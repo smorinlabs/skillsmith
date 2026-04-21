@@ -31,6 +31,8 @@ Source references use **shorthand-first** syntax. The parser accepts four forms,
 
 Scheme-prefixed syntax (`gh:acme/pack/skill`, `jsr:@acme/pack/skill`, `file:./path`) is reserved for Phase 2.
 
+Under the hood, Git sources are fetched via partial clones (`--filter=blob:none` / `--depth=1` when a ref is specified), lazy.nvim-style, so large skill repos don't download unneeded history. `--pin` resolves the ref to a full commit SHA and records it in the manifest/lockfile so subsequent reinstalls are reproducible.
+
 ### 1.5 Idempotence and already-installed handling
 
 Re-installing something already present exits **0** with a stderr notice. `--force` reinstalls or overwrites. For `apply` specifically, output mirrors `kubectl apply`: print `created`, `updated`, `unchanged`, `skipped` per skill, with aggregate counts at the end, and exit 0 even if every entry is unchanged.
@@ -66,6 +68,80 @@ For MVP, machine-readable output is emitted via the `--json` boolean flag on `li
 ### 1.10 Help routing
 
 All of the following invocation forms are accepted: `skillsmith`, `skillsmith help`, `skillsmith --help`, `skillsmith -h`, `skillsmith <cmd> --help`, `skillsmith <cmd> -h`, `skillsmith help <cmd>`. `-h` and `--help` are equivalent (no git-style split between abbreviated and full help). Cross-cutting docs are exposed via `skillsmith help <topic>` — the topic list is: `exit-codes`, `environment`, `scopes`, `manifest`, `sources`, `formatting`.
+
+### 1.11 Installation model: content-addressed store + symlinks
+
+SkillSmith installs into an **isolated, content-addressed store** (pipx/mise precedent), then symlinks entry points into the target tool's skill directory. This enables conflict-free coexistence of multiple versions and guaranteed-clean uninstall — directly addressing the "disabled doesn't mean uninstalled" class of complaints.
+
+**Store layout** (XDG-compliant, honors the §5 rule):
+
+```
+$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/
+  # fallback: ~/.local/share/skillsmith/store/<owner>/<repo>@<sha>/<skill>/
+```
+
+**Entry points** are symlinked into the tool-specific and scope-specific location per §1.2. For example, installing `acme/skills/grep` into `--scope=user` with `--tool=claude-code`:
+
+```
+~/.local/share/skillsmith/store/acme/skills@3f2a1b/grep/   <- real content
+~/.claude/skills/grep                                      <- symlink into store
+```
+
+Project-scope install with the same source points the project-local symlink at the *same* store entry — no duplicate bytes on disk.
+
+**Uninstall** resolves each target symlink to the store entry, removes the symlink, then garbage-collects the store entry if no other symlink references it. `skillsmith list` and `skillsmith doctor` are symlink-aware: `list --long` shows both the symlink path and the store path; orphaned symlinks (dangling into a pruned store entry) are surfaced as warnings.
+
+**Direct-install escape hatch.** For users who need file-copy installation (e.g., tool environments that reject symlinks, air-gapped targets, or simple copy-out-and-ship workflows), `install --direct` bypasses the store and copies files into the target location. `--direct` installs lose coexistence and the clean-uninstall guarantee; `uninstall` of a `--direct` skill falls back to a manifest-tracked file list recorded at install time. The tool is symlink-aware in both directions: mixed stores (some store-backed, some `--direct`) are supported, and `list` marks each with its install mode.
+
+### 1.12 Per-skill configuration (values layering)
+
+Each skill may declare a `values.toml` with default configuration. SkillSmith layers values at resolution time using a Helm-style precedence (high to low):
+
+1. `--set key=value` on the CLI (repeatable)
+2. environment variables matching a declared `valuesFromEnv` map
+3. project-level override: `./skillsmith.values.toml`
+4. user-level override: `$XDG_CONFIG_HOME/skillsmith/values/<skill>.toml`
+5. skill default: `values.toml` shipped with the skill
+
+Values are rendered into the skill at install and re-rendered on `sync`/`apply` when any layer changes. This is distinct from SkillSmith's own config precedence in §6.3, which governs the CLI itself.
+
+### 1.13 Lifecycle hooks
+
+Skills may declare lifecycle hooks in their manifest, modeled on Helm's hook annotations:
+
+- `pre-install`, `post-install`
+- `pre-upgrade`, `post-upgrade`
+- `pre-uninstall`, `post-uninstall`
+
+Hooks are shell scripts or executables shipped inside the skill directory. They run with a minimal, documented environment (`SKILLSMITH_SKILL_NAME`, `SKILLSMITH_SKILL_PATH`, `SKILLSMITH_SCOPE`, `SKILLSMITH_TOOL`, resolved values). A non-zero exit from a `pre-*` hook aborts the operation; a non-zero exit from a `post-*` hook is logged as a warning unless `--strict` is set. `--no-hooks` disables hook execution entirely.
+
+### 1.14 Version compatibility
+
+Skill manifests may declare compatibility ranges for the target tool (VS Code's `engines` and JetBrains' `since-build`/`until-build` precedent):
+
+```toml
+[compat]
+claude-code = ">=1.1,<2"
+codex       = ">=0.5"
+```
+
+At install time, if the detected tool version does not satisfy the range, SkillSmith refuses with exit 4 and a remediation hint. `--ignore-compat` overrides for local experimentation; it is not honored in `apply` runs so CI cannot silently drift off the declared compatibility.
+
+### 1.15 Meta-skills (extension packs)
+
+A skill manifest may declare itself a **meta-skill** (VS Code `extensionPack` precedent) by listing other skills as dependencies:
+
+```toml
+[meta]
+kind = "pack"
+includes = [
+  "acme/skills/grep",
+  "acme/skills/diff",
+  "acme/skills/edit",
+]
+```
+
+Installing a meta-skill resolves and installs all referenced skills transitively. Meta-skills have no content of their own beyond the manifest; uninstalling a meta-skill does **not** cascade to its members (matching VS Code's behavior — members may be shared with other packs). `list --long` marks pack membership.
 
 ---
 
@@ -215,6 +291,10 @@ No positional arguments.
 | `--dry-run` | — | bool | false | — | Print actions without executing |
 | `--ref` | — | string | `HEAD` | — | Git ref (branch, tag, commit) for URL sources |
 | `--pin` | — | string | — | — | Pin to a specific commit SHA after install (gh-extensions style) |
+| `--direct` | — | bool | false | — | Copy files into the target dir instead of symlinking from the store (§1.11) |
+| `--set` | — | `k=v` repeatable | — | — | Override values for the skill (§1.12) |
+| `--no-hooks` | — | bool | false | — | Skip lifecycle hooks (§1.13) |
+| `--ignore-compat` | — | bool | false | — | Install even if tool version is out of range (§1.14); ignored by `apply` |
 | `--continue-on-error` | — | bool | false | — | Keep going after per-skill failures |
 
 ### 3.3 `sync` flags
@@ -250,7 +330,10 @@ No positional arguments.
 | `--force` | `-f` | bool | false | — | Reinstall all |
 | `--yes` | `-y` | bool | false | — | Skip prompts |
 | `--dry-run` | — | bool | false | — | Preview reconciliation plan |
+| `--check` | — | bool | false | — | Drift check: exit non-zero if any skill would be created/updated/deleted. For CI pre-commit. |
 | `--prune` | — | bool | false | — | Remove installed skills absent from manifest |
+| `--no-hooks` | — | bool | false | — | Skip lifecycle hooks (§1.13) |
+| `--set` | — | `k=v` repeatable | — | — | Override values at apply time (§1.12) |
 
 ### 3.6 `uninstall` flags
 
@@ -264,6 +347,7 @@ No positional arguments.
 | `--all-scopes` | — | bool | false | — | Remove from every scope where present |
 | `--yes` | `-y` | bool | false | — | Skip confirmation |
 | `--dry-run` | — | bool | false | — | Print removals without executing |
+| `--no-hooks` | — | bool | false | — | Skip `pre-uninstall` / `post-uninstall` hooks (§1.13) |
 | `--continue-on-error` | — | bool | false | — | Keep going after per-skill failures |
 
 ### 3.7 `doctor` flags
@@ -471,6 +555,22 @@ Reading ./skillsmith.toml
 5 skills: 3 created/updated, 1 unchanged, 1 skipped, 0 failed.
 ```
 
+**`apply --check` (drift detection for CI):**
+```
+$ skillsmith apply --check
+Reading ./skillsmith.toml
+
+  ⚠ grep     drift       installed @3f2a1b, manifest @7e9c2d
+  ⚠ format   missing     declared in manifest, not installed
+  ✓ diff     in-sync     .claude/skills/diff
+
+3 skills: 2 drifted, 1 in-sync.
+Exit code: 2
+
+# Example CI hook
+#   skillsmith apply --check || { echo "skill drift detected"; exit 1; }
+```
+
 ### 4.4 `skillsmith uninstall --help` / `skillsmith help uninstall`
 
 ```
@@ -626,7 +726,7 @@ Removing 3 skills from scope=project for tool=claude-code:
 
 **Config keys.** `kebab-case` in TOML (`default-tool`, `default-scope`), dotted paths for nested (`registry.default`, `tool.claude-code.path`). Match env var name by uppercasing and replacing dots/dashes with underscores (`SKILLSMITH_DEFAULT_TOOL`, `SKILLSMITH_REGISTRY_DEFAULT`).
 
-**Paths and files.** `skillsmith.toml` for project manifest (cargo precedent). `~/.config/skillsmith/config.toml` for user config (XDG). `~/.local/share/skillsmith/` for installed artifacts at user scope. `~/.cache/skillsmith/` for Git clones and download cache. Never use `~/.skillsmith/` — XDG compliance from day one.
+**Paths and files.** `skillsmith.toml` for project manifest (cargo precedent). `~/.config/skillsmith/config.toml` for user config (XDG). `~/.local/share/skillsmith/store/<owner>/<repo>@<sha>/<skill>/` for content-addressed skill content (§1.11); tool-specific locations (`~/.claude/skills/<skill>`, `./.claude/skills/<skill>`, etc.) hold symlinks into the store, except for `--direct` installs which are plain files tracked by install manifest. `~/.cache/skillsmith/` for Git clones and download cache. Never use `~/.skillsmith/` — XDG compliance from day one.
 
 **Source refs.** Three-part `<owner>/<repo>/<skill>` is canonical shorthand. Two-part and one-part forms fall back to defaults from config. Git URLs accepted verbatim. Scheme-prefixed form (`gh:`, `file:`, `jsr:`) reserved for Phase 2.
 
@@ -644,7 +744,7 @@ Document these in `skillsmith help exit-codes`:
 | 1 | Generic failure (install error, network error, parse error) |
 | 2 | Usage error, cancelled action, or refused destructive action without `--force`/`--yes` |
 | 3 | Config error (malformed `skillsmith.toml` or user config) |
-| 4 | Target tool not installed |
+| 4 | Target tool not installed, or installed tool version is outside the skill's declared compatibility range (§1.14) |
 | 5 | Source unresolvable (repo not found, skill not in repo, ref not found) |
 | 6 | Scope/permission error (cannot write to system scope without privileges) |
 | 130 | Cancelled via SIGINT (Ctrl-C) — standard Unix signal-exit |
@@ -692,13 +792,16 @@ Precedence (high to low): CLI flag > env var > project `skillsmith.toml` > user 
 ### 6.4 Config file locations (XDG-compliant)
 
 - User config: `$XDG_CONFIG_HOME/skillsmith/config.toml`, fallback `~/.config/skillsmith/config.toml`
-- User data (installed skills at user scope): `$XDG_DATA_HOME/skillsmith/`, fallback `~/.local/share/skillsmith/`
-- Cache (Git clones, downloads): `$XDG_CACHE_HOME/skillsmith/`, fallback `~/.cache/skillsmith/`
+- User values overrides: `$XDG_CONFIG_HOME/skillsmith/values/<skill>.toml` (§1.12)
+- Skill store (content-addressed): `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/`, fallback `~/.local/share/skillsmith/store/…` (§1.11)
+- Install manifests for `--direct` installs: `$XDG_DATA_HOME/skillsmith/direct/<tool>/<scope>/<skill>.files` (file list recorded at install so uninstall can remove exactly what was written)
+- Cache (Git clones, downloads, partial-clone shallows): `$XDG_CACHE_HOME/skillsmith/`, fallback `~/.cache/skillsmith/`
 - System config: `/etc/skillsmith/config.toml`
 - Project manifest: `./skillsmith.toml` (discovered by walking up from CWD, cargo/npm pattern)
+- Project values override: `./skillsmith.values.toml`
 - Windows: `%APPDATA%\SkillSmith\`, `%LOCALAPPDATA%\SkillSmith\` per Microsoft guidance
 
-The tool-and-scope install path is not a SkillSmith config location but a **tool-specific** path SkillSmith writes into — e.g., `./.claude/skills/` for Claude Code at project scope, `~/.claude/skills/` at user scope, `/usr/local/share/claude/skills/` at system scope. These are derived at runtime from the target tool's own conventions and overridable by `--path`.
+The tool-and-scope install path is not a SkillSmith config location but a **tool-specific** path SkillSmith writes into — e.g., `./.claude/skills/` for Claude Code at project scope, `~/.claude/skills/` at user scope, `/usr/local/share/claude/skills/` at system scope. These are derived at runtime from the target tool's own conventions and overridable by `--path`. By default SkillSmith writes a symlink at that path pointing into the store (§1.11); with `--direct` it writes a file-copy tree instead.
 
 ---
 
