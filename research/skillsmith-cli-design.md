@@ -101,6 +101,19 @@ skillsmith apply [<manifest>]
   # Read a TOML manifest (default: ./skillsmith.toml) and install listed
   # skills. Idempotent. Prints created/updated/unchanged/skipped per entry.
 
+skillsmith uninstall <skill> [<skill>...]
+skillsmith remove    <skill> [<skill>...]    # alias
+skillsmith rm        <skill> [<skill>...]    # alias
+  # Remove one or more installed skills. Idempotent; not-installed
+  # exits 0 with a stderr notice. --scope/--tool disambiguate when
+  # a skill exists in multiple locations.
+
+skillsmith doctor
+  # Diagnose SkillSmith and target-tool readiness. Checks config,
+  # detected tools, scope paths, manifest, network, and cross-scope
+  # duplicates. Exits 0 on all-clear (or warnings unless --strict),
+  # 1 if any check failed.
+
 # Auxiliary commands (also MVP)
 
 skillsmith config <get|set|list|unset> [args]
@@ -150,6 +163,22 @@ skillsmith apply [FLAGS] [<manifest>]
 ```
 
 Positional manifest path optional; defaults to walking up for `skillsmith.toml` (cargo/npm precedent).
+
+For `uninstall`:
+
+```
+skillsmith uninstall [FLAGS] <skill> [<skill>...]
+```
+
+At least one `<skill>` is required. If a name is ambiguous across scopes or tools, SkillSmith prints the matches and exits 2 unless `--scope`, `--tool`, or `--all-scopes` disambiguates.
+
+For `doctor`:
+
+```
+skillsmith doctor [FLAGS]
+```
+
+No positional arguments.
 
 ---
 
@@ -223,6 +252,30 @@ Positional manifest path optional; defaults to walking up for `skillsmith.toml` 
 | `--dry-run` | — | bool | false | — | Preview reconciliation plan |
 | `--prune` | — | bool | false | — | Remove installed skills absent from manifest |
 
+### 3.6 `uninstall` flags
+
+| Long | Short | Type | Default | Env var | Description |
+|---|---|---|---|---|---|
+| `--tool` | `-t` | enum/repeatable | all detected | `SKILLSMITH_TOOL` | Limit removal to tool(s) |
+| `--scope` | `-s` | enum | all | `SKILLSMITH_SCOPE` | Limit to scope; required if `<skill>` is ambiguous |
+| `--user` | — | bool | — | — | Shorthand for `--scope=user` |
+| `--system` | — | bool | — | — | Shorthand for `--scope=system` |
+| `--project` | — | bool | — | — | Shorthand for `--scope=project` |
+| `--all-scopes` | — | bool | false | — | Remove from every scope where present |
+| `--yes` | `-y` | bool | false | — | Skip confirmation |
+| `--dry-run` | — | bool | false | — | Print removals without executing |
+| `--continue-on-error` | — | bool | false | — | Keep going after per-skill failures |
+
+### 3.7 `doctor` flags
+
+| Long | Short | Type | Default | Env var | Description |
+|---|---|---|---|---|---|
+| `--tool` | `-t` | enum/repeatable | all detected | `SKILLSMITH_TOOL` | Limit checks to tool(s) |
+| `--scope` | `-s` | enum | all | `SKILLSMITH_SCOPE` | Limit checks to scope |
+| `--offline` | — | bool | false | — | Skip network checks |
+| `--strict` | — | bool | false | — | Treat warnings as failures (exit 1 on any `⚠`) |
+| `--json` | — | bool | false | — | JSON output |
+
 ---
 
 ## 4. Help and error output mockups
@@ -237,9 +290,11 @@ USAGE
 
 CORE COMMANDS
   install:       Install a skill from a GitHub ref or Git URL
+  uninstall:     Remove an installed skill (aliases: rm, remove)
   sync:          Reconcile skills between scopes or projects
   list:          List installed skills across scopes and tools
   apply:         Install skills declared in skillsmith.toml
+  doctor:        Diagnose SkillSmith and target-tool readiness
 
 ADDITIONAL COMMANDS
   config:        Manage SkillSmith configuration
@@ -416,13 +471,154 @@ Reading ./skillsmith.toml
 5 skills: 3 created/updated, 1 unchanged, 1 skipped, 0 failed.
 ```
 
+### 4.4 `skillsmith uninstall --help` / `skillsmith help uninstall`
+
+```
+Remove one or more installed skills.
+
+USAGE
+  skillsmith uninstall [flags] <skill>...
+
+ALIASES
+  rm, remove
+
+ARGUMENTS
+  <skill>    Name of an installed skill. Repeatable.
+             If a name exists in multiple scopes or tools, disambiguate
+             with --scope, --tool, or --all-scopes.
+
+FLAGS
+  -t, --tool <name>          Target tool: claude-code, codex, kilo-code.
+                             Repeatable. Default: all detected tools.
+  -s, --scope <scope>        system | user | project. Required when name
+                             is ambiguous.
+      --user                 Shorthand for --scope=user
+      --system               Shorthand for --scope=system
+      --project              Shorthand for --scope=project
+      --all-scopes           Remove from every scope where present
+  -y, --yes                  Skip confirmation prompt
+      --dry-run              Print removals without executing
+      --continue-on-error    Keep going after per-skill failures
+
+INHERITED FLAGS
+  (See 'skillsmith help' for details)
+
+EXAMPLES
+  # Remove a skill from the current project
+  $ skillsmith uninstall grep --project
+
+  # Remove from every scope it's installed in
+  $ skillsmith uninstall grep --all-scopes
+
+  # Dry run
+  $ skillsmith rm grep diff --user --dry-run
+
+SEE ALSO
+  skillsmith install, skillsmith list
+```
+
+### 4.5 `skillsmith doctor --help` / `skillsmith help doctor`
+
+```
+Diagnose SkillSmith and target-tool readiness.
+
+USAGE
+  skillsmith doctor [flags]
+
+FLAGS
+  -t, --tool <name>       Limit checks to tool(s). Repeatable. Default: all.
+  -s, --scope <scope>     Limit checks to scope. Default: all.
+      --offline           Skip network checks
+      --strict            Treat warnings as failures (exit 1 on any ⚠)
+      --json              Emit JSON on stdout
+
+INHERITED FLAGS
+  (See 'skillsmith help' for details)
+
+EXAMPLES
+  # Full diagnostic
+  $ skillsmith doctor
+
+  # CI-friendly, no network, strict
+  $ skillsmith doctor --offline --strict
+
+  # Machine-readable
+  $ skillsmith doctor --json | jq '.checks[] | select(.status != "ok")'
+
+EXIT CODES
+  0  all checks pass (warnings allowed unless --strict)
+  1  one or more checks failed
+```
+
+### 4.6 Additional error / output mockups
+
+**`skillsmith doctor` human output:**
+```
+SkillSmith 0.4.2
+Config: /Users/alice/.config/skillsmith/config.toml
+
+Environment
+  ✓ XDG paths resolved (config, data, cache)
+  ✓ skillsmith.toml found at /Users/alice/projects/app/skillsmith.toml
+
+Target tools
+  ✓ claude-code 1.2.0          ~/.claude/skills (writable)
+  ⚠ codex       not installed  install: npm install -g @openai/codex
+  ✓ kilo-code   0.7.1          ~/.kilo/skills (writable)
+
+Scopes
+  ✓ user     /Users/alice/.local/share/skillsmith        (writable, 128 GB free)
+  ✓ project  /Users/alice/projects/app/.claude/skills    (writable, 128 GB free)
+  ⚠ system   /etc/skillsmith                             (not writable; sudo required for --system)
+
+Network
+  ✓ github.com reachable
+
+Skills
+  ⚠ 1 cross-scope duplicate:
+      grep: user (~/.claude/skills/grep) and project (./.claude/skills/grep)
+      see 'skillsmith list --duplicates'
+
+7 checks, 3 warnings, 0 failed.
+```
+
+**`skillsmith uninstall` idempotent no-op:**
+```
+skill 'grep' is not installed in scope=project
+
+Nothing to do.
+Exit 0.
+```
+
+**`skillsmith uninstall` ambiguous name:**
+```
+error: 'grep' is installed in multiple locations:
+
+  user      /Users/alice/.local/share/skillsmith/grep     claude-code
+  project   ./.claude/skills/grep                         claude-code
+
+Pass --scope to pick one, or --all-scopes to remove from every location.
+Exit code: 2
+```
+
+**`skillsmith uninstall` summary:**
+```
+Removing 3 skills from scope=project for tool=claude-code:
+
+  ✓ grep     removed    .claude/skills/grep
+  ✓ diff     removed    .claude/skills/diff
+  ⚠ edit     not-found  (not installed in scope=project)
+
+3 skills: 2 removed, 0 skipped, 1 not-found, 0 failed.
+```
+
 ---
 
 ## 5. Naming convention cheat sheet
 
 **Commands.** Use verbs for actions (`install`, `sync`, `list`, `apply`). Use nouns only as subgroups when the command surface gains a second primary resource type. Single word when possible. Hyphenated multi-word kebab-case when necessary (`set-default`, never `setDefault` or `set_default`). No plurals for verb commands; plurals only on resource noun groups if we add them (`skills`, not `skill`, in group names — following gcloud/stripe plural convention).
 
-**Aliases.** Ship these built-in aliases and no more: `ls` → `list`, `rm` → `uninstall` (when added in Phase 2), `i` → `install`. No abbreviations for `sync` or `apply` — they are already short and clear. Users can define their own via `skillsmith config alias.<name>`.
+**Aliases.** Ship these built-in aliases and no more: `ls` → `list`, `rm` / `remove` → `uninstall`, `i` → `install`. No abbreviations for `sync`, `apply`, or `doctor` — they are already short and clear. Users can define their own via `skillsmith config alias.<name>`.
 
 **Flags.** Long form is `--kebab-case`. Short form is a single letter, allocated sparingly (see §1.7). Boolean flags are presence-only; provide `--no-<flag>` counterparts only for flags that default to true. Enum flags (`--scope`, `--tool`, `--color`) use lowercase-kebab values. Accept both `--flag value` and `--flag=value`. Repeatable flags accumulate (repeat the flag; do not use comma-separation in MVP). Short flags may be combined POSIX-style (`-vf` is `-v -f`).
 
