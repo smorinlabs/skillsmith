@@ -2,7 +2,7 @@
 
 SkillSmith ships as a **flat, verb-first CLI** (npm/cargo/brew school) with **git-style scope flags** (`--system`/`--user`/`--project`), **gh-style help output** (separated FLAGS and INHERITED FLAGS, with EXAMPLES), **gh-style `owner/repo` source shorthand** for installs, and **kubectl/terraform-style idempotent `apply`**. The four MVP verbs — `install`, `sync`, `list`, `apply` — stay at depth 1 until the tool grows a second primary resource type.
 
-This doc is organized as: (0) background and non-goals, (1) design decisions, (2) command tree, (3) flag tables, (4) help/error mockups, (5) naming cheat sheet, (6) exit codes and env vars, (7) documentation strategy, (8) architecture sketch, (9) phasing.
+This doc is organized as: (0) background, non-goals, and core capabilities, (1) design decisions, (2) command tree, (3) flag tables, (4) help/error mockups, (5) naming cheat sheet, (6) exit codes and env vars, (7) documentation strategy, (8) architecture sketch, (9) phasing, (10) open questions.
 
 ---
 
@@ -31,6 +31,94 @@ Two primary personas at launch, served by the same CLI:
 - **Authoring tools.** SkillSmith installs and adapts skills; it does not scaffold new ones.
 - **Runtime features.** No execution, sandboxing, or mediation — packaging/placement only.
 - **GUI.** CLI-first.
+
+### 0.5 Core capabilities and features
+
+Summary of what the CLI delivers. Each bullet points to the section(s) where the behavior is specified in detail.
+
+#### 0.5.1 Tool-aware install with scope selection
+Given a source reference, a target tool, and a scope, place the skill at the correct path in the correct format.
+
+- Explicit flags `--tool {claude-code|codex|kilo-code}`, `--scope {system|user|project}`, `--path <dir>` (§1.2, §1.3, §3.2).
+- Interactive mode (TTY, flags omitted): detected tools shown as primary choices, not-installed alternatives listed separately with an install hint, scope prompt defaulting to `project` in a Git repo (§4, interactive-install mockup).
+- Tool-install check is a prerequisite: if the target tool is not installed, SkillSmith prints its canonical install command and exits 4 without running the installer (§4.3, §6.1).
+- Scope auto-defaults to `project` in a Git repo, else `user` (§1.3); `SKILLSMITH_SCOPE` overrides.
+
+#### 0.5.2 Content-addressed store with symlinked entry points
+Skills live in a single isolated store; each tool/scope path holds a symlink into the store. Enables conflict-free coexistence and clean uninstall.
+
+- Store layout: `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/` (§1.11).
+- `install --direct` copies files into the target path instead of symlinking, with a recorded file list for `uninstall` (§1.11, §3.2).
+- `list`, `doctor`, `sync`, and `uninstall` are symlink-aware and can resolve or GC store entries (§4.6, §8).
+
+#### 0.5.3 Cross-tool adaptation
+When a skill authored for tool A is installed for tool B, SkillSmith transforms it on the way into the store.
+
+- MVP: deterministic per-target-tool transformers for frontmatter renames, file layout, and known conventions (§1.16).
+- `--dry-run` previews the adapter diff; `--no-adapt` installs as-authored (§3.2).
+- Phase 2: LLM fallback, opt-in and gated, composed after the deterministic pass (§1.16, §9).
+
+#### 0.5.4 Same-scope and cross-scope existence detection
+Before writing, SkillSmith checks whether the skill is already installed at the requested scope and at broader scopes.
+
+- Same-scope duplicate: exit 0 with stderr notice; `--force` reinstalls (§1.5).
+- Cross-scope duplicate: list the other-scope installs with paths, require `--force` to proceed; TTY prompts, non-TTY exits 2 (§1.6).
+- `list --duplicates` surfaces cross-scope hits proactively (§3.4).
+
+#### 0.5.5 Cross-project sync
+Copy skills from a source (project, user scope, or another path) into a destination.
+
+- `sync --from <loc> --to <loc>` with default skip-if-already-present semantics (§2.1, §3.3).
+- `--delete` removes skills in the destination that are absent from the source (rsync-style, opt-in) (§3.3).
+- `--dry-run` previews the reconciliation plan (§3.3).
+
+#### 0.5.6 `list` and `doctor` diagnostics
+Enumerate installed state and verify environment readiness.
+
+- `list` / `ls` groups installed skills by tool and scope; `--duplicates` isolates cross-scope hits; `--long` adds paths, sources, and commit SHAs; `--json` for machine output (§3.4, §4.1).
+- `doctor` validates config resolution, detected tools and versions, scope writability, manifest parse, network reach, and cross-scope duplicates; `--strict` flips warnings to failures for CI; `--offline` skips network (§2 command tree, §3.7, §4.5, §4.6).
+
+#### 0.5.7 Clean uninstall
+Symmetric with install. Removes entry-point symlinks and GCs the store entry when no other symlink references it.
+
+- `uninstall` / `rm` / `remove` aliases (§2, §5 naming).
+- Idempotent: not-installed exits 0 with stderr notice; ambiguous names across scopes/tools error with a disambiguation list (§4.4, §4.6).
+- `--all-scopes` removes from every scope; per-scope `--scope`/`--tool` filters supported (§3.6).
+- `--direct` installs fall back to a manifest-tracked file list (§1.11).
+
+#### 0.5.8 Manifest-driven `apply` with drift detection
+A project-level `skillsmith.toml` pins what the repo depends on.
+
+- `apply` reads the manifest, installs missing skills, reports `created` / `updated` / `unchanged` / `skipped` per entry with aggregate counts (§1.5, §4 apply mockup).
+- `apply --check` is a drift detector for CI — exits non-zero when any skill would be created/updated/deleted (§3.5, §4 drift mockup).
+- `--prune` removes installed skills absent from the manifest (§3.5).
+- `--file` is repeatable, kubectl-style, for composing multiple manifests (§3.5).
+
+#### 0.5.9 Per-skill configuration, hooks, compatibility, meta-skills
+Packaging features layered on top of install.
+
+- **Values layering** (§1.12): Helm-style precedence `values.toml` → user → project → env → `--set`, re-rendered on `sync`/`apply` when any layer changes.
+- **Lifecycle hooks** (§1.13): `pre-install`/`post-install`/`pre-upgrade`/`post-upgrade`/`pre-uninstall`/`post-uninstall` with a documented env; `--no-hooks` to disable.
+- **Compatibility ranges** (§1.14): `[compat]` block refuses install when the tool version is outside the declared range (exit 4); `--ignore-compat` for local experimentation, ignored by `apply`.
+- **Meta-skills** (§1.15): `[meta] kind = "pack"` lists members; install resolves transitively; uninstall does not cascade.
+
+#### 0.5.10 Pluggable sources and registries
+Sources are layered.
+
+- MVP: Git URLs and GitHub shorthand `owner/repo/skill-name`, with 4-form parser precedence (§1.4).
+- Git fetch uses partial clones (§1.4) so large skill repos don't pull unneeded history.
+- `--ref` pins a branch/tag/commit; `--pin` resolves to a full SHA and records it (§1.4, §3.2).
+- Registry plugin surface is designed; default-registry is deferred and controlled via `registry.default` / `SKILLSMITH_REGISTRY` (§1.17).
+- Scheme-prefixed sources (`gh:`, `jsr:`, `file:`) are reserved for Phase 2 (§1.4).
+
+#### 0.5.11 Script-friendly, well-documented CLI surface
+Everything above composes cleanly in CI and automation.
+
+- Flags permutable anywhere; FLAGS vs INHERITED FLAGS separated in help (§1.8, §4.1).
+- `--json` boolean on supported commands; stdout is data, stderr is messages/errors; TTY-aware color and prompts; `NO_COLOR`, `CI`, and XDG conventions honored (§1.9, §6.2, §6.3).
+- Documented exit codes (0/1/2/3/4/5/6/130) with batch-max semantics (§6.1).
+- `help <topic>` pages for `exit-codes`, `environment`, `scopes`, `manifest`, `sources`, `formatting` (§1.10, §7).
+- Shell completion via `skillsmith completion <shell>`; "did you mean?" typo correction configurable via `help.autocorrect` (§7).
 
 ---
 
