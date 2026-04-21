@@ -2,7 +2,35 @@
 
 SkillSmith ships as a **flat, verb-first CLI** (npm/cargo/brew school) with **git-style scope flags** (`--system`/`--user`/`--project`), **gh-style help output** (separated FLAGS and INHERITED FLAGS, with EXAMPLES), **gh-style `owner/repo` source shorthand** for installs, and **kubectl/terraform-style idempotent `apply`**. The four MVP verbs — `install`, `sync`, `list`, `apply` — stay at depth 1 until the tool grows a second primary resource type.
 
-This doc is organized as: (1) design decisions, (2) command tree, (3) flag tables, (4) help/error mockups, (5) naming cheat sheet, (6) exit codes and env vars, (7) documentation strategy.
+This doc is organized as: (0) background and non-goals, (1) design decisions, (2) command tree, (3) flag tables, (4) help/error mockups, (5) naming cheat sheet, (6) exit codes and env vars, (7) documentation strategy, (8) architecture sketch, (9) phasing.
+
+---
+
+## 0. Background and non-goals
+
+### 0.1 Problem
+
+Agent coding tools (Claude Code, Codex, Kilo Code, Droid, and others) are converging on the idea of "skills" — reusable, packaged capabilities an agent can load. Adoption is fragmented in three ways: (1) install location differs per tool; (2) frontmatter, file layout, and tool-specific expectations differ even under nominally shared conventions like `AGENTS.md`; (3) no existing tooling answers "is this skill installed?", "install at user scope vs project scope", or "copy all skills from project A into project B". The `npx`-style install experiences available today write to one standard location and do not adapt to the target tool. SkillSmith closes that gap.
+
+### 0.2 Goal
+
+A single CLI that installs agent skills into the **right place, in the right format, at the right scope**, for whichever agent tool the user is targeting — with awareness of what's already installed, cross-project sync, and an optional project manifest for teams.
+
+### 0.3 Users
+
+Two primary personas at launch, served by the same CLI:
+
+- **Solo developer** — juggles multiple agent tools on one machine; wants a skill installed once and working regardless of tool. Uses the CLI imperatively.
+- **Team / engineering org** — wants consistency across contributors and projects. Uses `skillsmith.toml` (§1.12 values, §1.15 meta-skills) as the source of truth so anyone cloning can `skillsmith apply` and get the same setup.
+
+### 0.4 Non-goals (MVP)
+
+- **Semver version management and upgrade flows.** `install` and `sync` only add a skill if it is not already present at the destination; `--force` overwrites. `--ref` / `--pin` / content-addressed `<sha>` store paths (§1.11) are install-time **identity**, not version management. `[compat]` ranges (§1.14) are included but stand on the boundary toward Phase 2 version resolution; treat them as declarative, not resolved across alternatives.
+- **LLM-based adaptation.** MVP uses deterministic rules only (§1.16). An API-backed LLM fallback is Phase 2.
+- **Security / trust layer.** Installing a skill ships instructions an agent will execute — a real trust surface. Out of scope for MVP.
+- **Authoring tools.** SkillSmith installs and adapts skills; it does not scaffold new ones.
+- **Runtime features.** No execution, sandboxing, or mediation — packaging/placement only.
+- **GUI.** CLI-first.
 
 ---
 
@@ -142,6 +170,22 @@ includes = [
 ```
 
 Installing a meta-skill resolves and installs all referenced skills transitively. Meta-skills have no content of their own beyond the manifest; uninstalling a meta-skill does **not** cascade to its members (matching VS Code's behavior — members may be shared with other packs). `list --long` marks pack membership.
+
+### 1.16 Cross-tool adaptation
+
+When a skill was authored for tool A (e.g., `claude-code`) but is being installed for tool B (e.g., `codex`), SkillSmith applies a per-target-tool adapter that transforms the skill on the way into the store. Adapters cover frontmatter renames, file layout changes, and known convention mappings (e.g., Claude Code's `allowed-tools` → Codex's `tools`).
+
+**MVP is deterministic rules only.** Per-target-tool transformers are part of SkillSmith's codebase and produce reproducible output with no API calls. When `install` (or `apply`) runs an adapter, it prints the source target, the adapter pair, and each rule that fired.
+
+**LLM adaptation fallback is Phase 2** — opt-in, API-backed, and gated so users know when it runs. The adapter engine is designed so the deterministic pass and the LLM pass can compose: deterministic first, LLM only for fields the deterministic pass leaves unresolved.
+
+`install --no-adapt` skips adaptation entirely (install the skill as-authored, even if it was authored for a different tool). `install --dry-run` shows the adapted diff before writing.
+
+### 1.17 Registries and sources
+
+Sources are pluggable. MVP ships with direct Git repository URLs and GitHub shorthand (§1.4) as first-class source types. A **default registry** is not committed in MVP; it is a parallel research item. If a suitable existing registry is identified, wire it in behind `SKILLSMITH_REGISTRY` / the `registry.default` config key; otherwise ship with Git-only and add registry support later.
+
+Long-term: host a primary registry, keep direct Git URLs as first-class, and allow additional registries via `registry.<name>` config entries.
 
 ---
 
@@ -294,6 +338,7 @@ No positional arguments.
 | `--direct` | — | bool | false | — | Copy files into the target dir instead of symlinking from the store (§1.11) |
 | `--set` | — | `k=v` repeatable | — | — | Override values for the skill (§1.12) |
 | `--no-hooks` | — | bool | false | — | Skip lifecycle hooks (§1.13) |
+| `--no-adapt` | — | bool | false | — | Skip cross-tool adaptation (§1.16); install skill as-authored |
 | `--ignore-compat` | — | bool | false | — | Install even if tool version is out of range (§1.14); ignored by `apply` |
 | `--continue-on-error` | — | bool | false | — | Keep going after per-skill failures |
 
@@ -333,6 +378,7 @@ No positional arguments.
 | `--check` | — | bool | false | — | Drift check: exit non-zero if any skill would be created/updated/deleted. For CI pre-commit. |
 | `--prune` | — | bool | false | — | Remove installed skills absent from manifest |
 | `--no-hooks` | — | bool | false | — | Skip lifecycle hooks (§1.13) |
+| `--no-adapt` | — | bool | false | — | Skip cross-tool adaptation (§1.16) |
 | `--set` | — | `k=v` repeatable | — | — | Override values at apply time (§1.12) |
 
 ### 3.6 `uninstall` flags
@@ -531,6 +577,42 @@ About to install 3 skills into scope=project for tool=claude-code:
   acme/skills/edit          -> .claude/skills/edit  (overwrites existing)
 
 Proceed? [y/N]
+```
+
+**Interactive install (no flags, TTY, in a Git repo):**
+```
+$ cd ~/code/my-app
+$ skillsmith install acme/agent-tools/code-review
+
+  Detected Git repo.
+
+  Installed tools:
+    › claude-code
+      codex
+
+  Also available (not installed):
+      kilo-code  → install: npm i -g @kilocode/cli
+
+  Install scope?
+    › project (./.claude/skills)
+      user    (~/.claude/skills)
+      system  (/etc/claude/skills)
+
+  ⚠ Skill already installed at user scope.
+    Installing at project scope would duplicate across layers.
+    Re-run with --force to proceed.
+```
+
+**Cross-tool adaptation (install of a claude-code skill into codex):**
+```
+$ skillsmith install acme/agent-tools/claude-reviewer --tool codex
+
+  Source skill targets: claude-code
+  Applying deterministic adapter: claude-code → codex ✓
+    frontmatter 'allowed-tools' → 'tools'
+    file layout: prompts/*.md → instructions/*.md
+  Installed at ~/.codex/skills/claude-reviewer
+    store: ~/.local/share/skillsmith/store/acme/agent-tools@3f2a1b/claude-reviewer
 ```
 
 **Non-TTY, no `--yes`, destructive action:**
@@ -824,3 +906,63 @@ The tool-and-scope install path is not a SkillSmith config location but a **tool
 Every `--help` page ends with `Read the manual at https://skillsmith.dev/docs`. Every error message that refers to a concept links to the relevant docs page.
 
 **Typo correction** ("did you mean?") is provided via clap's built-in suggestions or Cobra's `SuggestFor`, with Levenshtein threshold 2. Enabled by default; controllable via `skillsmith config set help.autocorrect <never|prompt|immediate>` (git's model, since Git 2.34).
+
+---
+
+## 8. Architecture sketch
+
+Internal structure for implementers. Not normative for external consumers, but load-bearing for how the features in §1 compose.
+
+- **CLI frontend** — argument parsing, permutation (Cobra/clap), help routing (§1.10), interactive prompts (§4 mockups), TTY detection, `--no-prompt` / `--yes` / `--force` gating (§1.6), config discovery (§6.4), tool-install detection.
+- **Source resolver** — parses the four source forms (§1.4), drives partial-clone Git fetch for URL/shorthand sources, resolves refs to SHAs for `--pin`.
+- **Registry clients** — pluggable (§1.17). MVP wires direct Git + GitHub shorthand; Phase 2 adds our own registry and others.
+- **Store** — content-addressed layout at `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/` (§1.11). Write-once per (owner, repo, sha, skill); GC'd when the last symlink referencing a store entry is removed.
+- **Tool adapters** — one per target tool (`claude-code`, `codex`, `kilo-code` in MVP). Each adapter knows: install paths per scope, expected frontmatter schema, file layout conventions, adaptation rules *from* other tools, and the canonical install command for that tool (used in the "tool not installed" hint from §4.3).
+- **Adapter engine** — orchestrates adapter selection and the transform pipeline (§1.16). Deterministic rules pass in MVP; LLM fallback in Phase 2 runs only on fields the deterministic pass leaves unresolved.
+- **Values renderer** — applies the values layering (§1.12) at install, `sync`, and `apply`.
+- **Hook runner** — executes lifecycle scripts (§1.13) with the documented environment, respecting `--no-hooks`.
+- **State discovery** — no authoritative state file. `list`, `sync`, `doctor`, and `apply --check` infer installed state by scanning the store, following symlinks from each tool-and-scope path, and reading `direct/<tool>/<scope>/<skill>.files` for `--direct` installs. The filesystem is the source of truth.
+
+---
+
+## 9. Phasing
+
+### MVP
+
+Commands: `install`, `uninstall`, `sync`, `list`, `apply`, `doctor` — plus the auxiliary group (`config`, `completion`, `version`, `help`). This is an expansion over the initial PRD MVP (`install`, `sync`, `list`, `apply`), motivated by: clean uninstall semantics are load-bearing for the content-addressed store (§1.11), and `doctor` is the first-run/CI entry point for the configuration and compatibility story (§1.14, §6.3).
+
+Design decisions in §1 apply to MVP except where noted:
+
+- Deterministic adaptation only (§1.16).
+- Git URL + GitHub shorthand sources (§1.4); no default registry wired (§1.17).
+- `[compat]` ranges accepted declaratively (§1.14); upgrade/resolution across versions is Phase 2.
+- Direct-install escape hatch (`--direct`) is MVP.
+- Lifecycle hooks, values layering, and meta-skills are MVP.
+
+### Phase 2
+
+- LLM adaptation fallback — API-backed, opt-in, gated.
+- Version comparison and upgrade flows — semver resolution, diff/merge across installed vs declared `<sha>`.
+- Hosted primary registry; multi-registry config.
+- Additional tool adapters (Droid, Cursor, Aider, Cline, Continue — TBD).
+- Conflict resolution beyond "skip if exists" (diff, merge, prompt), layered on top of existing cross-scope detection (§1.6).
+- Security / trust layer for third-party skills.
+- Richer manifest features beyond what MVP needs.
+- `--output yaml|table|text` (§1.9), man-page generation, dynamic shell completions for skill names and source refs.
+
+### Phase 3 (speculative)
+
+- GUI / IDE integration.
+- Skill authoring helpers.
+- Cross-tool usage analytics.
+
+---
+
+## 10. Open questions
+
+Design-relevant questions carried forward from the PRD that are not yet resolved:
+
+1. **Working name.** `SkillSmith` is a placeholder. Binary name, `$XDG_*` path segment, config filenames, and env var prefix all assume this name — decide before any public surface.
+2. **Canonical install commands per tool.** The "tool not installed" error (§4.3) hardcodes an install hint per target tool. Confirm the recommended one-liner for each MVP tool (`claude-code`, `codex`, `kilo-code`).
+3. **Skill identity collisions.** If two different repos expose skills with the same leaf name, `list` must disambiguate. Current assumption: `list --long` shows the full `<owner>/<repo>/<skill>` and store path; `list` (short) may collide and should surface a warning when it does.
+4. **Manifest granularity.** How many per-skill overrides to support in `skillsmith.toml` v1 (target tool, scope, ref, values)? Current design leans minimal — one entry per skill with optional `{ tool, scope, ref, values }` — but the full shape is not locked.
