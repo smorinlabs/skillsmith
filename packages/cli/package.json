@@ -1,0 +1,17 @@
+{
+  "name": "skillsmith",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "skillsmith": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@skillsmith/core": "workspace:*",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "consola": "^3.2.3"
+  }
+}

@@ -6,7 +6,7 @@ pre-commit:
       run: bunx @biomejs/biome check --no-errors-on-unmatched --staged {staged_files}
     typecheck:
       glob: "*.{ts,tsx}"
-      run: bunx tsc -b
+      run: bunx tsc --noEmit
     actionlint:
       glob: ".github/workflows/*.{yml,yaml}"
       run: actionlint {staged_files}

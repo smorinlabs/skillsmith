@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "bun run packages/cli/src/index.ts",
     "test": "bun test",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc --noEmit",
     "lint": "biome check",
     "fmt": "biome check --write",
     "actions-lint": "actionlint",
