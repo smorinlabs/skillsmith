@@ -225,7 +225,7 @@ git commit -m "chore: add root tsconfig base + workspace references"
 }
 ```
 
-> Note: the core/CLI import-and-global boundary (no `commander`/`chalk`/`consola`/`process.exit`/`console.*` in `packages/core/src/**`) is enforced by `scripts/check-core-boundary.ts` (Task 30) rather than a Biome rule. The script is the authoritative boundary check and runs in both CI and `bun run check`.
+> Note: the core/CLI import-and-global boundary (no `commander`/`chalk`/`consola`/`process.exit`/`console.*` in `packages/core/src/**`) was originally enforced by `scripts/check-core-boundary.ts` (Task 30). Post-MVP (project P02 in `PROJECTS.md`), this was ported to ESLint (`no-restricted-imports` + `no-restricted-syntax` in `eslint.config.js`), the script was deleted, and the CI/`bun run check` steps now invoke `bun run lint:boundaries` instead.
 
 - [ ] **Step 2: Verify biome can parse its own config**
 
@@ -2843,6 +2843,8 @@ git commit -m "feat(cli): wire commander entry with agents, version, help routin
 ## Phase F — Integration + enforcement + release
 
 ### Task 30: Core-boundary enforcement script
+
+> **Superseded (post-MVP, project P02).** The script below was ported to ESLint (`no-restricted-imports` + `no-restricted-syntax` in `eslint.config.js`, scoped to `packages/core/src/**/*.ts`) and then deleted. CI and `bun run check` now invoke `bun run lint:boundaries` instead of `bun run scripts/check-core-boundary.ts`. The rest of this task is retained as historical record of the original MVP implementation.
 
 **Files:**
 - Create: `scripts/check-core-boundary.ts`

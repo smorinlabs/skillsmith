@@ -60,4 +60,44 @@ export default [
       ],
     },
   },
+  {
+    files: ['packages/core/src/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'commander', message: 'CLI-only: do not import in @skillsmith/core' },
+            { name: 'chalk', message: 'CLI-only: @skillsmith/core must produce no color' },
+            { name: 'consola', message: 'CLI-only: use Logger via ScanEnv in core' },
+            {
+              name: '@clack/prompts',
+              message: 'CLI-only: @skillsmith/core must be non-interactive',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.object.name='process'][callee.property.name='exit']",
+          message:
+            'core must not call process.exit — return Result<_, SkillSmithError> and let the CLI decide the exit code',
+        },
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.object.name='console'][callee.property.name=/^(log|info|warn|error|debug)$/]",
+          message: 'core must not use console.* — accept a Logger via ScanEnv',
+        },
+      ],
+    },
+  },
 ];

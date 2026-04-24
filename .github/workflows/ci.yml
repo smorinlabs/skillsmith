@@ -37,8 +37,8 @@ jobs:
       - name: Install actionlint
         uses: raven-actions/actionlint@v2
 
-      - name: Core boundary check (no CLI deps in core)
-        run: bun run scripts/check-core-boundary.ts
+      - name: ESLint boundaries (import paths, core isolation)
+        run: bun run lint:boundaries
 
       - name: Build binary (smoke)
         env:

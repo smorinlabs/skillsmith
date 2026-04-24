@@ -52,3 +52,25 @@ $ bun run check
 - New `eslint.config.js` present at root.
 - `lefthook.yml` includes an `eslint-boundaries` pre-commit command.
 - Biome config unchanged.
+
+---
+
+## [x] Project P02: Port `check-core-boundary.ts` to ESLint (v0.2.1)
+**Goal**: Replace the custom `scripts/check-core-boundary.ts` runtime check with equivalent ESLint rules, consolidating the core-isolation boundary into a single tool.
+
+**Out of Scope**
+- Widening forbidden imports or calls beyond the script's original list.
+- Enforcing these rules against `packages/core/tests/**`.
+
+### Tests & Tasks
+- [x] [P02-T01] Add a second config block in `eslint.config.js` scoped to `packages/core/src/**/*.ts` with `no-restricted-imports` (commander, chalk, consola, @clack/prompts) and `no-restricted-syntax` (`process.exit`, `console.{log,info,warn,error,debug}`).
+- [x] [P02-T02] Replace the "Core boundary check" step in `.github/workflows/ci.yml` with an ESLint boundaries step.
+- [x] [P02-T03] Delete `scripts/check-core-boundary.ts`.
+- [x] [P02-TS01] `bun run lint:boundaries` is clean on HEAD.
+- [x] [P02-TS02] Deliberate probe file importing `commander`/`chalk` and calling `console.log`/`process.exit` is flagged by both rules; revert.
+- [x] [P02-TS03] `bun run check` is green end-to-end.
+
+### Automated Verification
+- `bun run lint:boundaries` exits 0 on HEAD.
+- `scripts/check-core-boundary.ts` no longer exists.
+- CI workflow no longer references the script.
