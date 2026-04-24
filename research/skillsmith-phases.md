@@ -121,17 +121,13 @@ The write path — introduces the content-addressed store, symlinks, source reso
 - Idempotence and cross-scope duplicate detection (design doc §1.5, §1.6). `--force`, `--yes`, `--dry-run`, `--ref`, `--pin`. `--all-scopes` on uninstall.
 - Remaining exit codes 2/4/5/6/130 finalized.
 
-**Also absorbs (pushed from MVP-2b):**
-
-- **PowerShell completion** script (was planned to land with MVP-2a, then MVP-2b). Written here because PowerShell is the Windows-primary shell and lands with the Windows CI story.
-- **Windows in CI matrix.** The write path exercises Windows-specific path handling (separator, realpath, `%APPDATA%` vs `%USERPROFILE%`) more aggressively than the read path, so landing Windows here surfaces real install-time breakage.
-
 **Explicitly deferred:**
 
 - Install/uninstall for `codex`, `kilo-code`, `opencode` (→ MVP-3).
 - No `sync`, no `apply` (→ MVP-4).
 - No cross-tool adaptation; skills authored for a non-claude-code target install as-authored or are refused.
 - No `--direct`, no lifecycle hooks, no values layering, no meta-skills, no `[compat]` enforcement (→ MVP-5).
+- **PowerShell completion** and **Windows in CI matrix** (→ Phase 2).
 
 ---
 
@@ -206,6 +202,8 @@ Rounds out the MVP feature matrix. No new commands; existing commands gain optio
 - **`--output yaml|table|text`** (design doc §1.9, §6.2) — only added if demand emerges.
 - **Man-page generation** — auto-generated from the Cobra/clap command tree, shipped via Homebrew / apt / other packages. Inline help covers 95% of use cases in MVP (design doc §7).
 - **Dynamic shell completions** — completions for skill names and source refs (they require network calls that slow shells) (design doc §7).
+- **PowerShell completion** — previously planned for MVP-2a/2b/2c. Deferred here because no MVP user journey requires Windows, and bash/zsh/fish already cover the core audience. Implementation follows the existing runtime-introspection pattern in `packages/cli/src/completion/`; adding a `powershell.ts` renderer is a small follow-on once Windows support arrives.
+- **Windows in CI matrix** — add `windows-latest` to the GitHub Actions matrix, plus Windows-specific path handling for `%USERPROFILE%` / `%APPDATA%`, backslash separators, junction points, and symlink privilege elevation. Previously staged for MVP-2b and MVP-2c; moved here because Windows touches every layer (scan, config, install) and warrants a dedicated pass rather than slipping into a feature milestone.
 
 ---
 
