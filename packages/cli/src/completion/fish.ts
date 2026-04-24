@@ -1,6 +1,6 @@
 import type { CompletionNode } from './types.ts';
 
-const fishEscape = (s: string): string => s.replace(/'/g, "\\'");
+const fishEscape = (s: string): string => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
 export const renderFish = (nodes: readonly CompletionNode[]): string => {
   const root = nodes[0];

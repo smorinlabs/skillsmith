@@ -31,4 +31,16 @@ describe('renderFish', () => {
     expect(out).toContain('bash');
     expect(out).toContain('zsh');
   });
+
+  test('escapes backslashes before quotes (BUG-09)', () => {
+    const p = new Command().name('sk');
+    p.command('grep').description("Pattern e.g. '\\d+' matches digits");
+    const out2 = renderFish(walk(p));
+    // Backslash must be doubled; the single quote must be backslash-escaped.
+    // Expected rendering of the description inside single quotes:
+    //   'Pattern e.g. \'\\\\d+\' matches digits'
+    expect(out2).toContain('\\\\d+');
+    // And the raw, unescaped sequence must NOT appear.
+    expect(out2).not.toContain("'\\d+'");
+  });
 });

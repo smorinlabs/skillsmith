@@ -41,4 +41,12 @@ describe('renderBash', () => {
     expect(out).toContain('bash');
     expect(out).toContain('zsh');
   });
+
+  test('dispatches on first non-flag word, not COMP_WORDS[1]', () => {
+    // Guards BUG-04: global flags like --color preceding the subcommand
+    // must not defeat the case arms.
+    expect(out).not.toMatch(/case\s+"\$\{COMP_WORDS\[1\]/);
+    expect(out).toMatch(/for\s*\(\(\s*i=1;\s*i<COMP_CWORD/);
+    expect(out).toMatch(/case\s+"\$sub"/);
+  });
 });

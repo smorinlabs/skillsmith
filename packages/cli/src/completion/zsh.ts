@@ -1,6 +1,16 @@
-import type { CompletionNode } from './types.ts';
+import type { CompletionNode, CompletionOption } from './types.ts';
 
-const zshEscape = (s: string): string => s.replace(/'/g, "'\\''");
+// Escape single quotes (outer single-quoted string) and colons (zsh _arguments
+// / _describe delimiter) so description text can safely contain either.
+const zshEscape = (s: string): string => s.replace(/'/g, "'\\''").replace(/:/g, '\\:');
+
+const optionSpecs = (o: CompletionOption): string[] => {
+  const desc = zshEscape(o.description || o.long || o.short || '');
+  const choices = o.choices ? `:value:(${(o.choices ?? []).join(' ')})` : '';
+  const longPart = o.long ? [`'${o.long}${o.choices ? '=' : ''}[${desc}]${choices}'`] : [];
+  const shortPart = o.short ? [`'${o.short}[${desc}]${choices}'`] : [];
+  return [...longPart, ...shortPart];
+};
 
 export const renderZsh = (nodes: readonly CompletionNode[]): string => {
   const root = nodes[0];
@@ -13,17 +23,11 @@ export const renderZsh = (nodes: readonly CompletionNode[]): string => {
 
   const caseArms = root.subcommands
     .map((s) => {
-      const flags = s.options.flatMap((o) => {
-        const names = [o.short, o.long].filter((n): n is string => Boolean(n));
-        return names.map((n) => `'${n}[${zshEscape(o.description || n)}]'`);
-      });
+      const flags = s.options.flatMap(optionSpecs);
       const positionals = s.args
         .filter((a) => a.choices)
         .map((a) => `':${a.name}:(${(a.choices ?? []).join(' ')})'`);
-      const enumPairs = s.options
-        .filter((o) => o.choices)
-        .map((o) => `'${o.long}=(${(o.choices ?? []).join(' ')})'`);
-      const body = [...flags, ...positionals, ...enumPairs].join(' \\\n          ');
+      const body = [...flags, ...positionals].join(' \\\n          ');
       return `    ${s.name})\n        _arguments \\\n          ${body || "':no-args:'"}\n        ;;`;
     })
     .join('\n');
