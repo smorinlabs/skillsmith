@@ -1,11 +1,18 @@
 import { readFile as fsReadFile } from 'node:fs/promises';
 import type { ScanEnv } from '../env/types.ts';
-import { type SkillSmithError, configError } from '../errors.ts';
+import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
+import { CONFIG_ACCESSORS } from './accessors.ts';
 import { configFromEnv } from './env.ts';
 import { findProjectConfig, getConfigPath, resolveExplicitFile } from './paths.ts';
 import { parseConfig } from './schema.ts';
-import type { Config, ConfigKey, ConfigLayer, EffectiveConfig } from './types.ts';
+import {
+  CONFIG_KEYS,
+  type Config,
+  type ConfigKey,
+  type ConfigLayer,
+  type EffectiveConfig,
+} from './types.ts';
 
 export interface LoadConfigOpts {
   explicitFile?: string;
@@ -27,11 +34,7 @@ const tryLoadFile = async (
   try {
     text = await read(p);
   } catch (e) {
-    return err(
-      configError(`failed to read ${p}: ${e instanceof Error ? e.message : String(e)}`, {
-        file: p,
-      }),
-    );
+    return err(configError(`failed to read ${p}: ${errorMessage(e)}`, { file: p }));
   }
   const parsed = parseConfig(text);
   if (!parsed.ok) {
@@ -42,32 +45,7 @@ const tryLoadFile = async (
   return ok(parsed.value);
 };
 
-// Layers in ascending precedence (later entries override earlier ones)
 const ORDER: ConfigLayer[] = ['defaults', 'system', 'user', 'project', 'explicit-file', 'env'];
-
-const KEY_GETTERS: Record<ConfigKey, (c: Config) => unknown> = {
-  tool: (c) => c.tool,
-  scope: (c) => c.scope,
-  path: (c) => c.path,
-  'registry.default': (c) => c.registry?.default,
-};
-
-const assign = (target: Config, key: ConfigKey, value: unknown): void => {
-  switch (key) {
-    case 'tool':
-      target.tool = value as NonNullable<Config['tool']>;
-      return;
-    case 'scope':
-      target.scope = value as NonNullable<Config['scope']>;
-      return;
-    case 'path':
-      target.path = value as string;
-      return;
-    case 'registry.default':
-      target.registry = { ...(target.registry ?? {}), default: value as string };
-      return;
-  }
-};
 
 export const loadConfig = async (
   env: ScanEnv,
@@ -80,45 +58,33 @@ export const loadConfig = async (
     flag: opts.explicitFile,
     env: opts.explicitFileEnv,
   });
-  const projectPath = await findProjectConfig(env, cwd);
+  const [systemR, userR, projectR, explicitR] = await Promise.all([
+    tryLoadFile(read, env.fileExists, getConfigPath(env, 'system')),
+    tryLoadFile(read, env.fileExists, getConfigPath(env, 'user')),
+    findProjectConfig(env, cwd).then((p) => (p ? tryLoadFile(read, env.fileExists, p) : ok(null))),
+    explicitPath ? tryLoadFile(read, env.fileExists, explicitPath) : Promise.resolve(ok(null)),
+  ]);
+  for (const r of [systemR, userR, projectR, explicitR]) {
+    if (!r.ok) return r;
+  }
 
   const layers: Record<ConfigLayer, Config> = {
     defaults: {},
-    system: {},
-    user: {},
-    project: {},
-    'explicit-file': {},
+    system: (systemR.ok && systemR.value) || {},
+    user: (userR.ok && userR.value) || {},
+    project: (projectR.ok && projectR.value) || {},
+    'explicit-file': (explicitR.ok && explicitR.value) || {},
     env: configFromEnv(envVars),
   };
 
-  const systemR = await tryLoadFile(read, env.fileExists, getConfigPath(env, 'system'));
-  if (!systemR.ok) return systemR;
-  if (systemR.value) layers.system = systemR.value;
-
-  const userR = await tryLoadFile(read, env.fileExists, getConfigPath(env, 'user'));
-  if (!userR.ok) return userR;
-  if (userR.value) layers.user = userR.value;
-
-  if (projectPath) {
-    const projectR = await tryLoadFile(read, env.fileExists, projectPath);
-    if (!projectR.ok) return projectR;
-    if (projectR.value) layers.project = projectR.value;
-  }
-  if (explicitPath) {
-    const explicitR = await tryLoadFile(read, env.fileExists, explicitPath);
-    if (!explicitR.ok) return explicitR;
-    if (explicitR.value) layers['explicit-file'] = explicitR.value;
-  }
-
   const value: Config = {};
   const sources: Partial<Record<ConfigKey, ConfigLayer>> = {};
-  const keys: ConfigKey[] = ['tool', 'scope', 'path', 'registry.default'];
-  for (const key of keys) {
+  for (const key of CONFIG_KEYS) {
     for (let i = ORDER.length - 1; i >= 0; i--) {
       const layer = ORDER[i] as ConfigLayer;
-      const v = KEY_GETTERS[key](layers[layer]);
+      const v = CONFIG_ACCESSORS[key].get(layers[layer]);
       if (v !== undefined) {
-        assign(value, key, v);
+        CONFIG_ACCESSORS[key].set(value, v);
         sources[key] = layer;
         break;
       }

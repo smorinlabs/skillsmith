@@ -1,7 +1,7 @@
 import { parse as parseToml } from 'smol-toml';
 import { z } from 'zod';
 import { SUPPORTED_TOOLS } from '../agents/types.ts';
-import { type SkillSmithError, configError } from '../errors.ts';
+import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import type { Config } from './types.ts';
 
@@ -9,7 +9,7 @@ const RegistrySchema = z.object({ default: z.string().optional() }).strict('regi
 
 const ConfigSchema = z
   .object({
-    tool: z.enum(SUPPORTED_TOOLS as unknown as readonly [string, ...string[]]).optional(),
+    tool: z.enum(SUPPORTED_TOOLS).optional(),
     scope: z.enum(['system', 'user', 'project']).optional(),
     path: z.string().optional(),
     registry: RegistrySchema.optional(),
@@ -21,7 +21,7 @@ export const parseConfig = (text: string): Result<Config, SkillSmithError> => {
   try {
     raw = parseToml(text);
   } catch (e) {
-    return err(configError(`TOML parse error: ${e instanceof Error ? e.message : String(e)}`));
+    return err(configError(`TOML parse error: ${errorMessage(e)}`));
   }
   const parsed = ConfigSchema.safeParse(raw);
   if (!parsed.success) {

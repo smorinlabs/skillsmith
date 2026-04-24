@@ -3,8 +3,9 @@ import { dirname } from 'node:path';
 import lockfile from 'proper-lockfile';
 import { stringify as stringifyToml } from 'smol-toml';
 import type { ScanEnv } from '../env/types.ts';
-import { type SkillSmithError, configError } from '../errors.ts';
+import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
+import { CONFIG_ACCESSORS } from './accessors.ts';
 import { getConfigPath } from './paths.ts';
 import { parseConfig } from './schema.ts';
 import type { Config, ConfigKey, Scope } from './types.ts';
@@ -15,24 +16,6 @@ export interface SaveConfigOpts {
   delete?: readonly ConfigKey[];
   cwd?: string;
 }
-
-const deleteKey = (c: Config, key: ConfigKey): void => {
-  // `delete` is intentional — exactOptionalPropertyTypes forbids `= undefined`.
-  switch (key) {
-    case 'tool':
-      Reflect.deleteProperty(c, 'tool');
-      return;
-    case 'scope':
-      Reflect.deleteProperty(c, 'scope');
-      return;
-    case 'path':
-      Reflect.deleteProperty(c, 'path');
-      return;
-    case 'registry.default':
-      if (c.registry) Reflect.deleteProperty(c.registry, 'default');
-      return;
-  }
-};
 
 const stripUndefined = (c: Config): Record<string, unknown> => {
   const out: Record<string, unknown> = {};
@@ -55,18 +38,13 @@ export const saveConfig = async (
   try {
     await mkdir(dirname(file), { recursive: true });
   } catch (e) {
-    return err(
-      configError(
-        `cannot create directory for ${file}: ${e instanceof Error ? e.message : String(e)}`,
-        { file },
-      ),
-    );
+    return err(configError(`cannot create directory for ${file}: ${errorMessage(e)}`, { file }));
   }
 
   try {
     await writeFile(file, '', { flag: 'ax' });
   } catch {
-    // already exists — fine
+    // ignore EEXIST; proper-lockfile needs the target to exist before locking
   }
 
   let release: (() => Promise<void>) | null = null;
@@ -76,7 +54,7 @@ export const saveConfig = async (
       retries: { retries: 5, factor: 1, minTimeout: 10, maxTimeout: 100 },
     });
   } catch (e) {
-    return err(configError(`lock failed: ${e instanceof Error ? e.message : String(e)}`, { file }));
+    return err(configError(`lock failed: ${errorMessage(e)}`, { file }));
   }
 
   try {
@@ -96,7 +74,7 @@ export const saveConfig = async (
     if (opts.patch?.registry) {
       merged.registry = { ...(existing.registry ?? {}), ...opts.patch.registry };
     }
-    for (const key of opts.delete ?? []) deleteKey(merged, key);
+    for (const key of opts.delete ?? []) CONFIG_ACCESSORS[key].del(merged);
 
     const serialized = stringifyToml(stripUndefined(merged));
     const tmp = `${file}.tmp.${process.pid}.${Math.random().toString(36).slice(2)}`;
@@ -104,7 +82,7 @@ export const saveConfig = async (
     await rename(tmp, file);
     return ok({ file });
   } catch (e) {
-    return err(configError(`save failed: ${e instanceof Error ? e.message : String(e)}`, { file }));
+    return err(configError(`save failed: ${errorMessage(e)}`, { file }));
   } finally {
     if (release) await release().catch(() => {});
   }

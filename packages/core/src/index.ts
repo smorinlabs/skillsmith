@@ -1,11 +1,12 @@
 export { getAgent, listSupportedTools, registry } from './agents/registry.ts';
+export { getConfigValue } from './config/accessors.ts';
 export { loadConfig } from './config/load.ts';
 export { findProjectConfig, getConfigPath, resolveExplicitFile } from './config/paths.ts';
 export { saveConfig } from './config/save.ts';
 export { CONFIG_KEYS } from './config/types.ts';
 export { defaultScanEnv } from './env/default.ts';
 export { noopLogger } from './env/logger.ts';
-export { configError, genericError, unknownToolError } from './errors.ts';
+export { configError, errorMessage, genericError, unknownToolError } from './errors.ts';
 export type {
   Agent,
   Config,

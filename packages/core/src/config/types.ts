@@ -11,9 +11,9 @@ export interface Config {
   registry?: { default?: string };
 }
 
-export type ConfigKey = 'tool' | 'scope' | 'path' | 'registry.default';
+export const CONFIG_KEYS = ['tool', 'scope', 'path', 'registry.default'] as const;
 
-export const CONFIG_KEYS: readonly ConfigKey[] = ['tool', 'scope', 'path', 'registry.default'];
+export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
 export interface EffectiveConfig {
   value: Config;

@@ -5,14 +5,9 @@ import type { Result } from '../result.ts';
 
 export type { InstallMethod, InstallRecord } from '../detect/types.ts';
 
-export type SupportedTool = 'claude-code' | 'codex' | 'kilo-code' | 'opencode';
+export const SUPPORTED_TOOLS = ['claude-code', 'codex', 'kilo-code', 'opencode'] as const;
 
-export const SUPPORTED_TOOLS: readonly SupportedTool[] = [
-  'claude-code',
-  'codex',
-  'kilo-code',
-  'opencode',
-];
+export type SupportedTool = (typeof SUPPORTED_TOOLS)[number];
 
 export interface Agent {
   readonly tool: SupportedTool;

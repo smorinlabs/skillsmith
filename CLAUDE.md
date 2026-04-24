@@ -24,6 +24,16 @@ These rules are in `eslint.config.js` and fail `bun run check`. Respect them bef
 
 ---
 
+## Per-agent directories are a design boundary, not duplication
+
+Each supported tool under `packages/core/src/agents/<tool>/` (claude-code, codex, kilo-code, opencode, and any future tool) owns its own `detect.ts`, `index.ts`, `install-hint.ts`, `install-paths.ts`, `frontmatter.ts`, and `README.md`. **Keep these files separate even when bodies look near-identical.**
+
+Share common code via helpers (e.g. `agents/detect-factory.ts` → `createBinaryDetect(tool, binary)`) that each per-agent file calls in one line. Do not merge the agents into a single `builtin.ts` table, and do not delete `export {}` stubs — they reserve the slot and hold roadmap comments.
+
+So when any agent needs to diverge (e.g. Codex wants a different version-parsing strategy, Claude Code wants to check an additional install path), you can inline the implementation back into that one file without touching the others.
+
+---
+
 ## Releases
 
 Releases are automated by release-please from Conventional Commit messages on `main`. Get the commit wrong and the release is wrong — there's no manual bump.

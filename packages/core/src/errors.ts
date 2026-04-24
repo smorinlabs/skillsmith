@@ -14,6 +14,8 @@ export const unknownToolError = (tool: string): SkillSmithError => ({
   tool,
 });
 
+export const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
 export const configError = (
   message: string,
   opts: { file?: string; line?: number } = {},

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { errorMessage } from '@skillsmith/core';
 import { buildProgram } from './program.ts';
 import { installSigintHandler } from './util/signals.ts';
 
@@ -23,7 +24,7 @@ const main = async (): Promise<number> => {
 main().then(
   (code) => process.exit(code),
   (e) => {
-    process.stderr.write(`fatal: ${e instanceof Error ? e.message : String(e)}\n`);
+    process.stderr.write(`fatal: ${errorMessage(e)}\n`);
     process.exit(1);
   },
 );

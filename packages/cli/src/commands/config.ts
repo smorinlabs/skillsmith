@@ -1,4 +1,4 @@
-import { type Scope, defaultScanEnv } from '@skillsmith/core';
+import { type Scope, type SkillSmithError, defaultScanEnv } from '@skillsmith/core';
 import { Command, Option } from 'commander';
 import { exitCodeForError } from '../util/exit-codes.ts';
 import { runConfigGet } from './config/get.ts';
@@ -8,6 +8,33 @@ import { runConfigUnset } from './config/unset.ts';
 
 const scopeOption = () =>
   new Option('--scope <s>', 'user | project | system').choices(['user', 'project', 'system']);
+
+type ConfigError =
+  | { code: 'unknown-key'; key: string }
+  | { code: 'unset'; key: string; scope?: Scope }
+  | { code: 'invalid-value'; key: string; value: string; allowed: readonly string[] }
+  | SkillSmithError;
+
+function writeConfigError(err: ConfigError): never {
+  if (err.code === 'unknown-key') {
+    process.stderr.write(`error: unknown config key '${err.key}'\n`);
+    process.exit(2);
+  }
+  if (err.code === 'unset') {
+    process.stderr.write(
+      `error: '${err.key}' is not set${err.scope ? ` at ${err.scope} scope` : ''}\n`,
+    );
+    process.exit(1);
+  }
+  if (err.code === 'invalid-value') {
+    process.stderr.write(
+      `error: invalid value '${err.value}' for '${err.key}' (allowed: ${err.allowed.join(', ')})\n`,
+    );
+    process.exit(2);
+  }
+  process.stderr.write(`error: ${JSON.stringify(err)}\n`);
+  process.exit(exitCodeForError(err));
+}
 
 export const configCommand = (): Command => {
   const cmd = new Command('config').description('Manage SkillSmith configuration');
@@ -25,20 +52,7 @@ export const configCommand = (): Command => {
         ...(opts.scope ? { scope: opts.scope } : {}),
         json: opts.json,
       });
-      if (!r.ok) {
-        if (r.error.code === 'unknown-key') {
-          process.stderr.write(`error: unknown config key '${r.error.key}'\n`);
-          process.exit(2);
-        }
-        if (r.error.code === 'unset') {
-          process.stderr.write(
-            `error: '${r.error.key}' is not set${r.error.scope ? ` at ${r.error.scope} scope` : ''}\n`,
-          );
-          process.exit(1);
-        }
-        process.stderr.write(`error: ${JSON.stringify(r.error)}\n`);
-        process.exit(exitCodeForError(r.error));
-      }
+      if (!r.ok) writeConfigError(r.error);
       if (opts.json) {
         process.stdout.write(
           `${JSON.stringify({ key, value: r.value, ...(r.source ? { source: r.source } : {}) }, null, 2)}\n`,
@@ -60,14 +74,7 @@ export const configCommand = (): Command => {
         value,
         ...(opts.scope ? { scope: opts.scope } : {}),
       });
-      if (!r.ok) {
-        if (r.error.code === 'unknown-key') {
-          process.stderr.write(`error: unknown config key '${r.error.key}'\n`);
-          process.exit(2);
-        }
-        process.stderr.write(`error: ${JSON.stringify(r.error)}\n`);
-        process.exit(exitCodeForError(r.error));
-      }
+      if (!r.ok) writeConfigError(r.error);
       process.stderr.write(`wrote ${r.file}\n`);
     });
 
@@ -83,10 +90,7 @@ export const configCommand = (): Command => {
         ...(opts.scope ? { scope: opts.scope } : {}),
         json: opts.json,
       });
-      if (!r.ok) {
-        process.stderr.write(`error: ${JSON.stringify(r.error)}\n`);
-        process.exit(exitCodeForError(r.error));
-      }
+      if (!r.ok) writeConfigError(r.error);
       process.stdout.write(r.output);
     });
 
@@ -101,14 +105,7 @@ export const configCommand = (): Command => {
         key,
         ...(opts.scope ? { scope: opts.scope } : {}),
       });
-      if (!r.ok) {
-        if (r.error.code === 'unknown-key') {
-          process.stderr.write(`error: unknown config key '${r.error.key}'\n`);
-          process.exit(2);
-        }
-        process.stderr.write(`error: ${JSON.stringify(r.error)}\n`);
-        process.exit(exitCodeForError(r.error));
-      }
+      if (!r.ok) writeConfigError(r.error);
       process.stderr.write(`updated ${r.file}\n`);
     });
 

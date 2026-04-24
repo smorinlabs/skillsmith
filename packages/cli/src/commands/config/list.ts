@@ -1,11 +1,11 @@
 import {
   CONFIG_KEYS,
-  type ConfigKey,
   type EffectiveConfig,
   type Result,
   type ScanEnv,
   type Scope,
   type SkillSmithError,
+  getConfigValue,
   loadConfig,
 } from '@skillsmith/core';
 
@@ -19,22 +19,6 @@ export interface RunConfigListInput {
 export type RunConfigListResult =
   | { ok: true; output: string }
   | { ok: false; error: SkillSmithError };
-
-const getByKey = (
-  layer: EffectiveConfig['layers'][keyof EffectiveConfig['layers']],
-  key: ConfigKey,
-): string | undefined => {
-  switch (key) {
-    case 'tool':
-      return layer.tool;
-    case 'scope':
-      return layer.scope;
-    case 'path':
-      return layer.path;
-    case 'registry.default':
-      return layer.registry?.default;
-  }
-};
 
 export const runConfigList = async (input: RunConfigListInput): Promise<RunConfigListResult> => {
   const loader = input.loadConfig ?? ((env: ScanEnv) => loadConfig(env));
@@ -60,14 +44,14 @@ export const runConfigList = async (input: RunConfigListInput): Promise<RunConfi
   if (input.scope) {
     const layer = eff.layers[input.scope];
     for (const key of CONFIG_KEYS) {
-      const v = getByKey(layer, key);
+      const v = getConfigValue(layer, key);
       if (v !== undefined) lines.push(`${key} = ${JSON.stringify(v)}`);
     }
   } else {
     for (const key of CONFIG_KEYS) {
       const source = eff.sources[key];
       if (!source) continue;
-      const v = getByKey(eff.layers[source], key);
+      const v = getConfigValue(eff.layers[source], key);
       if (v !== undefined) lines.push(`${key} = ${JSON.stringify(v)}    # source: ${source}`);
     }
   }
