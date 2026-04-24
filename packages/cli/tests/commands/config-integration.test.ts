@@ -66,6 +66,17 @@ describe('skillsmith config', () => {
     expect(r.code).toBe(2);
   });
 
+  test('set with invalid tool value exits 2', async () => {
+    const d = join('/tmp', `sk-invalid-${Date.now()}`);
+    try {
+      const r = await run(['config', 'set', 'tool', 'bogus'], { XDG_CONFIG_HOME: d });
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain('invalid value');
+    } finally {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
   test('malformed config exits 3', async () => {
     const d = join('/tmp', `sk-bad-${Date.now()}`);
     await mkdir(join(d, 'skillsmith'), { recursive: true });
