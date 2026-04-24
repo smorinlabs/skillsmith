@@ -164,9 +164,3 @@ Skills
 
 11 checks, 2 warnings, 0 failed.
 ```
-
-## Cross-references
-
-- Output format (`--json` boolean): [§1.9](../skillsmith-cli-design.md#19-output-format)
-- Lifecycle hooks and hook env vars (`SKILLSMITH_HOOK_*` prefix): [§1.13](../skillsmith-cli-design.md#113-lifecycle-hooks)
-- For the [agents](./agents.md) command, see `./agents.md`.
