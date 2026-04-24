@@ -14,6 +14,8 @@ const fakeEnv = (opts: {
   xdg: { config: '/c', data: '/d', cache: '/k' },
   fileExists: async (p) => (opts.existing ?? new Set<string>()).has(p),
   realpath: async (p) => p,
+  listDir: async () => [],
+  readText: async () => '',
   runVersion: async () => 'unknown',
 });
 

@@ -1,0 +1,51 @@
+import { describe, expect, test } from 'bun:test';
+import { getSkillRoots } from '../../../src/agents/opencode/skill-roots.ts';
+import type { ScanEnv } from '../../../src/env/types.ts';
+
+const env = (home = '/h'): ScanEnv => ({
+  homeDir: home,
+  path: [],
+  platform: 'linux',
+  xdg: { config: `${home}/.config`, data: `${home}/.local/share`, cache: `${home}/.cache` },
+  fileExists: async () => false,
+  realpath: async (p) => p,
+  listDir: async () => [],
+  readText: async () => '',
+  runVersion: async () => 'unknown',
+});
+
+describe('opencode getSkillRoots', () => {
+  test('user → XDG opencode + .claude compat + .agents compat', () => {
+    expect(getSkillRoots(env(), 'user', { cwd: '/p', envVars: {} })).toEqual([
+      '/h/.config/opencode/skills',
+      '/h/.claude/skills',
+      '/h/.agents/skills',
+    ]);
+  });
+
+  test('OPENCODE_DISABLE_CLAUDE_CODE_SKILLS drops .claude/skills', () => {
+    const r = getSkillRoots(env(), 'user', {
+      cwd: '/p',
+      envVars: { OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: 'true' },
+    });
+    expect(r).toEqual(['/h/.config/opencode/skills', '/h/.agents/skills']);
+  });
+
+  test('OPENCODE_CONFIG_DIR overrides native root', () => {
+    expect(
+      getSkillRoots(env(), 'user', { cwd: '/p', envVars: { OPENCODE_CONFIG_DIR: '/oc' } }),
+    ).toEqual(['/oc/skills', '/h/.claude/skills', '/h/.agents/skills']);
+  });
+
+  test('project → three roots', () => {
+    expect(getSkillRoots(env(), 'project', { cwd: '/p', envVars: {} })).toEqual([
+      '/p/.opencode/skills',
+      '/p/.claude/skills',
+      '/p/.agents/skills',
+    ]);
+  });
+
+  test('system → empty', () => {
+    expect(getSkillRoots(env(), 'system', { cwd: '/p', envVars: {} })).toEqual([]);
+  });
+});

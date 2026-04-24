@@ -9,6 +9,8 @@ const env = (overrides: Partial<ScanEnv> = {}): ScanEnv => ({
   xdg: { config: '/home/u/.config', data: '/home/u/.local/share', cache: '/home/u/.cache' },
   fileExists: async () => false,
   realpath: async (p) => p,
+  listDir: async () => [],
+  readText: async () => '',
   runVersion: async () => 'unknown',
   ...overrides,
 });

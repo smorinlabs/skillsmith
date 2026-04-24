@@ -9,6 +9,8 @@ const makeEnv = (files: Record<string, string | undefined>): ScanEnv => ({
   xdg: { config: '/home/u/.config', data: '/home/u/.local/share', cache: '/home/u/.cache' },
   fileExists: async (p) => p in files,
   realpath: async (p) => p,
+  listDir: async () => [],
+  readText: async () => '',
   runVersion: async () => 'unknown',
 });
 

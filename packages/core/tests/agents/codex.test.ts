@@ -9,6 +9,8 @@ const env = (existing: string[]): ScanEnv => ({
   xdg: { config: '/c', data: '/d', cache: '/k' },
   fileExists: async (p) => existing.includes(p),
   realpath: async (p) => p,
+  listDir: async () => [],
+  readText: async () => '',
   runVersion: async () => '0.5.1',
 });
 

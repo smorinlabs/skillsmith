@@ -67,15 +67,15 @@ describe('walkSkillDir', () => {
     expect(r.map((e) => e.name)).toEqual(['real']);
   });
 
-  test('malformed SKILL.md yields frontmatter: null', async () => {
+  test('SKILL.md with unknown fields still yields a populated skill entry', async () => {
     const env = fakeEnv({
-      dirs: { '/r': ['bad'], '/r/bad': ['SKILL.md'] },
-      files: { '/r/bad/SKILL.md': '---\nname: [unclosed\n---\n' },
+      dirs: { '/r': ['ok'], '/r/ok': ['SKILL.md'] },
+      files: { '/r/ok/SKILL.md': '---\nunknown_field: 42\n---\nbody\n' },
       realpaths: {},
     });
     const r = await walkSkillDir(env, { tool: 'claude-code', scope: 'user', root: '/r' });
     expect(r).toHaveLength(1);
-    expect(r[0]?.frontmatter).toBeNull();
+    expect(r[0]?.frontmatter).toEqual({});
   });
 
   test('populates realpath (symlink collapse)', async () => {

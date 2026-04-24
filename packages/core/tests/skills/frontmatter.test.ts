@@ -26,9 +26,12 @@ describe('parseSkillFrontmatter', () => {
     if (r.ok) expect(r.value.name).toBe('grep');
   });
 
-  test('returns err for malformed YAML', () => {
-    const r = parseSkillFrontmatter('---\nname: [unclosed\n---\n');
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('skill-parse-error');
+  test('ignores non-string values for known fields (type-mismatch is silent)', () => {
+    const r = parseSkillFrontmatter('---\nname: 123\ndescription:\n  - not-a-string\n---\n');
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.name).toBeUndefined();
+      expect(r.value.description).toBeUndefined();
+    }
   });
 });

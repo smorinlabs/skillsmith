@@ -1,33 +1,72 @@
 # Skillsmith
 
-A CLI that installs and manages agent skills for AI coding tools.
+Detect which AI coding tools are installed on your system — the first step toward a unified way to install and sync skills across them.
 
-> **Status:** pre-1.0 (v0.1.0). The `agents` command is the only shipped surface today — it detects which supported AI coding tools are installed on the current system. Other commands (`install`, `list`, `apply`, `sync`, `doctor`, `uninstall`) are designed but not yet implemented.
+**Today (v0.1.0):** `agents` — detect Claude Code, Codex, Kilo Code, and opencode, and report their version, install path, and install method.
+**Roadmap:** `install`, `list`, `apply`, `sync`, `doctor`, `uninstall` — designed, not yet implemented.
+
+## Example output
+
+```sh
+$ skillsmith agents
+# Tools detected
+
+## claude-code
+
+| Path                              | Version               | Install method |
+|-----------------------------------|-----------------------|----------------|
+| /Users/you/.local/bin/claude      | 2.1.119 (Claude Code) | unknown        |
+
+## kilo-code
+
+| Path                   | Version | Install method |
+|------------------------|---------|----------------|
+| /opt/homebrew/bin/kilo | 7.2.20  | brew           |
+```
+
+Machine-readable form (`--format json`) emits a stable envelope with `schemaVersion: 1` and `experimental: true` — the shape may still change before 1.0.
 
 ## Install
 
-Skillsmith is a Bun workspace; build a native binary from source:
+No prebuilt binaries yet — run from source. Requires [Bun](https://bun.sh) ≥ 1.3.13.
 
 ```sh
 git clone https://github.com/stevemorin/skillsmith.git
 cd skillsmith
 bun install
-bun run build              # darwin-arm64 by default; see scripts in package.json for other targets
+bun run dev agents         # fastest way to try it — no build step
+```
+
+To produce a standalone binary:
+
+```sh
+bun run build              # darwin-arm64 by default; see package.json for other targets
 ./dist/skillsmith --help
 ```
 
-Requires [Bun](https://bun.sh) ≥ 1.3.13.
-
 ## Quickstart
 
+Use either `bun run dev` (runs from source) or `./dist/skillsmith` (after `bun run build`). Examples below use `skillsmith` as a stand-in for whichever you pick.
+
 ```sh
-./dist/skillsmith agents                       # human-readable markdown
-./dist/skillsmith agents --format json         # machine-readable
-./dist/skillsmith agents --detected-only       # skip the "Not detected" section
-./dist/skillsmith agents --tool claude-code    # scan one tool only (repeatable)
+skillsmith agents                       # human-readable markdown
+skillsmith agents --format json         # machine-readable (see envelope note above)
+skillsmith agents --detected-only       # skip the "Not detected" section
+skillsmith agents --tool claude-code    # scan one tool only (repeatable)
 ```
 
-Output lists each supported AI coding tool (Claude Code, Codex, Kilo Code, opencode) with its install method (`brew`, `npm-global`, `bun-global`, `standalone`, …) and resolved binary path.
+## Supported tools
+
+| Tool ID        | Probed binary | Detection today                                   |
+|----------------|---------------|---------------------------------------------------|
+| `claude-code`  | `claude`      | PATH lookup → `--version` → classify install path |
+| `codex`        | `codex`       | PATH lookup → `--version` → classify install path |
+| `kilo-code`    | `kilo`        | PATH lookup → `--version` → classify install path |
+| `opencode`     | `opencode`    | PATH lookup → `--version` → classify install path |
+
+The install-method classifier recognizes `brew`, `npm-global`, `bun-global`, `standalone`, and falls back to `unknown`. Each tool owns a separate directory under [`packages/core/src/agents/`](packages/core/src/agents/) so any one can diverge from the shared detection pipeline without touching the others.
+
+Missing a tool? Open an issue with a `skillsmith agents --format json` dump and the OS / install method you used.
 
 ## Packages
 

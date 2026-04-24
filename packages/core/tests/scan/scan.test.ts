@@ -9,6 +9,8 @@ const env = (existing: string[]): ScanEnv => ({
   xdg: { config: '/c', data: '/d', cache: '/k' },
   fileExists: async (p) => existing.includes(p),
   realpath: async (p) => p,
+  listDir: async () => [],
+  readText: async () => '',
   runVersion: async () => '9.9.9',
 });
 
@@ -79,6 +81,8 @@ describe('signal propagation', () => {
       xdg: { config: '/c', data: '/d', cache: '/k' },
       fileExists: async (p) => existing.includes(p),
       realpath: async (p) => p,
+      listDir: async () => [],
+      readText: async () => '',
       runVersion: async (_p, _a, signal) => {
         lastSignal.value = signal;
         return '1.0.0';
