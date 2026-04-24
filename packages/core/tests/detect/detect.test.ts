@@ -65,3 +65,44 @@ describe('detectTool', () => {
     if (!r.ok) expect(r.error.code).toBe('unknown-tool');
   });
 });
+
+describe('signal propagation', () => {
+  // Tracking env that records which signal (if any) was passed to runVersion.
+  const spyEnv = (
+    existing: string[],
+  ): { env: ScanEnv; lastSignal: { value: AbortSignal | undefined } } => {
+    const lastSignal: { value: AbortSignal | undefined } = { value: undefined };
+    const e: ScanEnv = {
+      homeDir: '/Users/u',
+      path: ['/usr/bin'],
+      platform: 'darwin',
+      xdg: { config: '/c', data: '/d', cache: '/k' },
+      fileExists: async (p) => existing.includes(p),
+      realpath: async (p) => p,
+      runVersion: async (_p, _a, signal) => {
+        lastSignal.value = signal;
+        return '1.0.0';
+      },
+    };
+    return { env: e, lastSignal };
+  };
+
+  test('detectAll forwards opts.signal down to each agent runVersion', async () => {
+    const { env: spy, lastSignal } = spyEnv([
+      '/opt/homebrew/bin/claude',
+      '/opt/homebrew/bin/codex',
+    ]);
+    const controller = new AbortController();
+    const r = await detectAll(spy, { signal: controller.signal });
+    expect(r.ok).toBe(true);
+    expect(lastSignal.value).toBe(controller.signal);
+  });
+
+  test('detectTool forwards signal down to the agent runVersion', async () => {
+    const { env: spy, lastSignal } = spyEnv(['/opt/homebrew/bin/kilo']);
+    const controller = new AbortController();
+    const r = await detectTool(spy, 'kilo-code', controller.signal);
+    expect(r.ok).toBe(true);
+    expect(lastSignal.value).toBe(controller.signal);
+  });
+});

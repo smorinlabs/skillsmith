@@ -5,6 +5,7 @@ export const runVersionCommand = async (
   args: readonly string[],
   signal?: AbortSignal,
 ): Promise<string | 'unknown'> => {
+  if (signal?.aborted) return 'unknown';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   const onParentAbort = () => controller.abort();

@@ -15,10 +15,11 @@ export interface DetectOptions {
 export const detectTool = async (
   env: ScanEnv,
   tool: string,
+  signal?: AbortSignal,
 ): Promise<Result<InstallRecord[], SkillSmithError>> => {
   const a = getAgent(tool);
   if (!a.ok) return a;
-  return a.value.detect(env);
+  return a.value.detect(env, signal);
 };
 
 export const detectAll = async (
@@ -35,7 +36,7 @@ export const detectAll = async (
   const entries = await Promise.all(
     tools.map(async (t) => {
       logger.debug(`detecting ${t}`);
-      const r = await registry[t].detect(env);
+      const r = await registry[t].detect(env, opts.signal);
       if (!r.ok) {
         logger.warn(`detection error for ${t}`, { code: r.error.code });
         return [t, [] as InstallRecord[]] as const;

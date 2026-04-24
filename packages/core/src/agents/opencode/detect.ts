@@ -6,14 +6,17 @@ import type { InstallRecord } from '../types.ts';
 
 const BINARY = 'opencode';
 
-export const detect = async (env: ScanEnv): Promise<Result<InstallRecord[], SkillSmithError>> => {
+export const detect = async (
+  env: ScanEnv,
+  signal?: AbortSignal,
+): Promise<Result<InstallRecord[], SkillSmithError>> => {
   try {
     const paths = await findOnPath(env, BINARY);
     const records = await Promise.all(
       paths.map(
         async (p): Promise<InstallRecord> => ({
           path: p,
-          version: await env.runVersion(p, ['--version']),
+          version: await env.runVersion(p, ['--version'], signal),
           installMethod: classifyInstallMethod(p),
         }),
       ),

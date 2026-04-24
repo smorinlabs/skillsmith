@@ -22,5 +22,5 @@ export interface InstallRecord {
 export interface Agent {
   readonly tool: SupportedTool;
   readonly installHint: string;
-  detect(env: ScanEnv): Promise<Result<InstallRecord[], SkillSmithError>>;
+  detect(env: ScanEnv, signal?: AbortSignal): Promise<Result<InstallRecord[], SkillSmithError>>;
 }

@@ -20,4 +20,15 @@ describe('runVersionCommand', () => {
     const v = await runVersionCommand(sleep, ['5']);
     expect(v).toBe('unknown');
   }, 5000);
+
+  test("returns 'unknown' immediately when the parent signal is already aborted", async () => {
+    const bunPath = Bun.which('bun') ?? 'bun';
+    const controller = new AbortController();
+    controller.abort();
+    const started = Date.now();
+    const v = await runVersionCommand(bunPath, ['--version'], controller.signal);
+    const elapsed = Date.now() - started;
+    expect(v).toBe('unknown');
+    expect(elapsed).toBeLessThan(100);
+  });
 });
