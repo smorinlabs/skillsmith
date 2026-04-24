@@ -121,6 +121,11 @@ The write path — introduces the content-addressed store, symlinks, source reso
 - Idempotence and cross-scope duplicate detection (design doc §1.5, §1.6). `--force`, `--yes`, `--dry-run`, `--ref`, `--pin`. `--all-scopes` on uninstall.
 - Remaining exit codes 2/4/5/6/130 finalized.
 
+**Also absorbs (pushed from MVP-2b):**
+
+- **PowerShell completion** script (was planned to land with MVP-2a, then MVP-2b). Written here because PowerShell is the Windows-primary shell and lands with the Windows CI story.
+- **Windows in CI matrix.** The write path exercises Windows-specific path handling (separator, realpath, `%APPDATA%` vs `%USERPROFILE%`) more aggressively than the read path, so landing Windows here surfaces real install-time breakage.
+
 **Explicitly deferred:**
 
 - Install/uninstall for `codex`, `kilo-code`, `opencode` (→ MVP-3).
