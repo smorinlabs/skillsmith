@@ -380,14 +380,6 @@ skillsmith uninstall [FLAGS] <skill> [<skill>...]
 
 At least one `<skill>` is required. If a name is ambiguous across scopes or tools, SkillSmith prints the matches and exits 2 unless `--scope`, `--tool`, or `--all-scopes` disambiguates.
 
-For `doctor`:
-
-```
-skillsmith doctor [FLAGS]
-```
-
-No positional arguments.
-
 ---
 
 ## 3. Flag tables
@@ -495,19 +487,6 @@ No positional arguments.
 | `--dry-run` | — | bool | false | — | Print removals without executing |
 | `--no-hooks` | — | bool | false | — | Skip `pre-uninstall` / `post-uninstall` hooks (§1.13) |
 | `--continue-on-error` | — | bool | false | — | Keep going after per-skill failures |
-
-### 3.7 `doctor` flags
-
-| Long | Short | Type | Default | Env var | Description |
-|---|---|---|---|---|---|
-| `--tool` | `-t` | enum/repeatable | all detected tools | `SKILLSMITH_TOOL` | Limit checks to tool(s) |
-| `--scope` | `-s` | enum | all | `SKILLSMITH_SCOPE` | Limit checks to scope |
-| `--user` | — | bool | — | — | Shorthand for `--scope=user` |
-| `--system` | — | bool | — | — | Shorthand for `--scope=system` |
-| `--project` | — | bool | — | — | Shorthand for `--scope=project` |
-| `--offline` | — | bool | false | — | Skip network checks |
-| `--strict` | — | bool | false | — | Treat warnings as failures (exit 1 on any `⚠`) |
-| `--json` | — | bool | false | — | JSON output |
 
 ---
 
@@ -819,71 +798,7 @@ SEE ALSO
   skillsmith install, skillsmith list
 ```
 
-### 4.5 `skillsmith doctor --help` / `skillsmith help doctor`
-
-```
-Diagnose SkillSmith and target-tool readiness.
-
-USAGE
-  skillsmith doctor [flags]
-
-FLAGS
-  -t, --tool <name>       Limit checks to tool(s). Repeatable. Default: all.
-  -s, --scope <scope>     Limit checks to scope. Default: all.
-      --offline           Skip network checks
-      --strict            Treat warnings as failures (exit 1 on any ⚠)
-      --json              Emit JSON on stdout
-
-INHERITED FLAGS
-  (See 'skillsmith help' for details)
-
-EXAMPLES
-  # Full diagnostic
-  $ skillsmith doctor
-
-  # CI-friendly, no network, strict
-  $ skillsmith doctor --offline --strict
-
-  # Machine-readable
-  $ skillsmith doctor --json | jq '.checks[] | select(.status != "ok")'
-
-EXIT CODES
-  0  all checks pass (warnings allowed unless --strict)
-  1  one or more checks failed
-```
-
 ### 4.6 Additional error / output mockups
-
-**`skillsmith doctor` human output:**
-```
-SkillSmith 0.4.2
-Config: /Users/alice/.config/skillsmith/config.toml
-
-Environment
-  ✓ XDG paths resolved (config, data, cache)
-  ✓ skillsmith.toml found at /Users/alice/projects/app/skillsmith.toml
-
-Target tools
-  ✓ claude-code 1.2.0          ~/.claude/skills (writable)
-  ⚠ codex       not installed  install: npm install -g @openai/codex
-  ✓ kilo-code   0.7.1          ~/.kilo/skills (writable)
-  ✓ opencode    0.3.0          ~/.local/share/opencode/skills (writable)
-
-SkillSmith data directories
-  ✓ data    /Users/alice/.local/share/skillsmith        ($XDG_DATA_HOME, writable, 128 GB free)
-  ✓ cache   /Users/alice/.cache/skillsmith              ($XDG_CACHE_HOME, writable)
-  ✓ config  /Users/alice/.config/skillsmith             ($XDG_CONFIG_HOME, writable)
-
-Network
-  ✓ github.com reachable
-
-Skills
-  ⚠ 1 cross-scope duplicate:
-      grep: user (~/.claude/skills/grep) and project (./.claude/skills/grep)
-      see 'skillsmith list --duplicates'
-
-11 checks, 2 warnings, 0 failed.
-```
 
 **`skillsmith uninstall` idempotent no-op:**
 ```
