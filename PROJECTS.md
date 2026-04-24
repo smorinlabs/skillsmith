@@ -8,6 +8,19 @@
 
 ---
 
+## [x] Project P07: Upgrade commit-msg enforcement to commitlint (v0.2.0)
+**Goal**: Replace the grep-based `commit-msg` lefthook hook with `@commitlint/cli` + `@commitlint/config-conventional`, enforce scope allowlist (`cli`, `core`, `main`), and validate PR titles in CI.
+
+### Tests & Tasks
+- [x] [P07-T01] Install `@commitlint/cli` and `@commitlint/config-conventional` as root devDependencies.
+- [x] [P07-T02] Add `commitlint.config.js` (ESM) extending `@commitlint/config-conventional` with `scope-enum: [cli, core, main]`.
+- [x] [P07-T03] Update `lefthook.yml` `commit-msg` hook to use `bunx commitlint --edit {1}`.
+- [x] [P07-T04] Add `lint-pr-title` job in `ci.yml` (PR-only, ubuntu, lints `${{ github.event.pull_request.title }}` via commitlint).
+- [x] [P07-TS01] Valid message `feat(cli): ...` passes; invalid scope `feat(clie): ...` fails; `chore(main): release X.Y.Z` passes.
+- [x] [P07-TS02] `just all` passes green.
+
+---
+
 ## [x] Project P04: OSS basics — README, LICENSE, CONTRIBUTING, CHANGELOG (v0.3.0)
 **Goal**: Give skillsmith the baseline docs a reader landing on GitHub expects. Phase 1 of the Option B documentation plan.
 
