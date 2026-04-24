@@ -1,6 +1,8 @@
 import type { SupportedTool } from '../agents/types.ts';
 
-export type Scope = 'system' | 'user' | 'project';
+export const SCOPES = ['system', 'user', 'project'] as const;
+
+export type Scope = (typeof SCOPES)[number];
 
 export type ConfigLayer = 'defaults' | 'system' | 'user' | 'project' | 'explicit-file' | 'env';
 

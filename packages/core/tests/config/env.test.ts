@@ -24,4 +24,15 @@ describe('configFromEnv', () => {
       tool: 'codex',
     });
   });
+  test('drops SKILLSMITH_TOOL when value is not a supported tool', () => {
+    expect(configFromEnv({ SKILLSMITH_TOOL: 'bogus' })).toEqual({});
+  });
+  test('drops SKILLSMITH_SCOPE when value is not a valid scope', () => {
+    expect(configFromEnv({ SKILLSMITH_SCOPE: 'root' })).toEqual({});
+  });
+  test('accepts valid tool even alongside invalid scope', () => {
+    expect(configFromEnv({ SKILLSMITH_TOOL: 'claude-code', SKILLSMITH_SCOPE: 'root' })).toEqual({
+      tool: 'claude-code',
+    });
+  });
 });

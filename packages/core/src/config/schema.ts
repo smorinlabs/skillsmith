@@ -3,14 +3,14 @@ import { z } from 'zod';
 import { SUPPORTED_TOOLS } from '../agents/types.ts';
 import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
-import type { Config } from './types.ts';
+import { type Config, SCOPES } from './types.ts';
 
 const RegistrySchema = z.object({ default: z.string().optional() }).strict('registry: unknown key');
 
 const ConfigSchema = z
   .object({
     tool: z.enum(SUPPORTED_TOOLS).optional(),
-    scope: z.enum(['system', 'user', 'project']).optional(),
+    scope: z.enum(SCOPES).optional(),
     path: z.string().optional(),
     registry: RegistrySchema.optional(),
   })
