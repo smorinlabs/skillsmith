@@ -2,11 +2,11 @@
 
 This doc tracks **when** each SkillSmith feature ships. The sibling [`skillsmith-cli-design.md`](./skillsmith-cli-design.md) tracks **what** each feature is. Any statement here about design details is authoritative only for phasing; cross-reference the design doc for the full specification of any feature named below.
 
-MVP is split into five releases (MVP-1 → MVP-5), each an end-to-end milestone that is shippable on its own. MVP-2 is further split into three sub-phases (MVP-2a → MVP-2c, staged simplest → most complex) so each 1–2-command slice can be validated in isolation. After MVP comes Phase 2, then speculative Phase 3.
+MVP is split into five releases (MVP-1 → MVP-5), each an end-to-end milestone that is shippable on its own. MVP-2 is further split into three sub-phases (MVP-2a → MVP-2c, staged simplest → most complex) so each 1–2-command slice can be validated in isolation. After MVP comes Phase 2, speculative Phase 3, and Phase 4 (npm publishing on top of the already-wired release-please automation).
 
 **Supported agents across the CLI:** `claude-code`, `codex`, `kilo-code`, `opencode`. `agents` detects all four from MVP-1. `install` / `uninstall` / `list` / `doctor` target claude-code only in MVP-2, then extend to all four in MVP-3. Additional agents (Droid, Cursor, Aider, Cline, Continue — TBD) are Phase 2.
 
-Sections: (1) non-goals, (2) MVP-1 inventory, (3) MVP-2 single-tool install (split into 2a config/completion, 2b list/doctor, 2c install/uninstall), (4) MVP-3 all-adapter coverage, (5) MVP-4 team workflows, (6) MVP-5 packaging extras, (7) Phase 2, (8) Phase 3 (speculative), (9) open phasing questions.
+Sections: (1) non-goals, (2) MVP-1 inventory, (3) MVP-2 single-tool install (split into 2a config/completion, 2b list/doctor, 2c install/uninstall), (4) MVP-3 all-adapter coverage, (5) MVP-4 team workflows, (6) MVP-5 packaging extras, (7) Phase 2, (8) Phase 3 (speculative), (9) Phase 4 npm publishing, (10) open phasing questions.
 
 ---
 
@@ -191,6 +191,40 @@ Rounds out the MVP feature matrix. No new commands; existing commands gain optio
 
 ---
 
-## 9. Open phasing questions
+## 9. Phase 4 — npm publishing
+
+Publishes the already-versioned packages to npm. Builds on the release-please pipeline landed in P06 (`release-please-config.json`, `.release-please-manifest.json`, `.github/workflows/release-please.yml`), which already handles Conventional-Commits → SemVer, rolling Release PR, root `CHANGELOG.md`, synchronized version bumps across root + `packages/cli/package.json` + `packages/core/package.json`, git tag (`vX.Y.Z`), and GitHub Release. Phase 4 adds **publish** to that same pipeline; nothing else about the release flow changes.
+
+**Added:**
+
+- Publish job in `.github/workflows/release-please.yml` gated on the action's `releases_created` output (`if: ${{ steps.release.outputs.releases_created }}`). Runs only when the Release PR merges, never on ordinary pushes.
+- `bun publish` (or `npm publish --provenance --access public`) for both workspace packages. `bun publish` / `npm publish` both rewrite `workspace:*` to a concrete version at pack time, so the CLI's `@skillsmith/core` dep resolves correctly for npm consumers.
+- `NPM_TOKEN` stored as a repo secret (automation token, not a personal token); `id-token: write` permission added to the publish job for npm provenance attestation.
+- `@skillsmith/core` publishes as source — `"files": ["src", "README.md"]` is already in place; Bun/TS consumers can import directly.
+- CLI publish strategy — **decision pending** (see open question below): either (a) publish source + Bun-runtime `bin` (zero transpile, requires Bun on the consumer), or (b) add a prepublish compile step producing a Node-compatible JS entry + `bin: { skillsmith: "./dist/index.js" }`.
+- `publishConfig.access = "public"` on both package.jsons (required for the first publish of an unscoped name and for scoped packages in a free npm org).
+
+**Scope:**
+
+- First publish moves both packages from unpublished to `<current version>` on npm; subsequent releases publish whatever version release-please picked (patch/minor/major per the Conventional-Commits rules documented in `docs/releases.md`).
+- Linked versioning from P06 is preserved: `skillsmith@X.Y.Z` and `@skillsmith/core@X.Y.Z` always ship together at the same version.
+- No behavior change to MVP-1…MVP-5 or the Release PR — this phase is pure distribution plumbing.
+
+**Explicitly deferred:**
+
+- **Native-binary GitHub Release assets** (darwin-arm64, linux-x64 compiled via `bun build --compile`). Related but distinct: a separate workflow keyed off the release tag that uploads binaries to the GitHub Release. Tracked separately; not a blocker for npm publish.
+- **Homebrew / apt / other package managers.** Downstream of native-binary artifacts.
+- **Provenance signing via Sigstore beyond npm's built-in `--provenance`.**
+- **Separate dist-tags** (`next`, `canary`) — everything publishes to `latest` until a pre-1.0 beta process is needed.
+
+**Open questions:**
+
+- **CLI distribution format on npm.** Ship source (Bun-runtime consumers only, simplest) or add a prepublish transpile step so `npm i -g skillsmith` works under Node? The current `bin` points at `./src/index.ts`, which only works under Bun. If the primary distribution channel becomes native binaries (via the deferred GitHub Release asset job), the npm publish of `skillsmith` may be demoted to "library-style — `@skillsmith/core` only" and the CLI package dropped from npm entirely.
+- **Package name availability.** Confirm `skillsmith` and `@skillsmith/core` are available (or owned) on npm before first publish. If `skillsmith` is taken, fall back to `@skillsmith/cli`.
+- **Pre-1.0 publish policy.** Publish every release from first merge, or hold npm publish until `1.0.0` and rely on native binaries + GitHub Releases until then? Deciding this determines whether Phase 4 lands before or after `1.0.0`.
+
+---
+
+## 10. Open phasing questions
 
 - **Canonical install commands per supported tool.** The "tool not installed" error (design doc §4.2) hardcodes an install hint per target. Confirm the recommended one-liner for each of the four MVP tools (`claude-code`, `codex`, `kilo-code`, `opencode`).
