@@ -4,6 +4,9 @@ pre-commit:
     biome:
       glob: "*.{ts,tsx,js,jsx,json,jsonc}"
       run: bunx @biomejs/biome check --no-errors-on-unmatched --staged {staged_files}
+    eslint-boundaries:
+      glob: "packages/*/src/**/*.ts"
+      run: bunx eslint --no-warn-ignored {staged_files}
     typecheck:
       glob: "*.{ts,tsx}"
       run: bunx tsc --noEmit
