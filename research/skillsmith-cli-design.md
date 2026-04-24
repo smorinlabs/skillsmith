@@ -1,8 +1,8 @@
 # SkillSmith CLI design spec
 
-SkillSmith ships as a **flat, verb-first CLI** (npm/cargo/brew school) with **git-style scope flags** (`--system`/`--user`/`--project`), **gh-style help output** (separated FLAGS and INHERITED FLAGS, with EXAMPLES), **gh-style `owner/repo` source shorthand** for installs, and **kubectl/terraform-style idempotent `apply`**. The six core verbs — `install`, `uninstall`, `sync`, `list`, `apply`, `doctor` — stay at depth 1 until the tool grows a second primary resource type.
+SkillSmith ships as a **flat, verb-first CLI** (npm/cargo/brew school) with **git-style scope flags** (`--system`/`--user`/`--project`), **gh-style help output** (separated FLAGS and INHERITED FLAGS, with EXAMPLES), **gh-style `owner/repo` source shorthand** for installs, and **kubectl/terraform-style idempotent `apply`**. The core verbs — `install`, `uninstall`, `sync`, `list`, `apply`, `doctor`, `check`, `agents` — stay at depth 1 until the tool grows a second primary resource type.
 
-This doc is organized as: (0) background, non-goals, and core capabilities, (1) design decisions, (2) command tree, (3) flag tables, (4) help/error mockups, (5) naming cheat sheet, (6) exit codes and env vars, (7) documentation strategy, (8) architecture sketch, (9) open questions. Release phasing (what ships in MVP vs. Phase 2 vs. Phase 3) lives in a sibling doc: [`skillsmith-phases.md`](./skillsmith-phases.md).
+This doc is organized as: (0) background, non-goals, and core capabilities, (1) design decisions, (2) command tree and per-command index, (3) global flags, (4) top-level help and cross-cutting mockups, (5) naming cheat sheet, (6) exit codes and env vars, (7) documentation strategy, (8) architecture sketch, (9) open questions. Per-command detail (argument order, flag tables, help mockups, command-specific errors) lives in [`commands/`](./commands/). Release phasing (what ships in MVP vs. Phase 2 vs. Phase 3) lives in [`skillsmith-phases.md`](./skillsmith-phases.md).
 
 ---
 
@@ -322,6 +322,17 @@ skillsmith doctor
   # duplicates. Exits 0 on all-clear (or warnings unless --strict),
   # 1 if any check failed.
 
+skillsmith check
+  # Error-severity subset of doctor, for CI and pre-commit.
+  # --exit-code exits non-zero on any error finding. --tool
+  # repeatable to scope the run. Warnings are intentionally
+  # never run here — check is error-and-above only.
+
+skillsmith agents
+  # Inventory of every supported tool SkillSmith can detect on
+  # the system, including multiple installs at different locations.
+  # Purely informational; always exits 0.
+
 # Auxiliary commands
 
 skillsmith config <get|set|list|unset> [args]
@@ -338,9 +349,23 @@ skillsmith help sources
 skillsmith help formatting
 ```
 
+### 2.1 Per-command detail
+
+Each command's argument order, flag table, help mockup, and command-specific error/prompt mockups live in its own file under [`commands/`](./commands/):
+
+- [`install`](./commands/install.md)
+- [`uninstall`](./commands/uninstall.md)
+- [`sync`](./commands/sync.md)
+- [`list`](./commands/list.md)
+- [`apply`](./commands/apply.md)
+- [`doctor`](./commands/doctor.md) — also covers the `check` CI subset
+- [`agents`](./commands/agents.md)
+
+This doc keeps only cross-cutting material: design decisions (§1), global flags (§3.1), top-level help (§4.1), shared error patterns (§4.2), naming (§5), exit codes and env vars (§6), documentation strategy (§7), architecture (§8), open questions (§9).
+
 ---
 
-## 3. Flag tables
+## 3. Global flags
 
 ### 3.1 Global (inherited) flags
 
@@ -360,7 +385,7 @@ skillsmith help formatting
 
 ---
 
-## 4. Help and error output mockups
+## 4. Top-level help and cross-cutting mockups
 
 ### 4.1 `skillsmith --help` / `skillsmith help`
 
@@ -415,7 +440,7 @@ LEARN MORE
   Read the manual at https://skillsmith.dev/docs
 ```
 
-### 4.3 Error and prompt mockups
+### 4.2 Cross-cutting error and prompt mockups
 
 **Tool not installed:**
 ```
