@@ -101,10 +101,10 @@ Split into two sub-phases:
 
 Nothing new feature-wise — same surface as `v0.3.0` plus release engineering.
 
-**Pushed out to MVP-2c:**
+**Pushed out to Phase 2:**
 
-- **PowerShell completion** (was planned to land with MVP-2b). Kept alongside Windows CI since PowerShell is Windows-primary.
-- **Windows in CI matrix** (was planned for MVP-2b). Deferred because cross-scope-writability checks in `doctor` exercise Windows-specific path handling enough to warrant landing the two together.
+- **PowerShell completion** (was planned for MVP-2a, then 2b, then 2c). Moved to Phase 2 — no MVP user journey requires Windows, and bash/zsh/fish already cover the core audience.
+- **Windows in CI matrix** (was planned for MVP-2b, then 2c). Moved to Phase 2 for the same reason: Windows surface area (separator, `%APPDATA%` vs `%USERPROFILE%`, symlink privileges) is non-trivial and doesn't block any MVP user journey.
 
 ### 3.3 MVP-2c — "Install and uninstall (write path)"
 
