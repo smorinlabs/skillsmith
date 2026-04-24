@@ -3,12 +3,29 @@ import { VERSION, defaultScanEnv } from '@skillsmith/core';
 import { Command } from 'commander';
 import { runAgents } from './commands/agents.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from './help/topics.ts';
+import { type ColorFlag, resolveColorMode } from './util/color.ts';
 import { exitCodeForError } from './util/exit-codes.ts';
 import { installSigintHandler } from './util/signals.ts';
 
+const applyColorMode = (flag: ColorFlag): void => {
+  const mode = resolveColorMode({
+    color: flag,
+    noColor: Boolean(process.env.NO_COLOR),
+    isTTY: Boolean(process.stdout.isTTY),
+    env: process.env,
+  });
+  if (mode === 'off') {
+    process.env.NO_COLOR = '1';
+    Reflect.deleteProperty(process.env, 'FORCE_COLOR');
+  } else {
+    process.env.FORCE_COLOR = '1';
+    Reflect.deleteProperty(process.env, 'NO_COLOR');
+  }
+};
+
 const main = async (): Promise<number> => {
   const controller = new AbortController();
-  const uninstall = installSigintHandler(controller);
+  const sigint = installSigintHandler(controller);
 
   try {
     const program = new Command()
@@ -26,6 +43,13 @@ const main = async (): Promise<number> => {
       .option('--color <mode>', 'auto | always | never', 'auto')
       .option('-C, --cd <dir>', 'Change directory before running', '.')
       .option('--debug', 'Print debug traces', false);
+
+    program.hook('preAction', (thisCommand) => {
+      const opts = thisCommand.opts() as { color?: string };
+      const raw = opts.color ?? 'auto';
+      const flag: ColorFlag = raw === 'always' || raw === 'never' || raw === 'auto' ? raw : 'auto';
+      applyColorMode(flag);
+    });
 
     program
       .command('agents')
@@ -79,6 +103,10 @@ const main = async (): Promise<number> => {
             process.stdout.write(`${r.value}\n`);
             return;
           }
+          process.stderr.write(
+            `error: internal: help topic '${topic}' is listed but has no content.\n`,
+          );
+          process.exit(1);
         }
         const cmd = program.commands.find((c) => c.name() === topic);
         if (cmd) {
@@ -98,9 +126,9 @@ const main = async (): Promise<number> => {
       return 0;
     }
     await program.parseAsync(process.argv);
-    return 0;
+    return sigint.wasInterrupted() ? 130 : 0;
   } finally {
-    uninstall();
+    sigint.uninstall();
   }
 };
 

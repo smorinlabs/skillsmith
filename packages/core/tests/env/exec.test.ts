@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { runVersionCommand } from '../../src/detect/exec.ts';
+import { runVersionCommand } from '../../src/env/exec.ts';
 
 describe('runVersionCommand', () => {
   test("returns 'unknown' for a non-existent binary", async () => {

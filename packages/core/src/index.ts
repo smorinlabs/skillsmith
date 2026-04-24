@@ -1,5 +1,5 @@
 export { getAgent, listSupportedTools, registry } from './agents/registry.ts';
-export { detectAll, detectTool } from './detect/detect.ts';
+export { detectAll, detectTool } from './scan/index.ts';
 export { defaultScanEnv } from './env/default.ts';
 export { noopLogger } from './env/logger.ts';
 export { genericError, unknownToolError } from './errors.ts';

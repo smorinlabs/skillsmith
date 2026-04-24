@@ -42,4 +42,26 @@ describe('renderAgentsMarkdown', () => {
     expect(md).toContain('| /opt/homebrew/bin/claude | 1.2.3 | brew |');
     expect(md).toContain('| /Users/u/.npm/bin/claude | 1.1.0 | npm-global |');
   });
+
+  test('escapes pipes and newlines in cell values', () => {
+    const results = new Map<SupportedTool, InstallRecord[]>([
+      [
+        'claude-code',
+        [
+          {
+            path: '/weird|path/claude',
+            version: 'v1.0\nINJECTED | row',
+            installMethod: 'brew',
+          },
+        ],
+      ],
+      ['codex', []],
+      ['kilo-code', []],
+      ['opencode', []],
+    ]);
+    const md = renderAgentsMarkdown(results, { detectedOnly: true });
+    expect(md).toContain('/weird\\|path/claude');
+    expect(md).not.toMatch(/\nINJECTED/);
+    expect(md).toContain('v1.0 INJECTED \\| row');
+  });
 });

@@ -4,6 +4,12 @@ export interface RenderOptions {
   detectedOnly: boolean;
 }
 
+const escapeCell = (s: string): string =>
+  s
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/[\r\n]+/g, ' ');
+
 export const renderAgentsMarkdown = (
   results: Map<SupportedTool, InstallRecord[]>,
   opts: RenderOptions,
@@ -20,7 +26,7 @@ export const renderAgentsMarkdown = (
   for (const [tool, records] of detected) {
     lines.push(`## ${tool}`, '', '| Path | Version | Install method |', '|---|---|---|');
     for (const r of records) {
-      lines.push(`| ${r.path} | ${r.version} | ${r.installMethod} |`);
+      lines.push(`| ${escapeCell(r.path)} | ${escapeCell(r.version)} | ${r.installMethod} |`);
     }
     lines.push('');
   }

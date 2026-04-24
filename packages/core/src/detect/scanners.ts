@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import type { InstallMethod } from '../agents/types.ts';
 import type { ScanEnv } from '../env/types.ts';
+import type { InstallMethod } from './types.ts';
 
 export const wellKnownBinDirs = (env: ScanEnv): readonly string[] => {
   const home = env.homeDir;
@@ -17,8 +17,8 @@ export const wellKnownBinDirs = (env: ScanEnv): readonly string[] => {
 
 export const classifyInstallMethod = (absPath: string): InstallMethod => {
   if (absPath.startsWith('/opt/homebrew/') || absPath.startsWith('/usr/local/')) return 'brew';
+  if (absPath.includes('/.bun/install/global/')) return 'bun-global';
   if (absPath.includes('/.npm/') || absPath.includes('node_modules/.bin/')) return 'npm-global';
-  if (absPath.includes('/.bun/install/global/')) return 'npm-global';
   if (absPath.includes('.app/Contents/')) return 'app-bundle';
   return 'unknown';
 };

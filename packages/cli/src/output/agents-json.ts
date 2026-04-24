@@ -4,7 +4,14 @@ import { z } from 'zod';
 const InstallRecordSchema = z.object({
   path: z.string(),
   version: z.string(),
-  installMethod: z.enum(['brew', 'npm-global', 'native-installer', 'app-bundle', 'unknown']),
+  installMethod: z.enum([
+    'brew',
+    'npm-global',
+    'bun-global',
+    'native-installer',
+    'app-bundle',
+    'unknown',
+  ]),
 });
 
 export const AgentsJsonSchema = z.object({

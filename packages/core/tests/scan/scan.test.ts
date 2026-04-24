@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { detectAll, detectTool } from '../../src/detect/detect.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
+import { detectAll, detectTool } from '../../src/scan/index.ts';
 
 const env = (existing: string[]): ScanEnv => ({
   homeDir: '/Users/u',

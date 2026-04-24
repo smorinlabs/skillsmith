@@ -1,10 +1,20 @@
-export const installSigintHandler = (controller: AbortController): (() => void) => {
+export interface SigintHandle {
+  uninstall: () => void;
+  wasInterrupted: () => boolean;
+}
+
+export const installSigintHandler = (controller: AbortController): SigintHandle => {
+  let interrupted = false;
   const handler = () => {
+    interrupted = true;
     controller.abort();
-    setTimeout(() => process.exit(130), 10);
+    process.exitCode = 130;
   };
   process.on('SIGINT', handler);
-  return () => {
-    process.off('SIGINT', handler);
+  return {
+    uninstall: () => {
+      process.off('SIGINT', handler);
+    },
+    wasInterrupted: () => interrupted,
   };
 };

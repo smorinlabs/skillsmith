@@ -2,13 +2,13 @@ pre-commit:
   parallel: true
   commands:
     biome:
-      glob: "*.{ts,tsx,js,jsx,json,jsonc}"
+      glob: "**/*.{ts,tsx,js,jsx,json,jsonc}"
       run: bunx @biomejs/biome check --no-errors-on-unmatched --staged {staged_files}
     eslint-boundaries:
       glob: "packages/*/src/**/*.ts"
       run: bunx eslint --no-warn-ignored {staged_files}
     typecheck:
-      glob: "*.{ts,tsx}"
+      glob: "**/*.{ts,tsx}"
       run: bunx tsc --noEmit
     actionlint:
       glob: ".github/workflows/*.{yml,yaml}"

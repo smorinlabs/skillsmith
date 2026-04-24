@@ -26,8 +26,10 @@ describe('classifyInstallMethod', () => {
   });
   test('classifies npm-global paths', () => {
     expect(classifyInstallMethod('/home/user/.npm/bin/claude')).toBe('npm-global');
+  });
+  test('classifies bun-global paths', () => {
     expect(classifyInstallMethod('/home/user/.bun/install/global/node_modules/.bin/codex')).toBe(
-      'npm-global',
+      'bun-global',
     );
   });
   test('classifies .app bundle paths', () => {

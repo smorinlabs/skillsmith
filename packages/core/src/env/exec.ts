@@ -17,11 +17,14 @@ export const runVersionCommand = async (
       stderr: 'pipe',
     });
     const abortHandler = () => proc.kill();
-    controller.signal.addEventListener('abort', abortHandler, { once: true });
-    const exit = await proc.exited;
+    if (controller.signal.aborted) proc.kill();
+    else controller.signal.addEventListener('abort', abortHandler, { once: true });
+    const [exit, stdout] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text().catch(() => ''),
+    ]);
     controller.signal.removeEventListener('abort', abortHandler);
     if (exit !== 0) return 'unknown';
-    const stdout = await new Response(proc.stdout).text();
     const first = stdout.trim().split('\n')[0]?.trim();
     return first && first.length > 0 ? first : 'unknown';
   } catch {

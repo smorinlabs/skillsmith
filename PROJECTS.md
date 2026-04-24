@@ -55,6 +55,35 @@ $ bun run check
 
 ---
 
+## [x] Project P03: Bug audit round 1 (v0.2.2)
+**Goal**: Fix all bugs identified in the round-1 code-wide audit across `packages/core`, `packages/cli`, and project tooling.
+
+**Out of Scope**
+- Widening agent detection to new tools.
+- Full CLI color palette; wiring `--color` only sets NO_COLOR/FORCE_COLOR env vars.
+
+### Tests & Tasks
+- [x] [P03-T01] exec.ts: early-return on pre-aborted signal; read stdout concurrently with `proc.exited`.
+- [x] [P03-T02] Root `build` script no longer hardcodes `bun-darwin-arm64`; per-target scripts plus native detection via `scripts/build-native.ts`.
+- [x] [P03-T03] `detectTool` accepts a signal; `detectAll` forwards `opts.signal` to each agent.
+- [x] [P03-T04] `renderAgentsMarkdown` escapes `|`, `\`, and newlines in cells.
+- [x] [P03-T05] `--color` flag reads via `resolveColorMode` and sets `NO_COLOR`/`FORCE_COLOR`.
+- [x] [P03-T06] lefthook Biome and typecheck globs use `**/` prefix.
+- [x] [P03-T07] Core boundary refactor: moved `exec.ts` to `env/`, split `InstallMethod`/`InstallRecord` into `detect/types.ts`, moved orchestrator to `scan/`. ESLint zones added for env↛agents, env↛detect, detect↛agents.
+- [x] [P03-T08] `defaultScanEnv` uses platform `path.delimiter` for PATH split.
+- [x] [P03-T09] `classifyInstallMethod` returns new `'bun-global'` for `~/.bun/install/global/**`.
+- [x] [P03-T10] `fileExists` drops `existsSync` fallback; `catch { return false; }`.
+- [x] [P03-T11] SIGINT handler sets `process.exitCode = 130` and exposes `wasInterrupted()`; `main()` returns 130 on interrupt.
+- [x] [P03-T12] `help [topic]` emits an internal-error and exits 1 if a known topic has no content.
+- [x] [P03-TS01] New test for bun-global classification.
+- [x] [P03-TS02] New test for markdown cell escaping.
+
+### Automated Verification
+- `bun run check` passes (biome + eslint + tsc + actionlint + bun test).
+- `bun run build` produces a native binary; `./dist/skillsmith agents --format json` parses.
+
+---
+
 ## [x] Project P02: Port `check-core-boundary.ts` to ESLint (v0.2.1)
 **Goal**: Replace the custom `scripts/check-core-boundary.ts` runtime check with equivalent ESLint rules, consolidating the core-isolation boundary into a single tool.
 

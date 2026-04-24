@@ -1,8 +1,7 @@
-import { existsSync } from 'node:fs';
 import { realpath as fsRealpath, stat } from 'node:fs/promises';
 import { homedir, platform as osPlatform } from 'node:os';
-import { join } from 'node:path';
-import { runVersionCommand } from '../detect/exec.ts';
+import { delimiter, join } from 'node:path';
+import { runVersionCommand } from './exec.ts';
 import type { Platform, ScanEnv, XdgDirs } from './types.ts';
 
 const resolvePlatform = (): Platform => {
@@ -19,7 +18,7 @@ const resolveXdg = (home: string): XdgDirs => ({
 
 export const defaultScanEnv = async (): Promise<ScanEnv> => {
   const home = homedir();
-  const path = (process.env.PATH ?? '').split(':').filter(Boolean);
+  const path = (process.env.PATH ?? '').split(delimiter).filter(Boolean);
   return {
     homeDir: home,
     path,
@@ -30,7 +29,7 @@ export const defaultScanEnv = async (): Promise<ScanEnv> => {
         await stat(p);
         return true;
       } catch {
-        return existsSync(p);
+        return false;
       }
     },
     realpath: async (p) => fsRealpath(p),
