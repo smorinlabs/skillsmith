@@ -1,8 +1,8 @@
 # Skillsmith
 
-Detect which AI coding tools are installed on your system — the first step toward a unified way to install and sync skills across them.
+Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill install and sync across Claude Code, Codex, Kilo Code, and opencode.
 
-**Today (v0.1.0):** `agents` — detect Claude Code, Codex, Kilo Code, and opencode, and report their version, install path, and install method.
+**Today:** `agents` — detect Claude Code, Codex, Kilo Code, and opencode, and report their version, install path, and install method.
 **Roadmap:** `install`, `list`, `apply`, `sync`, `doctor`, `uninstall` — designed, not yet implemented.
 
 ## Example output
@@ -24,7 +24,22 @@ $ skillsmith agents
 | /opt/homebrew/bin/kilo | 7.2.20  | brew           |
 ```
 
-Machine-readable form (`--format json`) emits a stable envelope with `schemaVersion: 1` and `experimental: true` — the shape may still change before 1.0.
+Machine-readable form (`--format json`) wraps results in a small envelope. Shape is marked `experimental` and may still change before 1.0:
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "experimental": true,
+  "tools": {
+    "claude-code": [
+      { "path": "/usr/local/bin/claude", "version": "2.1.119 (Claude Code)", "installMethod": "unknown" }
+    ]
+    // codex, kilo-code, opencode — same shape; each key maps to an array (a tool can have multiple installs on one system)
+  }
+}
+```
+
+`installMethod` is one of `brew`, `npm-global`, `bun-global`, `standalone`, `unknown`.
 
 ## Install
 
@@ -68,20 +83,44 @@ The install-method classifier recognizes `brew`, `npm-global`, `bun-global`, `st
 
 Missing a tool? Open an issue with a `skillsmith agents --format json` dump and the OS / install method you used.
 
+### What it runs on your system
+
+`agents` is read-only. For each supported tool, Skillsmith resolves the binary on your `PATH` and invokes it once with `--version` to capture the output. Nothing else from those tools is executed, and `agents` writes no files. Skillsmith's own config, when you use `config set`, lives at `$XDG_CONFIG_HOME/skillsmith/config.toml` (user) or `./skillsmith.toml` (project).
+
 ## Packages
 
 This repo is a Bun workspace with two packages:
 
-| Package | What it is |
-|---|---|
-| `@skillsmith/core` | Pure library: agent registry, detection pipeline, `Result<T, SkillSmithError>` types. Zero CLI deps, zero side effects. |
-| `skillsmith` | The CLI: `commander` entry, output rendering, help topics. Depends on `@skillsmith/core`. |
+| Package | What it is | On npm? |
+|---|---|---|
+| `@skillsmith/core` | Pure detection library: agent registry, `Result<T, SkillSmithError>` types, zero CLI deps, zero side effects. | Yes |
+| `skillsmith` | The CLI: `commander` entry, output rendering, help topics. Depends on `@skillsmith/core`. | Build from source (for now) |
 
-See [`packages/core/README.md`](packages/core/README.md) and [`packages/cli/README.md`](packages/cli/README.md).
+### Using `@skillsmith/core` as a library
+
+If you're building your own tool and want the detection pipeline without the CLI:
+
+```sh
+bun add @skillsmith/core    # or: npm i @skillsmith/core
+```
+
+```ts
+import { registry, defaultScanEnv } from '@skillsmith/core';
+import type { InstallRecord } from '@skillsmith/core';
+
+const env = defaultScanEnv();
+const result = await registry['claude-code'].detect(env);
+if (result.ok) {
+  const installs: InstallRecord[] = result.value;
+  console.log(installs);
+}
+```
+
+Further reading: [`packages/core/README.md`](packages/core/README.md) (detection API, `Result` type, `ScanEnv` injection) and [`packages/cli/README.md`](packages/cli/README.md) (flag reference, output formats).
 
 ## Architecture snapshot
 
-- **Core/CLI split** is enforced at lint time — `@skillsmith/core` cannot import `commander`/`chalk`/`consola`/`@clack/prompts`, call `process.exit`, or use `console.*`. Enforcement lives in `eslint.config.js` (rules `no-restricted-imports`, `no-restricted-syntax`, and `import/no-restricted-paths`).
+- **Core/CLI split** is enforced at lint time so `@skillsmith/core` stays embeddable — no `commander`/`chalk`/`consola`/`@clack/prompts` imports, no `process.exit`, no `console.*`. The CLI owns exit codes, output, and user I/O.
 - **Results over exceptions:** core functions return `Result<T, SkillSmithError>`; the CLI decides exit codes.
 - **`ScanEnv` injection:** core accepts an environment object (home dir, XDG paths, logger) rather than touching globals directly, which makes the library testable and the CLI boundary explicit.
 
