@@ -6,5 +6,7 @@ export const exitCodeForError = (e: SkillSmithError): number => {
       return 1;
     case 'unknown-tool':
       return 2;
+    case 'config-error':
+      return 3;
   }
 };

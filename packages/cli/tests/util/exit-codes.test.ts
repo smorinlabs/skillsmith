@@ -11,4 +11,8 @@ describe('exitCodeForError', () => {
     const e: SkillSmithError = { code: 'unknown-tool', tool: 'x' };
     expect(exitCodeForError(e)).toBe(2);
   });
+  test("'config-error' → 3", () => {
+    const e: SkillSmithError = { code: 'config-error', message: 'boom' };
+    expect(exitCodeForError(e)).toBe(3);
+  });
 });
