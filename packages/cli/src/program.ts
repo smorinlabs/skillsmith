@@ -1,6 +1,7 @@
 import { VERSION, defaultScanEnv } from '@skillsmith/core';
-import { Command, Option } from 'commander';
+import { Argument, Command, Option } from 'commander';
 import { runAgents } from './commands/agents.ts';
+import { type Shell, runCompletion } from './commands/completion.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from './help/topics.ts';
 import { type ColorFlag, resolveColorMode } from './util/color.ts';
 import { exitCodeForError } from './util/exit-codes.ts';
@@ -44,6 +45,22 @@ export const buildProgram = (signal?: AbortSignal): Command => {
     applyColorMode(flag);
   });
 
+  // Map commander's usage errors (invalid choice, unknown command, missing arg)
+  // to our exit-2 contract; everything else uses the error's own exitCode or 1.
+  program.exitOverride((err) => {
+    const usageCodes = new Set([
+      'commander.invalidArgument',
+      'commander.unknownCommand',
+      'commander.missingArgument',
+      'commander.unknownOption',
+      'commander.excessArguments',
+      'commander.missingMandatoryOptionValue',
+    ]);
+    if (usageCodes.has(err.code)) process.exit(2);
+    if (err.code === 'commander.helpDisplayed' || err.code === 'commander.version') process.exit(0);
+    process.exit(err.exitCode ?? 1);
+  });
+
   program
     .command('agents')
     .description('List every supported tool SkillSmith detects on this system')
@@ -82,6 +99,14 @@ export const buildProgram = (signal?: AbortSignal): Command => {
     .description('Print SkillSmith version')
     .action(() => {
       process.stdout.write(`${VERSION}\n`);
+    });
+
+  program
+    .command('completion')
+    .description('Emit a shell completion script')
+    .addArgument(new Argument('<shell>', 'Target shell').choices(['bash', 'zsh', 'fish']))
+    .action((shell: Shell) => {
+      process.stdout.write(runCompletion(program, shell));
     });
 
   program
