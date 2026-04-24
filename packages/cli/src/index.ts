@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 import { errorMessage } from '@skillsmith/core';
 import { buildProgram } from './program.ts';
-import { installSigintHandler } from './util/signals.ts';
+import { installSignalHandler } from './util/signals.ts';
 
 const main = async (): Promise<number> => {
   const controller = new AbortController();
-  const sigint = installSigintHandler(controller);
+  const signals = installSignalHandler(controller);
 
   try {
     const args = process.argv.slice(2);
@@ -15,9 +15,9 @@ const main = async (): Promise<number> => {
       return 0;
     }
     await program.parseAsync(process.argv);
-    return sigint.wasInterrupted() ? 130 : 0;
+    return signals.exitCode() ?? 0;
   } finally {
-    sigint.uninstall();
+    signals.uninstall();
   }
 };
 
