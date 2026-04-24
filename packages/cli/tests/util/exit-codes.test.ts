@@ -15,4 +15,8 @@ describe('exitCodeForError', () => {
     const e: SkillSmithError = { code: 'config-error', message: 'boom' };
     expect(exitCodeForError(e)).toBe(3);
   });
+  test("'skill-parse-error' → 1", () => {
+    const e: SkillSmithError = { code: 'skill-parse-error', message: 'x', file: 'y' };
+    expect(exitCodeForError(e)).toBe(1);
+  });
 });

@@ -1,7 +1,8 @@
 export type SkillSmithError =
   | { code: 'generic'; message: string; cause?: unknown }
   | { code: 'unknown-tool'; tool: string }
-  | { code: 'config-error'; message: string; file?: string; line?: number };
+  | { code: 'config-error'; message: string; file?: string; line?: number }
+  | { code: 'skill-parse-error'; message: string; file: string };
 
 export const genericError = (message: string, cause?: unknown): SkillSmithError => ({
   code: 'generic',
@@ -24,4 +25,10 @@ export const configError = (
   message,
   ...(opts.file !== undefined ? { file: opts.file } : {}),
   ...(opts.line !== undefined ? { line: opts.line } : {}),
+});
+
+export const skillParseError = (message: string, file: string): SkillSmithError => ({
+  code: 'skill-parse-error',
+  message,
+  file,
 });

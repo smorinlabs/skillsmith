@@ -8,5 +8,7 @@ export const exitCodeForError = (e: SkillSmithError): number => {
       return 2;
     case 'config-error':
       return 3;
+    case 'skill-parse-error':
+      return 1;
   }
 };
