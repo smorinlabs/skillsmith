@@ -66,6 +66,9 @@ export default [
             { target: './packages/cli/src/completion', from: './packages/cli/src/commands' },
             { target: './packages/cli/src/completion', from: './packages/cli/src/output' },
             { target: './packages/cli/src/completion', from: './packages/cli/src/help' },
+            // skills domain is agent-agnostic; do not import from agents/** (except types)
+            { target: './packages/core/src/skills', from: './packages/core/src/scan' },
+            { target: './packages/core/src/skills', from: './packages/core/src/doctor' },
           ],
         },
       ],
