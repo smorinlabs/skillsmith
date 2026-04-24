@@ -1,4 +1,4 @@
-import { realpath as fsRealpath, stat } from 'node:fs/promises';
+import { realpath as fsRealpath, readFile, readdir, stat } from 'node:fs/promises';
 import { homedir, platform as osPlatform } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { runVersionCommand } from './exec.ts';
@@ -33,6 +33,14 @@ export const defaultScanEnv = async (): Promise<ScanEnv> => {
       }
     },
     realpath: async (p) => fsRealpath(p),
+    listDir: async (p) => {
+      try {
+        return await readdir(p);
+      } catch {
+        return [];
+      }
+    },
+    readText: async (p) => readFile(p, 'utf8'),
     runVersion: async (binaryPath, args, signal) => runVersionCommand(binaryPath, args, signal),
   };
 };

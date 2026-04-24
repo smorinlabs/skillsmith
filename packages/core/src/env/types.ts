@@ -13,6 +13,8 @@ export interface ScanEnv {
   xdg: XdgDirs;
   fileExists(p: string): Promise<boolean>;
   realpath(p: string): Promise<string>;
+  listDir(p: string): Promise<readonly string[]>;
+  readText(p: string): Promise<string>;
   runVersion(
     binaryPath: string,
     args: readonly string[],
