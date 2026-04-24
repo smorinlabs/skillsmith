@@ -66,29 +66,45 @@ Ships the two self-contained support utilities first, so the TOML config format 
 - `install`, `uninstall` (→ MVP-2c).
 - No dynamic shell completions (→ Phase 2).
 
-### 3.2 MVP-2b — "List and doctor (read path)"
+### 3.2 MVP-2b — "List, doctor, check (read path)"
 
-Read-only observability. Ships before any writes so the `list` / `doctor` views are validated against an empty target first; both commands run cleanly against an empty install state.
+Read-only observability. Ships before any writes so the `list` / `doctor` views are validated against an empty target first; all three commands run cleanly against an empty install state.
 
-**Commands added:** `list`, `doctor`.
+Split into two sub-phases:
+
+**3.2.1 MVP-2b.1 — Dev surface** (tag `v0.3.0` internal)
+
+**Commands added:** `list`, `doctor`, `check`.
 
 **Scope:**
 
-- `list` / `ls` with `--tool`, `--scope`, `--duplicates`, `--long`, `--json`. Reports empty until MVP-2c installs exist; `--duplicates` has nothing to surface yet.
-- `doctor` validates config parse (from 2a), detected tools (all four via MVP-1 detection modules), scope writability for claude-code, manifest parse, network reach, cross-scope duplicates. `--strict`, `--offline`, `--json` (see [`commands/doctor.md`](./commands/doctor.md)).
-- `--json` supported on `list` and `doctor` (design doc §6.2).
+- `list` / `ls` with glob positionals, `--tool`, `--scope`, `--user`/`--system`/`--project` shorthands, `--duplicates`, `--long`, `--json`. Reports empty until MVP-2c installs exist; `--duplicates` has nothing to surface yet.
+- `doctor` runs the 8 built-in checks (XDG paths, config parse, tool detected, scope writability, cross-scope duplicates, multi-install, legacy-install, network reach). `--strict`, `--offline`, `--json`, `--tool` repeatable, `--scope` + shorthands.
+- `check` runs the error-severity subset for CI. `--exit-code`, `--json`, `--tool`, `--scope` + shorthands.
+- New global `--json` boolean flag on `list`, `doctor`, `check` (distinct from `agents --format markdown|json`).
+- New `Agent.getSkillRoots(env, scope)` method on every agent; central `listSkills` orchestrator uses it plus a shared walker.
+- `ScanEnv` gains `listDir(path)` for enumerating directory entries in tests and at runtime.
+- New `SkillSmithError` variant: `skill-parse-error` for malformed SKILL.md YAML.
+- Coverage gate introduced at ≥ 85% for `packages/core/src/doctor/**` and `packages/core/src/skills/**`.
 - Exit codes 0/1 finalized for read commands.
 
-**Added (completing MVP-2a):**
+**Explicitly deferred (→ MVP-2b.2 or MVP-2c):**
 
-- PowerShell completion script (deferred from MVP-2a). Lands with Windows entering the CI matrix since PowerShell is the primary shell there.
+- Public release (npm publish, Homebrew formula, codesign + notarize) → MVP-2b.2.
+- "Manifest matches lockfile" check, "orphaned files in skills dir" check — need MVP-2c's lockfile + store.
+- Plugin-contributed healthcheck runner → P2. Manifest key reserved.
+- `--fix` command → not in scope (each check ships remediation strings instead).
 
-**Explicitly deferred:**
+**3.2.2 MVP-2b.2 — First public release** (tag `v1.0.0` public)
 
-- `install`, `uninstall` (→ MVP-2c).
-- List/doctor for `codex`, `kilo-code`, `opencode` (→ MVP-3).
-- No `sync`, no `apply` (→ MVP-4).
-- No `--direct`, no lifecycle hooks, no values layering, no meta-skills, no `[compat]` enforcement (→ MVP-5).
+**Separate brainstorm.** Covers: npm publish of `@skillsmith/core` + `skillsmith` bin, Homebrew formula (cask for the compiled binary), codesign + notarize for macOS Gatekeeper, release notes, installation docs.
+
+Nothing new feature-wise — same surface as `v0.3.0` plus release engineering.
+
+**Pushed out to MVP-2c:**
+
+- **PowerShell completion** (was planned to land with MVP-2b). Kept alongside Windows CI since PowerShell is Windows-primary.
+- **Windows in CI matrix** (was planned for MVP-2b). Deferred because cross-scope-writability checks in `doctor` exercise Windows-specific path handling enough to warrant landing the two together.
 
 ### 3.3 MVP-2c — "Install and uninstall (write path)"
 
