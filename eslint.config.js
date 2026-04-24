@@ -58,6 +58,14 @@ export default [
             { target: './packages/core/src/env', from: './packages/core/src/agents' },
             { target: './packages/core/src/env', from: './packages/core/src/detect' },
             { target: './packages/core/src/detect', from: './packages/core/src/agents' },
+            // config is a sibling leaf — may import agent TYPES (SupportedTool) but
+            // no detection/scanner/orchestration logic.
+            { target: './packages/core/src/config', from: './packages/core/src/detect' },
+            { target: './packages/core/src/config', from: './packages/core/src/scan' },
+            // completion renderers receive a Command from the caller; no cli-internal imports
+            { target: './packages/cli/src/completion', from: './packages/cli/src/commands' },
+            { target: './packages/cli/src/completion', from: './packages/cli/src/output' },
+            { target: './packages/cli/src/completion', from: './packages/cli/src/help' },
           ],
         },
       ],
