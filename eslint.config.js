@@ -97,6 +97,10 @@ export default [
             "CallExpression[callee.type='MemberExpression'][callee.object.name='console'][callee.property.name=/^(log|info|warn|error|debug)$/]",
           message: 'core must not use console.* — accept a Logger via ScanEnv',
         },
+        {
+          selector: "ImportDeclaration[source.value='node:console']",
+          message: 'core must not import from node:console — accept a Logger via ScanEnv',
+        },
       ],
     },
   },
