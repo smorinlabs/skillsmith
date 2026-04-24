@@ -47,13 +47,14 @@ No Release PR appears when every commit is a "none" type — expected.
 
 - `cli` — `packages/cli/**`
 - `core` — `packages/core/**`
+- `main` — reserved for release-please (`chore(main): release X.Y.Z`)
 - omit — root configs, `scripts/**`, workflows, docs, tooling
 
 Scopes are **cosmetic** in this repo's release-please setup (single package + `extra-files`); they affect the CHANGELOG line, not the version bump.
 
 ## PR titles must also be Conventional
 
-`main` uses squash-merge, so the PR title becomes the commit release-please parses. The `commit-msg` lefthook hook only validates local commits, not PR titles.
+`main` uses squash-merge, so the PR title becomes the commit release-please parses. The `commit-msg` lefthook hook validates local commits; the `lint-pr-title` CI job validates PR titles.
 
 ## Breaking changes and the 0.x trap
 
