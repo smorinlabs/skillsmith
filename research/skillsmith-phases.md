@@ -2,11 +2,11 @@
 
 This doc tracks **when** each SkillSmith feature ships. The sibling [`skillsmith-cli-design.md`](./skillsmith-cli-design.md) tracks **what** each feature is. Any statement here about design details is authoritative only for phasing; cross-reference the design doc for the full specification of any feature named below.
 
-MVP is split into five releases (MVP-1 → MVP-5), each an end-to-end milestone that is shippable on its own. After MVP comes Phase 2, then speculative Phase 3.
+MVP is split into five releases (MVP-1 → MVP-5), each an end-to-end milestone that is shippable on its own. MVP-2 is further split into three sub-phases (MVP-2a → MVP-2c, staged simplest → most complex) so each 1–2-command slice can be validated in isolation. After MVP comes Phase 2, then speculative Phase 3.
 
 **Supported agents across the CLI:** `claude-code`, `codex`, `kilo-code`, `opencode`. `agents` detects all four from MVP-1. `install` / `uninstall` / `list` / `doctor` target claude-code only in MVP-2, then extend to all four in MVP-3. Additional agents (Droid, Cursor, Aider, Cline, Continue — TBD) are Phase 2.
 
-Sections: (1) non-goals, (2) MVP-1 inventory, (3) MVP-2 single-tool install, (4) MVP-3 all-adapter coverage, (5) MVP-4 team workflows, (6) MVP-5 packaging extras, (7) Phase 2, (8) Phase 3 (speculative), (9) open phasing questions.
+Sections: (1) non-goals, (2) MVP-1 inventory, (3) MVP-2 single-tool install (split into 2a config/completion, 2b list/doctor, 2c install/uninstall), (4) MVP-3 all-adapter coverage, (5) MVP-4 team workflows, (6) MVP-5 packaging extras, (7) Phase 2, (8) Phase 3 (speculative), (9) open phasing questions.
 
 ---
 
@@ -44,31 +44,68 @@ Smallest useful release. Pure inventory, no writes beyond the CLI's own config.
 
 ## 3. MVP-2 — "Install a skill for one tool"
 
-First release with write semantics. A solo developer can install a skill end-to-end for claude-code, see what they've installed, and remove it.
+First release with write semantics, split into three sub-phases (MVP-2a → MVP-2c) staged simplest → most complex. Each sub-phase ships 1–2 commands that can be built and validated in isolation. All three remain **claude-code-only**; multi-agent coverage is MVP-3. After MVP-2c, a solo developer can install a skill end-to-end for claude-code, see what they've installed, and remove it.
 
-**Commands added:** `install`, `uninstall`, `list`, `doctor`, `config`, `completion`.
+### 3.1 MVP-2a — "Config and completion (support)"
+
+Ships the two self-contained support utilities first, so the TOML config format and shell-completion plumbing exist before any state-modifying command is built against them.
+
+**Commands added:** `config`, `completion`.
 
 **Scope:**
 
-- `install` / `uninstall` / `list` / `doctor` target **claude-code only**. Single adapter; no cross-tool adaptation path exercised.
-- Source resolver: Git URL + GitHub shorthand (`owner/repo/skill-name`, `repo/skill-name`), 4-form parser (design doc §1.4). Partial-clone Git fetch.
-- Content-addressed store at `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/` with symlinked entry points (design doc §1.11).
-- Scope flags: `--system` / `--user` / `--project`, `--scope`, scope auto-default (design doc §1.2, §1.3).
-- Idempotence and cross-scope duplicate detection (design doc §1.5, §1.6). `--force`, `--yes`, `--dry-run`, `--ref`, `--pin`.
-- `list` / `ls` with `--tool`, `--scope`, `--duplicates`, `--long`, `--json`.
-- `doctor` validates config, detected tools (still all four), scope writability for claude-code, manifest parse, network reach, cross-scope duplicates. `--strict`, `--offline`, `--json` (design doc §3.7, §4.5).
 - `config <get|set|list|unset>` for user config.
-- `completion <bash|zsh|fish|powershell>` — static completions (subcommands, flag names, enum values).
-- Exit codes 0/1/2/3/4/5/6/130 wired.
-- `--json` supported on `list` and `doctor` (design doc §6.2).
+- `completion <bash|zsh|fish|powershell>` — static completions (subcommands, flag names, enum values) for commands that exist at each point; regenerated as later sub-phases add commands.
+- TOML config file format + XDG-search-path resolution (`SKILLSMITH_CONFIG` honored). Config keys users set now (`tool`, `scope`, `path`, `registry`) persist and take effect once 2b/2c ship.
+- Exit code 3 (malformed user config) wired.
 
 **Explicitly deferred:**
 
-- Install/uninstall/list/doctor for `codex`, `kilo-code`, `opencode` (→ MVP-3).
+- `list`, `doctor` (→ MVP-2b).
+- `install`, `uninstall` (→ MVP-2c).
+- No dynamic shell completions (→ Phase 2).
+
+### 3.2 MVP-2b — "List and doctor (read path)"
+
+Read-only observability. Ships before any writes so the `list` / `doctor` views are validated against an empty target first; both commands run cleanly against an empty install state.
+
+**Commands added:** `list`, `doctor`.
+
+**Scope:**
+
+- `list` / `ls` with `--tool`, `--scope`, `--duplicates`, `--long`, `--json`. Reports empty until MVP-2c installs exist; `--duplicates` has nothing to surface yet.
+- `doctor` validates config parse (from 2a), detected tools (all four via MVP-1 detection modules), scope writability for claude-code, manifest parse, network reach, cross-scope duplicates. `--strict`, `--offline`, `--json` (design doc §3.7, §4.5).
+- `--json` supported on `list` and `doctor` (design doc §6.2).
+- Exit codes 0/1 finalized for read commands.
+
+**Explicitly deferred:**
+
+- `install`, `uninstall` (→ MVP-2c).
+- List/doctor for `codex`, `kilo-code`, `opencode` (→ MVP-3).
+- No `sync`, no `apply` (→ MVP-4).
+- No `--direct`, no lifecycle hooks, no values layering, no meta-skills, no `[compat]` enforcement (→ MVP-5).
+
+### 3.3 MVP-2c — "Install and uninstall (write path)"
+
+The write path — introduces the content-addressed store, symlinks, source resolver, and the claude-code adapter. Paired because uninstall only exists to reverse install; validating them together confirms the install pipeline is clean. By this point 2a/2b already exist to observe and diagnose the writes.
+
+**Commands added:** `install`, `uninstall`.
+
+**Scope:**
+
+- `install` / `uninstall` target **claude-code only**. Single adapter; no cross-tool adaptation path exercised.
+- Source resolver: Git URL + GitHub shorthand (`owner/repo/skill-name`, `repo/skill-name`), 4-form parser (design doc §1.4). Partial-clone Git fetch.
+- Content-addressed store at `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/` with symlinked entry points (design doc §1.11).
+- Scope flags: `--system` / `--user` / `--project`, `--scope`, scope auto-default (design doc §1.2, §1.3).
+- Idempotence and cross-scope duplicate detection (design doc §1.5, §1.6). `--force`, `--yes`, `--dry-run`, `--ref`, `--pin`. `--all-scopes` on uninstall.
+- Remaining exit codes 2/4/5/6/130 finalized.
+
+**Explicitly deferred:**
+
+- Install/uninstall for `codex`, `kilo-code`, `opencode` (→ MVP-3).
 - No `sync`, no `apply` (→ MVP-4).
 - No cross-tool adaptation; skills authored for a non-claude-code target install as-authored or are refused.
 - No `--direct`, no lifecycle hooks, no values layering, no meta-skills, no `[compat]` enforcement (→ MVP-5).
-- No dynamic shell completions (→ Phase 2).
 
 ---
 

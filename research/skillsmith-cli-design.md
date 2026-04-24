@@ -1,6 +1,6 @@
 # SkillSmith CLI design spec
 
-SkillSmith ships as a **flat, verb-first CLI** (npm/cargo/brew school) with **git-style scope flags** (`--system`/`--user`/`--project`), **gh-style help output** (separated FLAGS and INHERITED FLAGS, with EXAMPLES), **gh-style `owner/repo` source shorthand** for installs, and **kubectl/terraform-style idempotent `apply`**. The four core verbs — `install`, `sync`, `list`, `apply` — stay at depth 1 until the tool grows a second primary resource type.
+SkillSmith ships as a **flat, verb-first CLI** (npm/cargo/brew school) with **git-style scope flags** (`--system`/`--user`/`--project`), **gh-style help output** (separated FLAGS and INHERITED FLAGS, with EXAMPLES), **gh-style `owner/repo` source shorthand** for installs, and **kubectl/terraform-style idempotent `apply`**. The six core verbs — `install`, `uninstall`, `sync`, `list`, `apply`, `doctor` — stay at depth 1 until the tool grows a second primary resource type.
 
 This doc is organized as: (0) background, non-goals, and core capabilities, (1) design decisions, (2) command tree, (3) flag tables, (4) help/error mockups, (5) naming cheat sheet, (6) exit codes and env vars, (7) documentation strategy, (8) architecture sketch, (9) open questions. Release phasing (what ships in MVP vs. Phase 2 vs. Phase 3) lives in a sibling doc: [`skillsmith-phases.md`](./skillsmith-phases.md).
 
@@ -47,7 +47,7 @@ Skills live in a single isolated store; each tool/scope path holds a symlink int
 - `list`, `doctor`, `sync`, and `uninstall` are symlink-aware and can resolve or GC store entries (§4.6, §8).
 
 #### 0.5.3 Cross-tool adaptation
-When a skill authored for tool A is installed for tool B, SkillSmith transforms it on the way into the store.
+When a skill authored for tool A is installed for tool B, SkillSmith transforms it on the way to the target. The store holds the skill as authored; adapted output lives in a per-tool overlay (§1.11, §1.16).
 
 - Deterministic per-target-tool transformers for frontmatter renames, file layout, and known conventions (§1.16).
 - `--dry-run` previews the adapter diff; `--no-adapt` installs as-authored (§3.2).
@@ -57,7 +57,7 @@ When a skill authored for tool A is installed for tool B, SkillSmith transforms 
 Before writing, SkillSmith checks whether the skill is already installed at the requested scope and at broader scopes.
 
 - Same-scope duplicate: exit 0 with stderr notice; `--force` reinstalls (§1.5).
-- Cross-scope duplicate: list the other-scope installs with paths, require `--force` to proceed; TTY prompts, non-TTY exits 2 (§1.6).
+- Cross-scope duplicate: list the other-scope installs with paths; in TTY mode, SkillSmith prompts unless `--force` or `--yes` was passed; in non-TTY mode, `--force` is required (without it, exit 2) (§1.6).
 - `list --duplicates` surfaces cross-scope hits proactively (§3.4).
 
 #### 0.5.5 Cross-project sync
@@ -136,9 +136,9 @@ The primary form is `--scope=<enum>` with values `system` / `user` / `project`. 
 Source references use **shorthand-first** syntax. The parser accepts four forms, in this precedence order:
 
 1. Full Git URL (`https://…`, `git@…`, `ssh://…`) → treat as Git source.
-2. Three-part `user/repo/skill-name` → GitHub by default (registry configurable).
+2. Three-part `owner/repo/skill-name` → GitHub by default (registry configurable).
 3. Two-part `repo/skill` → assume default org (from config).
-4. One-part `skill` → assume default registry (future).
+4. One-part `skill` → assume default registry (requires default registry; see §1.17 — not available in MVP).
 
 Scheme-prefixed syntax (`gh:acme/pack/skill`, `jsr:@acme/pack/skill`, `file:./path`) is not currently supported; see [`skillsmith-phases.md`](./skillsmith-phases.md).
 
@@ -146,11 +146,13 @@ Under the hood, Git sources are fetched via partial clones (`--filter=blob:none`
 
 ### 1.5 Idempotence and already-installed handling
 
-Re-installing something already present exits **0** with a stderr notice. `--force` reinstalls or overwrites. For `apply` specifically, output mirrors `kubectl apply`: print `created`, `updated`, `unchanged`, `skipped` per skill, with aggregate counts at the end, and exit 0 even if every entry is unchanged.
+Re-installing something already present exits **0** with a stderr notice. `--force` reinstalls or overwrites. For `apply` specifically, output mirrors `kubectl apply`: print `created`, `updated`, `unchanged`, `skipped`, `failed` per skill, with aggregate counts at the end (each status reported as a separate count), and exit 0 even if every entry is unchanged.
 
 ### 1.6 Cross-scope duplicate detection
 
 A single `--force` flag overrides both "already installed in this scope" and "already installed in another scope". Cross-scope hits are printed to stderr with their scope and path before `--force` is applied, so users see what they are overriding. In interactive TTY mode, if a cross-scope hit is detected and neither `--force` nor `--yes` was passed, SkillSmith prompts. In non-TTY mode without `--force`, SkillSmith exits 2 with a clear error.
+
+**Precedence of `--yes` and `--no-prompt`.** `--yes` auto-confirms a prompt; `--no-prompt` refuses to show one. When both would apply, `--yes` wins — the user has pre-authorized the action, so there is no prompt to suppress. `--no-prompt` only takes over when `--yes` has not been supplied: in that case, any gate that would normally prompt fails fast with exit 2 instead.
 
 ### 1.7 Short flag allocation
 
@@ -174,7 +176,7 @@ Global flags are accepted anywhere on the command line (before or after the subc
 
 ### 1.9 Output format
 
-Machine-readable output is emitted via the `--json` boolean flag on `list` and `apply`. stdout carries data; stderr carries messages, progress, and errors. See [`skillsmith-phases.md`](./skillsmith-phases.md) for the `--output yaml|table|text` roadmap.
+Machine-readable output is emitted via the `--json` boolean flag on `list`, `apply`, and `doctor`. stdout carries data; stderr carries messages, progress, and errors. See [`skillsmith-phases.md`](./skillsmith-phases.md) for the `--output yaml|table|text` roadmap.
 
 ### 1.10 Help routing
 
@@ -198,9 +200,11 @@ $XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/
 ~/.claude/skills/grep                                      <- symlink into store
 ```
 
-Project-scope install with the same source points the project-local symlink at the *same* store entry — no duplicate bytes on disk.
+Project-scope install with the same source and the same target tool points the project-local symlink at the *same* store entry — no duplicate bytes on disk.
 
-**Uninstall** resolves each target symlink to the store entry, removes the symlink, then garbage-collects the store entry if no other symlink references it. `skillsmith list` and `skillsmith doctor` are symlink-aware: `list --long` shows both the symlink path and the store path; orphaned symlinks (dangling into a pruned store entry) are surfaced as warnings.
+**Cross-tool installs.** The store entry for a given `(owner, repo, sha, skill)` always holds the skill as authored. When a skill authored for tool A is installed for tool B, adapter output (per §1.16) is materialized to a sibling per-tool overlay at `$XDG_DATA_HOME/skillsmith/adapted/<owner>/<repo>@<sha>/<skill>/<target-tool>/`, and the target-tool symlink points into that overlay. Multiple target tools for the same source are represented by distinct overlay directories; the store entry itself is never mutated. Same-tool installs skip the overlay and symlink directly into the store.
+
+**Uninstall** resolves each target symlink to the store entry or its adapted overlay, removes the symlink, then garbage-collects the overlay (when its last referencing symlink is gone) and the store entry (when no overlay and no direct symlink references it). `skillsmith list` and `skillsmith doctor` are symlink-aware: `list --long` shows both the symlink path and the store path; orphaned symlinks (dangling into a pruned store entry) are surfaced as warnings.
 
 **Direct-install escape hatch.** For users who need file-copy installation (e.g., tool environments that reject symlinks, air-gapped targets, or simple copy-out-and-ship workflows), `install --direct` bypasses the store and copies files into the target location. `--direct` installs lose coexistence and the clean-uninstall guarantee; `uninstall` of a `--direct` skill falls back to a manifest-tracked file list recorded at install time. The tool is symlink-aware in both directions: mixed stores (some store-backed, some `--direct`) are supported, and `list` marks each with its install mode.
 
@@ -224,7 +228,7 @@ Skills may declare lifecycle hooks in their manifest, modeled on Helm's hook ann
 - `pre-upgrade`, `post-upgrade`
 - `pre-uninstall`, `post-uninstall`
 
-Hooks are shell scripts or executables shipped inside the skill directory. They run with a minimal, documented environment (`SKILLSMITH_SKILL_NAME`, `SKILLSMITH_SKILL_PATH`, `SKILLSMITH_SCOPE`, `SKILLSMITH_TOOL`, resolved values). A non-zero exit from a `pre-*` hook aborts the operation; a non-zero exit from a `post-*` hook is logged as a warning unless `--strict` is set. `--no-hooks` disables hook execution entirely.
+Hooks are shell scripts or executables shipped inside the skill directory. They run with a minimal, documented environment, all hook-scoped under the `SKILLSMITH_HOOK_*` prefix so they never collide with user-facing defaults like `SKILLSMITH_TOOL` / `SKILLSMITH_SCOPE`: `SKILLSMITH_HOOK_SKILL_NAME`, `SKILLSMITH_HOOK_SKILL_PATH`, `SKILLSMITH_HOOK_SCOPE`, `SKILLSMITH_HOOK_TOOL`, `SKILLSMITH_HOOK_PHASE` (e.g. `pre-install`), plus resolved values. A non-zero exit from a `pre-*` hook aborts the operation; a non-zero exit from a `post-*` hook is logged as a warning unless `--strict` is set. `--no-hooks` disables hook execution entirely.
 
 ### 1.14 Version compatibility
 
@@ -256,7 +260,7 @@ Installing a meta-skill resolves and installs all referenced skills transitively
 
 ### 1.16 Cross-tool adaptation
 
-When a skill was authored for tool A (e.g., `claude-code`) but is being installed for tool B (e.g., `codex`), SkillSmith applies a per-target-tool adapter that transforms the skill on the way into the store. Adapters cover frontmatter renames, file layout changes, and known convention mappings (e.g., Claude Code's `allowed-tools` → Codex's `tools`).
+When a skill was authored for tool A (e.g., `claude-code`) but is being installed for tool B (e.g., `codex`), SkillSmith applies a per-target-tool adapter that transforms the skill on the way to the target. The store always holds the skill as authored; adapter output is materialized to a per-tool overlay that the target symlink points into (§1.11). Adapters cover frontmatter renames, file layout changes, and known convention mappings (e.g., Claude Code's `allowed-tools` → Codex's `tools`).
 
 SkillSmith uses deterministic per-target-tool transformers. They are part of SkillSmith's codebase and produce reproducible output with no API calls. When `install` (or `apply`) runs an adapter, it prints the source target, the adapter pair, and each rule that fired.
 
@@ -285,6 +289,7 @@ skillsmith --help | -h               # top-level help
 # Core verbs
 
 skillsmith install <source> [<source>...]
+skillsmith i       <source> [<source>...]    # alias
   # Install one or more skills. <source> is:
   #   owner/repo/skill-name   (GitHub shorthand)
   #   repo/skill-name         (with default org)
@@ -396,24 +401,24 @@ No positional arguments.
 | `--verbose` | `-v` | count | 0 | `SKILLSMITH_VERBOSE` | Verbose output; repeatable (`-vv` = debug) |
 | `--quiet` | `-q` | bool | false | `SKILLSMITH_QUIET` | Suppress non-error output |
 | `--json` | — | bool | false | — | Emit JSON on stdout (supported commands only) |
-| `--no-color` | — | bool | false | `NO_COLOR`, `SKILLSMITH_NO_COLOR` | Disable ANSI colors |
+| `--no-color` | — | bool | false | `NO_COLOR`, `SKILLSMITH_NO_COLOR` (either non-empty disables color; no-color.org) | Disable ANSI colors |
 | `--color` | — | enum | `auto` | `SKILLSMITH_COLOR` | `auto`, `always`, `never` |
 | `--config` | — | path | (search) | `SKILLSMITH_CONFIG` | Path to user config file |
 | `--no-prompt` | — | bool | (auto from TTY) | `SKILLSMITH_NO_PROMPT`, `CI` | Never prompt; fail if input needed |
-| `-C` | — | path | `.` | — | Change to directory before running (git/cargo `-C`) |
+| `--cd` | `-C` | path | `.` | — | Change to directory before running (git/cargo `-C`) |
 | `--debug` | — | bool | false | `SKILLSMITH_DEBUG` | Print debug traces to stderr |
 
 ### 3.2 `install` flags
 
 | Long | Short | Type | Default | Env var | Description |
 |---|---|---|---|---|---|
-| `--tool` | `-t` | enum/repeatable | (auto-detect) | `SKILLSMITH_TOOL` | Target tool: `claude-code`, `codex`, `kilo-code`, `opencode`. Repeatable. |
+| `--tool` | `-t` | enum/repeatable | auto-detect (prompts in TTY, first detected in non-TTY) | `SKILLSMITH_TOOL` | Target tool: `claude-code`, `codex`, `kilo-code`, `opencode`. Repeatable. |
 | `--scope` | `-s` | enum | (auto) | `SKILLSMITH_SCOPE` | `system`, `user`, `project` |
 | `--user` | — | bool | — | — | Shorthand for `--scope=user` |
 | `--system` | — | bool | — | — | Shorthand for `--scope=system` |
 | `--project` | — | bool | — | — | Shorthand for `--scope=project` |
 | `--path` | `-p` | path | (derived from scope+tool) | `SKILLSMITH_PATH` | Override install path |
-| `--force` | `-f` | bool | false | — | Reinstall if present; override cross-scope duplicates |
+| `--force` | `-f` | bool | false | — | Treat already-installed entries as install targets; override cross-scope duplicates |
 | `--yes` | `-y` | bool | false | — | Skip confirmation prompts |
 | `--dry-run` | — | bool | false | — | Print actions without executing |
 | `--ref` | — | string | `HEAD` | — | Git ref (branch, tag, commit) for URL sources |
@@ -431,22 +436,29 @@ No positional arguments.
 |---|---|---|---|---|---|
 | `--from` | — | string | — | — | Source scope or project path |
 | `--to` | — | string | — | — | Destination scope or project path |
-| `--tool` | `-t` | enum/repeatable | all detected | `SKILLSMITH_TOOL` | Limit sync to tool(s) |
+| `--tool` | `-t` | enum/repeatable | all detected tools | `SKILLSMITH_TOOL` | Limit sync to tool(s) |
 | `--scope` | `-s` | enum | (auto) | `SKILLSMITH_SCOPE` | Limit sync to scope |
-| `--force` | `-f` | bool | false | — | Override cross-scope duplicates |
+| `--user` | — | bool | — | — | Shorthand for `--scope=user` |
+| `--system` | — | bool | — | — | Shorthand for `--scope=system` |
+| `--project` | — | bool | — | — | Shorthand for `--scope=project` |
+| `--force` | `-f` | bool | false | — | Treat already-installed entries as install targets; override cross-scope duplicates |
 | `--yes` | `-y` | bool | false | — | Skip confirmation |
 | `--dry-run` | — | bool | false | — | Preview |
 | `--delete` | — | bool | false | — | Remove skills in `--to` absent from `--from` (rsync-style; opt-in) |
+| `--continue-on-error` | — | bool | false | — | Keep going after per-skill failures |
 
 ### 3.4 `list` flags
 
 | Long | Short | Type | Default | Env var | Description |
 |---|---|---|---|---|---|
-| `--tool` | `-t` | enum/repeatable | all | `SKILLSMITH_TOOL` | Filter by tool |
+| `--tool` | `-t` | enum/repeatable | all detected tools | `SKILLSMITH_TOOL` | Filter by tool |
 | `--scope` | `-s` | enum | all | `SKILLSMITH_SCOPE` | Filter by scope |
+| `--user` | — | bool | — | — | Shorthand for `--scope=user` |
+| `--system` | — | bool | — | — | Shorthand for `--scope=system` |
+| `--project` | — | bool | — | — | Shorthand for `--scope=project` |
 | `--duplicates` | — | bool | false | — | Show only cross-scope duplicates |
 | `--json` | — | bool | false | — | JSON output |
-| `--long` | `-l` | bool | false | — | Show paths, sources, commit SHAs |
+| `--long` | `-l` | bool | false | — | Show symlink path, store path, source, and commit SHA |
 
 ### 3.5 `apply` flags
 
@@ -455,20 +467,25 @@ No positional arguments.
 | `--file` | — | path/repeatable | `./skillsmith.toml` | — | Manifest path(s); repeatable (kubectl `-f`) |
 | `--tool` | `-t` | enum/repeatable | from manifest | `SKILLSMITH_TOOL` | Override tool targets |
 | `--scope` | `-s` | enum | from manifest | `SKILLSMITH_SCOPE` | Override scope |
-| `--force` | `-f` | bool | false | — | Reinstall all |
+| `--user` | — | bool | — | — | Shorthand for `--scope=user` |
+| `--system` | — | bool | — | — | Shorthand for `--scope=system` |
+| `--project` | — | bool | — | — | Shorthand for `--scope=project` |
+| `--force` | `-f` | bool | false | — | Treat already-installed manifest entries as install targets (reinstall regardless of unchanged status); override cross-scope duplicates |
 | `--yes` | `-y` | bool | false | — | Skip prompts |
 | `--dry-run` | — | bool | false | — | Preview reconciliation plan |
-| `--check` | — | bool | false | — | Drift check: exit non-zero if any skill would be created/updated/deleted. For CI pre-commit. |
+| `--check` | — | bool | false | — | Drift check: exit 7 if any skill would be created/updated/deleted. For CI pre-commit. |
 | `--prune` | — | bool | false | — | Remove installed skills absent from manifest |
 | `--no-hooks` | — | bool | false | — | Skip lifecycle hooks (§1.13) |
 | `--no-adapt` | — | bool | false | — | Skip cross-tool adaptation (§1.16) |
 | `--set` | — | `k=v` repeatable | — | — | Override values at apply time (§1.12) |
+| `--continue-on-error` | — | bool | false | — | Keep going after per-skill failures |
+| `--json` | — | bool | false | — | JSON output |
 
 ### 3.6 `uninstall` flags
 
 | Long | Short | Type | Default | Env var | Description |
 |---|---|---|---|---|---|
-| `--tool` | `-t` | enum/repeatable | all detected | `SKILLSMITH_TOOL` | Limit removal to tool(s) |
+| `--tool` | `-t` | enum/repeatable | all detected tools | `SKILLSMITH_TOOL` | Limit removal to tool(s) |
 | `--scope` | `-s` | enum | all | `SKILLSMITH_SCOPE` | Limit to scope; required if `<skill>` is ambiguous |
 | `--user` | — | bool | — | — | Shorthand for `--scope=user` |
 | `--system` | — | bool | — | — | Shorthand for `--scope=system` |
@@ -483,8 +500,11 @@ No positional arguments.
 
 | Long | Short | Type | Default | Env var | Description |
 |---|---|---|---|---|---|
-| `--tool` | `-t` | enum/repeatable | all detected | `SKILLSMITH_TOOL` | Limit checks to tool(s) |
+| `--tool` | `-t` | enum/repeatable | all detected tools | `SKILLSMITH_TOOL` | Limit checks to tool(s) |
 | `--scope` | `-s` | enum | all | `SKILLSMITH_SCOPE` | Limit checks to scope |
+| `--user` | — | bool | — | — | Shorthand for `--scope=user` |
+| `--system` | — | bool | — | — | Shorthand for `--scope=system` |
+| `--project` | — | bool | — | — | Shorthand for `--scope=project` |
 | `--offline` | — | bool | false | — | Skip network checks |
 | `--strict` | — | bool | false | — | Treat warnings as failures (exit 1 on any `⚠`) |
 | `--json` | — | bool | false | — | JSON output |
@@ -524,7 +544,7 @@ HELP TOPICS
   sources:       Supported source reference formats
 
 INHERITED FLAGS
-  -C, --path <dir>         Run as if launched from <dir>
+  -C, --cd <dir>           Run as if launched from <dir>
       --config <file>      Path to config file (default: search XDG paths)
       --color <when>       auto | always | never (default: auto)
       --no-color           Disable color (alias for --color=never)
@@ -554,6 +574,9 @@ Install one or more agent skills.
 USAGE
   skillsmith install [flags] <source>...
 
+ALIASES
+  i
+
 ARGUMENTS
   <source>   One of:
                owner/repo/skill-name   GitHub shorthand
@@ -563,7 +586,8 @@ ARGUMENTS
 
 FLAGS
   -t, --tool <name>          Target tool: claude-code, codex, kilo-code, opencode.
-                             Repeatable. Default: auto-detect installed tools.
+                             Repeatable. Default: auto-detect; prompts in TTY,
+                             uses first detected in non-TTY.
   -s, --scope <scope>        system | user | project. Default: project if in
                              a Git repo, else user.
       --user                 Shorthand for --scope=user
@@ -578,7 +602,7 @@ FLAGS
       --continue-on-error    Keep going after per-skill failures
 
 INHERITED FLAGS
-  -C, --path, --config, --color, --no-color, -v, --verbose, -q, --quiet,
+  -C, --cd, --config, --color, --no-color, -v, --verbose, -q, --quiet,
   --json, --no-prompt, -h, --help, -V, --version
   (See 'skillsmith help' for details)
 
@@ -696,7 +720,8 @@ $ skillsmith install acme/agent-tools/claude-reviewer --tool codex
     frontmatter 'allowed-tools' → 'tools'
     file layout: prompts/*.md → instructions/*.md
   Installed at ~/.codex/skills/claude-reviewer
-    store: ~/.local/share/skillsmith/store/acme/agent-tools@3f2a1b/claude-reviewer
+    store:   ~/.local/share/skillsmith/store/acme/agent-tools@3f2a1b/claude-reviewer
+    adapted: ~/.local/share/skillsmith/adapted/acme/agent-tools@3f2a1b/claude-reviewer/codex
 ```
 
 **Non-TTY, no `--yes`, destructive action:**
@@ -706,6 +731,17 @@ error: refusing to overwrite 'edit' without confirmation.
 This session is non-interactive (stdin is not a TTY).
 Pass --yes to auto-confirm, or --force to override existing installs.
 Exit code: 2
+```
+
+**Scope/permission error — system scope not writable:**
+```
+$ skillsmith install acme/skills/grep --system
+error: cannot write to system scope: /etc/skillsmith (permission denied)
+
+The system scope requires elevated privileges.
+Try: sudo skillsmith install acme/skills/grep --system
+Or:  skillsmith install acme/skills/grep --user
+Exit code: 6
 ```
 
 **`apply` output (kubectl-style):**
@@ -718,7 +754,7 @@ Reading ./skillsmith.toml
   ⚠ format     skipped    already in user scope; pass --force to override
   ✓ test       created    .claude/skills/test           acme/skills@3f2a1b
 
-5 skills: 3 created/updated, 1 unchanged, 1 skipped, 0 failed.
+5 skills: 2 created, 1 updated, 1 unchanged, 1 skipped, 0 failed.
 ```
 
 **`apply --check` (drift detection for CI):**
@@ -731,7 +767,7 @@ Reading ./skillsmith.toml
   ✓ diff     in-sync     .claude/skills/diff
 
 3 skills: 2 drifted, 1 in-sync.
-Exit code: 2
+Exit code: 7
 
 # Example CI hook
 #   skillsmith apply --check || { echo "skill drift detected"; exit 1; }
@@ -833,10 +869,10 @@ Target tools
   ✓ kilo-code   0.7.1          ~/.kilo/skills (writable)
   ✓ opencode    0.3.0          ~/.local/share/opencode/skills (writable)
 
-Scopes
-  ✓ user     /Users/alice/.local/share/skillsmith        (writable, 128 GB free)
-  ✓ project  /Users/alice/projects/app/.claude/skills    (writable, 128 GB free)
-  ⚠ system   /etc/skillsmith                             (not writable; sudo required for --system)
+SkillSmith data directories
+  ✓ data    /Users/alice/.local/share/skillsmith        ($XDG_DATA_HOME, writable, 128 GB free)
+  ✓ cache   /Users/alice/.cache/skillsmith              ($XDG_CACHE_HOME, writable)
+  ✓ config  /Users/alice/.config/skillsmith             ($XDG_CONFIG_HOME, writable)
 
 Network
   ✓ github.com reachable
@@ -846,7 +882,7 @@ Skills
       grep: user (~/.claude/skills/grep) and project (./.claude/skills/grep)
       see 'skillsmith list --duplicates'
 
-7 checks, 3 warnings, 0 failed.
+11 checks, 2 warnings, 0 failed.
 ```
 
 **`skillsmith uninstall` idempotent no-op:**
@@ -861,7 +897,7 @@ Exit 0.
 ```
 error: 'grep' is installed in multiple locations:
 
-  user      /Users/alice/.local/share/skillsmith/grep     claude-code
+  user      /Users/alice/.claude/skills/grep              claude-code
   project   ./.claude/skills/grep                         claude-code
 
 Pass --scope to pick one, or --all-scopes to remove from every location.
@@ -891,7 +927,7 @@ Removing 3 skills from scope=project for tool=claude-code:
 
 **Env vars.** `SKILLSMITH_<NAME>` in SCREAMING_SNAKE_CASE. Honor cross-tool standards verbatim: `NO_COLOR`, `FORCE_COLOR`, `CLICOLOR`, `CLICOLOR_FORCE`, `TERM`, `PAGER`, `EDITOR`, `VISUAL`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, `CI`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`.
 
-**Config keys.** `kebab-case` in TOML (`default-tool`, `default-scope`), dotted paths for nested (`registry.default`, `tool.claude-code.path`). Match env var name by uppercasing and replacing dots/dashes with underscores (`SKILLSMITH_DEFAULT_TOOL`, `SKILLSMITH_REGISTRY_DEFAULT`).
+**Config keys.** `kebab-case` in TOML (`tool`, `scope`, `path`), dotted paths for nested (`registry.default`, `tool.claude-code.path`). Env var names map from config keys by uppercasing and replacing dots/dashes with underscores (`SKILLSMITH_TOOL` ↔ `tool`; `SKILLSMITH_TOOL_CLAUDE_CODE_PATH` ↔ `tool.claude-code.path`). For nested keys with a clear primary value, the primary's env var drops the trailing segment (`SKILLSMITH_REGISTRY` ↔ `registry.default`).
 
 **Paths and files.** `skillsmith.toml` for project manifest (cargo precedent). `~/.config/skillsmith/config.toml` for user config (XDG). `~/.local/share/skillsmith/store/<owner>/<repo>@<sha>/<skill>/` for content-addressed skill content (§1.11); tool-specific locations (`~/.claude/skills/<skill>`, `./.claude/skills/<skill>`, etc.) hold symlinks into the store, except for `--direct` installs which are plain files tracked by install manifest. `~/.cache/skillsmith/` for Git clones and download cache. Never use `~/.skillsmith/` — XDG compliance from day one.
 
@@ -914,6 +950,7 @@ Document these in `skillsmith help exit-codes`:
 | 4 | Target tool not installed, or installed tool version is outside the skill's declared compatibility range (§1.14) |
 | 5 | Source unresolvable (repo not found, skill not in repo, ref not found) |
 | 6 | Scope/permission error (cannot write to system scope without privileges) |
+| 7 | Drift detected (`apply --check`: at least one skill would be created, updated, or deleted) |
 | 130 | Cancelled via SIGINT (Ctrl-C) — standard Unix signal-exit |
 
 Partial failures in batch operations (`install` with multiple sources, `apply` with many entries) exit with the **highest** code from any failure, unless `--continue-on-error` was set, in which case exit with code 1 if any failed.
@@ -928,17 +965,29 @@ Document in `skillsmith help environment`:
 
 ```
 SKILLSMITH_CONFIG           Path to user config (default: XDG search path)
-SKILLSMITH_HOME             Override XDG data dir for installed skills
+SKILLSMITH_HOME             Override SkillSmith's data dir entirely. If set,
+                            wins over $XDG_DATA_HOME/skillsmith. If unset,
+                            data dir is $XDG_DATA_HOME/skillsmith
+                            (default ~/.local/share/skillsmith).
 SKILLSMITH_CACHE            Override XDG cache dir
 SKILLSMITH_TOOL             Default --tool
 SKILLSMITH_SCOPE            Default --scope
 SKILLSMITH_PATH             Default --path
 SKILLSMITH_REGISTRY         Default registry base (e.g. github.com/acme)
-SKILLSMITH_TOKEN            Git/API token for private sources
+SKILLSMITH_TOKEN            Default Git/API token for any source host.
+SKILLSMITH_TOKEN_<HOST>     Per-host token override; <HOST> is the uppercased
+                            hostname with dots replaced by underscores
+                            (e.g. SKILLSMITH_TOKEN_GITHUB_COM,
+                            SKILLSMITH_TOKEN_GITLAB_INTERNAL_ACME_COM).
+                            Per-host wins over the default token.
 SKILLSMITH_DEBUG            Non-empty = enable debug traces (same as --debug)
-SKILLSMITH_VERBOSE          Integer level (1=verbose, 2=debug)
+SKILLSMITH_VERBOSE          Integer level (0=off, 1=verbose, 2=debug).
+                            Clamped to [0, 2]; values ≥ 3 are treated as 2.
+                            Empty or unset = 0. Matches `-v` / `-vv` on CLI.
 SKILLSMITH_QUIET            Non-empty = suppress non-error output
-SKILLSMITH_NO_COLOR         Non-empty = disable color (fallback to NO_COLOR)
+SKILLSMITH_NO_COLOR         Non-empty = disable color. Equivalent in precedence
+                            to NO_COLOR (no-color.org): either being non-empty
+                            disables color. --color=always / FORCE_COLOR re-enable.
 SKILLSMITH_NO_PROMPT        Non-empty = never prompt
 SKILLSMITH_COLOR            auto | always | never
 
@@ -961,6 +1010,7 @@ Precedence (high to low): CLI flag > env var > project `skillsmith.toml` > user 
 - User config: `$XDG_CONFIG_HOME/skillsmith/config.toml`, fallback `~/.config/skillsmith/config.toml`
 - User values overrides: `$XDG_CONFIG_HOME/skillsmith/values/<skill>.toml` (§1.12)
 - Skill store (content-addressed): `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/`, fallback `~/.local/share/skillsmith/store/…` (§1.11)
+- Adapted overlays (cross-tool installs): `$XDG_DATA_HOME/skillsmith/adapted/<owner>/<repo>@<sha>/<skill>/<target-tool>/`, fallback `~/.local/share/skillsmith/adapted/…` (§1.11, §1.16)
 - Install manifests for `--direct` installs: `$XDG_DATA_HOME/skillsmith/direct/<tool>/<scope>/<skill>.files` (file list recorded at install so uninstall can remove exactly what was written)
 - Cache (Git clones, downloads, partial-clone shallows): `$XDG_CACHE_HOME/skillsmith/`, fallback `~/.cache/skillsmith/`
 - System config: `/etc/skillsmith/config.toml`
@@ -1001,9 +1051,9 @@ Internal structure for implementers. Not normative for external consumers, but l
 - **CLI frontend** — argument parsing, permutation (Cobra/clap), help routing (§1.10), interactive prompts (§4 mockups), TTY detection, `--no-prompt` / `--yes` / `--force` gating (§1.6), config discovery (§6.4), tool-install detection.
 - **Source resolver** — parses the four source forms (§1.4), drives partial-clone Git fetch for URL/shorthand sources, resolves refs to SHAs for `--pin`.
 - **Registry clients** — pluggable (§1.17). Direct Git + GitHub shorthand are wired; see [`skillsmith-phases.md`](./skillsmith-phases.md) for additional registry plans.
-- **Store** — content-addressed layout at `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/` (§1.11). Write-once per (owner, repo, sha, skill); GC'd when the last symlink referencing a store entry is removed.
+- **Store** — content-addressed layout at `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/` (§1.11), holding the skill as authored. Write-once per (owner, repo, sha, skill); never mutated by adapters. Cross-tool adapted output lives in a sibling per-tool overlay at `$XDG_DATA_HOME/skillsmith/adapted/<owner>/<repo>@<sha>/<skill>/<target-tool>/`. A store entry is GC'd when it has no direct referencing symlinks and no adapted overlays; an overlay is GC'd when its last referencing symlink is removed.
 - **Tool adapters** — one per target tool (`claude-code`, `codex`, `kilo-code`, `opencode`). Each adapter knows: install paths per scope, expected frontmatter schema, file layout conventions, adaptation rules *from* other tools, and the canonical install command for that tool (used in the "tool not installed" hint from §4.3).
-- **Adapter engine** — orchestrates adapter selection and the transform pipeline (§1.16). Runs a deterministic rules pass; the design accommodates an LLM fallback pass that runs only on fields the deterministic pass leaves unresolved (see [`skillsmith-phases.md`](./skillsmith-phases.md)).
+- **Adapter engine** — orchestrates adapter selection and the transform pipeline (§1.16), invoked at target-materialization time after the store is populated. Output is written to a per-tool overlay that the target symlink points into; the store entry itself is never mutated. Runs a deterministic rules pass; the design accommodates an LLM fallback pass that runs only on fields the deterministic pass leaves unresolved (see [`skillsmith-phases.md`](./skillsmith-phases.md)).
 - **Values renderer** — applies the values layering (§1.12) at install, `sync`, and `apply`.
 - **Hook runner** — executes lifecycle scripts (§1.13) with the documented environment, respecting `--no-hooks`.
 - **State discovery** — no authoritative state file. `list`, `sync`, `doctor`, and `apply --check` infer installed state by scanning the store, following symlinks from each tool-and-scope path, and reading `direct/<tool>/<scope>/<skill>.files` for `--direct` installs. The filesystem is the source of truth.
