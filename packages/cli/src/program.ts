@@ -2,6 +2,7 @@ import { VERSION, defaultScanEnv } from '@skillsmith/core';
 import { Argument, Command, Option } from 'commander';
 import { runAgents } from './commands/agents.ts';
 import { type Shell, runCompletion } from './commands/completion.ts';
+import { configCommand } from './commands/config.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from './help/topics.ts';
 import { type ColorFlag, resolveColorMode } from './util/color.ts';
 import { exitCodeForError } from './util/exit-codes.ts';
@@ -93,6 +94,8 @@ export const buildProgram = (signal?: AbortSignal): Command => {
         process.stdout.write(`${r.output}\n`);
       },
     );
+
+  program.addCommand(configCommand());
 
   program
     .command('version')
