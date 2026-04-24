@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { realpath as fsRealpath, stat } from 'node:fs/promises';
 import { homedir, platform as osPlatform } from 'node:os';
 import { join } from 'node:path';
+import { runVersionCommand } from '../detect/exec.ts';
 import type { Platform, ScanEnv, XdgDirs } from './types.ts';
 
 const resolvePlatform = (): Platform => {
@@ -33,6 +34,6 @@ export const defaultScanEnv = async (): Promise<ScanEnv> => {
       }
     },
     realpath: async (p) => fsRealpath(p),
-    runVersion: async (_binaryPath, _args, _signal) => 'unknown',
+    runVersion: async (binaryPath, args, signal) => runVersionCommand(binaryPath, args, signal),
   };
 };
