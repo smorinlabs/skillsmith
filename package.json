@@ -12,9 +12,10 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
+    "lint:boundaries": "eslint 'packages/*/src/**/*.ts'",
     "fmt": "biome check --write",
     "actions-lint": "actionlint",
-    "check": "bun run lint && bun run typecheck && bun run actions-lint && bun run test",
+    "check": "bun run lint && bun run lint:boundaries && bun run typecheck && bun run actions-lint && bun run test",
     "build": "bun build --compile --bytecode --target=bun-darwin-arm64 packages/cli/src/index.ts --outfile dist/skillsmith",
     "postinstall": "lefthook install || true"
   },
@@ -22,6 +23,10 @@
     "@biomejs/biome": "^1.9.4",
     "@types/bun": "^1.1.14",
     "@types/node": "^22.10.0",
+    "@typescript-eslint/parser": "8.59.0",
+    "eslint": "9",
+    "eslint-import-resolver-typescript": "4.4.4",
+    "eslint-plugin-import": "2.32.0",
     "lefthook": "^1.10.0",
     "typescript": "^5.7.0"
   }
