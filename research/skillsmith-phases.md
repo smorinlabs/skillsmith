@@ -29,8 +29,8 @@ Smallest useful release. Pure inventory, no writes beyond the CLI's own config.
 
 **Scope:**
 
-- `agents` detects all four supported agents (`claude-code`, `codex`, `kilo-code`, `opencode`) at well-known locations per agent (PATH, brew, npm-global, app bundles, XDG dirs). `--agent` repeatable, `--detected-only`, `--format markdown|json`. Always exits 0 (inventory, not a gate). See [`12-agents.md`](./12-agents.md).
-- Detection modules for all four agents are the same modules later reused by `doctor` (MVP-2) and `check` — one source of truth for "where does this agent live."
+- `agents` detects all four supported tools (`claude-code`, `codex`, `kilo-code`, `opencode`) at well-known locations per tool (PATH, brew, npm-global, app bundles, XDG dirs). `--tool` repeatable, `--detected-only`, `--format markdown|json`. Always exits 0 (inventory, not a gate). See [`commands/agents.md`](./commands/agents.md).
+- Detection modules for all four tools are the same modules later reused by `doctor` (MVP-2) and `check` — one source of truth for "where does this tool live."
 - Version-flag timeout hard-coded to 2s per detection attempt.
 - `version` / `--version` / `-V` prints SkillSmith version.
 - `help`, `help <topic>`, `--help` / `-h` on any command or the root (design doc §1.10).
@@ -74,7 +74,7 @@ Read-only observability. Ships before any writes so the `list` / `doctor` views 
 **Scope:**
 
 - `list` / `ls` with `--tool`, `--scope`, `--duplicates`, `--long`, `--json`. Reports empty until MVP-2c installs exist; `--duplicates` has nothing to surface yet.
-- `doctor` validates config parse (from 2a), detected tools (all four via MVP-1 detection modules), scope writability for claude-code, manifest parse, network reach, cross-scope duplicates. `--strict`, `--offline`, `--json` (design doc §3.7, §4.5).
+- `doctor` validates config parse (from 2a), detected tools (all four via MVP-1 detection modules), scope writability for claude-code, manifest parse, network reach, cross-scope duplicates. `--strict`, `--offline`, `--json` (see [`commands/doctor.md`](./commands/doctor.md)).
 - `--json` supported on `list` and `doctor` (design doc §6.2).
 - Exit codes 0/1 finalized for read commands.
 
@@ -115,9 +115,9 @@ No new commands. The MVP-1 and MVP-2 commands extend across all four supported a
 
 **Added:**
 
-- Install/uninstall adapters for `codex`, `kilo-code`, `opencode` (joining `claude-code` from MVP-2). Each adapter knows that agent's install paths per scope, expected frontmatter schema, file-layout conventions, and canonical install command (for the "tool not installed" hint, design doc §4.3).
+- Install/uninstall adapters for `codex`, `kilo-code`, `opencode` (joining `claude-code` from MVP-2). Each adapter knows that tool's install paths per scope, expected frontmatter schema, file-layout conventions, and canonical install command (for the "tool not installed" hint, design doc §4.2).
 - `list` state discovery extends to all four adapter paths at every scope.
-- `doctor` exercises scope paths, writability, and version checks across all four agents.
+- `doctor` exercises scope paths, writability, and version checks across all four tools.
 - `agents` detection from MVP-1 is already broad; no change in this release.
 
 **Scope stays same-tool-only:** installing a skill authored for agent A into agent A. Cross-tool adaptation (installing an agent-A skill into agent B) is MVP-5.
@@ -137,8 +137,8 @@ Cross-scope sync and manifest-driven install, layered on top of MVP-3's full-cov
 
 **Scope:**
 
-- `sync` with `--from`, `--to`, `--delete`, `--dry-run`, `--tool`, `--scope`, `--force`, `--yes` (design doc §3.3). Works across all four adapters.
-- `apply` reads `./skillsmith.toml` (walks up from CWD). Prints `created` / `updated` / `unchanged` / `skipped` per entry with aggregate counts (design doc §1.5). A single manifest may declare skills for any of the four agents.
+- `sync` with `--from`, `--to`, `--delete`, `--dry-run`, `--tool`, `--scope`, `--force`, `--yes` (see [`commands/sync.md`](./commands/sync.md)). Works across all four adapters.
+- `apply` reads `./skillsmith.toml` (walks up from CWD). Prints `created` / `updated` / `unchanged` / `skipped` per entry with aggregate counts (design doc §1.5). A single manifest may declare skills for any of the four tools.
 - `apply --check` — drift detector for CI, exits non-zero on any would-create / would-update / would-delete.
 - `apply --prune` — removes installed skills absent from the manifest.
 - `apply --file` — repeatable, kubectl-style.
@@ -193,4 +193,4 @@ Rounds out the MVP feature matrix. No new commands; existing commands gain optio
 
 ## 9. Open phasing questions
 
-- **Canonical install commands per supported agent.** The "tool not installed" error (design doc §4.3) hardcodes an install hint per target. Confirm the recommended one-liner for each of the four MVP agents (`claude-code`, `codex`, `kilo-code`, `opencode`).
+- **Canonical install commands per supported tool.** The "tool not installed" error (design doc §4.2) hardcodes an install hint per target. Confirm the recommended one-liner for each of the four MVP tools (`claude-code`, `codex`, `kilo-code`, `opencode`).
