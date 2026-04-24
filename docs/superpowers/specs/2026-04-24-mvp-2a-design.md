@@ -95,6 +95,10 @@ Coverage per shell:
 
 Install instructions printed as a comment header in each script (e.g. `# To install: skillsmith completion bash > /etc/bash_completion.d/skillsmith`).
 
+**Single source of truth: the commander program.** The `completion` command walks `program.commands` and each command's options at runtime; it does not maintain a separate spec. Every enum flag and every enum-valued positional argument uses `.addOption(new Option(...).choices([...]))` (or `.argument('<x>', '...', new InvalidArgumentError(...))` with an explicit `choices` wrapper) so enum values live on the commander nodes themselves. Adding a new flag automatically makes it completable with zero further action; no drift surface exists.
+
+**Dev script:** `scripts/preview-completions.ts` renders all three shell scripts back-to-back with `=== <shell> ===` headers, for eyeballing output and reviewing diffs during development. Not shipped in the binary — local-only convenience.
+
 ### 2.6 Exit codes wired or re-used in MVP-2a
 
 - `0` success (unchanged).
@@ -200,11 +204,14 @@ packages/cli/src/
       list.ts
       unset.ts
     completion.ts     # shell dispatcher
-  completions/
-    bash.ts           # returns completion-script string
+  completion/
+    walk.ts           # commander Command → CompletionNode[] (internal AST)
+    types.ts          # CompletionNode, CompletionOption
+    bash.ts           # render(nodes) → bash script string
     zsh.ts
     fish.ts
-    spec.ts           # single source of truth: subcommands, flags, enum values
+scripts/
+  preview-completions.ts  # dev-only: prints bash + zsh + fish back-to-back
 ```
 
 ### 4.3 ESLint zones to add
@@ -213,7 +220,7 @@ Core:
 - `packages/core/src/config/**` must not import from `packages/core/src/agents/**` or `packages/core/src/detect/**` or `packages/core/src/scan/**`. Config is a sibling leaf, not a consumer of domain modules.
 
 CLI:
-- `packages/cli/src/completions/**` must not import from `packages/cli/src/commands/**`, `packages/cli/src/output/**`, `packages/cli/src/help/**`, `packages/cli/src/index.ts`. Completions are static, derived from the `spec.ts` single source only.
+- `packages/cli/src/completion/**` must not import from `packages/cli/src/commands/**`, `packages/cli/src/output/**`, `packages/cli/src/help/**`. It receives a commander `Command` instance from the caller (the `completion` command passes the program in) and must not know about any specific subcommand implementation. The one allowed import is the `commander` package itself (to access `Command`/`Option` types).
 - `packages/cli/src/commands/config/**` may import from `packages/cli/src/commands/config.ts` (the dispatcher re-exports these) and from `@skillsmith/core`. Standard command-module layering.
 
 ### 4.4 Project walk-up rule
@@ -236,32 +243,40 @@ This is the MVP design-doc rule and matches cargo/npm. A `skillsmith.toml` above
 
 Lock release is registered via the MVP-1 SIGINT handler hook so Ctrl-C during a `config set` doesn't leave a stale lock.
 
-### 4.6 `completion` static data source
+### 4.6 `completion` generation pipeline
 
-Every completion script is rendered from a single `spec.ts` describing the command tree. Commander is not introspected — commander's help output is human-oriented and brittle. The spec is hand-maintained; a test asserts the spec matches the actual commander tree by walking `program.commands` and their `options()`.
+Runtime introspection of the commander program tree. No hand-maintained spec. Three stages:
 
-Spec shape:
+1. **Walk:** `walk(program: Command): CompletionNode[]` traverses `program.commands` recursively. For each command it captures: name, description, `option.long`/`short`/`flags`/`argChoices`, and positional arguments with choices. Output is an internal `CompletionNode` tree — a shell-agnostic AST.
+2. **Render:** one renderer per shell (`bash.ts`, `zsh.ts`, `fish.ts`). Each consumes the AST and emits a complete script string.
+3. **Dispatch:** the `completion <shell>` command picks the renderer and prints the result.
 
-```ts
-export const CompletionSpec = {
-  subcommands: ['agents', 'config', 'completion', 'help', 'version'] as const,
-  globalFlags: [
-    { long: '--help', short: '-h' },
-    { long: '--version', short: '-V' },
-    // ...
-  ],
-  perCommand: {
-    agents: {
-      flags: [{ long: '--tool', short: '-t', values: SUPPORTED_TOOLS }, ...],
-    },
-    config: {
-      subcommands: ['get', 'set', 'list', 'unset'],
-      flags: [{ long: '--scope', values: ['system', 'user', 'project'] }, { long: '--json' }],
-    },
-    // ...
-  },
-};
+**Single source of truth requirements** (enforced by the lint rule in §4.3 and a test in §5.2):
+
+- Every enum flag uses `.addOption(new Option(...).choices([...]))`. Plain `.option('--foo <enum>', ...)` is disallowed because it hides the enum from `argChoices`.
+- Every enum-valued positional uses `.addArgument(new Argument('<x>', '...').choices([...]))`.
+- Commands declared via `program.command('name')` are already introspectable.
+
+When a developer adds a new flag, it becomes completable on the next build with no further action — zero drift surface because there is no parallel spec to drift from.
+
+**Dev preview:** `scripts/preview-completions.ts` imports the configured commander program, walks it, and prints bash/zsh/fish output back-to-back for quick review:
+
 ```
+$ bun run scripts/preview-completions.ts
+=== bash ===
+# To install: ...
+_skillsmith() { ... }
+complete -F _skillsmith skillsmith
+
+=== zsh ===
+#compdef skillsmith
+...
+
+=== fish ===
+complete -c skillsmith ...
+```
+
+This is strictly local tooling — not bundled into the binary.
 
 ## 5. Testing strategy
 
@@ -277,8 +292,8 @@ export const CompletionSpec = {
 ### 5.2 CLI (`skillsmith`)
 
 - **`config get|set|list|unset`:** golden-output tests per subcommand, covering happy path + every listed error.
-- **`completion`:** snapshot tests per shell — bash, zsh, fish. Each asserts specific completable items appear (e.g. `_skillsmith_tool_values` mentions all four tools).
-- **Spec-vs-commander consistency:** a test walks the real commander tree and asserts `CompletionSpec` lists every subcommand and flag. Drift fails CI.
+- **`completion` renderers:** snapshot tests per shell — bash, zsh, fish. Feed the walker a minimal fixture `Command` built inline and assert the rendered script contains specific completable items (subcommand names, flag names, enum values). Snapshots live under `packages/cli/tests/completion/__snapshots__/`.
+- **Commander declaration gate:** a test walks the *real* configured program tree and asserts that (a) every subcommand has a description, (b) every enum-typed option uses `argChoices` (i.e. was declared via `.addOption(new Option(...).choices([...]))`), and (c) every enum-typed positional uses `Argument.argChoices`. Drift — e.g. someone adding `.option('--format <fmt>', ...)` without `choices` — fails CI immediately.
 - **Exit-code integration:** each new exit-3 path tested via the binary, asserting the code.
 
 ### 5.3 Coverage gate
@@ -294,9 +309,10 @@ Still not enforced in MVP-2a. Re-evaluate at MVP-2b (`doctor` adds the first rea
 5. `./skillsmith config set tool xxx` → exit 3 with a readable schema error.
 6. Malformed user config causes any command to exit 3; `doctor` will surface this cleanly in MVP-2b.
 7. `./skillsmith completion bash | head -3` shows a bash script comment header with install instructions.
-8. Spec-vs-commander consistency test fails if a flag is added to commander without being added to `CompletionSpec`.
-9. Concurrent `config set` (two processes) leaves a valid TOML file; test via `Bun.spawn` × 2.
-10. `v0.2.0` tag cut internally after all of the above.
+8. `bun run scripts/preview-completions.ts` dumps all three shell scripts with `=== <shell> ===` headers.
+9. Commander declaration-gate test fails if an enum flag is added via plain `.option()` without `choices`, or if a new subcommand lacks a description.
+10. Concurrent `config set` (two processes) leaves a valid TOML file; test via `Bun.spawn` × 2.
+11. `v0.2.0` tag cut internally after all of the above.
 
 ## 7. Out-of-scope reminders
 
