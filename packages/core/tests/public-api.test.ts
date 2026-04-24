@@ -20,6 +20,13 @@ describe('@skillsmith/core public API', () => {
       'mapErr',
       'genericError',
       'unknownToolError',
+      'configError',
+      'loadConfig',
+      'saveConfig',
+      'getConfigPath',
+      'findProjectConfig',
+      'resolveExplicitFile',
+      'CONFIG_KEYS',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);
