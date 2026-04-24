@@ -61,7 +61,7 @@ JSON output emits a structured document with the same data, one entry per tool w
 
 1. **Include not-detected tools by default?** Current spec: yes, under a "Not detected" heading, with `--detected-only` to suppress. Argument for default-on: users want to know what SkillSmith supports, not just what they happen to have installed. Argument against: noisy if the supported-tool list grows large. Your call.
 2. **Version-flag timeout as a flag or hard-coded?** Leaning hard-code 2s for MVP and promote to `--timeout` only if users hit real cases where it matters.
-3. **`--format markdown|json` vs. the project-wide `--json` boolean.** Other commands use `--json` as a boolean flag (per main-doc §1.9). `agents` uses `--format` because markdown is a deliberate default content type, not a toggle. Acceptable divergence or should it conform?
+3. **`--format markdown|json` vs. the project-wide `--json` boolean.** Other commands use `--json` as a boolean flag (per main-doc [§1.9](../skillsmith-cli-design.md#19-output-format)). `agents` uses `--format` because markdown is a deliberate default content type, not a toggle. Acceptable divergence or should it conform?
 
 ## Feature table
 
