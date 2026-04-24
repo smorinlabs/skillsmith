@@ -21,7 +21,7 @@ describe('skillsmith help routing', () => {
   test('`skillsmith --version` prints a version, exit 0', async () => {
     const r = await run(['--version']);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/0\.1\.0/);
+    expect(r.stdout).toMatch(/0\.2\.0/);
   });
 
   test('`skillsmith help exit-codes` prints topic page, exit 0', async () => {
