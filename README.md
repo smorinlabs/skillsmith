@@ -46,11 +46,11 @@ See [`packages/core/README.md`](packages/core/README.md) and [`packages/cli/READ
 - **Results over exceptions:** core functions return `Result<T, SkillSmithError>`; the CLI decides exit codes.
 - **`ScanEnv` injection:** core accepts an environment object (home dir, XDG paths, logger) rather than touching globals directly, which makes the library testable and the CLI boundary explicit.
 
-A fuller architecture explainer is planned in [P05](PROJECTS.md).
+The full explainer lives in [`docs/architecture.md`](docs/architecture.md). The non-obvious design decisions are captured as [ADRs](docs/adr/README.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev loop, commit format, and boundary rules.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev loop, commit format, and boundary rules. Release process is documented in [`docs/releases.md`](docs/releases.md).
 
 ## Project tracker
 

@@ -36,7 +36,32 @@
 
 ---
 
-## [ ] Project P05: Architecture + ADRs + release doc (v0.3.1)
+## [-] Project P06: Automate CHANGELOG + releases via release-please (v0.3.0)
+**Goal**: Replace manual CHANGELOG maintenance and version bumping with `googleapis/release-please-action`. On every push to `main`, release-please parses Conventional Commits and opens/updates a single rolling "Release PR" that bumps root + both workspace package versions and appends to `CHANGELOG.md`. Merging the Release PR creates the git tag and GitHub Release.
+
+**Out of Scope**
+- Publishing to npm (core/CLI stay unpublished for now; can be added as a follow-up job triggered by the `release-created` output).
+- Building native binaries on release (separate job driven off the release tag, added later).
+- Migrating away from Conventional Commits or changing the commit-message policy.
+
+### Tests & Tasks
+- [x] [P06-T01] Add `release-please-config.json` (root): `release-type: node`, single `.` package with `package-name: skillsmith`, `changelog-path: CHANGELOG.md`, and `extra-files` bumping `packages/cli/package.json` + `packages/core/package.json` `$.version`. Linked versioning via single-package config.
+- [x] [P06-T02] Add `.release-please-manifest.json` seeded at `{ ".": "0.1.0" }`.
+- [x] [P06-T03] Add `.github/workflows/release-please.yml` (push to `main`, `contents: write` + `pull-requests: write`, `googleapis/release-please-action@v4`).
+- [x] [P06-TS01] `bun run check` stays green (actionlint validates the new workflow).
+- [ ] [P06-TS02] After first merge to `main`, confirm a "Release PR" appears with a generated `CHANGELOG.md` entry and synchronized version bumps in all three `package.json` files.
+
+### Automated Verification
+- `bun run check` passes (actionlint accepts the new workflow).
+- Workflow file exists at `.github/workflows/release-please.yml` and references the `v4` action.
+
+### Manual Verification
+- On next push to `main` with a `feat:`/`fix:`/`chore:` commit, release-please opens a PR titled `chore(main): release <version>`.
+- Merging that PR creates tag `v<version>` and a GitHub Release whose body matches the CHANGELOG entry.
+
+---
+
+## [x] Project P05: Architecture + ADRs + release doc (v0.3.1)
 **Goal**: Capture the non-obvious design decisions already baked into the codebase so future contributors (and future-you) have the rationale. Phase 2 of the Option B documentation plan.
 
 **Out of Scope**
@@ -45,13 +70,15 @@
 - Per-command user reference (still deferred).
 
 ### Tests & Tasks
-- [ ] [P05-T01] `docs/architecture.md`: one-pager covering package split (`@skillsmith/core` + `skillsmith` CLI), `Result<T, SkillSmithError>` pattern, `ScanEnv` injection, agent registry, detection pipeline, and ESLint boundaries as enforcement.
-- [ ] [P05-T02] `docs/releases.md`: how to tag a release, what CI does, supported binary targets (darwin-arm64, linux-x64).
-- [ ] [P05-T03] `docs/adr/0001-core-cli-split.md`: why `@skillsmith/core` has zero CLI deps and no side effects.
-- [ ] [P05-T04] `docs/adr/0002-result-type.md`: why Result-over-exceptions in core.
-- [ ] [P05-T05] `docs/adr/0003-eslint-import-boundaries.md`: what zones are enforced and why (derived from P01 + P02).
-- [ ] [P05-T06] Link from root `README.md` → `docs/architecture.md` and ADR index.
-- [ ] [P05-TS01] `bun run check` stays green.
+- [x] [P05-T01] `docs/architecture.md`: one-pager covering package split (`@skillsmith/core` + `skillsmith` CLI), `Result<T, SkillSmithError>` pattern, `ScanEnv` injection, agent registry, detection pipeline, and ESLint boundaries as enforcement.
+- [x] [P05-T02] `docs/releases.md`: release-please automated flow, conventional-commits → SemVer mapping, supported binary targets, pre-1.0 manual-override escape hatch.
+- [x] [P05-T03] `docs/adr/0001-core-cli-split.md`: why `@skillsmith/core` has zero CLI deps and no side effects.
+- [x] [P05-T04] `docs/adr/0002-result-type.md`: why Result-over-exceptions in core.
+- [x] [P05-T05] `docs/adr/0003-eslint-import-boundaries.md`: what zones are enforced and why (derived from P01 + P02).
+- [x] [P05-T06] Link from root `README.md` → `docs/architecture.md` and `docs/adr/README.md`; link to `docs/releases.md` from CONTRIBUTING-nearby pointer.
+- [x] [P05-T07] `docs/adr/README.md` ADR index with numbering convention and "when to write one" guidance.
+- [x] [P05-TS01] `bun run check` stays green.
+- [x] [P05-TS02] No dead internal links in the new docs (verified by grep scan).
 
 ### Automated Verification
 - All linked files exist; no dead internal links.
