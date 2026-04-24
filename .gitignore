@@ -15,5 +15,6 @@ build/
 .env.local
 *.log
 .bun-cache/
+.*.bun-build
 coverage/
 *.tsbuildinfo

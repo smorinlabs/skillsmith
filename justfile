@@ -1,0 +1,44 @@
+# Run the default check pipeline (lint, typecheck, actions-lint, test)
+default: check
+
+# Install workspace dependencies with bun
+install:
+    bun install
+
+# Run the CLI in dev mode (forwards extra args to the CLI)
+dev *args:
+    bun run dev {{args}}
+
+# Run the test suite (forwards extra args to `bun test`)
+test *args:
+    bun test {{args}}
+
+# Typecheck the workspace with tsc --noEmit
+typecheck:
+    bun run typecheck
+
+# Lint with Biome (no writes)
+lint:
+    bun run lint
+
+# Enforce import-boundary rules via ESLint
+lint-boundaries:
+    bun run lint:boundaries
+
+# Format and auto-fix with Biome
+fmt:
+    bun run fmt
+
+# Lint GitHub Actions workflows with actionlint
+actions-lint:
+    bun run actions-lint
+
+# Run all verification: lint, boundaries, typecheck, actions-lint, test
+check: lint lint-boundaries typecheck actions-lint test
+
+# Build the CLI to dist/skillsmith (compiled bun binary)
+build:
+    bun run build
+
+# Format, then run full check pipeline
+all: fmt check
