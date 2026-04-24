@@ -76,12 +76,19 @@ interface ScanEnv {
   homeDir: string;
   xdg: XdgDirs;                       // config / data / cache
   path: readonly string[];            // PATH split with platform delimiter
-  logger: Logger;                     // structured, non-console
-  exec: (cmd: string, args: string[], opts?) => Promise<ExecResult>;
+  fileExists(p: string): Promise<boolean>;
+  realpath(p: string): Promise<string>;
+  runVersion(
+    binaryPath: string,
+    args: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<string | 'unknown'>;
 }
 ```
 
 The CLI builds a real one via `defaultScanEnv()`; tests inject fakes. This is what makes the detection pipeline unit-testable without mocking `node:fs` or `node:child_process`.
+
+A separate `Logger` interface lives in `env/logger.ts` and is passed through `DetectOptions` (not `ScanEnv`), so callers that don't want logging can omit it entirely.
 
 ## Agent registry and detection pipeline
 
