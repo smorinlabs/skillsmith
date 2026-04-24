@@ -42,3 +42,7 @@ build:
 
 # Format, then run full check pipeline
 all: fmt check
+
+# Install gitleaks (used by the pre-commit and pre-push secret scan)
+install-gitleaks:
+    ./scripts/install-gitleaks.sh

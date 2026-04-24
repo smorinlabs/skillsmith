@@ -10,6 +10,8 @@ pre-commit:
     actionlint:
       glob: ".github/workflows/*.{yml,yaml}"
       run: actionlint {staged_files}
+    gitleaks:
+      run: ./scripts/check-gitleaks.sh staged
 
 pre-push:
   commands:
@@ -17,6 +19,8 @@ pre-push:
       run: bunx tsc --noEmit
     test:
       run: bun test
+    gitleaks:
+      run: ./scripts/check-gitleaks.sh full
 
 commit-msg:
   commands:
