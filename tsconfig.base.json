@@ -18,6 +18,8 @@
     "noEmit": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "allowJs": false,
     "composite": true,
     "declaration": true,
