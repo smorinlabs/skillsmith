@@ -8,6 +8,60 @@
 
 ---
 
+## [x] Project P04: OSS basics — README, LICENSE, CONTRIBUTING, CHANGELOG (v0.3.0)
+**Goal**: Give skillsmith the baseline docs a reader landing on GitHub expects. Phase 1 of the Option B documentation plan.
+
+**Out of Scope**
+- Architecture explainer, ADRs, release-process doc (deferred to P05).
+- User-facing command reference (deferred; will be added per-command as features ship).
+- Docs site, typedoc, auto-generated CLI reference.
+
+### Tests & Tasks
+- [x] [P04-T01] Add `LICENSE` (verbatim Apache-2.0) and `NOTICE` (© 2026 Steve Morin) at repo root.
+- [x] [P04-T02] Add root `README.md`: what skillsmith is, current status (pre-1.0), install via `bun run build`, quickstart (`skillsmith agents`), link to `CONTRIBUTING.md` and `PROJECTS.md`.
+- [x] [P04-T03] Add `CONTRIBUTING.md`: clone → `bun install` → `bun run check`, conventional-commits rule, lefthook notes, ESLint boundary rules pointer.
+- [x] [P04-T04] Seed `CHANGELOG.md` from conventional commits; single `[Unreleased]` section above the tagged `[0.1.0]` baseline.
+- [x] [P04-T05] Add slim `packages/core/README.md` (library for embedders; public API surface) and `packages/cli/README.md` (pointer to root README).
+- [x] [P04-T06] Set `license: "Apache-2.0"` field in each `package.json`.
+- [x] [P04-TS01] `bun run check` stays green.
+- [x] [P04-TS02] `skillsmith --help` and `skillsmith agents --help` run successfully from source via `bun run dev`.
+
+### Automated Verification
+- `bun run check` passes.
+- `LICENSE` present; each `package.json` declares `"license": "Apache-2.0"`.
+
+### Manual Verification
+- README renders correctly on GitHub (headings, code blocks, links).
+- CONTRIBUTING.md `bun run check` instructions work from a fresh clone.
+
+---
+
+## [ ] Project P05: Architecture + ADRs + release doc (v0.3.1)
+**Goal**: Capture the non-obvious design decisions already baked into the codebase so future contributors (and future-you) have the rationale. Phase 2 of the Option B documentation plan.
+
+**Out of Scope**
+- Auto-generated API docs (typedoc).
+- Docs site.
+- Per-command user reference (still deferred).
+
+### Tests & Tasks
+- [ ] [P05-T01] `docs/architecture.md`: one-pager covering package split (`@skillsmith/core` + `skillsmith` CLI), `Result<T, SkillSmithError>` pattern, `ScanEnv` injection, agent registry, detection pipeline, and ESLint boundaries as enforcement.
+- [ ] [P05-T02] `docs/releases.md`: how to tag a release, what CI does, supported binary targets (darwin-arm64, linux-x64).
+- [ ] [P05-T03] `docs/adr/0001-core-cli-split.md`: why `@skillsmith/core` has zero CLI deps and no side effects.
+- [ ] [P05-T04] `docs/adr/0002-result-type.md`: why Result-over-exceptions in core.
+- [ ] [P05-T05] `docs/adr/0003-eslint-import-boundaries.md`: what zones are enforced and why (derived from P01 + P02).
+- [ ] [P05-T06] Link from root `README.md` → `docs/architecture.md` and ADR index.
+- [ ] [P05-TS01] `bun run check` stays green.
+
+### Automated Verification
+- All linked files exist; no dead internal links.
+- `bun run check` passes.
+
+### Manual Verification
+- Each ADR follows Michael Nygard format (Status/Context/Decision/Consequences).
+
+---
+
 ## [x] Project P01: ESLint import boundaries (v0.2.0)
 **Goal**: Enforce architectural import boundaries via ESLint's `import/no-restricted-paths` rule, alongside existing Biome lint/format. Option B zones: cross-package boundary (core ↔ cli), in-package CLI layering, and in-package core layering.
 
