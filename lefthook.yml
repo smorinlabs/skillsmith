@@ -21,6 +21,10 @@ pre-push:
       run: bun test
     gitleaks:
       run: ./scripts/check-gitleaks.sh full
+    audit:
+      run: bun audit --audit-level=high
+    eslint-security:
+      run: bunx eslint --config eslint.security.config.js --max-warnings 0 'packages/*/src/**/*.ts'
 
 commit-msg:
   commands:
