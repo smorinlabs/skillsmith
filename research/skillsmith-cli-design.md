@@ -340,14 +340,6 @@ skillsmith help formatting
 
 ### 2.1 Argument order
 
-For `list`:
-
-```
-skillsmith list [FLAGS] [<skill>...]
-```
-
-Optional positional filter(s) matching skill name patterns (glob supported): `skillsmith list 'grep*'`.
-
 For `apply`:
 
 ```
@@ -375,19 +367,6 @@ Positional manifest path optional; defaults to walking up for `skillsmith.toml` 
 | `--no-prompt` | — | bool | (auto from TTY) | `SKILLSMITH_NO_PROMPT`, `CI` | Never prompt; fail if input needed |
 | `--cd` | `-C` | path | `.` | — | Change to directory before running (git/cargo `-C`) |
 | `--debug` | — | bool | false | `SKILLSMITH_DEBUG` | Print debug traces to stderr |
-
-### 3.4 `list` flags
-
-| Long | Short | Type | Default | Env var | Description |
-|---|---|---|---|---|---|
-| `--tool` | `-t` | enum/repeatable | all detected tools | `SKILLSMITH_TOOL` | Filter by tool |
-| `--scope` | `-s` | enum | all | `SKILLSMITH_SCOPE` | Filter by scope |
-| `--user` | — | bool | — | — | Shorthand for `--scope=user` |
-| `--system` | — | bool | — | — | Shorthand for `--scope=system` |
-| `--project` | — | bool | — | — | Shorthand for `--scope=project` |
-| `--duplicates` | — | bool | false | — | Show only cross-scope duplicates |
-| `--json` | — | bool | false | — | JSON output |
-| `--long` | `-l` | bool | false | — | Show symlink path, store path, source, and commit SHA |
 
 ### 3.5 `apply` flags
 
