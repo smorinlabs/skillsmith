@@ -55,13 +55,14 @@ Ships the two self-contained support utilities first, so the TOML config format 
 **Scope:**
 
 - `config <get|set|list|unset>` for user config.
-- `completion <bash|zsh|fish|powershell>` — static completions (subcommands, flag names, enum values) for commands that exist at each point; regenerated as later sub-phases add commands.
+- `completion <bash|zsh|fish>` — static completions (subcommands, flag names, enum values) for commands that exist at each point; regenerated as later sub-phases add commands. PowerShell is deferred to MVP-2b when Windows enters the CI matrix.
 - TOML config file format + XDG-search-path resolution (`SKILLSMITH_CONFIG` honored). Config keys users set now (`tool`, `scope`, `path`, `registry`) persist and take effect once 2b/2c ship.
 - Exit code 3 (malformed user config) wired.
 
 **Explicitly deferred:**
 
 - `list`, `doctor` (→ MVP-2b).
+- PowerShell completion (→ MVP-2b).
 - `install`, `uninstall` (→ MVP-2c).
 - No dynamic shell completions (→ Phase 2).
 
@@ -77,6 +78,10 @@ Read-only observability. Ships before any writes so the `list` / `doctor` views 
 - `doctor` validates config parse (from 2a), detected tools (all four via MVP-1 detection modules), scope writability for claude-code, manifest parse, network reach, cross-scope duplicates. `--strict`, `--offline`, `--json` (see [`commands/doctor.md`](./commands/doctor.md)).
 - `--json` supported on `list` and `doctor` (design doc §6.2).
 - Exit codes 0/1 finalized for read commands.
+
+**Added (completing MVP-2a):**
+
+- PowerShell completion script (deferred from MVP-2a). Lands with Windows entering the CI matrix since PowerShell is the primary shell there.
 
 **Explicitly deferred:**
 
