@@ -10,6 +10,10 @@ export const getConfigPath = (env: ScanEnv, scope: Scope, cwd?: string): string 
       return join(env.xdg.config, 'skillsmith', 'config.toml');
     case 'project':
       return join(cwd ?? process.cwd(), 'skillsmith.toml');
+    case 'managed':
+      // SkillSmith config has no managed layer (managed is for skills/plugins).
+      // Return an unwritable path so the caller fails fast if it tries to use it.
+      return '/dev/null';
   }
 };
 

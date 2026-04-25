@@ -1,6 +1,6 @@
 import type { SupportedTool } from '../agents/types.ts';
 
-export const SCOPES = ['system', 'user', 'project'] as const;
+export const SCOPES = ['system', 'user', 'project', 'managed'] as const;
 
 export type Scope = (typeof SCOPES)[number];
 

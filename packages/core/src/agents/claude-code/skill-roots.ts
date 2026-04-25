@@ -21,5 +21,8 @@ export const getSkillRoots = (
       return [join(ctx.cwd, '.claude', 'skills')];
     case 'system':
       return [];
+    case 'managed':
+      // populated by Task 8 — returns managed-skills dir under getManagedFilePath()
+      return [];
   }
 };

@@ -26,5 +26,7 @@ export const getSkillRoots = (
     }
     case 'system':
       return [];
+    case 'managed':
+      return [];
   }
 };

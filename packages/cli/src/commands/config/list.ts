@@ -20,11 +20,26 @@ export type RunConfigListResult =
   | { ok: true; output: string }
   | { ok: false; error: SkillSmithError };
 
+// Config has its own ConfigLayer enum (defaults | system | user | project | explicit-file | env).
+// Scope's 'managed' value is not a config layer — reject here.
+type ConfigScope = Exclude<Scope, 'managed'>;
+const isConfigScope = (s: Scope): s is ConfigScope => s !== 'managed';
+
 export const runConfigList = async (input: RunConfigListInput): Promise<RunConfigListResult> => {
   const loader = input.loadConfig ?? ((env: ScanEnv) => loadConfig(env));
   const r = await loader(input.env);
   if (!r.ok) return { ok: false, error: r.error };
   const eff = r.value;
+
+  if (input.scope && !isConfigScope(input.scope)) {
+    return {
+      ok: false,
+      error: {
+        code: 'config-error',
+        message: `scope '${input.scope}' has no SkillSmith config layer (try user|project|system)`,
+      },
+    };
+  }
 
   if (input.json) {
     if (input.scope) {

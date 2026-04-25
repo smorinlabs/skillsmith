@@ -17,5 +17,7 @@ export const getSkillRoots = (
       return [join(ctx.cwd, '.agents', 'skills')];
     case 'system':
       return ['/etc/codex/skills'];
+    case 'managed':
+      return [];
   }
 };

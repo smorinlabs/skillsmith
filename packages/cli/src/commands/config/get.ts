@@ -38,6 +38,16 @@ export const runConfigGet = async (input: RunConfigGetInput): Promise<RunConfigG
   const eff = r.value;
 
   if (input.scope) {
+    if (input.scope === 'managed') {
+      return {
+        ok: false,
+        error: {
+          code: 'unset',
+          key: input.key,
+          scope: input.scope,
+        },
+      };
+    }
     const v = getConfigValue(eff.layers[input.scope], key);
     if (v === undefined) {
       return { ok: false, error: { code: 'unset', key: input.key, scope: input.scope } };
