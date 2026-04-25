@@ -1,20 +1,20 @@
 import {
-  SCOPES,
   SUPPORTED_TOOLS,
   type Scope,
   type SupportedTool,
   defaultScanEnv,
-  listSkills,
+  listCommands,
 } from '@skillsmith/core';
 import { Command, Option } from 'commander';
-import { renderListHuman } from '../output/list-human.ts';
-import { renderListJson } from '../output/list-json.ts';
+import { renderCommandsHuman } from '../output/commands-human.ts';
+import { renderCommandsJson } from '../output/commands-json.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 
-export const listCommand = (): Command =>
-  new Command('list')
-    .alias('ls')
-    .description('List installed skills across tools and scopes')
+const COMMAND_SCOPES: readonly Scope[] = ['user', 'project'];
+
+export const commandsCommand = (): Command =>
+  new Command('commands')
+    .description('List installed slash commands across tools and scopes')
     .argument('[glob...]', 'glob filter(s)')
     .option(
       '-t, --tool <name>',
@@ -23,18 +23,13 @@ export const listCommand = (): Command =>
       [] as string[],
     )
     .addOption(
-      new Option('-s, --scope <scope>', 'Narrow to a scope').choices([
+      new Option('-s, --scope <scope>', 'Narrow to a scope (user or project only)').choices([
         'user',
         'project',
-        'system',
-        'managed',
       ]),
     )
     .option('--user', 'shorthand for --scope=user', false)
-    .option('--system', 'shorthand for --scope=system', false)
     .option('--project', 'shorthand for --scope=project', false)
-    .option('--managed', 'shorthand for --scope=managed', false)
-    .option('--duplicates', 'Show only cross-scope duplicates', false)
     .option('-l, --long', 'Show paths and details', false)
     .option('--json', 'Emit JSON', false)
     .option('--enabled', 'Show only enabled entries', false)
@@ -47,10 +42,7 @@ export const listCommand = (): Command =>
           tool: string[];
           scope?: string;
           user: boolean;
-          system: boolean;
           project: boolean;
-          managed: boolean;
-          duplicates: boolean;
           long: boolean;
           json: boolean;
           enabled: boolean;
@@ -70,9 +62,15 @@ export const listCommand = (): Command =>
           process.stderr.write(`error: ${scopeR.error.message}\n`);
           process.exit(2);
         }
+        if (scopeR.value === 'system' || scopeR.value === 'managed') {
+          process.stderr.write(
+            `error: scope '${scopeR.value}' is not available for commands (user or project only)\n`,
+          );
+          process.exit(2);
+        }
         const tools: readonly SupportedTool[] =
           opts.tool.length > 0 ? (opts.tool as SupportedTool[]) : SUPPORTED_TOOLS;
-        const scopes: readonly Scope[] = scopeR.value ? [scopeR.value] : SCOPES;
+        const scopes: readonly Scope[] = scopeR.value ? [scopeR.value] : COMMAND_SCOPES;
         const enabledFilter = opts.enabled
           ? ('enabled-only' as const)
           : opts.disabled
@@ -81,11 +79,10 @@ export const listCommand = (): Command =>
               ? ('unconfigured-only' as const)
               : undefined;
         const env = await defaultScanEnv();
-        const r = await listSkills(env, {
+        const r = await listCommands(env, {
           tools,
           scopes,
           ...(globs.length > 0 ? { globs } : {}),
-          duplicatesOnly: opts.duplicates,
           ...(enabledFilter ? { enabledFilter } : {}),
           cwd: process.cwd(),
           envVars: process.env,
@@ -95,7 +92,9 @@ export const listCommand = (): Command =>
           process.exit(1);
         }
         process.stdout.write(
-          opts.json ? renderListJson(r.value) : renderListHuman(r.value, { long: opts.long }),
+          opts.json
+            ? renderCommandsJson(r.value)
+            : renderCommandsHuman(r.value, { long: opts.long }),
         );
       },
     );

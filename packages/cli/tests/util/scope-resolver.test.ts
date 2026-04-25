@@ -35,4 +35,15 @@ describe('resolveScopeFlags', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value).toBe('user');
   });
+
+  test('--managed shorthand → managed', () => {
+    const r = resolveScopeFlags({ managed: true });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe('managed');
+  });
+
+  test('--managed --system → conflict error', () => {
+    const r = resolveScopeFlags({ managed: true, system: true });
+    expect(r.ok).toBe(false);
+  });
 });

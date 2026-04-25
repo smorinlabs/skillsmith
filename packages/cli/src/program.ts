@@ -2,6 +2,7 @@ import { VERSION, defaultScanEnv } from '@skillsmith/core';
 import { Argument, Command, Option } from 'commander';
 import { runAgents } from './commands/agents.ts';
 import { checkCommand } from './commands/check.ts';
+import { commandsCommand } from './commands/commands.ts';
 import { type Shell, runCompletion } from './commands/completion.ts';
 import { configCommand } from './commands/config.ts';
 import { doctorCommand } from './commands/doctor.ts';
@@ -100,6 +101,7 @@ export const buildProgram = (signal?: AbortSignal): Command => {
 
   program.addCommand(configCommand());
   program.addCommand(listCommand());
+  program.addCommand(commandsCommand());
   program.addCommand(doctorCommand());
   program.addCommand(checkCommand());
 

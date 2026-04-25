@@ -1,6 +1,6 @@
-import type { Origin, SkillEntry } from '@skillsmith/core';
+import type { CommandEntry, Origin } from '@skillsmith/core';
 
-export interface ListHumanOpts {
+export interface CommandsHumanOpts {
   long: boolean;
 }
 
@@ -10,9 +10,12 @@ const formatOrigin = (o: Origin): string => {
   return 'policy';
 };
 
-export const renderListHuman = (entries: readonly SkillEntry[], opts: ListHumanOpts): string => {
-  if (entries.length === 0) return 'No skills installed.\n';
-  const grouped = new Map<string, Map<string, SkillEntry[]>>();
+export const renderCommandsHuman = (
+  entries: readonly CommandEntry[],
+  opts: CommandsHumanOpts,
+): string => {
+  if (entries.length === 0) return 'No commands installed.\n';
+  const grouped = new Map<string, Map<string, CommandEntry[]>>();
   for (const e of entries) {
     if (!grouped.has(e.tool)) grouped.set(e.tool, new Map());
     const byScope = grouped.get(e.tool);
@@ -23,16 +26,16 @@ export const renderListHuman = (entries: readonly SkillEntry[], opts: ListHumanO
   const lines: string[] = [];
   for (const [tool, byScope] of grouped) {
     lines.push(`# ${tool}`);
-    for (const [scope, skills] of byScope) {
+    for (const [scope, cmds] of byScope) {
       lines.push(`  ${scope}:`);
-      for (const s of skills) {
-        const desc = s.frontmatter?.description ?? '';
-        const status = s.enabled === 'on' ? '' : ` [${s.enabled}]`;
-        const origin = formatOrigin(s.origin);
+      for (const c of cmds) {
+        const desc = c.frontmatter?.description ?? '';
+        const status = c.enabled === 'on' ? '' : ` [${c.enabled}]`;
+        const origin = formatOrigin(c.origin);
         lines.push(
           opts.long
-            ? `    ${s.name}  ${origin}${status}  ${s.path}  ${desc}`
-            : `    ${s.name}  ${origin}${status}  ${desc}`,
+            ? `    ${c.name}  ${origin}${status}  ${c.path}  ${desc}`
+            : `    ${c.name}  ${origin}${status}  ${desc}`,
         );
       }
     }

@@ -5,6 +5,7 @@ export interface ScopeFlagOpts {
   user?: boolean;
   system?: boolean;
   project?: boolean;
+  managed?: boolean;
 }
 
 export const resolveScopeFlags = (
@@ -14,6 +15,7 @@ export const resolveScopeFlags = (
   if (opts.user) shorthands.push('user');
   if (opts.system) shorthands.push('system');
   if (opts.project) shorthands.push('project');
+  if (opts.managed) shorthands.push('managed');
 
   if (shorthands.length > 1) {
     return err({

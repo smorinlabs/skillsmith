@@ -1,4 +1,4 @@
-import type { SkillEntry } from '@skillsmith/core';
+import type { CommandEntry } from '@skillsmith/core';
 import { z } from 'zod';
 
 const FrontmatterSchema = z
@@ -20,7 +20,7 @@ const OriginSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('policy') }),
 ]);
 
-const SkillEntrySchema = z.object({
+const CommandEntrySchema = z.object({
   name: z.string(),
   path: z.string(),
   realpath: z.string(),
@@ -32,11 +32,11 @@ const SkillEntrySchema = z.object({
   enabled: z.enum(['on', 'off', 'unset']),
 });
 
-export const ListJsonSchema = z.object({
-  schemaVersion: z.literal(2),
+export const CommandsJsonSchema = z.object({
+  schemaVersion: z.literal(1),
   experimental: z.literal(true),
-  skills: z.array(SkillEntrySchema),
+  commands: z.array(CommandEntrySchema),
 });
 
-export const renderListJson = (entries: readonly SkillEntry[]): string =>
-  JSON.stringify({ schemaVersion: 2, experimental: true, skills: entries }, null, 2);
+export const renderCommandsJson = (entries: readonly CommandEntry[]): string =>
+  JSON.stringify({ schemaVersion: 1, experimental: true, commands: entries }, null, 2);

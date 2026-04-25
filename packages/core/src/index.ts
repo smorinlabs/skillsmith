@@ -22,19 +22,24 @@ export type {
   CheckRunContext,
   CheckRunMode,
   CheckRunResult,
+  CommandEntry,
   Config,
   ConfigKey,
   ConfigLayer,
   DetectOptions,
   EffectiveConfig,
+  EnabledState,
   Finding,
   Frontmatter,
   InstallMethod,
   InstallRecord,
+  ListCommandsOpts,
   ListSkillsOpts,
   LoadConfigOpts,
   Logger,
+  Origin,
   Platform,
+  PluginProvenanceScope,
   Result,
   SaveConfigOpts,
   ScanEnv,
@@ -48,6 +53,7 @@ export type {
 } from './public-types.ts';
 export { err, isErr, isOk, map, mapErr, ok } from './result.ts';
 export { detectAll, detectTool } from './scan/index.ts';
+export { listCommands } from './scan/list-commands.ts';
 export { listSkills } from './scan/list-skills.ts';
 export { parseSkillFrontmatter } from './skills/frontmatter.ts';
 export { VERSION } from './version.ts';
