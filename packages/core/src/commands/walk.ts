@@ -2,10 +2,11 @@ import { join } from 'node:path';
 import type { SupportedTool } from '../agents/types.ts';
 import type { Scope } from '../config/types.ts';
 import type { ScanEnv } from '../env/types.ts';
-import { parseSkillFrontmatter } from './frontmatter.ts';
-import type { EnabledState, Origin, SkillEntry } from './types.ts';
+import { parseSkillFrontmatter } from '../skills/frontmatter.ts';
+import type { EnabledState, Origin } from '../skills/types.ts';
+import type { CommandEntry } from './types.ts';
 
-export interface WalkSkillDirOpts {
+export interface WalkCommandDirOpts {
   tool: SupportedTool;
   scope: Scope;
   root: string;
@@ -13,22 +14,25 @@ export interface WalkSkillDirOpts {
   enabled: EnabledState;
 }
 
-export const walkSkillDir = async (env: ScanEnv, opts: WalkSkillDirOpts): Promise<SkillEntry[]> => {
+export const walkCommandDir = async (
+  env: ScanEnv,
+  opts: WalkCommandDirOpts,
+): Promise<CommandEntry[]> => {
   if (!(await env.fileExists(opts.root))) return [];
 
   const entries = await env.listDir(opts.root);
-  const results: SkillEntry[] = [];
+  const out: CommandEntry[] = [];
 
-  for (const name of entries) {
-    if (name.startsWith('.')) continue;
-    const path = join(opts.root, name);
-    const skillMd = join(path, 'SKILL.md');
-    if (!(await env.fileExists(skillMd))) continue;
+  for (const filename of entries) {
+    if (filename.startsWith('.')) continue;
+    if (!filename.endsWith('.md')) continue;
+    const path = join(opts.root, filename);
+    if (!(await env.fileExists(path))) continue;
 
-    let frontmatter: SkillEntry['frontmatter'] = null;
+    let frontmatter: CommandEntry['frontmatter'] = null;
     try {
-      const text = await env.readText(skillMd);
-      const parsed = parseSkillFrontmatter(text, skillMd);
+      const text = await env.readText(path);
+      const parsed = parseSkillFrontmatter(text, path);
       if (parsed.ok) frontmatter = parsed.value;
     } catch {
       frontmatter = null;
@@ -41,7 +45,8 @@ export const walkSkillDir = async (env: ScanEnv, opts: WalkSkillDirOpts): Promis
       // keep logical path
     }
 
-    results.push({
+    const name = filename.slice(0, -'.md'.length);
+    out.push({
       name,
       path,
       realpath,
@@ -54,5 +59,5 @@ export const walkSkillDir = async (env: ScanEnv, opts: WalkSkillDirOpts): Promis
     });
   }
 
-  return results;
+  return out;
 };

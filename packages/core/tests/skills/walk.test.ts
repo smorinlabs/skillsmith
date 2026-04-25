@@ -27,6 +27,8 @@ describe('walkSkillDir', () => {
       tool: 'claude-code',
       scope: 'user',
       root: '/h/.claude/skills',
+      origin: { kind: 'standalone' },
+      enabled: 'on',
     });
     expect(r).toEqual([]);
   });
@@ -48,6 +50,8 @@ describe('walkSkillDir', () => {
       tool: 'claude-code',
       scope: 'user',
       root: '/h/.claude/skills',
+      origin: { kind: 'standalone' },
+      enabled: 'on',
     });
     expect(r.map((e) => e.name).sort()).toEqual(['diff', 'grep']);
     expect(r.every((e) => e.frontmatter !== null)).toBe(true);
@@ -63,7 +67,13 @@ describe('walkSkillDir', () => {
       files: { '/root/real/SKILL.md': '---\nname: real\n---\n' },
       realpaths: {},
     });
-    const r = await walkSkillDir(env, { tool: 'claude-code', scope: 'user', root: '/root' });
+    const r = await walkSkillDir(env, {
+      tool: 'claude-code',
+      scope: 'user',
+      root: '/root',
+      origin: { kind: 'standalone' },
+      enabled: 'on',
+    });
     expect(r.map((e) => e.name)).toEqual(['real']);
   });
 
@@ -73,7 +83,13 @@ describe('walkSkillDir', () => {
       files: { '/r/ok/SKILL.md': '---\nunknown_field: 42\n---\nbody\n' },
       realpaths: {},
     });
-    const r = await walkSkillDir(env, { tool: 'claude-code', scope: 'user', root: '/r' });
+    const r = await walkSkillDir(env, {
+      tool: 'claude-code',
+      scope: 'user',
+      root: '/r',
+      origin: { kind: 'standalone' },
+      enabled: 'on',
+    });
     expect(r).toHaveLength(1);
     expect(r[0]?.frontmatter).toEqual({});
   });
@@ -84,7 +100,13 @@ describe('walkSkillDir', () => {
       files: { '/r/link/SKILL.md': '---\n---\n' },
       realpaths: { '/r/link': '/elsewhere/real' },
     });
-    const r = await walkSkillDir(env, { tool: 'claude-code', scope: 'user', root: '/r' });
+    const r = await walkSkillDir(env, {
+      tool: 'claude-code',
+      scope: 'user',
+      root: '/r',
+      origin: { kind: 'standalone' },
+      enabled: 'on',
+    });
     expect(r[0]?.realpath).toBe('/elsewhere/real');
   });
 });

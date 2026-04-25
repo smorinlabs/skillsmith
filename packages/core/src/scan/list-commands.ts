@@ -1,7 +1,9 @@
 import { Glob } from 'bun';
 import { registry } from '../agents/registry.ts';
 import type { SupportedTool } from '../agents/types.ts';
-import { SCOPES, type Scope } from '../config/types.ts';
+import type { CommandEntry } from '../commands/types.ts';
+import { walkCommandDir } from '../commands/walk.ts';
+import type { Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
 import { noopLogger } from '../env/logger.ts';
 import type { ScanEnv } from '../env/types.ts';
@@ -9,14 +11,12 @@ import type { SkillSmithError } from '../errors.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
 import { type Result, ok } from '../result.ts';
-import type { Origin, PluginProvenanceScope, SkillEntry } from '../skills/types.ts';
-import { walkSkillDir } from '../skills/walk.ts';
+import type { Origin, PluginProvenanceScope } from '../skills/types.ts';
 
-export interface ListSkillsOpts {
+export interface ListCommandsOpts {
   tools?: readonly SupportedTool[];
   scopes?: readonly Scope[];
   globs?: readonly string[];
-  duplicatesOnly?: boolean;
   enabledFilter?: 'enabled-only' | 'disabled-only' | 'unconfigured-only';
   cwd: string;
   envVars: Record<string, string | undefined>;
@@ -24,33 +24,18 @@ export interface ListSkillsOpts {
   signal?: AbortSignal;
 }
 
+const COMMAND_SCOPES: readonly Scope[] = ['user', 'project'];
+
 const pluginScopeToScope = (ps: PluginProvenanceScope): Scope => (ps === 'local' ? 'project' : ps);
 
-// Origin per scope: managed-scope claude-code skills are policy-pushed (not bundled in a plugin).
-const standaloneOriginFor = (scope: Scope): Origin =>
-  scope === 'managed' ? { kind: 'policy' } : { kind: 'standalone' };
-
-const applyGlobs = (entries: SkillEntry[], globs: readonly string[]): SkillEntry[] => {
+const applyGlobs = (entries: CommandEntry[], globs: readonly string[]): CommandEntry[] => {
   const compiled = globs.map((g) => new Glob(g));
   return entries.filter((e) => compiled.some((g) => g.match(e.name)));
 };
 
-const filterCrossScopeDuplicates = (entries: SkillEntry[]): SkillEntry[] => {
-  const byName = new Map<string, Set<Scope>>();
-  for (const e of entries) {
-    if (!byName.has(e.name)) byName.set(e.name, new Set());
-    byName.get(e.name)?.add(e.scope);
-  }
-  const dupNames = new Set<string>();
-  for (const [name, scopes] of byName) {
-    if (scopes.size > 1) dupNames.add(name);
-  }
-  return entries.filter((e) => dupNames.has(e.name));
-};
-
-const dedupeByRealpath = (entries: SkillEntry[]): SkillEntry[] => {
+const dedupeByRealpath = (entries: CommandEntry[]): CommandEntry[] => {
   const seen = new Set<string>();
-  const out: SkillEntry[] = [];
+  const out: CommandEntry[] = [];
   for (const e of entries) {
     const key = `${e.tool}|${e.scope}|${e.realpath}`;
     if (seen.has(key)) continue;
@@ -65,15 +50,15 @@ const scanStandalone = async (
   tools: readonly SupportedTool[],
   scopes: readonly Scope[],
   ctx: { cwd: string; envVars: Record<string, string | undefined> },
-): Promise<SkillEntry[]> => {
-  const out: SkillEntry[] = [];
+): Promise<CommandEntry[]> => {
+  const out: CommandEntry[] = [];
+  const origin: Origin = { kind: 'standalone' };
   for (const tool of tools) {
     for (const scope of scopes) {
       const agent = registry[tool];
-      const roots = agent.getSkillRoots(env, scope, ctx);
-      const origin = standaloneOriginFor(scope);
+      const roots = agent.getCommandRoots(env, scope, ctx);
       for (const root of roots) {
-        const entries = await walkSkillDir(env, {
+        const entries = await walkCommandDir(env, {
           tool,
           scope,
           root,
@@ -91,12 +76,12 @@ const scanPluginBundled = async (
   env: ScanEnv,
   tools: readonly SupportedTool[],
   discovered: readonly DiscoveredPlugin[],
-): Promise<SkillEntry[]> => {
-  const out: SkillEntry[] = [];
+): Promise<CommandEntry[]> => {
+  const out: CommandEntry[] = [];
   for (const tool of tools) {
     const agent = registry[tool];
     for (const p of discovered) {
-      const root = agent.getPluginSkillDir(p.installation.installPath);
+      const root = agent.getPluginCommandDir(p.installation.installPath);
       if (!root) continue;
       const origin: Origin = {
         kind: 'plugin',
@@ -104,7 +89,7 @@ const scanPluginBundled = async (
         pluginVersion: p.installation.version,
         pluginScope: p.installation.scope,
       };
-      const entries = await walkSkillDir(env, {
+      const entries = await walkCommandDir(env, {
         tool,
         scope: pluginScopeToScope(p.installation.scope),
         root,
@@ -117,16 +102,20 @@ const scanPluginBundled = async (
   return out;
 };
 
-export const listSkills = async (
+export const listCommands = async (
   env: ScanEnv,
-  opts: ListSkillsOpts,
-): Promise<Result<SkillEntry[], SkillSmithError>> => {
+  opts: ListCommandsOpts,
+): Promise<Result<CommandEntry[], SkillSmithError>> => {
   const logger = opts.logger ?? noopLogger;
   const tools = opts.tools ?? (Object.keys(registry) as readonly SupportedTool[]);
-  const scopes = opts.scopes ?? SCOPES;
-  const ctx = { cwd: opts.cwd, envVars: opts.envVars };
+  const requestedScopes = opts.scopes ?? COMMAND_SCOPES;
+  // commands don't exist at system/managed — filter even if caller requested
+  const scopes = requestedScopes.filter((s) => s === 'user' || s === 'project');
 
-  const standalone = await scanStandalone(env, tools, scopes, ctx);
+  const standalone = await scanStandalone(env, tools, scopes, {
+    cwd: opts.cwd,
+    envVars: opts.envVars,
+  });
   const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
   if (!discoveredR.ok) return discoveredR;
   const pluginBundled = await scanPluginBundled(env, tools, discoveredR.value);
@@ -134,18 +123,15 @@ export const listSkills = async (
   let all = [...standalone, ...pluginBundled];
   all = dedupeByRealpath(all);
   if (opts.globs && opts.globs.length > 0) all = applyGlobs(all, opts.globs);
-  if (opts.duplicatesOnly) all = filterCrossScopeDuplicates(all);
   if (opts.enabledFilter === 'enabled-only') all = all.filter((e) => e.enabled === 'on');
   if (opts.enabledFilter === 'disabled-only') all = all.filter((e) => e.enabled === 'off');
   if (opts.enabledFilter === 'unconfigured-only') all = all.filter((e) => e.enabled === 'unset');
 
-  // scope filter applies after plugin expansion because plugin-bundled entries
-  // have their scope computed from pluginScope
-  const scopeSet = new Set(scopes);
+  const scopeSet: Set<Scope> = new Set(scopes);
   all = all.filter((e) => scopeSet.has(e.scope));
 
   logger.debug(
-    `listSkills: ${standalone.length} standalone + ${pluginBundled.length} plugin = ${all.length} after filters`,
+    `listCommands: ${standalone.length} standalone + ${pluginBundled.length} plugin = ${all.length}`,
   );
 
   return ok(all);
