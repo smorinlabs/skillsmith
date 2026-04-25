@@ -47,6 +47,8 @@ export const walkSkillDir = async (env: ScanEnv, opts: WalkSkillDirOpts): Promis
       scope: opts.scope,
       root: opts.root,
       frontmatter,
+      origin: { kind: 'standalone' },
+      enabled: 'on',
     });
   }
 
