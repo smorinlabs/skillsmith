@@ -115,9 +115,9 @@ describe('SkillEntry', () => {
       root: '/h/.claude/skills',
       frontmatter: null,
       origin: { kind: 'standalone' },
-      enabled: true,
+      enabled: 'on',
     };
-    expect(e.enabled).toBe(true);
+    expect(e.enabled).toBe('on');
     expect(e.origin.kind).toBe('standalone');
   });
 });
@@ -163,7 +163,7 @@ export interface SkillEntry {
   root: string;
   frontmatter: Frontmatter | null;
   origin: Origin;
-  enabled: boolean;
+  enabled: EnabledState;
 }
 ```
 
@@ -189,7 +189,7 @@ In `packages/core/src/skills/walk.ts`, replace the `results.push({...})` call wi
       root: opts.root,
       frontmatter,
       origin: { kind: 'standalone' },
-      enabled: true,
+      enabled: 'on',
     });
 ```
 
@@ -235,10 +235,10 @@ describe('CommandEntry', () => {
       root: '/h/.claude/commands',
       frontmatter: { description: 'audit CI' },
       origin: { kind: 'standalone' },
-      enabled: true,
+      enabled: 'on',
     };
     expect(e.name).toBe('ci-audit');
-    expect(e.enabled).toBe(true);
+    expect(e.enabled).toBe('on');
   });
 
   test('path ends in .md', () => {
@@ -251,7 +251,7 @@ describe('CommandEntry', () => {
       root: '/x',
       frontmatter: null,
       origin: { kind: 'standalone' },
-      enabled: true,
+      enabled: 'on',
     };
     expect(e.path.endsWith('.md')).toBe(true);
   });
@@ -279,7 +279,7 @@ export interface CommandEntry {
   root: string;
   frontmatter: Frontmatter | null;
   origin: Origin;
-  enabled: boolean;
+  enabled: EnabledState;
 }
 ```
 
@@ -304,7 +304,7 @@ git commit -m "feat(core): add CommandEntry type parallel to SkillEntry"
 - [ ] **Step 1: Implement the types**
 
 ```ts
-import type { PluginProvenanceScope } from '../skills/types.ts';
+import type { EnabledState, PluginProvenanceScope } from '../skills/types.ts';
 
 export interface PluginInstallation {
   id: string;                      // "plugin-name@marketplace"
@@ -315,7 +315,7 @@ export interface PluginInstallation {
 }
 
 export interface PluginEnablement {
-  enabled: boolean;
+  enabled: EnabledState;
   source: 'managed' | 'user' | 'project' | 'local' | 'none';
 }
 
@@ -537,18 +537,18 @@ describe('resolveEnablement', () => {
   test('user: settings.json enabledPlugins[id] = true → enabled', async () => {
     const e = env({ '/h/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'foo@bar': true } }) });
     const r = await resolveEnablement(e, { id: 'foo@bar', scope: 'user', installPath: '/x', version: '1' });
-    expect(r).toEqual({ enabled: true, source: 'user' });
+    expect(r).toEqual({ enabled: 'on', source: 'user' });
   });
 
-  test('user: missing settings file → disabled', async () => {
+  test('user: missing settings file → unset', async () => {
     const r = await resolveEnablement(env({}), { id: 'foo@bar', scope: 'user', installPath: '/x', version: '1' });
-    expect(r).toEqual({ enabled: false, source: 'none' });
+    expect(r).toEqual({ enabled: 'unset', source: 'none' });
   });
 
   test('user: enabledPlugins[id] = false → disabled with source user', async () => {
     const e = env({ '/h/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'foo@bar': false } }) });
     const r = await resolveEnablement(e, { id: 'foo@bar', scope: 'user', installPath: '/x', version: '1' });
-    expect(r).toEqual({ enabled: false, source: 'user' });
+    expect(r).toEqual({ enabled: 'off', source: 'user' });
   });
 
   test('project: reads <projectPath>/.claude/settings.json', async () => {
@@ -560,7 +560,7 @@ describe('resolveEnablement', () => {
       version: '1',
       projectPath: '/p',
     });
-    expect(r).toEqual({ enabled: true, source: 'project' });
+    expect(r).toEqual({ enabled: 'on', source: 'project' });
   });
 
   test('local: reads <projectPath>/.claude/settings.local.json', async () => {
@@ -572,7 +572,7 @@ describe('resolveEnablement', () => {
       version: '1',
       projectPath: '/p',
     });
-    expect(r).toEqual({ enabled: true, source: 'local' });
+    expect(r).toEqual({ enabled: 'on', source: 'local' });
   });
 
   test("managed: reads platform managed-settings.json (darwin = /Library/Application Support/ClaudeCode/...)", async () => {
@@ -582,17 +582,23 @@ describe('resolveEnablement', () => {
       }),
     });
     const r = await resolveEnablement(e, { id: 'foo@bar', scope: 'managed', installPath: '/x', version: '1' });
-    expect(r).toEqual({ enabled: true, source: 'managed' });
+    expect(r).toEqual({ enabled: 'on', source: 'managed' });
   });
 
-  test('project: missing projectPath → disabled (conservative)', async () => {
+  test('project: missing projectPath → unset', async () => {
     const r = await resolveEnablement(env({}), {
       id: 'foo@bar',
       scope: 'project',
       installPath: '/x',
       version: '1',
     });
-    expect(r).toEqual({ enabled: false, source: 'none' });
+    expect(r).toEqual({ enabled: 'unset', source: 'none' });
+  });
+
+  test('user: enabledPlugins object exists but key absent → unset', async () => {
+    const e = env({ '/h/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'other@x': true } }) });
+    const r = await resolveEnablement(e, { id: 'foo@bar', scope: 'user', installPath: '/x', version: '1' });
+    expect(r).toEqual({ enabled: 'unset', source: 'none' });
   });
 });
 ```
@@ -651,15 +657,15 @@ export const resolveEnablement = async (
   installation: PluginInstallation,
 ): Promise<PluginEnablement> => {
   const path = settingsPathForInstallation(env, installation);
-  if (!path) return { enabled: false, source: 'none' };
+  if (!path) return { enabled: 'unset', source: 'none' };
 
   const ep = await readEnabledPlugins(env, path);
-  if (ep === null) return { enabled: false, source: 'none' };
+  if (ep === null) return { enabled: 'unset', source: 'none' };
 
   const value = ep[installation.id];
-  if (value === true) return { enabled: true, source: installation.scope };
-  if (value === false) return { enabled: false, source: installation.scope };
-  return { enabled: false, source: 'none' };
+  if (value === true) return { enabled: 'on', source: installation.scope };
+  if (value === false) return { enabled: 'off', source: installation.scope };
+  return { enabled: 'unset', source: 'none' };
 };
 ```
 
@@ -722,7 +728,7 @@ describe('discoverPlugins', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value).toHaveLength(1);
-      expect(r.value[0]?.enablement.enabled).toBe(true);
+      expect(r.value[0]?.enablement.enabled).toBe('on');
     }
   });
 
@@ -759,7 +765,7 @@ describe('discoverPlugins', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value).toHaveLength(1);
-      expect(r.value[0]?.enablement.enabled).toBe(true);
+      expect(r.value[0]?.enablement.enabled).toBe('on');
     }
   });
 });
@@ -867,12 +873,45 @@ export interface Agent {
 }
 ```
 
-- [ ] **Step 2: Update `claude-code/skill-roots.ts` to handle `managed`**
+- [ ] **Step 2a: Create `claude-code/managed-path.ts`**
+
+Per Claude Code source (`~/c/claude-code/src/utils/settings/managedPath.ts`), managed skills live at platform-dependent paths. Create `packages/core/src/agents/claude-code/managed-path.ts`:
+
+```ts
+import { join } from 'node:path';
+import type { Platform } from '../../env/types.ts';
+
+const MANAGED_BASE: Record<Platform, string> = {
+  darwin: '/Library/Application Support/ClaudeCode',
+  linux: '/etc/claude-code',
+  win32: 'C:\\Program Files\\ClaudeCode',
+};
+
+export const getManagedSkillsDir = (
+  platform: Platform,
+  envVars: Record<string, string | undefined>,
+): string => {
+  // CLAUDE_CODE_DISABLE_POLICY_SKILLS turns off managed-skill loading entirely.
+  // Caller checks this env var before calling — we just return the path here.
+  const base = envVars.CLAUDE_CODE_MANAGED_SETTINGS_PATH ?? MANAGED_BASE[platform];
+  return join(base, '.claude', 'skills');
+};
+
+export const isManagedSkillsDisabled = (
+  envVars: Record<string, string | undefined>,
+): boolean => {
+  const v = envVars.CLAUDE_CODE_DISABLE_POLICY_SKILLS;
+  return v !== undefined && v !== '' && v !== '0' && v.toLowerCase() !== 'false';
+};
+```
+
+- [ ] **Step 2b: Update `claude-code/skill-roots.ts` to handle `managed`**
 
 ```ts
 import { join } from 'node:path';
 import type { Scope } from '../../config/types.ts';
 import type { ScanEnv } from '../../env/types.ts';
+import { getManagedSkillsDir, isManagedSkillsDisabled } from './managed-path.ts';
 
 export interface SkillRootsCtx {
   cwd: string;
@@ -894,7 +933,7 @@ export const getSkillRoots = (
     case 'system':
       return [];
     case 'managed':
-      return []; // managed skills surface via origin=plugin+pluginScope=managed
+      return isManagedSkillsDisabled(ctx.envVars) ? [] : [getManagedSkillsDir(env.platform, ctx.envVars)];
   }
 };
 ```
@@ -1050,7 +1089,7 @@ describe('walkCommandDir', () => {
       scope: 'user',
       root: '/h/.claude/commands',
       origin: { kind: 'standalone' },
-      enabled: true,
+      enabled: 'on',
     });
     expect(r).toEqual([]);
   });
@@ -1068,7 +1107,7 @@ describe('walkCommandDir', () => {
       scope: 'user',
       root: '/r',
       origin: { kind: 'standalone' },
-      enabled: true,
+      enabled: 'on',
     });
     expect(r.map((e) => e.name).sort()).toEqual(['ci-audit', 'foo']);
   });
@@ -1083,7 +1122,7 @@ describe('walkCommandDir', () => {
       scope: 'user',
       root: '/r',
       origin: { kind: 'standalone' },
-      enabled: true,
+      enabled: 'on',
     });
     expect(r.map((e) => e.name)).toEqual(['good']);
   });
@@ -1111,7 +1150,7 @@ export interface WalkCommandDirOpts {
   scope: Scope;
   root: string;
   origin: Origin;
-  enabled: boolean;
+  enabled: EnabledState;
 }
 
 export const walkCommandDir = async (
@@ -1202,7 +1241,7 @@ export interface WalkSkillDirOpts {
   scope: Scope;
   root: string;
   origin: Origin;
-  enabled: boolean;
+  enabled: EnabledState;
 }
 
 export const walkSkillDir = async (
@@ -1281,7 +1320,7 @@ export interface ListSkillsOpts {
   scopes?: readonly Scope[];
   globs?: readonly string[];
   duplicatesOnly?: boolean;
-  enabledFilter?: 'enabled-only' | 'disabled-only';
+  enabledFilter?: 'enabled-only' | 'disabled-only' | 'unconfigured-only';
   cwd: string;
   envVars: Record<string, string | undefined>;
   logger?: Logger;
@@ -1321,6 +1360,11 @@ const dedupeByRealpath = (entries: SkillEntry[]): SkillEntry[] => {
   return out;
 };
 
+// Origin per scope: managed scope under claude-code is policy-pushed (no plugin), all other
+// standalone scope/tool combinations are user/project author-placed files.
+const standaloneOriginFor = (scope: Scope): Origin =>
+  scope === 'managed' ? { kind: 'policy' } : { kind: 'standalone' };
+
 const scanStandalone = async (
   env: ScanEnv,
   tools: readonly SupportedTool[],
@@ -1328,18 +1372,18 @@ const scanStandalone = async (
   ctx: { cwd: string; envVars: Record<string, string | undefined> },
 ): Promise<SkillEntry[]> => {
   const out: SkillEntry[] = [];
-  const origin: Origin = { kind: 'standalone' };
   for (const tool of tools) {
     for (const scope of scopes) {
       const agent = registry[tool];
       const roots = agent.getSkillRoots(env, scope, ctx);
+      const origin = standaloneOriginFor(scope);
       for (const root of roots) {
         const entries = await walkSkillDir(env, {
           tool,
           scope,
           root,
           origin,
-          enabled: true,
+          enabled: 'on',
         });
         out.push(...entries);
       }
@@ -1396,8 +1440,9 @@ export const listSkills = async (
   all = dedupeByRealpath(all);
   if (opts.globs && opts.globs.length > 0) all = applyGlobs(all, opts.globs);
   if (opts.duplicatesOnly) all = filterCrossScopeDuplicates(all);
-  if (opts.enabledFilter === 'enabled-only') all = all.filter((e) => e.enabled);
-  if (opts.enabledFilter === 'disabled-only') all = all.filter((e) => !e.enabled);
+  if (opts.enabledFilter === 'enabled-only') all = all.filter((e) => e.enabled === 'on');
+  if (opts.enabledFilter === 'disabled-only') all = all.filter((e) => e.enabled === 'off');
+  if (opts.enabledFilter === 'unconfigured-only') all = all.filter((e) => e.enabled === 'unset');
 
   // scope filter applies after plugin expansion because plugin-bundled entries
   // have their scope computed from pluginScope
@@ -1473,7 +1518,7 @@ describe('listSkills with plugin discovery', () => {
         expect(entry.origin.pluginVersion).toBe('1.0');
         expect(entry.origin.pluginScope).toBe('user');
       }
-      expect(entry?.enabled).toBe(true);
+      expect(entry?.enabled).toBe('on');
       expect(entry?.scope).toBe('user');
     }
   });
@@ -1497,7 +1542,7 @@ describe('listSkills with plugin discovery', () => {
     );
     const r = await listSkills(e, { tools: ['claude-code'], cwd: '/proj', envVars: {} });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value[0]?.enabled).toBe(false);
+    if (r.ok) expect(r.value[0]?.enabled).toBe('off');
   });
 
   test('enabledFilter=enabled-only drops disabled plugin skills', async () => {
@@ -1618,7 +1663,7 @@ describe('listCommands', () => {
     if (r.ok) {
       const cmd = r.value.find((x) => x.name === 'do-thing');
       expect(cmd?.origin.kind).toBe('plugin');
-      expect(cmd?.enabled).toBe(true);
+      expect(cmd?.enabled).toBe('on');
     }
   });
 });
@@ -1651,7 +1696,7 @@ export interface ListCommandsOpts {
   tools?: readonly SupportedTool[];
   scopes?: readonly Scope[];
   globs?: readonly string[];
-  enabledFilter?: 'enabled-only' | 'disabled-only';
+  enabledFilter?: 'enabled-only' | 'disabled-only' | 'unconfigured-only';
   cwd: string;
   envVars: Record<string, string | undefined>;
   logger?: Logger;
@@ -1698,7 +1743,7 @@ const scanStandalone = async (
           scope,
           root,
           origin,
-          enabled: true,
+          enabled: 'on',
         });
         out.push(...entries);
       }
@@ -1758,8 +1803,9 @@ export const listCommands = async (
   let all = [...standalone, ...pluginBundled];
   all = dedupeByRealpath(all);
   if (opts.globs && opts.globs.length > 0) all = applyGlobs(all, opts.globs);
-  if (opts.enabledFilter === 'enabled-only') all = all.filter((e) => e.enabled);
-  if (opts.enabledFilter === 'disabled-only') all = all.filter((e) => !e.enabled);
+  if (opts.enabledFilter === 'enabled-only') all = all.filter((e) => e.enabled === 'on');
+  if (opts.enabledFilter === 'disabled-only') all = all.filter((e) => e.enabled === 'off');
+  if (opts.enabledFilter === 'unconfigured-only') all = all.filter((e) => e.enabled === 'unset');
 
   const scopeSet = new Set(scopes);
   all = all.filter((e) => scopeSet.has(e.scope));
@@ -1911,7 +1957,7 @@ const SkillEntrySchema = z.object({
   root: z.string(),
   frontmatter: FrontmatterSchema,
   origin: OriginSchema,
-  enabled: z.boolean(),
+  enabled: z.enum(['on', 'off', 'unset']),
 });
 
 export const ListJsonSchema = z.object({
@@ -2022,6 +2068,7 @@ export const listCommand = (): Command =>
     .option('--json', 'Emit JSON', false)
     .option('--enabled', 'Show only enabled entries', false)
     .option('--disabled', 'Show only disabled entries', false)
+    .option('--unconfigured', 'Show only entries that have never been toggled', false)
     .action(
       async (
         globs: string[],
@@ -2037,10 +2084,14 @@ export const listCommand = (): Command =>
           json: boolean;
           enabled: boolean;
           disabled: boolean;
+          unconfigured: boolean;
         },
       ) => {
-        if (opts.enabled && opts.disabled) {
-          process.stderr.write('error: --enabled and --disabled are mutually exclusive\n');
+        const filterCount = [opts.enabled, opts.disabled, opts.unconfigured].filter(Boolean).length;
+        if (filterCount > 1) {
+          process.stderr.write(
+            'error: --enabled, --disabled, and --unconfigured are mutually exclusive\n',
+          );
           process.exit(2);
         }
         const scopeR = resolveScopeFlags(opts);
@@ -2055,7 +2106,9 @@ export const listCommand = (): Command =>
           ? ('enabled-only' as const)
           : opts.disabled
             ? ('disabled-only' as const)
-            : undefined;
+            : opts.unconfigured
+              ? ('unconfigured-only' as const)
+              : undefined;
         const env = await defaultScanEnv();
         const r = await listSkills(env, {
           tools,
@@ -2139,7 +2192,7 @@ const CommandEntrySchema = z.object({
   root: z.string(),
   frontmatter: FrontmatterSchema,
   origin: OriginSchema,
-  enabled: z.boolean(),
+  enabled: z.enum(['on', 'off', 'unset']),
 });
 
 export const CommandsJsonSchema = z.object({
@@ -2242,6 +2295,7 @@ export const commandsCommand = (): Command =>
     .option('--json', 'Emit JSON', false)
     .option('--enabled', 'Show only enabled entries', false)
     .option('--disabled', 'Show only disabled entries', false)
+    .option('--unconfigured', 'Show only entries that have never been toggled', false)
     .action(
       async (
         globs: string[],
@@ -2254,10 +2308,14 @@ export const commandsCommand = (): Command =>
           json: boolean;
           enabled: boolean;
           disabled: boolean;
+          unconfigured: boolean;
         },
       ) => {
-        if (opts.enabled && opts.disabled) {
-          process.stderr.write('error: --enabled and --disabled are mutually exclusive\n');
+        const filterCount = [opts.enabled, opts.disabled, opts.unconfigured].filter(Boolean).length;
+        if (filterCount > 1) {
+          process.stderr.write(
+            'error: --enabled, --disabled, and --unconfigured are mutually exclusive\n',
+          );
           process.exit(2);
         }
         const scopeR = resolveScopeFlags(opts);
@@ -2279,7 +2337,9 @@ export const commandsCommand = (): Command =>
           ? ('enabled-only' as const)
           : opts.disabled
             ? ('disabled-only' as const)
-            : undefined;
+            : opts.unconfigured
+              ? ('unconfigured-only' as const)
+              : undefined;
         const env = await defaultScanEnv();
         const r = await listCommands(env, {
           tools,
