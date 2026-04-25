@@ -8,6 +8,46 @@
 
 ---
 
+## [x] Project P08: MVP-2b.1.1 — plugin-scope discovery + commands primitive (v0.3.1)
+**Goal**: Fix `skillsmith list --tool claude-code` reporting 1 skill on a machine with 40+ active skills. Add plugin-bundled skill discovery, slash commands as a separate primitive, `managed` scope, `Origin` tagged union (`standalone | plugin | policy`), and 3-state `EnabledState` (`on | off | unset`).
+
+**Out of Scope**
+- Other agents' plugin systems (codex/kilo-code/opencode return stub `[]`/`null`).
+- Policy (managed) command discovery — Claude Code policy only ships skills, not commands.
+
+### Tests & Tasks
+- [x] [P08-T01] Add `'managed'` to `Scope` union; extend `SCOPES` in `config/types.ts`.
+- [x] [P08-T02] Add `PluginProvenanceScope`, `EnabledState`, `Origin` tagged union to `skills/types.ts`; extend `SkillEntry` with `origin` + `enabled`.
+- [x] [P08-T03] Add `CommandEntry` in `commands/types.ts` parallel to `SkillEntry`.
+- [x] [P08-T04] Add `plugins/installed.ts` (zod-validated `installed_plugins.json` reader).
+- [x] [P08-T05] Add `plugins/enablement.ts` (4-layer: managed / user / project / local settings resolver).
+- [x] [P08-T06] Add `plugins/discover.ts` (joins installed + enablement; filters project/local by `cwd`).
+- [x] [P08-T07] Add `agents/claude-code/managed-path.ts` honoring `CLAUDE_CODE_MANAGED_SETTINGS_PATH` and `CLAUDE_CODE_DISABLE_POLICY_SKILLS`.
+- [x] [P08-T08] Extend `Agent` interface with `getCommandRoots`, `getPluginSkillDir`, `getPluginCommandDir`; wire all 4 agents (claude-code real, others stubs).
+- [x] [P08-T09] Add `commands/walk.ts` (scans `.md` files, parses frontmatter).
+- [x] [P08-T10] Rewrite `scan/list-skills.ts` with `scanStandalone` + `scanPluginBundled`; tag managed scope as `origin: 'policy'`.
+- [x] [P08-T11] Add `scan/list-commands.ts` orchestrator (user/project scopes only).
+- [x] [P08-T12] Extend `scope-resolver.ts` with `--managed` shorthand.
+- [x] [P08-T13] Add `--managed`, `--enabled`, `--disabled`, `--unconfigured` flags to `list` command.
+- [x] [P08-T14] Add `commands` subcommand with same flags; reject `--scope=system|managed` with exit 2.
+- [x] [P08-T15] Export `CommandEntry`, `Origin`, `EnabledState`, `PluginProvenanceScope` from public API.
+- [x] [P08-T16] Add ESLint zones for `plugins/**` and `commands/**` (with `except: ['./types.ts']` for shared type imports).
+- [x] [P08-TS01] Unit tests for installed/enablement/discover readers, commands/walk, list-skills origin tagging, list-commands.
+- [x] [P08-TS02] Smoke test on author's machine: `skillsmith list --tool claude-code --json` returns 40+ skills with mixed `standalone`/`plugin` origins; `skillsmith commands --tool claude-code --json` returns 48.
+- [x] [P08-TS03] `just check` stays green (222 tests).
+
+### Deliverable
+```bash
+$ skillsmith list --tool claude-code --json | jq '.skills | length'
+40
+$ skillsmith commands --tool claude-code --json | jq '.commands | length'
+48
+$ skillsmith --version
+0.3.1
+```
+
+---
+
 ## [x] Project P07: Upgrade commit-msg enforcement to commitlint (v0.2.0)
 **Goal**: Replace the grep-based `commit-msg` lefthook hook with `@commitlint/cli` + `@commitlint/config-conventional`, enforce scope allowlist (`cli`, `core`, `main`), and validate PR titles in CI.
 

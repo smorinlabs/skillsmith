@@ -69,6 +69,26 @@ export default [
             // skills domain is agent-agnostic; do not import from agents/** (except types)
             { target: './packages/core/src/skills', from: './packages/core/src/scan' },
             { target: './packages/core/src/skills', from: './packages/core/src/doctor' },
+            // plugins is a leaf — no logic imports from domain modules
+            // (type-only re-use from skills/types.ts is allowed)
+            { target: './packages/core/src/plugins', from: './packages/core/src/agents' },
+            {
+              target: './packages/core/src/plugins',
+              from: './packages/core/src/skills',
+              except: ['./types.ts'],
+            },
+            { target: './packages/core/src/plugins', from: './packages/core/src/commands' },
+            { target: './packages/core/src/plugins', from: './packages/core/src/scan' },
+            { target: './packages/core/src/plugins', from: './packages/core/src/doctor' },
+            // commands domain is agent-agnostic; same rules as skills
+            // (SupportedTool type from agents/types.ts is allowed)
+            {
+              target: './packages/core/src/commands',
+              from: './packages/core/src/agents',
+              except: ['./types.ts'],
+            },
+            { target: './packages/core/src/commands', from: './packages/core/src/scan' },
+            { target: './packages/core/src/commands', from: './packages/core/src/doctor' },
           ],
         },
       ],

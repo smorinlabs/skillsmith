@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Added
+- MVP-2b.1.1: plugin-bundled skill discovery — `skillsmith list --tool claude-code` now finds skills shipped by installed plugins in addition to standalone skills. Fixes a bug where a machine with 40+ active skills reported only 1.
+- New top-level `skillsmith commands` subcommand lists slash commands discovered across `user` and `project` scopes.
+- New `managed` scope (Claude Code policy-managed skills) with `CLAUDE_CODE_MANAGED_SETTINGS_PATH` override and `CLAUDE_CODE_DISABLE_POLICY_SKILLS` honored.
+- Public API: `CommandEntry`, `Origin` (`standalone | plugin | policy`), `EnabledState` (`on | off | unset`), `PluginProvenanceScope` (`user | project | managed | local`).
+- `list`/`commands` flags: `--enabled`, `--disabled`, `--unconfigured` filter by the new 3-state enablement; `list --managed` shorthand.
+- ESLint zones for `plugins/**` and `commands/**` (type-only imports from sibling domains allowed via `except: ['./types.ts']`).
+- JSON schema for `list` bumped to `schemaVersion: 2` with `origin` + `enabled` fields.
 - Apache-2.0 license (`LICENSE`, `NOTICE`).
 - Root `README.md`, `CONTRIBUTING.md`, and this `CHANGELOG.md`.
 - Slim per-package READMEs (`packages/core/README.md`, `packages/cli/README.md`).

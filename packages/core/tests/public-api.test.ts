@@ -39,8 +39,8 @@ describe('@skillsmith/core public API', () => {
     for (const k of expected) expect(actual.has(k)).toBe(true);
   });
 
-  test('VERSION matches 0.3.0', () => {
-    expect(core.VERSION).toBe('0.3.0');
+  test('VERSION matches 0.3.1', () => {
+    expect(core.VERSION).toBe('0.3.1');
   });
 
   test('detectAll is callable with defaultScanEnv and returns a Result', async () => {
