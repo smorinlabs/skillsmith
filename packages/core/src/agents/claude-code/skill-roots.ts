@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import type { Scope } from '../../config/types.ts';
 import type { ScanEnv } from '../../env/types.ts';
+import { getManagedSkillsDir, isManagedSkillsDisabled } from './managed-path.ts';
 
 export interface SkillRootsCtx {
   cwd: string;
@@ -22,7 +23,8 @@ export const getSkillRoots = (
     case 'system':
       return [];
     case 'managed':
-      // populated by Task 8 — returns managed-skills dir under getManagedFilePath()
-      return [];
+      return isManagedSkillsDisabled(ctx.envVars)
+        ? []
+        : [getManagedSkillsDir(env.platform, ctx.envVars)];
   }
 };

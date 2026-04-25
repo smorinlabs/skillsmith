@@ -17,4 +17,7 @@ export interface Agent {
   readonly installHint: string;
   detect(env: ScanEnv, signal?: AbortSignal): Promise<Result<InstallRecord[], SkillSmithError>>;
   getSkillRoots(env: ScanEnv, scope: Scope, ctx: SkillRootsCtx): readonly string[];
+  getCommandRoots(env: ScanEnv, scope: Scope, ctx: SkillRootsCtx): readonly string[];
+  getPluginSkillDir(installPath: string): string | null;
+  getPluginCommandDir(installPath: string): string | null;
 }
