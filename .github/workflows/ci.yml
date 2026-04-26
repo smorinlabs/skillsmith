@@ -35,7 +35,12 @@ jobs:
         run: bun test
 
       - name: Install actionlint
-        uses: raven-actions/actionlint@v2
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: actionlint
+        run: actionlint
 
       - name: ESLint boundaries (import paths, core isolation)
         run: bun run lint:boundaries
