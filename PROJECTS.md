@@ -8,6 +8,23 @@
 
 ---
 
+## [ ] Project P09: MVP-2c — `install` + `uninstall` (write path) (v0.4.0)
+**Goal**: Ship the write path for SkillSmith — `install` and `uninstall` commands targeting **claude-code only**. Introduces the source resolver (Git URL + GitHub shorthand, 4-form parser), partial-clone Git fetch, content-addressed store at `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/`, symlinked entry points, scope flags + auto-default, idempotence, cross-scope duplicate detection, and the remaining exit codes (2/4/5/6/130).
+
+**Out of Scope**
+- `install`/`uninstall` for `codex`, `kilo-code`, `opencode` (→ MVP-3).
+- `sync`, `apply` (→ MVP-4).
+- Cross-tool adaptation; non-claude-code-authored skills install as-authored or are refused.
+- `--direct`, lifecycle hooks, values layering, meta-skills, `[compat]` enforcement (→ MVP-5).
+- PowerShell completion + Windows in CI matrix (→ Phase 2).
+
+### Tests & Tasks
+- [ ] [P09-BR] Brainstorm + spec — design doc at `docs/superpowers/specs/YYYY-MM-DD-mvp-2c-install-design.md`.
+- [ ] [P09-PL] Implementation plan — `docs/superpowers/plans/YYYY-MM-DD-mvp-2c-install.md`.
+- (Tasks expanded after brainstorm.)
+
+---
+
 ## [x] Project P08: MVP-2b.1.1 — plugin-scope discovery + commands primitive (v0.3.1)
 **Goal**: Fix `skillsmith list --tool claude-code` reporting 1 skill on a machine with 40+ active skills. Add plugin-bundled skill discovery, slash commands as a separate primitive, `managed` scope, `Origin` tagged union (`standalone | plugin | policy`), and 3-state `EnabledState` (`on | off | unset`).
 
