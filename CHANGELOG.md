@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.3.2](https://github.com/smorinlabs/skillsmith/compare/v0.3.1...v0.3.2) (2026-07-06)
+
+
+### Bug Fixes
+
+* dependency security updates + P10 un-park hygiene ([#1](https://github.com/smorinlabs/skillsmith/issues/1)) ([3df05ba](https://github.com/smorinlabs/skillsmith/commit/3df05bacac9a6e0ae13cfcb6026e8a3e4ca0dee4))
+
 ## [Unreleased]
 
 ### Added
