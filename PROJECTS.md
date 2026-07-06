@@ -30,11 +30,11 @@ archive `smorin/skillsmith` with a deprecation note; repoint local origin. Refre
 **Out of Scope**: any feature work; going public (→ P14).
 
 ### Tests & Tasks
-- [ ] [P10-T01] Diagnose release-please: why branch-but-no-PR; fix wiring (workflow perms/config) — *orchestrator + sonnet*
-- [ ] [P10-T02] Reconcile CHANGELOG (0.2.0/0.3.0/0.3.1) via the documented manual path; delete stale branch both remotes — *sonnet*
-- [ ] [P10-T03] Dedup repos: canonical smorinlabs, archive smorin w/ notice, repoint local origin, update repo URLs in docs — *orchestrator*
-- [ ] [P10-T04] Toolchain refresh: Bun + deps bump; `bun run check` green — *sonnet*
-- [ ] [P10-T05] Commit the load-verification research doc; scrub-check `research/` (no machine paths/PII) — *haiku*
+- [x] [P10-T01] Diagnose release-please: why branch-but-no-PR; fix wiring (workflow perms/config) — *orchestrator + sonnet*
+- [x] [P10-T02] Reconcile CHANGELOG (0.2.0/0.3.0/0.3.1) via the documented manual path; delete stale branch both remotes — *sonnet*
+- [x] [P10-T03] Dedup repos: canonical smorinlabs, archive smorin w/ notice, repoint local origin, update repo URLs in docs — *orchestrator*
+- [x] [P10-T04] Toolchain refresh: Bun + deps bump; `bun run check` green — *sonnet*
+- [x] [P10-T05] Commit the load-verification research doc; scrub-check `research/` (no machine paths/PII) — *haiku*
 - [ ] [P10-TS01] CI green on a PR; squash-merge lands; release-please behaves correctly (Release PR opens or correctly abstains)
 
 ### Automated Verification
