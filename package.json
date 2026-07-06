@@ -37,5 +37,10 @@
     "eslint-plugin-security": "4.0.0",
     "lefthook": "1.13.6",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "brace-expansion": "^5.0.6",
+    "fast-uri": "^3.1.2",
+    "js-yaml": "^3.15.0"
   }
 }
