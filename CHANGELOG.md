@@ -116,8 +116,8 @@ Initial tagged release.
 - Agent registry (`getAgent`, `listSupportedTools`), detection orchestrators (`detectAll`, `detectTool`), and public API surface.
 - `skillsmith` CLI: commander entry, `agents` command, `version`, `help [topic]`, SIGINT handler, color-mode resolver honoring `NO_COLOR`/`FORCE_COLOR`/`TERM=dumb`, markdown + JSON (zod-validated) renderers, error-code → exit-code mapping.
 
-[Unreleased]: https://github.com/stevemorin/skillsmith/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/smorinlabs/skillsmith/compare/v0.3.1...HEAD
 [0.3.1]: https://github.com/smorinlabs/skillsmith/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/smorinlabs/skillsmith/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/smorinlabs/skillsmith/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/stevemorin/skillsmith/releases/tag/v0.1.0
+[0.1.0]: https://github.com/smorinlabs/skillsmith/releases/tag/v0.1.0

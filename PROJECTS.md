@@ -18,7 +18,7 @@
 > atomicity/round-trip model) and all final whole-branch reviews / highest-risk verification.
 > Ledger: `.superpowers/sdd/progress.md`.
 
-## [ ] Project P10: Un-park — consolidate + hygiene (v0.3.2)
+## [-] Project P10: Un-park — consolidate + hygiene (v0.3.2)
 **Goal**: Bring the repo back to a healthy, single-home baseline. Finish the in-progress
 release-please wiring (P06 `[-]`): diagnose why the release branch exists with no Release PR,
 reconcile CHANGELOG (missing 0.2.0/0.3.0/0.3.1 sections; salvage from the stale
@@ -38,7 +38,7 @@ archive `smorin/skillsmith` with a deprecation note; repoint local origin. Refre
 - [ ] [P10-TS01] CI green on a PR; squash-merge lands; release-please behaves correctly (Release PR opens or correctly abstains)
 
 ### Automated Verification
-- `bun run check` green; `gh api repos/smorinlabs/skillsmith` canonical; `smorin/skillsmith` archived; CHANGELOG sections 0.1.0→0.3.1 contiguous.
+- `bun run check` green; `gh api repos/smorinlabs/skillsmith` canonical; `smorin/skillsmith` confirmed as transfer redirect to canonical; CHANGELOG sections 0.1.0→0.3.1 contiguous.
 
 ---
 

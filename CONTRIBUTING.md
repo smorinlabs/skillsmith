@@ -5,7 +5,7 @@ Thanks for your interest. Skillsmith is pre-1.0 and the public API is still shif
 ## Dev loop
 
 ```sh
-git clone https://github.com/stevemorin/skillsmith.git
+git clone https://github.com/smorinlabs/skillsmith.git
 cd skillsmith
 bun install                 # installs deps and runs `lefthook install`
 bun run check               # biome + ESLint boundaries + tsc + actionlint + bun test
