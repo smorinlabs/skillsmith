@@ -25,5 +25,16 @@
       "style": { "useImportType": "error", "useNodejsImportProtocol": "error" },
       "correctness": { "noUnusedVariables": "error", "noUnusedImports": "error" }
     }
-  }
+  },
+  "overrides": [
+    {
+      "include": [
+        "package.json",
+        "packages/cli/package.json",
+        "packages/core/package.json",
+        ".release-please-manifest.json"
+      ],
+      "formatter": { "enabled": false }
+    }
+  ]
 }
