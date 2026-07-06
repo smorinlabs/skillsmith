@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as core from '@skillsmith/core';
+import pkg from '../package.json' with { type: 'json' };
 
 describe('@skillsmith/core public API', () => {
   test('exports the documented runtime symbols', () => {
@@ -39,8 +40,8 @@ describe('@skillsmith/core public API', () => {
     for (const k of expected) expect(actual.has(k)).toBe(true);
   });
 
-  test('VERSION matches 0.3.1', () => {
-    expect(core.VERSION).toBe('0.3.1');
+  test('VERSION matches packages/core/package.json', () => {
+    expect(core.VERSION).toBe(pkg.version);
   });
 
   test('detectAll is callable with defaultScanEnv and returns a Result', async () => {

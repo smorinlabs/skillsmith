@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import pkg from '../../core/package.json' with { type: 'json' };
 
 const BIN = 'packages/cli/src/index.ts';
 
@@ -21,7 +22,7 @@ describe('skillsmith help routing', () => {
   test('`skillsmith --version` prints a version, exit 0', async () => {
     const r = await run(['--version']);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/0\.3\.1/);
+    expect(r.stdout).toContain(pkg.version);
   });
 
   test('`skillsmith help exit-codes` prints topic page, exit 0', async () => {
