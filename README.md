@@ -43,7 +43,7 @@ Machine-readable form (`--format json`) wraps results in a small envelope. Shape
 
 ## Install
 
-No prebuilt binaries yet — run from source. Requires [Bun](https://bun.sh) ≥ 1.3.13.
+No prebuilt binaries yet — run from source. Requires [Bun](https://bun.sh) ≥ 1.3.14.
 
 ```sh
 git clone https://github.com/stevemorin/skillsmith.git
