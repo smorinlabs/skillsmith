@@ -91,3 +91,12 @@ release-please rewrites these: root `package.json`, `packages/cli/package.json`,
 Runtime `VERSION` is read from `packages/core/package.json` at import time (`packages/core/src/version.ts`), so the CLI's `--version` follows automatically.
 
 Emergency manual path: `docs/releases.md:95`.
+
+## Dependency overrides (P10)
+
+Root `package.json` `overrides` force `fast-uri`, `js-yaml` (3.15.0 — must stay 3.x for
+gray-matter), and `brace-expansion` (5.x) to patched versions because bun overrides are
+flat/global. Known dormant hazard: minimatch@3 consumers inside eslint's tree will throw
+`TypeError: expand is not a function` if any eslint `files`/glob pattern uses braces
+(e.g. `*.{ts,tsx}`) — no such pattern exists today. If you hit that error, drop the
+`brace-expansion` override (1.x was never vulnerable) or bump the nested pin instead.

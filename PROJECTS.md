@@ -8,7 +8,110 @@
 
 ---
 
-## [ ] Project P09: MVP-2c — `install` + `uninstall` (write path) (v0.4.0)
+> **Revival sequence (2026-07-06):** P10 → P11 → P12 → P09 → P14.
+> Execution: superpowers subagent-driven development — feature branch + squash-merge PR per
+> project (per CLAUDE.md release flow), fresh implementer subagent per task, task review after
+> each, final whole-branch review per project. Model policy: **haiku** = transcription/mechanical
+> (complete spec in brief), **sonnet** = standard implementation + routine task reviews,
+> **opus** = anything tricky (deep-checker subprocess/stream parsing, store/lockfile,
+> atomic-swap correctness) + standard specs, **fable** = the hardest planning (P12 spec:
+> atomicity/round-trip model) and all final whole-branch reviews / highest-risk verification.
+> Ledger: `.superpowers/sdd/progress.md`.
+
+## [-] Project P10: Un-park — consolidate + hygiene (v0.3.2)
+**Goal**: Bring the repo back to a healthy, single-home baseline. Finish the in-progress
+release-please wiring (P06 `[-]`): diagnose why the release branch exists with no Release PR,
+reconcile CHANGELOG (missing 0.2.0/0.3.0/0.3.1 sections; salvage from the stale
+`release-please--branches--main--components--skillsmith` branch, then delete it on both
+remotes). Deduplicate the twin repos — canonical = `smorinlabs/skillsmith` (private until P14),
+archive `smorin/skillsmith` with a deprecation note; repoint local origin. Refresh toolchain
+(Bun pin, dep bumps) and prove CI green via a real PR.
+
+**Out of Scope**: any feature work; going public (→ P14).
+
+### Tests & Tasks
+- [x] [P10-T01] Diagnose release-please: why branch-but-no-PR; fix wiring (workflow perms/config) — *orchestrator + sonnet*
+- [x] [P10-T02] Reconcile CHANGELOG (0.2.0/0.3.0/0.3.1) via the documented manual path; delete stale branch both remotes — *sonnet*
+- [x] [P10-T03] Dedup repos: canonical smorinlabs, archive smorin w/ notice, repoint local origin, update repo URLs in docs — *orchestrator*
+- [x] [P10-T04] Toolchain refresh: Bun + deps bump; `bun run check` green — *sonnet*
+- [x] [P10-T05] Commit the load-verification research doc; scrub-check `research/` (no machine paths/PII) — *haiku*
+- [ ] [P10-TS01] CI green on a PR; squash-merge lands; release-please behaves correctly (Release PR opens or correctly abstains)
+
+### Automated Verification
+- `bun run check` green; `gh api repos/smorinlabs/skillsmith` canonical; `smorin/skillsmith` confirmed as transfer redirect to canonical; CHANGELOG sections 0.1.0→0.3.1 contiguous.
+
+---
+
+## [ ] Project P11: `skillsmith verify` — cross-tool load verification (v0.4.0)
+**Goal**: `skillsmith verify <path> [--tool claude-code|codex]... [--static|--deep] [--json]` —
+per-tool result **matrix** (never one merged verdict), per-tool severities surfaced, exit codes
+for CI. Engine per `research/skill-plugin-load-verification-2026-07-06.md`: Claude static
+(`claude plugin validate --strict`), Claude deep (stream-json `init` event via `--plugin-dir` +
+`--setting-sources ""`), Codex static (temp-`CODEX_HOME` marketplace/plugin add), Codex deep
+(`codex exec` stderr `failed to load skill`). Checkers live in the per-agent dirs
+(`agents/<tool>/verify.ts`); core returns `Result`, CLI owns exit codes/output. The `--json`
+schema is the public contract consumed by the skill-fleet `skill-verify` skill (smorin-harness P09).
+
+**Out of Scope**: skill *execution* testing (load only); kilo-code/opencode verify; Agent-SDK
+mechanism (CLI shell-out first; SDK evaluated as follow-up).
+
+### Tests & Tasks
+- [ ] [P11-BR] Brainstorm + spec (`docs/superpowers/specs/`): CLI surface, JSON schema, severity model, tool-missing/auth-missing semantics — *opus*
+- [ ] [P11-PL] Implementation plan (`docs/superpowers/plans/`) — *opus*
+- [ ] [P11-TS01] Port the broken-fixture suite (good/bad-yaml/bad-noframe/bad-nodesc skills; bad manifests ×2 formats) into `packages/core/tests/fixtures/` — *haiku*
+- [ ] [P11-T01] Core types: `VerifyReport`/`ToolVerdict`/`Finding` + Result plumbing — *sonnet*
+- [ ] [P11-T02] `agents/claude-code/verify.ts`: static validate parser — *sonnet*
+- [ ] [P11-T03] `agents/claude-code/verify.ts`: deep init-event check — *opus*
+- [ ] [P11-T04] `agents/codex/verify.ts`: static manifest check (temp CODEX_HOME) — *sonnet*
+- [ ] [P11-T05] `agents/codex/verify.ts`: deep stderr scrape — *opus*
+- [ ] [P11-T06] CLI command: matrix rendering, `--json`, exit codes, help topic — *sonnet*
+- [ ] [P11-TS02] Env-gated live e2e against real `claude`/`codex` (skipped in CI, run locally) — *sonnet*
+- [ ] [P11-RV] Final whole-branch review — *fable*
+
+### Automated Verification
+- `bun run check` green; fixture suite passes; `verify --json` output validates against the schema.
+
+---
+
+## [ ] Project P12: `promote` ⇄ `dev` — bidirectional placement flip (v0.5.0)
+**Goal**: Flip a skill/plugin between **dev mode** (symlink → source checkout) and **production**
+(pinned copy from a content-addressed store). `skillsmith promote <target>`: verify → snapshot
+store@git-SHA → atomic swap symlink→pinned → lockfile record. `skillsmith dev <target>`
+(**alias: `demote`**): record prod placement → swap to dev-symlink → lockfile. Round-trip
+lossless (lockfile stores both placements); `--rollback` restores prior state. Targets both
+Claude (`~/.claude/skills`) and Codex skill dirs where present.
+
+### Tests & Tasks
+- [ ] [P12-BR] Brainstorm + spec: lockfile schema, store layout (seed of P09's store), atomicity, multi-tool semantics, naming (`dev` primary / `demote` alias) — *fable*
+- [ ] [P12-PL] Implementation plan — *opus*
+- [ ] [P12-TS01] Fixture fleet (fake `~/.claude`/`~/.codex` trees with symlink + copy placements) — *haiku*
+- [ ] [P12-T01] Placement detection (symlink→repo vs pinned vs absent), per agent dir — *sonnet*
+- [ ] [P12-T02] Store snapshot @ SHA + lockfile read/write — *opus*
+- [ ] [P12-T03] Atomic swap + `--rollback` (crash-safe ordering) — *opus*
+- [ ] [P12-T04] CLI: `promote` / `dev` (alias `demote`), verify-gate integration — *sonnet*
+- [ ] [P12-TS02] Round-trip e2e: dev→promote→dev lossless on fixture fleet — *sonnet*
+- [ ] [P12-RV] Final whole-branch review — *fable*
+
+### Automated Verification
+- Round-trip test green; interrupted-swap test leaves a recoverable state; `bun run check` green.
+
+---
+
+## [ ] Project P14: Production flip — skillsmith v1.0.0
+**Goal**: Skillsmith itself dev→production: flip canonical repo public (post scrub), per-platform
+compiled binaries, distribution via `smorinlabs/homebrew-tap` + npm, docs refresh (README command
+surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
+
+### Tests & Tasks
+- [ ] [P14-T01] Public-flip scrub pass (research/ + history review) — *sonnet*
+- [ ] [P14-T02] Release binaries (darwin/linux × arm64/x64) wired into release-please release assets — *sonnet*
+- [ ] [P14-T03] Homebrew tap formula + npm publish — *sonnet*
+- [ ] [P14-T04] README/docs refresh + version matrix — *sonnet*
+- [ ] [P14-RV] Final review + `Release-As: 1.0.0` — *fable*
+
+---
+
+## [ ] Project P09: MVP-2c — `install` + `uninstall` (write path) (v0.6.0)
 **Goal**: Ship the write path for SkillSmith — `install` and `uninstall` commands targeting **claude-code only**. Introduces the source resolver (Git URL + GitHub shorthand, 4-form parser), partial-clone Git fetch, content-addressed store at `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/`, symlinked entry points, scope flags + auto-default, idempotence, cross-scope duplicate detection, and the remaining exit codes (2/4/5/6/130).
 
 **Out of Scope**
