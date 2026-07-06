@@ -1,12 +1,15 @@
 {
   "name": "@skillsmith/core",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
-  "files": ["src", "README.md"],
+  "files": [
+    "src",
+    "README.md"
+  ],
   "dependencies": {
     "gray-matter": "4.0.3",
     "proper-lockfile": "4.1.2",
