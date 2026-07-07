@@ -59,14 +59,14 @@ mechanism (CLI shell-out first; SDK evaluated as follow-up).
 ### Tests & Tasks
 - [x] [P11-BR] Brainstorm + spec (`docs/superpowers/specs/`): CLI surface, JSON schema, severity model, skip semantics (deep mode proven auth-free) — *opus*
 - [x] [P11-PL] Implementation plan (`docs/superpowers/plans/`) — *fable*
-- [ ] [P11-TS01] Port the broken-fixture suite (good/bad-yaml/bad-noframe/bad-nodesc skills; bad manifests ×2 formats) into `packages/core/tests/fixtures/` — *haiku*
-- [ ] [P11-T01] Core types: `VerifyReport`/`ToolVerdict`/`Finding` + Result plumbing — *sonnet*
-- [ ] [P11-T02] `agents/claude-code/verify.ts`: static validate parser — *sonnet*
-- [ ] [P11-T03] `agents/claude-code/verify.ts`: deep init-event check — *opus*
-- [ ] [P11-T04] `agents/codex/verify.ts`: static manifest check (temp CODEX_HOME) — *sonnet*
-- [ ] [P11-T05] `agents/codex/verify.ts`: deep stderr scrape — *opus*
-- [ ] [P11-T06] CLI command: matrix rendering, `--json`, exit codes, help topic — *sonnet*
-- [ ] [P11-TS02] Env-gated live e2e against real `claude`/`codex` (skipped in CI, run locally) — *sonnet*
+- [x] [P11-TS01] Port the broken-fixture suite (good/bad-yaml/bad-noframe/bad-nodesc skills; bad manifests ×2 formats) into `packages/core/tests/fixtures/` — *haiku*
+- [x] [P11-T01] Core types: `VerifyReport`/`ToolVerdict`/`Finding` + Result plumbing — *sonnet*
+- [x] [P11-T02] `agents/claude-code/verify.ts`: static validate parser — *sonnet*
+- [x] [P11-T03] `agents/claude-code/verify.ts`: deep init-event check — *opus*
+- [x] [P11-T04] `agents/codex/verify.ts`: static manifest check (temp CODEX_HOME) — *sonnet*
+- [x] [P11-T05] `agents/codex/verify.ts`: deep stderr scrape — *opus*
+- [x] [P11-T06] CLI command: matrix rendering, `--json`, exit codes, help topic — *sonnet*
+- [x] [P11-TS02] Env-gated live e2e against real `claude`/`codex` (skipped in CI, run locally) — *sonnet*
 - [ ] [P11-RV] Final whole-branch review — *fable*
 
 ### Automated Verification
