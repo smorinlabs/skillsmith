@@ -325,8 +325,8 @@ P2 staged      staging dir fully materialized: copyTree(store entry → .skillsm
                files fsynced, content hash verified against the store entry
 P3 backed-up   rename(live symlink → .skillsmith-backup-…)          ← live path now ABSENT
 P4 live        rename(.skillsmith-staging-… → live path)            ← live path now the pinned copy
-P5 committed   backup symlink unlinked; skills root fsyncDir'd; ledger updated
-               (mode, pinned record, journal.phase=committed, completedAt)
+P5 committed   skills root fsyncDir'd; ledger updated (mode, pinned record,
+               journal.phase=committed, completedAt); then backup symlink unlinked
 ```
 
 Dev (pinned copy → symlink). `before` = `{ mode: "pinned", storePath, contentHash }`:
@@ -336,13 +336,14 @@ P1 prepared    journal written; dev source resolved (§4.2)
 P2 staged      staging symlink created: makeSymlink(dev.sourcePath, .skillsmith-staging-…)
 P3 backed-up   rename(live dir → .skillsmith-backup-…)              ← live path now ABSENT
 P4 live        rename(.skillsmith-staging-… → live path)            ← live path now the symlink
-P5 committed   backup dir removed iff contentHash(backup) == pinned.contentHash,
-               else kept + warning (D14); fsyncDir; ledger updated
+P5 committed   ledger updated (mode, dev record); fsyncDir; then backup dir removed iff
+               contentHash(backup) == pinned.contentHash, else kept + warning (D14)
 ```
 
 Each journal write lands (write-ahead, §7.1) **before** the filesystem action of the phase it
 names authorizes; i.e. `phase: "backed-up"` is persisted, then the P3 rename runs, then
-`phase: "live"` is persisted, then the P4 rename runs, then commit.
+`phase: "live"` is persisted, then the P4 rename runs, then `phase: "committed"` is persisted,
+then the backup is reclaimed (the committed journal authorizes the discard).
 
 ### 8.3 Journal record
 
@@ -372,8 +373,8 @@ before (or during) the phase's filesystem action, so recovery probes the filesys
 | C2 after `staged`, before P3 rename | `staged` | old, intact | remove staging, clear journal | continue at P3 |
 | C3 after `backed-up` journal, around P3 rename | `backed-up` | **old or ABSENT** (probe) | if live still old: remove staging, clear journal; if absent: `rename(backup → live)`, remove staging, clear journal | if live still old: run P3; if absent: continue at P4 |
 | C4 after `live` journal, around P4 rename | `live` | **ABSENT or new** (probe) | if absent: `rename(backup → live)`, remove staging; if new: `rename(live → staging-name)`, `rename(backup → live)`, remove staging'; clear journal | if absent: run P4; if new: continue at P5 |
-| C5 after P4, before commit write | `live` | new | as C4 "new" row | complete P5 (cleanup + commit) |
-| C6 committed | `committed` | new | inverse flip via retained records (a normal, fully journaled flip in the opposite direction — D10) | no-op (already converged, D13) |
+| C5 after P4, before commit write | `live` | new | as C4 "new" row | complete P5 (commit + cleanup) |
+| C6 committed | `committed` | new | inverse flip via retained records (a normal, fully journaled flip in the opposite direction — D10) | reclaim any backup residue (idempotent), else no-op (D13) |
 
 Invariants provable from the table (and locked by tests, §15):
 

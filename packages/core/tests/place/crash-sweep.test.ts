@@ -257,7 +257,7 @@ const runCrashSweep = async (f: FixtureFleet, cfg: SweepCfg): Promise<void> => {
   const totalMutations = counter.calls();
   expect(totalMutations).toBeGreaterThan(0);
 
-  const observed = new Set<JournalPhase | 'none'>(['committed']);
+  const observed = new Set<JournalPhase | 'none'>();
 
   for (let n = 1; n <= totalMutations; n++) {
     await restoreState(env, skillsRoot, ledgerPath, baseline);
