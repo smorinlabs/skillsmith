@@ -83,9 +83,8 @@ const runStaticMode = async (
   }
 
   const findings = parseClaudeValidateOutput(`${result.stdout}\n${result.stderr}`, opts.path);
-  const hasMarker = /[✘⚠]/.test(`${result.stdout}${result.stderr}`);
 
-  if (findings.length === 0 && result.code !== 0 && !hasMarker) {
+  if (findings.length === 0 && result.code !== 0) {
     return {
       mode: 'static',
       status: 'error',

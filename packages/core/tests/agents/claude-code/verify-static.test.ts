@@ -254,6 +254,23 @@ describe('verifyClaudeCode', () => {
     });
   });
 
+  test('exit 1 with bare ✘ marker only (no per-check findings) -> status error, skipReason exec-error', async () => {
+    const bareMarkerOnly = '✘ Validation failed';
+    const scanEnv = fakeInstalled({
+      exec: async () => ({ code: 1, stdout: bareMarkerOnly, stderr: '', timedOut: false }),
+    });
+    const r = await verifyClaudeCode(scanEnv, {
+      path: '/work/dummytest',
+      modes: ['static'],
+      strict: false,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.modes[0]?.status).toBe('error');
+    expect(r.value.modes[0]?.skipReason).toBe('exec-error');
+    expect(r.value.modes[0]?.verdict).toBeNull();
+  });
+
   test("'deep' requested alone produces no ModeResult yet", async () => {
     const scanEnv = fakeInstalled({
       exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
