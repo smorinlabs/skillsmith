@@ -10,5 +10,17 @@ export const exitCodeForError = (e: SkillSmithError): number => {
       return 3;
     case 'skill-parse-error':
       return 1;
+    case 'flip-failed':
+      return 1;
+    case 'flip-refused':
+      return 2;
+    case 'ledger-error':
+      return 3;
+    case 'placement-not-found':
+      return 4;
+    case 'source-unresolvable':
+      return 5;
+    case 'permission-denied':
+      return 6;
   }
 };

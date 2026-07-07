@@ -1,5 +1,7 @@
 export type Platform = 'darwin' | 'linux' | 'win32';
 
+export type PathKind = 'file' | 'dir' | 'symlink' | 'absent';
+
 export interface XdgDirs {
   config: string;
   data: string;
@@ -36,4 +38,17 @@ export interface ScanEnv {
     signal?: AbortSignal,
   ): Promise<string | 'unknown'>;
   exec(cmd: string, args: readonly string[], opts?: ExecOptions): Promise<ExecResult>;
+  pathKind(p: string): Promise<PathKind>;
+  isExecutable(p: string): Promise<boolean>;
+  readBytes(p: string): Promise<Uint8Array>;
+  readLink(p: string): Promise<string>;
+  makeSymlink(target: string, linkPath: string): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
+  copyTree(from: string, to: string): Promise<void>;
+  removeTree(p: string): Promise<void>;
+  makeDir(p: string): Promise<void>;
+  writeTextFile(p: string, text: string): Promise<void>;
+  fsyncFile(p: string): Promise<void>;
+  fsyncDir(p: string): Promise<void>;
+  withFileLock<T>(p: string, fn: () => Promise<T>): Promise<T>;
 }
