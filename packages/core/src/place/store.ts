@@ -95,9 +95,19 @@ const parseRemote = (url: string): { owner: string; repo: string } | null => {
   // scp-like ssh form: git@host:owner/repo(.git)
   const ssh = trimmed.match(/^[^@\s]+@[^:\s]+:([^/\s]+)\/(.+)$/);
   if (ssh?.[1] && ssh[2]) return { owner: ssh[1], repo: stripGit(ssh[2]) };
-  // url form: scheme://[user@]host/owner/repo(.git)
-  const url2 = trimmed.match(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/\s]+@)?[^/\s]+\/([^/\s]+)\/(.+)$/);
-  if (url2?.[1] && url2[2]) return { owner: url2[1], repo: stripGit(url2[2]) };
+  // url form: scheme://[user@]host/owner/repo(.git) — parsed via URL to avoid regex backtracking
+  if (/^[a-z][a-z0-9+.-]*:\/\//.test(trimmed) && !/\s/.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      const segments = parsed.pathname.split('/').filter((s) => s.length > 0);
+      const owner = segments[0];
+      if (owner && segments.length >= 2) {
+        return { owner, repo: stripGit(segments.slice(1).join('/')) };
+      }
+    } catch {
+      // fall through to null — not a parseable URL
+    }
+  }
   return null;
 };
 
