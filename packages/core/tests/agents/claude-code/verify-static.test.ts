@@ -18,20 +18,39 @@ const env = (): ScanEnv => ({
   exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 });
 
+// Real `claude plugin validate` output (2.1.202): the marker sits alone on a summary line
+// ("✘ Found N error(s):" / "⚠ Found N warning(s):"); the actual check/message follows on an
+// indented "  ❯ <checkId>: <message>" continuation line. "Validating skill: <path>" /
+// "Validating plugin manifest: <path>" header lines carry the file for whatever follows.
 const MIXED_SKILL_BLOCK = [
   'Validating skill: /work/dummytest/skills/bad-yaml/SKILL.md',
-  '✘ frontmatter: YAML frontmatter failed to parse: YAML Parse error: Unexpected character.',
-  '  At runtime this skill loads with empty metadata (all frontmatter fields silently dropped).',
+  '',
+  '✘ Found 1 error:',
+  '',
+  '  ❯ frontmatter: YAML frontmatter failed to parse: YAML Parse error: Unexpected character.',
+  '',
   'Validating skill: /work/dummytest/skills/bad-noframe/SKILL.md',
-  '⚠ frontmatter: No frontmatter block found. Add YAML frontmatter between --- delimiters ...',
+  '',
+  '⚠ Found 1 warning:',
+  '',
+  '  ❯ frontmatter: No frontmatter block found. Add YAML frontmatter between --- delimiters ...',
+  '',
   'Validating skill: /work/dummytest/skills/bad-nodesc/SKILL.md',
-  '⚠ description: No description in frontmatter. ...',
+  '',
+  '⚠ Found 1 warning:',
+  '',
+  '  ❯ description: No description in frontmatter. ...',
+  '',
   '✘ Validation failed',
 ].join('\n');
 
 const BROKEN_MANIFEST_LINES = [
-  "✘ json: Invalid JSON syntax: JSON Parse error: Expected '}'",
-  '✘ name: Invalid input: expected string, received undefined',
+  'Validating plugin manifest: /work/claude-badjson/.claude-plugin/plugin.json',
+  '',
+  '✘ Found 2 errors:',
+  '',
+  "  ❯ json: Invalid JSON syntax: JSON Parse error: Expected '}'",
+  '  ❯ name: Invalid input: expected string, received undefined',
 ].join('\n');
 
 describe('parseClaudeValidateOutput', () => {
@@ -46,7 +65,7 @@ describe('parseClaudeValidateOutput', () => {
       message: 'YAML frontmatter failed to parse: YAML Parse error: Unexpected character.',
       file: 'skills/bad-yaml/SKILL.md',
       subject: 'skill',
-      raw: '✘ frontmatter: YAML frontmatter failed to parse: YAML Parse error: Unexpected character.',
+      raw: '❯ frontmatter: YAML frontmatter failed to parse: YAML Parse error: Unexpected character.',
     });
 
     expect(findings[1]).toEqual({
@@ -56,7 +75,7 @@ describe('parseClaudeValidateOutput', () => {
       message: 'No frontmatter block found. Add YAML frontmatter between --- delimiters ...',
       file: 'skills/bad-noframe/SKILL.md',
       subject: 'skill',
-      raw: '⚠ frontmatter: No frontmatter block found. Add YAML frontmatter between --- delimiters ...',
+      raw: '❯ frontmatter: No frontmatter block found. Add YAML frontmatter between --- delimiters ...',
     });
 
     expect(findings[2]).toEqual({
@@ -66,7 +85,7 @@ describe('parseClaudeValidateOutput', () => {
       message: 'No description in frontmatter. ...',
       file: 'skills/bad-nodesc/SKILL.md',
       subject: 'skill',
-      raw: '⚠ description: No description in frontmatter. ...',
+      raw: '❯ description: No description in frontmatter. ...',
     });
 
     // The bare "✘ Validation failed" summary line must not produce a 4th finding.
@@ -84,7 +103,7 @@ describe('parseClaudeValidateOutput', () => {
       message: "Invalid JSON syntax: JSON Parse error: Expected '}'",
       file: '.claude-plugin/plugin.json',
       subject: 'manifest',
-      raw: "✘ json: Invalid JSON syntax: JSON Parse error: Expected '}'",
+      raw: "❯ json: Invalid JSON syntax: JSON Parse error: Expected '}'",
     });
 
     expect(findings[1]).toEqual({
@@ -94,12 +113,13 @@ describe('parseClaudeValidateOutput', () => {
       message: 'Invalid input: expected string, received undefined',
       file: '.claude-plugin/plugin.json',
       subject: 'manifest',
-      raw: '✘ name: Invalid input: expected string, received undefined',
+      raw: '❯ name: Invalid input: expected string, received undefined',
     });
   });
 
   test('no findings before any "Validating skill:" line means file: null', () => {
-    const findings = parseClaudeValidateOutput('✘ frontmatter: oops', '/work/dummytest');
+    const noHeader = ['✘ Found 1 error:', '', '  ❯ frontmatter: oops'].join('\n');
+    const findings = parseClaudeValidateOutput(noHeader, '/work/dummytest');
     expect(findings).toHaveLength(1);
     expect(findings[0]?.file).toBeNull();
     expect(findings[0]?.subject).toBe('skill');
@@ -141,7 +161,10 @@ describe('verifyClaudeCode', () => {
   test('warnings only + strict:true -> mode verdict fail; strict adds --strict to exec args', async () => {
     const warningsOnly = [
       'Validating skill: /work/dummytest/skills/bad-noframe/SKILL.md',
-      '⚠ frontmatter: No frontmatter block found. Add YAML frontmatter between --- delimiters ...',
+      '',
+      '⚠ Found 1 warning:',
+      '',
+      '  ❯ frontmatter: No frontmatter block found. Add YAML frontmatter between --- delimiters ...',
     ].join('\n');
     let capturedArgs: readonly string[] | undefined;
     const scanEnv = fakeInstalled({

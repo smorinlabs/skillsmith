@@ -158,7 +158,7 @@ const runStaticMode = async (
       `${JSON.stringify(
         {
           name: MARKETPLACE_NAME,
-          plugins: [{ source: { source: 'local', path: `./plugins/${name}` } }],
+          plugins: [{ name, source: { source: 'local', path: `./plugins/${name}` } }],
         },
         null,
         2,

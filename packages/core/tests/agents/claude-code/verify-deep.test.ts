@@ -24,13 +24,27 @@ const CANNED_DEEP_BLOCK = [
 ].join('\n');
 
 // The Task-3 static block for the `plugin validate` call: one error + two warnings.
+// Real output shape: the marker sits alone on a "Found N error(s)/warning(s):" summary
+// line; the check/message follows on an indented "  ❯ <checkId>: <message>" line.
 const STATIC_BLOCK = [
   'Validating skill: /work/dummytest/skills/bad-yaml/SKILL.md',
-  '✘ frontmatter: YAML frontmatter failed to parse: YAML Parse error: Unexpected character.',
+  '',
+  '✘ Found 1 error:',
+  '',
+  '  ❯ frontmatter: YAML frontmatter failed to parse: YAML Parse error: Unexpected character.',
+  '',
   'Validating skill: /work/dummytest/skills/bad-noframe/SKILL.md',
-  '⚠ frontmatter: No frontmatter block found. Add YAML frontmatter between --- delimiters ...',
+  '',
+  '⚠ Found 1 warning:',
+  '',
+  '  ❯ frontmatter: No frontmatter block found. Add YAML frontmatter between --- delimiters ...',
+  '',
   'Validating skill: /work/dummytest/skills/bad-nodesc/SKILL.md',
-  '⚠ description: No description in frontmatter. ...',
+  '',
+  '⚠ Found 1 warning:',
+  '',
+  '  ❯ description: No description in frontmatter. ...',
+  '',
   '✘ Validation failed',
 ].join('\n');
 

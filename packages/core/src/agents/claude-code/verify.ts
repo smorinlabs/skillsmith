@@ -14,45 +14,69 @@ import type {
 } from '../../verify/types.ts';
 import { detect } from './detect.ts';
 
-const MARKER_RE = /([✘⚠])\s*([^\s:]+):\s*(.*)/;
-const VALIDATING_RE = /^Validating skill:\s*(.+)$/;
+// Real `claude plugin validate` output puts the marker alone on a summary line
+// ("✘ Found N error(s):" / "⚠ Found N warning(s):"); the check/message that marker covers
+// follows on a separate, indented continuation line ("  ❯ <checkId>: <message>"). The subject
+// and file come from whichever "Validating skill: <path>" / "Validating plugin manifest: <path>"
+// header line preceded the block.
+const VALIDATING_SKILL_RE = /^Validating skill:\s*(.+)$/;
+const VALIDATING_MANIFEST_RE = /^Validating plugin manifest:\s*(.+)$/;
+const SUMMARY_RE = /^[✘⚠]\s*Found\s+\d+\s+(?:error|warning)s?:/;
+const FINDING_RE = /^\s*❯\s*([^\s:]+):\s*(.*)$/;
 
 /** Pure. Parses `claude plugin validate` output into findings. targetPath strips file prefixes. */
 export const parseClaudeValidateOutput = (output: string, targetPath: string): VerifyFinding[] => {
   const findings: VerifyFinding[] = [];
-  let currentFile: string | null = null;
   const prefix = targetPath.endsWith('/') ? targetPath : `${targetPath}/`;
 
-  for (const line of output.split('\n')) {
-    if (/^\s/.test(line)) continue; // indented continuation line, ignored
+  let currentFile: string | null = null;
+  let currentSubject: 'skill' | 'manifest' = 'skill';
+  let pendingSeverity: 'error' | 'warning' | null = null;
 
-    const validating = line.match(VALIDATING_RE);
-    if (validating) {
-      const rawFile = validating[1];
-      if (rawFile !== undefined) {
-        const file = rawFile.trim();
-        currentFile = file.startsWith(prefix) ? file.slice(prefix.length) : file;
-      }
+  const setCurrentFile = (rawFile: string | undefined): void => {
+    if (rawFile === undefined) return;
+    const file = rawFile.trim();
+    currentFile = file.startsWith(prefix) ? file.slice(prefix.length) : file;
+  };
+
+  for (const line of output.split('\n')) {
+    const skillHeader = line.match(VALIDATING_SKILL_RE);
+    if (skillHeader) {
+      setCurrentFile(skillHeader[1]);
+      currentSubject = 'skill';
+      pendingSeverity = null;
       continue;
     }
 
-    const marker = line.match(MARKER_RE);
-    if (!marker) continue; // e.g. the bare "✘ Validation failed" summary line
+    const manifestHeader = line.match(VALIDATING_MANIFEST_RE);
+    if (manifestHeader) {
+      setCurrentFile(manifestHeader[1]);
+      currentSubject = 'manifest';
+      pendingSeverity = null;
+      continue;
+    }
 
-    const [, markerChar, check, message] = marker;
-    if (markerChar === undefined || check === undefined || message === undefined) continue;
+    if (SUMMARY_RE.test(line)) {
+      pendingSeverity = line.trimStart().startsWith('✘') ? 'error' : 'warning';
+      continue;
+    }
 
-    const toolSeverity: 'error' | 'warning' = markerChar === '✘' ? 'error' : 'warning';
-    const isManifest = check === 'json' || check === 'name';
+    if (pendingSeverity === null) continue; // e.g. the bare "✘ Validation failed" summary line
+
+    const finding = line.match(FINDING_RE);
+    if (!finding) continue;
+
+    const [, check, message] = finding;
+    if (check === undefined || message === undefined) continue;
 
     findings.push({
       checkId: `claude.${check}`,
-      toolSeverity,
-      normalizedSeverity: toolSeverity,
+      toolSeverity: pendingSeverity,
+      normalizedSeverity: pendingSeverity,
       message,
-      file: isManifest ? '.claude-plugin/plugin.json' : currentFile,
-      subject: isManifest ? 'manifest' : 'skill',
-      raw: line,
+      file: currentFile,
+      subject: currentSubject,
+      raw: line.trim(),
     });
   }
 
