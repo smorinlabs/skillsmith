@@ -58,7 +58,7 @@ mechanism (CLI shell-out first; SDK evaluated as follow-up).
 
 ### Tests & Tasks
 - [x] [P11-BR] Brainstorm + spec (`docs/superpowers/specs/`): CLI surface, JSON schema, severity model, skip semantics (deep mode proven auth-free) — *opus*
-- [ ] [P11-PL] Implementation plan (`docs/superpowers/plans/`) — *fable*
+- [x] [P11-PL] Implementation plan (`docs/superpowers/plans/`) — *fable*
 - [ ] [P11-TS01] Port the broken-fixture suite (good/bad-yaml/bad-noframe/bad-nodesc skills; bad manifests ×2 formats) into `packages/core/tests/fixtures/` — *haiku*
 - [ ] [P11-T01] Core types: `VerifyReport`/`ToolVerdict`/`Finding` + Result plumbing — *sonnet*
 - [ ] [P11-T02] `agents/claude-code/verify.ts`: static validate parser — *sonnet*
