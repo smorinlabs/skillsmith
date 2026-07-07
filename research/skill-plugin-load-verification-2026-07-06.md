@@ -212,4 +212,52 @@ Asking the model "list your skills" (model-probe) — non-deterministic; use it 
 - Codex plugin-manifest `missing name` (only invalid-JSON tested); marketplace-manifest schema errors
   beyond wrong-location.
 - **Execution** of a loaded skill (invoking it and observing behavior) — this doc covers *load* verification only.
-- Auth/cost model for CI (both runtime paths spend a small model call; the static paths do not).
+- Auth/cost model for CI — **RESOLVED (2026-07-07 addendum below): the deep/runtime paths are auth-free
+  and model-free; init enumeration (Claude) and `failed to load skill` (Codex) fire at session start
+  before any API call. Static paths were already model-free.**
+
+---
+
+## Addendum (2026-07-07) — deep verification is auth-independent; frozen auth-failure signatures
+
+**Verified live against the same tools (Claude Code `2.1.201`, codex-cli `0.142.5`, macOS).** This
+**supersedes the "needs auth + one cheap session/turn" qualifiers on the deep/runtime paths above**: both
+tools enumerate the plugin/skills **locally at session init, before the first API turn**, so an isolated
+(empty-config) session produces the load result and *then* fails auth. That auth failure is the expected,
+healthy tail — not a verifier failure.
+
+### Deep mode needs no auth and no model call
+
+- **Claude.** Under an empty `CLAUDE_CONFIG_DIR` with `--plugin-dir <dummy-plugin> --setting-sources ""`,
+  the `init` event still enumerated `dummytest:good-skill` and `plugins: ['dummytest']`; the turn then
+  failed with `authentication_failed`. So the init/enumeration is available with **no auth and no model
+  call** — key success on the `init` event and ignore the tail.
+- **Codex.** All three `failed to load skill` stderr errors were emitted in a **fully unauthenticated**
+  session that also returned `401 Unauthorized` in the same run — the skill-load surface fires before any
+  model call.
+
+### Frozen auth-failure signatures (also the test simulation recipes)
+
+**Claude — simulate an unauthenticated run:**
+```bash
+CLAUDE_CONFIG_DIR=$(mktemp -d) claude --print --verbose --output-format stream-json "ok"
+```
+→ **exit 1**; an assistant event carrying the structured field `"error":"authentication_failed"` with
+text `Not logged in · Please run /login`; a final `result` event with `is_error: true`.
+**Gotcha:** `--verbose` is **required** with `stream-json` under an isolated config dir.
+
+**Codex — simulate an unauthenticated run:**
+```bash
+CODEX_HOME=$(mktemp -d) codex exec --json --skip-git-repo-check -C <dir> "ok"
+```
+→ **exit 1**; stdout `{"type":"error","message":"…401 Unauthorized…"}` events; stderr
+`ERROR codex_api…: 401 Unauthorized`. **Gotcha:** `--skip-git-repo-check` (or a trusted dir) is required
+for temp workdirs.
+
+### Consequence for a verifier
+
+- Run deep under empty config dirs (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`); no signed-in session required.
+- Treat "`init` received" (Claude) / the `failed to load skill` scan (Codex) as the success signal; treat
+  the trailing `authentication_failed` / `401` + exit 1 as the **expected** tail, not a finding.
+- There is no auth-skip to detect: the deep skip machinery reduces to tool-missing, timeout, and
+  unexpected (unparseable) failure.

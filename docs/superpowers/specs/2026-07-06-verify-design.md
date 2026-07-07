@@ -1,16 +1,19 @@
 # SkillSmith P11 design — `skillsmith verify` — "Does this load in each tool?"
 
-**Status:** Draft (2026-07-06) — pending approval. This is the P11-BR deliverable.
-**Scope:** One new read-only command, `skillsmith verify <path>`, that loads a plugin under
-each target tool's own verifier and reports a **per-tool result matrix** (never one merged verdict).
-Static (no-model, no-auth) by default; `--deep` opt-in adds a session-backed load confirmation.
+**Status:** Draft (2026-07-06); amended 2026-07-07 — both open questions resolved (bare-skill input,
+auth-free deep mode; proven live). This is the P11-BR deliverable.
+**Scope:** One new read-only command, `skillsmith verify <path>`, that loads a plugin **or a bare skill**
+under each target tool's own verifier and reports a **per-tool result matrix** (never one merged verdict).
+Static is the default; `--deep` opt-in adds a session-backed load confirmation. **Both modes are
+auth-free and model-free** — deep's only extra cost is startup latency (§7.4).
 **Release framing:** `v0.4.0` (minor `feat` — new command). Internal milestone; no public release.
 **Prerequisite:** `v0.3.2` (P10) tagged; per-agent modules and the `Result`/`Finding` foundations live.
 **Consumer contract:** the `--json` output is a versioned public contract consumed by the
 smorin-harness skill-fleet `skill-verify` skill (P09). It is versioned here and evolved additively.
-**Empirical basis:** `research/skill-plugin-load-verification-2026-07-06.md` — every command, error
-string, and severity below was reproduced live against **Claude Code `2.1.201`** and
-**codex-cli `0.142.5`** on macOS. This spec does not invent capabilities beyond what that doc proved.
+**Empirical basis:** `research/skill-plugin-load-verification-2026-07-06.md` (incl. its 2026-07-07
+addendum) — every command, error string, and severity below was reproduced live against
+**Claude Code `2.1.201`** and **codex-cli `0.142.5`** on macOS. This spec does not invent capabilities
+beyond what that doc proved.
 
 ---
 
@@ -22,8 +25,9 @@ Codex — **detect those failures deterministically, but through different surfa
 severities**. The research doc proves the sharpest example: a skill missing `description` is a
 **warning** in Claude (loads unless `--strict`) and a hard **error** in Codex (silently dropped).
 
-`skillsmith verify <path>` runs each tool's own verifier against a plugin directory and returns what
-each tool actually reports. The command's defining constraint, inherited directly from the research:
+`skillsmith verify <path>` runs each tool's own verifier against a plugin directory (or a bare skill,
+wrapped in an ephemeral plugin — §4.1) and returns what each tool actually reports. The command's
+defining constraint, inherited directly from the research:
 **there is no single cross-tool verdict.** The output is a matrix — one result per (tool, mode) — and
 the cross-tool severity disagreement is preserved, never collapsed.
 
@@ -49,11 +53,11 @@ research failure taxonomy; the research doc is authoritative.
 | Tool · mode | Command (proven) | Auth / model | Covers manifest | Covers skills | Gives reasons |
 |---|---|---|---|---|---|
 | **claude · static** | `claude plugin validate <dir> [--strict]` | none | ✅ | ✅ | ✅ (`✘`/`⚠` + text) |
-| **claude · deep** | `claude --print --output-format stream-json --setting-sources "" --plugin-dir <dir> "ok"` → parse `init` event | auth + 1 model turn | — | presence only | ❌ (broken skills drop **silently**) |
+| **claude · deep** | `CLAUDE_CONFIG_DIR=$(mktemp -d) claude --print --verbose --output-format stream-json --setting-sources "" --plugin-dir <dir> "ok"` → parse `init` event | none (isolated) | — | presence only | ❌ (broken skills drop **silently**) |
 | **codex · static** | temp `CODEX_HOME`; `codex plugin marketplace add <root>`; `codex plugin add <p>@<mkt>`; `codex plugin list --json` | none | ✅ | ❌ | ✅ for manifest (`failed to parse plugin.json`) |
-| **codex · deep** | temp `CODEX_HOME`; `codex exec -C <proj> --dangerously-bypass-approvals-and-sandbox "ok" 2>err`; grep `failed to load skill` | auth + 1 session | — | ✅ | ✅ (`ERROR … failed to load skill <file>: <reason>`) |
+| **codex · deep** | empty `CODEX_HOME`; `codex exec -C <proj> --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox "ok" 2>err`; grep `failed to load skill` | none (isolated) | — | ✅ | ✅ (`ERROR … failed to load skill <file>: <reason>`) |
 
-**Three consequences drive the design:**
+**Four consequences drive the design:**
 
 1. **Claude static is the whole gate for Claude** (manifest + skills, no auth). Claude deep only adds
    *presence* confirmation and, critically, **cannot say why** a skill failed.
@@ -61,6 +65,9 @@ research failure taxonomy; the research doc is authoritative.
    (deep). So a codex result in `--static` mode has a real coverage gap that must be surfaced, not
    hidden behind a green checkmark.
 3. **The same defect earns different severities per tool.** Any model that emits one verdict is wrong.
+4. **Deep is auth-free and model-free** (proven 2026-07-07 — §7.4). Both tools enumerate the plugin
+   locally at session init *before* any API call, so deep runs under empty config dirs and never needs a
+   signed-in session; its only extra cost over static is startup latency (~2-8 s/tool).
 
 ---
 
@@ -68,14 +75,14 @@ research failure taxonomy; the research doc is authoritative.
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | **Input is a plugin directory** (contains `.claude-plugin/plugin.json` and/or `.codex-plugin/plugin.json`, with skills under `skills/<name>/SKILL.md`). Not a directory → exit 2. | This is exactly what the proven commands consume (`claude plugin validate <dir>`; the codex marketplace wrapper). Bare-skill input is Open Question 1. |
+| D1 | **Input is a plugin directory _or_ a bare skill directory.** A plugin dir contains `.claude-plugin/plugin.json` and/or `.codex-plugin/plugin.json`, with skills under `skills/<name>/SKILL.md`. A bare skill dir contains a `SKILL.md`; `verify` wraps it in an ephemeral generated plugin (minimal `plugin.json` + `skills/<name>/`) under a temp dir before dispatching (§4.1). Neither shape (no manifest, no `SKILL.md`) → exit 2. | The proven commands consume a plugin layout (`claude plugin validate <dir>`; the codex marketplace wrapper); the wrapper shape is proven — the research dummy-plugin fixture was a hand-written `plugin.json` + `skills/`, accepted by both `claude plugin validate` and `--plugin-dir` runtime loading. |
 | D2 | **Per-tool matrix, never a merged verdict.** `VerifyReport.tools[]` holds one `ToolVerdict` per tool; each `ToolVerdict.modes[]` holds one `ModeResult` per mode run. | The research proves cross-tool severity disagreement. A single verdict would erase it. |
-| D3 | **Default = static, all *detected* tools. `--deep` is additive opt-in (runs static **then** deep).** | Static needs no auth and spends no model call; it is the correct CI default. Deep costs auth + a model turn on Claude, so it is opt-in. Deep implies static (deep confirms load; static supplies the reasons). |
+| D3 | **Default = static, all *detected* tools. `--deep` is additive opt-in (runs static **then** deep).** | Static is instant, hermetic, and gives per-skill reasons; it is the correct CI default. Deep is also auth-free and model-free (§7.4) — its *only* extra cost is startup latency (~2-8 s/tool to spin up an isolated session), so it is opt-in for speed, not for auth or spend. Deep implies static (deep confirms load; static supplies the reasons). |
 | D4 | **Dual severity per finding: `toolSeverity` (native token, verbatim) + `normalizedSeverity` (SkillSmith 3-level axis).** Findings are nested per (tool, mode); nothing is merged across tools. | Consumers get a stable axis to filter on **without** losing what each tool said. Because findings live under their tool, the disagreement is preserved structurally, not flattened. |
 | D5 | **Coverage is explicit per (tool, mode)** via `coverage: {manifest, skills}`, and a coverage gap is surfaced as a prominent notice (e.g. "codex static checks the manifest only; run `--deep` for skill validation"). | Codex static's manifest-only coverage would otherwise read as a false green. Honesty over a clean checkmark. |
 | D6 | **Explicit-is-required, default-is-best-effort.** A tool named with `--tool` MUST be available; an auto-detected tool that is absent is a silent skip. `--deep` named explicitly MUST deliver deep coverage for required tools. | Lets the fast default tolerate a machine without codex, while making a deliberate `--tool codex --deep` a real gate. This one principle governs both flag handling and exit codes. |
 | D7 | **Exit codes reuse the documented set (§9).** `0` verified · `1` verified-failed · `2` usage · `4` could-not-verify · `130` SIGINT. `1` (a proven defect) **outranks** `4` (an environment gap). | CI must tell "the artifact is broken" from "I couldn't check it" (task requirement). No new numeric codes are minted; code 4's meaning is extended from "tool not installed" to "verification prerequisite unavailable." A proven break is more actionable than a gap, so `1 > 4` — this deliberately overrides the batch-max rule in `skillsmith-cli-design.md §6.1`. |
-| D8 | **Shell out; isolate with temp dirs; surface version drift, don't fail on it.** Claude static is read-only; claude deep isolates with `--setting-sources "" --plugin-dir`; codex uses a throwaway `CODEX_HOME`. Observed `claude`/`codex` versions are recorded and compared to the verified-against matrix; drift adds a notice. | Matches the proven isolation. Parsers key on stable substrings, so a version bump degrades to a warning, never a silent misparse. |
+| D8 | **Shell out; isolate with temp dirs; surface version drift, don't fail on it.** Claude static is read-only; claude deep isolates with an empty `CLAUDE_CONFIG_DIR` + `--setting-sources "" --plugin-dir` (so it runs offline and auth-free); codex uses a throwaway `CODEX_HOME`. Observed `claude`/`codex` versions are recorded and compared to the verified-against matrix; drift adds a notice. | Matches the proven isolation. Parsers key on stable substrings, so a version bump degrades to a warning, never a silent misparse. |
 | D9 | **`--json` is a versioned contract** (`schemaVersion: 1`, `kind: "skillsmith.verify"`), evolved additively. | It is consumed by another repo's skill (P09). Versioning is mandatory; additive-only keeps the P09 consumer from breaking. |
 | D10 | **Checkers live per-agent** (`agents/claude-code/verify.ts`, `agents/codex/verify.ts`); a `verify/` orchestrator assembles the report; core returns `Result`, the CLI owns exit codes + output. | The house per-agent boundary (CLAUDE.md) and the core/CLI split (ADR 0001). |
 
@@ -89,10 +96,10 @@ skillsmith verify <path> [--tool claude-code|codex]... [--static | --deep] [--st
 
 | Flag | Short | Type | Default | Semantics |
 |---|---|---|---|---|
-| `<path>` | — | positional (required) | — | Plugin directory to verify (D1). Missing/not-a-dir/not-a-plugin → exit 2. |
+| `<path>` | — | positional (required) | — | Plugin **or bare skill** directory to verify (D1, §4.1). Missing/not-a-dir/neither-shape → exit 2. |
 | `--tool` | `-t` | enum, repeatable | all **detected** of `{claude-code, codex}` | Restrict to tool(s). A named-but-absent tool is a hard "could-not-verify" (D6 → exit 4). Values other than `claude-code`/`codex` → exit 2. |
 | `--static` | — | bool | on | Static mode only (no auth, no model call). This is the default; the flag states it explicitly. |
-| `--deep` | — | bool | off | Also run deep mode (session-backed). Implies static (D3). Needs auth + one model turn per tool. |
+| `--deep` | — | bool | off | Also run deep mode (session-backed, isolated). Implies static (D3). No auth, no model call (§7.4); adds startup latency (~2-8 s/tool). |
 | `--strict` | — | bool | off | Treat any `warning` finding as a failure (mode verdict `warn` → `fail`); also passed through to `claude plugin validate --strict`. Mirrors doctor `--strict`. |
 | `--json` | — | bool | off | Emit the versioned JSON contract on stdout (§8). |
 
@@ -103,6 +110,22 @@ is a no-op here. `--static` and `--deep` are not a mutually-exclusive error pair
 
 **Mode set resolution:** `--deep` → `{static, deep}`; otherwise → `{static}`.
 **Tool set resolution:** `--tool X --tool Y` → `[X, Y]` (required); none → tools detected on PATH (best-effort).
+
+### 4.1 Input shape (plugin dir or bare skill)
+
+`<path>` may be either:
+
+- a **plugin directory** — contains `.claude-plugin/plugin.json` and/or `.codex-plugin/plugin.json`, with
+  skills under `skills/<name>/SKILL.md`. Consumed as-is.
+- a **bare skill directory** — contains a `SKILL.md` (the shape the P09 `skill-verify` consumer hands us).
+  `verify` wraps it in an **ephemeral generated plugin** under a temp dir: a minimal `plugin.json` plus
+  `skills/<name>/` holding the skill, then runs the normal plugin checkers against that wrapper. The
+  wrapper shape is proven — the research dummy-plugin fixture was a hand-written `plugin.json` + `skills/`,
+  accepted by both `claude plugin validate` and `--plugin-dir` runtime loading, and by the codex
+  marketplace layout. The wrapper is cleaned up in a `finally`; `target.kind` records `'skill'` so the
+  JSON consumer knows the input was a bare skill.
+
+A directory with neither a plugin manifest nor a `SKILL.md` is a usage error (exit 2).
 
 ---
 
@@ -133,8 +156,8 @@ export interface VerifyFinding {
 export interface ModeResult {
   mode: VerifyMode;
   status: ModeStatus;                 // 'ran' | 'skipped' | 'error'
-  skipReason: string | null;          // when status !== 'ran': 'auth-required' | 'timeout' |
-                                       //   'not-installed' | 'unsupported' | 'exec-error'
+  skipReason: string | null;          // when status !== 'ran': 'not-installed' (tool-missing) |
+                                       //   'timeout' | 'exec-error' (unexpected failure). No 'auth-required' (§7.4).
   coverage: { manifest: boolean; skills: boolean };  // what THIS (tool,mode) actually inspected
   verdict: VerifyOutcome | null;      // null unless status === 'ran'
   command: string;                    // the command line run (redacted of temp paths), for auditability
@@ -153,7 +176,7 @@ export interface ToolVerdict {
 
 export interface VerifyReport {
   schemaVersion: 1;
-  target: { path: string; kind: 'plugin' };
+  target: { path: string; kind: 'plugin' | 'skill' };   // 'skill' = a bare skill dir, wrapped (§4.1)
   requested: { tools: ('claude-code' | 'codex')[]; modes: VerifyMode[]; strict: boolean; explicitTools: boolean };
   verifiedAgainst: Record<'claude-code' | 'codex', string>;   // the version matrix this build was proven against
   summary: {
@@ -214,12 +237,17 @@ a `finally`. Nothing writes to the real `~/.claude` or `~/.codex`.
   <check>: <msg>` → error finding; `⚠ <check>: <msg>` → warning finding. Manifest lines (`✘ json:` /
   `✘ name:`) → `subject: 'manifest'`. `coverage = {manifest: true, skills: true}`. We compute the mode
   verdict from parsed findings, not from claude's own exit code (which we still record).
-- **Deep:** `claude --print --output-format stream-json --setting-sources "" --plugin-dir <path> "ok"`.
-  Read the first JSON line where `type === 'system' && subtype === 'init'`; take `.plugins`, `.skills`
-  (namespaced `plugin:skill`), `.slash_commands`. For each skill discovered in `<path>/*/skills` (or the
-  plugin's declared skills) that is **absent** from `init.skills`, emit a synthesized presence finding
-  (§6). `coverage = {manifest: false, skills: true(presence-only)}`. Auth is retained via inherited
-  credentials; `--setting-sources ""` guarantees only the plugin under test loads.
+- **Deep:** `CLAUDE_CONFIG_DIR=$(mktemp -d) claude --print --verbose --output-format stream-json
+  --setting-sources "" --plugin-dir <path> "ok"`. **Runs under an empty `CLAUDE_CONFIG_DIR`, so it needs
+  no auth and makes no model call** — the `init` event (skills + plugins enumeration) fires locally
+  *before* any API turn (§7.4). Read the first JSON line where `type === 'system' && subtype === 'init'`;
+  take `.plugins`, `.skills` (namespaced `plugin:skill`), `.slash_commands`. For each skill discovered in
+  `<path>/*/skills` (or the plugin's declared skills) that is **absent** from `init.skills`, emit a
+  synthesized presence finding (§6). `coverage = {manifest: false, skills: true(presence-only)}`.
+  `--verbose` is **required** with `stream-json` under an isolated config dir. **Receiving the `init`
+  event is the success signal; the subsequent `authentication_failed` event + exit 1 is the expected,
+  healthy tail (§7.4, §9) — it must not be read as a failure.** `--setting-sources ""` guarantees only
+  the plugin under test loads.
 
 ### 7.2 codex
 
@@ -234,17 +262,22 @@ Codex requires **synthesizing the layout it expects** from the plugin under test
   `{subject:'marketplace'}`. `codex plugin list --json` confirms installed state.
   `coverage = {manifest: true, skills: false}` — **the codex static coverage gap** (D5): emit a notice
   finding (`normalizedSeverity: 'info'`) that skills were not checked.
-- **Deep (skills):** `CODEX_HOME=$(mktemp -d)` + a throwaway project dir with the plugin's skills copied
-  to `<proj>/.agents/skills/<name>/SKILL.md` (Codex reads `.agents/skills`, **not** `.claude/skills`).
-  `codex exec -C <proj> --dangerously-bypass-approvals-and-sandbox "ok" 2>err.log`; each stderr line
-  matching `failed to load skill <file>: <reason>` → `{checkId:'codex.skill-load', toolSeverity:'error',
-  normalizedSeverity:'error', file, message:<reason>, subject:'skill'}`. `coverage = {manifest:false,
-  skills:true}`.
+- **Deep (skills):** `CODEX_HOME=$(mktemp -d)` (empty — **no auth, no model call**) + a throwaway project
+  dir with the plugin's skills copied to `<proj>/.agents/skills/<name>/SKILL.md` (Codex reads
+  `.agents/skills`, **not** `.claude/skills`).
+  `codex exec -C <proj> --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox "ok" 2>err.log`
+  (`--skip-git-repo-check` is required for the temp workdir). The `failed to load skill` errors are
+  emitted at session start *before* any model call — proven in a fully unauthenticated run that also
+  emitted `401 Unauthorized` (§7.4). Each stderr line matching `failed to load skill <file>: <reason>` →
+  `{checkId:'codex.skill-load', toolSeverity:'error', normalizedSeverity:'error', file, message:<reason>,
+  subject:'skill'}`. The trailing `401 Unauthorized` on stderr is the expected healthy tail, **not** a
+  finding (§7.4, §9). `coverage = {manifest:false, skills:true}`.
 
 ### 7.3 Timeouts, cancellation, version drift
 
-- **Timeouts** (constants, not flags in MVP): static ≈ 30 s, deep ≈ 120 s (a model turn). On timeout the
-  `ModeResult` is `status:'error', skipReason:'timeout'`.
+- **Timeouts** (constants, not flags in MVP): static ≈ 30 s, deep ≈ 60 s (session startup + init
+  enumeration; **no model turn**, so deep is fast — typically ~2-8 s/tool). On timeout the `ModeResult`
+  is `status:'error', skipReason:'timeout'`.
 - **Cancellation:** the CLI's `AbortSignal` (SIGINT) is threaded to every subprocess; on abort the process
   is killed, temp dirs are cleaned, and the CLI exits 130.
 - **Version drift:** each `ToolVerdict` records `toolVersion` (from `claude --version` / `codex --version`
@@ -253,6 +286,34 @@ Codex requires **synthesizing the layout it expects** from the plugin under test
   less reliable"). Parsers match on stable substrings (`✘`, `⚠`, `Invalid JSON syntax`, `failed to load
   skill`, `failed to parse plugin.json`, the `init` event fields), so a bump degrades to a notice rather
   than a silent misparse. `verifiedAgainst` is a single constant kept beside the P14 version matrix.
+
+### 7.4 Deep is auth-independent; the expected auth-failed tail (proven 2026-07-07)
+
+Deep verification needs **no signed-in session and makes no model call** on either tool. Both tools
+enumerate the plugin/skills **locally at session init, before the first API turn**, so an isolated
+(empty-config) session yields the load result and then fails auth — and that auth failure is the
+*expected, healthy* tail, not a verifier failure.
+
+- **Claude.** Under an empty `CLAUDE_CONFIG_DIR` with `--plugin-dir <dummy-plugin> --setting-sources ""`,
+  the `init` event still enumerated `dummytest:good-skill` and `plugins: ['dummytest']`; the turn then
+  failed with `authentication_failed`. Verify keys success on the `init` event and ignores the tail.
+- **Codex.** All three `failed to load skill` stderr errors were emitted in a fully unauthenticated
+  session that also returned `401 Unauthorized` in the same run.
+
+**Frozen auth-failure signatures (also the simulation recipes for tests):**
+
+- **Claude:** `CLAUDE_CONFIG_DIR=$(mktemp -d) claude --print --verbose --output-format stream-json "ok"`
+  → **exit 1**; an assistant event carrying the structured field `"error":"authentication_failed"` and
+  text `Not logged in · Please run /login`; a final `result` event with `is_error: true`.
+  *Gotcha:* `--verbose` is **required** with `stream-json` under an isolated config dir.
+- **Codex:** `CODEX_HOME=$(mktemp -d) codex exec --json --skip-git-repo-check -C <dir> "ok"`
+  → **exit 1**; stdout `{"type":"error","message":"…401 Unauthorized…"}` events; stderr
+  `ERROR codex_api…: 401 Unauthorized`. *Gotcha:* `--skip-git-repo-check` (or a trusted dir) is required
+  for temp workdirs.
+
+Consequence for verify: deep never skips for auth. The skip machinery is `not-installed` (tool missing),
+`timeout`, and `exec-error` (an *unexpected* non-zero / unparseable failure) only — an isolated deep
+session that returns the init/enumeration then this frozen tail counts as `status:'ran'`.
 
 ---
 
@@ -308,7 +369,7 @@ skill and a missing-description skill, `--deep`, both tools installed):
           "skipReason": null,
           "coverage": { "manifest": false, "skills": true },
           "verdict": "warn",
-          "command": "claude --print --output-format stream-json --setting-sources \"\" --plugin-dir <path> \"ok\"",
+          "command": "CLAUDE_CONFIG_DIR=<tmp> claude --print --verbose --output-format stream-json --setting-sources \"\" --plugin-dir <path> \"ok\"",
           "findings": [
             { "checkId": "claude.load-presence", "toolSeverity": null, "normalizedSeverity": "warning",
               "message": "skill 'bad-yaml' did not load (reason unavailable at runtime — see static validate)",
@@ -344,7 +405,7 @@ skill and a missing-description skill, `--deep`, both tools installed):
           "skipReason": null,
           "coverage": { "manifest": false, "skills": true },
           "verdict": "fail",
-          "command": "codex exec -C <proj> --dangerously-bypass-approvals-and-sandbox \"ok\"",
+          "command": "codex exec -C <proj> --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox \"ok\"",
           "findings": [
             { "checkId": "codex.skill-load", "toolSeverity": "error", "normalizedSeverity": "error",
               "message": "invalid YAML: found unexpected end of stream at line 3 column 23",
@@ -361,8 +422,10 @@ skill and a missing-description skill, `--deep`, both tools installed):
 ```
 
 A **tool skipped** because it is not installed renders as a `ToolVerdict` with `available:false`,
-`skipReason:"not-installed"`, `verdict:"inconclusive"`, `modes:[]`. A **deep mode skipped for auth**
-renders as a `ModeResult` with `status:"skipped", skipReason:"auth-required", verdict:null`.
+`skipReason:"not-installed"`, `verdict:"inconclusive"`, `modes:[]`. Deep mode never skips for auth (§7.4);
+a deep mode that **timed out or crashed unexpectedly** renders as a `ModeResult` with
+`status:"error", skipReason:"timeout"` (or `"exec-error"`) and `verdict:null`. A bare-skill input (§4.1)
+renders `target.kind:"skill"`.
 
 ---
 
@@ -374,8 +437,8 @@ renders as a `ModeResult` with `status:"skipped", skipReason:"auth-required", ve
 |---|---|
 | `0` | Verified. At least one mode ran; every ran-mode verdict is `pass` (or `warn` when not `--strict`); no explicitly-required tool/mode was missing. |
 | `1` | **Verification failed** — a proven defect. Some ran mode has verdict `fail` (any `normalizedSeverity:'error'` finding, or a `warning` under `--strict`). |
-| `2` | Usage error — missing `<path>`, path not a directory / not a plugin, or `--tool` given a value outside `{claude-code, codex}`. |
-| `4` | **Could not verify** — an environment gap, not a defect. Triggered by: nothing ran at all; **or** an explicitly `--tool`-named tool is not installed; **or** `--deep` was explicitly requested and a required tool's deep mode could not run (auth/timeout/exec-error). |
+| `2` | Usage error — missing `<path>`, path not a directory / neither a plugin nor a bare skill (§4.1), or `--tool` given a value outside `{claude-code, codex}`. |
+| `4` | **Could not verify** — an environment gap, not a defect. Triggered by: nothing ran at all; **or** an explicitly `--tool`-named tool is not installed; **or** `--deep` was explicitly requested and a required tool's deep mode could not run (timeout/exec-error — deep never fails for auth, §7.4). |
 | `130` | Cancelled via SIGINT. |
 
 **Rollup algorithm (authoritative; overrides §6.1 batch-max for this command — D7):**
@@ -398,6 +461,13 @@ An auto-detected (not `--tool`-named) tool that is simply absent is a silent ski
 a `--deep` gap only forces `4` when the user explicitly opted into deep (D6). CI wanting to enforce codex
 skill coverage on a static run can read `coverage.skills` from the JSON rather than relying on exit code.
 
+**Isolated deep mode and exit codes.** Because deep runs under empty config dirs (§7.4), each deep
+subprocess itself exits non-zero (`authentication_failed` / `401`) *by design*. Verify's per-tool exit
+code is computed from the parsed **report** (init enumeration / skill-load lines), never from the deep
+subprocess's own exit status — the frozen auth-failed tail is the success signal, so it never reads as a
+`fail` (that would need a `normalizedSeverity:'error'` finding) nor as a could-not-verify (`4` needs a
+timeout/exec-error, not this expected tail).
+
 ---
 
 ## 10. Architecture and where code lives
@@ -409,7 +479,8 @@ packages/core/src/
   verify/
     types.ts        VerifyReport, ToolVerdict, ModeResult, VerifyFinding, verdict enums
     run.ts          verifyPlugin(env, opts): Result<VerifyReport, SkillSmithError> — orchestrator:
-                    detect tools, dispatch per-agent checkers, assemble matrix, roll up verdicts
+                    resolve input shape (wrap bare skills, §4.1), detect tools, dispatch per-agent
+                    checkers, assemble matrix, roll up verdicts
     normalize.ts    tool-native severity -> normalizedSeverity (§6), pure
   agents/claude-code/verify.ts   verifyClaudeCode(env, {path, modes, strict, signal}) -> Result<ToolVerdict, …>
   agents/codex/verify.ts          verifyCodex(env, {path, modes, strict, signal}) -> Result<ToolVerdict, …>
@@ -440,7 +511,10 @@ is the **one core-interface addition** the feature requires and is called out he
 verdict rollup), not derived from a `SkillSmithError` code.
 
 Temp-dir helpers and the codex marketplace-wrapper synthesis live inside `agents/codex/verify.ts` (a
-codex-specific concern per the per-agent boundary), not in a shared util.
+codex-specific concern per the per-agent boundary), not in a shared util. Bare-skill wrapping
+(generating the ephemeral `plugin.json` + `skills/<name>/` from a lone `SKILL.md`, §4.1) is tool-agnostic,
+so it lives in the `verify/` orchestrator (`run.ts`) and runs once before per-agent dispatch; both
+checkers then consume the generated plugin dir.
 
 ---
 
@@ -451,7 +525,7 @@ codex-specific concern per the per-agent boundary), not in a shared util.
 | `<path>` missing / not a directory / no plugin manifest and no `SKILL.md` | core returns `err`; CLI prints `error: …` to stderr, exit `2`. |
 | `--tool` value not in `{claude-code, codex}` | commander `.choices([...])` rejects → exit `2`. |
 | Named tool not installed | `ToolVerdict.available=false, skipReason:'not-installed'`; contributes to exit `4` (D6). |
-| Deep requested, auth missing | deep `ModeResult.status='skipped', skipReason:'auth-required'`; static verdict (if any) stands; exit `4` only if `--deep` was explicit (D6). |
+| Deep session returns `authentication_failed` / `401` after `init` | **Expected, not a skip or error** (§7.4): deep runs isolated, so the tail always appears; the init enumeration / skill-load lines already produced the verdict. `status:'ran'`. |
 | Subprocess non-zero for a *reason we parse* (e.g. `failed to parse plugin.json`) | **not** an error — it is a finding; mode `status:'ran'`, verdict reflects it. |
 | Subprocess crash / unparseable output / timeout | `ModeResult.status='error', skipReason:'exec-error'|'timeout'`, `verdict:null`; a `warning`-level report notice; contributes to could-not-verify (exit 4) for required tools. |
 | Version drift | `info` notice; verdict unaffected (§7.3). |
@@ -474,17 +548,19 @@ no known pattern **and** exits non-zero becomes `status:'error'`.
 - **Parser unit tests (deterministic, no real CLIs)** — inject a fake `env.exec` that **replays the exact
   stdout/stderr strings from the research doc** (`✘ frontmatter: YAML frontmatter failed to parse…`,
   `⚠ description: No description…`, `ERROR … failed to load skill …: missing field description`,
-  `Error: failed to parse plugin.json: EOF while parsing…`, a sample `init` event). Assert the produced
-  findings, `toolSeverity`/`normalizedSeverity`, `coverage`, mode/tool/summary verdicts, and exit code.
+  `Error: failed to parse plugin.json: EOF while parsing…`, a sample `init` event **followed by the frozen
+  `authentication_failed` / `401` tail + exit 1, §7.4**). Assert the produced findings,
+  `toolSeverity`/`normalizedSeverity`, `coverage`, mode/tool/summary verdicts, and exit code — including
+  that a deep run which received `init` (then the auth-failed tail) is `status:'ran'`, not a skip/error.
   This is where the severity-disagreement invariant (§6 worked example) is locked by test.
 - **Schema golden test** — `renderVerifyJson(report)` validates against `VerifyJsonSchema`; a fixed report
   round-trips to a committed golden JSON (guards the P09 contract).
 - **Exit-code table test** — drive the rollup (§9) across `{pass, warn, fail, nothing-ran,
-  explicit-tool-absent, deep-auth-missing}` and assert `0/1/2/4`.
-- **Env-gated live e2e (P11-TS02)** — behind `SKILLSMITH_E2E=1` (and `--deep` paths behind auth), shell out
-  to the real `claude`/`codex` against the fixtures and assert the same findings the fakes assert.
-  **Skipped in CI** (no CLIs, no auth); run locally. Also serves as the drift canary against new tool
-  versions.
+  explicit-tool-absent, deep-timeout, deep-exec-error}` and assert `0/1/2/4`.
+- **Env-gated live e2e (P11-TS02)** — behind `SKILLSMITH_E2E=1`, shell out to the real `claude`/`codex`
+  against the fixtures and assert the same findings the fakes assert. Deep paths run isolated (no auth
+  needed, §7.4), so they run wherever the CLIs are installed. **Skipped in CI** (no CLIs); run locally.
+  Also serves as the drift canary against new tool versions — including the frozen auth-failed tail.
 - `bun run check` stays green (biome + eslint boundaries + tsc + actionlint + bun test).
 
 ---
@@ -495,21 +571,19 @@ no known pattern **and** exits non-zero becomes `status:'error'`.
 - `kilo-code` / `opencode` verify (no proven verifier).
 - Agent-SDK mechanism (CLI shell-out first).
 - Auto-fix / remediation execution (findings carry text only).
-- **Bare-skill-directory input** as a first-class target (Open Question 1) — MVP takes plugin dirs.
 - Remote/URL inputs — `verify` takes a local path only.
 - A `--timeout` flag and a user-facing verified-against version matrix (folded into P14 docs).
 - Codex `app-server skills/list` no-model enumeration (experimental in research; not driven end-to-end).
 
 ---
 
-## 14. Open questions
+## 14. Resolved questions
 
-1. **Input shape.** MVP takes a **plugin directory** (the only shape the proven commands consume). Does
-   the P09 `skill-verify` consumer hand us plugin dirs, or **bare skill dirs**? If bare, `verify` must
-   synthesize an ephemeral minimal plugin wrapper around a lone `SKILL.md` (proven for codex's
-   marketplace layout; extrapolated for `claude plugin validate`). Needs one confirmation pass with the
-   P09 owner + a live claude-wrapper proof before we widen D1.
-2. **Deep skip detection.** The research proved the *success* paths but did not pin an exact, stable
-   auth-failure signature for either CLI. MVP detects a deep skip by attempting the session and matching
-   auth/network error substrings on stderr; if that proves brittle across versions, a pre-flight auth
-   probe (`claude`/`codex` whoami-style) may be needed. The exact skip-reason strings are not yet frozen.
+Both original open questions were resolved on 2026-07-07 (proven live; folded into the sections above):
+
+1. **Input shape — RESOLVED.** `verify` accepts a plugin dir **or** a bare skill dir, wrapping a lone
+   `SKILL.md` in an ephemeral generated plugin (§4.1, D1). The wrapper shape is proven for both
+   `claude plugin validate` and `--plugin-dir` runtime loading, and for the codex marketplace layout.
+2. **Deep skip detection — RESOLVED.** Deep is auth-free and model-free (§7.4): it runs under empty
+   config dirs, so there is no auth skip to detect. The auth-failure signatures are now frozen and used
+   only to recognize the *expected* healthy tail after a successful init/enumeration — not to gate a run.
