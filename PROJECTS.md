@@ -113,6 +113,10 @@ surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
 ---
 
 ## [ ] Project P09: MVP-2c — `install` + `uninstall` (write path) (v0.6.0)
+> **PRD (authoritative, 2026-07-07):** `docs/superpowers/specs/2026-07-07-p09-install-prd.md` —
+> supersedes this section's claude-only scoping and the April source grammar; reuses P12
+> store/ledger/swap and P11 verify. P09-BR consumes the PRD.
+
 **Goal**: Ship the write path for SkillSmith — `install` and `uninstall` commands targeting **claude-code only**. Introduces the source resolver (Git URL + GitHub shorthand, 4-form parser), partial-clone Git fetch, content-addressed store at `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/`, symlinked entry points, scope flags + auto-default, idempotence, cross-scope duplicate detection, and the remaining exit codes (2/4/5/6/130).
 
 **Out of Scope**
