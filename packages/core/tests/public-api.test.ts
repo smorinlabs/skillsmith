@@ -35,6 +35,9 @@ describe('@skillsmith/core public API', () => {
       'runChecks',
       'builtInChecks',
       'skillParseError',
+      'runVerify',
+      'VERIFY_TOOLS',
+      'VERIFIED_AGAINST',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);

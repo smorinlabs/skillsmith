@@ -18,6 +18,7 @@ const fakeEnv = (fake: Fake): ScanEnv => ({
   listDir: async (p) => fake.dirs[p] ?? [],
   readText: async (p) => fake.files[p] ?? '',
   runVersion: async () => 'unknown',
+  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 });
 
 describe('walkSkillDir', () => {

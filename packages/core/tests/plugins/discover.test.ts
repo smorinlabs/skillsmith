@@ -12,6 +12,7 @@ const env = (files: Record<string, string>): ScanEnv => ({
   listDir: async () => [],
   readText: async (p) => files[p] ?? '',
   runVersion: async () => 'unknown',
+  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 });
 
 describe('discoverPlugins', () => {

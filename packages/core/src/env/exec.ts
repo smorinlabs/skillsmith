@@ -1,3 +1,5 @@
+import type { ExecOptions, ExecResult } from './types.ts';
+
 const DEFAULT_TIMEOUT_MS = 2000;
 
 export const runVersionCommand = async (
@@ -32,5 +34,47 @@ export const runVersionCommand = async (
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', onParentAbort);
+  }
+};
+
+export const execCommand = async (
+  cmd: string,
+  args: readonly string[],
+  opts: ExecOptions = {},
+): Promise<ExecResult> => {
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+
+  try {
+    const proc = Bun.spawn([cmd, ...args], {
+      ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+      env: { ...process.env, ...opts.env },
+      stdin: opts.input !== undefined ? new TextEncoder().encode(opts.input) : undefined,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    if (opts.timeoutMs !== undefined) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        proc.kill();
+      }, opts.timeoutMs);
+    }
+    onAbort = () => proc.kill();
+    if (opts.signal?.aborted) proc.kill();
+    else opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+    const [code, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text().catch(() => ''),
+      new Response(proc.stderr).text().catch(() => ''),
+    ]);
+    return { code, stdout, stderr, timedOut };
+  } catch (e) {
+    return { code: -1, stdout: '', stderr: String(e), timedOut: false };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (onAbort !== undefined) opts.signal?.removeEventListener('abort', onAbort);
   }
 };

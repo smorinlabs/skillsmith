@@ -1,7 +1,7 @@
 import { realpath as fsRealpath, readFile, readdir, stat } from 'node:fs/promises';
 import { homedir, platform as osPlatform } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { runVersionCommand } from './exec.ts';
+import { execCommand, runVersionCommand } from './exec.ts';
 import type { Platform, ScanEnv, XdgDirs } from './types.ts';
 
 const resolvePlatform = (): Platform => {
@@ -42,5 +42,6 @@ export const defaultScanEnv = async (): Promise<ScanEnv> => {
     },
     readText: async (p) => readFile(p, 'utf8'),
     runVersion: async (binaryPath, args, signal) => runVersionCommand(binaryPath, args, signal),
+    exec: async (cmd, args, opts) => execCommand(cmd, args, opts),
   };
 };

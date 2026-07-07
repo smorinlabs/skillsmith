@@ -22,7 +22,7 @@ export type { DetectOptions } from './scan/index.ts';
 export type { ListCommandsOpts } from './scan/list-commands.ts';
 export type { ListSkillsOpts } from './scan/list-skills.ts';
 export type { Logger } from './env/logger.ts';
-export type { Platform, ScanEnv, XdgDirs } from './env/types.ts';
+export type { ExecOptions, ExecResult, Platform, ScanEnv, XdgDirs } from './env/types.ts';
 export type { SkillSmithError } from './errors.ts';
 export type { Result } from './result.ts';
 export type {
@@ -32,3 +32,19 @@ export type {
   PluginProvenanceScope,
   SkillEntry,
 } from './skills/types.ts';
+export type {
+  ModeResult,
+  ModeStatus,
+  NormalizedSeverity,
+  SkipReason,
+  SummaryVerdict,
+  ToolVerdict,
+  ToolVerifier,
+  ToolVerifyOptions,
+  VerifyFinding,
+  VerifyMode,
+  VerifyOutcome,
+  VerifyReport,
+  VerifyTool,
+} from './verify/types.ts';
+export type { VerifyOptions } from './verify/run.ts';

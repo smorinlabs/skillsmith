@@ -29,6 +29,7 @@ Add ESLint, scoped narrowly to three rules, and use it alongside Biome — not a
    - Leaf-to-leaf bans inside the CLI (e.g. `util` ↛ `output`) to keep the graph one-directional.
    - `packages/core/src/env` ↛ `agents`, `detect`.
    - `packages/core/src/detect` ↛ `agents`.
+   - `packages/core/src/{skills,plugins,commands}` ↛ `verify` (verify is a high-level orchestrator, like doctor).
 
 2. **Core isolation** (`no-restricted-imports` + `no-restricted-syntax`) — applies to `packages/core/src/**/*.ts` only:
    - Forbidden imports: `commander`, `chalk`, `consola`, `@clack/prompts`, `node:console`.
