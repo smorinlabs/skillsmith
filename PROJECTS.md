@@ -43,7 +43,7 @@ archive `smorin/skillsmith` with a deprecation note; repoint local origin. Refre
 
 ---
 
-## [ ] Project P11: `skillsmith verify` — cross-tool load verification (v0.4.0)
+## [-] Project P11: `skillsmith verify` — cross-tool load verification (v0.4.0)
 **Goal**: `skillsmith verify <path> [--tool claude-code|codex]... [--static|--deep] [--json]` —
 per-tool result **matrix** (never one merged verdict), per-tool severities surfaced, exit codes
 for CI. Engine per `research/skill-plugin-load-verification-2026-07-06.md`: Claude static
@@ -57,7 +57,7 @@ schema is the public contract consumed by the skill-fleet `skill-verify` skill (
 mechanism (CLI shell-out first; SDK evaluated as follow-up).
 
 ### Tests & Tasks
-- [ ] [P11-BR] Brainstorm + spec (`docs/superpowers/specs/`): CLI surface, JSON schema, severity model, tool-missing/auth-missing semantics — *opus*
+- [x] [P11-BR] Brainstorm + spec (`docs/superpowers/specs/`): CLI surface, JSON schema, severity model, skip semantics (deep mode proven auth-free) — *opus*
 - [ ] [P11-PL] Implementation plan (`docs/superpowers/plans/`) — *fable*
 - [ ] [P11-TS01] Port the broken-fixture suite (good/bad-yaml/bad-noframe/bad-nodesc skills; bad manifests ×2 formats) into `packages/core/tests/fixtures/` — *haiku*
 - [ ] [P11-T01] Core types: `VerifyReport`/`ToolVerdict`/`Finding` + Result plumbing — *sonnet*
