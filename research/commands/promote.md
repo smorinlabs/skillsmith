@@ -40,10 +40,13 @@ Promotes every dev-mode placement in the selected tools. Per-pair results are in
 (a failure on one pair never blocks the rest); batch exit code is the highest per-pair code.
 
 **`skillsmith promote --rollback <skill>...`** — P12.
-Recovery/undo, direction-agnostic (identical on `dev --rollback`): with an uncommitted swap journal
-it restores the journaled before-state (the recovery path after an interrupted swap); with a
-committed last transition it performs the normal inverse flip from the retained ledger records.
-A pair with an uncommitted journal refuses every other operation until rolled back or re-run.
+Recovery/undo. Per-pair behavior is direction-agnostic (a named `dev --rollback <skill>` behaves
+identically): with an uncommitted swap journal it restores the journaled before-state (the recovery
+path after an interrupted swap); with a committed last transition it performs the normal inverse
+flip from the retained ledger records. A pair with an uncommitted journal refuses every other
+operation until rolled back or re-run. Target *selection* stays op-specific, though:
+`promote --rollback --all` selects dev-class placements (plus any journaled pair), so undoing a
+fleet-wide promote is `skillsmith dev --rollback --all`, not `promote --rollback --all`.
 
 Rationale for the verify-gate defaults: Claude static covers manifest + skills with reasons — it is
 the whole gate for Claude. Codex static covers only the manifest, so promoting on it alone would
