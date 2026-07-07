@@ -68,10 +68,12 @@ describe('parseCodexExecStderr', () => {
       'missing YAML frontmatter delimited by ---',
       'missing field `description`',
     ]);
+    // Staged paths (relative to the throwaway deep-mode project) are mapped back to the
+    // plugin-relative form the verified target actually has, not the temp staging layout.
     expect(findings.map((f) => f.file)).toEqual([
-      '.agents/skills/bad-yaml/SKILL.md',
-      '.agents/skills/bad-noframe/SKILL.md',
-      '.agents/skills/bad-nodesc/SKILL.md',
+      'skills/bad-yaml/SKILL.md',
+      'skills/bad-noframe/SKILL.md',
+      'skills/bad-nodesc/SKILL.md',
     ]);
     for (const f of findings) {
       expect(f.checkId).toBe('codex.skill-load');
@@ -86,6 +88,14 @@ describe('parseCodexExecStderr', () => {
 
   test('clean stderr (only the 401 tail) -> no findings', () => {
     expect(parseCodexExecStderr('ERROR codex_api: 401 Unauthorized', '/proj')).toEqual([]);
+  });
+
+  test('targetKind "skill" (bare-skill wrap) -> collapses to the original bare SKILL.md', () => {
+    const stderr =
+      'ERROR codex_core::session::session: failed to load skill /proj/.agents/skills/my-skill/SKILL.md: missing field `description`';
+    const findings = parseCodexExecStderr(stderr, '/proj', 'skill');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.file).toBe('SKILL.md');
   });
 });
 
@@ -109,7 +119,14 @@ describe('verifyCodex deep mode', () => {
         goodSkillStaged = existsSync(
           join(proj as string, '.agents', 'skills', 'good-skill', 'SKILL.md'),
         );
-        return { code: 1, stdout: '', stderr: CANNED_DEEP_STDERR, timedOut: false };
+        // Real codex reports the actual temp project path, not a fixed literal — substitute
+        // it in so the prefix-stripping in parseCodexExecStderr exercises for real here.
+        return {
+          code: 1,
+          stdout: '',
+          stderr: CANNED_DEEP_STDERR.replaceAll('/proj', proj as string),
+          timedOut: false,
+        };
       },
     });
 
@@ -135,6 +152,13 @@ describe('verifyCodex deep mode', () => {
       expect(f.checkId).toBe('codex.skill-load');
       expect(f.normalizedSeverity).toBe('error');
     }
+    // Findings report target-relative paths (the target's real `skills/<n>/` layout),
+    // not the throwaway `.agents/skills/<n>/` staging path used for the deep exec.
+    expect((deep?.findings ?? []).map((f) => f.file)).toEqual([
+      'skills/bad-yaml/SKILL.md',
+      'skills/bad-noframe/SKILL.md',
+      'skills/bad-nodesc/SKILL.md',
+    ]);
 
     // Tool verdict is the worst of static pass / deep fail.
     expect(r.value.verdict).toBe('fail');

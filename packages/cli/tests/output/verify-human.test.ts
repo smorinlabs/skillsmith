@@ -233,4 +233,41 @@ describe('renderVerifyHuman', () => {
     );
     expect(out).toContain('verified: claude-code.  Exit code: 0');
   });
+
+  test('summary line with every tool skipped (none installed): explicit could-not-verify line', () => {
+    const out = renderVerifyHuman(
+      report({
+        tools: [
+          tool({
+            tool: 'claude-code',
+            available: false,
+            toolVersion: null,
+            skipReason: 'not-installed',
+            verdict: 'inconclusive',
+            modes: [],
+          }),
+          tool({
+            tool: 'codex',
+            available: false,
+            toolVersion: null,
+            skipReason: 'not-installed',
+            verdict: 'inconclusive',
+            modes: [],
+          }),
+        ],
+        summary: {
+          verdict: 'inconclusive',
+          verified: [],
+          failed: [],
+          skipped: ['claude-code', 'codex'],
+          counts: { error: 0, warning: 0, info: 0 },
+        },
+      }),
+      3,
+    );
+    expect(out).not.toContain('verified: .');
+    expect(out).toContain(
+      'verified: none — no tools ran (claude-code: not installed, codex: not installed)  Exit code: 3',
+    );
+  });
 });

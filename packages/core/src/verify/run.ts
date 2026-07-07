@@ -99,6 +99,7 @@ export const runVerify = async (
         path: resolved.value.path,
         modes,
         strict,
+        kind: resolved.value.kind,
         ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       });
       if (!result.ok) return result;

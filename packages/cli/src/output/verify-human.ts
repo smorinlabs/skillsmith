@@ -1,4 +1,4 @@
-import type { VerifyFinding, VerifyReport } from '@skillsmith/core';
+import type { ToolVerdict, VerifyFinding, VerifyReport } from '@skillsmith/core';
 
 const SEVERITY_MARKER: Record<VerifyFinding['normalizedSeverity'], string> = {
   error: '✘',
@@ -7,6 +7,13 @@ const SEVERITY_MARKER: Record<VerifyFinding['normalizedSeverity'], string> = {
 };
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** Why a tool produced no verdict at all, for the "could not verify" summary line. */
+const skipDescription = (t: ToolVerdict): string => {
+  if (!t.available) return `${t.tool}: not installed`;
+  const reason = t.modes.find((m) => m.skipReason !== null)?.skipReason;
+  return `${t.tool}: ${reason ?? 'did not run'}`;
+};
 
 export const renderVerifyHuman = (report: VerifyReport, exitCode: number): string => {
   const lines: string[] = [];
@@ -47,13 +54,18 @@ export const renderVerifyHuman = (report: VerifyReport, exitCode: number): strin
     lines.push('');
   }
 
-  const { failed, verified, counts } = report.summary;
+  const { failed, verified, skipped, counts } = report.summary;
   const summaryLine =
     failed.length > 0
       ? `${failed.length} ${failed.length === 1 ? 'tool' : 'tools'} failed, ${verified.length} passed.  ` +
         `(${plural(counts.error, 'error')}, ${plural(counts.warning, 'warning')}, ${plural(counts.info, 'notice')})  ` +
         `Exit code: ${exitCode}`
-      : `verified: ${verified.join(', ')}.  Exit code: ${exitCode}`;
+      : verified.length > 0
+        ? `verified: ${verified.join(', ')}.  Exit code: ${exitCode}`
+        : `verified: none — no tools ran (${report.tools
+            .filter((t) => skipped.includes(t.tool))
+            .map(skipDescription)
+            .join(', ')})  Exit code: ${exitCode}`;
   lines.push(summaryLine);
 
   return `${lines.join('\n')}\n`;

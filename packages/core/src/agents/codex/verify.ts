@@ -65,9 +65,29 @@ export const parseCodexInstallOutput = (stdout: string, stderr: string): VerifyF
 };
 
 const FAILED_TO_LOAD_RE = /failed to load skill (.+?): (.+)$/;
+const STAGED_SKILLS_PREFIX = '.agents/skills/';
+
+/**
+ * Maps a staged skill path (relative to the throwaway deep-mode project, e.g.
+ * `.agents/skills/<name>/SKILL.md`) back to the path the verified target actually has.
+ * For a real plugin that's the plugin-relative `skills/<name>/SKILL.md`. For a wrapped
+ * bare-skill target (a single synthesized `skills/<name>/` dir), the user never had a
+ * `skills/` folder at all — collapse to the original bare `SKILL.md`.
+ */
+const mapStagedSkillPath = (file: string, targetKind: 'plugin' | 'skill'): string => {
+  if (!file.startsWith(STAGED_SKILLS_PREFIX)) return file;
+  const rest = file.slice(STAGED_SKILLS_PREFIX.length); // '<name>/SKILL.md'
+  if (targetKind !== 'skill') return `skills/${rest}`;
+  const slash = rest.indexOf('/');
+  return slash >= 0 ? rest.slice(slash + 1) : `skills/${rest}`;
+};
 
 /** Pure. Extracts `failed to load skill` findings from codex exec stderr. projDir strips prefixes. */
-export const parseCodexExecStderr = (stderr: string, projDir: string): VerifyFinding[] => {
+export const parseCodexExecStderr = (
+  stderr: string,
+  projDir: string,
+  targetKind: 'plugin' | 'skill' = 'plugin',
+): VerifyFinding[] => {
   const findings: VerifyFinding[] = [];
   const prefix = projDir.endsWith('/') ? projDir : `${projDir}/`;
 
@@ -78,12 +98,14 @@ export const parseCodexExecStderr = (stderr: string, projDir: string): VerifyFin
     const [, rawFile, reason] = match;
     if (rawFile === undefined || reason === undefined) continue;
 
+    const staged = rawFile.startsWith(prefix) ? rawFile.slice(prefix.length) : rawFile;
+
     findings.push({
       checkId: 'codex.skill-load',
       toolSeverity: 'error',
       normalizedSeverity: 'error',
       message: reason,
-      file: rawFile.startsWith(prefix) ? rawFile.slice(prefix.length) : rawFile,
+      file: mapStagedSkillPath(staged, targetKind),
       subject: 'skill',
       raw: line,
     });
@@ -297,7 +319,17 @@ const runDeepMode = async (
 
     if (result.timedOut) return deepErrorResult('timeout');
 
-    const findings = parseCodexExecStderr(result.stderr, proj);
+    // codex reports paths under the *canonicalized* project dir (e.g. macOS resolves
+    // /var -> /private/var), which can differ from the mkdtemp()-returned logical path;
+    // strip using the resolved form so the prefix actually matches.
+    let realProj = proj;
+    try {
+      realProj = await env.realpath(proj);
+    } catch {
+      // keep the logical path; best-effort prefix strip in parseCodexExecStderr
+    }
+
+    const findings = parseCodexExecStderr(result.stderr, realProj, opts.kind ?? 'plugin');
 
     // The load phase runs before any auth/model call. It demonstrably ran when the session
     // exits clean, when a per-skill load failure was scraped, or when the isolated session

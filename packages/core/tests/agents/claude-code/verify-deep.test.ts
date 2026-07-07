@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parseClaudeInit, verifyClaudeCode } from '../../../src/agents/claude-code/verify.ts';
+import { defaultScanEnv } from '../../../src/env/default.ts';
 import type { ScanEnv } from '../../../src/env/types.ts';
 
 const env = (): ScanEnv => ({
@@ -293,5 +297,37 @@ describe('verifyClaudeCode deep mode', () => {
     // 'null:good-skill' never matches -> reported missing.
     expect(r.value.modes[0]?.findings).toHaveLength(1);
     expect(r.value.modes[0]?.findings[0]?.file).toBe('skills/good-skill/SKILL.md');
+  });
+
+  // Copilot review flagged getExpectedSkills' unconditional `env.listDir(skillsDir)` call as a
+  // throw risk for a manifest-only plugin with no `skills/` dir (defaultScanEnv readdir ENOENT).
+  // Exercise the REAL defaultScanEnv (not a mock) against a real directory with no `skills/`
+  // subfolder to settle whether that guard already exists.
+  test('deep mode: manifest-only plugin (no skills/ dir) -> ran, zero expected skills, no throw', async () => {
+    const proj = await mkdtemp(join(tmpdir(), 'skillsmith-verify-deep-noskills-'));
+    try {
+      const real = await defaultScanEnv();
+      const scanEnv: ScanEnv = {
+        ...real,
+        path: ['/fake'],
+        fileExists: async (p) => p === '/fake/claude',
+        runVersion: async () => '2.1.202 (Claude Code)',
+        readText: async () => '{"name":"noskills"}',
+        exec: async (_cmd, args) => {
+          if (args[0] === 'plugin') return { code: 0, stdout: '', stderr: '', timedOut: false };
+          return { code: 1, stdout: CANNED_DEEP_BLOCK, stderr: '', timedOut: false };
+        },
+      };
+
+      const r = await verifyClaudeCode(scanEnv, { path: proj, modes: ['deep'], strict: false });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.value.modes[0]?.status).toBe('ran');
+      expect(r.value.modes[0]?.skipReason).toBeNull();
+      expect(r.value.modes[0]?.verdict).toBe('pass');
+      expect(r.value.modes[0]?.findings).toEqual([]);
+    } finally {
+      await rm(proj, { recursive: true, force: true });
+    }
   });
 });

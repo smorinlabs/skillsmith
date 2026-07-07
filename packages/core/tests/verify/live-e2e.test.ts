@@ -178,6 +178,13 @@ describe.skipIf(!E2E)('verify live e2e (real claude/codex CLIs)', () => {
       expect(messages.some((m) => m.includes('invalid YAML'))).toBe(true);
       expect(messages.some((m) => m.includes('missing YAML frontmatter'))).toBe(true);
       expect(messages.some((m) => m.includes('missing field `description`'))).toBe(true);
+
+      // Findings must report target-relative paths (skills/<n>/SKILL.md under DUMMYTEST),
+      // not the throwaway `.agents/skills/<n>/SKILL.md` staging path used for the deep exec.
+      for (const skill of ['bad-yaml', 'bad-noframe', 'bad-nodesc']) {
+        expect(errors.some((f) => f.file === `skills/${skill}/SKILL.md`)).toBe(true);
+      }
+      expect(errors.every((f) => f.file?.startsWith('.agents/') !== true)).toBe(true);
     }, 120_000);
   });
 });

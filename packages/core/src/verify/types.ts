@@ -67,6 +67,11 @@ export interface ToolVerifyOptions {
   modes: readonly VerifyMode[];
   strict: boolean;
   signal?: AbortSignal;
+  // Original target shape from resolveTarget, so a checker can map any temp-staging
+  // path back to what the user actually verified (e.g. collapse a bare skill's
+  // synthesized `skills/<name>/SKILL.md` to the original `SKILL.md`). Undefined ==
+  // 'plugin' (the common case; only runVerify threads this through today).
+  kind?: 'plugin' | 'skill';
 }
 
 export type ToolVerifier = (
