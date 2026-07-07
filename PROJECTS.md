@@ -43,7 +43,7 @@ archive `smorin/skillsmith` with a deprecation note; repoint local origin. Refre
 
 ---
 
-## [-] Project P11: `skillsmith verify` — cross-tool load verification (v0.4.0)
+## [x] Project P11: `skillsmith verify` — cross-tool load verification (v0.4.0)
 **Goal**: `skillsmith verify <path> [--tool claude-code|codex]... [--static|--deep] [--json]` —
 per-tool result **matrix** (never one merged verdict), per-tool severities surfaced, exit codes
 for CI. Engine per `research/skill-plugin-load-verification-2026-07-06.md`: Claude static
