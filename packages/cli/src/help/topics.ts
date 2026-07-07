@@ -13,7 +13,16 @@ export type HelpTopic = (typeof HELP_TOPIC_NAMES)[number];
 
 const TOPICS: Record<HelpTopic, string> = {
   'exit-codes':
-    'Exit codes\n  0 success\n  1 generic failure / verification failed\n  2 usage error\n  4 could not verify (verify: required tool or mode unavailable)\n  130 SIGINT\n\nFull reference: research/skillsmith-cli-design.md §6.1',
+    'Exit codes\n' +
+    '  0 success\n' +
+    '  1 failure (verify gate / flip failed; generic failure / verification failed)\n' +
+    '  2 usage error or refusal\n' +
+    '  3 config or ledger unreadable\n' +
+    '  4 no placement/tool (verify: required tool or mode unavailable)\n' +
+    '  5 dev source unresolvable\n' +
+    '  6 permission error\n' +
+    '  130 SIGINT\n\n' +
+    'Full reference: research/skillsmith-cli-design.md §6.1',
   environment:
     'Environment variables\n  NO_COLOR, FORCE_COLOR, CLICOLOR, CLICOLOR_FORCE, TERM — honored by --color auto mode.\n\nSKILLSMITH_* variables land in MVP-2a with the config layer.',
   scopes:
