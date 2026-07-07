@@ -63,6 +63,15 @@ const isPathTarget = (target: string): boolean => target.includes('/') || isAbso
 
 const isFlippableClass = (cls: PlacementClass): boolean => cls === 'dev' || cls === 'pinned';
 
+/** A pair carries an uncommitted journal when an earlier swap was interrupted (crash / SIGKILL).
+ *  Such a pair must surface into the plan regardless of its current filesystem class — a crash
+ *  window can leave the live path absent (backup holds the old artifact) or in the wrong class —
+ *  so the run layer's resume/rollback/refuse logic (spec §8.4) stays reachable via every route. */
+const hasOpenJournal = (ledger: LedgerFile, skill: string, tool: FlipTool): boolean => {
+  const journal = getPair(ledger, skill, tool)?.journal;
+  return journal != null && journal.phase !== 'committed';
+};
+
 interface CodexRoots {
   current: string;
   legacy: string;
@@ -116,6 +125,17 @@ const resolveCodex = async (
   return { placement: current, notices: [], duplicateReason: null };
 };
 
+const classifyForTool = (
+  env: ScanEnv,
+  ctx: SkillRootsCtx,
+  storeRoot: string,
+  skill: string,
+  tool: FlipTool,
+): Promise<ToolResolution> =>
+  tool === 'claude-code'
+    ? resolveClaudeCode(env, ctx, storeRoot, skill)
+    : resolveCodex(env, ctx, storeRoot, skill);
+
 const searchedRootsDescription = (env: ScanEnv, ctx: SkillRootsCtx): string => {
   const [claudeRoot] = claudeCodeSkillRootsUser(env, ctx);
   const codex = codexRootsOf(env, ctx);
@@ -131,16 +151,14 @@ const resolveNamedTarget = async (
   target: string,
   toolsInOrder: readonly FlipTool[],
   explicitTools: boolean,
+  ledger: LedgerFile,
 ): Promise<{ pairs: PairPlan[]; preResults: FlipResult[] }> => {
   const pairs: PairPlan[] = [];
   const preResults: FlipResult[] = [];
   let anyFlippableFound = false;
 
   for (const tool of toolsInOrder) {
-    const res =
-      tool === 'claude-code'
-        ? await resolveClaudeCode(env, ctx, storeRoot, target)
-        : await resolveCodex(env, ctx, storeRoot, target);
+    const res = await classifyForTool(env, ctx, storeRoot, target, tool);
 
     if (res.duplicateReason) {
       anyFlippableFound = true;
@@ -157,6 +175,13 @@ const resolveNamedTarget = async (
     }
 
     if (!isFlippableClass(res.placement.class)) {
+      // A journaled pair surfaces even when its live path is absent/wrong-class (F1), so the run
+      // layer can resume/rollback/refuse it. Committed/absent-journal pairs keep prior behavior.
+      if (hasOpenJournal(ledger, target, tool)) {
+        anyFlippableFound = true;
+        pairs.push({ skill: target, tool, placement: res.placement, notices: res.notices });
+        continue;
+      }
       if (explicitTools) {
         const reason = `'${target}' has no flippable placement for ${tool} (found: ${res.placement.class})`;
         preResults.push(
@@ -191,6 +216,7 @@ const resolvePathTarget = async (
   target: string,
   selectedTools: readonly FlipTool[],
   explicitTools: boolean,
+  ledger: LedgerFile,
 ): Promise<Result<{ pairs: PairPlan[]; preResults: FlipResult[] }, SkillSmithError>> => {
   const resolved = resolve(ctx.cwd, target);
   const parent = dirname(resolved);
@@ -228,7 +254,9 @@ const resolvePathTarget = async (
   }
 
   const placement = await classifyPlacement(env, root, skill, storeRoot);
-  if (!isFlippableClass(placement.class)) {
+  // A journaled pair surfaces even when its live path is absent/wrong-class (F1); otherwise a
+  // non-flippable class is a placement-not-found refusal as before.
+  if (!isFlippableClass(placement.class) && !hasOpenJournal(ledger, skill, tool)) {
     const reason = `'${target}' has no flippable placement for ${tool} (found: ${placement.class})`;
     return ok({
       pairs: [],
@@ -250,7 +278,9 @@ const resolvePathTarget = async (
 /** Target & tool resolution (spec §5/D2/D3). `opts.op` picks the `--all` flippable class:
  *  `dev` for promote, `pinned` for dev. Named/path targets accept either class (dev.md §4's
  *  convergent no-op / already-dev no-op both need the pair to reach the run layer). `ledger` is
- *  read-only here, consulted only for `dev --all`'s "pinned with a recorded dev source" filter. */
+ *  read-only here: consulted for `dev --all`'s "pinned with a recorded dev source" filter, and —
+ *  across every route — to surface any pair carrying an uncommitted journal regardless of its
+ *  filesystem class, so an interrupted swap stays reachable by --rollback / re-run / resume (F1). */
 export const planFlips = async (
   env: ScanEnv,
   opts: FlipOptions & { op: FlipOp },
@@ -315,11 +345,29 @@ export const planFlips = async (
     const allSkillNames = new Set<string>();
     for (const byName of perTool.values())
       for (const name of byName.keys()) allSkillNames.add(name);
+    // F1: also consider any skill whose ledger pair carries an uncommitted journal for a selected
+    // tool, even when the filesystem scan missed it (a crash window can leave the live path absent,
+    // so it never appears in the placement listing — nor in the wrong class the op filters for).
+    for (const skill of Object.keys(ledger.skills))
+      if (toolsInOrder.some((tool) => hasOpenJournal(ledger, skill, tool)))
+        allSkillNames.add(skill);
 
     const codexLegacyRoot = codexRootsOf(env, ctx).legacy;
     for (const skill of [...allSkillNames].sort()) {
       for (const tool of toolsInOrder) {
         const placement = perTool.get(tool)?.get(skill);
+
+        // A journaled pair surfaces regardless of filesystem class or the op's dev-source filter,
+        // so the run layer's resume/rollback/refuse logic remains reachable (F1).
+        if (hasOpenJournal(ledger, skill, tool)) {
+          const p =
+            placement ?? (await classifyForTool(env, ctx, storeRoot, skill, tool)).placement;
+          const notices =
+            tool === 'codex' && p.root === codexLegacyRoot ? [LEGACY_ROOT_NOTICE] : [];
+          pairs.push({ skill, tool, placement: p, notices });
+          continue;
+        }
+
         if (!placement) continue;
 
         if (opts.op === 'dev' && !getPair(ledger, skill, tool)?.dev?.sourcePath) {
@@ -355,6 +403,7 @@ export const planFlips = async (
         target,
         toolsInOrder,
         explicitTools,
+        ledger,
       );
       if (!resolved.ok) return resolved;
       pairs.push(...resolved.value.pairs);
@@ -368,6 +417,7 @@ export const planFlips = async (
       target,
       toolsInOrder,
       explicitTools,
+      ledger,
     );
     pairs.push(...resolved.pairs);
     preResults.push(...resolved.preResults);

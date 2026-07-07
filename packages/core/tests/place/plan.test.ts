@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { symlink } from 'node:fs/promises';
+import { rm, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { emptyLedger, setPair } from '../../src/place/ledger.ts';
 import { storeRootOf } from '../../src/place/paths.ts';
 import { LEGACY_ROOT_NOTICE, planFlips } from '../../src/place/plan.ts';
-import type { DevRecord, FlipOptions, LedgerFile } from '../../src/place/types.ts';
+import type { DevRecord, FlipOptions, LedgerFile, PairRecord } from '../../src/place/types.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -229,5 +229,86 @@ describe('planFlips', () => {
     expect(r.value.pairs).toEqual([]);
     expect(r.value.preResults[0]?.action).toBe('refused');
     expect(r.value.preResults[0]?.reason).toContain('store-linked');
+  });
+
+  // F1 regression: a crash between the P3 (live -> backup) and P4 (staging -> live) renames leaves
+  // the live path ABSENT while an uncommitted journal is recorded (the backup holds the old
+  // artifact). classifyPlacement then returns 'absent', which pre-fix dropped the pair from every
+  // route (named -> exit 4 "no placement found"; --all -> never listed), stranding the journaled
+  // pair beyond the reach of --rollback / re-run / resume. The pair must surface into the plan
+  // regardless of filesystem class so the run layer's resume/rollback/refuse logic engages.
+  describe('an uncommitted-journal pair is never dropped from planning (F1)', () => {
+    const openJournalPair = (
+      skillsRoot: string,
+      skill: string,
+      op: 'promote' | 'dev',
+    ): PairRecord => ({
+      placementPath: join(skillsRoot, skill),
+      mode: op === 'promote' ? 'dev' : 'pinned',
+      dev: dev(resolve(f.alphaSrc)),
+      pinned: null,
+      journal: {
+        op,
+        txId: 'beef0001',
+        phase: 'live', // P4 not yet done => live absent
+        startedAt: NOW,
+        completedAt: null,
+        before:
+          op === 'promote'
+            ? { mode: 'dev', symlinkTarget: resolve(f.alphaSrc) }
+            : { mode: 'pinned', storePath: null, contentHash: null },
+        stagingPath: join(skillsRoot, `.skillsmith-staging-${skill}-beef0001`),
+        backupPath: join(skillsRoot, `.skillsmith-backup-${skill}-beef0001`),
+      },
+    });
+
+    // Remove alpha's live symlink to reproduce the absent-live crash window, then record an
+    // uncommitted journal for (alpha, claude-code).
+    const absentLiveWithJournal = async (op: 'promote' | 'dev'): Promise<LedgerFile> => {
+      const skillsRoot = join(f.home, '.claude', 'skills');
+      await rm(join(skillsRoot, 'alpha'), { force: true });
+      const ledger = emptyLedger(NOW);
+      setPair(ledger, 'alpha', 'claude-code', openJournalPair(skillsRoot, 'alpha', op));
+      return ledger;
+    };
+
+    for (const op of ['promote', 'dev'] as const) {
+      test(`named target (${op}) surfaces the journaled pair despite an absent live path`, async () => {
+        const ledger = await absentLiveWithJournal(op);
+        const r = await planFlips(f.env, baseOpts({ targets: ['alpha'], op }), storeRoot, ledger);
+        if (!r.ok) throw new Error('expected ok');
+        const pair = r.value.pairs.find((p) => p.skill === 'alpha' && p.tool === 'claude-code');
+        expect(pair).toBeDefined();
+        expect(pair?.placement.class).toBe('absent');
+        // The pre-fix failure mode: a placement-not-found preResult instead of a planned pair.
+        expect(r.value.preResults.some((res) => res.error?.code === 'placement-not-found')).toBe(
+          false,
+        );
+      });
+
+      test(`--all (${op}) surfaces the journaled pair despite an absent live path`, async () => {
+        const ledger = await absentLiveWithJournal(op);
+        const r = await planFlips(f.env, baseOpts({ all: true, op }), storeRoot, ledger);
+        if (!r.ok) throw new Error('expected ok');
+        expect(r.value.pairs.some((p) => p.skill === 'alpha' && p.tool === 'claude-code')).toBe(
+          true,
+        );
+      });
+    }
+
+    test('a committed-journal pair keeps current behavior (absent => dropped, not surfaced)', async () => {
+      const skillsRoot = join(f.home, '.claude', 'skills');
+      await rm(join(skillsRoot, 'alpha'), { force: true });
+      const ledger = emptyLedger(NOW);
+      const rec = openJournalPair(skillsRoot, 'alpha', 'promote');
+      if (rec.journal) rec.journal.phase = 'committed';
+      setPair(ledger, 'alpha', 'claude-code', rec);
+      const r = await planFlips(f.env, baseOpts({ targets: ['alpha'] }), storeRoot, ledger);
+      if (!r.ok) throw new Error('expected ok');
+      expect(r.value.pairs.some((p) => p.skill === 'alpha')).toBe(false);
+      expect(r.value.preResults.some((res) => res.error?.code === 'placement-not-found')).toBe(
+        true,
+      );
+    });
   });
 });

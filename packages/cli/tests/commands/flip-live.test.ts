@@ -148,10 +148,16 @@ describe.skipIf(!E2E)('skillsmith promote/dev live e2e (real process SIGKILL)', 
         await clearOrphanedLock(ledgerPath);
       }
 
-      // Crashed on-disk state: live path absent or old; backup present when absent; store intact.
+      // Crashed on-disk state — two possible kill points, each pinned down exactly. Either the
+      // live path is still the OLD symlink (killed before the P3 rename; target byte-identical),
+      // or it is ABSENT with the backup holding the old artifact (killed in the P3-P4 window).
+      // The absent branch is the F1 crash window: planning surfaces the journaled pair from the
+      // ledger, so the rollback below MUST recover it (exit 0) — never exit 4 "no placement found".
       const liveKind = await kindOf(livePath);
       expect(['symlink', 'absent']).toContain(liveKind);
-      if (liveKind === 'absent') {
+      if (liveKind === 'symlink') {
+        expect(await readlink(livePath)).toBe(originalTarget);
+      } else {
         const names = await residueNames(skillsRoot);
         expect(names.some((n) => n.startsWith('.skillsmith-backup-alpha-'))).toBe(true);
       }
