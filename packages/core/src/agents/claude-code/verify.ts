@@ -1,7 +1,10 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ScanEnv } from '../../env/types.ts';
 import { ok } from '../../result.ts';
 import { extractVersionToken, modeVerdictFor, toolVerdictFor } from '../../verify/normalize.ts';
-import { STATIC_TIMEOUT_MS, VERIFIED_AGAINST } from '../../verify/types.ts';
+import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS, VERIFIED_AGAINST } from '../../verify/types.ts';
 import type {
   ModeResult,
   ToolVerifier,
@@ -107,11 +110,140 @@ const runStaticMode = async (
   };
 };
 
+interface ClaudeInitEvent {
+  type?: unknown;
+  subtype?: unknown;
+  plugins?: { name: string }[];
+  skills?: string[];
+}
+
+/** Pure. First stream-json line with type==='system' && subtype==='init', or null if absent. */
+export const parseClaudeInit = (stdout: string): { plugins: string[]; skills: string[] } | null => {
+  for (const line of stdout.split('\n')) {
+    let obj: unknown;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue; // non-JSON junk line (stderr leakage, blank lines) — skip
+    }
+    if (typeof obj !== 'object' || obj === null) continue;
+    const event = obj as ClaudeInitEvent;
+    if (event.type === 'system' && event.subtype === 'init') {
+      return {
+        plugins: (event.plugins ?? []).map((p) => p.name),
+        skills: event.skills ?? [],
+      };
+    }
+  }
+  return null;
+};
+
+/** Subdirectories `n` of `<path>/skills/` where `<path>/skills/<n>/SKILL.md` exists. */
+const getExpectedSkills = async (env: ScanEnv, path: string): Promise<string[]> => {
+  const skillsDir = join(path, 'skills');
+  const entries = await env.listDir(skillsDir);
+  const present: string[] = [];
+  for (const n of entries) {
+    if (await env.fileExists(join(skillsDir, n, 'SKILL.md'))) present.push(n);
+  }
+  return present;
+};
+
+/** Manifest plugin name, or null on any read/parse failure. */
+const readPluginName = async (env: ScanEnv, path: string): Promise<string | null> => {
+  try {
+    const parsed: unknown = JSON.parse(
+      await env.readText(join(path, '.claude-plugin', 'plugin.json')),
+    );
+    const name = (parsed as { name?: unknown }).name;
+    return typeof name === 'string' ? name : null;
+  } catch {
+    return null;
+  }
+};
+
+const runDeepMode = async (
+  env: ScanEnv,
+  binary: string,
+  opts: ToolVerifyOptions,
+): Promise<ModeResult> => {
+  const coverage = { manifest: false, skills: true };
+  const command = `CLAUDE_CONFIG_DIR=<tmp> claude --print --verbose --output-format stream-json --setting-sources "" --plugin-dir ${opts.path} "ok"`;
+
+  const cfg = await mkdtemp(join(tmpdir(), 'skillsmith-claude-cfg-'));
+  try {
+    const result = await env.exec(
+      binary,
+      [
+        '--print',
+        '--verbose',
+        '--output-format',
+        'stream-json',
+        '--setting-sources',
+        '',
+        '--plugin-dir',
+        opts.path,
+        'ok',
+      ],
+      {
+        env: { CLAUDE_CONFIG_DIR: cfg },
+        timeoutMs: DEEP_TIMEOUT_MS,
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+      },
+    );
+
+    const init = parseClaudeInit(result.stdout);
+
+    // Init received is the success signal: the authentication_failed tail + exit 1 is the
+    // expected healthy ending of an isolated session and must not read as a failure.
+    if (init === null) {
+      return {
+        mode: 'deep',
+        status: 'error',
+        skipReason: result.timedOut ? 'timeout' : 'exec-error',
+        coverage,
+        verdict: null,
+        command,
+        findings: [],
+      };
+    }
+
+    const expected = await getExpectedSkills(env, opts.path);
+    const pluginName = await readPluginName(env, opts.path);
+    const loaded = new Set(init.skills);
+
+    const findings: VerifyFinding[] = [];
+    for (const n of expected) {
+      if (loaded.has(`${pluginName}:${n}`)) continue;
+      findings.push({
+        checkId: 'claude.load-presence',
+        toolSeverity: null,
+        normalizedSeverity: 'warning',
+        message: `skill '${n}' did not load (reason unavailable at runtime — see static validate)`,
+        file: `skills/${n}/SKILL.md`,
+        subject: 'skill',
+      });
+    }
+
+    return {
+      mode: 'deep',
+      status: 'ran',
+      skipReason: null,
+      coverage,
+      verdict: modeVerdictFor(findings, opts.strict),
+      command,
+      findings,
+    };
+  } finally {
+    await rm(cfg, { recursive: true, force: true });
+  }
+};
+
 type ModeRunner = (env: ScanEnv, binary: string, opts: ToolVerifyOptions) => Promise<ModeResult>;
 
-// 'deep' is added by the next task; a requested 'deep' mode simply produces no ModeResult yet.
 const MODE_RUNNERS: Partial<Record<VerifyMode, ModeRunner>> = {
   static: runStaticMode,
+  deep: runDeepMode,
 };
 
 export const verifyClaudeCode: ToolVerifier = async (env, opts) => {

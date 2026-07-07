@@ -271,7 +271,7 @@ describe('verifyClaudeCode', () => {
     expect(r.value.modes[0]?.verdict).toBeNull();
   });
 
-  test("'deep' requested alone produces no ModeResult yet", async () => {
+  test("'deep' requested alone now produces a deep ModeResult (empty stream -> exec-error)", async () => {
     const scanEnv = fakeInstalled({
       exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
     });
@@ -282,6 +282,9 @@ describe('verifyClaudeCode', () => {
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value.modes).toEqual([]);
+    expect(r.value.modes).toHaveLength(1);
+    expect(r.value.modes[0]?.mode).toBe('deep');
+    expect(r.value.modes[0]?.status).toBe('error');
+    expect(r.value.modes[0]?.skipReason).toBe('exec-error');
   });
 });
