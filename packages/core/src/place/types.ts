@@ -95,3 +95,72 @@ export interface SwapOutcome {
   backupKept: string | null; // path of a preserved backup (hash mismatch / no pinned record)
   warning: string | null;
 }
+
+export type FlipAction =
+  | 'flipped'
+  | 'updated'
+  | 'noop'
+  | 'skipped'
+  | 'refused'
+  | 'failed'
+  | 'rolled-back';
+
+export interface FlipResult {
+  skill: string;
+  tool: FlipTool | null; // null only for a target that matched no tool at all
+  placementPath: string | null;
+  action: FlipAction;
+  reason: string | null; // human cause for skipped/refused/failed
+  before: { mode: 'dev' | 'pinned'; symlinkTarget?: string; storePath?: string | null } | null;
+  after: { mode: 'dev' | 'pinned'; symlinkTarget?: string; storePath?: string | null } | null;
+  store: {
+    path: string;
+    rev: string;
+    gitSha: string | null;
+    dirty: boolean;
+    reused: boolean;
+  } | null;
+  verify: {
+    gate: 'passed' | 'warned' | 'failed' | 'skipped' | 'inconclusive';
+    verdict: 'pass' | 'warn' | 'fail' | 'inconclusive' | null;
+  } | null; // null for dev/rollback pairs
+  error?: SkillSmithError; // CORE-ONLY: drives the CLI exit code; NOT rendered in JSON
+}
+
+export interface FlipReport {
+  op: FlipOp;
+  dryRun: boolean;
+  requested: { targets: string[]; all: boolean; tools: FlipTool[]; explicitTools: boolean };
+  results: FlipResult[];
+  summary: {
+    flipped: number;
+    updated: number;
+    noop: number;
+    skipped: number;
+    refused: number;
+    failed: number;
+    rolledBack: number;
+  };
+}
+
+export interface FlipOptions {
+  targets: readonly string[];
+  all?: boolean;
+  tools?: readonly FlipTool[]; // explicit --tool list; undefined = auto
+  source?: string; // dev only
+  strict?: boolean; // promote only
+  noVerify?: boolean; // promote only
+  allowDirty?: boolean; // promote only
+  rollback?: boolean;
+  dryRun?: boolean;
+  cwd: string;
+  envVars: Record<string, string | undefined>;
+  testPauseAt?: JournalPhase; // wired only by the CLI under SKILLSMITH_E2E=1
+  signal?: AbortSignal;
+}
+
+export interface FlipDeps {
+  verify: typeof import('../verify/run.ts').verifyPlugin; // injectable for tests
+  now: () => string;
+  newTxId: () => string;
+}

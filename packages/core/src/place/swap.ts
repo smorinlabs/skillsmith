@@ -346,7 +346,10 @@ const reconstructPlan = (
 };
 
 /** Same-op re-run continuation (spec §8.4 right column). Reconstructs the plan from the ledger and
- *  drives the journal forward to committed; a committed journal only reclaims residue. */
+ *  drives the journal forward to committed; a committed journal only reclaims residue.
+ *  Warning: called on an already-`committed` journal, this still returns `ok({committed: true})` —
+ *  that means "residue reclaimed", never "this call just performed the flip"; callers must not
+ *  count it as a fresh success. */
 export const resumeSwap = async (
   ctx: SwapCtx,
   skill: string,

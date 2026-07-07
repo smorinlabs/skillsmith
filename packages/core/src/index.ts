@@ -32,9 +32,17 @@ export type {
   ExecOptions,
   ExecResult,
   Finding,
+  FlipAction,
+  FlipDeps,
+  FlipOp,
+  FlipOptions,
+  FlipReport,
+  FlipResult,
+  FlipTool,
   Frontmatter,
   InstallMethod,
   InstallRecord,
+  JournalPhase,
   ListCommandsOpts,
   ListSkillsOpts,
   LoadConfigOpts,
@@ -43,6 +51,9 @@ export type {
   ModeStatus,
   NormalizedSeverity,
   Origin,
+  PathKind,
+  Placement,
+  PlacementClass,
   Platform,
   PluginProvenanceScope,
   Result,
@@ -67,6 +78,8 @@ export type {
   VerifyTool,
   XdgDirs,
 } from './public-types.ts';
+export { defaultFlipDeps, runDev, runPromote, runRollback } from './place/run.ts';
+export { FLIP_TOOLS } from './place/types.ts';
 export { err, isErr, isOk, map, mapErr, ok } from './result.ts';
 export { detectAll, detectTool } from './scan/index.ts';
 export { listCommands } from './scan/list-commands.ts';

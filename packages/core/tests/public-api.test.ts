@@ -39,6 +39,11 @@ describe('@skillsmith/core public API', () => {
       'verifyPlugin',
       'VERIFY_TOOLS',
       'VERIFIED_AGAINST',
+      'runPromote',
+      'runDev',
+      'runRollback',
+      'defaultFlipDeps',
+      'FLIP_TOOLS',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);
