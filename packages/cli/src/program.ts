@@ -7,6 +7,7 @@ import { type Shell, runCompletion } from './commands/completion.ts';
 import { configCommand } from './commands/config.ts';
 import { doctorCommand } from './commands/doctor.ts';
 import { listCommand } from './commands/list.ts';
+import { verifyCommand } from './commands/verify.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from './help/topics.ts';
 import { type ColorFlag, resolveColorMode } from './util/color.ts';
 import { exitCodeForError } from './util/exit-codes.ts';
@@ -104,6 +105,7 @@ export const buildProgram = (signal?: AbortSignal): Command => {
   program.addCommand(commandsCommand());
   program.addCommand(doctorCommand());
   program.addCommand(checkCommand());
+  program.addCommand(verifyCommand(signal));
 
   program
     .command('version')
