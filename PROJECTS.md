@@ -67,7 +67,7 @@ mechanism (CLI shell-out first; SDK evaluated as follow-up).
 - [x] [P11-T05] `agents/codex/verify.ts`: deep stderr scrape — *opus*
 - [x] [P11-T06] CLI command: matrix rendering, `--json`, exit codes, help topic — *sonnet*
 - [x] [P11-TS02] Env-gated live e2e against real `claude`/`codex` (skipped in CI, run locally) — *sonnet*
-- [ ] [P11-RV] Final whole-branch review — *fable*
+- [x] [P11-RV] Final whole-branch review — *fable*
 
 ### Automated Verification
 - `bun run check` green; fixture suite passes; `verify --json` output validates against the schema.
