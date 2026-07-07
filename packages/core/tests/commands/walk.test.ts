@@ -15,6 +15,7 @@ const fakeEnv = (
   listDir: async (p) => dirs[p] ?? [],
   readText: async (p) => files[p] ?? '',
   runVersion: async () => 'unknown',
+  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 });
 
 describe('walkCommandDir', () => {

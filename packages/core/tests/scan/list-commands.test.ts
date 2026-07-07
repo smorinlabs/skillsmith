@@ -12,6 +12,7 @@ const env = (dirs: Record<string, readonly string[]>, files: Record<string, stri
   listDir: async (p) => dirs[p] ?? [],
   readText: async (p) => files[p] ?? '',
   runVersion: async () => 'unknown',
+  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 });
 
 describe('listCommands', () => {

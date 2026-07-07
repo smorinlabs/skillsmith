@@ -14,8 +14,9 @@
 > each, final whole-branch review per project. Model policy: **haiku** = transcription/mechanical
 > (complete spec in brief), **sonnet** = standard implementation + routine task reviews,
 > **opus** = anything tricky (deep-checker subprocess/stream parsing, store/lockfile,
-> atomic-swap correctness) + standard specs, **fable** = the hardest planning (P12 spec:
-> atomicity/round-trip model) and all final whole-branch reviews / highest-risk verification.
+> atomic-swap correctness) + standard specs, **fable** = major planning (ALL [P*-PL]
+> implementation plans + hardest [P*-BR] specs) and all final whole-branch reviews /
+> highest-risk verification.
 > Ledger: `.superpowers/sdd/progress.md`.
 
 ## [x] Project P10: Un-park — consolidate + hygiene (v0.3.2)
@@ -42,7 +43,7 @@ archive `smorin/skillsmith` with a deprecation note; repoint local origin. Refre
 
 ---
 
-## [ ] Project P11: `skillsmith verify` — cross-tool load verification (v0.4.0)
+## [-] Project P11: `skillsmith verify` — cross-tool load verification (v0.4.0)
 **Goal**: `skillsmith verify <path> [--tool claude-code|codex]... [--static|--deep] [--json]` —
 per-tool result **matrix** (never one merged verdict), per-tool severities surfaced, exit codes
 for CI. Engine per `research/skill-plugin-load-verification-2026-07-06.md`: Claude static
@@ -56,17 +57,17 @@ schema is the public contract consumed by the skill-fleet `skill-verify` skill (
 mechanism (CLI shell-out first; SDK evaluated as follow-up).
 
 ### Tests & Tasks
-- [ ] [P11-BR] Brainstorm + spec (`docs/superpowers/specs/`): CLI surface, JSON schema, severity model, tool-missing/auth-missing semantics — *opus*
-- [ ] [P11-PL] Implementation plan (`docs/superpowers/plans/`) — *opus*
-- [ ] [P11-TS01] Port the broken-fixture suite (good/bad-yaml/bad-noframe/bad-nodesc skills; bad manifests ×2 formats) into `packages/core/tests/fixtures/` — *haiku*
-- [ ] [P11-T01] Core types: `VerifyReport`/`ToolVerdict`/`Finding` + Result plumbing — *sonnet*
-- [ ] [P11-T02] `agents/claude-code/verify.ts`: static validate parser — *sonnet*
-- [ ] [P11-T03] `agents/claude-code/verify.ts`: deep init-event check — *opus*
-- [ ] [P11-T04] `agents/codex/verify.ts`: static manifest check (temp CODEX_HOME) — *sonnet*
-- [ ] [P11-T05] `agents/codex/verify.ts`: deep stderr scrape — *opus*
-- [ ] [P11-T06] CLI command: matrix rendering, `--json`, exit codes, help topic — *sonnet*
-- [ ] [P11-TS02] Env-gated live e2e against real `claude`/`codex` (skipped in CI, run locally) — *sonnet*
-- [ ] [P11-RV] Final whole-branch review — *fable*
+- [x] [P11-BR] Brainstorm + spec (`docs/superpowers/specs/`): CLI surface, JSON schema, severity model, skip semantics (deep mode proven auth-free) — *opus*
+- [x] [P11-PL] Implementation plan (`docs/superpowers/plans/`) — *fable*
+- [x] [P11-TS01] Port the broken-fixture suite (good/bad-yaml/bad-noframe/bad-nodesc skills; bad manifests ×2 formats) into `packages/core/tests/fixtures/` — *haiku*
+- [x] [P11-T01] Core types: `VerifyReport`/`ToolVerdict`/`Finding` + Result plumbing — *sonnet*
+- [x] [P11-T02] `agents/claude-code/verify.ts`: static validate parser — *sonnet*
+- [x] [P11-T03] `agents/claude-code/verify.ts`: deep init-event check — *opus*
+- [x] [P11-T04] `agents/codex/verify.ts`: static manifest check (temp CODEX_HOME) — *sonnet*
+- [x] [P11-T05] `agents/codex/verify.ts`: deep stderr scrape — *opus*
+- [x] [P11-T06] CLI command: matrix rendering, `--json`, exit codes, help topic — *sonnet*
+- [x] [P11-TS02] Env-gated live e2e against real `claude`/`codex` (skipped in CI, run locally) — *sonnet*
+- [x] [P11-RV] Final whole-branch review — *fable*
 
 ### Automated Verification
 - `bun run check` green; fixture suite passes; `verify --json` output validates against the schema.
@@ -83,7 +84,7 @@ Claude (`~/.claude/skills`) and Codex skill dirs where present.
 
 ### Tests & Tasks
 - [ ] [P12-BR] Brainstorm + spec: lockfile schema, store layout (seed of P09's store), atomicity, multi-tool semantics, naming (`dev` primary / `demote` alias) — *fable*
-- [ ] [P12-PL] Implementation plan — *opus*
+- [ ] [P12-PL] Implementation plan — *fable*
 - [ ] [P12-TS01] Fixture fleet (fake `~/.claude`/`~/.codex` trees with symlink + copy placements) — *haiku*
 - [ ] [P12-T01] Placement detection (symlink→repo vs pinned vs absent), per agent dir — *sonnet*
 - [ ] [P12-T02] Store snapshot @ SHA + lockfile read/write — *opus*

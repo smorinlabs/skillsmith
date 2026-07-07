@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.verify",
+  "target": { "path": "/abs/plugins/dummytest", "kind": "plugin" },
+  "requested": { "tools": ["claude-code", "codex"], "modes": ["static", "deep"], "strict": false, "explicitTools": false },
+  "verifiedAgainst": { "claude-code": "2.1.202", "codex": "0.142.5" },
+  "summary": {
+    "verdict": "fail",
+    "verified": [],
+    "failed": ["claude-code", "codex"],
+    "skipped": [],
+    "counts": { "error": 3, "warning": 2, "info": 1 }
+  },
+  "tools": [
+    {
+      "tool": "claude-code",
+      "available": true,
+      "toolVersion": "2.1.202",
+      "versionDrift": false,
+      "skipReason": null,
+      "verdict": "fail",
+      "modes": [
+        {
+          "mode": "static",
+          "status": "ran",
+          "skipReason": null,
+          "coverage": { "manifest": true, "skills": true },
+          "verdict": "fail",
+          "command": "claude plugin validate <path>",
+          "findings": [
+            { "checkId": "claude.frontmatter", "toolSeverity": "error", "normalizedSeverity": "error",
+              "message": "YAML frontmatter failed to parse: YAML Parse error: Unexpected character.",
+              "file": "skills/bad-yaml/SKILL.md", "subject": "skill" },
+            { "checkId": "claude.description", "toolSeverity": "warning", "normalizedSeverity": "warning",
+              "message": "No description in frontmatter.", "file": "skills/bad-nodesc/SKILL.md", "subject": "skill" }
+          ]
+        },
+        {
+          "mode": "deep",
+          "status": "ran",
+          "skipReason": null,
+          "coverage": { "manifest": false, "skills": true },
+          "verdict": "warn",
+          "command": "CLAUDE_CONFIG_DIR=<tmp> claude --print --verbose --output-format stream-json --setting-sources \"\" --plugin-dir <path> \"ok\"",
+          "findings": [
+            { "checkId": "claude.load-presence", "toolSeverity": null, "normalizedSeverity": "warning",
+              "message": "skill 'bad-yaml' did not load (reason unavailable at runtime — see static validate)",
+              "file": "skills/bad-yaml/SKILL.md", "subject": "skill" }
+          ]
+        }
+      ]
+    },
+    {
+      "tool": "codex",
+      "available": true,
+      "toolVersion": "0.142.5",
+      "versionDrift": false,
+      "skipReason": null,
+      "verdict": "fail",
+      "modes": [
+        {
+          "mode": "static",
+          "status": "ran",
+          "skipReason": null,
+          "coverage": { "manifest": true, "skills": false },
+          "verdict": "pass",
+          "command": "codex plugin marketplace add <root> && codex plugin add <name>@<mkt>",
+          "findings": [
+            { "checkId": "codex.static-coverage", "toolSeverity": null, "normalizedSeverity": "info",
+              "message": "codex static checked the manifest only; run --deep for skill validation",
+              "file": null, "subject": "plugin" }
+          ]
+        },
+        {
+          "mode": "deep",
+          "status": "ran",
+          "skipReason": null,
+          "coverage": { "manifest": false, "skills": true },
+          "verdict": "fail",
+          "command": "codex exec -C <proj> --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox \"ok\"",
+          "findings": [
+            { "checkId": "codex.skill-load", "toolSeverity": "error", "normalizedSeverity": "error",
+              "message": "invalid YAML: found unexpected end of stream at line 3 column 23",
+              "file": ".agents/skills/bad-yaml/SKILL.md", "subject": "skill" },
+            { "checkId": "codex.skill-load", "toolSeverity": "error", "normalizedSeverity": "error",
+              "message": "missing field `description`",
+              "file": ".agents/skills/bad-nodesc/SKILL.md", "subject": "skill" }
+          ]
+        }
+      ]
+    }
+  ]
+}

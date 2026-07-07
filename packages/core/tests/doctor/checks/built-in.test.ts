@@ -18,6 +18,7 @@ const baseEnv: ScanEnv = {
   listDir: async () => [],
   readText: async () => '',
   runVersion: async () => 'unknown',
+  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 };
 
 const baseCtx: CheckRunContext = {

@@ -89,6 +89,10 @@ export default [
             },
             { target: './packages/core/src/commands', from: './packages/core/src/scan' },
             { target: './packages/core/src/commands', from: './packages/core/src/doctor' },
+            // verify is a high-level orchestrator; leaves must not import it
+            { target: './packages/core/src/skills', from: './packages/core/src/verify' },
+            { target: './packages/core/src/plugins', from: './packages/core/src/verify' },
+            { target: './packages/core/src/commands', from: './packages/core/src/verify' },
           ],
         },
       ],

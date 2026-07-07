@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { runVersionCommand } from '../../src/env/exec.ts';
+import { execCommand, runVersionCommand } from '../../src/env/exec.ts';
 
 describe('runVersionCommand', () => {
   test("returns 'unknown' for a non-existent binary", async () => {
@@ -30,5 +30,55 @@ describe('runVersionCommand', () => {
     const elapsed = Date.now() - started;
     expect(v).toBe('unknown');
     expect(elapsed).toBeLessThan(100);
+  });
+});
+
+describe('execCommand', () => {
+  test('runs a simple command and captures stdout', async () => {
+    const r = await execCommand('/bin/echo', ['hi']);
+    expect(r).toEqual({ code: 0, stdout: 'hi\n', stderr: '', timedOut: false });
+  });
+
+  test('captures non-zero exit code and stderr', async () => {
+    const bunPath = Bun.which('bun') ?? 'bun';
+    const r = await execCommand(bunPath, ['-e', 'console.error("boom"); process.exit(3)']);
+    expect(r.code).toBe(3);
+    expect(r.stderr).toContain('boom');
+    expect(r.timedOut).toBe(false);
+  });
+
+  test('merges env over process.env rather than replacing it', async () => {
+    const bunPath = Bun.which('bun') ?? 'bun';
+    const r = await execCommand(bunPath, ['-e', 'console.log(process.env.SKILLSMITH_X)'], {
+      env: { SKILLSMITH_X: 'y' },
+    });
+    expect(r.stdout).toBe('y\n');
+    expect(r.timedOut).toBe(false);
+    expect(process.env.PATH).toBeTruthy();
+  });
+
+  test('sets timedOut when the process exceeds timeoutMs', async () => {
+    const sleep = Bun.which('sleep') ?? '/bin/sleep';
+    const r = await execCommand(sleep, ['5'], { timeoutMs: 200 });
+    expect(r.timedOut).toBe(true);
+  }, 5000);
+
+  test('returns promptly with a non-zero code for an already-aborted signal', async () => {
+    const bunPath = Bun.which('bun') ?? 'bun';
+    const controller = new AbortController();
+    controller.abort();
+    const started = Date.now();
+    const r = await execCommand(bunPath, ['--version'], { signal: controller.signal });
+    const elapsed = Date.now() - started;
+    expect(r.timedOut).toBe(false);
+    expect(r.code).not.toBe(0);
+    expect(elapsed).toBeLessThan(100);
+  });
+
+  test('does not throw on spawn failure', async () => {
+    const r = await execCommand('/nope/definitely/not/here', []);
+    expect(r.code).toBe(-1);
+    expect(r.stderr.length).toBeGreaterThan(0);
+    expect(r.timedOut).toBe(false);
   });
 });

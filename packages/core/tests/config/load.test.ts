@@ -12,6 +12,7 @@ const makeEnv = (files: Record<string, string | undefined>): ScanEnv => ({
   listDir: async () => [],
   readText: async () => '',
   runVersion: async () => 'unknown',
+  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 });
 
 describe('loadConfig', () => {

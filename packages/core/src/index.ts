@@ -29,6 +29,8 @@ export type {
   DetectOptions,
   EffectiveConfig,
   EnabledState,
+  ExecOptions,
+  ExecResult,
   Finding,
   Frontmatter,
   InstallMethod,
@@ -37,6 +39,9 @@ export type {
   ListSkillsOpts,
   LoadConfigOpts,
   Logger,
+  ModeResult,
+  ModeStatus,
+  NormalizedSeverity,
   Origin,
   Platform,
   PluginProvenanceScope,
@@ -48,7 +53,18 @@ export type {
   SkillEntry,
   SkillRootsCtx,
   SkillSmithError,
+  SkipReason,
+  SummaryVerdict,
   SupportedTool,
+  ToolVerdict,
+  ToolVerifier,
+  ToolVerifyOptions,
+  VerifyFinding,
+  VerifyMode,
+  VerifyOptions,
+  VerifyOutcome,
+  VerifyReport,
+  VerifyTool,
   XdgDirs,
 } from './public-types.ts';
 export { err, isErr, isOk, map, mapErr, ok } from './result.ts';
@@ -56,4 +72,6 @@ export { detectAll, detectTool } from './scan/index.ts';
 export { listCommands } from './scan/list-commands.ts';
 export { listSkills } from './scan/list-skills.ts';
 export { parseSkillFrontmatter } from './skills/frontmatter.ts';
+export { resolveTarget, runVerify, verifyPlugin } from './verify/run.ts';
+export { VERIFIED_AGAINST, VERIFY_TOOLS } from './verify/types.ts';
 export { VERSION } from './version.ts';

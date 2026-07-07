@@ -12,6 +12,7 @@ const env = (existing: string[]): ScanEnv => ({
   listDir: async () => [],
   readText: async () => '',
   runVersion: async () => '9.9.9',
+  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 });
 
 describe('detectAll', () => {
@@ -87,6 +88,7 @@ describe('signal propagation', () => {
         lastSignal.value = signal;
         return '1.0.0';
       },
+      exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
     };
     return { env: e, lastSignal };
   };

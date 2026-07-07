@@ -17,6 +17,7 @@ const fakeEnv = (opts: {
   listDir: async () => [],
   readText: async () => '',
   runVersion: async () => 'unknown',
+  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 });
 
 describe('classifyInstallMethod', () => {

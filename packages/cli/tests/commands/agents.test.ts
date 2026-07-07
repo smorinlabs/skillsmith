@@ -12,6 +12,7 @@ const env = (existing: string[]): ScanEnv => ({
   listDir: async () => [],
   readText: async () => '',
   runVersion: async () => '1.0.0',
+  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
 });
 
 describe('runAgents', () => {
