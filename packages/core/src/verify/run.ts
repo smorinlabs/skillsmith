@@ -51,6 +51,7 @@ export const resolveTarget = async (
         name,
         description: 'skillsmith verify ephemeral wrapper',
         version: '0.0.0',
+        author: { name: 'skillsmith' },
       });
       await mkdir(join(tmp, '.claude-plugin'), { recursive: true });
       await mkdir(join(tmp, '.codex-plugin'), { recursive: true });

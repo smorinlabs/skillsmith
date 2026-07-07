@@ -76,7 +76,7 @@ export type ToolVerifier = (
 
 /** The version matrix this build's parsers were proven against (research 2026-07-06/07). */
 export const VERIFIED_AGAINST: Record<VerifyTool, string> = {
-  'claude-code': '2.1.201',
+  'claude-code': '2.1.202',
   codex: '0.142.5',
 };
 

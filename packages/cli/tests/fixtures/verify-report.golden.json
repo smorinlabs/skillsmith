@@ -3,7 +3,7 @@
   "kind": "skillsmith.verify",
   "target": { "path": "/abs/plugins/dummytest", "kind": "plugin" },
   "requested": { "tools": ["claude-code", "codex"], "modes": ["static", "deep"], "strict": false, "explicitTools": false },
-  "verifiedAgainst": { "claude-code": "2.1.201", "codex": "0.142.5" },
+  "verifiedAgainst": { "claude-code": "2.1.202", "codex": "0.142.5" },
   "summary": {
     "verdict": "fail",
     "verified": [],
@@ -15,7 +15,7 @@
     {
       "tool": "claude-code",
       "available": true,
-      "toolVersion": "2.1.201",
+      "toolVersion": "2.1.202",
       "versionDrift": false,
       "skipReason": null,
       "verdict": "fail",

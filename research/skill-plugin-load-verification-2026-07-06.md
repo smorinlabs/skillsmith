@@ -261,3 +261,6 @@ for temp workdirs.
   the trailing `authentication_failed` / `401` + exit 1 as the **expected** tail, not a finding.
 - There is no auth-skip to detect: the deep skip machinery reduces to tool-missing, timeout, and
   unexpected (unparseable) failure.
+
+**Addendum (2026-07-07):** the parser format above was re-frozen and re-verified against Claude Code
+`2.1.202` live output — no shape changes; `VERIFIED_AGAINST['claude-code']` bumped to `2.1.202`.

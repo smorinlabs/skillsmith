@@ -18,7 +18,7 @@ const report: VerifyReport = {
     strict: false,
     explicitTools: false,
   },
-  verifiedAgainst: { 'claude-code': '2.1.201', codex: '0.142.5' },
+  verifiedAgainst: { 'claude-code': '2.1.202', codex: '0.142.5' },
   summary: {
     verdict: 'fail',
     verified: [],
@@ -30,7 +30,7 @@ const report: VerifyReport = {
     {
       tool: 'claude-code',
       available: true,
-      toolVersion: '2.1.201',
+      toolVersion: '2.1.202',
       versionDrift: false,
       skipReason: null,
       verdict: 'fail',

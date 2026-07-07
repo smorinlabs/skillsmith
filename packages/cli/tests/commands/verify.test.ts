@@ -16,7 +16,7 @@ const mode = (overrides: Partial<ModeResult> = {}): ModeResult => ({
 const tool = (overrides: Partial<ToolVerdict> = {}): ToolVerdict => ({
   tool: 'claude-code',
   available: true,
-  toolVersion: '2.1.201',
+  toolVersion: '2.1.202',
   versionDrift: false,
   skipReason: null,
   verdict: 'pass',
@@ -33,7 +33,7 @@ const report = (overrides: Partial<VerifyReport> = {}): VerifyReport => ({
     strict: false,
     explicitTools: false,
   },
-  verifiedAgainst: { 'claude-code': '2.1.201', codex: '0.142.5' },
+  verifiedAgainst: { 'claude-code': '2.1.202', codex: '0.142.5' },
   summary: {
     verdict: 'pass',
     verified: ['claude-code', 'codex'],

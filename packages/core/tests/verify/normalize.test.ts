@@ -154,7 +154,7 @@ describe('summarize', () => {
 
 describe('extractVersionToken', () => {
   test('extracts from a parenthesized suffix', () => {
-    expect(extractVersionToken('2.1.201 (Claude Code)')).toBe('2.1.201');
+    expect(extractVersionToken('2.1.202 (Claude Code)')).toBe('2.1.202');
   });
   test('extracts from a prefixed string', () => {
     expect(extractVersionToken('codex-cli 0.142.5')).toBe('0.142.5');

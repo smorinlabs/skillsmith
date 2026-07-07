@@ -84,7 +84,7 @@ describe('verifyClaudeCode deep mode', () => {
     path: ['/fake'],
     fileExists: async (p) => p === '/fake/claude',
     realpath: async (p) => p,
-    runVersion: async () => '2.1.201 (Claude Code)',
+    runVersion: async () => '2.1.202 (Claude Code)',
     ...overrides,
   });
 

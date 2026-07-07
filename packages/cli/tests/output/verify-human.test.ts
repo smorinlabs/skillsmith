@@ -16,7 +16,7 @@ const mode = (overrides: Partial<ModeResult> = {}): ModeResult => ({
 const tool = (overrides: Partial<ToolVerdict> = {}): ToolVerdict => ({
   tool: 'claude-code',
   available: true,
-  toolVersion: '2.1.201',
+  toolVersion: '2.1.202',
   versionDrift: false,
   skipReason: null,
   verdict: 'pass',
@@ -33,7 +33,7 @@ const report = (overrides: Partial<VerifyReport> = {}): VerifyReport => ({
     strict: false,
     explicitTools: false,
   },
-  verifiedAgainst: { 'claude-code': '2.1.201', codex: '0.142.5' },
+  verifiedAgainst: { 'claude-code': '2.1.202', codex: '0.142.5' },
   summary: {
     verdict: 'pass',
     verified: ['claude-code', 'codex'],
@@ -70,10 +70,10 @@ describe('renderVerifyHuman', () => {
 
   test('per-tool line contains "<tool> <toolVersion>" and "verdict: <verdict>"', () => {
     const out = renderVerifyHuman(
-      report({ tools: [tool({ tool: 'claude-code', toolVersion: '2.1.201', verdict: 'fail' })] }),
+      report({ tools: [tool({ tool: 'claude-code', toolVersion: '2.1.202', verdict: 'fail' })] }),
       1,
     );
-    expect(out).toContain('claude-code 2.1.201');
+    expect(out).toContain('claude-code 2.1.202');
     expect(out).toContain('verdict: fail');
   });
 

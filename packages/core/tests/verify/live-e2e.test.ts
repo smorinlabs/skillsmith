@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { verifyClaudeCode } from '../../src/agents/claude-code/verify.ts';
 import { verifyCodex } from '../../src/agents/codex/verify.ts';
 import { defaultScanEnv } from '../../src/env/default.ts';
+import { verifyPlugin } from '../../src/verify/run.ts';
 import type { ModeResult } from '../../src/verify/types.ts';
 
 // Env-gated live e2e against the real `claude` / `codex` CLIs. CI never sets
@@ -21,6 +22,7 @@ const DUMMYTEST = join(FIXTURES, 'dummytest');
 const CLAUDE_BADJSON = join(FIXTURES, 'claude-badjson');
 const CLAUDE_NONAME = join(FIXTURES, 'claude-noname');
 const CODEX_BADPLUG = join(FIXTURES, 'codex-badplug');
+const BARE_SKILL = join(FIXTURES, 'bare-skill');
 
 /**
  * Fails loudly with the full mode payload (status/skipReason/command/findings) rather
@@ -109,6 +111,22 @@ describe.skipIf(!E2E)('verify live e2e (real claude/codex CLIs)', () => {
         expect(finding?.checkId).toBe('claude.load-presence');
         expect(finding?.normalizedSeverity).toBe('warning');
       }
+    }, 120_000);
+
+    test('static: bare-skill (wrapped) — pass verdict, no spurious claude.author warning', async () => {
+      const env = await defaultScanEnv();
+      const r = await verifyPlugin(env, {
+        path: BARE_SKILL,
+        tools: ['claude-code'],
+        strict: false,
+      });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+
+      const claudeVerdict = r.value.tools.find((t) => t.tool === 'claude-code');
+      const mode = requireRan(claudeVerdict?.modes[0], 'claude static bare-skill');
+      expect(mode.verdict).toBe('pass');
+      expect(mode.findings.some((f) => f.checkId === 'claude.author')).toBe(false);
     }, 120_000);
   });
 

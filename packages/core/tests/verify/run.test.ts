@@ -129,7 +129,7 @@ describe('runVerify', () => {
       strict: false,
       explicitTools: false,
     });
-    expect(r.value.verifiedAgainst).toEqual({ 'claude-code': '2.1.201', codex: '0.142.5' });
+    expect(r.value.verifiedAgainst).toEqual({ 'claude-code': '2.1.202', codex: '0.142.5' });
     expect(r.value.summary.verdict).toBe('pass');
     expect(r.value.tools.length).toBe(2);
   });
