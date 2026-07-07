@@ -1,0 +1,4 @@
+{
+  "name": "claude-badjson",
+  "description": "manifest with a JSON syntax error",
+  "version": "0.1.0"
