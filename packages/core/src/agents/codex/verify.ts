@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import type { ScanEnv } from '../../env/types.ts';
 import { ok } from '../../result.ts';
 import { extractVersionToken, modeVerdictFor, toolVerdictFor } from '../../verify/normalize.ts';
-import { STATIC_TIMEOUT_MS, VERIFIED_AGAINST } from '../../verify/types.ts';
+import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS, VERIFIED_AGAINST } from '../../verify/types.ts';
 import type {
   ModeResult,
   ToolVerifier,
@@ -62,6 +62,34 @@ export const parseCodexInstallOutput = (stdout: string, stderr: string): VerifyF
   }
 
   return [];
+};
+
+const FAILED_TO_LOAD_RE = /failed to load skill (.+?): (.+)$/;
+
+/** Pure. Extracts `failed to load skill` findings from codex exec stderr. projDir strips prefixes. */
+export const parseCodexExecStderr = (stderr: string, projDir: string): VerifyFinding[] => {
+  const findings: VerifyFinding[] = [];
+  const prefix = projDir.endsWith('/') ? projDir : `${projDir}/`;
+
+  for (const line of stderr.split('\n')) {
+    const match = line.match(FAILED_TO_LOAD_RE);
+    if (!match) continue;
+
+    const [, rawFile, reason] = match;
+    if (rawFile === undefined || reason === undefined) continue;
+
+    findings.push({
+      checkId: 'codex.skill-load',
+      toolSeverity: 'error',
+      normalizedSeverity: 'error',
+      message: reason,
+      file: rawFile.startsWith(prefix) ? rawFile.slice(prefix.length) : rawFile,
+      subject: 'skill',
+      raw: line,
+    });
+  }
+
+  return findings;
 };
 
 /** Manifest plugin name, or null on any read/parse failure. */
@@ -214,10 +242,91 @@ const runStaticMode = async (
   }
 };
 
+const DEEP_COVERAGE = { manifest: false, skills: true };
+const DEEP_COMMAND =
+  'codex exec -C <proj> --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox "ok"';
+
+const deepErrorResult = (skipReason: 'timeout' | 'exec-error'): ModeResult => ({
+  mode: 'deep',
+  status: 'error',
+  skipReason,
+  coverage: DEEP_COVERAGE,
+  verdict: null,
+  command: DEEP_COMMAND,
+  findings: [],
+});
+
+/** Copy each `<path>/skills/<n>/` (with SKILL.md) into `<proj>/.agents/skills/<n>/`. */
+const stageSkills = async (env: ScanEnv, path: string, proj: string): Promise<void> => {
+  const skillsDir = join(path, 'skills');
+  if (!(await env.fileExists(skillsDir))) return; // no skills dir ⇒ nothing to stage
+  await mkdir(join(proj, '.agents', 'skills'), { recursive: true });
+  for (const n of await env.listDir(skillsDir)) {
+    const src = join(skillsDir, n);
+    if (!(await env.fileExists(join(src, 'SKILL.md')))) continue;
+    await cp(src, join(proj, '.agents', 'skills', n), { recursive: true });
+  }
+};
+
+const runDeepMode = async (
+  env: ScanEnv,
+  binary: string,
+  opts: ToolVerifyOptions,
+): Promise<ModeResult> => {
+  const proj = await mkdtemp(join(tmpdir(), 'skillsmith-codex-proj-'));
+  const home = await mkdtemp(join(tmpdir(), 'skillsmith-codex-home-'));
+  try {
+    await stageSkills(env, opts.path, proj);
+
+    const result = await env.exec(
+      binary,
+      [
+        'exec',
+        '-C',
+        proj,
+        '--skip-git-repo-check',
+        '--dangerously-bypass-approvals-and-sandbox',
+        'ok',
+      ],
+      {
+        env: { CODEX_HOME: home },
+        timeoutMs: DEEP_TIMEOUT_MS,
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+      },
+    );
+
+    if (result.timedOut) return deepErrorResult('timeout');
+
+    const findings = parseCodexExecStderr(result.stderr, proj);
+
+    // The load phase runs before any auth/model call. It demonstrably ran when the session
+    // exits clean, when a per-skill load failure was scraped, or when the isolated session
+    // reached its expected unauthenticated 401 tail. A non-zero exit with none of that
+    // evidence is an exec failure, never a pass.
+    const loadPhaseRan =
+      result.code === 0 || findings.length > 0 || result.stderr.includes('401 Unauthorized');
+    if (!loadPhaseRan) return deepErrorResult('exec-error');
+
+    return {
+      mode: 'deep',
+      status: 'ran',
+      skipReason: null,
+      coverage: DEEP_COVERAGE,
+      verdict: modeVerdictFor(findings, opts.strict),
+      command: DEEP_COMMAND,
+      findings,
+    };
+  } finally {
+    await rm(proj, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
+};
+
 type ModeRunner = (env: ScanEnv, binary: string, opts: ToolVerifyOptions) => Promise<ModeResult>;
 
 const MODE_RUNNERS: Partial<Record<VerifyMode, ModeRunner>> = {
   static: runStaticMode,
+  deep: runDeepMode,
 };
 
 export const verifyCodex: ToolVerifier = async (env, opts) => {
