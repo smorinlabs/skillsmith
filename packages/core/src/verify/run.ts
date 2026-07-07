@@ -1,6 +1,8 @@
 import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { verifyClaudeCode } from '../agents/claude-code/verify.ts';
+import { verifyCodex } from '../agents/codex/verify.ts';
 import type { ScanEnv } from '../env/types.ts';
 import { type SkillSmithError, errorMessage, genericError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -115,3 +117,14 @@ export const runVerify = async (
     await resolved.value.cleanup();
   }
 };
+
+const defaultCheckers: Record<VerifyTool, ToolVerifier> = {
+  'claude-code': verifyClaudeCode,
+  codex: verifyCodex,
+};
+
+/** `runVerify` wired to the built-in per-agent checkers. */
+export const verifyPlugin = (
+  env: ScanEnv,
+  opts: VerifyOptions,
+): Promise<Result<VerifyReport, SkillSmithError>> => runVerify(env, opts, defaultCheckers);

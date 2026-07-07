@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultScanEnv } from '../../src/env/default.ts';
 import { ok } from '../../src/result.ts';
-import { resolveTarget, runVerify } from '../../src/verify/run.ts';
+import { resolveTarget, runVerify, verifyPlugin } from '../../src/verify/run.ts';
 import type { ToolVerifier, VerifyOutcome, VerifyTool } from '../../src/verify/types.ts';
 
 const FIXTURES = join(import.meta.dir, '..', 'fixtures', 'verify');
@@ -232,5 +232,30 @@ describe('runVerify', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('generic');
     if (!r.ok && r.error.code === 'generic') expect(r.error.message).toContain('aborted');
+  });
+});
+
+describe('verifyPlugin', () => {
+  test('with neither tool on PATH, both are not-installed and summary is inconclusive', async () => {
+    const base = await defaultScanEnv();
+    // `path: []` alone isn't enough — wellKnownBinDirs always probes fixed OS/home
+    // locations too, so also hide the two tool binaries there regardless of what's
+    // actually installed on the machine running this test.
+    const env = {
+      ...base,
+      path: [] as string[],
+      fileExists: async (p: string) =>
+        p.endsWith('/claude') || p.endsWith('/codex') ? false : base.fileExists(p),
+    };
+    const r = await verifyPlugin(env, { path: join(FIXTURES, 'dummytest') });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.tools).toHaveLength(2);
+    for (const t of r.value.tools) {
+      expect(t.available).toBe(false);
+      expect(t.skipReason).toBe('not-installed');
+    }
+    expect(r.value.summary.verdict).toBe('inconclusive');
+    expect(r.value.summary.skipped).toEqual(['claude-code', 'codex']);
   });
 });

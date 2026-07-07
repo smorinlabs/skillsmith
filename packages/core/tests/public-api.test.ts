@@ -36,6 +36,7 @@ describe('@skillsmith/core public API', () => {
       'builtInChecks',
       'skillParseError',
       'runVerify',
+      'verifyPlugin',
       'VERIFY_TOOLS',
       'VERIFIED_AGAINST',
     ]);

@@ -72,6 +72,6 @@ export { detectAll, detectTool } from './scan/index.ts';
 export { listCommands } from './scan/list-commands.ts';
 export { listSkills } from './scan/list-skills.ts';
 export { parseSkillFrontmatter } from './skills/frontmatter.ts';
-export { resolveTarget, runVerify } from './verify/run.ts';
+export { resolveTarget, runVerify, verifyPlugin } from './verify/run.ts';
 export { VERIFIED_AGAINST, VERIFY_TOOLS } from './verify/types.ts';
 export { VERSION } from './version.ts';
