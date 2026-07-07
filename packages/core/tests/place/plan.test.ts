@@ -139,6 +139,10 @@ describe('planFlips', () => {
     );
     // 'copied' is pinned (not dev) and must not appear.
     expect(bySkillTool.some((s) => s.startsWith('copied@'))).toBe(false);
+    // 'dup' is pinned in BOTH codex roots (never dev-class in either) — irrelevant to
+    // `promote --all` (only dev-class targets are planned), so it produces no preResult at
+    // all here. Converse of the `dev --all` case below, where dup IS refused.
+    expect(r.value.preResults.filter((res) => res.skill === 'dup')).toEqual([]);
   });
 
   test('--all dev: pinned-without-recorded-source is skipped, not an error', async () => {
