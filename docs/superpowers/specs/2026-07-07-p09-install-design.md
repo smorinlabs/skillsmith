@@ -1,6 +1,9 @@
 # SkillSmith P09 design — `install` / `uninstall` — the acquisition verbs
 
 **Status:** Draft (2026-07-07). This is the P09-BR deliverable.
+**Design gate:** Adjudicated 2026-07-07 by the project owner. All decisions ratified; D10 amended
+to add an opt-in `--deep` flag (O3's alternative, chosen over ship-static-only-and-revisit); O1
+deferred to a follow-up project. See §18 for the per-question record.
 **PRD:** `docs/superpowers/specs/2026-07-07-p09-install-prd.md` (approved 2026-07-07) — every
 R#/F#/U#/Q# requirement cited below is binding; this spec elaborates them into a buildable design.
 **Scope:** Two new commands. `skillsmith install <source>[@<ref>]…` fetches a skill from a git
@@ -39,8 +42,10 @@ the acquisition verbs on top of the machinery P12 already shipped:
 What is genuinely new: the **source grammar and resolver** (§5), the **fetch pipeline** (§6), the
 **scope model** (project scope enters the ledger for the first time, §2.1/§7.3), the
 **uninstall destruction semantics** (§9), and the **security floor** — PRD F9: install executes
-NOTHING from the fetched repo. No hooks, no scripts, no feeding fetched bytes to an agent binary
-(§10). Every decision below is checked against F9.
+nothing from the fetched repo **by default**. No hooks, no scripts, no feeding fetched bytes to an
+agent binary — unless the operator opts in with `--deep` (D10, §10), which is documented informed
+consent to run the codex binary's loader against fetched content, pre-placement. Every decision
+below is checked against F9's default floor.
 
 ### 1.1 Non-goals (this feature)
 
@@ -117,12 +122,12 @@ backup names reuse P12's reserved dot-names (§8.2).
 | D5 | **Fetch = `git init` + `git fetch --filter=blob:none --depth 1 origin <ref>` + `ls-tree` scan + cone `sparse-checkout` of only the selected skill directory** into `<dataDir>/.fetch/<txId>/` (§6). Ref → SHA via `FETCH_HEAD`; full-SHA refs fetched directly; short SHAs rejected. All git via `env.exec` (P11 primitive); no new runtime deps (PRD §7). | Blobless + sparse means the network cost is one packfile of trees plus the blobs of the one skill subtree — the repo is never installed (PRD §4) and never even fully materialized. `--depth 1` drops history; GitHub/GitLab both allow full-SHA `fetch` and `--filter`. |
 | D6 | **Ledger stays schemaVersion 1; every P09 field is additive** (§7): `PairRecord.origin?`, `PinnedRecord.placement?`, `LedgerFile.projects?`, `Journal.before.liveKind?`. **Two deliberate enum widenings** — `Journal.op` gains `'install' | 'uninstall'` and `Journal.before` gains an `{ mode: 'absent' }` variant — are confined to crash windows: install/uninstall null the journal in the same ledger write that commits the terminal pair state, and every locked v0.6.0 batch runs a journal-hygiene sweep that completes any lingering committed acquisition journal. A v0.5.0 binary reading a ledger *during* such a crash window fails loudly (exit 3) rather than misinterpreting it. | PRD F2 mandates schemaVersion 1 + additive `origin`. PRD F3 mandates reusing P12's swap **+ journal**, which forces the ops into the journal enum; the alternative (a second journal file) splits crash-truth across two files and re-opens every §8.4 invariant. Adjudication per the additive-evolution rule: the widened values are never at rest in a healthy ledger, recovery requires the same-or-newer binary that wrote them, and versions move forward in lockstep pre-1.0. Known limitation recorded: any v0.5.0 binary that *rewrites* the ledger strips additive fields (zod strips unknown keys before `writeLedger`) — acceptable pre-1.0, noted for the P14 packaging review. |
 | D7 | **Default placement = store symlink; `--direct` = plain copy materialized *from the store entry*** (never from the fetch dir). Both are recorded as `mode: 'pinned'` with `pinned.placement: 'symlink' | 'copy'`. The store entry is created in every case — `--direct` changes only the placement materialization, not provenance. | PRD §4 placement table. Copying from the store (not the fetch dir) means the placement is provably byte-identical to the pinned entry (`contentHash` verified by the swap's staging check), and `--direct` keeps the full round-trip/`dev`/`promote` interop of a P12 `pinned` placement. |
-| D8 | **Scope default: `project` inside a git work tree, else `user`; project-scope pairs live in an additive `LedgerFile.projects` subtree keyed by the project root's realpath** (§7.3). The user-scope `skills` tree is untouched. `promote`/`dev` remain user-scope-only (P12 §16 stands; see open question O1). | PRD F5. Keying by realpath states the path basis explicitly (P12 carry-forward): it matches `git rev-parse --show-toplevel`'s realpath output, so the same repo reached via a symlinked path maps to one key. Mirroring the `skills` shape keeps one PairRecord schema and lets uninstall/list code share record handling. |
+| D8 | **Scope default: `project` inside a git work tree, else `user`; project-scope pairs live in an additive `LedgerFile.projects` subtree keyed by the project root's realpath** (§7.3). The user-scope `skills` tree is untouched. `promote`/`dev` remain user-scope-only (P12 §16 stands; O1, deferred at the design gate — §18). | PRD F5. Keying by realpath states the path basis explicitly (P12 carry-forward): it matches `git rev-parse --show-toplevel`'s realpath output, so the same repo reached via a symlinked path maps to one key. Mirroring the `skills` shape keeps one PairRecord schema and lets uninstall/list code share record handling. |
 | D9 | **Store-linked flip amendment** (§2.2): `dev` accepts store-linked (recorded source or `--source`); `promote` on the resulting dev placement — and convergence on a store-linked placement itself — honors `pinned.placement`, re-creating a store *symlink* for installed skills instead of a copy. Store-linked with no pair record stays refused for `promote`; `dev --source` may adopt it. | PRD scenario 4 requires exactly this loop: `install → dev --source <clone> → promote` must end managed and pinned *in the same placement form install chose*, or the acquisition verb and the flip verbs fight each other. Honoring the recorded form makes `promote` mean "make production current" (P12 D13) without silently converting a symlink fleet into copies. |
-| D10 | **Verify gate: mode `static` for both tools, on the fetched skill, before snapshot** (PRD F6/Q3). Blocking policy identical to promote (P12 D11): `fail` blocks (exit 1), `warn` blocks under `--strict`, `inconclusive` warns or blocks under `--strict`; `--no-verify` skips and records `verify: "skipped"`. **Codex deep is deliberately NOT run at install**: deep launches the codex binary, which loads and parses the just-fetched skill — feeding untrusted bytes to a local agent binary is exactly what F9's "executes nothing from the fetched repo" floor exists to prevent at acquisition time. The codex coverage gap (static is manifest-only, P11's central finding) is accepted and documented: the remediation is `skillsmith verify <skill> --deep` after install, and `promote` (scenario 4) still gates deep. | Q3 locked "on, static" and F9 is absolute. The gate's result transfers to the placed artifact because the store snapshot is contentHash-verified byte-identical to the verified source (same transfer argument as P12 D11). |
+| D10 | **Verify gate: mode `static` for both tools by DEFAULT, on the fetched skill, before snapshot** (PRD F6/Q3), **plus an opt-in `--deep` flag (bool, default `false`) amended in at the design gate 2026-07-07 — O3's alternative, chosen over ship-static-only-and-revisit.** claude-code's gate is unaffected by `--deep`: its static already covers manifest + skills, the whole gate (P11), so there is nothing deep adds. Codex's gate, under `--deep`, runs **static + deep** — the promote-parity gate — on the *fetched* skill, at the exact pipeline point the static gate already runs (before snapshot/placement, §10). Blocking policy is identical under `--deep` and the default: `fail` blocks (exit 1), `warn` blocks under `--strict`, `inconclusive` warns or blocks under `--strict`; `--no-verify` skips and records `verify: "skipped"`. `--deep` combined with `--no-verify` is a flag contradiction — usage refusal, exit 2 (§13/§14). **Codex deep is still NOT run by default**: deep launches the codex binary, which loads and parses the just-fetched skill — feeding untrusted bytes to a local agent binary is exactly what F9's *default* floor exists to prevent at acquisition time. `--deep` is documented informed consent to do exactly that, pre-placement, not a change to the default. The codex coverage gap under the default gate (static is manifest-only, P11's central finding) is accepted and documented: the remediation is `--deep` itself, or a post-install `skillsmith verify <skill> --deep`; `promote` (scenario 4) still gates deep unconditionally. | Q3 locked "on, static" as the default, and F9's default floor is absolute — install executes nothing from the fetched repo unless the operator opts in. The gate's result transfers to the placed artifact because the store snapshot is contentHash-verified byte-identical to the verified source (same transfer argument as P12 D11). The design gate chose the opt-in over O3's original ship-static-only recommendation: explicit, greppable consent (same rationale as D16's `--force`) turns a silent coverage gap into a documented choice without weakening the default floor for the common case. |
 | D11 | **Install transaction per (source, tool, scope), in PRD order: resolve → fetch → verify → snapshot → place → record.** Resolve/fetch/verify/snapshot run once per source; place+record run per (tool, scope) as independent journaled swaps (P12 D12 per-tool transactions). Placement uses the P12 swap engine with a new journal op `'install'`: fresh installs have `before: { mode: 'absent' }` and degenerate to stage→publish (no backup); replacements (`--force`, new rev) run the full two-rename protocol. The journal is nulled in the commit write. | PRD F3 verbatim ("per-tool transactions via P12's swap + journal"). Reuse means the §8.4 crash table, `--rollback` reachability via `plan.ts`'s open-journal surfacing, and the SIGKILL e2e harness all apply to install for free (§8.5). |
-| D12 | **Uninstall removes the placement and the entire PairRecord** — dev record, pinned record, origin history — for each selected (skill, tool, scope); store entries are never deleted (U1, PRD §7). Dev-mode placements are refused with `promote`/`dev --rollback` guidance unless `--force` (U3). Placements with no ledger pair are refused unless `--force` (SkillSmith didn't create them; an unmanaged pinned dir has no store copy, so with `--force` its backup is kept unless hash-matched — the D14-P12 pattern). Absent everywhere → convergent no-op, exit 0 with a notice. | Uninstall is the one deliberate destruction verb: keeping zombie records for removed placements would make the ledger lie to `list`/detection. The accepted loss — a pinned-mode pair's retained dev record dies with the pair — is recoverable by `dev --source` after a reinstall, and the removal report prints everything being forgotten. P12's D5 ("flips never delete the opposite record") is untouched: it constrains flips, not uninstall. |
-| D13 | **Batch semantics (F8): sources process sequentially; fail-fast — a source-level failure stops scheduling later sources (reported `skipped`) unless `--continue-on-error`. ONE ledger lock per invocation, acquired before the first mutation and held across the entire batch** (fetch and verify included). Exit code = highest per-result code in both modes. | The one-lock rule is the P12-T02 carry-forward codified by F8 (per-skill locking exhausts proper-lockfile retries at 25-way fan-out). Holding it across fetch/verify follows P12 precedent (the promote gate already runs codex ~2–8 s under the lock); a concurrent invocation waits or fails loudly. Batch-max exit is strictly more informative than the design doc §6.1's "`--continue-on-error` ⇒ exit 1"; the divergence is deliberate and recorded here — one uniform batch-max rule across every multi-target skillsmith verb (P12 established it). |
+| D12 | **Uninstall removes the placement and the entire PairRecord** — dev record, pinned record, origin history — for each selected (skill, tool, scope); store entries are never deleted (U1, PRD §7). Dev-mode placements are refused with `promote`/`dev --rollback` guidance unless `--force` (U3). Placements with no ledger pair are refused unless `--force` (SkillSmith didn't create them; an unmanaged pinned dir has no store copy, so with `--force` its backup is kept unless hash-matched — the D14-P12 pattern). Absent everywhere → convergent no-op, exit 0 with a notice (ratified at design gate 2026-07-07). | Uninstall is the one deliberate destruction verb: keeping zombie records for removed placements would make the ledger lie to `list`/detection. The accepted loss — a pinned-mode pair's retained dev record dies with the pair — is recoverable by `dev --source` after a reinstall, and the removal report prints everything being forgotten. P12's D5 ("flips never delete the opposite record") is untouched: it constrains flips, not uninstall. |
+| D13 | **Batch semantics (F8): sources process sequentially; fail-fast — a source-level failure stops scheduling later sources (reported `skipped`) unless `--continue-on-error`. ONE ledger lock per invocation, acquired before the first mutation and held across the entire batch** (fetch and verify included). Exit code = highest per-result code in both modes. | The one-lock rule is the P12-T02 carry-forward codified by F8 (per-skill locking exhausts proper-lockfile retries at 25-way fan-out). Holding it across fetch/verify follows P12 precedent (the promote gate already runs codex ~2–8 s under the lock); a concurrent invocation waits or fails loudly. Batch-max exit is strictly more informative than the design doc §6.1's "`--continue-on-error` ⇒ exit 1"; the divergence is deliberate and recorded here — one uniform batch-max rule across every multi-target skillsmith verb (P12 established it). Ratified at design gate 2026-07-07. |
 | D14 | **Idempotence (F7) is convergent:** same source → same resolved rev → placement intact and recorded → `noop`, exit 0. `--force` re-executes (action `updated`) — including same-rev re-place and deliberate up/downgrade via `--ref` (scenario 5). A placement on disk with no ledger record but matching the resolved store entry (crash between place and record, or hand-made) is converged by re-recording (action `repaired`). | House idempotence §1.5. `repaired` keeps the crash story honest without a repair verb: re-running the same install always converges. |
 | D15 | **Codex roots: install writes only the current-convention roots** (`~/.agents/skills`, `./.agents/skills`); the legacy root is read-only for install. Skill already present in the legacy root → refuse (exit 2) with "uninstall it from the legacy root first: `skillsmith uninstall <skill> --tool codex`". **Uninstall treats legacy-root placements as first-class removable** (with the P12 legacy notice). No auto-migration in v1: migration = `uninstall` + `install`. | Writing the current root is the placement-creation decision P12 §10.2 explicitly deferred to P09. Auto-migrating on `--force` would make install delete things outside its target root — a destruction side-effect the destruction verb should own instead. Installing alongside a legacy copy would mint the dual-root conflict P12 refuses to flip. |
 | D16 | **Neither verb ever asks a confirmation question.** Install's only interaction is the R2/R3 picker (D4). Uninstall never prompts: removals of managed placements are recoverable (store immortal + reinstall), and the two data-loss hazards (dev-mode links, unmanaged dirs) are gated by `--force`, not prompts; `--yes`/`--no-prompt` are accepted (picker-relevant for install, no-ops for uninstall). | Same CI-safety rationale as P12 D14. Prompt-gating destruction invites `--yes`-blindness; `--force` is greppable in scripts and history. |
@@ -139,7 +144,7 @@ backup names reuse P12's reserved dot-names (§8.2).
 skillsmith install   <source>[@<ref>] [<source>...]
                      [--tool claude-code|codex]... [--scope user|project | --user | --project]
                      [--ref <ref>] [--pin] [--direct] [--force]
-                     [--strict] [--no-verify]
+                     [--strict] [--no-verify] [--deep]
                      [--continue-on-error] [--dry-run] [--json]
 skillsmith i         …            # built-in alias
 
@@ -163,6 +168,7 @@ skillsmith rm | remove …          # built-in aliases
 | `--force` | `-f` | bool | off | Re-execute an idempotent no-op; replace an existing placement of any class (dev links are adopted into the dev record first, §8.4); override cross-scope shadowing (F5/F7). |
 | `--strict` | — | bool | off | Verify-gate `warn`/`inconclusive` block (D10). |
 | `--no-verify` | — | bool | off | Skip the verify gate; `pinned.verify: "skipped"` recorded (F6). |
+| `--deep` | — | bool | off | Opt in to the promote-parity verify gate (D10, amended at the design gate): codex runs static + deep on the fetched skill, at the same pipeline point the static gate runs, before snapshot/placement; claude-code is unaffected. Conflicts with `--no-verify` (both set → exit 2, usage refusal). |
 | `--continue-on-error` | — | bool | off | Keep processing later sources after a source-level failure (F8/D13). |
 | `--dry-run` | — | bool | off | Full plan (F10): parses, fetches (read-only; no lock, no store/ledger writes), resolves names and SHAs, prints per-(source, tool, scope) actions incl. shadowing and idempotence verdicts. |
 | `--json` | — | bool | off | Versioned JSON report on stdout (§12); disables the picker (D4). |
@@ -179,8 +185,9 @@ design doc §3.1).
 3. **Fetch + resolve** (§6): resolve ref → full SHA; enumerate candidate skills from the tree
    (D3); apply the selector (name / `//path` / whole-repo), picker on ambiguity (D4). Fetch is
    **elided** when the store already holds the resolved entry (§6.4).
-4. **Verify gate** (§10): static, both tools requested for this source, against the fetched skill
-   dir (or the store entry when fetch was elided). Runs once per (source, tool).
+4. **Verify gate** (§10): static by default for both tools requested for this source (codex also
+   runs deep under `--deep`, D10), against the fetched skill dir (or the store entry when fetch was
+   elided). Runs once per (source, tool).
 5. **Snapshot** (§7.1): `snapshotToStore` with provenance built from the *parsed source* (not
    `git remote`): `ns/name` = clamped repo path (§7.2), rev = `<sha12>`. Idempotent reuse when the
    entry exists (`reused: true`); content mismatch at an existing `@<sha12>` = integrity error,
@@ -557,8 +564,9 @@ P5 committed   persisted (backup still on disk) → reclaim backup:
 
 4. Store entries are **never** deleted (U1; PRD §7 — no GC in v1). The report prints the surviving
    store path so "where did my bytes go" has an answer.
-5. Absent everywhere → `noop`, exit 0, notice (D12). Placement absent but a stale pair exists →
-   remove the record, action `removed` with reason "placement was already gone".
+5. Absent everywhere → `noop`, exit 0, notice (D12; ratified at design gate 2026-07-07). Placement
+   absent but a stale pair exists → remove the record, action `removed` with reason "placement was
+   already gone".
 
 ### 9.2 Crash windows
 
@@ -575,28 +583,35 @@ the backup exists; nothing unreproducible is deleted before the committed journa
 
 ## 10. Verify gate (install)
 
-Per D10 — mode `static` for **both** tools, run once per (source, tool) against the fetched skill
-directory (bare-skill input; P11's `resolveTarget` wraps it in an ephemeral plugin, verify §4.1),
-*before* snapshot and placement:
+Per D10 — mode `static` for **both** tools BY DEFAULT, run once per (source, tool) against the
+fetched skill directory (bare-skill input; P11's `resolveTarget` wraps it in an ephemeral plugin,
+verify §4.1), *before* snapshot and placement. An opt-in `--deep` flag (amended at the design gate
+2026-07-07, resolving O3 — §18) requests the promote-parity gate for codex; claude-code is
+unaffected either way:
 
 | Tool | Invocation | Coverage note |
 |---|---|---|
-| claude-code | `verifyPlugin(env, { path: <fetchedSkillDir>, tools: ['claude-code'], deep: false })` | static covers manifest + skills — the whole gate (P11). |
-| codex | same with `tools: ['codex']`, `deep: false` | static is manifest-only; the skill-substance gap is **accepted under F9** (D10) — deep would launch the codex binary on just-fetched untrusted content. Remediation printed as a notice: `skillsmith verify <skill> --deep` post-install; `promote` still gates deep. |
+| claude-code | `verifyPlugin(env, { path: <fetchedSkillDir>, tools: ['claude-code'], deep: false })` — always, `--deep` has no effect here. | static covers manifest + skills — the whole gate (P11). |
+| codex | default: same with `tools: ['codex']`, `deep: false`. Under `--deep`: `deep: true` — static + deep, at this same pipeline point (before snapshot/placement). | Default: static is manifest-only; the skill-substance gap is **accepted under F9's default floor** (D10) — deep would launch the codex binary on just-fetched untrusted content. Remediation: `--deep` itself, or a post-install `skillsmith verify <skill> --deep`; `promote` still gates deep unconditionally. Under `--deep`: the gap is closed for this install — the operator has given informed consent to run the codex binary against the fetched, unplaced skill. |
 
-Blocking: `fail` → that source's placements for that tool are `failed`, exit contribution 1;
-`warn` → proceed (`pinned.verify: "warned"`) unless `--strict`; `inconclusive` → proceed with a
-warning unless `--strict`; `--no-verify` → gate skipped, `pinned.verify: "skipped"` (auditable,
-F6). A gate that blocks touches nothing — it runs before any journal or store write for that
-source. Under fetch elision (§6.4) the gate runs against the store entry; the result transfers by
-content-hash identity (D10).
+Blocking is **identical under `--deep` and the default**: `fail` → that source's placements for
+that tool are `failed`, exit contribution 1; `warn` → proceed (`pinned.verify: "warned"`) unless
+`--strict`; `inconclusive` → proceed with a warning unless `--strict`; `--no-verify` → gate
+skipped, `pinned.verify: "skipped"` (auditable, F6). `--deep` combined with `--no-verify` is a
+flag contradiction, refused before any I/O: exit 2 (§13/§14). A gate that blocks touches nothing —
+it runs before any journal or store write for that source. Under fetch elision (§6.4) the gate
+runs against the store entry, in whichever mode was requested (static, or static+deep under
+`--deep`); the result transfers by content-hash identity (D10).
 
 **F9 checklist (every pipeline step):** parse — no I/O; fetch — git plumbing only, no checkout
 scripts, no hooks (`git init`+`fetch`+`sparse-checkout`+`checkout` execute nothing from the fetched
 tree; `core.hooksPath` is irrelevant because the fetch dir's config is skillsmith-created and no
 repo-supplied config is ever honored — `git -C` on a dir we `init`ed); verify — static parsers
-only (D10); snapshot/place — `copyTree`/`makeSymlink`/`rename`; record — JSON write. No step
-executes fetched content. Exec bits are *preserved* by the content-hash manifest but nothing runs.
+only **by default** (D10); snapshot/place — `copyTree`/`makeSymlink`/`rename`; record — JSON
+write. No step executes fetched content **by default**. `--deep` is the one deliberate, opt-in
+exception — it launches the codex binary against the fetched skill, and it is documented as
+informed consent (D10), not silently absorbed into this checklist. Exec bits are *preserved* by
+the content-hash manifest but nothing runs unless `--deep` was explicitly requested.
 
 ---
 
@@ -649,7 +664,8 @@ share `skillsmith.flip`.
     "tools": ["claude-code", "codex"], "explicitTools": false,
     "scope": "user", "explicitScope": false,
     "ref": null, "pin": false, "direct": false, "force": false,
-    "verify": "static"                       // 'static' | 'skipped' (--no-verify)
+    "verify": "static",                      // 'static' | 'skipped' (--no-verify)
+    "deep": false                            // ADDITIVE (D10, design gate amendment): --deep requested
   },
   "results": [
     {
@@ -666,7 +682,10 @@ share `skillsmith.flip`.
       "origin": { "host": "github.com", "repo": "smorinlabs/smorinlabs-harness",
                   "skillPath": "plugins/factor-harness/skills/factor-scan",
                   "refRequested": null, "refResolved": "8c1d…40hex", "pin": false },
-      "verify": { "gate": "passed", "verdict": "pass" },   // null when the gate was skipped
+      "verify": { "gate": "passed", "verdict": "pass",
+                  "mode": "static" },         // ADDITIVE (D10): 'static' | 'static+deep' — the mode
+                                              // actually run for THIS tool (codex only under --deep;
+                                              // claude-code is always 'static'); null when gate skipped
       "candidates": null                     // string[] of //paths on R2/R3 ambiguity refusals
     }
   ],
@@ -717,7 +736,7 @@ highest per-result code (D13, both fail-fast and `--continue-on-error`).
 |---|---|---|
 | 0 | all `installed`/`updated`/`repaired`/`noop` (+ warnings) | all `removed`/`noop` (idempotent absence included) |
 | 1 | verify-gate `fail`; snapshot integrity error; mid-swap I/O failure (state recoverable §8.4); lock unobtainable | mid-removal I/O failure (state recoverable §9.2); lock unobtainable |
-| 2 | grammar rejections (R4/R5/R6, D2 ambiguous segments); R2/R3 ambiguity in non-TTY/`--json`/`--no-prompt`; shadowing without `--force` (F5); codex legacy-root conflict (D15); existing different-origin placement without `--force`; `--ref` with multiple sources or conflicting `@ref`; contradictory scope flags; unresolved journal on the pair | U2 cross-scope ambiguity; U3 dev-mode refusal; unmanaged placement without `--force`; unresolved journal |
+| 2 | grammar rejections (R4/R5/R6, D2 ambiguous segments); R2/R3 ambiguity in non-TTY/`--json`/`--no-prompt`; shadowing without `--force` (F5); codex legacy-root conflict (D15); existing different-origin placement without `--force`; `--ref` with multiple sources or conflicting `@ref`; contradictory scope flags; `--deep` with `--no-verify` (flag contradiction, D10); unresolved journal on the pair | U2 cross-scope ambiguity; U3 dev-mode refusal; unmanaged placement without `--force`; unresolved journal |
 | 3 | placements ledger unreadable/unparseable (never regenerated — P12 §7.1) | same |
 | 4 | explicitly `--tool`-named tool not detected (install hint printed); no tool detected at all | — (uninstall needs no detection) |
 | 5 | source unresolvable: network/clone failure, repo or ref not found, name matching **zero** skills in the repo (R1), short-SHA ref | — |
@@ -745,6 +764,7 @@ same `Result<T, SkillSmithError>` family).
 | Bare repo has exactly one skill | install it (R3). |
 | Skill dir name starts with `.` | exit 2 ("dot-prefixed skills are invisible to placement detection"). |
 | Verify gate `fail` / `warn`+`--strict` | `failed`, exit 1, findings rendered via verify's output; nothing placed for that source (D10). |
+| `--deep` combined with `--no-verify` | exit 2, usage refusal before any I/O — the two flags contradict (opt in to a deeper gate vs. skip the gate entirely); message names both flags (D10). |
 | Store entry exists with different content at `@<sha12>` | integrity error, exit 1 (P12 §6.3 verbatim). |
 | Same skill present at the other scope | `refused` exit 2 + shadowing explanation; `--force` proceeds with warning (F5). |
 | Codex skill present in legacy `~/.codex/skills` | `refused` exit 2, uninstall-first guidance; `--force` does not override (D15). |
@@ -847,6 +867,11 @@ return `Result<…, SkillSmithError>`; the CLI owns prompts, exit codes, and out
   install a real skill (bare, name, and `//path` forms), then the scenario-4 round-trip
   `dev --source <local clone>` → `promote` → `dev --rollback` → `uninstall`; `--force --ref <tag>`
   up/downgrade (scenario 5); non-TTY ambiguity listing (R2).
+- **Verify-gate tests (D10, amended for `--deep`):** canned verify reports (pass/warn/fail/
+  inconclusive) × {default, `--strict`, `--no-verify`, `--deep`} → block/proceed matrix; asserts
+  the codex gate requests `static` by default and `static+deep` under `--deep`; asserts the
+  claude-code gate requests `static` unconditionally, unaffected by `--deep`; asserts `--deep` +
+  `--no-verify` together is a usage refusal, exit 2, before any fetch/I/O.
 - **Exit-code table test:** drive §13 across the enumerated conditions; batch-max asserted for
   fail-fast and `--continue-on-error`.
 - **JSON contract tests:** zod round-trip + golden files for both kinds; picker-disabled-under-
@@ -862,24 +887,39 @@ Everything in §1.1, plus, explicitly: parallel multi-source fetching (sequentia
 simple ordering); store GC / reference counting (PRD §7 overrides P12 §1.1's forward-reference);
 `install --rollback` as a flag (recovery is re-run + the flip verbs' `--rollback`, §8.4);
 migration of codex legacy-root placements (uninstall+install is the migration, D15);
-project-scope `promote`/`dev` (open question O1); dead-PID lock detection (D17, deferred);
+project-scope `promote`/`dev` (O1, deferred to a follow-up project at the design gate — §18);
+dead-PID lock detection (D17, deferred);
 `SKILLSMITH_TOOL`/`SKILLSMITH_SCOPE`/`SKILLSMITH_PATH` env-var flag defaults (April-draft feature,
 not implemented anywhere today — revisit with config work); Windows.
 
 ---
 
-## 18. Open questions (design gate)
+## 18. Design gate resolutions (formerly "open questions")
 
-- **O1 — project-scope flips.** Install defaults to project scope inside a repo (F5), but
-  `promote`/`dev` remain user-scope-only (P12 §16). A team-repo install therefore cannot run the
-  scenario-4 hack loop *at project scope* until flips learn `--scope`. Recommendation: defer to a
-  follow-up (P13-class); run the scenario-4 acceptance at user scope (the PRD's fleet scenarios
-  are user-scope). Consequence if deferred: documented asymmetry — project-scope placements are
-  install/uninstall-only in v0.6.0.
-- **O2 — journal-op widening (D6) ratification.** The alternative (a second journal file) keeps
-  v0.5.0 readers happy even in crash windows at the cost of a split crash-truth. Recommendation:
-  widen with terminal-null + hygiene sweep as specced. Consequence: a v0.5.0 binary run against a
-  ledger frozen mid-install-crash exits 3 until any v0.6.0 command runs.
-- **O3 — codex install gate is manifest-only (D10).** If the coverage gap is unacceptable, the
-  alternative is an opt-in `--deep` install flag (explicit consent weakens the F9 argument).
-  Recommendation: ship static-only + the printed remediation notice; revisit after P14 exposure.
+No open questions remain in this spec. All three below were adjudicated by the project owner on
+2026-07-07 (see the header block); the original framing is kept intact under each so the history
+of what was asked and recommended stays readable — only the outcome is new.
+
+- **O1 — project-scope flips. ADJUDICATED: deferred to a follow-up project; project-scope
+  placements are install/uninstall-only in v0.6.0; the scenario-4 acceptance runs at user scope.**
+  Install defaults to project scope inside a repo (F5), but `promote`/`dev` remain user-scope-only
+  (P12 §16). A team-repo install therefore cannot run the scenario-4 hack loop *at project scope*
+  until flips learn `--scope`. Recommendation: defer to a follow-up (P13-class); run the scenario-4
+  acceptance at user scope (the PRD's fleet scenarios are user-scope). Consequence if deferred:
+  documented asymmetry — project-scope placements are install/uninstall-only in v0.6.0. The
+  recommendation was adopted as-is; the follow-up project has not yet been filed.
+- **O2 — journal-op widening (D6) ratification. ADJUDICATED: D6 widening ratified as specced.**
+  The alternative (a second journal file) keeps v0.5.0 readers happy even in crash windows at the
+  cost of a split crash-truth. Recommendation: widen with terminal-null + hygiene sweep as specced.
+  Consequence: a v0.5.0 binary run against a ledger frozen mid-install-crash exits 3 until any
+  v0.6.0 command runs. The recommendation was adopted as-is.
+- **O3 — codex install gate is manifest-only (D10). ADJUDICATED: opt-in `--deep` added (D10's
+  design-gate amendment) — the design gate chose the alternative, not the original
+  recommendation.** If the coverage
+  gap is unacceptable, the alternative is an opt-in `--deep` install flag (explicit consent
+  weakens the F9 argument). Original recommendation (NOT adopted): ship static-only + the printed
+  remediation notice; revisit after P14 exposure. What shipped instead: the alternative — a
+  `--deep` flag (D10, §4.1, §10) that opts codex into the promote-parity gate (static + deep) on
+  the fetched skill, pre-placement; claude-code is unaffected; blocking policy matches the default
+  gate; `--deep` + `--no-verify` is a usage refusal (exit 2). The default remains static-only for
+  both tools — F9's floor still holds for anyone who does not pass `--deep`.

@@ -2,12 +2,15 @@
 
 `skillsmith install` acquires one or more agent skills from a git host: it fetches the repo as a
 blobless partial clone, resolves the requested skill (by name, explicit `//path`, or whole-repo
-scan), runs the static verify gate, pins the skill into the content-addressed store at the resolved
-commit SHA, places it for the chosen tools and scope (store symlink by default, `--direct` copy),
-and records acquisition provenance in the placements ledger. Alias: `i`.
+scan), runs the verify gate (static for both tools by default; `--deep` opts codex into
+static+deep), pins the skill into the content-addressed store at the resolved commit SHA, places
+it for the chosen tools and scope (store symlink by default, `--direct` copy), and records
+acquisition provenance in the placements ledger. Alias: `i`.
 
-The repo is never installed — only the selected skill subtree persists (store + placement). Install
-executes nothing from the fetched repo: no hooks, no scripts, pure file placement.
+The repo is never installed — only the selected skill subtree persists (store + placement). By
+default, install executes nothing from the fetched repo: no hooks, no scripts, pure file
+placement. `--deep` is the one opt-in exception — documented informed consent to run the codex
+binary against the fetched, unplaced skill before placement (see Flags below).
 
 Full design — source grammar and parse table, fetch mechanics, ledger schema additions, the
 install transaction and its crash story, JSON contract — lives in
@@ -55,6 +58,7 @@ names are reserved for a future registry and rejected.
 | `--force` | `-f` | bool | false | Re-execute a no-op, replace an existing placement, override cross-scope shadowing. |
 | `--strict` | — | bool | false | Verify-gate `warn`/`inconclusive` verdicts block. |
 | `--no-verify` | — | bool | false | Skip the verify gate (recorded as `verify: "skipped"` in the ledger). |
+| `--deep` | — | bool | false | Run the deeper promote-parity verify gate on the fetched skill before placement — codex static+deep; claude-code is unaffected. Requires verification; conflicts with `--no-verify` (both set → exit 2). |
 | `--continue-on-error` | — | bool | false | Keep processing later sources after a source-level failure. |
 | `--dry-run` | — | bool | false | Fetch + resolve read-only and print the full plan; no lock, no store/ledger writes. |
 | `--json` | — | bool | false | Versioned JSON report (`kind: "skillsmith.install"`) on stdout; disables the picker. |
@@ -91,6 +95,7 @@ FLAGS
   -f, --force                Reinstall / replace / override cross-scope shadowing
       --strict               Verify warnings block installation
       --no-verify            Skip the verify gate (recorded in the ledger)
+      --deep                 Run codex static+deep before placement (conflicts with --no-verify)
       --continue-on-error    Keep going after per-source failures
       --dry-run              Print the resolved plan without changing anything
       --json                 Emit the versioned JSON report on stdout
@@ -220,11 +225,16 @@ Exit code: 2
 
 ## Open questions
 
-1. **Should install grow an opt-in `--deep` verify gate?** The install gate is static for both
-   tools (F9: never feed just-fetched content to a local agent binary); codex static is
-   manifest-only, so codex skill substance is unverified until a post-install
-   `skillsmith verify --deep` or a later `promote`. Spec recommendation: ship static-only,
-   revisit after P14 public exposure (spec §18 O3).
-2. **Auth/token plumbing** (`SKILLSMITH_TOKEN`, `SKILLSMITH_TOKEN_<HOST>` from the design doc
-   §6.3) is deferred — v1 relies on git's own credential machinery with
-   `GIT_TERMINAL_PROMPT=0`. Revisit with registry work.
+None held on this page. The one question this page used to carry — should install grow an
+opt-in `--deep` verify gate — was adjudicated at the design gate 2026-07-07: the design gate
+chose the alternative over the spec's original static-only recommendation, and `--deep` shipped
+(see the flag table and help output above; spec §10, §18 O3). The default is unchanged: static
+for both tools, with codex static remaining manifest-only under the default (F9's floor is
+"install executes nothing from the fetched repo by default"); `--deep` is documented informed
+consent to run the codex binary against the fetched, unplaced skill. codex skill substance is
+still unverified by default until `--deep`, a post-install `skillsmith verify --deep`, or a later
+`promote`.
+
+Auth/token plumbing (`SKILLSMITH_TOKEN`, `SKILLSMITH_TOKEN_<HOST>` from the design doc §6.3) is
+deferred — v1 relies on git's own credential machinery with `GIT_TERMINAL_PROMPT=0`. Revisit with
+registry work.
