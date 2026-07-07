@@ -84,7 +84,7 @@ Claude (`~/.claude/skills`) and Codex skill dirs where present.
 
 ### Tests & Tasks
 - [x] [P12-BR] Brainstorm + spec: lockfile schema, store layout (seed of P09's store), atomicity, multi-tool semantics, naming (`dev` primary / `demote` alias) — *fable*
-- [ ] [P12-PL] Implementation plan — *fable*
+- [x] [P12-PL] Implementation plan — *fable*
 - [ ] [P12-TS01] Fixture fleet (fake `~/.claude`/`~/.codex` trees with symlink + copy placements) — *haiku*
 - [ ] [P12-T01] Placement detection (symlink→repo vs pinned vs absent), per agent dir — *sonnet*
 - [ ] [P12-T02] Store snapshot @ SHA + lockfile read/write — *opus*
