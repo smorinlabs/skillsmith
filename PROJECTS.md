@@ -91,7 +91,7 @@ Claude (`~/.claude/skills`) and Codex skill dirs where present.
 - [x] [P12-T03] Atomic swap + `--rollback` (crash-safe ordering) — *opus*
 - [x] [P12-T04] CLI: `promote` / `dev` (alias `demote`), verify-gate integration — *sonnet*
 - [x] [P12-TS02] Round-trip e2e: dev→promote→dev lossless on fixture fleet — *sonnet*
-- [ ] [P12-RV] Final whole-branch review — *fable*
+- [x] [P12-RV] Final whole-branch review — *fable*
 
 ### Automated Verification
 - Round-trip test green; interrupted-swap test leaves a recoverable state; `bun run check` green.
