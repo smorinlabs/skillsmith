@@ -74,7 +74,7 @@ mechanism (CLI shell-out first; SDK evaluated as follow-up).
 
 ---
 
-## [ ] Project P12: `promote` ⇄ `dev` — bidirectional placement flip (v0.5.0)
+## [-] Project P12: `promote` ⇄ `dev` — bidirectional placement flip (v0.5.0)
 **Goal**: Flip a skill/plugin between **dev mode** (symlink → source checkout) and **production**
 (pinned copy from a content-addressed store). `skillsmith promote <target>`: verify → snapshot
 store@git-SHA → atomic swap symlink→pinned → lockfile record. `skillsmith dev <target>`
@@ -83,7 +83,7 @@ lossless (lockfile stores both placements); `--rollback` restores prior state. T
 Claude (`~/.claude/skills`) and Codex skill dirs where present.
 
 ### Tests & Tasks
-- [ ] [P12-BR] Brainstorm + spec: lockfile schema, store layout (seed of P09's store), atomicity, multi-tool semantics, naming (`dev` primary / `demote` alias) — *fable*
+- [x] [P12-BR] Brainstorm + spec: lockfile schema, store layout (seed of P09's store), atomicity, multi-tool semantics, naming (`dev` primary / `demote` alias) — *fable*
 - [ ] [P12-PL] Implementation plan — *fable*
 - [ ] [P12-TS01] Fixture fleet (fake `~/.claude`/`~/.codex` trees with symlink + copy placements) — *haiku*
 - [ ] [P12-T01] Placement detection (symlink→repo vs pinned vs absent), per agent dir — *sonnet*
