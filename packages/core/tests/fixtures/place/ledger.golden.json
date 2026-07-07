@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.placements",
+  "updatedAt": "2026-07-07T18:20:11Z",
+  "skills": {
+    "factor-scan": {
+      "tools": {
+        "claude-code": {
+          "placementPath": "/Users/alice/.claude/skills/factor-scan",
+          "mode": "pinned",
+          "dev": {
+            "sourcePath": "/Users/alice/c/smorinlabs-harness/plugins/factor-harness/skills/factor-scan",
+            "resolvedPath": "/Users/alice/c/smorinlabs-harness/plugins/factor-harness/skills/factor-scan",
+            "repoRoot": "/Users/alice/c/smorinlabs-harness",
+            "sourceRelPath": "plugins/factor-harness/skills/factor-scan",
+            "remote": "smorinlabs/smorinlabs-harness",
+            "recordedAt": "2026-07-07T18:20:11Z"
+          },
+          "pinned": {
+            "storePath": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan",
+            "rev": "3f2a1b9c0d4e",
+            "gitSha": "3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80",
+            "dirty": false,
+            "contentHash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            "snapshotAt": "2026-07-07T18:20:11Z",
+            "verify": "passed"
+          },
+          "journal": null
+        }
+      }
+    }
+  }
+}
