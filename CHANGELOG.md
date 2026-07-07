@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.5.0](https://github.com/smorinlabs/skillsmith/compare/v0.4.0...v0.5.0) (2026-07-07)
+
+
+### Features
+
+* add promote and dev commands for bidirectional skill placement flips ([#5](https://github.com/smorinlabs/skillsmith/issues/5)) ([c74dbc4](https://github.com/smorinlabs/skillsmith/commit/c74dbc4d8e7450c9f9a583a1efba8569269e6ae2))
+
 ## [0.4.0](https://github.com/smorinlabs/skillsmith/compare/v0.3.2...v0.4.0) (2026-07-07)
 
 
