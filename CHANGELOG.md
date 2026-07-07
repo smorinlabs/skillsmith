@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.4.0](https://github.com/smorinlabs/skillsmith/compare/v0.3.2...v0.4.0) (2026-07-07)
+
+
+### Features
+
+* add skillsmith verify command for cross-tool skill/plugin load verification ([#3](https://github.com/smorinlabs/skillsmith/issues/3)) ([234e067](https://github.com/smorinlabs/skillsmith/commit/234e06744b5d37b4d49993ada9f935139c488f07))
+
 ## [0.3.2](https://github.com/smorinlabs/skillsmith/compare/v0.3.1...v0.3.2) (2026-07-06)
 
 
