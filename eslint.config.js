@@ -93,6 +93,12 @@ export default [
             { target: './packages/core/src/skills', from: './packages/core/src/verify' },
             { target: './packages/core/src/plugins', from: './packages/core/src/verify' },
             { target: './packages/core/src/commands', from: './packages/core/src/verify' },
+            // place is a high-level orchestrator; leaves must not import it. place imports verify
+            // (promote gate), so verify must never import place back.
+            { target: './packages/core/src/skills', from: './packages/core/src/place' },
+            { target: './packages/core/src/plugins', from: './packages/core/src/place' },
+            { target: './packages/core/src/commands', from: './packages/core/src/place' },
+            { target: './packages/core/src/verify', from: './packages/core/src/place' },
           ],
         },
       ],

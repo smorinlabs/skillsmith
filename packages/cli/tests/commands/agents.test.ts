@@ -13,6 +13,19 @@ const env = (existing: string[]): ScanEnv => ({
   readText: async () => '',
   runVersion: async () => '1.0.0',
   exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
+  pathKind: async () => 'absent' as const,
+  isExecutable: async () => false,
+  readBytes: async () => new Uint8Array(),
+  readLink: async () => '',
+  makeSymlink: async () => {},
+  rename: async () => {},
+  copyTree: async () => {},
+  removeTree: async () => {},
+  makeDir: async () => {},
+  writeTextFile: async () => {},
+  fsyncFile: async () => {},
+  fsyncDir: async () => {},
+  withFileLock: (_p, fn) => fn(),
 });
 
 describe('runAgents', () => {

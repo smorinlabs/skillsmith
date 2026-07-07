@@ -22,8 +22,20 @@ export type { DetectOptions } from './scan/index.ts';
 export type { ListCommandsOpts } from './scan/list-commands.ts';
 export type { ListSkillsOpts } from './scan/list-skills.ts';
 export type { Logger } from './env/logger.ts';
-export type { ExecOptions, ExecResult, Platform, ScanEnv, XdgDirs } from './env/types.ts';
+export type { ExecOptions, ExecResult, PathKind, Platform, ScanEnv, XdgDirs } from './env/types.ts';
 export type { SkillSmithError } from './errors.ts';
+export type {
+  FlipAction,
+  FlipDeps,
+  FlipOp,
+  FlipOptions,
+  FlipReport,
+  FlipResult,
+  FlipTool,
+  JournalPhase,
+  Placement,
+  PlacementClass,
+} from './place/types.ts';
 export type { Result } from './result.ts';
 export type {
   EnabledState,

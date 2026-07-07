@@ -30,6 +30,7 @@ Add ESLint, scoped narrowly to three rules, and use it alongside Biome — not a
    - `packages/core/src/env` ↛ `agents`, `detect`.
    - `packages/core/src/detect` ↛ `agents`.
    - `packages/core/src/{skills,plugins,commands}` ↛ `verify` (verify is a high-level orchestrator, like doctor).
+   - `packages/core/src/{skills,plugins,commands,verify}` ↛ `place` (place is a high-level orchestrator that imports verify for the promote gate).
 
 2. **Core isolation** (`no-restricted-imports` + `no-restricted-syntax`) — applies to `packages/core/src/**/*.ts` only:
    - Forbidden imports: `commander`, `chalk`, `consola`, `@clack/prompts`, `node:console`.
