@@ -14,8 +14,9 @@
 > each, final whole-branch review per project. Model policy: **haiku** = transcription/mechanical
 > (complete spec in brief), **sonnet** = standard implementation + routine task reviews,
 > **opus** = anything tricky (deep-checker subprocess/stream parsing, store/lockfile,
-> atomic-swap correctness) + standard specs, **fable** = the hardest planning (P12 spec:
-> atomicity/round-trip model) and all final whole-branch reviews / highest-risk verification.
+> atomic-swap correctness) + standard specs, **fable** = major planning (ALL [P*-PL]
+> implementation plans + hardest [P*-BR] specs) and all final whole-branch reviews /
+> highest-risk verification.
 > Ledger: `.superpowers/sdd/progress.md`.
 
 ## [x] Project P10: Un-park — consolidate + hygiene (v0.3.2)
@@ -57,7 +58,7 @@ mechanism (CLI shell-out first; SDK evaluated as follow-up).
 
 ### Tests & Tasks
 - [ ] [P11-BR] Brainstorm + spec (`docs/superpowers/specs/`): CLI surface, JSON schema, severity model, tool-missing/auth-missing semantics — *opus*
-- [ ] [P11-PL] Implementation plan (`docs/superpowers/plans/`) — *opus*
+- [ ] [P11-PL] Implementation plan (`docs/superpowers/plans/`) — *fable*
 - [ ] [P11-TS01] Port the broken-fixture suite (good/bad-yaml/bad-noframe/bad-nodesc skills; bad manifests ×2 formats) into `packages/core/tests/fixtures/` — *haiku*
 - [ ] [P11-T01] Core types: `VerifyReport`/`ToolVerdict`/`Finding` + Result plumbing — *sonnet*
 - [ ] [P11-T02] `agents/claude-code/verify.ts`: static validate parser — *sonnet*
@@ -83,7 +84,7 @@ Claude (`~/.claude/skills`) and Codex skill dirs where present.
 
 ### Tests & Tasks
 - [ ] [P12-BR] Brainstorm + spec: lockfile schema, store layout (seed of P09's store), atomicity, multi-tool semantics, naming (`dev` primary / `demote` alias) — *fable*
-- [ ] [P12-PL] Implementation plan — *opus*
+- [ ] [P12-PL] Implementation plan — *fable*
 - [ ] [P12-TS01] Fixture fleet (fake `~/.claude`/`~/.codex` trees with symlink + copy placements) — *haiku*
 - [ ] [P12-T01] Placement detection (symlink→repo vs pinned vs absent), per agent dir — *sonnet*
 - [ ] [P12-T02] Store snapshot @ SHA + lockfile read/write — *opus*
