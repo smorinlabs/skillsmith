@@ -74,7 +74,7 @@ mechanism (CLI shell-out first; SDK evaluated as follow-up).
 
 ---
 
-## [-] Project P12: `promote` ⇄ `dev` — bidirectional placement flip (v0.5.0)
+## [x] Project P12: `promote` ⇄ `dev` — bidirectional placement flip (v0.5.0)
 **Goal**: Flip a skill/plugin between **dev mode** (symlink → source checkout) and **production**
 (pinned copy from a content-addressed store). `skillsmith promote <target>`: verify → snapshot
 store@git-SHA → atomic swap symlink→pinned → lockfile record. `skillsmith dev <target>`
