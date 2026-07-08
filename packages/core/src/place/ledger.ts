@@ -66,6 +66,7 @@ const JournalSchema = z.object({
       storePath: z.string().nullable(),
       contentHash: z.string().nullable(),
       liveKind: z.enum(['symlink', 'dir']).optional(),
+      symlinkTarget: z.string().optional(),
     }),
     z.object({ mode: z.literal('absent') }),
   ]),

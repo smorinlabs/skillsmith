@@ -467,6 +467,58 @@ const replaceOverDev = async (f: FixtureFleet): Promise<AcquireCfg> => {
   };
 };
 
+// Replace a store symlink (→ target A) with a new store symlink (→ target B) — SAME kind (D9 re-pin).
+// rollback must disambiguate old-vs-new by the recorded symlink target, not kind.
+const replaceSymlinkOverSymlink = async (f: FixtureFleet): Promise<AcquireCfg> => {
+  const env = fastEnv(f.env);
+  const skillsRoot = join(f.home, '.claude', 'skills');
+  const placementPath = join(skillsRoot, SKILL);
+  const ledgerPath = ledgerPathOf(f.data);
+  const s = await seedStore(f, env); // target B = s.storePath
+  const oldTarget = resolve(f.alphaSrc); // target A — a distinct, valid symlink target
+  await env.makeSymlink(oldTarget, placementPath); // old store symlink → A
+  const ledger = emptyLedger(NOW);
+  setPairAt(ledger, null, SKILL, TOOL, {
+    placementPath,
+    mode: 'pinned',
+    dev: null,
+    pinned: pinnedOf(oldTarget, 'oldrev000000', s.contentHash, 'symlink'),
+    origin: origin(),
+    journal: null,
+  });
+  const w = await writeLedger(env, ledgerPath, ledger);
+  if (!w.ok) throw new Error(msg(w.error));
+  return {
+    op: 'install',
+    isFresh: false,
+    skillsRoot,
+    placementPath,
+    ledgerPath,
+    storePath: s.storePath,
+    contentHash: s.contentHash,
+    oldKind: 'symlink',
+    newKind: 'symlink',
+    oldTarget,
+    newTarget: s.storePath,
+    expectedPhases: ['prepared', 'staged', 'backed-up', 'live', 'committed'],
+    makePlan: () => ({
+      op: 'install',
+      skill: SKILL,
+      tool: TOOL,
+      skillsRoot,
+      placementPath,
+      install: {
+        build: 'symlink',
+        storePath: s.storePath,
+        contentHash: s.contentHash,
+        pinned: pinnedOf(s.storePath, s.rev, s.contentHash, 'symlink'),
+        origin: origin(),
+        adoptedDev: null,
+      },
+    }),
+  };
+};
+
 const uninstall = async (f: FixtureFleet, placement: 'symlink' | 'copy'): Promise<AcquireCfg> => {
   const env = fastEnv(f.env);
   const skillsRoot = join(f.home, '.claude', 'skills');
@@ -529,6 +581,7 @@ suite('fresh symlink install', (f) => freshInstall(f, 'symlink'));
 suite('fresh copy install', (f) => freshInstall(f, 'copy'));
 suite('replace install over a pinned copy', replaceOverCopy);
 suite('replace install over a dev symlink', replaceOverDev);
+suite('replace install symlink over symlink', replaceSymlinkOverSymlink);
 suite('uninstall of a symlink placement', (f) => uninstall(f, 'symlink'));
 suite('uninstall of a managed copy', (f) => uninstall(f, 'copy'));
 

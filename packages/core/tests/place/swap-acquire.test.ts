@@ -275,6 +275,33 @@ describe('runSwap — install', () => {
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
 
+  test('symlink → symlink replace SUCCEEDS (D9 re-pin), retargeting the live symlink', async () => {
+    // A store/dev symlink is replaced by a new store symlink pointing elsewhere — same kind, but
+    // safe because rollback disambiguates via the recorded old symlink target.
+    const s = await seedStore(f);
+    const live = join(skillsRoot, SKILL);
+    const oldTarget = resolve(f.alphaSrc); // old symlink target (≠ the new store path)
+    await f.env.makeSymlink(oldTarget, live);
+    const ledger = emptyLedger(NOW);
+    setPairAt(ledger, null, SKILL, TOOL, {
+      placementPath: live,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf(oldTarget, 'oldrev000000', s.contentHash, 'symlink'),
+      origin: origin('smorinlabs/fixture-harness/alpha'),
+      journal: null,
+    });
+    const ctx = makeCtx(f.env, ledgerPath, ledger);
+    const r = await runSwap(ctx, installPlan(s, skillsRoot, live, 'symlink'));
+    if (!r.ok) throw new Error(msg(r.error));
+    expect(await f.env.pathKind(live)).toBe('symlink');
+    expect(await f.env.readLink(live)).toBe(s.storePath); // retargeted to the new store entry
+    const pair = getPairAt(ledger, null, SKILL, TOOL);
+    expect(pair?.pinned?.placement).toBe('symlink');
+    expect(pair?.journal).toBeNull();
+    expect(await residue(f.env, skillsRoot)).toEqual([]);
+  });
+
   test('runSwap over an uncommitted install journal → flip-refused naming all remediations', async () => {
     const s = await seedStore(f);
     const live = join(skillsRoot, SKILL);

@@ -429,32 +429,44 @@ const computeBefore = async (
       }
       return ok({ mode: 'absent' });
     }
-    // Replace install. `rollbackSwap` disambiguates "live is the new artifact" (P4 done) purely by a
-    // kind change (`liveKind !== oldKind`); a same-kind replace (dir→dir or symlink→symlink) is
-    // indistinguishable at that window, so an uncommitted rollback would silently leave the new
-    // artifact live and orphan the backup. The run layer MUST route a same-kind replace as a kind
-    // change (like promote's demote-first path); the engine enforces that here rather than trust it.
+    // Replace install. `rollbackSwap` decides "live is the new artifact" (P4 done): for a
+    // kind-changing swap by the kind flip; for symlink→symlink by the recorded old symlink target
+    // (see below + rollbackSwap). dir→dir is BOTH kind- and target-ambiguous at that window, so it
+    // stays rejected — the run layer must route a copy re-install as a kind change (promote's
+    // demote-first path). symlink→symlink is safe and allowed.
     const newBuildKind = plan.install?.build === 'symlink' ? 'symlink' : 'dir';
-    if (newBuildKind === kindOf(liveKind)) {
+    const oldKind = kindOf(liveKind);
+    if (newBuildKind === 'dir' && oldKind === 'dir') {
       return err(
         genericError(
-          `same-kind replace of ${plan.skill} (live ${kindOf(liveKind)} → new ${newBuildKind}) must be routed as a kind change by the run layer`,
+          `same-kind replace of ${plan.skill} (dir → dir) must be routed as a kind change by the run layer`,
         ),
       );
     }
-    // A dev symlink is being adopted: `adoptedDev` is the run layer's signal that the live symlink
-    // points outside the store. If the run layer forgets to set it, that dev record is silently lost
-    // (this branch is skipped and the pre-state is recorded as pinned instead of dev).
-    if (plan.install?.adoptedDev) {
+    // Record the old symlink target for ANY symlink pre-state so rollback can disambiguate a
+    // symlink→symlink replace via the target. `adoptedDev` is the run layer's signal that the live
+    // symlink points outside the store (governs dev-vs-pinned mode); if it forgets to set it, that
+    // dev record is silently lost (recorded as pinned instead of dev).
+    let symlinkTarget: string | null = null;
+    if (oldKind === 'symlink') {
       const t = await readLive();
       if (!t.ok) return t;
-      return ok({ mode: 'dev', symlinkTarget: t.value, liveKind: 'symlink' });
+      symlinkTarget = t.value;
+    }
+    if (plan.install?.adoptedDev) {
+      if (symlinkTarget === null) {
+        return err(
+          genericError(`cannot adopt dev source for ${plan.skill}: live is not a symlink`),
+        );
+      }
+      return ok({ mode: 'dev', symlinkTarget, liveKind: 'symlink' });
     }
     return ok({
       mode: 'pinned',
       storePath: existing?.pinned?.storePath ?? null,
       contentHash: existing?.pinned?.contentHash ?? null,
-      liveKind: kindOf(liveKind),
+      liveKind: oldKind,
+      ...(symlinkTarget !== null ? { symlinkTarget } : {}),
     });
   }
   // op === 'uninstall'
@@ -464,11 +476,21 @@ const computeBefore = async (
     if (!t.ok) return t;
     return ok({ mode: 'dev', symlinkTarget: t.value, liveKind: kindOf(liveKind) });
   }
+  // Record the old symlink target for a store-symlink placement too, so rollback's symlink branch
+  // always has it (uninstall is symlink→absent, so a live symlink at rollback is always the OLD one;
+  // recording the target keeps that branch well-defined rather than tripping its fail-loud guard).
+  let uninstallTarget: string | null = null;
+  if (kindOf(liveKind) === 'symlink') {
+    const t = await readLive();
+    if (!t.ok) return t;
+    uninstallTarget = t.value;
+  }
   return ok({
     mode: 'pinned',
     storePath: existing.pinned?.storePath ?? null,
     contentHash: existing.pinned?.contentHash ?? null,
     liveKind: kindOf(liveKind),
+    ...(uninstallTarget !== null ? { symlinkTarget: uninstallTarget } : {}),
   });
 };
 
@@ -691,15 +713,31 @@ export const rollbackSwap = async (
       if ((await env.pathKind(j.backupPath)) !== 'absent') {
         await env.rename(j.backupPath, live);
       }
-    } else if (liveKind !== oldKind) {
-      // Live is the NEW entry (P4 done): move it aside, restore the backup, drop the new one.
-      if ((await env.pathKind(j.backupPath)) !== 'absent') {
-        if ((await env.pathKind(j.stagingPath)) !== 'absent') await env.removeTree(j.stagingPath);
-        await env.rename(live, j.stagingPath);
-        await env.rename(j.backupPath, live);
+    } else {
+      // Live is present: decide whether it is the NEW artifact (P4 done) or still the OLD one. A kind
+      // change tells them apart; a symlink→symlink replace can't be told apart by kind, so compare
+      // the recorded old symlink target — this is what makes symlink→symlink replace safe to allow.
+      let liveIsNew: boolean;
+      if (oldKind === 'symlink' && liveKind === 'symlink') {
+        if (before.symlinkTarget == null) {
+          return err(
+            genericError(`cannot roll back ${skill}: symlink before-state is missing its target`),
+          );
+        }
+        liveIsNew = (await env.readLink(live)) !== before.symlinkTarget;
+      } else {
+        liveIsNew = liveKind !== oldKind;
       }
+      if (liveIsNew) {
+        // Move the new entry aside, restore the backup, drop the new one.
+        if ((await env.pathKind(j.backupPath)) !== 'absent') {
+          if ((await env.pathKind(j.stagingPath)) !== 'absent') await env.removeTree(j.stagingPath);
+          await env.rename(live, j.stagingPath);
+          await env.rename(j.backupPath, live);
+        }
+      }
+      // else: live is still the old entry — nothing to restore.
     }
-    // else: live is still the old entry — nothing to restore.
     if ((await env.pathKind(j.stagingPath)) !== 'absent') await env.removeTree(j.stagingPath);
   } catch (e) {
     return err(mapFsErr(e, `cannot roll back ${skill}`));

@@ -64,6 +64,7 @@ export interface Journal {
         storePath: string | null;
         contentHash: string | null;
         liveKind?: 'symlink' | 'dir';
+        symlinkTarget?: string; // recorded when the live pre-state is a symlink (symlink→symlink rollback)
       }
     | { mode: 'absent' };
   stagingPath: string;
