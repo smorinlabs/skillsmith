@@ -25,6 +25,7 @@ const env = (home = '/h'): ScanEnv => ({
   writeTextFile: async () => {},
   fsyncFile: async () => {},
   fsyncDir: async () => {},
+  modifiedAt: async () => null,
   withFileLock: (_p, fn) => fn(),
 });
 

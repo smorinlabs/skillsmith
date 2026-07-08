@@ -115,5 +115,21 @@ export const defaultScanEnv = async (): Promise<ScanEnv> => {
         await release().catch(() => {});
       }
     },
+    modifiedAt: async (p) => {
+      try {
+        const st = await lstat(p);
+        return st.mtimeMs;
+      } catch (e) {
+        if (
+          e &&
+          typeof e === 'object' &&
+          'code' in e &&
+          (e as { code?: unknown }).code === 'ENOENT'
+        ) {
+          return null;
+        }
+        throw e;
+      }
+    },
   };
 };

@@ -30,6 +30,7 @@ const fakeEnv = (opts: {
   writeTextFile: async () => {},
   fsyncFile: async () => {},
   fsyncDir: async () => {},
+  modifiedAt: async () => null,
   withFileLock: (_p, fn) => fn(),
 });
 

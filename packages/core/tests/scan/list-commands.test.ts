@@ -25,6 +25,7 @@ const env = (dirs: Record<string, readonly string[]>, files: Record<string, stri
   writeTextFile: async () => {},
   fsyncFile: async () => {},
   fsyncDir: async () => {},
+  modifiedAt: async () => null,
   withFileLock: (_p, fn) => fn(),
 });
 

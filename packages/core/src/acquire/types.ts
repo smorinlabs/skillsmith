@@ -9,3 +9,13 @@ export interface SourceSpec {
     | { kind: 'path'; path: string }; // normalized: no leading/trailing '/', no empty/'.'/'..' segments
   ref: string | null; // the `@ref` as given; null = HEAD (remote default branch)
 }
+
+export interface CandidateSkill {
+  path: string; // repo-relative git tree path of the skill dir; '' = repo root
+  name: string; // basename(path); for path '' the caller substitutes the repo's final segment
+}
+
+export type Selection =
+  | { kind: 'chosen'; skill: CandidateSkill }
+  | { kind: 'ambiguous'; candidates: CandidateSkill[] } // caller: exit-2 refusal + JSON candidates
+  | { kind: 'none'; searched: number }; // caller: exit-5 source-unresolvable
