@@ -18,8 +18,8 @@ const TOPICS: Record<HelpTopic, string> = {
     '  1 failure (verify gate / flip failed; generic failure / verification failed)\n' +
     '  2 usage error or refusal\n' +
     '  3 config or ledger unreadable\n' +
-    '  4 no placement/tool (verify: required tool or mode unavailable)\n' +
-    '  5 dev source unresolvable\n' +
+    '  4 no placement/tool (install: tool not detected)\n' +
+    '  5 source unresolvable (dev source or install source)\n' +
     '  6 permission error\n' +
     '  130 SIGINT\n\n' +
     'Full reference: research/skillsmith-cli-design.md §6.1',
@@ -30,7 +30,19 @@ const TOPICS: Record<HelpTopic, string> = {
   manifest:
     'skillsmith.toml reference lands in MVP-2a (config) and MVP-4 (apply).\n\nSee research/skillsmith-cli-design.md for the planned schema.',
   sources:
-    'Source formats: owner/repo/skill, repo/skill, Git URL. Wired in MVP-2c (install).\n\nSee research/skillsmith-cli-design.md §1.4.',
+    'Source forms (skillsmith install <source>[@<ref>]):\n\n' +
+    '  owner/repo                        GitHub sugar; whole repo — exactly one skill installs it,\n' +
+    '                                    several -> interactive picker (TTY) / list + exit 2 (non-TTY)\n' +
+    '  owner/repo/<name>                 GitHub sugar; skill resolved BY NAME (repo-wide SKILL.md scan)\n' +
+    '  owner/repo//path/to/skill         sugar + explicit in-repo path\n' +
+    '  <host>/owner/repo[/<name>]        host-explicit: gitlab.com/..., git.corp:8443/... - no config\n' +
+    '  <host>/group/sub/repo//path       GitLab subgroups: multi-segment repo paths require `//`\n' +
+    '                                    (trailing bare `//` = whole-repo scan of a subgroup repo)\n' +
+    '  <git-url>[//path/to/skill]        any https/ssh/scp URL; `//` = explicit path in repo\n\n' +
+    'Every form may end with @<ref> (tag, branch, or full 40-hex SHA) after the path portion —\n' +
+    'never inside scp user@host. One-part names are reserved for a future registry and rejected;\n' +
+    'local filesystem paths are rejected (use `skillsmith dev --source` / `skillsmith promote`).\n\n' +
+    'Full reference: research/commands/install.md §Source forms.',
   formatting:
     'Output formats: markdown (default for agents), json (for agents and later list/doctor). stdout=data, stderr=messages.\n\nSee research/skillsmith-cli-design.md §1.9 and §6.2.',
 };
