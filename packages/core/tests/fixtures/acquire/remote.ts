@@ -10,6 +10,9 @@ export interface RemoteFixture {
   multiWork: string; // <base>/multi-work — the working clone multi.git was made from
   multiHead: string; // full 40-hex HEAD SHA of multi (main)
   multiTagSha: string; // full 40-hex SHA of tag v1.0.0 (the FIRST commit — differs from HEAD)
+  multiAnnotatedTag: string; // name of the ANNOTATED tag (v2.0.0) on the first commit
+  multiAnnotatedCommit: string; // full 40-hex COMMIT SHA the annotated tag peels to
+  multiAnnotatedTagObject: string; // full 40-hex SHA of the tag OBJECT itself (differs from commit)
   singleHead: string;
   rootHead: string;
 }
@@ -91,8 +94,24 @@ description: Fixture skill.
     'fixture: commit 1',
   ]);
 
-  // Tag the first commit
+  // Tag the first commit (lightweight — points directly at the commit)
   runGit(multiWork, ['tag', 'v1.0.0']);
+
+  // Annotated tag on the same first commit: its tag-OBJECT SHA differs from the commit it wraps.
+  // Used to prove ref resolution peels annotated tags to the underlying commit SHA.
+  runGit(multiWork, [
+    '-c',
+    'user.email=fixture@skillsmith.test',
+    '-c',
+    'user.name=fixture',
+    '-c',
+    'tag.gpgsign=false',
+    'tag',
+    '-a',
+    'v2.0.0',
+    '-m',
+    'annotated release',
+  ]);
 
   // Commit 2: Add duplicate review skill, factor-scan enhancements, hidden skill, docs
   await writeFile(
@@ -149,12 +168,20 @@ name: hidden
   // Get SHAs
   const multiHead = runGit(multiWork, ['rev-parse', 'HEAD']).trim();
   const multiTagSha = runGit(multiWork, ['rev-parse', 'v1.0.0^{commit}']).trim();
+  const multiAnnotatedTagObject = runGit(multiWork, ['rev-parse', 'v2.0.0']).trim();
+  const multiAnnotatedCommit = runGit(multiWork, ['rev-parse', 'v2.0.0^{commit}']).trim();
 
   if (!/^[0-9a-f]{40}$/.test(multiHead)) {
     throw new Error(`Invalid multiHead SHA: ${multiHead}`);
   }
   if (!/^[0-9a-f]{40}$/.test(multiTagSha)) {
     throw new Error(`Invalid multiTagSha SHA: ${multiTagSha}`);
+  }
+  if (!/^[0-9a-f]{40}$/.test(multiAnnotatedTagObject)) {
+    throw new Error(`Invalid multiAnnotatedTagObject SHA: ${multiAnnotatedTagObject}`);
+  }
+  if (multiAnnotatedTagObject === multiAnnotatedCommit) {
+    throw new Error('annotated tag object SHA must differ from the commit it wraps');
   }
 
   // Clone to bare repos
@@ -266,6 +293,9 @@ name: rootskill
     multiWork,
     multiHead,
     multiTagSha,
+    multiAnnotatedTag: 'v2.0.0',
+    multiAnnotatedCommit,
+    multiAnnotatedTagObject,
     singleHead,
     rootHead,
   };

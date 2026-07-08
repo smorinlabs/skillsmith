@@ -33,7 +33,7 @@ const stderrTail = (stderr: string): string =>
 
 /** Blobless partial clone of a single ref into a fresh, skillsmith-created git dir. Any non-zero
  *  git exit maps to `source-unresolvable` (never a half-state): git only ever writes inside
- *  `fetchDir`. Returns the full 40-hex SHA of FETCH_HEAD. */
+ *  `fetchDir`. Returns the full 40-hex COMMIT SHA of FETCH_HEAD (annotated tags are peeled). */
 export const fetchRepo = async (
   env: ScanEnv,
   opts: {
@@ -66,16 +66,24 @@ export const fetchRepo = async (
   );
   if (fetch.code !== 0) return fail(fetch.stderr);
 
+  // Peel to the underlying COMMIT: for an annotated tag, FETCH_HEAD is the tag-object SHA, but the
+  // canonical identity must be a commit SHA (place/store.ts records `git rev-parse HEAD`, and this
+  // SHA becomes the store rev and ledger gitSha). `^{commit}` is the identity for a commit already,
+  // so lightweight tags / branches / SHAs are unaffected.
   const rev = await git(
     env,
-    ['-C', fetchDir, 'rev-parse', 'FETCH_HEAD'],
+    ['-C', fetchDir, 'rev-parse', 'FETCH_HEAD^{commit}'],
     PLUMBING_TIMEOUT_MS,
     signal,
   );
   if (rev.code !== 0) return fail(rev.stderr);
   const sha = rev.stdout.trim();
   if (!SHA_HEX_40.test(sha)) {
-    return err(sourceUnresolvableError(`cannot fetch ${cloneUrl}: FETCH_HEAD is not a 40-hex SHA`));
+    return err(
+      sourceUnresolvableError(
+        `cannot fetch ${cloneUrl}: FETCH_HEAD did not peel to a 40-hex commit`,
+      ),
+    );
   }
 
   return ok({ sha });
@@ -152,10 +160,11 @@ export const sparseCheckoutSkill = async (
   return ok(skillPath === '' ? fetchDir : join(fetchDir, skillPath));
 };
 
-/** Elision probe: resolve a ref to a full SHA without any network round-trip when it is already a
- *  full 40-hex SHA. Otherwise ask the remote via `ls-remote`, preferring an exact tag, then an
- *  exact branch, then the first (HEAD) line. A miss or an `ls-remote` failure is `ok(null)` (not an
- *  error): callers fall back to the full fetch. */
+/** Elision probe: resolve a ref to a full COMMIT SHA without any network round-trip when it is
+ *  already a full 40-hex SHA. Otherwise ask the remote via `ls-remote`, preferring the peeled
+ *  `refs/tags/<ref>^{}` commit, then the exact tag, then the exact branch, then the first (HEAD)
+ *  line. A miss or an `ls-remote` failure is `ok(null)` (not an error): callers fall back to the
+ *  full fetch. */
 export const resolveRefViaLsRemote = async (
   env: ScanEnv,
   cloneUrl: string,
@@ -164,8 +173,11 @@ export const resolveRefViaLsRemote = async (
 ): Promise<Result<string | null, SkillSmithError>> => {
   if (ref !== null && SHA_HEX_40.test(ref)) return ok(ref); // fully offline, zero exec calls
 
-  const target = ref ?? 'HEAD';
-  const res = await git(env, ['ls-remote', cloneUrl, target], PLUMBING_TIMEOUT_MS, signal);
+  // Request the peeled `<ref>^{}` pseudo-ref alongside `<ref>` so annotated tags surface their
+  // COMMIT SHA (matching fetchRepo's `^{commit}` peel and place/store.ts). A single-pattern
+  // `ls-remote <url> <ref>` suppresses the peeled line, so it is requested explicitly.
+  const patterns = ref === null ? ['HEAD'] : [ref, `${ref}^{}`];
+  const res = await git(env, ['ls-remote', cloneUrl, ...patterns], PLUMBING_TIMEOUT_MS, signal);
   if (res.code !== 0) return ok(null);
 
   const rows = res.stdout
@@ -178,8 +190,10 @@ export const resolveRefViaLsRemote = async (
   if (rows.length === 0) return ok(null);
 
   if (ref !== null) {
+    const peeled = rows.find((row) => row.name === `refs/tags/${ref}^{}`);
+    if (peeled) return ok(peeled.sha); // annotated tag → underlying commit
     const tag = rows.find((row) => row.name === `refs/tags/${ref}`);
-    if (tag) return ok(tag.sha);
+    if (tag) return ok(tag.sha); // lightweight tag → already a commit
     const head = rows.find((row) => row.name === `refs/heads/${ref}`);
     if (head) return ok(head.sha);
   }

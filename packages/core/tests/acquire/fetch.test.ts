@@ -69,6 +69,19 @@ describe('fetchRepo', () => {
     expect(shaRes.value.sha).toBe(fixture.multiTagSha);
   });
 
+  test('an annotated tag peels to the underlying commit SHA (not the tag-object SHA)', async () => {
+    const fetchDir = freshFetchDir();
+    const res = await fetchRepo(env, {
+      cloneUrl: fixture.multiUrl,
+      ref: fixture.multiAnnotatedTag,
+      fetchDir,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.sha).toBe(fixture.multiAnnotatedCommit);
+    expect(res.value.sha).not.toBe(fixture.multiAnnotatedTagObject);
+  });
+
   test('a bad ref maps to source-unresolvable with a git stderr fragment; nothing outside fetchDir', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'skillsmith-badref-'));
     const fetchDir = join(parent, 'ft');
@@ -186,6 +199,14 @@ describe('resolveRefViaLsRemote', () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.value).toBe(fixture.multiTagSha);
+  });
+
+  test('an annotated tag resolves to its commit SHA, not the tag-object SHA', async () => {
+    const res = await resolveRefViaLsRemote(env, fixture.multiUrl, fixture.multiAnnotatedTag);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value).toBe(fixture.multiAnnotatedCommit);
+    expect(res.value).not.toBe(fixture.multiAnnotatedTagObject);
   });
 
   test('a null ref resolves HEAD to multiHead', async () => {
