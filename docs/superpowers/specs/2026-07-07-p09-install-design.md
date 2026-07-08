@@ -311,7 +311,7 @@ is removed on success **and** failure of its source (F1); a crash orphan is recl
 git init -q <fetchDir>
 git -C <fetchDir> remote add origin <cloneUrl>
 git -C <fetchDir> fetch -q --filter=blob:none --depth 1 origin <ref>   # <ref> = branch|tag|full SHA|HEAD
-sha=$(git -C <fetchDir> rev-parse FETCH_HEAD)                          # ref → full 40-hex SHA
+sha=$(git -C <fetchDir> rev-parse "FETCH_HEAD^{commit}")               # ref → full 40-hex COMMIT SHA (peeled)
 git -C <fetchDir> ls-tree -r --name-only FETCH_HEAD                    # tree listing, NO blobs (D3 scan)
 # after the selector picks exactly one skill path:
 git -C <fetchDir> sparse-checkout set --cone <skillDir>                # ('' / no-op for a root skill)
@@ -322,6 +322,17 @@ git -C <fetchDir> checkout -q --detach FETCH_HEAD                      # blobs f
   (GitHub/GitLab permit reachable-SHA fetch); short SHAs are rejected at parse-adjacent validation
   ("use a full 40-hex SHA, a tag, or a branch") — they cannot be resolved remotely without
   fetching history.
+- **Annotated-tag peeling (amended at design gate — resolves the §7.1/§7.2 identity contract):**
+  `<ref>` may name an **annotated** tag (GitHub Releases create these), whose object SHA is a
+  tag-wrapper distinct from its commit. The resolved `sha` MUST be the underlying **commit** SHA —
+  `rev-parse "FETCH_HEAD^{commit}"` peels it — so install's `gitSha` / store rev has the identical
+  commit-SHA semantics as `place/store.ts`'s `git rev-parse HEAD` (P12/promote). Without the peel,
+  an annotated tag and its commit would mint distinct store entries (breaking §7.1 reuse and §6.4
+  elision) and the recorded/printed `gitSha` would be a wrapper hash absent from `git log`/GitHub.
+  The requested ref string itself is retained verbatim in the ledger `origin.ref` (PRD F2 "ref
+  requested"), so the human-meaningful tag is never lost. The no-clone path (§6.4) peels the same
+  way: `ls-remote` emits a `refs/tags/<ref>^{}` dereference line for annotated tags — prefer it
+  when present.
 - Any non-zero git exit in this sequence → `source-unresolvable` (exit 5) with the git stderr tail;
   by construction no store/placement/ledger write has happened for this source — never a
   half-install (F1). Offline behavior is deterministic: the first `fetch` fails the same way every
@@ -342,7 +353,8 @@ race practically impossible.
 ### 6.4 Fetch elision (offline reinstall)
 
 When the ref resolves to a SHA **without a clone** — the ref is a literal 40-hex SHA, or
-`git ls-remote <cloneUrl> <ref>` returns it — and the store already holds
+`git ls-remote <cloneUrl> <ref>` returns it (preferring the `refs/tags/<ref>^{}` dereference line
+for an annotated tag, so the elided SHA is the commit SHA, per §6.2) — and the store already holds
 `<ns>/<name>@<sha12>/<skill>`, the clone is skipped entirely: verify and placement run against the
 store entry (content-hash-guaranteed identical to what a fetch would produce). Elision is
 permitted only when the skill path is already known without a tree scan — an explicit `//path`
