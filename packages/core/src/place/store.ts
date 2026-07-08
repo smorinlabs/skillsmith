@@ -89,6 +89,29 @@ export const contentHashOf = async (
   }
 };
 
+const sanitizeSeg = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, '-');
+
+/** Clamp a '/'-joined repo path to the frozen 2-segment store namespace (spec §7.2 / R7).
+ *  ns = sanitize(first segment); name = sanitize(remaining segments joined with '-').
+ *  sanitize: strip a trailing '.git' first, then replace every char outside [A-Za-z0-9._-]
+ *  with '-'. 'acme/platform/tools' → { ns: 'acme', name: 'platform-tools' }.
+ *
+ *  Collision note: a clamped subgroup (e.g. 'acme/platform-tools') and a real repo of that
+ *  same clamped name can only collide at an identical '@<sha12>' store path, at which point
+ *  the store's existing content-hash integrity check either reuses (identical content) or
+ *  fails loudly (mismatched content) — no extra handling is needed here. */
+export const clampStoreNs = (repoPath: string): { ns: string; name: string } => {
+  const segments = repoPath.split('/').filter((s) => s.length > 0);
+  const lastIdx = segments.length - 1;
+  const stripped = segments.map((seg, i) => (i === lastIdx ? seg.replace(/\.git$/, '') : seg));
+  if (stripped.length <= 1) {
+    const seg = sanitizeSeg(stripped[0] ?? '');
+    return { ns: seg, name: seg };
+  }
+  const [first, ...rest] = stripped;
+  return { ns: sanitizeSeg(first ?? ''), name: rest.map(sanitizeSeg).join('-') };
+};
+
 const parseRemote = (url: string): { owner: string; repo: string } | null => {
   const trimmed = url.trim();
   const stripGit = (s: string): string => s.replace(/\.git$/, '');
@@ -145,6 +168,8 @@ export const resolveProvenance = async (
 
   const remoteRes = await env.exec('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']);
   const parsed = remoteRes.code === 0 ? parseRemote(remoteRes.stdout) : null;
+  // remote stays unclamped (full provenance); only the store namespace is clamped to 2 segments.
+  const clamped = parsed ? clampStoreNs(`${parsed.owner}/${parsed.repo}`) : null;
 
   // git's --show-toplevel is a realpath; resolve the source too so `relative` stays clean
   // across symlinked prefixes (e.g. macOS /var -> /private/var temp dirs).
@@ -161,8 +186,8 @@ export const resolveProvenance = async (
     sourceRelPath: relative(repoRoot, realSource),
     remote: parsed ? `${parsed.owner}/${parsed.repo}` : null,
     gitSha,
-    ns: parsed ? parsed.owner : 'local',
-    name: parsed ? parsed.repo : basename(repoRoot),
+    ns: clamped ? clamped.ns : 'local',
+    name: clamped ? clamped.name : basename(repoRoot),
     dirtySummary,
   });
 };
