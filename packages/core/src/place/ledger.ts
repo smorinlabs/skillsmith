@@ -35,21 +35,39 @@ const PinnedRecordSchema = z.object({
   contentHash: z.string(),
   snapshotAt: z.string(),
   verify: z.enum(['passed', 'warned', 'skipped']),
+  placement: z.enum(['symlink', 'copy']).optional(),
+});
+
+const OriginRecordSchema = z.object({
+  source: z.string(),
+  host: z.string(),
+  repo: z.string(),
+  skillPath: z.string(),
+  refRequested: z.string().nullable(),
+  refResolved: z.string(),
+  pin: z.boolean(),
+  installedAt: z.string(),
 });
 
 const JournalSchema = z.object({
-  op: z.enum(['promote', 'dev', 'rollback']),
+  op: z.enum(['promote', 'dev', 'rollback', 'install', 'uninstall']),
   txId: z.string(),
   phase: z.enum(['prepared', 'staged', 'backed-up', 'live', 'committed']),
   startedAt: z.string(),
   completedAt: z.string().nullable(),
   before: z.union([
-    z.object({ mode: z.literal('dev'), symlinkTarget: z.string() }),
+    z.object({
+      mode: z.literal('dev'),
+      symlinkTarget: z.string(),
+      liveKind: z.enum(['symlink', 'dir']).optional(),
+    }),
     z.object({
       mode: z.literal('pinned'),
       storePath: z.string().nullable(),
       contentHash: z.string().nullable(),
+      liveKind: z.enum(['symlink', 'dir']).optional(),
     }),
+    z.object({ mode: z.literal('absent') }),
   ]),
   stagingPath: z.string(),
   backupPath: z.string(),
@@ -60,14 +78,21 @@ const PairRecordSchema = z.object({
   mode: z.enum(['dev', 'pinned']),
   dev: DevRecordSchema.nullable(),
   pinned: PinnedRecordSchema.nullable(),
+  origin: OriginRecordSchema.optional(),
   journal: JournalSchema.nullable(),
 });
+
+const SkillsTreeSchema = z.record(
+  z.string(),
+  z.object({ tools: z.record(z.enum(FLIP_TOOLS), PairRecordSchema) }),
+);
 
 const LedgerSchema = z.object({
   schemaVersion: z.literal(1),
   kind: z.literal('skillsmith.placements'),
   updatedAt: z.string(),
-  skills: z.record(z.string(), z.object({ tools: z.record(z.enum(FLIP_TOOLS), PairRecordSchema) })),
+  skills: SkillsTreeSchema,
+  projects: z.record(z.string(), z.object({ skills: SkillsTreeSchema })).optional(),
 });
 
 export const emptyLedger = (now: string): LedgerFile => ({
@@ -165,14 +190,69 @@ export const withLedgerLock = async <T>(
   }
 };
 
-export const getPair = (l: LedgerFile, skill: string, tool: FlipTool): PairRecord | null => {
-  const entry = l.skills[skill];
-  if (!entry) return null;
-  return entry.tools[tool] ?? null;
+// scopeKey null → the user-scope `skills` tree; a string → `projects[scopeKey].skills`.
+type SkillsTree = LedgerFile['skills'];
+
+const skillsTreeAt = (l: LedgerFile, scopeKey: string | null): SkillsTree | null => {
+  if (scopeKey === null) return l.skills;
+  return l.projects?.[scopeKey]?.skills ?? null;
 };
 
-export const setPair = (l: LedgerFile, skill: string, tool: FlipTool, rec: PairRecord): void => {
-  const entry = l.skills[skill] ?? { tools: {} };
-  entry.tools[tool] = rec;
-  l.skills[skill] = entry;
+export const getPairAt = (
+  l: LedgerFile,
+  scopeKey: string | null,
+  skill: string,
+  tool: FlipTool,
+): PairRecord | null => {
+  const tree = skillsTreeAt(l, scopeKey);
+  return tree?.[skill]?.tools[tool] ?? null;
 };
+
+export const setPairAt = (
+  l: LedgerFile,
+  scopeKey: string | null,
+  skill: string,
+  tool: FlipTool,
+  rec: PairRecord,
+): void => {
+  let tree: SkillsTree;
+  if (scopeKey === null) {
+    tree = l.skills;
+  } else {
+    const projects = l.projects ?? {};
+    const scope = projects[scopeKey] ?? { skills: {} };
+    projects[scopeKey] = scope;
+    l.projects = projects;
+    tree = scope.skills;
+  }
+  const entry = tree[skill] ?? { tools: {} };
+  entry.tools[tool] = rec;
+  tree[skill] = entry;
+};
+
+// Removes the pair and prunes any container it leaves empty (tools → skill → project → projects).
+export const deletePairAt = (
+  l: LedgerFile,
+  scopeKey: string | null,
+  skill: string,
+  tool: FlipTool,
+): void => {
+  const tree = skillsTreeAt(l, scopeKey);
+  const entry = tree?.[skill];
+  if (!tree || !entry) return;
+  delete entry.tools[tool];
+  if (Object.keys(entry.tools).length === 0) delete tree[skill];
+  if (scopeKey !== null && l.projects) {
+    const scope = l.projects[scopeKey];
+    if (scope && Object.keys(scope.skills).length === 0) delete l.projects[scopeKey];
+    // Drop the whole optional `projects` field when empty. `delete l.projects` trips
+    // lint/noDelete and `l.projects = undefined` trips exactOptionalPropertyTypes; Reflect avoids both.
+    if (Object.keys(l.projects).length === 0) Reflect.deleteProperty(l, 'projects');
+  }
+};
+
+export const getPair = (l: LedgerFile, skill: string, tool: FlipTool): PairRecord | null =>
+  getPairAt(l, null, skill, tool);
+
+export const setPair = (l: LedgerFile, skill: string, tool: FlipTool, rec: PairRecord): void =>
+  setPairAt(l, null, skill, tool, rec);

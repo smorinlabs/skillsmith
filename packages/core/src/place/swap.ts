@@ -1,5 +1,5 @@
 import { dirname, join } from 'node:path';
-import type { ScanEnv } from '../env/types.ts';
+import type { PathKind, ScanEnv } from '../env/types.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -9,12 +9,14 @@ import {
   permissionDeniedError,
 } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
-import { getPair } from './ledger.ts';
+import { deletePairAt, getPairAt, setPairAt } from './ledger.ts';
 import { contentHashOf } from './store.ts';
 import type {
   FlipTool,
   Journal,
+  JournalOp,
   JournalPhase,
+  LedgerFile,
   PairRecord,
   SwapCtx,
   SwapOutcome,
@@ -55,6 +57,8 @@ const guardFs = async (
 const stagingNameOf = (skill: string, txId: string): string =>
   `.skillsmith-staging-${skill}-${txId}`;
 const backupNameOf = (skill: string, txId: string): string => `.skillsmith-backup-${skill}-${txId}`;
+
+const kindOf = (probe: PathKind): 'symlink' | 'dir' => (probe === 'symlink' ? 'symlink' : 'dir');
 
 // Recursively fsync every regular file under a freshly copied staging tree (durability of P2).
 const fsyncTree = async (env: ScanEnv, dir: string): Promise<void> => {
@@ -114,6 +118,26 @@ const buildStaging = async (
       }
       return ok(undefined);
     }
+    if (plan.op === 'install') {
+      if (!plan.install) return err(genericError('install plan missing install payload'));
+      if (plan.install.build === 'symlink') {
+        await env.makeSymlink(plan.install.storePath, j.stagingPath);
+        return ok(undefined);
+      }
+      await env.copyTree(plan.install.storePath, j.stagingPath);
+      await fsyncTree(env, j.stagingPath);
+      const h = await contentHashOf(env, j.stagingPath);
+      if (!h.ok) return h;
+      if (h.value !== plan.install.contentHash) {
+        return err(
+          flipFailedError(
+            `staging hash mismatch for ${plan.skill}: expected ${plan.install.contentHash}`,
+          ),
+        );
+      }
+      return ok(undefined);
+    }
+    if (plan.op === 'uninstall') return ok(undefined); // no staging phase
     if (!plan.dev) return err(genericError('dev plan missing dev payload'));
     await env.makeSymlink(plan.dev.sourcePath, j.stagingPath);
     return ok(undefined);
@@ -122,9 +146,46 @@ const buildStaging = async (
   }
 };
 
+/** Reclaim a backup left by a two-rename swap. Symlink backups are always removed (the store
+ *  target they pointed at is never touched and remains recorded). A dir backup is removed only
+ *  when its content matches a store entry recorded on the pair (reproducible); an edited copy is
+ *  KEPT with a warning so an unmanaged edit is never silently destroyed. */
+const reclaimBackup = async (
+  env: ScanEnv,
+  backupPath: string,
+  acceptableHashes: readonly (string | null | undefined)[],
+  label: string,
+): Promise<Result<{ backupKept: string | null; warning: string | null }, SkillSmithError>> => {
+  try {
+    const kind = await env.pathKind(backupPath);
+    if (kind === 'absent') return ok({ backupKept: null, warning: null });
+    if (kind === 'symlink') {
+      await env.removeTree(backupPath);
+      return ok({ backupKept: null, warning: null });
+    }
+    const acceptable = acceptableHashes.filter(
+      (h): h is string => typeof h === 'string' && h.length > 0,
+    );
+    const h = await contentHashOf(env, backupPath);
+    if (!h.ok) return h;
+    if (acceptable.includes(h.value)) {
+      await env.removeTree(backupPath);
+      return ok({ backupKept: null, warning: null });
+    }
+    return ok({
+      backupKept: backupPath,
+      warning: `kept backup ${backupPath}: the ${label} copy was edited in place (hash mismatch)`,
+    });
+  } catch (e) {
+    return err(mapFsErr(e, `cannot reclaim backup ${backupPath}`));
+  }
+};
+
 // P5: write-ahead commit (durable committed journal) THEN reclaim the backup. Committing first
 // keeps the C5 rollback valid — the backup is the only physical copy of the old state and must
-// survive until the new live entry is recorded as committed.
+// survive until the new live entry is recorded as committed. Promote/dev leave the committed
+// journal at rest; acquisition ops (install/uninstall) finish with a terminal write that nulls the
+// journal (install) or deletes the pair (uninstall) so no committed acquisition journal survives.
 const commit = async (
   ctx: SwapCtx,
   plan: SwapPlan,
@@ -132,60 +193,120 @@ const commit = async (
   j: Journal,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
   const env = ctx.env;
+  const scopeKey = plan.scopeKey ?? null;
   try {
     await env.fsyncDir(plan.skillsRoot);
   } catch (e) {
     return err(mapFsErr(e, `cannot fsync ${plan.skillsRoot}`));
   }
 
-  if (plan.op === 'promote') {
-    if (!plan.promote) return err(genericError('promote plan missing promote payload'));
-    pair.mode = 'pinned';
-    pair.pinned = plan.promote.pinned;
-    pair.dev = plan.promote.devRecord;
-  } else {
-    if (!plan.dev) return err(genericError('dev plan missing dev payload'));
-    pair.mode = 'dev';
-    pair.dev = plan.dev.devRecord;
-  }
-  j.phase = 'committed';
-  j.completedAt = ctx.now();
-  const persisted = await ctx.persist();
-  if (!persisted.ok) return persisted;
+  if (plan.op === 'promote' || plan.op === 'dev') {
+    if (plan.op === 'promote') {
+      if (!plan.promote) return err(genericError('promote plan missing promote payload'));
+      pair.mode = 'pinned';
+      pair.pinned = plan.promote.pinned;
+      pair.dev = plan.promote.devRecord;
+    } else {
+      if (!plan.dev) return err(genericError('dev plan missing dev payload'));
+      pair.mode = 'dev';
+      pair.dev = plan.dev.devRecord;
+    }
+    j.phase = 'committed';
+    j.completedAt = ctx.now();
+    const persisted = await ctx.persist();
+    if (!persisted.ok) return persisted;
 
-  // Backup reclamation is authorized by the now-durable committed journal.
-  let backupKept: string | null = null;
-  let warning: string | null = null;
-  try {
-    if (plan.op === 'dev') {
-      const pinnedHash = pair.pinned?.contentHash ?? null;
-      if ((await env.pathKind(j.backupPath)) !== 'absent') {
-        if (pinnedHash === null) {
-          backupKept = j.backupPath;
-          warning = `kept backup ${j.backupPath}: no pinned record to verify the demoted copy`;
-        } else {
-          const h = await contentHashOf(env, j.backupPath);
-          if (!h.ok) return h;
-          if (h.value === pinnedHash) {
-            await env.removeTree(j.backupPath);
-          } else {
+    // Backup reclamation is authorized by the now-durable committed journal.
+    let backupKept: string | null = null;
+    let warning: string | null = null;
+    try {
+      if (plan.op === 'dev') {
+        const pinnedHash = pair.pinned?.contentHash ?? null;
+        if ((await env.pathKind(j.backupPath)) !== 'absent') {
+          if (pinnedHash === null) {
             backupKept = j.backupPath;
-            warning = `kept backup ${j.backupPath}: demoted copy was edited in place (hash mismatch)`;
+            warning = `kept backup ${j.backupPath}: no pinned record to verify the demoted copy`;
+          } else {
+            const h = await contentHashOf(env, j.backupPath);
+            if (!h.ok) return h;
+            if (h.value === pinnedHash) {
+              await env.removeTree(j.backupPath);
+            } else {
+              backupKept = j.backupPath;
+              warning = `kept backup ${j.backupPath}: demoted copy was edited in place (hash mismatch)`;
+            }
           }
         }
+      } else if ((await env.pathKind(j.backupPath)) !== 'absent') {
+        await env.removeTree(j.backupPath);
       }
-    } else if ((await env.pathKind(j.backupPath)) !== 'absent') {
-      await env.removeTree(j.backupPath);
+      await env.fsyncDir(plan.skillsRoot);
+    } catch (e) {
+      return err(mapFsErr(e, `cannot reclaim backup for ${plan.skill}`));
     }
-    await env.fsyncDir(plan.skillsRoot);
-  } catch (e) {
-    return err(mapFsErr(e, `cannot reclaim backup for ${plan.skill}`));
+    return ok({ committed: true, backupKept, warning });
   }
-  return ok({ committed: true, backupKept, warning });
+
+  if (plan.op === 'install') {
+    // The terminal records (mode 'pinned', pinned, origin, dev) were staged at P1. A fresh install
+    // (before absent) has no backup: a single terminal write nulls the journal. A replace install
+    // needs a write-ahead committed journal to authorize reclaiming the backup, then a terminal
+    // write to null the journal.
+    if (j.before.mode === 'absent') {
+      pair.journal = null;
+      const persisted = await ctx.persist();
+      if (!persisted.ok) return persisted;
+      return ok({ committed: true, backupKept: null, warning: null });
+    }
+    j.phase = 'committed';
+    j.completedAt = ctx.now();
+    const committed = await ctx.persist();
+    if (!committed.ok) return committed;
+
+    const oldHash = j.before.mode === 'pinned' ? j.before.contentHash : null;
+    const newHash = plan.install?.contentHash ?? pair.pinned?.contentHash ?? null;
+    const reclaimed = await reclaimBackup(env, j.backupPath, [newHash, oldHash], 'replaced');
+    if (!reclaimed.ok) return reclaimed;
+    const synced = await guardFs(
+      () => env.fsyncDir(plan.skillsRoot),
+      `cannot fsync ${plan.skillsRoot}`,
+    );
+    if (!synced.ok) return synced;
+
+    pair.journal = null;
+    const terminal = await ctx.persist();
+    if (!terminal.ok) return terminal;
+    return ok({ committed: true, ...reclaimed.value });
+  }
+
+  // op === 'uninstall'
+  j.phase = 'committed';
+  j.completedAt = ctx.now();
+  const committed = await ctx.persist();
+  if (!committed.ok) return committed;
+
+  const reclaimed = await reclaimBackup(
+    env,
+    j.backupPath,
+    [pair.pinned?.contentHash],
+    'uninstalled',
+  );
+  if (!reclaimed.ok) return reclaimed;
+  const synced = await guardFs(
+    () => env.fsyncDir(plan.skillsRoot),
+    `cannot fsync ${plan.skillsRoot}`,
+  );
+  if (!synced.ok) return synced;
+
+  deletePairAt(ctx.ledger, scopeKey, plan.skill, plan.tool);
+  const terminal = await ctx.persist();
+  if (!terminal.ok) return terminal;
+  return ok({ committed: true, ...reclaimed.value });
 };
 
 // Drive the swap forward from the journal's current phase to committed, probing the filesystem to
-// disambiguate the crash window (spec §8.4 right column). Idempotent per phase.
+// disambiguate the crash window (spec §8.4 right column). Idempotent per phase. Uninstall has no
+// staging (P2) and no publish (P4) — only the P3 backup rename and the P5 commit.
 const forward = async (
   ctx: SwapCtx,
   plan: SwapPlan,
@@ -196,9 +317,10 @@ const forward = async (
   const env = ctx.env;
   const live = plan.placementPath;
   const idx = (): number => PHASE_INDEX[j.phase];
+  const hasStaging = plan.op !== 'uninstall';
 
-  // P2 — build staging (journal at prepared).
-  if (idx() < PHASE_INDEX.staged) {
+  // P2 — build staging (journal at prepared). Skipped for uninstall.
+  if (hasStaging && idx() < PHASE_INDEX.staged) {
     if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
     if ((await env.pathKind(j.stagingPath)) !== 'absent') {
       const cleared = await guardFs(() => env.removeTree(j.stagingPath), 'clear staging remnant');
@@ -223,16 +345,19 @@ const forward = async (
     }
   }
 
-  // P4 — persist live, then rename(staging → live) if the live path is still absent.
-  if (idx() < PHASE_INDEX.live) {
-    const p = await advance(ctx, j, 'live');
-    if (!p.ok) return p;
-  }
-  if (idx() <= PHASE_INDEX.live) {
-    if ((await env.pathKind(live)) === 'absent') {
-      if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
-      const r = await guardFs(() => env.rename(j.stagingPath, live), `install ${plan.skill}`);
-      if (!r.ok) return r;
+  // P4 — persist live, then rename(staging → live) if the live path is still absent. Skipped for
+  // uninstall (nothing is published).
+  if (hasStaging) {
+    if (idx() < PHASE_INDEX.live) {
+      const p = await advance(ctx, j, 'live');
+      if (!p.ok) return p;
+    }
+    if (idx() <= PHASE_INDEX.live) {
+      if ((await env.pathKind(live)) === 'absent') {
+        if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
+        const r = await guardFs(() => env.rename(j.stagingPath, live), `install ${plan.skill}`);
+        if (!r.ok) return r;
+      }
     }
   }
 
@@ -241,10 +366,129 @@ const forward = async (
   return commit(ctx, plan, pair, j);
 };
 
-const refusedMessage = (op: string, skill: string): string =>
-  `a previous ${op} of ${skill} was interrupted. ` +
-  `Run 'skillsmith ${op} --rollback ${skill}' to restore the previous state, ` +
-  `or re-run 'skillsmith ${op} ${skill}' to complete the swap.`;
+const refusedMessage = (op: JournalOp, skill: string, source?: string): string => {
+  if (op === 'install') {
+    return (
+      `a previous install of ${skill} was interrupted. ` +
+      `Run 'skillsmith promote --rollback ${skill}' (or 'skillsmith dev --rollback ${skill}') ` +
+      `to restore the previous state, or re-run 'skillsmith install ${source ?? skill}' to complete it.`
+    );
+  }
+  if (op === 'uninstall') {
+    return (
+      `a previous uninstall of ${skill} was interrupted. ` +
+      `Run 'skillsmith promote --rollback ${skill}' (or 'skillsmith dev --rollback ${skill}') ` +
+      `to restore the previous state, or re-run 'skillsmith uninstall ${skill}' to complete it.`
+    );
+  }
+  return (
+    `a previous ${op} of ${skill} was interrupted. ` +
+    `Run 'skillsmith ${op} --rollback ${skill}' to restore the previous state, ` +
+    `or re-run 'skillsmith ${op} ${skill}' to complete the swap.`
+  );
+};
+
+// Compute the journal `before` record (the pre-swap live state) for a fresh swap.
+const computeBefore = async (
+  ctx: SwapCtx,
+  plan: SwapPlan,
+  existing: PairRecord | null,
+  liveKind: PathKind,
+): Promise<Result<Journal['before'], SkillSmithError>> => {
+  const readLive = async (): Promise<Result<string, SkillSmithError>> => {
+    try {
+      return ok(await ctx.env.readLink(plan.placementPath));
+    } catch (e) {
+      return err(mapFsErr(e, `cannot read live symlink for ${plan.skill}`));
+    }
+  };
+
+  if (plan.op === 'promote') {
+    const t = await readLive();
+    if (!t.ok) return t;
+    return ok({ mode: 'dev', symlinkTarget: t.value, liveKind: kindOf(liveKind) });
+  }
+  if (plan.op === 'dev') {
+    return ok({
+      mode: 'pinned',
+      storePath: existing?.pinned?.storePath ?? null,
+      contentHash: existing?.pinned?.contentHash ?? null,
+      liveKind: kindOf(liveKind),
+    });
+  }
+  if (plan.op === 'install') {
+    if (liveKind === 'absent') {
+      // Fresh install. The run layer routes any pair holding prior records through the replace
+      // path, so a fresh install must land on a genuinely empty slot.
+      if (existing?.pinned || existing?.dev) {
+        return err(
+          genericError(
+            `fresh install precondition violated for ${plan.skill}: pair holds prior records`,
+          ),
+        );
+      }
+      return ok({ mode: 'absent' });
+    }
+    if (plan.install?.adoptedDev) {
+      const t = await readLive();
+      if (!t.ok) return t;
+      return ok({ mode: 'dev', symlinkTarget: t.value, liveKind: 'symlink' });
+    }
+    return ok({
+      mode: 'pinned',
+      storePath: existing?.pinned?.storePath ?? null,
+      contentHash: existing?.pinned?.contentHash ?? null,
+      liveKind: kindOf(liveKind),
+    });
+  }
+  // op === 'uninstall'
+  if (!existing) return err(genericError(`cannot uninstall ${plan.skill}: no pair record`));
+  if (existing.mode === 'dev') {
+    const t = await readLive();
+    if (!t.ok) return t;
+    return ok({ mode: 'dev', symlinkTarget: t.value, liveKind: kindOf(liveKind) });
+  }
+  return ok({
+    mode: 'pinned',
+    storePath: existing.pinned?.storePath ?? null,
+    contentHash: existing.pinned?.contentHash ?? null,
+    liveKind: kindOf(liveKind),
+  });
+};
+
+// Build the pair record to stage behind the uncommitted journal at P1.
+const stagePair = (
+  plan: SwapPlan,
+  existing: PairRecord | null,
+  before: Journal['before'],
+  journal: Journal,
+): Result<PairRecord, SkillSmithError> => {
+  if (plan.op === 'install') {
+    if (!plan.install) return err(genericError('install plan missing install payload'));
+    return ok({
+      placementPath: plan.placementPath,
+      mode: 'pinned',
+      dev: plan.install.adoptedDev ?? existing?.dev ?? null,
+      pinned: plan.install.pinned,
+      origin: plan.install.origin,
+      journal,
+    });
+  }
+  if (plan.op === 'uninstall') {
+    if (!existing) return err(genericError(`cannot uninstall ${plan.skill}: no pair record`));
+    return ok({ ...existing, journal });
+  }
+  // promote / dev — mode stays the before-mode until P5 (P12 shape, unchanged).
+  const mode = before.mode === 'dev' ? 'dev' : 'pinned';
+  return ok({
+    placementPath: plan.placementPath,
+    mode,
+    dev: plan.op === 'promote' ? (plan.promote?.devRecord ?? null) : (plan.dev?.devRecord ?? null),
+    pinned: plan.op === 'promote' ? (plan.promote?.pinned ?? null) : (existing?.pinned ?? null),
+    ...(existing?.origin ? { origin: existing.origin } : {}),
+    journal,
+  });
+};
 
 /** Start a fresh journaled swap. Refuses (flip-refused) when the pair carries an uncommitted
  *  journal — the caller must rollback or resume it first (Global Constraint 6). */
@@ -252,29 +496,26 @@ export const runSwap = async (
   ctx: SwapCtx,
   plan: SwapPlan,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
-  const existing = getPair(ctx.ledger, plan.skill, plan.tool);
+  const scopeKey = plan.scopeKey ?? null;
+  const existing = getPairAt(ctx.ledger, scopeKey, plan.skill, plan.tool);
   if (existing?.journal && existing.journal.phase !== 'committed') {
-    return err(flipRefusedError(refusedMessage(existing.journal.op, plan.skill)));
+    return err(
+      flipRefusedError(
+        refusedMessage(existing.journal.op, plan.skill, plan.install?.origin.source),
+      ),
+    );
   }
 
-  let before: Journal['before'];
-  if (plan.op === 'promote') {
-    if (!plan.promote) return err(genericError('promote plan missing promote payload'));
-    let symlinkTarget: string;
-    try {
-      symlinkTarget = await ctx.env.readLink(plan.placementPath);
-    } catch (e) {
-      return err(mapFsErr(e, `cannot read live symlink for ${plan.skill}`));
-    }
-    before = { mode: 'dev', symlinkTarget };
-  } else {
-    if (!plan.dev) return err(genericError('dev plan missing dev payload'));
-    before = {
-      mode: 'pinned',
-      storePath: existing?.pinned?.storePath ?? null,
-      contentHash: existing?.pinned?.contentHash ?? null,
-    };
+  let liveKind: PathKind;
+  try {
+    liveKind = await ctx.env.pathKind(plan.placementPath);
+  } catch (e) {
+    return err(mapFsErr(e, `cannot probe live path for ${plan.skill}`));
   }
+
+  const beforeRes = await computeBefore(ctx, plan, existing, liveKind);
+  if (!beforeRes.ok) return beforeRes;
+  const before = beforeRes.value;
 
   const txId = ctx.newTxId();
   const journal: Journal = {
@@ -288,18 +529,10 @@ export const runSwap = async (
     backupPath: join(plan.skillsRoot, backupNameOf(plan.skill, txId)),
   };
 
-  // Stage the target records behind the uncommitted journal so a same-op resume can reconstruct
-  // the plan from the ledger alone (resumeSwap takes no plan). mode is unchanged until P5.
-  const pair: PairRecord = {
-    placementPath: plan.placementPath,
-    mode: before.mode,
-    dev: plan.op === 'promote' ? (plan.promote?.devRecord ?? null) : (plan.dev?.devRecord ?? null),
-    pinned: plan.op === 'promote' ? (plan.promote?.pinned ?? null) : (existing?.pinned ?? null),
-    journal,
-  };
-  const entry = ctx.ledger.skills[plan.skill] ?? { tools: {} };
-  entry.tools[plan.tool] = pair;
-  ctx.ledger.skills[plan.skill] = entry;
+  const pairRes = stagePair(plan, existing, before, journal);
+  if (!pairRes.ok) return pairRes;
+  const pair = pairRes.value;
+  setPairAt(ctx.ledger, scopeKey, plan.skill, plan.tool, pair);
 
   const p1 = await ctx.persist();
   if (!p1.ok) return p1;
@@ -313,12 +546,14 @@ const reconstructPlan = (
   j: Journal,
   skill: string,
   tool: FlipTool,
+  scopeKey: string | null,
 ): Result<SwapPlan, SkillSmithError> => {
   const base = {
     skill,
     tool,
     skillsRoot: dirname(pair.placementPath),
     placementPath: pair.placementPath,
+    scopeKey,
   };
   if (j.op === 'promote') {
     if (!pair.pinned) return err(genericError(`cannot resume promote of ${skill}: pinned missing`));
@@ -342,45 +577,97 @@ const reconstructPlan = (
       dev: { sourcePath: pair.dev.sourcePath, devRecord: pair.dev },
     });
   }
+  if (j.op === 'install') {
+    if (!pair.pinned) return err(genericError(`cannot resume install of ${skill}: pinned missing`));
+    if (!pair.origin) return err(genericError(`cannot resume install of ${skill}: origin missing`));
+    return ok({
+      ...base,
+      op: 'install',
+      install: {
+        build: pair.pinned.placement === 'symlink' ? 'symlink' : 'copy',
+        storePath: pair.pinned.storePath,
+        contentHash: pair.pinned.contentHash,
+        pinned: pair.pinned,
+        origin: pair.origin,
+        adoptedDev: pair.dev,
+      },
+    });
+  }
+  if (j.op === 'uninstall') {
+    return ok({ ...base, op: 'uninstall' });
+  }
   return err(genericError(`cannot resume journal op '${j.op}' for ${skill}`));
 };
 
 /** Same-op re-run continuation (spec §8.4 right column). Reconstructs the plan from the ledger and
- *  drives the journal forward to committed; a committed journal only reclaims residue.
+ *  drives the journal forward to committed; a committed journal only reclaims residue and finishes
+ *  the terminal transition.
  *  Warning: called on an already-`committed` journal, this still returns `ok({committed: true})` —
- *  that means "residue reclaimed", never "this call just performed the flip"; callers must not
+ *  that means "residue reclaimed", never "this call just performed the swap"; callers must not
  *  count it as a fresh success. */
 export const resumeSwap = async (
   ctx: SwapCtx,
   skill: string,
   tool: FlipTool,
+  scopeKey: string | null = null,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
-  const pair = getPair(ctx.ledger, skill, tool);
+  const pair = getPairAt(ctx.ledger, scopeKey, skill, tool);
   const j = pair?.journal ?? null;
   if (!pair || !j) return err(flipRefusedError(`nothing to resume for ${skill}`));
-  const plan = reconstructPlan(pair, j, skill, tool);
+  const plan = reconstructPlan(pair, j, skill, tool, scopeKey);
   if (!plan.ok) return plan;
   return forward(ctx, plan.value, pair);
 };
 
 /** Uncommitted-journal recovery (spec §8.4 --rollback column). Restores the before-state with at
- *  most two renames and clears the journal. Committed journals are refused — the run layer performs
- *  the inverse flip via the retained records. */
+ *  most two renames and clears the journal. A committed promote/dev/install is refused — the run
+ *  layer performs the inverse via the retained records. A committed uninstall is still reversible
+ *  while its backup survives (rename it back); once reclaimed it is terminal. A fresh install
+ *  (before absent) rolls back to "nothing there": the new artifact and pair record are removed. */
 export const rollbackSwap = async (
   ctx: SwapCtx,
   skill: string,
   tool: FlipTool,
+  scopeKey: string | null = null,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
-  const pair = getPair(ctx.ledger, skill, tool);
+  const pair = getPairAt(ctx.ledger, scopeKey, skill, tool);
   const j = pair?.journal ?? null;
   if (!pair || !j) return err(flipRefusedError(`nothing to roll back for ${skill}`));
-  if (j.phase === 'committed') {
-    return err(flipRefusedError(`cannot roll back a committed ${j.op} of ${skill}`));
-  }
 
   const env = ctx.env;
   const live = pair.placementPath;
-  const oldKind = j.before.mode === 'dev' ? 'symlink' : 'dir';
+  const before = j.before;
+
+  if (j.phase === 'committed') {
+    if (j.op === 'uninstall' && (await env.pathKind(j.backupPath)) !== 'absent') {
+      try {
+        if ((await env.pathKind(live)) === 'absent') await env.rename(j.backupPath, live);
+      } catch (e) {
+        return err(mapFsErr(e, `cannot roll back ${skill}`));
+      }
+      pair.journal = null;
+      const persisted = await ctx.persist();
+      if (!persisted.ok) return persisted;
+      return ok({ committed: false, backupKept: null, warning: null });
+    }
+    return err(flipRefusedError(`cannot roll back a committed ${j.op} of ${skill}`));
+  }
+
+  // Fresh install: the only live entry that can exist is the new artifact. Restore "nothing there".
+  if (before.mode === 'absent') {
+    try {
+      if ((await env.pathKind(live)) !== 'absent') await env.removeTree(live);
+      if ((await env.pathKind(j.stagingPath)) !== 'absent') await env.removeTree(j.stagingPath);
+    } catch (e) {
+      return err(mapFsErr(e, `cannot roll back ${skill}`));
+    }
+    deletePairAt(ctx.ledger, scopeKey, skill, tool);
+    const persisted = await ctx.persist();
+    if (!persisted.ok) return persisted;
+    return ok({ committed: false, backupKept: null, warning: null });
+  }
+
+  const oldKind = before.liveKind ?? (before.mode === 'dev' ? 'symlink' : 'dir');
   try {
     const liveKind = await env.pathKind(live);
     if (liveKind === 'absent') {
@@ -402,9 +689,53 @@ export const rollbackSwap = async (
     return err(mapFsErr(e, `cannot roll back ${skill}`));
   }
 
-  pair.mode = j.before.mode;
+  pair.mode = before.mode;
   pair.journal = null;
   const persisted = await ctx.persist();
   if (!persisted.ok) return persisted;
   return ok({ committed: false, backupKept: null, warning: null });
+};
+
+/** §8.5: finish any committed acquisition journal left by a crash between the committed write and
+ *  the terminal write. Walks the user `skills` tree AND every `projects` subtree. Runs at the start
+ *  of every locked batch (install, uninstall, promote, dev, rollback). Idempotent. */
+export const sweepCommittedAcquireJournals = async (
+  ctx: SwapCtx,
+): Promise<Result<string[], SkillSmithError>> => {
+  type Target = { scopeKey: string | null; skill: string; tool: FlipTool };
+  const targets: Target[] = [];
+
+  const collect = (tree: LedgerFile['skills'], scopeKey: string | null): void => {
+    for (const skill of Object.keys(tree)) {
+      const entry = tree[skill];
+      if (!entry) continue;
+      for (const tool of Object.keys(entry.tools) as FlipTool[]) {
+        const j = entry.tools[tool]?.journal;
+        if (j && j.phase === 'committed' && (j.op === 'install' || j.op === 'uninstall')) {
+          targets.push({ scopeKey, skill, tool });
+        }
+      }
+    }
+  };
+
+  collect(ctx.ledger.skills, null);
+  if (ctx.ledger.projects) {
+    for (const key of Object.keys(ctx.ledger.projects)) {
+      const scope = ctx.ledger.projects[key];
+      if (scope) collect(scope.skills, key);
+    }
+  }
+
+  const notes: string[] = [];
+  for (const t of targets) {
+    const pair = getPairAt(ctx.ledger, t.scopeKey, t.skill, t.tool);
+    const j = pair?.journal ?? null;
+    if (!pair || !j) continue;
+    const plan = reconstructPlan(pair, j, t.skill, t.tool, t.scopeKey);
+    if (!plan.ok) return plan;
+    const done = await forward(ctx, plan.value, pair);
+    if (!done.ok) return done;
+    if (done.value.warning) notes.push(done.value.warning);
+  }
+  return ok(notes);
 };

@@ -15,7 +15,7 @@ import { getPair, readLedger, withLedgerLock, writeLedger } from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
 import { type PairPlan, planFlips } from './plan.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore, sweepStaging } from './store.ts';
-import { resumeSwap, rollbackSwap, runSwap } from './swap.ts';
+import { resumeSwap, rollbackSwap, runSwap, sweepCommittedAcquireJournals } from './swap.ts';
 import {
   type DevRecord,
   FLIP_TOOLS,
@@ -891,6 +891,13 @@ const runFlipBatch = async (
       if (!ledgerRes.ok) return ledgerRes;
       let ledger = ledgerRes.value;
 
+      // §8.5 hygiene: finish any committed install/uninstall left mid-terminal by a crash. Notes
+      // are not surfaced by flips; a sweep failure aborts the batch (recovery must complete first).
+      const swept = await sweepCommittedAcquireJournals(
+        makeSwapCtx(env, ledgerPath, ledger, deps, opts),
+      );
+      if (!swept.ok) return err(midSwapError(swept.error));
+
       const planRes = await planFlips(env, { ...opts, op }, storeRoot, ledger);
       if (!planRes.ok) return planRes;
       const { pairs, preResults } = planRes.value;
@@ -967,6 +974,12 @@ export const runRollback = async (
       const ledgerRes = await readLedger(env, ledgerPath);
       if (!ledgerRes.ok) return ledgerRes;
       let ledger = ledgerRes.value;
+
+      // §8.5 hygiene: finish any committed install/uninstall left mid-terminal by a crash.
+      const swept = await sweepCommittedAcquireJournals(
+        makeSwapCtx(env, ledgerPath, ledger, deps, opts),
+      );
+      if (!swept.ok) return err(midSwapError(swept.error));
 
       const planRes = await planFlips(env, opts, storeRoot, ledger);
       if (!planRes.ok) return planRes;
