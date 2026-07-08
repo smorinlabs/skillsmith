@@ -257,7 +257,19 @@ const runPromotePair = async (
   let resolvedSourceDir: string;
   let isReplace = false;
 
-  if (placement.class === 'pinned') {
+  if (placement.class === 'store-linked') {
+    // D9: a hand-made symlink into the store with no ledger pair at all is unmanageable —
+    // reinstall is the only way back to a known state (P12 behavior for every OTHER unmanaged
+    // placement kind never applied here since store-linked was previously unreachable).
+    if (!existing) {
+      const reason = "managed state missing; reinstall with 'skillsmith install --force'";
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    if (!existing.dev) return noopResult(base, 'already pinned; no dev source recorded');
+    devRecord = existing.dev;
+    resolvedSourceDir = existing.dev.resolvedPath;
+    isReplace = true;
+  } else if (placement.class === 'pinned') {
     if (!existing?.dev) return noopResult(base, 'already pinned; no dev source recorded');
     devRecord = existing.dev;
     resolvedSourceDir = existing.dev.resolvedPath;
@@ -285,6 +297,14 @@ const runPromotePair = async (
       recordedAt: deps.now(),
     };
   }
+
+  // D9 re-pin (the heart of D9): a symlink-placement pinned record with a retained origin means
+  // the FINAL swap must re-create a store symlink, not a copy — whether reached via the
+  // store-linked convergence above, or via a plain promote of a dev symlink whose pair still
+  // carries that record (the install -> `dev --source` -> promote loop, PRD scenario 4). The
+  // latter is itself a replace (there is a previous rev to converge against), not a fresh flip.
+  const symlinkRepin = existing?.pinned?.placement === 'symlink' && existing?.origin !== undefined;
+  if (symlinkRepin) isReplace = true;
 
   const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts);
   if (gate.blocked) {
@@ -334,6 +354,75 @@ const runPromotePair = async (
     if (existing?.pinned && currentRevRes.value === existing.pinned.rev) {
       const reason = notesAcc.length > 0 ? notesAcc.join('; ') : 'already pinned; source unchanged';
       return noopResult(base, reason);
+    }
+
+    if (symlinkRepin) {
+      const repinOrigin = existing?.origin;
+      if (!repinOrigin)
+        return failedResult(base, genericError('symlink re-pin missing origin record'));
+
+      const dataDir = resolveDataDir(env, opts.envVars);
+      const txId = deps.newTxId();
+      const snapRes = await snapshotToStore(env, {
+        sourceDir: resolvedSourceDir,
+        skill,
+        storeRoot: storeRootOf(dataDir),
+        provenance,
+        txId,
+      });
+      if (!snapRes.ok) return failedResult(base, snapRes.error);
+      const snap = snapRes.value;
+
+      const pinned: PinnedRecord = {
+        storePath: snap.storePath,
+        rev: snap.rev,
+        gitSha: provenance.gitSha,
+        dirty: provenance.kind === 'git-dirty',
+        contentHash: snap.contentHash,
+        snapshotAt: deps.now(),
+        verify: ledgerVerifyOf(gate.gate),
+        placement: 'symlink',
+      };
+
+      // `adoptedDev` tells the engine the PRE-swap live symlink pointed outside the store (governs
+      // its before-state classification): true when we got here via a dev-class placement (the
+      // live entry there IS a genuine dev symlink); false for a store-linked convergence (the live
+      // entry there already points inside the store).
+      const installPlan: SwapPlan = {
+        op: 'install',
+        skill,
+        tool,
+        skillsRoot: dirname(placement.path),
+        placementPath: placement.path,
+        install: {
+          build: 'symlink',
+          storePath: snap.storePath,
+          contentHash: snap.contentHash,
+          pinned,
+          origin: repinOrigin,
+          adoptedDev: placement.class === 'dev' ? devRecord : null,
+        },
+      };
+      const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
+      const swapRes = await runSwap(swapCtx, installPlan);
+      if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
+      if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
+
+      return {
+        ...base,
+        action: 'updated',
+        reason: notesAcc.length > 0 ? notesAcc.join('; ') : null,
+        before: { mode: 'pinned', storePath: existing?.pinned?.storePath ?? null },
+        after: { mode: 'pinned', storePath: snap.storePath },
+        store: {
+          path: snap.storePath,
+          rev: snap.rev,
+          gitSha: provenance.gitSha,
+          dirty: provenance.kind === 'git-dirty',
+          reused: snap.reused,
+        },
+        verify: { gate: gate.gate, verdict: gate.verdict },
+      };
     }
 
     // Re-pin (source moved): swap.ts's 'promote' op always reads the live entry as a symlink, so
@@ -467,6 +556,12 @@ const runDevPair = async (
     resolve(opts.cwd, opts.source) !== resolve(opts.cwd, recordedSource);
 
   if (source === null) {
+    // D9: a recordless store-linked placement (hand-made symlink into the store) has no dev
+    // history to point at — the reinstall guidance applies, not the generic --source hint.
+    if (placement.class === 'store-linked' && !existing) {
+      const reason = "managed state missing; reinstall with 'skillsmith install --force'";
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
     if (opts.all) {
       return {
         ...base,
@@ -716,6 +811,35 @@ const predictPair = async (
   }
 
   if (op === 'promote') {
+    if (placement.class === 'store-linked') {
+      if (!existing) {
+        const reason = "managed state missing; reinstall with 'skillsmith install --force'";
+        return refusedResult(base, reason, flipRefusedError(reason));
+      }
+      if (!existing.dev) return noopResult(base, 'already pinned; no dev source recorded');
+      const provRes = await resolveProvenance(env, existing.dev.resolvedPath);
+      if (!provRes.ok) return failedResult(base, provRes.error);
+      const provenance = provRes.value;
+      if (provenance.kind === 'git-dirty' && !opts.allowDirty) {
+        const reason = `refusing to promote '${skill}': the source tree is dirty`;
+        return refusedResult(base, reason, flipRefusedError(reason));
+      }
+      const revRes = await computeRevPreview(env, provenance, existing.dev.resolvedPath);
+      if (!revRes.ok) return failedResult(base, revRes.error);
+      if (existing.pinned && revRes.value === existing.pinned.rev) {
+        return noopResult(base, 'already pinned; source unchanged');
+      }
+      return {
+        ...base,
+        action: 'updated',
+        reason: null,
+        before: null,
+        after: null,
+        store: null,
+        verify: null,
+      };
+    }
+
     if (placement.class === 'pinned') {
       if (!existing?.dev) return noopResult(base, 'already pinned; no dev source recorded');
       const provRes = await resolveProvenance(env, existing.dev.resolvedPath);
@@ -760,6 +884,26 @@ const predictPair = async (
       const reason = `refusing to promote '${skill}': the source tree is dirty`;
       return refusedResult(base, reason, flipRefusedError(reason));
     }
+
+    // D9: mirror runPromotePair's re-pin convergence for a dev symlink whose pair still carries a
+    // symlink-placement pinned record + origin (install -> `dev --source` -> promote loop).
+    if (existing?.pinned?.placement === 'symlink' && existing?.origin !== undefined) {
+      const revRes = await computeRevPreview(env, provRes.value, resolvedTarget);
+      if (!revRes.ok) return failedResult(base, revRes.error);
+      if (existing.pinned && revRes.value === existing.pinned.rev) {
+        return noopResult(base, 'already pinned; source unchanged');
+      }
+      return {
+        ...base,
+        action: 'updated',
+        reason: null,
+        before: null,
+        after: null,
+        store: null,
+        verify: null,
+      };
+    }
+
     return {
       ...base,
       action: 'flipped',
@@ -777,6 +921,10 @@ const predictPair = async (
   const recordedSource = existing?.dev?.sourcePath ?? null;
   const source = opts.source ?? recordedSource;
   if (source === null) {
+    if (placement.class === 'store-linked' && !existing) {
+      const reason = "managed state missing; reinstall with 'skillsmith install --force'";
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
     if (opts.all) {
       return {
         ...base,

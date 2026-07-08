@@ -63,6 +63,19 @@ const isPathTarget = (target: string): boolean => target.includes('/') || isAbso
 
 const isFlippableClass = (cls: PlacementClass): boolean => cls === 'dev' || cls === 'pinned';
 
+/** D9: a `store-linked` placement (a symlink into the store) is never in `--all` sets, but for a
+ *  named/path target it surfaces into the plan so the run layer can converge/re-pin/flip it per
+ *  its ledger record — the run layer refuses a recordless one with reinstall guidance. Named-target
+ *  resolution keeps ONE exception: with an EXPLICIT `--tool`, a store-linked placement carrying no
+ *  ledger record stays a plan-level "not flippable" preResult (P12 shape), just reworded — it is
+ *  not routed to the run layer in that narrower case. */
+const isStoreLinkedFlippableFor = (
+  ledger: LedgerFile,
+  skill: string,
+  tool: FlipTool,
+  explicitTools: boolean,
+): boolean => !explicitTools || getPair(ledger, skill, tool) !== null;
+
 /** A pair carries an uncommitted journal when an earlier swap was interrupted (crash / SIGKILL).
  *  Such a pair must surface into the plan regardless of its current filesystem class — a crash
  *  window can leave the live path absent (backup holds the old artifact) or in the wrong class —
@@ -174,7 +187,12 @@ const resolveNamedTarget = async (
       continue;
     }
 
-    if (!isFlippableClass(res.placement.class)) {
+    const flippableNow =
+      isFlippableClass(res.placement.class) ||
+      (res.placement.class === 'store-linked' &&
+        isStoreLinkedFlippableFor(ledger, target, tool, explicitTools));
+
+    if (!flippableNow) {
       // A journaled pair surfaces even when its live path is absent/wrong-class (F1), so the run
       // layer can resume/rollback/refuse it. Committed/absent-journal pairs keep prior behavior.
       if (hasOpenJournal(ledger, target, tool)) {
@@ -183,7 +201,10 @@ const resolveNamedTarget = async (
         continue;
       }
       if (explicitTools) {
-        const reason = `'${target}' has no flippable placement for ${tool} (found: ${res.placement.class})`;
+        const reason =
+          res.placement.class === 'store-linked'
+            ? `'${target}' has no flippable placement for ${tool} (found: store-linked, no managed record); reinstall with 'skillsmith install --force'`
+            : `'${target}' has no flippable placement for ${tool} (found: ${res.placement.class})`;
         preResults.push(
           emptyFlipResult(
             target,
@@ -255,8 +276,11 @@ const resolvePathTarget = async (
 
   const placement = await classifyPlacement(env, root, skill, storeRoot);
   // A journaled pair surfaces even when its live path is absent/wrong-class (F1); otherwise a
-  // non-flippable class is a placement-not-found refusal as before.
-  if (!isFlippableClass(placement.class) && !hasOpenJournal(ledger, skill, tool)) {
+  // non-flippable class is a placement-not-found refusal as before. A path target resolves to
+  // exactly one tool already (no multi-tool search to fall back on), so — unlike a named target —
+  // store-linked always surfaces here regardless of a ledger record; the run layer decides.
+  const flippable = isFlippableClass(placement.class) || placement.class === 'store-linked';
+  if (!flippable && !hasOpenJournal(ledger, skill, tool)) {
     const reason = `'${target}' has no flippable placement for ${tool} (found: ${placement.class})`;
     return ok({
       pairs: [],
