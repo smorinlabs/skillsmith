@@ -292,6 +292,73 @@ describe('store-linked flip (D9)', () => {
     expect(noopResult.value.results[0]?.action).toBe('noop');
   });
 
+  test('genuine store-linked re-pin (no dev flip first) drives runPromotePair store-linked branch', async () => {
+    // Unlike the PRD-scenario-4 test above, this does NOT call runDev first, so the live path is
+    // STILL a symlink into the store at promote time — classifyPlacement reports 'store-linked',
+    // exercising runPromotePair's `placement.class === 'store-linked'` branch (adoptedDev = null,
+    // since the pre-swap live symlink already points INSIDE the store) rather than the dev-class
+    // branch. The engine mechanics are covered by Task 5's swap-acquire test; this covers the
+    // run.ts WIRING of that branch end-to-end with a moved rev.
+    const s = await seedStore(f, 'alpha-inst');
+    const skillsRoot = join(f.home, '.claude', 'skills');
+    const live = join(skillsRoot, 'alpha-inst');
+    await f.env.makeSymlink(s.storePath, live);
+
+    const seededOrigin = origin('smorinlabs/fixture-harness/alpha');
+    const seededDev = dev(resolve(f.alphaSrc));
+    const seededPinned = pinnedOf(s.storePath, s.rev, s.contentHash, 'symlink');
+    const ledger = emptyLedger(NOW);
+    setPair(ledger, 'alpha-inst', 'claude-code', {
+      placementPath: live,
+      mode: 'pinned',
+      dev: seededDev,
+      pinned: seededPinned,
+      origin: seededOrigin,
+      journal: null,
+    });
+    await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+
+    // Confirm the live path is genuinely store-linked BEFORE promote (guards against the coverage
+    // silently regressing to the dev-class branch if the seed or classifier ever changes).
+    expect(await f.env.pathKind(live)).toBe('symlink');
+    expect(await f.env.readLink(live)).toBe(s.storePath); // points into the store => store-linked
+
+    // Move the source rev so the store-linked convergence re-pins (rather than noops).
+    commitChange(
+      f.checkout,
+      'plugins/fh/skills/alpha/SKILL.md',
+      '---\nname: alpha\ndescription: v2.\n---\n',
+    );
+    commitAll(f.checkout, 'fixture: alpha v2');
+
+    const promoted = await runPromote(f.env, opts(f, { targets: ['alpha-inst'] }), passDeps());
+    if (!promoted.ok) throw new Error(msg(promoted.error));
+    const pr = promoted.value.results[0];
+    expect(pr?.action).toBe('updated');
+    // before.mode is 'pinned' (the store-linked branch reports a pinned before-state, NOT a dev
+    // one) — outcome-level confirmation that the store-linked-class branch (not the dev branch) ran.
+    expect(pr?.before?.mode).toBe('pinned');
+    expect(pr?.store?.rev).not.toBe(s.rev);
+
+    // Live is a store SYMLINK again, retargeted to the NEW store entry.
+    expect(await f.env.pathKind(live)).toBe('symlink');
+    expect(pr?.store?.path).toBeDefined();
+    expect(await f.env.readLink(live)).toBe(pr?.store?.path as string);
+
+    const after = await readLedgerOf(f);
+    if (!after.ok) throw new Error(msg(after.error));
+    const pair = getPair(after.value, 'alpha-inst', 'claude-code');
+    expect(pair?.mode).toBe('pinned');
+    expect(pair?.pinned?.placement).toBe('symlink');
+    expect(pair?.pinned?.rev).not.toBe(s.rev);
+    expect(pair?.origin).toEqual(seededOrigin); // retained verbatim
+    expect(pair?.dev).not.toBeNull(); // dev record retained
+    expect(pair?.journal).toBeNull();
+
+    const residue = (await f.env.listDir(skillsRoot)).filter((n) => n.startsWith('.skillsmith-'));
+    expect(residue).toEqual([]);
+  });
+
   test('recordless store-linked (hand-made symlink into the store) stays refused; --source adopts it', async () => {
     const s = await seedStore(f, 'slink-src');
     const skillsRoot = join(f.home, '.claude', 'skills');
