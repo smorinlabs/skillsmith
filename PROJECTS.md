@@ -112,7 +112,7 @@ surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
 
 ---
 
-## [ ] Project P09: MVP-2c — `install` + `uninstall` (write path) (v0.6.0)
+## [-] Project P09: MVP-2c — `install` + `uninstall` (write path) (v0.6.0)
 > **PRD (authoritative, 2026-07-07):** `docs/superpowers/specs/2026-07-07-p09-install-prd.md` —
 > supersedes this section's claude-only scoping and the April source grammar; reuses P12
 > store/ledger/swap and P11 verify. P09-BR consumes the PRD.
@@ -127,9 +127,19 @@ surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
 - PowerShell completion + Windows in CI matrix (→ Phase 2).
 
 ### Tests & Tasks
-- [ ] [P09-BR] Brainstorm + spec — design doc at `docs/superpowers/specs/YYYY-MM-DD-mvp-2c-install-design.md`.
-- [ ] [P09-PL] Implementation plan — `docs/superpowers/plans/YYYY-MM-DD-mvp-2c-install.md`.
-- (Tasks expanded after brainstorm.)
+- [x] [P09-BR] Brainstorm + spec — `docs/superpowers/specs/2026-07-07-p09-install-design.md` (design-gate adjudicated incl. --deep amendment) — *fable*
+- [x] [P09-PL] Implementation plan — `docs/superpowers/plans/2026-07-07-p09-install-implementation.md` — *fable*
+- [ ] [P09-T01] Source grammar parser: pure `parseSource` (20-row table, R4/R5/R6, short-SHA reject) + `acquire/` eslint zone + ADR-0003 note — *sonnet*
+- [ ] [P09-T02] `clampStoreNs` in `place/store.ts` + `parseRemote` subgroup clamp regression (R7 / PR #5 follow-up #4) — *sonnet*
+- [ ] [P09-TS01] Hermetic `file://` bare-repo fetch fixtures (multi/single/root layouts, allowFilter) + project-scope fleet root — *haiku*
+- [ ] [P09-T03] Blobless fetch pipeline + resolver: git via env.exec, ls-tree scan, sparse checkout, ls-remote elision, .fetch orphan sweep, `env.modifiedAt` — *opus*
+- [ ] [P09-T04] Ledger additive schema + journal widening + install/uninstall swap ops + hygiene sweep + crash sweeps + v0.5.0-schema compat probe — *opus* (highest-risk; fable task-review)
+- [ ] [P09-T05] Store-linked flip amendment (D9): dev accepts recorded/--source, promote re-pins honoring `pinned.placement`, origin retained — *sonnet*
+- [ ] [P09-T06] `runInstall` orchestrator: one-lock batch, verify gate (static default, opt-in --deep), scopes/shadowing/legacy, noop/updated/repaired, fetch elision — *opus*
+- [ ] [P09-T07] `runUninstall` orchestrator (U2/U3/D12 refusals, journaled removal, store immortal) + public API exports — *sonnet*
+- [ ] [P09-T08] CLI: `install` (alias `i`, @clack picker) + `uninstall` (`rm`/`remove`), JSON contracts + goldens, human renderers, help topics — *sonnet*
+- [ ] [P09-TS02] Acceptance: interop round-trip e2e, §13 exit-code table, env-gated SIGKILL install e2e + live e2e vs smorinlabs/smorinlabs-harness (PRD §10) — *sonnet*
+- [ ] [P09-RV] Final whole-branch review — *fable*
 
 ---
 
