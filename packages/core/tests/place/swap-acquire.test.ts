@@ -222,6 +222,8 @@ describe('runSwap — install', () => {
   });
 
   test('replace install over an edited pinned copy: backup dir KEPT + warning (hash mismatch)', async () => {
+    // Kind flip (dir → store symlink) so the engine's same-kind guard permits the replace; the old
+    // edited copy becomes a dir backup whose hash no longer matches any store entry → KEPT + warning.
     const s = await seedStore(f);
     const live = join(skillsRoot, SKILL);
     await f.env.copyTree(s.storePath, live); // a managed pinned copy
@@ -235,15 +237,42 @@ describe('runSwap — install', () => {
       journal: null,
     });
     const ctx = makeCtx(f.env, ledgerPath, ledger);
-    const r = await runSwap(ctx, installPlan(s, skillsRoot, live, 'copy'));
+    const r = await runSwap(ctx, installPlan(s, skillsRoot, live, 'symlink'));
     if (!r.ok) throw new Error(msg(r.error));
     expect(r.value.backupKept).not.toBeNull();
     expect(r.value.warning).not.toBeNull();
-    expect(await f.env.pathKind(live)).toBe('dir');
+    expect(await f.env.pathKind(live)).toBe('symlink');
     expect(await f.env.pathKind(r.value.backupKept as string)).toBe('dir');
     expect(getPairAt(ledger, null, SKILL, TOOL)?.journal).toBeNull();
     // store entry untouched
     expect(await f.env.pathKind(s.storePath)).not.toBe('absent');
+  });
+
+  test('same-kind replace (dir → dir) is rejected loudly, not attempted', async () => {
+    // A copy-over-copy replace is indistinguishable from the old entry at the P4 rollback window
+    // (both dirs), so the engine refuses it — the run layer must route it as a kind change.
+    const s = await seedStore(f);
+    const live = join(skillsRoot, SKILL);
+    await f.env.copyTree(s.storePath, live); // old managed copy (dir)
+    const ledger = emptyLedger(NOW);
+    setPairAt(ledger, null, SKILL, TOOL, {
+      placementPath: live,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf(s.storePath, s.rev, s.contentHash, 'copy'),
+      journal: null,
+    });
+    const ctx = makeCtx(f.env, ledgerPath, ledger);
+    const r = await runSwap(ctx, installPlan(s, skillsRoot, live, 'copy')); // new build is also a dir
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('generic');
+      expect(msg(r.error)).toContain('same-kind replace');
+    }
+    // refused before any mutation: live untouched, no journal written, no residue.
+    expect(await f.env.pathKind(live)).toBe('dir');
+    expect(getPairAt(ledger, null, SKILL, TOOL)?.journal).toBeNull();
+    expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
 
   test('runSwap over an uncommitted install journal → flip-refused naming all remediations', async () => {

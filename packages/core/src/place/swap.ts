@@ -429,6 +429,22 @@ const computeBefore = async (
       }
       return ok({ mode: 'absent' });
     }
+    // Replace install. `rollbackSwap` disambiguates "live is the new artifact" (P4 done) purely by a
+    // kind change (`liveKind !== oldKind`); a same-kind replace (dir→dir or symlink→symlink) is
+    // indistinguishable at that window, so an uncommitted rollback would silently leave the new
+    // artifact live and orphan the backup. The run layer MUST route a same-kind replace as a kind
+    // change (like promote's demote-first path); the engine enforces that here rather than trust it.
+    const newBuildKind = plan.install?.build === 'symlink' ? 'symlink' : 'dir';
+    if (newBuildKind === kindOf(liveKind)) {
+      return err(
+        genericError(
+          `same-kind replace of ${plan.skill} (live ${kindOf(liveKind)} → new ${newBuildKind}) must be routed as a kind change by the run layer`,
+        ),
+      );
+    }
+    // A dev symlink is being adopted: `adoptedDev` is the run layer's signal that the live symlink
+    // points outside the store. If the run layer forgets to set it, that dev record is silently lost
+    // (this branch is skipped and the pre-state is recorded as pinned instead of dev).
     if (plan.install?.adoptedDev) {
       const t = await readLive();
       if (!t.ok) return t;
@@ -689,6 +705,10 @@ export const rollbackSwap = async (
     return err(mapFsErr(e, `cannot roll back ${skill}`));
   }
 
+  // Restores the old live BYTES but keeps whatever records `stagePair` wrote at P1: for an
+  // uncommitted replace-install rollback that means the NEW pinned/origin/placement records survive
+  // (mirrors P12 promote-rollback — the engine never retains the old PinnedRecord/origin, so it
+  // cannot restore them). The run layer (Task 7) MUST reconcile the ledger record after such a rollback.
   pair.mode = before.mode;
   pair.journal = null;
   const persisted = await ctx.persist();
