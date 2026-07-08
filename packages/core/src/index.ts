@@ -1,3 +1,10 @@
+export {
+  defaultInstallDeps,
+  defaultUninstallDeps,
+  runInstall,
+  runUninstall,
+} from './acquire/run.ts';
+export { parseSource } from './acquire/source.ts';
 export { getAgent, listSupportedTools, registry } from './agents/registry.ts';
 export { SUPPORTED_TOOLS } from './agents/types.ts';
 export { getConfigValue } from './config/accessors.ts';

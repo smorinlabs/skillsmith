@@ -120,3 +120,55 @@ export interface InstallDeps {
   newTxId: () => string; // 8-hex
   pick?: (candidates: readonly CandidateSkill[]) => Promise<CandidateSkill | null>;
 }
+
+export type UninstallAction = 'removed' | 'noop' | 'refused' | 'failed';
+
+export interface UninstallOptions {
+  targets: readonly string[]; // skill names (leaf dir names) or placement paths
+  tools?: readonly FlipTool[]; // restrict; undefined = every tool where the skill is found
+  scope?: InstallScope; // restrict to one scope
+  allScopes?: boolean; // user scope AND the current project's scope
+  force?: boolean;
+  dryRun?: boolean;
+  cwd: string;
+  envVars: Record<string, string | undefined>;
+  testPauseAt?: JournalPhase;
+  signal?: AbortSignal;
+}
+
+export interface UninstallResult {
+  skill: string;
+  tool: FlipTool | null; // null only when a target matched nothing anywhere
+  scope: InstallScope | null;
+  placementPath: string | null;
+  action: UninstallAction;
+  reason: string | null;
+  before: {
+    mode: 'dev' | 'pinned';
+    placement: 'symlink' | 'copy' | null;
+    storePath: string | null;
+    symlinkTarget: string | null;
+  } | null;
+  storeRetained: string | null; // surviving store path — "where did my bytes go"
+  backupKept: string | null; // path of a preserved unreproducible copy
+  error?: SkillSmithError; // CORE-ONLY, as install
+}
+
+export interface UninstallReport {
+  dryRun: boolean;
+  requested: {
+    targets: string[];
+    tools: FlipTool[];
+    explicitTools: boolean;
+    scope: InstallScope | null;
+    allScopes: boolean;
+    force: boolean;
+  };
+  results: UninstallResult[];
+  summary: { removed: number; noop: number; refused: number; failed: number };
+}
+
+export interface UninstallDeps {
+  now: () => string;
+  newTxId: () => string;
+}

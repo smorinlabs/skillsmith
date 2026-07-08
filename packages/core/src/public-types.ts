@@ -1,3 +1,18 @@
+export type {
+  CandidateSkill,
+  InstallAction,
+  InstallDeps,
+  InstallOptions,
+  InstallReport,
+  InstallResult,
+  InstallScope,
+  SourceSpec,
+  UninstallAction,
+  UninstallDeps,
+  UninstallOptions,
+  UninstallReport,
+  UninstallResult,
+} from './acquire/types.ts';
 export type { Agent, SkillRootsCtx, SupportedTool } from './agents/types.ts';
 export type { CommandEntry } from './commands/types.ts';
 export type {
@@ -33,6 +48,7 @@ export type {
   FlipResult,
   FlipTool,
   JournalPhase,
+  OriginRecord,
   Placement,
   PlacementClass,
 } from './place/types.ts';

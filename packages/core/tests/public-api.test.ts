@@ -44,6 +44,11 @@ describe('@skillsmith/core public API', () => {
       'runRollback',
       'defaultFlipDeps',
       'FLIP_TOOLS',
+      'runInstall',
+      'runUninstall',
+      'defaultInstallDeps',
+      'defaultUninstallDeps',
+      'parseSource',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);

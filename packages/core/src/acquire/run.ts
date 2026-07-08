@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { basename, dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { installHint as claudeCodeInstallHint } from '../agents/claude-code/install-hint.ts';
 import { getSkillRoots as claudeCodeSkillRoots } from '../agents/claude-code/skill-roots.ts';
 import { installHint as codexInstallHint } from '../agents/codex/install-hint.ts';
@@ -23,6 +23,7 @@ import {
   writeLedger,
 } from '../place/ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
+import { LEGACY_ROOT_NOTICE } from '../place/plan.ts';
 import {
   type SnapshotResult,
   clampStoreNs,
@@ -41,6 +42,7 @@ import {
   type FlipTool,
   type LedgerFile,
   type OriginRecord,
+  type PairRecord,
   type PinnedRecord,
   type Provenance,
   type SwapCtx,
@@ -68,6 +70,11 @@ import type {
   InstallResult,
   InstallScope,
   SourceSpec,
+  UninstallAction,
+  UninstallDeps,
+  UninstallOptions,
+  UninstallReport,
+  UninstallResult,
 } from './types.ts';
 
 export const defaultInstallDeps: Omit<InstallDeps, 'pick'> = {
@@ -1218,6 +1225,713 @@ export const runInstall = async (
 
       const results = await processAll(ledger, false);
       return ok(buildReport(false, requested, results));
+    },
+  );
+
+  if (!locked.ok) return locked;
+  return locked.value;
+};
+
+// ---------------------------------------------------------------------------------------------
+// uninstall
+// ---------------------------------------------------------------------------------------------
+
+export const defaultUninstallDeps: UninstallDeps = {
+  now: () => new Date().toISOString(),
+  newTxId: () => randomBytes(4).toString('hex'),
+};
+
+// A resolved (skill, tool, scope) candidate for removal. 'stale' = ledger pair with no live
+// placement anywhere; 'duplicate' = codex current+legacy both non-absent (unresolvable without
+// disambiguation, mirrors place/plan.ts's resolveCodex).
+interface UMatch {
+  scope: InstallScope;
+  scopeKey: string | null;
+  tool: FlipTool;
+  kind: 'live' | 'stale' | 'duplicate';
+  placement: Placement | null; // null for 'stale'
+  existing: PairRecord | null;
+  notice: string | null; // legacy-root notice
+  duplicatePaths?: string[];
+}
+
+const matchPathOf = (m: UMatch): string | null => {
+  if (m.kind === 'duplicate') return m.duplicatePaths?.[0] ?? null;
+  if (m.kind === 'stale') return m.existing?.placementPath ?? null;
+  return m.placement?.path ?? null;
+};
+
+const emptyUninstallResult = (
+  skill: string,
+  tool: FlipTool | null,
+  scope: InstallScope | null,
+  action: UninstallAction,
+): UninstallResult => ({
+  skill,
+  tool,
+  scope,
+  placementPath: null,
+  action,
+  reason: null,
+  before: null,
+  storeRetained: null,
+  backupKept: null,
+});
+
+const notInstalledResult = (skill: string): UninstallResult => ({
+  ...emptyUninstallResult(skill, null, null, 'noop'),
+  reason: `'${skill}' is not installed anywhere skillsmith manages`,
+});
+
+// D12: before.placement/storePath come straight off the ledger record; symlinkTarget is populated
+// only for dev (the recorded dev source) or a store-linked pinned record (a plain 'copy' placement
+// has no symlink to report) — per the brief, "symlinkTarget for dev/store-linked".
+const uninstallBeforeFromRecord = (
+  mode: 'dev' | 'pinned',
+  pinned: PinnedRecord | null,
+  dev: PairRecord['dev'],
+): UninstallResult['before'] => ({
+  mode,
+  placement: pinned?.placement ?? null,
+  storePath: pinned?.storePath ?? null,
+  symlinkTarget:
+    mode === 'dev'
+      ? (dev?.sourcePath ?? null)
+      : pinned && pinned.placement === 'symlink'
+        ? pinned.storePath
+        : null,
+});
+
+// Search-set resolution for a NAME target (U2): every (scope, tool) in the requested search set,
+// each classified against every root that tool owns at that scope (codex/user owns two: current +
+// legacy). "Found" = a non-absent placement OR a ledger pair (spec's convergent definition).
+const collectUninstallMatches = async (
+  env: ScanEnv,
+  opts: UninstallOptions,
+  ledger: LedgerFile,
+  storeRoot: string,
+  name: string,
+  scopesToSearch: readonly InstallScope[],
+  toolsToSearch: readonly FlipTool[],
+  scopeKeyFor: (scope: InstallScope) => Promise<string | null>,
+): Promise<UMatch[]> => {
+  const matches: UMatch[] = [];
+  for (const scope of scopesToSearch) {
+    const scopeKey = await scopeKeyFor(scope);
+    for (const tool of toolsToSearch) {
+      const ctx = {
+        cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
+        envVars: opts.envVars,
+      };
+      const roots = SKILL_ROOTS[tool](env, scope, ctx).filter((r): r is string => r !== undefined);
+      const existing = getPairAt(ledger, scopeKey, name, tool);
+      const placements = await Promise.all(
+        roots.map((root) => classifyPlacement(env, root, name, storeRoot)),
+      );
+      const nonAbsent = placements.filter((p) => p.class !== 'absent');
+      if (nonAbsent.length > 1) {
+        matches.push({
+          scope,
+          scopeKey,
+          tool,
+          kind: 'duplicate',
+          placement: nonAbsent[0] ?? null,
+          existing,
+          notice: null,
+          duplicatePaths: nonAbsent.map((p) => p.path),
+        });
+        continue;
+      }
+      const placement = nonAbsent[0] ?? null;
+      if (placement) {
+        const notice =
+          tool === 'codex' && roots.length > 1 && placement.root === roots[1]
+            ? LEGACY_ROOT_NOTICE
+            : null;
+        matches.push({ scope, scopeKey, tool, kind: 'live', placement, existing, notice });
+        continue;
+      }
+      if (existing) {
+        matches.push({
+          scope,
+          scopeKey,
+          tool,
+          kind: 'stale',
+          placement: null,
+          existing,
+          notice: null,
+        });
+      }
+    }
+  }
+  return matches;
+};
+
+interface PathTargetMatch {
+  name: string;
+  scope: InstallScope;
+  scopeKey: string | null;
+  tool: FlipTool;
+  root: string;
+  notice: string | null;
+}
+
+// A path target (contains '/', or absolute) resolves to exactly one (tool, scope, root) by
+// dirname match — claude-code user/project, codex current user/project, codex legacy. No
+// ambiguity concept applies (one path, one owning root); outside every root is a hard refusal.
+const resolveUninstallPathTarget = (
+  env: ScanEnv,
+  opts: UninstallOptions,
+  target: string,
+  projectRoot: string | null,
+  toolsToSearch: readonly FlipTool[],
+  explicitTools: boolean,
+): Result<PathTargetMatch, SkillSmithError> => {
+  const resolved = resolve(opts.cwd, target);
+  const parent = dirname(resolved);
+  const name = basename(resolved);
+
+  const ctxUser = { cwd: opts.cwd, envVars: opts.envVars };
+  const claudeUserRoot = SKILL_ROOTS['claude-code'](env, 'user', ctxUser)[0];
+  const codexUserRoots = SKILL_ROOTS.codex(env, 'user', ctxUser);
+  const codexCurrent = codexUserRoots[0];
+  const codexLegacy = codexUserRoots[1];
+
+  const candidates: Omit<PathTargetMatch, 'name'>[] = [];
+  if (claudeUserRoot !== undefined) {
+    candidates.push({
+      scope: 'user',
+      scopeKey: null,
+      tool: 'claude-code',
+      root: claudeUserRoot,
+      notice: null,
+    });
+  }
+  if (codexCurrent !== undefined) {
+    candidates.push({
+      scope: 'user',
+      scopeKey: null,
+      tool: 'codex',
+      root: codexCurrent,
+      notice: null,
+    });
+  }
+  if (codexLegacy !== undefined) {
+    candidates.push({
+      scope: 'user',
+      scopeKey: null,
+      tool: 'codex',
+      root: codexLegacy,
+      notice: LEGACY_ROOT_NOTICE,
+    });
+  }
+  if (projectRoot !== null) {
+    const ctxProj = { cwd: projectRoot, envVars: opts.envVars };
+    const claudeProjRoot = SKILL_ROOTS['claude-code'](env, 'project', ctxProj)[0];
+    const codexProjRoot = SKILL_ROOTS.codex(env, 'project', ctxProj)[0];
+    if (claudeProjRoot !== undefined) {
+      candidates.push({
+        scope: 'project',
+        scopeKey: projectRoot,
+        tool: 'claude-code',
+        root: claudeProjRoot,
+        notice: null,
+      });
+    }
+    if (codexProjRoot !== undefined) {
+      candidates.push({
+        scope: 'project',
+        scopeKey: projectRoot,
+        tool: 'codex',
+        root: codexProjRoot,
+        notice: null,
+      });
+    }
+  }
+
+  const match = candidates.find((c) => c.root === parent);
+  if (!match) {
+    const roots = candidates.map((c) => c.root).join(', ');
+    return err(flipRefusedError(`'${target}' is outside every known skills root (${roots})`));
+  }
+  if (opts.scope !== undefined && opts.scope !== match.scope) {
+    return err(
+      flipRefusedError(
+        `'${target}' resolves to ${match.scope} scope, which is not the requested --scope`,
+      ),
+    );
+  }
+  if (explicitTools && !toolsToSearch.includes(match.tool)) {
+    return err(
+      flipRefusedError(
+        `'${target}' resolves to ${match.tool}, which is not in the requested --tool set`,
+      ),
+    );
+  }
+  return ok({ name, ...match });
+};
+
+// Decide + (unless dry-run) execute the removal for one resolved (skill, tool, scope) match.
+// Refusals happen before any journal write; a managed removal drives the already-recorded pair
+// through the engine's 'uninstall' swap directly, an unmanaged --force removal first synthesizes
+// a minimal PairRecord so the SAME engine path (backup rename, hash-guarded reclaim, terminal
+// pair deletion) applies uniformly — the engine never deletes a store entry either way.
+const processUninstallMatch = async (
+  env: ScanEnv,
+  ledger: LedgerFile,
+  ledgerPath: string,
+  opts: UninstallOptions,
+  deps: UninstallDeps,
+  name: string,
+  match: UMatch,
+  dryRun: boolean,
+): Promise<UninstallResult> => {
+  const { scope, scopeKey, tool, existing, notice } = match;
+
+  const swapCtx: SwapCtx = {
+    env,
+    ledgerPath,
+    ledger,
+    persist: () => writeLedger(env, ledgerPath, ledger),
+    now: deps.now,
+    newTxId: deps.newTxId,
+    pauseAt: opts.testPauseAt,
+    signal: opts.signal,
+  };
+  const midSwap = (e: SkillSmithError): SkillSmithError =>
+    e.code === 'ledger-error' ? flipFailedError(msg(e)) : e;
+  const failed = (e: SkillSmithError, placementPath: string | null): UninstallResult => ({
+    skill: name,
+    tool,
+    scope,
+    placementPath,
+    action: 'failed',
+    reason: msg(e),
+    before: null,
+    storeRetained: null,
+    backupKept: null,
+    error: e,
+  });
+
+  // Constraint #6: an uncommitted journal on the pair refuses every op except a same-op re-run
+  // (which resumes it to completion) — checked first, ahead of the stale-pair shortcut and the
+  // dev/unmanaged gates below, since a crash window can leave the live placement absent or in an
+  // unexpected class regardless of what this match's own classification found.
+  if (existing?.journal && existing.journal.phase !== 'committed') {
+    const placementPath = existing.placementPath;
+    const before = uninstallBeforeFromRecord(existing.mode, existing.pinned, existing.dev);
+    const storeRetained = existing.pinned?.storePath ?? null;
+    if (existing.journal.op === 'uninstall') {
+      if (dryRun) {
+        return {
+          skill: name,
+          tool,
+          scope,
+          placementPath,
+          action: 'removed',
+          reason: notice,
+          before,
+          storeRetained,
+          backupKept: null,
+        };
+      }
+      const resumed = await resumeSwap(swapCtx, name, tool, scopeKey);
+      if (!resumed.ok) return failed(midSwap(resumed.error), placementPath);
+      return {
+        skill: name,
+        tool,
+        scope,
+        placementPath,
+        action: 'removed',
+        reason: resumed.value.warning ?? notice,
+        before,
+        storeRetained,
+        backupKept: resumed.value.backupKept,
+      };
+    }
+    const reason = refusedMessage(existing.journal.op, name);
+    return {
+      skill: name,
+      tool,
+      scope,
+      placementPath,
+      action: 'refused',
+      reason,
+      before: null,
+      storeRetained: null,
+      backupKept: null,
+      error: flipRefusedError(reason),
+    };
+  }
+
+  if (match.kind === 'duplicate') {
+    const paths = match.duplicatePaths ?? [];
+    const reason = `found in both ${paths.join(' and ')}; resolve the duplicate first`;
+    return {
+      skill: name,
+      tool,
+      scope,
+      placementPath: paths[0] ?? null,
+      action: 'refused',
+      reason,
+      before: null,
+      storeRetained: null,
+      backupKept: null,
+      error: flipRefusedError(reason),
+    };
+  }
+
+  if (match.kind === 'stale') {
+    const ex = existing as PairRecord;
+    const placementPath = ex.placementPath;
+    const before = uninstallBeforeFromRecord(ex.mode, ex.pinned, ex.dev);
+    const storeRetained = ex.pinned?.storePath ?? null;
+    const reason = 'placement was already gone';
+    if (dryRun) {
+      return {
+        skill: name,
+        tool,
+        scope,
+        placementPath,
+        action: 'removed',
+        reason,
+        before,
+        storeRetained,
+        backupKept: null,
+      };
+    }
+    deletePairAt(ledger, scopeKey, name, tool);
+    const persisted = await writeLedger(env, ledgerPath, ledger);
+    if (!persisted.ok) return failed(persisted.error, placementPath);
+    return {
+      skill: name,
+      tool,
+      scope,
+      placementPath,
+      action: 'removed',
+      reason,
+      before,
+      storeRetained,
+      backupKept: null,
+    };
+  }
+
+  // match.kind === 'live'
+  const placement = match.placement as Placement;
+  const placementPath = placement.path;
+
+  if (existing) {
+    if (existing.mode === 'dev' && !opts.force) {
+      const reason = `'${name}' (${tool}) is in dev mode — a live symlink into a working checkout. Run 'skillsmith promote ${name}' to pin it first, or 'skillsmith dev --rollback ${name}' to restore the pinned copy, or pass --force to remove the symlink — the checkout itself is never touched.`;
+      return {
+        skill: name,
+        tool,
+        scope,
+        placementPath,
+        action: 'refused',
+        reason,
+        before: null,
+        storeRetained: null,
+        backupKept: null,
+        error: flipRefusedError(reason),
+      };
+    }
+    const before = uninstallBeforeFromRecord(existing.mode, existing.pinned, existing.dev);
+    const storeRetained = existing.pinned?.storePath ?? null;
+    if (dryRun) {
+      return {
+        skill: name,
+        tool,
+        scope,
+        placementPath,
+        action: 'removed',
+        reason: notice,
+        before,
+        storeRetained,
+        backupKept: null,
+      };
+    }
+    const plan: SwapPlan = {
+      op: 'uninstall',
+      skill: name,
+      tool,
+      skillsRoot: dirname(placement.path),
+      placementPath: placement.path,
+      scopeKey,
+    };
+    const swapRes = await runSwap(swapCtx, plan);
+    if (!swapRes.ok) return failed(midSwap(swapRes.error), placementPath);
+    return {
+      skill: name,
+      tool,
+      scope,
+      placementPath,
+      action: 'removed',
+      reason: swapRes.value.warning ?? notice,
+      before,
+      storeRetained,
+      backupKept: swapRes.value.backupKept,
+    };
+  }
+
+  // unmanaged (no ledger pair)
+  if (!opts.force) {
+    const reason = `'${name}' (${tool}) has no skillsmith record; pass --force to remove it anyway`;
+    return {
+      skill: name,
+      tool,
+      scope,
+      placementPath,
+      action: 'refused',
+      reason,
+      before: null,
+      storeRetained: null,
+      backupKept: null,
+      error: flipRefusedError(reason),
+    };
+  }
+  const mode: 'dev' | 'pinned' = placement.class === 'dev' ? 'dev' : 'pinned';
+  const before: UninstallResult['before'] = {
+    mode,
+    placement: null,
+    storePath: null,
+    symlinkTarget: placement.symlinkTarget ?? null,
+  };
+  if (dryRun) {
+    return {
+      skill: name,
+      tool,
+      scope,
+      placementPath,
+      action: 'removed',
+      reason: notice,
+      before,
+      storeRetained: null,
+      backupKept: null,
+    };
+  }
+  const synth: PairRecord = {
+    placementPath: placement.path,
+    mode,
+    dev: null,
+    pinned: null,
+    journal: null,
+  };
+  setPairAt(ledger, scopeKey, name, tool, synth);
+  const plan: SwapPlan = {
+    op: 'uninstall',
+    skill: name,
+    tool,
+    skillsRoot: dirname(placement.path),
+    placementPath: placement.path,
+    scopeKey,
+  };
+  const swapRes = await runSwap(swapCtx, plan);
+  if (!swapRes.ok) return failed(midSwap(swapRes.error), placementPath);
+  return {
+    skill: name,
+    tool,
+    scope,
+    placementPath,
+    action: 'removed',
+    reason: swapRes.value.warning ?? notice,
+    before,
+    storeRetained: null,
+    backupKept: swapRes.value.backupKept,
+  };
+};
+
+const isUninstallPathTarget = (target: string): boolean =>
+  target.includes('/') || isAbsolute(target);
+
+// Resolve one CLI target (name or path) to zero or more UninstallResults. A name target searches
+// the whole (scope x tool) search set and applies U2 ambiguity; a path target pins exactly one
+// (scope, tool) by dirname match and skips the ambiguity question entirely.
+const processUninstallTarget = async (
+  env: ScanEnv,
+  ledger: LedgerFile,
+  ledgerPath: string,
+  storeRoot: string,
+  opts: UninstallOptions,
+  deps: UninstallDeps,
+  target: string,
+  projectRoot: string | null,
+  scopesToSearch: readonly InstallScope[],
+  toolsToSearch: readonly FlipTool[],
+  explicitTools: boolean,
+  scopeKeyFor: (scope: InstallScope) => Promise<string | null>,
+  dryRun: boolean,
+): Promise<UninstallResult[]> => {
+  if (isUninstallPathTarget(target)) {
+    const resolved = resolveUninstallPathTarget(
+      env,
+      opts,
+      target,
+      projectRoot,
+      toolsToSearch,
+      explicitTools,
+    );
+    if (!resolved.ok) {
+      const name = basename(resolve(opts.cwd, target));
+      return [
+        {
+          ...emptyUninstallResult(name, null, null, 'refused'),
+          reason: msg(resolved.error),
+          error: resolved.error,
+        },
+      ];
+    }
+    const { name, scope, scopeKey, tool, root, notice } = resolved.value;
+    const existing = getPairAt(ledger, scopeKey, name, tool);
+    const placement = await classifyPlacement(env, root, name, storeRoot);
+    let match: UMatch;
+    if (placement.class !== 'absent') {
+      match = { scope, scopeKey, tool, kind: 'live', placement, existing, notice };
+    } else if (existing) {
+      match = { scope, scopeKey, tool, kind: 'stale', placement: null, existing, notice: null };
+    } else {
+      return [notInstalledResult(name)];
+    }
+    return [await processUninstallMatch(env, ledger, ledgerPath, opts, deps, name, match, dryRun)];
+  }
+
+  const matches = await collectUninstallMatches(
+    env,
+    opts,
+    ledger,
+    storeRoot,
+    target,
+    scopesToSearch,
+    toolsToSearch,
+    scopeKeyFor,
+  );
+  if (matches.length === 0) return [notInstalledResult(target)];
+
+  const distinctScopes = new Set(matches.map((m) => m.scope));
+  if (distinctScopes.size > 1 && opts.scope === undefined && !opts.allScopes) {
+    const list = matches
+      .map((m) => `${m.scope} (${m.tool} at ${matchPathOf(m) ?? '<unknown>'})`)
+      .join(', ');
+    const reason = `'${target}' is installed in multiple scopes: ${list}; disambiguate with --scope, --tool, or --all-scopes`;
+    return [
+      {
+        ...emptyUninstallResult(target, null, null, 'refused'),
+        reason,
+        error: flipRefusedError(reason),
+      },
+    ];
+  }
+
+  const results: UninstallResult[] = [];
+  for (const match of matches) {
+    results.push(
+      await processUninstallMatch(env, ledger, ledgerPath, opts, deps, target, match, dryRun),
+    );
+  }
+  return results;
+};
+
+const buildUninstallReport = (
+  dryRun: boolean,
+  requested: UninstallReport['requested'],
+  results: UninstallResult[],
+): UninstallReport => {
+  const summary = { removed: 0, noop: 0, refused: 0, failed: 0 };
+  for (const r of results) summary[r.action]++;
+  return { dryRun, requested, results, summary };
+};
+
+export const runUninstall = async (
+  env: ScanEnv,
+  opts: UninstallOptions,
+  deps: UninstallDeps = { ...defaultUninstallDeps },
+): Promise<Result<UninstallReport, SkillSmithError>> => {
+  const dataDir = resolveDataDir(env, opts.envVars);
+  const storeRoot = storeRootOf(dataDir);
+  const ledgerPath = ledgerPathOf(dataDir);
+  const explicitTools = opts.tools !== undefined && opts.tools.length > 0;
+  const toolsToSearch: FlipTool[] = explicitTools
+    ? [...(opts.tools as FlipTool[])]
+    : [...FLIP_TOOLS];
+
+  const requested: UninstallReport['requested'] = {
+    targets: [...opts.targets],
+    tools: toolsToSearch,
+    explicitTools,
+    scope: opts.scope ?? null,
+    allScopes: Boolean(opts.allScopes),
+    force: Boolean(opts.force),
+  };
+
+  // U2 search set: user scope + the current project's scope (Task 7 phase-1 rule) unless --scope
+  // restricts to one. --all-scopes doesn't change the search set (both are already searched) — it
+  // only changes the ambiguity POLICY below (act on every match instead of refusing).
+  const projectRoot = await gitToplevel(env, opts.cwd);
+  const scopesToSearch: InstallScope[] =
+    opts.scope !== undefined ? [opts.scope] : projectRoot !== null ? ['user', 'project'] : ['user'];
+  const scopeKeyFor = async (scope: InstallScope): Promise<string | null> =>
+    scope === 'project' ? (projectRoot ?? (await env.realpath(opts.cwd))) : null;
+
+  const processAll = async (ledger: LedgerFile, dryRun: boolean): Promise<UninstallResult[]> => {
+    const results: UninstallResult[] = [];
+    for (const target of opts.targets) {
+      results.push(
+        ...(await processUninstallTarget(
+          env,
+          ledger,
+          ledgerPath,
+          storeRoot,
+          opts,
+          deps,
+          target,
+          projectRoot,
+          scopesToSearch,
+          toolsToSearch,
+          explicitTools,
+          scopeKeyFor,
+          dryRun,
+        )),
+      );
+    }
+    return results;
+  };
+
+  // Uninstall needs no binary detection and no fetch/verify — dry-run only needs a ledger read.
+  if (opts.dryRun) {
+    const ledgerRes = await readLedger(env, ledgerPath);
+    if (!ledgerRes.ok) return ledgerRes;
+    const results = await processAll(ledgerRes.value, true);
+    return ok(buildUninstallReport(true, requested, results));
+  }
+
+  const locked = await withLedgerLock(
+    env,
+    ledgerPath,
+    async (): Promise<Result<UninstallReport, SkillSmithError>> => {
+      await sweepStaging(env, storeRoot);
+      await sweepFetchOrphans(env, dataDir);
+      const ledgerRes = await readLedger(env, ledgerPath);
+      if (!ledgerRes.ok) return ledgerRes;
+      const ledger = ledgerRes.value;
+
+      const swept = await sweepCommittedAcquireJournals({
+        env,
+        ledgerPath,
+        ledger,
+        persist: () => writeLedger(env, ledgerPath, ledger),
+        now: deps.now,
+        newTxId: deps.newTxId,
+        pauseAt: opts.testPauseAt,
+        signal: opts.signal,
+      });
+      if (!swept.ok) {
+        return err(
+          swept.error.code === 'ledger-error' ? flipFailedError(msg(swept.error)) : swept.error,
+        );
+      }
+
+      const results = await processAll(ledger, false);
+      return ok(buildUninstallReport(false, requested, results));
     },
   );
 
