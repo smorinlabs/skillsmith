@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, symlink, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, symlink, chmod, rm, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { defaultScanEnv } from '../../../src/env/default.ts';
@@ -16,6 +16,8 @@ export interface FixtureFleet {
   env: ScanEnv; // defaultScanEnv() with homeDir overridden to <home>
   envVars: Record<string, string | undefined>; // { SKILLSMITH_HOME: <data> }
   makeCheckoutDirty(): Promise<void>; // appends a line to alpha's SKILL.md (unstaged change)
+  project: string; // <base>/project — a REAL git repo (init + one commit); the project-scope root
+  projectReal: string; // realpath of <base>/project (macOS /var → /private/var)
 }
 
 export const buildFixtureFleet = async (): Promise<FixtureFleet> => {
@@ -26,6 +28,7 @@ export const buildFixtureFleet = async (): Promise<FixtureFleet> => {
   const alphaSrc = join(checkout, 'plugins', 'fh', 'skills', 'alpha');
   const betaSrc = join(checkout, 'plugins', 'fh', 'skills', 'beta');
   const gammaSrc = join(base, 'loose', 'gamma');
+  const project = join(base, 'project');
 
   // Create directory structure
   await mkdir(join(checkout, 'plugins', 'fh', 'skills', 'alpha', 'bin'), { recursive: true });
@@ -136,9 +139,9 @@ name: dup
     GIT_CONFIG_SYSTEM: '/dev/null',
   };
 
-  const runGit = (args: string[]) => {
+  const runGit = (cwd: string, args: string[]) => {
     const result = Bun.spawnSync(['git', ...args], {
-      cwd: checkout,
+      cwd,
       env: gitEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -151,8 +154,8 @@ name: dup
     return new TextDecoder().decode(result.stdout);
   };
 
-  runGit(['init', '-q', '-b', 'main']);
-  runGit([
+  runGit(checkout, ['init', '-q', '-b', 'main']);
+  runGit(checkout, [
     '-c',
     'user.email=fixture@skillsmith.test',
     '-c',
@@ -162,7 +165,7 @@ name: dup
     'add',
     '-A',
   ]);
-  runGit([
+  runGit(checkout, [
     '-c',
     'user.email=fixture@skillsmith.test',
     '-c',
@@ -173,13 +176,42 @@ name: dup
     '-qm',
     'fixture: initial',
   ]);
-  runGit(['remote', 'add', 'origin', 'git@github.com:smorinlabs/fixture-harness.git']);
+  runGit(checkout, ['remote', 'add', 'origin', 'git@github.com:smorinlabs/fixture-harness.git']);
 
-  const headSha = runGit(['rev-parse', 'HEAD']).trim();
+  const headSha = runGit(checkout, ['rev-parse', 'HEAD']).trim();
 
   if (!/^[0-9a-f]{40}$/.test(headSha)) {
     throw new Error(`Invalid HEAD SHA: ${headSha}`);
   }
+
+  // Create project directory — a REAL git repo
+  await mkdir(project);
+  await writeFile(join(project, 'README.md'), '# project fixture\n');
+
+  runGit(project, ['init', '-q', '-b', 'main']);
+  runGit(project, [
+    '-c',
+    'user.email=fixture@skillsmith.test',
+    '-c',
+    'user.name=fixture',
+    '-c',
+    'commit.gpgsign=false',
+    'add',
+    '-A',
+  ]);
+  runGit(project, [
+    '-c',
+    'user.email=fixture@skillsmith.test',
+    '-c',
+    'user.name=fixture',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '-qm',
+    'fixture: project',
+  ]);
+
+  const projectReal = await realpath(project);
 
   // Create env with overridden homeDir
   const defaultEnv = await defaultScanEnv();
@@ -204,6 +236,8 @@ name: dup
       const content = await Bun.file(skillPath).text();
       await writeFile(skillPath, content + '\ndirty edit\n');
     },
+    project,
+    projectReal,
   };
 
   return fleet;
