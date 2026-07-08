@@ -1,4 +1,4 @@
-import { type SkillSmithError, flipRefusedError } from '../errors.ts';
+import { type SkillSmithError, flipRefusedError, sourceUnresolvableError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import type { SourceSpec } from './types.ts';
 
@@ -6,7 +6,7 @@ type Selector = SourceSpec['selector'];
 
 const SHORT_SHA_RE = /^[0-9a-f]{7,39}$/;
 const SCP_RE = /^([^/\s]+)@([^/:\s]+):(.*)$/s;
-const ALLOWED_SCHEMES = ['https', 'http', 'ssh', 'git'];
+const ALLOWED_SCHEMES = ['https', 'http', 'ssh', 'git', 'file'];
 
 const ONE_PART_MSG = "one-part names are reserved for a future registry; use 'owner/repo[/<name>]'";
 const AMBIGUOUS_SUBGROUP_MSG =
@@ -129,7 +129,7 @@ const parseUrlForm = (
   const scheme = body.slice(0, schemeIdx);
   if (!ALLOWED_SCHEMES.includes(scheme)) {
     return err(
-      flipRefusedError(`unsupported URL scheme '${scheme}' — use https, http, ssh, or git`),
+      flipRefusedError(`unsupported URL scheme '${scheme}' — use https, http, ssh, git, or file`),
     );
   }
 
@@ -232,9 +232,11 @@ export const parseSource = (raw: string): Result<SourceSpec, SkillSmithError> =>
   if (!splitResult.ok) return splitResult;
   const { body, ref } = splitResult.value;
 
+  // The ONE grammar rejection that is source-unresolvable (exit 5), not flip-refused: the
+  // source is well-formed but a short SHA cannot be resolved remotely.
   if (ref !== null && SHORT_SHA_RE.test(ref)) {
     return err(
-      flipRefusedError(
+      sourceUnresolvableError(
         'short SHAs cannot be resolved remotely; use a full 40-hex SHA, a tag, or a branch',
       ),
     );

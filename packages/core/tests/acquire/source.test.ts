@@ -205,9 +205,12 @@ describe('parseSource — parse table', () => {
 });
 
 describe('parseSource — fuzz edges', () => {
-  test('short SHA rejected', () => {
-    expectReject(
-      'owner/repo@8c1d2e3',
+  test('short SHA rejected as source-unresolvable (exit 5, not flip-refused)', () => {
+    const r = parseSource('owner/repo@8c1d2e3');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('source-unresolvable');
+    expect('message' in r.error ? r.error.message : '').toContain(
       'short SHAs cannot be resolved remotely; use a full 40-hex SHA, a tag, or a branch',
     );
   });
@@ -250,5 +253,15 @@ describe('parseSource — fuzz edges', () => {
 
   test('unsupported scheme rejected, naming the scheme', () => {
     expectReject('ftp://x/y', 'ftp');
+  });
+
+  test('file:// URL form accepted (hermetic e2e fixtures)', () => {
+    expectOk('file:///tmp/fixtures/multi.git//plugins/x', {
+      host: '',
+      repoPath: 'tmp/fixtures/multi',
+      selector: { kind: 'path', path: 'plugins/x' },
+      ref: null,
+      cloneUrl: 'file:///tmp/fixtures/multi.git',
+    });
   });
 });
