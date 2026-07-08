@@ -30,7 +30,7 @@ import {
   snapshotToStore,
   sweepStaging,
 } from '../place/store.ts';
-import { runSwap, sweepCommittedAcquireJournals } from '../place/swap.ts';
+import { refusedMessage, runSwap, sweepCommittedAcquireJournals } from '../place/swap.ts';
 import {
   FLIP_TOOLS,
   type FlipTool,
@@ -580,10 +580,7 @@ const placePair = async (
 
   const existing = getPairAt(p.ledger, p.scopeKey, skill, tool);
   if (existing?.journal && existing.journal.phase !== 'committed') {
-    return refuse(
-      `'${skill}' (${tool}) has an interrupted ${existing.journal.op} in progress (phase: ${existing.journal.phase}). ` +
-        `Run 'skillsmith ${existing.journal.op} --rollback ${skill}' to restore the previous state, or re-run 'skillsmith install ${spec.raw}' to complete it.`,
-    );
+    return refuse(refusedMessage(existing.journal.op, skill, spec.raw));
   }
 
   const live = await classifyPlacement(env, installRoot, skill, p.storeRoot);
@@ -778,7 +775,7 @@ const predictPair = async (
 
   const existing = getPairAt(p.ledger, p.scopeKey, skill, tool);
   if (existing?.journal && existing.journal.phase !== 'committed') {
-    return refuse(`'${skill}' (${tool}) has an interrupted ${existing.journal.op} in progress`);
+    return refuse(refusedMessage(existing.journal.op, skill, spec.raw));
   }
 
   const live = await classifyPlacement(env, installRoot, skill, p.storeRoot);

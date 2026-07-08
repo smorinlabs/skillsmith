@@ -18,6 +18,7 @@ import type { ExecResult, ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { getPairAt, readLedger, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
+import type { Journal } from '../../src/place/types.ts';
 import { ok } from '../../src/result.ts';
 import { VERIFIED_AGAINST, type VerifyReport } from '../../src/verify/types.ts';
 import {
@@ -490,6 +491,47 @@ describe('runInstall — fetch elision', () => {
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).not.toBe('absent');
     const cc = r.value.results.find((x) => x.tool === 'claude-code');
     expect(cc?.store?.reused).toBe(true);
+  });
+});
+
+describe('runInstall — uncommitted journal refusal', () => {
+  test('an interrupted install journal on the pair → refused, naming the REAL rollback commands', async () => {
+    const r1 = await runInstall(f.env, userOpts, makeDeps());
+    if (!r1.ok) throw new Error(msg(r1.error));
+
+    // plant an uncommitted (phase !== 'committed') install journal on the pair
+    const ledger = await led();
+    const skillsRoot = claudeRoot();
+    const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
+    if (!pair) throw new Error('expected a seeded pair');
+    const journal: Journal = {
+      op: 'install',
+      txId: 'deadbeef',
+      phase: 'staged',
+      startedAt: NOW,
+      completedAt: null,
+      before: { mode: 'absent' },
+      stagingPath: join(skillsRoot, '.skillsmith-staging-factor-scan-deadbeef'),
+      backupPath: join(skillsRoot, '.skillsmith-backup-factor-scan-deadbeef'),
+    };
+    pair.journal = journal;
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    if (!w.ok) throw new Error(msg(w.error));
+
+    const r2 = await runInstall(
+      f.env,
+      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      makeDeps(),
+    );
+    if (!r2.ok) throw new Error(msg(r2.error));
+    const res = r2.value.results.find((x) => x.tool === 'claude-code');
+    expect(res?.action).toBe('refused');
+    expect(res?.error?.code).toBe('flip-refused'); // exit-2 contribution
+    const reason = res?.reason ?? '';
+    // names a REAL recovery command (promote/dev --rollback), NOT the nonexistent install --rollback
+    expect(reason).toMatch(/(promote|dev) --rollback/);
+    expect(reason).not.toContain('install --rollback');
+    expect(reason).not.toContain('uninstall --rollback');
   });
 });
 

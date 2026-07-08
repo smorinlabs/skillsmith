@@ -366,7 +366,7 @@ const forward = async (
   return commit(ctx, plan, pair, j);
 };
 
-const refusedMessage = (op: JournalOp, skill: string, source?: string): string => {
+export const refusedMessage = (op: JournalOp, skill: string, source?: string): string => {
   if (op === 'install') {
     return (
       `a previous install of ${skill} was interrupted. ` +
