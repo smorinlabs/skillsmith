@@ -72,6 +72,16 @@ reflects them):
    rule — resolved: rollback of a `before: { mode: 'absent' }` journal **deletes the pair record**;
    as an engine precondition, the run layer never starts a fresh-install swap on a pair holding
    prior dev/pinned records (those route through the repaired/replace paths instead).
+7. §5.2's URL scheme list (`https|http|ssh|git`) gains `file` — the spec's own §16 test strategy
+   drives install against `file://` bare-repo fixtures, and that must flow through the public
+   grammar (`runInstall` parses every source). R6 still rejects bare filesystem paths.
+8. Spec §15 homes the journal-hygiene sweep in `acquire/run.ts`, but §8.5 requires the
+   promote/dev/rollback batches (`place/run.ts`) to run it too, and `place` may never import
+   `acquire` — resolved: `sweepCommittedAcquireJournals` lives in `place/swap.ts`, called by
+   both run layers (Task 5).
+9. §2.2/D9 is silent on store-linked in the flip verbs' `--all` sets — resolved: named/path
+   targets accept store-linked; the `--all` sets are unchanged (the spec amends only the
+   targeted-flip paths — Task 6).
 
 ---
 
@@ -179,7 +189,7 @@ reflects them):
 
 - Paths are repo-relative from the workspace root.
 - `bun test` auto-discovers `*.test.ts`; helper files without that suffix are not collected.
-- Model per task: TS01 = haiku; T01, T02, T05, T07, TS02 = sonnet; T03, T04, T06 = opus.
+- Model per task: TS01 = haiku; T01, T02, T05, T07, T08, TS02 = sonnet; T03, T04, T06 = opus.
   **Highest-risk task: Task 5 [P09-T04] (ledger + swap widening) — it gets a fable task-review;
   every other task gets a sonnet review.** The final whole-branch review (P09-RV, fable) is
   outside this plan's task list.
@@ -247,8 +257,10 @@ export interface SourceSpec {
 export const parseSource = (raw: string): Result<SourceSpec, SkillSmithError>;
 ```
 
-All rejections return `err(flipRefusedError(<message>))` (exit 2 via the existing map). Messages
-below are load-bearing — copy them.
+Grammar rejections return `err(flipRefusedError(<message>))` (exit 2 via the existing map),
+with ONE exception: the short-SHA rejection returns `err(sourceUnresolvableError(<message>))`
+(exit 5 — the §13 table lists "short-SHA ref" under source-unresolvable; the source is
+well-formed but cannot be resolved remotely). Messages below are load-bearing — copy them.
 
 **Parse algorithm (ordered; implement exactly):**
 
@@ -259,10 +271,12 @@ below are load-bearing — copy them.
    `` `place '@<ref>' after the skill path: '<body-with-@-moved-to-end>'` `` (e.g.
    `owner/repo@v2//path` → suggest `owner/repo//path@v2`).
 2. **Ref validation (parse-adjacent):** a ref matching `/^[0-9a-f]{7,39}$/` is a short SHA →
-   reject: `short SHAs cannot be resolved remotely; use a full 40-hex SHA, a tag, or a branch`.
+   reject with `sourceUnresolvableError` (exit 5, see above):
+   `short SHAs cannot be resolved remotely; use a full 40-hex SHA, a tag, or a branch`.
    A 40-hex ref is accepted as a SHA.
 3. **URL detection:** body contains `://` → URL form (scheme must be one of `https`, `http`,
-   `ssh`, `git`; anything else rejects with the scheme named). Or body matches scp form
+   `ssh`, `git`, `file` — resolution 7; anything else rejects with the scheme named). Or body
+   matches scp form
    `^[^/\s]+@[^/:\s]+:` → scp form. For both: split an optional `//path` at the **first `//`
    after the authority** (for URLs, search the path portion only — never match the `://`);
    repo path = URL/scp path segments with trailing `.git` stripped; host = authority host
@@ -315,14 +329,18 @@ is the repo root and the name = the repo's final path segment (resolution-time r
 | 19 | `owner/repo@v2//path` | — | — | — | — | reject (R4: `@` before the end of the path portion) |
 | 20 | `owner/repo/a/b/c` | — | — | — | — | reject (>3 sugar segments without `//`) |
 
-Plus fuzz edges: `owner/repo@8c1d2e3` (short SHA reject); `https://user@gitlab.com/a/b` (userinfo
-`@` not a ref); trailing single `/` tolerated (`owner/repo/` = whole-repo); `.git` stripped from
-sugar (`owner/repo.git` → repoPath `owner/repo`); `owner/repo//a//b` (second `//` → reject invalid
-segment — empty segment); `owner/repo/.hidden` (dot-name reject); `ftp://x/y` (scheme reject).
+Plus fuzz edges: `owner/repo@8c1d2e3` (short SHA → reject, code `source-unresolvable`);
+`https://user@gitlab.com/a/b` (userinfo `@` not a ref); trailing single `/` tolerated
+(`owner/repo/` = whole-repo); `.git` stripped from sugar (`owner/repo.git` → repoPath
+`owner/repo`); `owner/repo//a//b` (second `//` → reject invalid segment — empty segment);
+`owner/repo/.hidden` (dot-name reject); `ftp://x/y` (scheme reject);
+`file:///tmp/fixtures/multi.git//plugins/x` (ok: URL form, host `''`, cloneUrl
+`file:///tmp/fixtures/multi.git`, path selector `plugins/x` — resolution 7).
 
 - [ ] **Step 1: Failing tests** — `packages/core/tests/acquire/source.test.ts`: one assertion
-  block per table row (assert every `SourceSpec` field on ok rows; assert `error.code ===
-  'flip-refused'` and a distinctive message substring on reject rows) plus the fuzz edges.
+  block per table row (assert every `SourceSpec` field on ok rows; assert the documented
+  `error.code` — `flip-refused`, or `source-unresolvable` for the short-SHA edge — and a
+  distinctive message substring on reject rows) plus the fuzz edges.
   Run: `bun test packages/core/tests/acquire/source.test.ts` — expect FAIL (module missing).
 - [ ] **Step 2: Implement** `types.ts` + `source.ts` (pure string work; `node:path` allowed but
   not needed; NO env, NO I/O).
@@ -1805,8 +1823,3 @@ git commit -m "test: add P09 interop round-trip, exit-code table, and SIGKILL/li
 - Values layering, `--set`, `--path` overrides (April-draft features not carried into v1).
 - `F_FULLFSYNC`/power-loss hardening beyond the specified fsync points (P12 Global Constraint 12
   stands).
-
-
-
-
-
