@@ -134,7 +134,7 @@ surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
 - [x] [P09-TS01] Hermetic `file://` bare-repo fetch fixtures (multi/single/root layouts, allowFilter) + project-scope fleet root — *haiku*
 - [x] [P09-T03] Blobless fetch pipeline + resolver: git via env.exec, ls-tree scan, sparse checkout, ls-remote elision, .fetch orphan sweep, `env.modifiedAt` — *opus*
 - [x] [P09-T04] Ledger additive schema + journal widening + install/uninstall swap ops + hygiene sweep + crash sweeps + v0.5.0-schema compat probe — *opus* (highest-risk; fable task-review)
-- [ ] [P09-T05] Store-linked flip amendment (D9): dev accepts recorded/--source, promote re-pins honoring `pinned.placement`, origin retained — *sonnet*
+- [x] [P09-T05] Store-linked flip amendment (D9): dev accepts recorded/--source, promote re-pins honoring `pinned.placement`, origin retained — *sonnet*
 - [ ] [P09-T06] `runInstall` orchestrator: one-lock batch, verify gate (static default, opt-in --deep), scopes/shadowing/legacy, noop/updated/repaired, fetch elision — *opus*
 - [ ] [P09-T07] `runUninstall` orchestrator (U2/U3/D12 refusals, journaled removal, store immortal) + public API exports — *sonnet*
 - [ ] [P09-T08] CLI: `install` (alias `i`, @clack picker) + `uninstall` (`rm`/`remove`), JSON contracts + goldens, human renderers, help topics — *sonnet*
