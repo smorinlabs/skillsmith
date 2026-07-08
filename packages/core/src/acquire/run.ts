@@ -30,7 +30,12 @@ import {
   snapshotToStore,
   sweepStaging,
 } from '../place/store.ts';
-import { refusedMessage, runSwap, sweepCommittedAcquireJournals } from '../place/swap.ts';
+import {
+  refusedMessage,
+  resumeSwap,
+  runSwap,
+  sweepCommittedAcquireJournals,
+} from '../place/swap.ts';
 import {
   FLIP_TOOLS,
   type FlipTool,
@@ -580,6 +585,37 @@ const placePair = async (
 
   const existing = getPairAt(p.ledger, p.scopeKey, skill, tool);
   if (existing?.journal && existing.journal.phase !== 'committed') {
+    // Global Constraint #6: an unresolved journal refuses every operation EXCEPT a same-op re-run
+    // (which RESUMES it to completion) and --rollback. A same-op install re-run drives the recorded
+    // swap forward via the generic resumeSwap; a DIFFERENT interrupted op still refuses, naming that
+    // journal's op for the same-op-re-run / --rollback recovery.
+    if (existing.journal.op === 'install') {
+      const wasFresh = existing.journal.before.mode === 'absent';
+      const ctx = makeSwapCtx(p);
+      const resumed = await resumeSwap(ctx, skill, tool, p.scopeKey);
+      if (!resumed.ok) {
+        return fail(
+          resumed.error.code === 'ledger-error'
+            ? flipFailedError(msg(resumed.error))
+            : resumed.error,
+        );
+      }
+      const after = getPairAt(p.ledger, p.scopeKey, skill, tool);
+      return {
+        ...base,
+        action: wasFresh ? 'installed' : 'updated',
+        reason: resumed.value.warning ?? shadowWarning ?? gate.notice,
+        placement: after?.pinned?.placement ?? base.placement,
+        store: after?.pinned
+          ? {
+              path: after.pinned.storePath,
+              rev: after.pinned.rev,
+              gitSha: after.pinned.gitSha ?? sha,
+              reused: true,
+            }
+          : base.store,
+      };
+    }
     return refuse(refusedMessage(existing.journal.op, skill, spec.raw));
   }
 
@@ -775,6 +811,13 @@ const predictPair = async (
 
   const existing = getPairAt(p.ledger, p.scopeKey, skill, tool);
   if (existing?.journal && existing.journal.phase !== 'committed') {
+    // A same-op install re-run would RESUME to completion (#6); a different op still refuses.
+    if (existing.journal.op === 'install') {
+      return {
+        ...base,
+        action: existing.journal.before.mode === 'absent' ? 'installed' : 'updated',
+      };
+    }
     return refuse(refusedMessage(existing.journal.op, skill, spec.raw));
   }
 

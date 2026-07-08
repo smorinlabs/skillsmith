@@ -494,25 +494,71 @@ describe('runInstall — fetch elision', () => {
   });
 });
 
-describe('runInstall — uncommitted journal refusal', () => {
-  test('an interrupted install journal on the pair → refused, naming the REAL rollback commands', async () => {
-    const r1 = await runInstall(f.env, userOpts, makeDeps());
+describe('runInstall — unresolved journal (Global Constraint #6)', () => {
+  test('same-op install re-run RESUMES the interrupted install to completion (not refused)', async () => {
+    const r1 = await runInstall(
+      f.env,
+      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      makeDeps(),
+    );
     if (!r1.ok) throw new Error(msg(r1.error));
+    const live = join(claudeRoot(), 'factor-scan');
+    expect(await f.env.pathKind(live)).toBe('symlink'); // materialized store symlink
 
-    // plant an uncommitted (phase !== 'committed') install journal on the pair
+    // Plant an uncommitted install journal at phase 'live' (crashed just before the terminal write):
+    // the placement is already published; resume must only commit (null the journal).
     const ledger = await led();
-    const skillsRoot = claudeRoot();
     const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
     if (!pair) throw new Error('expected a seeded pair');
     const journal: Journal = {
       op: 'install',
       txId: 'deadbeef',
-      phase: 'staged',
+      phase: 'live',
       startedAt: NOW,
       completedAt: null,
       before: { mode: 'absent' },
-      stagingPath: join(skillsRoot, '.skillsmith-staging-factor-scan-deadbeef'),
-      backupPath: join(skillsRoot, '.skillsmith-backup-factor-scan-deadbeef'),
+      stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
+      backupPath: join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef'),
+    };
+    pair.journal = journal;
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    if (!w.ok) throw new Error(msg(w.error));
+
+    const r2 = await runInstall(
+      f.env,
+      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      makeDeps(),
+    );
+    if (!r2.ok) throw new Error(msg(r2.error));
+    const res = r2.value.results.find((x) => x.tool === 'claude-code');
+    expect(res?.action).toBe('installed'); // RESUMED to completion, NOT refused
+    expect(res?.error).toBeUndefined();
+
+    const after = await led();
+    expect(getPairAt(after, null, 'factor-scan', 'claude-code')?.journal).toBeNull();
+    expect(await f.env.pathKind(live)).toBe('symlink');
+  });
+
+  test('a DIFFERENT interrupted op (promote) → refused, naming the JOURNAL op, not install', async () => {
+    const r1 = await runInstall(
+      f.env,
+      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      makeDeps(),
+    );
+    if (!r1.ok) throw new Error(msg(r1.error));
+
+    const ledger = await led();
+    const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
+    if (!pair) throw new Error('expected a seeded pair');
+    const journal: Journal = {
+      op: 'promote',
+      txId: 'deadbeef',
+      phase: 'staged',
+      startedAt: NOW,
+      completedAt: null,
+      before: { mode: 'dev', symlinkTarget: '/src/factor-scan', liveKind: 'symlink' },
+      stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
+      backupPath: join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef'),
     };
     pair.journal = journal;
     const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
@@ -528,10 +574,9 @@ describe('runInstall — uncommitted journal refusal', () => {
     expect(res?.action).toBe('refused');
     expect(res?.error?.code).toBe('flip-refused'); // exit-2 contribution
     const reason = res?.reason ?? '';
-    // names a REAL recovery command (promote/dev --rollback), NOT the nonexistent install --rollback
-    expect(reason).toMatch(/(promote|dev) --rollback/);
+    expect(reason).toContain('promote --rollback'); // names the JOURNAL's op
     expect(reason).not.toContain('install --rollback');
-    expect(reason).not.toContain('uninstall --rollback');
+    expect(reason).not.toContain("re-run 'skillsmith install"); // does not claim install completes it
   });
 });
 
