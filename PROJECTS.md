@@ -129,7 +129,7 @@ surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
 ### Tests & Tasks
 - [x] [P09-BR] Brainstorm + spec — `docs/superpowers/specs/2026-07-07-p09-install-design.md` (design-gate adjudicated incl. --deep amendment) — *fable*
 - [x] [P09-PL] Implementation plan — `docs/superpowers/plans/2026-07-07-p09-install-implementation.md` — *fable*
-- [ ] [P09-T01] Source grammar parser: pure `parseSource` (20-row table, R4/R5/R6, short-SHA reject) + `acquire/` eslint zone + ADR-0003 note — *sonnet*
+- [x] [P09-T01] Source grammar parser: pure `parseSource` (20-row table, R4/R5/R6, short-SHA reject) + `acquire/` eslint zone + ADR-0003 note — *sonnet*
 - [ ] [P09-T02] `clampStoreNs` in `place/store.ts` + `parseRemote` subgroup clamp regression (R7 / PR #5 follow-up #4) — *sonnet*
 - [ ] [P09-TS01] Hermetic `file://` bare-repo fetch fixtures (multi/single/root layouts, allowFilter) + project-scope fleet root — *haiku*
 - [ ] [P09-T03] Blobless fetch pipeline + resolver: git via env.exec, ls-tree scan, sparse checkout, ls-remote elision, .fetch orphan sweep, `env.modifiedAt` — *opus*
