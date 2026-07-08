@@ -137,7 +137,7 @@ surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
 - [x] [P09-T05] Store-linked flip amendment (D9): dev accepts recorded/--source, promote re-pins honoring `pinned.placement`, origin retained — *sonnet*
 - [x] [P09-T06] `runInstall` orchestrator: one-lock batch, verify gate (static default, opt-in --deep), scopes/shadowing/legacy, noop/updated/repaired, fetch elision — *opus*
 - [x] [P09-T07] `runUninstall` orchestrator (U2/U3/D12 refusals, journaled removal, store immortal) + public API exports — *sonnet*
-- [ ] [P09-T08] CLI: `install` (alias `i`, @clack picker) + `uninstall` (`rm`/`remove`), JSON contracts + goldens, human renderers, help topics — *sonnet*
+- [x] [P09-T08] CLI: `install` (alias `i`, @clack picker) + `uninstall` (`rm`/`remove`), JSON contracts + goldens, human renderers, help topics — *sonnet*
 - [ ] [P09-TS02] Acceptance: interop round-trip e2e, §13 exit-code table, env-gated SIGKILL install e2e + live e2e vs smorinlabs/smorinlabs-harness (PRD §10) — *sonnet*
 - [ ] [P09-RV] Final whole-branch review — *fable*
 
