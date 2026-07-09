@@ -655,12 +655,32 @@ const runRollbackPair = async (
   const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
+    // Captured BEFORE the call: `rollbackSwap` mutates this same pair record in place (nulls
+    // `.journal` on success), so reading `existing.journal` afterward would see the post-mutation
+    // state, not the journal that was actually rolled back.
+    const journalOp = existing.journal.op;
+    const journalBeforeMode = existing.journal.before.mode;
     const rb = await rollbackSwap(swapCtx, skill, tool);
     if (!rb.ok) return failedResult(base, midSwapError(rb.error));
+
+    // I2: an uncommitted install REPLACE (before-state was a real placement, not a fresh install)
+    // restores the OLD live bytes but the engine never captures the OLD pinned/origin records, so
+    // they're left stranded on the pair pointing at the un-materialized new rev — a silent ledger/
+    // disk mismatch until the next `install` reconciles it. Scoped to exactly that case: a fresh
+    // install rollback deletes the pair (coherent), and uninstall/promote/dev rollbacks never
+    // overwrote records (coherent) — neither needs this warning.
+    const isInterruptedInstallReplace = journalOp === 'install' && journalBeforeMode !== 'absent';
+    const reconcileWarning = `placement bytes were restored to the previous state, but the ledger still records the interrupted install's rev for '${skill}' — re-run 'skillsmith install' to reconcile it (it self-corrects on the next install)`;
+    const reason = isInterruptedInstallReplace
+      ? rb.value.warning
+        ? `${rb.value.warning}; ${reconcileWarning}`
+        : reconcileWarning
+      : rb.value.warning;
+
     return {
       ...base,
       action: 'rolled-back',
-      reason: rb.value.warning,
+      reason,
       before: null,
       after: null,
       store: null,
