@@ -22,5 +22,7 @@ export const exitCodeForError = (e: SkillSmithError): number => {
       return 5;
     case 'permission-denied':
       return 6;
+    case 'tool-unavailable':
+      return 4;
   }
 };

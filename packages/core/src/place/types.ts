@@ -5,7 +5,20 @@ import type { Result } from '../result.ts';
 export const FLIP_TOOLS = ['claude-code', 'codex'] as const;
 export type FlipTool = (typeof FLIP_TOOLS)[number];
 export type FlipOp = 'promote' | 'dev' | 'rollback';
+export type AcquireOp = 'install' | 'uninstall';
+export type JournalOp = FlipOp | AcquireOp; // FlipOp is NOT widened
 export type { Placement, PlacementClass } from '../agents/placement-shared.ts';
+
+export interface OriginRecord {
+  source: string; // the literal user argument ('smorinlabs/smorinlabs-harness/factor-scan')
+  host: string; // 'github.com'
+  repo: string; // UNCLAMPED repo path (subgroups keep their '/')
+  skillPath: string; // repo-relative git tree path; '' for a root skill
+  refRequested: string | null; // '@ref' / --ref as given; null = HEAD default
+  refResolved: string; // always the full 40-hex SHA
+  pin: boolean; // --pin policy marker
+  installedAt: string;
+}
 
 export interface DevRecord {
   sourcePath: string;
@@ -24,6 +37,7 @@ export interface PinnedRecord {
   contentHash: string; // 'sha256:<64hex>'
   snapshotAt: string;
   verify: 'passed' | 'warned' | 'skipped';
+  placement?: 'symlink' | 'copy'; // absent = 'copy' (every P12-written record)
 }
 
 export interface PairRecord {
@@ -31,29 +45,42 @@ export interface PairRecord {
   mode: 'dev' | 'pinned';
   dev: DevRecord | null;
   pinned: PinnedRecord | null;
+  origin?: OriginRecord; // written only by install
   journal: Journal | null;
 }
 
 export type JournalPhase = 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';
 
 export interface Journal {
-  op: FlipOp;
+  op: JournalOp;
   txId: string; // 8 lowercase hex chars
   phase: JournalPhase;
   startedAt: string;
   completedAt: string | null;
   before:
-    | { mode: 'dev'; symlinkTarget: string }
-    | { mode: 'pinned'; storePath: string | null; contentHash: string | null };
+    | { mode: 'dev'; symlinkTarget: string; liveKind?: 'symlink' | 'dir' }
+    | {
+        mode: 'pinned';
+        storePath: string | null;
+        contentHash: string | null;
+        liveKind?: 'symlink' | 'dir';
+        symlinkTarget?: string; // recorded when the live pre-state is a symlink (symlink→symlink rollback)
+      }
+    | { mode: 'absent' };
   stagingPath: string;
   backupPath: string;
 }
+
+export type ProjectScope = {
+  skills: Record<string, { tools: Partial<Record<FlipTool, PairRecord>> }>;
+};
 
 export interface LedgerFile {
   schemaVersion: 1;
   kind: 'skillsmith.placements';
   updatedAt: string;
   skills: Record<string, { tools: Partial<Record<FlipTool, PairRecord>> }>;
+  projects?: Record<string, ProjectScope>; // key = project root, REALPATH basis
 }
 
 export interface Provenance {
@@ -79,15 +106,25 @@ export interface SwapCtx {
 }
 
 export interface SwapPlan {
-  op: 'promote' | 'dev';
+  op: 'promote' | 'dev' | 'install' | 'uninstall';
   rollbackOf?: FlipOp; // set when this swap implements a committed-state rollback
   skill: string;
   tool: FlipTool;
   skillsRoot: string;
   placementPath: string; // join(skillsRoot, skill)
+  scopeKey?: string | null; // realpath project key; null/undefined = user-scope `skills` tree
   // promote: the store entry to materialize; dev: the literal symlink target to restore
   promote?: { storePath: string; contentHash: string; pinned: PinnedRecord; devRecord: DevRecord };
   dev?: { sourcePath: string; devRecord: DevRecord };
+  install?: {
+    build: 'symlink' | 'copy';
+    storePath: string;
+    contentHash: string;
+    pinned: PinnedRecord;
+    origin: OriginRecord;
+    adoptedDev: DevRecord | null;
+  };
+  // op 'uninstall' needs no payload — the engine reads the pair record.
 }
 
 export interface SwapOutcome {

@@ -7,8 +7,10 @@ import { type Shell, runCompletion } from './commands/completion.ts';
 import { configCommand } from './commands/config.ts';
 import { devCommand } from './commands/dev.ts';
 import { doctorCommand } from './commands/doctor.ts';
+import { installCommand } from './commands/install.ts';
 import { listCommand } from './commands/list.ts';
 import { promoteCommand } from './commands/promote.ts';
+import { uninstallCommand } from './commands/uninstall.ts';
 import { verifyCommand } from './commands/verify.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from './help/topics.ts';
 import { type ColorFlag, resolveColorMode } from './util/color.ts';
@@ -110,6 +112,8 @@ export const buildProgram = (signal?: AbortSignal): Command => {
   program.addCommand(verifyCommand(signal));
   program.addCommand(promoteCommand(signal));
   program.addCommand(devCommand(signal));
+  program.addCommand(installCommand(signal));
+  program.addCommand(uninstallCommand(signal));
 
   program
     .command('version')

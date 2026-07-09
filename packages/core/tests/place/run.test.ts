@@ -3,10 +3,18 @@ import { rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { getPair, readLedger } from '../../src/place/ledger.ts';
+import { emptyLedger, getPair, readLedger, setPair, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { runDev, runPromote, runRollback } from '../../src/place/run.ts';
-import type { FlipDeps, FlipOptions } from '../../src/place/types.ts';
+import type {
+  DevRecord,
+  FlipDeps,
+  FlipOptions,
+  Journal,
+  OriginRecord,
+  PairRecord,
+  PinnedRecord,
+} from '../../src/place/types.ts';
 import type { Result } from '../../src/result.ts';
 import { ok } from '../../src/result.ts';
 import type { VerifyOptions } from '../../src/verify/run.ts';
@@ -436,6 +444,225 @@ describe('runRollback', () => {
     const result = rb.value.results[0];
     expect(result?.action).toBe('refused');
     expect(result?.reason).toContain('nothing to roll back');
+  });
+});
+
+// -------------------------------------------------------------------------------------------
+// I2: flip-rollback of an interrupted install must warn when it leaves a stale rev on the pair
+// -------------------------------------------------------------------------------------------
+
+describe('runRollback — interrupted install-replace reconciliation warning (I2)', () => {
+  let f: FixtureFleet;
+  beforeEach(async () => {
+    f = await buildFixtureFleet();
+  });
+  afterEach(async () => {
+    await destroyFixtureFleet(f);
+  });
+
+  const devOf = (sourcePath: string): DevRecord => ({
+    sourcePath,
+    resolvedPath: sourcePath,
+    repoRoot: null,
+    sourceRelPath: null,
+    remote: null,
+    recordedAt: NOW,
+  });
+
+  const originOf = (skill: string): OriginRecord => ({
+    source: `smorinlabs/fixture-harness/${skill}`,
+    host: 'github.com',
+    repo: 'smorinlabs/fixture-harness',
+    skillPath: `plugins/fh/skills/${skill}`,
+    refRequested: null,
+    refResolved: 'b'.repeat(40),
+    pin: false,
+    installedAt: NOW,
+  });
+
+  const pinnedOf = (storePath: string, rev: string): PinnedRecord => ({
+    storePath,
+    rev,
+    gitSha: null,
+    dirty: false,
+    contentHash: `sha256:${'0'.repeat(64)}`,
+    snapshotAt: NOW,
+    verify: 'passed',
+    placement: 'symlink',
+  });
+
+  const seedJournaledPair = async (
+    skill: string,
+    journal: Journal,
+    pair: Omit<PairRecord, 'journal'>,
+  ): Promise<string> => {
+    const ledgerPath = ledgerPathOf(f.data);
+    const ledger = emptyLedger(NOW);
+    setPair(ledger, skill, 'claude-code', { ...pair, journal });
+    const w = await writeLedger(f.env, ledgerPath, ledger);
+    if (!w.ok) throw new Error(msg(w.error));
+    return ledgerPath;
+  };
+
+  test('RED->GREEN: replace-install rollback (before.mode pinned) surfaces the reconcile warning', async () => {
+    const skill = 'zeta-replace';
+    const skillsRoot = join(f.home, '.claude', 'skills');
+    const live = join(skillsRoot, skill);
+    // Old placement bytes still on disk (P1/P2 done, P3/P4 not — mirrors the 'staged' crash phase).
+    await f.env.makeDir(live);
+
+    const journal: Journal = {
+      op: 'install',
+      txId: 'aaaa1111',
+      phase: 'staged',
+      startedAt: NOW,
+      completedAt: null,
+      before: { mode: 'pinned', storePath: null, contentHash: null, liveKind: 'dir' },
+      stagingPath: join(skillsRoot, `.skillsmith-staging-${skill}-aaaa1111`),
+      backupPath: join(skillsRoot, `.skillsmith-backup-${skill}-aaaa1111`),
+    };
+    await seedJournaledPair(skill, journal, {
+      placementPath: live,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf('/fake/store/o/r@newrev000000/zeta', 'newrev000000'),
+      origin: originOf(skill),
+    });
+
+    const rb = await runRollback(
+      f.env,
+      { ...opts(f, { targets: [skill] }), op: 'promote' },
+      passDeps(),
+    );
+    if (!rb.ok) throw new Error(msg(rb.error));
+    const result = rb.value.results[0];
+    expect(result?.action).toBe('rolled-back');
+    expect(result?.reason).toContain('reconcile');
+    expect(result?.reason).toContain('ledger');
+    expect(result?.reason).toContain('skillsmith install');
+
+    // The old placement bytes are restored/preserved (the engine already did this part right).
+    expect(await f.env.pathKind(live)).toBe('dir');
+    const ledgerRes = await readLedger(f.env, ledgerPathOf(f.data));
+    if (!ledgerRes.ok) throw new Error(msg(ledgerRes.error));
+    const pair = getPair(ledgerRes.value, skill, 'claude-code');
+    expect(pair?.journal).toBeNull();
+    expect(pair?.mode).toBe('pinned');
+  });
+
+  test('negative: fresh-install rollback (before.mode absent) does NOT surface the reconcile warning', async () => {
+    const skill = 'zeta-fresh';
+    const skillsRoot = join(f.home, '.claude', 'skills');
+    const live = join(skillsRoot, skill);
+    // The half-installed NEW artifact — a fresh install has nothing to restore to.
+    await f.env.makeDir(live);
+
+    const journal: Journal = {
+      op: 'install',
+      txId: 'bbbb2222',
+      phase: 'staged',
+      startedAt: NOW,
+      completedAt: null,
+      before: { mode: 'absent' },
+      stagingPath: join(skillsRoot, `.skillsmith-staging-${skill}-bbbb2222`),
+      backupPath: join(skillsRoot, `.skillsmith-backup-${skill}-bbbb2222`),
+    };
+    await seedJournaledPair(skill, journal, {
+      placementPath: live,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf('/fake/store/o/r@newrev000000/zeta', 'newrev000000'),
+      origin: originOf(skill),
+    });
+
+    const rb = await runRollback(
+      f.env,
+      { ...opts(f, { targets: [skill] }), op: 'promote' },
+      passDeps(),
+    );
+    if (!rb.ok) throw new Error(msg(rb.error));
+    const result = rb.value.results[0];
+    expect(result?.action).toBe('rolled-back');
+    expect(result?.reason ?? '').not.toContain('reconcile');
+
+    // Fresh install rollback deletes the pair entirely (coherent — nothing left to reconcile).
+    expect(await f.env.pathKind(live)).toBe('absent');
+    const ledgerRes = await readLedger(f.env, ledgerPathOf(f.data));
+    if (!ledgerRes.ok) throw new Error(msg(ledgerRes.error));
+    expect(getPair(ledgerRes.value, skill, 'claude-code')).toBeNull();
+  });
+
+  test('negative: uninstall-journal rollback does NOT surface the reconcile warning', async () => {
+    const skill = 'zeta-uninstall';
+    const skillsRoot = join(f.home, '.claude', 'skills');
+    const live = join(skillsRoot, skill);
+    const backupPath = join(skillsRoot, `.skillsmith-backup-${skill}-cccc3333`);
+    // Committed-live-removed, backup still holding the old bytes (mirrors 'backed-up' phase).
+    await f.env.makeDir(backupPath);
+
+    const journal: Journal = {
+      op: 'uninstall',
+      txId: 'cccc3333',
+      phase: 'backed-up',
+      startedAt: NOW,
+      completedAt: null,
+      before: { mode: 'pinned', storePath: null, contentHash: null, liveKind: 'dir' },
+      stagingPath: join(skillsRoot, `.skillsmith-staging-${skill}-cccc3333`),
+      backupPath,
+    };
+    await seedJournaledPair(skill, journal, {
+      placementPath: live,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf('/fake/store/o/r@oldrev000000/zeta', 'oldrev000000'),
+      origin: originOf(skill),
+    });
+
+    const rb = await runRollback(
+      f.env,
+      { ...opts(f, { targets: [skill] }), op: 'promote' },
+      passDeps(),
+    );
+    if (!rb.ok) throw new Error(msg(rb.error));
+    const result = rb.value.results[0];
+    expect(result?.action).toBe('rolled-back');
+    expect(result?.reason ?? '').not.toContain('reconcile');
+  });
+
+  test('negative: interrupted promote-journal rollback does NOT surface the reconcile warning', async () => {
+    const skill = 'zeta-promote';
+    const skillsRoot = join(f.home, '.claude', 'skills');
+    const live = join(skillsRoot, skill);
+    const target = resolve(f.alphaSrc);
+    // Live still the old dev symlink — the promote journal never got past 'staged'.
+    await f.env.makeSymlink(target, live);
+
+    const journal: Journal = {
+      op: 'promote',
+      txId: 'dddd4444',
+      phase: 'staged',
+      startedAt: NOW,
+      completedAt: null,
+      before: { mode: 'dev', symlinkTarget: target, liveKind: 'symlink' },
+      stagingPath: join(skillsRoot, `.skillsmith-staging-${skill}-dddd4444`),
+      backupPath: join(skillsRoot, `.skillsmith-backup-${skill}-dddd4444`),
+    };
+    await seedJournaledPair(skill, journal, {
+      placementPath: live,
+      mode: 'dev',
+      dev: devOf(target),
+      pinned: null,
+    });
+
+    const rb = await runRollback(
+      f.env,
+      { ...opts(f, { targets: [skill] }), op: 'promote' },
+      passDeps(),
+    );
+    if (!rb.ok) throw new Error(msg(rb.error));
+    const result = rb.value.results[0];
+    expect(result?.action).toBe('rolled-back');
+    expect(result?.reason ?? '').not.toContain('reconcile');
   });
 });
 

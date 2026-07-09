@@ -1,3 +1,10 @@
+export {
+  defaultInstallDeps,
+  defaultUninstallDeps,
+  runInstall,
+  runUninstall,
+} from './acquire/run.ts';
+export { parseSource } from './acquire/source.ts';
 export { getAgent, listSupportedTools, registry } from './agents/registry.ts';
 export { SUPPORTED_TOOLS } from './agents/types.ts';
 export { getConfigValue } from './config/accessors.ts';
@@ -18,6 +25,7 @@ export {
 } from './errors.ts';
 export type {
   Agent,
+  CandidateSkill,
   Check,
   CheckRunContext,
   CheckRunMode,
@@ -40,8 +48,14 @@ export type {
   FlipResult,
   FlipTool,
   Frontmatter,
+  InstallAction,
+  InstallDeps,
   InstallMethod,
+  InstallOptions,
   InstallRecord,
+  InstallReport,
+  InstallResult,
+  InstallScope,
   JournalPhase,
   ListCommandsOpts,
   ListSkillsOpts,
@@ -65,11 +79,17 @@ export type {
   SkillRootsCtx,
   SkillSmithError,
   SkipReason,
+  SourceSpec,
   SummaryVerdict,
   SupportedTool,
   ToolVerdict,
   ToolVerifier,
   ToolVerifyOptions,
+  UninstallAction,
+  UninstallDeps,
+  UninstallOptions,
+  UninstallReport,
+  UninstallResult,
   VerifyFinding,
   VerifyMode,
   VerifyOptions,

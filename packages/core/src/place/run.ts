@@ -15,7 +15,7 @@ import { getPair, readLedger, withLedgerLock, writeLedger } from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
 import { type PairPlan, planFlips } from './plan.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore, sweepStaging } from './store.ts';
-import { resumeSwap, rollbackSwap, runSwap } from './swap.ts';
+import { resumeSwap, rollbackSwap, runSwap, sweepCommittedAcquireJournals } from './swap.ts';
 import {
   type DevRecord,
   FLIP_TOOLS,
@@ -257,7 +257,19 @@ const runPromotePair = async (
   let resolvedSourceDir: string;
   let isReplace = false;
 
-  if (placement.class === 'pinned') {
+  if (placement.class === 'store-linked') {
+    // D9: a hand-made symlink into the store with no ledger pair at all is unmanageable —
+    // reinstall is the only way back to a known state (P12 behavior for every OTHER unmanaged
+    // placement kind never applied here since store-linked was previously unreachable).
+    if (!existing) {
+      const reason = "managed state missing; reinstall with 'skillsmith install --force'";
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    if (!existing.dev) return noopResult(base, 'already pinned; no dev source recorded');
+    devRecord = existing.dev;
+    resolvedSourceDir = existing.dev.resolvedPath;
+    isReplace = true;
+  } else if (placement.class === 'pinned') {
     if (!existing?.dev) return noopResult(base, 'already pinned; no dev source recorded');
     devRecord = existing.dev;
     resolvedSourceDir = existing.dev.resolvedPath;
@@ -285,6 +297,14 @@ const runPromotePair = async (
       recordedAt: deps.now(),
     };
   }
+
+  // D9 re-pin (the heart of D9): a symlink-placement pinned record with a retained origin means
+  // the FINAL swap must re-create a store symlink, not a copy — whether reached via the
+  // store-linked convergence above, or via a plain promote of a dev symlink whose pair still
+  // carries that record (the install -> `dev --source` -> promote loop, PRD scenario 4). The
+  // latter is itself a replace (there is a previous rev to converge against), not a fresh flip.
+  const symlinkRepin = existing?.pinned?.placement === 'symlink' && existing?.origin !== undefined;
+  if (symlinkRepin) isReplace = true;
 
   const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts);
   if (gate.blocked) {
@@ -334,6 +354,75 @@ const runPromotePair = async (
     if (existing?.pinned && currentRevRes.value === existing.pinned.rev) {
       const reason = notesAcc.length > 0 ? notesAcc.join('; ') : 'already pinned; source unchanged';
       return noopResult(base, reason);
+    }
+
+    if (symlinkRepin) {
+      const repinOrigin = existing?.origin;
+      if (!repinOrigin)
+        return failedResult(base, genericError('symlink re-pin missing origin record'));
+
+      const dataDir = resolveDataDir(env, opts.envVars);
+      const txId = deps.newTxId();
+      const snapRes = await snapshotToStore(env, {
+        sourceDir: resolvedSourceDir,
+        skill,
+        storeRoot: storeRootOf(dataDir),
+        provenance,
+        txId,
+      });
+      if (!snapRes.ok) return failedResult(base, snapRes.error);
+      const snap = snapRes.value;
+
+      const pinned: PinnedRecord = {
+        storePath: snap.storePath,
+        rev: snap.rev,
+        gitSha: provenance.gitSha,
+        dirty: provenance.kind === 'git-dirty',
+        contentHash: snap.contentHash,
+        snapshotAt: deps.now(),
+        verify: ledgerVerifyOf(gate.gate),
+        placement: 'symlink',
+      };
+
+      // `adoptedDev` tells the engine the PRE-swap live symlink pointed outside the store (governs
+      // its before-state classification): true when we got here via a dev-class placement (the
+      // live entry there IS a genuine dev symlink); false for a store-linked convergence (the live
+      // entry there already points inside the store).
+      const installPlan: SwapPlan = {
+        op: 'install',
+        skill,
+        tool,
+        skillsRoot: dirname(placement.path),
+        placementPath: placement.path,
+        install: {
+          build: 'symlink',
+          storePath: snap.storePath,
+          contentHash: snap.contentHash,
+          pinned,
+          origin: repinOrigin,
+          adoptedDev: placement.class === 'dev' ? devRecord : null,
+        },
+      };
+      const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
+      const swapRes = await runSwap(swapCtx, installPlan);
+      if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
+      if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
+
+      return {
+        ...base,
+        action: 'updated',
+        reason: notesAcc.length > 0 ? notesAcc.join('; ') : null,
+        before: { mode: 'pinned', storePath: existing?.pinned?.storePath ?? null },
+        after: { mode: 'pinned', storePath: snap.storePath },
+        store: {
+          path: snap.storePath,
+          rev: snap.rev,
+          gitSha: provenance.gitSha,
+          dirty: provenance.kind === 'git-dirty',
+          reused: snap.reused,
+        },
+        verify: { gate: gate.gate, verdict: gate.verdict },
+      };
     }
 
     // Re-pin (source moved): swap.ts's 'promote' op always reads the live entry as a symlink, so
@@ -467,6 +556,12 @@ const runDevPair = async (
     resolve(opts.cwd, opts.source) !== resolve(opts.cwd, recordedSource);
 
   if (source === null) {
+    // D9: a recordless store-linked placement (hand-made symlink into the store) has no dev
+    // history to point at — the reinstall guidance applies, not the generic --source hint.
+    if (placement.class === 'store-linked' && !existing) {
+      const reason = "managed state missing; reinstall with 'skillsmith install --force'";
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
     if (opts.all) {
       return {
         ...base,
@@ -560,12 +655,32 @@ const runRollbackPair = async (
   const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
+    // Captured BEFORE the call: `rollbackSwap` mutates this same pair record in place (nulls
+    // `.journal` on success), so reading `existing.journal` afterward would see the post-mutation
+    // state, not the journal that was actually rolled back.
+    const journalOp = existing.journal.op;
+    const journalBeforeMode = existing.journal.before.mode;
     const rb = await rollbackSwap(swapCtx, skill, tool);
     if (!rb.ok) return failedResult(base, midSwapError(rb.error));
+
+    // I2: an uncommitted install REPLACE (before-state was a real placement, not a fresh install)
+    // restores the OLD live bytes but the engine never captures the OLD pinned/origin records, so
+    // they're left stranded on the pair pointing at the un-materialized new rev — a silent ledger/
+    // disk mismatch until the next `install` reconciles it. Scoped to exactly that case: a fresh
+    // install rollback deletes the pair (coherent), and uninstall/promote/dev rollbacks never
+    // overwrote records (coherent) — neither needs this warning.
+    const isInterruptedInstallReplace = journalOp === 'install' && journalBeforeMode !== 'absent';
+    const reconcileWarning = `placement bytes were restored to the previous state, but the ledger still records the interrupted install's rev for '${skill}' — re-run 'skillsmith install' to reconcile it (it self-corrects on the next install)`;
+    const reason = isInterruptedInstallReplace
+      ? rb.value.warning
+        ? `${rb.value.warning}; ${reconcileWarning}`
+        : reconcileWarning
+      : rb.value.warning;
+
     return {
       ...base,
       action: 'rolled-back',
-      reason: rb.value.warning,
+      reason,
       before: null,
       after: null,
       store: null,
@@ -716,6 +831,35 @@ const predictPair = async (
   }
 
   if (op === 'promote') {
+    if (placement.class === 'store-linked') {
+      if (!existing) {
+        const reason = "managed state missing; reinstall with 'skillsmith install --force'";
+        return refusedResult(base, reason, flipRefusedError(reason));
+      }
+      if (!existing.dev) return noopResult(base, 'already pinned; no dev source recorded');
+      const provRes = await resolveProvenance(env, existing.dev.resolvedPath);
+      if (!provRes.ok) return failedResult(base, provRes.error);
+      const provenance = provRes.value;
+      if (provenance.kind === 'git-dirty' && !opts.allowDirty) {
+        const reason = `refusing to promote '${skill}': the source tree is dirty`;
+        return refusedResult(base, reason, flipRefusedError(reason));
+      }
+      const revRes = await computeRevPreview(env, provenance, existing.dev.resolvedPath);
+      if (!revRes.ok) return failedResult(base, revRes.error);
+      if (existing.pinned && revRes.value === existing.pinned.rev) {
+        return noopResult(base, 'already pinned; source unchanged');
+      }
+      return {
+        ...base,
+        action: 'updated',
+        reason: null,
+        before: null,
+        after: null,
+        store: null,
+        verify: null,
+      };
+    }
+
     if (placement.class === 'pinned') {
       if (!existing?.dev) return noopResult(base, 'already pinned; no dev source recorded');
       const provRes = await resolveProvenance(env, existing.dev.resolvedPath);
@@ -760,6 +904,26 @@ const predictPair = async (
       const reason = `refusing to promote '${skill}': the source tree is dirty`;
       return refusedResult(base, reason, flipRefusedError(reason));
     }
+
+    // D9: mirror runPromotePair's re-pin convergence for a dev symlink whose pair still carries a
+    // symlink-placement pinned record + origin (install -> `dev --source` -> promote loop).
+    if (existing?.pinned?.placement === 'symlink' && existing?.origin !== undefined) {
+      const revRes = await computeRevPreview(env, provRes.value, resolvedTarget);
+      if (!revRes.ok) return failedResult(base, revRes.error);
+      if (existing.pinned && revRes.value === existing.pinned.rev) {
+        return noopResult(base, 'already pinned; source unchanged');
+      }
+      return {
+        ...base,
+        action: 'updated',
+        reason: null,
+        before: null,
+        after: null,
+        store: null,
+        verify: null,
+      };
+    }
+
     return {
       ...base,
       action: 'flipped',
@@ -777,6 +941,10 @@ const predictPair = async (
   const recordedSource = existing?.dev?.sourcePath ?? null;
   const source = opts.source ?? recordedSource;
   if (source === null) {
+    if (placement.class === 'store-linked' && !existing) {
+      const reason = "managed state missing; reinstall with 'skillsmith install --force'";
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
     if (opts.all) {
       return {
         ...base,
@@ -891,6 +1059,13 @@ const runFlipBatch = async (
       if (!ledgerRes.ok) return ledgerRes;
       let ledger = ledgerRes.value;
 
+      // §8.5 hygiene: finish any committed install/uninstall left mid-terminal by a crash. Notes
+      // are not surfaced by flips; a sweep failure aborts the batch (recovery must complete first).
+      const swept = await sweepCommittedAcquireJournals(
+        makeSwapCtx(env, ledgerPath, ledger, deps, opts),
+      );
+      if (!swept.ok) return err(midSwapError(swept.error));
+
       const planRes = await planFlips(env, { ...opts, op }, storeRoot, ledger);
       if (!planRes.ok) return planRes;
       const { pairs, preResults } = planRes.value;
@@ -967,6 +1142,12 @@ export const runRollback = async (
       const ledgerRes = await readLedger(env, ledgerPath);
       if (!ledgerRes.ok) return ledgerRes;
       let ledger = ledgerRes.value;
+
+      // §8.5 hygiene: finish any committed install/uninstall left mid-terminal by a crash.
+      const swept = await sweepCommittedAcquireJournals(
+        makeSwapCtx(env, ledgerPath, ledger, deps, opts),
+      );
+      if (!swept.ok) return err(midSwapError(swept.error));
 
       const planRes = await planFlips(env, opts, storeRoot, ledger);
       if (!planRes.ok) return planRes;

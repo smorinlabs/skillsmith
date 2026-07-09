@@ -99,6 +99,12 @@ export default [
             { target: './packages/core/src/plugins', from: './packages/core/src/place' },
             { target: './packages/core/src/commands', from: './packages/core/src/place' },
             { target: './packages/core/src/verify', from: './packages/core/src/place' },
+            // acquire is the topmost core orchestrator (install/uninstall); nothing may import it back.
+            { target: './packages/core/src/skills', from: './packages/core/src/acquire' },
+            { target: './packages/core/src/plugins', from: './packages/core/src/acquire' },
+            { target: './packages/core/src/commands', from: './packages/core/src/acquire' },
+            { target: './packages/core/src/verify', from: './packages/core/src/acquire' },
+            { target: './packages/core/src/place', from: './packages/core/src/acquire' },
           ],
         },
       ],

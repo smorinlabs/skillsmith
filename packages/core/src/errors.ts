@@ -8,7 +8,8 @@ export type SkillSmithError =
   | { code: 'ledger-error'; message: string; file?: string }
   | { code: 'permission-denied'; message: string; path?: string }
   | { code: 'flip-refused'; message: string }
-  | { code: 'flip-failed'; message: string };
+  | { code: 'flip-failed'; message: string }
+  | { code: 'tool-unavailable'; message: string };
 
 export const genericError = (message: string, cause?: unknown): SkillSmithError => ({
   code: 'generic',
@@ -68,5 +69,10 @@ export const flipRefusedError = (message: string): SkillSmithError => ({
 
 export const flipFailedError = (message: string): SkillSmithError => ({
   code: 'flip-failed',
+  message,
+});
+
+export const toolUnavailableError = (message: string): SkillSmithError => ({
+  code: 'tool-unavailable',
   message,
 });

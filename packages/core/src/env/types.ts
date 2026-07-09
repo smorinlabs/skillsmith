@@ -51,4 +51,5 @@ export interface ScanEnv {
   fsyncFile(p: string): Promise<void>;
   fsyncDir(p: string): Promise<void>;
   withFileLock<T>(p: string, fn: () => Promise<T>): Promise<T>;
+  modifiedAt(p: string): Promise<number | null>; // lstat mtimeMs; null when absent (ENOENT)
 }
