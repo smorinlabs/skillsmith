@@ -112,7 +112,7 @@ surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
 
 ---
 
-## [-] Project P09: MVP-2c — `install` + `uninstall` (write path) (v0.6.0)
+## [x] Project P09: MVP-2c — `install` + `uninstall` (write path) (v0.6.0)
 > **PRD (authoritative, 2026-07-07):** `docs/superpowers/specs/2026-07-07-p09-install-prd.md` —
 > supersedes this section's claude-only scoping and the April source grammar; reuses P12
 > store/ledger/swap and P11 verify. P09-BR consumes the PRD.
