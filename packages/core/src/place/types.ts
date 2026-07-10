@@ -44,9 +44,12 @@ export interface PairRecord {
   placementPath: string;
   mode: 'dev' | 'pinned';
   dev: DevRecord | null;
-  pinned: PinnedRecord | null;
+  // P13 (BF-2): a `dev --source` create/adopt writes a dev-only record that OMITS `pinned` and
+  // `journal` entirely — a new legal shape. Both are optional here so a raw omitted-field record
+  // types as `undefined`; every reader must be nullish-safe (`!= null`, not `!== null`).
+  pinned?: PinnedRecord | null;
   origin?: OriginRecord; // written only by install
-  journal: Journal | null;
+  journal?: Journal | null;
 }
 
 export type JournalPhase = 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';

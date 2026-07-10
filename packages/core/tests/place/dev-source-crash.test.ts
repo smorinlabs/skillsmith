@@ -218,29 +218,17 @@ describe('dev --source create — staging-name collision on retry', () => {
   });
 });
 
-describe('dev --source create — true process death before rename (state-construction; crashingEnv cannot express this)', () => {
-  // `crashingEnv` throws INSIDE the same call, before the intercepted primitive runs — but
-  // createDevPlacement wraps the whole staged-rename block in one try/catch that reacts to that
-  // throw by calling `env.removeTree(stagingPath)` itself (proven by the crash-sweep test above: no
-  // residue survives ANY crashed call). A real SIGKILL never reaches that catch — the process is
-  // simply gone. There is no `SKILLSMITH_TEST_PAUSE_AT`-style real-crash seam for the create path
-  // (D3 deliberately gives it no journal, and the existing pause seam only understands
-  // `JournalPhase` values), so a genuine no-cleanup crash can only be modeled by constructing the
-  // terminal disk state directly — same escape hatch the existing "S2 (codex): simulated crash
-  // state" test (dev-source.test.ts:192) already uses for the *later* window.
-  //
-  // FINDING (not fixed here — out of scope for this test/docs pass, flagged for a follow-up): D3's
-  // stated convergence guarantee is scoped to the window AFTER the staging→live rename (S2 — dev
-  // symlink live, not yet in the ledger). It says nothing about a crash strictly BEFORE that rename.
-  // Because create/adopt has no journal recording which txId a given attempt used, and production
-  // `newTxId` is random per call, a stray `.skillsmith-staging-<skill>-<txid>` left by a truly-dead
-  // process is never rediscovered by a later retry (which computes a different staging name) — it
-  // is orphaned permanently, unlike promote/dev's swap residue, which the journal lets
-  // rollback/resume find and clean by name. The skill itself still converges correctly; only the
-  // stray staging entry is never swept. This mirrors the PRD's own precedent of flagging an
-  // out-of-scope edge case for later (D3: "if [uninstall of a dev-created pair] refuses, that's a
-  // finding for a follow-up").
-  test('the skill converges to created, but the orphaned staging entry from the dead attempt is never swept', async () => {
+describe('dev --source create — true process death leaves a staging orphan (now swept: BF-5 / T5)', () => {
+  // A real SIGKILL during an OLD-style staged create (`makeSymlink(source, staging)` then
+  // `rename(staging, live)`) could leave a stray `.skillsmith-staging-<skill>-<txid>` — the process
+  // is simply gone, so no in-process catch ran. The current create path no longer stages at all (it
+  // publishes the symlink directly at the final path, BF-5(a)), and BF-5's non-blocking pre-stage
+  // sweep removes any stale `.skillsmith-staging-<skill>-*` for THIS name before publishing. So a
+  // stray staging orphan left by a truly-dead earlier attempt — which a random-txid retry could
+  // never rediscover under the old scheme — is now swept on the next `dev --source` for that name.
+  // The scenario is still modeled by constructing the terminal disk state directly (crashingEnv
+  // throws in-process, before the primitive; it cannot express a no-cleanup process death).
+  test('a stray staging orphan for this name is swept by the next create, which still converges', async () => {
     const f = await buildFixtureFleet();
     try {
       const claudeRoot = claudeRootOf(f);
@@ -248,10 +236,9 @@ describe('dev --source create — true process death before rename (state-constr
       const source = await makeSkillSource(f.base, skill);
       const resolvedSource = resolve(source);
 
-      // The exact disk state a process SIGKILLed between `makeSymlink(source, staging)` and
-      // `rename(staging, live)` leaves: the staging entry exists, `live` does not, nothing is
-      // recorded. Its txId ("deadbeef01") is deliberately NOT the one the retry below will use —
-      // production txIds are random per call, so a later retry can never guess the dead one.
+      // The disk state a process SIGKILLed mid-create leaves: a stray staging entry, `live` absent,
+      // nothing recorded. Its txId ("deadbeef01") is deliberately arbitrary — the sweep is by NAME,
+      // not by txid, so it no longer matters that a retry could never guess the dead one.
       const deadStaging = join(claudeRoot, `.skillsmith-staging-${skill}-deadbeef01`);
       await symlink(resolvedSource, deadStaging);
       expect(await f.env.pathKind(join(claudeRoot, skill))).toBe('absent');
@@ -269,16 +256,16 @@ describe('dev --source create — true process death before rename (state-constr
       );
       if (!r.ok) throw new Error(msg(r.error));
 
-      // The skill itself converges correctly ...
+      // The skill converges correctly ...
       expect(r.value.results[0]?.action).toBe('created');
       expect(await f.env.pathKind(join(claudeRoot, skill))).toBe('symlink');
       expect(await f.env.readLink(join(claudeRoot, skill))).toBe(resolvedSource);
       const pair = getPair(await readLedgerOf(f), skill, 'claude-code');
       expect(pair?.dev?.sourcePath).toBe(resolvedSource);
 
-      // ... but the dead attempt's staging entry is untouched — documented residue, not a
-      // regression introduced by this test file.
-      expect(await f.env.pathKind(deadStaging)).toBe('symlink');
+      // ... AND the dead attempt's staging orphan was swept before the publish (BF-5 / T5).
+      expect(await f.env.pathKind(deadStaging)).toBe('absent');
+      expect(await stagingResidue(claudeRoot)).toEqual([]);
     } finally {
       await destroyFixtureFleet(f);
     }

@@ -1,4 +1,4 @@
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import {
   claudeCodeSkillRootsUser,
   listClaudeCodePlacements,
@@ -94,7 +94,9 @@ const isRollbackablePair = (ledger: LedgerFile, skill: string, tool: FlipTool): 
   if (hasOpenJournal(ledger, skill, tool)) return true;
   const pair = getPair(ledger, skill, tool);
   if (pair === null) return false;
-  return pair.mode === 'pinned' ? pair.dev !== null : pair.pinned !== null;
+  // BF-2: `!= null` (not `!== null`) so a RAW dev-only record whose `pinned` key is OMITTED
+  // (undefined) is not selected as rollbackable — a dev-created pair has no pinned state to invert.
+  return pair.mode === 'pinned' ? pair.dev != null : pair.pinned != null;
 };
 
 interface CodexRoots {
@@ -106,6 +108,23 @@ const codexRootsOf = (env: ScanEnv, ctx: SkillRootsCtx): CodexRoots => {
   const [current, legacy] = getCodexSkillRoots(env, 'user', ctx);
   return { current: current ?? '', legacy: legacy ?? '' };
 };
+
+/** The standard user-scope skills roots a tool owns (claude-code: one; codex: current + legacy).
+ *  Used to decide whether a ledger-recorded placementPath lives at a CUSTOM location (a `--dest`
+ *  create) — BF-1(d). */
+const standardRootsFor = (env: ScanEnv, ctx: SkillRootsCtx, tool: FlipTool): string[] => {
+  if (tool === 'claude-code') {
+    const [root] = claudeCodeSkillRootsUser(env, ctx);
+    return [root ?? join(env.homeDir, '.claude', 'skills')];
+  }
+  const roots = codexRootsOf(env, ctx);
+  return [roots.current, roots.legacy].filter((r) => r !== '');
+};
+
+/** BF-1(a): a skill NAME target must be a single leaf — never `.`/`..`/empty/`/`-bearing, which
+ *  would classify (and could clobber) the skills ROOT itself rather than a skill in it. */
+const isValidLeafName = (name: string): boolean =>
+  name !== '' && name !== '.' && name !== '..' && !name.includes('/') && !name.includes(sep);
 
 interface ToolResolution {
   placement: Placement;
@@ -184,17 +203,57 @@ const resolveNamedTarget = async (
   const preResults: FlipResult[] = [];
   let anyFlippableFound = false;
 
+  // BF-1(a): reject a non-leaf/dot name before it can classify the skills ROOT itself.
+  if (!isValidLeafName(target)) {
+    const reason = `'${target}' is not a valid skill name`;
+    return {
+      pairs: [],
+      preResults: [emptyFlipResult(target, null, null, reason, flipRefusedError(reason))],
+    };
+  }
+
   for (const tool of toolsInOrder) {
-    // P13: `--dest` overrides the destination root for a create (requires exactly one --tool, the
-    // CLI enforces that). Classify the target at the dest root instead of the tool default.
-    const res: ToolResolution =
-      dest !== undefined
-        ? {
-            placement: await classifyPlacement(env, dest, target, storeRoot),
+    let res: ToolResolution;
+    if (dest !== undefined) {
+      // P13 `--dest`: create at a custom root (requires exactly one --tool). `dest` is already
+      // resolved absolute + normalized by planFlips (BF-1b), and the leaf-name check above keeps
+      // join(dest, target) contained under dest.
+      const destPlacement = await classifyPlacement(env, dest, target, storeRoot);
+      // BF-1(c): a `--dest` create must not shadow an existing placement in the tool's STANDARD
+      // roots (codex modern/legacy included) or an existing ledger pair — that silently creates a
+      // duplicate the lifecycle can't reconcile. The old code hard-coded duplicateReason:null here.
+      const normal = await classifyForTool(env, ctx, storeRoot, target, tool);
+      const hasPair = getPair(ledger, target, tool) !== null;
+      if (normal.duplicateReason || normal.placement.class !== 'absent' || hasPair) {
+        anyFlippableFound = true;
+        const where = normal.duplicateReason
+          ? 'both codex roots'
+          : normal.placement.class !== 'absent'
+            ? normal.placement.path
+            : 'the placements ledger';
+        const reason = `refusing to create '${target}' (${tool}) at ${destPlacement.path}: a placement already exists (${where}); resolve it first`;
+        preResults.push(
+          emptyFlipResult(target, tool, destPlacement.path, reason, flipRefusedError(reason)),
+        );
+        continue;
+      }
+      res = { placement: destPlacement, notices: [], duplicateReason: null };
+    } else {
+      res = await classifyForTool(env, ctx, storeRoot, target, tool);
+      // BF-1(d): the ledger is the source of truth for a placement's LOCATION. When the standard
+      // roots don't hold it but a ledger pair records a placement at a CUSTOM location (a `--dest`
+      // create), classify THERE so promote/dev/uninstall stay able to manage it for its whole life.
+      if (res.placement.class === 'absent') {
+        const recorded = getPair(ledger, target, tool)?.placementPath;
+        if (recorded && !standardRootsFor(env, ctx, tool).includes(dirname(recorded))) {
+          res = {
+            placement: await classifyPlacement(env, dirname(recorded), target, storeRoot),
             notices: [],
             duplicateReason: null,
-          }
-        : await classifyForTool(env, ctx, storeRoot, target, tool);
+          };
+        }
+      }
+    }
 
     if (res.duplicateReason) {
       anyFlippableFound = true;
@@ -264,10 +323,18 @@ const resolvePathTarget = async (
   selectedTools: readonly FlipTool[],
   explicitTools: boolean,
   ledger: LedgerFile,
+  withSource: boolean,
 ): Promise<Result<{ pairs: PairPlan[]; preResults: FlipResult[] }, SkillSmithError>> => {
   const resolved = resolve(ctx.cwd, target);
   const parent = dirname(resolved);
   const skill = basename(resolved);
+
+  // BF-1(a): a path whose leaf resolves to `.`/`..`/'' (e.g. `.`, `foo/..`) would target a skills
+  // ROOT, not a skill — refuse.
+  if (!isValidLeafName(skill)) {
+    const reason = `'${target}' does not name a skill`;
+    return err(flipRefusedError(reason));
+  }
 
   const [claudeRoot] = claudeCodeSkillRootsUser(env, ctx);
   const codex = codexRootsOf(env, ctx);
@@ -285,6 +352,16 @@ const resolvePathTarget = async (
     tool = 'codex';
     notices = [LEGACY_ROOT_NOTICE];
     root = codex.legacy;
+  } else {
+    // BF-1(d): a custom-location path (outside every standard root) is still managed if the ledger
+    // records a pair at exactly this placementPath (a `--dest` create). The ledger owns LOCATION.
+    for (const t of FLIP_TOOLS) {
+      if (getPair(ledger, skill, t)?.placementPath === resolved) {
+        tool = t;
+        root = parent;
+        break;
+      }
+    }
   }
 
   if (tool === null || root === null) {
@@ -305,7 +382,12 @@ const resolvePathTarget = async (
   // non-flippable class is a placement-not-found refusal as before. A path target resolves to
   // exactly one tool already (no multi-tool search to fall back on), so — unlike a named target —
   // store-linked always surfaces here regardless of a ledger record; the run layer decides.
-  const flippable = isFlippableClass(placement.class) || placement.class === 'store-linked';
+  // BF-1(e): an explicit absent path target with `--source` routes to S1 create (the run layer
+  // creates the placement at exactly this path).
+  const flippable =
+    isFlippableClass(placement.class) ||
+    placement.class === 'store-linked' ||
+    (withSource && placement.class === 'absent');
   if (!flippable && !hasOpenJournal(ledger, skill, tool)) {
     const reason = `'${target}' has no flippable placement for ${tool} (found: ${placement.class})`;
     return ok({
@@ -475,6 +557,10 @@ export const planFlips = async (
     return ok({ pairs, preResults });
   }
 
+  // BF-1(b): resolve `--dest` to an ABSOLUTE, normalized path once, so the recorded placementPath is
+  // never relative and join(dest, leaf) is contained under it.
+  const resolvedDest = opts.dest !== undefined ? resolve(ctx.cwd, opts.dest) : undefined;
+
   for (const target of opts.targets) {
     if (isPathTarget(target)) {
       const resolved = await resolvePathTarget(
@@ -485,6 +571,7 @@ export const planFlips = async (
         toolsInOrder,
         explicitTools,
         ledger,
+        opts.source !== undefined,
       );
       if (!resolved.ok) return resolved;
       pairs.push(...resolved.value.pairs);
@@ -500,7 +587,7 @@ export const planFlips = async (
       explicitTools,
       ledger,
       opts.source !== undefined,
-      opts.dest,
+      resolvedDest,
     );
     pairs.push(...resolved.pairs);
     preResults.push(...resolved.preResults);

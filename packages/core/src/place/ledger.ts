@@ -180,14 +180,18 @@ export const withLedgerLock = async <T>(
     return err(ledgerError(`cannot create ledger directory: ${errorMessage(e)}`, ledgerPath));
   }
 
-  // proper-lockfile needs the target to exist; create it empty on first use (`writeFile ax`
-  // semantics — never clobber existing content). Precedent: config/save.ts.
-  if ((await env.pathKind(ledgerPath)) === 'absent') {
-    await env.writeTextFile(ledgerPath, '').catch(() => {});
+  // BF-7a (D2 "nothing written"): lock a SIDECAR (`placements.json.lock`), never the ledger itself.
+  // Materializing an empty `placements.json` just to acquire the lock left ledger state on disk even
+  // when the gate failed before any write — violating "nothing written". proper-lockfile needs its
+  // target to exist, so the sidecar is created empty (never the ledger); `writeLedger` alone
+  // materializes `placements.json`, and only on a real write. Precedent: config/save.ts.
+  const lockPath = `${ledgerPath}.lock`;
+  if ((await env.pathKind(lockPath)) === 'absent') {
+    await env.writeTextFile(lockPath, '').catch(() => {});
   }
 
   try {
-    const value = await env.withFileLock(ledgerPath, fn);
+    const value = await env.withFileLock(lockPath, fn);
     return ok(value);
   } catch (e) {
     return err(flipFailedError(`another skillsmith operation is running: ${errorMessage(e)}`));

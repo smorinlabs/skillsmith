@@ -1288,7 +1288,7 @@ const notInstalledResult = (skill: string): UninstallResult => ({
 // has no symlink to report) — per the brief, "symlinkTarget for dev/store-linked".
 const uninstallBeforeFromRecord = (
   mode: 'dev' | 'pinned',
-  pinned: PinnedRecord | null,
+  pinned: PinnedRecord | null | undefined,
   dev: PairRecord['dev'],
 ): UninstallResult['before'] => ({
   mode,
@@ -1350,6 +1350,28 @@ const collectUninstallMatches = async (
             : null;
         matches.push({ scope, scopeKey, tool, kind: 'live', placement, existing, notice });
         continue;
+      }
+      // BF-1(d): a custom-location placement (a `dev --source --dest` create) lives outside every
+      // standard root, so the scan above finds nothing — but the ledger records exactly where it is.
+      // Classify at the recorded placementPath so uninstall REMOVES the live symlink, not just the
+      // record (a 'stale' match would orphan the symlink).
+      if (existing?.placementPath) {
+        const recordedRoot = dirname(existing.placementPath);
+        if (!roots.includes(recordedRoot)) {
+          const custom = await classifyPlacement(env, recordedRoot, name, storeRoot);
+          if (custom.class !== 'absent') {
+            matches.push({
+              scope,
+              scopeKey,
+              tool,
+              kind: 'live',
+              placement: custom,
+              existing,
+              notice: null,
+            });
+            continue;
+          }
+        }
       }
       if (existing) {
         matches.push({
@@ -1625,7 +1647,9 @@ const processUninstallMatch = async (
     // without --force — the pin is precious and promote/dev --rollback can restore it. A dev-CREATED
     // pair (`dev --source`, no pinned record) has nothing to restore, so uninstall removes just the
     // symlink + ledger record (the checkout is never touched).
-    if (existing.mode === 'dev' && existing.pinned !== null && !opts.force) {
+    // BF-2: `!= null` (not `!== null`) so a RAW dev-only record whose `pinned` key is OMITTED
+    // (undefined, not explicit null) is not mistaken for a retained pin and made to demand --force.
+    if (existing.mode === 'dev' && existing.pinned != null && !opts.force) {
       const reason = `'${name}' (${tool}) is in dev mode — a live symlink into a working checkout. Run 'skillsmith promote ${name}' to pin it first, or 'skillsmith dev --rollback ${name}' to restore the pinned copy, or pass --force to remove the symlink — the checkout itself is never touched.`;
       return {
         skill: name,
