@@ -98,6 +98,28 @@ Claude (`~/.claude/skills`) and Codex skill dirs where present.
 
 ---
 
+## [ ] Project P13: `dev --source` — create + adopt dev placements (issue #9)
+**Goal**: Extend `skillsmith dev <name-or-path> --source <path>` to a full state machine:
+CREATE the dev symlink + ledger record when no placement exists; ADOPT (record-only) an
+existing matching hand-made symlink; noop when already recorded; refuse on target mismatch;
+today's pinned-flip behavior unchanged. Sources resolved absolute (sidesteps #10 for new
+records). Closes the gap where initial placement needed a bare `ln -s` outside skillsmith;
+downstream, smorin-harness `skill-create` drops its ln -s step. Plan:
+`docs/superpowers/plans/2026-07-10-p13-dev-source-plan.md`.
+
+### Tests & Tasks
+- [ ] [P13-T01] PRD (semantics table + 5 decisions: codex root, verify gate, journal/rollback, FlipReport vocabulary, --all non-interaction) — approval gate
+- [ ] [P13-TS01] Failing-first unit suite: state machine × tools, dev-only ledger record shape (no pin), absolute resolution, dual-root refusal, --json contract
+- [ ] [P13-T02] Core: plan.ts absent-pair resolution + run.ts create/adopt paths + ledger write (+ journal per PRD)
+- [ ] [P13-T03] CLI: dev.ts flags/help/exit codes; FlipReport `created`/`adopted`; research/commands/dev.md
+- [ ] [P13-TS02] Crash injection on create path; e2e drift-canary extension (sandboxed SKILLSMITH_HOME)
+- [ ] [P13-T04] Adversarial full-branch review (codex) + fable whole-branch review
+- [ ] [P13-T05] PR, CI green, merge; release-please v0.7.0
+- [ ] [P13-T06] Downstream: skill-create wire step → single `skillsmith dev --source` per tool; real-skill re-wire proof; smorin-harness release
+- [ ] [P13-T07] Close issue #9; flip this project; memory update
+
+---
+
 ## [ ] Project P14: Production flip — skillsmith v1.0.0
 **Goal**: Skillsmith itself dev→production: flip canonical repo public (post scrub), per-platform
 compiled binaries, distribution via `smorinlabs/homebrew-tap` + npm, docs refresh (README command
