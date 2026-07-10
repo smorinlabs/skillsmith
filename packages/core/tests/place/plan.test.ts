@@ -4,7 +4,13 @@ import { join, resolve } from 'node:path';
 import { emptyLedger, setPair } from '../../src/place/ledger.ts';
 import { storeRootOf } from '../../src/place/paths.ts';
 import { LEGACY_ROOT_NOTICE, planFlips } from '../../src/place/plan.ts';
-import type { DevRecord, FlipOptions, LedgerFile, PairRecord } from '../../src/place/types.ts';
+import type {
+  DevRecord,
+  FlipOptions,
+  LedgerFile,
+  PairRecord,
+  PinnedRecord,
+} from '../../src/place/types.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -309,6 +315,85 @@ describe('planFlips', () => {
       expect(r.value.preResults.some((res) => res.error?.code === 'placement-not-found')).toBe(
         true,
       );
+    });
+  });
+
+  // P15 / issue #11: `--rollback --all` must be direction-agnostic (spec D10). The bug reused the
+  // forward verb's placement-class filter (plan.ts): `promote --rollback --all` selected dev-class
+  // placements, `dev --rollback --all` selected pinned-class placements — OPPOSITE, non-overlapping
+  // sets. Rollback selection must instead key off each pair's OWN rollbackable state so both verbs
+  // select the identical set: exactly the pairs whose last committed flip can be inverted.
+  describe('--rollback --all is direction-agnostic (P15, issue #11)', () => {
+    const pinnedRec = (): PinnedRecord => ({
+      storePath: join(storeRoot, 'local', 'x@content-000000000000', 'x'),
+      rev: 'content-000000000000',
+      gitSha: null,
+      dirty: false,
+      contentHash: `sha256:${'0'.repeat(64)}`,
+      snapshotAt: NOW,
+      verify: 'passed',
+    });
+
+    // A mixed-state fleet: (a) a dev pair with a retained pin (last committed op = dev), (b) a
+    // pinned pair with a retained dev record (last committed op = promote), and (c) a fresh
+    // dev-only pair with no ledger record at all (gamma@codex on disk) — not rollbackable.
+    const mixedLedger = (): LedgerFile => {
+      const ledger = emptyLedger(NOW);
+      setPair(ledger, 'alpha', 'claude-code', {
+        placementPath: join(f.home, '.claude', 'skills', 'alpha'),
+        mode: 'dev',
+        dev: dev(resolve(f.alphaSrc)),
+        pinned: pinnedRec(),
+        journal: null,
+      });
+      setPair(ledger, 'copied', 'claude-code', {
+        placementPath: join(f.home, '.claude', 'skills', 'copied'),
+        mode: 'pinned',
+        dev: dev(resolve(f.alphaSrc)),
+        pinned: pinnedRec(),
+        journal: null,
+      });
+      return ledger;
+    };
+
+    const selectAll = async (op: 'promote' | 'dev'): Promise<string[]> => {
+      const r = await planFlips(
+        f.env,
+        baseOpts({ all: true, op, rollback: true }),
+        storeRoot,
+        mixedLedger(),
+      );
+      if (!r.ok) throw new Error('expected ok');
+      return r.value.pairs.map((p) => `${p.skill}@${p.tool}`).sort();
+    };
+
+    test('both verbs select the identical rollbackable set', async () => {
+      const asPromote = await selectAll('promote');
+      const asDev = await selectAll('dev');
+      expect(asPromote).toEqual(asDev);
+      expect(asPromote).toEqual(['alpha@claude-code', 'copied@claude-code']);
+    });
+
+    test('a fresh dev-only pair with no ledger record is untouched by either verb', async () => {
+      expect(await selectAll('promote')).not.toContain('gamma@codex');
+      expect(await selectAll('dev')).not.toContain('gamma@codex');
+    });
+
+    test('named-target rollback selection is unchanged (already direction-agnostic)', async () => {
+      const named = async (op: 'promote' | 'dev', target: string): Promise<string[]> => {
+        const r = await planFlips(
+          f.env,
+          baseOpts({ targets: [target], op, rollback: true }),
+          storeRoot,
+          mixedLedger(),
+        );
+        if (!r.ok) throw new Error('expected ok');
+        return r.value.pairs.map((p) => `${p.skill}@${p.tool}`).sort();
+      };
+      expect(await named('promote', 'copied')).toEqual(await named('dev', 'copied'));
+      expect(await named('promote', 'copied')).toEqual(['copied@claude-code']);
+      expect(await named('promote', 'alpha')).toEqual(await named('dev', 'alpha'));
+      expect(await named('promote', 'alpha')).toEqual(['alpha@claude-code']);
     });
   });
 });
