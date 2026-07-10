@@ -1204,7 +1204,9 @@ Flow (dev, per pair — spec §4.2): placement must be `pinned` (already `dev` �
 dangling). Resolve source: ledger `dev.sourcePath` → else `opts.source` → else result `refused` +
 `flipRefusedError('no recorded dev source; pass --source <path>')` (exit 2). `--source` must
 exist and contain `SKILL.md` (else exit 2); when both exist and disagree, `--source` wins and the
-dev record is updated. Recorded `dev.sourcePath` that no longer resolves on disk → `refused` +
+dev record is updated. **[SUPERSEDED by P13 S5b (2026-07-10): a `--source` that disagrees with the
+recorded dev source now REFUSES rather than silently repointing the record — see
+`docs/superpowers/specs/2026-07-10-p13-dev-source-prd.md` §S5.]** Recorded `dev.sourcePath` that no longer resolves on disk → `refused` +
 `sourceUnresolvableError` (exit 5). Then `runSwap` (dev plan); `backupKept` from the outcome
 becomes a warning in `reason`. Ledger: `mode: 'dev'`, `dev` updated, `pinned` + store entry
 retained.
@@ -1325,7 +1327,8 @@ tests import them relatively).
   path (`rev` matches `/^dirty-[0-9a-f]{12}$/`, `gitSha` still recorded, `dirty: true`); non-git
   gamma promote (`local/gamma@content-…`); dev happy path (literal symlink restored, pinned
   retained); dev `--source` adoption of the hand-copied `copied` dir; `--source` disagree →
-  record updated; missing recorded source → exit-5-class error on the pair; rollback of a
+  record updated (**SUPERSEDED by P13 S5b: `--source` disagree now REFUSES, not updates**);
+  missing recorded source → exit-5-class error on the pair; rollback of a
   committed promote → placement is the dev symlink again (action `rolled-back`); rollback with
   nothing to roll back → refused; dry-run writes nothing (ledger absent afterwards) and takes no
   lock.
