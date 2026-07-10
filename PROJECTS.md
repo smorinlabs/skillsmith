@@ -122,7 +122,7 @@ downstream, smorin-harness `skill-create` drops its ln -s step. Plan:
 
 ---
 
-## [ ] Project P15: Fix `--rollback --all` direction bug (issue #11)
+## [x] Project P15: Fix `--rollback --all` direction bug (issue #11)
 **Goal**: Bulk rollback must select pairs by their rollbackable prior state (last committed
 op per pair), not the forward operation's placement-class filter (plan.ts:326) — restoring
 the P12 promise that `promote --rollback` and `dev --rollback` are identical. Footgun today:
@@ -130,8 +130,8 @@ the P12 promise that `promote --rollback` and `dev --rollback` are identical. Fo
 P13 merges (same files: plan.ts/run.ts).**
 
 ### Tests & Tasks
-- [ ] [P15-TS01] Failing tests: `--all` rollback selection identical for both verbs; mixed-state fleet fixture (dev-with-pin, pinned, dev-only) rolls back only truly-rollbackable pairs
-- [ ] [P15-T01] Fix selection in plan.ts; PR; release-please patch
+- [x] [P15-TS01] Failing tests: `--all` rollback selection identical for both verbs; mixed-state fleet fixture (dev-with-pin, pinned, dev-only) rolls back only truly-rollbackable pairs (2026-07-10)
+- [x] [P15-T01] Fix selection in plan.ts; PR; release-please patch (2026-07-10)
 
 ---
 

@@ -85,6 +85,18 @@ const hasOpenJournal = (ledger: LedgerFile, skill: string, tool: FlipTool): bool
   return journal != null && journal.phase !== 'committed';
 };
 
+/** P15 (issue #11): a pair is rollbackable when the run layer's direction-agnostic rollback (D10)
+ *  can invert it — an uncommitted journal restores the journaled before-state, otherwise a committed
+ *  flip is inverted from the retained inverse record (pinned needs a dev record, dev needs a pinned
+ *  record). Mirrors `runRollbackPair`'s "nothing to roll back" guard so `--rollback --all` plans
+ *  exactly the pairs it will act on, independent of the forward verb's placement-class filter. */
+const isRollbackablePair = (ledger: LedgerFile, skill: string, tool: FlipTool): boolean => {
+  if (hasOpenJournal(ledger, skill, tool)) return true;
+  const pair = getPair(ledger, skill, tool);
+  if (pair === null) return false;
+  return pair.mode === 'pinned' ? pair.dev !== null : pair.pinned !== null;
+};
+
 interface CodexRoots {
   current: string;
   legacy: string;
@@ -299,12 +311,15 @@ const resolvePathTarget = async (
   return ok({ pairs: [{ skill, tool, placement, notices }], preResults: [] });
 };
 
-/** Target & tool resolution (spec §5/D2/D3). `opts.op` picks the `--all` flippable class:
- *  `dev` for promote, `pinned` for dev. Named/path targets accept either class (dev.md §4's
+/** Target & tool resolution (spec §5/D2/D3). For a forward flip, `opts.op` picks the `--all`
+ *  flippable class: `dev` for promote, `pinned` for dev. When `opts.rollback` is set, the `--all`
+ *  selection is direction-agnostic instead (D10 / P15): pairs are chosen by their own rollbackable
+ *  ledger state, not the verb's class filter. Named/path targets accept either class (dev.md §4's
  *  convergent no-op / already-dev no-op both need the pair to reach the run layer). `ledger` is
- *  read-only here: consulted for `dev --all`'s "pinned with a recorded dev source" filter, and —
- *  across every route — to surface any pair carrying an uncommitted journal regardless of its
- *  filesystem class, so an interrupted swap stays reachable by --rollback / re-run / resume (F1). */
+ *  read-only here: consulted for `dev --all`'s "pinned with a recorded dev source" filter and for
+ *  rollback selection, and — across every route — to surface any pair carrying an uncommitted
+ *  journal regardless of its filesystem class, so an interrupted swap stays reachable by
+ *  --rollback / re-run / resume (F1). */
 export const planFlips = async (
   env: ScanEnv,
   opts: FlipOptions & { op: FlipOp },
@@ -324,6 +339,34 @@ export const planFlips = async (
   const preResults: FlipResult[] = [];
 
   if (opts.all) {
+    // P15 (issue #11): bulk rollback is direction-agnostic (D10). Select each pair by its OWN
+    // rollbackable state — NOT the forward verb's placement-class filter below, which made
+    // `promote --rollback --all` (dev class) and `dev --rollback --all` (pinned class) choose
+    // opposite, non-overlapping sets. The run layer inverts each pair from its retained records
+    // regardless of the verb, so the plan must offer exactly the pairs that layer can invert.
+    if (opts.rollback) {
+      for (const skill of Object.keys(ledger.skills).sort()) {
+        for (const tool of toolsInOrder) {
+          if (!isRollbackablePair(ledger, skill, tool)) continue;
+          const res = await classifyForTool(env, ctx, storeRoot, skill, tool);
+          if (res.duplicateReason) {
+            preResults.push(
+              emptyFlipResult(
+                skill,
+                tool,
+                res.placement.path,
+                res.duplicateReason,
+                flipRefusedError(res.duplicateReason),
+              ),
+            );
+            continue;
+          }
+          pairs.push({ skill, tool, placement: res.placement, notices: res.notices });
+        }
+      }
+      return ok({ pairs, preResults });
+    }
+
     const flippableClass: PlacementClass = opts.op === 'promote' ? 'dev' : 'pinned';
     const perTool = new Map<FlipTool, Map<string, Placement>>();
 
