@@ -634,7 +634,7 @@ describe('P13-T6b review regressions', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // BF-7(a) — gate failure must leave NO placements.json (lock sidecar, D2 "nothing written")
+  // BF-7(a) — gate failure must leave NO placements.json (R2: target-lock, realpath:false, D2 "nothing written")
   // -------------------------------------------------------------------------------------------
 
   test('BF-7(a): a gate failure on a fresh home leaves NO placements.json in the data dir', async () => {
@@ -647,7 +647,8 @@ describe('P13-T6b review regressions', () => {
     );
     if (!r.ok) throw new Error(msg(r.error));
     expect(actionV2(r.value.results[0])).toBe('failed');
-    // D2: no ledger materialized. The lock lives in a sidecar (placements.json.lock), not the ledger.
+    // D2: no ledger materialized. R2: the lock targets placements.json directly (realpath:false), so
+    // proper-lockfile's mkdir lock DIR is placements.json.lock and the ledger FILE is never written.
     expect(await f.env.pathKind(ledgerPath)).toBe('absent');
   });
 });

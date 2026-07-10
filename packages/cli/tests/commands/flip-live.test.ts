@@ -13,11 +13,10 @@ import {
 // would spend its retry budget failing with "another skillsmith operation is running" rather than
 // waiting out 30+ real seconds per test. We've just confirmed the child is gone (`proc.exited`), so
 // clearing its orphaned lock directory ourselves is a faithful stand-in for that staleness sweep.
-// BF-7a: the ledger lock now lives on a SIDECAR (`placements.json.lock`) so a gate failure never
-// materializes `placements.json`; proper-lockfile's mkdir-lock directory is therefore
-// `placements.json.lock.lock`.
+// R2: the ledger lock targets `placements.json` directly (realpath:false, no materialization), so
+// proper-lockfile's atomic mkdir-lock directory is `placements.json.lock`.
 const clearOrphanedLock = async (ledgerPath: string): Promise<void> => {
-  await rm(`${ledgerPath}.lock.lock`, { recursive: true, force: true });
+  await rm(`${ledgerPath}.lock`, { recursive: true, force: true });
 };
 
 // Env-gated interrupted-swap process e2e — the one case worth running against a real process,
