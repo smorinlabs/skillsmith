@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "skillsmith.flip",
   "op": "promote",
   "dryRun": false,
@@ -52,6 +52,8 @@
     "skipped": 0,
     "refused": 1,
     "failed": 0,
-    "rolledBack": 0
+    "rolledBack": 0,
+    "created": 0,
+    "adopted": 0
   }
 }

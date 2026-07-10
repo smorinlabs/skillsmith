@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { lstat, symlink } from 'node:fs/promises';
+import { lstat, realpath, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { makeSkillSource } from '../../../core/tests/fixtures/place/dev-source.ts';
 import {
@@ -156,7 +156,10 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
     const f = await buildFixtureFleet();
     try {
       await makeSkillSource(f.base, 'relskill');
-      const expected = resolve(f.base, 'srcs', 'relskill');
+      // The CLI resolves --source against process.cwd(), which the OS canonicalizes (on macOS the
+      // temp dir's /var is realpath'd to /private/var). Resolve `expected` against the realpath of
+      // the spawn cwd so the assertion pins "recorded absolute, against the CLI's cwd" portably.
+      const expected = resolve(await realpath(f.base), 'srcs', 'relskill');
 
       // The CLI resolves --source against ITS cwd; spawn from the fixture base.
       const proc = Bun.spawn(

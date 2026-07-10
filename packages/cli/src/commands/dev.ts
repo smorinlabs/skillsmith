@@ -41,6 +41,9 @@ interface DevFlags {
   all: boolean;
   tool: string[];
   source?: string;
+  dest?: string;
+  strict: boolean;
+  verify: boolean; // --no-verify sets this false
   rollback: boolean;
   dryRun: boolean;
   json: boolean;
@@ -85,7 +88,16 @@ export const devCommand = (signal?: AbortSignal): Command =>
         .argParser(collectTool)
         .default([] as string[]),
     )
-    .option('--source <path>', 'Dev source for a placement with no recorded source.')
+    .option(
+      '--source <path>',
+      'Dev source: create (absent) or adopt (matching symlink) a placement.',
+    )
+    .option(
+      '--dest <path>',
+      'Destination root for a created placement (requires exactly one --tool).',
+    )
+    .option('--strict', 'Treat verify warnings/inconclusive as blocking on create/adopt.', false)
+    .option('--no-verify', 'Skip the static verify gate on create/adopt.')
     .option('--rollback', 'Restore the prior placement state (undo / crash recovery).', false)
     .option('--dry-run', 'Show the plan without changing anything.', false)
     .option('--json', 'Emit the versioned JSON report on stdout.', false)
@@ -102,11 +114,18 @@ export const devCommand = (signal?: AbortSignal): Command =>
         usageError('at least one <skill> is required, or pass --all');
       if (opts.all && skills.length > 0)
         usageError('--all cannot be combined with positional targets');
+      if (opts.all && opts.source !== undefined) {
+        // PRD D5: create/adopt are inherently targeted; --all gains no create/adopt semantics.
+        usageError('--all cannot be combined with --source');
+      }
       if (opts.rollback && opts.source !== undefined) {
         usageError('--rollback cannot be combined with --source');
       }
       if (opts.source !== undefined && skills.length !== 1) {
         usageError('--source is only valid with exactly one positional target');
+      }
+      if (opts.dest !== undefined && opts.tool.length !== 1) {
+        usageError(`--dest requires exactly one --tool (got ${opts.tool.length})`);
       }
 
       const env = await defaultScanEnv();
@@ -120,6 +139,9 @@ export const devCommand = (signal?: AbortSignal): Command =>
         all: opts.all,
         ...(opts.tool.length > 0 ? { tools: opts.tool as FlipTool[] } : {}),
         ...(opts.source !== undefined ? { source: opts.source } : {}),
+        ...(opts.dest !== undefined ? { dest: opts.dest } : {}),
+        strict: opts.strict,
+        noVerify: !opts.verify,
         dryRun: opts.dryRun,
         cwd: process.cwd(),
         envVars: process.env,

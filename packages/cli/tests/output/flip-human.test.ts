@@ -60,6 +60,8 @@ describe('renderFlipHuman', () => {
         refused: 0,
         failed: 0,
         rolledBack: 0,
+        created: 0,
+        adopted: 0,
       },
     };
 
@@ -109,6 +111,8 @@ describe('renderFlipHuman', () => {
         refused: 0,
         failed: 0,
         rolledBack: 0,
+        created: 0,
+        adopted: 0,
       },
     };
 
@@ -156,6 +160,8 @@ describe('renderFlipHuman', () => {
         refused: 0,
         failed: 0,
         rolledBack: 0,
+        created: 0,
+        adopted: 0,
       },
     };
 
@@ -189,6 +195,8 @@ describe('renderFlipHuman', () => {
         refused: 1,
         failed: 0,
         rolledBack: 0,
+        created: 0,
+        adopted: 0,
       },
     };
 

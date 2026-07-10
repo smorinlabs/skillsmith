@@ -77,6 +77,8 @@ const ACTION_LABEL: Record<FlipAction, string> = {
   refused: 'refused',
   failed: 'failed',
   'rolled-back': 'rolled back',
+  created: 'created',
+  adopted: 'adopted',
 };
 
 /** Human-readable render of a `skillsmith.flip` report (mockups in `research/commands/{promote,dev}.md`). */
@@ -100,6 +102,8 @@ export const renderFlipHuman = (report: FlipReport, exitCode: number): string =>
   }
 
   const counts: [FlipAction, number][] = [
+    ['created', report.summary.created],
+    ['adopted', report.summary.adopted],
     ['flipped', report.summary.flipped],
     ['updated', report.summary.updated],
     ['noop', report.summary.noop],
@@ -110,7 +114,12 @@ export const renderFlipHuman = (report: FlipReport, exitCode: number): string =>
   ];
   const warnings = report.results.filter(
     (r) =>
-      (r.action === 'flipped' || r.action === 'updated' || r.action === 'rolled-back') && r.reason,
+      (r.action === 'flipped' ||
+        r.action === 'updated' ||
+        r.action === 'rolled-back' ||
+        r.action === 'created' ||
+        r.action === 'adopted') &&
+      r.reason,
   ).length;
 
   const parts = counts

@@ -60,7 +60,17 @@ const report: FlipReport = {
       },
     },
   ],
-  summary: { flipped: 1, updated: 0, noop: 0, skipped: 0, refused: 1, failed: 0, rolledBack: 0 },
+  summary: {
+    flipped: 1,
+    updated: 0,
+    noop: 0,
+    skipped: 0,
+    refused: 1,
+    failed: 0,
+    rolledBack: 0,
+    created: 0,
+    adopted: 0,
+  },
 };
 
 describe('renderFlipJson', () => {
@@ -80,7 +90,7 @@ describe('renderFlipJson', () => {
       ['kind', 'schemaVersion', 'op', 'dryRun', 'requested', 'results', 'summary'].sort(),
     );
     expect(rendered.kind).toBe('skillsmith.flip');
-    expect(rendered.schemaVersion).toBe(1);
+    expect(rendered.schemaVersion).toBe(2);
   });
 
   test('the core-only `error` field never appears in the rendered output', () => {
@@ -133,6 +143,8 @@ describe('renderFlipJson', () => {
         refused: 0,
         failed: 0,
         rolledBack: 1,
+        created: 0,
+        adopted: 0,
       },
     };
     const rendered = JSON.parse(renderFlipJson(rollback));
