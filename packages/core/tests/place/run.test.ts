@@ -445,6 +445,47 @@ describe('runRollback', () => {
     expect(result?.action).toBe('refused');
     expect(result?.reason).toContain('nothing to roll back');
   });
+
+  // P15 / issue #11: end-to-end, `promote --rollback --all` and `dev --rollback --all` must roll
+  // back the identical set (spec D10). Mixed-state fleet: (a) alpha@claude-code demoted back to dev
+  // with its pin retained (last committed op = dev), (b) beta@codex promoted (last committed op =
+  // promote), (c) gamma@codex a fresh dev-only symlink with no ledger record. Only (a) and (b) are
+  // rollbackable; (c) is untouched by both verbs.
+  test('--rollback --all selects the same rollbackable set for both verbs (P15, issue #11)', async () => {
+    const up = await runPromote(f.env, opts(f, { targets: ['alpha'] }), passDeps());
+    if (!up.ok) throw new Error(msg(up.error));
+    const down = await runDev(f.env, opts(f, { targets: ['alpha'] }), passDeps());
+    if (!down.ok) throw new Error(msg(down.error));
+    const upBeta = await runPromote(
+      f.env,
+      opts(f, { targets: ['beta'], tools: ['codex'] }),
+      passDeps(),
+    );
+    if (!upBeta.ok) throw new Error(msg(upBeta.error));
+
+    const rolledBack = (r: Awaited<ReturnType<typeof runRollback>>): string[] => {
+      if (!r.ok) throw new Error(msg(r.error));
+      return r.value.results
+        .filter((res) => res.action === 'rolled-back')
+        .map((res) => `${res.skill}@${res.tool}`)
+        .sort();
+    };
+
+    const asPromote = await runRollback(
+      f.env,
+      { ...opts(f, { all: true, dryRun: true }), op: 'promote' },
+      passDeps(),
+    );
+    const asDev = await runRollback(
+      f.env,
+      { ...opts(f, { all: true, dryRun: true }), op: 'dev' },
+      passDeps(),
+    );
+
+    expect(rolledBack(asPromote)).toEqual(rolledBack(asDev));
+    expect(rolledBack(asPromote)).toEqual(['alpha@claude-code', 'beta@codex']);
+    expect(rolledBack(asPromote)).not.toContain('gamma@codex');
+  });
 });
 
 // -------------------------------------------------------------------------------------------

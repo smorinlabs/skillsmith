@@ -1126,7 +1126,7 @@ export const runRollback = async (
   if (opts.dryRun) {
     const ledgerRes = await readLedger(env, ledgerPath);
     if (!ledgerRes.ok) return ledgerRes;
-    const planRes = await planFlips(env, opts, storeRoot, ledgerRes.value);
+    const planRes = await planFlips(env, { ...opts, rollback: true }, storeRoot, ledgerRes.value);
     if (!planRes.ok) return planRes;
     const results: FlipResult[] = [...planRes.value.preResults];
     for (const pair of planRes.value.pairs)
@@ -1149,7 +1149,7 @@ export const runRollback = async (
       );
       if (!swept.ok) return err(midSwapError(swept.error));
 
-      const planRes = await planFlips(env, opts, storeRoot, ledger);
+      const planRes = await planFlips(env, { ...opts, rollback: true }, storeRoot, ledger);
       if (!planRes.ok) return planRes;
       const { pairs, preResults } = planRes.value;
 
