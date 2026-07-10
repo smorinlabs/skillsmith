@@ -224,7 +224,7 @@ $ skillsmith --version
 
 ---
 
-## [-] Project P06: Automate CHANGELOG + releases via release-please (v0.3.0)
+## [x] Project P06: Automate CHANGELOG + releases via release-please (v0.3.0)
 **Goal**: Replace manual CHANGELOG maintenance and version bumping with `googleapis/release-please-action`. On every push to `main`, release-please parses Conventional Commits and opens/updates a single rolling "Release PR" that bumps root + both workspace package versions and appends to `CHANGELOG.md`. Merging the Release PR creates the git tag and GitHub Release.
 
 **Out of Scope**
@@ -237,7 +237,8 @@ $ skillsmith --version
 - [x] [P06-T02] Add `.release-please-manifest.json` seeded at `{ ".": "0.1.0" }`.
 - [x] [P06-T03] Add `.github/workflows/release-please.yml` (push to `main`, `contents: write` + `pull-requests: write`, `googleapis/release-please-action@v4`).
 - [x] [P06-TS01] `bun run check` stays green (actionlint validates the new workflow).
-- [ ] [P06-TS02] After first merge to `main`, confirm a "Release PR" appears with a generated `CHANGELOG.md` entry and synchronized version bumps in all three `package.json` files.
+- [x] [P06-TS02] After first merge to `main`, confirm a "Release PR" appears with a generated `CHANGELOG.md` entry and synchronized version bumps in all three `package.json` files.
+      Confirmed repeatedly in production: Release PRs opened and merged for v0.3.2, v0.4.0, v0.5.0, and v0.6.0, each with a generated CHANGELOG entry and synchronized bumps across all three `package.json` files.
 
 ### Automated Verification
 - `bun run check` passes (actionlint accepts the new workflow).
