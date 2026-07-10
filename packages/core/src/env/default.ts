@@ -104,7 +104,13 @@ export const defaultScanEnv = async (): Promise<ScanEnv> => {
     fsyncFile: async (p) => fsyncPath(p),
     fsyncDir: async (p) => fsyncPath(p),
     withFileLock: async (p, fn) => {
+      // R2: `realpath: false` resolves the lock target with `path.resolve` only (no `fs.realpath`),
+      // so the target file need NOT exist to be locked. proper-lockfile still mkdir's the atomic lock
+      // DIR `${p}.lock`; locking `placements.json` directly therefore (a) yields the ORIGINAL
+      // `placements.json.lock` dir name — true cross-version exclusion with pre-sidecar binaries —
+      // and (b) never materializes `placements.json` (BF-7a "nothing written" holds).
       const release = await lockfile.lock(p, {
+        realpath: false,
         stale: 30_000,
         update: 5_000,
         retries: { retries: 5, factor: 2, minTimeout: 100, maxTimeout: 2_000 },

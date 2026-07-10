@@ -180,18 +180,15 @@ export const withLedgerLock = async <T>(
     return err(ledgerError(`cannot create ledger directory: ${errorMessage(e)}`, ledgerPath));
   }
 
-  // BF-7a (D2 "nothing written"): lock a SIDECAR (`placements.json.lock`), never the ledger itself.
-  // Materializing an empty `placements.json` just to acquire the lock left ledger state on disk even
-  // when the gate failed before any write — violating "nothing written". proper-lockfile needs its
-  // target to exist, so the sidecar is created empty (never the ledger); `writeLedger` alone
-  // materializes `placements.json`, and only on a real write. Precedent: config/save.ts.
-  const lockPath = `${ledgerPath}.lock`;
-  if ((await env.pathKind(lockPath)) === 'absent') {
-    await env.writeTextFile(lockPath, '').catch(() => {});
-  }
-
+  // R2 / BF-7a (D2 "nothing written"): lock the ledger TARGET directly. proper-lockfile mkdir's the
+  // atomic lock DIR `placements.json.lock` — with `withFileLock`'s `realpath:false`, the target need
+  // NOT exist, so this both (a) restores the ORIGINAL lock-dir name for true cross-version exclusion
+  // with pre-sidecar binaries (they locked the same target -> the same dir) and (b) never
+  // materializes `placements.json` when a gate fails before any write. A prior fix locked a SIDECAR
+  // (`placements.json.lock`) as the target, which mkdir'd `placements.json.lock.lock` — a DIFFERENT
+  // dir than old binaries held, so the two never excluded each other (split-brain).
   try {
-    const value = await env.withFileLock(lockPath, fn);
+    const value = await env.withFileLock(ledgerPath, fn);
     return ok(value);
   } catch (e) {
     return err(flipFailedError(`another skillsmith operation is running: ${errorMessage(e)}`));

@@ -525,8 +525,10 @@ const runPromotePair = async (
 
 // ---------------------------------------------------------------------------------------------
 // dev --source: create + adopt (P13). Dev-only records — no journal, no pinned (D3). Write order
-// for create is symlink-first (staging name + atomic rename) then ledger, so a crash between the
-// two leaves state S2, which a re-run adopts and converges.
+// for create is symlink-first (direct atomic no-clobber publish) then ledger, so a crash between the
+// two leaves state S2, which a re-run adopts and converges. (Design evolved at adversarial review:
+// direct EEXIST publish replaces the earlier staged-rename — it eliminates the staging-orphan class;
+// convergence semantics are unchanged.)
 // ---------------------------------------------------------------------------------------------
 
 /** BF-3: canonicalize a path for source-equality comparison. `resolve` makes it absolute and folds
@@ -549,11 +551,25 @@ const canonicalizePath = async (env: ScanEnv, cwd: string, p: string): Promise<s
 const samePath = async (env: ScanEnv, cwd: string, a: string, b: string): Promise<boolean> =>
   (await canonicalizePath(env, cwd, a)) === (await canonicalizePath(env, cwd, b));
 
-/** BF-6: a usable `SKILL.md` is a regular FILE (`pathKind === 'file'`), not a directory that merely
- *  shares the name and not an absent path — `env.fileExists` (a `stat`) would accept a directory.
- *  Shared by create/adopt and their dry-run predictions so the two never diverge. */
-const sourceHasSkillMd = async (env: ScanEnv, sourceDir: string): Promise<boolean> =>
-  (await env.pathKind(join(sourceDir, 'SKILL.md'))) === 'file';
+/** BF-6 / R4: a usable `SKILL.md` is a regular FILE *after following symlinks* — a directory named
+ *  `SKILL.md` is still rejected (BF-6), but a `SKILL.md` that is a symlink to a regular file is now
+ *  accepted (R4: the PRD only requires the source "contains SKILL.md"; the pre-fix `pathKind==='file'`
+ *  lstat rejected the symlink case). `env.fileExists` (a follow-`stat`) can't be used alone — it would
+ *  also accept a directory. So: a plain regular file passes directly; a symlink is followed via
+ *  `realpath` and accepted only when its ultimate target is a regular file (a dangling link or a
+ *  symlink-to-directory is rejected). Shared by create/adopt and their dry-run predictions so the two
+ *  never diverge. */
+const sourceHasSkillMd = async (env: ScanEnv, sourceDir: string): Promise<boolean> => {
+  const p = join(sourceDir, 'SKILL.md');
+  const kind = await env.pathKind(p);
+  if (kind === 'file') return true;
+  if (kind !== 'symlink') return false; // 'dir' (BF-6) or 'absent'
+  try {
+    return (await env.pathKind(await env.realpath(p))) === 'file';
+  } catch {
+    return false; // dangling symlink
+  }
+};
 
 /** Provenance-enriched dev record for a create/adopt. `sourcePath` and `resolvedPath` are BOTH the
  *  ABSOLUTE resolved source (PRD: never record a relative source — sidesteps #10 for new records). */
@@ -595,8 +611,8 @@ const combineNotes = (...notes: (string | null)[]): string | null => {
   return kept.length > 0 ? kept.join('; ') : null;
 };
 
-/** S1: absent placement -> validate source -> static verify gate -> staged-rename symlink -> dev
- *  record. A foreign real file already occupying the placement path (S6) refuses. */
+/** S1: absent placement -> validate source -> static verify gate -> direct atomic no-clobber symlink
+ *  publish -> dev record. A foreign real file already occupying the placement path (S6) refuses. */
 const createDevPlacement = async (
   env: ScanEnv,
   ledger: LedgerFile,
@@ -700,9 +716,14 @@ const adoptDevPlacement = async (
   const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, false);
   if (gate.blocked) return gateFailedResult(base, gate);
 
-  // BF-5(b): re-read the LIVE symlink immediately before recording. A concurrent retarget between
-  // classification and here would otherwise record source A while the disk points at B — refuse
-  // rather than record a lie.
+  // R1: collect provenance FIRST — its async git work is the widest classify->act window. The record
+  // content derives purely from `--source` (never the live link), so building it early is safe and
+  // moves the wide async gap OUT from between the live re-read and the ledger write.
+  const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
+
+  // BF-5(b)/R1: re-read the LIVE symlink immediately before recording — AFTER provenance, so a
+  // concurrent retarget that lands during provenance collection is still observed here. A mismatch
+  // refuses rather than record source A while the disk points at B.
   let literalNow: string;
   try {
     literalNow = await env.readLink(live);
@@ -715,7 +736,6 @@ const adoptDevPlacement = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
   // Dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely.
   setPair(ledger, skill, tool, { placementPath: live, mode: 'dev', dev: devRecord });
   const persisted = await writeLedger(env, ledgerPath, ledger);
