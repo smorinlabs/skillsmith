@@ -1621,7 +1621,11 @@ const processUninstallMatch = async (
   const placementPath = placement.path;
 
   if (existing) {
-    if (existing.mode === 'dev' && !opts.force) {
+    // P13: a dev-mode pair with a RETAINED pin (installed/promoted then demoted) still refuses
+    // without --force — the pin is precious and promote/dev --rollback can restore it. A dev-CREATED
+    // pair (`dev --source`, no pinned record) has nothing to restore, so uninstall removes just the
+    // symlink + ledger record (the checkout is never touched).
+    if (existing.mode === 'dev' && existing.pinned !== null && !opts.force) {
       const reason = `'${name}' (${tool}) is in dev mode — a live symlink into a working checkout. Run 'skillsmith promote ${name}' to pin it first, or 'skillsmith dev --rollback ${name}' to restore the pinned copy, or pass --force to remove the symlink — the checkout itself is never touched.`;
       return {
         skill: name,

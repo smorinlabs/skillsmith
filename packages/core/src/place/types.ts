@@ -140,7 +140,9 @@ export type FlipAction =
   | 'skipped'
   | 'refused'
   | 'failed'
-  | 'rolled-back';
+  | 'rolled-back'
+  | 'created'
+  | 'adopted';
 
 export interface FlipResult {
   skill: string;
@@ -177,6 +179,8 @@ export interface FlipReport {
     refused: number;
     failed: number;
     rolledBack: number;
+    created: number; // P13 D4
+    adopted: number; // P13 D4
   };
 }
 
@@ -185,8 +189,9 @@ export interface FlipOptions {
   all?: boolean;
   tools?: readonly FlipTool[]; // explicit --tool list; undefined = auto
   source?: string; // dev only
-  strict?: boolean; // promote only
-  noVerify?: boolean; // promote only
+  dest?: string; // dev --source create only: override the created placement's destination root
+  strict?: boolean; // promote / dev --source only
+  noVerify?: boolean; // promote / dev --source only
   allowDirty?: boolean; // promote only
   rollback?: boolean;
   dryRun?: boolean;

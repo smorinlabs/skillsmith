@@ -371,7 +371,9 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     expect(result?.after).toEqual({ mode: 'dev', symlinkTarget: resolve(f.alphaSrc) });
   });
 
-  test('--source disagreeing with the recorded source wins and updates the record', async () => {
+  // P13 S5b (approved behavior change from P12): a --source that disagrees with the RECORDED dev
+  // source now REFUSES rather than silently repointing the record (was: --source wins & updates).
+  test('--source disagreeing with the recorded source is refused (P13 S5b)', async () => {
     const adopted = await runDev(
       f.env,
       opts(f, { targets: ['copied'], source: resolve(f.alphaSrc) }),
@@ -388,9 +390,8 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     );
     if (!redirected.ok) throw new Error(msg(redirected.error));
     const result = redirected.value.results[0];
-    expect(result?.action).toBe('flipped');
-    expect(result?.after).toEqual({ mode: 'dev', symlinkTarget: resolve(f.betaSrc) });
-    expect(result?.reason).toContain('updated');
+    expect(result?.action).toBe('refused');
+    expect(result?.error?.code).toBe('flip-refused');
   });
 
   test('missing recorded dev source -> source-unresolvable error on the pair', async () => {

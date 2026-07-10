@@ -78,9 +78,12 @@ const PairRecordSchema = z.object({
   placementPath: z.string(),
   mode: z.enum(['dev', 'pinned']),
   dev: DevRecordSchema.nullable(),
-  pinned: PinnedRecordSchema.nullable(),
+  // P13: a dev-only record (dev --source create/adopt) OMITS `pinned` and `journal` entirely — a
+  // new legal shape. Keep them nullable AND optional so both the absent-key shape and the
+  // explicit-null shape (every P12-written record) parse.
+  pinned: PinnedRecordSchema.nullable().optional(),
   origin: OriginRecordSchema.optional(),
-  journal: JournalSchema.nullable(),
+  journal: JournalSchema.nullable().optional(),
 });
 
 const SkillsTreeSchema = z.record(

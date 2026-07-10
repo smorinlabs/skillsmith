@@ -177,13 +177,24 @@ const resolveNamedTarget = async (
   toolsInOrder: readonly FlipTool[],
   explicitTools: boolean,
   ledger: LedgerFile,
+  withSource: boolean,
+  dest: string | undefined,
 ): Promise<{ pairs: PairPlan[]; preResults: FlipResult[] }> => {
   const pairs: PairPlan[] = [];
   const preResults: FlipResult[] = [];
   let anyFlippableFound = false;
 
   for (const tool of toolsInOrder) {
-    const res = await classifyForTool(env, ctx, storeRoot, target, tool);
+    // P13: `--dest` overrides the destination root for a create (requires exactly one --tool, the
+    // CLI enforces that). Classify the target at the dest root instead of the tool default.
+    const res: ToolResolution =
+      dest !== undefined
+        ? {
+            placement: await classifyPlacement(env, dest, target, storeRoot),
+            notices: [],
+            duplicateReason: null,
+          }
+        : await classifyForTool(env, ctx, storeRoot, target, tool);
 
     if (res.duplicateReason) {
       anyFlippableFound = true;
@@ -202,7 +213,10 @@ const resolveNamedTarget = async (
     const flippableNow =
       isFlippableClass(res.placement.class) ||
       (res.placement.class === 'store-linked' &&
-        isStoreLinkedFlippableFor(ledger, target, tool, explicitTools));
+        isStoreLinkedFlippableFor(ledger, target, tool, explicitTools)) ||
+      // P13 S1/S6: with `--source`, an absent placement routes to the run layer for create (or a
+      // foreign-object refusal when a real file already occupies the placement path).
+      (withSource && res.placement.class === 'absent');
 
     if (!flippableNow) {
       // A journaled pair surfaces even when its live path is absent/wrong-class (F1), so the run
@@ -485,6 +499,8 @@ export const planFlips = async (
       toolsInOrder,
       explicitTools,
       ledger,
+      opts.source !== undefined,
+      opts.dest,
     );
     pairs.push(...resolved.pairs);
     preResults.push(...resolved.preResults);

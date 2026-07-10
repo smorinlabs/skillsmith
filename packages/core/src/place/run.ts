@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { ScanEnv } from '../env/types.ts';
 import {
   type SkillSmithError,
+  errorMessage,
   flipFailedError,
   flipRefusedError,
   genericError,
@@ -11,7 +12,7 @@ import {
 import { type Result, err, ok } from '../result.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import type { ToolVerdict } from '../verify/types.ts';
-import { getPair, readLedger, withLedgerLock, writeLedger } from './ledger.ts';
+import { getPair, readLedger, setPair, withLedgerLock, writeLedger } from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
 import { type PairPlan, planFlips } from './plan.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore, sweepStaging } from './store.ts';
@@ -154,13 +155,14 @@ const runVerifyGate = async (
   tool: FlipTool,
   sourceDir: string,
   opts: FlipOptions,
+  deep: boolean,
 ): Promise<GateOutcome> => {
   if (opts.noVerify) return { blocked: null, gate: 'skipped', verdict: null, notice: null };
 
   const vr = await deps.verify(env, {
     path: sourceDir,
     tools: [tool],
-    deep: tool === 'codex',
+    deep,
     strict: opts.strict ?? false,
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
@@ -306,7 +308,7 @@ const runPromotePair = async (
   const symlinkRepin = existing?.pinned?.placement === 'symlink' && existing?.origin !== undefined;
   if (symlinkRepin) isReplace = true;
 
-  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts);
+  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, tool === 'codex');
   if (gate.blocked) {
     return {
       ...base,
@@ -500,6 +502,167 @@ const runPromotePair = async (
 };
 
 // ---------------------------------------------------------------------------------------------
+// dev --source: create + adopt (P13). Dev-only records — no journal, no pinned (D3). Write order
+// for create is symlink-first (staging name + atomic rename) then ledger, so a crash between the
+// two leaves state S2, which a re-run adopts and converges.
+// ---------------------------------------------------------------------------------------------
+
+/** Provenance-enriched dev record for a create/adopt. `sourcePath` and `resolvedPath` are BOTH the
+ *  ABSOLUTE resolved source (PRD: never record a relative source — sidesteps #10 for new records). */
+const buildDevSourceRecord = async (
+  env: ScanEnv,
+  resolvedSourceDir: string,
+  deps: FlipDeps,
+): Promise<DevRecord> => {
+  const provRes = await resolveProvenance(env, resolvedSourceDir);
+  return {
+    sourcePath: resolvedSourceDir,
+    resolvedPath: resolvedSourceDir,
+    repoRoot: provRes.ok ? provRes.value.repoRoot : null,
+    sourceRelPath: provRes.ok ? provRes.value.sourceRelPath : null,
+    remote: provRes.ok ? provRes.value.remote : null,
+    recordedAt: deps.now(),
+  };
+};
+
+/** S1/S2 warning (not a refusal): the source directory's basename differs from the placement name. */
+const basenameNotice = (resolvedSourceDir: string, skill: string): string | null =>
+  basename(resolvedSourceDir) !== skill
+    ? `source basename '${basename(resolvedSourceDir)}' does not match placement name '${skill}'`
+    : null;
+
+const gateFailedResult = (base: Base, gate: GateOutcome): FlipResult => ({
+  ...base,
+  action: 'failed',
+  reason: gate.blocked ? errMessage(gate.blocked) : 'verify gate failed',
+  before: null,
+  after: null,
+  store: null,
+  verify: { gate: gate.gate, verdict: gate.verdict },
+  ...(gate.blocked ? { error: gate.blocked } : {}),
+});
+
+const combineNotes = (...notes: (string | null)[]): string | null => {
+  const kept = notes.filter((n): n is string => Boolean(n));
+  return kept.length > 0 ? kept.join('; ') : null;
+};
+
+/** S1: absent placement -> validate source -> static verify gate -> staged-rename symlink -> dev
+ *  record. A foreign real file already occupying the placement path (S6) refuses. */
+const createDevPlacement = async (
+  env: ScanEnv,
+  ledger: LedgerFile,
+  ledgerPath: string,
+  base: Base,
+  skill: string,
+  tool: FlipTool,
+  live: string,
+  source: string,
+  opts: FlipOptions,
+  deps: FlipDeps,
+): Promise<FlipResult> => {
+  let liveKind: Awaited<ReturnType<ScanEnv['pathKind']>>;
+  try {
+    liveKind = await env.pathKind(live);
+  } catch (e) {
+    return failedResult(base, flipFailedError(`cannot probe ${live}: ${errorMessage(e)}`));
+  }
+  // A real dir classifies as 'pinned' upstream, so 'absent' here is either truly absent or a file.
+  if (liveKind !== 'absent') {
+    const reason = `refusing to create '${skill}' (${tool}): a foreign ${liveKind} already exists at ${live}`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  const resolvedSourceDir = resolve(opts.cwd, source);
+  if (!(await env.fileExists(join(resolvedSourceDir, 'SKILL.md')))) {
+    const reason = `--source '${source}' does not contain SKILL.md`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, false);
+  if (gate.blocked) return gateFailedResult(base, gate);
+
+  const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
+
+  const skillsRoot = dirname(live);
+  const stagingPath = join(skillsRoot, `.skillsmith-staging-${skill}-${deps.newTxId()}`);
+  try {
+    await env.makeDir(skillsRoot);
+    if ((await env.pathKind(stagingPath)) !== 'absent') await env.removeTree(stagingPath);
+    await env.makeSymlink(resolvedSourceDir, stagingPath);
+    await env.rename(stagingPath, live);
+    await env.fsyncDir(skillsRoot);
+  } catch (e) {
+    await env.removeTree(stagingPath).catch(() => {});
+    return failedResult(base, flipFailedError(`cannot create '${skill}': ${errorMessage(e)}`));
+  }
+
+  setPair(ledger, skill, tool, {
+    placementPath: live,
+    mode: 'dev',
+    dev: devRecord,
+    pinned: null,
+    journal: null,
+  });
+  const persisted = await writeLedger(env, ledgerPath, ledger);
+  if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
+
+  return {
+    ...base,
+    action: 'created',
+    reason: combineNotes(basenameNotice(resolvedSourceDir, skill), gate.notice),
+    before: null,
+    after: { mode: 'dev', symlinkTarget: resolvedSourceDir },
+    store: null,
+    verify: { gate: gate.gate, verdict: gate.verdict },
+  };
+};
+
+/** S2: a matching hand-made symlink not in the ledger -> record-only adopt. Disk is untouched;
+ *  the gate still runs (D2). */
+const adoptDevPlacement = async (
+  env: ScanEnv,
+  ledger: LedgerFile,
+  ledgerPath: string,
+  base: Base,
+  skill: string,
+  tool: FlipTool,
+  live: string,
+  resolvedSourceDir: string,
+  opts: FlipOptions,
+  deps: FlipDeps,
+): Promise<FlipResult> => {
+  if (!(await env.fileExists(join(resolvedSourceDir, 'SKILL.md')))) {
+    const reason = `--source '${opts.source ?? resolvedSourceDir}' does not contain SKILL.md`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, false);
+  if (gate.blocked) return gateFailedResult(base, gate);
+
+  const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
+  setPair(ledger, skill, tool, {
+    placementPath: live,
+    mode: 'dev',
+    dev: devRecord,
+    pinned: null,
+    journal: null,
+  });
+  const persisted = await writeLedger(env, ledgerPath, ledger);
+  if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
+
+  return {
+    ...base,
+    action: 'adopted',
+    reason: combineNotes(basenameNotice(resolvedSourceDir, skill), gate.notice),
+    before: { mode: 'dev', symlinkTarget: resolvedSourceDir },
+    after: { mode: 'dev', symlinkTarget: resolvedSourceDir },
+    store: null,
+    verify: { gate: gate.gate, verdict: gate.verdict },
+  };
+};
+
+// ---------------------------------------------------------------------------------------------
 // dev (real)
 // ---------------------------------------------------------------------------------------------
 
@@ -546,7 +709,54 @@ const runDevPair = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  if (placement.class === 'dev') return noopResult(base, null);
+  // P13 S1 create / S6 foreign-object refusal: an absent placement only reaches the run layer when
+  // `--source` is present (plan.ts routes it). Without a source there is nothing to create.
+  if (placement.class === 'absent') {
+    if (opts.source === undefined) {
+      const reason = 'no recorded dev source; pass --source <path>';
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    return createDevPlacement(
+      env,
+      ledger,
+      ledgerPath,
+      base,
+      skill,
+      tool,
+      placement.path,
+      opts.source,
+      opts,
+      deps,
+    );
+  }
+
+  // P13 S2/S3/S4: an existing dev symlink under `--source`. Without a source this stays the P12
+  // "already in dev mode" no-op.
+  if (placement.class === 'dev') {
+    if (opts.source === undefined) return noopResult(base, null);
+    const resolvedSourceDir = resolve(opts.cwd, opts.source);
+    const literal = placement.symlinkTarget;
+    const resolvedLink = literal !== null ? resolveSymlinkAbsolute(placement.path, literal) : null;
+    if (resolvedLink !== resolvedSourceDir) {
+      // S4: never silently repoint an existing dev symlink.
+      const reason = `existing dev symlink for '${skill}' (${tool}) points to ${resolvedLink ?? '<unknown>'}, not --source ${resolvedSourceDir}`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    // S3: recorded + matching -> noop. S2: matching but unrecorded -> record-only adopt.
+    if (existing?.dev) return noopResult(base, null);
+    return adoptDevPlacement(
+      env,
+      ledger,
+      ledgerPath,
+      base,
+      skill,
+      tool,
+      placement.path,
+      resolvedSourceDir,
+      opts,
+      deps,
+    );
+  }
 
   const recordedSource = existing?.dev?.sourcePath ?? null;
   const source = opts.source ?? recordedSource;
@@ -574,6 +784,13 @@ const runDevPair = async (
       };
     }
     const reason = 'no recorded dev source; pass --source <path>';
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  // PRD S5b (behavior change from P12): for a pinned/store-linked pair, a --source that disagrees
+  // with the RECORDED dev source now REFUSES rather than silently repointing the record.
+  if (updatedRecord) {
+    const reason = `refusing to redirect '${skill}' (${tool}): --source ${resolve(opts.cwd, opts.source ?? '')} disagrees with the recorded dev source ${resolve(opts.cwd, recordedSource ?? '')}`;
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
@@ -614,8 +831,8 @@ const runDevPair = async (
   const swapRes = await runSwap(swapCtx, plan);
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
 
+  // `updatedRecord` no longer reaches here — S5b refuses a recorded-source disagreement above.
   const notesAcc: string[] = [];
-  if (updatedRecord) notesAcc.push('dev source updated from --source');
   if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
 
   return {
@@ -936,10 +1153,61 @@ const predictPair = async (
   }
 
   // op === 'dev'
-  if (placement.class === 'dev') return noopResult(base, null);
+  // P13 S1 create / S6 foreign-object (dry-run predicts without writing).
+  if (placement.class === 'absent') {
+    if (opts.source === undefined) {
+      const reason = 'no recorded dev source; pass --source <path>';
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    const liveKind = await env.pathKind(placement.path);
+    if (liveKind !== 'absent') {
+      const reason = `refusing to create '${skill}' (${tool}): a foreign ${liveKind} already exists at ${placement.path}`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    return {
+      ...base,
+      action: 'created',
+      reason: null,
+      before: null,
+      after: null,
+      store: null,
+      verify: null,
+    };
+  }
+
+  // P13 S2/S3/S4 (dry-run) for an existing dev symlink under --source.
+  if (placement.class === 'dev') {
+    if (opts.source === undefined) return noopResult(base, null);
+    const resolvedSourceDir = resolve(opts.cwd, opts.source);
+    const literal = placement.symlinkTarget;
+    const resolvedLink = literal !== null ? resolveSymlinkAbsolute(placement.path, literal) : null;
+    if (resolvedLink !== resolvedSourceDir) {
+      const reason = `existing dev symlink for '${skill}' (${tool}) points to ${resolvedLink ?? '<unknown>'}, not --source ${resolvedSourceDir}`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    if (existing?.dev) return noopResult(base, null);
+    return {
+      ...base,
+      action: 'adopted',
+      reason: null,
+      before: null,
+      after: null,
+      store: null,
+      verify: null,
+    };
+  }
 
   const recordedSource = existing?.dev?.sourcePath ?? null;
   const source = opts.source ?? recordedSource;
+  // PRD S5b (dry-run mirror): a --source disagreeing with the recorded source refuses.
+  if (
+    opts.source !== undefined &&
+    recordedSource !== null &&
+    resolve(opts.cwd, opts.source) !== resolve(opts.cwd, recordedSource)
+  ) {
+    const reason = `refusing to redirect '${skill}' (${tool}): --source ${resolve(opts.cwd, opts.source)} disagrees with the recorded dev source ${resolve(opts.cwd, recordedSource)}`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
   if (source === null) {
     if (placement.class === 'store-linked' && !existing) {
       const reason = "managed state missing; reinstall with 'skillsmith install --force'";
@@ -995,6 +1263,8 @@ const emptySummary = (): FlipReport['summary'] => ({
   refused: 0,
   failed: 0,
   rolledBack: 0,
+  created: 0,
+  adopted: 0,
 });
 
 const ACTION_TO_SUMMARY_KEY: Record<FlipAction, keyof FlipReport['summary']> = {
@@ -1005,6 +1275,8 @@ const ACTION_TO_SUMMARY_KEY: Record<FlipAction, keyof FlipReport['summary']> = {
   refused: 'refused',
   failed: 'failed',
   'rolled-back': 'rolledBack',
+  created: 'created',
+  adopted: 'adopted',
 };
 
 const buildReport = (
