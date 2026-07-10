@@ -36,7 +36,7 @@ skillsmith dev <name-or-path> --source <path> [--tool <t>]... [--dest <path>]
 
 | # | Placement state | Behavior | Action | Exit contrib. |
 |---|---|---|---|---|
-| S1 | absent | validate source → verify gate → **staged-rename symlink** → ledger dev record | `created` | 0 |
+| S1 | absent | validate source → verify gate → **direct atomic no-clobber symlink publish** → ledger dev record | `created` | 0 |
 | S2 | dev symlink, `readlink` == resolved source, **not** in ledger | validate + verify gate → ledger dev record; **disk untouched** | `adopted` | 0 |
 | S3 | dev symlink, recorded, matching | nothing | `noop` | 0 |
 | S4 | dev symlink, `readlink` != resolved source | refuse — never silently repoint | `refused` | 2 |
@@ -68,10 +68,14 @@ Gate failure → `refused`-style failure, exit 1, **nothing written**. Deep is
 not run here (promote's pinning gate keeps its own semantics).
 
 **D3 — Crash safety by state-machine convergence; no new journal op.** Write
-order is symlink first (staging name + atomic `rename`), ledger second. A
+order is symlink first (direct atomic no-clobber publish), ledger second. A
 crash between the two leaves exactly state S2 — re-running the same command
-adopts and converges. Idempotent by construction; the journal field stays
-absent for create/adopt pairs. Rollback-of-create is **out of scope v1**:
+adopts and converges. (Design evolved at adversarial review: the direct EEXIST
+publish replaces the earlier staged-rename — it eliminates the staging-orphan
+class; convergence semantics are unchanged. The crash window is unchanged too: a
+crash after the symlink but before the ledger write leaves S2, same as before.)
+Idempotent by construction; the journal field stays absent for create/adopt
+pairs. Rollback-of-create is **out of scope v1**:
 removal is `skillsmith uninstall` (T2 adds a test that uninstall handles a
 dev-created pair; if it refuses, that's a finding for a follow-up, and manual
 `rm` + doctor parity covers the gap).
