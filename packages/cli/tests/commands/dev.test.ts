@@ -33,6 +33,25 @@ describe('skillsmith dev — flag validation', () => {
     expect(r.code).toBe(2);
   });
 
+  // BF-7(c): rollback takes none of the create/gate flags (matches promote's discipline).
+  test('--rollback combined with --dest -> exit 2', async () => {
+    const r = await run(['dev', '--rollback', '--dest', '/tmp', '--tool', 'codex', 'x']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--rollback');
+  });
+
+  test('--rollback combined with --strict -> exit 2', async () => {
+    const r = await run(['dev', '--rollback', '--strict', 'x']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--rollback');
+  });
+
+  test('--rollback combined with --no-verify -> exit 2', async () => {
+    const r = await run(['dev', '--rollback', '--no-verify', 'x']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--rollback');
+  });
+
   test('an unknown --tool value -> exit 2', async () => {
     const r = await run(['dev', 'x', '--tool', 'bogus']);
     expect(r.code).toBe(2);

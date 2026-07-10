@@ -118,8 +118,13 @@ export const devCommand = (signal?: AbortSignal): Command =>
         // PRD D5: create/adopt are inherently targeted; --all gains no create/adopt semantics.
         usageError('--all cannot be combined with --source');
       }
-      if (opts.rollback && opts.source !== undefined) {
-        usageError('--rollback cannot be combined with --source');
+      if (
+        opts.rollback &&
+        (opts.source !== undefined || opts.dest !== undefined || opts.strict || !opts.verify)
+      ) {
+        // BF-7(c): rollback restores prior state — it takes none of the create/gate flags, matching
+        // promote's flag discipline.
+        usageError('--rollback cannot be combined with --source, --dest, --strict, or --no-verify');
       }
       if (opts.source !== undefined && skills.length !== 1) {
         usageError('--source is only valid with exactly one positional target');
