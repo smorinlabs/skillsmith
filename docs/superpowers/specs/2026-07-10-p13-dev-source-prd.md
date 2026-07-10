@@ -1,7 +1,7 @@
 # P13 PRD — `dev --source`: create + adopt dev placements
 
-**Status:** Resolved for implementation (decisions veto-able at T6 review) ·
-**Date:** 2026-07-10 · **Author:** Fable · **Issue:** #9 · **Plan:**
+**Status:** APPROVED — decisions D1–D5 locked with Steve via walkthrough,
+2026-07-10 · **Author:** Fable · **Issue:** #9 · **Plan:**
 `docs/superpowers/plans/2026-07-10-p13-dev-source-plan.md`
 
 ## Goal
@@ -15,16 +15,20 @@ tooling (smorin-harness `skill-create`).
 ## CLI surface
 
 ```
-skillsmith dev <name-or-path> --source <path> [--tool <t>]... [--no-verify] [--strict] [--dry-run] [--json]
+skillsmith dev <name-or-path> --source <path> [--tool <t>]... [--dest <path>]
+              [--no-verify] [--strict] [--dry-run] [--json]
 ```
 
 - `<name-or-path>`: skill name (placement resolved per tool) or explicit
   placement path. `--source`: local dir containing `SKILL.md`; resolved to an
   **absolute** path before any use or recording (never record a relative
   source — sidesteps #10 for all new records).
-- No `--tool` → every detected flip tool (claude-code, codex), pairs processed
-  in the existing fixed order; pairs remain independent (one pair's refusal
-  does not stop the next — unchanged from P12 semantics).
+- No `--tool` → both default tools (claude-code, codex), pairs processed in
+  the existing fixed order; pairs remain independent (one pair's refusal does
+  not stop the next — unchanged from P12 semantics).
+- `--dest <path>` overrides the **default destination location** for the
+  created placement; requires exactly one `--tool` (usage error otherwise —
+  an unscoped path is ambiguous across tools).
 - `--all` with `--source` is a **usage error (exit 2)**. Create/adopt are
   inherently targeted; `--all` gains no new semantics (see also bug #11).
 
@@ -45,12 +49,17 @@ placement name → **warning**, not refusal. Codex dual-root presence → refuse
 
 ## The five decisions (resolved)
 
-**D1 — Codex root for created placements: consistency-first.** Create into the
-root where the tool's existing skills already live (any skillsmith-visible
-skill present in legacy `~/.codex/skills` → use it; else the preferred
-`~/.agents/skills`). Deterministic, observable, avoids split-brain fleets; a
-future whole-fleet root migration is a separate concern. The chosen root is
-named in the report.
+**D1 — Destination locations: modern convention, verified (Steve, walkthrough).**
+Default destination locations are Claude Code (`~/.claude/skills`) and Codex's
+**current** convention — believed to be `~/.agents/skills` per
+`agents/codex/skill-roots.ts`, but **T0 double-verifies against live Codex
+behavior and upstream docs before any test pins it**. Once verified, that
+location is the create-target AND the consistent default across skillsmith
+(doctor guidance, install paths — audit for stragglers). `--dest` provides the
+per-invocation override. A skill never gets symlinks in two Codex locations
+(dual-location refusal stands). **Downstream (post-P13): migrate all 22 legacy
+`~/.codex/skills` placements to the verified location** using `dev --source`
+itself (per skill: uninstall legacy → create modern; pilot-first, sequential).
 
 **D2 — Verify gate: static by default for both create and adopt.** Hermetic,
 auth-free, catches the frontmatter-rot class (proven twice in the fleet).
@@ -90,7 +99,9 @@ schema tolerance; whichever way, the behavior is explicit and tested).
 ## Test matrix (T2 writes these failing-first)
 
 State machine S1–S6 × both tools · absolute-resolution of relative `--source` ·
-`--all --source` usage error · verify-gate block (S1 and S2) + `--no-verify` +
+`--all --source` usage error · `--dest` override (honored with one `--tool`;
+usage error unscoped; recorded placementPath reflects it) · codex default
+destination = the T0-verified location · verify-gate block (S1 and S2) + `--no-verify` +
 `--strict` · dual-root refusal · basename-mismatch warning · ledger shape
 (dev-only record; no pin/journal) · pin-assumption audit (plan/rollback/list
 against a dev-only record) · idempotent re-run (S1 → S3; simulated crash
@@ -108,5 +119,6 @@ v2 (actions, counters) · uninstall of a dev-created pair.
 
 ## Out of scope
 
-Rollback-of-create (v1) · `install` local-path sources · `--all` growth ·
-fleet root migration for codex · any change to promote's gate semantics.
+Rollback-of-create (v1) · `install` local-path sources · `--all` growth · any
+change to promote's gate semantics. (Codex fleet migration to the verified
+modern location is IN scope as a downstream task, per D1.)
