@@ -1,25 +1,27 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { lstat, readlink, realpath } from 'node:fs/promises';
 import { buildRemoteFixture, destroyRemoteFixture } from '../fixtures/acquire/remote.ts';
 import { buildFixtureFleet, destroyFixtureFleet } from '../fixtures/place/fleet.ts';
 
 describe('RemoteFixture', () => {
-  let fixture: Awaited<ReturnType<typeof buildRemoteFixture>> | null = null;
+  // The bare remotes are immutable during these read-only assertions, so the fixture is built
+  // once for the whole suite rather than per test — rebuilding it per test spins up three bare
+  // git repos each time and saturates git subprocess spawns (a source of CI flakiness).
+  let fixture: Awaited<ReturnType<typeof buildRemoteFixture>>;
 
-  afterEach(async () => {
-    if (fixture) {
-      await destroyRemoteFixture(fixture);
-      fixture = null;
-    }
+  beforeAll(async () => {
+    fixture = await buildRemoteFixture();
   });
 
-  test('buildRemoteFixture() resolves', async () => {
-    fixture = await buildRemoteFixture();
+  afterAll(async () => {
+    await destroyRemoteFixture(fixture);
+  });
+
+  test('buildRemoteFixture() resolves', () => {
     expect(fixture).toBeDefined();
   });
 
-  test('multi.git exists and is a bare repository', async () => {
-    fixture = await buildRemoteFixture();
+  test('multi.git exists and is a bare repository', () => {
     const result = Bun.spawnSync(
       ['git', '-C', `${fixture.base}/multi.git`, 'rev-parse', '--is-bare-repository'],
       {
@@ -30,8 +32,7 @@ describe('RemoteFixture', () => {
     expect(output).toBe('true');
   });
 
-  test('single.git exists and is a bare repository', async () => {
-    fixture = await buildRemoteFixture();
+  test('single.git exists and is a bare repository', () => {
     const result = Bun.spawnSync(
       ['git', '-C', `${fixture.base}/single.git`, 'rev-parse', '--is-bare-repository'],
       {
@@ -42,8 +43,7 @@ describe('RemoteFixture', () => {
     expect(output).toBe('true');
   });
 
-  test('root.git exists and is a bare repository', async () => {
-    fixture = await buildRemoteFixture();
+  test('root.git exists and is a bare repository', () => {
     const result = Bun.spawnSync(
       ['git', '-C', `${fixture.base}/root.git`, 'rev-parse', '--is-bare-repository'],
       {
@@ -54,8 +54,7 @@ describe('RemoteFixture', () => {
     expect(output).toBe('true');
   });
 
-  test('multi.git has uploadpack.allowFilter set to true', async () => {
-    fixture = await buildRemoteFixture();
+  test('multi.git has uploadpack.allowFilter set to true', () => {
     const result = Bun.spawnSync(
       ['git', '-C', `${fixture.base}/multi.git`, 'config', '--get', 'uploadpack.allowFilter'],
       {
@@ -66,8 +65,7 @@ describe('RemoteFixture', () => {
     expect(output).toBe('true');
   });
 
-  test('multi.git has uploadpack.allowReachableSHA1InWant set to true', async () => {
-    fixture = await buildRemoteFixture();
+  test('multi.git has uploadpack.allowReachableSHA1InWant set to true', () => {
     const result = Bun.spawnSync(
       [
         'git',
@@ -85,29 +83,24 @@ describe('RemoteFixture', () => {
     expect(output).toBe('true');
   });
 
-  test('multiHead and multiTagSha are both 40-hex SHAs', async () => {
-    fixture = await buildRemoteFixture();
+  test('multiHead and multiTagSha are both 40-hex SHAs', () => {
     expect(fixture.multiHead).toMatch(/^[0-9a-f]{40}$/);
     expect(fixture.multiTagSha).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  test('singleHead is a 40-hex SHA', async () => {
-    fixture = await buildRemoteFixture();
+  test('singleHead is a 40-hex SHA', () => {
     expect(fixture.singleHead).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  test('rootHead is a 40-hex SHA', async () => {
-    fixture = await buildRemoteFixture();
+  test('rootHead is a 40-hex SHA', () => {
     expect(fixture.rootHead).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  test('multiTagSha differs from multiHead', async () => {
-    fixture = await buildRemoteFixture();
+  test('multiTagSha differs from multiHead', () => {
     expect(fixture.multiTagSha).not.toBe(fixture.multiHead);
   });
 
-  test('git ls-remote multiUrl HEAD contains multiHead', async () => {
-    fixture = await buildRemoteFixture();
+  test('git ls-remote multiUrl HEAD contains multiHead', () => {
     const result = Bun.spawnSync(['git', 'ls-remote', fixture.multiUrl, 'HEAD'], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -116,33 +109,21 @@ describe('RemoteFixture', () => {
   });
 
   test('multiWork contains plugins/web/skills/review/SKILL.md', async () => {
-    fixture = await buildRemoteFixture();
-    try {
-      await lstat(`${fixture.multiWork}/plugins/web/skills/review/SKILL.md`);
-      expect(true).toBe(true);
-    } catch {
-      expect(false).toBe(true);
-    }
+    const stats = await lstat(`${fixture.multiWork}/plugins/web/skills/review/SKILL.md`);
+    expect(stats.isFile()).toBe(true);
   });
 
   test('multiWork contains plugins/api/skills/review/SKILL.md', async () => {
-    fixture = await buildRemoteFixture();
-    try {
-      await lstat(`${fixture.multiWork}/plugins/api/skills/review/SKILL.md`);
-      expect(true).toBe(true);
-    } catch {
-      expect(false).toBe(true);
-    }
+    const stats = await lstat(`${fixture.multiWork}/plugins/api/skills/review/SKILL.md`);
+    expect(stats.isFile()).toBe(true);
   });
 
   test('multiWork/plugins/fh/skills/factor-scan/bin/run.sh has owner-exec bit', async () => {
-    fixture = await buildRemoteFixture();
     const stats = await lstat(`${fixture.multiWork}/plugins/fh/skills/factor-scan/bin/run.sh`);
     expect((stats.mode & 0o100) !== 0).toBe(true);
   });
 
   test('multiWork/plugins/fh/skills/factor-scan/link.md is a relative symlink with target SKILL.md', async () => {
-    fixture = await buildRemoteFixture();
     const linkStats = await lstat(`${fixture.multiWork}/plugins/fh/skills/factor-scan/link.md`);
     expect(linkStats.isSymbolicLink()).toBe(true);
     const target = await readlink(`${fixture.multiWork}/plugins/fh/skills/factor-scan/link.md`);
@@ -150,40 +131,36 @@ describe('RemoteFixture', () => {
   });
 
   test('destroyRemoteFixture removes base directory', async () => {
-    fixture = await buildRemoteFixture();
-    let baseExists = false;
-    try {
-      await lstat(fixture.base);
-      baseExists = true;
-    } catch {
-      baseExists = false;
-    }
-    expect(baseExists).toBe(true);
-    await destroyRemoteFixture(fixture);
+    // This test owns its own throwaway fixture because it asserts teardown behavior; it must not
+    // destroy the suite-shared fixture that beforeAll built.
+    const own = await buildRemoteFixture();
+    expect((await lstat(own.base)).isDirectory()).toBe(true);
+    await destroyRemoteFixture(own);
     let baseExistsAfter = false;
     try {
-      await lstat(fixture.base);
+      await lstat(own.base);
       baseExistsAfter = true;
     } catch {
       baseExistsAfter = false;
     }
     expect(baseExistsAfter).toBe(false);
-    fixture = null;
   });
 });
 
 describe('FixtureFleet with project extensions', () => {
-  let fleet: Awaited<ReturnType<typeof buildFixtureFleet>> | null = null;
+  // Read-only assertions against an immutable fleet — built once for the suite (no test calls
+  // makeCheckoutDirty, so the shared checkout stays clean).
+  let fleet: Awaited<ReturnType<typeof buildFixtureFleet>>;
 
-  afterEach(async () => {
-    if (fleet) {
-      await destroyFixtureFleet(fleet);
-      fleet = null;
-    }
+  beforeAll(async () => {
+    fleet = await buildFixtureFleet();
   });
 
-  test('buildFixtureFleet() still resolves with all pre-existing fields', async () => {
-    fleet = await buildFixtureFleet();
+  afterAll(async () => {
+    await destroyFixtureFleet(fleet);
+  });
+
+  test('buildFixtureFleet() still resolves with all pre-existing fields', () => {
     expect(fleet).toBeDefined();
     expect(fleet.base).toBeDefined();
     expect(fleet.home).toBeDefined();
@@ -198,35 +175,25 @@ describe('FixtureFleet with project extensions', () => {
     expect(fleet.makeCheckoutDirty).toBeDefined();
   });
 
-  test('buildFixtureFleet() has project field', async () => {
-    fleet = await buildFixtureFleet();
+  test('buildFixtureFleet() has project field', () => {
     expect(fleet.project).toBeDefined();
   });
 
-  test('buildFixtureFleet() has projectReal field', async () => {
-    fleet = await buildFixtureFleet();
+  test('buildFixtureFleet() has projectReal field', () => {
     expect(fleet.projectReal).toBeDefined();
   });
 
   test('project/.git exists', async () => {
-    fleet = await buildFixtureFleet();
-    try {
-      await lstat(`${fleet.project}/.git`);
-      expect(true).toBe(true);
-    } catch {
-      expect(false).toBe(true);
-    }
+    const stats = await lstat(`${fleet.project}/.git`);
+    expect(stats.isDirectory()).toBe(true);
   });
 
   test('projectReal equals realpath(project)', async () => {
-    fleet = await buildFixtureFleet();
     const realPath = await realpath(fleet.project);
     expect(fleet.projectReal).toBe(realPath);
   });
 
   test('all pre-existing fleet assertions pass', async () => {
-    fleet = await buildFixtureFleet();
-
     // From original fleet.test.ts
     expect(fleet.headSha).toMatch(/^[0-9a-f]{40}$/);
 
