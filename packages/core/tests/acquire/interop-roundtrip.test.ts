@@ -25,6 +25,7 @@ import {
   buildRemoteFixture,
   destroyRemoteFixture,
 } from '../fixtures/acquire/remote.ts';
+import { hermeticGitEnv } from '../fixtures/git-env.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -113,7 +114,7 @@ const uninstallDeps = () => ({
 const runGit = (cwd: string, args: string[]): void => {
   const result = Bun.spawnSync(['git', ...args], {
     cwd,
-    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+    env: hermeticGitEnv(),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   if (result.exitCode !== 0) {

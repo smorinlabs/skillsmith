@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { lstat, readlink, realpath } from 'node:fs/promises';
 import { buildRemoteFixture, destroyRemoteFixture } from '../fixtures/acquire/remote.ts';
+import { hermeticGitEnv } from '../fixtures/git-env.ts';
 import { buildFixtureFleet, destroyFixtureFleet } from '../fixtures/place/fleet.ts';
 
 describe('RemoteFixture', () => {
@@ -25,6 +26,7 @@ describe('RemoteFixture', () => {
     const result = Bun.spawnSync(
       ['git', '-C', `${fixture.base}/multi.git`, 'rev-parse', '--is-bare-repository'],
       {
+        env: hermeticGitEnv(),
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );
@@ -36,6 +38,7 @@ describe('RemoteFixture', () => {
     const result = Bun.spawnSync(
       ['git', '-C', `${fixture.base}/single.git`, 'rev-parse', '--is-bare-repository'],
       {
+        env: hermeticGitEnv(),
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );
@@ -47,6 +50,7 @@ describe('RemoteFixture', () => {
     const result = Bun.spawnSync(
       ['git', '-C', `${fixture.base}/root.git`, 'rev-parse', '--is-bare-repository'],
       {
+        env: hermeticGitEnv(),
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );
@@ -58,6 +62,7 @@ describe('RemoteFixture', () => {
     const result = Bun.spawnSync(
       ['git', '-C', `${fixture.base}/multi.git`, 'config', '--get', 'uploadpack.allowFilter'],
       {
+        env: hermeticGitEnv(),
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );
@@ -76,6 +81,7 @@ describe('RemoteFixture', () => {
         'uploadpack.allowReachableSHA1InWant',
       ],
       {
+        env: hermeticGitEnv(),
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     );
@@ -102,6 +108,7 @@ describe('RemoteFixture', () => {
 
   test('git ls-remote multiUrl HEAD contains multiHead', () => {
     const result = Bun.spawnSync(['git', 'ls-remote', fixture.multiUrl, 'HEAD'], {
+      env: hermeticGitEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const output = new TextDecoder().decode(result.stdout);
@@ -199,6 +206,7 @@ describe('FixtureFleet with project extensions', () => {
 
     // Check git status is clean
     const result = Bun.spawnSync(['git', '-C', fleet.checkout, 'status', '--porcelain'], {
+      env: hermeticGitEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const output = new TextDecoder().decode(result.stdout);
