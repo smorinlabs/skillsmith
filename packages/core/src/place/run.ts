@@ -551,6 +551,19 @@ const canonicalizePath = async (env: ScanEnv, cwd: string, p: string): Promise<s
 const samePath = async (env: ScanEnv, cwd: string, a: string, b: string): Promise<boolean> =>
   (await canonicalizePath(env, cwd, a)) === (await canonicalizePath(env, cwd, b));
 
+/** Resolve the source used to validate/probe a dev flip without changing the literal symlink
+ * payload. A recorded `sourcePath` may intentionally be relative to the placement directory, so
+ * source-less demotion must use the absolute `resolvedPath` captured at promotion time (#10).
+ * Explicit `--source` remains relative to the caller's cwd by CLI contract. */
+const resolveDevSource = (
+  opts: FlipOptions,
+  sourcePath: string,
+  recordedResolved: string | null,
+): string =>
+  opts.source === undefined && recordedResolved !== null
+    ? recordedResolved
+    : resolve(opts.cwd, sourcePath);
+
 /** BF-6 / R4: a usable `SKILL.md` is a regular FILE *after following symlinks* — a directory named
  *  `SKILL.md` is still rejected (BF-6), but a `SKILL.md` that is a symlink to a regular file is now
  *  accepted (R4: the PRD only requires the source "contains SKILL.md"; the pre-fix `pathKind==='file'`
@@ -925,7 +938,7 @@ const runDevPair = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  const resolvedSourceDir = resolve(opts.cwd, source);
+  const resolvedSourceDir = resolveDevSource(opts, source, recordedResolved);
   const hasSkillMd = await env.fileExists(join(resolvedSourceDir, 'SKILL.md'));
   if (!hasSkillMd) {
     if (opts.source !== undefined) {
@@ -1401,7 +1414,7 @@ const predictPair = async (
     const reason = 'no recorded dev source; pass --source <path>';
     return refusedResult(base, reason, flipRefusedError(reason));
   }
-  const resolvedSourceDir = resolve(opts.cwd, source);
+  const resolvedSourceDir = resolveDevSource(opts, source, recordedResolved);
   const hasSkillMd = await env.fileExists(join(resolvedSourceDir, 'SKILL.md'));
   if (!hasSkillMd) {
     const reason = `the recorded dev source for '${skill}' (${tool}) no longer exists: ${resolvedSourceDir}`;
