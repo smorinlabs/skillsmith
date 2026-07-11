@@ -98,7 +98,7 @@ Claude (`~/.claude/skills`) and Codex skill dirs where present.
 
 ---
 
-## [ ] Project P13: `dev --source` — create + adopt dev placements (issue #9)
+## [~] Project P13: `dev --source` — create + adopt dev placements (issue #9)
 **Goal**: Extend `skillsmith dev <name-or-path> --source <path>` to a full state machine:
 CREATE the dev symlink + ledger record when no placement exists; ADOPT (record-only) an
 existing matching hand-made symlink; noop when already recorded; refuse on target mismatch;
@@ -109,16 +109,16 @@ downstream, smorin-harness `skill-create` drops its ln -s step. Plan:
 
 ### Tests & Tasks
 - [x] [P13-T01] PRD — D1-D5 locked with Steve via walkthrough 2026-07-10 (modern-convention destinations + --dest override; static verify default; convergence+uninstall; schemaVersion 2; --all frozen)
-- [ ] [P13-T00] Spike: double-verify Codex's CURRENT default skills location against live behavior + upstream docs (not just skill-roots.ts belief); audit skillsmith for consistency with it
-- [ ] [P13-TS01] Failing-first unit suite: state machine × tools, dev-only ledger record shape (no pin), absolute resolution, dual-root refusal, --json contract
-- [ ] [P13-T02] Core: plan.ts absent-pair resolution + run.ts create/adopt paths + ledger write (+ journal per PRD)
-- [ ] [P13-T03] CLI: dev.ts flags/help/exit codes; FlipReport `created`/`adopted`; research/commands/dev.md
-- [ ] [P13-TS02] Crash injection on create path; e2e drift-canary extension (sandboxed SKILLSMITH_HOME)
-- [ ] [P13-T04] Adversarial full-branch review (codex) + fable whole-branch review
-- [ ] [P13-T05] PR, CI green, merge; release-please v0.7.0
+- [x] [P13-T00] Spike: double-verify Codex's CURRENT default skills location against live behavior + upstream docs (not just skill-roots.ts belief); audit skillsmith for consistency with it
+- [x] [P13-TS01] Failing-first unit suite: state machine × tools, dev-only ledger record shape (no pin), absolute resolution, dual-root refusal, --json contract
+- [x] [P13-T02] Core: plan.ts absent-pair resolution + run.ts create/adopt paths + ledger write (+ journal per PRD)
+- [x] [P13-T03] CLI: dev.ts flags/help/exit codes; FlipReport `created`/`adopted`; research/commands/dev.md
+- [x] [P13-TS02] Crash injection on create path; e2e drift-canary extension (sandboxed SKILLSMITH_HOME)
+- [x] [P13-T04] Adversarial full-branch review (codex) + fable whole-branch review
+- [x] [P13-T05] PR, CI green, merge; release-please v0.7.0
 - [ ] [P13-T06] Downstream: skill-create wire step → single `skillsmith dev --source` per tool; real-skill re-wire proof; smorin-harness release
 - [ ] [P13-T07] Downstream migration: move all 22 legacy ~/.codex/skills placements to the verified modern location via dev --source (uninstall legacy → create modern; pilot-first, sequential)
-- [ ] [P13-T08] Close issue #9; flip this project; memory update
+- [x] [P13-T08] Issue #9 closed (auto, PR #18 'Fixes #9'); memory updated
 
 ---
 
