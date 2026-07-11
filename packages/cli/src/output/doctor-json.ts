@@ -9,6 +9,10 @@ const FindingSchema = z.object({
   remediation: z.string().optional(),
   tool: z.string().optional(),
   scope: z.string().optional(),
+  path: z.string().optional(),
+  operation: z.string().optional(),
+  reason: z.string().optional(),
+  scopeInUse: z.boolean().optional(),
 });
 
 export const DoctorJsonSchema = z.object({

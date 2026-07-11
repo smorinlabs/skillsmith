@@ -14,6 +14,10 @@ export interface Finding {
   remediation?: string;
   tool?: SupportedTool;
   scope?: Scope;
+  path?: string;
+  operation?: string;
+  reason?: string;
+  scopeInUse?: boolean;
 }
 
 export interface CheckRunContext {
@@ -21,6 +25,8 @@ export interface CheckRunContext {
   mode: CheckRunMode;
   tools: readonly SupportedTool[];
   scopes: readonly Scope[];
+  /** Whether the caller explicitly selected a scope instead of using the default sweep. */
+  scopeExplicit?: boolean;
   cwd: string;
   envVars: Record<string, string | undefined>;
   offline: boolean;

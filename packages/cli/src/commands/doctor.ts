@@ -56,6 +56,7 @@ export const doctorCommand = (): Command =>
           mode: 'doctor',
           tools,
           scopes,
+          scopeExplicit: scopeR.value !== null,
           cwd: process.cwd(),
           envVars: process.env,
           offline: opts.offline,
