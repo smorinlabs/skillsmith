@@ -12,7 +12,7 @@ const finding: Finding = {
   tool: 'codex',
   scope: 'system',
   path: '/etc/codex/skills',
-  operation: 'access("/etc", W_OK) as uid 501',
+  operation: 'access("/etc", W_OK | X_OK) as uid 501',
   reason: 'checks whether SkillSmith can install or update skills in this scope',
   scopeInUse: false,
 };
@@ -28,7 +28,7 @@ describe('doctor output', () => {
 
     expect(output).toContain('scope: codex/system');
     expect(output).toContain('path: /etc/codex/skills');
-    expect(output).toContain('operation: access("/etc", W_OK) as uid 501');
+    expect(output).toContain('operation: access("/etc", W_OK | X_OK) as uid 501');
     expect(output).toContain(
       'reason: checks whether SkillSmith can install or update skills in this scope',
     );

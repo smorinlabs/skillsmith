@@ -62,7 +62,7 @@ describe('scopeWritable', () => {
     const findings = await check.run(context({ env }));
 
     expect(findings).toEqual([]);
-    expect(accessed).toEqual([{ path: '/h', mode: constants.W_OK }]);
+    expect(accessed).toEqual([{ path: '/h', mode: constants.W_OK | constants.X_OK }]);
     expect(made).toEqual([]);
   });
 
@@ -84,7 +84,7 @@ describe('scopeWritable', () => {
         tool: 'claude-code',
         scope: 'user',
         path: root,
-        operation: `access(${JSON.stringify(root)}, W_OK) as uid 501`,
+        operation: `access(${JSON.stringify(root)}, W_OK | X_OK) as uid 501`,
         reason: 'checks whether SkillSmith can install or update skills in this scope',
         scopeInUse: true,
       }),
@@ -109,7 +109,7 @@ describe('scopeWritable', () => {
         severity: 'info',
         scope: 'system',
         path: '/etc/codex/skills',
-        operation: 'access("/etc", W_OK) as uid 501',
+        operation: 'access("/etc", W_OK | X_OK) as uid 501',
         scopeInUse: false,
       }),
     ]);
@@ -124,6 +124,17 @@ describe('scopeWritable', () => {
     const findings = await check.run(
       context({ env, tools: ['codex'], scopes: ['system'], scopeExplicit: true }),
     );
+
+    expect(findings[0]?.severity).toBe('error');
+  });
+
+  test('keeps privileged-scope failures actionable for older callers without scope metadata', async () => {
+    const env = fakeEnv((path) => (path === '/etc' ? 'dir' : 'absent'));
+    const check = createScopeWritableCheck(async () => {
+      throw new Error('permission denied');
+    });
+
+    const findings = await check.run(context({ env, tools: ['codex'], scopes: ['system'] }));
 
     expect(findings[0]?.severity).toBe('error');
   });

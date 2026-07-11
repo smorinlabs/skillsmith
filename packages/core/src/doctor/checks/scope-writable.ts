@@ -42,12 +42,12 @@ export const createScopeWritableCheck = (
           const scopeInUse = rootKind !== 'absent';
           const probePath = scopeInUse ? root : await nearestExistingAncestor(ctx.env, root);
           const uid = getUid();
-          const operation = `access(${quoted(probePath)}, W_OK) as uid ${uid ?? 'unknown'}`;
+          const operation = `access(${quoted(probePath)}, W_OK | X_OK) as uid ${uid ?? 'unknown'}`;
           try {
-            await accessPath(probePath, constants.W_OK);
+            await accessPath(probePath, constants.W_OK | constants.X_OK);
           } catch (e) {
             const expectedPrivilegedScope =
-              (scope === 'system' || scope === 'managed') && !ctx.scopeExplicit;
+              (scope === 'system' || scope === 'managed') && ctx.scopeExplicit === false;
             findings.push({
               checkId: 'scope-writable',
               severity: expectedPrivilegedScope ? 'info' : 'error',
