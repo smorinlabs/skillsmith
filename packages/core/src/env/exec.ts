@@ -45,11 +45,13 @@ export const execCommand = async (
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
+  const childEnv: Record<string, string | undefined> = { ...process.env, ...opts.env };
+  for (const name of opts.unsetEnv ?? []) delete childEnv[name];
 
   try {
     const proc = Bun.spawn([cmd, ...args], {
       ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
-      env: { ...process.env, ...opts.env },
+      env: childEnv,
       stdin: opts.input !== undefined ? new TextEncoder().encode(opts.input) : undefined,
       stdout: 'pipe',
       stderr: 'pipe',

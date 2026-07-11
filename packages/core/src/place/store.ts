@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { basename, dirname, join, relative } from 'node:path';
+import { execGit } from '../env/git.ts';
 import type { ScanEnv } from '../env/types.ts';
 import {
   type SkillSmithError,
@@ -140,7 +141,7 @@ export const resolveProvenance = async (
   env: ScanEnv,
   sourceDir: string,
 ): Promise<Result<Provenance, SkillSmithError>> => {
-  const top = await env.exec('git', ['-C', sourceDir, 'rev-parse', '--show-toplevel']);
+  const top = await execGit(env, ['-C', sourceDir, 'rev-parse', '--show-toplevel']);
   if (top.code !== 0) {
     return ok({
       kind: 'non-git',
@@ -155,18 +156,18 @@ export const resolveProvenance = async (
   }
   const repoRoot = top.stdout.trim();
 
-  const status = await env.exec('git', ['-C', repoRoot, 'status', '--porcelain']);
+  const status = await execGit(env, ['-C', repoRoot, 'status', '--porcelain']);
   const statusOut = status.stdout.trim();
   const dirty = statusOut.length > 0;
   const dirtySummary = dirty ? statusOut.split('\n').slice(0, 10).join('\n') : null;
 
-  const head = await env.exec('git', ['-C', repoRoot, 'rev-parse', 'HEAD']);
+  const head = await execGit(env, ['-C', repoRoot, 'rev-parse', 'HEAD']);
   const gitSha = head.stdout.trim();
   if (head.code !== 0 || !SHA_HEX_40.test(gitSha)) {
     return err(genericError(`could not resolve git HEAD for ${repoRoot}`));
   }
 
-  const remoteRes = await env.exec('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']);
+  const remoteRes = await execGit(env, ['-C', repoRoot, 'remote', 'get-url', 'origin']);
   const parsed = remoteRes.code === 0 ? parseRemote(remoteRes.stdout) : null;
   // remote stays unclamped (full provenance); only the store namespace is clamped to 2 segments.
   const clamped = parsed ? clampStoreNs(`${parsed.owner}/${parsed.repo}`) : null;

@@ -11,6 +11,7 @@ export interface XdgDirs {
 export interface ExecOptions {
   cwd?: string;
   env?: Record<string, string>; // merged over process.env, e.g. { CODEX_HOME: '<tmp>' }
+  unsetEnv?: readonly string[]; // removed after env merge; callers cannot reintroduce these keys
   timeoutMs?: number;
   input?: string;
   signal?: AbortSignal;

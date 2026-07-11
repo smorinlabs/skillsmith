@@ -1,32 +1,11 @@
+import { GIT_REPO_LOCAL_ENV_VARS } from '../../src/env/git.ts';
+
 // Hermetic env for spawning git (or the CLI) from tests. Git hooks — e.g. the
 // lefthook pre-push that runs `bun test` — export repo-location variables such
 // as GIT_DIR; a child git inheriting them writes to the REAL repo instead of
 // the fixture temp dir (issue #17).
 //
-// The first 15 names are `git rev-parse --local-env-vars` (git 2.50); the last
-// 4 are defensive extras that also affect repo discovery/writes. Revisit on
-// major git upgrades.
-export const GIT_REPO_SCRUB_VARS = [
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_CONFIG',
-  'GIT_CONFIG_PARAMETERS',
-  'GIT_CONFIG_COUNT',
-  'GIT_OBJECT_DIRECTORY',
-  'GIT_DIR',
-  'GIT_WORK_TREE',
-  'GIT_IMPLICIT_WORK_TREE',
-  'GIT_GRAFT_FILE',
-  'GIT_INDEX_FILE',
-  'GIT_NO_REPLACE_OBJECTS',
-  'GIT_REPLACE_REF_BASE',
-  'GIT_PREFIX',
-  'GIT_SHALLOW_FILE',
-  'GIT_COMMON_DIR',
-  'GIT_CEILING_DIRECTORIES',
-  'GIT_NAMESPACE',
-  'GIT_QUARANTINE_PATH',
-  'GIT_DISCOVERY_ACROSS_FILESYSTEM',
-] as const;
+export const GIT_REPO_SCRUB_VARS = GIT_REPO_LOCAL_ENV_VARS;
 
 // Scrub and config-pinning win over overrides: no test may reintroduce a
 // repo-location var, so a poisoned caller can never opt back into the bug.

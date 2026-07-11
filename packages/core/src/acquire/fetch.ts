@@ -1,4 +1,5 @@
 import { basename, dirname, join } from 'node:path';
+import { execGit } from '../env/git.ts';
 import type { ExecResult, ScanEnv } from '../env/types.ts';
 import { type SkillSmithError, sourceUnresolvableError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -9,17 +10,16 @@ const FETCH_TIMEOUT_MS = 120_000;
 const SWEEP_AGE_MS = 60 * 60 * 1000; // .fetch orphans older than 60 minutes are swept
 const SHA_HEX_40 = /^[0-9a-f]{40}$/;
 
-// F9: every git run is via env.exec with GIT_TERMINAL_PROMPT=0, in a skillsmith-`init`ed dir so
-// no repo-supplied config or hook is ever honored. Nothing fetched is ever executed.
+// F9: every git run is sanitized by execGit and uses a skillsmith-`init`ed dir, so inherited hook
+// repository state and repo-supplied config/hooks are never honored. Nothing fetched is executed.
 const git = (
   env: ScanEnv,
   args: readonly string[],
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<ExecResult> =>
-  env.exec('git', args, {
+  execGit(env, args, {
     timeoutMs,
-    env: { GIT_TERMINAL_PROMPT: '0' },
     ...(signal ? { signal } : {}),
   });
 

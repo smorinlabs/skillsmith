@@ -57,6 +57,26 @@ describe('execCommand', () => {
     expect(process.env.PATH).toBeTruthy();
   });
 
+  test('unsetEnv removes inherited variables after applying overrides', async () => {
+    const bunPath = Bun.which('bun') ?? 'bun';
+    const previous = process.env.SKILLSMITH_INHERITED;
+    process.env.SKILLSMITH_INHERITED = 'poisoned';
+    try {
+      const r = await execCommand(
+        bunPath,
+        ['-e', 'console.log(process.env.SKILLSMITH_INHERITED ?? "absent")'],
+        {
+          env: { SKILLSMITH_INHERITED: 'reintroduced' },
+          unsetEnv: ['SKILLSMITH_INHERITED'],
+        },
+      );
+      expect(r.stdout).toBe('absent\n');
+    } finally {
+      if (previous === undefined) process.env.SKILLSMITH_INHERITED = undefined;
+      else process.env.SKILLSMITH_INHERITED = previous;
+    }
+  });
+
   test('sets timedOut when the process exceeds timeoutMs', async () => {
     const sleep = Bun.which('sleep') ?? '/bin/sleep';
     const r = await execCommand(sleep, ['5'], { timeoutMs: 200 });
