@@ -4,6 +4,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '..');
+const repository = 'smorinlabs/skillsmith';
 const bootstrap =
   '/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, pausing for every human approval it requires and marking complete only after all referenced gates and final sign-off pass.';
 const preparationBranch = 'agent/p17-execution-package';
@@ -510,10 +511,14 @@ function requireChecks(pr: PullRequest): void {
 
 function requirePrAllowlist(number: number): void {
   const allowed = new Set(canonicalFiles);
-  const changed = run(['gh', 'pr', 'diff', String(number), '--name-only'])
-    .split('\n')
-    .map((path) => path.trim())
-    .filter(Boolean);
+  const pages = json<Array<Array<{ filename: string }>>>([
+    'gh',
+    'api',
+    '--paginate',
+    '--slurp',
+    `repos/${repository}/pulls/${number}/files?per_page=100`,
+  ]);
+  const changed = pages.flat().map((file) => file.filename);
   if (changed.length === 0) fail(`PR #${number} has no changed files`);
   const unexpected = changed.filter((path) => !allowed.has(path));
   if (unexpected.length > 0) {
@@ -526,9 +531,8 @@ function requirePrAllowlist(number: number): void {
 }
 
 function requireReviewClosure(number: number): void {
-  const repo = json<{ nameWithOwner: string }>(['gh', 'repo', 'view', '--json', 'nameWithOwner']);
-  const [owner, name] = repo.nameWithOwner.split('/');
-  if (!owner || !name) fail('could not resolve GitHub owner/repository');
+  const [owner, name] = repository.split('/');
+  if (!owner || !name) fail('malformed canonical GitHub repository');
   const query =
     'query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{isResolved}pageInfo{hasNextPage endCursor}}}}}';
   let cursor: string | null = null;
@@ -547,7 +551,7 @@ function requireReviewClosure(number: number): void {
       `number=${number}`,
     ];
     if (cursor) command.push('-F', `cursor=${cursor}`);
-    const result = json<{
+    let result: {
       data?: {
         repository?: {
           pullRequest?: {
@@ -558,7 +562,33 @@ function requireReviewClosure(number: number): void {
           };
         };
       };
-    }>(command);
+    };
+    try {
+      result = json<{
+        data?: {
+          repository?: {
+            pullRequest?: {
+              reviewThreads?: {
+                nodes?: Array<{ isResolved: boolean }>;
+                pageInfo?: { hasNextPage: boolean; endCursor: string | null };
+              };
+            };
+          };
+        };
+      }>(command);
+    } catch (error) {
+      const commentPages = json<Array<Array<{ id: number }>>>([
+        'gh',
+        'api',
+        '--paginate',
+        '--slurp',
+        `repos/${repository}/pulls/${number}/comments?per_page=100`,
+      ]);
+      if (commentPages.flat().length > 0) {
+        fail(`cannot prove review-thread closure through REST fallback: ${String(error)}`);
+      }
+      return;
+    }
     const threads = result.data?.repository?.pullRequest?.reviewThreads;
     if ((threads?.nodes ?? []).some((thread) => !thread.isResolved)) {
       fail(`PR #${number} has unresolved review threads`);
@@ -571,14 +601,59 @@ function requireReviewClosure(number: number): void {
 }
 
 function readPr(number: number): PullRequest {
-  return json<PullRequest>([
+  const pull = json<{
+    number: number;
+    state: string;
+    draft: boolean;
+    base: { ref: string };
+    head: { ref: string; sha: string };
+    mergeable: boolean | null;
+    mergeable_state: string;
+    merged_at: string | null;
+    merge_commit_sha: string | null;
+    html_url: string;
+  }>(['gh', 'api', `repos/${repository}/pulls/${number}`]);
+  const checkResponse = json<{
+    check_runs: Array<{ name: string; status: string; conclusion: string | null }>;
+  }>(['gh', 'api', `repos/${repository}/commits/${pull.head.sha}/check-runs?per_page=100`]);
+  const reviewPages = json<
+    Array<Array<{ user?: { login?: string }; state?: string; submitted_at?: string }>>
+  >([
     'gh',
-    'pr',
-    'view',
-    String(number),
-    '--json',
-    'number,state,isDraft,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,reviewDecision,mergedAt,mergeCommit,statusCheckRollup,url',
+    'api',
+    '--paginate',
+    '--slurp',
+    `repos/${repository}/pulls/${number}/reviews?per_page=100`,
   ]);
+  const latestReviews = new Map<string, string>();
+  for (const review of reviewPages.flat()) {
+    const login = review.user?.login;
+    const state = review.state?.toUpperCase();
+    if (login && state && state !== 'COMMENTED') latestReviews.set(login, state);
+  }
+  const reviewDecision = [...latestReviews.values()].includes('CHANGES_REQUESTED')
+    ? 'CHANGES_REQUESTED'
+    : '';
+  return {
+    number: pull.number,
+    state: pull.state.toUpperCase(),
+    isDraft: pull.draft,
+    baseRefName: pull.base.ref,
+    headRefName: pull.head.ref,
+    headRefOid: pull.head.sha,
+    mergeable:
+      pull.mergeable === true ? 'MERGEABLE' : pull.mergeable === false ? 'CONFLICTING' : 'UNKNOWN',
+    mergeStateStatus: pull.mergeable_state.toUpperCase(),
+    reviewDecision,
+    mergedAt: pull.merged_at,
+    mergeCommit: pull.merge_commit_sha ? { oid: pull.merge_commit_sha } : null,
+    statusCheckRollup: checkResponse.check_runs.map((check) => ({
+      name: check.name,
+      status: check.status.toUpperCase(),
+      conclusion: check.conclusion?.toUpperCase(),
+    })),
+    url: pull.html_url,
+  };
 }
 
 if (mode === '--merge-ready') {
