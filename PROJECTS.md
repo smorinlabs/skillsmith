@@ -19,18 +19,18 @@
 > highest-risk verification.
 > Ledger: `.superpowers/sdd/progress.md`.
 
-## [-] Project P16: Hermetic git fixtures — scrub inherited GIT_DIR (#17) (v0.7.0)
+## [x] Project P16: Hermetic git fixtures — scrub inherited GIT_DIR (#17) (v0.7.0)
 **Goal**: Every git process reachable from `bun test` — direct fixture spawns and production spawn paths called in-process by tests — must be hermetic regardless of invoking context: scrub git's repo-location env family from child envs (canonical helper) and from the test runner itself (preload), so the lefthook pre-push can never leak fixture commits into the real repo again. Closes #17; retires the `--no-verify` push workaround.
 
 ### Tests & Tasks
-- [ ] [P16-T01] Canonical hermetic git-env helper `packages/core/tests/fixtures/git-env.ts` (+ unit tests)
-- [ ] [P16-TS01] Regression: per-builder poisoned-`GIT_DIR` tests leave a victim repo untouched
-- [ ] [P16-T02] Route both fixture builders (`acquire/remote.ts`, `place/fleet.ts`) through the helper
-- [ ] [P16-T03] Sweep inline git spawns in core tests through `hermeticGitEnv()`
-- [ ] [P16-T04] Test preload scrubbing the runner env (bunfig.toml) + runner-env canary test
-- [ ] [P16-T05] Sweep every CLI-test spawn through the canonical helper
-- [ ] [P16-TS02] Simulated-hook e2e: suite passes in a sandbox clone with `GIT_DIR` poisoned; clone untouched
-- [ ] [P16-T06] Closeout: file production-side follow-up issue, flip PROJECTS.md, PR (`Closes #17`), push without `--no-verify`
+- [x] [P16-T01] Canonical hermetic git-env helper `packages/core/tests/fixtures/git-env.ts` (+ unit tests)
+- [x] [P16-TS01] Regression: per-builder poisoned-`GIT_DIR` tests leave a victim repo untouched
+- [x] [P16-T02] Route both fixture builders (`acquire/remote.ts`, `place/fleet.ts`) through the helper
+- [x] [P16-T03] Sweep inline git spawns in core tests through `hermeticGitEnv()`
+- [x] [P16-T04] Test preload scrubbing the runner env (bunfig.toml) + runner-env canary test — final review added per-package bunfig wiring (package bunfig shadows root)
+- [x] [P16-T05] Sweep every CLI-test spawn through the canonical helper
+- [x] [P16-TS02] Simulated-hook e2e: suite passes in a sandbox clone with `GIT_DIR` poisoned; clone untouched
+- [x] [P16-T06] Closeout: follow-up issues filed (#20 production-side env spread; #19 pre-existing cli test cwd bug), PROJECTS.md flipped, PR (`Closes #17`), push without `--no-verify`
 
 ### Automated Verification
 - `bun test packages/core/tests/fixtures` passes (unit + regression + canary)
