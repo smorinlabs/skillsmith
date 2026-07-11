@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.7.0](https://github.com/smorinlabs/skillsmith/compare/v0.6.0...v0.7.0) (2026-07-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **core:** dev --source that disagrees with an already-RECORDED dev source now REFUSES (S5b) instead of silently repointing the record. FlipAction and FlipReport['summary'] (public @skillsmith/core exports) gain created/adopted.
+
+### Features
+
+* **core:** dev --source creates and adopts dev placements ([#18](https://github.com/smorinlabs/skillsmith/issues/18)) ([e367f36](https://github.com/smorinlabs/skillsmith/commit/e367f36a686eddde66a57da678562b3d9623e3a7))
+
+
+### Bug Fixes
+
+* **core:** make --rollback --all selection direction-agnostic ([9b99500](https://github.com/smorinlabs/skillsmith/commit/9b99500e9792fcdbfff5a4e13945c0468b906fee)), closes [#11](https://github.com/smorinlabs/skillsmith/issues/11)
+
 ## [0.6.0](https://github.com/smorinlabs/skillsmith/compare/v0.5.0...v0.6.0) (2026-07-09)
 
 
