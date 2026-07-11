@@ -32,13 +32,23 @@ type Entity = {
   tier: string;
   evidence: string[];
 };
+type GroupStatus =
+  | 'planned'
+  | 'mapped'
+  | 'ready'
+  | 'active'
+  | 'reviewed'
+  | 'signed-off'
+  | 'failed'
+  | 'blocked'
+  | 'deferred';
 type Group = {
   id: string;
   dependsOn: string[];
   impactedValidations: string[];
   requiredNowValidations: string[];
   downstreamCoverage: string[];
-  status: string;
+  status: GroupStatus;
   ownedFiles: string[];
   testCommands: string[];
   implementers: string[];

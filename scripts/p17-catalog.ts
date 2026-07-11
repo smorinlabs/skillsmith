@@ -64,12 +64,23 @@ type GateRecord = {
   evidence: string[];
 };
 
+type GroupStatus =
+  | 'planned'
+  | 'mapped'
+  | 'ready'
+  | 'active'
+  | 'reviewed'
+  | 'signed-off'
+  | 'failed'
+  | 'blocked'
+  | 'deferred';
+
 type Group = {
   id: string;
   phase: string;
   title: string;
   dependsOn: string[];
-  status: Entity['status'];
+  status: GroupStatus;
   owner: string;
   ownedFiles: string[];
   integrationOwner: string | null;
@@ -862,7 +873,7 @@ function validate(catalog: Catalog): void {
   const expected = initialize();
   const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
   const validTiers = new Set(['required-pr', 'supported-platform', 'release', 'deferred']);
-  const groupStatuses = new Set([
+  const groupStatuses = new Set<GroupStatus>([
     'planned',
     'mapped',
     'ready',

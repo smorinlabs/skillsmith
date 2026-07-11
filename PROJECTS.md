@@ -59,7 +59,7 @@
 
 ## [x] Project P10: Un-park — consolidate + hygiene (v0.3.2)
 **Goal**: Bring the repo back to a healthy, single-home baseline. Finish the in-progress
-release-please wiring (P06 `[-]`): diagnose why the release branch exists with no Release PR,
+release-please wiring (P06, then marked **Decided Not To Do**): diagnose why the release branch exists with no Release PR,
 reconcile CHANGELOG (missing 0.2.0/0.3.0/0.3.1 sections; salvage from the stale
 `release-please--branches--main--components--skillsmith` branch, then delete it on both
 remotes). Deduplicate the twin repos — canonical = `smorinlabs/skillsmith` (private until P14),
