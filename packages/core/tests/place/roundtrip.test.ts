@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { getPair, readLedger } from '../../src/place/ledger.ts';
@@ -165,6 +165,43 @@ describe('round-trip losslessness', () => {
       expect(result?.action).toBe('flipped');
       expect(result?.store?.reused).toBe(true);
       expect(result?.store?.rev).toBe(up.value.results[0]?.store?.rev);
+    } finally {
+      await destroyFixtureFleet(f);
+    }
+  });
+
+  test('relative dev link round-trips byte-identically from an unrelated cwd (#10)', async () => {
+    const f = await buildFixtureFleet();
+    try {
+      const livePath = join(f.home, '.claude', 'skills', 'alpha');
+      const literalTarget = relative(dirname(livePath), f.alphaSrc);
+      await f.env.removeTree(livePath);
+      await f.env.makeSymlink(literalTarget, livePath);
+
+      const up = await runPromote(f.env, opts(f, { targets: ['alpha'] }), gatePass());
+      if (!up.ok) throw new Error(msg(up.error));
+      expect(up.value.results[0]?.action).toBe('flipped');
+      expect(await f.env.pathKind(livePath)).toBe('dir');
+
+      const preview = await runDev(
+        f.env,
+        opts(f, { targets: ['alpha'], dryRun: true }),
+        gatePass(),
+      );
+      if (!preview.ok) throw new Error(msg(preview.error));
+      expect(preview.value.results[0]?.action).toBe('flipped');
+      expect(await f.env.pathKind(livePath)).toBe('dir');
+
+      const down = await runDev(f.env, opts(f, { targets: ['alpha'] }), gatePass());
+      if (!down.ok) throw new Error(msg(down.error));
+      expect(down.value.results[0]?.action).toBe('flipped');
+      expect(await f.env.readLink(livePath)).toBe(literalTarget);
+
+      const ledgerRes = await readLedgerOf(f);
+      if (!ledgerRes.ok) throw new Error(msg(ledgerRes.error));
+      const pair = getPair(ledgerRes.value, 'alpha', 'claude-code');
+      expect(pair?.dev?.sourcePath).toBe(literalTarget);
+      expect(pair?.dev?.resolvedPath).toBe(resolve(f.alphaSrc));
     } finally {
       await destroyFixtureFleet(f);
     }
