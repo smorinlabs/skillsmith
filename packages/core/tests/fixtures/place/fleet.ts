@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { defaultScanEnv } from '../../../src/env/default.ts';
 import type { ScanEnv } from '../../../src/env/types.ts';
+import { runGit } from '../git-env.ts';
 
 export interface FixtureFleet {
   base: string; // mkdtemp root; everything lives under it
@@ -131,28 +132,6 @@ name: dup
 
   // Create home/.codex/skills/gamma (absolute symlink to gammaSrc)
   await symlink(resolve(gammaSrc), join(home, '.codex', 'skills', 'gamma'));
-
-  // Initialize git repo and commit
-  const gitEnv = {
-    ...process.env,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-  };
-
-  const runGit = (cwd: string, args: string[]) => {
-    const result = Bun.spawnSync(['git', ...args], {
-      cwd,
-      env: gitEnv,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    if (result.exitCode !== 0) {
-      const stderr = new TextDecoder().decode(result.stderr);
-      throw new Error(`git ${args.join(' ')} failed: ${stderr}`);
-    }
-
-    return new TextDecoder().decode(result.stdout);
-  };
 
   runGit(checkout, ['init', '-q', '-b', 'main']);
   runGit(checkout, [

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { hermeticGitEnv, runGit } from '../../../core/tests/fixtures/git-env.ts';
 
 // Env-gated NETWORK e2e against the real `smorinlabs/smorinlabs-harness` repo — the PRD §10 live
 // acceptance. CI never sets SKILLSMITH_E2E, so this suite reports as skipped and `bun run check`
@@ -36,7 +37,7 @@ const run = async (
 ): Promise<ProcResult> => {
   const proc = Bun.spawn(['bun', BIN, ...args], {
     cwd: REPO_ROOT,
-    env: { ...process.env, ...env },
+    env: hermeticGitEnv(env),
     stdin: opts.stdin ?? 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -54,14 +55,6 @@ const requireExit = (r: ProcResult, expected: number, label: string): void => {
         `--- stdout ---\n${r.stdout}\n--- stderr ---\n${r.stderr}`,
     );
   }
-};
-
-const runGit = (cwd: string, args: string[]): string => {
-  const result = Bun.spawnSync(['git', ...args], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
-  if (result.exitCode !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${new TextDecoder().decode(result.stderr)}`);
-  }
-  return new TextDecoder().decode(result.stdout);
 };
 
 interface Scratch {

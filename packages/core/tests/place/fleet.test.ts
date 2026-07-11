@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { lstat, readlink, stat } from 'node:fs/promises';
+import { hermeticGitEnv } from '../fixtures/git-env.ts';
 import { buildFixtureFleet, destroyFixtureFleet } from '../fixtures/place/fleet.ts';
 
 describe('FixtureFleet', () => {
@@ -35,6 +36,7 @@ describe('FixtureFleet', () => {
   test('git status is clean initially', async () => {
     fleet = await buildFixtureFleet();
     const result = Bun.spawnSync(['git', '-C', fleet.checkout, 'status', '--porcelain'], {
+      env: hermeticGitEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const output = new TextDecoder().decode(result.stdout);
@@ -45,6 +47,7 @@ describe('FixtureFleet', () => {
     fleet = await buildFixtureFleet();
     await fleet.makeCheckoutDirty();
     const result = Bun.spawnSync(['git', '-C', fleet.checkout, 'status', '--porcelain'], {
+      env: hermeticGitEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const output = new TextDecoder().decode(result.stdout);

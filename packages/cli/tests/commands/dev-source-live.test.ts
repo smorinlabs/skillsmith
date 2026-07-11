@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { lstat, readlink, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import {
   codexDefaultSkillsDestFor,
   makeSkillSource,
@@ -43,7 +44,7 @@ const run = async (
 ): Promise<{ stdout: string; stderr: string; code: number }> => {
   const proc = Bun.spawn(['bun', 'run', BIN, ...args], {
     cwd: REPO_ROOT,
-    env: { ...process.env, ...env },
+    env: hermeticGitEnv(env),
     stdout: 'pipe',
     stderr: 'pipe',
   });

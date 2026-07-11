@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 
 const BIN = 'packages/cli/src/index.ts';
 const run = async (args: string[], env: Record<string, string> = {}) => {
   const proc = Bun.spawn(['bun', 'run', BIN, ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
-    env: { ...process.env, ...env },
+    env: hermeticGitEnv(env),
   });
   const code = await proc.exited;
   return {

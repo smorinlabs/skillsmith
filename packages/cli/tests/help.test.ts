@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import pkg from '../../core/package.json' with { type: 'json' };
+import { hermeticGitEnv } from '../../core/tests/fixtures/git-env.ts';
 
 const BIN = 'packages/cli/src/index.ts';
 
 const run = async (args: string[]): Promise<{ stdout: string; stderr: string; code: number }> => {
-  const proc = Bun.spawn(['bun', 'run', BIN, ...args], { stdout: 'pipe', stderr: 'pipe' });
+  const proc = Bun.spawn(['bun', 'run', BIN, ...args], {
+    env: hermeticGitEnv(),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
   const code = await proc.exited;
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();

@@ -25,6 +25,7 @@ import type {
   VerifyReport,
   VerifyTool,
 } from '../../src/verify/types.ts';
+import { hermeticGitEnv } from '../fixtures/git-env.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -42,11 +43,7 @@ const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code
 const runGit = (checkout: string, args: string[]): void => {
   const result = Bun.spawnSync(['git', ...args], {
     cwd: checkout,
-    env: {
-      ...process.env,
-      GIT_CONFIG_GLOBAL: '/dev/null',
-      GIT_CONFIG_SYSTEM: '/dev/null',
-    },
+    env: hermeticGitEnv(),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   if (result.exitCode !== 0) {

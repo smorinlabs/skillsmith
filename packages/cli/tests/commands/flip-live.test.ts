@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { lstat, readFile, readdir, readlink, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import {
   buildFixtureFleet,
   destroyFixtureFleet,
@@ -97,7 +98,7 @@ const waitForPhase = async (
 const spawnCli = (args: string[], env: Record<string, string>) =>
   Bun.spawn(['bun', BIN, ...args], {
     cwd: REPO_ROOT,
-    env: { ...process.env, ...env },
+    env: hermeticGitEnv(env),
     stdout: 'pipe',
     stderr: 'pipe',
   } as const);
