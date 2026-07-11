@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
-
-const BIN = 'packages/cli/src/index.ts';
+import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
 const run = async (args: string[]): Promise<{ stdout: string; stderr: string; code: number }> => {
-  const proc = Bun.spawn(['bun', 'run', BIN, ...args], {
+  const proc = Bun.spawn(['bun', 'run', CLI_ENTRYPOINT, ...args], {
     env: hermeticGitEnv(),
     stdout: 'pipe',
     stderr: 'pipe',

@@ -2,10 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
-
-const BIN = 'packages/cli/src/index.ts';
+import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 const run = async (args: string[], env: Record<string, string> = {}) => {
-  const proc = Bun.spawn(['bun', 'run', BIN, ...args], {
+  const proc = Bun.spawn(['bun', 'run', CLI_ENTRYPOINT, ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
     env: hermeticGitEnv(env),
