@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, writeFile, symlink, chmod, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { runGit } from '../git-env.ts';
 
 export interface RemoteFixture {
   base: string; // mkdtemp root
@@ -16,27 +17,6 @@ export interface RemoteFixture {
   singleHead: string;
   rootHead: string;
 }
-
-const runGit = (cwd: string, args: string[]): string => {
-  const gitEnv = {
-    ...process.env,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-  };
-
-  const result = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: gitEnv,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-
-  if (result.exitCode !== 0) {
-    const stderr = new TextDecoder().decode(result.stderr);
-    throw new Error(`git ${args.join(' ')} failed: ${stderr}`);
-  }
-
-  return new TextDecoder().decode(result.stdout);
-};
 
 export const buildRemoteFixture = async (): Promise<RemoteFixture> => {
   const base = await mkdtemp(join(tmpdir(), 'skillsmith-remote-'));
