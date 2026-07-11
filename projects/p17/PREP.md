@@ -1,7 +1,7 @@
 # P17 preparation checklist
 
 **Status:** pr-openable
-**Preparation PR:** pending
+**Preparation PR:** #31
 
 This file is the committed preparation closeout record for starting the P17 persistent Codex goal.
 Its committed terminal state is `pr-openable`: sections A-H and I01-I03 are checked, their evidence
