@@ -42,6 +42,10 @@ Releases are automated by release-please from Conventional Commit messages on `m
 
 `<type>(<scope>)!?: <subject>`
 
+`<subject>` must start lowercase — commitlint's subject-case rule rejects
+`feat: Add …`. Watch for this being swallowed when committing with `-q` or a
+pipe: always confirm with `git log -1` that the commit actually landed.
+
 Bumps (release-please, `node` type):
 
 | Type | Post-1.0 | Pre-1.0 (now) |
@@ -65,6 +69,23 @@ Scopes are **cosmetic** in this repo's release-please setup (single package + `e
 ## PR titles must also be Conventional
 
 `main` uses squash-merge, so the PR title becomes the commit release-please parses. The `commit-msg` lefthook hook validates local commits; the `lint-pr-title` CI job validates PR titles.
+
+## Pushing: bypass the pre-push hook (issue #17)
+
+The lefthook pre-push hook runs `bun test`, which leaks test-fixture commits onto
+real branches via a `GIT_DIR` environment leak (issue #17, corrupted a real branch
+once). Until fixed:
+
+1. Run the full check manually first: `bun run check`
+2. Push with the hook disabled: `git push --no-verify`
+
+Never push with the hook enabled from a checkout with real work on it.
+
+## Bun stdout pipe truncation
+
+Piping large CLI output truncates silently at ~64 KB (`bun … list --json | jq`
+loses the tail with no error). Redirect to a file instead —
+`bun … list --json > out.json` — then read the file.
 
 ## Breaking changes and the 0.x trap
 
