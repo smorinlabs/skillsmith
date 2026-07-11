@@ -1,5 +1,14 @@
-import { describe, test, expect } from 'bun:test';
-import { GIT_REPO_SCRUB_VARS, hermeticGitEnv, scrubGitRepoEnv } from './git-env.ts';
+import { afterEach, describe, test, expect } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { GIT_REPO_SCRUB_VARS, hermeticGitEnv, runGit, scrubGitRepoEnv } from './git-env.ts';
+
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 const withPoisonedProcessEnv = (fn: () => void): void => {
   const saved: Record<string, string | undefined> = {};
@@ -55,5 +64,24 @@ describe('scrubGitRepoEnv', () => {
         expect(process.env[name]).toBeUndefined();
       }
     });
+  });
+});
+
+describe('runGit', () => {
+  test('returns stdout when git exits successfully', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'skillsmith-run-git-'));
+    temporaryRoots.push(cwd);
+
+    expect(runGit(cwd, ['--version'])).toMatch(/^git version /);
+  });
+
+  test('throws an error containing stderr when git exits non-zero', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'skillsmith-run-git-'));
+    temporaryRoots.push(cwd);
+    runGit(cwd, ['init', '-q', '-b', 'main']);
+
+    expect(() => runGit(cwd, ['rev-parse', '--verify', 'refs/heads/missing'])).toThrow(
+      /git rev-parse --verify refs\/heads\/missing failed:.*fatal:/s,
+    );
   });
 });
