@@ -5,7 +5,7 @@ pre-commit:
       glob: "**/*.{ts,tsx,js,jsx,json,jsonc}"
       run: bunx @biomejs/biome check --no-errors-on-unmatched --staged {staged_files}
     eslint-boundaries:
-      glob: "packages/*/src/**/*.ts"
+      glob: "packages/*/{src,tests}/**/*.ts"
       run: bunx eslint --no-warn-ignored {staged_files}
     actionlint:
       glob: ".github/workflows/*.{yml,yaml}"

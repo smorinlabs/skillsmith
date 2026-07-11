@@ -18,9 +18,9 @@ Biome (the project's formatter/linter) doesn't have an equivalent to `eslint-plu
 
 ## Decision
 
-Add ESLint, scoped narrowly to three rules, and use it alongside Biome — not as a replacement.
+Add ESLint, scoped narrowly to architectural and test-safety rules, and use it alongside Biome — not as a replacement.
 
-**Config:** a flat `eslint.config.js` at the repo root with two blocks:
+**Config:** a flat `eslint.config.js` at the repo root with three blocks:
 
 1. **Import zones** (`import/no-restricted-paths`) — applies to `packages/*/src/**/*.ts`:
    - `packages/core/src` ↛ `packages/cli` (core cannot import anything from CLI).
@@ -37,6 +37,10 @@ Add ESLint, scoped narrowly to three rules, and use it alongside Biome — not a
    - Forbidden imports: `commander`, `chalk`, `consola`, `@clack/prompts`, `node:console`.
    - Forbidden syntax: `process.exit(...)`, `console.{log,info,warn,error,debug}(...)`.
 
+3. **Test spawn hygiene** (local `skillsmith/hermetic-test-spawn` rule) — applies to `packages/*/tests/**/*.ts` only:
+   - Every direct `Bun.spawn(...)` and `Bun.spawnSync(...)` must pass an inline options object containing `env: hermeticGitEnv(...)`.
+   - This keeps child Git repository state and global/system config isolated even outside preload-wired `bun test` invocations.
+
 **Wiring:**
 - `bun run lint:boundaries` runs ESLint just for these rules.
 - `bun run check` includes `lint:boundaries` between Biome and tsc.
@@ -49,6 +53,7 @@ Add ESLint, scoped narrowly to three rules, and use it alongside Biome — not a
 - `eslint-plugin-import@2.32` (`no-restricted-paths`).
 - `@typescript-eslint/parser@8` (parse-only; no type-checking rules).
 - `eslint-import-resolver-typescript@4` (so `@skillsmith/core` resolves to a real path for `no-restricted-paths`).
+- One local flat-config rule for the exact top-level spawn-options shape; no additional plugin is needed.
 
 Notably **not added**: `@typescript-eslint/eslint-plugin`. We're using ESLint strictly as a boundary enforcer; Biome remains the general linter.
 
@@ -56,7 +61,7 @@ Notably **not added**: `@typescript-eslint/eslint-plugin`. We're using ESLint st
 
 ### Positive
 
-- **Single source of truth.** The previous split between `check-core-boundary.ts` (substance) and "nothing" (import direction) is replaced by one config.
+- **Single source of truth.** Architectural and structural safety rules stay in one AST-based config rather than separate regex or structural-search scripts.
 - **Editor feedback.** Any ESLint-enabled editor highlights violations as you type — much faster than waiting for CI.
 - **AST-based precision.** `no-restricted-syntax` on `process.exit` and `console.*` won't false-positive on a string like `"process.exit"` inside a log message, which the regex script could.
 - **Catches more cases.** Side-effect imports (`import 'chalk'`), re-exports (`export * from 'chalk'`), and dynamic imports (`import('chalk')`) are all caught by `no-restricted-imports` — the regex script missed all three.
@@ -75,6 +80,7 @@ Notably **not added**: `@typescript-eslint/eslint-plugin`. We're using ESLint st
 - **Keep `scripts/check-core-boundary.ts` and add `eslint-plugin-boundaries`.** Rejected — two tools, two configs, overlapping coverage. One ESLint config wins on simplicity.
 - **TypeScript project references instead of `no-restricted-paths`.** Partially considered — TS refs enforce cross-*package* boundaries but not in-package layering. We rely on ESLint for the directional rules; TS project references remain a possible future addition.
 - **Runtime assertions (Node loader that blocks the forbidden modules).** Rejected — slower, trickier to debug, doesn't catch `console.*`.
+- **A separate ast-grep or custom spawn-check script.** Rejected — ESLint already parses these files and can express the required call shape, so another structural enforcement tool would duplicate configuration and wiring.
 
 ## Maintenance
 
