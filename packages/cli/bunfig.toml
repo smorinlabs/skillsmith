@@ -1,0 +1,6 @@
+[install]
+exact = true
+
+[test]
+coverage = false
+preload = ["../core/tests/fixtures/preload.ts"]
