@@ -3,15 +3,30 @@ import importPlugin from 'eslint-plugin-import';
 
 export default [
   {
-    ignores: [
-      '**/node_modules/**',
-      'dist/**',
-      'docs/**',
-      'research/**',
-      'scripts/**',
-      'packages/*/tests/**',
-      '**/*.d.ts',
-    ],
+    ignores: ['**/node_modules/**', 'dist/**', 'docs/**', 'research/**', 'scripts/**', '**/*.d.ts'],
+  },
+  {
+    files: ['packages/*/tests/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
+    rules: {
+      // Test children can run outside the bunfig preload (direct package commands,
+      // hooks, or one-off files), so every spawn must isolate Git state and config itself.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.type='MemberExpression'][callee.object.name='Bun'][callee.property.name=/^(spawn|spawnSync)$/]:not(:has(Property[key.name='env'][value.type='CallExpression'][value.callee.name='hermeticGitEnv']))",
+          message:
+            'test Bun.spawn/Bun.spawnSync options must include env: hermeticGitEnv(...) to isolate Git state and config',
+        },
+      ],
+    },
   },
   {
     files: ['packages/*/src/**/*.ts'],
