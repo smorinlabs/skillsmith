@@ -98,7 +98,7 @@ Claude (`~/.claude/skills`) and Codex skill dirs where present.
 
 ---
 
-## [~] Project P13: `dev --source` — create + adopt dev placements (issue #9)
+## [x] Project P13: `dev --source` — create + adopt dev placements (issue #9)
 **Goal**: Extend `skillsmith dev <name-or-path> --source <path>` to a full state machine:
 CREATE the dev symlink + ledger record when no placement exists; ADOPT (record-only) an
 existing matching hand-made symlink; noop when already recorded; refuse on target mismatch;
@@ -117,7 +117,7 @@ downstream, smorin-harness `skill-create` drops its ln -s step. Plan:
 - [x] [P13-T04] Adversarial full-branch review (codex) + fable whole-branch review
 - [x] [P13-T05] PR, CI green, merge; release-please v0.7.0
 - [ ] [P13-T06] Downstream: skill-create wire step → single `skillsmith dev --source` per tool; real-skill re-wire proof; smorin-harness release
-- [ ] [P13-T07] Downstream migration: move all 22 legacy ~/.codex/skills placements to the verified modern location via dev --source (uninstall legacy → create modern; pilot-first, sequential)
+- [x] [P13-T07] Downstream migration DONE 2026-07-10: all 22 codex placements moved ~/.codex/skills → ~/.agents/skills via dev --source (pilot + gated 21-skill sweep, 21/21 clean, restore path never needed; legacy root holds only the 4 codex-native dirs)
 - [x] [P13-T08] Issue #9 closed (auto, PR #18 'Fixes #9'); memory updated
 
 ---
