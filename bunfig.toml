@@ -3,3 +3,4 @@ exact = true
 
 [test]
 coverage = false
+preload = ["./packages/core/tests/fixtures/preload.ts"]
