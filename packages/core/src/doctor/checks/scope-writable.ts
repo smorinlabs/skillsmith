@@ -18,6 +18,16 @@ const nearestExistingAncestor = async (env: ScanEnv, root: string): Promise<stri
   return candidate;
 };
 
+const effectivePathKind = async (env: ScanEnv, path: string): Promise<string> => {
+  const kind = await env.pathKind(path);
+  if (kind !== 'symlink') return kind;
+  try {
+    return await env.pathKind(await env.realpath(path));
+  } catch {
+    return 'broken symlink';
+  }
+};
+
 const quoted = (value: string): string => JSON.stringify(value);
 
 export const createScopeWritableCheck = (
@@ -42,8 +52,13 @@ export const createScopeWritableCheck = (
           const scopeInUse = rootKind !== 'absent';
           const probePath = scopeInUse ? root : await nearestExistingAncestor(ctx.env, root);
           const uid = getUid();
-          const operation = `access(${quoted(probePath)}, W_OK | X_OK) as uid ${uid ?? 'unknown'}`;
+          let operation = `inspect ${quoted(probePath)} as a directory`;
           try {
+            const probeKind = await effectivePathKind(ctx.env, probePath);
+            if (probeKind !== 'dir') {
+              throw new Error(`expected a directory, found ${probeKind}`);
+            }
+            operation = `access(${quoted(probePath)}, W_OK | X_OK) as uid ${uid ?? 'unknown'}`;
             await accessPath(probePath, constants.W_OK | constants.X_OK);
           } catch (e) {
             const expectedPrivilegedScope =

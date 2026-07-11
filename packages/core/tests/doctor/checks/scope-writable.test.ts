@@ -138,4 +138,44 @@ describe('scopeWritable', () => {
 
     expect(findings[0]?.severity).toBe('error');
   });
+
+  test('rejects an existing writable file in place of the skill root', async () => {
+    const root = '/h/.claude/skills';
+    const accessed: string[] = [];
+    const env = fakeEnv((path) => (path === root ? 'file' : 'absent'));
+    const check = createScopeWritableCheck(async (path) => {
+      accessed.push(path);
+    });
+
+    const findings = await check.run(context({ env }));
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        severity: 'error',
+        operation: `inspect ${JSON.stringify(root)} as a directory`,
+        message: expect.stringContaining('expected a directory, found file'),
+      }),
+    ]);
+    expect(accessed).toEqual([]);
+  });
+
+  test('rejects a writable file as the nearest existing ancestor', async () => {
+    const ancestor = '/h/.claude';
+    const accessed: string[] = [];
+    const env = fakeEnv((path) => (path === ancestor ? 'file' : 'absent'));
+    const check = createScopeWritableCheck(async (path) => {
+      accessed.push(path);
+    });
+
+    const findings = await check.run(context({ env }));
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        severity: 'error',
+        operation: `inspect ${JSON.stringify(ancestor)} as a directory`,
+        message: expect.stringContaining('expected a directory, found file'),
+      }),
+    ]);
+    expect(accessed).toEqual([]);
+  });
 });
