@@ -37,7 +37,7 @@ Add ESLint, scoped narrowly to architectural and test-safety rules, and use it a
    - Forbidden imports: `commander`, `chalk`, `consola`, `@clack/prompts`, `node:console`.
    - Forbidden syntax: `process.exit(...)`, `console.{log,info,warn,error,debug}(...)`.
 
-3. **Test spawn hygiene** (`no-restricted-syntax`) — applies to `packages/*/tests/**/*.ts` only:
+3. **Test spawn hygiene** (local `skillsmith/hermetic-test-spawn` rule) — applies to `packages/*/tests/**/*.ts` only:
    - Every direct `Bun.spawn(...)` and `Bun.spawnSync(...)` must pass an inline options object containing `env: hermeticGitEnv(...)`.
    - This keeps child Git repository state and global/system config isolated even outside preload-wired `bun test` invocations.
 
@@ -53,6 +53,7 @@ Add ESLint, scoped narrowly to architectural and test-safety rules, and use it a
 - `eslint-plugin-import@2.32` (`no-restricted-paths`).
 - `@typescript-eslint/parser@8` (parse-only; no type-checking rules).
 - `eslint-import-resolver-typescript@4` (so `@skillsmith/core` resolves to a real path for `no-restricted-paths`).
+- One local flat-config rule for the exact top-level spawn-options shape; no additional plugin is needed.
 
 Notably **not added**: `@typescript-eslint/eslint-plugin`. We're using ESLint strictly as a boundary enforcer; Biome remains the general linter.
 

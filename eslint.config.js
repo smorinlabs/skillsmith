@@ -1,6 +1,69 @@
 import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
 
+const unwrapTypeScriptExpression = (node) => {
+  let current = node;
+  while (
+    current &&
+    (current.type === 'TSAsExpression' ||
+      current.type === 'TSSatisfiesExpression' ||
+      current.type === 'TSTypeAssertion')
+  ) {
+    current = current.expression;
+  }
+  return current;
+};
+
+export const hermeticTestSpawnRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      missingHermeticEnv:
+        'test Bun.spawn/Bun.spawnSync options must include env: hermeticGitEnv(...) to isolate Git state and config',
+    },
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const callee = node.callee;
+        if (
+          callee.type !== 'MemberExpression' ||
+          callee.object.type !== 'Identifier' ||
+          callee.object.name !== 'Bun'
+        ) {
+          return;
+        }
+
+        const method = callee.computed
+          ? callee.property.type === 'Literal' && typeof callee.property.value === 'string'
+            ? callee.property.value
+            : null
+          : callee.property.type === 'Identifier'
+            ? callee.property.name
+            : null;
+        if (method !== 'spawn' && method !== 'spawnSync') return;
+
+        const options = unwrapTypeScriptExpression(node.arguments[1]);
+        const hasHermeticEnv =
+          options?.type === 'ObjectExpression' &&
+          options.properties.some(
+            (property) =>
+              property.type === 'Property' &&
+              !property.computed &&
+              property.key.type === 'Identifier' &&
+              property.key.name === 'env' &&
+              property.value.type === 'CallExpression' &&
+              property.value.callee.type === 'Identifier' &&
+              property.value.callee.name === 'hermeticGitEnv',
+          );
+
+        if (!hasHermeticEnv) context.report({ node, messageId: 'missingHermeticEnv' });
+      },
+    };
+  },
+};
+
 export default [
   {
     ignores: ['**/node_modules/**', 'dist/**', 'docs/**', 'research/**', 'scripts/**', '**/*.d.ts'],
@@ -14,18 +77,15 @@ export default [
         sourceType: 'module',
       },
     },
+    plugins: {
+      skillsmith: {
+        rules: { 'hermetic-test-spawn': hermeticTestSpawnRule },
+      },
+    },
     rules: {
       // Test children can run outside the bunfig preload (direct package commands,
       // hooks, or one-off files), so every spawn must isolate Git state and config itself.
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector:
-            "CallExpression[callee.type='MemberExpression'][callee.object.name='Bun'][callee.property.name=/^(spawn|spawnSync)$/]:not(:has(Property[key.name='env'][value.type='CallExpression'][value.callee.name='hermeticGitEnv']))",
-          message:
-            'test Bun.spawn/Bun.spawnSync options must include env: hermeticGitEnv(...) to isolate Git state and config',
-        },
-      ],
+      'skillsmith/hermetic-test-spawn': 'error',
     },
   },
   {
