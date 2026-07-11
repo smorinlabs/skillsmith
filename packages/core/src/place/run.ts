@@ -731,7 +731,15 @@ const adoptDevPlacement = async (
     return failedResult(base, flipFailedError(`cannot re-read ${live}: ${errorMessage(e)}`));
   }
   const resolvedNow = resolveSymlinkAbsolute(live, literalNow);
-  if (!(await samePath(env, opts.cwd, resolvedNow, resolvedSourceDir))) {
+  // R1 (final window): from this final readLink to setPair the invariant is "record exactly what was
+  // read" — `live` and its captured target are NEVER touched on the filesystem again. The check
+  // compares the CAPTURED target STRING against the resolved source canonicalized LEXICALLY (`resolve`
+  // folds `.`/`..`/trailing slashes; no realpath). A fresh realpath here would re-dereference the
+  // live-derived path and open a retarget window: the pre-fix `samePath` trusted that realpath and
+  // could record the source while the disk pointed elsewhere (a mix). Post-final-read TOCTOU is out of
+  // scope BY CONSTRUCTION — a retarget landing after this read is indistinguishable from one committed
+  // just after setPair, and doctor parity reconciles the drift.
+  if (resolve(opts.cwd, resolvedNow) !== resolve(opts.cwd, resolvedSourceDir)) {
     const reason = `refusing to adopt '${skill}' (${tool}): the live symlink now points to ${resolvedNow}, not --source ${resolvedSourceDir}`;
     return refusedResult(base, reason, flipRefusedError(reason));
   }

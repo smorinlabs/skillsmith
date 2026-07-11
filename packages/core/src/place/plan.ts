@@ -444,21 +444,23 @@ export const planFlips = async (
       for (const skill of Object.keys(ledger.skills).sort()) {
         for (const tool of toolsInOrder) {
           if (!isRollbackablePair(ledger, skill, tool)) continue;
-          let res = await classifyForTool(env, ctx, storeRoot, skill, tool);
-          // BF-1(d)/R3: the ledger owns a placement's LOCATION. When the standard roots don't hold it
-          // but the pair records a placementPath at a CUSTOM location (a `--dest` create later
-          // promoted), classify THERE — otherwise bulk rollback targets the (absent) standard path,
-          // the swap then rewrites placementPath to it and orphans the real custom placement.
-          if (res.placement.class === 'absent') {
-            const recorded = getPair(ledger, skill, tool)?.placementPath;
-            if (recorded && !standardRootsFor(env, ctx, tool).includes(dirname(recorded))) {
-              res = {
-                placement: await classifyPlacement(env, dirname(recorded), skill, storeRoot),
-                notices: [],
-                duplicateReason: null,
-              };
-            }
-          }
+          // BF-1(d)/R3: the ledger owns a placement's LOCATION unconditionally. Classify — and later
+          // swap — at the pair's RECORDED placementPath, NOT the standard root. A same-name real
+          // artifact that appears at the standard root is UNMANAGED and must never be touched: the
+          // pre-fix order classified the standard root FIRST and fell back to the recorded path only
+          // when standard was absent, so such an artifact hijacked the pair — mutating the unrelated
+          // artifact and orphaning the custom placement. When the recorded path IS a standard root,
+          // classifyForTool yields the identical placement (plus codex current/legacy handling), so
+          // standard-recorded pairs are unaffected.
+          const recorded = getPair(ledger, skill, tool)?.placementPath;
+          const res: ToolResolution =
+            recorded && !standardRootsFor(env, ctx, tool).includes(dirname(recorded))
+              ? {
+                  placement: await classifyPlacement(env, dirname(recorded), skill, storeRoot),
+                  notices: [],
+                  duplicateReason: null,
+                }
+              : await classifyForTool(env, ctx, storeRoot, skill, tool);
           if (res.duplicateReason) {
             preResults.push(
               emptyFlipResult(
