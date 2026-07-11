@@ -1,6 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { lstat, realpath, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import { makeSkillSource } from '../../../core/tests/fixtures/place/dev-source.ts';
 import {
   type FixtureFleet,
@@ -19,7 +20,7 @@ const run = async (
 ): Promise<{ stdout: string; stderr: string; code: number }> => {
   const proc = Bun.spawn(['bun', 'run', BIN, ...args], {
     cwd: REPO_ROOT,
-    env: { ...process.env, ...env },
+    env: hermeticGitEnv(env),
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -178,7 +179,7 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
         ],
         {
           cwd: f.base,
-          env: { ...process.env, ...sandboxEnv(f) },
+          env: hermeticGitEnv(sandboxEnv(f)),
           stdout: 'pipe',
           stderr: 'pipe',
         },

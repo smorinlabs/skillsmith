@@ -6,6 +6,7 @@ import {
   buildRemoteFixture,
   destroyRemoteFixture,
 } from '../../../core/tests/fixtures/acquire/remote.ts';
+import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import {
   buildFixtureFleet,
   destroyFixtureFleet,
@@ -103,7 +104,7 @@ const waitForPhase = async (
 const spawnCli = (args: string[], env: Record<string, string>) =>
   Bun.spawn(['bun', BIN, ...args], {
     cwd: REPO_ROOT,
-    env: { ...process.env, ...env },
+    env: hermeticGitEnv(env),
     stdout: 'pipe',
     stderr: 'pipe',
   } as const);

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import { VerifyJsonSchema } from '../../src/output/verify-json.ts';
 
 // Env-gated live e2e against the real `claude` / `codex` CLIs, driven through the
@@ -18,6 +19,7 @@ const DUMMYTEST = join(REPO_ROOT, 'packages', 'core', 'tests', 'fixtures', 'veri
 const run = async (args: string[]): Promise<{ stdout: string; stderr: string; code: number }> => {
   const proc = Bun.spawn(['bun', 'packages/cli/src/index.ts', ...args], {
     cwd: REPO_ROOT,
+    env: hermeticGitEnv(),
     stdout: 'pipe',
     stderr: 'pipe',
   });
