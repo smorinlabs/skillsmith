@@ -19,6 +19,10 @@
 > highest-risk verification.
 > Ledger: `.superpowers/sdd/progress.md`.
 
+## Project index
+
+- [?] **P17** — [Skillsmith Ergonomics and Declarative Workflow](projects/P17-skillsmith-ergonomics-and-declarative-workflow-.md)
+
 ## [x] Project P16: Hermetic git fixtures — scrub inherited GIT_DIR (#17) (v0.7.0)
 **Goal**: Every git process reachable from `bun test` — direct fixture spawns and production spawn paths called in-process by tests — must be hermetic regardless of invoking context: scrub git's repo-location env family from child envs (canonical helper) and from the test runner itself (preload), so the lefthook pre-push can never leak fixture commits into the real repo again. Closes #17; retires the `--no-verify` push workaround.
 
