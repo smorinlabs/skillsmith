@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "init_done": true,
+  "projects_md_done": true,
+  "agents_md_done": true,
+  "claude_md_done": true,
+  "planning_system": "superpowers",
+  "planning_paths": {
+    "plans": ["~/.claude/plans/", "docs/superpowers/plans/"],
+    "specs": ["docs/superpowers/specs/"]
+  },
+  "references_block_nudged": true
+}

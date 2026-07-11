@@ -2,9 +2,23 @@
 
 **Status Legend:**
 - `[x]` Completed
-- `[-]` In Progress
-- `[ ]` Not Started
-- `[~]` Won't fix / Invalid / False positive
+- `[?]` Idea
+- `[ ]` Scoped / Not Started
+- `[~]` In Progress
+- `[-]` Decided Not To Do
+- `[>]` Continued by Successor
+
+---
+
+## Conventions
+
+### Project workflow skills (plugin: project-harness)
+
+- `using-project-harness` — bootstrap: when to use which skill below
+- `project-next` — orient: what's in progress, what's next, what's recently touched
+- `project-add` — capture an idea (≤4 questions, reserves the ID with a commit)
+- `project-refine` — flesh out / scope / decompose an existing project
+- `project-audit` — verify state matches conventions; fix per finding
 
 ---
 
@@ -21,7 +35,7 @@
 
 ## Project index
 
-- [ ] **P17** — [Skillsmith Ergonomics and Declarative Workflow](projects/P17-skillsmith-ergonomics-and-declarative-workflow.md)
+- [~] **P17** — [Skillsmith Ergonomics and Declarative Workflow](projects/P17-skillsmith-ergonomics-and-declarative-workflow.md)
 
 ## [x] Project P16: Hermetic git fixtures — scrub inherited GIT_DIR (#17) (v0.7.0)
 **Goal**: Every git process reachable from `bun test` — direct fixture spawns and production spawn paths called in-process by tests — must be hermetic regardless of invoking context: scrub git's repo-location env family from child envs (canonical helper) and from the test runner itself (preload), so the lefthook pre-push can never leak fixture commits into the real repo again. Closes #17; retires the `--no-verify` push workaround.

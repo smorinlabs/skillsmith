@@ -33,8 +33,12 @@ fmt:
 actions-lint:
     bun run actions-lint
 
-# Run all verification: lint, boundaries, typecheck, actions-lint, test
-check: lint lint-boundaries typecheck actions-lint test
+# Validate the P17 execution package and PR-openable checklist
+p17-check:
+    bun run check:p17
+
+# Run all verification: lint, boundaries, typecheck, actions-lint, P17, test
+check: lint lint-boundaries typecheck actions-lint p17-check test
 
 # Build the CLI to dist/skillsmith (compiled bun binary)
 build:

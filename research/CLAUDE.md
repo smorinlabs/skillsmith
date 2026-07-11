@@ -1,5 +1,25 @@
 # research/ guidance for Claude
 
+## Research index
+
+Prefer terminal leaves in `research/reference/`. Check this index before starting a new research
+thread; revisit exploratory funnels only when reopening a decision.
+
+### Terminal leaves
+
+- [Codex persistent goals](reference/codex-persistent-goal-2026-07-11.md) — verified 2026-07-11
+  against Codex CLI 0.144.1; use a short `/goal` pointer to a committed canonical goal file.
+
+### Decision funnels
+
+- [Codex persistent goal for P17](topics/codex-persistent-goal/DECISION.md) — decided; canonical
+  repository goal file plus one-sentence `/goal` bootstrap.
+
+### Proposal and defer logs
+
+- Declined proposals: none.
+- Deferred research: none.
+
 ## Ignore `research/archive/`
 
 Files under `research/archive/` are superseded research artifacts kept for history. Do not read, cite, or base decisions on anything in that directory unless the user explicitly asks about archived material.
