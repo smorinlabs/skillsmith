@@ -44,6 +44,26 @@ describe('resolveProvenance', () => {
     expect(p.dirtySummary).toBeNull();
   });
 
+  test('inherited hook repository state cannot redirect provenance git commands (#20)', async () => {
+    const previousDir = process.env.GIT_DIR;
+    const previousIndex = process.env.GIT_INDEX_FILE;
+    try {
+      process.env.GIT_DIR = join(f.project, '.git');
+      process.env.GIT_INDEX_FILE = join(f.project, '.git', 'index');
+      const p = await okProvenance(f, f.alphaSrc);
+      expect(p.kind).toBe('git-clean');
+      expect(p.repoRoot).toBe(await f.env.realpath(f.checkout));
+      expect(p.remote).toBe('smorinlabs/fixture-harness');
+      expect(p.gitSha).toBe(f.headSha);
+      expect(p.sourceRelPath).toBe('plugins/fh/skills/alpha');
+    } finally {
+      if (previousDir === undefined) process.env.GIT_DIR = undefined;
+      else process.env.GIT_DIR = previousDir;
+      if (previousIndex === undefined) process.env.GIT_INDEX_FILE = undefined;
+      else process.env.GIT_INDEX_FILE = previousIndex;
+    }
+  });
+
   test('dirty git tree → git-dirty with dirtySummary mentioning SKILL.md', async () => {
     await f.makeCheckoutDirty();
     const p = await okProvenance(f, f.alphaSrc);

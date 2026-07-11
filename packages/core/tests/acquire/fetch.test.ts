@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { lstat, mkdir, mkdtemp, readdir, readlink, rm, utimes } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readdir, readlink, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -17,6 +17,7 @@ import {
   buildRemoteFixture,
   destroyRemoteFixture,
 } from '../fixtures/acquire/remote.ts';
+import { runGit } from '../fixtures/git-env.ts';
 
 let fixture: RemoteFixture;
 let env: ScanEnv;
@@ -37,6 +38,67 @@ afterAll(async () => {
 });
 
 describe('fetchRepo', () => {
+  test('inherited hook repository state cannot redirect acquisition git commands (#20)', async () => {
+    const victim = await mkdtemp(join(tmpdir(), 'skillsmith-fetch-victim-'));
+    const previousDir = process.env.GIT_DIR;
+    const previousIndex = process.env.GIT_INDEX_FILE;
+    try {
+      await writeFile(join(victim, 'README.md'), '# victim\n');
+      runGit(victim, ['init', '-q', '-b', 'main']);
+      runGit(victim, [
+        '-c',
+        'user.email=fixture@skillsmith.test',
+        '-c',
+        'user.name=fixture',
+        '-c',
+        'commit.gpgsign=false',
+        'add',
+        '-A',
+      ]);
+      runGit(victim, [
+        '-c',
+        'user.email=fixture@skillsmith.test',
+        '-c',
+        'user.name=fixture',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '-qm',
+        'victim: initial',
+      ]);
+      const state = () => ({
+        head: runGit(victim, ['rev-parse', 'HEAD']).trim(),
+        branch: runGit(victim, ['branch', '--show-current']).trim(),
+        status: runGit(victim, ['status', '--porcelain']),
+        remotes: runGit(victim, ['remote']),
+        commits: runGit(victim, ['rev-list', '--count', 'HEAD']).trim(),
+      });
+      const before = state();
+
+      process.env.GIT_DIR = join(victim, '.git');
+      process.env.GIT_INDEX_FILE = join(victim, '.git', 'index');
+      const fetchDir = freshFetchDir();
+      const fetched = await fetchRepo(env, {
+        cloneUrl: fixture.multiUrl,
+        ref: null,
+        fetchDir,
+      });
+      expect(fetched.ok).toBe(true);
+      const listed = await lsTreeSkills(env, fetchDir);
+      expect(listed.ok).toBe(true);
+      const checkedOut = await sparseCheckoutSkill(env, fetchDir, 'plugins/fh/skills/factor-scan');
+      expect(checkedOut.ok).toBe(true);
+
+      expect(state()).toEqual(before);
+    } finally {
+      if (previousDir === undefined) process.env.GIT_DIR = undefined;
+      else process.env.GIT_DIR = previousDir;
+      if (previousIndex === undefined) process.env.GIT_INDEX_FILE = undefined;
+      else process.env.GIT_INDEX_FILE = previousIndex;
+      await rm(victim, { recursive: true, force: true });
+    }
+  });
+
   test('HEAD fetch resolves multiHead and stays blobless (no checkout)', async () => {
     const fetchDir = freshFetchDir();
     const res = await fetchRepo(env, { cloneUrl: fixture.multiUrl, ref: null, fetchDir });

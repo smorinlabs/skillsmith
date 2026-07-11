@@ -5,6 +5,7 @@ import { getSkillRoots as claudeCodeSkillRoots } from '../agents/claude-code/ski
 import { installHint as codexInstallHint } from '../agents/codex/install-hint.ts';
 import { getSkillRoots as codexSkillRoots } from '../agents/codex/skill-roots.ts';
 import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
+import { execGit } from '../env/git.ts';
 import type { ScanEnv } from '../env/types.ts';
 import {
   type SkillSmithError,
@@ -855,9 +856,8 @@ const predictPair = async (
 // ---------------------------------------------------------------------------------------------
 
 const gitToplevel = async (env: ScanEnv, cwd: string): Promise<string | null> => {
-  const r = await env.exec('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+  const r = await execGit(env, ['-C', cwd, 'rev-parse', '--show-toplevel'], {
     timeoutMs: PLUMBING_TIMEOUT_MS,
-    env: { GIT_TERMINAL_PROMPT: '0' },
   });
   if (r.code !== 0) return null;
   const top = r.stdout.trim();
