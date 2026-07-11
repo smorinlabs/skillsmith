@@ -54,6 +54,7 @@ export const checkCommand = (): Command =>
           mode: 'check',
           tools,
           scopes,
+          scopeExplicit: scopeR.value !== null,
           cwd: process.cwd(),
           envVars: process.env,
           offline: false,
