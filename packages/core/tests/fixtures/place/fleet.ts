@@ -1,9 +1,9 @@
-import { mkdtemp, mkdir, writeFile, symlink, chmod, rm, realpath } from 'node:fs/promises';
+import { mkdir, writeFile, symlink, chmod, rm, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
 import { defaultScanEnv } from '../../../src/env/default.ts';
 import type { ScanEnv } from '../../../src/env/types.ts';
 import { runGit } from '../git-env.ts';
+import { buildInTemporaryRoot } from '../temporary-root.ts';
 
 export interface FixtureFleet {
   base: string; // mkdtemp root; everything lives under it
@@ -21,8 +21,7 @@ export interface FixtureFleet {
   projectReal: string; // realpath of <base>/project (macOS /var → /private/var)
 }
 
-export const buildFixtureFleet = async (): Promise<FixtureFleet> => {
-  const base = await mkdtemp(join(tmpdir(), 'skillsmith-fleet-'));
+const populateFixtureFleet = async (base: string): Promise<FixtureFleet> => {
   const home = join(base, 'home');
   const data = join(base, 'data');
   const checkout = join(base, 'checkout');
@@ -221,6 +220,9 @@ name: dup
 
   return fleet;
 };
+
+export const buildFixtureFleet = async (): Promise<FixtureFleet> =>
+  buildInTemporaryRoot('skillsmith-fleet-', populateFixtureFleet);
 
 export const destroyFixtureFleet = async (f: FixtureFleet): Promise<void> => {
   await rm(f.base, { recursive: true, force: true });

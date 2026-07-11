@@ -1,7 +1,7 @@
-import { mkdtemp, mkdir, writeFile, symlink, chmod, rm } from 'node:fs/promises';
+import { mkdir, writeFile, symlink, chmod, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { runGit } from '../git-env.ts';
+import { buildInTemporaryRoot } from '../temporary-root.ts';
 
 export interface RemoteFixture {
   base: string; // mkdtemp root
@@ -18,9 +18,7 @@ export interface RemoteFixture {
   rootHead: string;
 }
 
-export const buildRemoteFixture = async (): Promise<RemoteFixture> => {
-  const base = await mkdtemp(join(tmpdir(), 'skillsmith-remote-'));
-
+const populateRemoteFixture = async (base: string): Promise<RemoteFixture> => {
   // Create multi-work directory structure
   const multiWork = join(base, 'multi-work');
   await mkdir(join(multiWork, 'plugins', 'web', 'skills', 'review'), { recursive: true });
@@ -282,6 +280,9 @@ name: rootskill
 
   return fixture;
 };
+
+export const buildRemoteFixture = async (): Promise<RemoteFixture> =>
+  buildInTemporaryRoot('skillsmith-remote-', populateRemoteFixture);
 
 export const destroyRemoteFixture = async (f: RemoteFixture): Promise<void> => {
   await rm(f.base, { recursive: true, force: true });

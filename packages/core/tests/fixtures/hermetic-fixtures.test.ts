@@ -71,8 +71,11 @@ test('buildRemoteFixture is hermetic under a poisoned hook environment (#17)', a
     expect(builderError).toBeNull();
     expect(fixture?.multiHead).not.toBe(victim.head);
   } finally {
-    if (fixture) await destroyRemoteFixture(fixture);
-    await rm(victim.dir, { recursive: true, force: true });
+    try {
+      if (fixture) await destroyRemoteFixture(fixture);
+    } finally {
+      await rm(victim.dir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -90,7 +93,10 @@ test('buildFixtureFleet is hermetic under a poisoned hook environment (#17)', as
     expect(builderError).toBeNull();
     expect(fleet?.headSha).not.toBe(victim.head);
   } finally {
-    if (fleet) await destroyFixtureFleet(fleet);
-    await rm(victim.dir, { recursive: true, force: true });
+    try {
+      if (fleet) await destroyFixtureFleet(fleet);
+    } finally {
+      await rm(victim.dir, { recursive: true, force: true });
+    }
   }
 });
