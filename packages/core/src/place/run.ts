@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { ScanEnv } from '../env/types.ts';
 import {
   type SkillSmithError,
+  errorMessage,
   flipFailedError,
   flipRefusedError,
   genericError,
@@ -11,7 +12,7 @@ import {
 import { type Result, err, ok } from '../result.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import type { ToolVerdict } from '../verify/types.ts';
-import { getPair, readLedger, withLedgerLock, writeLedger } from './ledger.ts';
+import { getPair, readLedger, setPair, withLedgerLock, writeLedger } from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
 import { type PairPlan, planFlips } from './plan.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore, sweepStaging } from './store.ts';
@@ -48,6 +49,28 @@ const midSwapError = (e: SkillSmithError): SkillSmithError =>
 
 const resolveSymlinkAbsolute = (placementPath: string, literalTarget: string): string =>
   isAbsolute(literalTarget) ? literalTarget : join(dirname(placementPath), literalTarget);
+
+const isEexist = (e: unknown): boolean =>
+  typeof e === 'object' && e !== null && 'code' in e && (e as { code: unknown }).code === 'EEXIST';
+
+/** Non-blocking (T5 hard-kill orphan): remove any stale `.skillsmith-staging-<skill>-*` entries for
+ *  THIS placement name before an S1 create publishes. A staging entry for this name can only be an
+ *  orphan from a SIGKILLed earlier attempt — the single-ledger-lock assumption guarantees no other
+ *  skillsmith op is concurrently mid-create for the same name. Best-effort: a listDir failure (root
+ *  not yet created) or a removeTree race is swallowed; the create's own no-clobber publish is the
+ *  real safety gate. */
+const sweepOwnStaging = async (env: ScanEnv, skillsRoot: string, skill: string): Promise<void> => {
+  const prefix = `.skillsmith-staging-${skill}-`;
+  let entries: readonly string[];
+  try {
+    entries = await env.listDir(skillsRoot);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    if (name.startsWith(prefix)) await env.removeTree(join(skillsRoot, name)).catch(() => {});
+  }
+};
 
 const HASH_PREFIX_LEN = 'sha256:'.length;
 
@@ -154,13 +177,14 @@ const runVerifyGate = async (
   tool: FlipTool,
   sourceDir: string,
   opts: FlipOptions,
+  deep: boolean,
 ): Promise<GateOutcome> => {
   if (opts.noVerify) return { blocked: null, gate: 'skipped', verdict: null, notice: null };
 
   const vr = await deps.verify(env, {
     path: sourceDir,
     tools: [tool],
-    deep: tool === 'codex',
+    deep,
     strict: opts.strict ?? false,
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
@@ -306,7 +330,7 @@ const runPromotePair = async (
   const symlinkRepin = existing?.pinned?.placement === 'symlink' && existing?.origin !== undefined;
   if (symlinkRepin) isReplace = true;
 
-  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts);
+  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, tool === 'codex');
   if (gate.blocked) {
     return {
       ...base,
@@ -500,6 +524,243 @@ const runPromotePair = async (
 };
 
 // ---------------------------------------------------------------------------------------------
+// dev --source: create + adopt (P13). Dev-only records — no journal, no pinned (D3). Write order
+// for create is symlink-first (direct atomic no-clobber publish) then ledger, so a crash between the
+// two leaves state S2, which a re-run adopts and converges. (Design evolved at adversarial review:
+// direct EEXIST publish replaces the earlier staged-rename — it eliminates the staging-orphan class;
+// convergence semantics are unchanged.)
+// ---------------------------------------------------------------------------------------------
+
+/** BF-3: canonicalize a path for source-equality comparison. `resolve` makes it absolute and folds
+ *  `.`/`..`/trailing slashes; `realpath` additionally follows symlink chains and normalizes
+ *  platform quirks (macOS `/var` → `/private/var`, case-folding). A not-yet-existing path has no
+ *  realpath, so we fall back to the resolved (lexically normalized) form — still trailing-slash- and
+ *  `..`-tolerant. */
+const canonicalizePath = async (env: ScanEnv, cwd: string, p: string): Promise<string> => {
+  const abs = resolve(cwd, p);
+  try {
+    return await env.realpath(abs);
+  } catch {
+    return abs;
+  }
+};
+
+/** BF-3: are two paths the same location? Resolved + realpath'd on BOTH sides, so a trailing slash,
+ *  a `..` segment, a symlinked tmp dir (/var vs /private/var), or a symlink chain no longer produces
+ *  a false mismatch. Used by S2/S4/S5b in the real AND dry-run paths. */
+const samePath = async (env: ScanEnv, cwd: string, a: string, b: string): Promise<boolean> =>
+  (await canonicalizePath(env, cwd, a)) === (await canonicalizePath(env, cwd, b));
+
+/** BF-6 / R4: a usable `SKILL.md` is a regular FILE *after following symlinks* — a directory named
+ *  `SKILL.md` is still rejected (BF-6), but a `SKILL.md` that is a symlink to a regular file is now
+ *  accepted (R4: the PRD only requires the source "contains SKILL.md"; the pre-fix `pathKind==='file'`
+ *  lstat rejected the symlink case). `env.fileExists` (a follow-`stat`) can't be used alone — it would
+ *  also accept a directory. So: a plain regular file passes directly; a symlink is followed via
+ *  `realpath` and accepted only when its ultimate target is a regular file (a dangling link or a
+ *  symlink-to-directory is rejected). Shared by create/adopt and their dry-run predictions so the two
+ *  never diverge. */
+const sourceHasSkillMd = async (env: ScanEnv, sourceDir: string): Promise<boolean> => {
+  const p = join(sourceDir, 'SKILL.md');
+  const kind = await env.pathKind(p);
+  if (kind === 'file') return true;
+  if (kind !== 'symlink') return false; // 'dir' (BF-6) or 'absent'
+  try {
+    return (await env.pathKind(await env.realpath(p))) === 'file';
+  } catch {
+    return false; // dangling symlink
+  }
+};
+
+/** Provenance-enriched dev record for a create/adopt. `sourcePath` and `resolvedPath` are BOTH the
+ *  ABSOLUTE resolved source (PRD: never record a relative source — sidesteps #10 for new records). */
+const buildDevSourceRecord = async (
+  env: ScanEnv,
+  resolvedSourceDir: string,
+  deps: FlipDeps,
+): Promise<DevRecord> => {
+  const provRes = await resolveProvenance(env, resolvedSourceDir);
+  return {
+    sourcePath: resolvedSourceDir,
+    resolvedPath: resolvedSourceDir,
+    repoRoot: provRes.ok ? provRes.value.repoRoot : null,
+    sourceRelPath: provRes.ok ? provRes.value.sourceRelPath : null,
+    remote: provRes.ok ? provRes.value.remote : null,
+    recordedAt: deps.now(),
+  };
+};
+
+/** S1/S2 warning (not a refusal): the source directory's basename differs from the placement name. */
+const basenameNotice = (resolvedSourceDir: string, skill: string): string | null =>
+  basename(resolvedSourceDir) !== skill
+    ? `source basename '${basename(resolvedSourceDir)}' does not match placement name '${skill}'`
+    : null;
+
+const gateFailedResult = (base: Base, gate: GateOutcome): FlipResult => ({
+  ...base,
+  action: 'failed',
+  reason: gate.blocked ? errMessage(gate.blocked) : 'verify gate failed',
+  before: null,
+  after: null,
+  store: null,
+  verify: { gate: gate.gate, verdict: gate.verdict },
+  ...(gate.blocked ? { error: gate.blocked } : {}),
+});
+
+const combineNotes = (...notes: (string | null)[]): string | null => {
+  const kept = notes.filter((n): n is string => Boolean(n));
+  return kept.length > 0 ? kept.join('; ') : null;
+};
+
+/** S1: absent placement -> validate source -> static verify gate -> direct atomic no-clobber symlink
+ *  publish -> dev record. A foreign real file already occupying the placement path (S6) refuses. */
+const createDevPlacement = async (
+  env: ScanEnv,
+  ledger: LedgerFile,
+  ledgerPath: string,
+  base: Base,
+  skill: string,
+  tool: FlipTool,
+  live: string,
+  source: string,
+  opts: FlipOptions,
+  deps: FlipDeps,
+): Promise<FlipResult> => {
+  // BF-5(e): a stale ledger pair (a lingering managed record whose live placement is gone) is the
+  // lifecycle source of truth — never silently overwrite it with a fresh dev-only create. The user
+  // must `uninstall` the record first.
+  if (getPair(ledger, skill, tool) !== null) {
+    const reason = `refusing to create '${skill}' (${tool}): a skillsmith record already exists — remove it first with 'skillsmith uninstall ${skill}'`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  let liveKind: Awaited<ReturnType<ScanEnv['pathKind']>>;
+  try {
+    liveKind = await env.pathKind(live);
+  } catch (e) {
+    return failedResult(base, flipFailedError(`cannot probe ${live}: ${errorMessage(e)}`));
+  }
+  // A real dir classifies as 'pinned' upstream, so 'absent' here is either truly absent or a file.
+  if (liveKind !== 'absent') {
+    const reason = `refusing to create '${skill}' (${tool}): a foreign ${liveKind} already exists at ${live}`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  const resolvedSourceDir = resolve(opts.cwd, source);
+  if (!(await sourceHasSkillMd(env, resolvedSourceDir))) {
+    const reason = `--source '${source}' does not contain SKILL.md`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, false);
+  if (gate.blocked) return gateFailedResult(base, gate);
+
+  const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
+
+  const skillsRoot = dirname(live);
+  try {
+    await env.makeDir(skillsRoot);
+    await sweepOwnStaging(env, skillsRoot, skill);
+    // BF-5(a): no-replace publish. Create the symlink DIRECTLY at the final path — `makeSymlink`
+    // fails atomically with EEXIST if anything appeared at `live` after the absent-check above (a
+    // concurrent create), so a replacing `rename` can never clobber a live artifact. Symlink
+    // creation is itself atomic, so no staging indirection is needed for crash safety: a crash
+    // before this leaves `absent`, a crash after leaves S2 (symlink live, no record) — a re-run
+    // adopts and converges (D3).
+    await env.makeSymlink(resolvedSourceDir, live);
+    await env.fsyncDir(skillsRoot);
+  } catch (e) {
+    if (isEexist(e)) {
+      const reason = `refusing to create '${skill}' (${tool}): a placement appeared at ${live} concurrently`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    return failedResult(base, flipFailedError(`cannot create '${skill}': ${errorMessage(e)}`));
+  }
+
+  // P13 dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely — not explicit
+  // nulls — so `Object.hasOwn(record, 'pinned')` is false and every nullish-safe reader treats the
+  // pair as having no pinned/journal state.
+  setPair(ledger, skill, tool, { placementPath: live, mode: 'dev', dev: devRecord });
+  const persisted = await writeLedger(env, ledgerPath, ledger);
+  if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
+
+  return {
+    ...base,
+    action: 'created',
+    reason: combineNotes(basenameNotice(resolvedSourceDir, skill), gate.notice),
+    before: null,
+    after: { mode: 'dev', symlinkTarget: resolvedSourceDir },
+    store: null,
+    verify: { gate: gate.gate, verdict: gate.verdict },
+  };
+};
+
+/** S2: a matching hand-made symlink not in the ledger -> record-only adopt. Disk is untouched;
+ *  the gate still runs (D2). */
+const adoptDevPlacement = async (
+  env: ScanEnv,
+  ledger: LedgerFile,
+  ledgerPath: string,
+  base: Base,
+  skill: string,
+  tool: FlipTool,
+  live: string,
+  resolvedSourceDir: string,
+  opts: FlipOptions,
+  deps: FlipDeps,
+): Promise<FlipResult> => {
+  if (!(await sourceHasSkillMd(env, resolvedSourceDir))) {
+    const reason = `--source '${opts.source ?? resolvedSourceDir}' does not contain SKILL.md`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, false);
+  if (gate.blocked) return gateFailedResult(base, gate);
+
+  // R1: collect provenance FIRST — its async git work is the widest classify->act window. The record
+  // content derives purely from `--source` (never the live link), so building it early is safe and
+  // moves the wide async gap OUT from between the live re-read and the ledger write.
+  const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
+
+  // BF-5(b)/R1: re-read the LIVE symlink immediately before recording — AFTER provenance, so a
+  // concurrent retarget that lands during provenance collection is still observed here. A mismatch
+  // refuses rather than record source A while the disk points at B.
+  let literalNow: string;
+  try {
+    literalNow = await env.readLink(live);
+  } catch (e) {
+    return failedResult(base, flipFailedError(`cannot re-read ${live}: ${errorMessage(e)}`));
+  }
+  const resolvedNow = resolveSymlinkAbsolute(live, literalNow);
+  // R1 (final window): from this final readLink to setPair the invariant is "record exactly what was
+  // read" — `live` and its captured target are NEVER touched on the filesystem again. The check
+  // compares the CAPTURED target STRING against the resolved source canonicalized LEXICALLY (`resolve`
+  // folds `.`/`..`/trailing slashes; no realpath). A fresh realpath here would re-dereference the
+  // live-derived path and open a retarget window: the pre-fix `samePath` trusted that realpath and
+  // could record the source while the disk pointed elsewhere (a mix). Post-final-read TOCTOU is out of
+  // scope BY CONSTRUCTION — a retarget landing after this read is indistinguishable from one committed
+  // just after setPair, and doctor parity reconciles the drift.
+  if (resolve(opts.cwd, resolvedNow) !== resolve(opts.cwd, resolvedSourceDir)) {
+    const reason = `refusing to adopt '${skill}' (${tool}): the live symlink now points to ${resolvedNow}, not --source ${resolvedSourceDir}`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  // Dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely.
+  setPair(ledger, skill, tool, { placementPath: live, mode: 'dev', dev: devRecord });
+  const persisted = await writeLedger(env, ledgerPath, ledger);
+  if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
+
+  return {
+    ...base,
+    action: 'adopted',
+    reason: combineNotes(basenameNotice(resolvedSourceDir, skill), gate.notice),
+    before: { mode: 'dev', symlinkTarget: resolvedSourceDir },
+    after: { mode: 'dev', symlinkTarget: resolvedSourceDir },
+    store: null,
+    verify: { gate: gate.gate, verdict: gate.verdict },
+  };
+};
+
+// ---------------------------------------------------------------------------------------------
 // dev (real)
 // ---------------------------------------------------------------------------------------------
 
@@ -546,14 +807,94 @@ const runDevPair = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  if (placement.class === 'dev') return noopResult(base, null);
+  // P13 S1 create / S6 foreign-object refusal: an absent placement only reaches the run layer when
+  // `--source` is present (plan.ts routes it). Without a source there is nothing to create.
+  if (placement.class === 'absent') {
+    if (opts.source === undefined) {
+      const reason = 'no recorded dev source; pass --source <path>';
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    return createDevPlacement(
+      env,
+      ledger,
+      ledgerPath,
+      base,
+      skill,
+      tool,
+      placement.path,
+      opts.source,
+      opts,
+      deps,
+    );
+  }
+
+  // P13 S2/S3/S4: an existing dev symlink under `--source`. Without a source this stays the P12
+  // "already in dev mode" no-op.
+  if (placement.class === 'dev') {
+    if (opts.source === undefined) return noopResult(base, null);
+    const resolvedSourceDir = resolve(opts.cwd, opts.source);
+    const literal = placement.symlinkTarget;
+    const resolvedLink = literal !== null ? resolveSymlinkAbsolute(placement.path, literal) : null;
+    // BF-3: canonical comparison (realpath both sides) — a trailing slash, `..`, symlink chain, or
+    // /var vs /private/var no longer produces a false S4 mismatch.
+    const linkMatches =
+      resolvedLink !== null && (await samePath(env, opts.cwd, resolvedLink, resolvedSourceDir));
+    if (!linkMatches) {
+      // S4: never silently repoint an existing dev symlink.
+      const reason = `existing dev symlink for '${skill}' (${tool}) points to ${resolvedLink ?? '<unknown>'}, not --source ${resolvedSourceDir}`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    // BF-5(c)/(d): S3 no-op only when the ledger pair genuinely records THIS source in dev mode; S2
+    // adopt only when the pair is GENUINELY absent. Any other existing record (e.g. a pinned/origin
+    // pair whose live symlink was manually replaced) must refuse — adopting would setPair over it and
+    // silently discard the retained pin.
+    if (existing !== null) {
+      if (
+        existing.mode === 'dev' &&
+        existing.dev != null &&
+        (await samePath(env, opts.cwd, existing.dev.resolvedPath, resolvedSourceDir))
+      ) {
+        return noopResult(base, null); // S3
+      }
+      const reason = `refusing to adopt '${skill}' (${tool}): a conflicting skillsmith record already exists for this placement — resolve it with 'skillsmith uninstall' or 'promote'/'dev --rollback' first`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    return adoptDevPlacement(
+      env,
+      ledger,
+      ledgerPath,
+      base,
+      skill,
+      tool,
+      placement.path,
+      resolvedSourceDir,
+      opts,
+      deps,
+    );
+  }
+
+  // BF-4: a real dir (class 'pinned') that is neither a skill (no usable SKILL.md) nor
+  // skillsmith-managed (no ledger pair) is a FOREIGN object — refuse (S6), never hand-copy-flip it
+  // into a dev symlink. A genuine hand-copied skill (has SKILL.md) keeps its P12 flip behavior; a
+  // managed pinned pair (has a ledger record) keeps its lifecycle.
+  if (placement.class === 'pinned' && existing === null) {
+    const placementHasSkillMd = (await env.pathKind(join(placement.path, 'SKILL.md'))) === 'file';
+    if (!placementHasSkillMd) {
+      const reason = `refusing to flip '${skill}' (${tool}): ${placement.path} is a foreign directory (no SKILL.md, no skillsmith record)`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+  }
 
   const recordedSource = existing?.dev?.sourcePath ?? null;
+  const recordedResolved = existing?.dev?.resolvedPath ?? null;
   const source = opts.source ?? recordedSource;
+  // BF-3: S5b compares --source against the recorded RESOLVED (absolute) path via the canonical
+  // helper — a relative P12-adoption record resolved against a different cwd no longer falsely
+  // mismatches, nor does a trailing slash / symlink chain.
   const updatedRecord =
     opts.source !== undefined &&
-    recordedSource !== null &&
-    resolve(opts.cwd, opts.source) !== resolve(opts.cwd, recordedSource);
+    recordedResolved !== null &&
+    !(await samePath(env, opts.cwd, opts.source, recordedResolved));
 
   if (source === null) {
     // D9: a recordless store-linked placement (hand-made symlink into the store) has no dev
@@ -574,6 +915,13 @@ const runDevPair = async (
       };
     }
     const reason = 'no recorded dev source; pass --source <path>';
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+
+  // PRD S5b (behavior change from P12): for a pinned/store-linked pair, a --source that disagrees
+  // with the RECORDED dev source now REFUSES rather than silently repointing the record.
+  if (updatedRecord) {
+    const reason = `refusing to redirect '${skill}' (${tool}): --source ${resolve(opts.cwd, opts.source ?? '')} disagrees with the recorded dev source ${recordedResolved}`;
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
@@ -614,8 +962,8 @@ const runDevPair = async (
   const swapRes = await runSwap(swapCtx, plan);
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
 
+  // `updatedRecord` no longer reaches here — S5b refuses a recorded-source disagreement above.
   const notesAcc: string[] = [];
-  if (updatedRecord) notesAcc.push('dev source updated from --source');
   if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
 
   return {
@@ -936,10 +1284,104 @@ const predictPair = async (
   }
 
   // op === 'dev'
-  if (placement.class === 'dev') return noopResult(base, null);
+  // P13 S1 create / S6 foreign-object (dry-run predicts without writing). BF-6: the prediction runs
+  // the SAME structural source validation as the real path (dir + `pathKind(SKILL.md)==='file'`), so
+  // dry-run never reports `created`/`adopted` for a source the real run would refuse. Only the
+  // external verify GATE is skipped in dry-run (documented — it needs network/tool auth).
+  if (placement.class === 'absent') {
+    if (opts.source === undefined) {
+      const reason = 'no recorded dev source; pass --source <path>';
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    // BF-5(e): a stale ledger pair would make the real create refuse — mirror it here.
+    if (existing !== null) {
+      const reason = `refusing to create '${skill}' (${tool}): a skillsmith record already exists — remove it first with 'skillsmith uninstall ${skill}'`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    const liveKind = await env.pathKind(placement.path);
+    if (liveKind !== 'absent') {
+      const reason = `refusing to create '${skill}' (${tool}): a foreign ${liveKind} already exists at ${placement.path}`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    const resolvedSourceDir = resolve(opts.cwd, opts.source);
+    if (!(await sourceHasSkillMd(env, resolvedSourceDir))) {
+      const reason = `--source '${opts.source}' does not contain SKILL.md`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    return {
+      ...base,
+      action: 'created',
+      reason: null,
+      before: null,
+      after: null,
+      store: null,
+      verify: null,
+    };
+  }
+
+  // P13 S2/S3/S4 (dry-run) for an existing dev symlink under --source.
+  if (placement.class === 'dev') {
+    if (opts.source === undefined) return noopResult(base, null);
+    const resolvedSourceDir = resolve(opts.cwd, opts.source);
+    const literal = placement.symlinkTarget;
+    const resolvedLink = literal !== null ? resolveSymlinkAbsolute(placement.path, literal) : null;
+    const linkMatches =
+      resolvedLink !== null && (await samePath(env, opts.cwd, resolvedLink, resolvedSourceDir));
+    if (!linkMatches) {
+      const reason = `existing dev symlink for '${skill}' (${tool}) points to ${resolvedLink ?? '<unknown>'}, not --source ${resolvedSourceDir}`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    // BF-5(c)/(d): S3 only on genuine agreement; any other existing record refuses; S2 adopt only
+    // when the pair is genuinely absent (and its source has a SKILL.md — BF-6).
+    if (existing !== null) {
+      if (
+        existing.mode === 'dev' &&
+        existing.dev != null &&
+        (await samePath(env, opts.cwd, existing.dev.resolvedPath, resolvedSourceDir))
+      ) {
+        return noopResult(base, null);
+      }
+      const reason = `refusing to adopt '${skill}' (${tool}): a conflicting skillsmith record already exists for this placement`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    if (!(await sourceHasSkillMd(env, resolvedSourceDir))) {
+      const reason = `--source '${opts.source}' does not contain SKILL.md`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+    return {
+      ...base,
+      action: 'adopted',
+      reason: null,
+      before: null,
+      after: null,
+      store: null,
+      verify: null,
+    };
+  }
+
+  // BF-4 (dry-run mirror): a foreign real dir (no SKILL.md, no ledger pair) refuses, matching the
+  // real path — dry-run must not predict a flip the real run would reject.
+  if (placement.class === 'pinned' && existing === null) {
+    const placementHasSkillMd = (await env.pathKind(join(placement.path, 'SKILL.md'))) === 'file';
+    if (!placementHasSkillMd) {
+      const reason = `refusing to flip '${skill}' (${tool}): ${placement.path} is a foreign directory (no SKILL.md, no skillsmith record)`;
+      return refusedResult(base, reason, flipRefusedError(reason));
+    }
+  }
 
   const recordedSource = existing?.dev?.sourcePath ?? null;
+  const recordedResolved = existing?.dev?.resolvedPath ?? null;
   const source = opts.source ?? recordedSource;
+  // PRD S5b (dry-run mirror, BF-3): compare against the recorded RESOLVED path via the canonical
+  // helper, not a lexical string compare.
+  if (
+    opts.source !== undefined &&
+    recordedResolved !== null &&
+    !(await samePath(env, opts.cwd, opts.source, recordedResolved))
+  ) {
+    const reason = `refusing to redirect '${skill}' (${tool}): --source ${resolve(opts.cwd, opts.source)} disagrees with the recorded dev source ${recordedResolved}`;
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
   if (source === null) {
     if (placement.class === 'store-linked' && !existing) {
       const reason = "managed state missing; reinstall with 'skillsmith install --force'";
@@ -995,6 +1437,8 @@ const emptySummary = (): FlipReport['summary'] => ({
   refused: 0,
   failed: 0,
   rolledBack: 0,
+  created: 0,
+  adopted: 0,
 });
 
 const ACTION_TO_SUMMARY_KEY: Record<FlipAction, keyof FlipReport['summary']> = {
@@ -1005,6 +1449,8 @@ const ACTION_TO_SUMMARY_KEY: Record<FlipAction, keyof FlipReport['summary']> = {
   refused: 'refused',
   failed: 'failed',
   'rolled-back': 'rolledBack',
+  created: 'created',
+  adopted: 'adopted',
 };
 
 const buildReport = (
@@ -1110,14 +1556,39 @@ export const runDev = (
   env: ScanEnv,
   opts: FlipOptions,
   deps: FlipDeps = defaultFlipDeps,
-): Promise<Result<FlipReport, SkillSmithError>> =>
-  runFlipBatch(env, opts, 'dev', deps, runDevPair, (e, l, p) => predictPair(e, l, 'dev', p, opts));
+): Promise<Result<FlipReport, SkillSmithError>> => {
+  // BF-1(f): validate `--dest` constraints in CORE (not CLI-only) — a library consumer calling
+  // runDev directly must get the same refusals. `--dest` needs `--source` (an unscoped destination
+  // is only meaningful for a create) and exactly one `--tool` (a path is ambiguous across tools).
+  if (opts.dest !== undefined) {
+    if (opts.source === undefined) {
+      return Promise.resolve(
+        err(flipRefusedError('--dest requires --source (it only overrides a create destination)')),
+      );
+    }
+    const toolCount = opts.tools?.length ?? 0;
+    if (toolCount !== 1) {
+      return Promise.resolve(
+        err(flipRefusedError(`--dest requires exactly one --tool (got ${toolCount})`)),
+      );
+    }
+  }
+  return runFlipBatch(env, opts, 'dev', deps, runDevPair, (e, l, p) =>
+    predictPair(e, l, 'dev', p, opts),
+  );
+};
 
 export const runRollback = async (
   env: ScanEnv,
   opts: FlipOptions & { op: 'promote' | 'dev' },
   deps: FlipDeps = defaultFlipDeps,
 ): Promise<Result<FlipReport, SkillSmithError>> => {
+  // BF-1(f)/BF-7(c): rollback restores prior state — it takes no create/gate flags. Reject them in
+  // CORE too (the CLI also rejects them) so a direct library call can't silently ignore a --source.
+  if (opts.source !== undefined || opts.dest !== undefined) {
+    return err(flipRefusedError('--rollback does not accept --source or --dest'));
+  }
+
   const dataDir = resolveDataDir(env, opts.envVars);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);

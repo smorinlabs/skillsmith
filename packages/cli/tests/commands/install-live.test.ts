@@ -18,7 +18,8 @@ import {
 // waiting out 30+ real seconds per test. We've just confirmed the child is gone (`proc.exited`), so
 // clearing its orphaned lock directory ourselves is a faithful stand-in for that staleness sweep —
 // mirrors P12's flip-live.test.ts exactly (D17: proper-lockfile's 30s staleness is the vetted path,
-// not something to "improve" here).
+// not something to "improve" here). R2: the ledger lock targets `placements.json` directly
+// (realpath:false, no materialization), so proper-lockfile's mkdir-lock directory is `placements.json.lock`.
 const clearOrphanedLock = async (ledgerPath: string): Promise<void> => {
   await rm(`${ledgerPath}.lock`, { recursive: true, force: true });
 };

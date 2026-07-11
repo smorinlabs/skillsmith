@@ -28,6 +28,8 @@ const report = (results: FlipResult[]): FlipReport => ({
     refused: 0,
     failed: 0,
     rolledBack: 0,
+    created: 0,
+    adopted: 0,
   },
 });
 

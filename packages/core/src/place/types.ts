@@ -44,9 +44,12 @@ export interface PairRecord {
   placementPath: string;
   mode: 'dev' | 'pinned';
   dev: DevRecord | null;
-  pinned: PinnedRecord | null;
+  // P13 (BF-2): a `dev --source` create/adopt writes a dev-only record that OMITS `pinned` and
+  // `journal` entirely — a new legal shape. Both are optional here so a raw omitted-field record
+  // types as `undefined`; every reader must be nullish-safe (`!= null`, not `!== null`).
+  pinned?: PinnedRecord | null;
   origin?: OriginRecord; // written only by install
-  journal: Journal | null;
+  journal?: Journal | null;
 }
 
 export type JournalPhase = 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';
@@ -140,7 +143,9 @@ export type FlipAction =
   | 'skipped'
   | 'refused'
   | 'failed'
-  | 'rolled-back';
+  | 'rolled-back'
+  | 'created'
+  | 'adopted';
 
 export interface FlipResult {
   skill: string;
@@ -177,6 +182,8 @@ export interface FlipReport {
     refused: number;
     failed: number;
     rolledBack: number;
+    created: number; // P13 D4
+    adopted: number; // P13 D4
   };
 }
 
@@ -185,8 +192,9 @@ export interface FlipOptions {
   all?: boolean;
   tools?: readonly FlipTool[]; // explicit --tool list; undefined = auto
   source?: string; // dev only
-  strict?: boolean; // promote only
-  noVerify?: boolean; // promote only
+  dest?: string; // dev --source create only: override the created placement's destination root
+  strict?: boolean; // promote / dev --source only
+  noVerify?: boolean; // promote / dev --source only
   allowDirty?: boolean; // promote only
   rollback?: boolean;
   dryRun?: boolean;

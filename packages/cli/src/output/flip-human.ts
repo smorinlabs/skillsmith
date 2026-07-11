@@ -38,7 +38,9 @@ const renderPair = (op: FlipReport['op'], r: FlipResult): string[] => {
   }
 
   if (r.verify) {
-    const modeLabel = tool === 'codex' ? 'deep' : 'static';
+    // BF-7b: render the ACTUAL gate mode. `dev --source` create/adopt always gates STATIC (PRD D2),
+    // even for codex — only promote runs codex deep. Labeling create/adopt "deep" was a lie.
+    const modeLabel = tool === 'codex' && op === 'promote' ? 'deep' : 'static';
     lines.push(`  verify   ${modeLabel}: ${r.verify.verdict ?? r.verify.gate}`);
   }
 
@@ -47,13 +49,21 @@ const renderPair = (op: FlipReport['op'], r: FlipResult): string[] => {
     lines.push(`  snapshot ${storeLabel(r.store.path)}  ${tag}`);
   }
 
+  const isCreateAdopt = r.action === 'created' || r.action === 'adopted';
   if (op === 'dev' && r.action !== 'noop' && r.after?.symlinkTarget) {
-    lines.push(`  source   ${r.after.symlinkTarget}  (recorded at promote)`);
+    // A dev-CREATED/adopted placement's source is the --source the user gave, not something
+    // "recorded at promote" (a fresh create has never been promoted).
+    const provenance = isCreateAdopt ? '(dev source)' : '(recorded at promote)';
+    lines.push(`  source   ${r.after.symlinkTarget}  ${provenance}`);
   }
 
   const swapLabel =
     op === 'dev'
-      ? 'pinned copy -> dev symlink'
+      ? r.action === 'created'
+        ? 'new dev symlink'
+        : r.action === 'adopted'
+          ? 'adopt dev symlink (record only)'
+          : 'pinned copy -> dev symlink'
       : op === 'rollback'
         ? 'restoring prior state'
         : 'dev symlink -> pinned copy';
@@ -77,6 +87,8 @@ const ACTION_LABEL: Record<FlipAction, string> = {
   refused: 'refused',
   failed: 'failed',
   'rolled-back': 'rolled back',
+  created: 'created',
+  adopted: 'adopted',
 };
 
 /** Human-readable render of a `skillsmith.flip` report (mockups in `research/commands/{promote,dev}.md`). */
@@ -100,6 +112,8 @@ export const renderFlipHuman = (report: FlipReport, exitCode: number): string =>
   }
 
   const counts: [FlipAction, number][] = [
+    ['created', report.summary.created],
+    ['adopted', report.summary.adopted],
     ['flipped', report.summary.flipped],
     ['updated', report.summary.updated],
     ['noop', report.summary.noop],
@@ -110,7 +124,12 @@ export const renderFlipHuman = (report: FlipReport, exitCode: number): string =>
   ];
   const warnings = report.results.filter(
     (r) =>
-      (r.action === 'flipped' || r.action === 'updated' || r.action === 'rolled-back') && r.reason,
+      (r.action === 'flipped' ||
+        r.action === 'updated' ||
+        r.action === 'rolled-back' ||
+        r.action === 'created' ||
+        r.action === 'adopted') &&
+      r.reason,
   ).length;
 
   const parts = counts

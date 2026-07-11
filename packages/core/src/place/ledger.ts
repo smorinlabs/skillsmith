@@ -78,9 +78,12 @@ const PairRecordSchema = z.object({
   placementPath: z.string(),
   mode: z.enum(['dev', 'pinned']),
   dev: DevRecordSchema.nullable(),
-  pinned: PinnedRecordSchema.nullable(),
+  // P13: a dev-only record (dev --source create/adopt) OMITS `pinned` and `journal` entirely — a
+  // new legal shape. Keep them nullable AND optional so both the absent-key shape and the
+  // explicit-null shape (every P12-written record) parse.
+  pinned: PinnedRecordSchema.nullable().optional(),
   origin: OriginRecordSchema.optional(),
-  journal: JournalSchema.nullable(),
+  journal: JournalSchema.nullable().optional(),
 });
 
 const SkillsTreeSchema = z.record(
@@ -177,12 +180,13 @@ export const withLedgerLock = async <T>(
     return err(ledgerError(`cannot create ledger directory: ${errorMessage(e)}`, ledgerPath));
   }
 
-  // proper-lockfile needs the target to exist; create it empty on first use (`writeFile ax`
-  // semantics — never clobber existing content). Precedent: config/save.ts.
-  if ((await env.pathKind(ledgerPath)) === 'absent') {
-    await env.writeTextFile(ledgerPath, '').catch(() => {});
-  }
-
+  // R2 / BF-7a (D2 "nothing written"): lock the ledger TARGET directly. proper-lockfile mkdir's the
+  // atomic lock DIR `placements.json.lock` — with `withFileLock`'s `realpath:false`, the target need
+  // NOT exist, so this both (a) restores the ORIGINAL lock-dir name for true cross-version exclusion
+  // with pre-sidecar binaries (they locked the same target -> the same dir) and (b) never
+  // materializes `placements.json` when a gate fails before any write. A prior fix locked a SIDECAR
+  // (`placements.json.lock`) as the target, which mkdir'd `placements.json.lock.lock` — a DIFFERENT
+  // dir than old binaries held, so the two never excluded each other (split-brain).
   try {
     const value = await env.withFileLock(ledgerPath, fn);
     return ok(value);

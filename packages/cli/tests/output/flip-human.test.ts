@@ -60,6 +60,8 @@ describe('renderFlipHuman', () => {
         refused: 0,
         failed: 0,
         rolledBack: 0,
+        created: 0,
+        adopted: 0,
       },
     };
 
@@ -109,6 +111,8 @@ describe('renderFlipHuman', () => {
         refused: 0,
         failed: 0,
         rolledBack: 0,
+        created: 0,
+        adopted: 0,
       },
     };
 
@@ -156,11 +160,54 @@ describe('renderFlipHuman', () => {
         refused: 0,
         failed: 0,
         rolledBack: 0,
+        created: 0,
+        adopted: 0,
       },
     };
 
     const out = renderFlipHuman(report, 0);
     expect(out).toContain('1 flipped, 1 warning.  Exit code: 0');
+  });
+
+  // BF-7(b): a `dev --source` create/adopt gate is always STATIC (PRD D2), even for codex — only
+  // promote runs codex deep. The renderer must label the actual mode, not always "deep" for codex.
+  test('a codex created result renders verify mode "static", never "deep"', () => {
+    const report: FlipReport = {
+      op: 'dev',
+      dryRun: false,
+      requested: { targets: ['x'], all: false, tools: ['codex'], explicitTools: true },
+      results: [
+        {
+          skill: 'x',
+          tool: 'codex',
+          placementPath: '/Users/alice/.agents/skills/x',
+          action: 'created',
+          reason: null,
+          before: null,
+          after: { mode: 'dev', symlinkTarget: '/Users/alice/c/x' },
+          store: null,
+          verify: { gate: 'passed', verdict: 'pass' },
+        },
+      ],
+      summary: {
+        flipped: 0,
+        updated: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 0,
+        failed: 0,
+        rolledBack: 0,
+        created: 1,
+        adopted: 0,
+      },
+    };
+    const out = renderFlipHuman(report, 0);
+    expect(out).toContain('verify   static: pass');
+    expect(out).not.toContain('deep');
+    // A fresh create is not "recorded at promote" and does not swap a "pinned copy".
+    expect(out).not.toContain('recorded at promote');
+    expect(out).not.toContain('pinned copy -> dev symlink');
+    expect(out).toContain('1 created.  Exit code: 0');
   });
 
   test('a refused result renders a refusal line and the summary counts it', () => {
@@ -189,6 +236,8 @@ describe('renderFlipHuman', () => {
         refused: 1,
         failed: 0,
         rolledBack: 0,
+        created: 0,
+        adopted: 0,
       },
     };
 

@@ -12,6 +12,8 @@ const ActionSchema = z.enum([
   'refused',
   'failed',
   'rolled-back',
+  'created',
+  'adopted',
 ]);
 const ModeSchema = z.enum(['dev', 'pinned']);
 const GateSchema = z.enum(['passed', 'warned', 'failed', 'skipped', 'inconclusive']);
@@ -55,7 +57,7 @@ const FlipResultSchema = z.object({
 });
 
 export const FlipJsonSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2), // P13 D4: enum growth (created/adopted) is a real contract change
   kind: z.literal('skillsmith.flip'),
   op: OpSchema,
   dryRun: z.boolean(),
@@ -74,6 +76,8 @@ export const FlipJsonSchema = z.object({
     refused: z.number(),
     failed: z.number(),
     rolledBack: z.number(),
+    created: z.number(), // P13 D4
+    adopted: z.number(), // P13 D4
   }),
 });
 
@@ -81,7 +85,7 @@ export const FlipJsonSchema = z.object({
  *  each result — it never reaches the wire, only `flipExitCode` (CLI-side) consumes it. */
 export const renderFlipJson = (report: FlipReport): string => {
   const payload = {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     kind: 'skillsmith.flip' as const,
     op: report.op,
     dryRun: report.dryRun,
