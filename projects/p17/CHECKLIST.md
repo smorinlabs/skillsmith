@@ -171,7 +171,7 @@ Tracked entities: **425** across **45** change groups.
 
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
-| EWP-CF-001 | P17-G0-03 | mapped | required-pr |
+| EWP-CF-001 | P17-G0-03 | validated | required-pr |
 | EWP-CF-002 | P17-G3B-01 | planned | required-pr |
 | EWP-CF-003 | P17-G2-01 | planned | required-pr |
 | EWP-CF-004 | P17-G1-02A | planned | required-pr |
@@ -334,7 +334,7 @@ Downstream coverage obligations: EWP-CMD-CHECK-TS01, EWP-CMD-CHECK-TS02, EWP-CMD
 
 ## P17-G0-03 — Artifact terminology, dependency order, and architecture/quality reconciliation
 
-Phase: 0; status: **ready**; dependencies: P17-G0-01.
+Phase: 0; status: **reviewed**; dependencies: P17-G0-01.
 Required-now validations: EWP-P0A-TS01, EWP-P0A-TS06, EWP-P0A-TS07.
 Downstream coverage obligations: EWP-OPT-TS01, EWP-P0A-TS02, EWP-P0A-TS03, EWP-P0A-TS04, EWP-P0A-TS05, EWP-P0A-TS08, EWP-P0A-TS09, EWP-P2-TS01, EWP-P2-TS02, EWP-P2-TS03, EWP-P2-TS04, EWP-P2-TS05, EWP-P3B-TS01, EWP-P3B-TS02, EWP-P3B-TS03, EWP-P4A-TS01, EWP-P4A-TS02, EWP-P4A-TS03, EWP-P4B-TS01, EWP-P4B-TS02, EWP-P4B-TS03, EWP-P4B-TS04, EWP-P4B-TS05, EWP-P4B-TS06, EWP-WF03, EWP-WF13.
 
@@ -342,21 +342,21 @@ Downstream coverage obligations: EWP-OPT-TS01, EWP-P0A-TS02, EWP-P0A-TS03, EWP-P
 
 - [x] P17-G0-03:mapped _(passed)_
 - [x] P17-G0-03:ready _(passed)_
-- [ ] P17-G0-03:test-first _(pending)_
-- [ ] P17-G0-03:minimal-implementation _(pending)_
-- [ ] P17-G0-03:targeted-green _(pending)_
-- [ ] P17-G0-03:impacted-green _(pending)_
-- [ ] P17-G0-03:refactor _(pending)_
-- [ ] P17-G0-03:adversarial-review _(pending)_
+- [x] P17-G0-03:test-first _(passed)_
+- [x] P17-G0-03:minimal-implementation _(passed)_
+- [x] P17-G0-03:targeted-green _(passed)_
+- [x] P17-G0-03:impacted-green _(passed)_
+- [x] P17-G0-03:refactor _(passed)_
+- [x] P17-G0-03:adversarial-review _(passed)_
 - [ ] P17-G0-03:traceability-closure _(pending)_
 - [ ] P17-G0-03:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-001** — Correct phase dependencies before extending command-specific orchestration _(finding; mapped)_
-- [ ] **EWP-P0A-T03** — Compare manifest/lock/plan terminology against config and placement schemas. _(phase-task; ready)_
-- [ ] **EWP-P0A-T04** — Run factor-architect review: good precedent, bad precedent, broken precedent, new _(phase-task; ready)_
-- [ ] **EWP-P0A-T05** — Run broad consistency/quality scan for contradictions, duplicate semantics, _(phase-task; ready)_
+- [ ] **EWP-CF-001** — Correct phase dependencies before extending command-specific orchestration _(finding; validated)_
+- [ ] **EWP-P0A-T03** — Compare manifest/lock/plan terminology against config and placement schemas. _(phase-task; reviewed)_
+- [ ] **EWP-P0A-T04** — Run factor-architect review: good precedent, bad precedent, broken precedent, new _(phase-task; reviewed)_
+- [ ] **EWP-P0A-T05** — Run broad consistency/quality scan for contradictions, duplicate semantics, _(phase-task; reviewed)_
 
 ## P17-G0-04 — Section-level documentation-drift ledger and authoritative-document closure
 
