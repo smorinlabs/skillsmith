@@ -1044,10 +1044,33 @@
       "phase": "1",
       "title": "Shared error/output boundary, exit precedence, and non-mutating mode policy",
       "dependsOn": [],
-      "status": "planned",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "packages/cli/src/output/error-boundary.ts",
+        "packages/cli/src/util/non-mutating-mode.ts",
+        "packages/cli/src/util/exit-codes.ts",
+        "packages/cli/src/util/acquire-exit.ts",
+        "packages/cli/src/util/flip-exit.ts",
+        "packages/cli/src/util/signals.ts",
+        "packages/cli/src/program.ts",
+        "packages/cli/src/index.ts",
+        "packages/cli/src/commands/install.ts",
+        "packages/cli/src/commands/uninstall.ts",
+        "packages/cli/src/commands/dev.ts",
+        "packages/cli/src/commands/promote.ts",
+        "packages/cli/src/commands/check.ts",
+        "packages/cli/src/commands/doctor.ts",
+        "packages/cli/src/commands/verify.ts",
+        "packages/cli/tests/contracts/options.test.ts",
+        "packages/cli/tests/util/exit-codes.test.ts",
+        "packages/cli/tests/util/acquire-exit.test.ts",
+        "packages/cli/tests/util/flip-exit.test.ts",
+        "packages/cli/tests/util/signals.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS06.test.ts",
+        "tests/ergonomics/workflows/EWP-WF15.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": [
         "EWP-CMD-APPLY-TS01",
         "EWP-CMD-APPLY-TS02",
@@ -1295,17 +1318,22 @@
         "EWP-WF09",
         "EWP-WF10"
       ],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS04",
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS10",
+        "bun test tests/ergonomics/phase/EWP-P1-TS06.test.ts --test-name-pattern EWP-P1-TS06",
+        "bun test tests/ergonomics/workflows/EWP-WF15.test.ts --test-name-pattern EWP-WF15"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02A.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02A.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
