@@ -1437,7 +1437,7 @@
       "phase": "1",
       "title": "`check`/doctor gate semantics and report-only behavior",
       "dependsOn": ["P17-G1-02A"],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/doctor/run.ts",
@@ -1482,7 +1482,7 @@
         "bun test tests/ergonomics/phase/EWP-P1-TS04.test.ts --test-name-pattern EWP-P1-TS04"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g0_05_attack_map/g1_02b_independent_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -1497,32 +1497,32 @@
           "evidence": ["projects/p17/evidence/P17-G1-02B.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02B.md#implementation-and-validation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02B.md#implementation-and-validation"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02B.md#implementation-and-validation"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02B.md#implementation-and-validation"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02B.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02B.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02B.md#traceability-and-sign-off"]
         }
       },
       "evidence": []
@@ -4927,11 +4927,11 @@
       "title": "Maintain — Are blocking machine/project health checks passing?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G1-02B",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:check",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-02B.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -9804,7 +9804,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS01",
       "target": {
@@ -9837,7 +9837,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS02",
       "target": {
@@ -9870,7 +9870,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS03",
       "target": {
@@ -9903,7 +9903,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS04",
       "target": {
@@ -9936,7 +9936,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS05",
       "target": {
@@ -15331,11 +15331,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G1-02B",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-02B.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": ["COMMAND:check", "P0-04"],
       "validatedBy": [
@@ -15624,7 +15624,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:tests/ergonomics/phase/EWP-P1-TS04.test.ts#EWP-P1-TS04",
       "target": {
@@ -19043,11 +19043,11 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G1-02B",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G1-02B",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-02B.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [

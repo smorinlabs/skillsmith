@@ -11,13 +11,13 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 5 | 23 | 6 |
-| phase-task | 65 | 17 | 48 | 0 |
-| phase-test | 61 | 13 | 48 | 0 |
-| command-test | 157 | 0 | 157 | 0 |
+| recommendation | 34 | 6 | 22 | 6 |
+| phase-task | 65 | 18 | 47 | 0 |
+| phase-test | 61 | 14 | 47 | 0 |
+| command-test | 157 | 5 | 152 | 0 |
 | option-gate | 10 | 4 | 6 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
-| command | 23 | 0 | 23 | 0 |
+| command | 23 | 1 | 22 | 0 |
 | finding | 43 | 11 | 32 | 0 |
 | decision | 16 | 0 | 15 | 1 |
 
@@ -26,7 +26,7 @@ Tracked entities: **425** across **45** change groups.
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
-| 1 | 9 | 62 | 24 | 0 |
+| 1 | 9 | 62 | 33 | 0 |
 | 2 | 5 | 33 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
@@ -106,7 +106,7 @@ Tracked entities: **425** across **45** change groups.
 |---|---|---|---|
 | COMMAND:agents | P17-G3A-02 | planned | required-pr |
 | COMMAND:apply | P17-G4B-02 | planned | required-pr |
-| COMMAND:check | P17-G1-02B | planned | required-pr |
+| COMMAND:check | P17-G1-02B | signed-off | required-pr |
 | COMMAND:commands | P17-G3A-02 | planned | required-pr |
 | COMMAND:completion | P17-G6-02B | planned | supported-platform |
 | COMMAND:config | P17-G2-01 | planned | required-pr |
@@ -135,7 +135,7 @@ Tracked entities: **425** across **45** change groups.
 | P0-01 | P17-G1-01 | signed-off | required-pr |
 | P0-02 | P17-G1-01 | signed-off | required-pr |
 | P0-03 | P17-G1-01 | signed-off | required-pr |
-| P0-04 | P17-G1-02B | planned | required-pr |
+| P0-04 | P17-G1-02B | signed-off | required-pr |
 | P0-05 | P17-G1-02C | planned | required-pr |
 | P0-06 | P17-G1-02A | signed-off | required-pr |
 | P0-07 | P17-G2-05 | planned | required-pr |
@@ -480,7 +480,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G1-02B — `check`/doctor gate semantics and report-only behavior
 
-Phase: 1; status: **active**; dependencies: P17-G1-02A.
+Phase: 1; status: **signed-off**; dependencies: P17-G1-02A.
 Required-now validations: EWP-CMD-CHECK-TS01, EWP-CMD-CHECK-TS02, EWP-CMD-CHECK-TS03, EWP-CMD-CHECK-TS04, EWP-CMD-CHECK-TS05, EWP-P1-TS04.
 Downstream coverage obligations: none.
 
@@ -489,25 +489,25 @@ Downstream coverage obligations: none.
 - [x] P17-G1-02B:mapped _(passed)_
 - [x] P17-G1-02B:ready _(passed)_
 - [x] P17-G1-02B:test-first _(passed)_
-- [ ] P17-G1-02B:minimal-implementation _(pending)_
-- [ ] P17-G1-02B:targeted-green _(pending)_
-- [ ] P17-G1-02B:impacted-green _(pending)_
-- [ ] P17-G1-02B:refactor _(pending)_
-- [ ] P17-G1-02B:adversarial-review _(pending)_
-- [ ] P17-G1-02B:traceability-closure _(pending)_
-- [ ] P17-G1-02B:signed-off _(pending)_
+- [x] P17-G1-02B:minimal-implementation _(passed)_
+- [x] P17-G1-02B:targeted-green _(passed)_
+- [x] P17-G1-02B:impacted-green _(passed)_
+- [x] P17-G1-02B:refactor _(passed)_
+- [x] P17-G1-02B:adversarial-review _(passed)_
+- [x] P17-G1-02B:traceability-closure _(passed)_
+- [x] P17-G1-02B:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:check** — Maintain — Are blocking machine/project health checks passing? _(command; planned)_
-- [ ] **EWP-CMD-CHECK-TS01** — only error-class checks execute. _(command-test; failing)_
-- [ ] **EWP-CMD-CHECK-TS02** — errors fail by default; report-only compatibility and conflict with the _(command-test; failing)_
-- [ ] **EWP-CMD-CHECK-TS03** — tool/scope/config and sibling/explicit custom artifact-pair selection _(command-test; failing)_
-- [ ] **EWP-CMD-CHECK-TS04** — JSON and stable exit contracts in CI/non-TTY. _(command-test; failing)_
-- [ ] **EWP-CMD-CHECK-TS05** — no network/advisory-warning noise unless explicitly requested. _(command-test; failing)_
-- [ ] **EWP-P1-T05** — Correct check gate semantics. _(phase-task; planned)_
-- [ ] **EWP-P1-TS04** — Check/doctor exit and JSON matrix. _(phase-test; failing)_
-- [ ] **P0-04** — CI-correct `check` _(recommendation; planned)_
+- [x] **COMMAND:check** — Maintain — Are blocking machine/project health checks passing? _(command; signed-off)_
+- [x] **EWP-CMD-CHECK-TS01** — only error-class checks execute. _(command-test; signed-off)_
+- [x] **EWP-CMD-CHECK-TS02** — errors fail by default; report-only compatibility and conflict with the _(command-test; signed-off)_
+- [x] **EWP-CMD-CHECK-TS03** — tool/scope/config and sibling/explicit custom artifact-pair selection _(command-test; signed-off)_
+- [x] **EWP-CMD-CHECK-TS04** — JSON and stable exit contracts in CI/non-TTY. _(command-test; signed-off)_
+- [x] **EWP-CMD-CHECK-TS05** — no network/advisory-warning noise unless explicitly requested. _(command-test; signed-off)_
+- [x] **EWP-P1-T05** — Correct check gate semantics. _(phase-task; signed-off)_
+- [x] **EWP-P1-TS04** — Check/doctor exit and JSON matrix. _(phase-test; signed-off)_
+- [x] **P0-04** — CI-correct `check` _(recommendation; signed-off)_
 
 ## P17-G1-02C — Current help/docs migration and legacy project-config warning boundary
 
