@@ -164,6 +164,37 @@ describe('EWP-CMD-CHECK-TS02', () => {
     expect(conflict.stdout).toContain('--exit-code');
     expect(conflict.stdout).not.toContain('/definitely/missing');
   });
+
+  test('deprecated exit-code emits one actionable human warning and structured JSON data', async () => {
+    const human = await runCli(['check', '--tool', 'codex', '--scope', 'user', '--exit-code']);
+    expect(human.exitCode).toBe(0);
+    expect(human.stdout).toContain('checks reported');
+    expect(human.stderr).toContain('warning: --exit-code is deprecated');
+    expect(human.stderr).toContain('default check behavior');
+    expect(human.stderr.trim().split('\n')).toHaveLength(1);
+
+    const json = await runCli([
+      'check',
+      '--tool',
+      'codex',
+      '--scope',
+      'user',
+      '--exit-code',
+      '--json',
+    ]);
+    expect(json.exitCode).toBe(0);
+    expect(json.stderr).toBe('');
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      schemaVersion: 1,
+      deprecations: [
+        {
+          spelling: '--exit-code',
+          replacement: 'default check behavior',
+          removalVersion: '2.0',
+        },
+      ],
+    });
+  });
 });
 
 describe('EWP-CMD-CHECK-TS03', () => {
@@ -224,6 +255,47 @@ describe('EWP-CMD-CHECK-TS03', () => {
         }),
       ).toMatchObject({ ok: false, error: { exitCode: 2 } });
     }
+  });
+
+  test('repeated singular artifact selectors fail before project discovery', async () => {
+    const cases = [
+      ['check', '--file', 'first.toml', '--file', 'second.toml'],
+      ['check', '--file', 'state.toml', '--lockfile', 'first.lock', '--lockfile', 'second.lock'],
+      ['doctor', '--file', 'first.toml', '--file', 'second.toml'],
+      ['doctor', '--file', 'state.toml', '--lockfile', 'first.lock', '--lockfile', 'second.lock'],
+    ] as const;
+
+    for (const args of cases) {
+      const result = await runCli(['-C', '/definitely/missing', ...args, '--json']);
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toBe('');
+      const error = JSON.parse(result.stdout) as {
+        readonly exitCode: number;
+        readonly message: string;
+      };
+      expect(error.exitCode).toBe(2);
+      expect(error.message).toContain('may only be specified once');
+      expect(result.stdout).not.toContain('/definitely/missing');
+      expect(result.stdout.trim().split('\n')).toHaveLength(1);
+    }
+  });
+
+  test('repeated singular artifact selectors emit one human usage error', async () => {
+    const result = await runCli([
+      '-C',
+      '/definitely/missing',
+      'check',
+      '--file',
+      'first.toml',
+      '--file',
+      'second.toml',
+    ]);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('--file may only be specified once');
+    expect(result.stderr).not.toContain('/definitely/missing');
+    expect(result.stderr.trim().split('\n')).toHaveLength(1);
   });
 });
 

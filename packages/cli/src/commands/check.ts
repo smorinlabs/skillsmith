@@ -15,11 +15,12 @@ import {
 } from '@skillsmith/core';
 import { Command, Option } from 'commander';
 import { renderDoctorHuman } from '../output/doctor-human.ts';
-import { renderDoctorJson } from '../output/doctor-json.ts';
+import { type CliDeprecation, renderDoctorJson } from '../output/doctor-json.ts';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
 import { resolveArtifactPair } from '../util/artifact-pair.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
+import { singularOption } from '../util/singular-option.ts';
 import { CLI_SELECTION_POLICIES, validateCliSelection } from './selection-validation.ts';
 
 export interface CheckFlags {
@@ -121,6 +122,13 @@ export const resolveCheckInputs = (
 const failUsage = (error: CheckUsageError, json: boolean): never =>
   failCliError(error, json ? 'json' : 'human', { exitCode: 2 });
 
+export const EXIT_CODE_DEPRECATION: CliDeprecation = {
+  spelling: '--exit-code',
+  replacement: 'default check behavior',
+  removalVersion: '2.0',
+  message: '--exit-code is deprecated; check already fails on errors by default',
+};
+
 export const checkCommand = (): Command =>
   withCliErrorBoundary(
     new Command('check')
@@ -142,11 +150,19 @@ export const checkCommand = (): Command =>
       .option('--user', 'shorthand for --scope=user', false)
       .option('--system', 'shorthand for --scope=system', false)
       .option('--project', 'shorthand for --scope=project', false)
-      .option('--file <path>', 'Use an explicit desired-state file')
-      .option('--lockfile <path>', 'Use an explicit lockfile (requires --file)')
+      .option('--file <path>', 'Use an explicit desired-state file', singularOption('--file'))
+      .option(
+        '--lockfile <path>',
+        'Use an explicit lockfile (requires --file)',
+        singularOption('--lockfile'),
+      )
       .option('--all-tools', 'Check every known tool instead of the configured default', false)
       .option('--report-only', 'Report errors without failing the process', false)
-      .option('--exit-code', 'Exit non-zero on any error finding', false)
+      .option(
+        '--exit-code',
+        'Deprecated through 1.x; check already exits non-zero on error findings',
+        false,
+      )
       .option('--json', 'Emit JSON', false)
       .action(
         async (
@@ -233,7 +249,15 @@ export const checkCommand = (): Command =>
           if (!r.ok) {
             return failCliError(r.error, opts.json ? 'json' : 'human');
           }
-          process.stdout.write(opts.json ? renderDoctorJson(r.value) : renderDoctorHuman(r.value));
+          const deprecations = opts.exitCode ? [EXIT_CODE_DEPRECATION] : [];
+          process.stdout.write(
+            opts.json ? renderDoctorJson(r.value, deprecations) : renderDoctorHuman(r.value),
+          );
+          if (!opts.json && opts.exitCode) {
+            process.stderr.write(
+              `warning: ${EXIT_CODE_DEPRECATION.message}; use default check behavior (removal no earlier than ${EXIT_CODE_DEPRECATION.removalVersion})\n`,
+            );
+          }
           const exit = resolveCheckExitCode(r.value, opts);
           if (!exit.ok) return failUsage(exit.error, opts.json);
           if (exit.value !== 0) process.exit(exit.value);

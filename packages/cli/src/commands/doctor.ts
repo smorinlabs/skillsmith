@@ -15,6 +15,7 @@ import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts'
 import { resolveArtifactPair } from '../util/artifact-pair.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
+import { singularOption } from '../util/singular-option.ts';
 import { CLI_SELECTION_POLICIES, validateCliSelection } from './selection-validation.ts';
 
 export const doctorCommand = (): Command =>
@@ -38,8 +39,12 @@ export const doctorCommand = (): Command =>
       .option('--user', 'shorthand for --scope=user', false)
       .option('--system', 'shorthand for --scope=system', false)
       .option('--project', 'shorthand for --scope=project', false)
-      .option('--file <path>', 'Use an explicit desired-state file')
-      .option('--lockfile <path>', 'Use an explicit lockfile (requires --file)')
+      .option('--file <path>', 'Use an explicit desired-state file', singularOption('--file'))
+      .option(
+        '--lockfile <path>',
+        'Use an explicit lockfile (requires --file)',
+        singularOption('--lockfile'),
+      )
       .option('--all-tools', 'Diagnose every known tool instead of the configured default', false)
       .option('--offline', 'Skip network checks', false)
       .option('--strict', 'Treat warnings as failures', false)
