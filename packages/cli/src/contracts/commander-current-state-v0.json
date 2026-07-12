@@ -28,6 +28,28 @@
     }
   },
   {
+    "key": "option:skillsmith:--config <file>",
+    "disposition": "N",
+    "phase": "P17-G1-01",
+    "validationOwner": "EWP-P1-TS02",
+    "option": {
+      "flags": "--config <file>",
+      "short": null,
+      "long": "--config",
+      "attributeName": "config",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
     "key": "option:skillsmith:--debug",
     "disposition": "C",
     "phase": "P17-G1-01",

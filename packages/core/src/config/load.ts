@@ -4,7 +4,12 @@ import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import { CONFIG_ACCESSORS } from './accessors.ts';
 import { configFromEnv } from './env.ts';
-import { findProjectConfig, getConfigPath, resolveExplicitFile } from './paths.ts';
+import {
+  findProjectConfig,
+  getConfigPath,
+  resolveConfigPath,
+  resolveExplicitFile,
+} from './paths.ts';
 import { parseConfig } from './schema.ts';
 import {
   CONFIG_KEYS,
@@ -45,7 +50,15 @@ const tryLoadFile = async (
   return ok(parsed.value);
 };
 
-const ORDER: ConfigLayer[] = ['defaults', 'system', 'user', 'project', 'explicit-file', 'env'];
+const ORDER: ConfigLayer[] = [
+  'defaults',
+  'system',
+  'user',
+  'project',
+  'explicit-file',
+  'env',
+  'cli',
+];
 
 export const loadConfig = async (
   env: ScanEnv,
@@ -54,14 +67,20 @@ export const loadConfig = async (
   const read = opts.readFile ?? DEFAULT_READ;
   const envVars = opts.envVars ?? (process.env as Record<string, string | undefined>);
   const cwd = opts.cwd ?? process.cwd();
-  const explicitPath = resolveExplicitFile({
-    flag: opts.explicitFile,
-    env: opts.explicitFileEnv,
-  });
+  const explicitPath = resolveConfigPath(
+    resolveExplicitFile({
+      flag: opts.explicitFile,
+      env: opts.explicitFileEnv,
+    }),
+    cwd,
+  );
+  const systemPath = getConfigPath(env, 'system');
+  const userPath = getConfigPath(env, 'user');
+  const projectPath = await findProjectConfig(env, cwd);
   const [systemR, userR, projectR, explicitR] = await Promise.all([
-    tryLoadFile(read, env.fileExists, getConfigPath(env, 'system')),
-    tryLoadFile(read, env.fileExists, getConfigPath(env, 'user')),
-    findProjectConfig(env, cwd).then((p) => (p ? tryLoadFile(read, env.fileExists, p) : ok(null))),
+    tryLoadFile(read, env.fileExists, systemPath),
+    tryLoadFile(read, env.fileExists, userPath),
+    projectPath ? tryLoadFile(read, env.fileExists, projectPath) : Promise.resolve(ok(null)),
     explicitPath ? tryLoadFile(read, env.fileExists, explicitPath) : Promise.resolve(ok(null)),
   ]);
   for (const r of [systemR, userR, projectR, explicitR]) {
@@ -75,6 +94,7 @@ export const loadConfig = async (
     project: (projectR.ok && projectR.value) || {},
     'explicit-file': (explicitR.ok && explicitR.value) || {},
     env: configFromEnv(envVars),
+    cli: {},
   };
 
   const value: Config = {};
@@ -91,5 +111,15 @@ export const loadConfig = async (
     }
   }
 
-  return ok({ value, sources, layers });
+  return ok({
+    value,
+    sources,
+    layers,
+    paths: {
+      system: systemPath,
+      user: userPath,
+      ...(projectPath ? { project: projectPath } : {}),
+      ...(explicitPath ? { 'explicit-file': explicitPath } : {}),
+    },
+  });
 };

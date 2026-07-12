@@ -56,11 +56,12 @@ export const buildProgram = (signal?: AbortSignal): Command => {
           .default('auto'),
       )
       .option('-C, --cd <dir>', 'Change directory before running', '.')
+      .option('--config <file>', 'Use an explicit configuration file')
       .option('--debug', 'Print debug traces', false),
   );
 
   program.hook('preAction', (thisCommand) => {
-    const opts = thisCommand.opts() as { color?: string };
+    const opts = thisCommand.optsWithGlobals() as { color?: string };
     const raw = opts.color ?? 'auto';
     const flag: ColorFlag = raw === 'always' || raw === 'never' || raw === 'auto' ? raw : 'auto';
     applyColorMode(flag);

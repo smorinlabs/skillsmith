@@ -17,6 +17,7 @@ import { renderFlipHuman } from '../output/flip-human.ts';
 import { renderFlipJson } from '../output/flip-json.ts';
 import { flipExitCode } from '../util/flip-exit.ts';
 import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
+import { resolveCommandProjectContext } from '../util/project-context.ts';
 
 const collectTool = (value: string, prev: string[]): string[] => {
   if (value !== 'claude-code' && value !== 'codex')
@@ -90,7 +91,7 @@ export const promoteCommand = (signal?: AbortSignal): Command =>
       .option('--no-prompt', 'Accepted no-op — promote never prompts.')
       .option('--yes', 'Accepted no-op — promote never prompts.', false)
       .addHelpText('after', EXAMPLES)
-      .action(async (skills: string[], opts: PromoteFlags) => {
+      .action(async (skills: string[], opts: PromoteFlags, command: Command) => {
         const mode = validateNonMutatingMode('promote', opts);
         if (!mode.ok) usageError(mode.message);
         if (skills.length === 0 && !opts.all)
@@ -102,6 +103,8 @@ export const promoteCommand = (signal?: AbortSignal): Command =>
         }
 
         const env = await defaultScanEnv();
+        const context = await resolveCommandProjectContext(command, env);
+        if (!context.ok) return failCliError(context.error, opts.json ? 'json' : 'human');
         const testPauseAt =
           process.env.SKILLSMITH_E2E === '1' && isJournalPhase(process.env.SKILLSMITH_TEST_PAUSE_AT)
             ? (process.env.SKILLSMITH_TEST_PAUSE_AT as JournalPhase)
@@ -115,7 +118,7 @@ export const promoteCommand = (signal?: AbortSignal): Command =>
           noVerify: !opts.verify,
           allowDirty: opts.allowDirty,
           dryRun: opts.dryRun,
-          cwd: process.cwd(),
+          cwd: context.value.projectRoot ?? context.value.effectiveCwd,
           envVars: process.env,
           ...(testPauseAt !== undefined ? { testPauseAt } : {}),
           ...(signal ? { signal } : {}),

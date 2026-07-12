@@ -1,6 +1,12 @@
-import { type Scope, type SkillSmithError, defaultScanEnv } from '@skillsmith/core';
+import {
+  type Scope,
+  type SkillSmithError,
+  defaultScanEnv,
+  resolveEffectiveConfig,
+} from '@skillsmith/core';
 import { Command, Option } from 'commander';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
+import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { runConfigGet } from './config/get.ts';
 import { runConfigList } from './config/list.ts';
 import { runConfigSet } from './config/set.ts';
@@ -54,13 +60,16 @@ export const configCommand = (): Command => {
     .description('Print a config value')
     .addOption(scopeOption())
     .option('--json', 'Emit JSON', false)
-    .action(async (key: string, opts: { scope?: Scope; json: boolean }) => {
+    .action(async (key: string, opts: { scope?: Scope; json: boolean }, command: Command) => {
       const env = await defaultScanEnv();
+      const context = await resolveCommandProjectContext(command, env);
+      if (!context.ok) writeConfigError(context.error, opts.json);
       const r = await runConfigGet({
         env,
         key,
         ...(opts.scope ? { scope: opts.scope } : {}),
         json: opts.json,
+        loadConfig: (scanEnv) => resolveEffectiveConfig(scanEnv, context.value),
       });
       if (!r.ok) writeConfigError(r.error, opts.json);
       if (opts.json) {
@@ -76,13 +85,16 @@ export const configCommand = (): Command => {
     .command('set <key> <value>')
     .description('Set a config value (default scope: user)')
     .addOption(scopeOption())
-    .action(async (key: string, value: string, opts: { scope?: Scope }) => {
+    .action(async (key: string, value: string, opts: { scope?: Scope }, command: Command) => {
       const env = await defaultScanEnv();
+      const context = await resolveCommandProjectContext(command, env);
+      if (!context.ok) writeConfigError(context.error);
       const r = await runConfigSet({
         env,
         key,
         value,
         ...(opts.scope ? { scope: opts.scope } : {}),
+        cwd: context.value.projectRoot ?? context.value.effectiveCwd,
       });
       if (!r.ok) writeConfigError(r.error);
       process.stderr.write(`wrote ${r.file}\n`);
@@ -93,12 +105,15 @@ export const configCommand = (): Command => {
     .description('List effective config (or a single scope)')
     .addOption(scopeOption())
     .option('--json', 'Emit JSON', false)
-    .action(async (opts: { scope?: Scope; json: boolean }) => {
+    .action(async (opts: { scope?: Scope; json: boolean }, command: Command) => {
       const env = await defaultScanEnv();
+      const context = await resolveCommandProjectContext(command, env);
+      if (!context.ok) writeConfigError(context.error, opts.json);
       const r = await runConfigList({
         env,
         ...(opts.scope ? { scope: opts.scope } : {}),
         json: opts.json,
+        loadConfig: (scanEnv) => resolveEffectiveConfig(scanEnv, context.value),
       });
       if (!r.ok) writeConfigError(r.error, opts.json);
       process.stdout.write(r.output);
@@ -108,12 +123,15 @@ export const configCommand = (): Command => {
     .command('unset <key>')
     .description('Remove a config value (default scope: user)')
     .addOption(scopeOption())
-    .action(async (key: string, opts: { scope?: Scope }) => {
+    .action(async (key: string, opts: { scope?: Scope }, command: Command) => {
       const env = await defaultScanEnv();
+      const context = await resolveCommandProjectContext(command, env);
+      if (!context.ok) writeConfigError(context.error);
       const r = await runConfigUnset({
         env,
         key,
         ...(opts.scope ? { scope: opts.scope } : {}),
+        cwd: context.value.projectRoot ?? context.value.effectiveCwd,
       });
       if (!r.ok) writeConfigError(r.error);
       process.stderr.write(`updated ${r.file}\n`);

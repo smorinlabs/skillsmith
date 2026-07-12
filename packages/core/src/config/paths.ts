@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { ScanEnv } from '../env/types.ts';
 import type { Scope } from './types.ts';
 
@@ -34,3 +34,6 @@ export const resolveExplicitFile = (input: {
   flag: string | undefined;
   env: string | undefined;
 }): string | null => input.flag ?? input.env ?? null;
+
+export const resolveConfigPath = (path: string | null, effectiveCwd: string): string | null =>
+  path === null ? null : isAbsolute(path) ? resolve(path) : resolve(effectiveCwd, path);

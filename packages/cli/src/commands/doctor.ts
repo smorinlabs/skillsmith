@@ -12,6 +12,7 @@ import { Command, Option } from 'commander';
 import { renderDoctorHuman } from '../output/doctor-human.ts';
 import { renderDoctorJson } from '../output/doctor-json.ts';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
+import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 
 export const doctorCommand = (): Command =>
@@ -34,16 +35,19 @@ export const doctorCommand = (): Command =>
       .option('--strict', 'Treat warnings as failures', false)
       .option('--json', 'Emit JSON', false)
       .action(
-        async (opts: {
-          tool: string[];
-          scope?: string;
-          user: boolean;
-          system: boolean;
-          project: boolean;
-          offline: boolean;
-          strict: boolean;
-          json: boolean;
-        }) => {
+        async (
+          opts: {
+            tool: string[];
+            scope?: string;
+            user: boolean;
+            system: boolean;
+            project: boolean;
+            offline: boolean;
+            strict: boolean;
+            json: boolean;
+          },
+          command: Command,
+        ) => {
           const scopeR = resolveScopeFlags(opts);
           if (!scopeR.ok) {
             return failCliError({
@@ -55,13 +59,15 @@ export const doctorCommand = (): Command =>
             opts.tool.length > 0 ? (opts.tool as SupportedTool[]) : SUPPORTED_TOOLS;
           const scopes: readonly Scope[] = scopeR.value ? [scopeR.value] : SCOPES;
           const env = await defaultScanEnv();
+          const context = await resolveCommandProjectContext(command, env);
+          if (!context.ok) return failCliError(context.error, opts.json ? 'json' : 'human');
           const r = await runChecks(builtInChecks, {
             env,
             mode: 'doctor',
             tools,
             scopes,
             scopeExplicit: scopeR.value !== null,
-            cwd: process.cwd(),
+            cwd: context.value.projectRoot ?? context.value.effectiveCwd,
             envVars: process.env,
             offline: opts.offline,
             logger: noopLogger,

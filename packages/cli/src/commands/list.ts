@@ -5,11 +5,13 @@ import {
   type SupportedTool,
   defaultScanEnv,
   listSkills,
+  resolveEffectiveConfig,
 } from '@skillsmith/core';
 import { Command, Option } from 'commander';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
 import { renderListHuman } from '../output/list-human.ts';
 import { renderListJson } from '../output/list-json.ts';
+import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 
 export const listCommand = (): Command =>
@@ -59,6 +61,7 @@ export const listCommand = (): Command =>
             disabled: boolean;
             unconfigured: boolean;
           },
+          command: Command,
         ) => {
           const filterCount = [opts.enabled, opts.disabled, opts.unconfigured].filter(
             Boolean,
@@ -76,8 +79,6 @@ export const listCommand = (): Command =>
               message: scopeR.error.message,
             });
           }
-          const tools: readonly SupportedTool[] =
-            opts.tool.length > 0 ? (opts.tool as SupportedTool[]) : SUPPORTED_TOOLS;
           const scopes: readonly Scope[] = scopeR.value ? [scopeR.value] : SCOPES;
           const enabledFilter = opts.enabled
             ? ('enabled-only' as const)
@@ -87,13 +88,23 @@ export const listCommand = (): Command =>
                 ? ('unconfigured-only' as const)
                 : undefined;
           const env = await defaultScanEnv();
+          const context = await resolveCommandProjectContext(command, env);
+          if (!context.ok) return failCliError(context.error, opts.json ? 'json' : 'human');
+          const config = await resolveEffectiveConfig(env, context.value);
+          if (!config.ok) return failCliError(config.error, opts.json ? 'json' : 'human');
+          const tools: readonly SupportedTool[] =
+            opts.tool.length > 0
+              ? (opts.tool as SupportedTool[])
+              : config.value.value.tool
+                ? [config.value.value.tool]
+                : SUPPORTED_TOOLS;
           const r = await listSkills(env, {
             tools,
             scopes,
             ...(globs.length > 0 ? { globs } : {}),
             duplicatesOnly: opts.duplicates,
             ...(enabledFilter ? { enabledFilter } : {}),
-            cwd: process.cwd(),
+            cwd: context.value.projectRoot ?? context.value.effectiveCwd,
             envVars: process.env,
           });
           if (!r.ok) {

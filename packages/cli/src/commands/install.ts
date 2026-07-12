@@ -21,6 +21,7 @@ import { renderInstallHuman } from '../output/install-human.ts';
 import { renderInstallJson } from '../output/install-json.ts';
 import { acquireExitCode } from '../util/acquire-exit.ts';
 import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
+import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 
 const collectTool = (value: string, prev: string[]): string[] => {
@@ -169,7 +170,7 @@ export const installCommand = (signal?: AbortSignal): Command =>
       .option('-y, --yes', 'Accepted no-op — the picker is a choice, not a confirmation.', false)
       .option('--no-prompt', 'Force non-TTY behavior: ambiguity lists candidates and exits 2.')
       .addHelpText('after', EXAMPLES)
-      .action(async (sources: string[], opts: InstallFlags) => {
+      .action(async (sources: string[], opts: InstallFlags, command: Command) => {
         const mode = validateNonMutatingMode('install', opts);
         if (!mode.ok) usageError(mode.message);
         if (opts.deep && !opts.verify) {
@@ -186,6 +187,8 @@ export const installCommand = (signal?: AbortSignal): Command =>
         const scope = (scopeR.ok ? scopeR.value : null) as InstallScope | null;
 
         const env = await defaultScanEnv();
+        const context = await resolveCommandProjectContext(command, env);
+        if (!context.ok) return failCliError(context.error, opts.json ? 'json' : 'human');
         const testPauseAt =
           process.env.SKILLSMITH_E2E === '1' && isJournalPhase(process.env.SKILLSMITH_TEST_PAUSE_AT)
             ? (process.env.SKILLSMITH_TEST_PAUSE_AT as JournalPhase)
@@ -207,7 +210,7 @@ export const installCommand = (signal?: AbortSignal): Command =>
           deep: opts.deep,
           continueOnError: opts.continueOnError,
           dryRun: opts.dryRun,
-          cwd: process.cwd(),
+          cwd: context.value.projectRoot ?? context.value.effectiveCwd,
           envVars: process.env,
           ...(testPauseAt !== undefined ? { testPauseAt } : {}),
           ...(signal ? { signal } : {}),

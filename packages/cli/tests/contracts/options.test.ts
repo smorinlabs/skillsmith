@@ -58,9 +58,19 @@ describe('EWP-OPT-TS01', () => {
       expect(fixture.immutable).toBeTrue();
     }
   });
-  test('live Commander tree, immutable snapshot, and closed ledger agree exactly', () => {
+  test('live Commander tree closes against evolving state without rewriting history', () => {
     const live = canonicalizeCommanderTree(buildProgram());
-    expect(live).toEqual(snapshot as readonly CanonicalCommand[]);
+    expect(live).not.toEqual(snapshot as readonly CanonicalCommand[]);
+    expect(
+      live
+        .find((command) => command.path === 'skillsmith')
+        ?.options.some((option) => option.flags === '--config <file>'),
+    ).toBeTrue();
+    expect(
+      (snapshot as readonly CanonicalCommand[])
+        .find((command) => command.path === 'skillsmith')
+        ?.options.some((option) => option.flags === '--config <file>'),
+    ).toBeFalse();
     expect(() => assertClosedMigrationLedger(live, migrationLedger)).not.toThrow();
     expect(
       migrationLedger.target.find((row) => row.key === 'argument:skillsmith completion:<shell>')

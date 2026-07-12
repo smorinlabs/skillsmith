@@ -17,13 +17,20 @@ export type { Agent, SkillRootsCtx, SupportedTool } from './agents/types.ts';
 export type { CommandEntry } from './commands/types.ts';
 export type {
   Config,
+  ConfigFileLayer,
   ConfigKey,
   ConfigLayer,
   EffectiveConfig,
   Scope,
 } from './config/types.ts';
+export type { ResolveEffectiveConfigOptions } from './config/effective.ts';
 export type { LoadConfigOpts } from './config/load.ts';
 export type { SaveConfigOpts } from './config/save.ts';
+export type {
+  ProjectContext,
+  ProjectKind,
+  ResolveProjectContextOptions,
+} from './context/types.ts';
 export type { InstallMethod, InstallRecord } from './detect/types.ts';
 export type {
   Check,
@@ -53,6 +60,23 @@ export type {
   PlacementClass,
 } from './place/types.ts';
 export type { Result } from './result.ts';
+export type {
+  SelectionAmbiguousError,
+  SelectionCandidate,
+  SelectionCapability,
+  SelectionCapabilityError,
+  SelectionInvalidEnumError,
+  SelectionOutcome,
+  SelectionPolicy,
+  SelectionRequest,
+  SelectionSource,
+  SelectionUnmatchedError,
+  SelectionUsageError,
+  SelectionValidationError,
+  TargetSelection,
+  TargetSelectionError,
+  ValidatedSelectionRequest,
+} from './selection/types.ts';
 export type {
   EnabledState,
   Frontmatter,

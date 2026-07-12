@@ -1,7 +1,6 @@
 import targetAuthorityJson from './cli-target-registry-v1.0.0.json';
 import currentAuthorityJson from './commander-current-ledger-v0.7.0.json';
 import currentStateJson from './commander-current-state-v0.json';
-import snapshot from './commander-surface-v0.7.0.json';
 import type { CanonicalCommand } from './commander-surface.ts';
 import { surfaceKeys } from './commander-surface.ts';
 
@@ -53,9 +52,6 @@ export interface MigrationLedger {
   >;
   targetHelpOwner: { phase: 'P17-G6-02A'; validation: 'EWP-OPT-TS05' };
 }
-
-const currentSurface = snapshot as readonly CanonicalCommand[];
-const currentKeys = surfaceKeys(currentSurface);
 
 const commandOwner = (path: string): string => {
   const top = path.replace(/^skillsmith ?/, '').split(' ')[0] ?? '';
@@ -654,78 +650,7 @@ const authoritativeTarget = targetAuthorityJson as readonly MigrationEntry[];
 export const migrationLedger: MigrationLedger = {
   schemaVersion: 1,
   snapshotVersion: '0.7.0',
-  current: currentKeys.map((key) => {
-    const path =
-      /^(?:command):(.+)$/.exec(key)?.[1] ??
-      /^(?:alias|argument|option):([^:]+)/.exec(key)?.[1] ??
-      'skillsmith';
-    const isD = /--rollback|--exit-code/.test(key);
-    const isC =
-      (path === 'skillsmith' && /--(?:verbose|quiet|color|cd|debug)/.test(key)) ||
-      /--no-prompt/.test(key);
-    const row = currentSurface
-      .flatMap((command) => command.options.map((option) => ({ command, option })))
-      .find(({ command, option }) => key === `option:${command.path}:${option.flags}`);
-    const argumentRow = currentSurface
-      .flatMap((command) => command.arguments.map((argument) => ({ command, argument })))
-      .find(({ command, argument }) => key === `argument:${command.path}:${argument.name}`);
-    return {
-      key,
-      disposition: isD
-        ? ('D' as const)
-        : isC
-          ? ('C' as const)
-          : key.startsWith('alias:')
-            ? ('A' as const)
-            : ('K' as const),
-      phase: isD
-        ? phaseFor(path.replace(/^skillsmith /, ''))
-        : isC
-          ? 'P17-G1-01'
-          : (commandGroup[path.replace(/^skillsmith /, '').split(' ')[0] ?? ''] ?? 'P17-G6-02A'),
-      validationOwner:
-        key === 'option:skillsmith:-V, --version'
-          ? 'EWP-CMD-HELP-TS07'
-          : isC && path === 'skillsmith'
-            ? 'EWP-P1-TS01'
-            : commandOwner(path),
-      ...(row
-        ? {
-            option: {
-              flags: row.option.flags,
-              short: row.option.short,
-              long: row.option.long,
-              attributeName: row.option.attributeName,
-              requiredValue: row.option.requiredValue,
-              optionalValue: row.option.optionalValue,
-              variadic: row.option.variadic,
-              valueShape: row.option.requiredValue
-                ? ('required' as const)
-                : row.option.optionalValue
-                  ? ('optional' as const)
-                  : ('boolean' as const),
-              choices: row.option.choices,
-              defaultValue: JSON.stringify(row.option.defaultValue),
-              defaultSource: row.option.defaultSource,
-              repeatable: row.option.repeatable,
-              negated: row.option.negated,
-              hidden: row.option.hidden,
-            },
-          }
-        : {}),
-      ...(argumentRow
-        ? {
-            argument: {
-              required: argumentRow.argument.required,
-              variadic: argumentRow.argument.variadic,
-              choices: argumentRow.argument.choices,
-              defaultValue: JSON.stringify(argumentRow.argument.defaultValue),
-              defaultSource: 'none' as const,
-            },
-          }
-        : {}),
-    };
-  }),
+  current: structuredClone(evolvingCurrentState),
   target: structuredClone(targetEntries),
   targetCommands: commandOwnership,
   optionGates: Object.fromEntries(
@@ -754,19 +679,28 @@ export const migrationLedger: MigrationLedger = {
     }),
   ),
   currentHelpInventory: Object.fromEntries(
-    currentSurface.map((command) => [
-      command.path,
-      {
-        visibleOptions: command.options
-          .filter((option) => !option.hidden)
-          .map((option) => option.flags)
-          .sort(),
-        hiddenOptions: command.options
-          .filter((option) => option.hidden)
-          .map((option) => option.flags)
-          .sort(),
-      },
-    ]),
+    evolvingCurrentState
+      .filter((entry) => entry.key.startsWith('command:'))
+      .map((entry) => entry.key.slice('command:'.length))
+      .map((path) => [
+        path,
+        {
+          visibleOptions: evolvingCurrentState
+            .filter(
+              (entry) => entry.key.startsWith(`option:${path}:`) && entry.option?.hidden !== true,
+            )
+            .map((entry) => entry.option?.flags)
+            .filter((flags): flags is string => flags !== undefined)
+            .sort(),
+          hiddenOptions: evolvingCurrentState
+            .filter(
+              (entry) => entry.key.startsWith(`option:${path}:`) && entry.option?.hidden === true,
+            )
+            .map((entry) => entry.option?.flags)
+            .filter((flags): flags is string => flags !== undefined)
+            .sort(),
+        },
+      ]),
   ),
   targetHelpOwner: { phase: 'P17-G6-02A', validation: 'EWP-OPT-TS05' },
 };
@@ -977,6 +911,13 @@ export const assertHelpAndTargetClosure = (
   surface: readonly CanonicalCommand[],
   ledger: MigrationLedger,
 ): void => {
+  if (
+    ledger.targetHelpOwner.phase !== 'P17-G6-02A' ||
+    ledger.targetHelpOwner.validation !== 'EWP-OPT-TS05'
+  )
+    throw new Error('future target help owner missing');
+  if (JSON.stringify(ledger.target) !== JSON.stringify(authoritativeTarget))
+    throw new Error('target registry spelling, disposition, shape, or ownership differs');
   const actual = Object.fromEntries(
     surface.map((command) => [
       command.path,
@@ -996,9 +937,4 @@ export const assertHelpAndTargetClosure = (
     throw new Error('current help inventory is stale');
   assertClosedMigrationLedger(surface, ledger);
   assertTargetOwnership(ledger);
-  if (
-    ledger.targetHelpOwner.phase !== 'P17-G6-02A' ||
-    ledger.targetHelpOwner.validation !== 'EWP-OPT-TS05'
-  )
-    throw new Error('future target help owner missing');
 };

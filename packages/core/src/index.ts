@@ -8,13 +8,20 @@ export { parseSource } from './acquire/source.ts';
 export { getAgent, listSupportedTools, registry } from './agents/registry.ts';
 export { SUPPORTED_TOOLS } from './agents/types.ts';
 export { getConfigValue } from './config/accessors.ts';
+export { resolveEffectiveConfig } from './config/effective.ts';
 export { loadConfig } from './config/load.ts';
-export { findProjectConfig, getConfigPath, resolveExplicitFile } from './config/paths.ts';
+export {
+  findProjectConfig,
+  getConfigPath,
+  resolveConfigPath,
+  resolveExplicitFile,
+} from './config/paths.ts';
 export { saveConfig } from './config/save.ts';
 export { CONFIG_KEYS, SCOPES } from './config/types.ts';
 export { builtInChecks } from './doctor/registry.ts';
 export { runChecks } from './doctor/run.ts';
 export { defaultScanEnv } from './env/default.ts';
+export { resolveProjectContext } from './context/project.ts';
 export { noopLogger } from './env/logger.ts';
 export {
   configError,
@@ -32,6 +39,7 @@ export type {
   CheckRunResult,
   CommandEntry,
   Config,
+  ConfigFileLayer,
   ConfigKey,
   ConfigLayer,
   DetectOptions,
@@ -69,11 +77,25 @@ export type {
   Placement,
   PlacementClass,
   Platform,
+  ProjectContext,
+  ProjectKind,
   PluginProvenanceScope,
   Result,
   SaveConfigOpts,
   ScanEnv,
   Scope,
+  SelectionAmbiguousError,
+  SelectionCandidate,
+  SelectionCapability,
+  SelectionCapabilityError,
+  SelectionInvalidEnumError,
+  SelectionOutcome,
+  SelectionPolicy,
+  SelectionRequest,
+  SelectionSource,
+  SelectionUnmatchedError,
+  SelectionUsageError,
+  SelectionValidationError,
   Severity,
   SkillEntry,
   SkillRootsCtx,
@@ -82,6 +104,8 @@ export type {
   SourceSpec,
   SummaryVerdict,
   SupportedTool,
+  TargetSelection,
+  TargetSelectionError,
   ToolVerdict,
   ToolVerifier,
   ToolVerifyOptions,
@@ -96,7 +120,10 @@ export type {
   VerifyOutcome,
   VerifyReport,
   VerifyTool,
+  ValidatedSelectionRequest,
   XdgDirs,
+  ResolveEffectiveConfigOptions,
+  ResolveProjectContextOptions,
 } from './public-types.ts';
 export { defaultFlipDeps, runDev, runPromote, runRollback } from './place/run.ts';
 export { FLIP_TOOLS } from './place/types.ts';
@@ -104,6 +131,8 @@ export { err, isErr, isOk, map, mapErr, ok } from './result.ts';
 export { detectAll, detectTool } from './scan/index.ts';
 export { listCommands } from './scan/list-commands.ts';
 export { listSkills } from './scan/list-skills.ts';
+export { resolveTargetSelection, validateSelectionRequest } from './selection/resolve.ts';
+export { SELECTION_CAPABILITIES } from './selection/types.ts';
 export { parseSkillFrontmatter } from './skills/frontmatter.ts';
 export { resolveTarget, runVerify, verifyPlugin } from './verify/run.ts';
 export { VERIFIED_AGAINST, VERIFY_TOOLS } from './verify/types.ts';

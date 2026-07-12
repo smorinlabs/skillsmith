@@ -4,7 +4,16 @@ export const SCOPES = ['system', 'user', 'project', 'managed'] as const;
 
 export type Scope = (typeof SCOPES)[number];
 
-export type ConfigLayer = 'defaults' | 'system' | 'user' | 'project' | 'explicit-file' | 'env';
+export type ConfigLayer =
+  | 'defaults'
+  | 'system'
+  | 'user'
+  | 'project'
+  | 'explicit-file'
+  | 'env'
+  | 'cli';
+
+export type ConfigFileLayer = 'system' | 'user' | 'project' | 'explicit-file';
 
 export interface Config {
   tool?: SupportedTool;
@@ -21,4 +30,5 @@ export interface EffectiveConfig {
   value: Config;
   sources: Partial<Record<ConfigKey, ConfigLayer>>;
   layers: Record<ConfigLayer, Config>;
+  paths: Partial<Record<ConfigFileLayer, string>>;
 }
