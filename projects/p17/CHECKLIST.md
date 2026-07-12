@@ -137,7 +137,7 @@ Tracked entities: **425** across **45** change groups.
 | P0-03 | P17-G1-01 | planned | required-pr |
 | P0-04 | P17-G1-02B | planned | required-pr |
 | P0-05 | P17-G1-02C | planned | required-pr |
-| P0-06 | P17-G1-02A | planned | required-pr |
+| P0-06 | P17-G1-02A | validated | required-pr |
 | P0-07 | P17-G2-05 | planned | required-pr |
 | P0-08 | P17-G2-05 | planned | required-pr |
 | P1-01 | P17-G3A-02 | planned | required-pr |
@@ -152,7 +152,7 @@ Tracked entities: **425** across **45** change groups.
 | P1-10 | P17-G5-01 | planned | required-pr |
 | P1-11 | P17-G5-03 | planned | required-pr |
 | P1-12 | P17-G6-01 | planned | release |
-| P2-01 | P17-G1-02A | planned | required-pr |
+| P2-01 | P17-G1-02A | validated | required-pr |
 | P2-02 | P17-G5-02 | planned | required-pr |
 | P2-03 | P17-G5-04 | planned | required-pr |
 | P2-04 | P17-G6-02B | planned | supported-platform |
@@ -174,7 +174,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-001 | P17-G0-03 | signed-off | required-pr |
 | EWP-CF-002 | P17-G3B-01 | planned | required-pr |
 | EWP-CF-003 | P17-G2-01 | planned | required-pr |
-| EWP-CF-004 | P17-G1-02A | planned | required-pr |
+| EWP-CF-004 | P17-G1-02A | validated | required-pr |
 | EWP-CF-005 | P17-G3B-02 | planned | required-pr |
 | EWP-CF-006 | P17-G3B-03 | planned | required-pr |
 | EWP-CF-007 | P17-G1-05 | planned | required-pr |
@@ -213,7 +213,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-040 | P17-G2-01 | planned | required-pr |
 | EWP-CF-041 | P17-G4A-03 | planned | required-pr |
 | EWP-CF-042 | P17-G4B-02 | planned | required-pr |
-| EWP-CF-043 | P17-G1-02A | planned | required-pr |
+| EWP-CF-043 | P17-G1-02A | validated | required-pr |
 
 #### decision
 
@@ -243,13 +243,13 @@ Tracked entities: **425** across **45** change groups.
 | EWP-OPT-TS01 | P17-G0-02 | signed-off | required-pr |
 | EWP-OPT-TS02 | P17-G1-03 | planned | required-pr |
 | EWP-OPT-TS03 | P17-G1-03 | planned | required-pr |
-| EWP-OPT-TS04 | P17-G1-02A | failing | required-pr |
+| EWP-OPT-TS04 | P17-G1-02A | passing | required-pr |
 | EWP-OPT-TS05 | P17-G6-02A | planned | required-pr |
 | EWP-OPT-TS06 | P17-G1-01 | planned | required-pr |
 | EWP-OPT-TS07 | P17-G6-02A | planned | required-pr |
 | EWP-OPT-TS08 | P17-G2-01 | planned | required-pr |
 | EWP-OPT-TS09 | P17-G4B-02 | planned | required-pr |
-| EWP-OPT-TS10 | P17-G1-02A | failing | required-pr |
+| EWP-OPT-TS10 | P17-G1-02A | passing | required-pr |
 
 #### workflow
 
@@ -269,7 +269,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF12 | P17-G5-04 | planned | required-pr |
 | EWP-WF13 | P17-G4A-04 | planned | required-pr |
 | EWP-WF14 | P17-G1-01 | planned | required-pr |
-| EWP-WF15 | P17-G1-02A | failing | required-pr |
+| EWP-WF15 | P17-G1-02A | passing | required-pr |
 | EWP-WF16 | P17-G6-02A | planned | required-pr |
 
 ## P17-G0-01 — Governance, authority, accepted-decision/finding traceability, and truthful counts
@@ -448,7 +448,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G1-02A — Shared error/output boundary, exit precedence, and non-mutating mode policy
 
-Phase: 1; status: **active**; dependencies: none.
+Phase: 1; status: **reviewed**; dependencies: none.
 Required-now validations: EWP-OPT-TS04, EWP-OPT-TS10, EWP-P1-TS06, EWP-WF15.
 Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-CHECK-TS01, EWP-CMD-CHECK-TS02, EWP-CMD-CHECK-TS03, EWP-CMD-CHECK-TS04, EWP-CMD-CHECK-TS05, EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-DOCTOR-TS01, EWP-CMD-DOCTOR-TS02, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS04, EWP-CMD-DOCTOR-TS05, EWP-CMD-DOCTOR-TS06, EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-CMD-GC-TS01, EWP-CMD-GC-TS02, EWP-CMD-GC-TS03, EWP-CMD-GC-TS04, EWP-CMD-GC-TS05, EWP-CMD-GC-TS06, EWP-CMD-GC-TS07, EWP-CMD-GC-TS08, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-CMD-SYNC-TS01, EWP-CMD-SYNC-TS02, EWP-CMD-SYNC-TS03, EWP-CMD-SYNC-TS04, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-SYNC-TS09, EWP-CMD-SYNC-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-CMD-UNINSTALL-TS01, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS05, EWP-CMD-UNINSTALL-TS06, EWP-CMD-UNINSTALL-TS07, EWP-CMD-UPDATE-TS01, EWP-CMD-UPDATE-TS02, EWP-CMD-UPDATE-TS03, EWP-CMD-UPDATE-TS04, EWP-CMD-UPDATE-TS05, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-CMD-UPDATE-TS10, EWP-P0A-TS04, EWP-WF08, EWP-WF09, EWP-WF10.
 
@@ -457,26 +457,26 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 - [x] P17-G1-02A:mapped _(passed)_
 - [x] P17-G1-02A:ready _(passed)_
 - [x] P17-G1-02A:test-first _(passed)_
-- [ ] P17-G1-02A:minimal-implementation _(pending)_
-- [ ] P17-G1-02A:targeted-green _(pending)_
-- [ ] P17-G1-02A:impacted-green _(pending)_
-- [ ] P17-G1-02A:refactor _(pending)_
-- [ ] P17-G1-02A:adversarial-review _(pending)_
+- [x] P17-G1-02A:minimal-implementation _(passed)_
+- [x] P17-G1-02A:targeted-green _(passed)_
+- [x] P17-G1-02A:impacted-green _(passed)_
+- [x] P17-G1-02A:refactor _(passed)_
+- [x] P17-G1-02A:adversarial-review _(passed)_
 - [ ] P17-G1-02A:traceability-closure _(pending)_
 - [ ] P17-G1-02A:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-004** — Complete exit taxonomy and semantic precedence _(finding; planned)_
-- [ ] **EWP-CF-043** — Close meaningless approval and contradictory preview modes _(finding; planned)_
-- [ ] **EWP-OPT-TS04** — Assert mutation, prompt, JSON, and exit behavior for each option family. _(option-gate; failing)_
-- [ ] **EWP-OPT-TS10** — Exhaust the shared non-mutating mode matrix: yes conflicts every dry-run/check; _(option-gate; failing)_
-- [ ] **EWP-P1-T04** — Shared human/JSON error mapping. _(phase-task; planned)_
-- [ ] **EWP-P1-T08** — Centralize the global exit taxonomy and batch precedence; remove unrestricted _(phase-task; planned)_
-- [ ] **EWP-P1-TS06** — Cross-command 0-7/130 exit matrix, including batch error-over-drift precedence. _(phase-test; failing)_
-- [ ] **EWP-WF15** — Noninteractive and output contracts _(workflow; failing)_
-- [ ] **P0-06** — Human/JSON error boundary _(recommendation; planned)_
-- [ ] **P2-01** — Consistent output selection _(recommendation; planned)_
+- [ ] **EWP-CF-004** — Complete exit taxonomy and semantic precedence _(finding; validated)_
+- [ ] **EWP-CF-043** — Close meaningless approval and contradictory preview modes _(finding; validated)_
+- [ ] **EWP-OPT-TS04** — Assert mutation, prompt, JSON, and exit behavior for each option family. _(option-gate; passing)_
+- [ ] **EWP-OPT-TS10** — Exhaust the shared non-mutating mode matrix: yes conflicts every dry-run/check; _(option-gate; passing)_
+- [ ] **EWP-P1-T04** — Shared human/JSON error mapping. _(phase-task; reviewed)_
+- [ ] **EWP-P1-T08** — Centralize the global exit taxonomy and batch precedence; remove unrestricted _(phase-task; reviewed)_
+- [ ] **EWP-P1-TS06** — Cross-command 0-7/130 exit matrix, including batch error-over-drift precedence. _(phase-test; passing)_
+- [ ] **EWP-WF15** — Noninteractive and output contracts _(workflow; passing)_
+- [ ] **P0-06** — Human/JSON error boundary _(recommendation; validated)_
+- [ ] **P2-01** — Consistent output selection _(recommendation; validated)_
 
 ## P17-G1-02B — `check`/doctor gate semantics and report-only behavior
 
