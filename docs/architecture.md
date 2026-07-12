@@ -31,7 +31,9 @@ packages/
 
 ## Core / CLI split
 
-The defining rule of the codebase: `@skillsmith/core` is a **pure library with zero CLI dependencies and no I/O side effects**. It returns values; it does not print, exit, or prompt.
+> P17 disposition: current behavior; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#9-shared-application-and-planning-architecture. This replaces the imprecise “no I/O side effects” shorthand.
+
+The defining rule of the codebase: `@skillsmith/core` is an **embeddable library with zero CLI dependencies**. Core domain logic receives filesystem, process, clock, and observation capabilities through injected ports; it does not directly print, exit, prompt, or own CLI policy.
 
 | Concern | `@skillsmith/core` | `skillsmith` CLI |
 |---|---|---|

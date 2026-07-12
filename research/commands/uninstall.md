@@ -1,5 +1,7 @@
 # uninstall
 
+> P17 disposition: shipped current behavior, not future GC authority; future target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#87-uninstall
+
 `skillsmith uninstall` removes installed skill placements and their ledger records. Aliases: `rm`,
 `remove`. Store entries are immortal — uninstall never deletes from the content-addressed store, so
 reinstalling a previously stored revision is instant (and, for a full-SHA source, offline).

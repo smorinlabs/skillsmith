@@ -1,5 +1,7 @@
 # SkillSmith phases
 
+> P17 disposition: historical roadmap, superseded target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#10-named-implementation-phases-and-slices
+
 This doc tracks **when** each SkillSmith feature ships. The sibling [`skillsmith-cli-design.md`](./skillsmith-cli-design.md) tracks **what** each feature is. Any statement here about design details is authoritative only for phasing; cross-reference the design doc for the full specification of any feature named below.
 
 MVP is split into five releases (MVP-1 → MVP-5), each an end-to-end milestone that is shippable on its own. MVP-2 is further split into three sub-phases (MVP-2a → MVP-2c, staged simplest → most complex) so each 1–2-command slice can be validated in isolation. After MVP comes Phase 2, speculative Phase 3, and Phase 4 (npm publishing on top of the already-wired release-please automation).
@@ -97,6 +99,8 @@ Split into two sub-phases:
 
 **3.2.2 MVP-2b.2 — First public release** (tag `v1.0.0` public)
 
+> P17 disposition: superseded 1.0 milestone; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#phase-6-distribution-and-ux-polish
+
 **Separate brainstorm.** Covers: npm publish of `@skillsmith/core` + `skillsmith` bin, Homebrew formula (cask for the compiled binary), codesign + notarize for macOS Gatekeeper, release notes, installation docs.
 
 Nothing new feature-wise — same surface as `v0.3.0` plus release engineering.
@@ -133,6 +137,8 @@ The write path — introduces the content-addressed store, symlinks, source reso
 
 ## 4. MVP-3 — "All four adapters"
 
+> P17 disposition: superseded four-tool write roadmap; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#phase-1-p0-cli-truthfulness
+
 No new commands. The MVP-1 and MVP-2 commands extend across all four supported agents. After this release, every same-tool install path works for the full agent set.
 
 **Added:**
@@ -152,6 +158,8 @@ No new commands. The MVP-1 and MVP-2 commands extend across all four supported a
 ---
 
 ## 5. MVP-4 — "Team workflows"
+
+> P17 disposition: superseded workflow phasing; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#phase-4-desired-state-mutation-planner-and-apply
 
 Cross-scope sync and manifest-driven install, layered on top of MVP-3's full-coverage foundation. Teams can commit `skillsmith.toml` and have contributors converge across all four agents.
 
@@ -216,6 +224,8 @@ Rounds out the MVP feature matrix. No new commands; existing commands gain optio
 ---
 
 ## 9. Phase 4 — npm publishing
+
+> P17 disposition: superseded publication phasing; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#p1-12-distribution
 
 Publishes the already-versioned packages to npm. Builds on the release-please pipeline landed in P06 (`release-please-config.json`, `.release-please-manifest.json`, `.github/workflows/release-please.yml`), which already handles Conventional-Commits → SemVer, rolling Release PR, root `CHANGELOG.md`, synchronized version bumps across root + `packages/cli/package.json` + `packages/core/package.json`, git tag (`vX.Y.Z`), and GitHub Release. Phase 4 adds **publish** to that same pipeline; nothing else about the release flow changes.
 

@@ -1,5 +1,7 @@
 # P13 PRD — `dev --source`: create + adopt dev placements
 
+> P17 disposition: shipped P13 evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote
+
 **Status:** APPROVED — decisions D1–D5 locked with Steve via walkthrough,
 2026-07-10 · **Author:** Fable · **Issue:** #9 · **Plan:**
 `docs/superpowers/plans/2026-07-10-p13-dev-source-plan.md`

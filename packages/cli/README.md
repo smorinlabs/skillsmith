@@ -4,10 +4,13 @@ The command-line interface for Skillsmith. See the root [README](../../README.md
 
 Source layout:
 
+> P17 disposition: current command layout; authority: packages/cli/src/program.ts
+
 ```
 src/
   index.ts         commander entry + signal handling + exit-code mapping
-  commands/        one file per command (currently: agents)
+  program.ts       command registration and global CLI policy
+  commands/        command handlers for inventory, diagnostics, config, verify, and lifecycle verbs
   output/          pure renderers (markdown, JSON)
   help/            help-topic text
   util/            color resolver, exit-code mapping, SIGINT handler

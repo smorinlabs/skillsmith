@@ -1,5 +1,7 @@
 # install
 
+> P17 disposition: shipped current behavior; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#86-install
+
 `skillsmith install` acquires one or more agent skills from a git host: it fetches the repo as a
 blobless partial clone, resolves the requested skill (by name, explicit `//path`, or whole-repo
 scan), runs the verify gate (static for both tools by default; `--deep` opts codex into

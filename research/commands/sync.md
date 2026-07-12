@@ -1,5 +1,7 @@
 # sync
 
+> P17 disposition: unimplemented superseded command draft; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#815-sync
+
 Reconcile installed skills between scopes or between projects.
 
 ## Argument order

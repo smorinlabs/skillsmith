@@ -1,5 +1,7 @@
 # list
 
+> P17 disposition: shipped command evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#83-list
+
 List installed skills across scopes and tools. Alias: `ls`.
 
 ## Argument order

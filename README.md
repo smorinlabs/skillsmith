@@ -1,9 +1,11 @@
 # Skillsmith
 
+> P17 disposition: current behavior; authority: packages/cli/src/program.ts
+
 Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill install and sync across Claude Code, Codex, Kilo Code, and opencode.
 
-**Today:** `agents` — detect Claude Code, Codex, Kilo Code, and opencode, and report their version, install path, and install method.
-**Roadmap:** `install`, `list`, `apply`, `sync`, `doctor`, `uninstall` — designed, not yet implemented.
+**Today:** `agents`, `list`, `commands`, `doctor`, `check`, `config`, `verify`, `install`, `uninstall`, `dev`/`demote`, `promote`, `completion`, `help`, and `version` are implemented. Write operations currently support Claude Code and Codex where their command contracts allow.
+**P17 target:** desired-state `init`, `export`, `plan`, `apply`, narrow `sync`, `status`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
 
 ## Example output
 
@@ -43,6 +45,8 @@ Machine-readable form (`--format json`) wraps results in a small envelope. Shape
 
 ## Install
 
+> P17 disposition: current source-build behavior; authority: package.json
+
 No prebuilt binaries yet — run from source. Requires [Bun](https://bun.sh) ≥ 1.3.14.
 
 ```sh
@@ -61,6 +65,8 @@ bun run build              # darwin-arm64 by default; see package.json for other
 
 ## Quickstart
 
+> P17 disposition: current examples; authority: packages/cli/src/program.ts
+
 Use either `bun run dev` (runs from source) or `./dist/skillsmith` (after `bun run build`). Examples below use `skillsmith` as a stand-in for whichever you pick.
 
 ```sh
@@ -68,6 +74,9 @@ skillsmith agents                       # human-readable markdown
 skillsmith agents --format json         # machine-readable (see envelope note above)
 skillsmith agents --detected-only       # skip the "Not detected" section
 skillsmith agents --tool claude-code    # scan one tool only (repeatable)
+skillsmith list                         # inspect installed skills
+skillsmith doctor                       # diagnose environment readiness
+skillsmith install owner/repo           # acquire a skill from a git host
 ```
 
 ## Supported tools
@@ -89,11 +98,13 @@ Missing a tool? Open an issue with a `skillsmith agents --format json` dump and 
 
 ## Packages
 
+> P17 disposition: current package boundary; authority: docs/architecture.md#core-cli-split
+
 This repo is a Bun workspace with two packages:
 
 | Package | What it is | On npm? |
 |---|---|---|
-| `@skillsmith/core` | Pure detection library: agent registry, `Result<T, SkillSmithError>` types, zero CLI deps, zero side effects. | Yes |
+| `@skillsmith/core` | Embeddable library: agent registry, `Result<T, SkillSmithError>` types, and domain/application operations behind injected capability ports; zero CLI dependencies. | Yes |
 | `skillsmith` | The CLI: `commander` entry, output rendering, help topics. Depends on `@skillsmith/core`. | Build from source (for now) |
 
 ### Using `@skillsmith/core` as a library
@@ -120,9 +131,11 @@ Further reading: [`packages/core/README.md`](packages/core/README.md) (detection
 
 ## Architecture snapshot
 
+> P17 disposition: current architecture; authority: docs/architecture.md#core-cli-split
+
 - **Core/CLI split** is enforced at lint time so `@skillsmith/core` stays embeddable — no `commander`/`chalk`/`consola`/`@clack/prompts` imports, no `process.exit`, no `console.*`. The CLI owns exit codes, output, and user I/O.
 - **Results over exceptions:** core functions return `Result<T, SkillSmithError>`; the CLI decides exit codes.
-- **`ScanEnv` injection:** core accepts an environment object (home dir, XDG paths, logger) rather than touching globals directly, which makes the library testable and the CLI boundary explicit.
+- **Capability injection:** core operations accept environment capabilities (filesystem, process execution, paths, clock, logger) instead of owning CLI/process policy, which makes the library testable and the boundary explicit.
 
 The full explainer lives in [`docs/architecture.md`](docs/architecture.md). The non-obvious design decisions are captured as [ADRs](docs/adr/README.md).
 

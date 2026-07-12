@@ -1,5 +1,7 @@
 # dev
 
+> P17 disposition: shipped current behavior; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote
+
 `skillsmith dev` (**alias: `demote`**) puts a skill into **dev mode** (a symlink into a local source
 checkout) for a tool. Three things live under this one verb, disambiguated by placement state:
 

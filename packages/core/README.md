@@ -1,6 +1,8 @@
 # @skillsmith/core
 
-Pure TypeScript library that powers the [Skillsmith](../../README.md) CLI. Handles agent registry, tool detection, and result/error types. Has zero CLI dependencies and no side effects — safe to embed in other tools.
+> P17 disposition: current behavior; authority: docs/architecture.md#core-cli-split
+
+Embeddable TypeScript library that powers the [Skillsmith](../../README.md) CLI. It handles agent registry, tool detection, skill lifecycle operations, and result/error types. It has zero CLI dependencies; domain logic receives I/O capabilities through injected ports so embedders control process and presentation policy.
 
 ## Install
 

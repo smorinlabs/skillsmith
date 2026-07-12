@@ -1,5 +1,7 @@
 # SkillSmith P12 design — `promote` ⇄ `dev` — bidirectional placement flip
 
+> P17 disposition: shipped P12 evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote
+
 **Status:** Draft (2026-07-07). This is the P12-BR deliverable.
 **Scope:** Two new commands that flip an installed skill between **dev mode** (the tool's skill
 directory holds a symlink into a local source checkout) and **production** (it holds a pinned copy

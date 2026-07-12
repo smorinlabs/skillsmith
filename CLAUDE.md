@@ -2,9 +2,11 @@
 
 ## Architectural boundaries — enforced by ESLint
 
-These rules are in `eslint.config.js` and fail `bun run check`. Respect them before you run the linter, not after.
+> P17 disposition: current behavior; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#9-shared-application-and-planning-architecture
 
-**`@skillsmith/core` (`packages/core/src/**`) is a pure library.** No CLI deps, no I/O side effects.
+These rules are in `eslint.config.js` and fail `bun run check`. Respect them before you run the linter, not after. This supersedes the old shorthand “No CLI deps, no I/O side effects.”
+
+**`@skillsmith/core` (`packages/core/src/**`) is an embeddable library.** No CLI deps; core domain logic uses injected capability ports, with no direct CLI output or process policy.
 - Forbidden imports: `commander`, `chalk`, `consola`, `@clack/prompts`, `node:console`.
 - Forbidden calls: `process.exit(...)`, `console.{log,info,warn,error,debug}(...)`.
 - Return `Result<T, SkillSmithError>`; let the CLI decide exit codes and output.

@@ -1,5 +1,7 @@
 # promote
 
+> P17 disposition: shipped current behavior; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote
+
 `skillsmith promote` flips a skill placement from **dev mode** (a symlink in the tool's skills
 directory pointing into a local source checkout) to **production** (a pinned copy materialized from
 the content-addressed store). It is the release half of the `promote` ⇄ `dev` pair: verify the

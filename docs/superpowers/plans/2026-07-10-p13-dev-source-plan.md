@@ -1,5 +1,7 @@
 # P13 — `dev --source`: create + adopt dev placements (issue #9)
 
+> P17 disposition: shipped P13 implementation evidence, not an active plan; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote
+
 **Status:** Plan for PRD · **Date:** 2026-07-10 · **Planner:** Fable
 **Issue:** #9 (record-only adoption) + its create-mode comment
 **Consumer:** smorin-harness `skill-create` (drops its `ln -s` step once this ships)

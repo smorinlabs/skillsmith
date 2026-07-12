@@ -4,11 +4,15 @@
 
 ## Runtime & build
 
+> P17 disposition: superseded distribution target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#p1-12-distribution
+
 - **Bun** ≥ 1.3.13 (pin in `package.json` "engines")
 - **Build:** `bun build --compile --bytecode --target=bun-darwin-arm64 src/index.ts --outfile dist/skillsmith`
 - **Distribution (V1):** Homebrew cask (primary for Mac POC), plus npm package with per-platform optional deps so `bunx`/`npx skillsmith` works without Bun installed
 
 ## Final dependency list (9 runtime)
+
+> P17 disposition: dependency list is historical and logging target is superseded; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#ewp-cf-038-add-operation-scoped-structured-observability
 
 ```
 commander            # CLI framework
@@ -81,6 +85,8 @@ Claude Code uses React hooks + Context only — no Zustand, no Jotai, no XState.
 **For SkillSmith:** even if V2 adds an Ink screen, keep state as the `Operation[]` log + derived selectors. Don't reach for Zustand or similar.
 
 ## State management in practice
+
+> P17 disposition: superseded monolithic operation-log target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#92-planning-and-transaction-model
 
 The rule of thumb lifted from the above:
 
