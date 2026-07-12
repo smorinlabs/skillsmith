@@ -1,5 +1,6 @@
 import { stripVTControlCharacters } from 'node:util';
 import type { SkillSmithError } from '@skillsmith/core';
+import type { Command } from 'commander';
 import { type ExitCode, exitCodeForError } from '../util/exit-codes.ts';
 
 export type CliErrorExitCode = ExitCode;
@@ -15,6 +16,8 @@ export interface CliErrorFallback {
   readonly message?: string;
   readonly exitCode?: CliErrorExitCode;
 }
+
+export type CliErrorFormat = 'human' | 'json';
 
 const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
   'generic',
@@ -128,12 +131,13 @@ export const normalizeCliError = (
 
   if (rawCode?.startsWith('commander.') === true) {
     const informational = rawCode === 'commander.helpDisplayed' || rawCode === 'commander.version';
+    const commanderMessage = (readString(error, 'message') ?? safeFallback.message).replace(
+      /^error:\s*/i,
+      '',
+    );
     return {
       code: sanitizeCode(rawCode, 'commander.error'),
-      message: sanitizeMessage(
-        readString(error, 'message') ?? safeFallback.message,
-        safeFallback.message,
-      ),
+      message: sanitizeMessage(commanderMessage, safeFallback.message),
       exitCode: informational ? 0 : 2,
     };
   }
@@ -157,7 +161,7 @@ export const normalizeCliError = (
 };
 
 /** Render exactly one public error record, with no access to the original throwable. */
-export const renderCliError = (error: NormalizedCliError, format: 'human' | 'json'): string => {
+export const renderCliError = (error: NormalizedCliError, format: CliErrorFormat): string => {
   if (format === 'human')
     return `error: ${sanitizeMessage(error.message, DEFAULT_ERROR.message)}\n`;
 
@@ -168,4 +172,39 @@ export const renderCliError = (error: NormalizedCliError, format: 'human' | 'jso
     message: sanitizeMessage(error.message, DEFAULT_ERROR.message),
     exitCode: error.exitCode,
   })}\n`;
+};
+
+/** Resolve the requested error format before Commander has necessarily completed option parsing. */
+export const cliErrorFormatFromArgv = (
+  argv: readonly string[] = process.argv.slice(2),
+): CliErrorFormat => {
+  if (argv.includes('--json') || argv.includes('--format=json')) return 'json';
+  const formatIndex = argv.lastIndexOf('--format');
+  return formatIndex >= 0 && argv[formatIndex + 1] === 'json' ? 'json' : 'human';
+};
+
+/** Emit exactly one normalized error value to the format-owned stream and terminate control flow. */
+export const failCliError = (
+  error: unknown,
+  format: CliErrorFormat = cliErrorFormatFromArgv(),
+  fallback?: string | CliErrorFallback,
+): never => {
+  const normalized = normalizeCliError(error, fallback);
+  (format === 'json' ? process.stdout : process.stderr).write(renderCliError(normalized, format));
+  process.exit(normalized.exitCode);
+};
+
+/**
+ * Route Commander usage failures through the same boundary. Commander writes its diagnostic before
+ * invoking an exit override, so suppress that raw write and emit the normalized record here.
+ */
+export const withCliErrorBoundary = <T extends Command>(command: T): T => {
+  command.configureOutput({ writeErr: () => undefined });
+  command.exitOverride((error) => {
+    if (error.code === 'commander.helpDisplayed' || error.code === 'commander.version') {
+      process.exit(0);
+    }
+    failCliError(error);
+  });
+  return command;
 };

@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   normalizeCliError,
   renderCliError,
@@ -11,9 +14,13 @@ import {
 import { installSignalHandler } from '../../../packages/cli/src/util/signals.ts';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 
-const runCli = async (args: readonly string[]) => {
+const runCli = async (
+  args: readonly string[],
+  options: { readonly cwd?: string; readonly env?: Record<string, string> } = {},
+) => {
   const proc = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
-    env: { ...process.env, CI: '1', NO_COLOR: '1' },
+    ...(options.cwd ? { cwd: options.cwd } : {}),
+    env: { ...process.env, CI: '1', NO_COLOR: '1', ...options.env },
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -105,6 +112,60 @@ describe('EWP-WF15', () => {
       message: 'Unknown tool: ghost',
       exitCode: 2,
     });
+  });
+
+  test('spawned JSON usage failures produce one envelope and no human stderr', async () => {
+    const cases = [
+      ['install', 'not-a-source', '--dry-run', '--yes', '--json'],
+      ['uninstall', 'absent', '--dry-run', '--yes', '--json'],
+      ['dev', 'absent', '--dry-run', '--yes', '--json'],
+      ['promote', 'absent', '--dry-run', '--yes', '--json'],
+      ['install', '--ghost', '--json'],
+      ['install', '--json'],
+    ] as const;
+    for (const args of cases) {
+      const result = await runCli(args);
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toBe('');
+      expect(result.stdout.trimEnd().split('\n')).toHaveLength(1);
+      const envelope = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(envelope.schemaVersion).toBe(1);
+      expect(envelope.kind).toBe('error');
+      expect(envelope.exitCode).toBe(2);
+    }
+  });
+
+  test('config JSON failures sanitize core errors through the same boundary', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'skillsmith-error-boundary-'));
+    const configRoot = join(sandbox, 'config');
+    await mkdir(join(configRoot, 'skillsmith'), { recursive: true });
+    await writeFile(join(configRoot, 'skillsmith', 'config.toml'), 'tools = [\n');
+    try {
+      const result = await runCli(['config', 'list', '--json'], {
+        cwd: sandbox,
+        env: {
+          HOME: join(sandbox, 'home'),
+          XDG_CONFIG_HOME: configRoot,
+          XDG_DATA_HOME: join(sandbox, 'data'),
+          XDG_STATE_HOME: join(sandbox, 'state'),
+          XDG_CACHE_HOME: join(sandbox, 'cache'),
+        },
+      });
+      expect(result.exitCode).toBe(3);
+      expect(result.stderr).toBe('');
+      expect(result.stdout.trimEnd().split('\n')).toHaveLength(1);
+      const envelope = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(envelope).toMatchObject({
+        schemaVersion: 1,
+        kind: 'error',
+        code: 'config-error',
+        exitCode: 3,
+      });
+      expect(envelope.message).toBeString();
+      expect(String(envelope.message)).not.toContain('\n');
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
   });
 
   test('usage errors and cancellation retain the shared exit contract', () => {

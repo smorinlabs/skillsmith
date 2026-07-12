@@ -1,6 +1,6 @@
 import { type Scope, type SkillSmithError, defaultScanEnv } from '@skillsmith/core';
 import { Command, Option } from 'commander';
-import { exitCodeForError } from '../util/exit-codes.ts';
+import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
 import { runConfigGet } from './config/get.ts';
 import { runConfigList } from './config/list.ts';
 import { runConfigSet } from './config/set.ts';
@@ -15,29 +15,39 @@ type ConfigError =
   | { code: 'invalid-value'; key: string; value: string; allowed: readonly string[] }
   | SkillSmithError;
 
-function writeConfigError(err: ConfigError): never {
+function writeConfigError(err: ConfigError, json = false): never {
+  const format = json ? 'json' : 'human';
   if (err.code === 'unknown-key') {
-    process.stderr.write(`error: unknown config key '${err.key}'\n`);
-    process.exit(2);
+    return failCliError(
+      { code: 'commander.invalidArgument', message: `unknown config key '${err.key}'` },
+      format,
+    );
   }
   if (err.code === 'unset') {
-    process.stderr.write(
-      `error: '${err.key}' is not set${err.scope ? ` at ${err.scope} scope` : ''}\n`,
+    return failCliError(
+      {
+        code: 'generic',
+        message: `'${err.key}' is not set${err.scope ? ` at ${err.scope} scope` : ''}`,
+      },
+      format,
     );
-    process.exit(1);
   }
   if (err.code === 'invalid-value') {
-    process.stderr.write(
-      `error: invalid value '${err.value}' for '${err.key}' (allowed: ${err.allowed.join(', ')})\n`,
+    return failCliError(
+      {
+        code: 'commander.invalidArgument',
+        message: `invalid value '${err.value}' for '${err.key}' (allowed: ${err.allowed.join(', ')})`,
+      },
+      format,
     );
-    process.exit(2);
   }
-  process.stderr.write(`error: ${JSON.stringify(err)}\n`);
-  process.exit(exitCodeForError(err));
+  return failCliError(err, format);
 }
 
 export const configCommand = (): Command => {
-  const cmd = new Command('config').description('Manage SkillSmith configuration');
+  const cmd = withCliErrorBoundary(
+    new Command('config').description('Manage SkillSmith configuration'),
+  );
 
   cmd
     .command('get <key>')
@@ -52,7 +62,7 @@ export const configCommand = (): Command => {
         ...(opts.scope ? { scope: opts.scope } : {}),
         json: opts.json,
       });
-      if (!r.ok) writeConfigError(r.error);
+      if (!r.ok) writeConfigError(r.error, opts.json);
       if (opts.json) {
         process.stdout.write(
           `${JSON.stringify({ key, value: r.value, ...(r.source ? { source: r.source } : {}) }, null, 2)}\n`,
@@ -90,7 +100,7 @@ export const configCommand = (): Command => {
         ...(opts.scope ? { scope: opts.scope } : {}),
         json: opts.json,
       });
-      if (!r.ok) writeConfigError(r.error);
+      if (!r.ok) writeConfigError(r.error, opts.json);
       process.stdout.write(r.output);
     });
 

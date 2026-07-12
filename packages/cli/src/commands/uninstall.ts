@@ -8,7 +8,12 @@ import {
   runUninstall,
 } from '@skillsmith/core';
 import { Argument, Command, InvalidArgumentError, Option } from 'commander';
-import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
+import {
+  failCliError,
+  normalizeCliError,
+  renderCliError,
+  withCliErrorBoundary,
+} from '../output/error-boundary.ts';
 import { renderUninstallHuman } from '../output/install-human.ts';
 import { renderUninstallJson } from '../output/install-json.ts';
 import { acquireExitCode } from '../util/acquire-exit.ts';
@@ -21,25 +26,12 @@ const collectTool = (value: string, prev: string[]): string[] => {
   return [...prev, value];
 };
 
-// `program.exitOverride()` (program.ts) is not inherited by commands attached via `addCommand`
-// (only `.command()`-created subcommands copy parent settings) — mirror promote.ts's/dev.ts's
-// local mapping.
-const USAGE_ERROR_CODES = new Set([
-  'commander.invalidArgument',
-  'commander.missingArgument',
-  'commander.unknownOption',
-  'commander.excessArguments',
-  'commander.missingMandatoryOptionValue',
-]);
-
 const JOURNAL_PHASES = new Set(['prepared', 'staged', 'backed-up', 'live', 'committed']);
 const isJournalPhase = (v: string | undefined): v is JournalPhase =>
   v !== undefined && JOURNAL_PHASES.has(v);
 
-const usageError = (message: string): never => {
-  process.stderr.write(`error: ${message}\n`);
-  process.exit(2);
-};
+const usageError = (message: string): never =>
+  failCliError({ code: 'commander.invalidArgument', message });
 
 interface UninstallFlags {
   tool: string[];
@@ -81,102 +73,99 @@ EXIT CODES
   130  cancelled (SIGINT; state recoverable)`;
 
 export const uninstallCommand = (signal?: AbortSignal): Command =>
-  new Command('uninstall')
-    .aliases(['rm', 'remove'])
-    .description(
-      'Remove installed skills (placements + ledger records; the store is never deleted).',
-    )
-    .addArgument(
-      new Argument(
-        '<skill...>',
-        'Installed skill name(s) (leaf dir name) or placement path(s). Ambiguous across scopes → disambiguate with --scope, --tool, or --all-scopes.',
-      ),
-    )
-    .addOption(
-      new Option(
-        '-t, --tool <name>',
-        'claude-code | codex. Repeatable. Default: every tool where the skill is found.',
+  withCliErrorBoundary(
+    new Command('uninstall')
+      .aliases(['rm', 'remove'])
+      .description(
+        'Remove installed skills (placements + ledger records; the store is never deleted).',
       )
-        .choices(['claude-code', 'codex'])
-        .argParser(collectTool)
-        .default([] as string[]),
-    )
-    .addOption(
-      new Option(
-        '-s, --scope <scope>',
-        'user | project. Required when the name is ambiguous. (system deferred)',
-      ).choices(['user', 'project']),
-    )
-    .option('--user', 'Shorthand for --scope=user', false)
-    .option('--project', 'Shorthand for --scope=project', false)
-    .option('--all-scopes', 'Remove from user scope and the current project', false)
-    .option('-f, --force', 'Remove dev-mode or unmanaged placements too', false)
-    .option('--dry-run', 'Print removals without executing', false)
-    .option('--json', 'Emit the versioned JSON report on stdout', false)
-    .option('-y, --yes', 'Accepted no-op — uninstall never prompts.', false)
-    .option('--no-prompt', 'Accepted no-op — uninstall never prompts.')
-    .exitOverride((err) => {
-      if (USAGE_ERROR_CODES.has(err.code)) process.exit(2);
-      if (err.code === 'commander.helpDisplayed') process.exit(0);
-      process.exit(err.exitCode ?? 1);
-    })
-    .addHelpText('after', EXAMPLES)
-    .action(async (targets: string[], opts: UninstallFlags) => {
-      const mode = validateNonMutatingMode('uninstall', opts);
-      if (!mode.ok) usageError(mode.message);
-      if (opts.allScopes && opts.scope !== undefined) {
-        usageError('--all-scopes cannot be combined with --scope');
-      }
-      const scopeR = resolveScopeFlags({
-        ...(opts.scope !== undefined ? { scope: opts.scope } : {}),
-        user: opts.user,
-        project: opts.project,
-      });
-      if (!scopeR.ok) usageError(scopeR.error.message);
-      const scope = (scopeR.ok ? scopeR.value : null) as InstallScope | null;
-      if (opts.allScopes && scope !== null) {
-        usageError('--all-scopes cannot be combined with --user/--project');
-      }
-
-      const env = await defaultScanEnv();
-      const testPauseAt =
-        process.env.SKILLSMITH_E2E === '1' && isJournalPhase(process.env.SKILLSMITH_TEST_PAUSE_AT)
-          ? (process.env.SKILLSMITH_TEST_PAUSE_AT as JournalPhase)
-          : undefined;
-
-      const uninstallOpts: UninstallOptions = {
-        targets,
-        ...(opts.tool.length > 0 ? { tools: opts.tool as FlipTool[] } : {}),
-        ...(scope !== null ? { scope } : {}),
-        allScopes: opts.allScopes,
-        force: opts.force,
-        dryRun: opts.dryRun,
-        cwd: process.cwd(),
-        envVars: process.env,
-        ...(testPauseAt !== undefined ? { testPauseAt } : {}),
-        ...(signal ? { signal } : {}),
-      };
-
-      const r = await runUninstall(env, uninstallOpts, { ...defaultUninstallDeps });
-      if (!r.ok) {
-        const error = normalizeCliError(r.error);
-        const format = opts.json ? 'json' : 'human';
-        (opts.json ? process.stdout : process.stderr).write(renderCliError(error, format));
-        process.exit(signal?.aborted ? 130 : error.exitCode);
-      }
-
-      for (const res of r.value.results) {
-        const label = `${res.skill}${res.tool ? ` (${res.tool})` : ''}`;
-        if (res.action === 'refused' || res.action === 'failed') {
-          process.stderr.write(`error: ${label}: ${res.reason ?? res.action}\n`);
-        } else if (res.action !== 'noop' && res.reason) {
-          process.stderr.write(`warning: ${label}: ${res.reason}\n`);
+      .addArgument(
+        new Argument(
+          '<skill...>',
+          'Installed skill name(s) (leaf dir name) or placement path(s). Ambiguous across scopes → disambiguate with --scope, --tool, or --all-scopes.',
+        ),
+      )
+      .addOption(
+        new Option(
+          '-t, --tool <name>',
+          'claude-code | codex. Repeatable. Default: every tool where the skill is found.',
+        )
+          .choices(['claude-code', 'codex'])
+          .argParser(collectTool)
+          .default([] as string[]),
+      )
+      .addOption(
+        new Option(
+          '-s, --scope <scope>',
+          'user | project. Required when the name is ambiguous. (system deferred)',
+        ).choices(['user', 'project']),
+      )
+      .option('--user', 'Shorthand for --scope=user', false)
+      .option('--project', 'Shorthand for --scope=project', false)
+      .option('--all-scopes', 'Remove from user scope and the current project', false)
+      .option('-f, --force', 'Remove dev-mode or unmanaged placements too', false)
+      .option('--dry-run', 'Print removals without executing', false)
+      .option('--json', 'Emit the versioned JSON report on stdout', false)
+      .option('-y, --yes', 'Accepted no-op — uninstall never prompts.', false)
+      .option('--no-prompt', 'Accepted no-op — uninstall never prompts.')
+      .addHelpText('after', EXAMPLES)
+      .action(async (targets: string[], opts: UninstallFlags) => {
+        const mode = validateNonMutatingMode('uninstall', opts);
+        if (!mode.ok) usageError(mode.message);
+        if (opts.allScopes && opts.scope !== undefined) {
+          usageError('--all-scopes cannot be combined with --scope');
         }
-      }
+        const scopeR = resolveScopeFlags({
+          ...(opts.scope !== undefined ? { scope: opts.scope } : {}),
+          user: opts.user,
+          project: opts.project,
+        });
+        if (!scopeR.ok) usageError(scopeR.error.message);
+        const scope = (scopeR.ok ? scopeR.value : null) as InstallScope | null;
+        if (opts.allScopes && scope !== null) {
+          usageError('--all-scopes cannot be combined with --user/--project');
+        }
 
-      const code = acquireExitCode(r.value);
-      process.stdout.write(
-        opts.json ? renderUninstallJson(r.value) : renderUninstallHuman(r.value, code),
-      );
-      process.exit(signal?.aborted ? 130 : code);
-    });
+        const env = await defaultScanEnv();
+        const testPauseAt =
+          process.env.SKILLSMITH_E2E === '1' && isJournalPhase(process.env.SKILLSMITH_TEST_PAUSE_AT)
+            ? (process.env.SKILLSMITH_TEST_PAUSE_AT as JournalPhase)
+            : undefined;
+
+        const uninstallOpts: UninstallOptions = {
+          targets,
+          ...(opts.tool.length > 0 ? { tools: opts.tool as FlipTool[] } : {}),
+          ...(scope !== null ? { scope } : {}),
+          allScopes: opts.allScopes,
+          force: opts.force,
+          dryRun: opts.dryRun,
+          cwd: process.cwd(),
+          envVars: process.env,
+          ...(testPauseAt !== undefined ? { testPauseAt } : {}),
+          ...(signal ? { signal } : {}),
+        };
+
+        const r = await runUninstall(env, uninstallOpts, { ...defaultUninstallDeps });
+        if (!r.ok) {
+          const error = normalizeCliError(r.error);
+          const format = opts.json ? 'json' : 'human';
+          (opts.json ? process.stdout : process.stderr).write(renderCliError(error, format));
+          process.exit(signal?.aborted ? 130 : error.exitCode);
+        }
+
+        for (const res of r.value.results) {
+          const label = `${res.skill}${res.tool ? ` (${res.tool})` : ''}`;
+          if (res.action === 'refused' || res.action === 'failed') {
+            process.stderr.write(`error: ${label}: ${res.reason ?? res.action}\n`);
+          } else if (res.action !== 'noop' && res.reason) {
+            process.stderr.write(`warning: ${label}: ${res.reason}\n`);
+          }
+        }
+
+        const code = acquireExitCode(r.value);
+        process.stdout.write(
+          opts.json ? renderUninstallJson(r.value) : renderUninstallHuman(r.value, code),
+        );
+        process.exit(signal?.aborted ? 130 : code);
+      }),
+  );

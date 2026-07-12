@@ -13,7 +13,11 @@ import { promoteCommand } from './commands/promote.ts';
 import { uninstallCommand } from './commands/uninstall.ts';
 import { verifyCommand } from './commands/verify.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from './help/topics.ts';
-import { normalizeCliError, renderCliError } from './output/error-boundary.ts';
+import {
+  normalizeCliError,
+  renderCliError,
+  withCliErrorBoundary,
+} from './output/error-boundary.ts';
 import { type ColorFlag, resolveColorMode } from './util/color.ts';
 
 const applyColorMode = (flag: ColorFlag): void => {
@@ -33,42 +37,33 @@ const applyColorMode = (flag: ColorFlag): void => {
 };
 
 export const buildProgram = (signal?: AbortSignal): Command => {
-  const program = new Command()
-    .name('skillsmith')
-    .description('SkillSmith installs and manages agent skills for AI coding tools.')
-    .version(VERSION, '-V, --version')
-    .helpOption('-h, --help', 'Show help')
-    .option('-v, --verbose', 'Verbose output; repeatable', (_: string, prev: number) => prev + 1, 0)
-    .option('-q, --quiet', 'Suppress non-error output', false)
-    .addOption(
-      new Option('--color <mode>', 'Colorize output')
-        .choices(['auto', 'always', 'never'])
-        .default('auto'),
-    )
-    .option('-C, --cd <dir>', 'Change directory before running', '.')
-    .option('--debug', 'Print debug traces', false);
+  const program = withCliErrorBoundary(
+    new Command()
+      .name('skillsmith')
+      .description('SkillSmith installs and manages agent skills for AI coding tools.')
+      .version(VERSION, '-V, --version')
+      .helpOption('-h, --help', 'Show help')
+      .option(
+        '-v, --verbose',
+        'Verbose output; repeatable',
+        (_: string, prev: number) => prev + 1,
+        0,
+      )
+      .option('-q, --quiet', 'Suppress non-error output', false)
+      .addOption(
+        new Option('--color <mode>', 'Colorize output')
+          .choices(['auto', 'always', 'never'])
+          .default('auto'),
+      )
+      .option('-C, --cd <dir>', 'Change directory before running', '.')
+      .option('--debug', 'Print debug traces', false),
+  );
 
   program.hook('preAction', (thisCommand) => {
     const opts = thisCommand.opts() as { color?: string };
     const raw = opts.color ?? 'auto';
     const flag: ColorFlag = raw === 'always' || raw === 'never' || raw === 'auto' ? raw : 'auto';
     applyColorMode(flag);
-  });
-
-  // Map commander's usage errors (invalid choice, unknown command, missing arg)
-  // to our exit-2 contract; everything else uses the error's own exitCode or 1.
-  program.exitOverride((err) => {
-    const usageCodes = new Set([
-      'commander.invalidArgument',
-      'commander.unknownCommand',
-      'commander.missingArgument',
-      'commander.unknownOption',
-      'commander.excessArguments',
-      'commander.missingMandatoryOptionValue',
-    ]);
-    if (usageCodes.has(err.code)) process.exit(2);
-    if (err.code === 'commander.helpDisplayed' || err.code === 'commander.version') process.exit(0);
-    process.exit(err.exitCode ?? 1);
   });
 
   program

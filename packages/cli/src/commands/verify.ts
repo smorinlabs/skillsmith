@@ -7,7 +7,11 @@ import {
   verifyPlugin,
 } from '@skillsmith/core';
 import { Argument, Command, InvalidArgumentError, Option } from 'commander';
-import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
+import {
+  normalizeCliError,
+  renderCliError,
+  withCliErrorBoundary,
+} from '../output/error-boundary.ts';
 import { renderVerifyHuman } from '../output/verify-human.ts';
 import { renderVerifyJson } from '../output/verify-json.ts';
 
@@ -18,18 +22,6 @@ const collectTool = (value: string, prev: string[]): string[] => {
     throw new InvalidArgumentError(`--tool must be one of claude-code, codex (got '${value}')`);
   return [...prev, value];
 };
-
-// `program.exitOverride()` (program.ts) is not inherited by commands attached via
-// `addCommand` (only `.command()`-created subcommands copy parent settings), so a bad
-// --tool value here would otherwise fall through commander's own `process.exit(1)`
-// instead of our exit-2 usage-error contract. Mirror the same mapping locally.
-const USAGE_ERROR_CODES = new Set([
-  'commander.invalidArgument',
-  'commander.missingArgument',
-  'commander.unknownOption',
-  'commander.excessArguments',
-  'commander.missingMandatoryOptionValue',
-]);
 
 export const verifyExitCode = (report: VerifyReport): 0 | 1 | 4 => {
   if (report.summary.verdict === 'fail') return 1;
@@ -46,72 +38,73 @@ export const verifyExitCode = (report: VerifyReport): 0 | 1 | 4 => {
 };
 
 export const verifyCommand = (signal?: AbortSignal): Command =>
-  new Command('verify')
-    .description('Verify that a plugin loads under each target tool')
-    .addArgument(new Argument('<path>', 'Plugin or bare skill directory'))
-    .addOption(
-      new Option(
-        '-t, --tool <name>',
-        'Restrict to tool(s): claude-code | codex. Repeatable. Default: all detected.',
+  withCliErrorBoundary(
+    new Command('verify')
+      .description('Verify that a plugin loads under each target tool')
+      .addArgument(new Argument('<path>', 'Plugin or bare skill directory'))
+      .addOption(
+        new Option(
+          '-t, --tool <name>',
+          'Restrict to tool(s): claude-code | codex. Repeatable. Default: all detected.',
+        )
+          .choices(['claude-code', 'codex'])
+          .argParser(collectTool)
+          .default([] as string[]),
       )
-        .choices(['claude-code', 'codex'])
-        .argParser(collectTool)
-        .default([] as string[]),
-    )
-    .option('--static', 'Static verification only (no auth, no model call). Default.', false)
-    .option(
-      '--deep',
-      'Also run session-backed load verification (isolated; no auth, no model call).',
-      false,
-    )
-    .option('--strict', 'Treat warnings as failures (exit 1 on any warning).', false)
-    .option('--json', 'Emit the versioned JSON report on stdout.', false)
-    .exitOverride((err) => {
-      if (USAGE_ERROR_CODES.has(err.code)) process.exit(2);
-      if (err.code === 'commander.helpDisplayed') process.exit(0);
-      process.exit(err.exitCode ?? 1);
-    })
-    .action(
-      async (
-        pathArg: string,
-        opts: { tool: string[]; static: boolean; deep: boolean; strict: boolean; json: boolean },
-      ) => {
-        const env = await defaultScanEnv();
-        const tools = opts.tool as VerifyTool[];
-        const r = await verifyPlugin(env, {
-          path: resolve(pathArg),
-          ...(tools.length > 0 ? { tools } : {}),
-          deep: opts.deep,
-          strict: opts.strict,
-          ...(signal ? { signal } : {}),
-        });
+      .option('--static', 'Static verification only (no auth, no model call). Default.', false)
+      .option(
+        '--deep',
+        'Also run session-backed load verification (isolated; no auth, no model call).',
+        false,
+      )
+      .option('--strict', 'Treat warnings as failures (exit 1 on any warning).', false)
+      .option('--json', 'Emit the versioned JSON report on stdout.', false)
+      .action(
+        async (
+          pathArg: string,
+          opts: { tool: string[]; static: boolean; deep: boolean; strict: boolean; json: boolean },
+        ) => {
+          const env = await defaultScanEnv();
+          const tools = opts.tool as VerifyTool[];
+          const r = await verifyPlugin(env, {
+            path: resolve(pathArg),
+            ...(tools.length > 0 ? { tools } : {}),
+            deep: opts.deep,
+            strict: opts.strict,
+            ...(signal ? { signal } : {}),
+          });
 
-        if (!r.ok) {
-          if (signal?.aborted) process.exit(130);
-          const error = normalizeCliError(r.error);
-          const format = opts.json ? 'json' : 'human';
-          (opts.json ? process.stdout : process.stderr).write(renderCliError(error, format));
-          process.exit(error.exitCode);
-        }
+          if (!r.ok) {
+            if (signal?.aborted) process.exit(130);
+            const error = normalizeCliError(
+              r.error.code === 'generic'
+                ? { code: 'commander.invalidArgument', message: r.error.message }
+                : r.error,
+            );
+            const format = opts.json ? 'json' : 'human';
+            (opts.json ? process.stdout : process.stderr).write(renderCliError(error, format));
+            process.exit(error.exitCode);
+          }
 
-        const code = verifyExitCode(r.value);
+          const code = verifyExitCode(r.value);
 
-        for (const tool of tools) {
-          const verdict = r.value.tools.find((t) => t.tool === tool);
-          if (!verdict || verdict.available) continue;
-          const agentR = getAgent(tool);
-          const installHint = agentR.ok ? agentR.value.installHint : '';
-          process.stderr.write(
-            `error: cannot verify: target tool '${tool}' is not installed on this system.\n\n` +
-              `  'verify --tool ${tool}' requires the ${TOOL_LABEL[tool]} CLI. To install it:\n\n` +
-              `    ${installHint}\n\n` +
-              `  Re-run once installed, or drop --tool ${tool} to verify with detected tools only.\n`,
+          for (const tool of tools) {
+            const verdict = r.value.tools.find((t) => t.tool === tool);
+            if (!verdict || verdict.available) continue;
+            const agentR = getAgent(tool);
+            const installHint = agentR.ok ? agentR.value.installHint : '';
+            process.stderr.write(
+              `error: cannot verify: target tool '${tool}' is not installed on this system.\n\n` +
+                `  'verify --tool ${tool}' requires the ${TOOL_LABEL[tool]} CLI. To install it:\n\n` +
+                `    ${installHint}\n\n` +
+                `  Re-run once installed, or drop --tool ${tool} to verify with detected tools only.\n`,
+            );
+          }
+
+          process.stdout.write(
+            opts.json ? renderVerifyJson(r.value) : renderVerifyHuman(r.value, code),
           );
-        }
-
-        process.stdout.write(
-          opts.json ? renderVerifyJson(r.value) : renderVerifyHuman(r.value, code),
-        );
-        process.exit(signal?.aborted ? 130 : code);
-      },
-    );
+          process.exit(signal?.aborted ? 130 : code);
+        },
+      ),
+  );
