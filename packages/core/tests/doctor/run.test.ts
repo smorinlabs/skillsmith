@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { configParse } from '../../src/doctor/checks/config-parse.ts';
 import { runChecks } from '../../src/doctor/run.ts';
 import type { Check, CheckRunContext } from '../../src/doctor/types.ts';
 import { noopLogger } from '../../src/env/logger.ts';
@@ -73,6 +74,66 @@ describe('runChecks', () => {
     }
   });
 
+  test('check mode executes only checks declared as error severity', async () => {
+    let warningRuns = 0;
+    const warning: Check = {
+      id: 'advisory',
+      severity: 'warning',
+      runsIn: ['doctor', 'check'],
+      run: async () => {
+        warningRuns += 1;
+        return [
+          {
+            checkId: 'advisory',
+            severity: 'warning',
+            title: 'advisory finding',
+            message: '',
+          },
+        ];
+      },
+    };
+    const error = mkCheck('blocking', 'error', ['check'], 1);
+
+    const result = await runChecks([warning, error], { ...ctx, mode: 'check' });
+
+    expect(result.ok).toBe(true);
+    expect(warningRuns).toBe(0);
+    if (result.ok) {
+      expect(result.value.findings.map((finding) => finding.checkId)).toEqual(['blocking']);
+      expect(result.value.counts).toEqual({ ok: 0, warning: 0, error: 1 });
+    }
+  });
+
+  test('doctor mode retains advisory checks', async () => {
+    const result = await runChecks([mkCheck('advisory', 'warning', ['doctor', 'check'], 1)], ctx);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.findings.map((finding) => finding.checkId)).toEqual(['advisory']);
+      expect(result.value.counts).toEqual({ ok: 0, warning: 1, error: 0 });
+    }
+  });
+
+  test('check mode tallies actual findings from error-class checks', async () => {
+    const declaredError: Check = {
+      id: 'blocking-family',
+      severity: 'error',
+      runsIn: ['check'],
+      run: async () => [
+        { checkId: 'blocking-family', severity: 'info', title: 'healthy', message: '' },
+        { checkId: 'blocking-family', severity: 'warning', title: 'warning', message: '' },
+        { checkId: 'blocking-family', severity: 'error', title: 'failure', message: '' },
+      ],
+    };
+
+    const result = await runChecks([declaredError], { ...ctx, mode: 'check' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.counts).toEqual({ ok: 1, warning: 1, error: 1 });
+    }
+  });
+
   test('aggregates counts by severity', async () => {
     const registry: Check[] = [
       mkCheck('x', 'error', ['doctor'], 2),
@@ -100,5 +161,32 @@ describe('runChecks', () => {
       expect(r.value.findings[0]?.title).toMatch(/bad/);
       expect(r.value.findings[0]?.severity).toBe('error');
     }
+  });
+});
+
+describe('config-parse artifact selection', () => {
+  test('an explicit selected file is diagnosed without reading or writing its sibling lock', async () => {
+    const file = '/p/custom/team.toml';
+    const selectedEnv: ScanEnv = {
+      ...env,
+      fileExists: async (path) => path === file,
+      readText: async (path) => {
+        if (path !== file) throw new Error(`unexpected read: ${path}`);
+        return 'tool = [invalid toml\n';
+      },
+    };
+
+    const findings = await configParse.run({
+      ...ctx,
+      env: selectedEnv,
+      artifactPair: { file, lockfile: '/p/custom/team.lock' },
+    });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      checkId: 'config-parse',
+      severity: 'error',
+    });
+    expect(findings[0]?.remediation).toContain(file);
   });
 });

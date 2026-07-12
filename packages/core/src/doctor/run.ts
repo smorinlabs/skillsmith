@@ -16,7 +16,10 @@ export const runChecks = async (
   registry: readonly Check[],
   ctx: CheckRunContext,
 ): Promise<Result<CheckRunResult, SkillSmithError>> => {
-  const applicable = registry.filter((c) => c.runsIn.includes(ctx.mode));
+  const applicable = registry.filter(
+    (check) =>
+      check.runsIn.includes(ctx.mode) && (ctx.mode !== 'check' || check.severity === 'error'),
+  );
   const findings: Finding[] = [];
   for (const check of applicable) {
     if (ctx.signal?.aborted) return err(genericError('runChecks aborted'));

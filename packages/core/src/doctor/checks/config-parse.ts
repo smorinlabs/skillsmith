@@ -9,6 +9,7 @@ export const configParse: Check = {
     const r = await loadConfig(ctx.env, {
       envVars: ctx.envVars,
       cwd: ctx.cwd,
+      ...(ctx.artifactPair ? { explicitFile: ctx.artifactPair.file } : {}),
       readFile: ctx.env.readText,
     });
     if (r.ok) return [];

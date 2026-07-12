@@ -28,6 +28,8 @@ export interface CheckRunContext {
   /** Whether the caller explicitly selected a scope instead of using the default sweep. */
   scopeExplicit?: boolean;
   cwd: string;
+  /** Resolved read-only artifact pair selected by the CLI; schemas and writes remain downstream. */
+  artifactPair?: { readonly file: string; readonly lockfile: string };
   envVars: Record<string, string | undefined>;
   offline: boolean;
   logger: Logger;

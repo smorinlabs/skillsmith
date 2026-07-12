@@ -12,6 +12,7 @@ import { Command, Option } from 'commander';
 import { renderDoctorHuman } from '../output/doctor-human.ts';
 import { renderDoctorJson } from '../output/doctor-json.ts';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
+import { resolveArtifactPair } from '../util/artifact-pair.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 import { CLI_SELECTION_POLICIES, validateCliSelection } from './selection-validation.ts';
@@ -37,6 +38,9 @@ export const doctorCommand = (): Command =>
       .option('--user', 'shorthand for --scope=user', false)
       .option('--system', 'shorthand for --scope=system', false)
       .option('--project', 'shorthand for --scope=project', false)
+      .option('--file <path>', 'Use an explicit desired-state file')
+      .option('--lockfile <path>', 'Use an explicit lockfile (requires --file)')
+      .option('--all-tools', 'Diagnose every known tool instead of the configured default', false)
       .option('--offline', 'Skip network checks', false)
       .option('--strict', 'Treat warnings as failures', false)
       .option('--json', 'Emit JSON', false)
@@ -48,12 +52,29 @@ export const doctorCommand = (): Command =>
             user: boolean;
             system: boolean;
             project: boolean;
+            file?: string;
+            lockfile?: string;
+            allTools: boolean;
             offline: boolean;
             strict: boolean;
             json: boolean;
           },
           command: Command,
         ) => {
+          if (opts.allTools && opts.tool.length > 0) {
+            return failCliError(
+              { code: 'usage', message: '--all-tools cannot be combined with --tool' },
+              opts.json ? 'json' : 'human',
+              { exitCode: 2 },
+            );
+          }
+          if (opts.lockfile !== undefined && opts.file === undefined) {
+            return failCliError(
+              { code: 'usage', message: '--lockfile requires --file' },
+              opts.json ? 'json' : 'human',
+              { exitCode: 2 },
+            );
+          }
           const selection = validateCliSelection(
             {
               targets: [],
@@ -78,6 +99,14 @@ export const doctorCommand = (): Command =>
           const env = await defaultScanEnv();
           const context = await resolveCommandProjectContext(command, env);
           if (!context.ok) return failCliError(context.error, opts.json ? 'json' : 'human');
+          const artifacts = resolveArtifactPair({
+            effectiveCwd: context.value.effectiveCwd,
+            ...(opts.file === undefined ? {} : { file: opts.file }),
+            ...(opts.lockfile === undefined ? {} : { lockfile: opts.lockfile }),
+          });
+          if (!artifacts.ok) {
+            return failCliError(artifacts.error, opts.json ? 'json' : 'human', { exitCode: 2 });
+          }
           const r = await runChecks(builtInChecks, {
             env,
             mode: 'doctor',
@@ -85,6 +114,14 @@ export const doctorCommand = (): Command =>
             scopes,
             scopeExplicit: scopeR.value !== null,
             cwd: context.value.projectRoot ?? context.value.effectiveCwd,
+            ...(artifacts.value.file && artifacts.value.lockfile
+              ? {
+                  artifactPair: {
+                    file: artifacts.value.file,
+                    lockfile: artifacts.value.lockfile,
+                  },
+                }
+              : {}),
             envVars: process.env,
             offline: opts.offline,
             logger: noopLogger,

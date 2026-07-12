@@ -482,12 +482,14 @@ describe('EWP-OPT-TS10', () => {
     },
   );
 
-  test('the declarative report-only check policy reserves --exit-code as invalid', () => {
-    const result = validateNonMutatingMode('check', { exitCode: true });
-    expect(result.ok).toBeFalse();
-    if (result.ok) throw new Error('check unexpectedly accepted --exit-code');
-    expect(result.exitCode).toBe(2);
-    expect(result.message).toContain('--exit-code');
+  test('the declarative check policy keeps exit-code compatibility opposite report-only', () => {
+    expect(validateNonMutatingMode('check', { exitCode: true })).toEqual({ ok: true });
+    const conflict = validateNonMutatingMode('check', { reportOnly: true, exitCode: true });
+    expect(conflict.ok).toBeFalse();
+    if (conflict.ok) throw new Error('check unexpectedly combined opposite exit policies');
+    expect(conflict.exitCode).toBe(2);
+    expect(conflict.message).toContain('--report-only');
+    expect(conflict.message).toContain('--exit-code');
   });
 
   test('meaningful current-command preview shaping remains valid', () => {

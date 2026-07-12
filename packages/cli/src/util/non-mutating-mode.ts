@@ -28,6 +28,7 @@ export interface NonMutatingModeOptions {
   continueOnError?: boolean;
   allowDirty?: boolean;
   exitCode?: boolean;
+  reportOnly?: boolean;
   out?: string;
 }
 
@@ -80,13 +81,8 @@ export const validateNonMutatingMode = (
   if (options.dryRun && options.check) return conflict('--dry-run', '--check');
   if (options.yes && options.dryRun) return conflict('--yes', '--dry-run');
   if (options.yes && options.check) return conflict('--yes', '--check');
-  if (policy.reportOnly && options.exitCode) {
-    return {
-      ok: false,
-      exitCode: 2,
-      message: '--exit-code cannot be combined with report-only check behavior',
-    };
-  }
+  if (policy.reportOnly && options.reportOnly && options.exitCode)
+    return conflict('--report-only', '--exit-code');
   if (command === 'plan' && options.check && options.out !== undefined) {
     return conflict('--check', '--out');
   }
