@@ -14,6 +14,7 @@ OAUTH_PORT="${P17_OAUTH_PORT:-1455}"
 DRY_RUN="${P17_DRY_RUN:-0}"
 
 GOAL_PROMPT='/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, pausing for every human approval it requires and marking complete only after all referenced gates and final sign-off pass.'
+REMOTE_TEST_PROMPT='Remote connectivity test only. Do not modify files. Use read-only shell commands to report the current directory, Git branch, Codex version, and Skillsmith version, then wait for my follow-up.'
 
 usage() {
     cat <<'EOF'
@@ -35,6 +36,8 @@ Commands:
   check          [MAC] Validate isolation, auth, tools, repository, and P17 gates
   goal           [MAC] Launch the terminal Codex session and print the /goal prompt
   remote         [MAC] Print desktop-app SSH setup and the same /goal prompt
+  remote-test    [MAC] Verify remote prerequisites and print an interactive test
+                         This does not start the P17 goal or a separate Codex TUI.
   stop           [MAC] Stop the VM without deleting it
   destroy --yes  [MAC] Permanently delete the disposable VM
   help           [MAC] Show this help
@@ -45,6 +48,7 @@ Required order:
   2. shell    [MAC]   Then authenticate inside the guest [GUEST] and exit
   3. install  [MAC]   Clones and installs Skillsmith using the guest GitHub login
   4. check    [MAC]   Runs the complete preflight
+     remote-test [MAC]   Optionally tests desktop interactivity without P17
   5. goal OR remote [MAC]   Starts terminal mode or explains desktop mode
 
 Environment overrides:
@@ -129,7 +133,11 @@ Steps 8-9 [MAC] - install Skillsmith and run the complete preflight:
   ./scripts/p17-sandbox.sh install
   ./scripts/p17-sandbox.sh check
 
-Step 10 [MAC] - choose exactly one canonical session:
+Optional remote test [MAC] - verify desktop interactivity before P17:
+
+  ./scripts/p17-sandbox.sh remote-test
+
+Step 10 [MAC] - choose exactly one canonical P17 session:
 
   ./scripts/p17-sandbox.sh goal    # terminal Codex session
   # OR
@@ -342,6 +350,64 @@ session.
 EOF
 }
 
+remote_test() {
+    local guest_command
+    local ssh_config_display
+    local ssh_alias="lima-$VM_NAME"
+    # This is a literal OpenSSH Include value printed for the user, not a shell path.
+    # shellcheck disable=SC2088
+    printf -v ssh_config_display '~/.lima/%s/ssh.config' "$VM_NAME"
+    guest_command=$(cat <<'EOF'
+export CODEX_HOME="$HOME/.codex-operator"
+cd /work/skillsmith
+test -d .git
+command -v codex >/dev/null
+codex login status 2>&1 | grep -qi ChatGPT
+printf 'Remote test prerequisites passed: cwd=%s codex=%s\n' "$PWD" "$(codex --version)"
+EOF
+)
+
+    if [[ "$DRY_RUN" == 1 ]]; then
+        printf '+ limactl shell %q -- bash -lc %s\n' "$VM_NAME" "$guest_command"
+    else
+        require_vm
+        limactl shell "$VM_NAME" -- bash -lc "$guest_command"
+    fi
+
+    cat <<EOF
+
+CODEX DESKTOP INTERACTIVE TEST [MAC]
+
+The guest repository, Codex executable, login-shell CODEX_HOME, and ChatGPT
+subscription are ready.
+
+1. Add this line once to ~/.ssh/config on the Mac if it is not already present:
+
+   Include $ssh_config_display
+
+2. In the ChatGPT desktop app, open Settings > Connections and add or enable:
+
+   SSH host: $ssh_alias
+   Project:  /work/skillsmith
+
+3. Start a new task in that remote project and submit this read-only prompt:
+
+   $REMOTE_TEST_PROMPT
+
+4. After Codex responds, send this follow-up in the same task:
+
+   Reply exactly REMOTE_INTERACTION_OK and do nothing else.
+
+Success means the first response reports /work/skillsmith from the VM and the
+second response is REMOTE_INTERACTION_OK. The task is fully interactive in the
+desktop app and on paired remote devices.
+
+This mode preflights the supported SSH task path and does not launch a separate terminal Codex TUI.
+The desktop app cannot attach to that TUI;
+the desktop app starts the guest Codex app server when you open the remote task.
+EOF
+}
+
 stop_vm() {
     if [[ "$DRY_RUN" == 1 ]]; then
         run limactl stop "$VM_NAME"
@@ -387,6 +453,7 @@ case "$command_name" in
     check) check_guest ;;
     goal) launch_goal ;;
     remote) remote_desktop ;;
+    remote-test) remote_test ;;
     stop) stop_vm ;;
     destroy) destroy_vm "$@" ;;
     help|-h|--help) usage ;;

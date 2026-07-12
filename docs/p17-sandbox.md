@@ -19,6 +19,7 @@ to the Mac before continuing with `install`, `check`, `goal`, or `remote`.
 | 4 | Guest | `exit` | Returns to the Mac. |
 | 5 | Mac | `./scripts/p17-sandbox.sh install` | Uses the guest GitHub login to clone the private repository, install dependencies and Gitleaks, build Skillsmith, and install its binary. |
 | 6 | Mac | `./scripts/p17-sandbox.sh check` | Runs the complete isolation, authentication, installation, repository, and P17 preflight. |
+| Optional | Mac | `./scripts/p17-sandbox.sh remote-test` | Verifies the guest Codex prerequisites and prints a harmless interactive desktop-app test. |
 | 7A | Mac | `./scripts/p17-sandbox.sh goal` | Starts the terminal Codex session. |
 | 7B | Mac | `./scripts/p17-sandbox.sh remote` | Prints the SSH configuration and prompt for starting the task from the ChatGPT desktop app instead. |
 
@@ -204,7 +205,34 @@ The check fails unless all of the following are true:
 The final gate uses GitHub and can fail temporarily if the authenticated account's GraphQL quota is
 exhausted. Rerun `check` after the quota resets; do not treat a rate-limit failure as a passing gate.
 
-## 5A. Start P17 in the terminal
+## 5. Test desktop remote interactivity before P17
+
+This optional test exercises the same supported SSH project path that the P17 desktop task will use,
+without submitting the goal or editing repository files.
+
+**MAC — Skillsmith checkout**
+
+```bash
+./scripts/p17-sandbox.sh remote-test
+```
+
+The command validates the VM, `/work/skillsmith`, the guest login-shell `CODEX_HOME`, the Codex
+executable, and the operator's ChatGPT subscription. It then prints:
+
+- the Lima SSH include and concrete host alias;
+- the desktop-app project path;
+- a read-only first prompt; and
+- an exact follow-up message that proves the same task remains interactive.
+
+Start the task from the ChatGPT desktop app as directed. The desktop app starts the guest Codex app
+server through SSH. The script deliberately does not start a terminal Codex TUI or expose an app
+server port because the desktop app cannot attach to that separate TUI process.
+
+The test is fully interactive. After the first response, send the printed follow-up in the same task.
+Success is a response that reports `/work/skillsmith` from the VM followed by exactly
+`REMOTE_INTERACTION_OK`.
+
+## 6A. Start P17 in the terminal
 
 **MAC — Skillsmith checkout**
 
@@ -217,9 +245,9 @@ search from `/work/skillsmith`. Paste the one-sentence `/goal` command printed i
 Unrestricted execution removes Codex command-approval prompts; it does not remove P17's required
 human phase approvals, adversarial reviews, or final sign-off.
 
-## 5B. Start P17 from the ChatGPT desktop app
+## 6B. Start P17 from the ChatGPT desktop app
 
-Use this instead of terminal step 5A when the task should remain accessible through Codex Remote.
+Use this instead of terminal step 6A when the task should remain accessible through Codex Remote.
 
 **MAC — Skillsmith checkout**
 
@@ -255,7 +283,7 @@ Mac and VM running. Pair a phone or another supported desktop with the Mac deskt
 from another device is needed. Files and commands still come from the VM; no host filesystem mount
 is added.
 
-## 6. Recover from the earlier unauthenticated clone failure
+## 7. Recover from the earlier unauthenticated clone failure
 
 If an earlier `setup` ended with:
 
@@ -284,7 +312,7 @@ all manual authentication steps above, including `gh auth login`, then `exit`. B
 ./scripts/p17-sandbox.sh remote # desktop-app mode
 ```
 
-## 7. Stop, resume, or discard
+## 8. Stop, resume, or discard
 
 **MAC — Skillsmith checkout**
 
@@ -294,9 +322,9 @@ Stop without deleting:
 ./scripts/p17-sandbox.sh stop
 ```
 
-Resume by running `setup`, `shell`, `install`, `check`, `goal`, or `remote`; each starts an existing
-stopped VM when necessary. Permanently discard the guest and all guest credentials only with
-explicit confirmation:
+Resume by running `setup`, `shell`, `install`, `check`, `remote-test`, `goal`, or `remote`; each
+starts an existing stopped VM when necessary. Permanently discard the guest and all guest
+credentials only with explicit confirmation:
 
 ```bash
 ./scripts/p17-sandbox.sh destroy --yes

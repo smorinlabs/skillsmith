@@ -30,6 +30,7 @@ describe('P17 Lima sandbox scripts', () => {
       'check',
       'goal',
       'remote',
+      'remote-test',
       'stop',
       'destroy',
     ]) {
@@ -112,6 +113,24 @@ describe('P17 Lima sandbox scripts', () => {
     expect(output).toContain('projects/P17-GOAL.md');
     expect(output).toContain('goal subcommand for this task');
     expect(output).not.toContain('--listen');
+  });
+
+  test('remote-test preflights the guest and prints an interactive read-only desktop test', () => {
+    const result = runHost('remote-test');
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe('');
+    const output = result.stdout.toString();
+    expect(output).toContain('bash -lc');
+    expect(output).toContain('codex login status');
+    expect(output).toContain('Include ~/.lima/skillsmith-p17/ssh.config');
+    expect(output).toContain('SSH host: lima-skillsmith-p17');
+    expect(output).toContain('Project:  /work/skillsmith');
+    expect(output).toContain('Do not modify files');
+    expect(output).toContain('REMOTE_INTERACTION_OK');
+    expect(output).toContain('fully interactive');
+    expect(output).toContain('does not launch a separate terminal Codex TUI');
+    expect(output).not.toContain('remote-control start');
+    expect(output).not.toContain('app-server --listen');
   });
 
   test('VM driver fallback is explicit and overrideable', () => {
