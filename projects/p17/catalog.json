@@ -774,10 +774,49 @@
       "phase": "1",
       "title": "Shared project context, config resolution, target/scope selection, and bounded defaults",
       "dependsOn": [],
-      "status": "planned",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "packages/core/src/context/project.ts",
+        "packages/core/src/context/types.ts",
+        "packages/core/src/config/effective.ts",
+        "packages/core/src/config/load.ts",
+        "packages/core/src/config/paths.ts",
+        "packages/core/src/config/types.ts",
+        "packages/core/src/selection/resolve.ts",
+        "packages/core/src/selection/types.ts",
+        "packages/core/src/scan/list-skills.ts",
+        "packages/core/src/scan/list-commands.ts",
+        "packages/core/src/place/types.ts",
+        "packages/core/src/place/plan.ts",
+        "packages/core/src/place/run.ts",
+        "packages/core/src/place/ledger.ts",
+        "packages/core/src/acquire/types.ts",
+        "packages/core/src/acquire/run.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/public-types.ts",
+        "packages/cli/src/util/scope-resolver.ts",
+        "packages/cli/src/program.ts",
+        "packages/cli/src/commands/list.ts",
+        "packages/cli/src/commands/commands.ts",
+        "packages/cli/src/commands/config.ts",
+        "packages/cli/src/commands/doctor.ts",
+        "packages/cli/src/commands/check.ts",
+        "packages/cli/src/commands/install.ts",
+        "packages/cli/src/commands/uninstall.ts",
+        "packages/cli/src/commands/dev.ts",
+        "packages/cli/src/commands/promote.ts",
+        "packages/core/tests/context/project.test.ts",
+        "packages/core/tests/config/effective.test.ts",
+        "packages/core/tests/selection/resolve.test.ts",
+        "packages/cli/tests/util/scope-resolver.test.ts",
+        "packages/cli/tests/contracts/options.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS02.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS03.test.ts",
+        "tests/ergonomics/workflows/EWP-WF14.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": [
         "EWP-CMD-APPLY-TS01",
         "EWP-CMD-APPLY-TS02",
@@ -992,17 +1031,23 @@
         "EWP-WF12",
         "EWP-WF15"
       ],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS06",
+        "bun test tests/ergonomics/phase/EWP-P1-TS01.test.ts --test-name-pattern EWP-P1-TS01",
+        "bun test tests/ergonomics/phase/EWP-P1-TS02.test.ts --test-name-pattern EWP-P1-TS02",
+        "bun test tests/ergonomics/phase/EWP-P1-TS03.test.ts --test-name-pattern EWP-P1-TS03",
+        "bun test tests/ergonomics/workflows/EWP-WF14.test.ts --test-name-pattern EWP-WF14"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-01.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-01.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
