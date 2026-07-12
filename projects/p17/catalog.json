@@ -325,11 +325,14 @@
       "phase": "0",
       "title": "Live-to-target CLI migration ledger and complete parser/option ownership",
       "dependsOn": ["P17-G0-01"],
-      "status": "ready",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/cli/src/contracts/commander-surface.ts",
         "packages/cli/src/contracts/commander-surface-v0.7.0.json",
+        "packages/cli/src/contracts/commander-current-ledger-v0.7.0.json",
+        "packages/cli/src/contracts/commander-current-state-v0.json",
+        "packages/cli/src/contracts/cli-target-registry-v1.0.0.json",
         "packages/cli/src/contracts/cli-migration-ledger.ts",
         "packages/cli/tests/contracts/options.test.ts",
         "tests/ergonomics/phase/EWP-P0A-TS02.test.ts",
@@ -438,7 +441,7 @@
         "bun test tests/ergonomics/phase/EWP-P0A-TS08.test.ts --test-name-pattern EWP-P0A-TS08"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g0_02_eighth_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -449,28 +452,28 @@
           "evidence": ["projects/p17/evidence/P17-G0-02.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-02.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-02.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-02.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-02.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-02.md#refactor"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-02.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -6705,11 +6708,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G0-02",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G0-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-02.md#mapping-and-prerequisites"],
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#adversarial-review"],
       "secondaryGroups": ["P17-G1-03", "P17-G1-02A", "P17-G6-02A"],
       "implements": [],
       "validatedBy": [
@@ -7143,11 +7146,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G0-02",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G0-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-02.md#mapping-and-prerequisites"],
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#adversarial-review"],
       "secondaryGroups": [
         "P17-G1-02B",
         "P17-G3B-01",
@@ -14145,11 +14148,16 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/options.test.ts",
+        "selector": "EWP-OPT-TS01",
+        "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#execution-receipt-ewp-opt-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-OPT-TS01"],
@@ -14435,11 +14443,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-02",
-      "status": "ready",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-02.md#ready-plan"],
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#adversarial-review"],
       "secondaryGroups": [],
       "implements": ["EWP-CF-010", "EWP-CF-023"],
       "validatedBy": [
@@ -14608,11 +14616,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-02",
-      "status": "ready",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-02.md#ready-plan"],
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#adversarial-review"],
       "secondaryGroups": [],
       "implements": ["EWP-CF-010", "EWP-CF-023"],
       "validatedBy": [
@@ -14696,11 +14704,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-02",
-      "status": "ready",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-02.md#ready-plan"],
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#adversarial-review"],
       "secondaryGroups": [],
       "implements": ["EWP-CF-010", "EWP-CF-023"],
       "validatedBy": [
@@ -14772,11 +14780,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS02.test.ts",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P0A-TS02.test.ts",
+        "selector": "EWP-P0A-TS02",
+        "command": "bun test tests/ergonomics/phase/EWP-P0A-TS02.test.ts --test-name-pattern EWP-P0A-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#execution-receipt-ewp-p0a-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS02"],
@@ -14797,11 +14810,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS03.test.ts",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P0A-TS03.test.ts",
+        "selector": "EWP-P0A-TS03",
+        "command": "bun test tests/ergonomics/phase/EWP-P0A-TS03.test.ts --test-name-pattern EWP-P0A-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#execution-receipt-ewp-p0a-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS03"],
@@ -14822,11 +14840,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS04.test.ts",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P0A-TS04.test.ts",
+        "selector": "EWP-P0A-TS04",
+        "command": "bun test tests/ergonomics/phase/EWP-P0A-TS04.test.ts --test-name-pattern EWP-P0A-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#execution-receipt-ewp-p0a-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS04"],
@@ -14918,11 +14941,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS08.test.ts",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P0A-TS08.test.ts",
+        "selector": "EWP-P0A-TS08",
+        "command": "bun test tests/ergonomics/phase/EWP-P0A-TS08.test.ts --test-name-pattern EWP-P0A-TS08"
+      },
+      "evidence": ["projects/p17/evidence/P17-G0-02.md#execution-receipt-ewp-p0a-ts08"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS08"],
