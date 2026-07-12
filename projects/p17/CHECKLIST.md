@@ -180,7 +180,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-007 | P17-G1-05 | planned | required-pr |
 | EWP-CF-008 | P17-G5-02 | planned | required-pr |
 | EWP-CF-009 | P17-G4B-02 | planned | required-pr |
-| EWP-CF-010 | P17-G0-02 | planned | required-pr |
+| EWP-CF-010 | P17-G0-02 | mapped | required-pr |
 | EWP-CF-011 | P17-G4A-02 | planned | required-pr |
 | EWP-CF-012 | P17-G2-03 | planned | required-pr |
 | EWP-CF-013 | P17-G6-02A | planned | required-pr |
@@ -193,7 +193,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-020 | P17-G4A-01 | planned | required-pr |
 | EWP-CF-021 | P17-G2-01 | planned | required-pr |
 | EWP-CF-022 | P17-G1-01 | planned | required-pr |
-| EWP-CF-023 | P17-G0-02 | planned | required-pr |
+| EWP-CF-023 | P17-G0-02 | mapped | required-pr |
 | EWP-CF-024 | P17-G1-01 | planned | required-pr |
 | EWP-CF-025 | P17-G3B-01 | planned | required-pr |
 | EWP-CF-026 | P17-G3B-02 | planned | required-pr |
@@ -302,14 +302,14 @@ Downstream coverage obligations: none.
 
 ## P17-G0-02 — Live-to-target CLI migration ledger and complete parser/option ownership
 
-Phase: 0; status: **planned**; dependencies: P17-G0-01.
+Phase: 0; status: **ready**; dependencies: P17-G0-01.
 Required-now validations: EWP-OPT-TS01, EWP-P0A-TS02, EWP-P0A-TS03, EWP-P0A-TS04, EWP-P0A-TS08.
 Downstream coverage obligations: EWP-CMD-CHECK-TS01, EWP-CMD-CHECK-TS02, EWP-CMD-CHECK-TS03, EWP-CMD-CHECK-TS04, EWP-CMD-CHECK-TS05, EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-OPT-TS02, EWP-OPT-TS03, EWP-OPT-TS04, EWP-OPT-TS05.
 
 ### Group gates
 
-- [ ] P17-G0-02:mapped _(pending)_
-- [ ] P17-G0-02:ready _(pending)_
+- [x] P17-G0-02:mapped _(passed)_
+- [x] P17-G0-02:ready _(passed)_
 - [ ] P17-G0-02:test-first _(pending)_
 - [ ] P17-G0-02:minimal-implementation _(pending)_
 - [ ] P17-G0-02:targeted-green _(pending)_
@@ -321,12 +321,12 @@ Downstream coverage obligations: EWP-CMD-CHECK-TS01, EWP-CMD-CHECK-TS02, EWP-CMD
 
 ### Tracked entities
 
-- [ ] **EWP-CF-010** — Make every command and option a testable parser contract _(finding; planned)_
-- [ ] **EWP-CF-023** — Make the current-to-1.0 CLI migration explicit and closed _(finding; planned)_
+- [ ] **EWP-CF-010** — Make every command and option a testable parser contract _(finding; mapped)_
+- [ ] **EWP-CF-023** — Make the current-to-1.0 CLI migration explicit and closed _(finding; mapped)_
 - [ ] **EWP-OPT-TS01** — Introspect the live Commander tree and fail on any option/argument/alias absent _(option-gate; planned)_
-- [ ] **EWP-P0A-T02** — Compare every proposed command/option against live Commander declarations. _(phase-task; planned)_
-- [ ] **EWP-P0A-T07** — Keep the normative command/option registry synchronized with implementation _(phase-task; planned)_
-- [ ] **EWP-P0A-T11** — Maintain the current-to-1.0 CLI migration ledger from a live Commander snapshot; _(phase-task; planned)_
+- [ ] **EWP-P0A-T02** — Compare every proposed command/option against live Commander declarations. _(phase-task; ready)_
+- [ ] **EWP-P0A-T07** — Keep the normative command/option registry synchronized with implementation _(phase-task; ready)_
+- [ ] **EWP-P0A-T11** — Maintain the current-to-1.0 CLI migration ledger from a live Commander snapshot; _(phase-task; ready)_
 - [ ] **EWP-P0A-TS02** — Command-option matrix has no duplicate short flags or contradictory defaults. _(phase-test; planned)_
 - [ ] **EWP-P0A-TS03** — Every proposed command has implementation, unit, CLI contract, and workflow test _(phase-test; planned)_
 - [ ] **EWP-P0A-TS04** — EWP-OPT-TS01..10 parser/registry consistency suite passes. _(phase-test; planned)_
