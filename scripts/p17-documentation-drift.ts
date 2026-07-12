@@ -999,8 +999,28 @@ export const validateDocumentationDrift = (
     const gateRows = Object.entries(gates).filter((entry): entry is [string, JsonObject] =>
       isObject(entry[1]),
     );
+    const lifecycleGateNames = [
+      'mapped',
+      'ready',
+      'test-first',
+      'minimal-implementation',
+      'targeted-green',
+      'impacted-green',
+      'refactor',
+      'adversarial-review',
+      'traceability-closure',
+      'signed-off',
+    ];
+    const hasExactLifecycleGates =
+      JSON.stringify(gateRows.map(([name]) => name)) === JSON.stringify(lifecycleGateNames);
+    const allLifecycleGatesPassed =
+      hasExactLifecycleGates && gateRows.every(([, gate]) => gate.status === 'passed');
+    if (!hasExactLifecycleGates)
+      errors.push('projects/p17/catalog.json G0-04 lifecycle gate set is invalid');
     const lastPassedGate = gateRows.filter(([, gate]) => gate.status === 'passed').at(-1)?.[0];
     const nextPendingGate = gateRows.find(([, gate]) => gate.status === 'pending')?.[0];
+    if (!nextPendingGate && !allLifecycleGatesPassed)
+      errors.push('projects/p17/catalog.json G0-04 cannot claim all lifecycle gates passed');
     const executionText = visibleText(
       sectionText(
         readRepoFile('projects/p17/EXECUTION.md'),
@@ -1008,15 +1028,19 @@ export const validateDocumentationDrift = (
         'projects/p17/EXECUTION.md',
       ),
     );
+    const groupProgress = nextPendingGate
+      ? `\`P17-G0-04\` is \`${String(activeGroup?.status)}\`: its last passed gate is ` +
+        `\`${String(lastPassedGate)}\`, and \`${nextPendingGate}\` remains pending.`
+      : allLifecycleGatesPassed
+        ? `\`P17-G0-04\` is \`${String(activeGroup?.status)}\`: all lifecycle gates are passed.`
+        : `\`P17-G0-04\` is \`${String(activeGroup?.status)}\`: no lifecycle gate is pending, but not all lifecycle gates are passed.`;
     const expectedExecutionStatus = visibleText(
       `**Status:** Phase 0 is \`${String(phase0?.status)}\`. ` +
         `\`P17-G0-01\` through \`P17-G0-03\` are \`${
           signedGroups.every((group) => group?.status === 'signed-off')
             ? 'signed-off'
             : 'not-all-signed-off'
-        }\`. ` +
-        `\`P17-G0-04\` is \`${String(activeGroup?.status)}\`: its last passed gate is ` +
-        `\`${String(lastPassedGate)}\`, and \`${String(nextPendingGate)}\` remains pending.`,
+        }\`. ${groupProgress}`,
     );
     if (!executionText.includes(expectedExecutionStatus))
       errors.push('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');

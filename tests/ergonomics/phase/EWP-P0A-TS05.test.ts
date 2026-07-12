@@ -353,6 +353,23 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
         text.replace('Phase 0 is `active`', 'Phase 0 is `ready`'),
       ),
     ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
+    const catalog = JSON.parse(
+      readFileSync(resolve(ROOT, 'projects/p17/catalog.json'), 'utf8'),
+    ) as JsonObject;
+    const group = (catalog.groups as JsonObject[]).find((row) => row.id === 'P17-G0-04');
+    if (!group) throw new Error('missing P17-G0-04 catalog group');
+    const gates = group.gates as JsonObject;
+    (gates['traceability-closure'] as JsonObject).status = 'failed';
+    expect(
+      validateDocumentationDrift(copy(), {
+        'projects/p17/catalog.json': JSON.stringify(catalog),
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        'projects/p17/catalog.json G0-04 cannot claim all lifecycle gates passed',
+        'projects/p17/EXECUTION.md status must match live catalog phase and gate facts',
+      ]),
+    );
   });
 
   test('EWP-P0A-TS05 closes architecture drift, stale families, and downstream deferral', () => {

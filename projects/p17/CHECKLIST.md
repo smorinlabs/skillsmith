@@ -12,20 +12,20 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 0 | 28 | 6 |
-| phase-task | 65 | 9 | 56 | 0 |
-| phase-test | 61 | 7 | 54 | 0 |
+| phase-task | 65 | 10 | 55 | 0 |
+| phase-test | 61 | 8 | 53 | 0 |
 | command-test | 157 | 0 | 157 | 0 |
 | option-gate | 10 | 1 | 9 | 0 |
 | workflow | 16 | 0 | 16 | 0 |
 | command | 23 | 0 | 23 | 0 |
-| finding | 43 | 3 | 40 | 0 |
+| finding | 43 | 4 | 39 | 0 |
 | decision | 16 | 0 | 15 | 1 |
 
 ### Phases
 
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
-| 0 | 5 | 29 | 20 | 0 |
+| 0 | 5 | 29 | 23 | 0 |
 | 1 | 9 | 62 | 0 | 0 |
 | 2 | 5 | 32 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
@@ -187,7 +187,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-014 | P17-G6-02B | planned | supported-platform |
 | EWP-CF-015 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-016 | P17-G5-04 | planned | required-pr |
-| EWP-CF-017 | P17-G0-04 | validated | required-pr |
+| EWP-CF-017 | P17-G0-04 | signed-off | required-pr |
 | EWP-CF-018 | P17-G0-05 | planned | required-pr |
 | EWP-CF-019 | P17-G2-01 | planned | required-pr |
 | EWP-CF-020 | P17-G4A-01 | planned | required-pr |
@@ -360,7 +360,7 @@ Downstream coverage obligations: EWP-OPT-TS01, EWP-P0A-TS02, EWP-P0A-TS03, EWP-P
 
 ## P17-G0-04 — Section-level documentation-drift ledger and authoritative-document closure
 
-Phase: 0; status: **reviewed**; dependencies: P17-G0-02, P17-G0-03.
+Phase: 0; status: **signed-off**; dependencies: P17-G0-02, P17-G0-03.
 Required-now validations: EWP-P0A-TS05.
 Downstream coverage obligations: EWP-P1-TS05, EWP-WF16.
 
@@ -374,14 +374,14 @@ Downstream coverage obligations: EWP-P1-TS05, EWP-WF16.
 - [x] P17-G0-04:impacted-green _(passed)_
 - [x] P17-G0-04:refactor _(passed)_
 - [x] P17-G0-04:adversarial-review _(passed)_
-- [ ] P17-G0-04:traceability-closure _(pending)_
-- [ ] P17-G0-04:signed-off _(pending)_
+- [x] P17-G0-04:traceability-closure _(passed)_
+- [x] P17-G0-04:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-017** — Reconcile active documentation before building against it _(finding; validated)_
-- [ ] **EWP-P0A-T08** — Produce and close the section-level documentation drift ledger across active _(phase-task; reviewed)_
-- [ ] **EWP-P0A-TS05** — Active-doc superseded-claim scan and authority-pointer gate passes. _(phase-test; passing)_
+- [x] **EWP-CF-017** — Reconcile active documentation before building against it _(finding; signed-off)_
+- [x] **EWP-P0A-T08** — Produce and close the section-level documentation drift ledger across active _(phase-task; signed-off)_
+- [x] **EWP-P0A-TS05** — Active-doc superseded-claim scan and authority-pointer gate passes. _(phase-test; signed-off)_
 
 ## P17-G0-05 — Catalog, structural validator, generated checklist, and executable ownership
 

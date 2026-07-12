@@ -3,8 +3,8 @@
 > P17 disposition: current execution state; authority: projects/p17/catalog.json
 
 **Status:** Phase 0 is `active`. `P17-G0-01` through `P17-G0-03` are `signed-off`.
-`P17-G0-04` is `reviewed`: its last passed gate is `adversarial-review`, and
-`traceability-closure` remains pending. `catalog.json` is the machine-readable status authority.
+`P17-G0-04` is `signed-off`: all lifecycle gates are passed. `catalog.json` is the machine-readable
+status authority.
 
 This file groups the consolidated plan into reviewable changes. It does not replace product
 contracts in the consolidated plan or status in `catalog.json`. `CHECKLIST.md` is generated from
