@@ -991,6 +991,7 @@ export const validateDocumentationDrift = (
     const phases = objects(catalogValue.phases);
     const groups = objects(catalogValue.groups);
     const phase0 = phases.find((phase) => phase.id === '0');
+    const phase1 = phases.find((phase) => phase.id === '1');
     const phase0GroupIds = ['P17-G0-01', 'P17-G0-02', 'P17-G0-03', 'P17-G0-04', 'P17-G0-05'];
     const phase0Groups = phase0GroupIds.map((id) => groups.find((group) => group.id === id));
     const lifecycleGateNames = [
@@ -1042,10 +1043,15 @@ export const validateDocumentationDrift = (
         : phaseReview === 'passed' && phaseApproval === 'passed' && phaseExit === 'passed'
           ? 'Whole-phase review, catalog recording of standing approval, and exit are passed.'
           : `Whole-phase closure states are review=${String(phaseReview)}, approval=${String(phaseApproval)}, exit=${String(phaseExit)}.`;
+    const phase1Entry = isObject(phase1?.entry) ? phase1.entry.status : undefined;
+    const phase1Progress =
+      phase1?.status === 'active' && phase1Entry === 'passed'
+        ? 'Phase 1 is `active`; its entry gate is passed.'
+        : `Phase 1 is \`${String(phase1?.status)}\`; its entry gate is ${String(phase1Entry)}.`;
     const expectedExecutionStatus = visibleText(
       `**Status:** Phase 0 is \`${String(phase0?.status)}\`. \`P17-G0-01\` through \`P17-G0-05\` are \`${
         allPhase0GroupsSigned ? 'signed-off' : 'not-all-signed-off'
-      }\`; ${allLifecycleGatesPassed ? 'all group lifecycle gates are passed.' : 'group lifecycle gates are not all passed.'} ${closureProgress} \`catalog.json\` is the machine-readable status authority.`,
+      }\`; ${allLifecycleGatesPassed ? 'all group lifecycle gates are passed.' : 'group lifecycle gates are not all passed.'} ${closureProgress} ${phase1Progress} \`catalog.json\` is the machine-readable status authority.`,
     );
     const actualExecutionStatus = visibleText(executionStatusBlocks[0]?.[0] ?? '');
     if (actualExecutionStatus !== expectedExecutionStatus)

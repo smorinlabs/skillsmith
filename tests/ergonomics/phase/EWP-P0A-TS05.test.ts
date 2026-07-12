@@ -350,7 +350,12 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
   test('EWP-P0A-TS05 binds execution prose to live catalog status and gates', () => {
     expect(
       mutateFile('projects/p17/EXECUTION.md', (text) =>
-        text.replace('Phase 0 is `active`', 'Phase 0 is `ready`'),
+        text.replace('Phase 0 is `approved`', 'Phase 0 is `ready`'),
+      ),
+    ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
+    expect(
+      mutateFile('projects/p17/EXECUTION.md', (text) =>
+        text.replace('Phase 1 is `active`', 'Phase 1 is `planned`'),
       ),
     ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
     expect(

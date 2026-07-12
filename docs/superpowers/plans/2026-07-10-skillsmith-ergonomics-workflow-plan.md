@@ -5,10 +5,10 @@
 > the design-review level. Phase 0's documentation-drift ledger, structural validator,
 > machine-readable verification catalog, generated checklist, executable ownership, and five group
 > sign-offs are complete. Whole-Phase-0 adversarial review, catalog recording of the standing
-> approval, and exit remain open before Phase 1.
+> approval, and exit passed on 2026-07-12; Phase 1 is active.
 > Implementation is authorized to proceed only through the named phase entry/exit gates and
 > validation ownership in this plan.
-> **Phase 0 execution:** groups=signed-off; review=pending; approval=pending; exit=pending.
+> **Phase 0 execution:** groups=signed-off; review=passed; approval=passed; exit=passed.
 >
 > **Current coverage (2026-07-11):** 34 unique P0-P3 recommendations and matching before/after
 > rows; 16 resolved product decisions and records; 16 holistic workflows; 65 named phase tasks;
@@ -4549,8 +4549,8 @@ amend this plan before implementation.
 audit were closed and approved on 2026-07-11. No product decision or finding remains open. At that
 design closeout, the Phase 0 executable gates were still open. As of 2026-07-12, documentation
 drift, the structural validator, catalog/checklist, executable ownership, and G0-01..G0-05 sign-offs
-are closed; whole-phase adversarial review, catalog recording of standing approval, and exit remain
-pending.
+are closed. Whole-phase adversarial review, catalog recording of standing approval, and exit passed
+on 2026-07-12.
 
 - Finding completeness: EWP-CF-001..043 each has one register row, one traceability row, accepted
   go-forward behavior, saved example, affected contracts, validation, and date; `audited=43` and
@@ -4571,7 +4571,7 @@ pending.
   `git diff --check` passes and the direct untracked-file diff check emits no diagnostics.
 
 This section records the original manual planning-artifact and current-to-target consistency result.
-The later Phase 0 executable evidence is recorded in `projects/p17/evidence/` and the live catalog;
+The Phase 0 executable evidence is recorded in `projects/p17/evidence/` and the live catalog;
 it does not imply that future commands, tests, recipes, distributions, or release gates are
 implemented. Those proofs remain owned by their named phases and may advance only when each exit
 gate passes.
@@ -4600,16 +4600,15 @@ This plan is fully articulated only when:
 - the final plan receives explicit user approval before implementation.
 
 **Design approval:** accepted by the user on 2026-07-11. The product contract and manual review are
-complete; the following mechanical work remains part of Phase 0 and is not implied complete by that
-approval:
+complete; the following Phase 0 mechanical closeout is also complete as recorded below:
 
 - [x] Produce and close the section-level documentation-drift ledger.
 - [x] Implement and pass the plan/catalog/checklist structural validator.
 - [x] Seed every tracked entity into the machine-readable verification catalog with one primary
   owner, tier, dependency group, executable target, and evidence state.
 - [x] Generate the exhaustive human checklist and prove deterministic round-trip parity.
-- [ ] Run and close the independent adversarial Phase 0 review.
-- [ ] Obtain explicit Phase 0 sign-off before Phase 1 begins.
+- [x] Run and close the independent adversarial Phase 0 review.
+- [x] Record standing Phase 0 approval and sign-off before Phase 1 begins.
 
 P17 owns this execution through `projects/P17-GOAL.md` and `projects/p17/EXECUTION.md`; progress and
 evidence are never inferred from this design-approval statement.
