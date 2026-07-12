@@ -187,7 +187,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-014 | P17-G6-02B | planned | supported-platform |
 | EWP-CF-015 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-016 | P17-G5-04 | planned | required-pr |
-| EWP-CF-017 | P17-G0-04 | planned | required-pr |
+| EWP-CF-017 | P17-G0-04 | mapped | required-pr |
 | EWP-CF-018 | P17-G0-05 | planned | required-pr |
 | EWP-CF-019 | P17-G2-01 | planned | required-pr |
 | EWP-CF-020 | P17-G4A-01 | planned | required-pr |
@@ -360,14 +360,14 @@ Downstream coverage obligations: EWP-OPT-TS01, EWP-P0A-TS02, EWP-P0A-TS03, EWP-P
 
 ## P17-G0-04 — Section-level documentation-drift ledger and authoritative-document closure
 
-Phase: 0; status: **planned**; dependencies: P17-G0-02, P17-G0-03.
+Phase: 0; status: **ready**; dependencies: P17-G0-02, P17-G0-03.
 Required-now validations: EWP-P0A-TS05.
 Downstream coverage obligations: EWP-P1-TS05, EWP-WF16.
 
 ### Group gates
 
-- [ ] P17-G0-04:mapped _(pending)_
-- [ ] P17-G0-04:ready _(pending)_
+- [x] P17-G0-04:mapped _(passed)_
+- [x] P17-G0-04:ready _(passed)_
 - [ ] P17-G0-04:test-first _(pending)_
 - [ ] P17-G0-04:minimal-implementation _(pending)_
 - [ ] P17-G0-04:targeted-green _(pending)_
@@ -379,8 +379,8 @@ Downstream coverage obligations: EWP-P1-TS05, EWP-WF16.
 
 ### Tracked entities
 
-- [ ] **EWP-CF-017** — Reconcile active documentation before building against it _(finding; planned)_
-- [ ] **EWP-P0A-T08** — Produce and close the section-level documentation drift ledger across active _(phase-task; planned)_
+- [ ] **EWP-CF-017** — Reconcile active documentation before building against it _(finding; mapped)_
+- [ ] **EWP-P0A-T08** — Produce and close the section-level documentation drift ledger across active _(phase-task; ready)_
 - [ ] **EWP-P0A-TS05** — Active-doc superseded-claim scan and authority-pointer gate passes. _(phase-test; planned)_
 
 ## P17-G0-05 — Catalog, structural validator, generated checklist, and executable ownership
