@@ -491,9 +491,13 @@
       "phase": "0",
       "title": "Artifact terminology, dependency order, and architecture/quality reconciliation",
       "dependsOn": ["P17-G0-01"],
-      "status": "planned",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
+      "ownedFiles": [
+        "projects/p17/reviews/P17-G0-03-reconciliation.json",
+        "scripts/p17-architecture-reconciliation.ts",
+        "tests/ergonomics/phase/P17-G0-03.test.ts"
+      ],
       "integrationOwner": null,
       "impactedValidations": [
         "EWP-OPT-TS01",
@@ -555,17 +559,17 @@
         "EWP-WF03",
         "EWP-WF13"
       ],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": ["bun test tests/ergonomics/phase/P17-G0-03.test.ts"],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-03.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-03.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
@@ -6336,11 +6340,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G0-03",
-      "status": "planned",
+      "status": "mapped",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G0-03",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G0-03.md#mapping-and-prerequisites"],
       "secondaryGroups": [
         "P17-G2-01",
         "P17-G2-02",
@@ -14474,11 +14478,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-03",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-03",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G0-03.md#ready-plan"],
       "secondaryGroups": ["P17-G0-02", "P17-G0-01", "P17-G0-04", "P17-G0-05"],
       "implements": ["EWP-CF-001"],
       "validatedBy": [
@@ -14515,11 +14519,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-03",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-03",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G0-03.md#ready-plan"],
       "secondaryGroups": ["P17-G0-02", "P17-G0-01", "P17-G0-04", "P17-G0-05"],
       "implements": ["EWP-CF-001"],
       "validatedBy": [
@@ -14556,11 +14560,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-03",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-03",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G0-03.md#ready-plan"],
       "secondaryGroups": ["P17-G0-02", "P17-G0-01", "P17-G0-04", "P17-G0-05"],
       "implements": ["EWP-CF-001"],
       "validatedBy": [
