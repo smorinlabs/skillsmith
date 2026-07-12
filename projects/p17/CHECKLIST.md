@@ -511,14 +511,14 @@ Downstream coverage obligations: none.
 
 ## P17-G1-02C — Current help/docs migration and legacy project-config warning boundary
 
-Phase: 1; status: **planned**; dependencies: P17-G1-01, P17-G1-02A.
+Phase: 1; status: **active**; dependencies: P17-G1-01, P17-G1-02A.
 Required-now validations: EWP-P1-TS05.
 Downstream coverage obligations: none.
 
 ### Group gates
 
-- [ ] P17-G1-02C:mapped _(pending)_
-- [ ] P17-G1-02C:ready _(pending)_
+- [x] P17-G1-02C:mapped _(passed)_
+- [x] P17-G1-02C:ready _(passed)_
 - [ ] P17-G1-02C:test-first _(pending)_
 - [ ] P17-G1-02C:minimal-implementation _(pending)_
 - [ ] P17-G1-02C:targeted-green _(pending)_

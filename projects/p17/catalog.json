@@ -1532,24 +1532,41 @@
       "phase": "1",
       "title": "Current help/docs migration and legacy project-config warning boundary",
       "dependsOn": ["P17-G1-01", "P17-G1-02A"],
-      "status": "planned",
+      "status": "active",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "README.md",
+        "docs/architecture.md",
+        "packages/core/README.md",
+        "packages/cli/README.md",
+        "packages/cli/src/help/topics.ts",
+        "packages/core/src/config/effective.ts",
+        "packages/core/src/config/types.ts",
+        "packages/core/tests/config/effective.test.ts",
+        "packages/cli/src/util/config-notice.ts",
+        "packages/cli/src/commands/config.ts",
+        "packages/cli/src/commands/list.ts",
+        "packages/cli/src/commands/commands.ts",
+        "packages/cli/src/commands/check.ts",
+        "tests/ergonomics/phase/EWP-P1-TS05.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": ["EWP-P1-TS05"],
       "requiredNowValidations": ["EWP-P1-TS05"],
       "downstreamCoverage": [],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS05.test.ts --test-name-pattern EWP-P1-TS05"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02C.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02C.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
