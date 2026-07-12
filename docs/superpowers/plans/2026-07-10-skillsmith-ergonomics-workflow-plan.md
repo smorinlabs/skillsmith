@@ -2,11 +2,13 @@
 
 > **Status:** Approved design and implementation baseline as of 2026-07-11. All D-001 through
 > D-016 decisions and EWP-CF-001 through EWP-CF-043 findings are recorded and manually closed at
-> the design-review level. Phase 0 executable closure is still open: the section-level
-> documentation-drift ledger, structural validator, machine-readable verification catalog,
-> generated execution checklist, and Phase 0 adversarial sign-off must be completed before Phase 1.
+> the design-review level. Phase 0's documentation-drift ledger, structural validator,
+> machine-readable verification catalog, generated checklist, executable ownership, and five group
+> sign-offs are complete. Whole-Phase-0 adversarial review, catalog recording of the standing
+> approval, and exit remain open before Phase 1.
 > Implementation is authorized to proceed only through the named phase entry/exit gates and
 > validation ownership in this plan.
+> **Phase 0 execution:** groups=signed-off; review=pending; approval=pending; exit=pending.
 >
 > **Current coverage (2026-07-11):** 34 unique P0-P3 recommendations and matching before/after
 > rows; 16 resolved product decisions and records; 16 holistic workflows; 65 named phase tasks;
@@ -4544,9 +4546,11 @@ amend this plan before implementation.
 ### 13.6 Whole-plan design-review closeout
 
 **Status:** the conversational decision review, accepted-finding backfill, and manual plan-integrity
-audit were closed and approved on 2026-07-11. No product decision or finding remains open. This is
-not the Phase 0 executable exit gate: documentation drift, the structural validator, catalog and
-generated checklist, executable validation ownership, and adversarial Phase 0 sign-off remain open.
+audit were closed and approved on 2026-07-11. No product decision or finding remains open. At that
+design closeout, the Phase 0 executable gates were still open. As of 2026-07-12, documentation
+drift, the structural validator, catalog/checklist, executable ownership, and G0-01..G0-05 sign-offs
+are closed; whole-phase adversarial review, catalog recording of standing approval, and exit remain
+pending.
 
 - Finding completeness: EWP-CF-001..043 each has one register row, one traceability row, accepted
   go-forward behavior, saved example, affected contracts, validation, and date; `audited=43` and
@@ -4566,11 +4570,11 @@ generated checklist, executable validation ownership, and adversarial Phase 0 si
 - Hygiene closure: stale counts/markers and superseded logger/artifact language are absent;
   `git diff --check` passes and the direct untracked-file diff check emits no diagnostics.
 
-This is a manual planning-artifact and current-to-target consistency result. It does not claim that
-the documentation-drift ledger is closed or that future validators, catalog entries, commands,
-tests, recipes, distributions, or release gates are implemented or have passed. Their executable
-proof is owned by the named phases; implementation begins with the open Phase 0 gates and may
-advance only when each named exit gate passes.
+This section records the original manual planning-artifact and current-to-target consistency result.
+The later Phase 0 executable evidence is recorded in `projects/p17/evidence/` and the live catalog;
+it does not imply that future commands, tests, recipes, distributions, or release gates are
+implemented. Those proofs remain owned by their named phases and may advance only when each exit
+gate passes.
 
 ---
 
@@ -4599,11 +4603,11 @@ This plan is fully articulated only when:
 complete; the following mechanical work remains part of Phase 0 and is not implied complete by that
 approval:
 
-- [ ] Produce and close the section-level documentation-drift ledger.
-- [ ] Implement and pass the plan/catalog/checklist structural validator.
-- [ ] Seed every tracked entity into the machine-readable verification catalog with one primary
+- [x] Produce and close the section-level documentation-drift ledger.
+- [x] Implement and pass the plan/catalog/checklist structural validator.
+- [x] Seed every tracked entity into the machine-readable verification catalog with one primary
   owner, tier, dependency group, executable target, and evidence state.
-- [ ] Generate the exhaustive human checklist and prove deterministic round-trip parity.
+- [x] Generate the exhaustive human checklist and prove deterministic round-trip parity.
 - [ ] Run and close the independent adversarial Phase 0 review.
 - [ ] Obtain explicit Phase 0 sign-off before Phase 1 begins.
 

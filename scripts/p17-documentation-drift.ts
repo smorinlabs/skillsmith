@@ -991,14 +991,8 @@ export const validateDocumentationDrift = (
     const phases = objects(catalogValue.phases);
     const groups = objects(catalogValue.groups);
     const phase0 = phases.find((phase) => phase.id === '0');
-    const signedGroups = ['P17-G0-01', 'P17-G0-02', 'P17-G0-03'].map((id) =>
-      groups.find((group) => group.id === id),
-    );
-    const activeGroup = groups.find((group) => group.id === 'P17-G0-04');
-    const gates = activeGroup && isObject(activeGroup.gates) ? activeGroup.gates : {};
-    const gateRows = Object.entries(gates).filter((entry): entry is [string, JsonObject] =>
-      isObject(entry[1]),
-    );
+    const phase0GroupIds = ['P17-G0-01', 'P17-G0-02', 'P17-G0-03', 'P17-G0-04', 'P17-G0-05'];
+    const phase0Groups = phase0GroupIds.map((id) => groups.find((group) => group.id === id));
     const lifecycleGateNames = [
       'mapped',
       'ready',
@@ -1011,38 +1005,50 @@ export const validateDocumentationDrift = (
       'traceability-closure',
       'signed-off',
     ];
-    const hasExactLifecycleGates =
-      JSON.stringify(gateRows.map(([name]) => name)) === JSON.stringify(lifecycleGateNames);
+    const phase0GateRows = phase0Groups.map((group) => {
+      const gates = group && isObject(group.gates) ? group.gates : {};
+      return Object.entries(gates).filter((entry): entry is [string, JsonObject] =>
+        isObject(entry[1]),
+      );
+    });
+    const hasExactLifecycleGates = phase0GateRows.every(
+      (gateRows) =>
+        JSON.stringify(gateRows.map(([name]) => name)) === JSON.stringify(lifecycleGateNames),
+    );
     const allLifecycleGatesPassed =
-      hasExactLifecycleGates && gateRows.every(([, gate]) => gate.status === 'passed');
+      hasExactLifecycleGates &&
+      phase0GateRows.every((gateRows) => gateRows.every(([, gate]) => gate.status === 'passed'));
+    const allPhase0GroupsSigned = phase0Groups.every((group) => group?.status === 'signed-off');
     if (!hasExactLifecycleGates)
-      errors.push('projects/p17/catalog.json G0-04 lifecycle gate set is invalid');
-    const lastPassedGate = gateRows.filter(([, gate]) => gate.status === 'passed').at(-1)?.[0];
-    const nextPendingGate = gateRows.find(([, gate]) => gate.status === 'pending')?.[0];
-    if (!nextPendingGate && !allLifecycleGatesPassed)
-      errors.push('projects/p17/catalog.json G0-04 cannot claim all lifecycle gates passed');
-    const executionText = visibleText(
-      sectionText(
-        readRepoFile('projects/p17/EXECUTION.md'),
-        '# P17 execution map',
-        'projects/p17/EXECUTION.md',
-      ),
-    );
-    const groupProgress = nextPendingGate
-      ? `\`P17-G0-04\` is \`${String(activeGroup?.status)}\`: its last passed gate is ` +
-        `\`${String(lastPassedGate)}\`, and \`${nextPendingGate}\` remains pending.`
-      : allLifecycleGatesPassed
-        ? `\`P17-G0-04\` is \`${String(activeGroup?.status)}\`: all lifecycle gates are passed.`
-        : `\`P17-G0-04\` is \`${String(activeGroup?.status)}\`: no lifecycle gate is pending, but not all lifecycle gates are passed.`;
+      errors.push('projects/p17/catalog.json Phase 0 lifecycle gate sets are invalid');
+    if (!allLifecycleGatesPassed)
+      errors.push(
+        'projects/p17/catalog.json Phase 0 cannot claim all group lifecycle gates passed',
+      );
+    const executionFile = readRepoFile('projects/p17/EXECUTION.md');
+    if (!executionFile.trimStart().startsWith('# P17 execution map\n'))
+      errors.push('projects/p17/EXECUTION.md H1 must be the first visible content');
+    const executionStatusBlocks = [
+      ...executionFile.matchAll(/^\*\*Status:\*\*[\s\S]*?(?=\n\s*\n|(?![\s\S]))/gm),
+    ];
+    if (executionStatusBlocks.length !== 1)
+      errors.push('projects/p17/EXECUTION.md must contain exactly one opening Status block');
+    const phaseReview = isObject(phase0?.review) ? phase0.review.status : undefined;
+    const phaseApproval = isObject(phase0?.approval) ? phase0.approval.status : undefined;
+    const phaseExit = isObject(phase0?.exit) ? phase0.exit.status : undefined;
+    const closureProgress =
+      phaseReview === 'pending' && phaseApproval === 'pending' && phaseExit === 'pending'
+        ? 'Whole-phase review, catalog recording of standing approval, and exit remain pending.'
+        : phaseReview === 'passed' && phaseApproval === 'passed' && phaseExit === 'passed'
+          ? 'Whole-phase review, catalog recording of standing approval, and exit are passed.'
+          : `Whole-phase closure states are review=${String(phaseReview)}, approval=${String(phaseApproval)}, exit=${String(phaseExit)}.`;
     const expectedExecutionStatus = visibleText(
-      `**Status:** Phase 0 is \`${String(phase0?.status)}\`. ` +
-        `\`P17-G0-01\` through \`P17-G0-03\` are \`${
-          signedGroups.every((group) => group?.status === 'signed-off')
-            ? 'signed-off'
-            : 'not-all-signed-off'
-        }\`. ${groupProgress}`,
+      `**Status:** Phase 0 is \`${String(phase0?.status)}\`. \`P17-G0-01\` through \`P17-G0-05\` are \`${
+        allPhase0GroupsSigned ? 'signed-off' : 'not-all-signed-off'
+      }\`; ${allLifecycleGatesPassed ? 'all group lifecycle gates are passed.' : 'group lifecycle gates are not all passed.'} ${closureProgress} \`catalog.json\` is the machine-readable status authority.`,
     );
-    if (!executionText.includes(expectedExecutionStatus))
+    const actualExecutionStatus = visibleText(executionStatusBlocks[0]?.[0] ?? '');
+    if (actualExecutionStatus !== expectedExecutionStatus)
       errors.push('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
   }
 

@@ -353,11 +353,36 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
         text.replace('Phase 0 is `active`', 'Phase 0 is `ready`'),
       ),
     ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
+    expect(
+      mutateFile('projects/p17/EXECUTION.md', (text) =>
+        text.replace(
+          '**Status:**',
+          '**Status:** Phase 0 is `planned` and G0-05 is not signed.\n\n**Status:**',
+        ),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        'projects/p17/EXECUTION.md must contain exactly one opening Status block',
+        'projects/p17/EXECUTION.md status must match live catalog phase and gate facts',
+      ]),
+    );
+    expect(
+      mutateFile(
+        'projects/p17/EXECUTION.md',
+        (text) => `**Status:** Phase 0 is \`planned\` and G0-05 is not signed.\n\n${text}`,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        'projects/p17/EXECUTION.md H1 must be the first visible content',
+        'projects/p17/EXECUTION.md must contain exactly one opening Status block',
+        'projects/p17/EXECUTION.md status must match live catalog phase and gate facts',
+      ]),
+    );
     const catalog = JSON.parse(
       readFileSync(resolve(ROOT, 'projects/p17/catalog.json'), 'utf8'),
     ) as JsonObject;
-    const group = (catalog.groups as JsonObject[]).find((row) => row.id === 'P17-G0-04');
-    if (!group) throw new Error('missing P17-G0-04 catalog group');
+    const group = (catalog.groups as JsonObject[]).find((row) => row.id === 'P17-G0-05');
+    if (!group) throw new Error('missing P17-G0-05 catalog group');
     const gates = group.gates as JsonObject;
     (gates['traceability-closure'] as JsonObject).status = 'failed';
     expect(
@@ -366,7 +391,7 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
       }),
     ).toEqual(
       expect.arrayContaining([
-        'projects/p17/catalog.json G0-04 cannot claim all lifecycle gates passed',
+        'projects/p17/catalog.json Phase 0 cannot claim all group lifecycle gates passed',
         'projects/p17/EXECUTION.md status must match live catalog phase and gate facts',
       ]),
     );

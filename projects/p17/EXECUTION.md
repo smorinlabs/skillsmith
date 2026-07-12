@@ -2,9 +2,10 @@
 
 > P17 disposition: current execution state; authority: projects/p17/catalog.json
 
-**Status:** Phase 0 is `active`. `P17-G0-01` through `P17-G0-03` are `signed-off`.
-`P17-G0-04` is `signed-off`: all lifecycle gates are passed. `catalog.json` is the machine-readable
-status authority.
+**Status:** Phase 0 is `active`. `P17-G0-01` through `P17-G0-05` are `signed-off`; all group
+lifecycle gates are passed. Whole-phase review, catalog recording of standing approval, and exit
+remain pending.
+`catalog.json` is the machine-readable status authority.
 
 This file groups the consolidated plan into reviewable changes. It does not replace product
 contracts in the consolidated plan or status in `catalog.json`. `CHECKLIST.md` is generated from
@@ -130,8 +131,9 @@ group.
 ## Phase gates
 
 - A phase cannot start until every dependency from the prior phase is signed off.
-- A phase cannot close while any required catalog entity is planned, red, failed, skipped,
-  unmapped, or missing evidence.
+- A phase cannot close while any entity owned by that phase's required groups is planned, red,
+  failed, skipped, unmapped, or missing evidence. Required downstream entities remain planned under
+  their later owning phases and do not falsely block the current phase.
 - Each phase receives an independent whole-phase adversarial review after its groups pass.
 - The user explicitly approves each Phase 0-6 boundary. Phase 7 is not a P17 completion gate.
 - Final P17 completion additionally requires all 23 commands and all non-deferred recommendations,

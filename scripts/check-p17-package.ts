@@ -221,8 +221,29 @@ if (
 }
 
 const plan = text('docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md');
-if (!plan.includes('Phase 0 executable closure is still open')) {
-  fail('plan does not declare open executable Phase 0 closure');
+const phaseCatalog = JSON.parse(text('projects/p17/catalog.json')) as {
+  groups: Array<{ id: string; status: string }>;
+  phases: Array<{
+    id: string;
+    requiredGroups: string[];
+    review: { status: string };
+    approval: { status: string };
+    exit: { status: string };
+  }>;
+};
+const phase0 = phaseCatalog.phases.find((phase) => phase.id === '0');
+if (!phase0) fail('catalog has no Phase 0 record');
+const phase0GroupsSigned = phase0.requiredGroups.every(
+  (id) => phaseCatalog.groups.find((group) => group.id === id)?.status === 'signed-off',
+);
+const phase0Marker =
+  `**Phase 0 execution:** groups=${phase0GroupsSigned ? 'signed-off' : 'incomplete'}; ` +
+  `review=${phase0.review.status}; approval=${phase0.approval.status}; exit=${phase0.exit.status}.`;
+const phase0Markers = [...plan.matchAll(/^> (\*\*Phase 0 execution:\*\* .+)$/gm)].map(
+  (match) => match[1],
+);
+if (phase0Markers.length !== 1 || phase0Markers[0] !== phase0Marker) {
+  fail('plan must contain exactly one Phase 0 execution marker matching catalog');
 }
 if (plan.includes('no planning gate remains open'))
   fail('plan retains stale all-gates-closed language');
