@@ -65,6 +65,19 @@ function json<T>(command: string[]): T {
   }
 }
 
+function jsonItems<T>(endpoint: string): T[] {
+  const command = ['gh', 'api', '--paginate', endpoint, '--jq', '.[]'];
+  const output = run(command);
+  if (!output) return [];
+  return output.split(/\r?\n/).map((line, index) => {
+    try {
+      return JSON.parse(line) as T;
+    } catch {
+      return fail(`${command.join(' ')} returned invalid JSON on item ${index + 1}`);
+    }
+  });
+}
+
 function checkLinks(path: string): number {
   const body = text(path);
   let checked = 0;
@@ -511,14 +524,10 @@ function requireChecks(pr: PullRequest): void {
 
 function requirePrAllowlist(number: number): void {
   const allowed = new Set(canonicalFiles);
-  const pages = json<Array<Array<{ filename: string }>>>([
-    'gh',
-    'api',
-    '--paginate',
-    '--slurp',
+  const files = jsonItems<{ filename: string }>(
     `repos/${repository}/pulls/${number}/files?per_page=100`,
-  ]);
-  const changed = pages.flat().map((file) => file.filename);
+  );
+  const changed = files.map((file) => file.filename);
   if (changed.length === 0) fail(`PR #${number} has no changed files`);
   const unexpected = changed.filter((path) => !allowed.has(path));
   if (unexpected.length > 0) {
@@ -577,14 +586,10 @@ function requireReviewClosure(number: number): void {
         };
       }>(command);
     } catch (error) {
-      const commentPages = json<Array<Array<{ id: number }>>>([
-        'gh',
-        'api',
-        '--paginate',
-        '--slurp',
+      const comments = jsonItems<{ id: number }>(
         `repos/${repository}/pulls/${number}/comments?per_page=100`,
-      ]);
-      if (commentPages.flat().length > 0) {
+      );
+      if (comments.length > 0) {
         fail(`cannot prove review-thread closure through REST fallback: ${String(error)}`);
       }
       return;
@@ -616,17 +621,13 @@ function readPr(number: number): PullRequest {
   const checkResponse = json<{
     check_runs: Array<{ name: string; status: string; conclusion: string | null }>;
   }>(['gh', 'api', `repos/${repository}/commits/${pull.head.sha}/check-runs?per_page=100`]);
-  const reviewPages = json<
-    Array<Array<{ user?: { login?: string }; state?: string; submitted_at?: string }>>
-  >([
-    'gh',
-    'api',
-    '--paginate',
-    '--slurp',
-    `repos/${repository}/pulls/${number}/reviews?per_page=100`,
-  ]);
+  const reviews = jsonItems<{
+    user?: { login?: string };
+    state?: string;
+    submitted_at?: string;
+  }>(`repos/${repository}/pulls/${number}/reviews?per_page=100`);
   const latestReviews = new Map<string, string>();
-  for (const review of reviewPages.flat()) {
+  for (const review of reviews) {
     const login = review.user?.login;
     const state = review.state?.toUpperCase();
     if (login && state && state !== 'COMMENTED') latestReviews.set(login, state);

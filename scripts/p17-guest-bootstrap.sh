@@ -14,7 +14,8 @@ usage() {
 Usage: scripts/p17-guest-bootstrap.sh MODE
 
 Modes:
-  install  Install the P17 toolchain and Skillsmith without authenticating
+  provision  Install the guest toolchain and four agent CLIs; do not clone Skillsmith
+  install    Clone, build, and install Skillsmith after GitHub authentication
   check    Validate isolation, subscriptions, tools, Skillsmith, and P17 gates
 EOF
 }
@@ -142,7 +143,7 @@ install_skillsmith() {
     sudo install -m 0755 "$REPO_DIR/dist/skillsmith" /usr/local/bin/skillsmith
 }
 
-install_all() {
+provision_all() {
     ensure_linux_arm64
     assert_no_host_mounts
     install_system_packages
@@ -150,18 +151,45 @@ install_all() {
     configure_operator_codex
     export PATH="$LOCAL_BIN:/usr/local/bin:$PATH"
     install_actionlint
-    install_skillsmith
     sudo apt-get clean
     sudo npm cache clean --force >/dev/null 2>&1 || true
 
     cat <<EOF
 
-P17 guest installation completed without authentication.
-Repository: $REPO_DIR
+P17 guest provisioning complete.
+Installed: OS packages, Node.js, Bun, GitHub CLI, Codex, Claude Code, Kilo Code,
+           OpenCode, and Actionlint.
+Not installed: the Skillsmith repository, dependencies, binary, or Gitleaks.
 Operator Codex home: $OPERATOR_CODEX_HOME
 Test user: $TEST_USER
 
-Return to the host instructions in docs/p17-sandbox.md for manual subscription login.
+Next: return to the host instructions in docs/p17-sandbox.md and perform the
+manual guest authentication step. GitHub authentication is required before the
+separate host-side install command can clone the private repository.
+EOF
+}
+
+install_repository() {
+    ensure_linux_arm64
+    assert_no_host_mounts
+    export PATH="$LOCAL_BIN:/usr/local/bin:$PATH"
+
+    for tool in bun git gh node npm; do
+        require_command "$tool"
+    done
+    if ! gh auth status >/dev/null 2>&1; then
+        die 'GitHub authentication is required before Skillsmith can be cloned. Run ./scripts/p17-sandbox.sh shell on the Mac, then run gh auth login and gh auth setup-git inside the guest.'
+    fi
+    gh auth setup-git
+    install_skillsmith
+
+    cat <<EOF
+
+Skillsmith repository installation complete.
+Repository: $REPO_DIR
+Binary: /usr/local/bin/skillsmith
+
+Exit to the Mac before running ./scripts/p17-sandbox.sh check.
 EOF
 }
 
@@ -211,24 +239,6 @@ check_test_codex_subscription() {
     grep -qi 'ChatGPT' <<<"$output"
 }
 
-check_kilo_subscription() {
-    local test_home
-    test_home="$(getent passwd "$TEST_USER" | cut -d: -f6)"
-
-    if sudo -iu "$TEST_USER" kilo profile --json >/dev/null 2>&1; then
-        return
-    fi
-
-    sudo test -f "$test_home/.local/share/kilo/auth.json" || return 1
-    sudo jq -e '
-      to_entries
-      | any(
-          (.key | ascii_downcase | test("openai|chatgpt"))
-          and (.value.type == "oauth")
-        )
-    ' "$test_home/.local/share/kilo/auth.json" >/dev/null
-}
-
 check_all() {
     ensure_linux_arm64
     export PATH="$LOCAL_BIN:/usr/local/bin:$PATH"
@@ -244,7 +254,6 @@ check_all() {
     check_item 'operator Codex subscription' check_operator_codex_subscription
     check_item 'test Codex subscription' check_test_codex_subscription
     check_item 'test Claude subscription' sudo -iu "$TEST_USER" claude auth status --text
-    check_item 'test Kilo subscription' check_kilo_subscription
     check_item 'operator GitHub login' gh auth status
     check_item 'all four agents detected' check_detected_agents
     check_item 'repository full gate' bash -lc "cd '$REPO_DIR' && bun run check"
@@ -261,7 +270,8 @@ check_all() {
 
 mode="${1:-}"
 case "$mode" in
-    install) install_all ;;
+    provision) provision_all ;;
+    install) install_repository ;;
     check) check_all ;;
     help|-h|--help) usage ;;
     *)
