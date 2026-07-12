@@ -636,7 +636,7 @@ function readPr(number: number): PullRequest {
     : '';
   return {
     number: pull.number,
-    state: pull.state.toUpperCase(),
+    state: pull.merged_at ? 'MERGED' : pull.state.toUpperCase(),
     isDraft: pull.draft,
     baseRefName: pull.base.ref,
     headRefName: pull.head.ref,
