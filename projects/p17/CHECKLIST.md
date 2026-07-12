@@ -480,14 +480,14 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G1-02B — `check`/doctor gate semantics and report-only behavior
 
-Phase: 1; status: **planned**; dependencies: P17-G1-02A.
+Phase: 1; status: **ready**; dependencies: P17-G1-02A.
 Required-now validations: EWP-CMD-CHECK-TS01, EWP-CMD-CHECK-TS02, EWP-CMD-CHECK-TS03, EWP-CMD-CHECK-TS04, EWP-CMD-CHECK-TS05, EWP-P1-TS04.
 Downstream coverage obligations: none.
 
 ### Group gates
 
-- [ ] P17-G1-02B:mapped _(pending)_
-- [ ] P17-G1-02B:ready _(pending)_
+- [x] P17-G1-02B:mapped _(passed)_
+- [x] P17-G1-02B:ready _(passed)_
 - [ ] P17-G1-02B:test-first _(pending)_
 - [ ] P17-G1-02B:minimal-implementation _(pending)_
 - [ ] P17-G1-02B:targeted-green _(pending)_
