@@ -774,7 +774,7 @@
       "phase": "1",
       "title": "Shared project context, config resolution, target/scope selection, and bounded defaults",
       "dependsOn": [],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/context/project.ts",
@@ -1050,8 +1050,8 @@
           "evidence": ["projects/p17/evidence/P17-G1-01.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-01.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -14415,11 +14415,16 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-01:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/options.test.ts",
+        "selector": "EWP-OPT-TS06",
+        "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-01.md#execution-receipt-ewp-opt-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-OPT-TS06"],
@@ -14431,8 +14436,10 @@
         "EWP-WF14"
       ],
       "affectedContracts": ["EWP-CF-022", "EWP-CF-024", "EWP-CF-031", "P0-01", "P0-02", "P0-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS06"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/options.test.ts"]
     },
     {
       "id": "EWP-OPT-TS07",
@@ -15450,11 +15457,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-01:tests/ergonomics/phase/EWP-P1-TS01.test.ts#EWP-P1-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS01.test.ts",
+        "selector": "EWP-P1-TS01",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS01.test.ts --test-name-pattern EWP-P1-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-01.md#execution-receipt-ewp-p1-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS01"],
@@ -15466,8 +15478,10 @@
         "EWP-WF14"
       ],
       "affectedContracts": ["EWP-CF-022", "EWP-CF-024", "EWP-CF-031", "P0-01", "P0-02", "P0-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS01.test.ts --test-name-pattern EWP-P1-TS01"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P1-TS01.test.ts"]
     },
     {
       "id": "EWP-P1-TS02",
@@ -15475,11 +15489,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-01:tests/ergonomics/phase/EWP-P1-TS02.test.ts#EWP-P1-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS02.test.ts",
+        "selector": "EWP-P1-TS02",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS02.test.ts --test-name-pattern EWP-P1-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-01.md#execution-receipt-ewp-p1-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS02"],
@@ -15491,8 +15510,10 @@
         "EWP-WF14"
       ],
       "affectedContracts": ["EWP-CF-022", "EWP-CF-024", "EWP-CF-031", "P0-01", "P0-02", "P0-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS02.test.ts --test-name-pattern EWP-P1-TS02"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P1-TS02.test.ts"]
     },
     {
       "id": "EWP-P1-TS03",
@@ -15500,11 +15521,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-01:tests/ergonomics/phase/EWP-P1-TS03.test.ts#EWP-P1-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS03.test.ts",
+        "selector": "EWP-P1-TS03",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS03.test.ts --test-name-pattern EWP-P1-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-01.md#execution-receipt-ewp-p1-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS03"],
@@ -15516,8 +15542,10 @@
         "EWP-WF14"
       ],
       "affectedContracts": ["EWP-CF-022", "EWP-CF-024", "EWP-CF-031", "P0-01", "P0-02", "P0-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS03.test.ts --test-name-pattern EWP-P1-TS03"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P1-TS03.test.ts"]
     },
     {
       "id": "EWP-P1-TS04",
@@ -18752,11 +18780,16 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-01:tests/ergonomics/workflows/EWP-WF14.test.ts#EWP-WF14",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF14.test.ts",
+        "selector": "EWP-WF14",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF14.test.ts --test-name-pattern EWP-WF14"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-01.md#execution-receipt-ewp-wf14"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-WF14"],
@@ -18768,8 +18801,10 @@
         "EWP-WF14"
       ],
       "affectedContracts": ["EWP-CF-022", "EWP-CF-024", "EWP-CF-031", "P0-01", "P0-02", "P0-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF14.test.ts --test-name-pattern EWP-WF14"
+      ],
+      "ownedFiles": ["tests/ergonomics/workflows/EWP-WF14.test.ts"]
     },
     {
       "id": "EWP-WF15",

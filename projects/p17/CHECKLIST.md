@@ -245,7 +245,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-OPT-TS03 | P17-G1-03 | planned | required-pr |
 | EWP-OPT-TS04 | P17-G1-02A | signed-off | required-pr |
 | EWP-OPT-TS05 | P17-G6-02A | planned | required-pr |
-| EWP-OPT-TS06 | P17-G1-01 | planned | required-pr |
+| EWP-OPT-TS06 | P17-G1-01 | failing | required-pr |
 | EWP-OPT-TS07 | P17-G6-02A | planned | required-pr |
 | EWP-OPT-TS08 | P17-G2-01 | planned | required-pr |
 | EWP-OPT-TS09 | P17-G4B-02 | planned | required-pr |
@@ -268,7 +268,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF11 | P17-G3B-03 | planned | required-pr |
 | EWP-WF12 | P17-G5-04 | planned | required-pr |
 | EWP-WF13 | P17-G4A-04 | planned | required-pr |
-| EWP-WF14 | P17-G1-01 | planned | required-pr |
+| EWP-WF14 | P17-G1-01 | failing | required-pr |
 | EWP-WF15 | P17-G1-02A | signed-off | required-pr |
 | EWP-WF16 | P17-G6-02A | planned | required-pr |
 
@@ -412,7 +412,7 @@ Downstream coverage obligations: EWP-P6-TS06.
 
 ## P17-G1-01 — Shared project context, config resolution, target/scope selection, and bounded defaults
 
-Phase: 1; status: **ready**; dependencies: none.
+Phase: 1; status: **active**; dependencies: none.
 Required-now validations: EWP-OPT-TS06, EWP-P1-TS01, EWP-P1-TS02, EWP-P1-TS03, EWP-WF14.
 Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-COMMANDS-TS02, EWP-CMD-CONFIG-TS03, EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-DOCTOR-TS02, EWP-CMD-GC-TS01, EWP-CMD-GC-TS02, EWP-CMD-GC-TS03, EWP-CMD-GC-TS04, EWP-CMD-GC-TS05, EWP-CMD-GC-TS06, EWP-CMD-GC-TS07, EWP-CMD-GC-TS08, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-LIST-TS03, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-CMD-STATUS-TS01, EWP-CMD-STATUS-TS02, EWP-CMD-STATUS-TS03, EWP-CMD-STATUS-TS04, EWP-CMD-STATUS-TS05, EWP-CMD-STATUS-TS06, EWP-CMD-SYNC-TS01, EWP-CMD-SYNC-TS02, EWP-CMD-SYNC-TS03, EWP-CMD-SYNC-TS04, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-SYNC-TS09, EWP-CMD-SYNC-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UPDATE-TS01, EWP-CMD-UPDATE-TS02, EWP-CMD-UPDATE-TS03, EWP-CMD-UPDATE-TS04, EWP-CMD-UPDATE-TS05, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-CMD-UPDATE-TS10, EWP-P2-TS02, EWP-P3B-TS03, EWP-P5-TS03, EWP-P5-TS05, EWP-WF05, EWP-WF09, EWP-WF10, EWP-WF11, EWP-WF12, EWP-WF15.
 
@@ -420,7 +420,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 - [x] P17-G1-01:mapped _(passed)_
 - [x] P17-G1-01:ready _(passed)_
-- [ ] P17-G1-01:test-first _(pending)_
+- [x] P17-G1-01:test-first _(passed)_
 - [ ] P17-G1-01:minimal-implementation _(pending)_
 - [ ] P17-G1-01:targeted-green _(pending)_
 - [ ] P17-G1-01:impacted-green _(pending)_
@@ -434,14 +434,14 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 - [ ] **EWP-CF-022** — Resolve project context once and keep it separate from artifact selection _(finding; planned)_
 - [ ] **EWP-CF-024** — Make dev, promote, and undo selection scope-aware _(finding; planned)_
 - [ ] **EWP-CF-031** — Make zero-target behavior explicit _(finding; planned)_
-- [ ] **EWP-OPT-TS06** — Exhaust zero-target, positional-plus-all, unmatched target/glob, filter-to-zero, _(option-gate; planned)_
+- [ ] **EWP-OPT-TS06** — Exhaust zero-target, positional-plus-all, unmatched target/glob, filter-to-zero, _(option-gate; failing)_
 - [ ] **EWP-P1-T01** — Shared CLI context, inherited-option builder, and immutable `ProjectContext` _(phase-task; planned)_
 - [ ] **EWP-P1-T02** — Operational effective-config resolver consuming the shared project context while _(phase-task; planned)_
 - [ ] **EWP-P1-T03** — Shared tool/scope/capability validation and scope-aware placement/history target _(phase-task; planned)_
-- [ ] **EWP-P1-TS01** — Global option spawned-CLI matrix plus root/nested cwd, `-C`, Git worktree, _(phase-test; planned)_
-- [ ] **EWP-P1-TS02** — Config precedence spawned-CLI matrix, including nested discovered manifest, _(phase-test; planned)_
-- [ ] **EWP-P1-TS03** — Invalid enum/capability matrix for every command plus cross-command _(phase-test; planned)_
-- [ ] **EWP-WF14** — Scope/shadowing and custom paths _(workflow; planned)_
+- [ ] **EWP-P1-TS01** — Global option spawned-CLI matrix plus root/nested cwd, `-C`, Git worktree, _(phase-test; failing)_
+- [ ] **EWP-P1-TS02** — Config precedence spawned-CLI matrix, including nested discovered manifest, _(phase-test; failing)_
+- [ ] **EWP-P1-TS03** — Invalid enum/capability matrix for every command plus cross-command _(phase-test; failing)_
+- [ ] **EWP-WF14** — Scope/shadowing and custom paths _(workflow; failing)_
 - [ ] **P0-01** — Functional global command context _(recommendation; planned)_
 - [ ] **P0-02** — Operational config consumption _(recommendation; planned)_
 - [ ] **P0-03** — Uniform tool/scope validation _(recommendation; planned)_

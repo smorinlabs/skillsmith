@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  resolveTargetSelection,
+  validateSelectionRequest,
+} from '../../../core/src/selection/resolve.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
+import { walk } from '../../src/completion/walk.ts';
 import {
   CLI_MIGRATION_PROVENANCE,
   assertClosedMigrationLedger,
@@ -290,6 +295,166 @@ describe('EWP-OPT-TS04', () => {
       ).toEqual({ ok: true });
       const execution = validateNonMutatingMode(commandName, { force: true });
       expect(execution).toEqual({ ok: true });
+    }
+  });
+});
+
+describe('EWP-OPT-TS06', () => {
+  const candidates = [
+    {
+      name: 'review',
+      tool: 'codex',
+      scope: 'user',
+      path: '/home/alice/.codex/skills/review',
+      capabilities: ['dev', 'promote', 'undo'],
+    },
+    {
+      name: 'review',
+      tool: 'codex',
+      scope: 'project',
+      path: '/work/acme/.codex/skills/review',
+      capabilities: ['dev', 'promote', 'undo'],
+    },
+    {
+      name: 'lint',
+      tool: 'claude-code',
+      scope: 'project',
+      path: '/work/acme/.claude/skills/lint',
+      capabilities: ['dev', 'promote', 'undo'],
+    },
+  ] as const;
+
+  const mutationPolicy = {
+    requiresSelection: true,
+    allowBoundedDefault: false,
+    allowAbsentCreate: false,
+    allowedTools: ['claude-code', 'codex'],
+    allowedScopes: ['user', 'project'],
+    allowedCapabilities: ['dev', 'promote', 'undo'],
+  } as const;
+
+  const validate = (
+    request: Parameters<typeof validateSelectionRequest>[0],
+    policy: Parameters<typeof validateSelectionRequest>[1] = mutationPolicy,
+  ) => {
+    const result = validateSelectionRequest(request, policy);
+    if (!result.ok)
+      throw new Error(`unexpected selection validation failure: ${result.error.code}`);
+    return result.value;
+  };
+
+  test('target-or-all grammar rejects a missing required selection and positional-plus-all', () => {
+    for (const request of [
+      { targets: [], all: false },
+      { targets: ['review'], all: true },
+    ]) {
+      const result = validateSelectionRequest(request, mutationPolicy);
+      expect(result.ok).toBeFalse();
+      if (result.ok) throw new Error('invalid mutation selection unexpectedly passed');
+      expect(result.error).toMatchObject({ code: 'usage', exitCode: 2 });
+    }
+  });
+
+  test('unmatched explicit targets never widen to another target or to all candidates', () => {
+    const request = validate({ targets: ['absent-*'], all: false });
+    const result = resolveTargetSelection(candidates, request);
+    expect(result.ok).toBeFalse();
+    if (result.ok) throw new Error('unmatched target unexpectedly passed');
+    expect(result.error).toMatchObject({ code: 'unmatched', exitCode: 2 });
+    expect(result.error.targets).toEqual(['absent-*']);
+  });
+
+  test('bounded defaults and explicit all select only their named bounds and retain provenance', () => {
+    const boundedPolicy = {
+      ...mutationPolicy,
+      requiresSelection: false,
+      allowBoundedDefault: true,
+    } as const;
+    const bounded = resolveTargetSelection(
+      candidates.filter((candidate) => candidate.scope === 'project'),
+      validate({ targets: [], all: false }, boundedPolicy),
+    );
+    expect(bounded).toMatchObject({
+      ok: true,
+      value: {
+        outcome: 'selected',
+        selectionSource: 'bounded-default',
+        selected: [{ scope: 'project' }, { scope: 'project' }],
+      },
+    });
+
+    const all = resolveTargetSelection(
+      candidates,
+      validate({ targets: [], all: true, scopes: ['project'] }),
+    );
+    expect(all).toMatchObject({
+      ok: true,
+      value: {
+        outcome: 'selected',
+        selectionSource: 'explicit-all',
+        selected: [{ scope: 'project' }, { scope: 'project' }],
+      },
+    });
+  });
+
+  test('a valid explicit selection filtered to zero is an explained no-op, never widened', () => {
+    const result = resolveTargetSelection(
+      candidates,
+      validate({ targets: ['review'], all: false, scopes: ['project'], tools: ['claude-code'] }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        selected: [],
+        outcome: 'filter-noop',
+        selectionSource: 'explicit-targets',
+      },
+    });
+    if (!result.ok) throw new Error('filter-to-zero unexpectedly failed');
+    expect(result.value.reason).toMatch(/filter/i);
+  });
+
+  test('optional-target policy stays declarative for downstream bounded and exception commands', () => {
+    const policies = {
+      status: { requiresSelection: false, allowBoundedDefault: true },
+      plan: { requiresSelection: false, allowBoundedDefault: true },
+      apply: { requiresSelection: false, allowBoundedDefault: true },
+      sync: { requiresSelection: false, allowBoundedDefault: true },
+      gc: { requiresSelection: false, allowBoundedDefault: true },
+      updateMutation: { requiresSelection: true, allowBoundedDefault: false },
+      updateCheck: { requiresSelection: false, allowBoundedDefault: true },
+      undo: { requiresSelection: true, allowBoundedDefault: false },
+    } as const;
+
+    for (const [command, contract] of Object.entries(policies)) {
+      const result = validateSelectionRequest(
+        { targets: [], all: false },
+        { ...mutationPolicy, ...contract },
+      );
+      expect(result.ok, command).toBe(!contract.requiresSelection);
+    }
+  });
+
+  test('current help exposes target-or-all grammar while completion never invents positional all', () => {
+    const program = buildProgram();
+    const completion = walk(program)[0];
+    if (!completion) throw new Error('completion root missing');
+
+    for (const commandName of ['dev', 'promote'] as const) {
+      const command = program.commands.find((candidate) => candidate.name() === commandName);
+      const completionCommand = completion.subcommands.find(
+        (candidate) => candidate.name === commandName,
+      );
+      if (!command || !completionCommand) throw new Error(`${commandName} command missing`);
+
+      expect(command.helpInformation()).toContain('[skill...]');
+      expect(command.options.some((option) => option.long === '--all')).toBeTrue();
+      expect(completionCommand.args).toEqual([
+        expect.objectContaining({ name: 'skill', variadic: true, choices: null }),
+      ]);
+      expect(completionCommand.args.flatMap((argument) => argument.choices ?? [])).not.toContain(
+        'all',
+      );
     }
   });
 });
