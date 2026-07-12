@@ -539,7 +539,17 @@ function requirePrAllowlist(number: number): void {
   }
 }
 
-function requireReviewClosure(number: number): void {
+function isGraphqlRateLimit(error: unknown): boolean {
+  const message = String(error);
+  return /graphql_rate_limit|["']?(?:type|code)["']?\s*:\s*["']?RATE_LIMIT|\brate limit (?:already )?exceeded\b|\bexceeded a secondary rate limit\b/i.test(
+    message,
+  );
+}
+
+function requireReviewClosure(
+  number: number,
+  { allowMergedEvidenceFallback }: { allowMergedEvidenceFallback: boolean },
+): void {
   const [owner, name] = repository.split('/');
   if (!owner || !name) fail('malformed canonical GitHub repository');
   const query =
@@ -586,11 +596,25 @@ function requireReviewClosure(number: number): void {
         };
       }>(command);
     } catch (error) {
+      const rateLimited = isGraphqlRateLimit(error);
+      if (rateLimited && allowMergedEvidenceFallback && reviewClosed) {
+        console.warn(
+          'warning: GitHub GraphQL rate limit exhausted; --final accepted the merged PR with the committed closed preparation-review ledger',
+        );
+        return;
+      }
+      if (rateLimited) {
+        fail(
+          'GitHub GraphQL rate limit exhausted; --merge-ready requires a live review-thread query. Retry after the GraphQL quota resets.',
+        );
+      }
       const comments = jsonItems<{ id: number }>(
         `repos/${repository}/pulls/${number}/comments?per_page=100`,
       );
       if (comments.length > 0) {
-        fail(`cannot prove review-thread closure through REST fallback: ${String(error)}`);
+        fail(
+          `cannot query GitHub review-thread closure; REST found ${comments.length} review comments but does not expose thread resolution: ${String(error)}`,
+        );
       }
       return;
     }
@@ -681,7 +705,7 @@ if (mode === '--merge-ready') {
     fail(`PR #${number} has unsatisfied review decision ${pr.reviewDecision}`);
   }
   requireChecks(pr);
-  requireReviewClosure(number);
+  requireReviewClosure(number, { allowMergedEvidenceFallback: false });
   requirePrAllowlist(number);
   console.log(`merge-ready: PR #${number} exact head ${head}; CI/reviews closed; ${pr.url}`);
   process.exit(0);
@@ -701,7 +725,7 @@ if (mode === '--final') {
     fail(`PR #${number} has unsatisfied review decision ${pr.reviewDecision}`);
   }
   requireChecks(pr);
-  requireReviewClosure(number);
+  requireReviewClosure(number, { allowMergedEvidenceFallback: true });
   requirePrAllowlist(number);
   const branch = run(['git', 'branch', '--show-current']);
   const head = run(['git', 'rev-parse', 'HEAD']);

@@ -30,6 +30,7 @@ describe('P17 Lima sandbox scripts', () => {
       'check',
       'goal',
       'remote',
+      'remote-test',
       'stop',
       'destroy',
     ]) {
@@ -114,6 +115,24 @@ describe('P17 Lima sandbox scripts', () => {
     expect(output).not.toContain('--listen');
   });
 
+  test('remote-test preflights the guest and prints an interactive read-only desktop test', () => {
+    const result = runHost('remote-test');
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe('');
+    const output = result.stdout.toString();
+    expect(output).toContain('bash -lc');
+    expect(output).toContain('codex login status');
+    expect(output).toContain('Include ~/.lima/skillsmith-p17/ssh.config');
+    expect(output).toContain('SSH host: lima-skillsmith-p17');
+    expect(output).toContain('Project:  /work/skillsmith');
+    expect(output).toContain('Do not modify files');
+    expect(output).toContain('REMOTE_INTERACTION_OK');
+    expect(output).toContain('fully interactive');
+    expect(output).toContain('does not launch a separate terminal Codex TUI');
+    expect(output).not.toContain('remote-control start');
+    expect(output).not.toContain('app-server --listen');
+  });
+
   test('VM driver fallback is explicit and overrideable', () => {
     const result = Bun.spawnSync(['bash', hostScript, 'setup'], {
       cwd: root,
@@ -161,6 +180,13 @@ describe('P17 Lima sandbox scripts', () => {
     expect(source).toContain("'--jq'");
     expect(source).toContain("'.[]'");
     expect(source).not.toContain("'--slurp'");
+    expect(source).toContain('function isGraphqlRateLimit');
+    expect(source).toContain('allowMergedEvidenceFallback: false');
+    expect(source).toContain('allowMergedEvidenceFallback: true');
+    expect(source).toContain('GitHub GraphQL rate limit exhausted');
+    expect(source).toContain('exceeded a secondary rate limit');
+    expect(source).toContain('--merge-ready requires a live review-thread query');
+    expect(source).not.toContain('cannot prove review-thread closure through REST fallback');
   });
 
   test('guest provision dry-run display is an exact streamed-script command', () => {
@@ -195,6 +221,8 @@ describe('P17 Lima sandbox scripts', () => {
     expect(source).toContain('It does **not** authenticate any account');
     expect(source).toContain('It does **not** clone or install Skillsmith');
     expect(source).toContain('**GUEST — operator user**');
+    expect(source).toContain('`--merge-ready` remains fail-closed');
+    expect(source).toContain('rate-limit-only failure emits a warning');
   });
 
   test('both scripts are valid Bash', () => {
