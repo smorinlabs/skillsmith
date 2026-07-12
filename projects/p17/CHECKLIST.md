@@ -12,20 +12,20 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 0 | 28 | 6 |
-| phase-task | 65 | 6 | 59 | 0 |
+| phase-task | 65 | 9 | 56 | 0 |
 | phase-test | 61 | 7 | 54 | 0 |
 | command-test | 157 | 0 | 157 | 0 |
 | option-gate | 10 | 1 | 9 | 0 |
 | workflow | 16 | 0 | 16 | 0 |
 | command | 23 | 0 | 23 | 0 |
-| finding | 43 | 2 | 41 | 0 |
+| finding | 43 | 3 | 40 | 0 |
 | decision | 16 | 0 | 15 | 1 |
 
 ### Phases
 
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
-| 0 | 5 | 29 | 16 | 0 |
+| 0 | 5 | 29 | 20 | 0 |
 | 1 | 9 | 62 | 0 | 0 |
 | 2 | 5 | 32 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
@@ -171,7 +171,7 @@ Tracked entities: **425** across **45** change groups.
 
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
-| EWP-CF-001 | P17-G0-03 | validated | required-pr |
+| EWP-CF-001 | P17-G0-03 | signed-off | required-pr |
 | EWP-CF-002 | P17-G3B-01 | planned | required-pr |
 | EWP-CF-003 | P17-G2-01 | planned | required-pr |
 | EWP-CF-004 | P17-G1-02A | planned | required-pr |
@@ -334,7 +334,7 @@ Downstream coverage obligations: EWP-CMD-CHECK-TS01, EWP-CMD-CHECK-TS02, EWP-CMD
 
 ## P17-G0-03 — Artifact terminology, dependency order, and architecture/quality reconciliation
 
-Phase: 0; status: **reviewed**; dependencies: P17-G0-01.
+Phase: 0; status: **signed-off**; dependencies: P17-G0-01.
 Required-now validations: EWP-P0A-TS01, EWP-P0A-TS06, EWP-P0A-TS07.
 Downstream coverage obligations: EWP-OPT-TS01, EWP-P0A-TS02, EWP-P0A-TS03, EWP-P0A-TS04, EWP-P0A-TS05, EWP-P0A-TS08, EWP-P0A-TS09, EWP-P2-TS01, EWP-P2-TS02, EWP-P2-TS03, EWP-P2-TS04, EWP-P2-TS05, EWP-P3B-TS01, EWP-P3B-TS02, EWP-P3B-TS03, EWP-P4A-TS01, EWP-P4A-TS02, EWP-P4A-TS03, EWP-P4B-TS01, EWP-P4B-TS02, EWP-P4B-TS03, EWP-P4B-TS04, EWP-P4B-TS05, EWP-P4B-TS06, EWP-WF03, EWP-WF13.
 
@@ -348,15 +348,15 @@ Downstream coverage obligations: EWP-OPT-TS01, EWP-P0A-TS02, EWP-P0A-TS03, EWP-P
 - [x] P17-G0-03:impacted-green _(passed)_
 - [x] P17-G0-03:refactor _(passed)_
 - [x] P17-G0-03:adversarial-review _(passed)_
-- [ ] P17-G0-03:traceability-closure _(pending)_
-- [ ] P17-G0-03:signed-off _(pending)_
+- [x] P17-G0-03:traceability-closure _(passed)_
+- [x] P17-G0-03:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-001** — Correct phase dependencies before extending command-specific orchestration _(finding; validated)_
-- [ ] **EWP-P0A-T03** — Compare manifest/lock/plan terminology against config and placement schemas. _(phase-task; reviewed)_
-- [ ] **EWP-P0A-T04** — Run factor-architect review: good precedent, bad precedent, broken precedent, new _(phase-task; reviewed)_
-- [ ] **EWP-P0A-T05** — Run broad consistency/quality scan for contradictions, duplicate semantics, _(phase-task; reviewed)_
+- [x] **EWP-CF-001** — Correct phase dependencies before extending command-specific orchestration _(finding; signed-off)_
+- [x] **EWP-P0A-T03** — Compare manifest/lock/plan terminology against config and placement schemas. _(phase-task; signed-off)_
+- [x] **EWP-P0A-T04** — Run factor-architect review: good precedent, bad precedent, broken precedent, new _(phase-task; signed-off)_
+- [x] **EWP-P0A-T05** — Run broad consistency/quality scan for contradictions, duplicate semantics, _(phase-task; signed-off)_
 
 ## P17-G0-04 — Section-level documentation-drift ledger and authoritative-document closure
 
