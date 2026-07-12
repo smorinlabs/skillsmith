@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dir, '..');
 const hostScript = resolve(root, 'scripts/p17-sandbox.sh');
 const guestScript = resolve(root, 'scripts/p17-guest-bootstrap.sh');
+const guide = resolve(root, 'docs/p17-sandbox.md');
+const packageCheck = resolve(root, 'scripts/check-p17-package.ts');
 
 function runHost(...args: string[]) {
   return Bun.spawnSync(['bash', hostScript, ...args], {
@@ -20,12 +22,50 @@ describe('P17 Lima sandbox scripts', () => {
     const result = runHost('help');
     expect(result.exitCode).toBe(0);
     const output = result.stdout.toString();
-    for (const command of ['setup', 'shell', 'check', 'goal', 'stop', 'destroy']) {
+    for (const command of [
+      'setup',
+      'manual',
+      'shell',
+      'install',
+      'check',
+      'goal',
+      'remote',
+      'stop',
+      'destroy',
+    ]) {
       expect(output).toContain(command);
     }
+    expect(output).toContain('[MAC]');
+    expect(output).toContain('[GUEST]');
+    expect(output).toContain('does not clone or install Skillsmith');
   });
 
-  test('setup dry-run creates one minimal isolated VM and streams guest installation', () => {
+  test('manual prints every manual boundary and performs no action', () => {
+    const result = runHost('manual');
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe('');
+    const output = result.stdout.toString();
+    for (const marker of [
+      '[MAC]',
+      '[GUEST]',
+      './scripts/p17-sandbox.sh shell',
+      'codex login --device-auth',
+      'gh auth login --hostname github.com --git-protocol https --web',
+      'sudo -iu skillsmith-test claude auth login',
+      'Kilo Code and OpenCode remain installed but unauthenticated',
+      'exit',
+      './scripts/p17-sandbox.sh install',
+      './scripts/p17-sandbox.sh check',
+      './scripts/p17-sandbox.sh goal',
+      './scripts/p17-sandbox.sh remote',
+    ]) {
+      expect(output).toContain(marker);
+    }
+    expect(output).toContain('This command only prints instructions');
+    expect(output).not.toContain('+ limactl');
+  });
+
+  test('setup dry-run creates one minimal isolated VM and provisions only the guest toolchain', () => {
     const result = runHost('setup');
     expect(result.exitCode).toBe(0);
     const output = result.stdout.toString();
@@ -37,8 +77,18 @@ describe('P17 Lima sandbox scripts', () => {
     expect(output).toContain('--mount-none');
     expect(output).toContain('--containerd=none');
     expect(output).toContain('--port-forward=1455:1455,static=true');
-    expect(output).toContain('bash -s -- install <');
+    expect(output).toContain('bash -s -- provision <');
+    expect(output).toContain('Skillsmith is not installed yet');
     expect(output).not.toContain('limactl clone');
+  });
+
+  test('install dry-run is a separate authenticated repository step', () => {
+    const result = runHost('install');
+    expect(result.exitCode).toBe(0);
+    const output = result.stdout.toString();
+    expect(output).toContain('bash -s -- install <');
+    expect(output).toContain('GitHub authentication');
+    expect(output).toContain('Skillsmith installation complete');
   });
 
   test('goal dry-run uses the operator Codex home and explicit unrestricted mode', () => {
@@ -49,6 +99,19 @@ describe('P17 Lima sandbox scripts', () => {
     expect(output).toContain('--dangerously-bypass-approvals-and-sandbox');
     expect(output).toContain('--search');
     expect(output).toContain('projects/P17-GOAL.md');
+  });
+
+  test('remote dry-run prints desktop SSH setup without exposing an app-server port', () => {
+    const result = runHost('remote');
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString()).toBe('');
+    const output = result.stdout.toString();
+    expect(output).toContain('Include ~/.lima/skillsmith-p17/ssh.config');
+    expect(output).toContain('lima-skillsmith-p17');
+    expect(output).toContain('/work/skillsmith');
+    expect(output).toContain('projects/P17-GOAL.md');
+    expect(output).toContain('goal subcommand for this task');
+    expect(output).not.toContain('--listen');
   });
 
   test('VM driver fallback is explicit and overrideable', () => {
@@ -67,7 +130,7 @@ describe('P17 Lima sandbox scripts', () => {
     expect(result.stdout.toString()).toContain('--vm-type=qemu');
   });
 
-  test('guest bootstrap installs the four agents and Skillsmith without embedding auth', () => {
+  test('guest bootstrap separates provisioning from the authenticated Skillsmith install', () => {
     const hostSource = readFileSync(hostScript, 'utf8');
     const source = readFileSync(guestScript, 'utf8');
     for (const packageName of [
@@ -80,23 +143,58 @@ describe('P17 Lima sandbox scripts', () => {
     }
     expect(source).toContain('skillsmith-test');
     expect(source).toContain('git clone');
+    expect(source).toContain('gh auth status');
+    expect(source).toContain('gh auth setup-git');
     expect(source).toContain('bun install --frozen-lockfile');
     expect(source).toContain('bun run build:linux-arm64');
     expect(source).toContain('$OPERATOR_HOME/.bashrc');
     expect(source).toContain('fetch origin main');
     expect(source).toContain("grep -qi 'ChatGPT'");
-    expect(source).toContain('.value.type == "oauth"');
+    expect(source).not.toContain("check_item 'test Kilo subscription'");
     expect(hostSource).toContain('limactl stop --force');
     expect(source).not.toMatch(/OPENAI_API_KEY|ANTHROPIC_API_KEY|KILO_API_KEY/);
   });
 
-  test('guest dry-run display is an exact streamed-script command', () => {
+  test('P17 live package checks support the Ubuntu GitHub CLI without --slurp', () => {
+    const source = readFileSync(packageCheck, 'utf8');
+    expect(source).toContain('function jsonItems');
+    expect(source).toContain("'--jq'");
+    expect(source).toContain("'.[]'");
+    expect(source).not.toContain("'--slurp'");
+  });
+
+  test('guest provision dry-run display is an exact streamed-script command', () => {
     const result = runHost('setup');
     const guestLine = result.stdout
       .toString()
       .split('\n')
-      .find((line) => line.includes('bash -s -- install'));
-    expect(guestLine).toBe(`+ limactl shell skillsmith-p17 -- bash -s -- install < ${guestScript}`);
+      .find((line) => line.includes('bash -s -- provision'));
+    expect(guestLine).toBe(
+      `+ limactl shell skillsmith-p17 -- bash -s -- provision < ${guestScript}`,
+    );
+  });
+
+  test('guide records the ordered host and guest workflow including manual GitHub auth', () => {
+    const source = readFileSync(guide, 'utf8');
+    const orderedMarkers = [
+      './scripts/p17-sandbox.sh setup',
+      './scripts/p17-sandbox.sh shell',
+      'gh auth login --hostname github.com --git-protocol https --web',
+      './scripts/p17-sandbox.sh install',
+      './scripts/p17-sandbox.sh check',
+      './scripts/p17-sandbox.sh goal',
+      './scripts/p17-sandbox.sh remote',
+    ];
+    let previous = -1;
+    for (const marker of orderedMarkers) {
+      const current = source.indexOf(marker, previous + 1);
+      expect(current).toBeGreaterThan(previous);
+      previous = current;
+    }
+    expect(source).toContain('Run every `./scripts/p17-sandbox.sh ...` command on the **Mac**');
+    expect(source).toContain('It does **not** authenticate any account');
+    expect(source).toContain('It does **not** clone or install Skillsmith');
+    expect(source).toContain('**GUEST — operator user**');
   });
 
   test('both scripts are valid Bash', () => {

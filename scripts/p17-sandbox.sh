@@ -21,14 +21,31 @@ Usage: scripts/p17-sandbox.sh COMMAND
 
 Manage the isolated Lima environment for the P17 persistent Codex goal.
 
+Run every scripts/p17-sandbox.sh command on the Mac from the Skillsmith checkout.
+Only the authentication commands documented after `shell` run inside the guest.
+
 Commands:
-  setup          Create/start the VM and install the guest toolchain
-  shell          Open an interactive shell in the VM
-  check          Run guest isolation, auth, install, and repository checks
-  goal           Launch unrestricted Codex and print the canonical /goal prompt
-  stop           Stop the VM without deleting it
-  destroy --yes  Permanently delete the disposable VM
-  help           Show this help
+  setup          [MAC] Create/start the VM and provision tools and agent CLIs
+                         This does not clone or install Skillsmith.
+  manual         [MAC] Print the complete manual authentication and handoff steps
+                         This command only prints instructions; it changes nothing.
+  shell          [MAC] Open the guest for the documented manual authentication
+                         commands [GUEST]; type `exit` when authentication is done
+  install        [MAC] After GitHub authentication, clone/build/install Skillsmith
+  check          [MAC] Validate isolation, auth, tools, repository, and P17 gates
+  goal           [MAC] Launch the terminal Codex session and print the /goal prompt
+  remote         [MAC] Print desktop-app SSH setup and the same /goal prompt
+  stop           [MAC] Stop the VM without deleting it
+  destroy --yes  [MAC] Permanently delete the disposable VM
+  help           [MAC] Show this help
+
+Required order:
+  1. setup    [MAC]   Installs the guest toolchain and all four agent CLIs
+     manual   [MAC]   Optionally prints every remaining command without running it
+  2. shell    [MAC]   Then authenticate inside the guest [GUEST] and exit
+  3. install  [MAC]   Clones and installs Skillsmith using the guest GitHub login
+  4. check    [MAC]   Runs the complete preflight
+  5. goal OR remote [MAC]   Starts terminal mode or explains desktop mode
 
 Environment overrides:
   P17_VM_NAME, P17_VM_TYPE, P17_VM_CPUS, P17_VM_MEMORY_GIB, P17_VM_DISK_GIB,
@@ -64,6 +81,62 @@ run() {
         return
     fi
     "$@"
+}
+
+print_manual() {
+    cat <<'EOF'
+P17 MANUAL AUTHENTICATION AND HANDOFF
+
+This command only prints instructions. It does not start the VM, open a shell,
+authenticate an account, clone a repository, or change any files.
+
+Prerequisite [MAC] - create and provision the VM if setup has not completed:
+
+  ./scripts/p17-sandbox.sh setup
+
+Step 1 [MAC] - open the guest:
+
+  ./scripts/p17-sandbox.sh shell
+
+Steps 2-6 [GUEST] - run these after the Ubuntu prompt appears:
+
+  # Operator Codex using a ChatGPT subscription
+  codex login --device-auth
+  codex login status
+
+  # GitHub account with access to smorinlabs/skillsmith
+  gh auth login --hostname github.com --git-protocol https --web
+  gh auth status
+  gh auth setup-git
+
+  # Test-user Codex using a ChatGPT subscription
+  sudo -iu skillsmith-test codex login --device-auth
+  sudo -iu skillsmith-test codex login status
+
+  # Test-user Claude Code using Claude Pro or Max
+  sudo -iu skillsmith-test claude auth login
+  sudo -iu skillsmith-test claude auth status --text
+
+  # Kilo Code and OpenCode remain installed but unauthenticated for this run.
+  # Their binaries and Skillsmith agent detection are still checked later.
+
+Step 7 [GUEST] - return to the Mac:
+
+  exit
+
+Steps 8-9 [MAC] - install Skillsmith and run the complete preflight:
+
+  ./scripts/p17-sandbox.sh install
+  ./scripts/p17-sandbox.sh check
+
+Step 10 [MAC] - choose exactly one canonical session:
+
+  ./scripts/p17-sandbox.sh goal    # terminal Codex session
+  # OR
+  ./scripts/p17-sandbox.sh remote  # ChatGPT desktop SSH session
+
+The detailed explanations and expected results are in docs/p17-sandbox.md.
+EOF
 }
 
 vm_exists() {
@@ -147,17 +220,27 @@ setup() {
             "$VM_TEMPLATE"
     fi
 
-    run_guest_script install
+    run_guest_script provision
     run limactl protect "$VM_NAME"
 
     cat <<EOF
 
-Guest installation complete. Authentication remains manual:
+SETUP COMPLETE [MAC]
+Installed inside the guest: OS packages, Node.js, Bun, GitHub CLI, Codex,
+Claude Code, Kilo Code, OpenCode, and Actionlint.
+Skillsmith is not installed yet. Authentication has not been performed.
+
+NEXT [MAC] - open the guest:
   $ROOT_DIR/scripts/p17-sandbox.sh shell
 
-Follow docs/p17-sandbox.md, then run:
-  $ROOT_DIR/scripts/p17-sandbox.sh check
-  $ROOT_DIR/scripts/p17-sandbox.sh goal
+To print every manual authentication and handoff command first:
+  $ROOT_DIR/scripts/p17-sandbox.sh manual
+
+NEXT [GUEST] - run the manual authentication commands in docs/p17-sandbox.md,
+including GitHub authentication, then type: exit
+
+NEXT [MAC] - clone and install Skillsmith:
+  $ROOT_DIR/scripts/p17-sandbox.sh install
 EOF
 }
 
@@ -179,6 +262,25 @@ check_guest() {
     run_guest_script check
 }
 
+install_skillsmith() {
+    if [[ "$DRY_RUN" == 1 ]]; then
+        run_guest_script install
+    else
+        require_vm
+        run_guest_script install
+    fi
+
+    cat <<EOF
+
+Skillsmith installation complete [MAC].
+The repository, dependencies, Gitleaks, and compiled Skillsmith binary now live
+inside the VM. GitHub authentication remains stored only in the guest.
+
+NEXT [MAC]:
+  $ROOT_DIR/scripts/p17-sandbox.sh check
+EOF
+}
+
 launch_goal() {
     local guest_command
     guest_command=$(cat <<EOF
@@ -195,6 +297,49 @@ EOF
     fi
     require_vm
     exec limactl shell "$VM_NAME" -- bash -lc "$guest_command"
+}
+
+remote_desktop() {
+    local ssh_config_display
+    local ssh_alias="lima-$VM_NAME"
+    # This is a literal OpenSSH Include value printed for the user, not a shell path.
+    # shellcheck disable=SC2088
+    printf -v ssh_config_display '~/.lima/%s/ssh.config' "$VM_NAME"
+
+    if [[ "$DRY_RUN" == 1 ]]; then
+        printf '+ limactl shell %q -- test -d /work/skillsmith/.git\n' "$VM_NAME"
+    else
+        require_vm
+        limactl shell "$VM_NAME" -- test -d /work/skillsmith/.git ||
+            die "Skillsmith is not installed; run install after guest GitHub authentication"
+    fi
+
+    cat <<EOF
+
+CODEX DESKTOP SSH SETUP [MAC]
+
+1. Add this line once to ~/.ssh/config on the Mac:
+
+   Include $ssh_config_display
+
+2. Confirm the Lima SSH alias from the Mac:
+
+   ssh $ssh_alias 'bash -lc '\''command -v codex && printf "CODEX_HOME=%s\\n" "\$CODEX_HOME"'\''
+
+3. In the ChatGPT desktop app, open Settings > Connections, add or enable:
+
+   SSH host: $ssh_alias
+   Project:  /work/skillsmith
+
+4. Start the P17 task in that remote project and submit:
+
+   $GOAL_PROMPT
+
+No Codex TCP port or host filesystem mount is required. The desktop app starts
+the guest Codex app server through Lima's loopback SSH connection. Do not also
+run the goal subcommand for this task; that would create a separate terminal
+session.
+EOF
 }
 
 stop_vm() {
@@ -236,9 +381,12 @@ shift || true
 
 case "$command_name" in
     setup) setup ;;
+    manual) print_manual ;;
     shell) open_shell ;;
+    install) install_skillsmith ;;
     check) check_guest ;;
     goal) launch_goal ;;
+    remote) remote_desktop ;;
     stop) stop_vm ;;
     destroy) destroy_vm "$@" ;;
     help|-h|--help) usage ;;
