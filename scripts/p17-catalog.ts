@@ -1060,6 +1060,15 @@ function validate(catalog: Catalog): void {
     entityIds.add(entity.id);
     const baseline = expectedEntities.get(entity.id);
     if (!baseline) fail(`catalog entity not defined by plan: ${entity.id}`);
+    if (
+      baseline.tier !== 'deferred' &&
+      (!Array.isArray(entity.validatedBy) ||
+        entity.validatedBy.length === 0 ||
+        !Array.isArray(entity.impactedValidations) ||
+        entity.impactedValidations.length === 0)
+    ) {
+      fail(`${entity.id} required entity has no validation mapping`);
+    }
     for (const key of [
       'kind',
       'title',
@@ -1673,8 +1682,13 @@ if (mode === '--init' || mode === '--reset-baseline') {
   } else if (mode === '--check') {
     const current = readFileSync(checklistPath, 'utf8');
     if (current !== rendered) fail('CHECKLIST.md is stale; run bun scripts/p17-catalog.ts --write');
+    const required = catalog.entities.filter((entity) => entity.tier !== 'deferred').length;
+    const deferred = catalog.entities.length - required;
+    const validations = catalog.entities.filter(
+      (entity) => entity.stateModel === 'validation',
+    ).length;
     console.log(
-      `valid: ${catalog.counts.total} entities, ${catalog.groups.length} groups, deterministic checklist`,
+      `valid: ${catalog.counts.total} entities (${required} required, ${deferred} deferred; ${validations} validation obligations), ${catalog.groups.length} groups, deterministic checklist`,
     );
   } else {
     fail(`unknown mode ${mode}; use --init, --reset-baseline, --write, or --check`);

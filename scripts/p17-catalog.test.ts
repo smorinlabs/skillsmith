@@ -24,6 +24,7 @@ type Entity = {
   stateModel: 'work' | 'validation' | 'coverage';
   primaryGroup: string;
   secondaryGroups: string[];
+  validatedBy: string[];
   impactedValidations: string[];
   affectedContracts: string[];
   plannedTarget: string;
@@ -186,6 +187,41 @@ describe('P17 immutable catalog and traceability baseline', () => {
     expect(result.exitCode).toBe(0);
   });
 
+  test('tracks every entity one-to-one with required validation coverage', () => {
+    const catalog = fixture();
+    const checklistIds = [
+      ...readFileSync(checklistPath, 'utf8').matchAll(/^- \[[ x]\] \*\*([^*]+)\*\* —/gm),
+    ].map((match) => match[1]);
+    const requiredEntities = catalog.entities.filter((entity) => entity.tier !== 'deferred');
+    const deferredEntities = catalog.entities.filter((entity) => entity.tier === 'deferred');
+    const validations = catalog.entities.filter((entity) => entity.stateModel === 'validation');
+
+    expect(catalog.entities).toHaveLength(425);
+    expect(new Set(catalog.entities.map((entity) => entity.id)).size).toBe(425);
+    expect(checklistIds).toHaveLength(425);
+    expect(new Set(checklistIds).size).toBe(425);
+    expect(requiredEntities).toHaveLength(418);
+    expect(deferredEntities).toHaveLength(7);
+    expect(validations).toHaveLength(244);
+    expect(
+      requiredEntities.every(
+        (entity) => entity.validatedBy.length > 0 && entity.impactedValidations.length > 0,
+      ),
+    ).toBe(true);
+  });
+
+  test('rejects a required entity without validation mappings', () => {
+    const result = runCatalogMutation((catalog) => {
+      const entity = required(
+        catalog.entities.find((item) => item.tier !== 'deferred'),
+        'missing required entity',
+      );
+      entity.validatedBy = [];
+      entity.impactedValidations = [];
+    });
+    expectFailure(result, 'required entity has no validation mapping');
+  });
+
   test.each([
     [
       'primary ownership',
@@ -224,7 +260,7 @@ describe('P17 immutable catalog and traceability baseline', () => {
         required(
           catalog.entities.find((item) => item.id === 'EWP-CF-039'),
           'missing EWP-CF-039',
-        ).impactedValidations = [];
+        ).impactedValidations = ['EWP-P0A-TS09'];
       },
       'immutable impactedValidations drifted',
     ],
