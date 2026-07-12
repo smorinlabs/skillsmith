@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 
 type Kind =
@@ -351,7 +351,7 @@ const recommendationGroups: Record<string, string> = {
   'P0-05': 'G1-02C',
   'P0-06': 'G1-02A',
   'P0-07': 'G2-05',
-  'P0-08': 'G0-05',
+  'P0-08': 'G2-05',
   'P1-01': 'G3A-02',
   'P1-02': 'G3A-01',
   'P1-03': 'G3A-02',
@@ -563,14 +563,16 @@ function tierFor(group: string): Entity['tier'] {
 
 function targetFor(item: { id: string; kind: Kind }, group: string): string {
   if (item.kind === 'phase-task') return `planned:${group}`;
-  if (item.kind === 'phase-test') return `planned:tests/ergonomics/phase/${item.id}.test.ts`;
+  if (item.kind === 'phase-test')
+    return `planned:${group}:tests/ergonomics/phase/${item.id}.test.ts#${item.id}`;
   if (item.kind === 'command-test') {
     const command = item.id.match(/^EWP-CMD-([A-Z]+)-/)?.[1]?.toLowerCase() ?? 'unknown';
-    return `planned:packages/cli/tests/contracts/${command}.test.ts#${item.id}`;
+    return `planned:${group}:packages/cli/tests/contracts/${command}.test.ts#${item.id}`;
   }
   if (item.kind === 'option-gate')
-    return `planned:packages/cli/tests/contracts/options.test.ts#${item.id}`;
-  if (item.kind === 'workflow') return `planned:tests/ergonomics/workflows/${item.id}.test.ts`;
+    return `planned:${group}:packages/cli/tests/contracts/options.test.ts#${item.id}`;
+  if (item.kind === 'workflow')
+    return `planned:${group}:tests/ergonomics/workflows/${item.id}.test.ts#${item.id}`;
   if (item.kind === 'command') return `surface:${item.id.slice('COMMAND:'.length)}`;
   return `coverage:${group}`;
 }
@@ -591,6 +593,23 @@ function stateModelFor(kind: Kind): Entity['stateModel'] {
 }
 
 const validationPrefix = '(?:EWP-(?:P(?:0A|1|2|3A|3B|4A|4B|5|6)-TS|CMD-[A-Z]+-TS|OPT-TS)|EWP-WF)';
+
+const explicitValidationOwnership: Record<string, string[]> = {
+  'P0-08': [
+    'EWP-P1-TS01',
+    'EWP-P1-TS02',
+    'EWP-P1-TS03',
+    'EWP-P1-TS04',
+    'EWP-P1-TS05',
+    'EWP-P1-TS06',
+    'EWP-P1-TS07',
+    'EWP-P2-TS02',
+    'EWP-P2-TS06',
+    'EWP-CMD-CONFIG-TS03',
+    'EWP-CMD-CONFIG-TS04',
+    'EWP-WF14',
+  ],
+};
 
 function validationReferences(value: string): string[] {
   const references = new Set<string>();
@@ -792,7 +811,9 @@ function initialize(): Catalog {
         : (validationsByPhase.get(phaseId ?? '') ?? []);
     const findingRelation = item.kind === 'finding' ? tracedFindings.get(item.id) : undefined;
     const tracedValidations = findingRelation?.validations ?? [];
-    const validations = tracedValidations.length > 0 ? tracedValidations : fallbackValidations;
+    const validations =
+      explicitValidationOwnership[item.id] ??
+      (tracedValidations.length > 0 ? tracedValidations : fallbackValidations);
     const contracts =
       item.kind === 'finding'
         ? (findingRelation?.contracts ?? [])
@@ -869,6 +890,16 @@ function initialize(): Catalog {
 }
 
 function validate(catalog: Catalog): void {
+  if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog)) {
+    fail('catalog root is malformed');
+  }
+  if (
+    !Array.isArray(catalog.groups) ||
+    !Array.isArray(catalog.entities) ||
+    !Array.isArray(catalog.phases)
+  ) {
+    fail('catalog top-level records are malformed');
+  }
   if (catalog.schemaVersion !== 2) fail(`unsupported catalog schema ${catalog.schemaVersion}`);
   const expected = initialize();
   const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
@@ -970,6 +1001,46 @@ function validate(catalog: Catalog): void {
   const requireGate = (owner: string, gate: GateRecord, status = 'passed'): void => {
     if (gate.status !== status) fail(`${owner} must be ${status}, found ${gate.status}`);
   };
+  const requireStringArray = (owner: string, value: unknown): asserts value is string[] => {
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+      fail(`${owner} must be an array of strings`);
+    }
+  };
+  const requireKeys = (
+    owner: string,
+    value: unknown,
+    required: string[],
+    optional: string[] = [],
+  ): void => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${owner} is malformed`);
+    const keys = Object.keys(value).sort();
+    const allowed = new Set([...required, ...optional]);
+    const missing = required.filter((key) => !keys.includes(key));
+    const unknown = keys.filter((key) => !allowed.has(key));
+    if (missing.length > 0 || unknown.length > 0) {
+      fail(
+        `${owner} has malformed keys (missing: ${missing.join(', ') || 'none'}; unknown: ${unknown.join(', ') || 'none'})`,
+      );
+    }
+  };
+  const requireUnique = (owner: string, values: string[]): void => {
+    if (new Set(values).size !== values.length) fail(`${owner} contains duplicate relations`);
+  };
+  requireKeys('catalog root', catalog, [
+    'schemaVersion',
+    'baselineDate',
+    'plan',
+    'executionMap',
+    'counts',
+    'phases',
+    'finalReview',
+    'finalApproval',
+    'finalSignoff',
+    'groups',
+    'entities',
+  ]);
+  requireKeys('catalog counts', catalog.counts, Object.keys(expectedCounts));
+  if (catalog.baselineDate !== '2026-07-11') fail('catalog baseline date drifted');
   if (catalog.plan !== expected.plan || catalog.executionMap !== expected.executionMap) {
     fail('catalog plan/execution-map pointers drifted from the immutable baseline');
   }
@@ -982,9 +1053,51 @@ function validate(catalog: Catalog): void {
   }
 
   const expectedGroups = new Map(expected.groups.map((group) => [group.id, group]));
+  if (
+    !same(
+      catalog.groups.map((group) => group.id),
+      expected.groups.map((group) => group.id),
+    )
+  ) {
+    fail('catalog groups are missing, extra, duplicate, or out of canonical order');
+  }
   const byGroup = new Map(catalog.groups.map((group) => [group.id, group]));
   if (byGroup.size !== expectedGroups.size) fail('catalog group set differs from EXECUTION.md');
   for (const group of catalog.groups) {
+    if (!group || typeof group !== 'object' || typeof group.id !== 'string') {
+      fail('catalog contains a malformed group record');
+    }
+    requireKeys(`group ${group.id}`, group, [
+      'id',
+      'phase',
+      'title',
+      'dependsOn',
+      'status',
+      'owner',
+      'ownedFiles',
+      'integrationOwner',
+      'impactedValidations',
+      'requiredNowValidations',
+      'downstreamCoverage',
+      'testCommands',
+      'implementers',
+      'reviewer',
+      'gates',
+      'evidence',
+    ]);
+    for (const [name, value] of [
+      ['dependsOn', group.dependsOn],
+      ['ownedFiles', group.ownedFiles],
+      ['impactedValidations', group.impactedValidations],
+      ['requiredNowValidations', group.requiredNowValidations],
+      ['downstreamCoverage', group.downstreamCoverage],
+      ['testCommands', group.testCommands],
+      ['implementers', group.implementers],
+      ['evidence', group.evidence],
+    ] as const) {
+      requireStringArray(`${group.id}.${name}`, value);
+      requireUnique(`${group.id}.${name}`, value);
+    }
     if (groupIds.has(group.id)) fail(`duplicate group ${group.id}`);
     groupIds.add(group.id);
     const baseline = expectedGroups.get(group.id);
@@ -1001,8 +1114,10 @@ function validate(catalog: Catalog): void {
       if (!same(group[key], baseline[key])) fail(`${group.id} immutable ${key} drifted`);
     }
     if (!groupStatuses.has(group.status)) fail(`${group.id} has invalid status ${group.status}`);
+    requireKeys(`${group.id}.gates`, group.gates, [...gateNames]);
     for (const gateName of gateNames) {
       const gate = group.gates[gateName];
+      requireKeys(`${group.id}:${gateName}`, gate, ['status', 'evidence']);
       if (!gate || !gateStatuses.has(gate.status) || !Array.isArray(gate.evidence)) {
         fail(`${group.id} has malformed gate ${gateName}`);
       }
@@ -1026,8 +1141,27 @@ function validate(catalog: Catalog): void {
       if (passed && !priorPassed) fail(`${group.id}:${gateName} passed before an earlier gate`);
       priorPassed = priorPassed && passed;
     }
+    if (group.gates['adversarial-review']?.status === 'pending' && group.reviewer !== null) {
+      fail(`${group.id} pending adversarial review must not name a reviewer`);
+    }
+    const phaseRank = (phase: string): number => {
+      const match = phase.match(/^(\d+)([A-Z])?$/);
+      if (!match?.[1]) fail(`malformed phase rank ${phase}`);
+      return Number(match[1]) * 100 + (match[2]?.charCodeAt(0) ?? 64) - 64;
+    };
     for (const dependency of group.dependsOn) {
       if (!byGroup.has(dependency)) fail(`${group.id} depends on missing ${dependency}`);
+      const dependencyGroup = byGroup.get(dependency);
+      const dependencyIndex = expected.groups.findIndex((item) => item.id === dependency);
+      const groupIndex = expected.groups.findIndex((item) => item.id === group.id);
+      if (
+        !dependencyGroup ||
+        phaseRank(dependencyGroup.phase) > phaseRank(group.phase) ||
+        (phaseRank(dependencyGroup.phase) === phaseRank(group.phase) &&
+          (dependencyIndex < 0 || dependencyIndex >= groupIndex))
+      ) {
+        fail(`${group.id} depends on future group ${dependency}`);
+      }
     }
     for (const validation of group.impactedValidations) {
       if (
@@ -1053,9 +1187,57 @@ function validate(catalog: Catalog): void {
   for (const id of groupIds) visit(id);
 
   const expectedEntities = new Map(expected.entities.map((entity) => [entity.id, entity]));
+  if (
+    !same(
+      catalog.entities.map((entity) => entity.id),
+      expected.entities.map((entity) => entity.id),
+    )
+  ) {
+    fail('catalog entities are missing, extra, duplicate, or out of canonical order');
+  }
   const byEntity = new Map(catalog.entities.map((entity) => [entity.id, entity]));
   if (byEntity.size !== expectedEntities.size) fail('catalog entity set differs from the plan');
   for (const entity of catalog.entities) {
+    if (!entity || typeof entity !== 'object' || typeof entity.id !== 'string') {
+      fail('catalog contains a malformed entity record');
+    }
+    requireKeys(
+      `entity ${entity.id}`,
+      entity,
+      [
+        'id',
+        'kind',
+        'title',
+        'stateModel',
+        'primaryGroup',
+        'secondaryGroups',
+        'implements',
+        'validatedBy',
+        'impactedValidations',
+        'affectedContracts',
+        'testCommands',
+        'ownedFiles',
+        'status',
+        'tier',
+        'plannedTarget',
+        'target',
+        'evidence',
+      ],
+      ['designStatus'],
+    );
+    for (const [name, value] of [
+      ['secondaryGroups', entity.secondaryGroups],
+      ['implements', entity.implements],
+      ['validatedBy', entity.validatedBy],
+      ['impactedValidations', entity.impactedValidations],
+      ['affectedContracts', entity.affectedContracts],
+      ['testCommands', entity.testCommands],
+      ['ownedFiles', entity.ownedFiles],
+      ['evidence', entity.evidence],
+    ] as const) {
+      requireStringArray(`${entity.id}.${name}`, value);
+      requireUnique(`${entity.id}.${name}`, value);
+    }
     if (entityIds.has(entity.id)) fail(`duplicate catalog entity ${entity.id}`);
     entityIds.add(entity.id);
     const baseline = expectedEntities.get(entity.id);
@@ -1098,8 +1280,21 @@ function validate(catalog: Catalog): void {
     if (entity.status === 'deferred' && entity.tier !== 'deferred') {
       fail(`${entity.id} is deferred without deferred tier`);
     }
+    if (entity.tier === 'deferred' && entity.status !== 'deferred') {
+      fail(`${entity.id} deferred tier must retain deferred status`);
+    }
     if (entity.tier === 'deferred' && entity.primaryGroup !== 'P17-G7-01') {
       fail(`${entity.id} is deferred outside Phase 7`);
+    }
+    if (entity.status === 'planned' || entity.status === 'deferred') {
+      if (
+        entity.target !== null ||
+        entity.evidence.length > 0 ||
+        entity.ownedFiles.length > 0 ||
+        entity.testCommands.length > 0
+      ) {
+        fail(`${entity.id} ${entity.status} record must remain pristine`);
+      }
     }
     for (const id of [...entity.validatedBy, ...entity.impactedValidations]) {
       const related = byEntity.get(id);
@@ -1107,7 +1302,31 @@ function validate(catalog: Catalog): void {
         fail(`${entity.id} has invalid validation relation ${id}`);
     }
     for (const id of [...entity.implements, ...entity.affectedContracts]) {
-      if (!byEntity.has(id)) fail(`${entity.id} has missing contract relation ${id}`);
+      const related = byEntity.get(id);
+      if (!related || related.stateModel !== 'coverage') {
+        fail(`${entity.id} has invalid contract relation ${id}`);
+      }
+    }
+    if (entity.stateModel === 'validation') {
+      if (typeof entity.plannedTarget !== 'string') {
+        fail(`${entity.id} planned target is malformed`);
+      }
+      const planned = entity.plannedTarget.match(/^planned:(P17-G[^:]+):([^#]+)#(.+)$/);
+      const plannedGroup = planned?.[1];
+      const plannedPath = planned?.[2];
+      const plannedSelector = planned?.[3];
+      if (
+        plannedGroup !== entity.primaryGroup ||
+        plannedSelector !== entity.id ||
+        !plannedPath ||
+        plannedPath.startsWith('/') ||
+        relative(root, resolve(root, plannedPath)).startsWith('..') ||
+        !/\.(?:ts|js|mjs|cjs|sh|yml|yaml)$/i.test(plannedPath)
+      ) {
+        fail(
+          `${entity.id} planned target must name its phase group, executable path, and selector`,
+        );
+      }
     }
     if (entity.status === 'signed-off') {
       requireEvidence(entity.id, entity.evidence);
@@ -1127,43 +1346,101 @@ function validate(catalog: Catalog): void {
       if (!target || typeof target !== 'object') {
         fail(`${entity.id} has no executable actual target`);
       }
+      requireKeys(`${entity.id} actual target`, target, ['kind', 'path', 'selector', 'command']);
+      if (
+        typeof target.kind !== 'string' ||
+        typeof target.path !== 'string' ||
+        typeof target.selector !== 'string' ||
+        typeof target.command !== 'string'
+      ) {
+        fail(`${entity.id} has a malformed executable actual target`);
+      }
       if (!['test', 'static', 'workflow', 'distribution'].includes(target.kind)) {
         fail(`${entity.id} has invalid executable target kind`);
       }
       const absoluteTarget = resolve(root, target.path);
       const repositoryRelative = relative(root, absoluteTarget);
+      const realTarget = existsSync(absoluteTarget) ? realpathSync(absoluteTarget) : absoluteTarget;
+      const realRepositoryRelative = relative(realpathSync(root), realTarget);
       if (
         target.path.startsWith('/') ||
         repositoryRelative.startsWith('..') ||
+        realRepositoryRelative.startsWith('..') ||
         !existsSync(absoluteTarget) ||
+        !lstatSync(absoluteTarget).isFile() ||
         !statSync(absoluteTarget).isFile() ||
-        !/\.(?:ts|js|mjs|cjs|sh|yml|yaml)$/i.test(target.path)
+        (!/\.(?:ts|js|mjs|cjs|sh|yml|yaml)$/i.test(target.path) && target.path !== 'justfile')
       ) {
         fail(`${entity.id} has invalid executable target path ${target.path}`);
       }
-      if (
-        target.selector !== entity.id ||
-        !target.command.includes(target.path) ||
-        !target.command.includes(target.selector)
-      ) {
+      const primaryGroup = byGroup.get(entity.primaryGroup);
+      if (target.selector !== entity.id || /\s/.test(target.path) || /\s/.test(target.selector)) {
         fail(`${entity.id} target is not bound to its runnable command and selector`);
       }
-      const commandPrefixes: Record<ExecutionTarget['kind'], string[]> = {
-        test: ['bun test '],
-        static: ['bun run ', 'bunx ', 'just '],
-        workflow: ['bun test ', 'bun run ', 'just '],
-        distribution: ['bun run ', 'just '],
-      };
-      if (!commandPrefixes[target.kind].some((prefix) => target.command.startsWith(prefix))) {
-        fail(`${entity.id} target command is invalid for ${target.kind}`);
+      if (/[;&|<>\n\r]/.test(target.command)) {
+        fail(`${entity.id} target command contains shell control syntax`);
+      }
+      if (target.kind === 'test' && !target.command.startsWith('bun test ')) {
+        fail(`${entity.id} target command is invalid for test`);
+      }
+      if (
+        target.kind === 'test' &&
+        target.command !== `bun test ${target.path} --test-name-pattern ${target.selector}`
+      ) {
+        fail(
+          `${entity.id} execution receipt is incomplete or does not match its target; test target command is not the exact runnable selector command`,
+        );
+      }
+      if (target.kind !== 'test') {
+        const exactScriptCommand =
+          /^scripts\/[A-Za-z0-9._/-]+\.(?:ts|js|mjs|cjs|sh)$/.test(target.path) &&
+          target.command === `bun run ${target.path} --check --validation ${target.selector}`;
+        const exactWorkflowTest =
+          target.kind === 'workflow' &&
+          target.command === `bun test ${target.path} --test-name-pattern ${target.selector}`;
+        const exactJustRecipe =
+          target.path === 'justfile' && target.command === `just -f justfile ${target.selector}`;
+        if (!exactScriptCommand && !exactWorkflowTest && !exactJustRecipe) {
+          fail(`${entity.id} target command is invalid for ${target.kind}`);
+        }
       }
       const targetBody = readFileSync(absoluteTarget, 'utf8');
+      const executableBody = targetBody
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      const escapedSelector = entity.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const skippedSelector = new RegExp(
+        `(?:test|it|describe)\\s*\\.\\s*(?:skip|todo|skipIf|todoIf)(?:\\([^\\n]*?\\))?\\s*\\([^\\n]*${escapedSelector}`,
+      );
+      const describeSelector = new RegExp(
+        `describe\\s*\\(\\s*['\"\`]${escapedSelector}(?=['\"\`\\s:—-])`,
+        'g',
+      );
+      const testSelector = new RegExp(
+        `(?:test|it)\\s*\\(\\s*['\"\`]${escapedSelector}(?=['\"\`\\s:—-])`,
+        'g',
+      );
+      const topLevelTestSelector = new RegExp(
+        `^(?:test|it)\\s*\\(\\s*['\"\`]${escapedSelector}(?=['\"\`\\s:—-])`,
+        'gm',
+      );
+      const describeOwners = executableBody.match(describeSelector)?.length ?? 0;
+      const testOwners = executableBody.match(testSelector)?.length ?? 0;
+      const topLevelTestOwners = executableBody.match(topLevelTestSelector)?.length ?? 0;
+      const executableSelectorOwners =
+        describeOwners + (describeOwners > 0 ? topLevelTestOwners : testOwners);
+      const selectorOccurrences =
+        executableBody.match(new RegExp(escapedSelector, 'g'))?.length ?? 0;
+      const testDrivenCommand = target.command.startsWith('bun test ');
+      const justRecipeExists =
+        target.path === 'justfile' &&
+        new RegExp(`^${escapedSelector.replace(/-/g, '\\-')}:`, 'm').test(executableBody);
       if (
-        !targetBody.includes(target.selector) ||
-        (target.kind === 'test' &&
-          !new RegExp(
-            `(?:test|it|describe)\\([^\\n]*${entity.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
-          ).test(targetBody))
+        !executableBody.includes(target.selector) ||
+        (entity.tier !== 'deferred' && skippedSelector.test(executableBody)) ||
+        (testDrivenCommand && executableSelectorOwners !== 1) ||
+        (!testDrivenCommand && target.path !== 'justfile' && selectorOccurrences !== 1) ||
+        (target.kind !== 'test' && target.path === 'justfile' && !justRecipeExists)
       ) {
         fail(`${entity.id} selector does not name an executable target`);
       }
@@ -1174,28 +1451,142 @@ function validate(catalog: Catalog): void {
       if (!receipt) {
         fail(`${entity.id} lacks an execution receipt bound to its target`);
       }
-      const escapedCommand = target.command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const ids = receipt.match(/^- Validation ID: `.+`$/gm) ?? [];
+      const commands = receipt.match(/^- Command: `.+`$/gm) ?? [];
+      const exits = receipt.match(/^- Exit status: `.+`$/gm) ?? [];
+      const results = receipt.match(/^- Result: .+$/gm) ?? [];
+      const revisions = receipt.match(/^- Revision: `.+`$/gm) ?? [];
+      const resultLine = results[0] ?? '';
+      const successful = entity.status === 'passing' || entity.status === 'signed-off';
+      const honestFailure = entity.status === 'failing';
+      const honestSkip = entity.status === 'skipped-required';
+      const honestActive = entity.status === 'active';
+      const honestBlocked = entity.status === 'blocked';
       if (
-        !receipt.includes(`- Validation ID: \`${entity.id}\``) ||
-        !new RegExp(`^- Command: \`${escapedCommand}\`$`, 'm').test(receipt) ||
-        !/^- Exit status: `0`$/m.test(receipt) ||
-        !/^- Result: \S.+$/m.test(receipt) ||
-        !/^- Revision: `(?:working-tree|[0-9a-f]{40})`$/m.test(receipt)
+        ids.length !== 1 ||
+        commands.length !== 1 ||
+        exits.length !== 1 ||
+        results.length !== 1 ||
+        revisions.length !== 1 ||
+        ids[0] !== `- Validation ID: \`${entity.id}\`` ||
+        commands[0] !== `- Command: \`${target.command}\`` ||
+        (successful && exits[0] !== '- Exit status: `0`') ||
+        (successful &&
+          (!/\bpass(?:ed|es|ing)?\b/i.test(resultLine) ||
+            /\b(?:skip(?:ped|s|ping)?|fail(?:ed|s|ing)?|error(?:ed|s|ing)?|todos?|cancel(?:led|ed|s|ing)?)\b/i.test(
+              resultLine.replace(/\b0\s+(?:failed|errors?|skipped|todos?|cancelled)\b/gi, ''),
+            ))) ||
+        (honestFailure &&
+          (!/^- Exit status: `[1-9]\d*`$/.test(exits[0] ?? '') ||
+            !/\b(?:fail(?:ed|s|ing)?|error(?:ed|s|ing)?)\b/i.test(resultLine))) ||
+        (honestSkip &&
+          (!/^- Exit status: `[1-9]\d*`$/.test(exits[0] ?? '') || !/\bskip/i.test(resultLine))) ||
+        (honestActive &&
+          (exits[0] !== '- Exit status: `not-run`' ||
+            !/\b(?:active|pending|not[- ]run)\b/i.test(resultLine))) ||
+        (honestBlocked &&
+          (exits[0] !== '- Exit status: `blocked`' || !/\bblocked\b/i.test(resultLine))) ||
+        (!successful && !honestFailure && !honestSkip && !honestActive && !honestBlocked) ||
+        !/^- Revision: `(?:working-tree|[0-9a-f]{40})`$/.test(revisions[0] ?? '')
       ) {
         fail(`${entity.id} execution receipt is incomplete or does not match its target`);
       }
+      if (
+        !primaryGroup?.ownedFiles.includes(target.path) ||
+        !entity.ownedFiles.includes(target.path)
+      ) {
+        fail(`${entity.id} executable target is not owned by both its entity and primary group`);
+      }
       if (entity.status === 'signed-off' && !/^- Revision: `[0-9a-f]{40}`$/m.test(receipt)) {
         fail(`${entity.id} signed receipt is not bound to an exact revision`);
+      }
+      if (entity.status === 'signed-off') {
+        const revision = receipt.match(/^- Revision: `([0-9a-f]{40})`$/m)?.[1];
+        const commitExists = revision
+          ? Bun.spawnSync(['git', 'cat-file', '-e', `${revision}^{commit}`], {
+              cwd: root,
+              stdout: 'ignore',
+              stderr: 'ignore',
+            }).exitCode === 0
+          : false;
+        const targetAtRevision = revision
+          ? Bun.spawnSync(['git', 'cat-file', '-e', `${revision}:${target.path}`], {
+              cwd: root,
+              stdout: 'ignore',
+              stderr: 'ignore',
+            }).exitCode === 0
+          : false;
+        if (!commitExists || !targetAtRevision) {
+          fail(`${entity.id} signed receipt revision does not contain its executable target`);
+        }
+        const committedTarget = Bun.spawnSync(['git', 'show', `${revision}:${target.path}`], {
+          cwd: root,
+          stdout: 'pipe',
+          stderr: 'ignore',
+        }).stdout.toString();
+        const committedExecutableBody = committedTarget
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '');
+        const committedDescribeOwners =
+          committedExecutableBody.match(describeSelector)?.length ?? 0;
+        const committedTestOwners = committedExecutableBody.match(testSelector)?.length ?? 0;
+        const committedTopLevelTestOwners =
+          committedExecutableBody.match(topLevelTestSelector)?.length ?? 0;
+        const committedSelectorOwners =
+          committedDescribeOwners +
+          (committedDescribeOwners > 0 ? committedTopLevelTestOwners : committedTestOwners);
+        if (target.kind === 'test' && committedSelectorOwners !== 1) {
+          fail(`${entity.id} signed receipt revision does not contain its executable selector`);
+        }
       }
     }
   }
 
   const expectedPhases = new Map(expected.phases.map((phase) => [phase.id, phase]));
+  if (
+    !same(
+      catalog.phases.map((phase) => phase.id),
+      expected.phases.map((phase) => phase.id),
+    )
+  ) {
+    fail('catalog phases are missing, extra, duplicate, or out of canonical order');
+  }
   const byPhase = new Map(catalog.phases.map((phase) => [phase.id, phase]));
   if (byPhase.size !== expectedPhases.size) fail('catalog phase set differs from the baseline');
   for (const phase of catalog.phases) {
     if (phaseIds.has(phase.id)) fail(`duplicate phase ${phase.id}`);
     phaseIds.add(phase.id);
+    requireKeys(`phase ${phase.id}`, phase, [
+      'id',
+      'dependsOn',
+      'requiredGroups',
+      'status',
+      'entry',
+      'review',
+      'approval',
+      'exit',
+    ]);
+    requireStringArray(`phase ${phase.id}.requiredGroups`, phase.requiredGroups);
+    requireUnique(`phase ${phase.id}.requiredGroups`, phase.requiredGroups);
+    requireKeys(`phase ${phase.id}.entry`, phase.entry, ['status', 'evidence']);
+    requireKeys(`phase ${phase.id}.review`, phase.review, ['status', 'evidence', 'reviewer']);
+    requireKeys(`phase ${phase.id}.approval`, phase.approval, ['status', 'evidence', 'approvedBy']);
+    requireKeys(`phase ${phase.id}.exit`, phase.exit, ['status', 'evidence']);
+    for (const [name, gate] of [
+      ['entry', phase.entry],
+      ['review', phase.review],
+      ['approval', phase.approval],
+      ['exit', phase.exit],
+    ] as const) {
+      requireStringArray(`phase ${phase.id}.${name}.evidence`, gate.evidence);
+      requireUnique(`phase ${phase.id}.${name}.evidence`, gate.evidence);
+    }
+    if (phase.review.status === 'pending' && phase.review.reviewer !== null) {
+      fail(`phase ${phase.id} pending review must not name a reviewer`);
+    }
+    if (phase.approval.status === 'pending' && phase.approval.approvedBy !== null) {
+      fail(`phase ${phase.id} pending approval must not name an approver`);
+    }
     const baseline = expectedPhases.get(phase.id);
     if (
       !baseline ||
@@ -1237,8 +1628,13 @@ function validate(catalog: Catalog): void {
       }
     }
     if (phase.approval.status === 'passed') {
-      if (phase.review.status !== 'passed' || phase.approval.approvedBy !== 'user') {
-        fail(`phase ${phase.id} approval lacks passed review or explicit user approval`);
+      const standingAuthorization = 'user-standing-authorization-2026-07-12';
+      const validApprover = phase.approval.approvedBy === standingAuthorization;
+      const standingEvidence = phase.approval.evidence.some(
+        (reference) => reference === 'projects/p17/evidence/standing-authorization.md',
+      );
+      if (phase.review.status !== 'passed' || !validApprover || !standingEvidence) {
+        fail(`phase ${phase.id} approval lacks passed review or canonical standing authorization`);
       }
     }
     if (phase.exit.status === 'passed' && phase.approval.status !== 'passed') {
@@ -1289,6 +1685,43 @@ function validate(catalog: Catalog): void {
         : group.phase;
     const phase = byPhase.get(phaseId);
     if (!phase) fail(`${group.id} has no phase record`);
+    if (group.status === 'planned' || group.status === 'deferred') {
+      if (
+        group.ownedFiles.length > 0 ||
+        group.testCommands.length > 0 ||
+        group.implementers.length > 0 ||
+        group.evidence.length > 0 ||
+        group.integrationOwner !== null ||
+        group.reviewer !== null
+      ) {
+        fail(`${group.id} ${group.status} record must remain pristine`);
+      }
+    }
+    const availableGroups = new Set<string>([group.id]);
+    const collectDependencies = (id: string): void => {
+      for (const dependency of byGroup.get(id)?.dependsOn ?? []) {
+        if (availableGroups.has(dependency)) continue;
+        availableGroups.add(dependency);
+        collectDependencies(dependency);
+      }
+    };
+    collectDependencies(group.id);
+    const partition = [...group.requiredNowValidations, ...group.downstreamCoverage].sort();
+    if (!same(partition, [...group.impactedValidations].sort())) {
+      fail(`${group.id} required-now/downstream coverage partition is incomplete`);
+    }
+    for (const validationId of group.requiredNowValidations) {
+      const owner = byEntity.get(validationId)?.primaryGroup;
+      if (!owner || !availableGroups.has(owner)) {
+        fail(`${group.id} required-now validation ${validationId} belongs to a future group`);
+      }
+    }
+    for (const validationId of group.downstreamCoverage) {
+      const owner = byEntity.get(validationId)?.primaryGroup;
+      if (!owner || availableGroups.has(owner)) {
+        fail(`${group.id} downstream validation ${validationId} is not downstream`);
+      }
+    }
     if (group.status !== 'planned' && group.status !== 'deferred') {
       if (phase.entry.status !== 'passed')
         fail(`${group.id} advanced before phase ${phaseId} entry`);
@@ -1438,8 +1871,25 @@ function validate(catalog: Catalog): void {
     ['final approval', catalog.finalApproval],
     ['final sign-off', catalog.finalSignoff],
   ] as const) {
+    requireKeys(
+      name,
+      gate,
+      name === 'final review'
+        ? ['status', 'evidence', 'reviewer']
+        : name === 'final approval'
+          ? ['status', 'evidence', 'approvedBy']
+          : ['status', 'evidence'],
+    );
+    requireStringArray(`${name}.evidence`, gate.evidence);
+    requireUnique(`${name}.evidence`, gate.evidence);
     if (!gateStatuses.has(gate.status)) fail(`${name} has invalid status ${gate.status}`);
     if (gate.status !== 'pending') requireEvidence(name, gate.evidence);
+  }
+  if (catalog.finalReview.status === 'pending' && catalog.finalReview.reviewer !== null) {
+    fail('pending final review must not name a reviewer');
+  }
+  if (catalog.finalApproval.status === 'pending' && catalog.finalApproval.approvedBy !== null) {
+    fail('pending final approval must not name an approver');
   }
   if (catalog.finalReview.status === 'passed') {
     if (!catalog.finalReview.reviewer) fail('final review passed without reviewer');
@@ -1468,8 +1918,13 @@ function validate(catalog: Catalog): void {
     }
   }
   if (catalog.finalApproval.status === 'passed') {
-    if (catalog.finalReview.status !== 'passed' || catalog.finalApproval.approvedBy !== 'user') {
-      fail('final approval lacks passed review or explicit user approval');
+    const standingAuthorization = 'user-standing-authorization-2026-07-12';
+    const validApprover = catalog.finalApproval.approvedBy === standingAuthorization;
+    const standingEvidence = catalog.finalApproval.evidence.some(
+      (reference) => reference === 'projects/p17/evidence/standing-authorization.md',
+    );
+    if (catalog.finalReview.status !== 'passed' || !validApprover || !standingEvidence) {
+      fail('final approval lacks passed review or canonical standing authorization');
     }
   }
   if (catalog.finalReview.status === 'failed' || catalog.finalReview.status === 'blocked') {
@@ -1674,6 +2129,48 @@ if (mode === '--init' || mode === '--reset-baseline') {
   );
 } else {
   const catalog = JSON.parse(readFileSync(catalogPath, 'utf8')) as Catalog;
+  if (mode === '--sync-planned-targets') {
+    const expected = initialize();
+    if (
+      catalog.entities.length !== expected.entities.length ||
+      catalog.entities.some(
+        (entity, index) =>
+          entity.id !== expected.entities[index]?.id ||
+          entity.kind !== expected.entities[index]?.kind,
+      )
+    ) {
+      fail('--sync-planned-targets refuses an entity ID, kind, cardinality, or order mismatch');
+    }
+    const expectedById = new Map(expected.entities.map((entity) => [entity.id, entity]));
+    const permittedResult = structuredClone(catalog);
+    for (const entity of permittedResult.entities) {
+      if (entity.stateModel !== 'validation') continue;
+      const plannedTarget = expectedById.get(entity.id)?.plannedTarget;
+      if (!plannedTarget) fail(`--sync-planned-targets has no baseline target for ${entity.id}`);
+      entity.plannedTarget = plannedTarget;
+    }
+    for (const entity of catalog.entities) {
+      if (entity.stateModel !== 'validation') continue;
+      entity.plannedTarget = expectedById.get(entity.id)?.plannedTarget ?? entity.plannedTarget;
+    }
+    if (JSON.stringify(catalog) !== JSON.stringify(permittedResult)) {
+      fail('--sync-planned-targets attempted to change execution state');
+    }
+    validate(catalog);
+    await Bun.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+    const formatResult = Bun.spawnSync(['bunx', 'biome', 'format', '--write', catalogPath], {
+      cwd: root,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    if (formatResult.exitCode !== 0) {
+      fail(`could not format synchronized catalog\n${formatResult.stderr.toString()}`);
+    }
+    console.log(
+      `synchronized ${catalog.entities.filter((entity) => entity.stateModel === 'validation').length} planned validation targets; run bun scripts/p17-catalog.ts --write`,
+    );
+    process.exit(0);
+  }
   validate(catalog);
   const rendered = render(catalog);
   if (mode === '--write') {
@@ -1691,6 +2188,8 @@ if (mode === '--init' || mode === '--reset-baseline') {
       `valid: ${catalog.counts.total} entities (${required} required, ${deferred} deferred; ${validations} validation obligations), ${catalog.groups.length} groups, deterministic checklist`,
     );
   } else {
-    fail(`unknown mode ${mode}; use --init, --reset-baseline, --write, or --check`);
+    fail(
+      `unknown mode ${mode}; use --init, --reset-baseline, --sync-planned-targets, --write, or --check`,
+    );
   }
 }

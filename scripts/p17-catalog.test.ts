@@ -189,6 +189,7 @@ function activateGroupThroughTargetedGreen(catalog: CatalogFixture): void {
   value.ownedFiles = ['scripts/p17-catalog.test.ts'];
   value.testCommands = ['bun test scripts/p17-catalog.test.ts'];
   value.implementers = ['implementation-agent'];
+  validation(catalog).ownedFiles = ['scripts/p17-catalog.test.ts'];
   passGroupThrough(value, 'targeted-green');
 }
 
@@ -679,7 +680,7 @@ describe('P17 final approval gates and reset safety', () => {
       pass(catalog.finalApproval);
       catalog.finalApproval.approvedBy = 'user';
     });
-    expectFailure(result, 'final approval lacks passed review or explicit user approval');
+    expectFailure(result, 'final approval lacks passed review or canonical standing authorization');
   });
 
   test('rejects final sign-off before final approval', () => {

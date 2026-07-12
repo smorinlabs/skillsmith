@@ -25,9 +25,9 @@ Tracked entities: **425** across **45** change groups.
 
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
-| 0 | 5 | 29 | 23 | 0 |
+| 0 | 5 | 28 | 23 | 0 |
 | 1 | 9 | 62 | 0 | 0 |
-| 2 | 5 | 32 | 0 | 0 |
+| 2 | 5 | 33 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 65 | 0 | 0 |
@@ -139,7 +139,7 @@ Tracked entities: **425** across **45** change groups.
 | P0-05 | P17-G1-02C | planned | required-pr |
 | P0-06 | P17-G1-02A | planned | required-pr |
 | P0-07 | P17-G2-05 | planned | required-pr |
-| P0-08 | P17-G0-05 | mapped | required-pr |
+| P0-08 | P17-G2-05 | planned | required-pr |
 | P1-01 | P17-G3A-02 | planned | required-pr |
 | P1-02 | P17-G3A-01 | planned | required-pr |
 | P1-03 | P17-G3A-02 | planned | required-pr |
@@ -188,7 +188,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-015 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-016 | P17-G5-04 | planned | required-pr |
 | EWP-CF-017 | P17-G0-04 | signed-off | required-pr |
-| EWP-CF-018 | P17-G0-05 | mapped | required-pr |
+| EWP-CF-018 | P17-G0-05 | validated | required-pr |
 | EWP-CF-019 | P17-G2-01 | planned | required-pr |
 | EWP-CF-020 | P17-G4A-01 | planned | required-pr |
 | EWP-CF-021 | P17-G2-01 | planned | required-pr |
@@ -209,7 +209,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-036 | P17-G1-05 | planned | required-pr |
 | EWP-CF-037 | P17-G1-06 | planned | required-pr |
 | EWP-CF-038 | P17-G1-07 | planned | required-pr |
-| EWP-CF-039 | P17-G0-05 | mapped | required-pr |
+| EWP-CF-039 | P17-G0-05 | validated | required-pr |
 | EWP-CF-040 | P17-G2-01 | planned | required-pr |
 | EWP-CF-041 | P17-G4A-03 | planned | required-pr |
 | EWP-CF-042 | P17-G4B-02 | planned | required-pr |
@@ -385,7 +385,7 @@ Downstream coverage obligations: EWP-P1-TS05, EWP-WF16.
 
 ## P17-G0-05 — Catalog, structural validator, generated checklist, and executable ownership
 
-Phase: 0; status: **ready**; dependencies: P17-G0-01, P17-G0-02, P17-G0-03.
+Phase: 0; status: **reviewed**; dependencies: P17-G0-01, P17-G0-02, P17-G0-03.
 Required-now validations: EWP-P0A-TS06, EWP-P0A-TS07, EWP-P0A-TS09.
 Downstream coverage obligations: EWP-P6-TS06.
 
@@ -393,23 +393,22 @@ Downstream coverage obligations: EWP-P6-TS06.
 
 - [x] P17-G0-05:mapped _(passed)_
 - [x] P17-G0-05:ready _(passed)_
-- [ ] P17-G0-05:test-first _(pending)_
-- [ ] P17-G0-05:minimal-implementation _(pending)_
-- [ ] P17-G0-05:targeted-green _(pending)_
-- [ ] P17-G0-05:impacted-green _(pending)_
-- [ ] P17-G0-05:refactor _(pending)_
-- [ ] P17-G0-05:adversarial-review _(pending)_
+- [x] P17-G0-05:test-first _(passed)_
+- [x] P17-G0-05:minimal-implementation _(passed)_
+- [x] P17-G0-05:targeted-green _(passed)_
+- [x] P17-G0-05:impacted-green _(passed)_
+- [x] P17-G0-05:refactor _(passed)_
+- [x] P17-G0-05:adversarial-review _(passed)_
 - [ ] P17-G0-05:traceability-closure _(pending)_
 - [ ] P17-G0-05:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-018** — Make plan status and cross-references mechanically truthful _(finding; mapped)_
-- [ ] **EWP-CF-039** — Make every planned validation executable and release-blocking _(finding; mapped)_
-- [ ] **EWP-P0A-T09** — Implement the plan structural validator and run it after every Phase-0 amendment. _(phase-task; ready)_
-- [ ] **EWP-P0A-T12** — Implement the machine-readable verification catalog mapping every phase, _(phase-task; ready)_
-- [ ] **EWP-P0A-TS09** — Verification-catalog self-tests reject missing, duplicate, malformed, orphaned, _(phase-test; planned)_
-- [ ] **P0-08** — User-promise integration tests _(recommendation; mapped)_
+- [ ] **EWP-CF-018** — Make plan status and cross-references mechanically truthful _(finding; validated)_
+- [ ] **EWP-CF-039** — Make every planned validation executable and release-blocking _(finding; validated)_
+- [ ] **EWP-P0A-T09** — Implement the plan structural validator and run it after every Phase-0 amendment. _(phase-task; reviewed)_
+- [ ] **EWP-P0A-T12** — Implement the machine-readable verification catalog mapping every phase, _(phase-task; reviewed)_
+- [ ] **EWP-P0A-TS09** — Verification-catalog self-tests reject missing, duplicate, malformed, orphaned, _(phase-test; passing)_
 
 ## P17-G1-01 — Shared project context, config resolution, target/scope selection, and bounded defaults
 
@@ -789,7 +788,7 @@ Downstream coverage obligations: none.
 ## P17-G2-05 — Versioned manifest/lock/plan/ledger/journal codecs and migration repositories
 
 Phase: 2; status: **planned**; dependencies: P17-G2-02, P17-G2-03, P17-G2-04.
-Required-now validations: EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS02, EWP-CMD-CONFIG-TS03, EWP-CMD-CONFIG-TS04, EWP-CMD-CONFIG-TS05, EWP-P2-TS06, EWP-P2-TS08, EWP-WF14.
+Required-now validations: EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS02, EWP-CMD-CONFIG-TS03, EWP-CMD-CONFIG-TS04, EWP-CMD-CONFIG-TS05, EWP-P1-TS01, EWP-P1-TS02, EWP-P1-TS03, EWP-P1-TS04, EWP-P1-TS05, EWP-P1-TS06, EWP-P1-TS07, EWP-P2-TS02, EWP-P2-TS06, EWP-P2-TS08, EWP-WF14.
 Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-DOCTOR-TS01, EWP-CMD-DOCTOR-TS02, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS04, EWP-CMD-DOCTOR-TS05, EWP-CMD-DOCTOR-TS06, EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-CMD-SYNC-TS01, EWP-CMD-SYNC-TS02, EWP-CMD-SYNC-TS03, EWP-CMD-SYNC-TS04, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-SYNC-TS09, EWP-CMD-SYNC-TS10, EWP-CMD-UNINSTALL-TS01, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS05, EWP-CMD-UNINSTALL-TS06, EWP-CMD-UNINSTALL-TS07, EWP-WF03, EWP-WF16.
 
 ### Group gates
@@ -812,6 +811,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 - [ ] **EWP-P2-TS06** — Exact legacy/canonical/mixed/empty/malformed/unknown shape matrix; read-only and _(phase-test; planned)_
 - [ ] **EWP-P2-TS08** — Per-version artifact golden fixtures; encode/decode round trips; prior-version _(phase-test; planned)_
 - [ ] **P0-07** — Resolve project config/manifest collision _(recommendation; planned)_
+- [ ] **P0-08** — User-promise integration tests _(recommendation; planned)_
 
 ## P17-G3A-01 — Canonical correlated read model and status state-product surface
 
