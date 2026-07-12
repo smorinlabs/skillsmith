@@ -8,10 +8,11 @@ import {
   runUninstall,
 } from '@skillsmith/core';
 import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
 import { renderUninstallHuman } from '../output/install-human.ts';
 import { renderUninstallJson } from '../output/install-json.ts';
 import { acquireExitCode } from '../util/acquire-exit.ts';
-import { exitCodeForError } from '../util/exit-codes.ts';
+import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 
 const collectTool = (value: string, prev: string[]): string[] => {
@@ -121,6 +122,8 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
     })
     .addHelpText('after', EXAMPLES)
     .action(async (targets: string[], opts: UninstallFlags) => {
+      const mode = validateNonMutatingMode('uninstall', opts);
+      if (!mode.ok) usageError(mode.message);
       if (opts.allScopes && opts.scope !== undefined) {
         usageError('--all-scopes cannot be combined with --scope');
       }
@@ -156,8 +159,10 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
 
       const r = await runUninstall(env, uninstallOpts, { ...defaultUninstallDeps });
       if (!r.ok) {
-        process.stderr.write(`error: ${'message' in r.error ? r.error.message : r.error.code}\n`);
-        process.exit(signal?.aborted ? 130 : exitCodeForError(r.error));
+        const error = normalizeCliError(r.error);
+        const format = opts.json ? 'json' : 'human';
+        (opts.json ? process.stdout : process.stderr).write(renderCliError(error, format));
+        process.exit(signal?.aborted ? 130 : error.exitCode);
       }
 
       for (const res of r.value.results) {

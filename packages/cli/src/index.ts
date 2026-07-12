@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { errorMessage } from '@skillsmith/core';
+import { normalizeCliError, renderCliError } from './output/error-boundary.ts';
 import { buildProgram } from './program.ts';
 import { installSignalHandler } from './util/signals.ts';
 
@@ -24,7 +24,8 @@ const main = async (): Promise<number> => {
 main().then(
   (code) => process.exit(code),
   (e) => {
-    process.stderr.write(`fatal: ${errorMessage(e)}\n`);
-    process.exit(1);
+    const error = normalizeCliError(e);
+    process.stderr.write(renderCliError(error, 'human'));
+    process.exit(error.exitCode);
   },
 );

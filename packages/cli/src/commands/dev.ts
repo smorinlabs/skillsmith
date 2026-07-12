@@ -7,10 +7,11 @@ import {
   runRollback,
 } from '@skillsmith/core';
 import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
 import { renderFlipHuman } from '../output/flip-human.ts';
 import { renderFlipJson } from '../output/flip-json.ts';
-import { exitCodeForError } from '../util/exit-codes.ts';
 import { flipExitCode } from '../util/flip-exit.ts';
+import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
 
 const collectTool = (value: string, prev: string[]): string[] => {
   if (value !== 'claude-code' && value !== 'codex')
@@ -47,6 +48,8 @@ interface DevFlags {
   rollback: boolean;
   dryRun: boolean;
   json: boolean;
+  yes: boolean;
+  prompt: boolean;
 }
 
 const EXAMPLES = `
@@ -110,6 +113,8 @@ export const devCommand = (signal?: AbortSignal): Command =>
     })
     .addHelpText('after', EXAMPLES)
     .action(async (skills: string[], opts: DevFlags) => {
+      const mode = validateNonMutatingMode('dev', opts);
+      if (!mode.ok) usageError(mode.message);
       if (skills.length === 0 && !opts.all)
         usageError('at least one <skill> is required, or pass --all');
       if (opts.all && skills.length > 0)
@@ -159,8 +164,10 @@ export const devCommand = (signal?: AbortSignal): Command =>
         : await runDev(env, flipOpts);
 
       if (!r.ok) {
-        process.stderr.write(`error: ${'message' in r.error ? r.error.message : r.error.code}\n`);
-        process.exit(signal?.aborted ? 130 : exitCodeForError(r.error));
+        const error = normalizeCliError(r.error);
+        const format = opts.json ? 'json' : 'human';
+        (opts.json ? process.stdout : process.stderr).write(renderCliError(error, format));
+        process.exit(signal?.aborted ? 130 : error.exitCode);
       }
 
       for (const res of r.value.results) {

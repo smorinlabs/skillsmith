@@ -37,15 +37,15 @@ describe('installSignalHandler', () => {
     }
   });
 
-  test('SIGTERM aborts the controller, sets exitCode 143', () => {
+  test('SIGTERM aborts the controller, normalizes to exitCode 130', () => {
     const c = new AbortController();
     const h = installSignalHandler(c);
     try {
       process.emit('SIGTERM');
       expect(h.wasInterrupted()).toBe(true);
-      expect(h.exitCode()).toBe(143);
+      expect(h.exitCode()).toBe(130);
       expect(c.signal.aborted).toBe(true);
-      expect(process.exitCode).toBe(143);
+      expect(process.exitCode).toBe(130);
     } finally {
       h.uninstall();
     }
@@ -61,5 +61,19 @@ describe('installSignalHandler', () => {
     h.uninstall();
     expect(process.listenerCount('SIGINT')).toBe(sigintBefore);
     expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
+  });
+
+  test('the first handled signal remains stable when another follows', () => {
+    const c = new AbortController();
+    const h = installSignalHandler(c);
+    try {
+      process.emit('SIGTERM');
+      expect(h.exitCode()).toBe(130);
+      process.emit('SIGINT');
+      expect(h.exitCode()).toBe(130);
+      expect(process.exitCode).toBe(130);
+    } finally {
+      h.uninstall();
+    }
   });
 });

@@ -11,6 +11,7 @@ import {
 import { Command, Option } from 'commander';
 import { renderDoctorHuman } from '../output/doctor-human.ts';
 import { renderDoctorJson } from '../output/doctor-json.ts';
+import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 
 export const doctorCommand = (): Command =>
@@ -63,8 +64,10 @@ export const doctorCommand = (): Command =>
           logger: noopLogger,
         });
         if (!r.ok) {
-          process.stderr.write(`error: ${JSON.stringify(r.error)}\n`);
-          process.exit(1);
+          const error = normalizeCliError(r.error);
+          const format = opts.json ? 'json' : 'human';
+          (opts.json ? process.stdout : process.stderr).write(renderCliError(error, format));
+          process.exit(error.exitCode);
         }
         process.stdout.write(opts.json ? renderDoctorJson(r.value) : renderDoctorHuman(r.value));
         const hadError = r.value.counts.error > 0;

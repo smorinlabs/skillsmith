@@ -13,8 +13,8 @@ import { promoteCommand } from './commands/promote.ts';
 import { uninstallCommand } from './commands/uninstall.ts';
 import { verifyCommand } from './commands/verify.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from './help/topics.ts';
+import { normalizeCliError, renderCliError } from './output/error-boundary.ts';
 import { type ColorFlag, resolveColorMode } from './util/color.ts';
-import { exitCodeForError } from './util/exit-codes.ts';
 
 const applyColorMode = (flag: ColorFlag): void => {
   const mode = resolveColorMode({
@@ -97,8 +97,12 @@ export const buildProgram = (signal?: AbortSignal): Command => {
           ...(signal ? { signal } : {}),
         });
         if (!r.ok) {
-          process.stderr.write(`error: ${JSON.stringify(r.error)}\n`);
-          process.exit(exitCodeForError(r.error));
+          const error = normalizeCliError(r.error);
+          const json = opts.format === 'json';
+          (json ? process.stdout : process.stderr).write(
+            renderCliError(error, json ? 'json' : 'human'),
+          );
+          process.exit(error.exitCode);
         }
         process.stdout.write(`${r.output}\n`);
       },

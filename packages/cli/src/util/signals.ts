@@ -1,14 +1,16 @@
+import type { ExitCode } from './exit-codes.ts';
+
 export interface SignalHandle {
   uninstall: () => void;
   wasInterrupted: () => boolean;
   /** Exit code matching the received signal, or undefined if not interrupted. */
-  exitCode: () => number | undefined;
+  exitCode: () => ExitCode | undefined;
 }
 
 const EXIT_FOR_SIGNAL = {
   SIGINT: 130,
-  SIGTERM: 143,
-} as const satisfies Record<string, number>;
+  SIGTERM: 130,
+} as const satisfies Record<string, ExitCode>;
 
 type HandledSignal = keyof typeof EXIT_FOR_SIGNAL;
 
@@ -17,9 +19,9 @@ export const installSignalHandler = (controller: AbortController): SignalHandle 
   let received: HandledSignal | null = null;
   const bindings: Array<[HandledSignal, () => void]> = signals.map((sig) => {
     const fn = (): void => {
-      received = sig;
+      received ??= sig;
       controller.abort();
-      process.exitCode = EXIT_FOR_SIGNAL[sig];
+      process.exitCode = 130;
     };
     process.on(sig, fn);
     return [sig, fn];

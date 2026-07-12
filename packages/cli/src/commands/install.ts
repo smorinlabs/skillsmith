@@ -11,10 +11,11 @@ import {
   runInstall,
 } from '@skillsmith/core';
 import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
 import { renderInstallHuman } from '../output/install-human.ts';
 import { renderInstallJson } from '../output/install-json.ts';
 import { acquireExitCode } from '../util/acquire-exit.ts';
-import { exitCodeForError } from '../util/exit-codes.ts';
+import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 
 const collectTool = (value: string, prev: string[]): string[] => {
@@ -177,6 +178,8 @@ export const installCommand = (signal?: AbortSignal): Command =>
     })
     .addHelpText('after', EXAMPLES)
     .action(async (sources: string[], opts: InstallFlags) => {
+      const mode = validateNonMutatingMode('install', opts);
+      if (!mode.ok) usageError(mode.message);
       if (opts.deep && !opts.verify) {
         usageError(
           '--deep and --no-verify contradict each other: --deep opts into a deeper verify gate, --no-verify skips the gate entirely',
@@ -220,8 +223,10 @@ export const installCommand = (signal?: AbortSignal): Command =>
 
       const r = await runInstall(env, installOpts, deps);
       if (!r.ok) {
-        process.stderr.write(`error: ${'message' in r.error ? r.error.message : r.error.code}\n`);
-        process.exit(signal?.aborted ? 130 : exitCodeForError(r.error));
+        const error = normalizeCliError(r.error);
+        const format = opts.json ? 'json' : 'human';
+        (opts.json ? process.stdout : process.stderr).write(renderCliError(error, format));
+        process.exit(signal?.aborted ? 130 : error.exitCode);
       }
 
       for (const res of r.value.results) {

@@ -7,6 +7,7 @@ import {
   verifyPlugin,
 } from '@skillsmith/core';
 import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
 import { renderVerifyHuman } from '../output/verify-human.ts';
 import { renderVerifyJson } from '../output/verify-json.ts';
 
@@ -87,10 +88,10 @@ export const verifyCommand = (signal?: AbortSignal): Command =>
 
         if (!r.ok) {
           if (signal?.aborted) process.exit(130);
-          process.stderr.write(
-            `error: ${r.error.code === 'generic' ? r.error.message : JSON.stringify(r.error)}\n`,
-          );
-          process.exit(2);
+          const error = normalizeCliError(r.error);
+          const format = opts.json ? 'json' : 'human';
+          (opts.json ? process.stdout : process.stderr).write(renderCliError(error, format));
+          process.exit(error.exitCode);
         }
 
         const code = verifyExitCode(r.value);

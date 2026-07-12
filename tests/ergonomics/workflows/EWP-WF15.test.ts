@@ -9,6 +9,21 @@ import {
   validateNonMutatingMode,
 } from '../../../packages/cli/src/util/non-mutating-mode.ts';
 import { installSignalHandler } from '../../../packages/cli/src/util/signals.ts';
+import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
+
+const runCli = async (args: readonly string[]) => {
+  const proc = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
+    env: { ...process.env, CI: '1', NO_COLOR: '1' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const exitCode = await proc.exited;
+  return {
+    exitCode,
+    stdout: await new Response(proc.stdout).text(),
+    stderr: await new Response(proc.stderr).text(),
+  };
+};
 
 describe('EWP-WF15', () => {
   afterEach(() => {
@@ -71,6 +86,25 @@ describe('EWP-WF15', () => {
     });
     expect(rendered).not.toContain('private nested cause');
     expect(rendered).not.toContain('stack');
+  });
+
+  test('a spawned current command traverses the same human and JSON error boundary', async () => {
+    const human = await runCli(['agents', '--tool', 'ghost']);
+    expect(human.exitCode).toBe(2);
+    expect(human.stdout).toBe('');
+    expect(human.stderr).toBe('error: Unknown tool: ghost\n');
+
+    const json = await runCli(['agents', '--tool', 'ghost', '--format', 'json']);
+    expect(json.exitCode).toBe(2);
+    expect(json.stderr).toBe('');
+    expect(json.stdout.trimEnd().split('\n')).toHaveLength(1);
+    expect(JSON.parse(json.stdout)).toEqual({
+      schemaVersion: 1,
+      kind: 'error',
+      code: 'unknown-tool',
+      message: 'Unknown tool: ghost',
+      exitCode: 2,
+    });
   });
 
   test('usage errors and cancellation retain the shared exit contract', () => {

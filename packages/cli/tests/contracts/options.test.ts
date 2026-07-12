@@ -250,9 +250,9 @@ describe('EWP-OPT-TS04', () => {
       const command = program.commands.find((candidate) => candidate.name() === commandName);
       if (!command) throw new Error(`live command missing: ${commandName}`);
       const options = new Set(command.options.map((option) => option.long));
-      expect(options).toEqual(
-        expect.arrayContaining(['--dry-run', '--yes', '--no-prompt', '--json']),
-      );
+      for (const option of ['--dry-run', '--yes', '--no-prompt', '--json']) {
+        expect(options.has(option)).toBeTrue();
+      }
       expect(Object.hasOwn(NON_MUTATING_MODE_POLICIES, commandName)).toBeTrue();
     }
   });
