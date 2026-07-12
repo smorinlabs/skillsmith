@@ -139,7 +139,7 @@ Tracked entities: **425** across **45** change groups.
 | P0-05 | P17-G1-02C | planned | required-pr |
 | P0-06 | P17-G1-02A | planned | required-pr |
 | P0-07 | P17-G2-05 | planned | required-pr |
-| P0-08 | P17-G0-05 | planned | required-pr |
+| P0-08 | P17-G0-05 | mapped | required-pr |
 | P1-01 | P17-G3A-02 | planned | required-pr |
 | P1-02 | P17-G3A-01 | planned | required-pr |
 | P1-03 | P17-G3A-02 | planned | required-pr |
@@ -188,7 +188,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-015 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-016 | P17-G5-04 | planned | required-pr |
 | EWP-CF-017 | P17-G0-04 | signed-off | required-pr |
-| EWP-CF-018 | P17-G0-05 | planned | required-pr |
+| EWP-CF-018 | P17-G0-05 | mapped | required-pr |
 | EWP-CF-019 | P17-G2-01 | planned | required-pr |
 | EWP-CF-020 | P17-G4A-01 | planned | required-pr |
 | EWP-CF-021 | P17-G2-01 | planned | required-pr |
@@ -209,7 +209,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-036 | P17-G1-05 | planned | required-pr |
 | EWP-CF-037 | P17-G1-06 | planned | required-pr |
 | EWP-CF-038 | P17-G1-07 | planned | required-pr |
-| EWP-CF-039 | P17-G0-05 | planned | required-pr |
+| EWP-CF-039 | P17-G0-05 | mapped | required-pr |
 | EWP-CF-040 | P17-G2-01 | planned | required-pr |
 | EWP-CF-041 | P17-G4A-03 | planned | required-pr |
 | EWP-CF-042 | P17-G4B-02 | planned | required-pr |
@@ -385,14 +385,14 @@ Downstream coverage obligations: EWP-P1-TS05, EWP-WF16.
 
 ## P17-G0-05 — Catalog, structural validator, generated checklist, and executable ownership
 
-Phase: 0; status: **planned**; dependencies: P17-G0-01, P17-G0-02, P17-G0-03.
+Phase: 0; status: **ready**; dependencies: P17-G0-01, P17-G0-02, P17-G0-03.
 Required-now validations: EWP-P0A-TS06, EWP-P0A-TS07, EWP-P0A-TS09.
 Downstream coverage obligations: EWP-P6-TS06.
 
 ### Group gates
 
-- [ ] P17-G0-05:mapped _(pending)_
-- [ ] P17-G0-05:ready _(pending)_
+- [x] P17-G0-05:mapped _(passed)_
+- [x] P17-G0-05:ready _(passed)_
 - [ ] P17-G0-05:test-first _(pending)_
 - [ ] P17-G0-05:minimal-implementation _(pending)_
 - [ ] P17-G0-05:targeted-green _(pending)_
@@ -404,12 +404,12 @@ Downstream coverage obligations: EWP-P6-TS06.
 
 ### Tracked entities
 
-- [ ] **EWP-CF-018** — Make plan status and cross-references mechanically truthful _(finding; planned)_
-- [ ] **EWP-CF-039** — Make every planned validation executable and release-blocking _(finding; planned)_
-- [ ] **EWP-P0A-T09** — Implement the plan structural validator and run it after every Phase-0 amendment. _(phase-task; planned)_
-- [ ] **EWP-P0A-T12** — Implement the machine-readable verification catalog mapping every phase, _(phase-task; planned)_
+- [ ] **EWP-CF-018** — Make plan status and cross-references mechanically truthful _(finding; mapped)_
+- [ ] **EWP-CF-039** — Make every planned validation executable and release-blocking _(finding; mapped)_
+- [ ] **EWP-P0A-T09** — Implement the plan structural validator and run it after every Phase-0 amendment. _(phase-task; ready)_
+- [ ] **EWP-P0A-T12** — Implement the machine-readable verification catalog mapping every phase, _(phase-task; ready)_
 - [ ] **EWP-P0A-TS09** — Verification-catalog self-tests reject missing, duplicate, malformed, orphaned, _(phase-test; planned)_
-- [ ] **P0-08** — User-promise integration tests _(recommendation; planned)_
+- [ ] **P0-08** — User-promise integration tests _(recommendation; mapped)_
 
 ## P17-G1-01 — Shared project context, config resolution, target/scope selection, and bounded defaults
 
