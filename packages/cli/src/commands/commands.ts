@@ -12,6 +12,7 @@ import { renderCommandsJson } from '../output/commands-json.ts';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
+import { CLI_SELECTION_POLICIES, validateCliSelection } from './selection-validation.ts';
 
 const COMMAND_SCOPES: readonly Scope[] = ['user', 'project'];
 
@@ -28,8 +29,10 @@ export const commandsCommand = (): Command =>
       )
       .addOption(
         new Option('-s, --scope <scope>', 'Narrow to a scope (user or project only)').choices([
+          'system',
           'user',
           'project',
+          'managed',
         ]),
       )
       .option('--user', 'shorthand for --scope=user', false)
@@ -55,6 +58,17 @@ export const commandsCommand = (): Command =>
           },
           command: Command,
         ) => {
+          const selection = validateCliSelection(
+            {
+              targets: [],
+              all: false,
+              tools: opts.tool,
+              ...(opts.scope === undefined ? {} : { scopes: [opts.scope] }),
+              capability: 'read',
+            },
+            CLI_SELECTION_POLICIES.commands,
+            opts.json ? 'json' : 'human',
+          );
           const filterCount = [opts.enabled, opts.disabled, opts.unconfigured].filter(
             Boolean,
           ).length;
@@ -71,12 +85,6 @@ export const commandsCommand = (): Command =>
               message: scopeR.error.message,
             });
           }
-          if (scopeR.value === 'system' || scopeR.value === 'managed') {
-            return failCliError({
-              code: 'commander.invalidArgument',
-              message: `scope '${scopeR.value}' is not available for commands (user or project only)`,
-            });
-          }
           const scopes: readonly Scope[] = scopeR.value ? [scopeR.value] : COMMAND_SCOPES;
           const enabledFilter = opts.enabled
             ? ('enabled-only' as const)
@@ -91,8 +99,8 @@ export const commandsCommand = (): Command =>
           const config = await resolveEffectiveConfig(env, context.value);
           if (!config.ok) return failCliError(config.error, opts.json ? 'json' : 'human');
           const tools: readonly SupportedTool[] =
-            opts.tool.length > 0
-              ? (opts.tool as SupportedTool[])
+            selection.tools.length > 0
+              ? selection.tools
               : config.value.value.tool
                 ? [config.value.value.tool]
                 : SUPPORTED_TOOLS;

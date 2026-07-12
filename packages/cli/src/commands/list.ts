@@ -13,6 +13,7 @@ import { renderListHuman } from '../output/list-human.ts';
 import { renderListJson } from '../output/list-json.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
+import { CLI_SELECTION_POLICIES, validateCliSelection } from './selection-validation.ts';
 
 export const listCommand = (): Command =>
   withCliErrorBoundary(
@@ -63,6 +64,17 @@ export const listCommand = (): Command =>
           },
           command: Command,
         ) => {
+          const selection = validateCliSelection(
+            {
+              targets: [],
+              all: false,
+              tools: opts.tool,
+              ...(opts.scope === undefined ? {} : { scopes: [opts.scope] }),
+              capability: 'read',
+            },
+            CLI_SELECTION_POLICIES.list,
+            opts.json ? 'json' : 'human',
+          );
           const filterCount = [opts.enabled, opts.disabled, opts.unconfigured].filter(
             Boolean,
           ).length;
@@ -93,8 +105,8 @@ export const listCommand = (): Command =>
           const config = await resolveEffectiveConfig(env, context.value);
           if (!config.ok) return failCliError(config.error, opts.json ? 'json' : 'human');
           const tools: readonly SupportedTool[] =
-            opts.tool.length > 0
-              ? (opts.tool as SupportedTool[])
+            selection.tools.length > 0
+              ? selection.tools
               : config.value.value.tool
                 ? [config.value.value.tool]
                 : SUPPORTED_TOOLS;

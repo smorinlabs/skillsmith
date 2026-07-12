@@ -1,12 +1,11 @@
 import {
   type FlipOptions,
-  type FlipTool,
   type JournalPhase,
   defaultScanEnv,
   runPromote,
   runRollback,
 } from '@skillsmith/core';
-import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import { Argument, Command, Option } from 'commander';
 import {
   failCliError,
   normalizeCliError,
@@ -18,10 +17,9 @@ import { renderFlipJson } from '../output/flip-json.ts';
 import { flipExitCode } from '../util/flip-exit.ts';
 import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
+import { CLI_SELECTION_POLICIES, validateCliAdapterSelection } from './selection-validation.ts';
 
 const collectTool = (value: string, prev: string[]): string[] => {
-  if (value !== 'claude-code' && value !== 'codex')
-    throw new InvalidArgumentError(`--tool must be one of claude-code, codex (got '${value}')`);
   return [...prev, value];
 };
 
@@ -78,7 +76,7 @@ export const promoteCommand = (signal?: AbortSignal): Command =>
       .option('--all', 'Promote every dev-mode placement in the selected tools.', false)
       .addOption(
         new Option('-t, --tool <name>', 'Restrict to tool(s): claude-code | codex. Repeatable.')
-          .choices(['claude-code', 'codex'])
+          .choices(['claude-code', 'codex', 'kilo-code', 'opencode'])
           .argParser(collectTool)
           .default([] as string[]),
       )
@@ -92,12 +90,18 @@ export const promoteCommand = (signal?: AbortSignal): Command =>
       .option('--yes', 'Accepted no-op — promote never prompts.', false)
       .addHelpText('after', EXAMPLES)
       .action(async (skills: string[], opts: PromoteFlags, command: Command) => {
+        const selection = validateCliAdapterSelection(
+          {
+            targets: skills,
+            all: opts.all,
+            tools: opts.tool,
+            capability: opts.rollback ? 'undo' : 'promote',
+          },
+          CLI_SELECTION_POLICIES.promote,
+          opts.json ? 'json' : 'human',
+        );
         const mode = validateNonMutatingMode('promote', opts);
         if (!mode.ok) usageError(mode.message);
-        if (skills.length === 0 && !opts.all)
-          usageError('at least one <skill> is required, or pass --all');
-        if (opts.all && skills.length > 0)
-          usageError('--all cannot be combined with positional targets');
         if (opts.rollback && (opts.strict || !opts.verify || opts.allowDirty)) {
           usageError('--rollback cannot be combined with --strict, --no-verify, or --allow-dirty');
         }
@@ -113,7 +117,7 @@ export const promoteCommand = (signal?: AbortSignal): Command =>
         const flipOpts: FlipOptions = {
           targets: skills,
           all: opts.all,
-          ...(opts.tool.length > 0 ? { tools: opts.tool as FlipTool[] } : {}),
+          ...(selection.tools.length > 0 ? { tools: selection.tools } : {}),
           strict: opts.strict,
           noVerify: !opts.verify,
           allowDirty: opts.allowDirty,

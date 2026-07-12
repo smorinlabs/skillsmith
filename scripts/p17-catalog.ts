@@ -595,6 +595,20 @@ function stateModelFor(kind: Kind): Entity['stateModel'] {
 const validationPrefix = '(?:EWP-(?:P(?:0A|1|2|3A|3B|4A|4B|5|6)-TS|CMD-[A-Z]+-TS|OPT-TS)|EWP-WF)';
 
 const explicitValidationOwnership: Record<string, string[]> = {
+  // P0-01's project-context/parser slice lands in G1-01. Output/runtime, observer diagnostics,
+  // and final TTY/color behavior remain mandatory downstream instead of being falsely signed off.
+  'P0-01': [
+    'EWP-OPT-TS06',
+    'EWP-P1-TS01',
+    'EWP-P1-TS02',
+    'EWP-P1-TS03',
+    'EWP-P1-TS05',
+    'EWP-P1-TS07',
+    'EWP-P1-TS11',
+    'EWP-P6-TS03',
+    'EWP-WF14',
+    'EWP-WF15',
+  ],
   'P0-08': [
     'EWP-P1-TS01',
     'EWP-P1-TS02',

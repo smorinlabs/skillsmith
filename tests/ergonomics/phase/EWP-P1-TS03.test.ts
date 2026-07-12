@@ -1,8 +1,23 @@
 import { describe, expect, test } from 'bun:test';
+import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import {
   resolveTargetSelection,
   validateSelectionRequest,
 } from '../../../packages/core/src/selection/resolve.ts';
+
+const runCli = async (args: readonly string[]) => {
+  const proc = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
+    env: { ...process.env, CI: '1', NO_COLOR: '1' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const exitCode = await proc.exited;
+  return {
+    exitCode,
+    stdout: await new Response(proc.stdout).text(),
+    stderr: await new Response(proc.stderr).text(),
+  };
+};
 
 const candidates = [
   {
@@ -63,6 +78,78 @@ const selectedPaths = (result: ReturnType<typeof resolveTargetSelection>): reado
 };
 
 describe('EWP-P1-TS03', () => {
+  test('live commands distinguish unknown enums from known unsupported selections', async () => {
+    const cases = [
+      {
+        label: 'agents unknown tool',
+        args: ['agents', '--tool', 'ghost-tool', '--format', 'json'],
+        code: 'invalid-enum',
+        exitCode: 2,
+      },
+      {
+        label: 'commands unsupported scope',
+        args: ['commands', '--scope', 'system', '--json'],
+        code: 'capability',
+        exitCode: 4,
+      },
+      {
+        label: 'doctor unsupported scope',
+        args: ['doctor', '--scope', 'managed', '--json'],
+        code: 'capability',
+        exitCode: 4,
+      },
+      {
+        label: 'check unknown scope',
+        args: ['check', '--scope', 'workspace', '--json'],
+        code: 'commander.invalidArgument',
+        exitCode: 2,
+      },
+      {
+        label: 'install unsupported tool',
+        args: ['install', 'not-a-source', '--tool', 'kilo-code', '--json'],
+        code: 'capability',
+        exitCode: 4,
+      },
+      {
+        label: 'uninstall unsupported tool',
+        args: ['uninstall', 'absent', '--tool', 'opencode', '--json'],
+        code: 'capability',
+        exitCode: 4,
+      },
+      {
+        label: 'dev unsupported tool',
+        args: ['dev', 'absent', '--tool', 'kilo-code', '--json'],
+        code: 'capability',
+        exitCode: 4,
+      },
+      {
+        label: 'promote unsupported tool',
+        args: ['promote', 'absent', '--tool', 'opencode', '--json'],
+        code: 'capability',
+        exitCode: 4,
+      },
+      {
+        label: 'verify unsupported tool',
+        args: ['verify', '.', '--tool', 'kilo-code', '--json'],
+        code: 'capability',
+        exitCode: 4,
+      },
+    ] as const;
+
+    for (const { label, args, code, exitCode } of cases) {
+      const result = await runCli(args);
+      expect(result.exitCode, label).toBe(exitCode);
+      expect(result.stderr, label).toBe('');
+      expect(result.stdout.trimEnd().split('\n'), label).toHaveLength(1);
+      expect(JSON.parse(result.stdout), label).toMatchObject({
+        schemaVersion: 1,
+        kind: 'error',
+        code,
+        exitCode,
+      });
+    }
+  });
+
   test('unknown enums are usage errors while known unsupported capabilities are exit 4', () => {
     const cases = [
       {

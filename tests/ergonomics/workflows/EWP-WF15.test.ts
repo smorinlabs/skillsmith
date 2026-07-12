@@ -99,7 +99,7 @@ describe('EWP-WF15', () => {
     const human = await runCli(['agents', '--tool', 'ghost']);
     expect(human.exitCode).toBe(2);
     expect(human.stdout).toBe('');
-    expect(human.stderr).toBe('error: Unknown tool: ghost\n');
+    expect(human.stderr).toBe("error: unknown tool 'ghost'\n");
 
     const json = await runCli(['agents', '--tool', 'ghost', '--format', 'json']);
     expect(json.exitCode).toBe(2);
@@ -108,8 +108,8 @@ describe('EWP-WF15', () => {
     expect(JSON.parse(json.stdout)).toEqual({
       schemaVersion: 1,
       kind: 'error',
-      code: 'unknown-tool',
-      message: 'Unknown tool: ghost',
+      code: 'invalid-enum',
+      message: "unknown tool 'ghost'",
       exitCode: 2,
     });
   });

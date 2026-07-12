@@ -202,4 +202,75 @@ describe('EWP-P1-TS02', () => {
       await rm(sandbox, { recursive: true, force: true });
     }
   });
+
+  test('spawned SKILLSMITH_CONFIG follows -C, yields to --config, and never rebases the project', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'skillsmith-p1-config-env-'));
+    const invocationCwd = join(sandbox, 'invocation');
+    const repository = join(sandbox, 'repository');
+    const nested = join(repository, 'packages', 'api');
+    const projectSkill = join(repository, '.claude', 'skills', 'context-skill');
+    await initializeRepository(repository);
+    await Promise.all([
+      mkdir(invocationCwd, { recursive: true }),
+      mkdir(nested, { recursive: true }),
+      mkdir(projectSkill, { recursive: true }),
+    ]);
+    await writeFile(join(nested, 'skillsmith.toml'), 'tool = "opencode"\n');
+    await writeFile(join(nested, 'environment.toml'), 'tool = "kilo-code"\n');
+    await writeFile(join(nested, 'team.toml'), 'tool = "claude-code"\n');
+    await writeFile(join(projectSkill, 'SKILL.md'), '---\nname: context-skill\n---\nfixture\n');
+    const env = {
+      HOME: join(sandbox, 'home'),
+      XDG_CONFIG_HOME: join(sandbox, 'xdg'),
+      XDG_DATA_HOME: join(sandbox, 'data'),
+      XDG_CACHE_HOME: join(sandbox, 'cache'),
+      SKILLSMITH_CONFIG: './environment.toml',
+    };
+
+    try {
+      const fromEnvironment = await runCli(
+        ['config', 'list', '-C', nested, '--json'],
+        invocationCwd,
+        env,
+      );
+      expect(fromEnvironment.exitCode).toBe(0);
+      expect(fromEnvironment.stderr).toBe('');
+      expect(JSON.parse(fromEnvironment.stdout)).toMatchObject({
+        effective: { tool: 'kilo-code' },
+        sources: { tool: 'explicit-file' },
+      });
+
+      const fromFlag = await runCli(
+        ['config', 'list', '-C', nested, '--config', './team.toml', '--json'],
+        invocationCwd,
+        env,
+      );
+      expect(fromFlag.exitCode).toBe(0);
+      expect(fromFlag.stderr).toBe('');
+      expect(JSON.parse(fromFlag.stdout)).toMatchObject({
+        effective: { tool: 'claude-code' },
+        sources: { tool: 'explicit-file' },
+      });
+
+      const list = await runCli(
+        ['list', '-C', nested, '--config', './team.toml', '--project', '--json'],
+        invocationCwd,
+        env,
+      );
+      expect(list.exitCode).toBe(0);
+      expect(list.stderr).toBe('');
+      expect(JSON.parse(list.stdout)).toMatchObject({
+        skills: [
+          {
+            name: 'context-skill',
+            tool: 'claude-code',
+            scope: 'project',
+            root: join(repository, '.claude', 'skills'),
+          },
+        ],
+      });
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
 });

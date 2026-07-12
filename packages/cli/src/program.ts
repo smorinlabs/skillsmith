@@ -10,6 +10,7 @@ import { doctorCommand } from './commands/doctor.ts';
 import { installCommand } from './commands/install.ts';
 import { listCommand } from './commands/list.ts';
 import { promoteCommand } from './commands/promote.ts';
+import { CLI_SELECTION_POLICIES, validateCliSelection } from './commands/selection-validation.ts';
 import { uninstallCommand } from './commands/uninstall.ts';
 import { verifyCommand } from './commands/verify.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from './help/topics.ts';
@@ -84,10 +85,21 @@ export const buildProgram = (signal?: AbortSignal): Command => {
     )
     .action(
       async (opts: { tool: string[]; detectedOnly: boolean; format: 'markdown' | 'json' }) => {
+        const format = opts.format === 'json' ? 'json' : 'human';
+        const selection = validateCliSelection(
+          {
+            targets: [],
+            all: false,
+            tools: opts.tool,
+            capability: 'read',
+          },
+          CLI_SELECTION_POLICIES.agents,
+          format,
+        );
         const env = await defaultScanEnv();
         const r = await runAgents({
           env,
-          tools: opts.tool.length > 0 ? opts.tool : undefined,
+          tools: selection.tools.length > 0 ? selection.tools : undefined,
           format: opts.format,
           detectedOnly: opts.detectedOnly,
           ...(signal ? { signal } : {}),

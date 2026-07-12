@@ -38,9 +38,9 @@ describe('skillsmith install — flag validation', () => {
     expect(r.stderr).toContain('--no-verify');
   });
 
-  test('--scope system -> exit 2 (commander .choices() rejection)', async () => {
+  test('--scope system -> exit 4 (known but unsupported capability)', async () => {
     const r = await run(['install', 'acme/repo', '--scope', 'system']);
-    expect(r.code).toBe(2);
+    expect(r.code).toBe(4);
   });
 
   test('an unknown --tool value -> exit 2', async () => {

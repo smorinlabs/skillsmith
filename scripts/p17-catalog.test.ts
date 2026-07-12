@@ -326,6 +326,23 @@ describe('P17 immutable catalog and traceability baseline', () => {
     expect(phase1.downstreamCoverage).toContain('EWP-WF16');
   });
 
+  test('preserves P0-01 output, observer, and TTY behavior as explicit downstream ownership', () => {
+    const catalog = fixture();
+    const p001 = required(
+      catalog.entities.find((item) => item.id === 'P0-01'),
+      'missing P0-01',
+    );
+    expect(p001.impactedValidations).toEqual(
+      expect.arrayContaining(['EWP-P1-TS07', 'EWP-P1-TS11', 'EWP-P6-TS03']),
+    );
+    expect(p001.secondaryGroups).toEqual(
+      expect.arrayContaining(['P17-G1-03', 'P17-G1-07', 'P17-G6-03']),
+    );
+    expect(group(catalog, 'P17-G1-01').downstreamCoverage).toEqual(
+      expect.arrayContaining(['EWP-P1-TS07', 'EWP-P1-TS11', 'EWP-P6-TS03']),
+    );
+  });
+
   test('expands shorthand finding command contracts explicitly', () => {
     const catalog = fixture();
     const contracts = (id: string) =>

@@ -6,7 +6,7 @@ import {
   getAgent,
   verifyPlugin,
 } from '@skillsmith/core';
-import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import { Argument, Command, Option } from 'commander';
 import {
   normalizeCliError,
   renderCliError,
@@ -14,12 +14,11 @@ import {
 } from '../output/error-boundary.ts';
 import { renderVerifyHuman } from '../output/verify-human.ts';
 import { renderVerifyJson } from '../output/verify-json.ts';
+import { CLI_SELECTION_POLICIES, validateCliAdapterSelection } from './selection-validation.ts';
 
 const TOOL_LABEL: Record<VerifyTool, string> = { 'claude-code': 'Claude Code', codex: 'Codex' };
 
 const collectTool = (value: string, prev: string[]): string[] => {
-  if (value !== 'claude-code' && value !== 'codex')
-    throw new InvalidArgumentError(`--tool must be one of claude-code, codex (got '${value}')`);
   return [...prev, value];
 };
 
@@ -47,7 +46,7 @@ export const verifyCommand = (signal?: AbortSignal): Command =>
           '-t, --tool <name>',
           'Restrict to tool(s): claude-code | codex. Repeatable. Default: all detected.',
         )
-          .choices(['claude-code', 'codex'])
+          .choices(['claude-code', 'codex', 'kilo-code', 'opencode'])
           .argParser(collectTool)
           .default([] as string[]),
       )
@@ -64,8 +63,18 @@ export const verifyCommand = (signal?: AbortSignal): Command =>
           pathArg: string,
           opts: { tool: string[]; static: boolean; deep: boolean; strict: boolean; json: boolean },
         ) => {
+          const selection = validateCliAdapterSelection(
+            {
+              targets: [pathArg],
+              all: false,
+              tools: opts.tool,
+              capability: 'read',
+            },
+            CLI_SELECTION_POLICIES.verify,
+            opts.json ? 'json' : 'human',
+          );
           const env = await defaultScanEnv();
-          const tools = opts.tool as VerifyTool[];
+          const tools: readonly VerifyTool[] = selection.tools;
           const r = await verifyPlugin(env, {
             path: resolve(pathArg),
             ...(tools.length > 0 ? { tools } : {}),

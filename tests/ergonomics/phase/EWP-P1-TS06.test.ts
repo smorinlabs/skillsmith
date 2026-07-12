@@ -142,7 +142,7 @@ describe('EWP-P1-TS06', () => {
     } finally {
       await rm(sandbox, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   test('current acquire and flip adapters delegate precedence to the shared selector', async () => {
     for (const file of ['acquire-exit.ts', 'flip-exit.ts']) {

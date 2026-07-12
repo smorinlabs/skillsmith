@@ -36,9 +36,9 @@ describe('skillsmith uninstall — flag validation', () => {
     expect(r.code).toBe(2);
   });
 
-  test('--scope system -> exit 2 (commander .choices() rejection)', async () => {
+  test('--scope system -> exit 4 (known but unsupported capability)', async () => {
     const r = await run(['uninstall', 'x', '--scope', 'system']);
-    expect(r.code).toBe(2);
+    expect(r.code).toBe(4);
   });
 
   test('an unknown --tool value -> exit 2', async () => {

@@ -1,5 +1,4 @@
 import {
-  type FlipTool,
   type InstallScope,
   type JournalPhase,
   type UninstallOptions,
@@ -7,7 +6,7 @@ import {
   defaultUninstallDeps,
   runUninstall,
 } from '@skillsmith/core';
-import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import { Argument, Command, Option } from 'commander';
 import {
   failCliError,
   normalizeCliError,
@@ -20,10 +19,9 @@ import { acquireExitCode } from '../util/acquire-exit.ts';
 import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
+import { CLI_SELECTION_POLICIES, validateCliAdapterSelection } from './selection-validation.ts';
 
 const collectTool = (value: string, prev: string[]): string[] => {
-  if (value !== 'claude-code' && value !== 'codex')
-    throw new InvalidArgumentError(`--tool must be one of claude-code, codex (got '${value}')`);
   return [...prev, value];
 };
 
@@ -36,7 +34,7 @@ const usageError = (message: string): never =>
 
 interface UninstallFlags {
   tool: string[];
-  scope?: 'user' | 'project';
+  scope?: string;
   user: boolean;
   project: boolean;
   allScopes: boolean;
@@ -91,7 +89,7 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
           '-t, --tool <name>',
           'claude-code | codex. Repeatable. Default: every tool where the skill is found.',
         )
-          .choices(['claude-code', 'codex'])
+          .choices(['claude-code', 'codex', 'kilo-code', 'opencode'])
           .argParser(collectTool)
           .default([] as string[]),
       )
@@ -99,7 +97,7 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
         new Option(
           '-s, --scope <scope>',
           'user | project. Required when the name is ambiguous. (system deferred)',
-        ).choices(['user', 'project']),
+        ).choices(['system', 'user', 'project', 'managed']),
       )
       .option('--user', 'Shorthand for --scope=user', false)
       .option('--project', 'Shorthand for --scope=project', false)
@@ -111,6 +109,17 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
       .option('--no-prompt', 'Accepted no-op — uninstall never prompts.')
       .addHelpText('after', EXAMPLES)
       .action(async (targets: string[], opts: UninstallFlags, command: Command) => {
+        const selection = validateCliAdapterSelection(
+          {
+            targets,
+            all: false,
+            tools: opts.tool,
+            ...(opts.scope === undefined ? {} : { scopes: [opts.scope] }),
+            capability: 'uninstall',
+          },
+          CLI_SELECTION_POLICIES.uninstall,
+          opts.json ? 'json' : 'human',
+        );
         const mode = validateNonMutatingMode('uninstall', opts);
         if (!mode.ok) usageError(mode.message);
         if (opts.allScopes && opts.scope !== undefined) {
@@ -122,7 +131,18 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
           project: opts.project,
         });
         if (!scopeR.ok) usageError(scopeR.error.message);
-        const scope = (scopeR.ok ? scopeR.value : null) as InstallScope | null;
+        const resolvedScope = scopeR.ok ? scopeR.value : null;
+        if (resolvedScope === 'system' || resolvedScope === 'managed') {
+          return failCliError(
+            {
+              code: 'capability',
+              message: `scope '${resolvedScope}' is unsupported for uninstall`,
+            },
+            opts.json ? 'json' : 'human',
+            { exitCode: 4 },
+          );
+        }
+        const scope: InstallScope | null = resolvedScope;
         if (opts.allScopes && scope !== null) {
           usageError('--all-scopes cannot be combined with --user/--project');
         }
@@ -137,7 +157,7 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
 
         const uninstallOpts: UninstallOptions = {
           targets,
-          ...(opts.tool.length > 0 ? { tools: opts.tool as FlipTool[] } : {}),
+          ...(selection.tools.length > 0 ? { tools: selection.tools } : {}),
           ...(scope !== null ? { scope } : {}),
           allScopes: opts.allScopes,
           force: opts.force,

@@ -1,7 +1,6 @@
 import { isCancel, select } from '@clack/prompts';
 import {
   type CandidateSkill,
-  type FlipTool,
   type InstallDeps,
   type InstallOptions,
   type InstallScope,
@@ -10,7 +9,7 @@ import {
   defaultScanEnv,
   runInstall,
 } from '@skillsmith/core';
-import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import { Argument, Command, Option } from 'commander';
 import {
   failCliError,
   normalizeCliError,
@@ -23,10 +22,9 @@ import { acquireExitCode } from '../util/acquire-exit.ts';
 import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
+import { CLI_SELECTION_POLICIES, validateCliAdapterSelection } from './selection-validation.ts';
 
 const collectTool = (value: string, prev: string[]): string[] => {
-  if (value !== 'claude-code' && value !== 'codex')
-    throw new InvalidArgumentError(`--tool must be one of claude-code, codex (got '${value}')`);
   return [...prev, value];
 };
 
@@ -39,7 +37,7 @@ const usageError = (message: string): never =>
 
 interface InstallFlags {
   tool: string[];
-  scope?: 'user' | 'project';
+  scope?: string;
   user: boolean;
   project: boolean;
   ref?: string;
@@ -141,7 +139,7 @@ export const installCommand = (signal?: AbortSignal): Command =>
           '-t, --tool <name>',
           'Target tool: claude-code | codex. Repeatable. Default: all detected.',
         )
-          .choices(['claude-code', 'codex'])
+          .choices(['claude-code', 'codex', 'kilo-code', 'opencode'])
           .argParser(collectTool)
           .default([] as string[]),
       )
@@ -149,7 +147,7 @@ export const installCommand = (signal?: AbortSignal): Command =>
         new Option(
           '-s, --scope <scope>',
           'user | project. Default: project in a git repo, else user. (system deferred)',
-        ).choices(['user', 'project']),
+        ).choices(['system', 'user', 'project', 'managed']),
       )
       .option('--user', 'Shorthand for --scope=user', false)
       .option('--project', 'Shorthand for --scope=project', false)
@@ -171,6 +169,17 @@ export const installCommand = (signal?: AbortSignal): Command =>
       .option('--no-prompt', 'Force non-TTY behavior: ambiguity lists candidates and exits 2.')
       .addHelpText('after', EXAMPLES)
       .action(async (sources: string[], opts: InstallFlags, command: Command) => {
+        const selection = validateCliAdapterSelection(
+          {
+            targets: sources,
+            all: false,
+            tools: opts.tool,
+            ...(opts.scope === undefined ? {} : { scopes: [opts.scope] }),
+            capability: 'install',
+          },
+          CLI_SELECTION_POLICIES.install,
+          opts.json ? 'json' : 'human',
+        );
         const mode = validateNonMutatingMode('install', opts);
         if (!mode.ok) usageError(mode.message);
         if (opts.deep && !opts.verify) {
@@ -184,7 +193,15 @@ export const installCommand = (signal?: AbortSignal): Command =>
           project: opts.project,
         });
         if (!scopeR.ok) usageError(scopeR.error.message);
-        const scope = (scopeR.ok ? scopeR.value : null) as InstallScope | null;
+        const resolvedScope = scopeR.ok ? scopeR.value : null;
+        if (resolvedScope === 'system' || resolvedScope === 'managed') {
+          return failCliError(
+            { code: 'capability', message: `scope '${resolvedScope}' is unsupported for install` },
+            opts.json ? 'json' : 'human',
+            { exitCode: 4 },
+          );
+        }
+        const scope: InstallScope | null = resolvedScope;
 
         const env = await defaultScanEnv();
         const context = await resolveCommandProjectContext(command, env);
@@ -199,7 +216,7 @@ export const installCommand = (signal?: AbortSignal): Command =>
 
         const installOpts: InstallOptions = {
           sources,
-          ...(opts.tool.length > 0 ? { tools: opts.tool as FlipTool[] } : {}),
+          ...(selection.tools.length > 0 ? { tools: selection.tools } : {}),
           ...(scope !== null ? { scope } : {}),
           ...(opts.ref !== undefined ? { ref: opts.ref } : {}),
           pin: opts.pin,

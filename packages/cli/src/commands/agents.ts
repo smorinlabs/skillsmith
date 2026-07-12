@@ -1,11 +1,13 @@
 import {
   type ScanEnv,
+  type SelectionValidationError,
   type SkillSmithError,
-  type SupportedTool,
   detectAll,
+  validateSelectionRequest,
 } from '@skillsmith/core';
 import { renderAgentsJson } from '../output/agents-json.ts';
 import { renderAgentsMarkdown } from '../output/agents-markdown.ts';
+import { CLI_SELECTION_POLICIES } from './selection-validation.ts';
 
 export interface RunAgentsInput {
   env: ScanEnv;
@@ -15,11 +17,23 @@ export interface RunAgentsInput {
   signal?: AbortSignal;
 }
 
-export type RunAgentsResult = { ok: true; output: string } | { ok: false; error: SkillSmithError };
+export type RunAgentsResult =
+  | { ok: true; output: string }
+  | { ok: false; error: SkillSmithError | SelectionValidationError };
 
 export const runAgents = async (input: RunAgentsInput): Promise<RunAgentsResult> => {
+  const selection = validateSelectionRequest(
+    {
+      targets: [],
+      all: false,
+      tools: input.tools ?? [],
+      capability: 'read',
+    },
+    CLI_SELECTION_POLICIES.agents,
+  );
+  if (!selection.ok) return { ok: false, error: selection.error };
   const r = await detectAll(input.env, {
-    ...(input.tools ? { tools: input.tools as readonly SupportedTool[] } : {}),
+    ...(selection.value.tools.length > 0 ? { tools: selection.value.tools } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
   });
   if (!r.ok) return { ok: false, error: r.error };

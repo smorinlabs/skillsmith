@@ -1,12 +1,11 @@
 import {
   type FlipOptions,
-  type FlipTool,
   type JournalPhase,
   defaultScanEnv,
   runDev,
   runRollback,
 } from '@skillsmith/core';
-import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import { Argument, Command, Option } from 'commander';
 import {
   failCliError,
   normalizeCliError,
@@ -18,10 +17,9 @@ import { renderFlipJson } from '../output/flip-json.ts';
 import { flipExitCode } from '../util/flip-exit.ts';
 import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
+import { CLI_SELECTION_POLICIES, validateCliAdapterSelection } from './selection-validation.ts';
 
 const collectTool = (value: string, prev: string[]): string[] => {
-  if (value !== 'claude-code' && value !== 'codex')
-    throw new InvalidArgumentError(`--tool must be one of claude-code, codex (got '${value}')`);
   return [...prev, value];
 };
 
@@ -82,7 +80,7 @@ export const devCommand = (signal?: AbortSignal): Command =>
       .option('--all', 'Demote every pinned placement with a recorded dev source.', false)
       .addOption(
         new Option('-t, --tool <name>', 'Restrict to tool(s): claude-code | codex. Repeatable.')
-          .choices(['claude-code', 'codex'])
+          .choices(['claude-code', 'codex', 'kilo-code', 'opencode'])
           .argParser(collectTool)
           .default([] as string[]),
       )
@@ -103,12 +101,18 @@ export const devCommand = (signal?: AbortSignal): Command =>
       .option('--yes', 'Accepted no-op — dev never prompts.', false)
       .addHelpText('after', EXAMPLES)
       .action(async (skills: string[], opts: DevFlags, command: Command) => {
+        const selection = validateCliAdapterSelection(
+          {
+            targets: skills,
+            all: opts.all,
+            tools: opts.tool,
+            capability: opts.rollback ? 'undo' : 'dev',
+          },
+          CLI_SELECTION_POLICIES.dev,
+          opts.json ? 'json' : 'human',
+        );
         const mode = validateNonMutatingMode('dev', opts);
         if (!mode.ok) usageError(mode.message);
-        if (skills.length === 0 && !opts.all)
-          usageError('at least one <skill> is required, or pass --all');
-        if (opts.all && skills.length > 0)
-          usageError('--all cannot be combined with positional targets');
         if (opts.all && opts.source !== undefined) {
           // PRD D5: create/adopt are inherently targeted; --all gains no create/adopt semantics.
           usageError('--all cannot be combined with --source');
@@ -141,7 +145,7 @@ export const devCommand = (signal?: AbortSignal): Command =>
         const flipOpts: FlipOptions = {
           targets: skills,
           all: opts.all,
-          ...(opts.tool.length > 0 ? { tools: opts.tool as FlipTool[] } : {}),
+          ...(selection.tools.length > 0 ? { tools: selection.tools } : {}),
           ...(opts.source !== undefined ? { source: opts.source } : {}),
           ...(opts.dest !== undefined ? { dest: opts.dest } : {}),
           strict: opts.strict,

@@ -18,9 +18,10 @@ export const resolveCommandProjectContext = (
   env: ScanEnv,
 ): Promise<Result<ProjectContext, SkillSmithError>> => {
   const options = command.optsWithGlobals() as GlobalProjectOptions;
+  const explicitConfigPath = options.config ?? process.env.SKILLSMITH_CONFIG;
   return resolveProjectContext(env, {
     invocationCwd: process.cwd(),
     ...(options.cd !== undefined ? { cd: options.cd } : {}),
-    ...(options.config !== undefined ? { explicitConfigPath: options.config } : {}),
+    ...(explicitConfigPath !== undefined ? { explicitConfigPath } : {}),
   });
 };
