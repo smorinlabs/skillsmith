@@ -184,6 +184,8 @@ describe('P17 Lima sandbox scripts', () => {
     expect(source).toContain('allowMergedEvidenceFallback: false');
     expect(source).toContain('allowMergedEvidenceFallback: true');
     expect(source).toContain('GitHub GraphQL rate limit exhausted');
+    expect(source).toContain('exceeded a secondary rate limit');
+    expect(source).toContain('--merge-ready requires a live review-thread query');
     expect(source).not.toContain('cannot prove review-thread closure through REST fallback');
   });
 

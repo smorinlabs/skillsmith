@@ -541,7 +541,9 @@ function requirePrAllowlist(number: number): void {
 
 function isGraphqlRateLimit(error: unknown): boolean {
   const message = String(error);
-  return /graphql_rate_limit|API rate limit already exceeded/i.test(message);
+  return /graphql_rate_limit|["']?(?:type|code)["']?\s*:\s*["']?RATE_LIMIT|\brate limit (?:already )?exceeded\b|\bexceeded a secondary rate limit\b/i.test(
+    message,
+  );
 }
 
 function requireReviewClosure(
@@ -601,15 +603,15 @@ function requireReviewClosure(
         );
         return;
       }
+      if (rateLimited) {
+        fail(
+          'GitHub GraphQL rate limit exhausted; --merge-ready requires a live review-thread query. Retry after the GraphQL quota resets.',
+        );
+      }
       const comments = jsonItems<{ id: number }>(
         `repos/${repository}/pulls/${number}/comments?per_page=100`,
       );
       if (comments.length > 0) {
-        if (rateLimited) {
-          fail(
-            `GitHub GraphQL rate limit exhausted; REST found ${comments.length} review comments but does not expose thread resolution. Retry after the GraphQL quota resets.`,
-          );
-        }
         fail(
           `cannot query GitHub review-thread closure; REST found ${comments.length} review comments but does not expose thread resolution: ${String(error)}`,
         );
