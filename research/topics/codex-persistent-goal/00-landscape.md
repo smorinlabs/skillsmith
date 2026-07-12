@@ -147,7 +147,7 @@ belongs in `projects/P17-GOAL.md` and the thread goal state.
 Use this one sentence from the repository root in a fresh interactive Codex thread:
 
 ```text
-/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, pausing for every human approval it requires and marking complete only after all referenced gates and final sign-off pass.
+/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, applying the recorded standing human approval without additional review pauses and marking complete only after all referenced gates and final sign-off pass.
 ```
 
 This does not claim a file-ingestion syntax. It supplies an ordinary objective string containing a

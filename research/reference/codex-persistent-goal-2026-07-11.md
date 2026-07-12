@@ -30,7 +30,7 @@ limit in a file and pointing the Goal at it.
 The safe P17 bootstrap is:
 
 ```text
-/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, pausing for every human approval it requires and marking complete only after all referenced gates and final sign-off pass.
+/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, applying the recorded standing human approval without additional review pauses and marking complete only after all referenced gates and final sign-off pass.
 ```
 
 This is an objective string containing a path, not a special file-ingestion syntax. Current public

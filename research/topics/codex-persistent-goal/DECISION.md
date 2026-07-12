@@ -16,7 +16,7 @@ briefs and do not receive assumed goal inheritance.
 Use this bootstrap sentence:
 
 ```text
-/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, pausing for every human approval it requires and marking complete only after all referenced gates and final sign-off pass.
+/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, applying the recorded standing human approval without additional review pauses and marking complete only after all referenced gates and final sign-off pass.
 ```
 
 Do not set a token budget unless the user explicitly requests one.
