@@ -325,7 +325,7 @@
       "phase": "0",
       "title": "Live-to-target CLI migration ledger and complete parser/option ownership",
       "dependsOn": ["P17-G0-01"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/cli/src/contracts/commander-surface.ts",
@@ -476,12 +476,12 @@
           "evidence": ["projects/p17/evidence/P17-G0-02.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-02.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-02.md#traceability-and-sign-off"]
         }
       },
       "evidence": []
@@ -6708,7 +6708,7 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G0-02",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G0-02",
       "target": null,
@@ -7146,7 +7146,7 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G0-02",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G0-02",
       "target": null,
@@ -14148,7 +14148,7 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS01",
       "target": {
@@ -14443,7 +14443,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-02",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-02",
       "target": null,
@@ -14616,7 +14616,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-02",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-02",
       "target": null,
@@ -14704,7 +14704,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-02",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-02",
       "target": null,
@@ -14780,7 +14780,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS02.test.ts",
       "target": {
@@ -14810,7 +14810,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS03.test.ts",
       "target": {
@@ -14840,7 +14840,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS04.test.ts",
       "target": {
@@ -14941,7 +14941,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS08.test.ts",
       "target": {
