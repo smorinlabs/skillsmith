@@ -1437,7 +1437,7 @@
       "phase": "1",
       "title": "`check`/doctor gate semantics and report-only behavior",
       "dependsOn": ["P17-G1-02A"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/doctor/run.ts",
@@ -1488,8 +1488,8 @@
           "evidence": ["projects/p17/evidence/P17-G1-02B.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02B.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -9799,11 +9799,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/check.test.ts",
+        "selector": "EWP-CMD-CHECK-TS01",
+        "command": "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-02B.md#execution-receipt-ewp-cmd-check-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-CHECK-TS01"],
@@ -9816,8 +9821,10 @@
         "EWP-P1-TS04"
       ],
       "affectedContracts": ["COMMAND:check", "P0-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS01"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/check.test.ts"]
     },
     {
       "id": "EWP-CMD-CHECK-TS02",
@@ -9825,11 +9832,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/check.test.ts",
+        "selector": "EWP-CMD-CHECK-TS02",
+        "command": "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-02B.md#execution-receipt-ewp-cmd-check-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-CHECK-TS02"],
@@ -9842,8 +9854,10 @@
         "EWP-P1-TS04"
       ],
       "affectedContracts": ["COMMAND:check", "P0-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/check.test.ts"]
     },
     {
       "id": "EWP-CMD-CHECK-TS03",
@@ -9851,11 +9865,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/check.test.ts",
+        "selector": "EWP-CMD-CHECK-TS03",
+        "command": "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-02B.md#execution-receipt-ewp-cmd-check-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-CHECK-TS03"],
@@ -9868,8 +9887,10 @@
         "EWP-P1-TS04"
       ],
       "affectedContracts": ["COMMAND:check", "P0-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/check.test.ts"]
     },
     {
       "id": "EWP-CMD-CHECK-TS04",
@@ -9877,11 +9898,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/check.test.ts",
+        "selector": "EWP-CMD-CHECK-TS04",
+        "command": "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-02B.md#execution-receipt-ewp-cmd-check-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-CHECK-TS04"],
@@ -9894,8 +9920,10 @@
         "EWP-P1-TS04"
       ],
       "affectedContracts": ["COMMAND:check", "P0-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS04"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/check.test.ts"]
     },
     {
       "id": "EWP-CMD-CHECK-TS05",
@@ -9903,11 +9931,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:packages/cli/tests/contracts/check.test.ts#EWP-CMD-CHECK-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/check.test.ts",
+        "selector": "EWP-CMD-CHECK-TS05",
+        "command": "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-02B.md#execution-receipt-ewp-cmd-check-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-CHECK-TS05"],
@@ -9920,8 +9953,10 @@
         "EWP-P1-TS04"
       ],
       "affectedContracts": ["COMMAND:check", "P0-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/check.test.ts --test-name-pattern EWP-CMD-CHECK-TS05"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/check.test.ts"]
     },
     {
       "id": "EWP-CMD-COMMANDS-TS01",
@@ -15584,11 +15619,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02B:tests/ergonomics/phase/EWP-P1-TS04.test.ts#EWP-P1-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS04.test.ts",
+        "selector": "EWP-P1-TS04",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS04.test.ts --test-name-pattern EWP-P1-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-02B.md#execution-receipt-ewp-p1-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS04"],
@@ -15601,8 +15641,10 @@
         "EWP-P1-TS04"
       ],
       "affectedContracts": ["COMMAND:check", "P0-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS04.test.ts --test-name-pattern EWP-P1-TS04"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P1-TS04.test.ts"]
     },
     {
       "id": "EWP-P1-TS05",

@@ -480,7 +480,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G1-02B — `check`/doctor gate semantics and report-only behavior
 
-Phase: 1; status: **ready**; dependencies: P17-G1-02A.
+Phase: 1; status: **active**; dependencies: P17-G1-02A.
 Required-now validations: EWP-CMD-CHECK-TS01, EWP-CMD-CHECK-TS02, EWP-CMD-CHECK-TS03, EWP-CMD-CHECK-TS04, EWP-CMD-CHECK-TS05, EWP-P1-TS04.
 Downstream coverage obligations: none.
 
@@ -488,7 +488,7 @@ Downstream coverage obligations: none.
 
 - [x] P17-G1-02B:mapped _(passed)_
 - [x] P17-G1-02B:ready _(passed)_
-- [ ] P17-G1-02B:test-first _(pending)_
+- [x] P17-G1-02B:test-first _(passed)_
 - [ ] P17-G1-02B:minimal-implementation _(pending)_
 - [ ] P17-G1-02B:targeted-green _(pending)_
 - [ ] P17-G1-02B:impacted-green _(pending)_
@@ -500,13 +500,13 @@ Downstream coverage obligations: none.
 ### Tracked entities
 
 - [ ] **COMMAND:check** — Maintain — Are blocking machine/project health checks passing? _(command; planned)_
-- [ ] **EWP-CMD-CHECK-TS01** — only error-class checks execute. _(command-test; planned)_
-- [ ] **EWP-CMD-CHECK-TS02** — errors fail by default; report-only compatibility and conflict with the _(command-test; planned)_
-- [ ] **EWP-CMD-CHECK-TS03** — tool/scope/config and sibling/explicit custom artifact-pair selection _(command-test; planned)_
-- [ ] **EWP-CMD-CHECK-TS04** — JSON and stable exit contracts in CI/non-TTY. _(command-test; planned)_
-- [ ] **EWP-CMD-CHECK-TS05** — no network/advisory-warning noise unless explicitly requested. _(command-test; planned)_
+- [ ] **EWP-CMD-CHECK-TS01** — only error-class checks execute. _(command-test; failing)_
+- [ ] **EWP-CMD-CHECK-TS02** — errors fail by default; report-only compatibility and conflict with the _(command-test; failing)_
+- [ ] **EWP-CMD-CHECK-TS03** — tool/scope/config and sibling/explicit custom artifact-pair selection _(command-test; failing)_
+- [ ] **EWP-CMD-CHECK-TS04** — JSON and stable exit contracts in CI/non-TTY. _(command-test; failing)_
+- [ ] **EWP-CMD-CHECK-TS05** — no network/advisory-warning noise unless explicitly requested. _(command-test; failing)_
 - [ ] **EWP-P1-T05** — Correct check gate semantics. _(phase-task; planned)_
-- [ ] **EWP-P1-TS04** — Check/doctor exit and JSON matrix. _(phase-test; planned)_
+- [ ] **EWP-P1-TS04** — Check/doctor exit and JSON matrix. _(phase-test; failing)_
 - [ ] **P0-04** — CI-correct `check` _(recommendation; planned)_
 
 ## P17-G1-02C — Current help/docs migration and legacy project-config warning boundary
