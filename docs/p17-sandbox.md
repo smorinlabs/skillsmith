@@ -202,8 +202,11 @@ The check fails unless all of the following are true:
 - the P17 preparation package's live final gate passes; and
 - the root filesystem still has adequate space.
 
-The final gate uses GitHub and can fail temporarily if the authenticated account's GraphQL quota is
-exhausted. Rerun `check` after the quota resets; do not treat a rate-limit failure as a passing gate.
+The live review-thread query uses GitHub GraphQL because the REST review-comment API does not expose
+thread-resolution state. `--merge-ready` remains fail-closed if that GraphQL quota is exhausted. For
+`--final`, the PR is already merged, so a rate-limit-only failure emits a warning and falls back to
+the committed, mechanically validated closed preparation-review ledger. Authentication errors,
+other GraphQL failures, and a successful query that finds an unresolved thread still fail the gate.
 
 ## 5. Test desktop remote interactivity before P17
 

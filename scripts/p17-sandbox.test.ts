@@ -180,6 +180,11 @@ describe('P17 Lima sandbox scripts', () => {
     expect(source).toContain("'--jq'");
     expect(source).toContain("'.[]'");
     expect(source).not.toContain("'--slurp'");
+    expect(source).toContain('function isGraphqlRateLimit');
+    expect(source).toContain('allowMergedEvidenceFallback: false');
+    expect(source).toContain('allowMergedEvidenceFallback: true');
+    expect(source).toContain('GitHub GraphQL rate limit exhausted');
+    expect(source).not.toContain('cannot prove review-thread closure through REST fallback');
   });
 
   test('guest provision dry-run display is an exact streamed-script command', () => {
@@ -214,6 +219,8 @@ describe('P17 Lima sandbox scripts', () => {
     expect(source).toContain('It does **not** authenticate any account');
     expect(source).toContain('It does **not** clone or install Skillsmith');
     expect(source).toContain('**GUEST — operator user**');
+    expect(source).toContain('`--merge-ready` remains fail-closed');
+    expect(source).toContain('rate-limit-only failure emits a warning');
   });
 
   test('both scripts are valid Bash', () => {
