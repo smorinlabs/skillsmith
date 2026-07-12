@@ -111,6 +111,7 @@ The check fails unless all of the following are true:
 
 - the guest has no 9p, VirtioFS, or SSHFS host mounts;
 - every required CLI is installed;
+- the guest checkout is clean `main` at the current `origin/main` commit;
 - operator and test-user Codex logins report ChatGPT authentication;
 - Claude is authenticated;
 - Kilo has either a Kilo account or an OpenAI/ChatGPT OAuth credential;

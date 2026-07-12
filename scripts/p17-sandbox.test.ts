@@ -37,7 +37,7 @@ describe('P17 Lima sandbox scripts', () => {
     expect(output).toContain('--mount-none');
     expect(output).toContain('--containerd=none');
     expect(output).toContain('--port-forward=1455:1455,static=true');
-    expect(output).toContain('p17-guest-bootstrap.sh install');
+    expect(output).toContain('bash -s -- install <');
     expect(output).not.toContain('limactl clone');
   });
 
@@ -68,6 +68,7 @@ describe('P17 Lima sandbox scripts', () => {
   });
 
   test('guest bootstrap installs the four agents and Skillsmith without embedding auth', () => {
+    const hostSource = readFileSync(hostScript, 'utf8');
     const source = readFileSync(guestScript, 'utf8');
     for (const packageName of [
       '@openai/codex',
@@ -81,9 +82,21 @@ describe('P17 Lima sandbox scripts', () => {
     expect(source).toContain('git clone');
     expect(source).toContain('bun install --frozen-lockfile');
     expect(source).toContain('bun run build:linux-arm64');
+    expect(source).toContain('$OPERATOR_HOME/.bashrc');
+    expect(source).toContain('fetch origin main');
     expect(source).toContain("grep -qi 'ChatGPT'");
     expect(source).toContain('.value.type == "oauth"');
+    expect(hostSource).toContain('limactl stop --force');
     expect(source).not.toMatch(/OPENAI_API_KEY|ANTHROPIC_API_KEY|KILO_API_KEY/);
+  });
+
+  test('guest dry-run display is an exact streamed-script command', () => {
+    const result = runHost('setup');
+    const guestLine = result.stdout
+      .toString()
+      .split('\n')
+      .find((line) => line.includes('bash -s -- install'));
+    expect(guestLine).toBe(`+ limactl shell skillsmith-p17 -- bash -s -- install < ${guestScript}`);
   });
 
   test('both scripts are valid Bash', () => {

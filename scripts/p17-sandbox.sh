@@ -82,7 +82,9 @@ start_existing_vm() {
     case "$status" in
         Running) ;;
         Stopped) run limactl start "$VM_NAME" ;;
-        *) die "Lima VM $VM_NAME is not usable (status: ${status:-unknown})" ;;
+        *)
+            die "Lima VM $VM_NAME is not usable (status: ${status:-unknown}); run destroy --yes"
+            ;;
     esac
 }
 
@@ -96,8 +98,8 @@ require_vm() {
 run_guest_script() {
     local mode="$1"
     if [[ "$DRY_RUN" == 1 ]]; then
-        printf '+ limactl shell %q -- bash -s -- %q < %s %s\n' \
-            "$VM_NAME" "$mode" "$GUEST_SCRIPT" "$mode"
+        printf '+ limactl shell %q -- bash -s -- %q < %s\n' \
+            "$VM_NAME" "$mode" "$GUEST_SCRIPT"
         return
     fi
     limactl shell "$VM_NAME" -- bash -s -- "$mode" <"$GUEST_SCRIPT"
@@ -201,8 +203,12 @@ stop_vm() {
         return
     fi
     require_command limactl
-    if vm_exists && [[ "$(vm_status)" == Running ]]; then
-        run limactl stop "$VM_NAME"
+    if vm_exists; then
+        case "$(vm_status)" in
+            Running) run limactl stop "$VM_NAME" ;;
+            Broken) run limactl stop --force "$VM_NAME" ;;
+            *) ;;
+        esac
     fi
 }
 
@@ -216,9 +222,11 @@ destroy_vm() {
     fi
     require_command limactl
     vm_exists || die "Lima VM $VM_NAME does not exist"
-    if [[ "$(vm_status)" == Running ]]; then
-        run limactl stop "$VM_NAME"
-    fi
+    case "$(vm_status)" in
+        Running) run limactl stop "$VM_NAME" ;;
+        Stopped) ;;
+        *) run limactl stop --force "$VM_NAME" ;;
+    esac
     run limactl unprotect "$VM_NAME"
     run limactl delete "$VM_NAME"
 }

@@ -88,6 +88,8 @@ configure_operator_codex() {
     chmod 0700 "$OPERATOR_CODEX_HOME"
     ensure_profile_line "$OPERATOR_HOME/.profile" "export CODEX_HOME=\"\$HOME/.codex-operator\""
     ensure_profile_line "$OPERATOR_HOME/.profile" "export PATH=\"\$HOME/.local/bin:\$PATH\""
+    ensure_profile_line "$OPERATOR_HOME/.bashrc" "export CODEX_HOME=\"\$HOME/.codex-operator\""
+    ensure_profile_line "$OPERATOR_HOME/.bashrc" "export PATH=\"\$HOME/.local/bin:\$PATH\""
 
     if [[ ! -f "$OPERATOR_CODEX_HOME/config.toml" ]]; then
         cat >"$OPERATOR_CODEX_HOME/config.toml" <<'EOF'
@@ -173,6 +175,7 @@ check_item() {
         echo PASS
     else
         echo FAIL
+        sed 's/^/  /' /tmp/p17-check.out >&2
         sed 's/^/  /' /tmp/p17-check.err >&2
         failures=$((failures + 1))
     fi
@@ -186,6 +189,14 @@ check_detected_agents() {
       [.tools | to_entries[] | select((.value | length) > 0) | .key] as $found
       | (["claude-code", "codex", "kilo-code", "opencode"] - $found | length) == 0
     ' <<<"$output" >/dev/null
+}
+
+check_repository_baseline() {
+    [[ -z "$(git -C "$REPO_DIR" status --porcelain)" ]] || return 1
+    [[ "$(git -C "$REPO_DIR" branch --show-current)" == main ]] || return 1
+    git -C "$REPO_DIR" fetch origin main
+    [[ "$(git -C "$REPO_DIR" rev-parse HEAD)" == \
+        "$(git -C "$REPO_DIR" rev-parse origin/main)" ]]
 }
 
 check_operator_codex_subscription() {
@@ -227,6 +238,7 @@ check_all() {
         check_item "tool: $tool" command -v "$tool"
     done
     check_item 'Skillsmith checkout' test -d "$REPO_DIR/.git"
+    check_item 'clean synchronized main' check_repository_baseline
     check_item 'operator Codex config' \
         env CODEX_HOME="$OPERATOR_CODEX_HOME" codex --strict-config --version
     check_item 'operator Codex subscription' check_operator_codex_subscription
