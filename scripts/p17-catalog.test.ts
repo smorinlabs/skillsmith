@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '..');
-const catalogPath = resolve(root, 'projects/p17/catalog.json');
 const checklistPath = resolve(root, 'projects/p17/CHECKLIST.md');
 const prepPath = resolve(root, 'projects/p17/PREP.md');
 const evidence = 'projects/p17/evidence/README.md';
@@ -79,8 +78,28 @@ afterEach(() => {
   }
 });
 
+let baselineFixtureBody: string | undefined;
+
 function fixture(): CatalogFixture {
-  return JSON.parse(readFileSync(catalogPath, 'utf8')) as CatalogFixture;
+  if (!baselineFixtureBody) {
+    const temporaryCatalog = temporaryFile('skillsmith-p17-baseline-catalog-', 'catalog.json');
+    const temporaryChecklist = temporaryFile('skillsmith-p17-baseline-checklist-', 'CHECKLIST.md');
+    const result = Bun.spawnSync(['bun', 'scripts/p17-catalog.ts', '--init'], {
+      cwd: root,
+      env: {
+        ...process.env,
+        P17_CATALOG_PATH: temporaryCatalog,
+        P17_CHECKLIST_PATH: temporaryChecklist,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    if (result.exitCode !== 0) {
+      throw new Error(`could not generate baseline catalog fixture: ${result.stderr.toString()}`);
+    }
+    baselineFixtureBody = readFileSync(temporaryCatalog, 'utf8');
+  }
+  return JSON.parse(baselineFixtureBody) as CatalogFixture;
 }
 
 function required<T>(value: T | undefined, message: string): T {

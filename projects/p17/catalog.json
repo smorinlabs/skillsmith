@@ -20,10 +20,10 @@
       "id": "0",
       "dependsOn": null,
       "requiredGroups": ["P17-G0-01", "P17-G0-02", "P17-G0-03", "P17-G0-04", "P17-G0-05"],
-      "status": "planned",
+      "status": "active",
       "entry": {
-        "status": "pending",
-        "evidence": []
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/phase-0.md#entry-gate-2026-07-12"]
       },
       "review": {
         "status": "pending",
@@ -256,48 +256,58 @@
       "phase": "0",
       "title": "Governance, authority, accepted-decision/finding traceability, and truthful counts",
       "dependsOn": [],
-      "status": "planned",
+      "status": "reviewed",
       "owner": "root-goal",
-      "ownedFiles": [],
+      "ownedFiles": [
+        "scripts/p17-plan-structure.ts",
+        "scripts/p17-catalog.test.ts",
+        "tests/ergonomics/phase/EWP-P0A-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P0A-TS06.test.ts",
+        "tests/ergonomics/phase/EWP-P0A-TS07.test.ts"
+      ],
       "integrationOwner": null,
       "impactedValidations": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
       "requiredNowValidations": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
       "downstreamCoverage": [],
-      "testCommands": [],
-      "implementers": [],
-      "reviewer": null,
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P0A-TS01.test.ts --test-name-pattern EWP-P0A-TS01",
+        "bun test tests/ergonomics/phase/EWP-P0A-TS06.test.ts --test-name-pattern EWP-P0A-TS06",
+        "bun test tests/ergonomics/phase/EWP-P0A-TS07.test.ts --test-name-pattern EWP-P0A-TS07"
+      ],
+      "implementers": ["root-codex-goal"],
+      "reviewer": "/root/g0_01_eighteenth_review",
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#targeted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#refactor"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#eighteenth-review-accepted"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -14391,11 +14401,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-01",
-      "status": "planned",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#targeted-green"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
@@ -14564,11 +14574,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-01",
-      "status": "planned",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#targeted-green"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
@@ -14652,11 +14662,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-01",
-      "status": "planned",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#targeted-green"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
@@ -14721,18 +14731,25 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-01",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS01.test.ts",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P0A-TS01.test.ts",
+        "selector": "EWP-P0A-TS01",
+        "command": "bun test tests/ergonomics/phase/EWP-P0A-TS01.test.ts --test-name-pattern EWP-P0A-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#execution-receipt-ewp-p0a-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS01"],
       "impactedValidations": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
       "affectedContracts": [],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P0A-TS01.test.ts --test-name-pattern EWP-P0A-TS01"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P0A-TS01.test.ts"]
     },
     {
       "id": "EWP-P0A-TS02",
@@ -14834,18 +14851,25 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-01",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS06.test.ts",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P0A-TS06.test.ts",
+        "selector": "EWP-P0A-TS06",
+        "command": "bun test tests/ergonomics/phase/EWP-P0A-TS06.test.ts --test-name-pattern EWP-P0A-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#execution-receipt-ewp-p0a-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS06"],
       "impactedValidations": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
       "affectedContracts": [],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P0A-TS06.test.ts --test-name-pattern EWP-P0A-TS06"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P0A-TS06.test.ts"]
     },
     {
       "id": "EWP-P0A-TS07",
@@ -14853,18 +14877,25 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-01",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS07.test.ts",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P0A-TS07.test.ts",
+        "selector": "EWP-P0A-TS07",
+        "command": "bun test tests/ergonomics/phase/EWP-P0A-TS07.test.ts --test-name-pattern EWP-P0A-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#execution-receipt-ewp-p0a-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS07"],
       "impactedValidations": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
       "affectedContracts": [],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P0A-TS07.test.ts --test-name-pattern EWP-P0A-TS07"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P0A-TS07.test.ts"]
     },
     {
       "id": "EWP-P0A-TS08",
