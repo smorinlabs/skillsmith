@@ -12,20 +12,20 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 0 | 28 | 6 |
-| phase-task | 65 | 10 | 55 | 0 |
-| phase-test | 61 | 8 | 53 | 0 |
+| phase-task | 65 | 12 | 53 | 0 |
+| phase-test | 61 | 9 | 52 | 0 |
 | command-test | 157 | 0 | 157 | 0 |
 | option-gate | 10 | 1 | 9 | 0 |
 | workflow | 16 | 0 | 16 | 0 |
 | command | 23 | 0 | 23 | 0 |
-| finding | 43 | 4 | 39 | 0 |
+| finding | 43 | 6 | 37 | 0 |
 | decision | 16 | 0 | 15 | 1 |
 
 ### Phases
 
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
-| 0 | 5 | 28 | 23 | 0 |
+| 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 0 | 0 |
 | 2 | 5 | 33 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
@@ -188,7 +188,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-015 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-016 | P17-G5-04 | planned | required-pr |
 | EWP-CF-017 | P17-G0-04 | signed-off | required-pr |
-| EWP-CF-018 | P17-G0-05 | validated | required-pr |
+| EWP-CF-018 | P17-G0-05 | signed-off | required-pr |
 | EWP-CF-019 | P17-G2-01 | planned | required-pr |
 | EWP-CF-020 | P17-G4A-01 | planned | required-pr |
 | EWP-CF-021 | P17-G2-01 | planned | required-pr |
@@ -209,7 +209,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-036 | P17-G1-05 | planned | required-pr |
 | EWP-CF-037 | P17-G1-06 | planned | required-pr |
 | EWP-CF-038 | P17-G1-07 | planned | required-pr |
-| EWP-CF-039 | P17-G0-05 | validated | required-pr |
+| EWP-CF-039 | P17-G0-05 | signed-off | required-pr |
 | EWP-CF-040 | P17-G2-01 | planned | required-pr |
 | EWP-CF-041 | P17-G4A-03 | planned | required-pr |
 | EWP-CF-042 | P17-G4B-02 | planned | required-pr |
@@ -385,7 +385,7 @@ Downstream coverage obligations: EWP-P1-TS05, EWP-WF16.
 
 ## P17-G0-05 — Catalog, structural validator, generated checklist, and executable ownership
 
-Phase: 0; status: **reviewed**; dependencies: P17-G0-01, P17-G0-02, P17-G0-03.
+Phase: 0; status: **signed-off**; dependencies: P17-G0-01, P17-G0-02, P17-G0-03.
 Required-now validations: EWP-P0A-TS06, EWP-P0A-TS07, EWP-P0A-TS09.
 Downstream coverage obligations: EWP-P6-TS06.
 
@@ -399,16 +399,16 @@ Downstream coverage obligations: EWP-P6-TS06.
 - [x] P17-G0-05:impacted-green _(passed)_
 - [x] P17-G0-05:refactor _(passed)_
 - [x] P17-G0-05:adversarial-review _(passed)_
-- [ ] P17-G0-05:traceability-closure _(pending)_
-- [ ] P17-G0-05:signed-off _(pending)_
+- [x] P17-G0-05:traceability-closure _(passed)_
+- [x] P17-G0-05:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-018** — Make plan status and cross-references mechanically truthful _(finding; validated)_
-- [ ] **EWP-CF-039** — Make every planned validation executable and release-blocking _(finding; validated)_
-- [ ] **EWP-P0A-T09** — Implement the plan structural validator and run it after every Phase-0 amendment. _(phase-task; reviewed)_
-- [ ] **EWP-P0A-T12** — Implement the machine-readable verification catalog mapping every phase, _(phase-task; reviewed)_
-- [ ] **EWP-P0A-TS09** — Verification-catalog self-tests reject missing, duplicate, malformed, orphaned, _(phase-test; passing)_
+- [x] **EWP-CF-018** — Make plan status and cross-references mechanically truthful _(finding; signed-off)_
+- [x] **EWP-CF-039** — Make every planned validation executable and release-blocking _(finding; signed-off)_
+- [x] **EWP-P0A-T09** — Implement the plan structural validator and run it after every Phase-0 amendment. _(phase-task; signed-off)_
+- [x] **EWP-P0A-T12** — Implement the machine-readable verification catalog mapping every phase, _(phase-task; signed-off)_
+- [x] **EWP-P0A-TS09** — Verification-catalog self-tests reject missing, duplicate, malformed, orphaned, _(phase-test; signed-off)_
 
 ## P17-G1-01 — Shared project context, config resolution, target/scope selection, and bounded defaults
 

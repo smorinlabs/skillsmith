@@ -703,7 +703,7 @@
       "phase": "0",
       "title": "Catalog, structural validator, generated checklist, and executable ownership",
       "dependsOn": ["P17-G0-01", "P17-G0-02", "P17-G0-03"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "scripts/p17-catalog.ts",
@@ -757,12 +757,12 @@
           "evidence": ["projects/p17/evidence/P17-G0-05.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-05.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-05.md#traceability-and-sign-off"]
         }
       },
       "evidence": []
@@ -7033,11 +7033,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G0-05",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G0-05",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-05.md#implementation-and-validation"],
+      "evidence": ["projects/p17/evidence/P17-G0-05.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G0-01"],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS06", "EWP-P0A-TS07"],
@@ -8470,11 +8470,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G0-05",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G0-05",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-05.md#implementation-and-validation"],
+      "evidence": ["projects/p17/evidence/P17-G0-05.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G6-04"],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS09", "EWP-P6-TS06"],
@@ -14729,11 +14729,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-05",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-05",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-05.md#adversarial-review"],
+      "evidence": ["projects/p17/evidence/P17-G0-05.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": ["EWP-CF-018", "EWP-CF-039"],
       "validatedBy": ["EWP-P0A-TS09"],
@@ -14798,11 +14798,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-05",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-05",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-05.md#adversarial-review"],
+      "evidence": ["projects/p17/evidence/P17-G0-05.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": ["EWP-CF-018", "EWP-CF-039"],
       "validatedBy": ["EWP-P0A-TS09"],
@@ -15041,7 +15041,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-05",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-05:tests/ergonomics/phase/EWP-P0A-TS09.test.ts#EWP-P0A-TS09",
       "target": {
@@ -15050,7 +15050,7 @@
         "selector": "EWP-P0A-TS09",
         "command": "bun test tests/ergonomics/phase/EWP-P0A-TS09.test.ts --test-name-pattern EWP-P0A-TS09"
       },
-      "evidence": ["projects/p17/evidence/P17-G0-05.md#execution-receipt-ewp-p0a-ts09"],
+      "evidence": ["projects/p17/evidence/P17-G0-05.md#signed-execution-receipt-ewp-p0a-ts09"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS09"],
