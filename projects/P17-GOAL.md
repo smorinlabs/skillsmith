@@ -77,6 +77,8 @@ Use this order when artifacts differ:
 11. [Codex-goal decision](../research/topics/codex-persistent-goal/DECISION.md) and
     [terminal reference](../research/reference/codex-persistent-goal-2026-07-11.md) govern the
     documented goal bootstrap and persistence assumptions.
+12. [Isolated execution environment](../docs/p17-sandbox.md) governs the optional Lima runner,
+    manual subscription authentication, host-isolation checks, and unrestricted Codex launch.
 
 Conversation summaries, agent reports, generated prose, and memory never override committed
 normative artifacts. A contract-changing discovery requires an explicit plan amendment, catalog
