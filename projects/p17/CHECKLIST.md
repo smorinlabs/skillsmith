@@ -519,7 +519,7 @@ Downstream coverage obligations: none.
 
 - [x] P17-G1-02C:mapped _(passed)_
 - [x] P17-G1-02C:ready _(passed)_
-- [ ] P17-G1-02C:test-first _(pending)_
+- [x] P17-G1-02C:test-first _(passed)_
 - [ ] P17-G1-02C:minimal-implementation _(pending)_
 - [ ] P17-G1-02C:targeted-green _(pending)_
 - [ ] P17-G1-02C:impacted-green _(pending)_
@@ -532,7 +532,7 @@ Downstream coverage obligations: none.
 
 - [ ] **EWP-P1-T06** — Current help/README/package docs and all code-adjacent command references updated _(phase-task; planned)_
 - [ ] **EWP-P1-T07** — Preserve legacy project-config reads and emit the Phase 2 migration warning; _(phase-task; planned)_
-- [ ] **EWP-P1-TS05** — Live help/docs declaration gate. _(phase-test; planned)_
+- [ ] **EWP-P1-TS05** — Live help/docs declaration gate. _(phase-test; failing)_
 - [ ] **P0-05** — Current docs and help _(recommendation; planned)_
 
 ## P17-G1-03 — Declarative command specifications, shared CLI runtime, and application-service boundary

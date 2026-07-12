@@ -1569,8 +1569,8 @@
           "evidence": ["projects/p17/evidence/P17-G1-02C.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-02C.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -15674,18 +15674,25 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-02C",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-02C:tests/ergonomics/phase/EWP-P1-TS05.test.ts#EWP-P1-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS05.test.ts",
+        "selector": "EWP-P1-TS05",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS05.test.ts --test-name-pattern EWP-P1-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-02C.md#execution-receipt-ewp-p1-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS05"],
       "impactedValidations": ["EWP-P1-TS05"],
       "affectedContracts": ["P0-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS05.test.ts --test-name-pattern EWP-P1-TS05"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P1-TS05.test.ts"]
     },
     {
       "id": "EWP-P1-TS06",
