@@ -256,7 +256,7 @@
       "phase": "0",
       "title": "Governance, authority, accepted-decision/finding traceability, and truthful counts",
       "dependsOn": [],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "scripts/p17-plan-structure.ts",
@@ -310,12 +310,12 @@
           "evidence": ["projects/p17/evidence/P17-G0-01.md#eighteenth-review-accepted"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#traceability-closure"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G0-01.md#group-sign-off"]
         }
       },
       "evidence": []
@@ -14401,11 +14401,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-01",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-01",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-01.md#targeted-green"],
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#group-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
@@ -14574,11 +14574,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-01",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-01",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-01.md#targeted-green"],
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#group-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
@@ -14662,11 +14662,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G0-01",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G0-01",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G0-01.md#targeted-green"],
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#group-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS01", "EWP-P0A-TS06", "EWP-P0A-TS07"],
@@ -14731,7 +14731,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS01.test.ts",
       "target": {
@@ -14740,7 +14740,7 @@
         "selector": "EWP-P0A-TS01",
         "command": "bun test tests/ergonomics/phase/EWP-P0A-TS01.test.ts --test-name-pattern EWP-P0A-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G0-01.md#execution-receipt-ewp-p0a-ts01"],
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#signed-execution-receipt-ewp-p0a-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS01"],
@@ -14851,7 +14851,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS06.test.ts",
       "target": {
@@ -14860,7 +14860,7 @@
         "selector": "EWP-P0A-TS06",
         "command": "bun test tests/ergonomics/phase/EWP-P0A-TS06.test.ts --test-name-pattern EWP-P0A-TS06"
       },
-      "evidence": ["projects/p17/evidence/P17-G0-01.md#execution-receipt-ewp-p0a-ts06"],
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#signed-execution-receipt-ewp-p0a-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS06"],
@@ -14877,7 +14877,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G0-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:tests/ergonomics/phase/EWP-P0A-TS07.test.ts",
       "target": {
@@ -14886,7 +14886,7 @@
         "selector": "EWP-P0A-TS07",
         "command": "bun test tests/ergonomics/phase/EWP-P0A-TS07.test.ts --test-name-pattern EWP-P0A-TS07"
       },
-      "evidence": ["projects/p17/evidence/P17-G0-01.md#execution-receipt-ewp-p0a-ts07"],
+      "evidence": ["projects/p17/evidence/P17-G0-01.md#signed-execution-receipt-ewp-p0a-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS07"],

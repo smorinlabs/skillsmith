@@ -12,8 +12,8 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 0 | 28 | 6 |
-| phase-task | 65 | 0 | 65 | 0 |
-| phase-test | 61 | 0 | 61 | 0 |
+| phase-task | 65 | 3 | 62 | 0 |
+| phase-test | 61 | 3 | 58 | 0 |
 | command-test | 157 | 0 | 157 | 0 |
 | option-gate | 10 | 0 | 10 | 0 |
 | workflow | 16 | 0 | 16 | 0 |
@@ -25,7 +25,7 @@ Tracked entities: **425** across **45** change groups.
 
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
-| 0 | 5 | 29 | 0 | 0 |
+| 0 | 5 | 29 | 6 | 0 |
 | 1 | 9 | 62 | 0 | 0 |
 | 2 | 5 | 32 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
@@ -274,7 +274,7 @@ Tracked entities: **425** across **45** change groups.
 
 ## P17-G0-01 — Governance, authority, accepted-decision/finding traceability, and truthful counts
 
-Phase: 0; status: **reviewed**; dependencies: none.
+Phase: 0; status: **signed-off**; dependencies: none.
 Required-now validations: EWP-P0A-TS01, EWP-P0A-TS06, EWP-P0A-TS07.
 Downstream coverage obligations: none.
 
@@ -288,17 +288,17 @@ Downstream coverage obligations: none.
 - [x] P17-G0-01:impacted-green _(passed)_
 - [x] P17-G0-01:refactor _(passed)_
 - [x] P17-G0-01:adversarial-review _(passed)_
-- [ ] P17-G0-01:traceability-closure _(pending)_
-- [ ] P17-G0-01:signed-off _(pending)_
+- [x] P17-G0-01:traceability-closure _(passed)_
+- [x] P17-G0-01:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-P0A-T01** — Preserve the resolved D-001..D-016 answer, rationale, rejected option, affected _(phase-task; reviewed)_
-- [ ] **EWP-P0A-T06** — Amend this plan and close every accepted finding. _(phase-task; reviewed)_
-- [ ] **EWP-P0A-T10** — Maintain accepted-finding traceability: every finding must retain the accepted _(phase-task; reviewed)_
-- [ ] **EWP-P0A-TS01** — Identifier/heading/decision-status validation. _(phase-test; passing)_
-- [ ] **EWP-P0A-TS06** — No unresolved decision, undefined/duplicate EWP ID, count mismatch, stale _(phase-test; passing)_
-- [ ] **EWP-P0A-TS07** — Every accepted EWP-CF row maps to a finding record, normative go-forward _(phase-test; passing)_
+- [x] **EWP-P0A-T01** — Preserve the resolved D-001..D-016 answer, rationale, rejected option, affected _(phase-task; signed-off)_
+- [x] **EWP-P0A-T06** — Amend this plan and close every accepted finding. _(phase-task; signed-off)_
+- [x] **EWP-P0A-T10** — Maintain accepted-finding traceability: every finding must retain the accepted _(phase-task; signed-off)_
+- [x] **EWP-P0A-TS01** — Identifier/heading/decision-status validation. _(phase-test; signed-off)_
+- [x] **EWP-P0A-TS06** — No unresolved decision, undefined/duplicate EWP ID, count mismatch, stale _(phase-test; signed-off)_
+- [x] **EWP-P0A-TS07** — Every accepted EWP-CF row maps to a finding record, normative go-forward _(phase-test; signed-off)_
 
 ## P17-G0-02 — Live-to-target CLI migration ledger and complete parser/option ownership
 
