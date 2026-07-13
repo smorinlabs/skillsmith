@@ -59,11 +59,6 @@ export const hashCanonicalInput = (
   schemaVersion: number,
   canonicalInput: string | Uint8Array,
 ): Result<ArtifactDigest, ArtifactHashError> => {
-  const ownedInput =
-    typeof canonicalInput === 'string'
-      ? encoder.encode(canonicalInput)
-      : new Uint8Array(canonicalInput);
-
   if (!DOMAIN_SET.has(domain)) {
     return err(hashError('unknown-domain', 'domain', 'artifact hash domain is unsupported'));
   }
@@ -73,6 +68,10 @@ export const hashCanonicalInput = (
     );
   }
 
+  const ownedInput =
+    typeof canonicalInput === 'string'
+      ? encoder.encode(canonicalInput)
+      : new Uint8Array(canonicalInput);
   return ok(digestCanonicalBytes(domain as HashDomain, ownedInput));
 };
 

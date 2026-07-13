@@ -698,6 +698,103 @@ describe('source-content artifact authority', () => {
     }
   });
 
+  test('P17-RV-G2-02-FUZZ-F04 reads listDir arrays by validated index, never their iterator', async () => {
+    const nodes = {
+      [ROOT]: { kind: 'dir', children: ['safe'] } as const,
+      [`${ROOT}/safe`]: { kind: 'file', bytes: bytes('safe') } as const,
+    };
+    const iteratorPrototype = Object.create(Array.prototype) as object;
+    Object.defineProperty(iteratorPrototype, Symbol.iterator, {
+      value: function* hiddenListingIterator() {
+        yield 'safe';
+      },
+    });
+    const indexedListing = ['safe', 'unsafe/path'];
+    Object.setPrototypeOf(indexedListing, iteratorPrototype);
+
+    const indexedBase = new TreePorts(nodes);
+    const indexedPorts: SourceContentReadPort = {
+      listDir: async () => indexedListing,
+      readBytes: indexedBase.readBytes.bind(indexedBase),
+      readFileMetadata: indexedBase.readFileMetadata.bind(indexedBase),
+      readLink: indexedBase.readLink.bind(indexedBase),
+    };
+    expectError(await projectSourceContent(indexedPorts, ROOT), 'unsafe-path', 'entries[].path');
+
+    const proxyListing = new Proxy(['safe', 'unsafe/P17_HIDDEN_LISTING_SECRET'], {
+      get(target, key, receiver) {
+        if (key === Symbol.iterator) {
+          return function* hiddenProxyListingIterator() {
+            yield 'safe';
+          };
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const proxyBase = new TreePorts(nodes);
+    const proxyPorts: SourceContentReadPort = {
+      listDir: async () => proxyListing,
+      readBytes: proxyBase.readBytes.bind(proxyBase),
+      readFileMetadata: proxyBase.readFileMetadata.bind(proxyBase),
+      readLink: proxyBase.readLink.bind(proxyBase),
+    };
+    const proxyResult = await projectSourceContent(proxyPorts, ROOT);
+    expectError(proxyResult, 'unsafe-path', 'entries[].path');
+    expect(JSON.stringify(proxyResult)).not.toContain('P17_HIDDEN_LISTING_SECRET');
+  });
+
+  test('P17-RV-G2-02-FUZZ-F03 reads projection entries by validated index, never their iterator', () => {
+    const iteratorPrototype = Object.create(Array.prototype) as object;
+    Object.defineProperty(iteratorPrototype, Symbol.iterator, {
+      value: function* hiddenProjectionIterator() {
+        yield { path: 'visible', type: 'directory' };
+      },
+    });
+    const indexedEntries: unknown[] = [
+      { path: '../P17_HIDDEN_PROJECTION_SECRET', type: 'directory' },
+    ];
+    Object.setPrototypeOf(indexedEntries, iteratorPrototype);
+    const indexedProjection = castProjection({
+      version: 1,
+      exclusionsVersion: 1,
+      entries: indexedEntries,
+    });
+    expectError(
+      serializeSourceContentProjection(indexedProjection),
+      'invalid-projection',
+      'entries[].path',
+    );
+    expectError(hashSourceContentV1(indexedProjection), 'invalid-projection', 'entries[].path');
+
+    const proxyEntries = new Proxy(
+      [{ path: '../P17_HIDDEN_PROJECTION_SECRET', type: 'directory' }],
+      {
+        get(target, key, receiver) {
+          if (key === Symbol.iterator) {
+            return function* hiddenProxyProjectionIterator() {
+              yield { path: 'visible', type: 'directory' };
+            };
+          }
+          return Reflect.get(target, key, receiver);
+        },
+      },
+    );
+    const proxyProjection = castProjection({
+      version: 1,
+      exclusionsVersion: 1,
+      entries: proxyEntries,
+    });
+    expectError(
+      serializeSourceContentProjection(proxyProjection),
+      'invalid-projection',
+      'entries[].path',
+    );
+    expectError(hashSourceContentV1(proxyProjection), 'invalid-projection', 'entries[].path');
+    expect(JSON.stringify(serializeSourceContentProjection(proxyProjection))).not.toContain(
+      'P17_HIDDEN_PROJECTION_SECRET',
+    );
+  });
+
   test('owns schema order and refuses fabricated invalid projections without throwing', () => {
     const valid = castProjection({
       entries: [{ bytes: 'eAo=', length: 2, executable: true, type: 'file', path: 'run.sh' }],

@@ -273,6 +273,17 @@ describe('artifact hash authority', () => {
       });
     }
     expect(hashCanonicalInput('unknown', 2, 'ignored')).toEqual(domainError);
+
+    let inputTouches = 0;
+    const hostileInput = new Proxy(Uint8Array.of(1), {
+      get: () => {
+        inputTouches += 1;
+        throw new Error('P17_HOSTILE_INPUT_CANARY');
+      },
+    });
+    expect(hashCanonicalInput('unknown', 1, hostileInput)).toEqual(domainError);
+    expect(hashCanonicalInput('resource', 2, hostileInput)).toEqual(schemaError);
+    expect(inputTouches).toBe(0);
   });
 
   test('brands only exact lowercase SHA-256 digests after runtime parsing', () => {

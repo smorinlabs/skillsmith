@@ -219,9 +219,71 @@ const keyParsesTo = (key: string, expected: string): boolean => {
   }
 };
 
+type MultilineQuote = 'basic' | 'literal' | null;
+
+const scanMultilineQuoteState = (
+  line: string,
+  initialState: MultilineQuote,
+): Readonly<{ state: MultilineQuote; containsMultiline: boolean }> => {
+  let state = initialState;
+  let inlineQuote: 'single' | 'double' | null = null;
+  let escaped = false;
+  let containsMultiline = state !== null;
+
+  for (let index = 0; index < line.length; index += 1) {
+    if (state === 'basic') {
+      if (line[index] === '\\') {
+        index += 1;
+      } else if (line.startsWith('"""', index)) {
+        state = null;
+        index += 2;
+      }
+      continue;
+    }
+    if (state === 'literal') {
+      if (line.startsWith("'''", index)) {
+        state = null;
+        index += 2;
+      }
+      continue;
+    }
+    if (inlineQuote === 'double') {
+      const character = line[index];
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inlineQuote = null;
+      continue;
+    }
+    if (inlineQuote === 'single') {
+      if (line[index] === "'") inlineQuote = null;
+      continue;
+    }
+    if (line[index] === '#') break;
+    if (line.startsWith('"""', index)) {
+      state = 'basic';
+      containsMultiline = true;
+      index += 2;
+    } else if (line.startsWith("'''", index)) {
+      state = 'literal';
+      containsMultiline = true;
+      index += 2;
+    } else if (line[index] === '"') {
+      inlineQuote = 'double';
+    } else if (line[index] === "'") {
+      inlineQuote = 'single';
+    }
+  }
+
+  return { state, containsMultiline };
+};
+
 const findRootToken = (source: string, key: string): string | null => {
+  let multilineState: MultilineQuote = null;
   for (const rawLine of source.split('\n')) {
     const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+    const scanned = scanMultilineQuoteState(line, multilineState);
+    multilineState = scanned.state;
+    if (scanned.containsMultiline) continue;
     const trimmed = line.trimStart();
     if (trimmed.startsWith('[')) return null;
     if (trimmed.length === 0 || trimmed.startsWith('#')) continue;

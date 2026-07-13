@@ -150,6 +150,8 @@ manifest_hash = "${fixture.manifestHash}"
       '  version   =   2 # future shape\nfuture = true\n',
       '"version" = 2\nfuture = true\n',
       'version = 2\n[[future]]\nvalue = "P17_SECRET_CANARY"\n',
+      'future = """\n[[skills]]\nversion = 1\n"""\nversion = 2\n',
+      "future = '''\nversion = +1\n'''\nversion = 2\n",
     ]) {
       expectError(
         readPortableLockSource(encoder.encode(source)),
@@ -202,6 +204,11 @@ manifest_hash = "${fixture.manifestHash}"
       'invalid-version',
       'version',
     );
+    expectError(
+      readPortableLockSource(encoder.encode("future = '''\nversion = 1\n'''\nversion = +1\n")),
+      'invalid-version',
+      'version',
+    );
   });
 
   test('discriminates hash schema before strict v1 fields', () => {
@@ -232,6 +239,8 @@ manifest_hash = "${fixture.manifestHash}"
       'version = 1\nhash_schema_version = 9007199254740991\nfuture = true\n',
       'version = 1\n"hash_schema_version" = 2\nfuture = true\n',
       'version = 1\nhash_schema_version = 2 # future schema\nfuture = true\n',
+      'version = 1\nfuture = """\nhash_schema_version = 1\n"""\nhash_schema_version = 2\n',
+      "version = 1\nfuture = '''\nhash_schema_version = +1\n'''\nhash_schema_version = 2\n",
     ]) {
       expectError(
         readPortableLockSource(encoder.encode(source)),
@@ -269,6 +278,15 @@ manifest_hash = "${fixture.manifestHash}"
     ]) {
       expectError(readPortableLockSource(encoder.encode(source)), 'malformed-lock');
     }
+    expectError(
+      readPortableLockSource(
+        encoder.encode(
+          'version = 1\nfuture = """\nhash_schema_version = 1\n"""\nhash_schema_version = +1\n',
+        ),
+      ),
+      'invalid-field',
+      'hash_schema_version',
+    );
   });
 
   test('classifies every presentation-only change as noncanonical', () => {

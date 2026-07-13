@@ -2669,7 +2669,7 @@
       "phase": "2",
       "title": "Portable lock schema, semantic hashes, canonicalization, and manifest relationship",
       "dependsOn": ["P17-G2-01"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -2729,7 +2729,7 @@
         "bun test tests/ergonomics/phase/EWP-P2-TS03.test.ts --test-name-pattern EWP-P2-TS03"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g2_02_fuzz_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -2760,8 +2760,8 @@
           "evidence": ["projects/p17/evidence/P17-G2-02.md#refactor-review"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-02.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -2779,7 +2779,8 @@
         "projects/p17/evidence/P17-G2-02.md#test-first-evidence",
         "projects/p17/evidence/P17-G2-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G2-02.md#refactor-review"
+        "projects/p17/evidence/P17-G2-02.md#refactor-review",
+        "projects/p17/evidence/P17-G2-02.md#adversarial-review"
       ]
     },
     {

@@ -709,7 +709,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD
 
 ## P17-G2-02 — Portable lock schema, semantic hashes, canonicalization, and manifest relationship
 
-Phase: 2; status: **active**; dependencies: P17-G2-01.
+Phase: 2; status: **reviewed**; dependencies: P17-G2-01.
 Required-now validations: EWP-P2-TS01, EWP-P2-TS03.
 Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS09, EWP-CMD-UPDATE-TS10, EWP-P2-TS04, EWP-P4B-TS03, EWP-WF03, EWP-WF07, EWP-WF09.
 
@@ -722,7 +722,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 - [x] P17-G2-02:targeted-green _(passed)_
 - [x] P17-G2-02:impacted-green _(passed)_
 - [x] P17-G2-02:refactor _(passed)_
-- [ ] P17-G2-02:adversarial-review _(pending)_
+- [x] P17-G2-02:adversarial-review _(passed)_
 - [ ] P17-G2-02:traceability-closure _(pending)_
 - [ ] P17-G2-02:signed-off _(pending)_
 

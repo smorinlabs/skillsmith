@@ -270,20 +270,43 @@ const exactKeys = (value: object, expected: readonly string[]): boolean => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
-const exactArrayShape = (value: readonly unknown[]): boolean => {
-  const keys = Reflect.ownKeys(value);
-  if (keys.length !== value.length + 1 || !keys.includes('length')) return false;
-  for (let index = 0; index < value.length; index += 1) {
-    const key = String(index);
-    if (!keys.includes(key)) return false;
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor === undefined || !('value' in descriptor)) return false;
+const copyExactIndexedArray = (value: unknown): readonly unknown[] | null => {
+  if (!Array.isArray(value)) return null;
+  try {
+    const keys = Reflect.ownKeys(value);
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+    if (
+      lengthDescriptor === undefined ||
+      !('value' in lengthDescriptor) ||
+      typeof lengthDescriptor.value !== 'number' ||
+      !Number.isSafeInteger(lengthDescriptor.value) ||
+      lengthDescriptor.value < 0 ||
+      keys.length !== lengthDescriptor.value + 1
+    ) {
+      return null;
+    }
+
+    const length = lengthDescriptor.value;
+    const descriptors: PropertyDescriptor[] = new Array(length);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (key === 'length') continue;
+      if (typeof key !== 'string' || !/^(?:0|[1-9][0-9]*)$/u.test(key) || Number(key) >= length) {
+        return null;
+      }
+    }
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (descriptor === undefined || !('value' in descriptor)) return null;
+      descriptors[index] = descriptor;
+    }
+
+    const copied: unknown[] = new Array(length);
+    for (let index = 0; index < length; index += 1) copied[index] = descriptors[index]?.value;
+    return copied;
+  } catch {
+    return null;
   }
-  return keys.every(
-    (key) =>
-      key === 'length' ||
-      (typeof key === 'string' && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < value.length),
-  );
 };
 
 const decodeCanonicalBase64 = (value: unknown): Uint8Array | null => {
@@ -311,12 +334,13 @@ const ownProjection = (
     }
     if (input.version !== 1) return invalidProjection('version');
     if (input.exclusionsVersion !== 1) return invalidProjection('exclusionsVersion');
-    if (!Array.isArray(input.entries)) return invalidProjection('entries');
-    if (!exactArrayShape(input.entries)) return invalidProjection('entries');
+    const candidates = copyExactIndexedArray(input.entries);
+    if (candidates === null) return invalidProjection('entries');
 
     const entries: SourceContentEntryV1[] = [];
     let previousPath: string | null = null;
-    for (const candidate of input.entries as readonly unknown[]) {
+    for (let index = 0; index < candidates.length; index += 1) {
+      const candidate = candidates[index];
       if (!isRecord(candidate)) return invalidProjection('entries');
       const path = canonicalProjectionPath(candidate.path);
       if (path === null) return invalidProjection('entries[].path');
@@ -449,7 +473,8 @@ const prepareListing = (
 ): Result<readonly PreparedChild[], SourceContentError> => {
   const children: PreparedChild[] = [];
   const names = new Set<string>();
-  for (const rawName of values) {
+  for (let index = 0; index < values.length; index += 1) {
+    const rawName = values[index];
     const normalized = normalizeEntryName(rawName);
     if (!normalized.ok) return normalized;
     if (names.has(normalized.value)) return err(sourceError('normalization-collision'));
@@ -485,7 +510,7 @@ const copyListing = async (
 ): Promise<readonly unknown[] | null> => {
   try {
     const value = await ports.listDir(path);
-    return Array.isArray(value) ? [...value] : null;
+    return copyExactIndexedArray(value);
   } catch {
     return null;
   }

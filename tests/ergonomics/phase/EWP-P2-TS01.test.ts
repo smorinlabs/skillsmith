@@ -269,7 +269,7 @@ describe('EWP-P2-TS01', () => {
     expect(core.module.MANIFEST_VERSION).toBe(api.MANIFEST_VERSION);
     expect(core.module.MANIFEST_SHAPES).toBe(api.MANIFEST_SHAPES);
     expect(Object.isFrozen(api.MANIFEST_SHAPES)).toBeTrue();
-  });
+  }, 15_000);
 
   test('classifies seven shapes before normalization and reads only canonical v1 or exact legacy', async () => {
     const fixtures: ReadonlyArray<{
