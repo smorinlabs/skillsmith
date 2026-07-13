@@ -24,7 +24,7 @@ describe('observation redaction', () => {
     let getterReads = 0;
     let proxyReads = 0;
     const accessor: Record<string, unknown> = {};
-    Object.defineProperty(accessor, 'secret', {
+    Object.defineProperty(accessor, 'secretToken', {
       enumerable: true,
       get: () => {
         getterReads++;
@@ -43,7 +43,16 @@ describe('observation redaction', () => {
     const cycle: Record<string, unknown> = {};
     cycle.self = cycle;
     const redacted = redactObservationValue({ accessor, proxy, cycle }) as Record<string, unknown>;
-    expect(JSON.stringify(redacted)).toContain('[ACCESSOR]');
+    expect((redacted.accessor as Record<string, unknown>).secretToken).toBe('[REDACTED]');
+    const ordinaryAccessor: Record<string, unknown> = {};
+    Object.defineProperty(ordinaryAccessor, 'value', {
+      enumerable: true,
+      get: () => {
+        getterReads++;
+        return 'canary';
+      },
+    });
+    expect(redactObservationValue(ordinaryAccessor)).toEqual({ value: '[ACCESSOR]' });
     expect(JSON.stringify(redacted)).toContain('[PROXY]');
     expect(JSON.stringify(redacted)).toContain('[CIRCULAR]');
     expect(getterReads).toBe(0);

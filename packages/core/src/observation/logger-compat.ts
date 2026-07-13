@@ -1,25 +1,31 @@
 import type { Logger } from '../env/logger.ts';
 import { createObservationEmitter } from './observer.ts';
 import { createOperationContext } from './operation-context.ts';
+import { redactObservationValue } from './redaction.ts';
 import type { ObservationBundle, ObserverEvent, ObserverPort } from './types.ts';
 
 export type LegacyObservationActivity = 'detect' | 'list-skills' | 'list-commands' | 'diagnostics';
 
 const LEGACY_WALL_TIME = '1970-01-01T00:00:00.000Z';
 
+const redactedString = (value: string): string => redactObservationValue(value) as string;
+
 const legacyObserver = (logger: Logger, activity: LegacyObservationActivity): ObserverPort =>
   Object.freeze({
     observe(event: ObserverEvent): void {
       switch (event.kind) {
         case 'tool.detection.started':
-          logger.debug(`detecting ${event.toolId}`);
+          logger.debug(`detecting ${redactedString(event.toolId)}`);
           return;
         case 'tool.detection.completed':
           if (event.outcome === 'failure' || event.outcome === 'cancelled')
-            logger.warn(`detection error for ${event.toolId}`, { code: event.errorCode });
+            logger.warn(`detection error for ${redactedString(event.toolId)}`, {
+              code: event.errorCode === null ? null : redactedString(event.errorCode),
+            });
           return;
         case 'operation.completed':
           if (
+            event.outcome !== 'success' ||
             event.operationKind !== 'inventory' ||
             event.standaloneCount === null ||
             event.bundledCount === null ||

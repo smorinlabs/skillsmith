@@ -187,11 +187,15 @@ const settleDiagnosticBuffer = (
   request: RuntimeExecutionRequest,
   exitClass: RuntimeExitClass,
 ): void => {
-  if (request.format === 'json' && exitClass !== 'success' && exitClass !== 'drift') {
-    request.diagnosticBuffer?.discard();
-    return;
+  try {
+    if (request.format === 'json' && exitClass !== 'success' && exitClass !== 'drift') {
+      request.diagnosticBuffer?.discard();
+      return;
+    }
+    request.diagnosticBuffer?.flush();
+  } catch {
+    // Presentation-only diagnostic settlement cannot change command output or exit semantics.
   }
-  request.diagnosticBuffer?.flush();
 };
 
 const unwrapApplicationResult = (
@@ -223,19 +227,22 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
   const fallbackErrorCode = (exitClass: Exclude<RuntimeExitClass, 'success' | 'drift'>): string =>
     exitClass === 'failure' ? 'command-failed' : exitClass;
 
-  const outcomeErrorCode = (outcome: RuntimeOutcome): string | null => {
-    if (outcome.exitClass === 'success' || outcome.exitClass === 'drift') return null;
+  const outcomeErrorCode = (
+    outcome: RuntimeOutcome,
+    exitClass: RuntimeExitClass,
+  ): string | null => {
+    if (exitClass === 'success' || exitClass === 'drift') return null;
     const diagnostic = outcome.diagnostics.find((candidate) => candidate.severity === 'error');
     if (diagnostic !== undefined) {
       return normalizeCliError(
         { code: diagnostic.code },
         {
-          code: fallbackErrorCode(outcome.exitClass),
+          code: fallbackErrorCode(exitClass),
           message: 'Command failed',
         },
       ).code;
     }
-    return fallbackErrorCode(outcome.exitClass);
+    return fallbackErrorCode(exitClass);
   };
 
   const completeCommand = (
@@ -299,6 +306,15 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
 
       if ('error' in unwrapped) return finishFailure(unwrapped.error, request, commandSpan);
 
+      let exitClass: RuntimeExitClass;
+      let errorCode: string | null;
+      try {
+        exitClass = unwrapped.outcome.exitClass;
+        errorCode = outcomeErrorCode(unwrapped.outcome, exitClass);
+      } catch (error) {
+        return finishFailure(error, request, commandSpan);
+      }
+
       const renderer = options.renderers[request.reportKind];
       if (renderer === undefined) {
         return finishFailure(
@@ -314,14 +330,9 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
       } catch (error) {
         return finishFailure(error, request, commandSpan);
       }
-      const exitCode = exitCodeForClass(unwrapped.outcome.exitClass);
-      completeCommand(
-        observation,
-        commandSpan,
-        unwrapped.outcome.exitClass,
-        outcomeErrorCode(unwrapped.outcome),
-      );
-      settleDiagnosticBuffer(request, unwrapped.outcome.exitClass);
+      const exitCode = exitCodeForClass(exitClass);
+      completeCommand(observation, commandSpan, exitClass, errorCode);
+      settleDiagnosticBuffer(request, exitClass);
       emitCommandOutput(options.io, outputForRequest(output, request));
       options.io.exit(exitCode);
       return { exitCode, outcome: unwrapped.outcome };

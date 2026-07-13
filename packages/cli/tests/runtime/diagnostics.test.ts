@@ -100,4 +100,31 @@ describe('CLI observation diagnostics', () => {
       operationCount: 1,
     });
   });
+
+  test('escapes every raw Unicode line separator in detail, trace, and debug output', () => {
+    const built = operation();
+    const planId = 'before\u0085next\u009bcontrol\u2028forged\u2029tail';
+    const event = createObserverEvent(built.context, {
+      kind: 'plan.created',
+      planId,
+      operationCount: 1,
+    });
+
+    for (const verbosity of ['verbose', 'trace', 'debug'] as const) {
+      const memory = memoryIo();
+      createCliDiagnosticObserver(memory.io, verbosity).observe(event);
+      expect(memory.stderr).toHaveLength(1);
+      const line = memory.stderr[0] ?? '';
+      expect(line.endsWith('\n')).toBeTrue();
+      expect(line.slice(0, -1)).not.toMatch(/[\r\n\u0085\u2028\u2029]/);
+      expect(line).toContain('\\u0085');
+      expect(line).toContain('\\u009b');
+      expect(line).toContain('\\u2028');
+      expect(line).toContain('\\u2029');
+      if (verbosity === 'debug') {
+        const parsed = JSON.parse(line.slice('debug: '.length));
+        expect(parsed.planId).toBe(planId);
+      }
+    }
+  });
 });

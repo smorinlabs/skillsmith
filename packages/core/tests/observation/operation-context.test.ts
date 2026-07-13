@@ -88,6 +88,37 @@ describe('OperationContext', () => {
       }),
     ).toThrow(TypeError);
     expect(built.purposes).toEqual([]);
+
+    const root = createOperationContext({
+      operationId: 'root-operation',
+      command: 'fixture',
+      workflow: 'fixture',
+      clock: built.clock,
+      id: built.id,
+    });
+    let getterReads = 0;
+    const childInput = {
+      workflow: 'child',
+      id: built.id,
+    } as { command: string; workflow: string; id: typeof built.id };
+    Object.defineProperty(childInput, 'command', {
+      enumerable: true,
+      get: () => {
+        getterReads++;
+        return 'child';
+      },
+    });
+    expect(() => createChildOperationContext(root, childInput)).toThrow(TypeError);
+    expect(getterReads).toBe(0);
+    expect(() =>
+      createChildOperationContext(
+        root,
+        new Proxy(
+          { command: 'child', workflow: 'child', id: built.id },
+          { ownKeys: () => ['command', 'workflow', 'id'] },
+        ),
+      ),
+    ).toThrow(TypeError);
   });
 
   test('explicit IDs consume no generator call and attempts reject overflow', () => {

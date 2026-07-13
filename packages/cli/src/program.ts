@@ -77,27 +77,36 @@ const CONTEXT_FREE_APPLICATIONS = new Set([
   'help',
 ]);
 
-const VALUE_LONG_OPTIONS = new Set(
-  CURRENT_COMMAND_SPECS.flatMap((spec) =>
-    spec.options.filter((option) => option.valueShape !== 'boolean').map((option) => option.long),
-  ),
-);
+interface ValueOptionSpellings {
+  readonly long: ReadonlySet<string>;
+  readonly short: ReadonlySet<string>;
+}
 
-const VALUE_SHORT_OPTIONS = new Set(
-  CURRENT_COMMAND_SPECS.flatMap((spec) =>
-    spec.options.flatMap((option) =>
-      option.valueShape !== 'boolean' && option.short !== null ? [option.short] : [],
+const valueOptionSpellings = (specs: readonly CommandSpec[]): ValueOptionSpellings => ({
+  long: new Set(
+    specs.flatMap((spec) =>
+      spec.options.filter((option) => option.valueShape !== 'boolean').map((option) => option.long),
     ),
   ),
-);
+  short: new Set(
+    specs.flatMap((spec) =>
+      spec.options.flatMap((option) =>
+        option.valueShape !== 'boolean' && option.short !== null ? [option.short] : [],
+      ),
+    ),
+  ),
+});
 
-const requestsEagerVersion = (invocation: readonly string[]): boolean => {
+const requestsEagerVersion = (
+  invocation: readonly string[],
+  valueOptions: ValueOptionSpellings,
+): boolean => {
   for (let index = 0; index < invocation.length; index++) {
     const token = invocation[index];
     if (token === undefined || token === '--') return false;
     if (token === '--version') return true;
     if (token === '--help') return false;
-    if (VALUE_LONG_OPTIONS.has(token)) {
+    if (valueOptions.long.has(token)) {
       index++;
       continue;
     }
@@ -108,7 +117,7 @@ const requestsEagerVersion = (invocation: readonly string[]): boolean => {
     for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex++) {
       const flag = cluster[clusterIndex];
       if (flag === undefined) continue;
-      if (VALUE_SHORT_OPTIONS.has(`-${flag}`)) {
+      if (valueOptions.short.has(`-${flag}`)) {
         if (clusterIndex === cluster.length - 1) index++;
         break;
       }
@@ -130,6 +139,7 @@ const invocationFromParse = (
 
 const eagerPresentationOptions = (
   invocation: readonly string[],
+  valueOptions: ValueOptionSpellings,
 ): Readonly<{ quiet?: true; debug?: true; verbose: number }> => {
   let quiet = false;
   let debug = false;
@@ -140,7 +150,7 @@ const eagerPresentationOptions = (
     if (token === '--quiet') quiet = true;
     if (token === '--debug') debug = true;
     if (token === '--verbose') verbose++;
-    if (VALUE_LONG_OPTIONS.has(token)) {
+    if (valueOptions.long.has(token)) {
       index++;
       continue;
     }
@@ -150,7 +160,7 @@ const eagerPresentationOptions = (
       const flag = cluster[clusterIndex];
       if (flag === 'q') quiet = true;
       if (flag === 'v') verbose++;
-      if (flag !== undefined && VALUE_SHORT_OPTIONS.has(`-${flag}`)) {
+      if (flag !== undefined && valueOptions.short.has(`-${flag}`)) {
         if (clusterIndex === cluster.length - 1) index++;
         break;
       }
@@ -287,20 +297,23 @@ export const buildProgram = (
   attachCommandSpecs(program, CURRENT_COMMAND_SPECS, actionFactory);
   installRuntimePreflight(program);
 
+  const attachedAdditionalSpecs: CommandSpec[] = [];
   for (const spec of extensions.additionalSpecs ?? []) {
     if (program.commands.some((command) => command.name() === spec.name)) continue;
     const command = createCommandFromSpec(spec);
     command.action(actionFactory(spec, command));
     program.addCommand(command);
+    attachedAdditionalSpecs.push(spec);
   }
+  const valueOptions = valueOptionSpellings([...CURRENT_COMMAND_SPECS, ...attachedAdditionalSpecs]);
 
   const parseAsync = program.parseAsync.bind(program);
   program.parseAsync = (async (...args: Parameters<Command['parseAsync']>) => {
     const [argv, options] = args;
     const invocation = invocationFromParse(argv, options?.from);
-    if (requestsEagerVersion(invocation)) {
+    if (requestsEagerVersion(invocation, valueOptions)) {
       assertRootRuntimePreflight(invocation);
-      const presentation = eagerPresentationOptions(invocation);
+      const presentation = eagerPresentationOptions(invocation, valueOptions);
       const verbosity = resolveObservationVerbosity(presentation);
       try {
         const prepared = createObservation('skillsmith version', 'version', verbosity);

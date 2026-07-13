@@ -57,10 +57,10 @@ export const redactObservationValue = (input: unknown): unknown => {
           if (typeof key !== 'string' || key === 'length') continue;
           const descriptor = descriptors[key];
           if (descriptor === undefined || descriptor.enumerable !== true) continue;
-          const redacted = !('value' in descriptor)
-            ? '[ACCESSOR]'
-            : SENSITIVE_KEY.test(key)
-              ? '[REDACTED]'
+          const redacted = SENSITIVE_KEY.test(key)
+            ? '[REDACTED]'
+            : !('value' in descriptor)
+              ? '[ACCESSOR]'
               : visit(descriptor.value, depth + 1);
           Object.defineProperty(result, key, {
             value: redacted,
@@ -77,10 +77,10 @@ export const redactObservationValue = (input: unknown): unknown => {
         const descriptor = descriptors[key];
         if (descriptor === undefined || descriptor.enumerable !== true) continue;
         Object.defineProperty(result, key, {
-          value: !('value' in descriptor)
-            ? '[ACCESSOR]'
-            : SENSITIVE_KEY.test(key)
-              ? '[REDACTED]'
+          value: SENSITIVE_KEY.test(key)
+            ? '[REDACTED]'
+            : !('value' in descriptor)
+              ? '[ACCESSOR]'
               : visit(descriptor.value, depth + 1),
           enumerable: true,
           configurable: true,

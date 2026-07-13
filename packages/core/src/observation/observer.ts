@@ -144,18 +144,19 @@ const inspectClosedRecord = (value: unknown, expectedKeys: readonly string[]): U
 };
 
 const inspectDenseArray = (value: unknown): readonly unknown[] => {
-  if (!Array.isArray(value) || utilTypes.isProxy(value))
+  if (
+    !Array.isArray(value) ||
+    utilTypes.isProxy(value) ||
+    Object.getPrototypeOf(value) !== Array.prototype
+  )
     throw new TypeError('value must be an array');
   const keys = Reflect.ownKeys(value);
-  const expectedKeys = [
-    ...Array.from({ length: value.length }, (_, index) => String(index)),
-    'length',
-  ];
-  if (
-    keys.length !== expectedKeys.length ||
-    keys.some((key) => typeof key !== 'string' || !expectedKeys.includes(key))
-  )
+  if (keys.length !== value.length + 1 || keys[value.length] !== 'length')
     throw new TypeError('array must be dense and contain no extra properties');
+  for (let index = 0; index < value.length; index++) {
+    if (keys[index] !== String(index))
+      throw new TypeError('array must be dense and contain no extra properties');
+  }
   const clone: unknown[] = [];
   for (let index = 0; index < value.length; index++) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
@@ -237,14 +238,28 @@ const payloadFor = (kind: ObserverEventKind, record: UnknownRecord): UnknownReco
         operationKind: requireMember(record.operationKind, OPERATION_KIND_SET, 'operationKind'),
       };
     case 'operation.completed': {
+      const operationKind = requireMember(
+        record.operationKind,
+        OPERATION_KIND_SET,
+        'operationKind',
+      );
       const outcome = requireMember(record.outcome, OUTCOMES, 'outcome');
+      const standaloneCount = requireNullableCount(record.standaloneCount, 'standaloneCount');
+      const bundledCount = requireNullableCount(record.bundledCount, 'bundledCount');
+      const resultCount = requireNullableCount(record.resultCount, 'resultCount');
+      const counts = [standaloneCount, bundledCount, resultCount];
+      if (
+        (operationKind === 'inventory' && counts.some((count) => count === null)) ||
+        (operationKind !== 'inventory' && counts.some((count) => count !== null))
+      )
+        throw new TypeError('operation counts do not match operationKind');
       return {
-        operationKind: requireMember(record.operationKind, OPERATION_KIND_SET, 'operationKind'),
+        operationKind,
         outcome,
         errorCode: requireErrorForOutcome(outcome, record.errorCode),
-        standaloneCount: requireNullableCount(record.standaloneCount, 'standaloneCount'),
-        bundledCount: requireNullableCount(record.bundledCount, 'bundledCount'),
-        resultCount: requireNullableCount(record.resultCount, 'resultCount'),
+        standaloneCount,
+        bundledCount,
+        resultCount,
         durationMilliseconds: requireNonNegativeFinite(
           record.durationMilliseconds,
           'durationMilliseconds',

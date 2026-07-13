@@ -51,6 +51,51 @@ describe('observer authority', () => {
         durationMilliseconds: 1,
       }),
     ).toThrow(TypeError);
+    expect(() =>
+      createObserverEvent(built.context, {
+        kind: 'operation.completed',
+        operationKind: 'inventory',
+        outcome: 'success',
+        errorCode: null,
+        standaloneCount: null,
+        bundledCount: null,
+        resultCount: null,
+        durationMilliseconds: 1,
+      }),
+    ).toThrow(TypeError);
+    expect(() =>
+      createObserverEvent(built.context, {
+        kind: 'operation.completed',
+        operationKind: 'diagnostics',
+        outcome: 'success',
+        errorCode: null,
+        standaloneCount: 1,
+        bundledCount: 0,
+        resultCount: 1,
+        durationMilliseconds: 1,
+      }),
+    ).toThrow(TypeError);
+
+    const exoticModes = ['static'] as ('static' | 'deep')[];
+    Object.setPrototypeOf(exoticModes, null);
+    expect(() =>
+      createObserverEvent(built.context, {
+        kind: 'tool.verification.started',
+        toolId: 'fixture-tool',
+        modes: exoticModes,
+      }),
+    ).toThrow(TypeError);
+
+    const exoticToolIds = ['fixture-tool'];
+    Object.setPrototypeOf(exoticToolIds, null);
+    expect(() =>
+      createObservationEmitter({ observer: { observe: () => {} }, toolIds: exoticToolIds }),
+    ).toThrow(TypeError);
+    const hugeSparse = [] as string[];
+    hugeSparse.length = 0xffff_ffff;
+    expect(() =>
+      createObservationEmitter({ observer: { observe: () => {} }, toolIds: hugeSparse }),
+    ).toThrow(TypeError);
   });
 
   test('emits paired, independently timed spans and enforces tool registry identity', () => {

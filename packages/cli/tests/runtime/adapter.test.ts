@@ -28,6 +28,24 @@ const silentObservation = (): ObservationBundle =>
     emitter: { begin: () => null, complete: () => {}, emit: () => {} },
   }) as unknown as ObservationBundle;
 
+const recordingObservation = (): {
+  readonly observation: ObservationBundle;
+  readonly completions: Record<string, unknown>[];
+} => {
+  const completions: Record<string, unknown>[] = [];
+  return {
+    completions,
+    observation: {
+      context: {},
+      emitter: {
+        begin: () => Object.freeze({}),
+        complete: (_span: unknown, input: Record<string, unknown>) => completions.push(input),
+        emit: () => {},
+      },
+    } as unknown as ObservationBundle,
+  };
+};
+
 const memoryIo = (): {
   readonly io: CliRuntimeIo;
   readonly stdout: string[];
@@ -358,6 +376,156 @@ describe('shared CLI runtime adapter', () => {
     expect(memory.stdout).toEqual(['capability report\n']);
     expect(memory.stderr).toEqual(['error: unavailable\n']);
     expect(memory.exits).toEqual([4]);
+  });
+
+  test('freezes semantic completion before rendering and contains hostile diagnostic reads', async () => {
+    const diagnostics: Array<{ code: string; severity: 'error'; message: string }> = [];
+    const recorded = recordingObservation();
+    const memory = memoryIo();
+    const runtime = createCliRuntimeAdapter({
+      applications: {
+        fixture: async () => ({
+          ...successOutcome(),
+          diagnostics,
+          exitClass: 'failure' as const,
+        }),
+      },
+      renderers: {
+        fixture: {
+          human: (outcome) => {
+            diagnostics.push({ severity: 'error', code: 'renderer-owned', message: 'forged' });
+            (outcome as { exitClass: RuntimeExitClass }).exitClass = 'success';
+            return 'failure report\n';
+          },
+          json: () => '',
+        },
+      },
+      io: memory.io,
+    });
+
+    const result = await runtime.execute({
+      application: 'fixture',
+      reportKind: 'fixture',
+      request: {},
+      context: {},
+      observation: recorded.observation,
+      format: 'human',
+    });
+    expect(result.exitCode).toBe(1);
+    expect(memory.stdout).toEqual(['failure report\n']);
+    expect(memory.exits).toEqual([1]);
+    expect(recorded.completions).toEqual([
+      { outcome: 'failure', exitClass: 'failure', errorCode: 'command-failed' },
+    ]);
+
+    const hostileDiagnostic = {
+      code: 'hostile-code',
+      severity: 'error' as const,
+      message: 'hostile',
+    };
+    Object.defineProperty(hostileDiagnostic, 'severity', {
+      enumerable: true,
+      get: () => {
+        throw new Error('hostile severity');
+      },
+    });
+    const hostileRecorded = recordingObservation();
+    const hostileMemory = memoryIo();
+    const hostileRuntime = createCliRuntimeAdapter({
+      applications: {
+        fixture: async () => ({
+          ...successOutcome(),
+          diagnostics: [hostileDiagnostic],
+          exitClass: 'failure' as const,
+        }),
+      },
+      renderers: { fixture: { human: () => 'unreachable\n', json: () => '' } },
+      io: hostileMemory.io,
+    });
+    const hostileResult = await hostileRuntime.execute({
+      application: 'fixture',
+      reportKind: 'fixture',
+      request: {},
+      context: {},
+      observation: hostileRecorded.observation,
+      format: 'human',
+    });
+    expect(hostileResult).toMatchObject({
+      exitCode: 1,
+      failure: { code: 'generic', message: 'hostile severity' },
+    });
+    expect(hostileMemory.stdout).toEqual([]);
+    expect(hostileMemory.stderr).toEqual(['error: hostile severity\n']);
+    expect(hostileMemory.exits).toEqual([1]);
+    expect(hostileRecorded.completions).toEqual([
+      { outcome: 'failure', exitClass: 'failure', errorCode: 'generic' },
+    ]);
+  });
+
+  test('isolates diagnostic buffer flush and discard failures from output and exit semantics', async () => {
+    const successMemory = memoryIo();
+    const successCalls: string[] = [];
+    const successRuntime = createCliRuntimeAdapter({
+      applications: { fixture: async () => successOutcome() },
+      renderers: { fixture: { human: () => 'success\n', json: () => '' } },
+      io: successMemory.io,
+    });
+    await expect(
+      successRuntime.execute({
+        application: 'fixture',
+        reportKind: 'fixture',
+        request: {},
+        context: {},
+        observation: silentObservation(),
+        format: 'human',
+        diagnosticBuffer: {
+          flush: () => {
+            successCalls.push('flush');
+            throw new Error('flush failed');
+          },
+          discard: () => successCalls.push('discard'),
+        },
+      }),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    expect(successCalls).toEqual(['flush']);
+    expect(successMemory.stdout).toEqual(['success\n']);
+    expect(successMemory.exits).toEqual([0]);
+
+    const failureMemory = memoryIo();
+    const failureCalls: string[] = [];
+    const failureRuntime = createCliRuntimeAdapter({
+      applications: {
+        fixture: async () => {
+          throw new Error('application failed');
+        },
+      },
+      renderers: {},
+      io: failureMemory.io,
+    });
+    await expect(
+      failureRuntime.execute({
+        application: 'fixture',
+        reportKind: 'fixture',
+        request: {},
+        context: {},
+        observation: silentObservation(),
+        format: 'json',
+        diagnosticBuffer: {
+          flush: () => failureCalls.push('flush'),
+          discard: () => {
+            failureCalls.push('discard');
+            throw new Error('discard failed');
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ exitCode: 1 });
+    expect(failureCalls).toEqual(['discard']);
+    expect(failureMemory.stderr).toEqual([]);
+    expect(JSON.parse(failureMemory.stdout.join(''))).toMatchObject({
+      kind: 'error',
+      exitCode: 1,
+    });
+    expect(failureMemory.exits).toEqual([1]);
   });
 });
 

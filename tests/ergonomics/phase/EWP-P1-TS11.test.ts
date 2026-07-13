@@ -10,6 +10,7 @@ import { validateOptionInvocation } from '../../../packages/cli/src/spec/relatio
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { resolveRuntimeConfiguration } from '../../../packages/core/src/config/runtime.ts';
 import { crossScopeDuplicate } from '../../../packages/core/src/doctor/checks/cross-scope-duplicate.ts';
+import { runChecks } from '../../../packages/core/src/doctor/run.ts';
 import { genericError } from '../../../packages/core/src/errors.ts';
 import { defaultRuntimePorts } from '../../../packages/core/src/ports/default.ts';
 import { err, ok } from '../../../packages/core/src/result.ts';
@@ -536,6 +537,17 @@ describe('EWP-P1-TS11', () => {
       startedAt: '2026-07-13T00:00:02.000Z',
       startedMonotonicMilliseconds: 30,
     });
+    let childGetterReads = 0;
+    const hostileChild: UnknownRecord = { workflow: 'child', id: built.id };
+    Object.defineProperty(hostileChild, 'command', {
+      enumerable: true,
+      get: () => {
+        childGetterReads++;
+        return 'skillsmith hostile-child';
+      },
+    });
+    expect(() => createChild(built.context, hostileChild)).toThrow(TypeError);
+    expect(childGetterReads).toBe(0);
     const callsBeforeTarget = built.idPurposes.length;
     const targeted = target(childContext, {
       groupId: 'group-1',
@@ -626,8 +638,37 @@ describe('EWP-P1-TS11', () => {
         toolId: 'fixture-tool',
         modes: ['deep', 'static'],
       },
+      {
+        kind: 'operation.completed',
+        operationKind: 'inventory',
+        outcome: 'success',
+        errorCode: null,
+        standaloneCount: null,
+        bundledCount: null,
+        resultCount: null,
+        durationMilliseconds: 1,
+      },
+      {
+        kind: 'operation.completed',
+        operationKind: 'diagnostics',
+        outcome: 'success',
+        errorCode: null,
+        standaloneCount: 1,
+        bundledCount: 0,
+        resultCount: 1,
+        durationMilliseconds: 1,
+      },
     ])
       expect(() => createEvent(built.context, invalid)).toThrow(TypeError);
+    const exoticModes = ['static'];
+    Object.setPrototypeOf(exoticModes, null);
+    expect(() =>
+      createEvent(built.context, {
+        kind: 'tool.verification.started',
+        toolId: 'fixture-tool',
+        modes: exoticModes,
+      }),
+    ).toThrow(TypeError);
     let eventGetterReads = 0;
     const accessorEvent: UnknownRecord = { kind: 'plan.created', operationCount: 1 };
     Object.defineProperty(accessorEvent, 'planId', {
@@ -1254,6 +1295,16 @@ describe('EWP-P1-TS11', () => {
     const symbolKey = { safe: true, [Symbol('secret')]: 'symbol-secret-canary' };
     expect(redact(symbolKey)).toBe('[SYMBOL]');
     expect(input.authorization).toBe('Bearer key-redaction-canary');
+    const sensitiveAccessor: UnknownRecord = {};
+    Object.defineProperty(sensitiveAccessor, 'secretToken', {
+      enumerable: true,
+      get: () => {
+        getterReads++;
+        return 'sensitive-accessor-canary';
+      },
+    });
+    expect(redact(sensitiveAccessor)).toEqual({ secretToken: '[REDACTED]' });
+    expect(getterReads).toBe(0);
 
     let deep: unknown = 'leaf';
     for (let index = 0; index < 34; index++) deep = { child: deep };
@@ -1415,6 +1466,36 @@ describe('EWP-P1-TS11', () => {
       'operation.started',
       'operation.completed',
     ]);
+    const diagnosticsStart = events.length;
+    const diagnosticsResult = await Reflect.apply(runChecks, null, [
+      [],
+      {
+        env: inventoryPorts,
+        mode: 'doctor',
+        tools: [],
+        scopes: [],
+        cwd: ROOT,
+        configuration,
+        offline: true,
+        observation: { context: built.context, emitter },
+      },
+    ]);
+    expect(record(diagnosticsResult) && diagnosticsResult.ok).toBeTrue();
+    expect(events.slice(diagnosticsStart).map((event) => event.kind)).toEqual([
+      'operation.started',
+      'operation.completed',
+    ]);
+    expect(events.slice(diagnosticsStart)).toMatchObject([
+      { operationKind: 'diagnostics' },
+      {
+        operationKind: 'diagnostics',
+        outcome: 'success',
+        standaloneCount: null,
+        bundledCount: null,
+        resultCount: null,
+      },
+    ]);
+
     const doctorStart = events.length;
     const doctorResult = await Reflect.apply(crossScopeDuplicate.run, crossScopeDuplicate, [
       {

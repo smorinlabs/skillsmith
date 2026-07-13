@@ -5,6 +5,11 @@ import { focusDoctorPorts, runChecks } from '../../src/doctor/run.ts';
 import type { Check, CheckRunContext, DoctorPorts } from '../../src/doctor/types.ts';
 import { noopLogger } from '../../src/env/logger.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
+import {
+  type ObserverEvent,
+  createObservationEmitter,
+  createOperationContext,
+} from '../../src/observation/index.ts';
 import { runtimePorts } from '../fixtures/runtime-ports.ts';
 
 const env: ScanEnv = {
@@ -71,6 +76,45 @@ const assertNoProcessAuthority = (ports: DoctorPorts): void => {
 };
 
 describe('runChecks', () => {
+  test('emits one diagnostics operation with null inventory counts', async () => {
+    const events: ObserverEvent[] = [];
+    const observation = {
+      context: createOperationContext({
+        operationId: 'diagnostics-operation',
+        command: 'skillsmith doctor',
+        workflow: 'doctor',
+        clock: {
+          wallNowIso: () => '2026-07-13T00:00:00.000Z',
+          monotonicMilliseconds: () => 1,
+        },
+        id: { nextId: () => 'unused' },
+      }),
+      emitter: createObservationEmitter({
+        observer: {
+          observe: (event) => {
+            events.push(event);
+          },
+        },
+      }),
+    };
+    const result = await runChecks([], { ...ctx, observation });
+    expect(result.ok).toBeTrue();
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      kind: 'operation.started',
+      operationKind: 'diagnostics',
+    });
+    expect(events[1]).toMatchObject({
+      kind: 'operation.completed',
+      operationKind: 'diagnostics',
+      outcome: 'success',
+      errorCode: null,
+      standaloneCount: null,
+      bundledCount: null,
+      resultCount: null,
+    });
+  });
+
   test('projects runtime authority without arbitrary process or mutation capabilities', () => {
     const focused = focusDoctorPorts(runtimePorts(env));
     assertNoProcessAuthority(focused);

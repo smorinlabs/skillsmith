@@ -59,23 +59,57 @@ export const runChecks = async (
   registry: readonly Check[],
   ctx: CheckRunContext,
 ): Promise<Result<CheckRunResult, SkillSmithError>> => {
-  const applicable = registry.filter(
-    (check) =>
-      check.runsIn.includes(ctx.mode) && (ctx.mode !== 'check' || check.severity === 'error'),
-  );
-  const findings: Finding[] = [];
-  for (const check of applicable) {
-    if (ctx.signal?.aborted) return err(genericError('runChecks aborted'));
-    try {
-      findings.push(...(await check.run(ctx)));
-    } catch (e) {
-      findings.push({
-        checkId: check.id,
-        severity: 'error',
-        title: `check '${check.id}' threw`,
-        message: errorMessage(e),
-      });
+  const observation = ctx.observation;
+  const span =
+    observation?.emitter.begin(observation.context, {
+      kind: 'operation.started',
+      operationKind: 'diagnostics',
+    }) ?? null;
+  try {
+    const applicable = registry.filter(
+      (check) =>
+        check.runsIn.includes(ctx.mode) && (ctx.mode !== 'check' || check.severity === 'error'),
+    );
+    const findings: Finding[] = [];
+    for (const check of applicable) {
+      if (ctx.signal?.aborted) {
+        observation?.emitter.complete(span, {
+          outcome: 'cancelled',
+          errorCode: 'cancelled',
+          standaloneCount: null,
+          bundledCount: null,
+          resultCount: null,
+        });
+        return err(genericError('runChecks aborted'));
+      }
+      try {
+        findings.push(...(await check.run(ctx)));
+      } catch (e) {
+        findings.push({
+          checkId: check.id,
+          severity: 'error',
+          title: `check '${check.id}' threw`,
+          message: errorMessage(e),
+        });
+      }
     }
+    const result = { findings, counts: tally(findings) };
+    observation?.emitter.complete(span, {
+      outcome: 'success',
+      errorCode: null,
+      standaloneCount: null,
+      bundledCount: null,
+      resultCount: null,
+    });
+    return ok(result);
+  } catch (error) {
+    observation?.emitter.complete(span, {
+      outcome: 'failure',
+      errorCode: 'generic',
+      standaloneCount: null,
+      bundledCount: null,
+      resultCount: null,
+    });
+    throw error;
   }
-  return ok({ findings, counts: tally(findings) });
 };

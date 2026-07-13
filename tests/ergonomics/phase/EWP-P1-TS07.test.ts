@@ -438,6 +438,79 @@ describe('EWP-P1-TS07', () => {
     expect(writes).toEqual([]);
   });
 
+  test('eager version parsing respects value-taking options from attached extension specs', async () => {
+    const fixture: CommandSpec = {
+      name: 'fixture-value',
+      path: 'skillsmith fixture-value',
+      aliases: [],
+      group: 'maintain',
+      primaryQuestion: 'Does extension option parsing retain authority?',
+      description: 'Exercise attached short values that resemble the version flag.',
+      arguments: [],
+      options: [
+        {
+          flags: '-m, --mode <mode>',
+          long: '--mode',
+          short: '-m',
+          attributeName: 'mode',
+          valueShape: 'required',
+          knownValues: [],
+          allowedValues: [],
+          repeatable: false,
+          negated: false,
+          flagDefault: undefined,
+          parsedDefault: undefined,
+          description: 'Fixture mode',
+        },
+      ],
+      examples: [],
+      capability: 'read',
+      reportKind: 'fixture-value',
+      application: 'help',
+    };
+    const calls: string[] = [];
+    const writes: string[] = [];
+    const program = buildProgram(undefined, {
+      additionalSpecs: [fixture],
+      applications: {
+        version: async () => {
+          calls.push('eager-version');
+          return {
+            report: {},
+            diagnostics: [],
+            exitClass: 'success',
+            mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+            deprecations: [],
+          };
+        },
+        help: async (request) => {
+          const options = record(request) && record(request.options) ? request.options : {};
+          calls.push(`fixture:${String(options.mode)}`);
+          return {
+            report: {},
+            diagnostics: [],
+            exitClass: 'success',
+            mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+            deprecations: [],
+          };
+        },
+      },
+      renderers: {
+        'fixture-value': { human: () => 'fixture-ran\n', json: () => '{}' },
+        version: { human: () => 'version-ran\n', json: () => '{}' },
+      },
+      runtimePorts: {
+        stdout: { write: (value) => writes.push(value) },
+        stderr: { write: (value) => writes.push(value) },
+        exit: () => {},
+      },
+    });
+
+    await program.parseAsync(['node', 'skillsmith', 'fixture-value', '-mV']);
+    expect(calls).toEqual(['fixture:V']);
+    expect(writes).toEqual(['fixture-ran\n']);
+  });
+
   test('one fixture spec drives parser, help, completion, docs inventory, and execution', async () => {
     const fixture: CommandSpec = {
       name: 'fixture',

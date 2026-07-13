@@ -84,17 +84,28 @@ const VERBOSE_KINDS = new Set<ObserverEventKind>([
   OPERATION_COMPLETED,
 ]);
 
-const SAFE_TOKEN = /^[A-Za-z0-9._:/@+-]+$/;
+const UNSAFE_TOKEN_CHARACTER = /[^A-Za-z0-9._:/@+\-]/;
+const RAW_DIAGNOSTIC_CONTROL = /[\u0080-\u009f\u2028\u2029]/g;
+
+const compactJson = (value: unknown): string => {
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined) return 'null';
+  return encoded.replace(
+    RAW_DIAGNOSTIC_CONTROL,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+};
 
 const record = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const scalar = (value: unknown): string => {
   if (value === null) return '-';
-  if (Array.isArray(value)) return JSON.stringify(value);
-  if (typeof value === 'string') return SAFE_TOKEN.test(value) ? value : JSON.stringify(value);
+  if (Array.isArray(value)) return compactJson(value);
+  if (typeof value === 'string')
+    return value.length > 0 && !UNSAFE_TOKEN_CHARACTER.test(value) ? value : compactJson(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return JSON.stringify(value);
+  return compactJson(value);
 };
 
 const payloadSuffix = (
@@ -150,6 +161,6 @@ export const createCliDiagnosticObserver = (
         io.stderr.write(traceLine(redacted, kind));
         return;
       }
-      io.stderr.write(`debug: ${JSON.stringify(redacted)}\n`);
+      io.stderr.write(`debug: ${compactJson(redacted)}\n`);
     },
   });

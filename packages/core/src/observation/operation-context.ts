@@ -225,11 +225,12 @@ export const createChildOperationContext = (
   },
 ): OperationContext => {
   const authority = requireContext(parent);
+  const source = requireRecord(input, 'child operation context input');
   return createOperationContext({
-    command: input.command,
-    workflow: input.workflow,
+    command: ownData(source, 'command') as string,
+    workflow: ownData(source, 'workflow') as string,
     clock: authority.clock,
-    id: input.id,
+    id: ownData(source, 'id') as Pick<IdPort, 'nextId'>,
     parentOperationId: authority.operationId,
   });
 };

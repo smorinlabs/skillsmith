@@ -36,6 +36,33 @@ describe('legacy Logger observation adapter', () => {
     });
   });
 
+  test('redacts token-like typed values before invoking the legacy logger', () => {
+    const calls: Array<readonly [string, string, unknown?]> = [];
+    const observation = observationFromLegacyLogger(
+      {
+        debug: (message, metadata) => calls.push(['debug', message, metadata]),
+        info: (message, metadata) => calls.push(['info', message, metadata]),
+        warn: (message, metadata) => calls.push(['warn', message, metadata]),
+      },
+      'detect',
+      ['sk-abcdefghi'],
+    );
+    const span = observation.emitter.begin(observation.context, {
+      kind: 'tool.detection.started',
+      toolId: 'sk-abcdefghi',
+    });
+    observation.emitter.complete(span, {
+      outcome: 'failure',
+      errorCode: 'sk-123456789abcdef',
+      resultCount: 0,
+    });
+    expect(JSON.stringify(calls)).not.toContain('abcdef');
+    expect(calls).toEqual([
+      ['debug', 'detecting [REDACTED]', undefined],
+      ['warn', 'detection error for [REDACTED]', { code: '[REDACTED]' }],
+    ]);
+  });
+
   test('reproduces inventory summaries for skill and command scans', () => {
     const messages: string[] = [];
     for (const activity of ['list-skills', 'list-commands'] as const) {
@@ -63,5 +90,29 @@ describe('legacy Logger observation adapter', () => {
       'listSkills: 2 standalone + 3 plugin = 5 after filters',
       'listCommands: 2 standalone + 3 plugin = 5',
     ]);
+  });
+
+  test('does not invent a legacy summary for a failed inventory operation', () => {
+    const messages: string[] = [];
+    const observation = observationFromLegacyLogger(
+      {
+        debug: (message) => messages.push(message),
+        info: () => {},
+        warn: () => {},
+      },
+      'list-skills',
+    );
+    const span = observation.emitter.begin(observation.context, {
+      kind: 'operation.started',
+      operationKind: 'inventory',
+    });
+    observation.emitter.complete(span, {
+      outcome: 'failure',
+      errorCode: 'generic',
+      standaloneCount: 2,
+      bundledCount: 0,
+      resultCount: 0,
+    });
+    expect(messages).toEqual([]);
   });
 });
