@@ -104,11 +104,11 @@ describe('contentHashOf', () => {
     expect(after).not.toBe(before);
   });
 
-  test('(g) format matches sha256:<64hex>', async () => {
+  test('(g) preserves the independent legacy ledger/store digest', async () => {
     const d = join(base, 'skill');
     await mkdir(d, { recursive: true });
     await writeFile(join(d, 'SKILL.md'), 'z');
     const h = await expectHash(env, d);
-    expect(h).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(h).toBe('sha256:e6701e2073659fd193452d2a55dc7d457f33d4719fbc7ea24e3b010d22a2ebc7');
   });
 });

@@ -66,6 +66,9 @@ export type {
 } from './agents/registry.ts';
 export type { SupportedTool } from './agents/types.ts';
 export type * from './artifacts/types.ts';
+export type * from './artifacts/hash.ts';
+export type * from './artifacts/lock.ts';
+export type * from './artifacts/source-content.ts';
 export type { CommandEntry } from './commands/types.ts';
 export type {
   Config,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as core from '@skillsmith/core';
 import pkg from '../package.json' with { type: 'json' };
+import * as artifacts from '../src/artifacts/index.ts';
 import { runtimePorts } from './fixtures/runtime-ports.ts';
 
 describe('@skillsmith/core public API', () => {
@@ -65,9 +66,48 @@ describe('@skillsmith/core public API', () => {
       'createObservationEmitter',
       'noopObserver',
       'redactObservationValue',
+      'HASH_SCHEMA_VERSION',
+      'HASH_DOMAINS',
+      'hashCanonicalInput',
+      'parseArtifactDigest',
+      'hashManifestSemantics',
+      'hashManifestBytes',
+      'LOCK_VERSION',
+      'readPortableLockSource',
+      'serializePortableLock',
+      'hashPortableLock',
+      'correlatePortableLock',
+      'SOURCE_CONTENT_EXCLUSIONS_VERSION',
+      'SOURCE_CONTENT_EXCLUSIONS_V1',
+      'projectSourceContent',
+      'serializeSourceContentProjection',
+      'hashSourceContentV1',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);
+  });
+
+  test('re-exports the portable artifact authority by identity', () => {
+    for (const name of [
+      'HASH_SCHEMA_VERSION',
+      'HASH_DOMAINS',
+      'hashCanonicalInput',
+      'parseArtifactDigest',
+      'hashManifestSemantics',
+      'hashManifestBytes',
+      'LOCK_VERSION',
+      'readPortableLockSource',
+      'serializePortableLock',
+      'hashPortableLock',
+      'correlatePortableLock',
+      'SOURCE_CONTENT_EXCLUSIONS_VERSION',
+      'SOURCE_CONTENT_EXCLUSIONS_V1',
+      'projectSourceContent',
+      'serializeSourceContentProjection',
+      'hashSourceContentV1',
+    ] as const) {
+      expect(core[name], name).toBe(artifacts[name]);
+    }
   });
 
   test('exports the validated registry without breaking the 1.x inventory projection', () => {
