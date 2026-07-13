@@ -70,17 +70,60 @@ const isSkillStructure = (value: unknown): boolean =>
   isOptionalString(value, 'placement') &&
   isOptionalString(value, 'path');
 
-const hasExactIntegerVersionSyntax = (source: string): boolean => {
+const splitRootAssignment = (line: string): Readonly<{ key: string; value: string }> | null => {
+  let quote: 'single' | 'double' | null = null;
+  let escaped = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote === 'double') {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') quote = null;
+      continue;
+    }
+    if (quote === 'single') {
+      if (character === "'") quote = null;
+      continue;
+    }
+    if (character === '"') quote = 'double';
+    else if (character === "'") quote = 'single';
+    else if (character === '#') return null;
+    else if (character === '=') {
+      return { key: line.slice(0, index).trim(), value: line.slice(index + 1).trim() };
+    }
+  }
+  return null;
+};
+
+const keyParsesToVersion = (key: string): boolean => {
+  if (key.length === 0 || key.length > 128) return false;
+  try {
+    const parsed = parseToml(`${key} = 0`);
+    return isRecord(parsed) && Object.keys(parsed).length === 1 && parsed.version === 0;
+  } catch {
+    return false;
+  }
+};
+
+const TOML_INTEGER_TOKEN =
+  /^(?:[+-]?(?:0|[1-9](?:_?[0-9])*)|0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*|0o[0-7](?:_?[0-7])*|0b[01](?:_?[01])*)$/u;
+
+const hasExactIntegerVersionSyntax = (source: string, expectedVersion: number): boolean => {
   for (const line of source.split('\n')) {
     const candidate = line.endsWith('\r') ? line.slice(0, -1) : line;
     const trimmed = candidate.trimStart();
     if (trimmed.startsWith('[')) return false;
     if (trimmed.length === 0 || trimmed.startsWith('#')) continue;
-    const assignment = /^(?:version|"version"|'version')[ \t]*=[ \t]*([^#]*?)[ \t]*(?:#.*)?$/u.exec(
-      trimmed,
-    );
-    if (assignment === null) continue;
-    return /^[+-]?(?:0|[1-9](?:_?[0-9])*)$/u.test(assignment[1] ?? '');
+    const assignment = splitRootAssignment(trimmed);
+    if (assignment === null || !keyParsesToVersion(assignment.key)) continue;
+    const token = assignment.value.split('#', 1)[0]?.trim() ?? '';
+    if (token.length === 0 || token.length > 128 || !TOML_INTEGER_TOKEN.test(token)) return false;
+    try {
+      const parsed = parseToml(`version = ${token}`);
+      return isRecord(parsed) && parsed.version === expectedVersion;
+    } catch {
+      return false;
+    }
   }
   return false;
 };
@@ -89,7 +132,7 @@ const isCanonicalStructure = (raw: RawRecord, source: string): boolean =>
   hasOnlyKeys(raw, CANONICAL_ROOT_KEYS) &&
   typeof raw.version === 'number' &&
   Number.isSafeInteger(raw.version) &&
-  hasExactIntegerVersionSyntax(source) &&
+  hasExactIntegerVersionSyntax(source, raw.version) &&
   (!('defaults' in raw) || isDefaultsStructure(raw.defaults)) &&
   (!('registry' in raw) || isRegistryStructure(raw.registry)) &&
   (!('skills' in raw) ||

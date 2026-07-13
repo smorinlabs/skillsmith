@@ -196,16 +196,71 @@ const unsafeEditorShape = (
 const replaceRange = (source: string, start: number, end: number, value: string): string =>
   `${source.slice(0, start)}${value}${source.slice(end)}`;
 
-const manualPatch = (section: string | null, key: string, operation: 'set' | 'unset'): string => {
-  const field = section === null ? key : `${section}.${key}`;
-  return [
+type ManualValue = string | readonly string[];
+
+const sensitiveManualValue = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
+      return true;
+    }
+  } catch {
+    // Non-URL values still receive the explicit credential-marker checks below.
+  }
+  return (
+    /:\/\/[^/\s:@]+(?::[^/@\s]+)?@/.test(value) ||
+    /(?:^|[?&#;\s])(?:api[_-]?key|auth(?:orization)?|credential|password|secret|token)\s*[=:]/i.test(
+      value,
+    )
+  );
+};
+
+const renderManualValue = (
+  value: ManualValue,
+  kind: 'string' | 'array',
+): { readonly rendered: string; readonly redacted: boolean } => {
+  const values = typeof value === 'string' ? [value] : value;
+  const redacted = values.some(sensitiveManualValue);
+  if (redacted) return { rendered: '"<REDACTED>"', redacted: true };
+  return {
+    rendered:
+      kind === 'array'
+        ? `[${values.map((item) => JSON.stringify(item)).join(', ')}]`
+        : JSON.stringify(values[0] ?? ''),
+    redacted: false,
+  };
+};
+
+const manualPatch = (
+  section: string | null,
+  key: string,
+  operation: 'set' | 'unset',
+  value: ManualValue,
+  kind: 'string' | 'array',
+  previous?: ManualValue,
+): string => {
+  const desired = renderManualValue(value, kind);
+  const before = previous === undefined ? undefined : renderManualValue(previous, kind);
+  const redacted = desired.redacted || before?.redacted === true;
+  const lines = [
     'manual patch:',
+    section === null ? 'target: top level' : `target table: [${section}]`,
     '--- a/config.toml',
     '+++ b/config.toml',
     '@@ -1 +1 @@',
-    '-# ambiguous source range retained',
-    `+# ${operation} ${field} using a validated value`,
-  ].join('\n');
+  ];
+  if (operation === 'unset') {
+    lines.push(`-${key} = ${desired.rendered}`, '+');
+  } else {
+    lines.push(before === undefined ? '-' : `-${key} = ${before.rendered}`);
+    lines.push(`+${key} = ${desired.rendered}`);
+  }
+  if (redacted) {
+    lines.push(
+      'replace "<REDACTED>" locally with the requested validated value before applying this patch',
+    );
+  }
+  return lines.join('\n');
 };
 
 const ambiguousBoundaryComment = (source: string, section: string | null): boolean => {
@@ -326,21 +381,29 @@ const editOne = (
   key: string,
   value: string | null,
   kind: 'string' | 'array',
+  semanticValue: ManualValue | undefined,
 ): Result<string, SkillSmithError> => {
+  const existing = entriesFor(source, section, key)[0];
+  if (value === null && !existing) return ok(source);
   const unsafe = unsafeEditorShape(source, section, key);
   if (unsafe) {
     const reason = 'message' in unsafe ? unsafe.message : 'cannot safely edit source';
     return err(
       invalidArgumentError(
-        `${reason}\n${manualPatch(section, key, value === null ? 'unset' : 'set')}`,
+        `${reason}\n${manualPatch(
+          section,
+          key,
+          value === null ? 'unset' : 'set',
+          value === null ? (semanticValue ?? '') : value,
+          kind,
+          value === null ? undefined : semanticValue,
+        )}`,
       ),
     );
   }
-  const existing = entriesFor(source, section, key)[0];
   if (value === null) {
-    return existing
-      ? ok(replaceRange(source, existing.line.start, existing.line.end, ''))
-      : ok(source);
+    if (!existing) return ok(source);
+    return ok(replaceRange(source, existing.line.start, existing.line.end, ''));
   }
   if (existing) {
     const rendered =
@@ -354,7 +417,7 @@ const editOne = (
   if (ambiguousBoundaryComment(source, section)) {
     return err(
       invalidArgumentError(
-        `cannot safely attach ${section === null ? key : `${section}.${key}`} across a comment/table boundary\n${manualPatch(section, key, 'set')}`,
+        `cannot safely attach ${section === null ? key : `${section}.${key}`} across a comment/table boundary\n${manualPatch(section, key, 'set', value, kind, semanticValue)}`,
       ),
     );
   }
@@ -456,7 +519,14 @@ const canonicalizeLegacyRanges = (
     ? ok(canonical)
     : err(
         invalidArgumentError(
-          `cannot safely migrate the exact legacy source\n${manualPatch('defaults', 'tools', 'set')}`,
+          `cannot safely migrate the exact legacy source\n${manualPatch(
+            'defaults',
+            'tools',
+            'set',
+            getConfigTools(config) ?? [],
+            'array',
+            getConfigTools(config),
+          )}`,
         ),
       );
 };
@@ -549,6 +619,13 @@ const renderNewProjectConfig = (input: HumanConfigEditInput): string => {
   return rendered.join('\n');
 };
 
+const semanticManualValue = (
+  config: Config,
+  key: ConfigKey,
+  project: boolean,
+): ManualValue | undefined =>
+  project && key === 'tool' ? getConfigTools(config) : CONFIG_ACCESSORS[key].get(config);
+
 export const editConfigSource = (
   source: string,
   input: HumanConfigEditInput,
@@ -591,7 +668,14 @@ export const editConfigSource = (
       : key === 'registry.default'
         ? { section: 'registry', key: 'default', kind: 'string' as const }
         : { section: null, key, kind: 'string' as const };
-    const result = editOne(edited, location.section, location.key, value, location.kind);
+    const result = editOne(
+      edited,
+      location.section,
+      location.key,
+      value,
+      location.kind,
+      semanticManualValue(config, key, project),
+    );
     if (!result.ok) return result;
     edited = result.value;
   }
@@ -605,7 +689,14 @@ export const editConfigSource = (
       : key === 'registry.default'
         ? { section: 'registry', key: 'default', kind: 'string' as const }
         : { section: null, key, kind: 'string' as const };
-    const result = editOne(edited, location.section, location.key, null, location.kind);
+    const result = editOne(
+      edited,
+      location.section,
+      location.key,
+      null,
+      location.kind,
+      semanticManualValue(config, key, project),
+    );
     if (!result.ok) return result;
     edited = result.value;
   }

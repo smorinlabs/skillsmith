@@ -294,6 +294,12 @@ describe('EWP-P2-TS01', () => {
       { shape: 'unknown', source: 'version = 1.0\n', readable: false },
       { shape: 'unknown', source: 'version = 1e0\n', readable: false },
       { shape: 'unknown', source: 'version = 2.0\n', readable: false },
+      { shape: 'canonical', source: 'version = 0x1\n', readable: true },
+      { shape: 'canonical', source: 'version = 0o1\n', readable: true },
+      { shape: 'canonical', source: 'version = 0b1\n', readable: true },
+      { shape: 'canonical', source: '"version" = 1\n', readable: true },
+      { shape: 'canonical', source: "'version' = 0x1\n", readable: true },
+      { shape: 'canonical', source: '"ver\\u0073ion" = 0b1\n', readable: true },
       { shape: 'unknown', source: 'mystery = true\n', readable: false },
       {
         shape: 'unknown',
@@ -316,6 +322,10 @@ describe('EWP-P2-TS01', () => {
         readable: false,
       },
       { shape: 'future', source: 'version = 2\n', readable: false },
+      { shape: 'future', source: 'version = 0x2\n', readable: false },
+      { shape: 'future', source: 'version = 0o2\n', readable: false },
+      { shape: 'future', source: 'version = 0b10\n', readable: false },
+      { shape: 'future', source: '"ver\\u0073ion" = 0x2\n', readable: false },
     ];
     guardValidToml(
       fixtures.filter((item) => item.shape !== 'malformed').map((item) => item.source),

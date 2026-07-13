@@ -50,6 +50,13 @@ export interface ResolvedExplicitArtifactPair {
   readonly lockfileSource: 'explicit' | 'sibling' | null;
 }
 
+export type ArtifactSelectorHost = 'posix' | 'windows';
+export type ArtifactSelectorTokenClassification =
+  | 'portable'
+  | 'machine-bound'
+  | 'invalid'
+  | 'nonportable';
+
 export type ArtifactPairPorts = Pick<FileReadPort, 'pathKind' | 'realpath'>;
 
 interface ResolvedSelector {
@@ -90,14 +97,33 @@ const hasControlCharacter = (token: string): boolean =>
     return code <= 0x1f || code === 0x7f;
   });
 
-const hasForeignWindowsForm = (token: string): boolean =>
-  /^[A-Za-z]:/u.test(token) || /^(?:\\\\|\/\/)/u.test(token) || token.includes('\\');
+/** Classify selector spelling without depending on the host executing the classifier. */
+export const classifyArtifactSelectorToken = (
+  token: string,
+  host: ArtifactSelectorHost,
+): ArtifactSelectorTokenClassification => {
+  if (token.length === 0 || hasControlCharacter(token)) return 'invalid';
+  if (/^[A-Za-z]:(?![\\/])/u.test(token)) return 'nonportable';
+
+  const driveAbsolute = /^[A-Za-z]:[\\/]/u.test(token);
+  const unc = /^(?:\\\\|\/\/)/u.test(token);
+  if (driveAbsolute || unc) return host === 'windows' ? 'machine-bound' : 'nonportable';
+  if (token.includes('\\')) {
+    if (host === 'posix') return 'nonportable';
+    return token.startsWith('\\') ? 'machine-bound' : 'portable';
+  }
+  return token.startsWith('/') ? 'machine-bound' : 'portable';
+};
 
 const explicitSelectorError = (token: string): ArtifactPairError | null => {
-  if (token.length === 0 || hasControlCharacter(token)) {
+  const classification = classifyArtifactSelectorToken(
+    token,
+    process.platform === 'win32' ? 'windows' : 'posix',
+  );
+  if (classification === 'invalid') {
     return usageError('artifact-selector-invalid', 'artifact file selector is empty or invalid');
   }
-  if (process.platform !== 'win32' && hasForeignWindowsForm(token)) {
+  if (classification === 'nonportable') {
     return usageError(
       'artifact-selector-nonportable',
       `artifact selector uses a foreign absolute-path form: ${token}`,

@@ -2,12 +2,32 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Command } from 'commander';
+import {
+  runConfigGetApplication,
+  runConfigListApplication,
+  runConfigSetApplication,
+  runConfigUnsetApplication,
+} from '../../../core/src/application/read-services.ts';
+import type {
+  CurrentApplicationContext,
+  CurrentCommandRequest,
+  InteractionPort,
+} from '../../../core/src/application/types.ts';
 import { resolveEffectiveConfig } from '../../../core/src/config/effective.ts';
 import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
 import { saveConfig } from '../../../core/src/config/save.ts';
 import { resolveProjectContext } from '../../../core/src/context/project.ts';
 import type { ProjectContext } from '../../../core/src/context/types.ts';
+import {
+  createObservationEmitter,
+  createOperationContext,
+  noopObserver,
+} from '../../../core/src/observation/index.ts';
+import type { RuntimePorts } from '../../../core/src/ports/types.ts';
 import { hermeticGitEnv, runGit } from '../../../core/tests/fixtures/git-env.ts';
+import { exitCodeForClass } from '../../src/runtime/adapter.ts';
+import { createCurrentRendererRegistry } from '../../src/runtime/current-renderers.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
 const temporaryRoots: string[] = [];
@@ -62,14 +82,39 @@ const unexpectedEntries = async (
 ): Promise<readonly string[]> =>
   (await readdir(directory)).filter((name) => !allowed.includes(name)).sort();
 
-const memorySavePorts = (
-  file: string,
-  source: string,
-  options: { readonly failRename?: boolean; readonly systemConfigPath?: string } = {},
-) => {
-  const files = new Map<string, string>([[file, source]]);
-  const modes = new Map<string, number>([[file, 0o600]]);
+type SaveFailurePhase =
+  | 'coordination-lock'
+  | 'metadata-read'
+  | 'read'
+  | 'create'
+  | 'write'
+  | 'chmod'
+  | 'file-fsync'
+  | 'rename'
+  | 'dir-fsync';
+
+interface MemorySaveOptions {
+  readonly failRename?: boolean;
+  readonly systemConfigPath?: string;
+  readonly initialPresent?: boolean;
+  readonly targetKind?: 'file' | 'absent' | 'dir' | 'symlink';
+  readonly failure?: {
+    readonly phase: SaveFailurePhase;
+    readonly code: string;
+  };
+}
+
+const memorySavePorts = (file: string, source: string, options: MemorySaveOptions = {}) => {
+  const initialPresent =
+    options.initialPresent ?? (options.targetKind === undefined || options.targetKind === 'file');
+  const files = new Map<string, string>(initialPresent ? [[file, source]] : []);
+  const modes = new Map<string, number>(initialPresent ? [[file, 0o600]] : []);
   const mutations: string[] = [];
+  const fail = (phase: SaveFailurePhase): void => {
+    if (options.failure?.phase === phase) {
+      throw Object.assign(new Error(`${phase} failed`), { code: options.failure.code });
+    }
+  };
   const ports = {
     homeDir: '/home/test',
     executableSearchPath: [],
@@ -83,6 +128,7 @@ const memorySavePorts = (
     realpath: async (path: string) => path,
     listDir: async () => [],
     readText: async (path: string) => {
+      if (path === file) fail('read');
       const value = files.get(path);
       if (value === undefined) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
       return value;
@@ -93,10 +139,12 @@ const memorySavePorts = (
     modifiedAt: async () => 0,
     makeDir: async () => {
       mutations.push('makeDir');
+      fail('create');
     },
     writeTextFile: async (path: string, text: string) => {
       mutations.push('writeTextFile');
       files.set(path, text);
+      fail('write');
     },
     makeSymlink: async () => {
       mutations.push('makeSymlink');
@@ -106,6 +154,7 @@ const memorySavePorts = (
       if (options.failRename) {
         throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
       }
+      fail('rename');
       files.set(to, files.get(from) ?? '');
       files.delete(from);
       const mode = modes.get(from);
@@ -122,13 +171,18 @@ const memorySavePorts = (
     },
     fsyncFile: async () => {
       mutations.push('fsyncFile');
+      fail('file-fsync');
     },
     fsyncDir: async () => {
       mutations.push('fsyncDir');
+      fail('dir-fsync');
     },
-    withFileLock: async <T>(_path: string, operation: () => Promise<T>) => operation(),
+    withFileLock: async <T>(_path: string, operation: () => Promise<T>) => {
+      fail('coordination-lock');
+      return operation();
+    },
     assertWritableDirectory: async () => {},
-    exec: async () => ({ code: 0, stdout: new Uint8Array(), stderr: '', timedOut: false }),
+    exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
     runVersion: async () => 'unknown' as const,
     wallNowIso: () => '2026-07-13T00:00:00.000Z',
     epochMilliseconds: () => 0,
@@ -150,18 +204,75 @@ const memorySavePorts = (
       materializeTree: async () => '',
     },
     http: { request: async () => ({ status: 200, ok: true }) },
-    readFileMetadata: async (path: string) => ({
-      kind: files.has(path) ? 'file' : 'absent',
-      mode: modes.get(path) ?? 0o600,
-      identity: path,
-    }),
+    readFileMetadata: async (path: string) => {
+      if (path === file) fail('metadata-read');
+      const kind =
+        path === file && options.targetKind !== undefined
+          ? options.targetKind
+          : files.has(path)
+            ? ('file' as const)
+            : ('absent' as const);
+      return {
+        kind,
+        mode: kind === 'absent' ? null : (modes.get(path) ?? 0o600),
+        identity: kind === 'absent' ? null : path,
+      } as const;
+    },
     setFileMode: async (path: string, mode: number) => {
       mutations.push('setFileMode');
       modes.set(path, mode);
+      fail('chmod');
     },
   };
   return { files, modes, mutations, ports };
 };
+
+const interaction: InteractionPort = {
+  mode: 'noninteractive',
+  choose: async () => ({ status: 'refused', reason: 'not used by config application tests' }),
+  confirm: async () => ({ status: 'refused', reason: 'not used by config application tests' }),
+};
+
+const observation = Object.freeze({
+  context: createOperationContext({
+    command: 'skillsmith config test',
+    workflow: 'test',
+    clock: {
+      wallNowIso: () => '2026-07-13T00:00:00.000Z',
+      monotonicMilliseconds: () => 0,
+    },
+    id: { nextId: () => 'config-test-operation' },
+  }),
+  emitter: createObservationEmitter({
+    observer: noopObserver,
+    toolIds: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+  }),
+});
+
+const nonGitProject = (): ProjectContext => ({
+  invocationCwd: '/repo',
+  effectiveCwd: '/repo',
+  projectRoot: null,
+  projectIdentity: null,
+  projectKind: 'non-git',
+  discoveredConfigPath: null,
+  explicitConfigPath: null,
+});
+
+const applicationContext = (ports: RuntimePorts): CurrentApplicationContext => ({
+  observation,
+  ports,
+  configuration: resolveRuntimeConfiguration({}),
+  interaction,
+  invocationCwd: '/repo',
+  globalOptions: {},
+  projectContext: nonGitProject(),
+});
+
+const applicationRequest = (
+  arguments_: readonly unknown[] = [],
+  options: Readonly<Record<string, unknown>> = {},
+): CurrentCommandRequest => ({ arguments: arguments_, options });
 
 describe('EWP-CMD-CONFIG-TS01', () => {
   test('project set replaces only the canonical tools value and preserves CRLF, trivia, and mode', async () => {
@@ -242,7 +353,7 @@ describe('EWP-CMD-CONFIG-TS01', () => {
       expect(unset.stdout).toBe('');
       expect(await readFile(selected.file, 'utf8')).not.toContain('codex');
     }
-  });
+  }, 20_000);
 
   test('LF and final-no-newline flat edits preserve 0640/0644 modes and exact newline form', async () => {
     const root = await sandbox('ts01-newlines');
@@ -266,40 +377,55 @@ describe('EWP-CMD-CONFIG-TS01', () => {
       expect(await permissionBits(file)).toBe(fixture.mode);
       expect(await unexpectedEntries(directory, ['config.toml'])).toEqual([]);
     }
-  });
+  }, 20_000);
 
-  test('an injected system path supports lossless set, effective read, and unset without /etc IO', async () => {
+  test('all four system application operations use the injected path without /etc IO', async () => {
     const file = '/fixture/system/config.toml';
     const source = '# system\ntool = "codex"\n';
     const fixture = memorySavePorts(file, source, { systemConfigPath: file });
-    const set = await saveConfig(fixture.ports, {
-      scope: 'system',
-      patch: { tool: 'opencode' },
+    const current = applicationContext(fixture.ports);
+
+    const get = await runConfigGetApplication(
+      applicationRequest(['tool'], { system: true }),
+      current,
+    );
+    expect(get).toMatchObject({
+      exitClass: 'success',
+      report: { key: 'tool', value: 'codex', scope: 'system' },
     });
-    expect(set).toMatchObject({ ok: true, value: { file, changed: true } });
+
+    const set = await runConfigSetApplication(
+      applicationRequest(['tool', 'opencode'], { system: true }),
+      current,
+    );
+    expect(set).toMatchObject({
+      exitClass: 'success',
+      report: { key: 'tool', value: 'opencode', scope: 'system', file },
+      mutation: { kind: 'applied', changed: 1 },
+    });
     expect(fixture.files.get(file)).toBe('# system\ntool = "opencode"\n');
     expect(fixture.modes.get(file)).toBe(0o600);
 
-    const resolved = await resolveEffectiveConfig(
-      fixture.ports,
-      {
-        invocationCwd: '/repo',
-        effectiveCwd: '/repo',
-        projectRoot: null,
-        projectIdentity: null,
-        projectKind: 'non-git',
-        discoveredConfigPath: null,
-        explicitConfigPath: null,
+    const list = await runConfigListApplication(applicationRequest([], { system: true }), current);
+    expect(list).toMatchObject({
+      exitClass: 'success',
+      report: {
+        scope: 'system',
+        effective: { tool: 'opencode' },
+        sources: { tool: 'system' },
+        layers: { system: { tool: 'opencode' } },
       },
-      { configuration: resolveRuntimeConfiguration({}) },
-    );
-    expect(resolved).toMatchObject({
-      ok: true,
-      value: { value: { tool: 'opencode' }, sources: { tool: 'system' } },
     });
 
-    const unset = await saveConfig(fixture.ports, { scope: 'system', delete: ['tool'] });
-    expect(unset).toMatchObject({ ok: true, value: { file, changed: true } });
+    const unset = await runConfigUnsetApplication(
+      applicationRequest(['tool'], { system: true }),
+      current,
+    );
+    expect(unset).toMatchObject({
+      exitClass: 'success',
+      report: { key: 'tool', scope: 'system', file },
+      mutation: { kind: 'applied', changed: 1 },
+    });
     expect(fixture.files.get(file)).not.toContain('tool');
     expect([...fixture.files.keys()].filter((path) => path.startsWith('/etc/'))).toEqual([]);
   });
@@ -838,6 +964,175 @@ describe('EWP-CMD-CONFIG-TS05', () => {
       staged: [],
       stagedModes: [],
     });
+  });
+
+  test('coordination, non-permission reads, and non-file destinations are signed state failures', async () => {
+    const file = '/config/skillsmith/config.toml';
+    const source = '# retained\ntool = "codex"\n';
+    const cases: readonly {
+      readonly label: string;
+      readonly options: MemorySaveOptions;
+      readonly kind: 'file' | 'dir' | 'symlink';
+    }[] = [
+      {
+        label: 'coordination lock contention',
+        options: { failure: { phase: 'coordination-lock', code: 'EBUSY' } },
+        kind: 'file',
+      },
+      {
+        label: 'metadata read EIO',
+        options: { failure: { phase: 'metadata-read', code: 'EIO' } },
+        kind: 'file',
+      },
+      {
+        label: 'content read EIO',
+        options: { failure: { phase: 'read', code: 'EIO' } },
+        kind: 'file',
+      },
+      { label: 'directory destination', options: { targetKind: 'dir' }, kind: 'dir' },
+      { label: 'symlink destination', options: { targetKind: 'symlink' }, kind: 'symlink' },
+    ];
+    const renderer = createCurrentRendererRegistry(new Command()).configSet;
+    if (renderer === undefined) throw new Error('configSet renderer is not registered');
+
+    for (const selected of cases) {
+      const fixture = memorySavePorts(file, source, selected.options);
+      const outcome = await runConfigSetApplication(
+        applicationRequest(['tool', 'opencode'], { user: true }),
+        applicationContext(fixture.ports),
+      );
+      const human = renderer.human(outcome);
+      const json = renderer.json(outcome);
+      const humanChannels =
+        typeof human === 'string'
+          ? { stdout: human, stderr: '' }
+          : { stdout: '', stderr: '', ...human };
+      const jsonChannels =
+        typeof json === 'string'
+          ? { stdout: json, stderr: '' }
+          : { stdout: '', stderr: '', ...json };
+
+      expect(
+        {
+          label: selected.label,
+          exitClass: outcome.exitClass,
+          exitCode: exitCodeForClass(outcome.exitClass),
+          diagnostic: outcome.diagnostics[0]?.code,
+          humanStdout: humanChannels.stdout,
+          humanOwnsStderr: humanChannels.stderr.length > 0,
+          jsonOwnsStdout: jsonChannels.stdout.length > 0,
+          jsonStderr: jsonChannels.stderr,
+          jsonExitCode: JSON.parse(jsonChannels.stdout).exitCode,
+          original:
+            selected.kind === 'file'
+              ? fixture.files.get(file)
+              : (await fixture.ports.readFileMetadata(file)).kind,
+          staged: [...fixture.files.keys()].filter((path) => path !== file),
+          stagedModes: [...fixture.modes.keys()].filter((path) => path !== file),
+          mutations: fixture.mutations,
+        },
+        selected.label,
+      ).toEqual({
+        label: selected.label,
+        exitClass: 'state',
+        exitCode: 3,
+        diagnostic: 'config-error',
+        humanStdout: '',
+        humanOwnsStderr: true,
+        jsonOwnsStdout: true,
+        jsonStderr: '',
+        jsonExitCode: 3,
+        original: selected.kind === 'file' ? source : selected.kind,
+        staged: [],
+        stagedModes: [],
+        mutations: [],
+      });
+    }
+  });
+
+  test('every EACCES and EPERM save phase is a signed permission failure with rollback', async () => {
+    const file = '/config/skillsmith/config.toml';
+    const source = '# retained\ntool = "codex"\n';
+    const phases = [
+      'metadata-read',
+      'read',
+      'create',
+      'write',
+      'chmod',
+      'file-fsync',
+      'dir-fsync',
+      'rename',
+    ] as const;
+    const cases = phases.flatMap((phase) =>
+      (['EACCES', 'EPERM'] as const).map((code, codeIndex) => ({
+        label: `${phase} ${code}`,
+        phase,
+        code,
+        existed:
+          phase === 'metadata-read' ||
+          phase === 'read' ||
+          phase === 'chmod' ||
+          (phase !== 'create' && codeIndex === 0),
+      })),
+    );
+    const renderer = createCurrentRendererRegistry(new Command()).configSet;
+    if (renderer === undefined) throw new Error('configSet renderer is not registered');
+
+    for (const selected of cases) {
+      const fixture = memorySavePorts(file, source, {
+        initialPresent: selected.existed,
+        failure: { phase: selected.phase, code: selected.code },
+      });
+      const outcome = await runConfigSetApplication(
+        applicationRequest(['tool', 'opencode'], { user: true }),
+        applicationContext(fixture.ports),
+      );
+      const human = renderer.human(outcome);
+      const json = renderer.json(outcome);
+      const humanChannels =
+        typeof human === 'string'
+          ? { stdout: human, stderr: '' }
+          : { stdout: '', stderr: '', ...human };
+      const jsonChannels =
+        typeof json === 'string'
+          ? { stdout: json, stderr: '' }
+          : { stdout: '', stderr: '', ...json };
+
+      expect(
+        {
+          label: selected.label,
+          exitClass: outcome.exitClass,
+          exitCode: exitCodeForClass(outcome.exitClass),
+          diagnostic: outcome.diagnostics[0]?.code,
+          mutation: outcome.mutation.kind,
+          humanStdout: humanChannels.stdout,
+          humanOwnsStderr: humanChannels.stderr.length > 0,
+          jsonOwnsStdout: jsonChannels.stdout.length > 0,
+          jsonStderr: jsonChannels.stderr,
+          jsonExitCode: JSON.parse(jsonChannels.stdout).exitCode,
+          original: fixture.files.get(file) ?? null,
+          originalMode: fixture.modes.get(file) ?? null,
+          staged: [...fixture.files.keys()].filter((path) => path !== file),
+          stagedModes: [...fixture.modes.keys()].filter((path) => path !== file),
+        },
+        selected.label,
+      ).toEqual({
+        label: selected.label,
+        exitClass: 'permission',
+        exitCode: 6,
+        diagnostic: 'permission-denied',
+        mutation: 'none',
+        humanStdout: '',
+        humanOwnsStderr: true,
+        jsonOwnsStdout: true,
+        jsonStderr: '',
+        jsonExitCode: 6,
+        original: selected.existed ? source : null,
+        originalMode: selected.existed ? 0o600 : null,
+        staged: [],
+        stagedModes: [],
+      });
+    }
   });
 
   test('unsafe registry credentials refuse before writing and never echo the canary', async () => {

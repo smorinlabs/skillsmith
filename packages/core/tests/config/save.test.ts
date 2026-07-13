@@ -213,15 +213,62 @@ describe('saveConfig', () => {
       expect(result.ok, label).toBeFalse();
       if (!result.ok) {
         expect(result.error).toMatchObject({ code: 'invalid-argument' });
-        expect('message' in result.error ? result.error.message : '').toContain(
-          '--- a/config.toml\n+++ b/config.toml\n@@ -1 +1 @@',
-        );
+        const message = 'message' in result.error ? result.error.message : '';
+        expect(message).toContain('--- a/config.toml\n+++ b/config.toml\n@@ -1 +1 @@');
+        expect(message).toContain('[defaults]');
+        expect(message).toContain('+tools = ["codex"]');
+        expect(message).not.toContain('ambiguous source range retained');
+        expect(message).not.toContain('using a validated value');
         expect(JSON.stringify(result.error)).not.toContain(canary);
       }
       expect(await readFile(file, 'utf8')).toBe(before);
       expect(await readdir(d)).toEqual(['skillsmith.toml']);
       await rm(d, { recursive: true, force: true });
     }
+  });
+
+  test('manual patches encode semantic unset content and redact sensitive set values', async () => {
+    const env = await defaultRuntimePorts();
+    const unsetRoot = await tmpDir('manual-unset');
+    const unsetFile = join(unsetRoot, 'skillsmith.toml');
+    const multiline = 'version = 1\n[defaults]\ntools = [\n  "codex",\n]\nscope = "project"\n';
+    await writeFile(unsetFile, multiline);
+    const unset = await saveConfig(env, {
+      scope: 'project',
+      file: unsetFile,
+      delete: ['tool'],
+    });
+    expect(unset.ok).toBeFalse();
+    if (!unset.ok) {
+      const message = 'message' in unset.error ? unset.error.message : '';
+      expect(message).toContain('[defaults]');
+      expect(message).toContain('-tools = ["codex"]');
+      expect(message).not.toContain('<REDACTED>');
+    }
+    expect(await readFile(unsetFile, 'utf8')).toBe(multiline);
+    expect(await readdir(unsetRoot)).toEqual(['skillsmith.toml']);
+    await rm(unsetRoot, { recursive: true, force: true });
+
+    const sensitiveRoot = await tmpDir('manual-sensitive');
+    const sensitiveFile = join(sensitiveRoot, 'config.toml');
+    const canary = 'P17_MANUAL_PATCH_SECRET';
+    const before = 'tool = "codex"\n# retained boundary\n[registry]\n';
+    await writeFile(sensitiveFile, before);
+    const sensitive = await saveConfig(env, {
+      scope: 'user',
+      file: sensitiveFile,
+      patch: { path: `https://user:${canary}@example.test/skills?token=${canary}` },
+    });
+    expect(sensitive.ok).toBeFalse();
+    if (!sensitive.ok) {
+      const message = 'message' in sensitive.error ? sensitive.error.message : '';
+      expect(message).toContain('+path = "<REDACTED>"');
+      expect(message).toContain('replace "<REDACTED>" locally with the requested validated value');
+      expect(message).not.toContain(canary);
+    }
+    expect(await readFile(sensitiveFile, 'utf8')).toBe(before);
+    expect(await readdir(sensitiveRoot)).toEqual(['config.toml']);
+    await rm(sensitiveRoot, { recursive: true, force: true });
   });
 
   test('cleans every ordinary staging-phase failure and compensates a failed directory flush', async () => {

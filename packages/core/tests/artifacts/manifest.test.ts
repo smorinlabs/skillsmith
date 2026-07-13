@@ -49,7 +49,23 @@ describe('manifest authority', () => {
       ['unknown', 'version = 1.0\n'],
       ['unknown', 'version = 1e0\n'],
       ['unknown', 'version = 2.0\n'],
+      ['canonical', 'version = 0x1\n'],
+      ['canonical', 'version = 0o1\n'],
+      ['canonical', 'version = 0b1\n'],
+      ['canonical', 'version = +1\n'],
+      ['canonical', 'version = 0x0_1\n'],
+      ['canonical', 'version = 0o0_1\n'],
+      ['canonical', 'version = 0b0_1\n'],
+      ['canonical', '"version" = 1\n'],
+      ['canonical', "'version' = 0x1\n"],
+      ['canonical', '"ver\\u0073ion" = 0b1\n'],
       ['future', 'version = 2\n'],
+      ['future', 'version = 0x2\n'],
+      ['future', 'version = 0o2\n'],
+      ['future', 'version = 0b10\n'],
+      ['future', 'version = +2\n'],
+      ['future', 'version = 1_0\n'],
+      ['future', '"ver\\u0073ion" = 0x2\n'],
     ] as const;
     for (const [shape, source] of fixtures) {
       expect(classifyManifestSource(source)).toBe(shape);

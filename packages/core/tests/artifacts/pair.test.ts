@@ -7,6 +7,7 @@ import {
   type ArtifactPairPorts,
   type ResolvedArtifactPair,
   type ResolvedExplicitArtifactPair,
+  classifyArtifactSelectorToken,
   resolveArtifactPair,
   resolveExplicitArtifactPairLexically,
 } from '../../src/artifacts/pair.ts';
@@ -80,6 +81,25 @@ const expectLexicalOk = (
 };
 
 describe('artifact pair resolution', () => {
+  test('classifies Windows selectors independently of the executing host', () => {
+    for (const token of ['C:team.toml', 'z:relative/path']) {
+      expect(classifyArtifactSelectorToken(token, 'posix')).toBe('nonportable');
+      expect(classifyArtifactSelectorToken(token, 'windows')).toBe('nonportable');
+    }
+    for (const token of [
+      'C:/state/team.toml',
+      'C:\\state\\team.toml',
+      '\\\\host\\share\\team.toml',
+    ]) {
+      expect(classifyArtifactSelectorToken(token, 'posix')).toBe('nonportable');
+      expect(classifyArtifactSelectorToken(token, 'windows')).toBe('machine-bound');
+    }
+    expect(classifyArtifactSelectorToken('state\\team.toml', 'posix')).toBe('nonportable');
+    expect(classifyArtifactSelectorToken('state\\team.toml', 'windows')).toBe('portable');
+    expect(classifyArtifactSelectorToken('./state/team.toml', 'posix')).toBe('portable');
+    expect(classifyArtifactSelectorToken('./state/team.toml', 'windows')).toBe('portable');
+  });
+
   test('resolves explicit selectors lexically without filesystem authority', () => {
     expect(expectLexicalOk(resolveExplicitArtifactPairLexically({ effectiveCwd: ROOT }))).toEqual({
       file: null,
