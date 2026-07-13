@@ -18,6 +18,8 @@ export interface CommandOptionSpec {
   readonly valueShape: OptionValueShape;
   readonly knownValues: readonly string[];
   readonly allowedValues: readonly string[];
+  /** Values enforced directly by Commander before application validation. */
+  readonly parserValues?: readonly string[];
   readonly repeatable: boolean;
   readonly negated: boolean;
   /** Value represented by absence/presence in the external flag contract. */

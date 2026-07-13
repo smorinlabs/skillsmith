@@ -32,7 +32,7 @@ packages/
       index.ts       public API surface
   cli/           skillsmith — the CLI
     src/
-      commands/      current inventory, diagnostics, config, verify, and lifecycle handlers
+      commands/      compatibility re-exports for the former command-module paths
       completion/    shell completion renderers
       contracts/     reviewed command/option surface snapshots
       output/        pure renderers (markdown, JSON with zod schema)
@@ -43,7 +43,6 @@ packages/
 ```
 
 ## Core / CLI split
-
 > P17 disposition: current behavior; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#9-shared-application-and-planning-architecture. This replaces the imprecise “no I/O side effects” shorthand.
 
 The defining rule of the codebase: `@skillsmith/core` is an **embeddable library with zero CLI dependencies**. Core domain logic receives filesystem, process, clock, and observation capabilities through injected ports; it does not directly print, exit, prompt, or own CLI policy.
@@ -77,12 +76,12 @@ CommandSpec -> shared CLI runtime -> core application service -> CommandOutcome<
 and deprecations. Core does not assign numeric process exits. `InteractionPort` keeps semantic choice
 and confirmation injectable while TTY, JSON, approval, and noninteractive policy remain CLI-owned.
 
-`CurrentApplicationContext` is deliberately transitional: G1-03 may compose current services with
+`CurrentApplicationContext` is deliberately transitional: current services compose with
 the existing `ScanEnv` facade, resolved project context/config, interaction, and signal. G1-04 owns
 the replacement with capability-scoped ports. The first service, `runVersionApplication`, is a
-zero-discovery canary and does not read environment, cwd, project, or config state. Existing command
-handlers migrate in later G1-03 slices; the presence of this foundation does not imply that migration
-is already complete.
+zero-discovery canary and does not read environment, cwd, project, or config state. The current
+parser graph is reconstructed from `CommandSpec`; compatibility action adapters now live under the
+shared CLI runtime rather than command-local modules.
 
 ## Result-based error handling
 

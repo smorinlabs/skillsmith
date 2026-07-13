@@ -134,6 +134,29 @@ const PROFILE: Readonly<
   },
 };
 
+const DESCRIPTION: Readonly<Record<string, string>> = {
+  skillsmith: 'SkillSmith installs and manages agent skills for AI coding tools.',
+  'skillsmith agents': 'List every supported tool SkillSmith detects on this system',
+  'skillsmith config': 'Manage SkillSmith configuration',
+  'skillsmith config get': 'Print a config value',
+  'skillsmith config set': 'Set a config value (default scope: user)',
+  'skillsmith config list': 'List effective config (or a single scope)',
+  'skillsmith config unset': 'Remove a config value (default scope: user)',
+  'skillsmith list': 'List installed skills across tools and scopes',
+  'skillsmith commands': 'List installed slash commands across tools and scopes',
+  'skillsmith doctor': 'Diagnose SkillSmith and target-tool readiness',
+  'skillsmith check': 'Error-severity subset of doctor, suitable for CI',
+  'skillsmith verify': 'Verify that a plugin loads under each target tool',
+  'skillsmith install': 'Install agent skills from a git host.',
+  'skillsmith uninstall':
+    'Remove installed skills (placements + ledger records; the store is never deleted).',
+  'skillsmith dev': 'Flip a skill from production (pinned copy) back to dev mode (symlink).',
+  'skillsmith promote': 'Promote a skill from dev mode (symlink) to production (pinned copy).',
+  'skillsmith version': 'Print SkillSmith version',
+  'skillsmith completion': 'Emit a shell completion script',
+  'skillsmith help': 'Help about a command or cross-cutting topic',
+};
+
 type StateArgument = {
   readonly required: boolean;
   readonly variadic: boolean;
@@ -176,7 +199,7 @@ export const CURRENT_COMMAND_SPECS: readonly CommandSpec[] = commandPaths.map((p
     aliases: aliasesForPath(path),
     group: profile.group,
     primaryQuestion: profile.question,
-    description: profile.question,
+    description: DESCRIPTION[path] ?? profile.question,
     arguments: argumentsForPath(path),
     options: optionsForPath(path),
     examples: path === 'skillsmith' ? ['skillsmith --help'] : [path],
