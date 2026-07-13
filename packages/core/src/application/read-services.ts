@@ -306,8 +306,9 @@ const projectFor = async (
   | { readonly ok: false; readonly error: SkillSmithError }
 > => {
   if (context.projectContext !== undefined) return { ok: true, value: context.projectContext };
-  const explicitConfigPath = context.globalOptions.config ?? context.envVars.SKILLSMITH_CONFIG;
-  return resolveProjectContext(context.env, {
+  const explicitConfigPath =
+    context.globalOptions.config ?? context.configuration.explicitConfigPath;
+  return resolveProjectContext(context.ports, {
     invocationCwd: context.invocationCwd,
     ...(context.globalOptions.cd === undefined ? {} : { cd: context.globalOptions.cd }),
     ...(explicitConfigPath === undefined ? {} : { explicitConfigPath }),
@@ -322,7 +323,9 @@ const configFor = async (
   | { readonly ok: false; readonly error: SkillSmithError }
 > => {
   if (context.effectiveConfig !== undefined) return { ok: true, value: context.effectiveConfig };
-  return resolveEffectiveConfig(context.env, project, { envVars: { ...context.envVars } });
+  return resolveEffectiveConfig(context.ports, project, {
+    configuration: context.configuration,
+  });
 };
 
 const configNoticeDiagnostics = (config: EffectiveConfig): readonly Diagnostic[] =>
@@ -363,9 +366,9 @@ const healthConfigFor = async (
     return config;
   }
   const invalidProjectConfig = project.discoveredConfigPath;
-  return resolveEffectiveConfig(context.env, project, {
-    envVars: { ...context.envVars },
-    readFile: async (path) => (path === invalidProjectConfig ? '' : context.env.readText(path)),
+  return resolveEffectiveConfig(context.ports, project, {
+    configuration: context.configuration,
+    readFile: async (path) => (path === invalidProjectConfig ? '' : context.ports.readText(path)),
   });
 };
 
@@ -472,7 +475,7 @@ export const runAgentsApplication: ApplicationService<CurrentCommandRequest, Age
   });
   const selection = validateReadSelection(request, READ_POLICY);
   if (!selection.ok) return failed(report(), selection.error);
-  const detected = await detectAll(context.env, {
+  const detected = await detectAll(context.ports, {
     ...(selection.value.tools.length > 0 ? { tools: selection.value.tools } : {}),
     ...(context.signal === undefined ? {} : { signal: context.signal }),
   });
@@ -534,7 +537,7 @@ export const runConfigSetApplication: ApplicationService<
   if (invalid !== null) return failed(empty, invalid);
   const project = await projectFor(context);
   if (!project.ok) return failed(empty, project.error);
-  const saved = await saveConfig(context.env, {
+  const saved = await saveConfig(context.ports, {
     scope,
     patch: configPatch(key, rawValue),
     cwd: project.value.projectRoot ?? project.value.effectiveCwd,
@@ -586,7 +589,7 @@ export const runConfigUnsetApplication: ApplicationService<
   if (typeof key !== 'string') return failed(empty, key);
   const project = await projectFor(context);
   if (!project.ok) return failed(empty, project.error);
-  const saved = await saveConfig(context.env, {
+  const saved = await saveConfig(context.ports, {
     scope,
     delete: [key],
     cwd: project.value.projectRoot ?? project.value.effectiveCwd,
@@ -620,14 +623,14 @@ export const runListApplication: ApplicationService<CurrentCommandRequest, ListR
       : config.value.value.tool
         ? [config.value.value.tool]
         : SUPPORTED_TOOLS;
-  const listed = await listSkills(context.env, {
+  const listed = await listSkills(context.ports, {
     tools,
     scopes: scope.value === null ? SCOPES : [scope.value],
     ...(argumentStrings(request, 0).length > 0 ? { globs: argumentStrings(request, 0) } : {}),
     duplicatesOnly: enabled(request, 'duplicates'),
     ...(typeof filter === 'string' ? { enabledFilter: filter } : {}),
     cwd: project.value.projectRoot ?? project.value.effectiveCwd,
-    envVars: { ...context.envVars },
+    configuration: context.configuration,
     ...(context.signal === undefined ? {} : { signal: context.signal }),
   });
   if (!listed.ok) return failed(empty, listed.error);
@@ -662,13 +665,13 @@ export const runCommandsApplication: ApplicationService<
       : config.value.value.tool
         ? [config.value.value.tool]
         : SUPPORTED_TOOLS;
-  const listed = await listCommands(context.env, {
+  const listed = await listCommands(context.ports, {
     tools,
     scopes: scope.value === null ? ['user', 'project'] : [scope.value],
     ...(argumentStrings(request, 0).length > 0 ? { globs: argumentStrings(request, 0) } : {}),
     ...(typeof filter === 'string' ? { enabledFilter: filter } : {}),
     cwd: project.value.projectRoot ?? project.value.effectiveCwd,
-    envVars: { ...context.envVars },
+    configuration: context.configuration,
     ...(context.signal === undefined ? {} : { signal: context.signal }),
   });
   if (!listed.ok) return failed(empty, listed.error);
@@ -721,14 +724,14 @@ const runHealthApplication = async (
         ? [config.value.value.scope]
         : SCOPES;
   const checked = await runChecks(builtInChecks, {
-    env: context.env,
+    env: context.ports,
     mode,
     tools,
     scopes,
     scopeExplicit: scope.value !== null,
     cwd: project.value.projectRoot ?? project.value.effectiveCwd,
     ...(artifacts === null ? {} : { artifactPair: artifacts }),
-    envVars: { ...context.envVars },
+    configuration: context.configuration,
     offline: mode === 'doctor' && enabled(request, 'offline'),
     logger: noopLogger,
     ...(context.signal === undefined ? {} : { signal: context.signal }),
@@ -808,7 +811,7 @@ export const runVerifyApplication: ApplicationService<
   if (!selection.ok) return failed(empty, selection.error);
   const project = await projectFor(context);
   if (!project.ok) return failed(empty, project.error);
-  const verified = await verifyPlugin(context.env, {
+  const verified = await verifyPlugin(context.ports, {
     path: resolve(project.value.effectiveCwd, target),
     ...(selection.value.tools.length > 0
       ? { tools: selection.value.tools as readonly VerifyTool[] }

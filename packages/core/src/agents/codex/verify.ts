@@ -1,7 +1,4 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import type { ScanEnv } from '../../env/types.ts';
 import { ok } from '../../result.ts';
 import { extractVersionToken, modeVerdictFor, toolVerdictFor } from '../../verify/normalize.ts';
 import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS, VERIFIED_AGAINST } from '../../verify/types.ts';
@@ -11,6 +8,7 @@ import type {
   ToolVerifyOptions,
   VerifyFinding,
   VerifyMode,
+  VerifyPorts,
 } from '../../verify/types.ts';
 import { detect } from './detect.ts';
 
@@ -115,7 +113,7 @@ export const parseCodexExecStderr = (
 };
 
 /** Manifest plugin name, or null on any read/parse failure. */
-const readManifestName = async (env: ScanEnv, manifestPath: string): Promise<string | null> => {
+const readManifestName = async (env: VerifyPorts, manifestPath: string): Promise<string | null> => {
   try {
     const parsed: unknown = JSON.parse(await env.readText(manifestPath));
     const name = (parsed as { name?: unknown }).name;
@@ -140,7 +138,7 @@ const errorResult = (
 });
 
 const runStaticMode = async (
-  env: ScanEnv,
+  env: VerifyPorts,
   binary: string,
   opts: ToolVerifyOptions,
 ): Promise<ModeResult> => {
@@ -171,11 +169,12 @@ const runStaticMode = async (
   const coverage = { manifest: true, skills: false };
   const command = `codex plugin marketplace add <root> && codex plugin add ${name}@<mkt>`;
 
-  const root = await mkdtemp(join(tmpdir(), 'skillsmith-codex-root-'));
-  const home = await mkdtemp(join(tmpdir(), 'skillsmith-codex-home-'));
+  const root = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('codex-root'));
+  const home = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('codex-home'));
   try {
-    await mkdir(join(root, '.agents', 'plugins'), { recursive: true });
-    await writeFile(
+    await env.makeDir(join(root, '.agents', 'plugins'));
+    await env.makeDir(home);
+    await env.writeTextFile(
       join(root, '.agents', 'plugins', 'marketplace.json'),
       `${JSON.stringify(
         {
@@ -186,7 +185,7 @@ const runStaticMode = async (
         2,
       )}\n`,
     );
-    await cp(opts.path, join(root, 'plugins', name), { recursive: true });
+    await env.copyTree(opts.path, join(root, 'plugins', name));
 
     const execOpts = {
       env: { CODEX_HOME: home },
@@ -259,8 +258,8 @@ const runStaticMode = async (
       findings,
     };
   } finally {
-    await rm(root, { recursive: true, force: true });
-    await rm(home, { recursive: true, force: true });
+    await env.removeTree(root);
+    await env.removeTree(home);
   }
 };
 
@@ -279,25 +278,27 @@ const deepErrorResult = (skipReason: 'timeout' | 'exec-error'): ModeResult => ({
 });
 
 /** Copy each `<path>/skills/<n>/` (with SKILL.md) into `<proj>/.agents/skills/<n>/`. */
-const stageSkills = async (env: ScanEnv, path: string, proj: string): Promise<void> => {
+const stageSkills = async (env: VerifyPorts, path: string, proj: string): Promise<void> => {
   const skillsDir = join(path, 'skills');
   if (!(await env.fileExists(skillsDir))) return; // no skills dir ⇒ nothing to stage
-  await mkdir(join(proj, '.agents', 'skills'), { recursive: true });
+  await env.makeDir(join(proj, '.agents', 'skills'));
   for (const n of await env.listDir(skillsDir)) {
     const src = join(skillsDir, n);
     if (!(await env.fileExists(join(src, 'SKILL.md')))) continue;
-    await cp(src, join(proj, '.agents', 'skills', n), { recursive: true });
+    await env.copyTree(src, join(proj, '.agents', 'skills', n));
   }
 };
 
 const runDeepMode = async (
-  env: ScanEnv,
+  env: VerifyPorts,
   binary: string,
   opts: ToolVerifyOptions,
 ): Promise<ModeResult> => {
-  const proj = await mkdtemp(join(tmpdir(), 'skillsmith-codex-proj-'));
-  const home = await mkdtemp(join(tmpdir(), 'skillsmith-codex-home-'));
+  const proj = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('codex-project'));
+  const home = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('codex-home'));
   try {
+    await env.makeDir(proj);
+    await env.makeDir(home);
     await stageSkills(env, opts.path, proj);
 
     const result = await env.exec(
@@ -349,12 +350,16 @@ const runDeepMode = async (
       findings,
     };
   } finally {
-    await rm(proj, { recursive: true, force: true });
-    await rm(home, { recursive: true, force: true });
+    await env.removeTree(proj);
+    await env.removeTree(home);
   }
 };
 
-type ModeRunner = (env: ScanEnv, binary: string, opts: ToolVerifyOptions) => Promise<ModeResult>;
+type ModeRunner = (
+  env: VerifyPorts,
+  binary: string,
+  opts: ToolVerifyOptions,
+) => Promise<ModeResult>;
 
 const MODE_RUNNERS: Partial<Record<VerifyMode, ModeRunner>> = {
   static: runStaticMode,

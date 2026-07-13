@@ -1,7 +1,5 @@
-import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import type { ScanEnv } from '../env/types.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -9,8 +7,18 @@ import {
   ledgerError,
   permissionDeniedError,
 } from '../errors.ts';
+import type { ClockPort, FileReadPort, FileWritePort, IdPort, LockPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { FLIP_TOOLS, type FlipTool, type LedgerFile, type PairRecord } from './types.ts';
+
+type LedgerReadPorts = Pick<FileReadPort, 'pathKind' | 'readText'> & Pick<ClockPort, 'wallNowIso'>;
+type LedgerWritePorts = Pick<
+  FileWritePort,
+  'writeTextFile' | 'fsyncFile' | 'rename' | 'fsyncDir' | 'removeTree'
+> &
+  Pick<ClockPort, 'wallNowIso'> &
+  IdPort;
+type LedgerLockPorts = Pick<FileWritePort, 'makeDir'> & LockPort;
 
 const isPermError = (e: unknown): boolean =>
   typeof e === 'object' &&
@@ -107,11 +115,11 @@ export const emptyLedger = (now: string): LedgerFile => ({
 });
 
 export const readLedger = async (
-  env: ScanEnv,
+  env: LedgerReadPorts,
   ledgerPath: string,
 ): Promise<Result<LedgerFile, SkillSmithError>> => {
   if ((await env.pathKind(ledgerPath)) === 'absent') {
-    return ok(emptyLedger(new Date().toISOString()));
+    return ok(emptyLedger(env.wallNowIso()));
   }
 
   let text: string;
@@ -124,7 +132,7 @@ export const readLedger = async (
     return err(ledgerError(`cannot read ledger: ${errorMessage(e)}`, ledgerPath));
   }
 
-  if (text.trim().length === 0) return ok(emptyLedger(new Date().toISOString()));
+  if (text.trim().length === 0) return ok(emptyLedger(env.wallNowIso()));
 
   let raw: unknown;
   try {
@@ -143,12 +151,12 @@ export const readLedger = async (
 };
 
 export const writeLedger = async (
-  env: ScanEnv,
+  env: LedgerWritePorts,
   ledgerPath: string,
   ledger: LedgerFile,
 ): Promise<Result<void, SkillSmithError>> => {
-  const serialized = JSON.stringify({ ...ledger, updatedAt: new Date().toISOString() }, null, 2);
-  const tmp = `${ledgerPath}.tmp-${randomBytes(4).toString('hex')}`;
+  const serialized = JSON.stringify({ ...ledger, updatedAt: env.wallNowIso() }, null, 2);
+  const tmp = `${ledgerPath}.tmp-${env.nextId('ledger-write')}`;
   try {
     await env.writeTextFile(tmp, serialized);
     await env.fsyncFile(tmp);
@@ -165,7 +173,7 @@ export const writeLedger = async (
 };
 
 export const withLedgerLock = async <T>(
-  env: ScanEnv,
+  env: LedgerLockPorts,
   ledgerPath: string,
   fn: () => Promise<T>,
 ): Promise<Result<T, SkillSmithError>> => {

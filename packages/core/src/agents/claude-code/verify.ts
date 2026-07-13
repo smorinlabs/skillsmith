@@ -1,7 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ScanEnv } from '../../env/types.ts';
 import { ok } from '../../result.ts';
 import { extractVersionToken, modeVerdictFor, toolVerdictFor } from '../../verify/normalize.ts';
 import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS, VERIFIED_AGAINST } from '../../verify/types.ts';
@@ -11,6 +8,7 @@ import type {
   ToolVerifyOptions,
   VerifyFinding,
   VerifyMode,
+  VerifyPorts,
 } from '../../verify/types.ts';
 import { detect } from './detect.ts';
 
@@ -84,7 +82,7 @@ export const parseClaudeValidateOutput = (output: string, targetPath: string): V
 };
 
 const runStaticMode = async (
-  env: ScanEnv,
+  env: VerifyPorts,
   binary: string,
   opts: ToolVerifyOptions,
 ): Promise<ModeResult> => {
@@ -163,8 +161,9 @@ export const parseClaudeInit = (stdout: string): { plugins: string[]; skills: st
 };
 
 /** Subdirectories `n` of `<path>/skills/` where `<path>/skills/<n>/SKILL.md` exists. */
-const getExpectedSkills = async (env: ScanEnv, path: string): Promise<string[]> => {
+const getExpectedSkills = async (env: VerifyPorts, path: string): Promise<string[]> => {
   const skillsDir = join(path, 'skills');
+  if (!(await env.fileExists(skillsDir))) return [];
   const entries = await env.listDir(skillsDir);
   const present: string[] = [];
   for (const n of entries) {
@@ -174,7 +173,7 @@ const getExpectedSkills = async (env: ScanEnv, path: string): Promise<string[]> 
 };
 
 /** Manifest plugin name, or null on any read/parse failure. */
-const readPluginName = async (env: ScanEnv, path: string): Promise<string | null> => {
+const readPluginName = async (env: VerifyPorts, path: string): Promise<string | null> => {
   try {
     const parsed: unknown = JSON.parse(
       await env.readText(join(path, '.claude-plugin', 'plugin.json')),
@@ -187,14 +186,15 @@ const readPluginName = async (env: ScanEnv, path: string): Promise<string | null
 };
 
 const runDeepMode = async (
-  env: ScanEnv,
+  env: VerifyPorts,
   binary: string,
   opts: ToolVerifyOptions,
 ): Promise<ModeResult> => {
   const coverage = { manifest: false, skills: true };
   const command = `CLAUDE_CONFIG_DIR=<tmp> claude --print --verbose --output-format stream-json --setting-sources "" --plugin-dir ${opts.path} "ok"`;
 
-  const cfg = await mkdtemp(join(tmpdir(), 'skillsmith-claude-cfg-'));
+  const cfg = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('claude-config'));
+  await env.makeDir(cfg);
   try {
     const result = await env.exec(
       binary,
@@ -259,11 +259,15 @@ const runDeepMode = async (
       findings,
     };
   } finally {
-    await rm(cfg, { recursive: true, force: true });
+    await env.removeTree(cfg);
   }
 };
 
-type ModeRunner = (env: ScanEnv, binary: string, opts: ToolVerifyOptions) => Promise<ModeResult>;
+type ModeRunner = (
+  env: VerifyPorts,
+  binary: string,
+  opts: ToolVerifyOptions,
+) => Promise<ModeResult>;
 
 const MODE_RUNNERS: Partial<Record<VerifyMode, ModeRunner>> = {
   static: runStaticMode,

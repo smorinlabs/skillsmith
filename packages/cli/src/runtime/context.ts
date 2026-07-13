@@ -1,7 +1,8 @@
 import {
   type CurrentApplicationContext,
   type InteractionPort,
-  defaultScanEnv,
+  defaultRuntimePorts,
+  resolveRuntimeConfiguration,
 } from '@skillsmith/core';
 import type { Command } from 'commander';
 import {
@@ -15,7 +16,7 @@ export interface RuntimeContextOptions {
   readonly interaction?: InteractionPort;
 }
 
-/** Construct the transitional context once per invocation; G1-04 replaces ScanEnv with ports. */
+/** Construct one capability-scoped application context per invocation. */
 export const createCurrentApplicationContext = async (
   command: Command,
   options: RuntimeContextOptions = {},
@@ -36,10 +37,10 @@ export const createCurrentApplicationContext = async (
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
   return {
-    env: await defaultScanEnv(),
+    ports: await defaultRuntimePorts(),
+    configuration: resolveRuntimeConfiguration(process.env),
     interaction: createPolicyInteraction(policy, options.interaction ?? promptInteraction()),
     invocationCwd: process.cwd(),
-    envVars: process.env,
     globalOptions: {
       ...(globals.cd === undefined ? {} : { cd: globals.cd }),
       ...(globals.config === undefined ? {} : { config: globals.config }),

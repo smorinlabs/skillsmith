@@ -22,9 +22,11 @@ import type {
   CurrentCommandRequest,
   InteractionPort,
 } from '../../src/application/types.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { EffectiveConfig } from '../../src/config/types.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
+import { runtimePorts } from '../fixtures/runtime-ports.ts';
 
 const temporaryRoots: string[] = [];
 
@@ -100,10 +102,10 @@ const context = (
   config: EffectiveConfig = effectiveConfig(),
   project: ProjectContext = projectContext(),
 ): CurrentApplicationContext => ({
-  env: scanEnv,
+  ports: runtimePorts(scanEnv),
+  configuration: resolveRuntimeConfiguration({}),
   interaction,
   invocationCwd: project.invocationCwd,
-  envVars: {},
   globalOptions: {},
   projectContext: project,
   effectiveConfig: config,

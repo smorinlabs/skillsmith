@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { resolveEffectiveConfig } from '../../src/config/effective.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
+import { runtimePorts } from '../fixtures/runtime-ports.ts';
 
 const context = (project: string | null, explicit: string | null = null): ProjectContext => ({
   invocationCwd: '/repo',
@@ -67,9 +69,9 @@ describe('resolveEffectiveConfig compatibility notices', () => {
     const files: Record<string, string> = { [projectPath]: source };
     const { env, writes } = fixture(files);
 
-    const result = await resolveEffectiveConfig(env, context(projectPath), {
+    const result = await resolveEffectiveConfig(runtimePorts(env), context(projectPath), {
       cli: { tool: 'opencode' },
-      envVars: { SKILLSMITH_SCOPE: 'user' },
+      configuration: resolveRuntimeConfiguration({ SKILLSMITH_SCOPE: 'user' }),
       readFile: async (path) => files[path] ?? '',
     });
 
@@ -107,10 +109,14 @@ describe('resolveEffectiveConfig compatibility notices', () => {
 
     for (const item of cases) {
       const { env, writes } = fixture(item.files);
-      const result = await resolveEffectiveConfig(env, context(item.project, item.explicit), {
-        envVars: {},
-        readFile: async (path) => item.files[path as keyof typeof item.files] ?? '',
-      });
+      const result = await resolveEffectiveConfig(
+        runtimePorts(env),
+        context(item.project, item.explicit),
+        {
+          configuration: resolveRuntimeConfiguration({}),
+          readFile: async (path) => item.files[path as keyof typeof item.files] ?? '',
+        },
+      );
       expect(result.ok).toBeTrue();
       if (!result.ok) throw new Error(JSON.stringify(result.error));
       expect(result.value.notices).toBeUndefined();
@@ -123,8 +129,8 @@ describe('resolveEffectiveConfig compatibility notices', () => {
     const files: Record<string, string> = { [projectPath]: 'unknown = true\n' };
     const { env, writes } = fixture(files);
 
-    const result = await resolveEffectiveConfig(env, context(projectPath), {
-      envVars: {},
+    const result = await resolveEffectiveConfig(runtimePorts(env), context(projectPath), {
+      configuration: resolveRuntimeConfiguration({}),
       readFile: async (path) => files[path] ?? '',
     });
 

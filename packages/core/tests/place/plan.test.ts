@@ -45,7 +45,7 @@ describe('planFlips', () => {
   ): FlipOptions & { op: 'promote' | 'dev' } => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     op: 'promote',
     ...overrides,
   });

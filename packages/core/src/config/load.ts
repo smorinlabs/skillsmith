@@ -1,9 +1,7 @@
-import { readFile as fsReadFile } from 'node:fs/promises';
-import type { ScanEnv } from '../env/types.ts';
 import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
+import type { InventoryReadPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { CONFIG_ACCESSORS } from './accessors.ts';
-import { configFromEnv } from './env.ts';
 import {
   findProjectConfig,
   getConfigPath,
@@ -21,13 +19,10 @@ import {
 
 export interface LoadConfigOpts {
   explicitFile?: string;
-  explicitFileEnv?: string;
-  envVars?: Record<string, string | undefined>;
-  cwd?: string;
+  configuration: ResolvedRuntimeConfiguration;
+  cwd: string;
   readFile?: (p: string) => Promise<string>;
 }
-
-const DEFAULT_READ = async (p: string) => fsReadFile(p, 'utf8');
 
 const tryLoadFile = async (
   read: (p: string) => Promise<string>,
@@ -61,16 +56,15 @@ const ORDER: ConfigLayer[] = [
 ];
 
 export const loadConfig = async (
-  env: ScanEnv,
-  opts: LoadConfigOpts = {},
+  env: InventoryReadPorts,
+  opts: LoadConfigOpts,
 ): Promise<Result<EffectiveConfig, SkillSmithError>> => {
-  const read = opts.readFile ?? DEFAULT_READ;
-  const envVars = opts.envVars ?? (process.env as Record<string, string | undefined>);
-  const cwd = opts.cwd ?? process.cwd();
+  const read = opts.readFile ?? env.readText;
+  const cwd = opts.cwd;
   const explicitPath = resolveConfigPath(
     resolveExplicitFile({
       flag: opts.explicitFile,
-      env: opts.explicitFileEnv,
+      env: opts.configuration.explicitConfigPath,
     }),
     cwd,
   );
@@ -93,7 +87,7 @@ export const loadConfig = async (
     user: (userR.ok && userR.value) || {},
     project: (projectR.ok && projectR.value) || {},
     'explicit-file': (explicitR.ok && explicitR.value) || {},
-    env: configFromEnv(envVars),
+    env: opts.configuration.configLayer,
     cli: {},
   };
 

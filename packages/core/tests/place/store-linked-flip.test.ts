@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { join, resolve } from 'node:path';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { emptyLedger, getPair, readLedger, setPair, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../src/place/paths.ts';
@@ -173,7 +172,7 @@ const nextTxId = (): string => (++txCounter).toString(16).padStart(8, '0');
 const passDeps = (): FlipDeps => ({
   now: () => NOW,
   newTxId: nextTxId,
-  verify: async (_env: ScanEnv, o: VerifyOptions) => {
+  verify: async (_env, o: VerifyOptions) => {
     const tool = o.tools?.[0] ?? 'claude-code';
     return ok(makeVerifyReport(tool)) as Result<VerifyReport, SkillSmithError>;
   },
@@ -182,7 +181,7 @@ const passDeps = (): FlipDeps => ({
 const opts = (f: FixtureFleet, o: Partial<FlipOptions> = {}): FlipOptions => ({
   targets: [],
   cwd: f.home,
-  envVars: f.envVars,
+  configuration: f.configuration,
   ...o,
 });
 

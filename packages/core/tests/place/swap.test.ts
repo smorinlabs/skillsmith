@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { appendFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { emptyLedger, getPair, setPair, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../src/place/paths.ts';
@@ -14,6 +13,7 @@ import type {
   SwapCtx,
   SwapPlan,
 } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -43,7 +43,7 @@ const pinnedOf = (storePath: string, rev: string, contentHash: string): PinnedRe
 });
 
 const makeCtx = (
-  env: ScanEnv,
+  env: RuntimePorts,
   ledgerPath: string,
   ledger: LedgerFile,
   opts: { txId?: string; signal?: AbortSignal } = {},
@@ -128,7 +128,7 @@ const demotePlan = (s: Seeded): SwapPlan => ({
   dev: { sourcePath: s.target, devRecord: dev(s.target) },
 });
 
-const residue = async (env: ScanEnv, skillsRoot: string): Promise<string[]> =>
+const residue = async (env: RuntimePorts, skillsRoot: string): Promise<string[]> =>
   (await env.listDir(skillsRoot)).filter((n) => n.startsWith('.skillsmith-'));
 
 describe('runSwap — promote / demote happy paths', () => {

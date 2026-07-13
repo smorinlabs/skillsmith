@@ -3,8 +3,7 @@ import { cp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
-import { defaultScanEnv } from '../../src/env/default.ts';
-import type { PathKind, ScanEnv } from '../../src/env/types.ts';
+import type { PathKind } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   emptyLedger,
@@ -27,6 +26,8 @@ import {
   type SwapCtx,
   type SwapPlan,
 } from '../../src/place/types.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -76,7 +77,7 @@ const pinnedOf = (
   placement,
 });
 
-const makeCtx = (env: ScanEnv, ledgerPath: string, ledger: LedgerFile): SwapCtx => ({
+const makeCtx = (env: RuntimePorts, ledgerPath: string, ledger: LedgerFile): SwapCtx => ({
   env,
   ledgerPath,
   ledger,
@@ -85,24 +86,24 @@ const makeCtx = (env: ScanEnv, ledgerPath: string, ledger: LedgerFile): SwapCtx 
   newTxId: () => TXID,
 });
 
-const ctxFromDisk = async (env: ScanEnv, ledgerPath: string): Promise<SwapCtx> => {
+const ctxFromDisk = async (env: RuntimePorts, ledgerPath: string): Promise<SwapCtx> => {
   const read = await readLedger(env, ledgerPath);
   if (!read.ok) throw new Error(msg(read.error));
   return makeCtx(env, ledgerPath, read.value);
 };
 
-const hashOf = async (env: ScanEnv, dir: string): Promise<string> => {
+const hashOf = async (env: RuntimePorts, dir: string): Promise<string> => {
   const h = await contentHashOf(env, dir);
   if (!h.ok) throw new Error(msg(h.error));
   return h.value;
 };
 
-const residue = async (env: ScanEnv, skillsRoot: string): Promise<string[]> =>
+const residue = async (env: RuntimePorts, skillsRoot: string): Promise<string[]> =>
   (await env.listDir(skillsRoot)).filter((n) => n.startsWith('.skillsmith-'));
 
 // fsync is durability-only and uncounted by crashingEnv, so stubbing it leaves the state machine
 // identical while sparing the shared runner's disk.
-const fastEnv = (inner: ScanEnv): ScanEnv => ({
+const fastEnv = (inner: RuntimePorts): RuntimePorts => ({
   ...inner,
   fsyncFile: async () => {},
   fsyncDir: async () => {},
@@ -115,7 +116,7 @@ const managedNames = (skill: string, txId: string): string[] => [
 ];
 
 const saveState = async (
-  env: ScanEnv,
+  env: RuntimePorts,
   skillsRoot: string,
   ledgerPath: string,
   dest: string,
@@ -132,7 +133,7 @@ const saveState = async (
 };
 
 const restoreState = async (
-  env: ScanEnv,
+  env: RuntimePorts,
   skillsRoot: string,
   ledgerPath: string,
   src: string,
@@ -154,7 +155,7 @@ interface StoreSeed {
   contentHash: string;
 }
 
-const seedStore = async (f: FixtureFleet, env: ScanEnv): Promise<StoreSeed> => {
+const seedStore = async (f: FixtureFleet, env: RuntimePorts): Promise<StoreSeed> => {
   const prov = await resolveProvenance(env, f.alphaSrc);
   if (!prov.ok) throw new Error(msg(prov.error));
   const snap = await snapshotToStore(env, {
@@ -588,10 +589,10 @@ suite('uninstall of a managed copy', (f) => uninstall(f, 'copy'));
 // ---- ledger compat probe (D6): a crash-window ledger is valid v0.6.0 but rejected by v0.5.0 ----
 
 describe('ledger compat probe (D6)', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = join(tmpdir(), `skillsmith-compat-${Math.random().toString(36).slice(2)}`);
     await mkdir(base, { recursive: true });
   });

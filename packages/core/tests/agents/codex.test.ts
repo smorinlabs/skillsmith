@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { codexAgent } from '../../src/agents/codex/index.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
+import type { DetectionPorts } from '../../src/ports/types.ts';
 
-const env = (existing: string[]): ScanEnv => ({
+const env = (existing: string[]): DetectionPorts => ({
   homeDir: '/Users/u',
-  path: ['/usr/bin'],
+  executableSearchPath: ['/usr/bin'],
   platform: 'darwin',
   xdg: { config: '/c', data: '/d', cache: '/k' },
   fileExists: async (p) => existing.includes(p),
@@ -12,21 +12,11 @@ const env = (existing: string[]): ScanEnv => ({
   listDir: async () => [],
   readText: async () => '',
   runVersion: async () => '0.5.1',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('codexAgent', () => {

@@ -49,7 +49,7 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
 
@@ -354,7 +354,7 @@ describe('dev --source — resolution, --dest, dual-location, warnings (P13 PRD)
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
 
@@ -478,7 +478,7 @@ describe('dev --source — idempotency, dry-run, ledger-shape legality (P13 PRD)
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
 

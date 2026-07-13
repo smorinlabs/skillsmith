@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  errorMessage,
   flipFailedError,
   flipRefusedError,
   genericError,
@@ -13,6 +14,9 @@ import {
 } from '../src/errors.ts';
 
 describe('SkillSmithError', () => {
+  test('errorMessage reads safe structural adapter messages', () => {
+    expect(errorMessage({ message: 'safe adapter failure' })).toBe('safe adapter failure');
+  });
   test('genericError carries message and optional cause', () => {
     const e = genericError('boom', new Error('root'));
     expect(e.code).toBe('generic');

@@ -4,10 +4,10 @@ import type { SupportedTool } from '../agents/types.ts';
 import { SCOPES, type Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
 import { noopLogger } from '../env/logger.ts';
-import type { ScanEnv } from '../env/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
+import type { InventoryReadPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import { type Result, ok } from '../result.ts';
 import type { Origin, PluginProvenanceScope, SkillEntry } from '../skills/types.ts';
 import { walkSkillDir } from '../skills/walk.ts';
@@ -19,7 +19,7 @@ export interface ListSkillsOpts {
   duplicatesOnly?: boolean;
   enabledFilter?: 'enabled-only' | 'disabled-only' | 'unconfigured-only';
   cwd: string;
-  envVars: Record<string, string | undefined>;
+  configuration: ResolvedRuntimeConfiguration;
   logger?: Logger;
   signal?: AbortSignal;
 }
@@ -61,10 +61,10 @@ const dedupeByRealpath = (entries: SkillEntry[]): SkillEntry[] => {
 };
 
 const scanStandalone = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   tools: readonly SupportedTool[],
   scopes: readonly Scope[],
-  ctx: { cwd: string; envVars: Record<string, string | undefined> },
+  ctx: { cwd: string; configuration: ResolvedRuntimeConfiguration },
 ): Promise<SkillEntry[]> => {
   const out: SkillEntry[] = [];
   for (const tool of tools) {
@@ -88,7 +88,7 @@ const scanStandalone = async (
 };
 
 const scanPluginBundled = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   tools: readonly SupportedTool[],
   discovered: readonly DiscoveredPlugin[],
 ): Promise<SkillEntry[]> => {
@@ -118,13 +118,13 @@ const scanPluginBundled = async (
 };
 
 export const listSkills = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   opts: ListSkillsOpts,
 ): Promise<Result<SkillEntry[], SkillSmithError>> => {
   const logger = opts.logger ?? noopLogger;
   const tools = opts.tools ?? (Object.keys(registry) as readonly SupportedTool[]);
   const scopes = opts.scopes ?? SCOPES;
-  const ctx = { cwd: opts.cwd, envVars: opts.envVars };
+  const ctx = { cwd: opts.cwd, configuration: opts.configuration };
 
   const standalone = await scanStandalone(env, tools, scopes, ctx);
   const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });

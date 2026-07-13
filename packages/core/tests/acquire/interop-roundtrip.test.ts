@@ -182,7 +182,7 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
       sources: [fsSource],
       tools: CLAUDE_ONLY,
       cwd: f.base,
-      envVars: f.envVars,
+      configuration: f.configuration,
     };
 
     // --- 1. runInstall -> store symlink placement ---
@@ -209,7 +209,7 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
       tools: CLAUDE_ONLY,
       noVerify: true,
       cwd: f.home,
-      envVars: f.envVars,
+      configuration: f.configuration,
       ...o,
     });
     const d1 = await runDev(f.env, flipOpts({ source: devSrc }), flipDeps());
@@ -289,7 +289,7 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
         tools: CLAUDE_ONLY,
         force: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -320,7 +320,7 @@ describe('interop round-trip — PRD scenario 5 (deliberate up/downgrade via --f
       sources: [fsSource],
       tools: CLAUDE_ONLY,
       cwd: f.base,
-      envVars: f.envVars,
+      configuration: f.configuration,
     };
 
     const r1 = await runInstall(f.env, baseOpts, installDeps());

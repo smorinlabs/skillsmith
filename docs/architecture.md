@@ -43,8 +43,11 @@ packages/
       index.ts       process entry, signal handling, and final exit mapping
 ```
 
+The historical “no I/O side effects” shorthand is corrected by the boundary below.
+
 ## Core / CLI split
-> P17 disposition: current behavior; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#9-shared-application-and-planning-architecture. This replaces the imprecise “no I/O side effects” shorthand.
+
+> P17 disposition: current behavior; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#9-shared-application-and-planning-architecture.
 
 The defining rule of the codebase: `@skillsmith/core` is an **embeddable library with zero CLI dependencies**. Core domain logic receives filesystem, process, clock, and observation capabilities through injected ports; it does not directly print, exit, prompt, or own CLI policy.
 
@@ -77,9 +80,9 @@ CommandSpec -> shared CLI runtime -> core application service -> CommandOutcome<
 and deprecations. Core does not assign numeric process exits. `InteractionPort` keeps semantic choice
 and confirmation injectable while TTY, JSON, approval, and noninteractive policy remain CLI-owned.
 
-`CurrentApplicationContext` is deliberately transitional: current services compose with
-the existing `ScanEnv` facade, resolved project context/config, interaction, and signal. G1-04 owns
-the replacement with capability-scoped ports. The first service, `runVersionApplication`, is a
+`CurrentApplicationContext` is retained as a compatibility alias for the capability-scoped
+`ApplicationContext`: current services compose with `RuntimePorts`, resolved typed configuration,
+project context, interaction, and signal. The first service, `runVersionApplication`, is a
 zero-discovery canary and does not read environment, cwd, project, or config state. The current
 parser graph is reconstructed from `CommandSpec`; one action factory resolves every current command
 through the public application registry and shared renderer/exit adapter. Legacy command-local
@@ -105,9 +108,10 @@ Details and alternatives considered: [ADR 0002](adr/0002-result-type.md).
 ## Capability-scoped ports and the `ScanEnv` compatibility facade
 
 ADR 0005 replaces aggregate authority with focused ports. Domain operations receive only the
-structural intersection they use: platform paths and reads for inventory, version probing for
-detection, named Git/HTTP operations where required, and explicit write/lock/clock/ID capabilities
-for mutation. `RuntimePorts` exists only at real-adapter and application composition boundaries.
+structural intersection they use: platform paths and reads for inventory, a high-level writable-path
+probe for diagnostics, version probing for detection, named Git/HTTP operations where required, and
+explicit write/lock/clock/ID capabilities for mutation. `RuntimePorts` exists only at real-adapter
+and application composition boundaries.
 
 `defaultRuntimePorts()` owns the production Node/Bun effects. Raw environment input is decoded once
 into `ResolvedRuntimeConfiguration`; domain and application requests do not carry `process.env` or

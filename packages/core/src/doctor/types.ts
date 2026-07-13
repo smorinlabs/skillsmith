@@ -1,7 +1,13 @@
 import type { SupportedTool } from '../agents/types.ts';
 import type { Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
-import type { ScanEnv } from '../env/types.ts';
+import type {
+  HttpPort,
+  InventoryReadPorts,
+  PathAccessPort,
+  ProcessPort,
+  ResolvedRuntimeConfiguration,
+} from '../ports/types.ts';
 
 export type Severity = 'error' | 'warning' | 'info';
 export type CheckRunMode = 'doctor' | 'check';
@@ -21,7 +27,7 @@ export interface Finding {
 }
 
 export interface CheckRunContext {
-  env: ScanEnv;
+  env: InventoryReadPorts & PathAccessPort & ProcessPort & { readonly http: HttpPort };
   mode: CheckRunMode;
   tools: readonly SupportedTool[];
   scopes: readonly Scope[];
@@ -30,7 +36,7 @@ export interface CheckRunContext {
   cwd: string;
   /** Resolved read-only artifact pair selected by the CLI; schemas and writes remain downstream. */
   artifactPair?: { readonly file: string; readonly lockfile: string };
-  envVars: Record<string, string | undefined>;
+  configuration: ResolvedRuntimeConfiguration;
   offline: boolean;
   logger: Logger;
   signal?: AbortSignal;

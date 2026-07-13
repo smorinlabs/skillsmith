@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { appendFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   emptyLedger,
@@ -23,6 +22,7 @@ import type {
   SwapCtx,
   SwapPlan,
 } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -70,7 +70,7 @@ const pinnedOf = (
   placement,
 });
 
-const makeCtx = (env: ScanEnv, ledgerPath: string, ledger: LedgerFile): SwapCtx => ({
+const makeCtx = (env: RuntimePorts, ledgerPath: string, ledger: LedgerFile): SwapCtx => ({
   env,
   ledgerPath,
   ledger,
@@ -103,7 +103,7 @@ const seedStore = async (f: FixtureFleet): Promise<StoreSeed> => {
   };
 };
 
-const residue = async (env: ScanEnv, skillsRoot: string): Promise<string[]> =>
+const residue = async (env: RuntimePorts, skillsRoot: string): Promise<string[]> =>
   (await env.listDir(skillsRoot)).filter((n) => n.startsWith('.skillsmith-'));
 
 const installPlan = (

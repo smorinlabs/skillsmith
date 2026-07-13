@@ -1,5 +1,6 @@
 import { join } from 'node:path';
-import type { Platform, ScanEnv } from '../env/types.ts';
+import type { Platform } from '../env/types.ts';
+import type { InventoryReadPorts } from '../ports/types.ts';
 import type { PluginEnablement, PluginInstallation } from './types.ts';
 
 const MANAGED_SETTINGS_PATH: Record<Platform, string> = {
@@ -8,7 +9,10 @@ const MANAGED_SETTINGS_PATH: Record<Platform, string> = {
   win32: 'C:\\ProgramData\\ClaudeCode\\managed-settings.json',
 };
 
-const settingsPathForInstallation = (env: ScanEnv, inst: PluginInstallation): string | null => {
+const settingsPathForInstallation = (
+  env: InventoryReadPorts,
+  inst: PluginInstallation,
+): string | null => {
   switch (inst.scope) {
     case 'user':
       return join(env.homeDir, '.claude', 'settings.json');
@@ -22,7 +26,7 @@ const settingsPathForInstallation = (env: ScanEnv, inst: PluginInstallation): st
 };
 
 const readEnabledPlugins = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   path: string,
 ): Promise<Record<string, boolean> | null> => {
   if (!(await env.fileExists(path))) return null;
@@ -40,7 +44,7 @@ const readEnabledPlugins = async (
 };
 
 export const resolveEnablement = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   installation: PluginInstallation,
 ): Promise<PluginEnablement> => {
   const path = settingsPathForInstallation(env, installation);

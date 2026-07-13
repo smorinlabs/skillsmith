@@ -7,6 +7,7 @@ import type {
   HttpPort,
   IdPort,
   LockPort,
+  PathAccessPort,
   PlatformPaths,
   ProcessPort,
   ResolvedRuntimeConfiguration,
@@ -52,6 +53,7 @@ type _FileWritePort = Assert<
   >
 >;
 type _LockPort = Assert<Equal<keyof LockPort, 'withFileLock'>>;
+type _PathAccessPort = Assert<Equal<keyof PathAccessPort, 'assertWritableDirectory'>>;
 type _ProcessPort = Assert<Equal<keyof ProcessPort, 'exec' | 'runVersion'>>;
 type _GitPort = Assert<
   Equal<
@@ -94,6 +96,7 @@ type RuntimePortKeys =
   | keyof FileReadPort
   | keyof FileWritePort
   | keyof LockPort
+  | keyof PathAccessPort
   | keyof ProcessPort
   | keyof ClockPort
   | keyof IdPort
@@ -111,6 +114,12 @@ type _PortErrorCode = Assert<
     | 'conflict'
     | 'invalid'
     | 'io'
+  >
+>;
+type _PortErrorCapability = Assert<
+  Equal<
+    PortError['capability'],
+    'file-read' | 'file-write' | 'lock' | 'path-access' | 'process' | 'git' | 'http'
   >
 >;
 type _PortErrorFields = Assert<

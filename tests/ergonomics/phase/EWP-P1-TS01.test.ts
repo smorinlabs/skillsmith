@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { resolveProjectContext } from '../../../packages/core/src/context/project.ts';
-import { defaultScanEnv } from '../../../packages/core/src/env/default.ts';
+import { defaultRuntimePorts } from '../../../packages/core/src/ports/default.ts';
 import { hermeticGitEnv, runGit } from '../../../packages/core/tests/fixtures/git-env.ts';
 
 interface CliResult {
@@ -69,7 +69,7 @@ describe('EWP-P1-TS01', () => {
 
     try {
       const before = process.cwd();
-      const env = await defaultScanEnv();
+      const env = await defaultRuntimePorts();
       const context = unwrap(
         await resolveProjectContext(env, {
           invocationCwd,
@@ -104,7 +104,7 @@ describe('EWP-P1-TS01', () => {
     await symlink(repository, linkedRepository, 'dir');
 
     try {
-      const env = await defaultScanEnv();
+      const env = await defaultRuntimePorts();
       const contexts = await Promise.all(
         [repository, nested, join(linkedRepository, 'packages', 'api')].map(async (invocationCwd) =>
           unwrap(await resolveProjectContext(env, { invocationCwd })),
@@ -139,7 +139,7 @@ describe('EWP-P1-TS01', () => {
 
     try {
       expect((await readFile(join(worktree, '.git'), 'utf8')).trim()).toStartWith('gitdir:');
-      const env = await defaultScanEnv();
+      const env = await defaultRuntimePorts();
       const context = unwrap(await resolveProjectContext(env, { invocationCwd: nested }));
       expect(context.projectKind).toBe('git');
       expect(context.projectRoot).toBe(await env.realpath(worktree));
@@ -157,7 +157,7 @@ describe('EWP-P1-TS01', () => {
     await writeFile(join(projectRoot, 'skillsmith.toml'), 'tool = "codex"\n');
 
     try {
-      const env = await defaultScanEnv();
+      const env = await defaultRuntimePorts();
       const context = unwrap(await resolveProjectContext(env, { invocationCwd: nested }));
       expect(context).toMatchObject({
         effectiveCwd: nested,

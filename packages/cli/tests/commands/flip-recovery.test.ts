@@ -1,8 +1,8 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { lstat, readdir, readlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { FlipDeps, FlipOptions, ScanEnv, SkillSmithError } from '@skillsmith/core';
-import { runDev, runPromote, runRollback } from '@skillsmith/core';
+import type { FlipDeps, FlipOptions, RuntimePorts, SkillSmithError } from '@skillsmith/core';
+import { resolveRuntimeConfiguration, runDev, runPromote, runRollback } from '@skillsmith/core';
 import { getPair, readLedger } from '../../../core/src/place/ledger.ts';
 import { ledgerPathOf, resolveDataDir } from '../../../core/src/place/paths.ts';
 import {
@@ -59,7 +59,7 @@ const passDeps = (): FlipDeps => ({
 const opts = (f: FixtureFleet, o: Partial<FlipOptions> = {}): FlipOptions => ({
   targets: [],
   cwd: f.home,
-  envVars: f.envVars,
+  configuration: resolveRuntimeConfiguration(f.envVars),
   ...o,
 });
 
@@ -69,7 +69,7 @@ const opts = (f: FixtureFleet, o: Partial<FlipOptions> = {}): FlipOptions => ({
 // stranded: classifyPlacement returns 'absent', so pre-fix planning dropped the pair from every
 // route. Only the live-install rename is faulted; the ledger's own renames (tmp -> placements.json)
 // and store renames have different destinations and pass through untouched.
-const crashOnInstall = (env: ScanEnv, livePath: string): ScanEnv => ({
+const crashOnInstall = (env: RuntimePorts, livePath: string): RuntimePorts => ({
   ...env,
   rename: async (src: string, dst: string): Promise<void> => {
     if (dst === livePath) throw new Error('injected crash: P4 install rename');
@@ -96,7 +96,7 @@ const journalPhaseOf = async (
   f: FixtureFleet,
   skill: string,
 ): Promise<string | null | undefined> => {
-  const ledgerPath = ledgerPathOf(resolveDataDir(f.env, f.envVars));
+  const ledgerPath = ledgerPathOf(resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars)));
   const l = await readLedger(f.env, ledgerPath);
   if (!l.ok) throw new Error(msg(l.error));
   return getPair(l.value, skill, 'claude-code')?.journal?.phase;

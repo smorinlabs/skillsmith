@@ -102,6 +102,7 @@ export type {
   IdPort,
   InventoryReadPorts,
   LockPort,
+  PathAccessPort,
   PlatformPaths,
   ProcessPort,
   ResolvedRuntimeConfiguration,

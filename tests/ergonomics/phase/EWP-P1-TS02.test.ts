@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { resolveEffectiveConfig } from '../../../packages/core/src/config/effective.ts';
+import { resolveRuntimeConfiguration } from '../../../packages/core/src/config/runtime.ts';
 import { resolveProjectContext } from '../../../packages/core/src/context/project.ts';
-import { defaultScanEnv } from '../../../packages/core/src/env/default.ts';
-import type { Config, ScanEnv } from '../../../packages/core/src/index.ts';
+import type { Config } from '../../../packages/core/src/index.ts';
+import { defaultRuntimePorts } from '../../../packages/core/src/ports/default.ts';
+import type { RuntimePorts } from '../../../packages/core/src/ports/types.ts';
 import { hermeticGitEnv, runGit } from '../../../packages/core/tests/fixtures/git-env.ts';
 
 const unwrap = <T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T => {
@@ -58,8 +60,8 @@ describe('EWP-P1-TS02', () => {
     ]);
 
     try {
-      const baseEnv = await defaultScanEnv();
-      const env: ScanEnv = {
+      const baseEnv = await defaultRuntimePorts();
+      const env: RuntimePorts = {
         ...baseEnv,
         homeDir: join(sandbox, 'home'),
         xdg: {
@@ -89,7 +91,7 @@ describe('EWP-P1-TS02', () => {
         unwrap(
           await resolveEffectiveConfig(env, context, {
             ...(cli ? { cli } : {}),
-            envVars,
+            configuration: resolveRuntimeConfiguration(envVars),
             readFile,
           }),
         );
@@ -143,7 +145,7 @@ describe('EWP-P1-TS02', () => {
     await writeFile(join(nested, 'team.toml'), 'tool = "claude-code"\n');
 
     try {
-      const env = await defaultScanEnv();
+      const env = await defaultRuntimePorts();
       const context = unwrap(
         await resolveProjectContext(env, {
           invocationCwd: sandbox,
@@ -158,7 +160,11 @@ describe('EWP-P1-TS02', () => {
       expect(context.explicitConfigPath).not.toBe(context.discoveredConfigPath);
       expect(context.explicitConfigPath).not.toBe(context.projectRoot);
 
-      const effective = unwrap(await resolveEffectiveConfig(env, context, { envVars: {} }));
+      const effective = unwrap(
+        await resolveEffectiveConfig(env, context, {
+          configuration: resolveRuntimeConfiguration({}),
+        }),
+      );
       expect(effective.value.tool).toBe('claude-code');
       expect(effective.sources.tool).toBe('explicit-file');
     } finally {

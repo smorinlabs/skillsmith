@@ -1,32 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import type { ScanEnv } from '../../src/env/types.ts';
 import { resolveEnablement } from '../../src/plugins/enablement.ts';
+import type { InventoryReadPorts } from '../../src/ports/types.ts';
 
-const env = (files: Record<string, string>): ScanEnv => ({
+const env = (files: Record<string, string>): InventoryReadPorts => ({
   homeDir: '/h',
-  path: [],
+  executableSearchPath: [],
   platform: 'darwin',
   xdg: { config: '/h/.config', data: '/h/.local/share', cache: '/h/.cache' },
   fileExists: async (p) => p in files,
   realpath: async (p) => p,
   listDir: async () => [],
   readText: async (p) => files[p] ?? '',
-  runVersion: async () => 'unknown',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('resolveEnablement', () => {

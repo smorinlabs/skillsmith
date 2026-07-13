@@ -1,12 +1,9 @@
-import { randomBytes } from 'node:crypto';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { installHint as claudeCodeInstallHint } from '../agents/claude-code/install-hint.ts';
 import { getSkillRoots as claudeCodeSkillRoots } from '../agents/claude-code/skill-roots.ts';
 import { installHint as codexInstallHint } from '../agents/codex/install-hint.ts';
 import { getSkillRoots as codexSkillRoots } from '../agents/codex/skill-roots.ts';
 import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
-import { execGit } from '../env/git.ts';
-import type { ScanEnv } from '../env/types.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -63,6 +60,7 @@ import {
 import { matchCandidates, selectSkill } from './resolve.ts';
 import { parseSource } from './source.ts';
 import type {
+  AcquisitionPorts,
   CandidateSkill,
   InstallAction,
   InstallDeps,
@@ -81,9 +79,12 @@ import type {
 export const defaultInstallDeps: Omit<InstallDeps, 'pick'> = {
   verify: verifyPlugin,
   detect: (env, tool, signal) => detectTool(env, tool, signal),
-  now: () => new Date().toISOString(),
-  newTxId: () => randomBytes(4).toString('hex'),
 };
+
+const nowOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string =>
+  deps.now?.() ?? ports.wallNowIso();
+const txIdOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string =>
+  deps.newTxId?.() ?? ports.nextId('acquisition-transaction');
 
 const SKILL_ROOTS: Record<FlipTool, typeof claudeCodeSkillRoots> = {
   'claude-code': claudeCodeSkillRoots,
@@ -94,8 +95,6 @@ const INSTALL_HINTS: Record<FlipTool, string> = {
   'claude-code': claudeCodeInstallHint,
   codex: codexInstallHint,
 };
-
-const PLUMBING_TIMEOUT_MS = 10_000;
 
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
 
@@ -159,7 +158,7 @@ const summarizeFindings = (tv: ToolVerdict | undefined): string => {
 };
 
 const runInstallVerifyGate = async (
-  env: ScanEnv,
+  env: AcquisitionPorts,
   deps: InstallDeps,
   tool: FlipTool,
   path: string,
@@ -229,7 +228,7 @@ const ledgerVerifyOf = (gate: Gate['gate']): 'passed' | 'warned' | 'skipped' =>
   gate === 'passed' ? 'passed' : gate === 'warned' ? 'warned' : 'skipped';
 
 // ---------------------------------------------------------------------------------------------
-// resolve + fetch (once per source)
+// source resolution and remote acquisition (once per source)
 // ---------------------------------------------------------------------------------------------
 
 interface Resolved {
@@ -248,7 +247,7 @@ type ResolveOutcome =
 // whose store entry already exists — skip the clone entirely (restricted to //path or a
 // ledger-recorded origin so R2's never-guess is not bypassed).
 const tryElide = async (
-  env: ScanEnv,
+  env: AcquisitionPorts,
   spec: SourceSpec,
   storeRoot: string,
   ledger: LedgerFile,
@@ -296,7 +295,7 @@ const tryElide = async (
 };
 
 const resolveSource = async (
-  env: ScanEnv,
+  env: AcquisitionPorts,
   deps: InstallDeps,
   spec: SourceSpec,
   scope: InstallScope,
@@ -309,7 +308,7 @@ const resolveSource = async (
   const elided = await tryElide(env, spec, storeRoot, ledger, scopeKey, opts.signal);
   if (elided) return { kind: 'resolved', r: elided };
 
-  const fetchDir = join(dataDir, '.fetch', deps.newTxId());
+  const fetchDir = join(dataDir, '.fetch', txIdOf(env, deps));
   const fr = await fetchRepo(env, {
     cloneUrl: spec.cloneUrl,
     ref: spec.ref,
@@ -429,7 +428,7 @@ const buildOrigin = (
 // ---------------------------------------------------------------------------------------------
 
 interface PlaceCtx {
-  env: ScanEnv;
+  env: AcquisitionPorts;
   deps: InstallDeps;
   opts: InstallOptions;
   ledger: LedgerFile;
@@ -445,8 +444,8 @@ const makeSwapCtx = (p: PlaceCtx): SwapCtx => ({
   ledgerPath: p.ledgerPath,
   ledger: p.ledger,
   persist: () => writeLedger(p.env, p.ledgerPath, p.ledger),
-  now: p.deps.now,
-  newTxId: p.deps.newTxId,
+  now: () => nowOf(p.env, p.deps),
+  newTxId: () => txIdOf(p.env, p.deps),
   pauseAt: p.opts.testPauseAt,
   signal: p.opts.signal,
 });
@@ -468,7 +467,7 @@ const replaceSwap = async (
   const inst = plan.install;
   if (!inst) return err(genericError('install plan missing install payload'));
   if (build === 'copy' && live.class === 'pinned') {
-    const symPinned = buildPinned(snap, sha, 'symlink', gate, p.deps.now());
+    const symPinned = buildPinned(snap, sha, 'symlink', gate, nowOf(p.env, p.deps));
     const intermediate: SwapPlan = {
       ...plan,
       install: { ...inst, build: 'symlink', pinned: symPinned, adoptedDev: null },
@@ -499,7 +498,7 @@ const placePair = async (
   const build: 'symlink' | 'copy' = opts.direct ? 'copy' : 'symlink';
   const rootsCtx = {
     cwd: p.scope === 'project' ? (p.scopeKey as string) : opts.cwd,
-    envVars: opts.envVars,
+    configuration: opts.configuration,
   };
   const installRoot = SKILL_ROOTS[tool](env, p.scope, rootsCtx)[0] as string;
   const placementPath = join(installRoot, skill);
@@ -579,7 +578,7 @@ const placePair = async (
   if (!(otherScope === 'project' && otherKey === null)) {
     const otherCtx = {
       cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
-      envVars: opts.envVars,
+      configuration: opts.configuration,
     };
     const otherRoot = SKILL_ROOTS[tool](env, otherScope, otherCtx)[0] as string;
     const op = await classifyPlacement(env, otherRoot, skill, p.storeRoot);
@@ -655,8 +654,8 @@ const placePair = async (
     }
     // Placement intact + matching the resolved store entry but the record is missing/stale →
     // rewrite the pair record only (no filesystem change).
-    const pinned = buildPinned(snap, sha, liveKind, gate, p.deps.now());
-    const origin = buildOrigin(spec, sha, resolved.skillPath, opts, p.deps.now());
+    const pinned = buildPinned(snap, sha, liveKind, gate, nowOf(p.env, p.deps));
+    const origin = buildOrigin(spec, sha, resolved.skillPath, opts, nowOf(p.env, p.deps));
     setPairAt(p.ledger, p.scopeKey, skill, tool, {
       placementPath,
       mode: 'pinned',
@@ -670,8 +669,8 @@ const placePair = async (
     return { ...finalize('repaired'), placement: liveKind };
   }
 
-  const pinned = buildPinned(snap, sha, build, gate, p.deps.now());
-  const origin = buildOrigin(spec, sha, resolved.skillPath, opts, p.deps.now());
+  const pinned = buildPinned(snap, sha, build, gate, nowOf(p.env, p.deps));
+  const origin = buildOrigin(spec, sha, resolved.skillPath, opts, nowOf(p.env, p.deps));
   // Adopt a genuine dev symlink (points outside the store) so nothing is lost on rollback.
   const adoptedDev =
     live.class === 'dev' && live.symlinkTarget !== null
@@ -681,7 +680,7 @@ const placePair = async (
           repoRoot: null,
           sourceRelPath: null,
           remote: null,
-          recordedAt: p.deps.now(),
+          recordedAt: nowOf(p.env, p.deps),
         }
       : null;
   const plan: SwapPlan = {
@@ -749,7 +748,7 @@ const predictPair = async (
   const build: 'symlink' | 'copy' = opts.direct ? 'copy' : 'symlink';
   const rootsCtx = {
     cwd: p.scope === 'project' ? (p.scopeKey as string) : opts.cwd,
-    envVars: opts.envVars,
+    configuration: opts.configuration,
   };
   const installRoot = SKILL_ROOTS[tool](env, p.scope, rootsCtx)[0] as string;
   const placementPath = join(installRoot, skill);
@@ -804,7 +803,7 @@ const predictPair = async (
   if (!(otherScope === 'project' && otherKey === null)) {
     const otherCtx = {
       cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
-      envVars: opts.envVars,
+      configuration: opts.configuration,
     };
     const otherRoot = SKILL_ROOTS[tool](env, otherScope, otherCtx)[0] as string;
     const shadowed =
@@ -855,13 +854,14 @@ const predictPair = async (
 // project root + scope
 // ---------------------------------------------------------------------------------------------
 
-const gitToplevel = async (env: ScanEnv, cwd: string): Promise<string | null> => {
-  const r = await execGit(env, ['-C', cwd, 'rev-parse', '--show-toplevel'], {
-    timeoutMs: PLUMBING_TIMEOUT_MS,
-  });
-  if (r.code !== 0) return null;
-  const top = r.stdout.trim();
-  if (top.length === 0) return null;
+const gitToplevel = async (env: AcquisitionPorts, cwd: string): Promise<string | null> => {
+  let top: string | null;
+  try {
+    top = await env.git.findRepositoryRoot({ cwd });
+  } catch {
+    return null;
+  }
+  if (top === null) return null;
   try {
     return await env.realpath(top);
   } catch {
@@ -896,11 +896,11 @@ const buildReport = (
 // ---------------------------------------------------------------------------------------------
 
 export const runInstall = async (
-  env: ScanEnv,
+  env: AcquisitionPorts,
   opts: InstallOptions,
   deps: InstallDeps = { ...defaultInstallDeps },
 ): Promise<Result<InstallReport, SkillSmithError>> => {
-  const dataDir = resolveDataDir(env, opts.envVars);
+  const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
   const explicitTools = opts.tools !== undefined && opts.tools.length > 0;
@@ -1110,7 +1110,7 @@ export const runInstall = async (
         if (gate.blocked) {
           const rootsCtx = {
             cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
-            envVars: opts.envVars,
+            configuration: opts.configuration,
           };
           const installRoot = SKILL_ROOTS[tool](env, scope, rootsCtx)[0] as string;
           sourceResults.push({
@@ -1147,7 +1147,7 @@ export const runInstall = async (
             skill: r.skillName,
             storeRoot,
             provenance,
-            txId: deps.newTxId(),
+            txId: txIdOf(env, deps),
           });
           if (!s.ok) snapErr = s.error;
           else snap = s.value;
@@ -1236,10 +1236,7 @@ export const runInstall = async (
 // uninstall
 // ---------------------------------------------------------------------------------------------
 
-export const defaultUninstallDeps: UninstallDeps = {
-  now: () => new Date().toISOString(),
-  newTxId: () => randomBytes(4).toString('hex'),
-};
+export const defaultUninstallDeps: UninstallDeps = {};
 
 // A resolved (skill, tool, scope) candidate for removal. 'stale' = ledger pair with no live
 // placement anywhere; 'duplicate' = codex current+legacy both non-absent (unresolvable without
@@ -1306,7 +1303,7 @@ const uninstallBeforeFromRecord = (
 // each classified against every root that tool owns at that scope (codex/user owns two: current +
 // legacy). "Found" = a non-absent placement OR a ledger pair (spec's convergent definition).
 const collectUninstallMatches = async (
-  env: ScanEnv,
+  env: AcquisitionPorts,
   opts: UninstallOptions,
   ledger: LedgerFile,
   storeRoot: string,
@@ -1321,7 +1318,7 @@ const collectUninstallMatches = async (
     for (const tool of toolsToSearch) {
       const ctx = {
         cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
-        envVars: opts.envVars,
+        configuration: opts.configuration,
       };
       const roots = SKILL_ROOTS[tool](env, scope, ctx).filter((r): r is string => r !== undefined);
       const existing = getPairAt(ledger, scopeKey, name, tool);
@@ -1402,7 +1399,7 @@ interface PathTargetMatch {
 // dirname match — claude-code user/project, codex current user/project, codex legacy. No
 // ambiguity concept applies (one path, one owning root); outside every root is a hard refusal.
 const resolveUninstallPathTarget = (
-  env: ScanEnv,
+  env: AcquisitionPorts,
   opts: UninstallOptions,
   target: string,
   projectRoot: string | null,
@@ -1413,7 +1410,7 @@ const resolveUninstallPathTarget = (
   const parent = dirname(resolved);
   const name = basename(resolved);
 
-  const ctxUser = { cwd: opts.cwd, envVars: opts.envVars };
+  const ctxUser = { cwd: opts.cwd, configuration: opts.configuration };
   const claudeUserRoot = SKILL_ROOTS['claude-code'](env, 'user', ctxUser)[0];
   const codexUserRoots = SKILL_ROOTS.codex(env, 'user', ctxUser);
   const codexCurrent = codexUserRoots[0];
@@ -1448,7 +1445,7 @@ const resolveUninstallPathTarget = (
     });
   }
   if (projectRoot !== null) {
-    const ctxProj = { cwd: projectRoot, envVars: opts.envVars };
+    const ctxProj = { cwd: projectRoot, configuration: opts.configuration };
     const claudeProjRoot = SKILL_ROOTS['claude-code'](env, 'project', ctxProj)[0];
     const codexProjRoot = SKILL_ROOTS.codex(env, 'project', ctxProj)[0];
     if (claudeProjRoot !== undefined) {
@@ -1499,7 +1496,7 @@ const resolveUninstallPathTarget = (
 // a minimal PairRecord so the SAME engine path (backup rename, hash-guarded reclaim, terminal
 // pair deletion) applies uniformly — the engine never deletes a store entry either way.
 const processUninstallMatch = async (
-  env: ScanEnv,
+  env: AcquisitionPorts,
   ledger: LedgerFile,
   ledgerPath: string,
   opts: UninstallOptions,
@@ -1515,8 +1512,8 @@ const processUninstallMatch = async (
     ledgerPath,
     ledger,
     persist: () => writeLedger(env, ledgerPath, ledger),
-    now: deps.now,
-    newTxId: deps.newTxId,
+    now: () => nowOf(env, deps),
+    newTxId: () => txIdOf(env, deps),
     pauseAt: opts.testPauseAt,
     signal: opts.signal,
   };
@@ -1776,7 +1773,7 @@ const isUninstallPathTarget = (target: string): boolean =>
 // the whole (scope x tool) search set and applies U2 ambiguity; a path target pins exactly one
 // (scope, tool) by dirname match and skips the ambiguity question entirely.
 const processUninstallTarget = async (
-  env: ScanEnv,
+  env: AcquisitionPorts,
   ledger: LedgerFile,
   ledgerPath: string,
   storeRoot: string,
@@ -1870,11 +1867,11 @@ const buildUninstallReport = (
 };
 
 export const runUninstall = async (
-  env: ScanEnv,
+  env: AcquisitionPorts,
   opts: UninstallOptions,
   deps: UninstallDeps = { ...defaultUninstallDeps },
 ): Promise<Result<UninstallReport, SkillSmithError>> => {
-  const dataDir = resolveDataDir(env, opts.envVars);
+  const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
   const explicitTools = opts.tools !== undefined && opts.tools.length > 0;
@@ -1947,8 +1944,8 @@ export const runUninstall = async (
         ledgerPath,
         ledger,
         persist: () => writeLedger(env, ledgerPath, ledger),
-        now: deps.now,
-        newTxId: deps.newTxId,
+        now: () => nowOf(env, deps),
+        newTxId: () => txIdOf(env, deps),
         pauseAt: opts.testPauseAt,
         signal: opts.signal,
       });

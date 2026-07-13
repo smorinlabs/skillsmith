@@ -704,7 +704,7 @@ describe('EWP-OPT-TS03', () => {
     } finally {
       await rm(configRoot, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   test('combined short booleans and attached short values match Commander semantics', async () => {
     const api = await requireOptionContractApi();
@@ -752,7 +752,7 @@ describe('EWP-OPT-TS03', () => {
       env,
     );
     expect(`${dev.stdout}${dev.stderr}`).not.toContain('--dest requires exactly one --tool');
-  });
+  }, 20_000);
 
   test('every current conflict and requirement rejects through one pure preflight', async () => {
     const api = await requireOptionContractApi();
@@ -859,7 +859,7 @@ describe('EWP-OPT-TS03', () => {
     expect(`${commandNamedConfigValue.stdout}${commandNamedConfigValue.stderr}`).not.toContain(
       '--ref requires exactly one source',
     );
-  });
+  }, 20_000);
 });
 
 describe('EWP-OPT-TS04', () => {

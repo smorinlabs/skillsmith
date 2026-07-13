@@ -94,6 +94,7 @@ describe('EWP-P1-TS08', () => {
       'FileReadPort',
       'FileWritePort',
       'LockPort',
+      'PathAccessPort',
       'ProcessPort',
       'GitPort',
       'HttpPort',
@@ -554,6 +555,7 @@ describe('EWP-P1-TS08', () => {
       'void Date.now();',
       'void Math.random();',
       'void crypto.randomUUID();',
+      'void process.getuid?.();',
       "void fetch('https://example.invalid');",
       'void defaultRuntimePorts; void (null as unknown as ScanEnv); void (null as unknown as RuntimePorts);',
     ].join('\n');
@@ -580,13 +582,14 @@ describe('EWP-P1-TS08', () => {
     const rejectedLines = new Set(
       lintReports.flatMap((report) => report.messages.map((m) => m.line)),
     );
-    for (let line = 1; line <= 9; line += 1)
+    for (let line = 1; line <= 10; line += 1)
       expect(rejectedLines, `ESLint did not reject negative canary line ${line}`).toContain(line);
 
     const eslint = await readFile(join(ROOT, 'eslint.config.js'), 'utf8');
     for (const required of [
       'process.env',
       'process.cwd',
+      'process.getuid',
       'ScanEnv',
       'RuntimePorts',
       'Date.now',
@@ -603,6 +606,7 @@ describe('EWP-P1-TS08', () => {
       'packages/cli/src/runtime/environment.ts',
     ]);
     const fetchAllow = new Set(['packages/core/src/ports/http.ts']);
+    const uidAllow = new Set(['packages/core/src/ports/default.ts']);
     const realImplementationAllow = new Set(['packages/core/src/ports/default.ts']);
     const defaultAdapterImportAllow = new Set([
       'packages/core/src/env/default.ts',
@@ -620,6 +624,8 @@ describe('EWP-P1-TS08', () => {
       const source = await readFile(path, 'utf8');
       if (/\bprocess\.(?:env|cwd)\b/.test(source) && !processAllow.has(name))
         rawFindings.push(`${name}: raw process environment`);
+      if (/\bprocess\.getuid\b/.test(source) && !uidAllow.has(name))
+        rawFindings.push(`${name}: ambient uid probe`);
       if (/\bfetch\s*\(/.test(source) && !fetchAllow.has(name))
         rawFindings.push(`${name}: ambient fetch`);
       if (realEffectImport.test(source) && !realImplementationAllow.has(name))

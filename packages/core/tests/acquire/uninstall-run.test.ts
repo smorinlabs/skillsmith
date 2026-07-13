@@ -138,7 +138,13 @@ const led = async () => {
 const installUser = async (opts: Partial<InstallOptions> = {}) => {
   const r = await runInstall(
     f.env,
-    { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars, ...opts },
+    {
+      sources: [fsSource],
+      tools: ['claude-code'],
+      cwd: f.base,
+      configuration: f.configuration,
+      ...opts,
+    },
     installDeps(),
   );
   if (!r.ok) throw new Error(msg(r.error));
@@ -153,7 +159,12 @@ describe('runUninstall — managed store-symlink removal', () => {
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -176,7 +187,12 @@ describe('runUninstall — managed --direct copy removal', () => {
     await installUser({ direct: true });
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -195,7 +211,12 @@ describe('runUninstall — managed --direct copy removal', () => {
     );
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -217,7 +238,7 @@ describe('runUninstall — U2 ambiguity', () => {
         sources: [fsSource],
         tools: ['claude-code'],
         cwd: f.project,
-        envVars: f.envVars,
+        configuration: f.configuration,
         force: true,
       },
       installDeps(),
@@ -229,7 +250,12 @@ describe('runUninstall — U2 ambiguity', () => {
     await installBoth();
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.project, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.project,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -252,7 +278,7 @@ describe('runUninstall — U2 ambiguity', () => {
         tools: ['claude-code'],
         scope: 'user',
         cwd: f.project,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -273,7 +299,7 @@ describe('runUninstall — U2 ambiguity', () => {
         tools: ['claude-code'],
         allScopes: true,
         cwd: f.project,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -296,7 +322,7 @@ describe('runUninstall — U3 dev mode', () => {
         source: f.gammaSrc,
         noVerify: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       flipDeps(),
     );
@@ -308,7 +334,12 @@ describe('runUninstall — U3 dev mode', () => {
     await flipToDev();
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -332,7 +363,7 @@ describe('runUninstall — U3 dev mode', () => {
         tools: ['claude-code'],
         force: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -350,7 +381,7 @@ describe('runUninstall — unmanaged', () => {
   test('hand-copied dir refused without --force', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['copied'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      { targets: ['copied'], tools: ['claude-code'], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -365,7 +396,13 @@ describe('runUninstall — unmanaged', () => {
   test('--force removes it; backup KEPT (no store entry to match) + warning', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['copied'], tools: ['claude-code'], force: true, cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['copied'],
+        tools: ['claude-code'],
+        force: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -383,7 +420,7 @@ describe('runUninstall — absent / stale', () => {
   test('absent everywhere → noop, exit-0 class, notice', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['totally-unknown-skill'], cwd: f.base, envVars: f.envVars },
+      { targets: ['totally-unknown-skill'], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -402,7 +439,12 @@ describe('runUninstall — absent / stale', () => {
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -418,7 +460,7 @@ describe('runUninstall — legacy root', () => {
   test('unmanaged legacy dev symlink refused without --force', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['legacy-only'], tools: ['codex'], cwd: f.base, envVars: f.envVars },
+      { targets: ['legacy-only'], tools: ['codex'], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -433,7 +475,7 @@ describe('runUninstall — legacy root', () => {
         tools: ['codex'],
         force: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -453,7 +495,7 @@ describe('runUninstall — path target', () => {
     const path = join(claudeRoot(), 'factor-scan');
     const r = await runUninstall(
       f.env,
-      { targets: [path], cwd: f.base, envVars: f.envVars },
+      { targets: [path], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -468,7 +510,7 @@ describe('runUninstall — path target', () => {
     const path = join(f.base, 'nowhere', 'ghost');
     const r = await runUninstall(
       f.env,
-      { targets: [path], cwd: f.base, envVars: f.envVars },
+      { targets: [path], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -501,7 +543,12 @@ describe('runUninstall — uncommitted journal (Global Constraint #6)', () => {
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -543,7 +590,12 @@ describe('runUninstall — uncommitted journal (Global Constraint #6)', () => {
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -568,7 +620,7 @@ describe('runUninstall — dry run', () => {
         tools: ['claude-code'],
         dryRun: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );

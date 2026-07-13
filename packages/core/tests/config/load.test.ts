@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { loadConfig } from '../../src/config/load.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
+import { runtimePorts } from '../fixtures/runtime-ports.ts';
+
+const options = (raw: Record<string, string | undefined> = {}) => ({
+  configuration: resolveRuntimeConfiguration(raw),
+  cwd: '/project',
+});
 
 const makeEnv = (files: Record<string, string | undefined>): ScanEnv => ({
   homeDir: '/home/u',
@@ -31,7 +38,10 @@ const makeEnv = (files: Record<string, string | undefined>): ScanEnv => ({
 
 describe('loadConfig', () => {
   test('empty system → returns defaults', async () => {
-    const r = await loadConfig(makeEnv({}), { envVars: {}, readFile: async () => '' });
+    const r = await loadConfig(runtimePorts(makeEnv({})), {
+      ...options(),
+      readFile: async () => '',
+    });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.value).toEqual({});
@@ -45,7 +55,10 @@ describe('loadConfig', () => {
       '/home/u/.config/skillsmith/config.toml': 'tool = "claude-code"\n',
     };
     const env = makeEnv(files);
-    const r = await loadConfig(env, { envVars: {}, readFile: async (p) => files[p] ?? '' });
+    const r = await loadConfig(runtimePorts(env), {
+      ...options(),
+      readFile: async (p) => files[p] ?? '',
+    });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.value.tool).toBe('claude-code');
@@ -58,8 +71,8 @@ describe('loadConfig', () => {
       '/home/u/.config/skillsmith/config.toml': 'tool = "claude-code"\n',
     };
     const env = makeEnv(files);
-    const r = await loadConfig(env, {
-      envVars: { SKILLSMITH_TOOL: 'codex' },
+    const r = await loadConfig(runtimePorts(env), {
+      ...options({ SKILLSMITH_TOOL: 'codex' }),
       readFile: async (p) => files[p] ?? '',
     });
     expect(r.ok).toBe(true);
@@ -72,8 +85,8 @@ describe('loadConfig', () => {
   test('env wins over explicit-file too (per §2.2 precedence)', async () => {
     const files: Record<string, string> = { '/tmp/explicit.toml': 'tool = "claude-code"\n' };
     const env = makeEnv(files);
-    const r = await loadConfig(env, {
-      envVars: { SKILLSMITH_TOOL: 'codex' },
+    const r = await loadConfig(runtimePorts(env), {
+      ...options({ SKILLSMITH_TOOL: 'codex' }),
       explicitFile: '/tmp/explicit.toml',
       readFile: async (p) => files[p] ?? '',
     });
@@ -86,7 +99,10 @@ describe('loadConfig', () => {
       '/home/u/.config/skillsmith/config.toml': 'garbage = nope bar\n',
     };
     const env = makeEnv(files);
-    const r = await loadConfig(env, { envVars: {}, readFile: async (p) => files[p] ?? '' });
+    const r = await loadConfig(runtimePorts(env), {
+      ...options(),
+      readFile: async (p) => files[p] ?? '',
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('config-error');
   });

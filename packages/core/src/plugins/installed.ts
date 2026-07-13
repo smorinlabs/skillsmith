@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { ScanEnv } from '../env/types.ts';
 import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
+import type { InventoryReadPorts, PlatformPaths } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import type { PluginInstallation } from './types.ts';
 
@@ -17,11 +17,11 @@ const FileSchema = z.object({
   plugins: z.record(z.array(InstallationEntrySchema)),
 });
 
-export const getInstalledPluginsPath = (env: ScanEnv): string =>
+export const getInstalledPluginsPath = (env: Pick<PlatformPaths, 'homeDir'>): string =>
   join(env.homeDir, '.claude', 'plugins', 'installed_plugins.json');
 
 export const readInstalledPlugins = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
 ): Promise<Result<PluginInstallation[], SkillSmithError>> => {
   const path = getInstalledPluginsPath(env);
   if (!(await env.fileExists(path))) return ok([]);

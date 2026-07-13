@@ -1,7 +1,8 @@
 import { mkdir, writeFile, symlink, chmod, rm, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { defaultScanEnv } from '../../../src/env/default.ts';
-import type { ScanEnv } from '../../../src/env/types.ts';
+import { resolveRuntimeConfiguration } from '../../../src/config/runtime.ts';
+import { defaultRuntimePorts } from '../../../src/ports/default.ts';
+import type { ResolvedRuntimeConfiguration, RuntimePorts } from '../../../src/ports/types.ts';
 import { runGit } from '../git-env.ts';
 import { buildInTemporaryRoot } from '../temporary-root.ts';
 
@@ -14,8 +15,9 @@ export interface FixtureFleet {
   betaSrc: string; // <checkout>/plugins/fh/skills/beta
   gammaSrc: string; // <base>/loose/gamma — non-git skill source
   headSha: string; // full 40-hex HEAD SHA of the checkout
-  env: ScanEnv; // defaultScanEnv() with homeDir overridden to <home>
+  env: RuntimePorts; // default runtime ports with homeDir overridden to <home>
   envVars: Record<string, string | undefined>; // { SKILLSMITH_HOME: <data> }
+  configuration: ResolvedRuntimeConfiguration;
   makeCheckoutDirty(): Promise<void>; // appends a line to alpha's SKILL.md (unstaged change)
   project: string; // <base>/project — a REAL git repo (init + one commit); the project-scope root
   projectReal: string; // realpath of <base>/project (macOS /var → /private/var)
@@ -192,8 +194,8 @@ name: dup
   const projectReal = await realpath(project);
 
   // Create env with overridden homeDir
-  const defaultEnv = await defaultScanEnv();
-  const env: ScanEnv = {
+  const defaultEnv = await defaultRuntimePorts();
+  const env: RuntimePorts = {
     ...defaultEnv,
     homeDir: home,
   };
@@ -209,6 +211,7 @@ name: dup
     headSha,
     env,
     envVars: { SKILLSMITH_HOME: data },
+    configuration: resolveRuntimeConfiguration({ SKILLSMITH_HOME: data }),
     makeCheckoutDirty: async () => {
       const skillPath = join(alphaSrc, 'SKILL.md');
       const content = await Bun.file(skillPath).text();

@@ -17,8 +17,10 @@ that boundary while preserving the public 1.x `ScanEnv` facade for existing embe
 
 Core effects are represented by cohesive public ports in `packages/core/src/ports/types.ts`:
 
-- `PlatformPaths`, `FileReadPort`, `FileWritePort`, `LockPort`, and `ProcessPort` own the existing
-  platform, filesystem, lock, and process operations.
+- `PlatformPaths`, `FileReadPort`, `FileWritePort`, `LockPort`, `PathAccessPort`, and `ProcessPort`
+  own the existing platform, filesystem, lock, writable-directory diagnostic, and process
+  operations. `PathAccessPort` keeps `fs.access` and the POSIX real UID reported by
+  `process.getuid()` in the real adapter.
 - `GitPort` exposes named repository operations instead of argv. `HttpPort` exposes one bounded
   request operation. Domain code cannot reach Git or HTTP through an arbitrary subprocess or
   ambient `fetch`.

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { getPair, readLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { runDev, runPromote, runRollback } from '../../src/place/run.ts';
 import type { LedgerFile } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   type DevSourceFlipOptions,
   actionV2,
@@ -37,7 +37,7 @@ describe('P13-T6d residual review regressions', () => {
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
   const claudeRoot = (): string => join(f.home, '.claude', 'skills');
@@ -58,20 +58,23 @@ describe('P13-T6d residual review regressions', () => {
     const live = join(claudeRoot(), 'r1race');
     await symlink(src, live); // hand-made dev symlink to src (== --source), not in ledger -> S2 adopt
 
-    // Model a concurrent retarget that happens WHILE provenance is being collected: the first git
-    // exec (resolveProvenance's `rev-parse --show-toplevel`) fires the retarget of the LIVE symlink
-    // to `other`. With provenance done BEFORE the final re-read, the re-read observes the retarget
-    // and refuses; the pre-fix order (re-read BEFORE provenance) had already recorded `src`.
+    // Model a concurrent retarget that happens WHILE provenance is being collected: the first
+    // intent-level repository-root lookup fires the retarget of the LIVE symlink to `other`. With
+    // provenance done BEFORE the final re-read, the re-read observes the retarget and refuses; the
+    // pre-fix order (re-read BEFORE provenance) had already recorded `src`.
     let retargeted = false;
-    const racingEnv: ScanEnv = {
+    const racingEnv: RuntimePorts = {
       ...f.env,
-      exec: async (cmd, args, o) => {
-        if (!retargeted && cmd === 'git') {
-          retargeted = true;
-          await rm(live, { force: true });
-          await symlink(other, live);
-        }
-        return f.env.exec(cmd, args, o);
+      git: {
+        ...f.env.git,
+        findRepositoryRoot: async (request) => {
+          if (!retargeted) {
+            retargeted = true;
+            await rm(live, { force: true });
+            await symlink(other, live);
+          }
+          return f.env.git.findRepositoryRoot(request);
+        },
       },
     };
 

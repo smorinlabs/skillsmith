@@ -2,8 +2,8 @@ import { getAgent, listSupportedTools, registry } from '../agents/registry.ts';
 import type { InstallRecord, SupportedTool } from '../agents/types.ts';
 import type { Logger } from '../env/logger.ts';
 import { noopLogger } from '../env/logger.ts';
-import type { ScanEnv } from '../env/types.ts';
 import { type SkillSmithError, unknownToolError } from '../errors.ts';
+import type { DetectionPorts } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 
 export interface DetectOptions {
@@ -13,7 +13,7 @@ export interface DetectOptions {
 }
 
 export const detectTool = async (
-  env: ScanEnv,
+  env: DetectionPorts,
   tool: string,
   signal?: AbortSignal,
 ): Promise<Result<InstallRecord[], SkillSmithError>> => {
@@ -23,7 +23,7 @@ export const detectTool = async (
 };
 
 export const detectAll = async (
-  env: ScanEnv,
+  env: DetectionPorts,
   opts: DetectOptions = {},
 ): Promise<Result<Map<SupportedTool, InstallRecord[]>, SkillSmithError>> => {
   const logger = opts.logger ?? noopLogger;

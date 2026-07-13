@@ -11,7 +11,7 @@ export const crossScopeDuplicate: Check = {
       scopes: ctx.scopes,
       duplicatesOnly: true,
       cwd: ctx.cwd,
-      envVars: ctx.envVars,
+      configuration: ctx.configuration,
       logger: ctx.logger,
     });
     if (!r.ok) return [];

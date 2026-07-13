@@ -1,5 +1,5 @@
-import type { ScanEnv } from '../env/types.ts';
 import type { SkillSmithError } from '../errors.ts';
+import type { InventoryReadPorts } from '../ports/types.ts';
 import { type Result, ok } from '../result.ts';
 import { resolveEnablement } from './enablement.ts';
 import { readInstalledPlugins } from './installed.ts';
@@ -18,7 +18,7 @@ const appliesToCwd = (
 };
 
 export const discoverPlugins = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   opts: DiscoverPluginsOpts,
 ): Promise<Result<DiscoveredPlugin[], SkillSmithError>> => {
   const installed = await readInstalledPlugins(env);

@@ -9,7 +9,7 @@ export const legacyInstall: Check = {
     const findings: Finding[] = [];
     // Codex deprecated path: $CODEX_HOME/skills (default ~/.codex/skills)
     if (ctx.tools.includes('codex')) {
-      const base = ctx.envVars.CODEX_HOME ?? join(ctx.env.homeDir, '.codex');
+      const base = ctx.configuration.codexHome ?? join(ctx.env.homeDir, '.codex');
       const legacyDir = join(base, 'skills');
       if (await ctx.env.fileExists(legacyDir)) {
         const entries = await ctx.env.listDir(legacyDir);

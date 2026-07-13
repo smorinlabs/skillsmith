@@ -1,5 +1,5 @@
 import { dirname, join } from 'node:path';
-import type { PathKind, ScanEnv } from '../env/types.ts';
+import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -21,6 +21,7 @@ import type {
   SwapCtx,
   SwapOutcome,
   SwapPlan,
+  SwapPorts,
 } from './types.ts';
 
 const PHASE_INDEX: Record<JournalPhase, number> = {
@@ -61,7 +62,7 @@ const backupNameOf = (skill: string, txId: string): string => `.skillsmith-backu
 const kindOf = (probe: PathKind): 'symlink' | 'dir' => (probe === 'symlink' ? 'symlink' : 'dir');
 
 // Recursively fsync every regular file under a freshly copied staging tree (durability of P2).
-const fsyncTree = async (env: ScanEnv, dir: string): Promise<void> => {
+const fsyncTree = async (env: SwapPorts, dir: string): Promise<void> => {
   const names = await env.listDir(dir);
   for (const name of names) {
     const abs = join(dir, name);
@@ -151,7 +152,7 @@ const buildStaging = async (
  *  when its content matches a store entry recorded on the pair (reproducible); an edited copy is
  *  KEPT with a warning so an unmanaged edit is never silently destroyed. */
 const reclaimBackup = async (
-  env: ScanEnv,
+  env: SwapPorts,
   backupPath: string,
   acceptableHashes: readonly (string | null | undefined)[],
   label: string,

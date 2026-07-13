@@ -7,7 +7,7 @@ export const configParse: Check = {
   runsIn: ['doctor', 'check'],
   run: async (ctx) => {
     const r = await loadConfig(ctx.env, {
-      envVars: ctx.envVars,
+      configuration: ctx.configuration,
       cwd: ctx.cwd,
       ...(ctx.artifactPair ? { explicitFile: ctx.artifactPair.file } : {}),
       readFile: ctx.env.readText,

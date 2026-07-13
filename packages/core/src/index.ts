@@ -29,6 +29,7 @@ export {
 } from './config/paths.ts';
 export { saveConfig } from './config/save.ts';
 export { CONFIG_KEYS, SCOPES } from './config/types.ts';
+export { resolveRuntimeConfiguration } from './config/runtime.ts';
 export { builtInChecks } from './doctor/registry.ts';
 export { runChecks } from './doctor/run.ts';
 export { defaultScanEnv } from './env/default.ts';
@@ -42,6 +43,7 @@ export {
   unknownToolError,
 } from './errors.ts';
 export { isPortError, portError, PORT_ERROR_CODES } from './ports/errors.ts';
+export { defaultRuntimePorts } from './ports/default.ts';
 export type {
   Agent,
   AnyCurrentApplicationService,
@@ -126,6 +128,7 @@ export type {
   NormalizedSeverity,
   Origin,
   PathKind,
+  PathAccessPort,
   Placement,
   PlacementClass,
   Platform,

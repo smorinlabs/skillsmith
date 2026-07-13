@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { parseClaudeInit, verifyClaudeCode } from '../../../src/agents/claude-code/verify.ts';
 import { defaultScanEnv } from '../../../src/env/default.ts';
 import type { ScanEnv } from '../../../src/env/types.ts';
+import type { VerifyPorts } from '../../../src/verify/types.ts';
+import { runtimePorts } from '../../fixtures/runtime-ports.ts';
 
-const env = (): ScanEnv => ({
+const scanEnvFixture = (): ScanEnv => ({
   homeDir: '/h',
   path: [],
   platform: 'linux',
@@ -97,21 +99,25 @@ describe('parseClaudeInit', () => {
 });
 
 describe('verifyClaudeCode deep mode', () => {
-  const fakeInstalled = (overrides: Partial<ScanEnv> = {}): ScanEnv => ({
-    ...env(),
-    path: ['/fake'],
-    fileExists: async (p) => p === '/fake/claude',
-    realpath: async (p) => p,
-    runVersion: async () => '2.1.202 (Claude Code)',
-    ...overrides,
-  });
+  const fixtureSkillExists = async (path: string): Promise<boolean> =>
+    path === '/fake/claude' || path === '/work/dummytest/skills' || path.endsWith('/SKILL.md');
+
+  const fakeInstalled = (overrides: Partial<ScanEnv> = {}): VerifyPorts =>
+    runtimePorts({
+      ...scanEnvFixture(),
+      path: ['/fake'],
+      fileExists: async (p) => p === '/fake/claude',
+      realpath: async (p) => p,
+      runVersion: async () => '2.1.202 (Claude Code)',
+      ...overrides,
+    });
 
   test('static+deep: deep ran despite exit 1, 3 presence warnings, tool verdict fail', async () => {
     let capturedDeepArgs: readonly string[] | undefined;
     let capturedDeepEnv: Record<string, string> | undefined;
 
     const scanEnv = fakeInstalled({
-      fileExists: async (p) => p === '/fake/claude' || p.endsWith('/SKILL.md'),
+      fileExists: fixtureSkillExists,
       listDir: async (p) =>
         p === '/work/dummytest/skills'
           ? ['good-skill', 'bad-yaml', 'bad-noframe', 'bad-nodesc']
@@ -178,7 +184,7 @@ describe('verifyClaudeCode deep mode', () => {
 
   test('reported deep command string redacts temp path to <tmp>', async () => {
     const scanEnv = fakeInstalled({
-      fileExists: async (p) => p === '/fake/claude' || p.endsWith('/SKILL.md'),
+      fileExists: fixtureSkillExists,
       listDir: async () => ['good-skill'],
       readText: async () => '{"name":"dummytest"}',
       exec: async (_cmd, args) => {
@@ -244,7 +250,7 @@ describe('verifyClaudeCode deep mode', () => {
       '"skills":["dummytest:good-skill","dummytest:bad-yaml","dummytest:bad-noframe",' +
       '"dummytest:bad-nodesc"],"slash_commands":[]}';
     const scanEnv = fakeInstalled({
-      fileExists: async (p) => p === '/fake/claude' || p.endsWith('/SKILL.md'),
+      fileExists: fixtureSkillExists,
       listDir: async (p) =>
         p === '/work/dummytest/skills'
           ? ['good-skill', 'bad-yaml', 'bad-noframe', 'bad-nodesc']
@@ -269,7 +275,7 @@ describe('verifyClaudeCode deep mode', () => {
 
   test('presence gaps become fail under --strict', async () => {
     const scanEnv = fakeInstalled({
-      fileExists: async (p) => p === '/fake/claude' || p.endsWith('/SKILL.md'),
+      fileExists: fixtureSkillExists,
       listDir: async () => ['bad-yaml'],
       readText: async () => '{"name":"dummytest"}',
       exec: async (_cmd, args) => {
@@ -290,7 +296,7 @@ describe('verifyClaudeCode deep mode', () => {
 
   test('unreadable plugin.json -> pluginName null, every expected skill reported missing', async () => {
     const scanEnv = fakeInstalled({
-      fileExists: async (p) => p === '/fake/claude' || p.endsWith('/SKILL.md'),
+      fileExists: fixtureSkillExists,
       listDir: async () => ['good-skill'],
       readText: async () => {
         throw new Error('ENOENT');
@@ -321,7 +327,7 @@ describe('verifyClaudeCode deep mode', () => {
     const proj = await mkdtemp(join(tmpdir(), 'skillsmith-verify-deep-noskills-'));
     try {
       const real = await defaultScanEnv();
-      const scanEnv: ScanEnv = {
+      const scanEnv = runtimePorts({
         ...real,
         path: ['/fake'],
         fileExists: async (p) => p === '/fake/claude',
@@ -331,7 +337,7 @@ describe('verifyClaudeCode deep mode', () => {
           if (args[0] === 'plugin') return { code: 0, stdout: '', stderr: '', timedOut: false };
           return { code: 1, stdout: CANNED_DEEP_BLOCK, stderr: '', timedOut: false };
         },
-      };
+      });
 
       const r = await verifyClaudeCode(scanEnv, { path: proj, modes: ['deep'], strict: false });
       expect(r.ok).toBe(true);

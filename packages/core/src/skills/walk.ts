@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import type { SupportedTool } from '../agents/types.ts';
 import type { Scope } from '../config/types.ts';
-import type { ScanEnv } from '../env/types.ts';
+import type { FileReadPort } from '../ports/types.ts';
 import { parseSkillFrontmatter } from './frontmatter.ts';
 import type { EnabledState, Origin, SkillEntry } from './types.ts';
 
@@ -13,7 +13,10 @@ export interface WalkSkillDirOpts {
   enabled: EnabledState;
 }
 
-export const walkSkillDir = async (env: ScanEnv, opts: WalkSkillDirOpts): Promise<SkillEntry[]> => {
+export const walkSkillDir = async (
+  env: FileReadPort,
+  opts: WalkSkillDirOpts,
+): Promise<SkillEntry[]> => {
   if (!(await env.fileExists(opts.root))) return [];
 
   const entries = await env.listDir(opts.root);

@@ -1,40 +1,32 @@
 import { describe, expect, test } from 'bun:test';
-import type { ScanEnv } from '../../src/env/types.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
+import type { InventoryReadPorts } from '../../src/ports/types.ts';
 import { listSkills } from '../../src/scan/list-skills.ts';
+
+const configuration = resolveRuntimeConfiguration({});
 
 const fakeEnv = (
   existing: Record<string, readonly string[]>,
   files: Record<string, string> = {},
-): ScanEnv => ({
+): InventoryReadPorts => ({
   homeDir: '/h',
-  path: [],
+  executableSearchPath: [],
   platform: 'linux',
   xdg: { config: '/h/.config', data: '/h/.local/share', cache: '/h/.cache' },
   fileExists: async (p) => p in existing || p in files,
   realpath: async (p) => p,
   listDir: async (p) => existing[p] ?? [],
   readText: async (p) => files[p] ?? '',
-  runVersion: async () => 'unknown',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('listSkills', () => {
   test('empty system → []', async () => {
-    const r = await listSkills(fakeEnv({}), { cwd: '/proj', envVars: {} });
+    const r = await listSkills(fakeEnv({}), { cwd: '/proj', configuration });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value).toEqual([]);
   });
@@ -50,7 +42,7 @@ describe('listSkills', () => {
     const r = await listSkills(env, {
       tools: ['claude-code'],
       cwd: '/proj',
-      envVars: {},
+      configuration,
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -76,7 +68,7 @@ describe('listSkills', () => {
     const r = await listSkills(env, {
       tools: ['claude-code'],
       cwd: '/proj',
-      envVars: {},
+      configuration,
       duplicatesOnly: true,
     });
     expect(r.ok).toBe(true);
@@ -101,7 +93,7 @@ describe('listSkills', () => {
     const r = await listSkills(env, {
       tools: ['claude-code'],
       cwd: '/proj',
-      envVars: {},
+      configuration,
       globs: ['gr*'],
     });
     expect(r.ok).toBe(true);

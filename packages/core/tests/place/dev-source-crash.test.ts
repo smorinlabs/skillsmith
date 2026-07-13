@@ -63,7 +63,7 @@ describe('dev --source create — crash sweep (crashingEnv, P12 technique)', () 
           tools: ['claude-code'],
           source: resolve(warmupSource),
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         },
         passFlipDeps(),
       );
@@ -81,7 +81,7 @@ describe('dev --source create — crash sweep (crashingEnv, P12 technique)', () 
           tools: ['claude-code'],
           source: resolve(drySource),
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         },
         passFlipDeps(),
       );
@@ -106,7 +106,7 @@ describe('dev --source create — crash sweep (crashingEnv, P12 technique)', () 
           tools: ['claude-code' as const],
           source: resolvedSource,
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         };
 
         const r = await runDev(crash.env, opts, passFlipDeps());
@@ -196,7 +196,7 @@ describe('dev --source create — staging-name collision on retry', () => {
           tools: ['claude-code'],
           source: resolvedSource,
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         },
         deps,
       );
@@ -250,7 +250,7 @@ describe('dev --source create — true process death leaves a staging orphan (no
           tools: ['claude-code'],
           source: resolvedSource,
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         },
         passFlipDeps(),
       );

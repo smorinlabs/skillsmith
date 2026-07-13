@@ -10,8 +10,8 @@ import {
   sparseCheckoutSkill,
   sweepFetchOrphans,
 } from '../../src/acquire/fetch.ts';
-import { defaultScanEnv } from '../../src/env/default.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   type RemoteFixture,
   buildRemoteFixture,
@@ -20,7 +20,7 @@ import {
 import { runGit } from '../fixtures/git-env.ts';
 
 let fixture: RemoteFixture;
-let env: ScanEnv;
+let env: RuntimePorts;
 let scratch: string; // parent for per-test fetch dirs (git init creates each leaf)
 let counter = 0;
 
@@ -28,7 +28,7 @@ const freshFetchDir = (): string => join(scratch, `ft-${counter++}`);
 
 beforeAll(async () => {
   fixture = await buildRemoteFixture();
-  env = await defaultScanEnv();
+  env = await defaultRuntimePorts();
   scratch = await mkdtemp(join(tmpdir(), 'skillsmith-fetch-'));
 });
 
@@ -242,7 +242,7 @@ describe('sparseCheckoutSkill', () => {
 describe('resolveRefViaLsRemote', () => {
   test('a full 40-hex ref is returned verbatim with zero exec calls', async () => {
     let execCount = 0;
-    const countingEnv: ScanEnv = {
+    const countingEnv: RuntimePorts = {
       ...env,
       exec: async (cmd, args, opts) => {
         execCount++;

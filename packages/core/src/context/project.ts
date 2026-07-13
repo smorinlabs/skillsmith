@@ -1,14 +1,13 @@
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { execGit } from '../env/git.ts';
-import type { ScanEnv } from '../env/types.ts';
 import { type SkillSmithError, errorMessage, genericError } from '../errors.ts';
+import type { GitReadPorts } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import type { ProjectContext, ResolveProjectContextOptions } from './types.ts';
 
 const PROJECT_CONFIG_NAME = 'skillsmith.toml';
 
 const nearestConfig = async (
-  env: ScanEnv,
+  env: GitReadPorts,
   start: string,
   boundary?: string,
 ): Promise<string | null> => {
@@ -24,7 +23,7 @@ const nearestConfig = async (
 };
 
 const canonicalDirectory = async (
-  env: ScanEnv,
+  env: GitReadPorts,
   path: string,
 ): Promise<Result<string, SkillSmithError>> => {
   try {
@@ -40,13 +39,9 @@ const canonicalDirectory = async (
   }
 };
 
-const resolveGitRoot = async (env: ScanEnv, effectiveCwd: string): Promise<string | null> => {
-  const result = await execGit(env, ['-C', effectiveCwd, 'rev-parse', '--show-toplevel'], {
-    timeoutMs: 2_000,
-  });
-  if (result.code !== 0 || result.timedOut) return null;
-  const reportedRoot = result.stdout.trim();
-  if (reportedRoot.length === 0) return null;
+const resolveGitRoot = async (env: GitReadPorts, effectiveCwd: string): Promise<string | null> => {
+  const reportedRoot = await env.git.findRepositoryRoot({ cwd: effectiveCwd });
+  if (reportedRoot === null) return null;
   try {
     return await env.realpath(reportedRoot);
   } catch {
@@ -55,7 +50,7 @@ const resolveGitRoot = async (env: ScanEnv, effectiveCwd: string): Promise<strin
 };
 
 export const resolveProjectContext = async (
-  env: ScanEnv,
+  env: GitReadPorts,
   options: ResolveProjectContextOptions,
 ): Promise<Result<ProjectContext, SkillSmithError>> => {
   const invocationCwd = resolve(options.invocationCwd);

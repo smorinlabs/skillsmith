@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
 import { runChecks } from '../../../core/src/doctor/run.ts';
 import type { Check, CheckRunContext, CheckRunResult } from '../../../core/src/doctor/types.ts';
 import { noopLogger } from '../../../core/src/env/logger.ts';
 import type { ScanEnv } from '../../../core/src/env/types.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
+import { runtimePorts } from '../../../core/tests/fixtures/runtime-ports.ts';
 import * as checkModule from '../../src/commands/check.ts';
 import { renderDoctorJson } from '../../src/output/doctor-json.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
@@ -73,12 +75,12 @@ const env: ScanEnv = {
 };
 
 const context = (overrides: Partial<CheckRunContext> = {}): CheckRunContext => ({
-  env,
+  env: runtimePorts(env),
   mode: 'check',
   tools: ['codex'],
   scopes: ['project'],
   cwd: '/repo',
-  envVars: {},
+  configuration: resolveRuntimeConfiguration({}),
   offline: false,
   logger: noopLogger,
   ...overrides,

@@ -14,11 +14,12 @@ import { runInstall } from '../../src/acquire/run.ts';
 import { parseSource } from '../../src/acquire/source.ts';
 import type { CandidateSkill, InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
-import type { ExecResult, ScanEnv } from '../../src/env/types.ts';
+import type { ExecResult } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { getPairAt, readLedger, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import type { Journal } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import { ok } from '../../src/result.ts';
 import { VERIFIED_AGAINST, type VerifyReport } from '../../src/verify/types.ts';
 import {
@@ -102,7 +103,7 @@ let userOpts: InstallOptions;
 beforeEach(async () => {
   f = await buildFixtureFleet();
   fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
-  userOpts = { sources: [fsSource], cwd: f.base, envVars: f.envVars };
+  userOpts = { sources: [fsSource], cwd: f.base, configuration: f.configuration };
 });
 afterEach(async () => {
   await destroyFixtureFleet(f);
@@ -271,7 +272,7 @@ describe('runInstall — scope', () => {
   test('project scope inside a work tree; pair keyed by realpath; user tree untouched', async () => {
     const r = await runInstall(
       f.env,
-      { sources: [fsSource], cwd: f.project, envVars: f.envVars },
+      { sources: [fsSource], cwd: f.project, configuration: f.configuration },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -298,7 +299,7 @@ describe('runInstall — scope', () => {
 
     const p = await runInstall(
       f.env,
-      { sources: [fsSource], cwd: f.project, envVars: f.envVars },
+      { sources: [fsSource], cwd: f.project, configuration: f.configuration },
       makeDeps(),
     );
     if (!p.ok) throw new Error(msg(p.error));
@@ -308,7 +309,7 @@ describe('runInstall — scope', () => {
 
     const pf = await runInstall(
       f.env,
-      { sources: [fsSource], cwd: f.project, envVars: f.envVars, force: true },
+      { sources: [fsSource], cwd: f.project, configuration: f.configuration, force: true },
       makeDeps(),
     );
     if (!pf.ok) throw new Error(msg(pf.error));
@@ -366,7 +367,7 @@ describe('runInstall — resolution ambiguity', () => {
   test('bare multi repo (3 skills) without pick → refused with 3 //path candidates', async () => {
     const r = await runInstall(
       f.env,
-      { sources: [fixture.multiUrl], cwd: f.base, envVars: f.envVars },
+      { sources: [fixture.multiUrl], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -384,7 +385,7 @@ describe('runInstall — resolution ambiguity', () => {
       cands.find((c) => c.path === 'plugins/fh/skills/factor-scan') ?? null;
     const r = await runInstall(
       f.env,
-      { sources: [fixture.multiUrl], cwd: f.base, envVars: f.envVars },
+      { sources: [fixture.multiUrl], cwd: f.base, configuration: f.configuration },
       makeDeps({ pick }),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -397,7 +398,7 @@ describe('runInstall — batch semantics', () => {
   test('a parse failure refuses the whole invocation pre-I/O (resolution 3)', async () => {
     const r = await runInstall(
       f.env,
-      { sources: ['onepart', fsSource], cwd: f.base, envVars: f.envVars },
+      { sources: ['onepart', fsSource], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -415,7 +416,7 @@ describe('runInstall — batch semantics', () => {
     const bad = `file:///nonexistent/${Math.random().toString(36).slice(2)}.git//x`;
     const r = await runInstall(
       f.env,
-      { sources: [fsSource, bad], cwd: f.base, envVars: f.envVars },
+      { sources: [fsSource, bad], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -431,7 +432,7 @@ describe('runInstall — batch semantics', () => {
     const bad = `file:///nonexistent/${Math.random().toString(36).slice(2)}.git//x`;
     const r = await runInstall(
       f.env,
-      { sources: [bad, fsSource], cwd: f.base, envVars: f.envVars },
+      { sources: [bad, fsSource], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -444,7 +445,12 @@ describe('runInstall — batch semantics', () => {
     const bad = `file:///nonexistent/${Math.random().toString(36).slice(2)}.git//x`;
     const r = await runInstall(
       f.env,
-      { sources: [bad, fsSource], cwd: f.base, envVars: f.envVars, continueOnError: true },
+      {
+        sources: [bad, fsSource],
+        cwd: f.base,
+        configuration: f.configuration,
+        continueOnError: true,
+      },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -459,7 +465,7 @@ describe('runInstall — fetch elision', () => {
     // seed: install online at the tag SHA
     const seed = await runInstall(
       f.env,
-      { sources: [shaSource], cwd: f.base, envVars: f.envVars },
+      { sources: [shaSource], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!seed.ok) throw new Error(msg(seed.error));
@@ -469,7 +475,7 @@ describe('runInstall — fetch elision', () => {
     await f.env.removeTree(join(agentsRoot(), 'factor-scan'));
 
     // fetch-forbidding env: any git 'fetch' fails hard
-    const noFetch: ScanEnv = {
+    const noFetch: RuntimePorts = {
       ...f.env,
       exec: async (cmd, args, opts): Promise<ExecResult> => {
         if (args.includes('fetch')) {
@@ -481,7 +487,7 @@ describe('runInstall — fetch elision', () => {
 
     const r = await runInstall(
       noFetch,
-      { sources: [shaSource], cwd: f.base, envVars: f.envVars },
+      { sources: [shaSource], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -498,7 +504,7 @@ describe('runInstall — unresolved journal (Global Constraint #6)', () => {
   test('same-op install re-run RESUMES the interrupted install to completion (not refused)', async () => {
     const r1 = await runInstall(
       f.env,
-      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r1.ok) throw new Error(msg(r1.error));
@@ -526,7 +532,7 @@ describe('runInstall — unresolved journal (Global Constraint #6)', () => {
 
     const r2 = await runInstall(
       f.env,
-      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r2.ok) throw new Error(msg(r2.error));
@@ -542,7 +548,7 @@ describe('runInstall — unresolved journal (Global Constraint #6)', () => {
   test('a DIFFERENT interrupted op (promote) → refused, naming the JOURNAL op, not install', async () => {
     const r1 = await runInstall(
       f.env,
-      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r1.ok) throw new Error(msg(r1.error));
@@ -566,7 +572,7 @@ describe('runInstall — unresolved journal (Global Constraint #6)', () => {
 
     const r2 = await runInstall(
       f.env,
-      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      { sources: [fsSource], tools: ['claude-code'], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r2.ok) throw new Error(msg(r2.error));

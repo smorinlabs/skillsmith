@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   type CurrentApplicationContext,
   type ScanEnv,
+  resolveRuntimeConfiguration,
   runAgentsApplication,
 } from '@skillsmith/core';
+import { runtimePorts } from '../../../core/tests/fixtures/runtime-ports.ts';
 
 const env = (existing: string[]): ScanEnv => ({
   homeDir: '/Users/u',
@@ -33,14 +35,14 @@ const env = (existing: string[]): ScanEnv => ({
 });
 
 const context = (scanEnv: ScanEnv): CurrentApplicationContext => ({
-  env: scanEnv,
+  ports: runtimePorts(scanEnv),
+  configuration: resolveRuntimeConfiguration({}),
   interaction: {
     mode: 'noninteractive',
     choose: async () => ({ status: 'refused', reason: 'test' }),
     confirm: async () => ({ status: 'refused', reason: 'test' }),
   },
   invocationCwd: '/repo',
-  envVars: {},
   globalOptions: {},
 });
 

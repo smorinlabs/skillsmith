@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultScanEnv } from '../../src/env/default.ts';
+import { defaultRuntimePorts as defaultScanEnv } from '../../src/ports/default.ts';
 import { ok } from '../../src/result.ts';
 import { resolveTarget, runVerify, verifyPlugin } from '../../src/verify/run.ts';
 import type { ToolVerifier, VerifyOutcome, VerifyTool } from '../../src/verify/types.ts';
@@ -243,7 +243,7 @@ describe('verifyPlugin', () => {
     // actually installed on the machine running this test.
     const env = {
       ...base,
-      path: [] as string[],
+      executableSearchPath: [] as string[],
       fileExists: async (p: string) =>
         p.endsWith('/claude') || p.endsWith('/codex') ? false : base.fileExists(p),
     };

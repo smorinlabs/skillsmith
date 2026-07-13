@@ -2,25 +2,25 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultScanEnv } from '../../src/env/default.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { contentHashOf } from '../../src/place/store.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
 
-const expectHash = async (env: ScanEnv, dir: string): Promise<string> => {
+const expectHash = async (env: RuntimePorts, dir: string): Promise<string> => {
   const r = await contentHashOf(env, dir);
   if (!r.ok) throw new Error(`contentHashOf failed: ${msg(r.error)}`);
   return r.value;
 };
 
 describe('contentHashOf', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
 
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = await mkdtemp(join(tmpdir(), 'skillsmith-hash-'));
   });
 

@@ -64,6 +64,100 @@ export const hermeticTestSpawnRule = {
   },
 };
 
+const importedName = (specifier) => {
+  if (specifier.type !== 'ImportSpecifier') return null;
+  return specifier.imported.type === 'Identifier'
+    ? specifier.imported.name
+    : String(specifier.imported.value);
+};
+
+const memberName = (node) => {
+  if (node.type !== 'MemberExpression') return null;
+  if (!node.computed && node.property.type === 'Identifier') return node.property.name;
+  return node.computed && node.property.type === 'Literal' ? String(node.property.value) : null;
+};
+
+export const capabilityOwnershipRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    docs: {
+      description:
+        'Own process.env, process.cwd, process.getuid, ScanEnv, RuntimePorts, Date.now, Math.random, randomUUID, fetch, and ports/default',
+    },
+    messages: { forbidden: '{{capability}} belongs to the runtime capability adapter' },
+  },
+  create(context) {
+    const filename = context.filename.replaceAll('\\', '/');
+    const is = (suffix) => filename.endsWith(suffix);
+    const defaultAdapter = is('/packages/core/src/ports/default.ts');
+    const httpAdapter = is('/packages/core/src/ports/http.ts');
+    const rawRuntimeComposition =
+      is('/packages/cli/src/runtime/context.ts') || is('/packages/cli/src/runtime/environment.ts');
+    const scanEnvOwner =
+      is('/packages/core/src/env/types.ts') ||
+      is('/packages/core/src/env/default.ts') ||
+      is('/packages/core/src/ports/compatibility.ts');
+    const runtimePortsOwner =
+      defaultAdapter ||
+      is('/packages/core/src/ports/types.ts') ||
+      is('/packages/core/src/ports/compatibility.ts') ||
+      is('/packages/core/src/application/types.ts') ||
+      is('/packages/cli/src/runtime/context.ts');
+    const defaultAdapterConsumer =
+      is('/packages/core/src/env/default.ts') || is('/packages/core/src/index.ts');
+    const report = (node, capability) =>
+      context.report({ node, messageId: 'forbidden', data: { capability } });
+
+    return {
+      ImportDeclaration(node) {
+        const source = String(node.source.value);
+        const names = node.specifiers.map(importedName);
+        if (names.includes('ScanEnv') && !scanEnvOwner) report(node, 'ScanEnv');
+        if (names.includes('RuntimePorts') && !runtimePortsOwner) report(node, 'RuntimePorts');
+        if (/ports\/default(?:\.ts)?$/.test(source) && !defaultAdapterConsumer)
+          report(node, 'ports/default');
+        if (
+          (/^node:(?:fs|os)(?:\/|$)/.test(source) || source === 'proper-lockfile') &&
+          !defaultAdapter
+        )
+          report(node, source);
+      },
+      MemberExpression(node) {
+        const property = memberName(node);
+        if (node.object.type === 'Identifier' && node.object.name === 'process') {
+          if (
+            (property === 'env' || property === 'cwd') &&
+            !defaultAdapter &&
+            !rawRuntimeComposition
+          )
+            report(node, `process.${property}`);
+          if (property === 'getuid' && !defaultAdapter) report(node, 'process.getuid');
+        }
+        if (
+          node.object.type === 'Identifier' &&
+          ((node.object.name === 'Date' && property === 'now') ||
+            (node.object.name === 'Math' && property === 'random') ||
+            (node.object.name === 'crypto' && property === 'randomUUID')) &&
+          !defaultAdapter
+        )
+          report(node, `${node.object.name}.${property}`);
+        if (
+          node.object.type === 'Identifier' &&
+          node.object.name === 'Bun' &&
+          (property === 'spawn' || property === 'spawnSync') &&
+          !defaultAdapter
+        )
+          report(node, `Bun.${property}`);
+      },
+      CallExpression(node) {
+        if (node.callee.type === 'Identifier' && node.callee.name === 'fetch' && !httpAdapter)
+          report(node, 'fetch');
+      },
+    };
+  },
+};
+
 export default [
   {
     ignores: ['**/node_modules/**', 'dist/**', 'docs/**', 'research/**', 'scripts/**', '**/*.d.ts'],
@@ -99,6 +193,9 @@ export default [
     },
     plugins: {
       import: importPlugin,
+      skillsmith: {
+        rules: { 'capability-ownership': capabilityOwnershipRule },
+      },
     },
     settings: {
       'import/resolver': {
@@ -111,6 +208,7 @@ export default [
       },
     },
     rules: {
+      'skillsmith/capability-ownership': 'error',
       'import/no-restricted-paths': [
         'error',
         {

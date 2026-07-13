@@ -6,10 +6,10 @@ import { walkCommandDir } from '../commands/walk.ts';
 import type { Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
 import { noopLogger } from '../env/logger.ts';
-import type { ScanEnv } from '../env/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
+import type { InventoryReadPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import { type Result, ok } from '../result.ts';
 import type { Origin, PluginProvenanceScope } from '../skills/types.ts';
 
@@ -19,7 +19,7 @@ export interface ListCommandsOpts {
   globs?: readonly string[];
   enabledFilter?: 'enabled-only' | 'disabled-only' | 'unconfigured-only';
   cwd: string;
-  envVars: Record<string, string | undefined>;
+  configuration: ResolvedRuntimeConfiguration;
   logger?: Logger;
   signal?: AbortSignal;
 }
@@ -46,10 +46,10 @@ const dedupeByRealpath = (entries: CommandEntry[]): CommandEntry[] => {
 };
 
 const scanStandalone = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   tools: readonly SupportedTool[],
   scopes: readonly Scope[],
-  ctx: { cwd: string; envVars: Record<string, string | undefined> },
+  ctx: { cwd: string; configuration: ResolvedRuntimeConfiguration },
 ): Promise<CommandEntry[]> => {
   const out: CommandEntry[] = [];
   const origin: Origin = { kind: 'standalone' };
@@ -73,7 +73,7 @@ const scanStandalone = async (
 };
 
 const scanPluginBundled = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   tools: readonly SupportedTool[],
   discovered: readonly DiscoveredPlugin[],
 ): Promise<CommandEntry[]> => {
@@ -103,7 +103,7 @@ const scanPluginBundled = async (
 };
 
 export const listCommands = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   opts: ListCommandsOpts,
 ): Promise<Result<CommandEntry[], SkillSmithError>> => {
   const logger = opts.logger ?? noopLogger;
@@ -114,7 +114,7 @@ export const listCommands = async (
 
   const standalone = await scanStandalone(env, tools, scopes, {
     cwd: opts.cwd,
-    envVars: opts.envVars,
+    configuration: opts.configuration,
   });
   const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
   if (!discoveredR.ok) return discoveredR;

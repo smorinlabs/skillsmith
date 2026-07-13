@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { defaultScanEnv } from '../../src/env/default.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   emptyLedger,
@@ -15,6 +13,8 @@ import {
 } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import type { DevRecord, LedgerFile, PinnedRecord } from '../../src/place/types.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -67,10 +67,10 @@ const applyDemote = (l: LedgerFile, skill: string, tool: 'claude-code' | 'codex'
 };
 
 describe('readLedger', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-'));
   });
   afterEach(async () => {
@@ -114,10 +114,10 @@ describe('readLedger', () => {
 });
 
 describe('golden ledger', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-'));
   });
   afterEach(async () => {
@@ -141,10 +141,10 @@ describe('golden ledger', () => {
 });
 
 describe('writeLedger', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-'));
   });
   afterEach(async () => {
@@ -239,10 +239,10 @@ describe('losslessness (D5) at the record level', () => {
 });
 
 describe('zod enum locks', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-'));
   });
   afterEach(async () => {

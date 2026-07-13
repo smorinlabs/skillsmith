@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { getPair, readLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { runDev, runPromote, runRollback } from '../../src/place/run.ts';
 import type { LedgerFile } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import { type DevSourceFlipOptions, actionV2, passFlipDeps } from '../fixtures/place/dev-source.ts';
 import {
   type FixtureFleet,
@@ -32,7 +32,7 @@ describe('P13-T6f residual review regressions', () => {
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
   const claudeRoot = (): string => join(f.home, '.claude', 'skills');
@@ -62,7 +62,7 @@ describe('P13-T6f residual review regressions', () => {
     // resolve the live-derived path (`other`), it returns the canonical of `src` — as if the link had
     // just been retargeted onto the source. The pre-fix guard realpath'd the live-derived path and
     // trusted that fresh result, so samePath(other, src) matched and it recorded `src` for disk-`other`.
-    const racingEnv: ScanEnv = {
+    const racingEnv: RuntimePorts = {
       ...f.env,
       realpath: async (p) =>
         resolve(f.home, p) === other ? f.env.realpath(src) : f.env.realpath(p),

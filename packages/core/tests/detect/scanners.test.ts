@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { classifyInstallMethod, findOnPath, wellKnownBinDirs } from '../../src/detect/scanners.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
+import type { DetectionPorts } from '../../src/ports/types.ts';
 
 const fakeEnv = (opts: {
   home?: string;
   path?: string[];
   platform?: 'darwin' | 'linux' | 'win32';
   existing?: Set<string>;
-}): ScanEnv => ({
+}): DetectionPorts => ({
   homeDir: opts.home ?? '/home/user',
-  path: opts.path ?? [],
+  executableSearchPath: opts.path ?? [],
   platform: opts.platform ?? 'linux',
   xdg: { config: '/c', data: '/d', cache: '/k' },
   fileExists: async (p) => (opts.existing ?? new Set<string>()).has(p),
@@ -17,21 +17,11 @@ const fakeEnv = (opts: {
   listDir: async () => [],
   readText: async () => '',
   runVersion: async () => 'unknown',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('classifyInstallMethod', () => {

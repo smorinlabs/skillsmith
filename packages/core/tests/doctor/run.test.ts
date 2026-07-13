@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import { configParse } from '../../src/doctor/checks/config-parse.ts';
 import { runChecks } from '../../src/doctor/run.ts';
 import type { Check, CheckRunContext } from '../../src/doctor/types.ts';
 import { noopLogger } from '../../src/env/logger.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
+import { runtimePorts } from '../fixtures/runtime-ports.ts';
 
 const env: ScanEnv = {
   homeDir: '/h',
@@ -33,12 +35,12 @@ const env: ScanEnv = {
 };
 
 const ctx: CheckRunContext = {
-  env,
+  env: runtimePorts(env),
   mode: 'doctor',
   tools: [],
   scopes: [],
   cwd: '/p',
-  envVars: {},
+  configuration: resolveRuntimeConfiguration({}),
   offline: false,
   logger: noopLogger,
 };
@@ -178,7 +180,7 @@ describe('config-parse artifact selection', () => {
 
     const findings = await configParse.run({
       ...ctx,
-      env: selectedEnv,
+      env: runtimePorts(selectedEnv),
       artifactPair: { file, lockfile: '/p/custom/team.lock' },
     });
 

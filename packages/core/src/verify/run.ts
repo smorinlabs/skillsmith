@@ -1,9 +1,6 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { verifyClaudeCode } from '../agents/claude-code/verify.ts';
 import { verifyCodex } from '../agents/codex/verify.ts';
-import type { ScanEnv } from '../env/types.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -18,6 +15,7 @@ import {
   VERIFIED_AGAINST,
   VERIFY_TOOLS,
   type VerifyMode,
+  type VerifyPorts,
   type VerifyReport,
   type VerifyTool,
 } from './types.ts';
@@ -37,7 +35,7 @@ export interface ResolvedTarget {
 }
 
 export const resolveTarget = async (
-  env: ScanEnv,
+  env: VerifyPorts,
   path: string,
 ): Promise<Result<ResolvedTarget, SkillSmithError>> => {
   const isPlugin =
@@ -51,23 +49,23 @@ export const resolveTarget = async (
   if (isBareSkill) {
     const name = basename(path);
     try {
-      const tmp = await mkdtemp(join(tmpdir(), 'skillsmith-verify-'));
+      const tmp = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('verify-wrapper'));
       const manifest = JSON.stringify({
         name,
         description: 'skillsmith verify ephemeral wrapper',
         version: '0.0.0',
         author: { name: 'skillsmith' },
       });
-      await mkdir(join(tmp, '.claude-plugin'), { recursive: true });
-      await mkdir(join(tmp, '.codex-plugin'), { recursive: true });
-      await writeFile(join(tmp, '.claude-plugin', 'plugin.json'), manifest);
-      await writeFile(join(tmp, '.codex-plugin', 'plugin.json'), manifest);
-      await cp(path, join(tmp, 'skills', name), { recursive: true });
+      await env.makeDir(join(tmp, '.claude-plugin'));
+      await env.makeDir(join(tmp, '.codex-plugin'));
+      await env.writeTextFile(join(tmp, '.claude-plugin', 'plugin.json'), manifest);
+      await env.writeTextFile(join(tmp, '.codex-plugin', 'plugin.json'), manifest);
+      await env.copyTree(path, join(tmp, 'skills', name));
       return ok({
         path: tmp,
         kind: 'skill',
         cleanup: async () => {
-          await rm(tmp, { recursive: true, force: true });
+          await env.removeTree(tmp);
         },
       });
     } catch (e) {
@@ -83,7 +81,7 @@ export const resolveTarget = async (
 };
 
 export const runVerify = async (
-  env: ScanEnv,
+  env: VerifyPorts,
   opts: VerifyOptions,
   checkers: Record<VerifyTool, ToolVerifier>,
 ): Promise<Result<VerifyReport, SkillSmithError>> => {
@@ -132,6 +130,6 @@ const defaultCheckers: Record<VerifyTool, ToolVerifier> = {
 
 /** `runVerify` wired to the built-in per-agent checkers. */
 export const verifyPlugin = (
-  env: ScanEnv,
+  env: VerifyPorts,
   opts: VerifyOptions,
 ): Promise<Result<VerifyReport, SkillSmithError>> => runVerify(env, opts, defaultCheckers);

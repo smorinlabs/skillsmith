@@ -11,7 +11,6 @@ import {
   type PlacementClass,
   classifyPlacement,
 } from '../agents/placement-shared.ts';
-import type { ScanEnv } from '../env/types.ts';
 import { type SkillSmithError, flipRefusedError, placementNotFoundError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import { getPair } from './ledger.ts';
@@ -22,6 +21,7 @@ import {
   type FlipResult,
   type FlipTool,
   type LedgerFile,
+  type PlacementReadPorts,
 } from './types.ts';
 
 export interface PairPlan {
@@ -104,7 +104,7 @@ interface CodexRoots {
   legacy: string;
 }
 
-const codexRootsOf = (env: ScanEnv, ctx: SkillRootsCtx): CodexRoots => {
+const codexRootsOf = (env: PlacementReadPorts, ctx: SkillRootsCtx): CodexRoots => {
   const [current, legacy] = getCodexSkillRoots(env, 'user', ctx);
   return { current: current ?? '', legacy: legacy ?? '' };
 };
@@ -112,7 +112,11 @@ const codexRootsOf = (env: ScanEnv, ctx: SkillRootsCtx): CodexRoots => {
 /** The standard user-scope skills roots a tool owns (claude-code: one; codex: current + legacy).
  *  Used to decide whether a ledger-recorded placementPath lives at a CUSTOM location (a `--dest`
  *  create) — BF-1(d). */
-const standardRootsFor = (env: ScanEnv, ctx: SkillRootsCtx, tool: FlipTool): string[] => {
+const standardRootsFor = (
+  env: PlacementReadPorts,
+  ctx: SkillRootsCtx,
+  tool: FlipTool,
+): string[] => {
   if (tool === 'claude-code') {
     const [root] = claudeCodeSkillRootsUser(env, ctx);
     return [root ?? join(env.homeDir, '.claude', 'skills')];
@@ -133,7 +137,7 @@ interface ToolResolution {
 }
 
 const resolveClaudeCode = async (
-  env: ScanEnv,
+  env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
   skill: string,
@@ -145,7 +149,7 @@ const resolveClaudeCode = async (
 };
 
 const resolveCodex = async (
-  env: ScanEnv,
+  env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
   skill: string,
@@ -170,7 +174,7 @@ const resolveCodex = async (
 };
 
 const classifyForTool = (
-  env: ScanEnv,
+  env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
   skill: string,
@@ -180,7 +184,7 @@ const classifyForTool = (
     ? resolveClaudeCode(env, ctx, storeRoot, skill)
     : resolveCodex(env, ctx, storeRoot, skill);
 
-const searchedRootsDescription = (env: ScanEnv, ctx: SkillRootsCtx): string => {
+const searchedRootsDescription = (env: PlacementReadPorts, ctx: SkillRootsCtx): string => {
   const [claudeRoot] = claudeCodeSkillRootsUser(env, ctx);
   const codex = codexRootsOf(env, ctx);
   return [claudeRoot, codex.current, codex.legacy]
@@ -189,7 +193,7 @@ const searchedRootsDescription = (env: ScanEnv, ctx: SkillRootsCtx): string => {
 };
 
 const resolveNamedTarget = async (
-  env: ScanEnv,
+  env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
   target: string,
@@ -316,7 +320,7 @@ const resolveNamedTarget = async (
 };
 
 const resolvePathTarget = async (
-  env: ScanEnv,
+  env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
   target: string,
@@ -417,12 +421,12 @@ const resolvePathTarget = async (
  *  journal regardless of its filesystem class, so an interrupted swap stays reachable by
  *  --rollback / re-run / resume (F1). */
 export const planFlips = async (
-  env: ScanEnv,
+  env: PlacementReadPorts,
   opts: FlipOptions & { op: FlipOp },
   storeRoot: string,
   ledger: LedgerFile,
 ): Promise<Result<FlipPlanOutcome, SkillSmithError>> => {
-  const ctx: SkillRootsCtx = { cwd: opts.cwd, envVars: opts.envVars };
+  const ctx: SkillRootsCtx = { cwd: opts.cwd, configuration: opts.configuration };
   const requestedTools = opts.tools;
   const explicitTools = requestedTools !== undefined && requestedTools.length > 0;
   const selectedTools: FlipTool[] =

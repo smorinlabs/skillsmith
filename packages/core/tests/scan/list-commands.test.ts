@@ -1,37 +1,32 @@
 import { describe, expect, test } from 'bun:test';
-import type { ScanEnv } from '../../src/env/types.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
+import type { InventoryReadPorts } from '../../src/ports/types.ts';
 import { listCommands } from '../../src/scan/list-commands.ts';
 
-const env = (dirs: Record<string, readonly string[]>, files: Record<string, string>): ScanEnv => ({
+const configuration = resolveRuntimeConfiguration({});
+
+const env = (
+  dirs: Record<string, readonly string[]>,
+  files: Record<string, string>,
+): InventoryReadPorts => ({
   homeDir: '/h',
-  path: [],
+  executableSearchPath: [],
   platform: 'linux',
   xdg: { config: '/h/.config', data: '/h/.local/share', cache: '/h/.cache' },
   fileExists: async (p) => p in dirs || p in files,
   realpath: async (p) => p,
   listDir: async (p) => dirs[p] ?? [],
   readText: async (p) => files[p] ?? '',
-  runVersion: async () => 'unknown',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('listCommands', () => {
   test('empty → []', async () => {
-    const r = await listCommands(env({}, {}), { cwd: '/proj', envVars: {} });
+    const r = await listCommands(env({}, {}), { cwd: '/proj', configuration });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value).toEqual([]);
   });
@@ -44,7 +39,7 @@ describe('listCommands', () => {
     const r = await listCommands(e, {
       tools: ['claude-code'],
       cwd: '/proj',
-      envVars: {},
+      configuration,
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -70,7 +65,7 @@ describe('listCommands', () => {
         '/pkg/commands/do-thing.md': '---\ndescription: a plugin command\n---\n',
       },
     );
-    const r = await listCommands(e, { tools: ['claude-code'], cwd: '/proj', envVars: {} });
+    const r = await listCommands(e, { tools: ['claude-code'], cwd: '/proj', configuration });
     expect(r.ok).toBe(true);
     if (r.ok) {
       const cmd = r.value.find((x) => x.name === 'do-thing');

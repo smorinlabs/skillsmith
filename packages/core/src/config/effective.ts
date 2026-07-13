@@ -1,10 +1,8 @@
-import { readFile as fsReadFile } from 'node:fs/promises';
 import type { ProjectContext } from '../context/types.ts';
-import type { ScanEnv } from '../env/types.ts';
 import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
+import type { InventoryReadPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { CONFIG_ACCESSORS } from './accessors.ts';
-import { configFromEnv } from './env.ts';
 import { getConfigPath } from './paths.ts';
 import { parseConfig } from './schema.ts';
 import {
@@ -17,7 +15,7 @@ import {
 
 export interface ResolveEffectiveConfigOptions {
   readonly cli?: Config;
-  readonly envVars?: Record<string, string | undefined>;
+  readonly configuration: ResolvedRuntimeConfiguration;
   readonly readFile?: (path: string) => Promise<string>;
 }
 
@@ -37,7 +35,7 @@ interface LoadedLayer {
 }
 
 const loadLayer = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   path: string | null,
   readFile: (path: string) => Promise<string>,
 ): Promise<Result<LoadedLayer, SkillSmithError>> => {
@@ -61,9 +59,9 @@ const loadLayer = async (
 };
 
 export const resolveEffectiveConfig = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   context: ProjectContext,
-  options: ResolveEffectiveConfigOptions = {},
+  options: ResolveEffectiveConfigOptions,
 ): Promise<Result<EffectiveConfig, SkillSmithError>> => {
   const paths = {
     system: getConfigPath(env, 'system'),
@@ -71,7 +69,7 @@ export const resolveEffectiveConfig = async (
     ...(context.discoveredConfigPath ? { project: context.discoveredConfigPath } : {}),
     ...(context.explicitConfigPath ? { 'explicit-file': context.explicitConfigPath } : {}),
   };
-  const readFile = options.readFile ?? ((path: string) => fsReadFile(path, 'utf8'));
+  const readFile = options.readFile ?? env.readText;
   const [system, user, project, explicitFile] = await Promise.all([
     loadLayer(env, paths.system, readFile),
     loadLayer(env, paths.user, readFile),
@@ -89,7 +87,7 @@ export const resolveEffectiveConfig = async (
     user: user.value.config,
     project: project.value.config,
     'explicit-file': explicitFile.value.config,
-    env: configFromEnv(options.envVars ?? process.env),
+    env: options.configuration.configLayer,
     cli: options.cli ?? {},
   };
   const value: Config = {};

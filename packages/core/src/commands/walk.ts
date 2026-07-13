@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import type { SupportedTool } from '../agents/types.ts';
 import type { Scope } from '../config/types.ts';
-import type { ScanEnv } from '../env/types.ts';
+import type { FileReadPort } from '../ports/types.ts';
 import { parseSkillFrontmatter } from '../skills/frontmatter.ts';
 import type { EnabledState, Origin } from '../skills/types.ts';
 import type { CommandEntry } from './types.ts';
@@ -15,7 +15,7 @@ export interface WalkCommandDirOpts {
 }
 
 export const walkCommandDir = async (
-  env: ScanEnv,
+  env: FileReadPort,
   opts: WalkCommandDirOpts,
 ): Promise<CommandEntry[]> => {
   if (!(await env.fileExists(opts.root))) return [];

@@ -1,4 +1,4 @@
-import type { ScanEnv } from '../../env/types.ts';
+import type { InventoryReadPorts } from '../../ports/types.ts';
 import type { SkillRootsCtx } from '../claude-code/skill-roots.ts';
 import { type Placement, listPlacements } from '../placement-shared.ts';
 import { getSkillRoots } from './skill-roots.ts';
@@ -11,7 +11,7 @@ export interface CodexPlacementScan {
 }
 
 export const listCodexPlacements = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
 ): Promise<CodexPlacementScan> => {

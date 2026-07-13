@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { resolveProjectContext } from '../../../packages/core/src/context/project.ts';
-import { defaultScanEnv } from '../../../packages/core/src/env/default.ts';
+import { defaultRuntimePorts } from '../../../packages/core/src/ports/default.ts';
 import { hermeticGitEnv, runGit } from '../../../packages/core/tests/fixtures/git-env.ts';
 
 const unwrap = <T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T => {
@@ -113,7 +113,7 @@ describe('EWP-WF14', () => {
     await writeFile(explicitPath, explicitBefore);
 
     try {
-      const env = await defaultScanEnv();
+      const env = await defaultRuntimePorts();
       const context = unwrap(
         await resolveProjectContext(env, {
           invocationCwd: nested,

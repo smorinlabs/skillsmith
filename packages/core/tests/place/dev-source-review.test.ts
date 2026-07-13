@@ -3,12 +3,12 @@ import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { runUninstall } from '../../src/acquire/run.ts';
 import type { UninstallDeps } from '../../src/acquire/types.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { getPair, readLedger, setPair, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { runDev, runPromote, runRollback } from '../../src/place/run.ts';
 import type { LedgerFile, PairRecord } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   DEV_SOURCE_NOW,
   type DevSourceFlipOptions,
@@ -51,7 +51,7 @@ describe('P13-T6b review regressions', () => {
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
   const claudeRoot = (): string => join(f.home, '.claude', 'skills');
@@ -177,7 +177,7 @@ describe('P13-T6b review regressions', () => {
     // delete, orphaning the live symlink.
     const un = await runUninstall(
       f.env,
-      { targets: ['beta'], tools: ['claude-code'], cwd: f.home, envVars: f.envVars },
+      { targets: ['beta'], tools: ['claude-code'], cwd: f.home, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!un.ok) throw new Error(msg(un.error));
@@ -303,7 +303,12 @@ describe('P13-T6b review regressions', () => {
 
     const r = await runUninstall(
       f.env,
-      { targets: ['rawskill'], tools: ['claude-code'], cwd: f.home, envVars: f.envVars },
+      {
+        targets: ['rawskill'],
+        tools: ['claude-code'],
+        cwd: f.home,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -440,7 +445,7 @@ describe('P13-T6b review regressions', () => {
     const live = join(claudeRoot(), 'racy');
     // Env whose makeSymlink at the final path fails EEXIST, as if a concurrent create won the race
     // between the absent-check and the publish. The old rename-based publish would have clobbered.
-    const racingEnv: ScanEnv = {
+    const racingEnv: RuntimePorts = {
       ...f.env,
       makeSymlink: async (target, linkPath) => {
         if (linkPath === live) {
@@ -472,7 +477,7 @@ describe('P13-T6b review regressions', () => {
     // readLink returns the real target on the FIRST read (classification) but a different target on
     // the adopt re-read — modeling a concurrent retarget between classify and record.
     let reads = 0;
-    const flakyEnv: ScanEnv = {
+    const flakyEnv: RuntimePorts = {
       ...f.env,
       readLink: async (p) => {
         if (p === live) {

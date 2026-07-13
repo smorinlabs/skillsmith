@@ -36,6 +36,10 @@ export interface LockPort {
   withFileLock<T>(path: string, operation: () => Promise<T>): Promise<T>;
 }
 
+export interface PathAccessPort {
+  assertWritableDirectory(path: string): Promise<void>;
+}
+
 export interface ProcessPort {
   exec(command: string, args: readonly string[], options?: ExecOptions): Promise<ExecResult>;
   runVersion(
@@ -141,6 +145,7 @@ export interface RuntimePorts
     FileReadPort,
     FileWritePort,
     LockPort,
+    PathAccessPort,
     ProcessPort,
     ClockPort,
     IdPort {

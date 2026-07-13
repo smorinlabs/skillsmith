@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import { verifyClaudeCode } from '../../src/agents/claude-code/verify.ts';
 import { verifyCodex } from '../../src/agents/codex/verify.ts';
-import { defaultScanEnv } from '../../src/env/default.ts';
+import { defaultRuntimePorts as defaultScanEnv } from '../../src/ports/default.ts';
 import { verifyPlugin } from '../../src/verify/run.ts';
 import type { ModeResult } from '../../src/verify/types.ts';
 

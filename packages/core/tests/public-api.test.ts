@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as core from '@skillsmith/core';
 import pkg from '../package.json' with { type: 'json' };
+import { runtimePorts } from './fixtures/runtime-ports.ts';
 
 describe('@skillsmith/core public API', () => {
   test('exports the documented runtime symbols', () => {
@@ -60,7 +61,7 @@ describe('@skillsmith/core public API', () => {
 
   test('detectAll is callable with defaultScanEnv and returns a Result', async () => {
     const env = await core.defaultScanEnv();
-    const r = await core.detectAll(env);
+    const r = await core.detectAll(runtimePorts(env));
     expect(typeof r.ok).toBe('boolean');
   });
 });

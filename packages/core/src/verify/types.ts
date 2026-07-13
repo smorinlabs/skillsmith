@@ -1,5 +1,5 @@
-import type { ScanEnv } from '../env/types.ts';
 import type { SkillSmithError } from '../errors.ts';
+import type { DetectionPorts, FileWritePort, IdPort, ProcessPort } from '../ports/types.ts';
 import type { Result } from '../result.ts';
 
 export const VERIFY_TOOLS = ['claude-code', 'codex'] as const;
@@ -74,8 +74,13 @@ export interface ToolVerifyOptions {
   kind?: 'plugin' | 'skill';
 }
 
+export type VerifyPorts = DetectionPorts &
+  FileWritePort &
+  Pick<ProcessPort, 'exec'> &
+  Pick<IdPort, 'nextId'>;
+
 export type ToolVerifier = (
-  env: ScanEnv,
+  env: VerifyPorts,
   opts: ToolVerifyOptions,
 ) => Promise<Result<ToolVerdict, SkillSmithError>>;
 

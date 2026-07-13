@@ -16,7 +16,7 @@ import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import { runDev, runPromote, runRollback } from '../place/run.ts';
-import type { FlipReport, FlipTool, JournalPhase } from '../place/types.ts';
+import type { FlipReport, FlipTool } from '../place/types.ts';
 import type { Result } from '../result.ts';
 import { validateSelectionRequest } from '../selection/resolve.ts';
 import type { SelectionCapability, SelectionPolicy } from '../selection/types.ts';
@@ -188,8 +188,9 @@ const resolveContext = async (
   dependencies: LifecycleDependencies,
 ): Promise<Result<ProjectContext, SkillSmithError>> => {
   if (context.projectContext !== undefined) return { ok: true, value: context.projectContext };
-  const explicitConfigPath = context.globalOptions.config ?? context.envVars.SKILLSMITH_CONFIG;
-  return dependencies.resolveContext(context.env, {
+  const explicitConfigPath =
+    context.globalOptions.config ?? context.configuration.explicitConfigPath;
+  return dependencies.resolveContext(context.ports, {
     invocationCwd: context.invocationCwd,
     ...(context.globalOptions.cd === undefined ? {} : { cd: context.globalOptions.cd }),
     ...(explicitConfigPath === undefined ? {} : { explicitConfigPath }),
@@ -245,20 +246,6 @@ const validateMode = (
     return { ok: false, message: '--yes cannot be combined with --dry-run' };
   }
   return { ok: true };
-};
-
-const journalPhase = (
-  envVars: Readonly<Record<string, string | undefined>>,
-): JournalPhase | undefined => {
-  if (envVars.SKILLSMITH_E2E !== '1') return undefined;
-  const phase = envVars.SKILLSMITH_TEST_PAUSE_AT;
-  return phase === 'prepared' ||
-    phase === 'staged' ||
-    phase === 'backed-up' ||
-    phase === 'live' ||
-    phase === 'committed'
-    ? phase
-    : undefined;
 };
 
 const select = (
@@ -384,9 +371,9 @@ export const createLifecycleApplicationServices = (
     if (!scope.ok) return refusal('install', scope.exitClass, 'scope', scope.message);
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('install', project.error, context.signal);
-    const pause = journalPhase(context.envVars);
+    const pause = context.configuration.journalPause;
     const result = await dependencies.install(
-      context.env,
+      context.ports,
       {
         sources,
         ...(selection.value.tools.length === 0
@@ -405,7 +392,7 @@ export const createLifecycleApplicationServices = (
         continueOnError: bool(options, 'continueOnError'),
         dryRun: bool(options, 'dryRun'),
         cwd: project.value.projectRoot ?? project.value.effectiveCwd,
-        envVars: { ...context.envVars },
+        configuration: context.configuration,
         ...(pause === undefined ? {} : { testPauseAt: pause }),
         ...(context.signal === undefined ? {} : { signal: context.signal }),
       },
@@ -450,9 +437,9 @@ export const createLifecycleApplicationServices = (
     }
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('uninstall', project.error, context.signal);
-    const pause = journalPhase(context.envVars);
+    const pause = context.configuration.journalPause;
     const result = await dependencies.uninstall(
-      context.env,
+      context.ports,
       {
         targets,
         ...(selection.value.tools.length === 0
@@ -463,7 +450,7 @@ export const createLifecycleApplicationServices = (
         force: bool(options, 'force'),
         dryRun: bool(options, 'dryRun'),
         cwd: project.value.projectRoot ?? project.value.effectiveCwd,
-        envVars: { ...context.envVars },
+        configuration: context.configuration,
         ...(pause === undefined ? {} : { testPauseAt: pause }),
         ...(context.signal === undefined ? {} : { signal: context.signal }),
       },
@@ -531,7 +518,7 @@ export const createLifecycleApplicationServices = (
       );
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('dev', project.error, context.signal);
-    const pause = journalPhase(context.envVars);
+    const pause = context.configuration.journalPause;
     const flipOptions = {
       targets,
       all: bool(options, 'all'),
@@ -544,13 +531,13 @@ export const createLifecycleApplicationServices = (
       noVerify: !bool(options, 'verify', true),
       dryRun: bool(options, 'dryRun'),
       cwd: project.value.projectRoot ?? project.value.effectiveCwd,
-      envVars: { ...context.envVars },
+      configuration: context.configuration,
       ...(pause === undefined ? {} : { testPauseAt: pause }),
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
     const result = rollback
-      ? await dependencies.rollback(context.env, { ...flipOptions, op: 'dev' })
-      : await dependencies.dev(context.env, flipOptions);
+      ? await dependencies.rollback(context.ports, { ...flipOptions, op: 'dev' })
+      : await dependencies.dev(context.ports, flipOptions);
     if (!result.ok) return domainFailure('dev', result.error, context.signal);
     const errors = result.value.results.flatMap((item) => (item.error ? [item.error] : []));
     return reportOutcome('dev', result.value, errors, flipMutation(result.value), context.signal);
@@ -586,7 +573,7 @@ export const createLifecycleApplicationServices = (
     }
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('promote', project.error, context.signal);
-    const pause = journalPhase(context.envVars);
+    const pause = context.configuration.journalPause;
     const flipOptions = {
       targets,
       all: bool(options, 'all'),
@@ -598,13 +585,13 @@ export const createLifecycleApplicationServices = (
       allowDirty: bool(options, 'allowDirty'),
       dryRun: bool(options, 'dryRun'),
       cwd: project.value.projectRoot ?? project.value.effectiveCwd,
-      envVars: { ...context.envVars },
+      configuration: context.configuration,
       ...(pause === undefined ? {} : { testPauseAt: pause }),
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
     const result = rollback
-      ? await dependencies.rollback(context.env, { ...flipOptions, op: 'promote' })
-      : await dependencies.promote(context.env, flipOptions);
+      ? await dependencies.rollback(context.ports, { ...flipOptions, op: 'promote' })
+      : await dependencies.promote(context.ports, flipOptions);
     if (!result.ok) return domainFailure('promote', result.error, context.signal);
     const errors = result.value.results.flatMap((item) => (item.error ? [item.error] : []));
     return reportOutcome(

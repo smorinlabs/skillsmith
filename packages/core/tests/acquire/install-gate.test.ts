@@ -12,7 +12,6 @@ import { join } from 'node:path';
 import { runInstall } from '../../src/acquire/run.ts';
 import type { InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { readLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
@@ -53,7 +52,7 @@ const detectBoth: InstallDeps['detect'] = async (_env, tool) =>
 
 const cannedVerify =
   (verdict: SummaryVerdict, calls: VerifyCall[]): InstallDeps['verify'] =>
-  async (_env: ScanEnv, opts: VerifyOptions) => {
+  async (_env, opts: VerifyOptions) => {
     const tools = opts.tools ?? [];
     calls.push({ path: opts.path, tools, deep: opts.deep ?? false });
     const tool = (tools[0] ?? 'claude-code') as FlipTool;
@@ -117,7 +116,7 @@ describe('runInstall — verify gate matrix', () => {
     baseOpts = {
       sources: [source],
       cwd: f.base, // outside any work tree → user scope
-      envVars: f.envVars,
+      configuration: f.configuration,
     };
   });
   afterEach(async () => {
@@ -194,7 +193,7 @@ describe('runInstall — verify gate matrix', () => {
       const c2: VerifyCall[] = [];
       const r2 = await runInstall(
         f2.env,
-        { sources: [source], cwd: f2.base, envVars: f2.envVars, strict: true },
+        { sources: [source], cwd: f2.base, configuration: f2.configuration, strict: true },
         makeDeps(cannedVerify('inconclusive', c2)),
       );
       if (!r2.ok) throw new Error(msg(r2.error));

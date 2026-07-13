@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto';
 import { basename, dirname, join, relative } from 'node:path';
-import { execGit } from '../env/git.ts';
-import type { ScanEnv } from '../env/types.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -9,6 +7,12 @@ import {
   genericError,
   permissionDeniedError,
 } from '../errors.ts';
+import type {
+  FileReadPort,
+  FileWritePort,
+  GitPort,
+  GitWorktreeInspection,
+} from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import type { Provenance } from './types.ts';
 
@@ -47,8 +51,18 @@ interface ManifestEntry {
   record: string;
 }
 
+type ContentHashPorts = Pick<
+  FileReadPort,
+  'listDir' | 'pathKind' | 'readLink' | 'readBytes' | 'isExecutable'
+>;
+type ProvenancePorts = Pick<FileReadPort, 'realpath'> & { readonly git: GitPort };
+type StoreWritePorts = ContentHashPorts &
+  Pick<FileWritePort, 'copyTree' | 'fsyncFile' | 'makeDir' | 'rename' | 'fsyncDir' | 'removeTree'>;
+type SweepStagingPorts = Pick<FileReadPort, 'pathKind' | 'listDir'> &
+  Pick<FileWritePort, 'removeTree'>;
+
 const collectEntries = async (
-  env: ScanEnv,
+  env: ContentHashPorts,
   absDir: string,
   relBase: string,
   out: ManifestEntry[],
@@ -65,8 +79,8 @@ const collectEntries = async (
       await collectEntries(env, abs, rel, out);
     } else if (kind === 'file') {
       const bytes = await env.readBytes(abs);
-      const exec = (await env.isExecutable(abs)) ? '1' : '0';
-      out.push({ relpath: rel, record: `${rel}\0F${exec}\0${sha256Hex(bytes)}` });
+      const executableFlag = (await env.isExecutable(abs)) ? '1' : '0';
+      out.push({ relpath: rel, record: `${rel}\0F${executableFlag}\0${sha256Hex(bytes)}` });
     }
     // 'absent' (a racing removal) contributes no record.
   }
@@ -76,7 +90,7 @@ const collectEntries = async (
  *  per-file records (relpath, owner-exec bit, sha256 of bytes) and symlink records (relpath,
  *  literal link target). Symlinks are NOT followed. Returns `sha256:<64hex>`. */
 export const contentHashOf = async (
-  env: ScanEnv,
+  env: ContentHashPorts,
   dir: string,
 ): Promise<Result<string, SkillSmithError>> => {
   try {
@@ -138,11 +152,16 @@ const parseRemote = (url: string): { owner: string; repo: string } | null => {
 /** Resolve provenance of a dev source directory via git (cwd-independent `-C`). Non-git trees,
  *  or git trees with an unparseable/absent origin remote, fall back to the `local` namespace. */
 export const resolveProvenance = async (
-  env: ScanEnv,
+  ports: ProvenancePorts,
   sourceDir: string,
 ): Promise<Result<Provenance, SkillSmithError>> => {
-  const top = await execGit(env, ['-C', sourceDir, 'rev-parse', '--show-toplevel']);
-  if (top.code !== 0) {
+  let repoRoot: string | null;
+  try {
+    repoRoot = await ports.git.findRepositoryRoot({ cwd: sourceDir });
+  } catch {
+    repoRoot = null;
+  }
+  if (repoRoot === null) {
     return ok({
       kind: 'non-git',
       repoRoot: null,
@@ -154,21 +173,20 @@ export const resolveProvenance = async (
       dirtySummary: null,
     });
   }
-  const repoRoot = top.stdout.trim();
-
-  const status = await execGit(env, ['-C', repoRoot, 'status', '--porcelain']);
-  const statusOut = status.stdout.trim();
+  let inspection: GitWorktreeInspection;
+  try {
+    inspection = await ports.git.inspectWorktree({ repositoryRoot: repoRoot });
+  } catch (e) {
+    return err(genericError(`could not inspect git worktree ${repoRoot}: ${errorMessage(e)}`));
+  }
+  const statusOut = inspection.dirtySummary?.trim() ?? '';
   const dirty = statusOut.length > 0;
   const dirtySummary = dirty ? statusOut.split('\n').slice(0, 10).join('\n') : null;
-
-  const head = await execGit(env, ['-C', repoRoot, 'rev-parse', 'HEAD']);
-  const gitSha = head.stdout.trim();
-  if (head.code !== 0 || !SHA_HEX_40.test(gitSha)) {
+  const gitSha = inspection.headSha;
+  if (!SHA_HEX_40.test(gitSha))
     return err(genericError(`could not resolve git HEAD for ${repoRoot}`));
-  }
 
-  const remoteRes = await execGit(env, ['-C', repoRoot, 'remote', 'get-url', 'origin']);
-  const parsed = remoteRes.code === 0 ? parseRemote(remoteRes.stdout) : null;
+  const parsed = inspection.remoteUrl === null ? null : parseRemote(inspection.remoteUrl);
   // remote stays unclamped (full provenance); only the store namespace is clamped to 2 segments.
   const clamped = parsed ? clampStoreNs(`${parsed.owner}/${parsed.repo}`) : null;
 
@@ -176,7 +194,7 @@ export const resolveProvenance = async (
   // across symlinked prefixes (e.g. macOS /var -> /private/var temp dirs).
   let realSource = sourceDir;
   try {
-    realSource = await env.realpath(sourceDir);
+    realSource = await ports.realpath(sourceDir);
   } catch {
     realSource = sourceDir;
   }
@@ -209,7 +227,7 @@ const revFor = (provenance: Provenance, hash12: string): Result<string, SkillSmi
   return ok(`content-${hash12}`);
 };
 
-const fsyncTreeFiles = async (env: ScanEnv, dir: string): Promise<void> => {
+const fsyncTreeFiles = async (env: StoreWritePorts, dir: string): Promise<void> => {
   const names = await env.listDir(dir);
   for (const name of names) {
     const abs = join(dir, name);
@@ -223,7 +241,7 @@ const fsyncTreeFiles = async (env: ScanEnv, dir: string): Promise<void> => {
  *  (spec §6.3). Existing entries are reused when their content matches; a content mismatch is a
  *  hard integrity violation. Store entries are immutable and never deleted. */
 export const snapshotToStore = async (
-  env: ScanEnv,
+  env: StoreWritePorts,
   opts: {
     sourceDir: string;
     skill: string;
@@ -294,7 +312,7 @@ export const snapshotToStore = async (
 
 /** Remove every `store/.staging/<txId>` directory (crash orphans). Best-effort; swallows errors.
  *  Callers run this at the start of a flip batch while holding the ledger lock. */
-export const sweepStaging = async (env: ScanEnv, storeRoot: string): Promise<void> => {
+export const sweepStaging = async (env: SweepStagingPorts, storeRoot: string): Promise<void> => {
   try {
     const stagingRoot = join(storeRoot, '.staging');
     if ((await env.pathKind(stagingRoot)) === 'absent') return;

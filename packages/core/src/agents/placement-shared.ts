@@ -1,5 +1,5 @@
 import { dirname, isAbsolute, join, sep } from 'node:path';
-import type { ScanEnv } from '../env/types.ts';
+import type { FileReadPort } from '../ports/types.ts';
 
 export type PlacementClass = 'dev' | 'pinned' | 'store-linked' | 'absent';
 
@@ -19,7 +19,7 @@ const isInsideStoreRoot = (resolvedTarget: string, storeRoot: string): boolean =
 /** Classification per spec §2: symlink outside the store → 'dev'; real dir → 'pinned';
  *  symlink inside storeRoot → 'store-linked'; nothing → 'absent'. */
 export const classifyPlacement = async (
-  env: ScanEnv,
+  env: FileReadPort,
   root: string,
   skill: string,
   storeRoot: string,
@@ -49,10 +49,11 @@ export const classifyPlacement = async (
 /** Every non-dot entry of the root, classified. A missing root yields []. Dot-prefixed entries
  *  (`.system`, `.skillsmith-staging-*`, `.skillsmith-backup-*`) are never placements. */
 export const listPlacements = async (
-  env: ScanEnv,
+  env: FileReadPort,
   root: string,
   storeRoot: string,
 ): Promise<Placement[]> => {
+  if (!(await env.fileExists(root))) return [];
   const entries = await env.listDir(root);
   const names = entries.filter((name) => !name.startsWith('.'));
   return Promise.all(names.map((name) => classifyPlacement(env, root, name, storeRoot)));

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { resolveRuntimeConfiguration } from '../../../src/config/runtime.ts';
 import { legacyInstall } from '../../../src/doctor/checks/legacy-install.ts';
 import { multiInstall } from '../../../src/doctor/checks/multi-install.ts';
 import { networkReach } from '../../../src/doctor/checks/network-reach.ts';
@@ -7,6 +8,7 @@ import { builtInChecks } from '../../../src/doctor/registry.ts';
 import type { CheckRunContext } from '../../../src/doctor/types.ts';
 import { noopLogger } from '../../../src/env/logger.ts';
 import type { ScanEnv } from '../../../src/env/types.ts';
+import { runtimePorts } from '../../fixtures/runtime-ports.ts';
 
 const baseEnv: ScanEnv = {
   homeDir: '/h',
@@ -36,12 +38,12 @@ const baseEnv: ScanEnv = {
 };
 
 const baseCtx: CheckRunContext = {
-  env: baseEnv,
+  env: runtimePorts(baseEnv),
   mode: 'doctor',
   tools: [],
   scopes: [],
   cwd: '/p',
-  envVars: {},
+  configuration: resolveRuntimeConfiguration({}),
   offline: true,
   logger: noopLogger,
 };
@@ -67,7 +69,10 @@ describe('xdgPaths', () => {
     expect(await xdgPaths.run(baseCtx)).toEqual([]);
   });
   test('empty config → error finding', async () => {
-    const ctx = { ...baseCtx, env: { ...baseEnv, xdg: { config: '', data: '/d', cache: '/c' } } };
+    const ctx = {
+      ...baseCtx,
+      env: runtimePorts({ ...baseEnv, xdg: { config: '', data: '/d', cache: '/c' } }),
+    };
     const findings = await xdgPaths.run(ctx);
     expect(findings).toHaveLength(1);
     expect(findings[0]?.severity).toBe('error');
@@ -92,7 +97,7 @@ describe('legacyInstall', () => {
       fileExists: async (p) => p === '/h/.codex/skills',
       listDir: async (p) => (p === '/h/.codex/skills' ? ['foo'] : []),
     };
-    const ctx: CheckRunContext = { ...baseCtx, env, tools: ['codex'] };
+    const ctx: CheckRunContext = { ...baseCtx, env: runtimePorts(env), tools: ['codex'] };
     const findings = await legacyInstall.run(ctx);
     expect(findings).toHaveLength(1);
     expect(findings[0]?.tool).toBe('codex');

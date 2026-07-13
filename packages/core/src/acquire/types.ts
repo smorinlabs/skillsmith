@@ -1,8 +1,27 @@
 import type { InstallRecord } from '../agents/types.ts';
-import type { ScanEnv } from '../env/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { FlipTool, JournalPhase } from '../place/types.ts';
+import type {
+  ClockPort,
+  DetectionPorts,
+  FileReadPort,
+  FileWritePort,
+  GitPort,
+  IdPort,
+  LockPort,
+  PlatformPaths,
+  ProcessPort,
+  ResolvedRuntimeConfiguration,
+} from '../ports/types.ts';
 import type { Result } from '../result.ts';
+
+export type AcquisitionPorts = PlatformPaths &
+  FileReadPort &
+  FileWritePort &
+  LockPort &
+  ProcessPort &
+  ClockPort &
+  IdPort & { readonly git: GitPort };
 
 export interface SourceSpec {
   raw: string; // the literal user argument, ref suffix included
@@ -50,7 +69,7 @@ export interface InstallOptions {
   continueOnError?: boolean;
   dryRun?: boolean;
   cwd: string;
-  envVars: Record<string, string | undefined>;
+  configuration: ResolvedRuntimeConfiguration;
   testPauseAt?: JournalPhase; // wired only by the CLI under SKILLSMITH_E2E=1
   signal?: AbortSignal;
 }
@@ -112,12 +131,12 @@ export interface InstallReport {
 export interface InstallDeps {
   verify: typeof import('../verify/run.ts').verifyPlugin;
   detect: (
-    env: ScanEnv,
+    env: DetectionPorts,
     tool: FlipTool,
     signal?: AbortSignal,
   ) => Promise<Result<InstallRecord[], SkillSmithError>>; // injectable: tests fake detection
-  now: () => string;
-  newTxId: () => string; // 8-hex
+  now?: () => string;
+  newTxId?: () => string; // 8-hex
   pick?: (candidates: readonly CandidateSkill[]) => Promise<CandidateSkill | null>;
 }
 
@@ -131,7 +150,7 @@ export interface UninstallOptions {
   force?: boolean;
   dryRun?: boolean;
   cwd: string;
-  envVars: Record<string, string | undefined>;
+  configuration: ResolvedRuntimeConfiguration;
   testPauseAt?: JournalPhase;
   signal?: AbortSignal;
 }
@@ -169,6 +188,6 @@ export interface UninstallReport {
 }
 
 export interface UninstallDeps {
-  now: () => string;
-  newTxId: () => string;
+  now?: () => string;
+  newTxId?: () => string;
 }

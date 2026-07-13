@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultScanEnv } from '../../src/env/default.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   deletePairAt,
@@ -16,6 +14,8 @@ import {
   writeLedger,
 } from '../../src/place/ledger.ts';
 import type { OriginRecord, PairRecord, PinnedRecord } from '../../src/place/types.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 
 const P12_GOLDEN = join(import.meta.dir, '..', 'fixtures', 'place', 'ledger.golden.json');
 const INSTALL_GOLDEN = join(
@@ -60,10 +60,10 @@ const installPair = (path: string, placement: 'symlink' | 'copy'): PairRecord =>
 });
 
 describe('additive schema — golden round trips', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-add-'));
   });
   afterEach(async () => {
@@ -100,10 +100,10 @@ describe('additive schema — golden round trips', () => {
 });
 
 describe('additive schema — zod locks', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-add-'));
   });
   afterEach(async () => {

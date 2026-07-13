@@ -11,12 +11,13 @@ import type {
   CurrentCommandRequest,
   InteractionPort,
 } from '../../src/application/types.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { runRollback } from '../../src/place/run.ts';
 import type { FlipReport } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import { err, ok } from '../../src/result.ts';
 
-const env = {} as ScanEnv;
+const ports = {} as RuntimePorts;
 
 const noninteractive: InteractionPort = {
   mode: 'noninteractive',
@@ -27,10 +28,10 @@ const noninteractive: InteractionPort = {
 const context = (
   overrides: Partial<CurrentApplicationContext> = {},
 ): CurrentApplicationContext => ({
-  env,
+  ports,
+  configuration: resolveRuntimeConfiguration({ HOME: '/home/test' }),
   interaction: noninteractive,
   invocationCwd: '/invocation',
-  envVars: { HOME: '/home/test' },
   globalOptions: {},
   projectContext: {
     invocationCwd: '/invocation',
@@ -229,7 +230,7 @@ describe('lifecycle application services', () => {
       noVerify: false,
       continueOnError: true,
       cwd: '/project',
-      envVars: { HOME: '/home/test' },
+      configuration: resolveRuntimeConfiguration({ HOME: '/home/test' }),
     });
     expect(outcome.exitClass).toBe('success');
     expect(outcome.report).toEqual({ command: 'install', value: report });

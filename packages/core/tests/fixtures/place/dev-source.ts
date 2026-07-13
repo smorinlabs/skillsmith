@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ScanEnv } from '../../../src/env/types.ts';
+import type { RuntimePorts } from '../../../src/ports/types.ts';
 import type { SkillSmithError } from '../../../src/errors.ts';
 import type {
   FlipAction,
@@ -148,7 +148,7 @@ export const cannedFlipDeps = (
 ): FlipDeps => ({
   now: () => DEV_SOURCE_NOW,
   newTxId: nextTxId,
-  verify: async (_env: ScanEnv, opts: VerifyOptions) => {
+  verify: async (_env, opts: VerifyOptions) => {
     calls.push(opts);
     const tool = opts.tools?.[0] ?? 'claude-code';
     return ok(makeVerifyReport(tool, verdict)) as Result<VerifyReport, SkillSmithError>;

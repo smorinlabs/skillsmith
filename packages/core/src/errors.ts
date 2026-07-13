@@ -28,7 +28,18 @@ export const unknownToolError = (tool: string): SkillSmithError => ({
   tool,
 });
 
-export const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+export const errorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (
+    error !== null &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message;
+  }
+  return String(error);
+};
 
 export const configError = (
   message: string,

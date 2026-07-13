@@ -1,6 +1,35 @@
-import type { ScanEnv } from '../env/types.ts';
 import type { SkillSmithError } from '../errors.ts';
+import type {
+  ClockPort,
+  FileReadPort,
+  FileWritePort,
+  GitPort,
+  IdPort,
+  LockPort,
+  PlatformPaths,
+  ProcessPort,
+  ResolvedRuntimeConfiguration,
+} from '../ports/types.ts';
 import type { Result } from '../result.ts';
+
+export type PlacementPorts = PlatformPaths &
+  FileReadPort &
+  FileWritePort &
+  LockPort &
+  ProcessPort &
+  ClockPort &
+  IdPort & { readonly git: GitPort };
+
+export type PlacementReadPorts = PlatformPaths & FileReadPort;
+
+export type SwapPorts = Pick<
+  FileReadPort,
+  'listDir' | 'pathKind' | 'readLink' | 'readBytes' | 'isExecutable'
+> &
+  Pick<
+    FileWritePort,
+    'copyTree' | 'fsyncFile' | 'makeSymlink' | 'removeTree' | 'rename' | 'fsyncDir'
+  >;
 
 export const FLIP_TOOLS = ['claude-code', 'codex'] as const;
 export type FlipTool = (typeof FLIP_TOOLS)[number];
@@ -98,7 +127,7 @@ export interface Provenance {
 }
 
 export interface SwapCtx {
-  env: ScanEnv;
+  env: SwapPorts;
   ledgerPath: string;
   ledger: LedgerFile; // mutated in place by the engine
   persist: () => Promise<Result<void, SkillSmithError>>; // writeLedger(env, ledgerPath, ledger)
@@ -199,13 +228,13 @@ export interface FlipOptions {
   rollback?: boolean;
   dryRun?: boolean;
   cwd: string;
-  envVars: Record<string, string | undefined>;
+  configuration: ResolvedRuntimeConfiguration;
   testPauseAt?: JournalPhase; // wired only by the CLI under SKILLSMITH_E2E=1
   signal?: AbortSignal;
 }
 
 export interface FlipDeps {
   verify: typeof import('../verify/run.ts').verifyPlugin; // injectable for tests
-  now: () => string;
-  newTxId: () => string;
+  now?: () => string;
+  newTxId?: () => string;
 }

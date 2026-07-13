@@ -4,6 +4,8 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseCodexExecStderr, verifyCodex } from '../../../src/agents/codex/verify.ts';
 import type { ExecResult, ScanEnv } from '../../../src/env/types.ts';
+import type { VerifyPorts } from '../../../src/verify/types.ts';
+import { runtimePorts } from '../../fixtures/runtime-ports.ts';
 
 const FIXTURES = join(import.meta.dir, '..', '..', 'fixtures', 'verify');
 const DUMMY = join(FIXTURES, 'dummytest');
@@ -29,7 +31,7 @@ const fileExistsFake = (p: string): boolean => {
   return false;
 };
 
-const env = (): ScanEnv => ({
+const scanEnvFixture = (): ScanEnv => ({
   homeDir: '/h',
   path: [],
   platform: 'linux',
@@ -56,12 +58,13 @@ const env = (): ScanEnv => ({
   withFileLock: (_p, fn) => fn(),
 });
 
-const fakeInstalled = (overrides: Partial<ScanEnv> = {}): ScanEnv => ({
-  ...env(),
-  path: ['/fake'],
-  runVersion: async () => '0.142.5 (Codex CLI)',
-  ...overrides,
-});
+const fakeInstalled = (overrides: Partial<ScanEnv> = {}): VerifyPorts =>
+  runtimePorts({
+    ...scanEnvFixture(),
+    path: ['/fake'],
+    runVersion: async () => '0.142.5 (Codex CLI)',
+    ...overrides,
+  });
 
 // Static happy-path exec sequence (Task 5), used by the combined static+deep run.
 const staticHappyPath = (_cmd: string, args: readonly string[]): ExecResult | null => {

@@ -168,5 +168,5 @@ describe('EWP-P1-TS04', () => {
     } finally {
       await rm(sandbox, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 });

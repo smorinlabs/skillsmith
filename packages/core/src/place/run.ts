@@ -1,6 +1,5 @@
-import { randomBytes } from 'node:crypto';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import type { ScanEnv } from '../env/types.ts';
+import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -29,6 +28,7 @@ import {
   type FlipTool,
   type LedgerFile,
   type PinnedRecord,
+  type PlacementPorts,
   type Provenance,
   type SwapCtx,
   type SwapPlan,
@@ -36,9 +36,11 @@ import {
 
 export const defaultFlipDeps: FlipDeps = {
   verify: verifyPlugin,
-  now: () => new Date().toISOString(),
-  newTxId: () => randomBytes(4).toString('hex'),
 };
+
+const nowOf = (ports: PlacementPorts, deps: FlipDeps): string => deps.now?.() ?? ports.wallNowIso();
+const txIdOf = (ports: PlacementPorts, deps: FlipDeps): string =>
+  deps.newTxId?.() ?? ports.nextId('placement-transaction');
 
 const errMessage = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
 
@@ -59,7 +61,11 @@ const isEexist = (e: unknown): boolean =>
  *  skillsmith op is concurrently mid-create for the same name. Best-effort: a listDir failure (root
  *  not yet created) or a removeTree race is swallowed; the create's own no-clobber publish is the
  *  real safety gate. */
-const sweepOwnStaging = async (env: ScanEnv, skillsRoot: string, skill: string): Promise<void> => {
+const sweepOwnStaging = async (
+  env: PlacementPorts,
+  skillsRoot: string,
+  skill: string,
+): Promise<void> => {
   const prefix = `.skillsmith-staging-${skill}-`;
   let entries: readonly string[];
   try {
@@ -75,7 +81,7 @@ const sweepOwnStaging = async (env: ScanEnv, skillsRoot: string, skill: string):
 const HASH_PREFIX_LEN = 'sha256:'.length;
 
 const computeRevPreview = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   provenance: Provenance,
   sourceDir: string,
 ): Promise<Result<string, SkillSmithError>> => {
@@ -136,7 +142,7 @@ const interruptedResult = (pair: PairPlan): FlipResult => ({
 });
 
 const makeSwapCtx = (
-  env: ScanEnv,
+  env: PlacementPorts,
   ledgerPath: string,
   ledger: LedgerFile,
   deps: FlipDeps,
@@ -146,8 +152,8 @@ const makeSwapCtx = (
   ledgerPath,
   ledger,
   persist: () => writeLedger(env, ledgerPath, ledger),
-  now: deps.now,
-  newTxId: deps.newTxId,
+  now: () => nowOf(env, deps),
+  newTxId: () => txIdOf(env, deps),
   pauseAt: opts.testPauseAt,
   signal: opts.signal,
 });
@@ -172,7 +178,7 @@ interface GateOutcome {
  *  static). `fail` blocks; `warn` blocks only under --strict; `inconclusive` proceeds with a
  *  notice unless --strict. `--no-verify` skips the gate entirely. */
 const runVerifyGate = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   deps: FlipDeps,
   tool: FlipTool,
   sourceDir: string,
@@ -235,7 +241,7 @@ const ledgerVerifyOf = (gate: GateOutcome['gate']): 'passed' | 'warned' | 'skipp
 // ---------------------------------------------------------------------------------------------
 
 const runPromotePair = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   ledger: LedgerFile,
   ledgerPath: string,
   pair: PairPlan,
@@ -318,7 +324,7 @@ const runPromotePair = async (
       repoRoot: null,
       sourceRelPath: null,
       remote: null,
-      recordedAt: deps.now(),
+      recordedAt: nowOf(env, deps),
     };
   }
 
@@ -385,8 +391,8 @@ const runPromotePair = async (
       if (!repinOrigin)
         return failedResult(base, genericError('symlink re-pin missing origin record'));
 
-      const dataDir = resolveDataDir(env, opts.envVars);
-      const txId = deps.newTxId();
+      const dataDir = resolveDataDir(env, opts.configuration);
+      const txId = txIdOf(env, deps);
       const snapRes = await snapshotToStore(env, {
         sourceDir: resolvedSourceDir,
         skill,
@@ -403,7 +409,7 @@ const runPromotePair = async (
         gitSha: provenance.gitSha,
         dirty: provenance.kind === 'git-dirty',
         contentHash: snap.contentHash,
-        snapshotAt: deps.now(),
+        snapshotAt: nowOf(env, deps),
         verify: ledgerVerifyOf(gate.gate),
         placement: 'symlink',
       };
@@ -468,8 +474,8 @@ const runPromotePair = async (
     if (toDevRes.value.warning) notesAcc.push(toDevRes.value.warning);
   }
 
-  const dataDir = resolveDataDir(env, opts.envVars);
-  const txId = deps.newTxId();
+  const dataDir = resolveDataDir(env, opts.configuration);
+  const txId = txIdOf(env, deps);
   const snapRes = await snapshotToStore(env, {
     sourceDir: resolvedSourceDir,
     skill,
@@ -486,7 +492,7 @@ const runPromotePair = async (
     gitSha: provenance.gitSha,
     dirty: provenance.kind === 'git-dirty',
     contentHash: snap.contentHash,
-    snapshotAt: deps.now(),
+    snapshotAt: nowOf(env, deps),
     verify: ledgerVerifyOf(gate.gate),
   };
 
@@ -536,7 +542,7 @@ const runPromotePair = async (
  *  platform quirks (macOS `/var` → `/private/var`, case-folding). A not-yet-existing path has no
  *  realpath, so we fall back to the resolved (lexically normalized) form — still trailing-slash- and
  *  `..`-tolerant. */
-const canonicalizePath = async (env: ScanEnv, cwd: string, p: string): Promise<string> => {
+const canonicalizePath = async (env: PlacementPorts, cwd: string, p: string): Promise<string> => {
   const abs = resolve(cwd, p);
   try {
     return await env.realpath(abs);
@@ -548,7 +554,7 @@ const canonicalizePath = async (env: ScanEnv, cwd: string, p: string): Promise<s
 /** BF-3: are two paths the same location? Resolved + realpath'd on BOTH sides, so a trailing slash,
  *  a `..` segment, a symlinked tmp dir (/var vs /private/var), or a symlink chain no longer produces
  *  a false mismatch. Used by S2/S4/S5b in the real AND dry-run paths. */
-const samePath = async (env: ScanEnv, cwd: string, a: string, b: string): Promise<boolean> =>
+const samePath = async (env: PlacementPorts, cwd: string, a: string, b: string): Promise<boolean> =>
   (await canonicalizePath(env, cwd, a)) === (await canonicalizePath(env, cwd, b));
 
 /** Resolve the source used to validate/probe a dev flip without changing the literal symlink
@@ -572,7 +578,7 @@ const resolveDevSource = (
  *  `realpath` and accepted only when its ultimate target is a regular file (a dangling link or a
  *  symlink-to-directory is rejected). Shared by create/adopt and their dry-run predictions so the two
  *  never diverge. */
-const sourceHasSkillMd = async (env: ScanEnv, sourceDir: string): Promise<boolean> => {
+const sourceHasSkillMd = async (env: PlacementPorts, sourceDir: string): Promise<boolean> => {
   const p = join(sourceDir, 'SKILL.md');
   const kind = await env.pathKind(p);
   if (kind === 'file') return true;
@@ -587,7 +593,7 @@ const sourceHasSkillMd = async (env: ScanEnv, sourceDir: string): Promise<boolea
 /** Provenance-enriched dev record for a create/adopt. `sourcePath` and `resolvedPath` are BOTH the
  *  ABSOLUTE resolved source (PRD: never record a relative source — sidesteps #10 for new records). */
 const buildDevSourceRecord = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   resolvedSourceDir: string,
   deps: FlipDeps,
 ): Promise<DevRecord> => {
@@ -598,7 +604,7 @@ const buildDevSourceRecord = async (
     repoRoot: provRes.ok ? provRes.value.repoRoot : null,
     sourceRelPath: provRes.ok ? provRes.value.sourceRelPath : null,
     remote: provRes.ok ? provRes.value.remote : null,
-    recordedAt: deps.now(),
+    recordedAt: nowOf(env, deps),
   };
 };
 
@@ -627,7 +633,7 @@ const combineNotes = (...notes: (string | null)[]): string | null => {
 /** S1: absent placement -> validate source -> static verify gate -> direct atomic no-clobber symlink
  *  publish -> dev record. A foreign real file already occupying the placement path (S6) refuses. */
 const createDevPlacement = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   ledger: LedgerFile,
   ledgerPath: string,
   base: Base,
@@ -646,7 +652,7 @@ const createDevPlacement = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  let liveKind: Awaited<ReturnType<ScanEnv['pathKind']>>;
+  let liveKind: PathKind;
   try {
     liveKind = await env.pathKind(live);
   } catch (e) {
@@ -710,7 +716,7 @@ const createDevPlacement = async (
 /** S2: a matching hand-made symlink not in the ledger -> record-only adopt. Disk is untouched;
  *  the gate still runs (D2). */
 const adoptDevPlacement = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   ledger: LedgerFile,
   ledgerPath: string,
   base: Base,
@@ -778,7 +784,7 @@ const adoptDevPlacement = async (
 // ---------------------------------------------------------------------------------------------
 
 const runDevPair = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   ledger: LedgerFile,
   ledgerPath: string,
   pair: PairPlan,
@@ -960,7 +966,7 @@ const runDevPair = async (
     repoRoot,
     sourceRelPath,
     remote,
-    recordedAt: deps.now(),
+    recordedAt: nowOf(env, deps),
   };
 
   const plan: SwapPlan = {
@@ -1003,7 +1009,7 @@ const runDevPair = async (
 // ---------------------------------------------------------------------------------------------
 
 const runRollbackPair = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   ledger: LedgerFile,
   ledgerPath: string,
   pair: PairPlan,
@@ -1099,7 +1105,7 @@ const runRollbackPair = async (
       repoRoot: null,
       sourceRelPath: null,
       remote: null,
-      recordedAt: deps.now(),
+      recordedAt: nowOf(env, deps),
     } satisfies DevRecord);
   const plan: SwapPlan = {
     op: 'promote',
@@ -1176,7 +1182,7 @@ const predictRollbackPair = (ledger: LedgerFile, pair: PairPlan): FlipResult => 
 // ---------------------------------------------------------------------------------------------
 
 const predictPair = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   ledger: LedgerFile,
   op: 'promote' | 'dev',
   pair: PairPlan,
@@ -1478,7 +1484,7 @@ const buildReport = (
 };
 
 type PairProcessor = (
-  env: ScanEnv,
+  env: PlacementPorts,
   ledger: LedgerFile,
   ledgerPath: string,
   pair: PairPlan,
@@ -1487,14 +1493,14 @@ type PairProcessor = (
 ) => Promise<FlipResult>;
 
 const runFlipBatch = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   opts: FlipOptions,
   op: 'promote' | 'dev',
   deps: FlipDeps,
   process: PairProcessor,
-  predict: (env: ScanEnv, ledger: LedgerFile, pair: PairPlan) => Promise<FlipResult>,
+  predict: (env: PlacementPorts, ledger: LedgerFile, pair: PairPlan) => Promise<FlipResult>,
 ): Promise<Result<FlipReport, SkillSmithError>> => {
-  const dataDir = resolveDataDir(env, opts.envVars);
+  const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
   const requested = buildRequested(opts);
@@ -1557,7 +1563,7 @@ const runFlipBatch = async (
 };
 
 export const runPromote = (
-  env: ScanEnv,
+  env: PlacementPorts,
   opts: FlipOptions,
   deps: FlipDeps = defaultFlipDeps,
 ): Promise<Result<FlipReport, SkillSmithError>> =>
@@ -1566,7 +1572,7 @@ export const runPromote = (
   );
 
 export const runDev = (
-  env: ScanEnv,
+  env: PlacementPorts,
   opts: FlipOptions,
   deps: FlipDeps = defaultFlipDeps,
 ): Promise<Result<FlipReport, SkillSmithError>> => {
@@ -1592,7 +1598,7 @@ export const runDev = (
 };
 
 export const runRollback = async (
-  env: ScanEnv,
+  env: PlacementPorts,
   opts: FlipOptions & { op: 'promote' | 'dev' },
   deps: FlipDeps = defaultFlipDeps,
 ): Promise<Result<FlipReport, SkillSmithError>> => {
@@ -1602,7 +1608,7 @@ export const runRollback = async (
     return err(flipRefusedError('--rollback does not accept --source or --dest'));
   }
 
-  const dataDir = resolveDataDir(env, opts.envVars);
+  const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
   const requested = buildRequested(opts);

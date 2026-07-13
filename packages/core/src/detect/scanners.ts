@@ -1,13 +1,13 @@
 import { join } from 'node:path';
-import type { ScanEnv } from '../env/types.ts';
+import type { DetectionPorts } from '../ports/types.ts';
 import type { InstallMethod } from './types.ts';
 
-export const wellKnownBinDirs = (env: ScanEnv): readonly string[] => {
+export const wellKnownBinDirs = (env: DetectionPorts): readonly string[] => {
   const home = env.homeDir;
   const common = [
     '/opt/homebrew/bin',
     '/usr/local/bin',
-    ...env.path,
+    ...env.executableSearchPath,
     join(home, '.local', 'bin'),
     join(home, '.npm', 'bin'),
     join(home, '.bun', 'install', 'global', 'node_modules', '.bin'),
@@ -23,7 +23,7 @@ export const classifyInstallMethod = (absPath: string): InstallMethod => {
   return 'unknown';
 };
 
-export const findOnPath = async (env: ScanEnv, binary: string): Promise<string[]> => {
+export const findOnPath = async (env: DetectionPorts, binary: string): Promise<string[]> => {
   const dirs = wellKnownBinDirs(env);
   const candidates = await Promise.all(
     dirs.map(async (d) => {

@@ -1,6 +1,5 @@
 import type { EffectiveConfig } from '../config/types.ts';
 import type { ProjectContext } from '../context/types.ts';
-import type { ScanEnv } from '../env/types.ts';
 import type { ResolvedRuntimeConfiguration, RuntimePorts } from '../ports/types.ts';
 
 /** Semantic exit classes. Numeric CLI exit codes remain presentation policy. */
@@ -107,26 +106,8 @@ export interface ApplicationContext {
   readonly signal?: AbortSignal;
 }
 
-/**
- * Transitional Phase-1 composition context.
- *
- * G1-03 may use the existing ScanEnv aggregate only to migrate current behavior without creating a
- * second set of real adapters. G1-04 replaces service dependencies with capability-scoped ports;
- * ScanEnv remains a 1.x compatibility facade rather than the type for new application services.
- */
-export interface CurrentApplicationContext {
-  readonly env: ScanEnv;
-  readonly interaction: InteractionPort;
-  readonly invocationCwd: string;
-  readonly envVars: Readonly<Record<string, string | undefined>>;
-  readonly globalOptions: {
-    readonly cd?: string;
-    readonly config?: string;
-  };
-  readonly projectContext?: ProjectContext;
-  readonly effectiveConfig?: EffectiveConfig;
-  readonly signal?: AbortSignal;
-}
+/** @deprecated Transitional name retained for the 1.x application-service registry. */
+export type CurrentApplicationContext = ApplicationContext;
 
 /** Parser-normalized request shared by the declarative CLI adapter and current services. */
 export interface CurrentCommandRequest {

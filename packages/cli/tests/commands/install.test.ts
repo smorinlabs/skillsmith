@@ -104,12 +104,12 @@ describe('install picker gating (D4)', () => {
     expect(typeof deps.pick).toBe('function');
   });
 
-  test('buildInstallDeps still carries the default verify/detect/now/newTxId deps', () => {
+  test('buildInstallDeps carries domain defaults while clock and ID stay port-owned', () => {
     const deps = buildInstallDeps({ json: true, noPrompt: false }, { stderr: true, stdin: true });
     expect(typeof deps.verify).toBe('function');
     expect(typeof deps.detect).toBe('function');
-    expect(typeof deps.now).toBe('function');
-    expect(typeof deps.newTxId).toBe('function');
+    expect(deps.now).toBeUndefined();
+    expect(deps.newTxId).toBeUndefined();
   });
 
   // `--yes` is not part of the gating signature at all — it structurally cannot auto-pick,

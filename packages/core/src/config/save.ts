@@ -1,9 +1,13 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import lockfile from 'proper-lockfile';
 import { stringify as stringifyToml } from 'smol-toml';
-import type { ScanEnv } from '../env/types.ts';
 import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
+import type {
+  FileReadPort,
+  FileWritePort,
+  IdPort,
+  LockPort,
+  PlatformPaths,
+} from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { CONFIG_ACCESSORS } from './accessors.ts';
 import { getConfigPath } from './paths.ts';
@@ -16,6 +20,12 @@ export interface SaveConfigOpts {
   delete?: readonly ConfigKey[];
   cwd?: string;
 }
+
+type SaveConfigPorts = PlatformPaths &
+  Pick<FileReadPort, 'pathKind' | 'readText'> &
+  Pick<FileWritePort, 'makeDir' | 'writeTextFile' | 'rename'> &
+  LockPort &
+  IdPort;
 
 const stripUndefined = (c: Config): Record<string, unknown> => {
   const out: Record<string, unknown> = {};
@@ -31,59 +41,47 @@ const stripUndefined = (c: Config): Record<string, unknown> => {
 };
 
 export const saveConfig = async (
-  env: ScanEnv,
+  ports: SaveConfigPorts,
   opts: SaveConfigOpts,
 ): Promise<Result<{ file: string }, SkillSmithError>> => {
-  const file = getConfigPath(env, opts.scope, opts.cwd);
+  const file = getConfigPath(ports, opts.scope, opts.cwd);
   try {
-    await mkdir(dirname(file), { recursive: true });
+    await ports.makeDir(dirname(file));
   } catch (e) {
     return err(configError(`cannot create directory for ${file}: ${errorMessage(e)}`, { file }));
   }
 
   try {
-    await writeFile(file, '', { flag: 'ax' });
-  } catch {
-    // ignore EEXIST; proper-lockfile needs the target to exist before locking
-  }
+    return await ports.withFileLock(file, async () => {
+      try {
+        let existing: Config = {};
+        const text = (await ports.pathKind(file)) === 'absent' ? '' : await ports.readText(file);
+        if (text.trim().length > 0) {
+          const parsed = parseConfig(text);
+          if (!parsed.ok) {
+            const base = parsed.error;
+            if (base.code !== 'config-error') return err(base);
+            return err({ ...base, file });
+          }
+          existing = parsed.value;
+        }
 
-  let release: (() => Promise<void>) | null = null;
-  try {
-    release = await lockfile.lock(file, {
-      stale: 10_000,
-      retries: { retries: 5, factor: 1, minTimeout: 10, maxTimeout: 100 },
+        const merged: Config = { ...existing, ...(opts.patch ?? {}) };
+        if (opts.patch?.registry) {
+          merged.registry = { ...(existing.registry ?? {}), ...opts.patch.registry };
+        }
+        for (const key of opts.delete ?? []) CONFIG_ACCESSORS[key].del(merged);
+
+        const serialized = stringifyToml(stripUndefined(merged));
+        const tmp = `${file}.tmp.${ports.nextId('config-save')}`;
+        await ports.writeTextFile(tmp, serialized);
+        await ports.rename(tmp, file);
+        return ok({ file });
+      } catch (e) {
+        return err(configError(`save failed: ${errorMessage(e)}`, { file }));
+      }
     });
   } catch (e) {
     return err(configError(`lock failed: ${errorMessage(e)}`, { file }));
-  }
-
-  try {
-    let existing: Config = {};
-    const text = await readFile(file, 'utf8');
-    if (text.trim().length > 0) {
-      const parsed = parseConfig(text);
-      if (!parsed.ok) {
-        const base = parsed.error;
-        if (base.code !== 'config-error') return err(base);
-        return err({ ...base, file });
-      }
-      existing = parsed.value;
-    }
-
-    const merged: Config = { ...existing, ...(opts.patch ?? {}) };
-    if (opts.patch?.registry) {
-      merged.registry = { ...(existing.registry ?? {}), ...opts.patch.registry };
-    }
-    for (const key of opts.delete ?? []) CONFIG_ACCESSORS[key].del(merged);
-
-    const serialized = stringifyToml(stripUndefined(merged));
-    const tmp = `${file}.tmp.${process.pid}.${Math.random().toString(36).slice(2)}`;
-    await writeFile(tmp, serialized);
-    await rename(tmp, file);
-    return ok({ file });
-  } catch (e) {
-    return err(configError(`save failed: ${errorMessage(e)}`, { file }));
-  } finally {
-    if (release) await release().catch(() => {});
   }
 };

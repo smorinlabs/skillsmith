@@ -4,8 +4,10 @@ import {
   verifyClaudeCode,
 } from '../../../src/agents/claude-code/verify.ts';
 import type { ScanEnv } from '../../../src/env/types.ts';
+import type { VerifyPorts } from '../../../src/verify/types.ts';
+import { runtimePorts } from '../../fixtures/runtime-ports.ts';
 
-const env = (): ScanEnv => ({
+const scanEnvFixture = (): ScanEnv => ({
   homeDir: '/h',
   path: [],
   platform: 'linux',
@@ -31,6 +33,8 @@ const env = (): ScanEnv => ({
   modifiedAt: async () => null,
   withFileLock: (_p, fn) => fn(),
 });
+
+const env = (): VerifyPorts => runtimePorts(scanEnvFixture());
 
 // Real `claude plugin validate` output (2.1.202): the marker sits alone on a summary line
 // ("✘ Found N error(s):" / "⚠ Found N warning(s):"); the actual check/message follows on an
@@ -141,14 +145,15 @@ describe('parseClaudeValidateOutput', () => {
 });
 
 describe('verifyClaudeCode', () => {
-  const fakeInstalled = (overrides: Partial<ScanEnv> = {}): ScanEnv => ({
-    ...env(),
-    path: ['/fake'],
-    fileExists: async (p) => p === '/fake/claude',
-    realpath: async (p) => p,
-    runVersion: async () => '2.1.202 (Claude Code)',
-    ...overrides,
-  });
+  const fakeInstalled = (overrides: Partial<ScanEnv> = {}): VerifyPorts =>
+    runtimePorts({
+      ...scanEnvFixture(),
+      path: ['/fake'],
+      fileExists: async (p) => p === '/fake/claude',
+      realpath: async (p) => p,
+      runVersion: async () => '2.1.202 (Claude Code)',
+      ...overrides,
+    });
 
   test('mixed-skill block (exit 1) -> ran, verdict fail, coverage true/true', async () => {
     const scanEnv = fakeInstalled({

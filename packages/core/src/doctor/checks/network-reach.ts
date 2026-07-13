@@ -1,4 +1,5 @@
 import { errorMessage } from '../../errors.ts';
+import type { HttpPort } from '../../ports/types.ts';
 import type { Check, Finding } from '../types.ts';
 
 const TIMEOUT_MS = 3000;
@@ -9,12 +10,14 @@ export const networkReach: Check = {
   runsIn: ['doctor'],
   run: async (ctx) => {
     if (ctx.offline) return [];
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch('https://github.com', {
+      const http: HttpPort = ctx.env.http;
+      const res = await http.request({
+        url: 'https://github.com',
         method: 'HEAD',
-        signal: ctx.signal ?? controller.signal,
+        headers: {},
+        timeoutMs: TIMEOUT_MS,
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
       });
       if (res.ok || res.status === 301 || res.status === 302) return [];
       const finding: Finding = {
@@ -33,8 +36,6 @@ export const networkReach: Check = {
         remediation: 'pass --offline or fix connectivity',
       };
       return [finding];
-    } finally {
-      clearTimeout(timer);
     }
   },
 };
