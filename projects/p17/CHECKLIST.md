@@ -672,7 +672,7 @@ Downstream coverage obligations: EWP-P3B-TS07.
 
 ## P17-G2-01 — Manifest discovery, ownership, unified schema, identity, and artifact-pair selection
 
-Phase: 2; status: **ready**; dependencies: P17-G0-01, P17-G0-02, P17-G0-04, P17-G0-05, P17-G1-04, P17-G1-05, P17-G1-06, P17-G1-07.
+Phase: 2; status: **active**; dependencies: P17-G0-01, P17-G0-02, P17-G0-04, P17-G0-05, P17-G1-04, P17-G1-05, P17-G1-06, P17-G1-07.
 Required-now validations: EWP-CMD-CHECK-TS03, EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS02, EWP-CMD-CONFIG-TS03, EWP-CMD-CONFIG-TS04, EWP-CMD-CONFIG-TS05, EWP-P0A-TS04, EWP-P0A-TS05, EWP-P0A-TS07, EWP-P0A-TS09, EWP-P1-TS01, EWP-P1-TS02, EWP-P1-TS03, EWP-P1-TS05, EWP-P1-TS06, EWP-P1-TS07, EWP-P1-TS08, EWP-P1-TS09, EWP-P1-TS10, EWP-P1-TS11, EWP-P2-TS01, EWP-P2-TS02, EWP-WF14.
 Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS05, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INSTALL-TS06, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-CMD-STATUS-TS05, EWP-CMD-SYNC-TS07, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UPDATE-TS06, EWP-OPT-TS08, EWP-P4A-TS01, EWP-WF04, EWP-WF07.
 
@@ -680,7 +680,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD
 
 - [x] P17-G2-01:mapped _(passed)_
 - [x] P17-G2-01:ready _(passed)_
-- [ ] P17-G2-01:test-first _(pending)_
+- [x] P17-G2-01:test-first _(passed)_
 - [ ] P17-G2-01:minimal-implementation _(pending)_
 - [ ] P17-G2-01:targeted-green _(pending)_
 - [ ] P17-G2-01:impacted-green _(pending)_
@@ -697,15 +697,15 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD
 - [ ] **EWP-CF-019** — Use one unique manifest name as portable identity _(finding; planned)_
 - [ ] **EWP-CF-021** — Select saved artifacts by declaration ownership before placement scope _(finding; planned)_
 - [ ] **EWP-CF-040** — Keep sibling lock defaults and expose one uniform advanced override _(finding; planned)_
-- [ ] **EWP-CMD-CONFIG-TS01** — get/set/list/unset round trips at system/user/project with lossless _(command-test; planned)_
-- [ ] **EWP-CMD-CONFIG-TS02** — CLI/env/project/user/system precedence and source labels. _(command-test; planned)_
-- [ ] **EWP-CMD-CONFIG-TS03** — explicit config, `-C` project discovery, nested manifest versus live-root _(command-test; planned)_
-- [ ] **EWP-CMD-CONFIG-TS04** — exact legacy read support and migration to D-003 in the same lossless _(command-test; planned)_
-- [ ] **EWP-CMD-CONFIG-TS05** — unknown keys/values/scopes and JSON output. _(command-test; planned)_
+- [ ] **EWP-CMD-CONFIG-TS01** — get/set/list/unset round trips at system/user/project with lossless _(command-test; failing)_
+- [ ] **EWP-CMD-CONFIG-TS02** — CLI/env/project/user/system precedence and source labels. _(command-test; failing)_
+- [ ] **EWP-CMD-CONFIG-TS03** — explicit config, `-C` project discovery, nested manifest versus live-root _(command-test; failing)_
+- [ ] **EWP-CMD-CONFIG-TS04** — exact legacy read support and migration to D-003 in the same lossless _(command-test; failing)_
+- [ ] **EWP-CMD-CONFIG-TS05** — unknown keys/values/scopes and JSON output. _(command-test; failing)_
 - [ ] **EWP-P2-T01** — Define project and user manifest discovery/destination paths, paired lock paths, _(phase-task; planned)_
 - [ ] **EWP-P2-T02** — Implement the versioned unified manifest schema, unique-name identity/invariants, _(phase-task; planned)_
-- [ ] **EWP-P2-TS01** — Manifest parser, unique-name/source/ref/scope/tool invariants, unknown-key, _(phase-test; planned)_
-- [ ] **EWP-P2-TS02** — Project/user/explicit-file discovery and paired-lock path matrix, including _(phase-test; planned)_
+- [ ] **EWP-P2-TS01** — Manifest parser, unique-name/source/ref/scope/tool invariants, unknown-key, _(phase-test; failing)_
+- [ ] **EWP-P2-TS02** — Project/user/explicit-file discovery and paired-lock path matrix, including _(phase-test; failing)_
 
 ## P17-G2-02 — Portable lock schema, semantic hashes, canonicalization, and manifest relationship
 
