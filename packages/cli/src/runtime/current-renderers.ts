@@ -20,8 +20,10 @@ import {
   type VersionReport,
   getConfigValue,
 } from '@skillsmith/core';
+import { toConfigGetV1Dto, toConfigListV1Dto } from '@skillsmith/core/contracts/v1';
 import type { Command } from 'commander';
 import { runCompletion } from '../completion/run.ts';
+import { currentWireCodecs } from '../contracts/wire-contracts.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from '../help/topics.ts';
 import { renderAgentsJson } from '../output/agents-json.ts';
 import { renderAgentsMarkdown } from '../output/agents-markdown.ts';
@@ -38,6 +40,7 @@ import { renderListHuman } from '../output/list-human.ts';
 import { renderListJson } from '../output/list-json.ts';
 import { renderVerifyHuman } from '../output/verify-human.ts';
 import { renderVerifyJson } from '../output/verify-json.ts';
+import { encodeWire } from '../output/wire-codec.ts';
 import type { RendererRegistry, RuntimeOutcome } from './adapter.ts';
 import { exitCodeForClass } from './adapter.ts';
 
@@ -218,20 +221,11 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
             detectedOnly: value.detectedOnly,
           })}\n`,
         ),
-      (value) => `${renderAgentsJson(value.detections as Map<never, never>)}\n`,
+      (value) => renderAgentsJson(value.detections as Map<never, never>),
     ),
     configGet: guarded<ConfigGetReport>(
       (value, outcome) => withDiagnostics(outcome, `${value.value ?? ''}\n`),
-      (value) =>
-        `${JSON.stringify(
-          {
-            key: value.key,
-            value: value.value,
-            ...(value.source === undefined ? {} : { source: value.source }),
-          },
-          null,
-          2,
-        )}\n`,
+      (value) => encodeWire(currentWireCodecs.configGet, toConfigGetV1Dto(value)),
     ),
     configSet: guarded<ConfigSetReport>(
       (value) => ({ stderr: `wrote ${value.file ?? ''}\n` }),
@@ -239,14 +233,7 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     ),
     configList: guarded<ConfigListReport>(
       (value, outcome) => withDiagnostics(outcome, configListHuman(value)),
-      (value) =>
-        `${JSON.stringify(
-          value.scope === undefined
-            ? { effective: value.effective, sources: value.sources, layers: value.layers }
-            : value.layers[value.scope],
-          null,
-          2,
-        )}`,
+      (value) => encodeWire(currentWireCodecs.configList, toConfigListV1Dto(value)),
     ),
     configUnset: guarded<ConfigUnsetReport>(
       (value) => ({ stderr: `updated ${value.file ?? ''}\n` }),
@@ -268,7 +255,7 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
       (value, outcome) =>
         value.result === null
           ? (errorOutput(outcome, 'json') ?? '')
-          : renderDoctorJson(value.result, outcome.deprecations),
+          : renderDoctorJson(value.result, outcome.deprecations, currentWireCodecs.doctor),
     ),
     check: guarded<HealthReport>(
       (value, outcome) =>
@@ -276,7 +263,7 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
       (value, outcome) =>
         value.result === null
           ? (errorOutput(outcome, 'json') ?? '')
-          : renderDoctorJson(value.result, outcome.deprecations),
+          : renderDoctorJson(value.result, outcome.deprecations, currentWireCodecs.check),
     ),
     verify: guarded<VerifyApplicationReport>(
       (value, outcome) =>
@@ -300,12 +287,12 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     ),
     dev: lifecycleRenderer<NonNullable<DevApplicationReport['value']>>(
       (value, outcome) => renderFlipHuman(value, exitCodeForClass(outcome.exitClass)),
-      renderFlipJson,
+      (value) => renderFlipJson(value, currentWireCodecs.dev),
       flipStderr,
     ),
     promote: lifecycleRenderer<NonNullable<PromoteApplicationReport['value']>>(
       (value, outcome) => renderFlipHuman(value, exitCodeForClass(outcome.exitClass)),
-      renderFlipJson,
+      (value) => renderFlipJson(value, currentWireCodecs.promote),
       flipStderr,
     ),
   };

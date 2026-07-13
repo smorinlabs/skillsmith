@@ -28,6 +28,7 @@
     "postinstall": "lefthook install || true"
   },
   "devDependencies": {
+    "@skillsmith/core": "workspace:*",
     "@biomejs/biome": "1.9.4",
     "@commitlint/cli": "20.5.0",
     "@commitlint/config-conventional": "20.5.0",

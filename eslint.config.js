@@ -217,7 +217,14 @@ export default [
             {
               target: './packages/cli/src',
               from: './packages/core/src',
-              except: ['./index.ts'],
+              // CLI consumes core only through reviewed package entry points. Versioned wire
+              // contracts intentionally remain separate from the 1.x compatibility root.
+              except: [
+                './index.ts',
+                './contracts/index.ts',
+                './contracts/v1/index.ts',
+                './contracts/v2/index.ts',
+              ],
             },
             { target: './packages/cli/src/output', from: './packages/cli/src/commands' },
             { target: './packages/cli/src/output', from: './packages/cli/src/index.ts' },

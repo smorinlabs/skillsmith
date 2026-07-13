@@ -53,6 +53,22 @@ import type {
 } from '@skillsmith/core';
 ```
 
+Versioned wire contracts use dedicated entry points so DTO authority does not mix with domain and
+1.x compatibility exports:
+
+```ts
+import { createWireContractRegistry } from '@skillsmith/core/contracts';
+import { agentsV1Codec, toAgentsV1Dto } from '@skillsmith/core/contracts/v1';
+import { flipV2Codec, toFlipV2Dto } from '@skillsmith/core/contracts/v2';
+```
+
+The current codec IDs are `agents`, `health`, `commands`, `config-get`, `config-list`, `flip`,
+`install`, `list`, `uninstall`, `verify`, `error`, and `capability-snapshot`. Codecs recursively
+reject unknown object fields, validate before encoding, preserve their declared JSON framing, and
+return sanitized `Result` errors rather than throwing for untrusted input. Explicit `to*Dto`
+mappers keep domain-only fields out of public wire shapes. See
+[ADR 0008](../../docs/adr/0008-wire-contract-registry.md).
+
 ## Design rules
 
 `@skillsmith/core` is an **embeddable, non-interactive library**. Its real default adapters perform

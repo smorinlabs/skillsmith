@@ -4,7 +4,10 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./contracts": "./src/contracts/index.ts",
+    "./contracts/v1": "./src/contracts/v1/index.ts",
+    "./contracts/v2": "./src/contracts/v2/index.ts"
   },
   "files": [
     "src",

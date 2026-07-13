@@ -1,42 +1,9 @@
-import type { SkillEntry } from '@skillsmith/core';
-import { z } from 'zod';
+import type { ListReport, SkillEntry } from '@skillsmith/core';
+import { toListV2Dto } from '@skillsmith/core/contracts/v2';
+import { currentWireCodecs } from '../contracts/wire-contracts.ts';
+import { encodeWire, wireSchema } from './wire-codec.ts';
 
-const FrontmatterSchema = z
-  .object({
-    name: z.string().optional(),
-    description: z.string().optional(),
-    version: z.string().optional(),
-  })
-  .nullable();
-
-const OriginSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('standalone') }),
-  z.object({
-    kind: z.literal('plugin'),
-    pluginId: z.string(),
-    pluginVersion: z.string(),
-    pluginScope: z.enum(['user', 'project', 'managed', 'local']),
-  }),
-  z.object({ kind: z.literal('policy') }),
-]);
-
-const SkillEntrySchema = z.object({
-  name: z.string(),
-  path: z.string(),
-  realpath: z.string(),
-  tool: z.string(),
-  scope: z.string(),
-  root: z.string(),
-  frontmatter: FrontmatterSchema,
-  origin: OriginSchema,
-  enabled: z.enum(['on', 'off', 'unset']),
-});
-
-export const ListJsonSchema = z.object({
-  schemaVersion: z.literal(2),
-  experimental: z.literal(true),
-  skills: z.array(SkillEntrySchema),
-});
+export const ListJsonSchema = wireSchema(currentWireCodecs.list);
 
 export const renderListJson = (entries: readonly SkillEntry[]): string =>
-  JSON.stringify({ schemaVersion: 2, experimental: true, skills: entries }, null, 2);
+  encodeWire(currentWireCodecs.list, toListV2Dto({ entries, long: false } satisfies ListReport));

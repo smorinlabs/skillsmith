@@ -1,49 +1,27 @@
-import type { CheckRunResult } from '@skillsmith/core';
-import { z } from 'zod';
+import type { CheckRunResult, Deprecation } from '@skillsmith/core';
+import { toHealthV1Dto } from '@skillsmith/core/contracts/v1';
+import { currentWireCodecs } from '../contracts/wire-contracts.ts';
+import { encodeWire, wireSchema } from './wire-codec.ts';
 
-const FindingSchema = z.object({
-  checkId: z.string(),
-  severity: z.enum(['error', 'warning', 'info']),
-  title: z.string(),
-  message: z.string(),
-  remediation: z.string().optional(),
-  tool: z.string().optional(),
-  scope: z.string().optional(),
-  path: z.string().optional(),
-  operation: z.string().optional(),
-  reason: z.string().optional(),
-  scopeInUse: z.boolean().optional(),
-});
+export type CliDeprecation = Deprecation;
 
-export const CliDeprecationSchema = z.object({
-  spelling: z.string(),
-  replacement: z.string(),
-  removalVersion: z.string(),
-  message: z.string(),
-});
+export const CliDeprecationSchema = {
+  parse(value: unknown): Deprecation {
+    const probe = toHealthV1Dto({ findings: [], counts: { ok: 0, warning: 0, error: 0 } }, [
+      value as Deprecation,
+    ]);
+    const parsed = currentWireCodecs.check.validate(probe);
+    if (!parsed.ok || parsed.value.deprecations?.[0] === undefined) {
+      throw new Error('invalid deprecation wire value');
+    }
+    return parsed.value.deprecations[0];
+  },
+};
 
-export type CliDeprecation = z.infer<typeof CliDeprecationSchema>;
-
-export const DoctorJsonSchema = z.object({
-  schemaVersion: z.literal(1),
-  experimental: z.literal(true),
-  findings: z.array(FindingSchema),
-  counts: z.object({ ok: z.number(), warning: z.number(), error: z.number() }),
-  deprecations: z.array(CliDeprecationSchema).optional(),
-});
+export const DoctorJsonSchema = wireSchema(currentWireCodecs.check);
 
 export const renderDoctorJson = (
-  r: CheckRunResult,
+  result: CheckRunResult,
   deprecations: readonly CliDeprecation[] = [],
-): string =>
-  JSON.stringify(
-    {
-      schemaVersion: 1,
-      experimental: true,
-      findings: r.findings,
-      counts: r.counts,
-      ...(deprecations.length === 0 ? {} : { deprecations }),
-    },
-    null,
-    2,
-  );
+  codec = currentWireCodecs.check,
+): string => encodeWire(codec, toHealthV1Dto(result, deprecations));

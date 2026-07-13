@@ -36,7 +36,7 @@ packages/
       commands/      compatibility re-exports for the former command-module paths
       completion/    shell completion renderers
       contracts/     reviewed command/option surface snapshots
-      output/        pure renderers (markdown, JSON with zod schema)
+      output/        pure human renderers and typed wire-codec adapters
       help/          topic-based help text
       util/          color-mode resolver, exit-code mapping, SIGINT handler
       program.ts     Commander registration and global policy
@@ -56,7 +56,8 @@ The defining rule of the codebase: `@skillsmith/core` is an **embeddable library
 | Domain logic (registry, detection, result types) | ✅ | ❌ |
 | `commander`, `chalk`, `consola`, `@clack/prompts` | ❌ (forbidden) | ✅ |
 | `process.exit`, `console.*` | ❌ (forbidden) | ✅ |
-| Output formatting (markdown, JSON) | ❌ | ✅ |
+| Output formatting (human presentation) | ❌ | ✅ |
+| Versioned public JSON wire codecs | ✅ | selects codecs |
 | Exit-code policy | ❌ | ✅ |
 | Subprocess execution via `env.exec` | ✅ (abstracted) | via core |
 
@@ -176,6 +177,25 @@ Currently supported tools: **Claude Code, Codex, Kilo Code, opencode**. All four
 and diagnostics; Claude Code and Codex additionally own verification and placement bundles. See
 [ADR 0007](adr/0007-tool-adapter-registry.md) for the exact operation/scope matrix and validation
 rules.
+
+## Versioned wire contracts
+
+Accepted CLI JSON is owned by strict codecs under `@skillsmith/core/contracts`, while the CLI owns
+the mapping from its JSON-capable command paths to those codecs. The generic registry validates and
+freezes supplied codecs and mappings without importing CLI command policy. Domain reports cross the
+boundary through explicit named mappers; renderer code does not spread domain objects, strip fields,
+or define a second public schema.
+
+The current registry contains `agents@1`, `health@1`, `commands@1`, `config-get@1`,
+`config-list@1`, `flip@2`, `install@1`, `list@2`, `uninstall@1`, `verify@1`, `error@1`, and
+`capability-snapshot@1`. Each descriptor fixes recursive unknown-field rejection, embedded kind and
+version policy, JSON indentation, terminal framing, and conservative compatibility. Current codecs
+declare no migrations. The `verify` codec derives tool choices from the validated tool registry;
+the capability snapshot projects only descriptor facts and is not yet a final command output.
+
+Consumers import shared types and the builder from `@skillsmith/core/contracts`, V1 DTOs/codecs from
+`@skillsmith/core/contracts/v1`, and V2 DTOs/codecs from `@skillsmith/core/contracts/v2`. See
+[ADR 0008](adr/0008-wire-contract-registry.md) for compatibility and ownership rules.
 
 ## In-package layering
 

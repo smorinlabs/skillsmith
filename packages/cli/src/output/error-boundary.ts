@@ -1,7 +1,9 @@
 import { stripVTControlCharacters } from 'node:util';
 import type { SkillSmithError } from '@skillsmith/core';
+import { errorV1Codec, toErrorV1Dto } from '@skillsmith/core/contracts/v1';
 import type { Command } from 'commander';
 import { type ExitCode, exitCodeForError } from '../util/exit-codes.ts';
+import { encodeWire } from './wire-codec.ts';
 
 export type CliErrorExitCode = ExitCode;
 
@@ -166,13 +168,14 @@ export const renderCliError = (error: NormalizedCliError, format: CliErrorFormat
   if (format === 'human')
     return `error: ${sanitizeMessage(error.message, DEFAULT_ERROR.message)}\n`;
 
-  return `${JSON.stringify({
-    schemaVersion: 1,
-    kind: 'error',
-    code: sanitizeCode(error.code, DEFAULT_ERROR.code),
-    message: sanitizeMessage(error.message, DEFAULT_ERROR.message),
-    exitCode: error.exitCode,
-  })}\n`;
+  return encodeWire(
+    errorV1Codec,
+    toErrorV1Dto({
+      code: sanitizeCode(error.code, DEFAULT_ERROR.code),
+      message: sanitizeMessage(error.message, DEFAULT_ERROR.message),
+      exitCode: error.exitCode,
+    }),
+  );
 };
 
 /** Resolve the requested error format before Commander has necessarily completed option parsing. */
