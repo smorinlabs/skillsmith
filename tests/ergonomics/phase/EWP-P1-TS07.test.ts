@@ -98,7 +98,7 @@ const flattenSpecPaths = (
   for (const spec of specs) {
     const raw = specName(spec);
     if (raw === null) continue;
-    const path = raw.startsWith('skillsmith ') ? raw : `${parent} ${raw}`;
+    const path = raw === 'skillsmith' || raw.startsWith('skillsmith ') ? raw : `${parent} ${raw}`;
     paths.set(path, spec);
     const children = specChildren(spec);
     if (children.length > 0) {
@@ -142,7 +142,9 @@ describe('EWP-P1-TS07', () => {
       `${loaded.path} must export one non-empty current CommandSpec registry`,
     ).toBeGreaterThan(0);
 
-    const specPaths = flattenSpecPaths(specs);
+    const specPaths = new Map(
+      [...flattenSpecPaths(specs)].filter(([path]) => path !== 'skillsmith'),
+    );
     const livePaths = canonicalizeCommanderTree(buildProgram())
       .map((command) => command.path)
       .filter((path) => path !== 'skillsmith');
