@@ -532,6 +532,68 @@ describe('EWP-P1-TS07', () => {
     expect(writes.at(-1)).toBe('version-ran\n');
   });
 
+  test('attached specs cannot change eager parsing by redefining an option value shape', () => {
+    const fixture = (
+      name: string,
+      flags: string,
+      long: string,
+      short: string | null,
+      valueShape: 'boolean' | 'required' | 'optional',
+    ): CommandSpec => ({
+      name,
+      path: `skillsmith ${name}`,
+      aliases: [],
+      group: 'maintain',
+      primaryQuestion: 'Does extension parsing remain isolated?',
+      description: 'Exercise option spelling shape ownership.',
+      arguments: [],
+      options: [
+        {
+          flags,
+          long,
+          short,
+          attributeName: 'mode',
+          valueShape,
+          knownValues: [],
+          allowedValues: [],
+          repeatable: false,
+          negated: false,
+          flagDefault: undefined,
+          parsedDefault: undefined,
+          description: 'Fixture mode',
+        },
+      ],
+      examples: [],
+      capability: 'read',
+      reportKind: name,
+      application: 'help',
+    });
+
+    expect(() =>
+      buildProgram(undefined, {
+        additionalSpecs: [
+          fixture('required-long', '--mode <value>', '--mode', null, 'required'),
+          fixture('optional-long', '--mode [value]', '--mode', null, 'optional'),
+        ],
+      }),
+    ).toThrow('Option spelling --mode has conflicting value shapes: required and optional');
+    expect(() =>
+      buildProgram(undefined, {
+        additionalSpecs: [
+          fixture('boolean-short', '-m, --first', '--first', '-m', 'boolean'),
+          fixture('required-short', '-m, --second <value>', '--second', '-m', 'required'),
+        ],
+      }),
+    ).toThrow('Option spelling -m has conflicting value shapes: boolean and required');
+    expect(() =>
+      buildProgram(undefined, {
+        additionalSpecs: [
+          fixture('root-collision', '--config [value]', '--config', null, 'optional'),
+        ],
+      }),
+    ).toThrow('Option spelling --config has conflicting value shapes: required and optional');
+  });
+
   test('one fixture spec drives parser, help, completion, docs inventory, and execution', async () => {
     const fixture: CommandSpec = {
       name: 'fixture',

@@ -82,24 +82,35 @@ interface ValueOptionSpellings {
   readonly short: ReadonlyMap<string, 'required' | 'optional'>;
 }
 
-const valueOptionSpellings = (specs: readonly CommandSpec[]): ValueOptionSpellings => ({
-  long: new Map(
-    specs.flatMap((spec) =>
-      spec.options.flatMap((option) =>
-        option.valueShape === 'boolean' ? [] : [[option.long, option.valueShape] as const],
-      ),
-    ),
-  ),
-  short: new Map(
-    specs.flatMap((spec) =>
-      spec.options.flatMap((option) =>
-        option.valueShape !== 'boolean' && option.short !== null
-          ? [[option.short, option.valueShape] as const]
-          : [],
-      ),
-    ),
-  ),
-});
+const valueOptionSpellings = (specs: readonly CommandSpec[]): ValueOptionSpellings => {
+  const long = new Map<string, 'required' | 'optional'>();
+  const short = new Map<string, 'required' | 'optional'>();
+  const longShapes = new Map<string, 'boolean' | 'required' | 'optional'>();
+  const shortShapes = new Map<string, 'boolean' | 'required' | 'optional'>();
+  const record = (
+    spelling: string,
+    shape: 'boolean' | 'required' | 'optional',
+    shapes: Map<string, 'boolean' | 'required' | 'optional'>,
+    values: Map<string, 'required' | 'optional'>,
+  ): void => {
+    const existing = shapes.get(spelling);
+    if (existing !== undefined && existing !== shape) {
+      throw new Error(
+        `Option spelling ${spelling} has conflicting value shapes: ${existing} and ${shape}`,
+      );
+    }
+    shapes.set(spelling, shape);
+    if (shape !== 'boolean') values.set(spelling, shape);
+  };
+
+  for (const spec of specs) {
+    for (const option of spec.options) {
+      record(option.long, option.valueShape, longShapes, long);
+      if (option.short !== null) record(option.short, option.valueShape, shortShapes, short);
+    }
+  }
+  return { long, short };
+};
 
 const consumesFollowingValue = (
   shape: 'required' | 'optional',
