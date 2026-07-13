@@ -709,14 +709,14 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD
 
 ## P17-G2-02 — Portable lock schema, semantic hashes, canonicalization, and manifest relationship
 
-Phase: 2; status: **planned**; dependencies: P17-G2-01.
+Phase: 2; status: **ready**; dependencies: P17-G2-01.
 Required-now validations: EWP-P2-TS01, EWP-P2-TS03.
 Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS09, EWP-CMD-UPDATE-TS10, EWP-P2-TS04, EWP-P4B-TS03, EWP-WF03, EWP-WF07, EWP-WF09.
 
 ### Group gates
 
-- [ ] P17-G2-02:mapped _(pending)_
-- [ ] P17-G2-02:ready _(pending)_
+- [x] P17-G2-02:mapped _(passed)_
+- [x] P17-G2-02:ready _(passed)_
 - [ ] P17-G2-02:test-first _(pending)_
 - [ ] P17-G2-02:minimal-implementation _(pending)_
 - [ ] P17-G2-02:targeted-green _(pending)_

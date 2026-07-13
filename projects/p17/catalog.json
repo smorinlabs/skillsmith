@@ -2669,10 +2669,32 @@
       "phase": "2",
       "title": "Portable lock schema, semantic hashes, canonicalization, and manifest relationship",
       "dependsOn": ["P17-G2-01"],
-      "status": "planned",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "docs/architecture.md",
+        "packages/core/README.md",
+        "packages/core/src/artifacts/hash.ts",
+        "packages/core/src/artifacts/index.ts",
+        "packages/core/src/artifacts/lock.ts",
+        "packages/core/src/artifacts/manifest.ts",
+        "packages/core/src/artifacts/source-content.ts",
+        "packages/core/src/artifacts/types.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/public-types.ts",
+        "packages/core/tests/artifacts/hash.test.ts",
+        "packages/core/tests/artifacts/lock.test.ts",
+        "packages/core/tests/artifacts/manifest.test.ts",
+        "packages/core/tests/artifacts/source-content.test.ts",
+        "packages/core/tests/place/content-hash.test.ts",
+        "packages/core/tests/public-api.test.ts",
+        "tests/ergonomics/fixtures/p2-ts03/hash-v1.golden.json",
+        "tests/ergonomics/fixtures/p2-ts03/lock-v1.golden.toml",
+        "tests/ergonomics/fixtures/p2-ts03/source-content-v1.golden.json",
+        "tests/ergonomics/phase/EWP-P2-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS03.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": [
         "EWP-CMD-APPLY-TS07",
         "EWP-CMD-DOCTOR-TS03",
@@ -2700,17 +2722,20 @@
         "EWP-WF07",
         "EWP-WF09"
       ],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P2-TS01.test.ts --test-name-pattern EWP-P2-TS01",
+        "bun test tests/ergonomics/phase/EWP-P2-TS03.test.ts --test-name-pattern EWP-P2-TS03"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-02.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-02.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
@@ -2745,7 +2770,11 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": [
+        "projects/p17/plans/P17-G2-02.md",
+        "projects/p17/evidence/P17-G2-02.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G2-02.md#ready-plan"
+      ]
     },
     {
       "id": "P17-G2-03",
