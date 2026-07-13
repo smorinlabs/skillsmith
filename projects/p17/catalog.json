@@ -2159,7 +2159,7 @@
       "phase": "1",
       "title": "Operation-scoped observation, correlation, redaction, and verbosity behavior",
       "dependsOn": ["P17-G1-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0009-operation-scoped-observation.md",
@@ -2231,8 +2231,8 @@
           "evidence": ["projects/p17/evidence/P17-G1-07.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-07.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -16243,18 +16243,30 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-07",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-07:tests/ergonomics/phase/EWP-P1-TS11.test.ts#EWP-P1-TS11",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "selector": "EWP-P1-TS11",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-07.md#red-execution-receipt-ewp-p1-ts11"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS11"],
       "impactedValidations": ["EWP-P1-TS11"],
       "affectedContracts": ["EWP-CF-038"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/fixtures/p1-ts11/public-observation-types.ts",
+        "tests/ergonomics/fixtures/p1-ts11/tsconfig.json"
+      ]
     },
     {
       "id": "EWP-P2-T01",

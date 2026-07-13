@@ -647,7 +647,7 @@ Downstream coverage obligations: EWP-P2-TS08.
 
 ## P17-G1-07 — Operation-scoped observation, correlation, redaction, and verbosity behavior
 
-Phase: 1; status: **ready**; dependencies: P17-G1-03.
+Phase: 1; status: **active**; dependencies: P17-G1-03.
 Required-now validations: EWP-P1-TS11.
 Downstream coverage obligations: EWP-P3B-TS07.
 
@@ -655,7 +655,7 @@ Downstream coverage obligations: EWP-P3B-TS07.
 
 - [x] P17-G1-07:mapped _(passed)_
 - [x] P17-G1-07:ready _(passed)_
-- [ ] P17-G1-07:test-first _(pending)_
+- [x] P17-G1-07:test-first _(passed)_
 - [ ] P17-G1-07:minimal-implementation _(pending)_
 - [ ] P17-G1-07:targeted-green _(pending)_
 - [ ] P17-G1-07:impacted-green _(pending)_
@@ -668,7 +668,7 @@ Downstream coverage obligations: EWP-P3B-TS07.
 
 - [ ] **EWP-CF-038** — Add operation-scoped structured observability _(finding; planned)_
 - [ ] **EWP-P1-T13** — Add ADR 0009, immutable OperationContext, the typed ObserverPort event registry, _(phase-task; planned)_
-- [ ] **EWP-P1-TS11** — Event-taxonomy completeness, command/event correlation, fake-clock timing, _(phase-test; planned)_
+- [ ] **EWP-P1-TS11** — Event-taxonomy completeness, command/event correlation, fake-clock timing, _(phase-test; failing)_
 
 ## P17-G2-01 — Manifest discovery, ownership, unified schema, identity, and artifact-pair selection
 
