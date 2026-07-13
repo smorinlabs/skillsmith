@@ -5,10 +5,12 @@
 > the design-review level. Phase 0's documentation-drift ledger, structural validator,
 > machine-readable verification catalog, generated checklist, executable ownership, and five group
 > sign-offs are complete. Whole-Phase-0 adversarial review, catalog recording of the standing
-> approval, and exit passed on 2026-07-12; Phase 1 is active.
+> approval, and exit passed on 2026-07-12. Phase 1's nine groups, whole-phase adversarial review,
+> standing approval, and exit passed on 2026-07-13; Phase 2 is active.
 > Implementation is authorized to proceed only through the named phase entry/exit gates and
 > validation ownership in this plan.
 > **Phase 0 execution:** groups=signed-off; review=passed; approval=passed; exit=passed.
+> **Phase 1 execution:** groups=signed-off; review=passed; approval=passed; exit=passed.
 >
 > **Current coverage (2026-07-11):** 34 unique P0-P3 recommendations and matching before/after
 > rows; 16 resolved product decisions and records; 16 holistic workflows; 65 named phase tasks;

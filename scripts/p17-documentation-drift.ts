@@ -992,6 +992,7 @@ export const validateDocumentationDrift = (
     const groups = objects(catalogValue.groups);
     const phase0 = phases.find((phase) => phase.id === '0');
     const phase1 = phases.find((phase) => phase.id === '1');
+    const phase2 = phases.find((phase) => phase.id === '2');
     const phase0GroupIds = ['P17-G0-01', 'P17-G0-02', 'P17-G0-03', 'P17-G0-04', 'P17-G0-05'];
     const phase0Groups = phase0GroupIds.map((id) => groups.find((group) => group.id === id));
     const lifecycleGateNames = [
@@ -1044,14 +1045,28 @@ export const validateDocumentationDrift = (
           ? 'Whole-phase review, catalog recording of standing approval, and exit are passed.'
           : `Whole-phase closure states are review=${String(phaseReview)}, approval=${String(phaseApproval)}, exit=${String(phaseExit)}.`;
     const phase1Entry = isObject(phase1?.entry) ? phase1.entry.status : undefined;
+    const phase1Review = isObject(phase1?.review) ? phase1.review.status : undefined;
+    const phase1Approval = isObject(phase1?.approval) ? phase1.approval.status : undefined;
+    const phase1Exit = isObject(phase1?.exit) ? phase1.exit.status : undefined;
     const phase1Progress =
       phase1?.status === 'active' && phase1Entry === 'passed'
         ? 'Phase 1 is `active`; its entry gate is passed.'
-        : `Phase 1 is \`${String(phase1?.status)}\`; its entry gate is ${String(phase1Entry)}.`;
+        : phase1?.status === 'approved' &&
+            phase1Entry === 'passed' &&
+            phase1Review === 'passed' &&
+            phase1Approval === 'passed' &&
+            phase1Exit === 'passed'
+          ? 'Phase 1 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.'
+          : `Phase 1 is \`${String(phase1?.status)}\`; its gates are entry=${String(phase1Entry)}, review=${String(phase1Review)}, approval=${String(phase1Approval)}, exit=${String(phase1Exit)}.`;
+    const phase2Entry = isObject(phase2?.entry) ? phase2.entry.status : undefined;
+    const phase2Progress =
+      phase2?.status === 'active' && phase2Entry === 'passed'
+        ? 'Phase 2 is `active`; its entry gate is passed.'
+        : `Phase 2 is \`${String(phase2?.status)}\`; its entry gate is ${String(phase2Entry)}.`;
     const expectedExecutionStatus = visibleText(
       `**Status:** Phase 0 is \`${String(phase0?.status)}\`. \`P17-G0-01\` through \`P17-G0-05\` are \`${
         allPhase0GroupsSigned ? 'signed-off' : 'not-all-signed-off'
-      }\`; ${allLifecycleGatesPassed ? 'all group lifecycle gates are passed.' : 'group lifecycle gates are not all passed.'} ${closureProgress} ${phase1Progress} \`catalog.json\` is the machine-readable status authority.`,
+      }\`; ${allLifecycleGatesPassed ? 'all group lifecycle gates are passed.' : 'group lifecycle gates are not all passed.'} ${closureProgress} ${phase1Progress} ${phase2Progress} \`catalog.json\` is the machine-readable status authority.`,
     );
     const actualExecutionStatus = visibleText(executionStatusBlocks[0]?.[0] ?? '');
     if (actualExecutionStatus !== expectedExecutionStatus)
