@@ -78,24 +78,33 @@ const CONTEXT_FREE_APPLICATIONS = new Set([
 ]);
 
 interface ValueOptionSpellings {
-  readonly long: ReadonlySet<string>;
-  readonly short: ReadonlySet<string>;
+  readonly long: ReadonlyMap<string, 'required' | 'optional'>;
+  readonly short: ReadonlyMap<string, 'required' | 'optional'>;
 }
 
 const valueOptionSpellings = (specs: readonly CommandSpec[]): ValueOptionSpellings => ({
-  long: new Set(
-    specs.flatMap((spec) =>
-      spec.options.filter((option) => option.valueShape !== 'boolean').map((option) => option.long),
-    ),
-  ),
-  short: new Set(
+  long: new Map(
     specs.flatMap((spec) =>
       spec.options.flatMap((option) =>
-        option.valueShape !== 'boolean' && option.short !== null ? [option.short] : [],
+        option.valueShape === 'boolean' ? [] : [[option.long, option.valueShape] as const],
+      ),
+    ),
+  ),
+  short: new Map(
+    specs.flatMap((spec) =>
+      spec.options.flatMap((option) =>
+        option.valueShape !== 'boolean' && option.short !== null
+          ? [[option.short, option.valueShape] as const]
+          : [],
       ),
     ),
   ),
 });
+
+const consumesFollowingValue = (
+  shape: 'required' | 'optional',
+  next: string | undefined,
+): boolean => shape === 'required' || (next !== undefined && !next.startsWith('-'));
 
 const requestsEagerVersion = (
   invocation: readonly string[],
@@ -106,8 +115,9 @@ const requestsEagerVersion = (
     if (token === undefined || token === '--') return false;
     if (token === '--version') return true;
     if (token === '--help') return false;
-    if (valueOptions.long.has(token)) {
-      index++;
+    const longValueShape = valueOptions.long.get(token);
+    if (longValueShape !== undefined) {
+      if (consumesFollowingValue(longValueShape, invocation[index + 1])) index++;
       continue;
     }
     if (token.startsWith('--')) continue;
@@ -117,8 +127,13 @@ const requestsEagerVersion = (
     for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex++) {
       const flag = cluster[clusterIndex];
       if (flag === undefined) continue;
-      if (valueOptions.short.has(`-${flag}`)) {
-        if (clusterIndex === cluster.length - 1) index++;
+      const shortValueShape = valueOptions.short.get(`-${flag}`);
+      if (shortValueShape !== undefined) {
+        if (
+          clusterIndex === cluster.length - 1 &&
+          consumesFollowingValue(shortValueShape, invocation[index + 1])
+        )
+          index++;
         break;
       }
       if (flag === 'V') return true;
@@ -150,8 +165,9 @@ const eagerPresentationOptions = (
     if (token === '--quiet') quiet = true;
     if (token === '--debug') debug = true;
     if (token === '--verbose') verbose++;
-    if (valueOptions.long.has(token)) {
-      index++;
+    const longValueShape = valueOptions.long.get(token);
+    if (longValueShape !== undefined) {
+      if (consumesFollowingValue(longValueShape, invocation[index + 1])) index++;
       continue;
     }
     if (!token.startsWith('-') || token.startsWith('--') || token === '-') continue;
@@ -160,8 +176,13 @@ const eagerPresentationOptions = (
       const flag = cluster[clusterIndex];
       if (flag === 'q') quiet = true;
       if (flag === 'v') verbose++;
-      if (flag !== undefined && valueOptions.short.has(`-${flag}`)) {
-        if (clusterIndex === cluster.length - 1) index++;
+      const shortValueShape = flag === undefined ? undefined : valueOptions.short.get(`-${flag}`);
+      if (shortValueShape !== undefined) {
+        if (
+          clusterIndex === cluster.length - 1 &&
+          consumesFollowingValue(shortValueShape, invocation[index + 1])
+        )
+          index++;
         break;
       }
     }

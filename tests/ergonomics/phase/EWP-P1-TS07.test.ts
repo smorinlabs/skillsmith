@@ -462,6 +462,20 @@ describe('EWP-P1-TS07', () => {
           parsedDefault: undefined,
           description: 'Fixture mode',
         },
+        {
+          flags: '-o, --optional [value]',
+          long: '--optional',
+          short: '-o',
+          attributeName: 'optional',
+          valueShape: 'optional',
+          knownValues: [],
+          allowedValues: [],
+          repeatable: false,
+          negated: false,
+          flagDefault: undefined,
+          parsedDefault: undefined,
+          description: 'Optional fixture value',
+        },
       ],
       examples: [],
       capability: 'read',
@@ -473,8 +487,9 @@ describe('EWP-P1-TS07', () => {
     const program = buildProgram(undefined, {
       additionalSpecs: [fixture],
       applications: {
-        version: async () => {
-          calls.push('eager-version');
+        version: async (request) => {
+          const options = record(request) && record(request.options) ? request.options : {};
+          calls.push(`eager-version:${String(options.verbose)}`);
           return {
             report: {},
             diagnostics: [],
@@ -509,6 +524,12 @@ describe('EWP-P1-TS07', () => {
     await program.parseAsync(['node', 'skillsmith', 'fixture-value', '-mV']);
     expect(calls).toEqual(['fixture:V']);
     expect(writes).toEqual(['fixture-ran\n']);
+
+    calls.length = 0;
+    writes.length = 0;
+    await program.parseAsync(['node', 'skillsmith', 'fixture-value', '-o', '-v', '-V']);
+    expect(calls).toEqual(['eager-version:1']);
+    expect(writes.at(-1)).toBe('version-ran\n');
   });
 
   test('one fixture spec drives parser, help, completion, docs inventory, and execution', async () => {

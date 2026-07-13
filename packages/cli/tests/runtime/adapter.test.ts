@@ -412,6 +412,7 @@ describe('shared CLI runtime adapter', () => {
       format: 'human',
     });
     expect(result.exitCode).toBe(1);
+    expect(result.outcome?.exitClass).toBe('failure');
     expect(memory.stdout).toEqual(['failure report\n']);
     expect(memory.exits).toEqual([1]);
     expect(recorded.completions).toEqual([
@@ -460,6 +461,145 @@ describe('shared CLI runtime adapter', () => {
     expect(hostileRecorded.completions).toEqual([
       { outcome: 'failure', exitClass: 'failure', errorCode: 'generic' },
     ]);
+  });
+
+  test('owns renderer output, failure classification, and registry reads before effects', async () => {
+    const outputMemory = memoryIo();
+    const outputRecorded = recordingObservation();
+    const outputRuntime = createCliRuntimeAdapter({
+      applications: { fixture: async () => successOutcome() },
+      renderers: {
+        fixture: {
+          human: () =>
+            new Proxy(
+              {},
+              {
+                get: () => {
+                  throw new Error('hostile output getter');
+                },
+              },
+            ),
+          json: () => '',
+        },
+      },
+      io: outputMemory.io,
+    });
+    await expect(
+      outputRuntime.execute({
+        application: 'fixture',
+        reportKind: 'fixture',
+        request: {},
+        context: {},
+        observation: outputRecorded.observation,
+        format: 'human',
+      }),
+    ).resolves.toMatchObject({
+      exitCode: 1,
+      failure: { exitClass: 'failure', message: 'hostile output getter' },
+    });
+    expect(outputMemory.stdout).toEqual([]);
+    expect(outputMemory.stderr).toEqual(['error: hostile output getter\n']);
+    expect(outputMemory.exits).toEqual([1]);
+    expect(outputRecorded.completions).toEqual([
+      { outcome: 'failure', exitClass: 'failure', errorCode: 'generic' },
+    ]);
+
+    const mutationMemory = memoryIo();
+    const mutationRuntime = createCliRuntimeAdapter({
+      applications: {
+        fixture: async () => {
+          throw { exitClass: 'permission', code: 'denied', message: 'denied' };
+        },
+      },
+      renderers: {},
+      renderFailure: (failure) => {
+        (failure as { exitClass: RuntimeExitClass }).exitClass = 'success';
+        (failure as { code: string }).code = 'forged';
+        return { stderr: 'custom failure\n' };
+      },
+      io: mutationMemory.io,
+    });
+    const mutationResult = await mutationRuntime.execute({
+      application: 'fixture',
+      reportKind: 'unused',
+      request: {},
+      context: {},
+      observation: silentObservation(),
+      format: 'human',
+    });
+    expect(mutationResult).toMatchObject({
+      exitCode: 6,
+      failure: { exitClass: 'permission', code: 'denied' },
+    });
+    expect(mutationMemory.stderr).toEqual(['custom failure\n']);
+    expect(mutationMemory.exits).toEqual([6]);
+
+    for (const classifyFailure of [
+      () => ({ exitClass: 'bogus', code: 'bad', message: 'bad' }),
+      () =>
+        new Proxy(
+          {},
+          {
+            get: () => {
+              throw new Error('hostile classifier getter');
+            },
+          },
+        ),
+    ]) {
+      const classifierMemory = memoryIo();
+      const runtime = createCliRuntimeAdapter({
+        applications: {
+          fixture: async () => {
+            throw new Error('application failed');
+          },
+        },
+        renderers: {},
+        classifyFailure: classifyFailure as never,
+        io: classifierMemory.io,
+      });
+      const result = await runtime.execute({
+        application: 'fixture',
+        reportKind: 'unused',
+        request: {},
+        context: {},
+        observation: silentObservation(),
+        format: 'human',
+      });
+      expect(result.exitCode).toBe(1);
+      expect(classifierMemory.exits).toEqual([1]);
+    }
+
+    for (const registry of ['applications', 'renderers'] as const) {
+      const registryMemory = memoryIo();
+      const hostileRegistry = new Proxy(
+        {},
+        {
+          get: () => {
+            throw new Error(`hostile ${registry} registry`);
+          },
+        },
+      );
+      const runtime = createCliRuntimeAdapter({
+        applications:
+          registry === 'applications' ? hostileRegistry : { fixture: async () => successOutcome() },
+        renderers:
+          registry === 'renderers'
+            ? hostileRegistry
+            : { fixture: { human: () => '', json: () => '' } },
+        io: registryMemory.io,
+      });
+      const result = await runtime.execute({
+        application: 'fixture',
+        reportKind: 'fixture',
+        request: {},
+        context: {},
+        observation: silentObservation(),
+        format: 'human',
+      });
+      expect(result.exitCode).toBe(1);
+      expect(registryMemory.stderr[0]).toContain(`hostile ${registry} registry`);
+      expect(registryMemory.exits).toEqual([1]);
+    }
   });
 
   test('isolates diagnostic buffer flush and discard failures from output and exit semantics', async () => {

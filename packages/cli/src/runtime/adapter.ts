@@ -172,8 +172,21 @@ const defaultFailureRenderer: RuntimeFailureRenderer = (failure, format) => {
   return format === 'human' ? { stderr: rendered } : { stdout: rendered };
 };
 
-const renderedOutput = (value: string | RenderedCommandOutput): RenderedCommandOutput =>
-  typeof value === 'string' ? { stdout: value } : value;
+const renderedOutput = (value: string | RenderedCommandOutput): RenderedCommandOutput => {
+  if (typeof value === 'string') return Object.freeze({ stdout: value });
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new TypeError('renderer must return a string or output record');
+  const stdout = value.stdout;
+  const stderr = value.stderr;
+  if (stdout !== undefined && typeof stdout !== 'string')
+    throw new TypeError('renderer stdout must be a string');
+  if (stderr !== undefined && typeof stderr !== 'string')
+    throw new TypeError('renderer stderr must be a string');
+  return Object.freeze({
+    ...(stdout === undefined ? {} : { stdout }),
+    ...(stderr === undefined ? {} : { stderr }),
+  });
+};
 
 const outputForRequest = (
   output: RenderedCommandOutput,
@@ -211,13 +224,33 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
   const classifyFailure = options.classifyFailure ?? defaultFailure;
   const renderFailure = options.renderFailure ?? defaultFailureRenderer;
 
+  const snapshotFailure = (failure: RuntimeFailure): RuntimeFailure => {
+    const exitClass: unknown = failure.exitClass;
+    const code = failure.code;
+    const message = failure.message;
+    if (!isExitClass(exitClass) || exitClass === 'success' || exitClass === 'drift')
+      throw new TypeError('failure classifier returned an invalid exitClass');
+    if (typeof code !== 'string' || typeof message !== 'string')
+      throw new TypeError('failure classifier returned invalid text');
+    return Object.freeze({ exitClass, code, message });
+  };
+
   const safeClassification = (error: unknown): RuntimeFailure => {
     try {
-      return classifyFailure(error);
+      return snapshotFailure(classifyFailure(error));
     } catch (classificationError) {
-      return defaultFailure(classificationError);
+      return snapshotFailure(defaultFailure(classificationError));
     }
   };
+
+  const snapshotOutcome = (outcome: RuntimeOutcome, exitClass: RuntimeExitClass): RuntimeOutcome =>
+    Object.freeze({
+      report: outcome.report,
+      diagnostics: Object.freeze([...outcome.diagnostics]),
+      exitClass,
+      mutation: outcome.mutation,
+      deprecations: Object.freeze([...outcome.deprecations]),
+    });
 
   const commandOutcome = (exitClass: RuntimeExitClass): 'success' | 'failure' | 'cancelled' => {
     if (exitClass === 'cancelled') return 'cancelled';
@@ -266,10 +299,10 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
     let failure = safeClassification(error);
     let output: RenderedCommandOutput;
     try {
-      output = renderFailure(failure, request.format);
+      output = renderedOutput(renderFailure({ ...failure }, request.format));
     } catch (renderError) {
       failure = safeClassification(renderError);
-      output = defaultFailureRenderer(failure, request.format);
+      output = renderedOutput(defaultFailureRenderer(failure, request.format));
     }
     const exitCode = exitCodeForClass(failure.exitClass);
     completeCommand(request.observation, commandSpan, failure.exitClass, failure.code);
@@ -287,7 +320,12 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
         observation?.emitter.begin<'command.started'>(observation.context, {
           kind: 'command.started',
         }) ?? null;
-      const application = options.applications[request.application];
+      let application: RuntimeApplication | undefined;
+      try {
+        application = options.applications[request.application];
+      } catch (error) {
+        return finishFailure(error, request, commandSpan);
+      }
       if (application === undefined) {
         return finishFailure(
           new Error(`Application service '${request.application}' is not registered`),
@@ -308,14 +346,23 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
 
       let exitClass: RuntimeExitClass;
       let errorCode: string | null;
+      let stableOutcome: RuntimeOutcome;
       try {
         exitClass = unwrapped.outcome.exitClass;
-        errorCode = outcomeErrorCode(unwrapped.outcome, exitClass);
+        if (!isExitClass(exitClass))
+          throw new TypeError('application returned an invalid exitClass');
+        stableOutcome = snapshotOutcome(unwrapped.outcome, exitClass);
+        errorCode = outcomeErrorCode(stableOutcome, exitClass);
       } catch (error) {
         return finishFailure(error, request, commandSpan);
       }
 
-      const renderer = options.renderers[request.reportKind];
+      let renderer: RuntimeRenderer | undefined;
+      try {
+        renderer = options.renderers[request.reportKind];
+      } catch (error) {
+        return finishFailure(error, request, commandSpan);
+      }
       if (renderer === undefined) {
         return finishFailure(
           new Error(`Renderer '${request.reportKind}' is not registered`),
@@ -335,7 +382,7 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
       settleDiagnosticBuffer(request, exitClass);
       emitCommandOutput(options.io, outputForRequest(output, request));
       options.io.exit(exitCode);
-      return { exitCode, outcome: unwrapped.outcome };
+      return { exitCode, outcome: stableOutcome };
     },
   };
 };
