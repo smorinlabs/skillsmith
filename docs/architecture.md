@@ -15,7 +15,6 @@ packages/
       acquire/       install/uninstall orchestration
       application/   public CommandOutcome and application-service boundary
       agents/        per-tool adapters (claude-code, codex, kilo-code, opencode) + registry
-      artifacts/     manifest identity, versioned hashes, canonical lock, portable source tree
       commands/      installed slash-command domain types
       config/        config discovery, parsing, precedence, and persistence
       context/       project-context resolution
