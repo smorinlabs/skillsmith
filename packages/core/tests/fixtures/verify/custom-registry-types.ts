@@ -11,6 +11,9 @@ export const customRegistryTypeContract = (env: VerifyPorts): void => {
   // @ts-expect-error custom verifier IDs require the matching registry argument
   void runVerify<'fixture-write'>(env, { path: '/fixture', tools: ['fixture-write'] });
 
+  // @ts-expect-error read-only registry IDs cannot be selected for verification
+  void runVerify(env, { path: '/fixture', tools: ['fixture-read'] }, registry);
+
   const automatic = runVerify(env, { path: '/fixture' }, registry);
   void automatic.then((result) => {
     if (!result.ok) return;

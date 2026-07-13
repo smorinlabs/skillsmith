@@ -129,7 +129,7 @@ export function runVerify(
 ): Promise<Result<VerifyReport<VerifyTool>, SkillSmithError>>;
 export function runVerify<ToolId extends string, VerificationId extends ToolId = ToolId>(
   env: VerifyPorts,
-  opts: VerifyOptions<VerificationId>,
+  opts: VerifyOptions<NoInfer<VerificationId>>,
   registry: VerifyRegistry<ToolId, VerificationId>,
 ): Promise<Result<VerifyReport<VerificationId>, SkillSmithError>>;
 export async function runVerify(
