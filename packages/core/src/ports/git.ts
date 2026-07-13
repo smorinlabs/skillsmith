@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import type { ExecOptions } from '../env/types.ts';
 import { toPortError } from './errors.ts';
 import type { GitPort, ProcessPort } from './types.ts';
 
@@ -25,19 +26,57 @@ export const GIT_REPOSITORY_ENVIRONMENT = [
 ] as const;
 
 const SHA_HEX_40 = /^[0-9a-f]{40}$/i;
+const DISCOVERY_TIMEOUT_MS = 2_000;
+const PLUMBING_TIMEOUT_MS = 10_000;
+const FETCH_TIMEOUT_MS = 120_000;
 
-export const createGitPort = (processPort: ProcessPort): GitPort => {
+export interface BinaryExecResult {
+  readonly code: number;
+  readonly stdout: Uint8Array;
+  readonly stderr: string;
+  readonly timedOut: boolean;
+}
+
+export interface BinaryProcessPort {
+  exec(command: string, args: readonly string[], options?: ExecOptions): Promise<BinaryExecResult>;
+}
+
+const assertSafeRevision = (operation: string, ref: string): void => {
+  if (ref.length === 0 || ref.startsWith('-') || ref.includes('\0')) {
+    throw toPortError(null, {
+      capability: 'git',
+      operation,
+      code: 'invalid',
+      message: 'invalid Git revision',
+      context: { ref },
+    });
+  }
+};
+
+const stderrTail = (stderr: string): string =>
+  stderr
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .slice(-5)
+    .join('\n');
+
+export const createGitPort = (
+  processPort: ProcessPort,
+  binaryProcessPort: BinaryProcessPort,
+): GitPort => {
   const execute = async (
     operation: string,
     args: readonly string[],
     context: Readonly<Record<string, string>>,
     signal?: AbortSignal,
+    timeoutMs = PLUMBING_TIMEOUT_MS,
   ) => {
     try {
       return await processPort.exec('git', args, {
         env: { GIT_TERMINAL_PROMPT: '0' },
         unsetEnv: GIT_REPOSITORY_ENVIRONMENT,
         ...(signal ? { signal } : {}),
+        timeoutMs,
       });
     } catch (error) {
       throw toPortError(error, { capability: 'git', operation, context });
@@ -49,14 +88,44 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
     args: readonly string[],
     context: Readonly<Record<string, string>>,
     signal?: AbortSignal,
+    timeoutMs = PLUMBING_TIMEOUT_MS,
   ) => {
-    const result = await execute(operation, args, context, signal);
+    const result = await execute(operation, args, context, signal, timeoutMs);
     if (result.code !== 0 || result.timedOut) {
       throw toPortError(result.stderr, {
         capability: 'git',
         operation,
         code: result.timedOut ? 'timeout' : 'unavailable',
-        message: result.stderr.trim().split('\n')[0] || `git ${operation} failed`,
+        message: stderrTail(result.stderr) || `git ${operation} failed`,
+        context,
+      });
+    }
+    return result.stdout;
+  };
+
+  const requiredBytes = async (
+    operation: string,
+    args: readonly string[],
+    context: Readonly<Record<string, string>>,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> => {
+    let result: BinaryExecResult;
+    try {
+      result = await binaryProcessPort.exec('git', args, {
+        env: { GIT_TERMINAL_PROMPT: '0' },
+        unsetEnv: GIT_REPOSITORY_ENVIRONMENT,
+        ...(signal ? { signal } : {}),
+        timeoutMs: PLUMBING_TIMEOUT_MS,
+      });
+    } catch (error) {
+      throw toPortError(error, { capability: 'git', operation, context });
+    }
+    if (result.code !== 0 || result.timedOut) {
+      throw toPortError(result.stderr, {
+        capability: 'git',
+        operation,
+        code: result.timedOut ? 'timeout' : 'unavailable',
+        message: stderrTail(result.stderr) || `git ${operation} failed`,
         context,
       });
     }
@@ -70,6 +139,7 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
         ['-C', cwd, 'rev-parse', '--show-toplevel'],
         { cwd },
         signal,
+        DISCOVERY_TIMEOUT_MS,
       );
       return result.code === 0 ? result.stdout.trim() || null : null;
     },
@@ -113,7 +183,7 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
         ref === null ? ['HEAD'] : [`refs/heads/${ref}`, `refs/tags/${ref}`, `refs/tags/${ref}^{}`];
       const result = await execute(
         'resolveRemoteRef',
-        ['ls-remote', remoteUrl, ...patterns],
+        ['ls-remote', '--', remoteUrl, ...patterns],
         { remoteUrl, ref: ref ?? 'HEAD' },
         signal,
       );
@@ -138,13 +208,13 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
     initializeFetch: async ({ repositoryRoot, remoteUrl, signal }) => {
       await required(
         'initializeFetch',
-        ['init', repositoryRoot],
+        ['init', '--', repositoryRoot],
         { repositoryRoot, remoteUrl },
         signal,
       );
       await required(
         'initializeFetch',
-        ['-C', repositoryRoot, 'remote', 'add', 'origin', remoteUrl],
+        ['-C', repositoryRoot, 'remote', 'add', '--', 'origin', remoteUrl],
         { repositoryRoot, remoteUrl },
         signal,
       );
@@ -159,11 +229,13 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
           '--depth=1',
           '--filter=blob:none',
           '--no-tags',
+          '--',
           'origin',
           ref ?? 'HEAD',
         ],
         { repositoryRoot, ref: ref ?? 'HEAD' },
         signal,
+        FETCH_TIMEOUT_MS,
       );
       const sha = (
         await required(
@@ -179,6 +251,7 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
       return { sha };
     },
     listTree: async ({ repositoryRoot, ref, signal }) => {
+      assertSafeRevision('listTree', ref);
       const output = await required(
         'listTree',
         ['-C', repositoryRoot, 'ls-tree', '-r', '-z', ref],
@@ -196,9 +269,9 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
         });
     },
     readBlob: async ({ repositoryRoot, ref, path, signal }) => {
-      const output = await required(
+      return requiredBytes(
         'readBlob',
-        ['-C', repositoryRoot, 'show', `${ref}:${path}`],
+        ['-C', repositoryRoot, 'cat-file', 'blob', '--', `${ref}:${path}`],
         {
           repositoryRoot,
           ref,
@@ -206,9 +279,9 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
         },
         signal,
       );
-      return new TextEncoder().encode(output);
     },
     materializeTree: async ({ repositoryRoot, ref, path, signal }) => {
+      assertSafeRevision('materializeTree', ref);
       if (path.length > 0) {
         await required(
           'materializeTree',
@@ -218,7 +291,7 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
         );
         await required(
           'materializeTree',
-          ['-C', repositoryRoot, 'sparse-checkout', 'set', path],
+          ['-C', repositoryRoot, 'sparse-checkout', 'set', '--', path],
           { repositoryRoot, ref, path },
           signal,
         );
@@ -232,6 +305,7 @@ export const createGitPort = (processPort: ProcessPort): GitPort => {
           path,
         },
         signal,
+        FETCH_TIMEOUT_MS,
       );
       return path.length > 0 ? join(repositoryRoot, path) : repositoryRoot;
     },

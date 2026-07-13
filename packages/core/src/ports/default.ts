@@ -20,8 +20,8 @@ import { homedir, platform as osPlatform } from 'node:os';
 import { delimiter, join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import type { PathKind, Platform, XdgDirs } from '../env/types.ts';
-import { toPortError } from './errors.ts';
-import { createGitPort } from './git.ts';
+import { isPortError, toPortError } from './errors.ts';
+import { type BinaryProcessPort, createGitPort } from './git.ts';
 import { createHttpPort } from './http.ts';
 import type {
   FileReadPort,
@@ -171,7 +171,7 @@ const createFileWritePort = (): FileWritePort => ({
 
 const createLockPort = (): LockPort => ({
   withFileLock: async (path, operation) => {
-    let release: (() => Promise<void>) | undefined;
+    let release: () => Promise<void>;
     try {
       release = await lockfile.lock(path, {
         realpath: false,
@@ -179,15 +179,17 @@ const createLockPort = (): LockPort => ({
         update: 5_000,
         retries: { retries: 5, factor: 2, minTimeout: 100, maxTimeout: 2_000 },
       });
-      return await operation();
     } catch (error) {
       throw toPortError(error, {
         capability: 'lock',
         operation: 'withFileLock',
         context: { path },
       });
+    }
+    try {
+      return await operation();
     } finally {
-      await release?.().catch(() => {});
+      await release().catch(() => {});
     }
   },
 });
@@ -207,14 +209,19 @@ const createPathAccessPort = (): PathAccessPort => ({
   },
 });
 
-const createProcessPort = (): ProcessPort => {
-  const exec: ProcessPort['exec'] = async (command, args, options = {}) => {
+const createProcessPorts = (): {
+  readonly processPort: ProcessPort;
+  readonly binaryProcessPort: BinaryProcessPort;
+} => {
+  const binaryExec: BinaryProcessPort['exec'] = async (command, args, options = {}) => {
     if (options.signal?.aborted) {
       throw toPortError(
         { code: 'ABORT_ERR' },
         {
           capability: 'process',
           operation: 'exec',
+          code: 'cancelled',
+          message: 'process operation was cancelled',
           context: { command },
         },
       );
@@ -225,6 +232,7 @@ const createProcessPort = (): ProcessPort => {
     };
     for (const name of options.unsetEnv ?? []) delete childEnvironment[name];
     let timedOut = false;
+    let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let removeAbort: (() => void) | undefined;
     try {
@@ -237,20 +245,38 @@ const createProcessPort = (): ProcessPort => {
       });
       if (options.timeoutMs !== undefined) {
         timer = setTimeout(() => {
+          if (cancelled) return;
           timedOut = true;
           child.kill();
         }, options.timeoutMs);
       }
-      const abort = () => child.kill();
+      const abort = () => {
+        if (timedOut) return;
+        cancelled = true;
+        child.kill();
+      };
       options.signal?.addEventListener('abort', abort, { once: true });
       removeAbort = () => options.signal?.removeEventListener('abort', abort);
       const [code, stdout, stderr] = await Promise.all([
         child.exited,
-        new Response(child.stdout).text().catch(() => ''),
+        new Response(child.stdout).arrayBuffer().catch(() => new ArrayBuffer(0)),
         new Response(child.stderr).text().catch(() => ''),
       ]);
-      return { code, stdout, stderr, timedOut };
+      if (cancelled) {
+        throw toPortError(
+          { code: 'ABORT_ERR' },
+          {
+            capability: 'process',
+            operation: 'exec',
+            code: 'cancelled',
+            message: 'process operation was cancelled',
+            context: { command },
+          },
+        );
+      }
+      return { code, stdout: new Uint8Array(stdout), stderr, timedOut };
     } catch (error) {
+      if (isPortError(error)) throw error;
       throw toPortError(error, {
         capability: 'process',
         operation: 'exec',
@@ -262,7 +288,12 @@ const createProcessPort = (): ProcessPort => {
     }
   };
 
-  return {
+  const binaryProcessPort: BinaryProcessPort = { exec: binaryExec };
+  const exec: ProcessPort['exec'] = async (command, args, options) => {
+    const result = await binaryExec(command, args, options);
+    return { ...result, stdout: new TextDecoder().decode(result.stdout) };
+  };
+  const processPort: ProcessPort = {
     exec,
     runVersion: async (binaryPath, args, signal) => {
       try {
@@ -277,11 +308,12 @@ const createProcessPort = (): ProcessPort => {
       }
     },
   };
+  return { processPort, binaryProcessPort };
 };
 
 export const defaultRuntimePorts = async (): Promise<RuntimePorts> => {
   const homeDir = homedir();
-  const processPort = createProcessPort();
+  const { processPort, binaryProcessPort } = createProcessPorts();
   return {
     homeDir,
     executableSearchPath: (process.env.PATH ?? '').split(delimiter).filter(Boolean),
@@ -295,8 +327,11 @@ export const defaultRuntimePorts = async (): Promise<RuntimePorts> => {
     wallNowIso: () => new Date().toISOString(),
     epochMilliseconds: () => Date.now(),
     monotonicMilliseconds: () => performance.now(),
-    nextId: (purpose) => `${purpose}-${randomBytes(8).toString('hex')}`,
-    git: createGitPort(processPort),
+    nextId: (purpose) =>
+      purpose === 'acquisition-transaction' || purpose === 'placement-transaction'
+        ? randomBytes(4).toString('hex')
+        : `${purpose}-${randomBytes(8).toString('hex')}`,
+    git: createGitPort(processPort, binaryProcessPort),
     http: createHttpPort(),
   };
 };

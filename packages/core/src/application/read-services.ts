@@ -17,7 +17,7 @@ import {
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import { builtInChecks } from '../doctor/registry.ts';
-import { runChecks } from '../doctor/run.ts';
+import { focusDoctorPorts, runChecks } from '../doctor/run.ts';
 import type { CheckRunMode, CheckRunResult } from '../doctor/types.ts';
 import { noopLogger } from '../env/logger.ts';
 import type { SkillSmithError } from '../errors.ts';
@@ -724,7 +724,7 @@ const runHealthApplication = async (
         ? [config.value.value.scope]
         : SCOPES;
   const checked = await runChecks(builtInChecks, {
-    env: context.ports,
+    env: focusDoctorPorts(context.ports),
     mode,
     tools,
     scopes,

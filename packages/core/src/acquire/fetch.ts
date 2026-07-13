@@ -12,6 +12,15 @@ type FetchSweepPorts = Pick<FileReadPort, 'pathKind' | 'listDir' | 'modifiedAt'>
   Pick<FileWritePort, 'removeTree'> &
   Pick<ClockPort, 'epochMilliseconds'>;
 
+// Preserve the legacy acquisition error contract: only the actionable last five non-empty lines
+// are surfaced, in their original order and with their original line contents.
+const stderrTail = (message: string): string =>
+  message
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .slice(-5)
+    .join('\n');
+
 /** Blobless partial clone of a single ref into a fresh, skillsmith-created git dir. Any non-zero
  *  git exit maps to `source-unresolvable` (never a half-state): git only ever writes inside
  *  `fetchDir`. Returns the full 40-hex COMMIT SHA of FETCH_HEAD (annotated tags are peeled). */
@@ -47,9 +56,7 @@ export const fetchRepo = async (
     }
     return ok({ sha: fetched.sha });
   } catch (e) {
-    return err(
-      sourceUnresolvableError(`cannot fetch ${cloneUrl} at ${ref ?? 'HEAD'}: ${errorMessage(e)}`),
-    );
+    return err(sourceUnresolvableError(`cannot fetch ${cloneUrl}: ${stderrTail(errorMessage(e))}`));
   }
 };
 
@@ -81,7 +88,7 @@ export const lsTreeSkills = async (
     }
     return ok({ candidates, scanned: candidates.length });
   } catch (e) {
-    return err(sourceUnresolvableError(`cannot list ${fetchDir}: ${errorMessage(e)}`));
+    return err(sourceUnresolvableError(`cannot list ${fetchDir}: ${stderrTail(errorMessage(e))}`));
   }
 };
 
@@ -106,7 +113,7 @@ export const sparseCheckoutSkill = async (
   } catch (e) {
     return err(
       sourceUnresolvableError(
-        `cannot check out ${skillPath === '' ? '<root>' : skillPath}: ${errorMessage(e)}`,
+        `cannot check out ${skillPath === '' ? '<root>' : skillPath}: ${stderrTail(errorMessage(e))}`,
       ),
     );
   }

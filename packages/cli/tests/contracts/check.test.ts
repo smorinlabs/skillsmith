@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
 import { runChecks } from '../../../core/src/doctor/run.ts';
+import { focusDoctorPorts } from '../../../core/src/doctor/run.ts';
 import type { Check, CheckRunContext, CheckRunResult } from '../../../core/src/doctor/types.ts';
 import { noopLogger } from '../../../core/src/env/logger.ts';
 import type { ScanEnv } from '../../../core/src/env/types.ts';
@@ -75,7 +76,7 @@ const env: ScanEnv = {
 };
 
 const context = (overrides: Partial<CheckRunContext> = {}): CheckRunContext => ({
-  env: runtimePorts(env),
+  env: focusDoctorPorts(runtimePorts(env)),
   mode: 'check',
   tools: ['codex'],
   scopes: ['project'],

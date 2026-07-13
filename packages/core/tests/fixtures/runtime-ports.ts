@@ -6,6 +6,13 @@ import type { RuntimePorts } from '../../src/ports/types.ts';
 
 let sequence = 0;
 
+const nextFixtureId = (purpose: string): string => {
+  sequence += 1;
+  return purpose === 'acquisition-transaction' || purpose === 'placement-transaction'
+    ? sequence.toString(16).padStart(8, '0').slice(-8)
+    : `${purpose}-${sequence}`;
+};
+
 /** Explicit compatibility projection for tests whose fixtures still exercise the public 1.x facade. */
 export const runtimePorts = (env: ScanEnv): RuntimePorts => ({
   ...runtimePortsFromScanEnv(env, {
@@ -14,7 +21,7 @@ export const runtimePorts = (env: ScanEnv): RuntimePorts => ({
       epochMilliseconds: () => 0,
       monotonicMilliseconds: () => 0,
     },
-    id: { nextId: (purpose) => `${purpose}-${++sequence}` },
+    id: { nextId: nextFixtureId },
   }),
   xdg: { ...env.xdg, cache: tmpdir() },
   makeDir: async (path) => {

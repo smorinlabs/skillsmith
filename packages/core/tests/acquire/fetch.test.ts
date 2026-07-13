@@ -11,6 +11,7 @@ import {
   sweepFetchOrphans,
 } from '../../src/acquire/fetch.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import { portError } from '../../src/ports/errors.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   type RemoteFixture,
@@ -153,10 +154,50 @@ describe('fetchRepo', () => {
     const e = res.error;
     expect(e.code).toBe('source-unresolvable');
     if (e.code !== 'source-unresolvable') return;
+    expect(e.message).toStartWith(`cannot fetch ${fixture.multiUrl}: `);
     expect(e.message).toContain('v9.9.9'); // git echoes the missing ref
     // git init created only the fetch dir; no store/ledger siblings appeared.
     expect(await readdir(parent)).toEqual(['ft']);
     await rm(parent, { recursive: true, force: true });
+  });
+
+  test('structured Git failures retain the legacy last-five-stderr wording exactly', async () => {
+    const cloneUrl = 'https://example.invalid/acme/repo.git';
+    const res = await fetchRepo(
+      {
+        git: {
+          ...env.git,
+          initializeFetch: async () => {},
+          fetchRef: async () => {
+            throw portError({
+              capability: 'git',
+              operation: 'fetchRef',
+              code: 'unavailable',
+              message: [
+                'line 1',
+                '',
+                'line 2',
+                'line 3',
+                'line 4',
+                'line 5',
+                'line 6',
+                'line 7',
+              ].join('\n'),
+              context: { repositoryRoot: '/fetch', ref: 'missing' },
+            });
+          },
+        },
+      },
+      { cloneUrl, ref: 'missing', fetchDir: '/fetch' },
+    );
+
+    expect(res).toEqual({
+      ok: false,
+      error: {
+        code: 'source-unresolvable',
+        message: `cannot fetch ${cloneUrl}: line 3\nline 4\nline 5\nline 6\nline 7`,
+      },
+    });
   });
 
   test('an unreachable URL fails source-unresolvable and identically on repeat (offline-deterministic)', async () => {

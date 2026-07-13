@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import { configParse } from '../../src/doctor/checks/config-parse.ts';
-import { runChecks } from '../../src/doctor/run.ts';
-import type { Check, CheckRunContext } from '../../src/doctor/types.ts';
+import { focusDoctorPorts, runChecks } from '../../src/doctor/run.ts';
+import type { Check, CheckRunContext, DoctorPorts } from '../../src/doctor/types.ts';
 import { noopLogger } from '../../src/env/logger.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
 import { runtimePorts } from '../fixtures/runtime-ports.ts';
@@ -35,7 +35,7 @@ const env: ScanEnv = {
 };
 
 const ctx: CheckRunContext = {
-  env: runtimePorts(env),
+  env: focusDoctorPorts(runtimePorts(env)),
   mode: 'doctor',
   tools: [],
   scopes: [],
@@ -63,7 +63,27 @@ const mkCheck = (
     })),
 });
 
+const assertNoProcessAuthority = (ports: DoctorPorts): void => {
+  // @ts-expect-error health checks cannot execute arbitrary processes
+  void ports.exec;
+  // @ts-expect-error health checks cannot run subprocess-backed version probes
+  void ports.runVersion;
+};
+
 describe('runChecks', () => {
+  test('projects runtime authority without arbitrary process or mutation capabilities', () => {
+    const focused = focusDoctorPorts(runtimePorts(env));
+    assertNoProcessAuthority(focused);
+
+    expect(focused.http.request).toBeFunction();
+    expect(focused.assertWritableDirectory).toBeFunction();
+    expect(focused).not.toHaveProperty('exec');
+    expect(focused).not.toHaveProperty('runVersion');
+    expect(focused).not.toHaveProperty('writeTextFile');
+    expect(focused).not.toHaveProperty('withFileLock');
+    expect(focused).not.toHaveProperty('git');
+  });
+
   test('filters registry by mode', async () => {
     const registry: Check[] = [
       mkCheck('a', 'warning', ['doctor'], 1),
@@ -180,7 +200,7 @@ describe('config-parse artifact selection', () => {
 
     const findings = await configParse.run({
       ...ctx,
-      env: runtimePorts(selectedEnv),
+      env: focusDoctorPorts(runtimePorts(selectedEnv)),
       artifactPair: { file, lockfile: '/p/custom/team.lock' },
     });
 

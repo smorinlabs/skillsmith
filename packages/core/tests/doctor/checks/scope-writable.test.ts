@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { resolveRuntimeConfiguration } from '../../../src/config/runtime.ts';
 import { createScopeWritableCheck } from '../../../src/doctor/checks/scope-writable.ts';
+import { focusDoctorPorts } from '../../../src/doctor/run.ts';
 import type { CheckRunContext } from '../../../src/doctor/types.ts';
 import { noopLogger } from '../../../src/env/logger.ts';
 import type { PathKind, ScanEnv } from '../../../src/env/types.ts';
@@ -38,7 +39,7 @@ const fakeEnv = (
 });
 
 const context = (overrides: Partial<CheckRunContext> = {}): CheckRunContext => ({
-  env: runtimePorts(fakeEnv(() => 'absent')),
+  env: focusDoctorPorts(runtimePorts(fakeEnv(() => 'absent'))),
   mode: 'doctor',
   tools: ['claude-code'],
   scopes: ['user'],
@@ -52,7 +53,7 @@ const context = (overrides: Partial<CheckRunContext> = {}): CheckRunContext => (
 const withAccess = (
   env: ScanEnv,
   assertWritableDirectory: CheckRunContext['env']['assertWritableDirectory'],
-): CheckRunContext['env'] => ({ ...runtimePorts(env), assertWritableDirectory });
+): CheckRunContext['env'] => focusDoctorPorts({ ...runtimePorts(env), assertWritableDirectory });
 
 const denied = (uid = 501) =>
   portError({

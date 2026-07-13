@@ -54,6 +54,7 @@ export type {
   CheckRunContext,
   CheckRunMode,
   CheckRunResult,
+  DoctorPorts,
   CliMetadataReport,
   CommandEntry,
   CommandExitClass,

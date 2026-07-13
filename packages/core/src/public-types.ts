@@ -62,6 +62,7 @@ export type {
   CheckRunContext,
   CheckRunMode,
   CheckRunResult,
+  DoctorPorts,
   Finding,
   Severity,
 } from './doctor/types.ts';

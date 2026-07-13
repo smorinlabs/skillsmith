@@ -5,7 +5,6 @@ import type {
   HttpPort,
   InventoryReadPorts,
   PathAccessPort,
-  ProcessPort,
   ResolvedRuntimeConfiguration,
 } from '../ports/types.ts';
 
@@ -26,8 +25,10 @@ export interface Finding {
   scopeInUse?: boolean;
 }
 
+export type DoctorPorts = InventoryReadPorts & PathAccessPort & { readonly http: HttpPort };
+
 export interface CheckRunContext {
-  env: InventoryReadPorts & PathAccessPort & ProcessPort & { readonly http: HttpPort };
+  env: DoctorPorts;
   mode: CheckRunMode;
   tools: readonly SupportedTool[];
   scopes: readonly Scope[];

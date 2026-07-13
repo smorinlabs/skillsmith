@@ -56,11 +56,12 @@ const codeFrom = (value: unknown): PortErrorCode => {
   if (isPortError(value)) return value.code;
   if (!isRecord(value)) return 'io';
   const code = typeof value.code === 'string' ? value.code : '';
+  const name = typeof value.name === 'string' ? value.name : '';
   if (code === 'ENOENT') return 'not-found';
   if (code === 'EACCES' || code === 'EPERM') return 'permission';
   if (code === 'EEXIST' || code === 'ENOTEMPTY') return 'conflict';
-  if (code === 'ETIMEDOUT' || code === 'TIMEOUT') return 'timeout';
-  if (code === 'ABORT_ERR' || code === 'AbortError') return 'cancelled';
+  if (code === 'ETIMEDOUT' || code === 'TIMEOUT' || name === 'TimeoutError') return 'timeout';
+  if (code === 'ABORT_ERR' || code === 'AbortError' || name === 'AbortError') return 'cancelled';
   if (code === 'EINVAL') return 'invalid';
   return 'io';
 };

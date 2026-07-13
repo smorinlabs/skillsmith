@@ -5,6 +5,7 @@ import { multiInstall } from '../../../src/doctor/checks/multi-install.ts';
 import { networkReach } from '../../../src/doctor/checks/network-reach.ts';
 import { xdgPaths } from '../../../src/doctor/checks/xdg-paths.ts';
 import { builtInChecks } from '../../../src/doctor/registry.ts';
+import { focusDoctorPorts } from '../../../src/doctor/run.ts';
 import type { CheckRunContext } from '../../../src/doctor/types.ts';
 import { noopLogger } from '../../../src/env/logger.ts';
 import type { ScanEnv } from '../../../src/env/types.ts';
@@ -38,7 +39,7 @@ const baseEnv: ScanEnv = {
 };
 
 const baseCtx: CheckRunContext = {
-  env: runtimePorts(baseEnv),
+  env: focusDoctorPorts(runtimePorts(baseEnv)),
   mode: 'doctor',
   tools: [],
   scopes: [],
@@ -71,7 +72,9 @@ describe('xdgPaths', () => {
   test('empty config → error finding', async () => {
     const ctx = {
       ...baseCtx,
-      env: runtimePorts({ ...baseEnv, xdg: { config: '', data: '/d', cache: '/c' } }),
+      env: focusDoctorPorts(
+        runtimePorts({ ...baseEnv, xdg: { config: '', data: '/d', cache: '/c' } }),
+      ),
     };
     const findings = await xdgPaths.run(ctx);
     expect(findings).toHaveLength(1);
@@ -97,7 +100,11 @@ describe('legacyInstall', () => {
       fileExists: async (p) => p === '/h/.codex/skills',
       listDir: async (p) => (p === '/h/.codex/skills' ? ['foo'] : []),
     };
-    const ctx: CheckRunContext = { ...baseCtx, env: runtimePorts(env), tools: ['codex'] };
+    const ctx: CheckRunContext = {
+      ...baseCtx,
+      env: focusDoctorPorts(runtimePorts(env)),
+      tools: ['codex'],
+    };
     const findings = await legacyInstall.run(ctx);
     expect(findings).toHaveLength(1);
     expect(findings[0]?.tool).toBe('codex');
