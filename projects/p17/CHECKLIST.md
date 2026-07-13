@@ -590,7 +590,7 @@ Downstream coverage obligations: EWP-WF11, EWP-WF16.
 
 ## P17-G1-05 — Executable tool-adapter/capability registry and current verify behavior
 
-Phase: 1; status: **ready**; dependencies: P17-G1-03.
+Phase: 1; status: **active**; dependencies: P17-G1-03.
 Required-now validations: EWP-CMD-VERIFY-TS01, EWP-CMD-VERIFY-TS02, EWP-CMD-VERIFY-TS03, EWP-CMD-VERIFY-TS04, EWP-P1-TS09.
 Downstream coverage obligations: EWP-CMD-AGENTS-TS03, EWP-P3B-TS06, EWP-WF01, EWP-WF05, EWP-WF07.
 
@@ -598,7 +598,7 @@ Downstream coverage obligations: EWP-CMD-AGENTS-TS03, EWP-P3B-TS06, EWP-WF01, EW
 
 - [x] P17-G1-05:mapped _(passed)_
 - [x] P17-G1-05:ready _(passed)_
-- [ ] P17-G1-05:test-first _(pending)_
+- [x] P17-G1-05:test-first _(passed)_
 - [ ] P17-G1-05:minimal-implementation _(pending)_
 - [ ] P17-G1-05:targeted-green _(pending)_
 - [ ] P17-G1-05:impacted-green _(pending)_
@@ -612,12 +612,12 @@ Downstream coverage obligations: EWP-CMD-AGENTS-TS03, EWP-P3B-TS06, EWP-WF01, EW
 - [ ] **COMMAND:verify** — Develop — Is this skill or plugin valid for the selected tools? _(command; planned)_
 - [ ] **EWP-CF-007** — Make support an operation capability, not one boolean _(finding; planned)_
 - [ ] **EWP-CF-036** — Make the tool-adapter registry the executable capability authority _(finding; planned)_
-- [ ] **EWP-CMD-VERIFY-TS01** — plugin/bare-skill/missing/invalid target resolution. _(command-test; planned)_
-- [ ] **EWP-CMD-VERIFY-TS02** — auto/explicit tools, absent tool, and Claude/Codex static-plus-deep _(command-test; planned)_
-- [ ] **EWP-CMD-VERIFY-TS03** — strict severity and 0/1/2/4/130 exits. _(command-test; planned)_
-- [ ] **EWP-CMD-VERIFY-TS04** — JSON/human/global-context and live-version matrix. _(command-test; planned)_
+- [ ] **EWP-CMD-VERIFY-TS01** — plugin/bare-skill/missing/invalid target resolution. _(command-test; failing)_
+- [ ] **EWP-CMD-VERIFY-TS02** — auto/explicit tools, absent tool, and Claude/Codex static-plus-deep _(command-test; failing)_
+- [ ] **EWP-CMD-VERIFY-TS03** — strict severity and 0/1/2/4/130 exits. _(command-test; failing)_
+- [ ] **EWP-CMD-VERIFY-TS04** — JSON/human/global-context and live-version matrix. _(command-test; failing)_
 - [ ] **EWP-P1-T11** — Add ADR 0007 and the validated ToolDescriptor plus inventory/verification/ _(phase-task; planned)_
-- [ ] **EWP-P1-TS09** — Exact four-tool operation matrix, unique ID/version and descriptor/bundle _(phase-test; planned)_
+- [ ] **EWP-P1-TS09** — Exact four-tool operation matrix, unique ID/version and descriptor/bundle _(phase-test; failing)_
 - [ ] **P2-06** — Capability visibility _(recommendation; planned)_
 
 ## P17-G1-06 — Canonical codecs, DTO mappings, and public wire-contract registry

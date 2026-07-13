@@ -1894,7 +1894,7 @@
       "phase": "1",
       "title": "Executable tool-adapter/capability registry and current verify behavior",
       "dependsOn": ["P17-G1-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0007-tool-adapter-registry.md",
@@ -1981,8 +1981,8 @@
           "evidence": ["projects/p17/evidence/P17-G1-05.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-05.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -14483,11 +14483,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-05:packages/cli/tests/contracts/verify.test.ts#EWP-CMD-VERIFY-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/verify.test.ts",
+        "selector": "EWP-CMD-VERIFY-TS01",
+        "command": "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-05.md#execution-receipt-ewp-cmd-verify-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-VERIFY-TS01"],
@@ -14499,8 +14504,10 @@
         "EWP-P1-TS09"
       ],
       "affectedContracts": ["COMMAND:verify", "EWP-CF-007", "EWP-CF-036", "P2-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS01"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/verify.test.ts"]
     },
     {
       "id": "EWP-CMD-VERIFY-TS02",
@@ -14508,11 +14515,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-05:packages/cli/tests/contracts/verify.test.ts#EWP-CMD-VERIFY-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/verify.test.ts",
+        "selector": "EWP-CMD-VERIFY-TS02",
+        "command": "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-05.md#execution-receipt-ewp-cmd-verify-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-VERIFY-TS02"],
@@ -14524,8 +14536,10 @@
         "EWP-P1-TS09"
       ],
       "affectedContracts": ["COMMAND:verify", "EWP-CF-007", "EWP-CF-036", "P2-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/verify.test.ts"]
     },
     {
       "id": "EWP-CMD-VERIFY-TS03",
@@ -14533,11 +14547,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-05:packages/cli/tests/contracts/verify.test.ts#EWP-CMD-VERIFY-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/verify.test.ts",
+        "selector": "EWP-CMD-VERIFY-TS03",
+        "command": "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-05.md#execution-receipt-ewp-cmd-verify-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-VERIFY-TS03"],
@@ -14549,8 +14568,10 @@
         "EWP-P1-TS09"
       ],
       "affectedContracts": ["COMMAND:verify", "EWP-CF-007", "EWP-CF-036", "P2-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/verify.test.ts"]
     },
     {
       "id": "EWP-CMD-VERIFY-TS04",
@@ -14558,11 +14579,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-05:packages/cli/tests/contracts/verify.test.ts#EWP-CMD-VERIFY-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/verify.test.ts",
+        "selector": "EWP-CMD-VERIFY-TS04",
+        "command": "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-05.md#execution-receipt-ewp-cmd-verify-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-VERIFY-TS04"],
@@ -14574,8 +14600,10 @@
         "EWP-P1-TS09"
       ],
       "affectedContracts": ["COMMAND:verify", "EWP-CF-007", "EWP-CF-036", "P2-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS04"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/verify.test.ts"]
     },
     {
       "id": "EWP-OPT-TS01",
@@ -16002,11 +16030,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-05:tests/ergonomics/phase/EWP-P1-TS09.test.ts#EWP-P1-TS09",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS09.test.ts",
+        "selector": "EWP-P1-TS09",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS09.test.ts --test-name-pattern EWP-P1-TS09"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-05.md#execution-receipt-ewp-p1-ts09"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS09"],
@@ -16018,8 +16051,14 @@
         "EWP-P1-TS09"
       ],
       "affectedContracts": ["COMMAND:verify", "EWP-CF-007", "EWP-CF-036", "P2-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS09.test.ts --test-name-pattern EWP-P1-TS09"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P1-TS09.test.ts",
+        "tests/ergonomics/fixtures/p1-ts09/read-only-adapter.ts",
+        "tests/ergonomics/fixtures/p1-ts09/write-adapter.ts"
+      ]
     },
     {
       "id": "EWP-P1-TS10",
