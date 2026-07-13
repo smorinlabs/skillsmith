@@ -1,6 +1,5 @@
-import { basename, join } from 'node:path';
-import { verifyClaudeCode } from '../agents/claude-code/verify.ts';
-import { verifyCodex } from '../agents/codex/verify.ts';
+import { basename, dirname, join } from 'node:path';
+import { type ToolRegistry, toolRegistry } from '../agents/registry.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -34,13 +33,45 @@ export interface ResolvedTarget {
   cleanup: () => Promise<void>; // removes the wrapper temp dir; no-op for plugins
 }
 
+type VerifyRegistry = Pick<ToolRegistry, 'adapters' | 'ids' | 'get' | 'toolsFor'>;
+type VerifyDispatch = VerifyRegistry | Readonly<Record<VerifyTool, ToolVerifier>>;
+
+const isVerifyRegistry = (dispatch: VerifyDispatch): dispatch is VerifyRegistry =>
+  'adapters' in dispatch &&
+  Array.isArray(dispatch.adapters) &&
+  typeof dispatch.get === 'function' &&
+  typeof dispatch.toolsFor === 'function';
+
+const targetManifestsFor = (registry: VerifyRegistry): readonly string[] => [
+  ...new Set(
+    [toolRegistry, registry].flatMap((candidate) =>
+      candidate.adapters.flatMap((adapter) => adapter.verification?.targetManifests ?? []),
+    ),
+  ),
+];
+
+const verifiedAgainstFor = (registry: VerifyRegistry): Record<string, string> =>
+  Object.fromEntries(
+    registry.adapters.flatMap((adapter) =>
+      adapter.verification
+        ? [[adapter.descriptor.id, adapter.verification.verifiedAgainst] as const]
+        : [],
+    ),
+  );
+
 export const resolveTarget = async (
   env: VerifyPorts,
   path: string,
+  registry: VerifyRegistry = toolRegistry,
 ): Promise<Result<ResolvedTarget, SkillSmithError>> => {
-  const isPlugin =
-    (await env.fileExists(join(path, '.claude-plugin', 'plugin.json'))) ||
-    (await env.fileExists(join(path, '.codex-plugin', 'plugin.json')));
+  const targetManifests = targetManifestsFor(registry);
+  let isPlugin = false;
+  for (const targetManifest of targetManifests) {
+    if (await env.fileExists(join(path, targetManifest))) {
+      isPlugin = true;
+      break;
+    }
+  }
   if (isPlugin) {
     return ok({ path, kind: 'plugin', cleanup: async () => {} });
   }
@@ -56,10 +87,10 @@ export const resolveTarget = async (
         version: '0.0.0',
         author: { name: 'skillsmith' },
       });
-      await env.makeDir(join(tmp, '.claude-plugin'));
-      await env.makeDir(join(tmp, '.codex-plugin'));
-      await env.writeTextFile(join(tmp, '.claude-plugin', 'plugin.json'), manifest);
-      await env.writeTextFile(join(tmp, '.codex-plugin', 'plugin.json'), manifest);
+      for (const targetManifest of targetManifests) {
+        await env.makeDir(join(tmp, dirname(targetManifest)));
+        await env.writeTextFile(join(tmp, targetManifest), manifest);
+      }
       await env.copyTree(path, join(tmp, 'skills', name));
       return ok({
         path: tmp,
@@ -75,7 +106,7 @@ export const resolveTarget = async (
 
   return err(
     invalidArgumentError(
-      `'${path}' is not a plugin or skill directory (expected .claude-plugin/plugin.json, .codex-plugin/plugin.json, or SKILL.md)`,
+      `'${path}' is not a plugin or skill directory (expected ${targetManifests.join(', ')}, or SKILL.md)`,
     ),
   );
 };
@@ -83,22 +114,29 @@ export const resolveTarget = async (
 export const runVerify = async (
   env: VerifyPorts,
   opts: VerifyOptions,
-  checkers: Record<VerifyTool, ToolVerifier>,
+  dispatch: VerifyDispatch = toolRegistry,
 ): Promise<Result<VerifyReport, SkillSmithError>> => {
   if (opts.signal?.aborted) return err(genericError('runVerify aborted'));
 
-  const resolved = await resolveTarget(env, opts.path);
+  const registry = isVerifyRegistry(dispatch) ? dispatch : null;
+  const resolved = await resolveTarget(env, opts.path, registry ?? toolRegistry);
   if (!resolved.ok) return resolved;
 
   try {
-    const toolSet = opts.tools ?? VERIFY_TOOLS;
+    const toolSet = opts.tools ?? registry?.toolsFor('verify-static') ?? VERIFY_TOOLS;
     const explicitTools = opts.tools !== undefined && opts.tools.length > 0;
     const modes: VerifyMode[] = opts.deep ? ['static', 'deep'] : ['static'];
     const strict = opts.strict ?? false;
 
     const toolVerdicts: ToolVerdict[] = [];
     for (const tool of toolSet) {
-      const result = await checkers[tool](env, {
+      const checker = registry
+        ? registry.get(tool)?.verification?.verify
+        : (dispatch as Readonly<Record<VerifyTool, ToolVerifier>>)[tool as VerifyTool];
+      if (checker === undefined) {
+        return err(genericError(`no registered verifier for '${tool}'`));
+      }
+      const result = await checker(env, {
         path: resolved.value.path,
         modes,
         strict,
@@ -113,23 +151,21 @@ export const runVerify = async (
       schemaVersion: 1,
       target: { path: opts.path, kind: resolved.value.kind },
       requested: { tools: [...toolSet], modes, strict, explicitTools },
-      verifiedAgainst: VERIFIED_AGAINST,
+      verifiedAgainst: registry ? verifiedAgainstFor(registry) : VERIFIED_AGAINST,
       summary: summarize(toolVerdicts),
       tools: toolVerdicts,
-    };
+    } as VerifyReport;
     return ok(report);
+  } catch (error) {
+    if (opts.signal?.aborted) return err(genericError('runVerify aborted'));
+    throw error;
   } finally {
     await resolved.value.cleanup();
   }
-};
-
-const defaultCheckers: Record<VerifyTool, ToolVerifier> = {
-  'claude-code': verifyClaudeCode,
-  codex: verifyCodex,
 };
 
 /** `runVerify` wired to the built-in per-agent checkers. */
 export const verifyPlugin = (
   env: VerifyPorts,
   opts: VerifyOptions,
-): Promise<Result<VerifyReport, SkillSmithError>> => runVerify(env, opts, defaultCheckers);
+): Promise<Result<VerifyReport, SkillSmithError>> => runVerify(env, opts, toolRegistry);

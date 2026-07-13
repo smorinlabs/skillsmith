@@ -1,8 +1,7 @@
-import { VERIFY_TOOLS } from '@skillsmith/core';
-import type { VerifyReport } from '@skillsmith/core';
+import { toolRegistry } from '@skillsmith/core';
+import type { ToolRegistry, VerifyReport } from '@skillsmith/core';
 import { z } from 'zod';
 
-const ToolSchema = z.enum(VERIFY_TOOLS);
 const ModeSchema = z.enum(['static', 'deep']);
 const NormalizedSeveritySchema = z.enum(['error', 'warning', 'info']);
 const OutcomeSchema = z.enum(['pass', 'warn', 'fail']);
@@ -31,36 +30,48 @@ const ModeResultSchema = z.object({
   findings: z.array(VerifyFindingSchema),
 });
 
-const ToolVerdictSchema = z.object({
-  tool: ToolSchema,
-  available: z.boolean(),
-  toolVersion: z.string().nullable(),
-  versionDrift: z.boolean(),
-  skipReason: SkipReasonSchema.nullable(),
-  verdict: SummaryVerdictSchema,
-  modes: z.array(ModeResultSchema),
-});
+type VerifySchemaRegistry = Pick<ToolRegistry, 'toolsFor'>;
 
-export const VerifyJsonSchema = z.object({
-  schemaVersion: z.literal(1),
-  kind: z.literal('skillsmith.verify'),
-  target: z.object({ path: z.string(), kind: z.enum(['plugin', 'skill']) }),
-  requested: z.object({
-    tools: z.array(ToolSchema),
-    modes: z.array(ModeSchema),
-    strict: z.boolean(),
-    explicitTools: z.boolean(),
-  }),
-  verifiedAgainst: z.object({ 'claude-code': z.string(), codex: z.string() }),
-  summary: z.object({
+export const createVerifyJsonSchema = (registry: VerifySchemaRegistry) => {
+  const tools = registry.toolsFor('verify-static');
+  if (tools.length === 0) throw new Error('verify JSON schema requires a registered verifier');
+  const ToolSchema = z.enum(tools as [string, ...string[]]);
+  const ToolVerdictSchema = z.object({
+    tool: ToolSchema,
+    available: z.boolean(),
+    toolVersion: z.string().nullable(),
+    versionDrift: z.boolean(),
+    skipReason: SkipReasonSchema.nullable(),
     verdict: SummaryVerdictSchema,
-    verified: z.array(ToolSchema),
-    failed: z.array(ToolSchema),
-    skipped: z.array(ToolSchema),
-    counts: z.object({ error: z.number(), warning: z.number(), info: z.number() }),
-  }),
-  tools: z.array(ToolVerdictSchema),
-});
+    modes: z.array(ModeResultSchema),
+  });
+  const verifiedAgainstShape = Object.fromEntries(
+    tools.map((tool) => [tool, z.string()]),
+  ) as Record<string, z.ZodString>;
+
+  return z.object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('skillsmith.verify'),
+    target: z.object({ path: z.string(), kind: z.enum(['plugin', 'skill']) }),
+    requested: z.object({
+      tools: z.array(ToolSchema),
+      modes: z.array(ModeSchema),
+      strict: z.boolean(),
+      explicitTools: z.boolean(),
+    }),
+    verifiedAgainst: z.object(verifiedAgainstShape),
+    summary: z.object({
+      verdict: SummaryVerdictSchema,
+      verified: z.array(ToolSchema),
+      failed: z.array(ToolSchema),
+      skipped: z.array(ToolSchema),
+      counts: z.object({ error: z.number(), warning: z.number(), info: z.number() }),
+    }),
+    tools: z.array(ToolVerdictSchema),
+  });
+};
+
+export const VerifyJsonSchema = createVerifyJsonSchema(toolRegistry);
 
 export const renderVerifyJson = (report: VerifyReport): string => {
   const payload = {

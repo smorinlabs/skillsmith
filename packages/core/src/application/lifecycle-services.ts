@@ -11,7 +11,7 @@ import type {
   InstallScope,
   UninstallReport,
 } from '../acquire/types.ts';
-import type { SupportedTool } from '../agents/types.ts';
+import { FLIP_TOOLS } from '../agents/registry.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { SkillSmithError } from '../errors.ts';
@@ -61,7 +61,6 @@ const DEFAULT_DEPENDENCIES: LifecycleDependencies = {
   rollback: runRollback,
 };
 
-const FLIP_TOOLS = ['claude-code', 'codex'] as const satisfies readonly SupportedTool[];
 const MUTATION_POLICY = (
   capabilities: readonly SelectionCapability[],
   allowAbsentCreate = false,

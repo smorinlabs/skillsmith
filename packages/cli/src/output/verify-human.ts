@@ -1,3 +1,4 @@
+import { toolRegistry } from '@skillsmith/core';
 import type { ToolVerdict, VerifyFinding, VerifyReport } from '@skillsmith/core';
 
 const SEVERITY_MARKER: Record<VerifyFinding['normalizedSeverity'], string> = {
@@ -38,9 +39,12 @@ export const renderVerifyHuman = (report: VerifyReport, exitCode: number): strin
 
       const manifestMark = m.coverage.manifest ? '✓' : '—';
       const skillsMark = m.coverage.skills
-        ? t.tool === 'claude-code' && m.mode === 'deep'
-          ? '✓ (presence)'
-          : '✓'
+        ? `✓${
+            m.mode === 'deep'
+              ? (toolRegistry.get(t.tool)?.verification?.renderedFacts.deepSkillCoverageSuffix ??
+                '')
+              : ''
+          }`
         : '—';
       const noFindings = m.findings.length === 0 ? '  (no findings)' : '';
       lines.push(`  ${m.mode}  manifest ${manifestMark}  skills ${skillsMark}${noFindings}`);

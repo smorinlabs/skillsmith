@@ -778,7 +778,7 @@ export const runCheckApplication: ApplicationService<CurrentCommandRequest, Heal
   context,
 ) => runHealthApplication('check', request, context);
 
-const verifyExitClass = (report: VerifyReport): CommandExitClass => {
+export const verifyExitClass = (report: VerifyReport): CommandExitClass => {
   if (report.summary.verdict === 'fail') return 'failure';
   const anyRan = report.tools.some((tool) => tool.modes.some((mode) => mode.status === 'ran'));
   if (!anyRan) return 'capability';
