@@ -8,6 +8,7 @@ Records of non-obvious design decisions. Each ADR follows the [Michael Nygard fo
 | [0002](0002-result-type.md) | `Result<T, E>` instead of exceptions for expected failures | Accepted |
 | [0003](0003-eslint-import-boundaries.md) | Enforce architectural boundaries with ESLint | Accepted |
 | [0004](0004-command-runtime-application-boundary.md) | Declarative commands, one CLI runtime, and public application services | Accepted |
+| [0005](0005-capability-scoped-ports.md) | Capability-scoped ports and one runtime adapter | Accepted |
 
 ## When to write an ADR
 

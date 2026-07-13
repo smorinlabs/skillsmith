@@ -14,6 +14,7 @@ export type {
   UninstallResult,
 } from './acquire/types.ts';
 export type {
+  ApplicationContext,
   ApplicationService,
   CommandExitClass,
   CommandOutcome,
@@ -70,6 +71,42 @@ export type { ListSkillsOpts } from './scan/list-skills.ts';
 export type { Logger } from './env/logger.ts';
 export type { ExecOptions, ExecResult, PathKind, Platform, ScanEnv, XdgDirs } from './env/types.ts';
 export type { SkillSmithError } from './errors.ts';
+export type {
+  PortCapability,
+  PortError,
+  PortErrorCode,
+  PortErrorContext,
+  PortErrorContextValue,
+} from './ports/errors.ts';
+export type {
+  ClockPort,
+  DetectionPorts,
+  FileReadPort,
+  FileWritePort,
+  GitBlobRequest,
+  GitFetchRefResult,
+  GitFetchRefRequest,
+  GitFindRepositoryRootRequest,
+  GitInitializeFetchRequest,
+  GitMaterializeTreeRequest,
+  GitPort,
+  GitReadPorts,
+  GitRequest,
+  GitResolveRemoteRefRequest,
+  GitTreeEntry,
+  GitTreeRequest,
+  GitWorktreeInspection,
+  HttpPort,
+  HttpRequest,
+  HttpResponse,
+  IdPort,
+  InventoryReadPorts,
+  LockPort,
+  PlatformPaths,
+  ProcessPort,
+  ResolvedRuntimeConfiguration,
+  RuntimePorts,
+} from './ports/types.ts';
 export type {
   FlipAction,
   FlipDeps,

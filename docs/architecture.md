@@ -21,6 +21,7 @@ packages/
       detect/        path scanners, install-method classification, detect-types
       doctor/        diagnostic checks and execution
       env/           ScanEnv, platform/XDG resolution, logger, subprocess exec
+      ports/         focused capabilities, safe adapter errors, real adapter composition
       place/         dev/promote placement transactions
       scan/          orchestrator: detectAll / detectTool
       selection/     shared tool/scope/target validation
@@ -101,38 +102,37 @@ This means:
 
 Details and alternatives considered: [ADR 0002](adr/0002-result-type.md).
 
-## `ScanEnv` — explicit capabilities and real adapters
+## Capability-scoped ports and the `ScanEnv` compatibility facade
 
-Domain operations receive filesystem and process capabilities through `ScanEnv`, which keeps those
-operations deterministic under tests. The production `defaultScanEnv()` adapter intentionally reads
-the host environment, home directory, platform, and XDG locations and supplies real filesystem,
-locking, and subprocess implementations. Config composition likewise reads environment variables at
-its production boundary.
+ADR 0005 replaces aggregate authority with focused ports. Domain operations receive only the
+structural intersection they use: platform paths and reads for inventory, version probing for
+detection, named Git/HTTP operations where required, and explicit write/lock/clock/ID capabilities
+for mutation. `RuntimePorts` exists only at real-adapter and application composition boundaries.
 
-The interface includes both read and write capabilities; this excerpt shows its shape rather than an
-exhaustive declaration (the source of truth is `packages/core/src/env/types.ts`):
+`defaultRuntimePorts()` owns the production Node/Bun effects. Raw environment input is decoded once
+into `ResolvedRuntimeConfiguration`; domain and application requests do not carry `process.env` or
+an unfiltered record. Real adapter failures are scalar-only `PortError` values that public
+coordinators translate to the existing result error contract.
+
+The focused read shape illustrates the authority boundary (the source of truth is
+`packages/core/src/ports/types.ts`):
 
 ```ts
-interface ScanEnv {
-  platform: Platform;                 // 'darwin' | 'linux' | 'win32'
-  homeDir: string;
-  xdg: XdgDirs;                       // config / data / cache
-  path: readonly string[];            // PATH split with platform delimiter
+type InventoryReadPorts = PlatformPaths & FileReadPort;
+
+interface FileReadPort {
   fileExists(p: string): Promise<boolean>;
+  pathKind(p: string): Promise<PathKind>;
   realpath(p: string): Promise<string>;
   listDir(p: string): Promise<readonly string[]>;
   readText(p: string): Promise<string>;
-  runVersion(
-    binaryPath: string,
-    args: readonly string[],
-    signal?: AbortSignal,
-  ): Promise<string | 'unknown'>;
-  exec(cmd: string, args: readonly string[], opts?: ExecOptions): Promise<ExecResult>;
-  // Additional byte, path-kind, write, rename, lock, and timestamp capabilities.
+  // Byte, link, executable, and timestamp reads complete the interface.
 }
 ```
 
-The CLI builds a real one via `defaultScanEnv()`; tests inject fakes. This is what makes the detection pipeline unit-testable without mocking `node:fs` or `node:child_process`.
+The deprecated public `ScanEnv` and `defaultScanEnv()` remain a 1.x compatibility facade projected
+from the same real adapter path. They gain no Git, HTTP, clock, or ID members and are not precedent
+for new domain signatures.
 
 A separate `Logger` interface lives in `env/logger.ts` and is passed through `DetectOptions` (not `ScanEnv`), so callers that don't want logging can omit it entirely.
 
@@ -212,5 +212,6 @@ If you find yourself fighting these rules, that's usually a signal to move code,
 - [ADR 0002 — Result-over-exceptions](adr/0002-result-type.md)
 - [ADR 0003 — ESLint import boundaries](adr/0003-eslint-import-boundaries.md)
 - [ADR 0004 — Command runtime and application services](adr/0004-command-runtime-application-boundary.md)
+- [ADR 0005 — Capability-scoped ports](adr/0005-capability-scoped-ports.md)
 - [Release process](releases.md)
 - [CONTRIBUTING](../CONTRIBUTING.md)

@@ -1,6 +1,7 @@
 import type { EffectiveConfig } from '../config/types.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { ScanEnv } from '../env/types.ts';
+import type { ResolvedRuntimeConfiguration, RuntimePorts } from '../ports/types.ts';
 
 /** Semantic exit classes. Numeric CLI exit codes remain presentation policy. */
 export const COMMAND_EXIT_CLASSES = [
@@ -89,6 +90,21 @@ export interface InteractionPort {
     readonly id: string;
     readonly message: string;
   }): Promise<InteractionResolution<boolean>>;
+}
+
+/** Capability-scoped composition context for application services migrated by G1-04. */
+export interface ApplicationContext {
+  readonly ports: RuntimePorts;
+  readonly configuration: ResolvedRuntimeConfiguration;
+  readonly interaction: InteractionPort;
+  readonly invocationCwd: string;
+  readonly globalOptions: {
+    readonly cd?: string;
+    readonly config?: string;
+  };
+  readonly projectContext?: ProjectContext;
+  readonly effectiveConfig?: EffectiveConfig;
+  readonly signal?: AbortSignal;
 }
 
 /**
