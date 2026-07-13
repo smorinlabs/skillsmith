@@ -565,7 +565,7 @@ Downstream coverage obligations: EWP-WF16.
 
 ## P17-G1-04 — Capability-scoped ports, typed configuration, and compatibility facade
 
-Phase: 1; status: **ready**; dependencies: P17-G1-03.
+Phase: 1; status: **active**; dependencies: P17-G1-03.
 Required-now validations: EWP-P1-TS08, EWP-WF15.
 Downstream coverage obligations: EWP-WF11, EWP-WF16.
 
@@ -573,7 +573,7 @@ Downstream coverage obligations: EWP-WF11, EWP-WF16.
 
 - [x] P17-G1-04:mapped _(passed)_
 - [x] P17-G1-04:ready _(passed)_
-- [ ] P17-G1-04:test-first _(pending)_
+- [x] P17-G1-04:test-first _(passed)_
 - [ ] P17-G1-04:minimal-implementation _(pending)_
 - [ ] P17-G1-04:targeted-green _(pending)_
 - [ ] P17-G1-04:impacted-green _(pending)_
@@ -586,7 +586,7 @@ Downstream coverage obligations: EWP-WF11, EWP-WF16.
 
 - [ ] **EWP-CF-034** — Replace the growing ScanEnv interface with capability-scoped ports _(finding; planned)_
 - [ ] **EWP-P1-T10** — Add ADR 0005 and capability-scoped PlatformPaths/FileRead/FileWrite/Lock/Process/ _(phase-task; planned)_
-- [ ] **EWP-P1-TS08** — Static signature/import gates, compile-time negative read-only capability _(phase-test; planned)_
+- [ ] **EWP-P1-TS08** — Static signature/import gates, compile-time negative read-only capability _(phase-test; failing)_
 
 ## P17-G1-05 — Executable tool-adapter/capability registry and current verify behavior
 

@@ -1744,7 +1744,7 @@
       "phase": "1",
       "title": "Capability-scoped ports, typed configuration, and compatibility facade",
       "dependsOn": ["P17-G1-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0001-core-cli-split.md",
@@ -1855,8 +1855,8 @@
           "evidence": ["projects/p17/evidence/P17-G1-04.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-04.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -15928,18 +15928,29 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-04",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-04:tests/ergonomics/phase/EWP-P1-TS08.test.ts#EWP-P1-TS08",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS08.test.ts",
+        "selector": "EWP-P1-TS08",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS08.test.ts --test-name-pattern EWP-P1-TS08"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-04.md#execution-receipt-ewp-p1-ts08"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS08"],
       "impactedValidations": ["EWP-P1-TS08"],
       "affectedContracts": ["EWP-CF-034"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS08.test.ts --test-name-pattern EWP-P1-TS08"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P1-TS08.test.ts",
+        "tests/ergonomics/fixtures/p1-ts08/tsconfig.json",
+        "tests/ergonomics/fixtures/p1-ts08/read-only-capability.ts"
+      ]
     },
     {
       "id": "EWP-P1-TS09",
