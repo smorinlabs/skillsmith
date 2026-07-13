@@ -8,7 +8,8 @@ import type { RuntimeOutcome } from '../../../packages/cli/src/runtime/adapter.t
 import { createCurrentRendererRegistry } from '../../../packages/cli/src/runtime/current-renderers.ts';
 import { CURRENT_COMMAND_SPECS } from '../../../packages/cli/src/spec/registry.ts';
 import { TOOL_OPERATIONS } from '../../../packages/core/src/agents/adapter-types.ts';
-import { toolRegistry } from '../../../packages/core/src/agents/registry.ts';
+import { createToolRegistry, toolRegistry } from '../../../packages/core/src/agents/registry.ts';
+import { writeFixtureAdapter } from '../fixtures/p1-ts09/write-adapter.ts';
 import {
   CURRENT_JSON_GOLDENS,
   CURRENT_RENDERER_REPORTS,
@@ -131,6 +132,43 @@ const GOLDEN_FILES = {
   error: 'error.stdout',
 } as const;
 
+const DESCRIPTOR_KEYS = [
+  'id',
+  'version',
+  'wireKind',
+  'embeddedVersion',
+  'unknownFields',
+  'formatting',
+  'migrations',
+  'compatibility',
+] as const;
+const MAPPING_KEYS = ['commandPath', 'contractId', 'version'] as const;
+const CONTRACT_RUNTIME_EXPORTS = ['createWireContractRegistry'] as const;
+const V1_RUNTIME_EXPORTS = [
+  'agentsV1Codec',
+  'capabilitySnapshotV1Codec',
+  'commandsV1Codec',
+  'configGetV1Codec',
+  'configListV1Codec',
+  'createVerifyV1Codec',
+  'errorV1Codec',
+  'healthV1Codec',
+  'installV1Codec',
+  'toAgentsV1Dto',
+  'toCapabilitySnapshotV1Dto',
+  'toCommandsV1Dto',
+  'toConfigGetV1Dto',
+  'toConfigListV1Dto',
+  'toErrorV1Dto',
+  'toHealthV1Dto',
+  'toInstallV1Dto',
+  'toUninstallV1Dto',
+  'toVerifyV1Dto',
+  'uninstallV1Codec',
+  'verifyV1Codec',
+] as const;
+const V2_RUNTIME_EXPORTS = ['flipV2Codec', 'listV2Codec', 'toFlipV2Dto', 'toListV2Dto'] as const;
+
 type UnknownRecord = Record<PropertyKey, unknown>;
 type WireResult = { readonly ok: boolean; readonly value?: unknown; readonly error?: unknown };
 type WireCodec = {
@@ -205,6 +243,69 @@ const resultValue = (result: WireResult): unknown => {
   return result.value;
 };
 
+const callable = (value: unknown): ((...args: unknown[]) => unknown) | null =>
+  typeof value === 'function' ? (value as (...args: unknown[]) => unknown) : null;
+
+const codecValue = (value: unknown, label: string): WireCodec | null => {
+  expect(record(value), `missing ${label}`).toBeTrue();
+  if (!record(value)) return null;
+  expect(typeof value.validate, `${label}.validate`).toBe('function');
+  expect(typeof value.decode, `${label}.decode`).toBe('function');
+  expect(typeof value.encode, `${label}.encode`).toBe('function');
+  return value as WireCodec;
+};
+
+const expectWireFailure = (
+  result: WireResult,
+  code: string,
+  contractId: string,
+  requestedVersion: number,
+  path?: readonly (string | number)[],
+): UnknownRecord => {
+  expect(result.ok).toBeFalse();
+  expect(record(result.error)).toBeTrue();
+  const error = record(result.error) ? result.error : {};
+  expect(Object.keys(error).sort()).toEqual(
+    ['code', 'contractId', 'requestedVersion', 'path', 'message'].sort(),
+  );
+  expect(error).toMatchObject({ code, contractId, requestedVersion });
+  if (path !== undefined) expect(error.path).toEqual([...path]);
+  expect(typeof error.message).toBe('string');
+  expect(Object.isFrozen(error)).toBeTrue();
+  expect(Object.isFrozen(error.path)).toBeTrue();
+  expect(error).not.toHaveProperty('cause');
+  expect(error).not.toHaveProperty('stack');
+  return error;
+};
+
+const verifyDtoFor = (tool: string): UnknownRecord => {
+  const dto = JSON.parse(CURRENT_JSON_GOLDENS.verify) as UnknownRecord;
+  dto.requested = { ...(dto.requested as UnknownRecord), tools: [tool] };
+  dto.verifiedAgainst = { [tool]: '9.9.9' };
+  dto.summary = {
+    ...(dto.summary as UnknownRecord),
+    verified: [tool],
+    failed: [],
+    skipped: [],
+  };
+  dto.tools = [{ ...((dto.tools as readonly UnknownRecord[])[0] ?? {}), tool }];
+  return dto;
+};
+
+const mutableCodec = (codec: WireCodec, descriptorOverrides: UnknownRecord = {}): WireCodec => ({
+  ...codec,
+  descriptor: {
+    ...codec.descriptor,
+    formatting: record(codec.descriptor.formatting)
+      ? { ...codec.descriptor.formatting }
+      : codec.descriptor.formatting,
+    migrations: Array.isArray(codec.descriptor.migrations)
+      ? [...codec.descriptor.migrations]
+      : codec.descriptor.migrations,
+    ...descriptorOverrides,
+  },
+});
+
 const successOutcome = (report: unknown): RuntimeOutcome => ({
   report,
   diagnostics: [],
@@ -224,15 +325,19 @@ const renderedCurrentBytes = (): CurrentBytes => {
     expect(selected, `missing current renderer ${name}`).toBeDefined();
     return selected === undefined ? '' : stdout(selected.json(successOutcome(report)));
   };
+  const health = render('check', CURRENT_RENDERER_REPORTS.health);
+  const flip = render('dev', CURRENT_RENDERER_REPORTS.flip);
+  expect(render('doctor', CURRENT_RENDERER_REPORTS.health), 'doctor renderer drift').toBe(health);
+  expect(render('promote', CURRENT_RENDERER_REPORTS.flip), 'promote renderer drift').toBe(flip);
   return {
     agents: render('agents', CURRENT_RENDERER_REPORTS.agents),
-    health: render('check', CURRENT_RENDERER_REPORTS.health),
+    health,
     commands: render('commands', CURRENT_RENDERER_REPORTS.commands),
     configGetUnscoped: render('configGet', CURRENT_RENDERER_REPORTS.configGetUnscoped),
     configGetScoped: render('configGet', CURRENT_RENDERER_REPORTS.configGetScoped),
     configListUnscoped: render('configList', CURRENT_RENDERER_REPORTS.configListUnscoped),
     configListScoped: render('configList', CURRENT_RENDERER_REPORTS.configListScoped),
-    flip: render('dev', CURRENT_RENDERER_REPORTS.flip),
+    flip,
     install: render('install', CURRENT_RENDERER_REPORTS.install),
     list: render('list', CURRENT_RENDERER_REPORTS.list),
     uninstall: render('uninstall', CURRENT_RENDERER_REPORTS.uninstall),
@@ -252,6 +357,37 @@ const addHostileFields = (value: UnknownRecord): UnknownRecord => {
     });
   return copy;
 };
+
+const hostileLifecycleReport = (
+  value: UnknownRecord & { readonly results: readonly UnknownRecord[] },
+) =>
+  addHostileFields({
+    ...value,
+    results: value.results.map((item) => addHostileFields(item)),
+  });
+
+const expectedCapabilitySnapshot = (): UnknownRecord => ({
+  schemaVersion: 1,
+  kind: 'skillsmith.capabilities',
+  tools: toolRegistry.adapters.map((adapter) => ({
+    id: adapter.descriptor.id,
+    order: adapter.descriptor.order,
+    capabilityVersion: adapter.descriptor.capabilityVersion,
+    operations: Object.fromEntries(
+      TOOL_OPERATIONS.map((operation) => {
+        const fact = adapter.descriptor.operations[operation];
+        return [
+          operation,
+          {
+            supported: fact.supported,
+            scopes: [...fact.scopes],
+            remediation: fact.remediation,
+          },
+        ];
+      }),
+    ),
+  })),
+});
 
 const typescriptFiles = async (root: string): Promise<readonly string[]> => {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
@@ -304,9 +440,16 @@ describe('EWP-P1-TS10', () => {
     expect(registry.commandMappings).toEqual(mappings);
     expect(Object.isFrozen(registry.codecs)).toBeTrue();
     expect(Object.isFrozen(registry.commandMappings)).toBeTrue();
+    for (const mapping of registry.commandMappings) {
+      expect(Object.keys(mapping)).toEqual([...MAPPING_KEYS]);
+      expect(Object.isFrozen(mapping)).toBeTrue();
+    }
     for (const codec of registry.codecs) {
       expect(Object.isFrozen(codec)).toBeTrue();
       expect(Object.isFrozen(codec.descriptor)).toBeTrue();
+      expect(Object.keys(codec.descriptor)).toEqual([...DESCRIPTOR_KEYS]);
+      expect(Object.isFrozen(codec.descriptor.formatting)).toBeTrue();
+      expect(Object.isFrozen(codec.descriptor.migrations)).toBeTrue();
       const policy = EXPECTED_DESCRIPTOR_POLICY[String(codec.descriptor.id)];
       expect(
         policy,
@@ -337,19 +480,11 @@ describe('EWP-P1-TS10', () => {
     const base = registry.get('agents', 1);
     expect(base).toBeDefined();
     if (base === undefined) return;
-    const mutableDescriptor = {
-      ...base.descriptor,
-      formatting: record(base.descriptor.formatting)
-        ? { ...base.descriptor.formatting }
-        : base.descriptor.formatting,
-      migrations: Array.isArray(base.descriptor.migrations)
-        ? [...base.descriptor.migrations]
-        : base.descriptor.migrations,
-    };
-    const mutable = { ...base, descriptor: mutableDescriptor };
-    const v2 = { ...mutable, descriptor: { ...mutableDescriptor, version: 2 } };
+    const mutable = mutableCodec(base);
+    const mutableDescriptor = mutable.descriptor;
+    const v2 = mutableCodec(base, { version: 2 });
     const fixtureMapping = { commandPath: 'skillsmith fixture', contractId: 'agents', version: 2 };
-    const future = create([mutable, v2], [fixtureMapping]);
+    const future = create([v2, mutable], [fixtureMapping]);
     expect(future.get('agents', 1)).toBeDefined();
     expect(future.latest('agents')?.descriptor.version).toBe(2);
     expect(future.forCommand('skillsmith fixture')?.descriptor.version).toBe(2);
@@ -357,10 +492,57 @@ describe('EWP-P1-TS10', () => {
     expect(Object.isFrozen(mutableDescriptor)).toBeFalse();
     expect(Object.isFrozen(future.codecs[0]?.descriptor)).toBeTrue();
     expect(Object.isFrozen(future.codecs[0]?.descriptor.formatting)).toBeTrue();
+    expect(Object.isFrozen(future.codecs[0]?.descriptor.migrations)).toBeTrue();
     expect(() => create([mutable, mutable], [])).toThrow(/duplicate|identity/i);
-    expect(() =>
-      create([{ ...mutable, descriptor: { ...mutableDescriptor, version: 0 } }], []),
-    ).toThrow(/version|safe|positive/i);
+    for (const version of [
+      -1,
+      0,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+    ])
+      expect(
+        () => create([mutableCodec(base, { version })], []),
+        `accepted invalid codec version ${String(version)}`,
+      ).toThrow(/version|safe|positive|integer/i);
+
+    const without = (key: string): UnknownRecord => {
+      const descriptor = { ...mutableDescriptor };
+      Reflect.deleteProperty(descriptor, key);
+      return descriptor;
+    };
+    const malformedDescriptors: readonly UnknownRecord[] = [
+      { ...mutableDescriptor, extra: true },
+      { ...mutableDescriptor, id: '' },
+      { ...mutableDescriptor, wireKind: '' },
+      { ...mutableDescriptor, wireKind: 1 },
+      { ...mutableDescriptor, embeddedVersion: 'version' },
+      { ...mutableDescriptor, unknownFields: 'strip' },
+      { ...mutableDescriptor, formatting: { indent: 4, terminalLf: true } },
+      { ...mutableDescriptor, formatting: { indent: 2 } },
+      { ...mutableDescriptor, formatting: { indent: 2, terminalLf: 'yes' } },
+      { ...mutableDescriptor, migrations: 'none' },
+      { ...mutableDescriptor, migrations: [0] },
+      { ...mutableDescriptor, migrations: [1] },
+      { ...mutableDescriptor, migrations: [1.5] },
+      { ...mutableDescriptor, compatibility: 'additive' },
+      ...DESCRIPTOR_KEYS.map((key) => without(key)),
+    ];
+    for (const descriptor of malformedDescriptors)
+      expect(
+        () => create([{ ...mutable, descriptor } as WireCodec], []),
+        `accepted malformed descriptor ${JSON.stringify(descriptor)}`,
+      ).toThrow();
+
+    for (const method of ['validate', 'decode', 'encode'] as const) {
+      const missing = { ...mutable } as UnknownRecord;
+      Reflect.deleteProperty(missing, method);
+      expect(() => create([missing as WireCodec], [])).toThrow(/method|function|codec/i);
+      expect(() => create([{ ...mutable, [method]: true } as unknown as WireCodec], [])).toThrow(
+        /method|function|codec/i,
+      );
+    }
     expect(() => create([mutable], [fixtureMapping])).toThrow(/unknown|version|contract/i);
     expect(() =>
       create(
@@ -371,6 +553,50 @@ describe('EWP-P1-TS10', () => {
         ],
       ),
     ).toThrow(/duplicate|command/i);
+
+    const validMapping = { commandPath: 'skillsmith fixture', contractId: 'agents', version: 1 };
+    const malformedMappings: readonly unknown[] = [
+      null,
+      {},
+      { ...validMapping, extra: true },
+      { ...validMapping, commandPath: '' },
+      { ...validMapping, contractId: '' },
+      ...[-1, 0, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1].map(
+        (version) => ({ ...validMapping, version }),
+      ),
+      ...MAPPING_KEYS.map((key) => {
+        const mapping: UnknownRecord = { ...validMapping };
+        Reflect.deleteProperty(mapping, key);
+        return mapping;
+      }),
+    ];
+    for (const mapping of malformedMappings)
+      expect(
+        () => create([mutable], [mapping as WireMapping]),
+        `accepted malformed mapping ${String(mapping)}`,
+      ).toThrow();
+
+    const ownedCodec = mutableCodec(base);
+    const ownedDescriptor = ownedCodec.descriptor;
+    const ownedFormatting = ownedDescriptor.formatting as UnknownRecord;
+    const ownedMigrations = ownedDescriptor.migrations as number[];
+    const ownedMapping = { ...validMapping };
+    const callerCodecs = [ownedCodec];
+    const callerMappings = [ownedMapping];
+    const owned = create(callerCodecs, callerMappings);
+    ownedDescriptor.id = 'mutated-after-build';
+    ownedFormatting.indent = 0;
+    ownedMigrations.push(99);
+    ownedMapping.commandPath = 'skillsmith mutated';
+    callerCodecs.length = 0;
+    callerMappings.length = 0;
+    expect(owned.get('agents', 1)?.descriptor).toMatchObject({
+      id: 'agents',
+      formatting: { indent: 2 },
+      migrations: [],
+    });
+    expect(owned.forCommand('skillsmith fixture')?.descriptor.id).toBe('agents');
+    expect(owned.forCommand('skillsmith mutated')).toBeUndefined();
   });
 
   test('family 3: strictly decodes malformed, unknown, wrong-version, and deterministic values', async () => {
@@ -380,28 +606,117 @@ describe('EWP-P1-TS10', () => {
     if (registry === undefined) return;
     const install = registry.get('install', 1);
     const flip = registry.get('flip', 2);
+    const agents = registry.get('agents', 1);
+    const configGet = registry.get('config-get', 1);
+    const configList = registry.get('config-list', 1);
     expect(install).toBeDefined();
     expect(flip).toBeDefined();
-    if (install === undefined || flip === undefined) return;
+    expect(agents).toBeDefined();
+    expect(configGet).toBeDefined();
+    expect(configList).toBeDefined();
+    if (
+      install === undefined ||
+      flip === undefined ||
+      agents === undefined ||
+      configGet === undefined ||
+      configList === undefined
+    )
+      return;
 
-    expect(install.decode('{"truncated":').ok).toBeFalse();
-    expect(install.decode('not json').error).toMatchObject({ code: 'malformed-json' });
-    const unknown = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
-    (unknown.requested as UnknownRecord).unexpected = true;
-    expect(install.decode(JSON.stringify(unknown)).error).toMatchObject({ code: 'invalid-shape' });
-    const wrong = JSON.parse(CURRENT_JSON_GOLDENS.flip) as UnknownRecord;
-    wrong.schemaVersion = 1;
-    expect(flip.decode(JSON.stringify(wrong)).error).toMatchObject({
-      code: 'unsupported-version',
-    });
-    wrong.schemaVersion = 99;
-    expect(flip.decode(JSON.stringify(wrong)).error).toMatchObject({
-      code: 'unsupported-version',
-    });
+    const malformedText = '{"do-not-leak":"raw-secret"';
+    let malformed: WireResult | undefined;
+    expect(() => {
+      malformed = install.decode(malformedText);
+    }).not.toThrow();
+    const malformedError = expectWireFailure(
+      malformed ?? { ok: true },
+      'malformed-json',
+      'install',
+      1,
+      [],
+    );
+    expect(String(malformedError.message)).not.toContain('raw-secret');
+
+    const unknownCases: Array<{
+      readonly value: UnknownRecord;
+      readonly path: readonly (string | number)[];
+    }> = [];
+    const top = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    top.unexpected = true;
+    unknownCases.push({ value: top, path: ['unexpected'] });
+    const nested = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    (nested.requested as UnknownRecord).unexpected = true;
+    unknownCases.push({ value: nested, path: ['requested', 'unexpected'] });
+    const deep = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    const firstResult = (deep.results as UnknownRecord[])[0];
+    if (firstResult !== undefined) (firstResult.store as UnknownRecord).unexpected = true;
+    unknownCases.push({ value: deep, path: ['results', 0, 'store', 'unexpected'] });
+    for (const fixture of unknownCases) {
+      const result = install.decode(JSON.stringify(fixture.value));
+      expectWireFailure(result, 'invalid-shape', 'install', 1, fixture.path);
+    }
+
+    const wrongKind = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    wrongKind.kind = 'skillsmith.other';
+    expectWireFailure(install.decode(JSON.stringify(wrongKind)), 'invalid-shape', 'install', 1, [
+      'kind',
+    ]);
+    const wrongInstallVersion = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    for (const version of [0, 2]) {
+      wrongInstallVersion.schemaVersion = version;
+      expectWireFailure(
+        install.decode(JSON.stringify(wrongInstallVersion)),
+        'unsupported-version',
+        'install',
+        version,
+        ['schemaVersion'],
+      );
+    }
+    const wrongFlipVersion = JSON.parse(CURRENT_JSON_GOLDENS.flip) as UnknownRecord;
+    for (const version of [1, 99]) {
+      wrongFlipVersion.schemaVersion = version;
+      expectWireFailure(
+        flip.decode(JSON.stringify(wrongFlipVersion)),
+        'unsupported-version',
+        'flip',
+        version,
+        ['schemaVersion'],
+      );
+    }
+
+    for (const [codec, bytes] of [
+      [configGet, CURRENT_JSON_GOLDENS.configGetUnscoped],
+      [configGet, CURRENT_JSON_GOLDENS.configGetScoped],
+      [configList, CURRENT_JSON_GOLDENS.configListUnscoped],
+      [configList, CURRENT_JSON_GOLDENS.configListScoped],
+    ] as const) {
+      const dto = resultValue(codec.decode(bytes));
+      expect(resultValue(codec.encode(dto))).toBe(bytes);
+    }
+
+    const dynamicAgents = JSON.parse(CURRENT_JSON_GOLDENS.agents) as UnknownRecord;
+    const tools = dynamicAgents.tools as UnknownRecord;
+    tools['fixture-dynamic-tool'] = [
+      { path: '/fixture/bin/dynamic', version: '1.0.0', installMethod: 'unknown' },
+    ];
+    expect(agents.decode(JSON.stringify(dynamicAgents)).ok).toBeTrue();
+    const agentsUnknown = { ...dynamicAgents, unexpected: true };
+    expectWireFailure(agents.decode(JSON.stringify(agentsUnknown)), 'invalid-shape', 'agents', 1, [
+      'unexpected',
+    ]);
+
     expect(registry.get('config-get', 99)).toBeUndefined();
     expect(registry.latest('config-get')?.descriptor.version).toBe(1);
     const dto = resultValue(install.decode(CURRENT_JSON_GOLDENS.install));
-    expect(resultValue(install.encode(dto))).toBe(resultValue(install.encode(dto)));
+    const invalidDto = { ...(dto as UnknownRecord), unexpected: true };
+    let invalidEncode: WireResult | undefined;
+    expect(() => {
+      invalidEncode = install.encode(invalidDto);
+    }).not.toThrow();
+    expectWireFailure(invalidEncode ?? { ok: true }, 'invalid-shape', 'install', 1, ['unexpected']);
+    const encoded = resultValue(install.encode(dto));
+    expect(encoded).toBe(resultValue(install.encode(dto)));
+    expect(encoded).toBe(CURRENT_JSON_GOLDENS.install);
   });
 
   test('family 4: compiles public codec-derived DTOs and compile-negative internal fields', async () => {
@@ -424,39 +739,133 @@ describe('EWP-P1-TS10', () => {
     expect(v1, 'missing v1 codecs and mappers').not.toBeNull();
     expect(v2, 'missing v2 codecs and mappers').not.toBeNull();
     if (v1 === null || v2 === null) return;
-    for (const name of [
-      'toAgentsV1Dto',
-      'toHealthV1Dto',
-      'toCommandsV1Dto',
-      'toConfigGetV1Dto',
-      'toConfigListV1Dto',
-      'toInstallV1Dto',
-      'toUninstallV1Dto',
-      'toVerifyV1Dto',
-      'toErrorV1Dto',
-      'toCapabilitySnapshotV1Dto',
-    ])
-      expect(typeof v1[name], `missing ${name}`).toBe('function');
-    for (const name of ['toFlipV2Dto', 'toListV2Dto'])
-      expect(typeof v2[name], `missing ${name}`).toBe('function');
+    const hostileInstall = hostileLifecycleReport(REPORT_FIXTURES.install);
+    const hostileUninstall = hostileLifecycleReport(REPORT_FIXTURES.uninstall);
+    const hostileFlip = hostileLifecycleReport(REPORT_FIXTURES.flip);
+    const capabilityBytes = JSON.stringify(expectedCapabilitySnapshot(), null, 2);
+    const cases: ReadonlyArray<{
+      readonly name: string;
+      readonly mapper: unknown;
+      readonly codec: unknown;
+      readonly args: readonly unknown[];
+      readonly bytes: string;
+    }> = [
+      {
+        name: 'agents@1',
+        mapper: v1.toAgentsV1Dto,
+        codec: v1.agentsV1Codec,
+        args: [REPORT_FIXTURES.agents],
+        bytes: CURRENT_JSON_GOLDENS.agents,
+      },
+      {
+        name: 'health@1',
+        mapper: v1.toHealthV1Dto,
+        codec: v1.healthV1Codec,
+        args: [REPORT_FIXTURES.health.result, []],
+        bytes: CURRENT_JSON_GOLDENS.health,
+      },
+      {
+        name: 'commands@1',
+        mapper: v1.toCommandsV1Dto,
+        codec: v1.commandsV1Codec,
+        args: [REPORT_FIXTURES.commands],
+        bytes: CURRENT_JSON_GOLDENS.commands,
+      },
+      {
+        name: 'config-get@1 unscoped',
+        mapper: v1.toConfigGetV1Dto,
+        codec: v1.configGetV1Codec,
+        args: [REPORT_FIXTURES.configGetUnscoped],
+        bytes: CURRENT_JSON_GOLDENS.configGetUnscoped,
+      },
+      {
+        name: 'config-get@1 scoped',
+        mapper: v1.toConfigGetV1Dto,
+        codec: v1.configGetV1Codec,
+        args: [REPORT_FIXTURES.configGetScoped],
+        bytes: CURRENT_JSON_GOLDENS.configGetScoped,
+      },
+      {
+        name: 'config-list@1 unscoped',
+        mapper: v1.toConfigListV1Dto,
+        codec: v1.configListV1Codec,
+        args: [REPORT_FIXTURES.configListUnscoped],
+        bytes: CURRENT_JSON_GOLDENS.configListUnscoped,
+      },
+      {
+        name: 'config-list@1 scoped',
+        mapper: v1.toConfigListV1Dto,
+        codec: v1.configListV1Codec,
+        args: [REPORT_FIXTURES.configListScoped],
+        bytes: CURRENT_JSON_GOLDENS.configListScoped,
+      },
+      {
+        name: 'install@1',
+        mapper: v1.toInstallV1Dto,
+        codec: v1.installV1Codec,
+        args: [hostileInstall],
+        bytes: CURRENT_JSON_GOLDENS.install,
+      },
+      {
+        name: 'uninstall@1',
+        mapper: v1.toUninstallV1Dto,
+        codec: v1.uninstallV1Codec,
+        args: [hostileUninstall],
+        bytes: CURRENT_JSON_GOLDENS.uninstall,
+      },
+      {
+        name: 'verify@1',
+        mapper: v1.toVerifyV1Dto,
+        codec: v1.verifyV1Codec,
+        args: [REPORT_FIXTURES.verify],
+        bytes: CURRENT_JSON_GOLDENS.verify,
+      },
+      {
+        name: 'error@1',
+        mapper: v1.toErrorV1Dto,
+        codec: v1.errorV1Codec,
+        args: [REPORT_FIXTURES.error],
+        bytes: CURRENT_JSON_GOLDENS.error,
+      },
+      {
+        name: 'capability-snapshot@1',
+        mapper: v1.toCapabilitySnapshotV1Dto,
+        codec: v1.capabilitySnapshotV1Codec,
+        args: [toolRegistry],
+        bytes: capabilityBytes,
+      },
+      {
+        name: 'flip@2',
+        mapper: v2.toFlipV2Dto,
+        codec: v2.flipV2Codec,
+        args: [hostileFlip],
+        bytes: CURRENT_JSON_GOLDENS.flip,
+      },
+      {
+        name: 'list@2',
+        mapper: v2.toListV2Dto,
+        codec: v2.listV2Codec,
+        args: [REPORT_FIXTURES.list],
+        bytes: CURRENT_JSON_GOLDENS.list,
+      },
+    ];
 
-    const cases = [
-      [v1.toInstallV1Dto, REPORT_FIXTURES.install],
-      [v1.toUninstallV1Dto, REPORT_FIXTURES.uninstall],
-      [v2.toFlipV2Dto, REPORT_FIXTURES.flip],
-    ] as const;
-    for (const [mapper, report] of cases) {
-      if (typeof mapper !== 'function') continue;
-      const hostile = {
-        ...report,
-        results: report.results.map((item) => addHostileFields(item)),
-      };
+    for (const fixture of cases) {
+      const mapper = callable(fixture.mapper);
+      const codec = codecValue(fixture.codec, `${fixture.name} codec`);
+      expect(mapper, `missing ${fixture.name} mapper`).not.toBeNull();
+      if (mapper === null || codec === null) continue;
       let dto: unknown;
       expect(() => {
-        dto = mapper(hostile);
-      }).not.toThrow();
-      expect(JSON.stringify(dto)).not.toContain('"error"');
-      expect(JSON.stringify(dto)).not.toContain('"secret"');
+        dto = mapper(...fixture.args);
+      }, `${fixture.name} mapper threw`).not.toThrow();
+      expect(codec.validate(dto).ok, `${fixture.name} mapper produced invalid DTO`).toBeTrue();
+      expect(resultValue(codec.encode(dto)), `${fixture.name} mapper/codec byte drift`).toBe(
+        fixture.bytes,
+      );
+      expect(JSON.stringify(dto), `${fixture.name} leaked lifecycle internals`).not.toMatch(
+        /"(?:error|secret)"/,
+      );
     }
   });
 
@@ -488,7 +897,9 @@ describe('EWP-P1-TS10', () => {
       ['health', 1, CURRENT_JSON_GOLDENS.health],
       ['commands', 1, CURRENT_JSON_GOLDENS.commands],
       ['config-get', 1, CURRENT_JSON_GOLDENS.configGetUnscoped],
+      ['config-get', 1, CURRENT_JSON_GOLDENS.configGetScoped],
       ['config-list', 1, CURRENT_JSON_GOLDENS.configListUnscoped],
+      ['config-list', 1, CURRENT_JSON_GOLDENS.configListScoped],
       ['flip', 2, CURRENT_JSON_GOLDENS.flip],
       ['install', 1, CURRENT_JSON_GOLDENS.install],
       ['list', 2, CURRENT_JSON_GOLDENS.list],
@@ -508,20 +919,20 @@ describe('EWP-P1-TS10', () => {
     const createVerify = v1.createVerifyV1Codec;
     expect(typeof createVerify).toBe('function');
     if (typeof createVerify === 'function') {
-      const fixtureCodec = createVerify({ toolsFor: () => ['fixture-verify'] });
-      const dto = JSON.parse(CURRENT_JSON_GOLDENS.verify) as UnknownRecord;
-      dto.requested = { ...(dto.requested as UnknownRecord), tools: ['fixture-verify'] };
-      dto.verifiedAgainst = { 'fixture-verify': '9.9.9' };
-      dto.summary = {
-        ...(dto.summary as UnknownRecord),
-        verified: ['fixture-verify'],
-        failed: [],
-        skipped: [],
-      };
-      dto.tools = [
-        { ...((dto.tools as readonly UnknownRecord[])[0] ?? {}), tool: 'fixture-verify' },
-      ];
-      expect(fixtureCodec.validate(dto).ok).toBeTrue();
+      const productionCodec = codecValue(createVerify(toolRegistry), 'production verify factory');
+      const injectedRegistry = createToolRegistry([writeFixtureAdapter]);
+      const injectedCodec = codecValue(
+        createVerify(injectedRegistry),
+        'injected fixture verify factory',
+      );
+      expect(injectedRegistry.toolsFor('verify-static')).toEqual(['fixture-write']);
+      const fixtureDto = verifyDtoFor('fixture-write');
+      const unknownProductionDto = verifyDtoFor('fixture-write');
+      const productionDto = JSON.parse(CURRENT_JSON_GOLDENS.verify);
+      expect(productionCodec?.validate(productionDto).ok).toBeTrue();
+      expect(productionCodec?.validate(unknownProductionDto).ok).toBeFalse();
+      expect(injectedCodec?.validate(fixtureDto).ok).toBeTrue();
+      expect(injectedCodec?.validate(productionDto).ok).toBeFalse();
     }
 
     const capabilityMapper = v1.toCapabilitySnapshotV1Dto;
@@ -553,18 +964,41 @@ describe('EWP-P1-TS10', () => {
     }).not.toThrow();
     expect(snapshot).toBeDefined();
     if (snapshot === undefined) return;
-    expect(snapshot.schemaVersion).toBe(1);
-    expect(snapshot.kind).toBe('skillsmith.capabilities');
+    const expectedSnapshot = expectedCapabilitySnapshot();
+    expect(snapshot).toEqual(expectedSnapshot);
     const tools = snapshot.tools as readonly UnknownRecord[];
     expect(tools).toHaveLength(toolRegistry.adapters.length);
     for (const [index, item] of tools.entries()) {
       expect(Object.keys(item)).toEqual(['id', 'order', 'capabilityVersion', 'operations']);
       expect(item.id).toBe(toolRegistry.adapters[index]?.descriptor.id);
+      expect(item.order).toBe(toolRegistry.adapters[index]?.descriptor.order);
+      expect(item.capabilityVersion).toBe(
+        toolRegistry.adapters[index]?.descriptor.capabilityVersion,
+      );
       expect(Object.keys(item.operations as UnknownRecord)).toEqual([...TOOL_OPERATIONS]);
+      for (const operation of TOOL_OPERATIONS) {
+        const fact = (item.operations as UnknownRecord)[operation];
+        const expected = toolRegistry.adapters[index]?.descriptor.operations[operation];
+        expect(fact).toEqual({
+          supported: expected?.supported,
+          scopes: expected === undefined ? undefined : [...expected.scopes],
+          remediation: expected?.remediation,
+        });
+      }
       expect(JSON.stringify(item)).not.toMatch(
         /inventory|verification|placement|adaptation|function/,
       );
     }
+    const capabilityCodec = codecValue(v1.capabilitySnapshotV1Codec, 'capability-snapshot@1 codec');
+    if (capabilityCodec === null) return;
+    expect(capabilityCodec.validate(snapshot).ok).toBeTrue();
+    const expectedBytes = JSON.stringify(expectedSnapshot, null, 2);
+    const encoded = resultValue(capabilityCodec.encode(snapshot));
+    expect(encoded).toBe(expectedBytes);
+    expect(resultValue(capabilityCodec.encode(snapshot))).toBe(encoded);
+    const decoded = resultValue(capabilityCodec.decode(encoded as string));
+    expect(decoded).toEqual(expectedSnapshot);
+    expect(capabilityCodec.validate(decoded).ok).toBeTrue();
   });
 
   test('family 8: publishes closed contracts, v1, and v2 package subpaths without Zod', async () => {
@@ -584,53 +1018,143 @@ describe('EWP-P1-TS10', () => {
     expect(contracts, 'public contracts subpath does not load').not.toBeNull();
     expect(v1, 'public contracts/v1 subpath does not load').not.toBeNull();
     expect(v2, 'public contracts/v2 subpath does not load').not.toBeNull();
+    expect(Object.keys(contracts ?? {}).sort()).toEqual([...CONTRACT_RUNTIME_EXPORTS].sort());
+    expect(Object.keys(v1 ?? {}).sort()).toEqual([...V1_RUNTIME_EXPORTS].sort());
+    expect(Object.keys(v2 ?? {}).sort()).toEqual([...V2_RUNTIME_EXPORTS].sort());
     expect(typeof contracts?.createWireContractRegistry).toBe('function');
-    expect(v1).toHaveProperty('agentsV1Codec');
-    expect(v1).toHaveProperty('capabilitySnapshotV1Codec');
-    expect(v2).toHaveProperty('flipV2Codec');
-    expect(v2).toHaveProperty('listV2Codec');
-    expect(Object.keys(contracts ?? {})).not.toContain('z');
+    for (const name of Object.keys(v1 ?? {})) expect(name).not.toMatch(/V2|zod|schema/);
+    for (const name of Object.keys(v2 ?? {})) expect(name).not.toMatch(/V1|zod|schema/);
   });
 
   test('family 9: gives codecs sole AST ownership of public JSON construction and parsing', async () => {
     const files = [
-      ...(await typescriptFiles(join(ROOT, 'packages/cli/src/output'))),
-      join(ROOT, 'packages/cli/src/runtime/current-renderers.ts'),
-      ...(await typescriptFiles(join(ROOT, 'packages/core/src/application'))),
+      ...new Set([
+        ...(await typescriptFiles(join(ROOT, 'packages/cli/src/output'))),
+        join(ROOT, 'packages/cli/src/runtime/current-renderers.ts'),
+        ...(await typescriptFiles(join(ROOT, 'packages/cli/src/runtime/current'))),
+        ...(await typescriptFiles(join(ROOT, 'packages/core/src/application'))),
+        join(ROOT, 'packages/core/src/place/plan.ts'),
+        ...(await typescriptFiles(join(ROOT, 'packages/core/src/planner'))),
+      ]),
     ];
+    for (const exempt of [
+      'packages/core/src/place/ledger.ts',
+      'packages/core/src/agents',
+      'packages/core/src/plugins',
+      'packages/cli/src/contracts',
+    ])
+      expect(files.some((path) => relative(ROOT, path).startsWith(exempt))).toBeFalse();
     const findings: string[] = [];
+    const allowed = {
+      configListHuman: 0,
+      metadataRenderer: 0,
+      version: 0,
+      configSet: 0,
+      configUnset: 0,
+    };
     for (const path of files) {
       const source = await readFile(path, 'utf8');
       const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+      const jsonAliases = new Set(['JSON']);
+      const methodAliases = new Map<string, 'parse' | 'stringify'>();
+      const jsonMethod = (expression: ts.Expression): 'parse' | 'stringify' | 'computed' | null => {
+        if (ts.isIdentifier(expression)) return methodAliases.get(expression.text) ?? null;
+        if (
+          ts.isPropertyAccessExpression(expression) &&
+          ts.isIdentifier(expression.expression) &&
+          jsonAliases.has(expression.expression.text) &&
+          (expression.name.text === 'parse' || expression.name.text === 'stringify')
+        )
+          return expression.name.text;
+        if (
+          ts.isElementAccessExpression(expression) &&
+          ts.isIdentifier(expression.expression) &&
+          jsonAliases.has(expression.expression.text)
+        ) {
+          const argument = expression.argumentExpression;
+          if (
+            ts.isStringLiteral(argument) &&
+            (argument.text === 'parse' || argument.text === 'stringify')
+          )
+            return argument.text;
+          return 'computed';
+        }
+        return null;
+      };
+      const collectAliases = (node: ts.Node): void => {
+        if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
+          if (
+            ts.isIdentifier(node.name) &&
+            ts.isIdentifier(node.initializer) &&
+            jsonAliases.has(node.initializer.text)
+          )
+            jsonAliases.add(node.name.text);
+          if (ts.isIdentifier(node.name)) {
+            const method = jsonMethod(node.initializer);
+            if (method === 'parse' || method === 'stringify')
+              methodAliases.set(node.name.text, method);
+          }
+          if (
+            ts.isObjectBindingPattern(node.name) &&
+            ts.isIdentifier(node.initializer) &&
+            jsonAliases.has(node.initializer.text)
+          )
+            for (const element of node.name.elements) {
+              const method = (element.propertyName ?? element.name).getText(tree);
+              if (ts.isIdentifier(element.name) && (method === 'parse' || method === 'stringify'))
+                methodAliases.set(element.name.text, method);
+            }
+        }
+        ts.forEachChild(node, collectAliases);
+      };
+      collectAliases(tree);
       const visit = (node: ts.Node, ancestors: readonly ts.Node[]): void => {
-        const exemptFunction = ancestors.some(
-          (parent) =>
-            (ts.isFunctionDeclaration(parent) || ts.isVariableDeclaration(parent)) &&
-            ['configListHuman', 'metadataRenderer'].includes(parent.name?.getText(tree) ?? ''),
-        );
-        const exemptProperty = ancestors.some(
-          (parent) =>
-            ts.isPropertyAssignment(parent) &&
-            ['version', 'configSet', 'configUnset'].includes(parent.name.getText(tree)),
-        );
+        const functionExemption = ancestors
+          .filter((parent) => ts.isFunctionDeclaration(parent) || ts.isVariableDeclaration(parent))
+          .map((parent) => parent.name?.getText(tree) ?? '')
+          .find((name) => name === 'configListHuman' || name === 'metadataRenderer');
+        const propertyExemption = ancestors
+          .filter(ts.isPropertyAssignment)
+          .map((parent) => parent.name.getText(tree))
+          .find((name) => name === 'version' || name === 'configSet' || name === 'configUnset');
         if (ts.isImportDeclaration(node) && node.moduleSpecifier.getText(tree) === "'zod'")
           findings.push(`${relative(ROOT, path)}: renderer-owned Zod schema`);
-        if (
-          ts.isCallExpression(node) &&
-          ts.isPropertyAccessExpression(node.expression) &&
-          node.expression.expression.getText(tree) === 'JSON'
-        ) {
-          const method = node.expression.name.text;
-          if (method === 'parse' || (method === 'stringify' && !exemptFunction && !exemptProperty))
-            findings.push(`${relative(ROOT, path)}: JSON.${method}`);
+        if (ts.isCallExpression(node)) {
+          const method = jsonMethod(node.expression);
+          if (method !== null) {
+            const exemption = functionExemption ?? propertyExemption;
+            if (method === 'stringify' && exemption !== undefined) {
+              allowed[exemption]++;
+            } else {
+              findings.push(`${relative(ROOT, path)}: JSON.${method}`);
+            }
+          }
         }
-        if (ts.isBindingElement(node) && node.dotDotDotToken !== undefined)
-          findings.push(`${relative(ROOT, path)}: rest-based field stripping`);
-        if (ts.isDeleteExpression(node)) findings.push(`${relative(ROOT, path)}: delete stripping`);
+        if (
+          ts.isBindingElement(node) &&
+          node.dotDotDotToken !== undefined &&
+          ts.isObjectBindingPattern(node.parent) &&
+          node.parent.elements.some(
+            (element) => (element.propertyName ?? element.name).getText(tree) === 'error',
+          )
+        )
+          findings.push(`${relative(ROOT, path)}: rest-based error stripping`);
+        if (
+          ts.isDeleteExpression(node) &&
+          /(?:\.|\[['"]?)error(?:['"]?\])?$/.test(node.expression.getText(tree))
+        )
+          findings.push(`${relative(ROOT, path)}: delete error stripping`);
         ts.forEachChild(node, (child) => visit(child, [...ancestors, node]));
       };
       visit(tree, []);
     }
+    expect(allowed).toEqual({
+      configListHuman: 2,
+      metadataRenderer: 1,
+      version: 1,
+      configSet: 1,
+      configUnset: 1,
+    });
     expect(findings).toEqual([]);
   });
 
@@ -651,15 +1175,26 @@ describe('EWP-P1-TS10', () => {
       contractId: 'fixture',
       version: 1,
     });
-    const before = loaded.currentWireContractRegistry.codecs.map(descriptorIdentity);
-    const extended = create([codec], [mapping]);
+    const production = loaded.currentWireContractRegistry;
+    const before = production.codecs.map(descriptorIdentity);
+    const beforeMappings = production.commandMappings.map((row) => ({ ...row }));
+    const extended = create(
+      [...production.codecs, codec],
+      [...production.commandMappings, mapping],
+    );
     expect(extended.get('fixture', 1)).toBeDefined();
     expect(extended.forCommand('skillsmith fixture')).toBe(extended.get('fixture', 1));
+    expect(extended.get('agents', 1)?.descriptor.id).toBe('agents');
+    expect(extended.forCommand('skillsmith agents')?.descriptor.id).toBe('agents');
+    expect(extended.codecs.map(descriptorIdentity)).toEqual([...before, ['fixture', 1]]);
+    expect(extended.commandMappings).toHaveLength(production.commandMappings.length + 1);
     expect(
       resultValue(codec.decode(resultValue(codec.encode({ value: 'extension' })) as string)),
     ).toEqual({ value: 'extension' });
-    expect(loaded.currentWireContractRegistry.get('fixture', 1)).toBeUndefined();
-    expect(loaded.currentWireContractRegistry.codecs.map(descriptorIdentity)).toEqual(before);
+    expect(production.get('fixture', 1)).toBeUndefined();
+    expect(production.forCommand('skillsmith fixture')).toBeUndefined();
+    expect(production.codecs.map(descriptorIdentity)).toEqual(before);
+    expect(production.commandMappings).toEqual(beforeMappings);
     const genericSource = await readFile(join(CONTRACTS_ROOT, 'registry.ts'), 'utf8');
     expect(genericSource).not.toContain('skillsmith fixture');
     expect(genericSource).not.toContain('CURRENT_COMMAND_SPECS');

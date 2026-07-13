@@ -1,3 +1,5 @@
+import type { WireCodec } from '@skillsmith/core/contracts';
+
 export interface FixtureDto {
   readonly value: string;
 }
@@ -60,7 +62,7 @@ export const fixtureCodec = Object.freeze({
     if (!validated.ok) return validated;
     return { ok: true as const, value: JSON.stringify(validated.value, null, 2) };
   },
-});
+}) satisfies WireCodec<'fixture', 1, FixtureDto>;
 
 export const fixtureCommandMapping = Object.freeze({
   commandPath: 'skillsmith fixture',
