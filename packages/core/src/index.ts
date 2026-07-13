@@ -25,6 +25,7 @@ export {
 } from './agents/registry.ts';
 export { TOOL_OPERATIONS } from './agents/adapter-types.ts';
 export { SUPPORTED_TOOLS } from './agents/types.ts';
+export * from './artifacts/index.ts';
 export { getConfigValue } from './config/accessors.ts';
 export { resolveEffectiveConfig } from './config/effective.ts';
 export { loadConfig } from './config/load.ts';

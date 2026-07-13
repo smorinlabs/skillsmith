@@ -10,6 +10,8 @@ export interface LegacyRuntimePortSupplements {
   readonly clock: ClockPort;
   readonly id: IdPort;
   readonly pathAccess?: PathAccessPort;
+  readonly readFileMetadata?: RuntimePorts['readFileMetadata'];
+  readonly setFileMode?: RuntimePorts['setFileMode'];
 }
 
 export type RuntimePortsFromScanEnv = (
@@ -41,6 +43,16 @@ export const runtimePortsFromScanEnv = (
   readLink: bind(env.readLink, env),
   isExecutable: bind(env.isExecutable, env),
   modifiedAt: bind(env.modifiedAt, env),
+  readFileMetadata:
+    supplements.readFileMetadata ??
+    (async (path) => {
+      const kind = await env.pathKind(path);
+      return {
+        kind,
+        mode: null,
+        identity: kind === 'absent' ? null : path,
+      };
+    }),
   makeDir: bind(env.makeDir, env),
   writeTextFile: bind(env.writeTextFile, env),
   makeSymlink: bind(env.makeSymlink, env),
@@ -49,6 +61,17 @@ export const runtimePortsFromScanEnv = (
   removeTree: bind(env.removeTree, env),
   fsyncFile: bind(env.fsyncFile, env),
   fsyncDir: bind(env.fsyncDir, env),
+  setFileMode:
+    supplements.setFileMode ??
+    (async (path) => {
+      throw portError({
+        capability: 'file-write',
+        operation: 'setFileMode',
+        code: 'unavailable',
+        message: 'file mode writes are unavailable through the ScanEnv compatibility facade',
+        context: { path },
+      });
+    }),
   withFileLock: bind(env.withFileLock, env),
   exec: bind(env.exec, env),
   runVersion: bind(env.runVersion, env),

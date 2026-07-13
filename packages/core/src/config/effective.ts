@@ -2,15 +2,16 @@ import type { ProjectContext } from '../context/types.ts';
 import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
 import type { InventoryReadPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
-import { CONFIG_ACCESSORS } from './accessors.ts';
+import { CONFIG_ACCESSORS, getConfigTools, setConfigTools } from './accessors.ts';
 import { getConfigPath } from './paths.ts';
-import { parseConfig } from './schema.ts';
+import { parseConfig, parseProjectConfig } from './schema.ts';
 import {
   CONFIG_KEYS,
   type Config,
   type ConfigKey,
   type ConfigLayer,
   type EffectiveConfig,
+  type ParsedConfigDocument,
 } from './types.ts';
 
 export interface ResolveEffectiveConfigOptions {
@@ -31,31 +32,30 @@ const ORDER = [
 
 interface LoadedLayer {
   readonly config: Config;
-  readonly exactLegacy: boolean;
+  readonly document?: ParsedConfigDocument;
 }
 
 const loadLayer = async (
   env: InventoryReadPorts,
   path: string | null,
   readFile: (path: string) => Promise<string>,
+  projectDocument: boolean,
 ): Promise<Result<LoadedLayer, SkillSmithError>> => {
-  if (path === null || !(await env.fileExists(path))) {
-    return ok({ config: {}, exactLegacy: false });
-  }
+  if (path === null || !(await env.fileExists(path))) return ok({ config: {} });
   let source: string;
   try {
     source = await readFile(path);
   } catch (cause) {
     return err(configError(`failed to read ${path}: ${errorMessage(cause)}`, { file: path }));
   }
-  const parsed = parseConfig(source);
-  if (!parsed.ok) {
-    return parsed.error.code === 'config-error' ? err({ ...parsed.error, file: path }) : parsed;
+  if (projectDocument) {
+    const parsed = parseProjectConfig(source);
+    return parsed.ok
+      ? ok({ config: parsed.value.config, document: parsed.value })
+      : err({ ...parsed.error, file: path });
   }
-  return ok({
-    config: parsed.value,
-    exactLegacy: Object.keys(parsed.value).length > 0,
-  });
+  const parsed = parseConfig(source);
+  return parsed.ok ? ok({ config: parsed.value }) : err({ ...parsed.error, file: path });
 };
 
 export const resolveEffectiveConfig = async (
@@ -69,12 +69,21 @@ export const resolveEffectiveConfig = async (
     ...(context.discoveredConfigPath ? { project: context.discoveredConfigPath } : {}),
     ...(context.explicitConfigPath ? { 'explicit-file': context.explicitConfigPath } : {}),
   };
-  const readFile = options.readFile ?? env.readText;
+  const underlyingRead = options.readFile ?? env.readText;
+  const reads = new Map<string, Promise<string>>();
+  const readFile = (path: string): Promise<string> => {
+    let pending = reads.get(path);
+    if (pending === undefined) {
+      pending = underlyingRead(path);
+      reads.set(path, pending);
+    }
+    return pending;
+  };
   const [system, user, project, explicitFile] = await Promise.all([
-    loadLayer(env, paths.system, readFile),
-    loadLayer(env, paths.user, readFile),
-    loadLayer(env, paths.project ?? null, readFile),
-    loadLayer(env, paths['explicit-file'] ?? null, readFile),
+    loadLayer(env, paths.system, readFile, false),
+    loadLayer(env, paths.user, readFile, false),
+    loadLayer(env, paths.project ?? null, readFile, true),
+    loadLayer(env, paths['explicit-file'] ?? null, readFile, true),
   ]);
   if (!system.ok) return system;
   if (!user.ok) return user;
@@ -92,7 +101,25 @@ export const resolveEffectiveConfig = async (
   };
   const value: Config = {};
   const sources: Partial<Record<ConfigKey, ConfigLayer>> = {};
+
+  let toolSelection: EffectiveConfig['toolSelection'];
+  for (let index = ORDER.length - 1; index >= 0; index--) {
+    const layer = ORDER[index];
+    if (layer === undefined) continue;
+    const tools = getConfigTools(layers[layer]);
+    if (tools === undefined) continue;
+    setConfigTools(value, tools);
+    sources.tool = layer;
+    toolSelection = Object.freeze({
+      tools: Object.freeze([...tools]),
+      source: layer,
+      cardinality: tools.length === 1 ? 'scalar' : 'plural',
+    });
+    break;
+  }
+
   for (const key of CONFIG_KEYS) {
+    if (key === 'tool') continue;
     for (let index = ORDER.length - 1; index >= 0; index--) {
       const layer = ORDER[index];
       if (layer === undefined) continue;
@@ -104,23 +131,38 @@ export const resolveEffectiveConfig = async (
     }
   }
 
+  const notices: NonNullable<EffectiveConfig['notices']>[number][] = [];
   const projectPath = paths.project;
-  const notices =
-    project.value.exactLegacy && projectPath
-      ? [
-          {
-            code: 'legacy-project-config' as const,
-            path: projectPath,
-            migrationPending: true as const,
-            migrationPhase: 2 as const,
-          },
-        ]
-      : [];
+  if (project.value.document?.migrationPending && projectPath) {
+    notices.push({
+      code: 'legacy-project-config',
+      path: projectPath,
+      migrationPending: true,
+      migrationPhase: 2,
+    });
+  }
+  for (const layer of ORDER) {
+    const tools = getConfigTools(layers[layer]);
+    if (tools === undefined || tools.length < 2) continue;
+    notices.push({
+      code: 'plural-tool-selection',
+      ...(layer === 'project' && paths.project
+        ? { path: paths.project }
+        : layer === 'explicit-file' && paths['explicit-file']
+          ? { path: paths['explicit-file'] }
+          : {}),
+      tools: Object.freeze([...tools]),
+      source: layer,
+      disposition: sources.tool === layer ? 'effective' : 'shadowed',
+    });
+  }
+
   return ok({
     value,
     sources,
     layers,
     paths,
-    ...(notices.length > 0 ? { notices } : {}),
+    ...(toolSelection === undefined ? {} : { toolSelection }),
+    ...(notices.length === 0 ? {} : { notices: Object.freeze(notices) }),
   });
 };

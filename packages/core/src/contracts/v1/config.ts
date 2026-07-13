@@ -1,17 +1,43 @@
 import { z } from 'zod';
 import { SUPPORTED_TOOLS } from '../../agents/types.ts';
-import type { ConfigGetReport, ConfigListReport } from '../../application/read-services.ts';
+import type {
+  ConfigGetReport,
+  ConfigListReport,
+  ConfigSetReport,
+  ConfigUnsetReport,
+} from '../../application/read-services.ts';
 import { type Config, SCOPES } from '../../config/types.ts';
 import { createJsonWireCodec } from '../codec.ts';
 
 const ConfigV1Schema = z
   .object({
     tool: z.enum(SUPPORTED_TOOLS).optional(),
+    tools: z.array(z.enum(SUPPORTED_TOOLS)).readonly().optional(),
     scope: z.enum(SCOPES).optional(),
     path: z.string().optional(),
     registry: z.object({ default: z.string().optional() }).strict().optional(),
   })
   .strict();
+
+const ConfigNoticeV1Schema = z.union([
+  z
+    .object({
+      code: z.literal('legacy-project-config'),
+      path: z.string(),
+      migrationPending: z.literal(true),
+      migrationPhase: z.literal(2),
+    })
+    .strict(),
+  z
+    .object({
+      code: z.literal('plural-tool-selection'),
+      path: z.string().optional(),
+      tools: z.array(z.enum(SUPPORTED_TOOLS)).readonly(),
+      source: z.enum(['defaults', 'system', 'user', 'project', 'explicit-file', 'env', 'cli']),
+      disposition: z.enum(['effective', 'shadowed']),
+    })
+    .strict(),
+]);
 
 const ConfigGetV1Schema = z
   .object({
@@ -20,6 +46,7 @@ const ConfigGetV1Schema = z
     source: z
       .enum(['defaults', 'system', 'user', 'project', 'explicit-file', 'env', 'cli'])
       .optional(),
+    notices: z.array(ConfigNoticeV1Schema).readonly().optional(),
   })
   .strict();
 
@@ -57,17 +84,40 @@ const ConfigListUnscopedV1Schema = z
     effective: ConfigV1Schema,
     sources: SourcesV1Schema,
     layers: LayersV1Schema,
+    notices: z.array(ConfigNoticeV1Schema).readonly().optional(),
   })
   .strict();
 
 const ConfigListV1Schema = z.union([ConfigListUnscopedV1Schema, ConfigV1Schema]);
 
+const ConfigSetV1Schema = z
+  .object({
+    key: z.string(),
+    value: z.string(),
+    scope: z.enum(['system', 'user', 'project']),
+    file: z.string().nullable(),
+    operation: z.literal('migrate-project-config').optional(),
+  })
+  .strict();
+
+const ConfigUnsetV1Schema = z
+  .object({
+    key: z.string(),
+    scope: z.enum(['system', 'user', 'project']),
+    file: z.string().nullable(),
+    operation: z.literal('migrate-project-config').optional(),
+  })
+  .strict();
+
 export type ConfigGetV1Dto = z.infer<typeof ConfigGetV1Schema>;
 export type ConfigListV1Dto = z.infer<typeof ConfigListV1Schema>;
+export type ConfigSetV1Dto = z.infer<typeof ConfigSetV1Schema>;
+export type ConfigUnsetV1Dto = z.infer<typeof ConfigUnsetV1Schema>;
 
 const toConfigV1Dto = (source: Config): z.infer<typeof ConfigV1Schema> => {
   const dto: z.infer<typeof ConfigV1Schema> = {};
   if (source.tool !== undefined) dto.tool = source.tool;
+  if (source.tools !== undefined) dto.tools = source.tools;
   if (source.scope !== undefined) dto.scope = source.scope;
   if (source.path !== undefined) dto.path = source.path;
   if (source.registry !== undefined) {
@@ -100,6 +150,7 @@ const toLayersV1Dto = (source: ConfigListReport['layers']): z.infer<typeof Layer
 export const toConfigGetV1Dto = (report: ConfigGetReport): ConfigGetV1Dto => {
   const dto: ConfigGetV1Dto = { key: report.key, value: report.value };
   if (report.scope === undefined && report.source !== undefined) dto.source = report.source;
+  if (report.notices !== undefined) dto.notices = report.notices;
   return dto;
 };
 
@@ -109,8 +160,28 @@ export const toConfigListV1Dto = (report: ConfigListReport): ConfigListV1Dto => 
     effective: toConfigV1Dto(report.effective),
     sources: toSourcesV1Dto(report.sources),
     layers: toLayersV1Dto(report.layers),
+    ...(report.notices === undefined ? {} : { notices: report.notices }),
   };
 };
+
+export const toConfigSetV1Dto = (report: ConfigSetReport): ConfigSetV1Dto => ({
+  key: report.key,
+  value: report.value,
+  scope: report.scope,
+  file: report.file,
+  ...('operation' in report && report.operation === 'migrate-project-config'
+    ? { operation: report.operation }
+    : {}),
+});
+
+export const toConfigUnsetV1Dto = (report: ConfigUnsetReport): ConfigUnsetV1Dto => ({
+  key: report.key,
+  scope: report.scope,
+  file: report.file,
+  ...('operation' in report && report.operation === 'migrate-project-config'
+    ? { operation: report.operation }
+    : {}),
+});
 
 export const configGetV1Codec = createJsonWireCodec(
   {
@@ -138,4 +209,32 @@ export const configListV1Codec = createJsonWireCodec(
     compatibility: 'conservative',
   },
   ConfigListV1Schema,
+);
+
+export const configSetV1Codec = createJsonWireCodec(
+  {
+    id: 'config-set',
+    version: 1,
+    wireKind: null,
+    embeddedVersion: null,
+    unknownFields: 'reject-recursive',
+    formatting: { indent: 0, terminalLf: true },
+    migrations: [],
+    compatibility: 'conservative',
+  },
+  ConfigSetV1Schema,
+);
+
+export const configUnsetV1Codec = createJsonWireCodec(
+  {
+    id: 'config-unset',
+    version: 1,
+    wireKind: null,
+    embeddedVersion: null,
+    unknownFields: 'reject-recursive',
+    formatting: { indent: 0, terminalLf: true },
+    migrations: [],
+    compatibility: 'conservative',
+  },
+  ConfigUnsetV1Schema,
 );

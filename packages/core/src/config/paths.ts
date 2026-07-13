@@ -3,13 +3,13 @@ import type { FileReadPort, PlatformPaths } from '../ports/types.ts';
 import type { Scope } from './types.ts';
 
 export const getConfigPath = (
-  env: Pick<PlatformPaths, 'xdg'>,
+  env: Pick<PlatformPaths, 'xdg' | 'systemConfigPath'>,
   scope: Scope,
   cwd?: string,
 ): string => {
   switch (scope) {
     case 'system':
-      return '/etc/skillsmith/config.toml';
+      return env.systemConfigPath ?? '/etc/skillsmith/config.toml';
     case 'user':
       return join(env.xdg.config, 'skillsmith', 'config.toml');
     case 'project':

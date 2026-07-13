@@ -3,6 +3,8 @@ import type {
   CommandsReport,
   ConfigGetReport,
   ConfigListReport,
+  ConfigSetReport,
+  ConfigUnsetReport,
   FlipReport,
   HealthReport,
   InstallRecord,
@@ -141,6 +143,19 @@ export const CONFIG_LIST_SCOPED_REPORT_FIXTURE = {
   sources: CONFIG_LIST_UNSCOPED_REPORT_FIXTURE.sources,
   layers: CONFIG_LAYERS,
 } satisfies ConfigListReport;
+
+export const CONFIG_SET_REPORT_FIXTURE = {
+  key: 'tool',
+  value: 'codex',
+  scope: 'user',
+  file: '/fixture/config.toml',
+} satisfies ConfigSetReport;
+
+export const CONFIG_UNSET_REPORT_FIXTURE = {
+  key: 'tool',
+  scope: 'user',
+  file: '/fixture/config.toml',
+} satisfies ConfigUnsetReport;
 
 export const FLIP_REPORT_FIXTURE = {
   op: 'promote',
@@ -365,6 +380,8 @@ export const REPORT_FIXTURES = {
   configGetScoped: CONFIG_GET_SCOPED_REPORT_FIXTURE,
   configListUnscoped: CONFIG_LIST_UNSCOPED_REPORT_FIXTURE,
   configListScoped: CONFIG_LIST_SCOPED_REPORT_FIXTURE,
+  configSet: CONFIG_SET_REPORT_FIXTURE,
+  configUnset: CONFIG_UNSET_REPORT_FIXTURE,
   flip: FLIP_REPORT_FIXTURE,
   install: INSTALL_REPORT_FIXTURE,
   list: LIST_REPORT_FIXTURE,
@@ -382,6 +399,8 @@ export const CURRENT_RENDERER_REPORTS = {
   configGetScoped: REPORT_FIXTURES.configGetScoped,
   configListUnscoped: REPORT_FIXTURES.configListUnscoped,
   configListScoped: REPORT_FIXTURES.configListScoped,
+  configSet: REPORT_FIXTURES.configSet,
+  configUnset: REPORT_FIXTURES.configUnset,
   flip: { value: REPORT_FIXTURES.flip },
   install: { value: REPORT_FIXTURES.install },
   list: REPORT_FIXTURES.list,
@@ -406,6 +425,8 @@ export const CURRENT_JSON_GOLDENS = {
     '{\n  "effective": {\n    "tool": "codex",\n    "scope": "project",\n    "path": "./skills",\n    "registry": {\n      "default": "team"\n    }\n  },\n  "sources": {\n    "tool": "user",\n    "scope": "project",\n    "path": "project",\n    "registry.default": "project"\n  },\n  "layers": {\n    "defaults": {\n      "tool": "claude-code",\n      "scope": "user"\n    },\n    "system": {},\n    "user": {\n      "tool": "codex"\n    },\n    "project": {\n      "scope": "project",\n      "path": "./skills",\n      "registry": {\n        "default": "team"\n      }\n    },\n    "explicit-file": {},\n    "env": {},\n    "cli": {}\n  }\n}',
   configListScoped:
     '{\n  "scope": "project",\n  "path": "./skills",\n  "registry": {\n    "default": "team"\n  }\n}',
+  configSet: '{"key":"tool","value":"codex","scope":"user","file":"/fixture/config.toml"}\n',
+  configUnset: '{"key":"tool","scope":"user","file":"/fixture/config.toml"}\n',
   flip: '{\n  "schemaVersion": 2,\n  "kind": "skillsmith.flip",\n  "op": "promote",\n  "dryRun": false,\n  "requested": {\n    "targets": [\n      "fixture-skill"\n    ],\n    "all": false,\n    "tools": [\n      "codex"\n    ],\n    "explicitTools": true\n  },\n  "results": [\n    {\n      "skill": "fixture-skill",\n      "tool": "codex",\n      "placementPath": "/fixture/project/skills/fixture-skill",\n      "action": "flipped",\n      "reason": null,\n      "before": {\n        "mode": "dev",\n        "symlinkTarget": "/fixture/source/fixture-skill"\n      },\n      "after": {\n        "mode": "pinned",\n        "storePath": "/fixture/store/fixture-skill"\n      },\n      "store": {\n        "path": "/fixture/store/fixture-skill",\n        "rev": "main",\n        "gitSha": "1111111111111111111111111111111111111111",\n        "dirty": false,\n        "reused": false\n      },\n      "verify": {\n        "gate": "passed",\n        "verdict": "pass"\n      }\n    }\n  ],\n  "summary": {\n    "flipped": 1,\n    "updated": 0,\n    "noop": 0,\n    "skipped": 0,\n    "refused": 0,\n    "failed": 0,\n    "rolledBack": 0,\n    "created": 0,\n    "adopted": 0\n  }\n}',
   install:
     '{\n  "schemaVersion": 1,\n  "kind": "skillsmith.install",\n  "dryRun": false,\n  "requested": {\n    "sources": [\n      "fixture/repository//skills/fixture-skill"\n    ],\n    "tools": [\n      "codex"\n    ],\n    "explicitTools": true,\n    "scope": "project",\n    "explicitScope": true,\n    "ref": "main",\n    "pin": true,\n    "direct": false,\n    "force": false,\n    "verify": "static",\n    "deep": false\n  },\n  "results": [\n    {\n      "source": "fixture/repository//skills/fixture-skill",\n      "skill": "fixture-skill",\n      "tool": "codex",\n      "scope": "project",\n      "placementPath": "/fixture/project/skills/fixture-skill",\n      "action": "installed",\n      "reason": null,\n      "placement": "symlink",\n      "store": {\n        "path": "/fixture/store/fixture-skill",\n        "rev": "main",\n        "gitSha": "1111111111111111111111111111111111111111",\n        "reused": false\n      },\n      "origin": {\n        "host": "github.com",\n        "repo": "fixture/repository",\n        "skillPath": "skills/fixture-skill",\n        "refRequested": "main",\n        "refResolved": "1111111111111111111111111111111111111111",\n        "pin": true\n      },\n      "verify": {\n        "gate": "passed",\n        "verdict": "pass",\n        "mode": "static"\n      },\n      "candidates": null\n    }\n  ],\n  "summary": {\n    "installed": 1,\n    "updated": 0,\n    "repaired": 0,\n    "noop": 0,\n    "skipped": 0,\n    "refused": 0,\n    "failed": 0\n  }\n}',
@@ -426,6 +447,8 @@ export const GOLDEN_TERMINAL_LF = {
   configGetScoped: true,
   configListUnscoped: false,
   configListScoped: false,
+  configSet: true,
+  configUnset: true,
   flip: false,
   install: false,
   list: false,

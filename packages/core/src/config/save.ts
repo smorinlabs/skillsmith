@@ -1,7 +1,13 @@
 import { dirname } from 'node:path';
-import { stringify as stringifyToml } from 'smol-toml';
-import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
+import {
+  type SkillSmithError,
+  configError,
+  errorMessage,
+  permissionDeniedError,
+} from '../errors.ts';
+import { isPortError } from '../ports/errors.ts';
 import type {
+  FileModeWritePort,
   FileReadPort,
   FileWritePort,
   IdPort,
@@ -9,79 +15,158 @@ import type {
   PlatformPaths,
 } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
-import { CONFIG_ACCESSORS } from './accessors.ts';
+import { createConfigSource, editConfigSource } from './human-edit.ts';
 import { getConfigPath } from './paths.ts';
-import { parseConfig } from './schema.ts';
 import type { Config, ConfigKey, Scope } from './types.ts';
 
 export interface SaveConfigOpts {
-  scope: Scope;
-  patch?: Partial<Config>;
-  delete?: readonly ConfigKey[];
-  cwd?: string;
+  readonly scope: Scope;
+  readonly patch?: Partial<Config>;
+  readonly delete?: readonly ConfigKey[];
+  readonly cwd?: string;
+  /** Explicit selected destination. Required for nested desired-state ownership. */
+  readonly file?: string;
+}
+
+export interface SaveConfigResult {
+  readonly file: string;
+  readonly changed: boolean;
+  readonly unchanged: boolean;
+  readonly operation?: 'migrate-project-config';
 }
 
 type SaveConfigPorts = PlatformPaths &
-  Pick<FileReadPort, 'pathKind' | 'readText'> &
-  Pick<FileWritePort, 'makeDir' | 'writeTextFile' | 'rename'> &
+  Pick<FileReadPort, 'readText'> & {
+    readFileMetadata(path: string): Promise<{
+      readonly kind: 'absent' | 'file' | 'dir' | 'symlink' | string;
+      readonly mode: number | null;
+      readonly identity: string | null;
+    }>;
+  } & Pick<
+    FileWritePort,
+    'makeDir' | 'writeTextFile' | 'rename' | 'removeTree' | 'fsyncFile' | 'fsyncDir'
+  > &
+  FileModeWritePort &
   LockPort &
   IdPort;
 
-const stripUndefined = (c: Config): Record<string, unknown> => {
-  const out: Record<string, unknown> = {};
-  if (c.tool !== undefined) out.tool = c.tool;
-  if (c.scope !== undefined) out.scope = c.scope;
-  if (c.path !== undefined) out.path = c.path;
-  if (c.registry) {
-    const r: Record<string, unknown> = {};
-    if (c.registry.default !== undefined) r.default = c.registry.default;
-    if (Object.keys(r).length > 0) out.registry = r;
+const nodeCode = (error: unknown): string | null =>
+  error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : null;
+
+const saveError = (error: unknown, file: string, operation: string): SkillSmithError => {
+  const permission =
+    nodeCode(error) === 'EACCES' ||
+    nodeCode(error) === 'EPERM' ||
+    (isPortError(error) && error.code === 'permission');
+  return permission
+    ? permissionDeniedError(`${operation} denied for ${file}`, file)
+    : configError(`${operation} failed for ${file}: ${errorMessage(error)}`, { file });
+};
+
+const editAt = async (
+  ports: SaveConfigPorts,
+  file: string,
+  opts: SaveConfigOpts,
+): Promise<
+  Result<
+    {
+      readonly source: string;
+      readonly mode: number | null;
+      readonly changed: boolean;
+      readonly operation?: 'migrate-project-config';
+      readonly existed: boolean;
+    },
+    SkillSmithError
+  >
+> => {
+  let metadata: Awaited<ReturnType<SaveConfigPorts['readFileMetadata']>>;
+  try {
+    metadata = await ports.readFileMetadata(file);
+  } catch (error) {
+    return err(saveError(error, file, 'config metadata read'));
   }
-  return out;
+  if (metadata.kind === 'dir' || metadata.kind === 'symlink') {
+    return err(configError(`config destination must be a regular file: ${file}`, { file }));
+  }
+  if (metadata.kind === 'absent') {
+    const created = createConfigSource(opts);
+    return created.ok
+      ? ok({
+          source: created.value.source,
+          mode: null,
+          changed: created.value.changed,
+          ...(created.value.operation === undefined ? {} : { operation: created.value.operation }),
+          existed: false,
+        })
+      : created;
+  }
+  let source: string;
+  try {
+    source = await ports.readText(file);
+  } catch (error) {
+    return err(saveError(error, file, 'config read'));
+  }
+  const edited = editConfigSource(source, opts);
+  return edited.ok
+    ? ok({
+        source: edited.value.source,
+        mode: metadata.mode,
+        changed: edited.value.changed,
+        ...(edited.value.operation === undefined ? {} : { operation: edited.value.operation }),
+        existed: true,
+      })
+    : edited;
 };
 
 export const saveConfig = async (
   ports: SaveConfigPorts,
   opts: SaveConfigOpts,
-): Promise<Result<{ file: string }, SkillSmithError>> => {
-  const file = getConfigPath(ports, opts.scope, opts.cwd);
-  try {
-    await ports.makeDir(dirname(file));
-  } catch (e) {
-    return err(configError(`cannot create directory for ${file}: ${errorMessage(e)}`, { file }));
+): Promise<Result<SaveConfigResult, SkillSmithError>> => {
+  const file = opts.file ?? getConfigPath(ports, opts.scope, opts.cwd);
+  const initial = await editAt(ports, file, opts);
+  if (!initial.ok) return initial;
+  if (!initial.value.changed) {
+    return ok({ file, changed: false, unchanged: true });
+  }
+
+  if (!initial.value.existed) {
+    try {
+      await ports.makeDir(dirname(file));
+    } catch (error) {
+      return err(saveError(error, file, 'config directory creation'));
+    }
   }
 
   try {
     return await ports.withFileLock(file, async () => {
+      const current = await editAt(ports, file, opts);
+      if (!current.ok) return current;
+      if (!current.value.changed) return ok({ file, changed: false, unchanged: true });
+
+      const temporary = `${file}.tmp.${ports.nextId('config-save')}`;
+      let staged = false;
       try {
-        let existing: Config = {};
-        const text = (await ports.pathKind(file)) === 'absent' ? '' : await ports.readText(file);
-        if (text.trim().length > 0) {
-          const parsed = parseConfig(text);
-          if (!parsed.ok) {
-            const base = parsed.error;
-            if (base.code !== 'config-error') return err(base);
-            return err({ ...base, file });
-          }
-          existing = parsed.value;
-        }
-
-        const merged: Config = { ...existing, ...(opts.patch ?? {}) };
-        if (opts.patch?.registry) {
-          merged.registry = { ...(existing.registry ?? {}), ...opts.patch.registry };
-        }
-        for (const key of opts.delete ?? []) CONFIG_ACCESSORS[key].del(merged);
-
-        const serialized = stringifyToml(stripUndefined(merged));
-        const tmp = `${file}.tmp.${ports.nextId('config-save')}`;
-        await ports.writeTextFile(tmp, serialized);
-        await ports.rename(tmp, file);
-        return ok({ file });
-      } catch (e) {
-        return err(configError(`save failed: ${errorMessage(e)}`, { file }));
+        await ports.writeTextFile(temporary, current.value.source);
+        staged = true;
+        if (current.value.mode !== null) await ports.setFileMode(temporary, current.value.mode);
+        await ports.fsyncFile(temporary);
+        await ports.rename(temporary, file);
+        staged = false;
+        await ports.fsyncDir(dirname(file));
+        return ok({
+          file,
+          changed: true,
+          unchanged: false,
+          ...(current.value.operation === undefined ? {} : { operation: current.value.operation }),
+        });
+      } catch (error) {
+        if (staged) await ports.removeTree(temporary).catch(() => {});
+        return err(saveError(error, file, 'config replacement'));
       }
     });
-  } catch (e) {
-    return err(configError(`lock failed: ${errorMessage(e)}`, { file }));
+  } catch (error) {
+    return err(saveError(error, file, 'config coordination lock'));
   }
 };

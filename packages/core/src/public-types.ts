@@ -65,6 +65,7 @@ export type {
   VerificationToolId,
 } from './agents/registry.ts';
 export type { SupportedTool } from './agents/types.ts';
+export type * from './artifacts/types.ts';
 export type { CommandEntry } from './commands/types.ts';
 export type {
   Config,

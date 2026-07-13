@@ -450,6 +450,10 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   ...scopeRelations('skillsmith list', ['user', 'project', 'system', 'managed']),
   exclusive('skillsmith commands', ['--enabled', '--disabled', '--unconfigured']),
   ...scopeRelations('skillsmith commands', ['user', 'project']),
+  ...scopeRelations('skillsmith config get', ['user', 'project', 'system']),
+  ...scopeRelations('skillsmith config set', ['user', 'project', 'system']),
+  ...scopeRelations('skillsmith config list', ['user', 'project', 'system']),
+  ...scopeRelations('skillsmith config unset', ['user', 'project', 'system']),
   conflicts('skillsmith doctor', '--all-tools', '--tool'),
   ...scopeRelations('skillsmith doctor', ['user', 'project', 'system']),
   {

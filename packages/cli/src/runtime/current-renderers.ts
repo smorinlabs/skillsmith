@@ -20,7 +20,12 @@ import {
   type VersionReport,
   getConfigValue,
 } from '@skillsmith/core';
-import { toConfigGetV1Dto, toConfigListV1Dto } from '@skillsmith/core/contracts/v1';
+import {
+  toConfigGetV1Dto,
+  toConfigListV1Dto,
+  toConfigSetV1Dto,
+  toConfigUnsetV1Dto,
+} from '@skillsmith/core/contracts/v1';
 import type { Command } from 'commander';
 import { runCompletion } from '../completion/run.ts';
 import { currentWireCodecs } from '../contracts/wire-contracts.ts';
@@ -229,7 +234,7 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     ),
     configSet: guarded<ConfigSetReport>(
       (value) => ({ stderr: `wrote ${value.file ?? ''}\n` }),
-      (value) => `${JSON.stringify(value)}\n`,
+      (value) => encodeWire(currentWireCodecs.configSet, toConfigSetV1Dto(value)),
     ),
     configList: guarded<ConfigListReport>(
       (value, outcome) => withDiagnostics(outcome, configListHuman(value)),
@@ -237,7 +242,7 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     ),
     configUnset: guarded<ConfigUnsetReport>(
       (value) => ({ stderr: `updated ${value.file ?? ''}\n` }),
-      (value) => `${JSON.stringify(value)}\n`,
+      (value) => encodeWire(currentWireCodecs.configUnset, toConfigUnsetV1Dto(value)),
     ),
     list: guarded<ListReport>(
       (value, outcome) =>

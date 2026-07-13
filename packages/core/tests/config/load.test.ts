@@ -106,4 +106,27 @@ describe('loadConfig', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('config-error');
   });
+
+  test('canonical project plural replaces lower scalar and exposes cardinality', async () => {
+    const files: Record<string, string> = {
+      '/home/u/.config/skillsmith/config.toml': 'tool = "kilo-code"\n',
+      '/project/skillsmith.toml':
+        'version = 1\n[defaults]\ntools = ["codex", "claude-code"]\nscope = "project"\n',
+    };
+    const env = makeEnv(files);
+    const result = await loadConfig(runtimePorts(env), {
+      ...options(),
+      readFile: async (path) => files[path] ?? '',
+    });
+    expect(result.ok).toBeTrue();
+    if (result.ok) {
+      expect(result.value.value).toEqual({ tools: ['claude-code', 'codex'], scope: 'project' });
+      expect(result.value.sources.tool).toBe('project');
+      expect(result.value.toolSelection).toEqual({
+        tools: ['claude-code', 'codex'],
+        source: 'project',
+        cardinality: 'plural',
+      });
+    }
+  });
 });

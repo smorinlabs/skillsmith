@@ -7,6 +7,26 @@ export interface PlatformPaths {
   readonly executableSearchPath: readonly string[];
   readonly platform: Platform;
   readonly xdg: Readonly<XdgDirs>;
+  /** Optional hermetic override; production defaults to /etc/skillsmith/config.toml. */
+  readonly systemConfigPath?: string;
+}
+
+export interface FileMetadata {
+  readonly kind: PathKind;
+  /** Permission bits only (setuid/setgid/sticky plus rwx), never the file-type bits. */
+  readonly mode: number | null;
+  /** Stable identity for change detection; null when the path is absent. */
+  readonly identity: string | null;
+}
+
+/** Focused metadata capability used only by lossless editors and transaction planners. */
+export interface FileMetadataReadPort {
+  readFileMetadata(path: string): Promise<FileMetadata>;
+}
+
+/** Focused permission capability used only when staging a replacement file. */
+export interface FileModeWritePort {
+  setFileMode(path: string, mode: number): Promise<void>;
 }
 
 export interface FileReadPort {
@@ -144,6 +164,8 @@ export interface RuntimePorts
   extends PlatformPaths,
     FileReadPort,
     FileWritePort,
+    FileMetadataReadPort,
+    FileModeWritePort,
     LockPort,
     PathAccessPort,
     ProcessPort,

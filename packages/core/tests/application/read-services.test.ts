@@ -264,10 +264,16 @@ describe('read and config outcomes', () => {
     const current = context(env(), config);
     const get = await runConfigGetApplication(request(['tool']), current);
     const list = await runConfigListApplication(request(), current);
-    expect(get.report).toEqual({ key: 'tool', value: 'codex', source: 'user' });
+    expect(get.report).toEqual({
+      key: 'tool',
+      value: 'codex',
+      source: 'user',
+      notices: config.notices ?? [],
+    });
     expect(get.diagnostics[0]?.code).toBe('legacy-project-config');
     expect(list.report.effective).toEqual({ tool: 'codex' });
     expect(list.report.sources).toEqual({ tool: 'user' });
+    expect(list.report.notices).toEqual(config.notices);
   });
 
   test('config set and unset report applied mutations and the touched file', async () => {

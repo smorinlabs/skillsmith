@@ -1,5 +1,16 @@
 import type { ScanEnv } from '../../src/env/types.ts';
-import { cp, mkdir, open, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { runtimePortsFromScanEnv } from '../../src/ports/compatibility.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
@@ -22,8 +33,29 @@ export const runtimePorts = (env: ScanEnv): RuntimePorts => ({
       monotonicMilliseconds: () => 0,
     },
     id: { nextId: nextFixtureId },
+    readFileMetadata: async (path) => {
+      try {
+        const value = await lstat(path);
+        return {
+          kind: value.isSymbolicLink() ? 'symlink' : value.isDirectory() ? 'dir' : 'file',
+          mode: value.mode & 0o7777,
+          identity: `${value.dev}:${value.ino}`,
+        };
+      } catch {
+        const kind = await env.pathKind(path);
+        return { kind, mode: null, identity: kind === 'absent' ? null : path };
+      }
+    },
+    setFileMode: (path, mode) => chmod(path, mode),
   }),
   xdg: { ...env.xdg, cache: tmpdir() },
+  readText: async (path) => {
+    try {
+      return await readFile(path, 'utf8');
+    } catch {
+      return env.readText(path);
+    }
+  },
   makeDir: async (path) => {
     await mkdir(path, { recursive: true });
   },

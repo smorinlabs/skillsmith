@@ -601,6 +601,7 @@ const explicitValidationOwnership: Record<string, string[]> = {
     'EWP-CMD-CONFIG-TS03',
     'EWP-CMD-CONFIG-TS04',
     'EWP-CMD-CONFIG-TS05',
+    'EWP-OPT-TS01',
     'EWP-P0A-TS05',
     'EWP-P0A-TS09',
     'EWP-P1-TS01',

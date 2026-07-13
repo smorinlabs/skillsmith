@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { PORT_ERROR_CODES, type PlatformPaths, isPortError, portError } from '../../src/index.ts';
+import type {
+  FileMetadataReadPort,
+  FileModeWritePort,
+  FileReadPort,
+  FileWritePort,
+} from '../../src/ports/types.ts';
 
 describe('capability port contracts', () => {
   test('PlatformPaths uses the executable search path without the ScanEnv alias', () => {
@@ -40,5 +46,22 @@ describe('capability port contracts', () => {
         }),
       ),
     ).toBeFalse();
+  });
+
+  test('metadata and mode remain focused capabilities outside broad read/write ports', async () => {
+    type HasMetadata = 'readFileMetadata' extends keyof FileReadPort ? true : false;
+    type HasMode = 'setFileMode' extends keyof FileWritePort ? true : false;
+    const broadReadHasMetadata: HasMetadata = false;
+    const broadWriteHasMode: HasMode = false;
+    const metadata: FileMetadataReadPort['readFileMetadata'] = async () => ({
+      kind: 'file',
+      mode: 0o600,
+      identity: '1:2',
+    });
+    const setMode: FileModeWritePort['setFileMode'] = async () => {};
+    expect(broadReadHasMetadata).toBeFalse();
+    expect(broadWriteHasMode).toBeFalse();
+    expect(await metadata('/config')).toEqual({ kind: 'file', mode: 0o600, identity: '1:2' });
+    expect(setMode).toBeFunction();
   });
 });

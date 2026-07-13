@@ -234,7 +234,7 @@ describe('EWP-CMD-CONFIG-TS02', () => {
     runGit(root, ['init', '--quiet']);
     await Promise.all([
       mkdir(join(root, '.claude', 'skills', 'plural-claude'), { recursive: true }),
-      mkdir(join(root, '.codex', 'skills', 'plural-codex'), { recursive: true }),
+      mkdir(join(root, '.agents', 'skills', 'plural-codex'), { recursive: true }),
     ]);
     await Promise.all([
       writeFile(
@@ -242,7 +242,7 @@ describe('EWP-CMD-CONFIG-TS02', () => {
         '---\nname: plural-claude\ndescription: fixture\n---\n',
       ),
       writeFile(
-        join(root, '.codex', 'skills', 'plural-codex', 'SKILL.md'),
+        join(root, '.agents', 'skills', 'plural-codex', 'SKILL.md'),
         '---\nname: plural-codex\ndescription: fixture\n---\n',
       ),
       writeFile(

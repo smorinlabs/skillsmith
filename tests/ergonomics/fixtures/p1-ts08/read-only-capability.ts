@@ -1,6 +1,8 @@
 import type { PortError } from '../../../../packages/core/src/ports/errors.ts';
 import type {
   ClockPort,
+  FileMetadataReadPort,
+  FileModeWritePort,
   FileReadPort,
   FileWritePort,
   GitPort,
@@ -23,8 +25,13 @@ type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends <
 type Assert<Value extends true> = Value;
 
 type _PlatformPaths = Assert<
-  Equal<keyof PlatformPaths, 'homeDir' | 'executableSearchPath' | 'platform' | 'xdg'>
+  Equal<
+    keyof PlatformPaths,
+    'homeDir' | 'executableSearchPath' | 'platform' | 'systemConfigPath' | 'xdg'
+  >
 >;
+type _FileMetadataReadPort = Assert<Equal<keyof FileMetadataReadPort, 'readFileMetadata'>>;
+type _FileModeWritePort = Assert<Equal<keyof FileModeWritePort, 'setFileMode'>>;
 type _FileReadPort = Assert<
   Equal<
     keyof FileReadPort,
@@ -95,6 +102,8 @@ type RuntimePortKeys =
   | keyof PlatformPaths
   | keyof FileReadPort
   | keyof FileWritePort
+  | keyof FileMetadataReadPort
+  | keyof FileModeWritePort
   | keyof LockPort
   | keyof PathAccessPort
   | keyof ProcessPort
@@ -140,6 +149,10 @@ void readOnly.fileExists('/skills/review/SKILL.md');
 void readOnly.listDir('/skills');
 void readOnly.readText('/skills/review/SKILL.md');
 
+// @ts-expect-error inventory scans do not need the focused metadata reader
+void readOnly.readFileMetadata('/skills/review/SKILL.md');
+// @ts-expect-error read-only inventory cannot change file modes
+void readOnly.setFileMode('/skills/review/SKILL.md', 0o600);
 // @ts-expect-error read-only inventory cannot write files
 void readOnly.writeTextFile('/skills/review/SKILL.md', 'changed');
 // @ts-expect-error read-only inventory cannot remove trees

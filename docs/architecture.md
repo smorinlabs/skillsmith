@@ -191,7 +191,8 @@ boundary through explicit named mappers; renderer code does not spread domain ob
 or define a second public schema.
 
 The current registry contains `agents@1`, `health@1`, `commands@1`, `config-get@1`,
-`config-list@1`, `flip@2`, `install@1`, `list@2`, `uninstall@1`, `verify@1`, `error@1`, and
+`config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`, `install@1`, `list@2`, `uninstall@1`,
+`verify@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive unknown-field rejection, embedded kind and
 version policy, JSON indentation, terminal framing, and conservative compatibility. Current codecs
 declare no migrations. The `verify` codec derives tool choices from the validated tool registry;

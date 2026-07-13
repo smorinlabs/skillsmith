@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultRuntimePorts, defaultScanEnv, isPortError } from '../../src/index.ts';
@@ -125,5 +125,28 @@ describe('defaultRuntimePorts', () => {
 
     expect(received).toBe(callbackFailure);
     expect(isPortError(received)).toBeFalse();
+  });
+
+  test('reads stable regular-file metadata and applies focused permission bits', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-config-metadata-'));
+    const file = join(root, 'config.toml');
+    try {
+      await writeFile(file, 'tool = "codex"\n');
+      await chmod(file, 0o600);
+      const before = await ports.readFileMetadata(file);
+      expect(before).toMatchObject({ kind: 'file', mode: 0o600 });
+      expect(before.identity).toBeString();
+      await ports.setFileMode(file, 0o640);
+      expect((await stat(file)).mode & 0o777).toBe(0o640);
+      expect((await ports.readFileMetadata(file)).identity).toBe(before.identity);
+      expect(await ports.readFileMetadata(join(root, 'absent'))).toEqual({
+        kind: 'absent',
+        mode: null,
+        identity: null,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

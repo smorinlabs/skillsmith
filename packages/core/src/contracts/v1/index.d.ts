@@ -4,6 +4,8 @@ import type {
   CommandsReport,
   ConfigGetReport,
   ConfigListReport,
+  ConfigSetReport,
+  ConfigUnsetReport,
   Deprecation,
   InstallReport,
   ToolRegistry,
@@ -110,15 +112,32 @@ export interface CommandsV1Dto {
 
 interface ConfigV1Dto {
   tool?: ConfigToolId | undefined;
+  tools?: readonly ConfigToolId[] | undefined;
   scope?: ConfigScope | undefined;
   path?: string | undefined;
   registry?: { default?: string | undefined } | undefined;
 }
 
+type ConfigNoticeV1Dto =
+  | {
+      code: 'legacy-project-config';
+      path: string;
+      migrationPending: true;
+      migrationPhase: 2;
+    }
+  | {
+      code: 'plural-tool-selection';
+      path?: string | undefined;
+      tools: readonly ConfigToolId[];
+      source: ConfigLayer;
+      disposition: 'effective' | 'shadowed';
+    };
+
 export interface ConfigGetV1Dto {
   key: string;
   value: string | null;
   source?: ConfigLayer | undefined;
+  notices?: readonly ConfigNoticeV1Dto[] | undefined;
 }
 
 export type ConfigListV1Dto =
@@ -132,7 +151,23 @@ export type ConfigListV1Dto =
         'registry.default'?: ConfigLayer | undefined;
       };
       layers: Record<ConfigLayer, ConfigV1Dto>;
+      notices?: readonly ConfigNoticeV1Dto[] | undefined;
     };
+
+export interface ConfigSetV1Dto {
+  key: string;
+  value: string;
+  scope: 'system' | 'user' | 'project';
+  file: string | null;
+  operation?: 'migrate-project-config' | undefined;
+}
+
+export interface ConfigUnsetV1Dto {
+  key: string;
+  scope: 'system' | 'user' | 'project';
+  file: string | null;
+  operation?: 'migrate-project-config' | undefined;
+}
 
 export interface InstallV1Dto {
   schemaVersion: 1;
@@ -298,6 +333,10 @@ export declare const configGetV1Codec: WireCodec<'config-get', 1, ConfigGetV1Dto
 export declare const toConfigGetV1Dto: (report: ConfigGetReport) => ConfigGetV1Dto;
 export declare const configListV1Codec: WireCodec<'config-list', 1, ConfigListV1Dto>;
 export declare const toConfigListV1Dto: (report: ConfigListReport) => ConfigListV1Dto;
+export declare const configSetV1Codec: WireCodec<'config-set', 1, ConfigSetV1Dto>;
+export declare const toConfigSetV1Dto: (report: ConfigSetReport) => ConfigSetV1Dto;
+export declare const configUnsetV1Codec: WireCodec<'config-unset', 1, ConfigUnsetV1Dto>;
+export declare const toConfigUnsetV1Dto: (report: ConfigUnsetReport) => ConfigUnsetV1Dto;
 export declare const installV1Codec: WireCodec<'install', 1, InstallV1Dto>;
 export declare const toInstallV1Dto: (report: InstallReport) => InstallV1Dto;
 export declare const uninstallV1Codec: WireCodec<'uninstall', 1, UninstallV1Dto>;

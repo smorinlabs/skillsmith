@@ -54,6 +54,8 @@ const EXPECTED_PATHS = [
   'skillsmith commands',
   'skillsmith config get',
   'skillsmith config list',
+  'skillsmith config set',
+  'skillsmith config unset',
   'skillsmith dev',
   'skillsmith doctor',
   'skillsmith install',
@@ -69,6 +71,8 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith commands', 'commands', 1],
   ['skillsmith config get', 'config-get', 1],
   ['skillsmith config list', 'config-list', 1],
+  ['skillsmith config set', 'config-set', 1],
+  ['skillsmith config unset', 'config-unset', 1],
   ['skillsmith dev', 'flip', 2],
   ['skillsmith doctor', 'health', 1],
   ['skillsmith install', 'install', 1],
@@ -84,6 +88,8 @@ const EXPECTED_CODECS = [
   ['commands', 1],
   ['config-get', 1],
   ['config-list', 1],
+  ['config-set', 1],
+  ['config-unset', 1],
   ['flip', 2],
   ['install', 1],
   ['list', 2],
@@ -109,6 +115,8 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
   commands: { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
   'config-get': { wireKind: null, embeddedVersion: null, indent: 2, terminalLf: true },
   'config-list': { wireKind: null, embeddedVersion: null, indent: 2, terminalLf: false },
+  'config-set': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
+  'config-unset': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
   flip: {
     wireKind: 'skillsmith.flip',
     embeddedVersion: 'schemaVersion',
@@ -151,6 +159,8 @@ const GOLDEN_FILES = {
   configGetScoped: 'config-get-scoped.stdout',
   configListUnscoped: 'config-list-unscoped.stdout',
   configListScoped: 'config-list-scoped.stdout',
+  configSet: 'config-set.stdout',
+  configUnset: 'config-unset.stdout',
   flip: 'flip.stdout',
   install: 'install.stdout',
   list: 'list.stdout',
@@ -177,6 +187,8 @@ const V1_RUNTIME_EXPORTS = [
   'commandsV1Codec',
   'configGetV1Codec',
   'configListV1Codec',
+  'configSetV1Codec',
+  'configUnsetV1Codec',
   'createVerifyV1Codec',
   'errorV1Codec',
   'healthV1Codec',
@@ -186,6 +198,8 @@ const V1_RUNTIME_EXPORTS = [
   'toCommandsV1Dto',
   'toConfigGetV1Dto',
   'toConfigListV1Dto',
+  'toConfigSetV1Dto',
+  'toConfigUnsetV1Dto',
   'toErrorV1Dto',
   'toHealthV1Dto',
   'toInstallV1Dto',
@@ -365,6 +379,8 @@ const renderedCurrentBytes = (): CurrentBytes => {
     configGetScoped: render('configGet', CURRENT_RENDERER_REPORTS.configGetScoped),
     configListUnscoped: render('configList', CURRENT_RENDERER_REPORTS.configListUnscoped),
     configListScoped: render('configList', CURRENT_RENDERER_REPORTS.configListScoped),
+    configSet: render('configSet', CURRENT_RENDERER_REPORTS.configSet),
+    configUnset: render('configUnset', CURRENT_RENDERER_REPORTS.configUnset),
     flip,
     install: render('install', CURRENT_RENDERER_REPORTS.install),
     list: render('list', CURRENT_RENDERER_REPORTS.list),
@@ -430,7 +446,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the twelve live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the fourteen live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -439,14 +455,8 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(12);
-    for (const excluded of [
-      'skillsmith config set',
-      'skillsmith config unset',
-      'skillsmith version',
-      'skillsmith completion',
-      'skillsmith help',
-    ])
+    expect(new Set(paths).size).toBe(14);
+    for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
 
@@ -473,6 +483,8 @@ describe('EWP-P1-TS10', () => {
       ['commands', 'skillsmith commands'],
       ['configGet', 'skillsmith config get'],
       ['configList', 'skillsmith config list'],
+      ['configSet', 'skillsmith config set'],
+      ['configUnset', 'skillsmith config unset'],
       ['dev', 'skillsmith dev'],
       ['doctor', 'skillsmith doctor'],
       ['install', 'skillsmith install'],
@@ -1861,6 +1873,20 @@ describe('EWP-P1-TS10', () => {
         bytes: CURRENT_JSON_GOLDENS.configListScoped,
       },
       {
+        name: 'config-set@1',
+        mapper: v1.toConfigSetV1Dto,
+        codec: v1.configSetV1Codec,
+        args: [REPORT_FIXTURES.configSet],
+        bytes: CURRENT_JSON_GOLDENS.configSet,
+      },
+      {
+        name: 'config-unset@1',
+        mapper: v1.toConfigUnsetV1Dto,
+        codec: v1.configUnsetV1Codec,
+        args: [REPORT_FIXTURES.configUnset],
+        bytes: CURRENT_JSON_GOLDENS.configUnset,
+      },
+      {
         name: 'install@1',
         mapper: v1.toInstallV1Dto,
         codec: v1.installV1Codec,
@@ -2248,8 +2274,8 @@ describe('EWP-P1-TS10', () => {
       configListHuman: 2,
       metadataRenderer: 1,
       version: 1,
-      configSet: 1,
-      configUnset: 1,
+      configSet: 0,
+      configUnset: 0,
     });
     expect(findings).toEqual([]);
   });

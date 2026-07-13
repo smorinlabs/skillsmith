@@ -92,7 +92,7 @@ describe('resolveEffectiveConfig compatibility notices', () => {
     expect(writes()).toBe(0);
   });
 
-  test('does not mark non-project, absent, or empty/comment-only layers', async () => {
+  test('does not mark non-project or absent layers', async () => {
     const cases = [
       {
         files: { '/repo/team.toml': 'tool = "codex"\n' },
@@ -100,11 +100,6 @@ describe('resolveEffectiveConfig compatibility notices', () => {
         explicit: '/repo/team.toml',
       },
       { files: {}, project: null, explicit: null },
-      {
-        files: { '/repo/skillsmith.toml': '# comments only\n' },
-        project: '/repo/skillsmith.toml',
-        explicit: null,
-      },
     ] as const;
 
     for (const item of cases) {
@@ -124,6 +119,20 @@ describe('resolveEffectiveConfig compatibility notices', () => {
     }
   });
 
+  test('rejects empty and comment-only project documents without effects', async () => {
+    for (const source of ['', ' \n\t', '# comments only\n']) {
+      const projectPath = '/repo/skillsmith.toml';
+      const files = { [projectPath]: source };
+      const { env, writes } = fixture(files);
+      const result = await resolveEffectiveConfig(runtimePorts(env), context(projectPath), {
+        configuration: resolveRuntimeConfiguration({}),
+        readFile: async (path) => files[path as keyof typeof files] ?? '',
+      });
+      expect(result.ok, JSON.stringify(source)).toBeFalse();
+      expect(writes()).toBe(0);
+    }
+  });
+
   test('keeps malformed discovered project config on the existing error path', async () => {
     const projectPath = '/repo/skillsmith.toml';
     const files: Record<string, string> = { [projectPath]: 'unknown = true\n' };
@@ -138,5 +147,66 @@ describe('resolveEffectiveConfig compatibility notices', () => {
     if (result.ok) throw new Error('expected config error');
     expect(result.error).toMatchObject({ code: 'config-error', file: projectPath });
     expect(writes()).toBe(0);
+  });
+
+  test('replaces scalar and plural tool selections by layer and reports effective and shadowed sources', async () => {
+    const projectPath = '/repo/skillsmith.toml';
+    const explicitPath = '/repo/team.toml';
+    const files: Record<string, string> = {
+      '/config/skillsmith/config.toml': 'tool = "kilo-code"\n',
+      [projectPath]:
+        'version = 1\n[defaults]\ntools = ["codex", "claude-code"]\nscope = "project"\n',
+      [explicitPath]: 'version = 1\n[defaults]\ntools = ["opencode", "kilo-code"]\n',
+    };
+    const { env } = fixture(files);
+    const result = await resolveEffectiveConfig(
+      runtimePorts(env),
+      context(projectPath, explicitPath),
+      {
+        configuration: resolveRuntimeConfiguration({ SKILLSMITH_TOOL: 'codex' }),
+        readFile: async (path) => files[path] ?? '',
+      },
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    expect(result.value.value).toEqual({ tool: 'codex', scope: 'project' });
+    expect(result.value.toolSelection).toEqual({
+      tools: ['codex'],
+      source: 'env',
+      cardinality: 'scalar',
+    });
+    expect(result.value.notices).toContainEqual({
+      code: 'plural-tool-selection',
+      path: projectPath,
+      tools: ['claude-code', 'codex'],
+      source: 'project',
+      disposition: 'shadowed',
+    });
+    expect(result.value.notices).toContainEqual({
+      code: 'plural-tool-selection',
+      path: explicitPath,
+      tools: ['kilo-code', 'opencode'],
+      source: 'explicit-file',
+      disposition: 'shadowed',
+    });
+  });
+
+  test('reads one shared discovered/explicit path once while retaining both roles', async () => {
+    const path = '/repo/skillsmith.toml';
+    const source = 'tool = "codex"\n';
+    const { env } = fixture({ [path]: source });
+    let reads = 0;
+    const result = await resolveEffectiveConfig(runtimePorts(env), context(path, path), {
+      configuration: resolveRuntimeConfiguration({}),
+      readFile: async () => {
+        reads += 1;
+        return source;
+      },
+    });
+    expect(result.ok).toBeTrue();
+    expect(reads).toBe(1);
+    if (result.ok) {
+      expect(result.value.paths).toMatchObject({ project: path, 'explicit-file': path });
+    }
   });
 });

@@ -364,11 +364,13 @@ describe('EWP-P2-TS01', () => {
       canonicalManifest({ tools: ['ghost'] }),
       singleSkillManifest({ tools: null, scope: 'project' }, false),
       singleSkillManifest({ tools: ['codex'], scope: null }, false),
-      canonicalManifest({ skills: [{ extra: 'mystery = true' }] }),
-      canonicalManifest({ extraRoot: 'mystery = true' }),
       canonicalManifest().replace('[[skills]]', '[[skills]]\nplacement = "hardlink"'),
     ];
-    guardValidToml([valid, ...invalid]);
+    const unreadable = [
+      canonicalManifest({ skills: [{ extra: 'mystery = true' }] }),
+      canonicalManifest({ extraRoot: 'mystery = true' }),
+    ];
+    guardValidToml([valid, ...invalid, ...unreadable]);
     const api = await requireManifestApi();
     const normalized = normalize(api, valid);
 
@@ -409,6 +411,10 @@ describe('EWP-P2-TS01', () => {
     expect(normalize(api, reordered)).toEqual(normalized);
     for (const source of invalid)
       expectStateError(api.normalizeManifestDocument(read(api, source)));
+    for (const source of unreadable) {
+      expect(api.classifyManifestSource(source)).toBe('unknown');
+      expectStateError(api.readManifestSource(source), 'unknown');
+    }
   });
 
   test('enforces exact portable name and requested-ref grammar without Git authority', async () => {
@@ -459,11 +465,13 @@ describe('EWP-P2-TS01', () => {
       'a//b',
       ...['~', '^', ':', '?', '*', '[', '\\'].map((token) => `a${token}b`),
     ];
+    const refManifest = (ref: string): string =>
+      singleSkillManifest({ ref }).replaceAll('\u007f', '\\u007F');
     const fixtures = [
       ...positiveNames.map((name) => singleSkillManifest({ name })),
       ...negativeNames.map((name) => singleSkillManifest({ name })),
-      ...positiveRefs.map((ref) => singleSkillManifest({ ref })),
-      ...negativeRefs.map((ref) => singleSkillManifest({ ref })),
+      ...positiveRefs.map((ref) => refManifest(ref)),
+      ...negativeRefs.map((ref) => refManifest(ref)),
     ];
     guardValidToml(fixtures);
     expect(new TextEncoder().encode(`${'é'.repeat(127)}a`)).toHaveLength(255);
@@ -475,10 +483,10 @@ describe('EWP-P2-TS01', () => {
     for (const name of negativeNames)
       expectStateError(api.normalizeManifestDocument(read(api, singleSkillManifest({ name }))));
     for (const ref of positiveRefs)
-      expect(normalize(api, singleSkillManifest({ ref })).skills[0]?.ref).toBe(ref);
+      expect(normalize(api, refManifest(ref)).skills[0]?.ref).toBe(ref);
     expect(normalize(api, singleSkillManifest({ ref: null })).skills[0]?.ref).toBeNull();
     for (const ref of negativeRefs)
-      expectStateError(api.normalizeManifestDocument(read(api, singleSkillManifest({ ref }))));
+      expectStateError(api.normalizeManifestDocument(read(api, refManifest(ref))));
   });
 
   test('canonicalizes credential-free source and registry identity without retaining transport input', async () => {

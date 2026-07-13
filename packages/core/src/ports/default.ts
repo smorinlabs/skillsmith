@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
   access,
+  chmod,
   cp,
   realpath as fsRealpath,
   rename as fsRename,
@@ -25,6 +26,8 @@ import { type BinaryProcessPort, createGitPort } from './git.ts';
 import { createHttpPort } from './http.ts';
 import type {
   ClockPort,
+  FileMetadataReadPort,
+  FileModeWritePort,
   FileReadPort,
   FileWritePort,
   IdPort,
@@ -90,7 +93,7 @@ const fsyncPath = (path: string): Promise<void> =>
     }
   });
 
-const createFileReadPort = (): FileReadPort => ({
+const createFileReadPort = (): FileReadPort & FileMetadataReadPort => ({
   fileExists: async (path) => {
     try {
       await stat(path);
@@ -155,9 +158,31 @@ const createFileReadPort = (): FileReadPort => ({
       });
     }
   },
+  readFileMetadata: async (path) => {
+    try {
+      const value = await lstat(path);
+      const kind: PathKind = value.isSymbolicLink()
+        ? 'symlink'
+        : value.isDirectory()
+          ? 'dir'
+          : 'file';
+      return {
+        kind,
+        mode: value.mode & 0o7777,
+        identity: `${value.dev}:${value.ino}`,
+      };
+    } catch (error) {
+      if (nodeCode(error) === 'ENOENT') return { kind: 'absent', mode: null, identity: null };
+      throw toPortError(error, {
+        capability: 'file-read',
+        operation: 'readFileMetadata',
+        context: { path },
+      });
+    }
+  },
 });
 
-const createFileWritePort = (): FileWritePort => ({
+const createFileWritePort = (): FileWritePort & FileModeWritePort => ({
   makeDir: (path) =>
     fileOperation('file-write', 'makeDir', { path }, async () => {
       await mkdir(path, { recursive: true });
@@ -184,6 +209,10 @@ const createFileWritePort = (): FileWritePort => ({
     }),
   fsyncFile: (path) => fsyncPath(path),
   fsyncDir: (path) => fsyncPath(path),
+  setFileMode: (path, mode) =>
+    fileOperation('file-write', 'setFileMode', { path, mode: mode.toString(8) }, async () => {
+      await chmod(path, mode);
+    }),
 });
 
 const createLockPort = (): LockPort => ({

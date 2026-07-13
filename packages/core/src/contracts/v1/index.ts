@@ -7,12 +7,21 @@ export {
 } from './capability-snapshot.ts';
 export type { CommandsV1Dto } from './commands.ts';
 export { commandsV1Codec, toCommandsV1Dto } from './commands.ts';
-export type { ConfigGetV1Dto, ConfigListV1Dto } from './config.ts';
+export type {
+  ConfigGetV1Dto,
+  ConfigListV1Dto,
+  ConfigSetV1Dto,
+  ConfigUnsetV1Dto,
+} from './config.ts';
 export {
   configGetV1Codec,
   configListV1Codec,
+  configSetV1Codec,
+  configUnsetV1Codec,
   toConfigGetV1Dto,
   toConfigListV1Dto,
+  toConfigSetV1Dto,
+  toConfigUnsetV1Dto,
 } from './config.ts';
 export type { ErrorV1Dto } from './error.ts';
 export { errorV1Codec, toErrorV1Dto } from './error.ts';

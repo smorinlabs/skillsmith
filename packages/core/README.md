@@ -67,7 +67,8 @@ import { agentsV1Codec, toAgentsV1Dto } from '@skillsmith/core/contracts/v1';
 import { flipV2Codec, toFlipV2Dto } from '@skillsmith/core/contracts/v2';
 ```
 
-The current codec IDs are `agents`, `health`, `commands`, `config-get`, `config-list`, `flip`,
+The current codec IDs are `agents`, `health`, `commands`, `config-get`, `config-list`, `config-set`,
+`config-unset`, `flip`,
 `install`, `list`, `uninstall`, `verify`, `error`, and `capability-snapshot`. Codecs recursively
 reject unknown object fields, validate before encoding, preserve their declared JSON framing, and
 return sanitized `Result` errors rather than throwing for untrusted input. Explicit `to*Dto`

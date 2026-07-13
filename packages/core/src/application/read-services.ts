@@ -1,8 +1,9 @@
 import { join, parse, resolve } from 'node:path';
 import { listSupportedTools } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS, type SupportedTool } from '../agents/types.ts';
+import { normalizePortablePath, normalizeRegistryIdentity } from '../artifacts/identity.ts';
 import type { CommandEntry } from '../commands/types.ts';
-import { CONFIG_ACCESSORS, getConfigValue } from '../config/accessors.ts';
+import { CONFIG_ACCESSORS, getConfigTools, getConfigValue } from '../config/accessors.ts';
 import { resolveEffectiveConfig } from '../config/effective.ts';
 import { saveConfig } from '../config/save.ts';
 import {
@@ -10,6 +11,7 @@ import {
   type Config,
   type ConfigKey,
   type ConfigLayer,
+  type ConfigNotice,
   type EffectiveConfig,
   SCOPES,
   type Scope,
@@ -66,6 +68,7 @@ export interface ConfigGetReport {
   readonly value: string | null;
   readonly source?: ConfigLayer;
   readonly scope?: Exclude<Scope, 'managed'>;
+  readonly notices?: readonly ConfigNotice[];
 }
 
 export interface ConfigSetReport {
@@ -73,6 +76,7 @@ export interface ConfigSetReport {
   readonly value: string;
   readonly scope: Exclude<Scope, 'managed'>;
   readonly file: string | null;
+  readonly operation?: 'migrate-project-config';
 }
 
 export interface ConfigListReport {
@@ -80,12 +84,14 @@ export interface ConfigListReport {
   readonly effective: Config;
   readonly sources: EffectiveConfig['sources'];
   readonly layers: EffectiveConfig['layers'];
+  readonly notices?: readonly ConfigNotice[];
 }
 
 export interface ConfigUnsetReport {
   readonly key: string;
   readonly scope: Exclude<Scope, 'managed'>;
   readonly file: string | null;
+  readonly operation?: 'migrate-project-config';
 }
 
 export interface ListReport {
@@ -328,17 +334,33 @@ const configFor = async (
 };
 
 const configNoticeDiagnostics = (config: EffectiveConfig): readonly Diagnostic[] =>
-  (config.notices ?? []).map((notice) => ({
-    code: notice.code,
-    severity: 'warning' as const,
-    message: `legacy project config detected at ${notice.path}`,
-    remediation: 'migrate the project configuration when the Phase 2 migration is available',
-    details: {
-      path: notice.path,
-      migrationPending: notice.migrationPending,
-      migrationPhase: notice.migrationPhase,
-    },
-  }));
+  (config.notices ?? []).map((notice): Diagnostic => {
+    if (notice.code === 'legacy-project-config') {
+      return {
+        code: notice.code,
+        severity: 'warning',
+        message: `legacy project config detected at ${notice.path}`,
+        remediation: 'migrate the project configuration in Phase 2 with config set or config unset',
+        details: {
+          path: notice.path,
+          migrationPending: notice.migrationPending,
+          migrationPhase: notice.migrationPhase,
+        },
+      };
+    }
+    return {
+      code: notice.code,
+      severity: 'warning',
+      message: `${notice.disposition} plural tool selection from ${notice.source}`,
+      remediation: 'use config list to inspect every selected tool',
+      details: {
+        source: notice.source,
+        disposition: notice.disposition,
+        tools: notice.tools.join(','),
+        ...(notice.path === undefined ? {} : { path: notice.path }),
+      },
+    };
+  });
 
 const healthConfigFor = async (
   mode: CheckRunMode,
@@ -367,7 +389,8 @@ const healthConfigFor = async (
   const invalidProjectConfig = project.discoveredConfigPath;
   return resolveEffectiveConfig(context.ports, project, {
     configuration: context.configuration,
-    readFile: async (path) => (path === invalidProjectConfig ? '' : context.ports.readText(path)),
+    readFile: async (path) =>
+      path === invalidProjectConfig ? 'version = 1\n' : context.ports.readText(path),
   });
 };
 
@@ -406,10 +429,17 @@ const emptyEffectiveConfig = (): EffectiveConfig => ({
   paths: {},
 });
 
+const effectiveTools = (config: EffectiveConfig): readonly SupportedTool[] =>
+  config.toolSelection?.tools ?? (config.value.tool === undefined ? [] : [config.value.tool]);
+
 const configPatch = (key: ConfigKey, value: string): Partial<Config> =>
   CONFIG_ACCESSORS[key].patch(value);
 
-const validateConfigValue = (key: ConfigKey, value: string): ReadServiceError | null => {
+const validateConfigValue = (
+  key: ConfigKey,
+  value: string,
+  destinationScope: Exclude<Scope, 'managed'>,
+): ReadServiceError | null => {
   const allowed =
     key === 'tool'
       ? listSupportedTools()
@@ -419,16 +449,29 @@ const validateConfigValue = (key: ConfigKey, value: string): ReadServiceError | 
   if (allowed !== null && !(allowed as readonly string[]).includes(value)) {
     return usage(`invalid value '${value}' for '${key}' (allowed: ${allowed.join(', ')})`);
   }
+  if (key === 'registry.default' && !normalizeRegistryIdentity(value).ok) {
+    return usage('invalid credential-free registry identity');
+  }
+  if (key === 'path') {
+    const pathScope = destinationScope === 'project' ? 'project' : 'user';
+    if (!normalizePortablePath(value, pathScope, 'config.path').ok) {
+      return usage(`invalid portable path for ${destinationScope} scope`);
+    }
+  }
   return null;
 };
 
-const appliedMutation = (): MutationSummary => ({
+const saveMutation = (changed: boolean): MutationSummary => ({
   kind: 'applied',
   planned: 1,
-  changed: 1,
-  unchanged: 0,
+  changed: changed ? 1 : 0,
+  unchanged: changed ? 0 : 1,
   failed: 0,
 });
+
+const projectConfigDestination = (project: ProjectContext): string =>
+  project.discoveredConfigPath ??
+  join(project.projectRoot ?? project.effectiveCwd, 'skillsmith.toml');
 
 const enabledFilter = (
   request: Readonly<CurrentCommandRequest>,
@@ -498,6 +541,18 @@ export const runConfigGetApplication: ApplicationService<
   const config = await configFor(context, project.value);
   if (!config.ok) return failed(empty, config.error);
   if (scope !== undefined) {
+    const scopedTools = key === 'tool' ? getConfigTools(config.value.layers[scope]) : undefined;
+    if (scopedTools !== undefined && scopedTools.length > 1) {
+      return failed(
+        {
+          key,
+          value: null,
+          scope,
+          ...(config.value.notices === undefined ? {} : { notices: config.value.notices }),
+        },
+        usage(`'tool' is plural at ${scope} scope; use config list to inspect every value`),
+      );
+    }
     const value = getConfigValue(config.value.layers[scope], key);
     if (value === undefined) {
       return failed(
@@ -505,14 +560,40 @@ export const runConfigGetApplication: ApplicationService<
         { code: 'config-unset', message: `'${key}' is not set at ${scope} scope` },
       );
     }
-    return success({ key, value, scope }, { diagnostics: configNoticeDiagnostics(config.value) });
+    return success(
+      {
+        key,
+        value,
+        scope,
+        ...(config.value.notices === undefined ? {} : { notices: config.value.notices }),
+      },
+      { diagnostics: configNoticeDiagnostics(config.value) },
+    );
+  }
+  if (key === 'tool' && config.value.toolSelection?.cardinality === 'plural') {
+    return failed(
+      {
+        key,
+        value: null,
+        ...(config.value.notices === undefined ? {} : { notices: config.value.notices }),
+      },
+      usage(`'tool' is plural; use config list to inspect every value`),
+    );
   }
   const source = config.value.sources[key];
   const value = source === undefined ? undefined : getConfigValue(config.value.layers[source], key);
   if (source === undefined || value === undefined) {
     return failed(empty, { code: 'config-unset', message: `'${key}' is not set` });
   }
-  return success({ key, value, source }, { diagnostics: configNoticeDiagnostics(config.value) });
+  return success(
+    {
+      key,
+      value,
+      source,
+      ...(config.value.notices === undefined ? {} : { notices: config.value.notices }),
+    },
+    { diagnostics: configNoticeDiagnostics(config.value) },
+  );
 };
 
 export const runConfigSetApplication: ApplicationService<
@@ -533,7 +614,7 @@ export const runConfigSetApplication: ApplicationService<
   if (argumentString(request, 1) === undefined) {
     return failed(empty, usage('a configuration value is required'));
   }
-  const invalid = validateConfigValue(key, rawValue);
+  const invalid = validateConfigValue(key, rawValue, scope);
   if (invalid !== null) return failed(empty, invalid);
   const project = await projectFor(context);
   if (!project.ok) return failed(empty, project.error);
@@ -541,9 +622,18 @@ export const runConfigSetApplication: ApplicationService<
     scope,
     patch: configPatch(key, rawValue),
     cwd: project.value.projectRoot ?? project.value.effectiveCwd,
+    ...(scope === 'project' ? { file: projectConfigDestination(project.value) } : {}),
   });
   if (!saved.ok) return failed(empty, saved.error);
-  return success({ ...empty, key, file: saved.value.file }, { mutation: appliedMutation() });
+  return success(
+    {
+      ...empty,
+      key,
+      file: saved.value.file,
+      ...(saved.value.operation === undefined ? {} : { operation: saved.value.operation }),
+    },
+    { mutation: saveMutation(saved.value.changed) },
+  );
 };
 
 export const runConfigListApplication: ApplicationService<
@@ -568,6 +658,7 @@ export const runConfigListApplication: ApplicationService<
       effective: config.value.value,
       sources: config.value.sources,
       layers: config.value.layers,
+      ...(config.value.notices === undefined ? {} : { notices: config.value.notices }),
     },
     { diagnostics: configNoticeDiagnostics(config.value) },
   );
@@ -593,9 +684,18 @@ export const runConfigUnsetApplication: ApplicationService<
     scope,
     delete: [key],
     cwd: project.value.projectRoot ?? project.value.effectiveCwd,
+    ...(scope === 'project' ? { file: projectConfigDestination(project.value) } : {}),
   });
   if (!saved.ok) return failed(empty, saved.error);
-  return success({ key, scope, file: saved.value.file }, { mutation: appliedMutation() });
+  return success(
+    {
+      key,
+      scope,
+      file: saved.value.file,
+      ...(saved.value.operation === undefined ? {} : { operation: saved.value.operation }),
+    },
+    { mutation: saveMutation(saved.value.changed) },
+  );
 };
 
 export const runListApplication: ApplicationService<CurrentCommandRequest, ListReport> = async (
@@ -620,8 +720,8 @@ export const runListApplication: ApplicationService<CurrentCommandRequest, ListR
   const tools =
     selection.value.tools.length > 0
       ? selection.value.tools
-      : config.value.value.tool
-        ? [config.value.value.tool]
+      : effectiveTools(config.value).length > 0
+        ? effectiveTools(config.value)
         : SUPPORTED_TOOLS;
   const listed = await listSkills(context.ports, {
     tools,
@@ -663,8 +763,8 @@ export const runCommandsApplication: ApplicationService<
   const tools =
     selection.value.tools.length > 0
       ? selection.value.tools
-      : config.value.value.tool
-        ? [config.value.value.tool]
+      : effectiveTools(config.value).length > 0
+        ? effectiveTools(config.value)
         : SUPPORTED_TOOLS;
   const listed = await listCommands(context.ports, {
     tools,
@@ -716,8 +816,8 @@ const runHealthApplication = async (
         : SUPPORTED_TOOLS
       : selection.value.tools.length > 0
         ? selection.value.tools
-        : config.value.value.tool
-          ? [config.value.value.tool]
+        : effectiveTools(config.value).length > 0
+          ? effectiveTools(config.value)
           : SUPPORTED_TOOLS;
   const scopes =
     scope.value !== null

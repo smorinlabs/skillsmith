@@ -26,6 +26,16 @@ describe('ScanEnv compatibility', () => {
       operation: 'assertWritableDirectory',
       code: 'unavailable',
     });
+    expect(await focused.readFileMetadata('/definitely/missing')).toEqual({
+      kind: 'absent',
+      mode: null,
+      identity: null,
+    });
+    await expect(focused.setFileMode('/state', 0o600)).rejects.toMatchObject({
+      capability: 'file-write',
+      operation: 'setFileMode',
+      code: 'unavailable',
+    });
   });
 
   test('defaultScanEnv is the legacy projection of the same real adapter shape', async () => {
