@@ -6,6 +6,7 @@ import {
   builtInChecks,
   defaultScanEnv,
   noopLogger,
+  resolveEffectiveConfig,
   runChecks,
 } from '@skillsmith/core';
 import { Command, Option } from 'commander';
@@ -13,6 +14,7 @@ import { renderDoctorHuman } from '../output/doctor-human.ts';
 import { renderDoctorJson } from '../output/doctor-json.ts';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
 import { resolveArtifactPair } from '../util/artifact-pair.ts';
+import { renderConfigNotices } from '../util/config-notice.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 import { singularOption } from '../util/singular-option.ts';
@@ -104,6 +106,10 @@ export const doctorCommand = (): Command =>
           const env = await defaultScanEnv();
           const context = await resolveCommandProjectContext(command, env);
           if (!context.ok) return failCliError(context.error, opts.json ? 'json' : 'human');
+          const effectiveConfig =
+            !opts.json && opts.file === undefined
+              ? await resolveEffectiveConfig(env, context.value)
+              : null;
           const artifacts = resolveArtifactPair({
             effectiveCwd: context.value.effectiveCwd,
             ...(opts.file === undefined ? {} : { file: opts.file }),
@@ -133,6 +139,9 @@ export const doctorCommand = (): Command =>
           });
           if (!r.ok) {
             return failCliError(r.error, opts.json ? 'json' : 'human');
+          }
+          if (effectiveConfig?.ok) {
+            process.stderr.write(renderConfigNotices(effectiveConfig.value, 'human'));
           }
           process.stdout.write(opts.json ? renderDoctorJson(r.value) : renderDoctorHuman(r.value));
           const hadError = r.value.counts.error > 0;

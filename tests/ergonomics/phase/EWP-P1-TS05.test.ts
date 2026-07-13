@@ -194,6 +194,21 @@ describe('EWP-P1-TS05', () => {
       expect(warnings[0]).toMatch(/Phase 2/i);
       expect(warnings[0]).toMatch(/read-only|migrat/i);
       expect(await readFile(configPath, 'utf8')).toBe(source);
+
+      const doctorArgs = ['doctor', '--tool', 'codex', '--scope', 'user', '--offline'] as const;
+      const doctor = await runCli(doctorArgs, nested, env);
+      expect(doctor.exitCode).toBe(0);
+      expect(doctor.stdout).toContain('checks reported');
+      const doctorWarnings = doctor.stderr.trimEnd().split('\n').filter(Boolean);
+      expect(doctorWarnings).toHaveLength(1);
+      expect(doctorWarnings[0]).toMatch(/warning:.*legacy project config/i);
+      expect(doctorWarnings[0]).toContain(configPath);
+
+      const doctorJson = await runCli([...doctorArgs, '--json'], nested, env);
+      expect(doctorJson.exitCode).toBe(0);
+      expect(doctorJson.stderr).toBe('');
+      expect(() => JSON.parse(doctorJson.stdout)).not.toThrow();
+      expect(await readFile(configPath, 'utf8')).toBe(source);
     } finally {
       await rm(sandbox, { recursive: true, force: true });
     }
