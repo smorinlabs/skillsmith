@@ -8,10 +8,14 @@ import { createCliRuntimeAdapter } from '../../../packages/cli/src/runtime/adapt
 import { CURRENT_COMMAND_SPECS } from '../../../packages/cli/src/spec/registry.ts';
 import { validateOptionInvocation } from '../../../packages/cli/src/spec/relations.ts';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
+import { resolveRuntimeConfiguration } from '../../../packages/core/src/config/runtime.ts';
+import { crossScopeDuplicate } from '../../../packages/core/src/doctor/checks/cross-scope-duplicate.ts';
 import { genericError } from '../../../packages/core/src/errors.ts';
 import { defaultRuntimePorts } from '../../../packages/core/src/ports/default.ts';
 import { err, ok } from '../../../packages/core/src/result.ts';
 import { detectAll } from '../../../packages/core/src/scan/index.ts';
+import { listCommands } from '../../../packages/core/src/scan/list-commands.ts';
+import { listSkills } from '../../../packages/core/src/scan/list-skills.ts';
 import { runVerify } from '../../../packages/core/src/verify/run.ts';
 import type { ToolVerifier } from '../../../packages/core/src/verify/types.ts';
 import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
@@ -635,6 +639,18 @@ describe('EWP-P1-TS11', () => {
     });
     expect(() => createEvent(built.context, accessorEvent)).toThrow(TypeError);
     expect(eventGetterReads).toBe(0);
+    let eventProxyReads = 0;
+    const proxyEvent = new Proxy(
+      { kind: 'plan.created', planId: 'plan-1', operationCount: 1 },
+      {
+        ownKeys: () => {
+          eventProxyReads++;
+          return ['kind', 'planId', 'operationCount'];
+        },
+      },
+    );
+    expect(() => createEvent(built.context, proxyEvent)).toThrow(TypeError);
+    expect(eventProxyReads).toBe(0);
   }, 20_000);
 
   test('family 2: correlates command/span lifecycle with independent clocks and deterministic error codes', async () => {
@@ -775,11 +791,13 @@ describe('EWP-P1-TS11', () => {
     expect(Object.isFrozen(events.at(-1)?.modes)).toBeTrue();
     Reflect.apply(complete, emitter, [verificationSpan, { verdict: 'pass', errorCode: null }]);
 
+    const beforeUnknown = events.length;
     const unknownToolSpan = Reflect.apply(begin, emitter, [
       built.context,
       { kind: 'tool.detection.started', toolId: 'unknown-tool' },
     ]);
     expect(unknownToolSpan).toBeNull();
+    expect(events).toHaveLength(beforeUnknown);
     const otherEmitter = createEmitter({
       observer: { observe: () => timeline.push('other-emitter') },
       toolIds: ['fixture-tool'],
@@ -797,6 +815,50 @@ describe('EWP-P1-TS11', () => {
     ]);
     expect(events).toHaveLength(eventCount);
     expect(timeline).not.toContain('other-emitter');
+
+    const createContext = callable(authority.createOperationContext);
+    expect(createContext).not.toBeNull();
+    if (createContext === null) return;
+    let clockFails = false;
+    const unstableContext = createContext({
+      command: 'skillsmith unstable',
+      workflow: 'unstable',
+      operationId: 'unstable-operation',
+      id: { nextId: () => 'unused' },
+      clock: {
+        wallNowIso: () => {
+          if (clockFails) throw new Error('clock failed');
+          return '2026-07-13T00:01:00.000Z';
+        },
+        monotonicMilliseconds: () => (clockFails ? Number.NaN : 100),
+      },
+    });
+    const unstableEvents: UnknownRecord[] = [];
+    const unstableEmitter = createEmitter({
+      observer: { observe: (event: UnknownRecord) => unstableEvents.push(event) },
+    }) as UnknownRecord;
+    const unstableBegin = callable(unstableEmitter.begin);
+    const unstableComplete = callable(unstableEmitter.complete);
+    expect(unstableBegin).not.toBeNull();
+    expect(unstableComplete).not.toBeNull();
+    if (unstableBegin === null || unstableComplete === null) return;
+    const unstableSpan = Reflect.apply(unstableBegin, unstableEmitter, [
+      unstableContext,
+      { kind: 'command.started' },
+    ]);
+    expect(unstableEvents).toHaveLength(1);
+    clockFails = true;
+    expect(() =>
+      Reflect.apply(unstableComplete, unstableEmitter, [
+        unstableSpan,
+        { outcome: 'success', exitClass: 'success', errorCode: null },
+      ]),
+    ).not.toThrow();
+    expect(unstableEvents).toHaveLength(1);
+    expect(
+      Reflect.apply(unstableBegin, unstableEmitter, [unstableContext, { kind: 'command.started' }]),
+    ).toBeNull();
+    expect(unstableEvents).toHaveLength(1);
 
     const completionCode = async (
       exitClass: string,
@@ -915,6 +977,61 @@ describe('EWP-P1-TS11', () => {
         exitClass: 'permission',
         errorCode: 'classified-runtime',
       });
+    }
+
+    for (const mode of ['missing-application', 'returned-error'] as const) {
+      const failureTimeline: string[] = [];
+      const failureBuilt = makeContext(authority, { operationId: `ordered-${mode}` });
+      if (failureBuilt.context === undefined) return;
+      const failureEmitter = createEmitter({
+        observer: {
+          observe: (event: UnknownRecord) => failureTimeline.push(`event:${String(event.kind)}`),
+        },
+      });
+      const adapter = createCliRuntimeAdapter({
+        applications:
+          mode === 'missing-application'
+            ? {}
+            : {
+                fixture: async () => {
+                  failureTimeline.push('application');
+                  return { ok: false, error: new Error('returned failure') };
+                },
+              },
+        renderers: {},
+        io: {
+          stdout: { write: (value) => failureTimeline.push(`stdout:${value.trim()}`) },
+          stderr: { write: (value) => failureTimeline.push(`stderr:${value.trim()}`) },
+          exit: (code) => failureTimeline.push(`exit:${code}`),
+        },
+        classifyFailure: () => ({
+          exitClass: 'failure',
+          code: 'ordered-failure',
+          message: 'ordered failure',
+        }),
+        renderFailure: () => {
+          failureTimeline.push('failure-renderer');
+          return { stderr: 'error: ordered failure\n' };
+        },
+      });
+      await Reflect.apply(adapter.execute, adapter, [
+        {
+          application: 'fixture',
+          reportKind: 'fixture',
+          request: {},
+          context: { observation: { context: failureBuilt.context, emitter: failureEmitter } },
+          observation: { context: failureBuilt.context, emitter: failureEmitter },
+          format: 'human',
+        },
+      ]);
+      expect(failureTimeline).toEqual([
+        'event:command.started',
+        ...(mode === 'returned-error' ? ['application'] : []),
+        'failure-renderer',
+        'event:command.completed',
+        'stderr:error: ordered failure',
+        'exit:1',
+      ]);
     }
 
     const focusedWrites: string[] = [];
@@ -1179,6 +1296,29 @@ describe('EWP-P1-TS11', () => {
       'tool.detection.completed',
     ]);
     expect(events[0]?.toolId).toBe('codex');
+    const detectionErrorEvents: UnknownRecord[] = [];
+    const detectionErrorEmitter = createEmitter({
+      observer: { observe: (event: UnknownRecord) => detectionErrorEvents.push(event) },
+      toolIds: ['codex'],
+    });
+    const detectionError = (await Reflect.apply(detectAll, null, [
+      { ...detectionEnv(), fileExists: async () => Promise.reject(new Error('probe failed')) },
+      {
+        tools: ['codex'],
+        observation: { context: built.context, emitter: detectionErrorEmitter },
+      },
+    ])) as { readonly ok: boolean; readonly value?: Map<string, readonly unknown[]> };
+    expect(detectionError.ok).toBeTrue();
+    expect(detectionError.value?.get('codex')).toEqual([]);
+    expect(detectionErrorEvents.map((event) => event.kind)).toEqual([
+      'tool.detection.started',
+      'tool.detection.completed',
+    ]);
+    expect(detectionErrorEvents.at(-1)).toMatchObject({
+      outcome: 'failure',
+      errorCode: 'generic',
+      resultCount: 0,
+    });
 
     const legacyAdapter = callable(authority.observationFromLegacyLogger);
     expect(legacyAdapter, 'missing Logger compatibility adapter').not.toBeNull();
@@ -1227,6 +1367,74 @@ describe('EWP-P1-TS11', () => {
     ]);
     expect(JSON.stringify(legacyLines)).not.toContain('legacy-observation');
 
+    const inventoryPorts = {
+      ...(await defaultRuntimePorts()),
+      homeDir: '/nonexistent/skillsmith-ts11-home',
+      xdg: {
+        config: '/nonexistent/skillsmith-ts11-config',
+        data: '/nonexistent/skillsmith-ts11-data',
+        cache: '/nonexistent/skillsmith-ts11-cache',
+      },
+    };
+    const configuration = resolveRuntimeConfiguration({});
+    const inventoryStart = events.length;
+    const listedSkills = await Reflect.apply(listSkills, null, [
+      inventoryPorts,
+      {
+        tools: [],
+        scopes: [],
+        cwd: ROOT,
+        configuration,
+        observation: { context: built.context, emitter },
+      },
+    ]);
+    expect(record(listedSkills) && listedSkills.ok).toBeTrue();
+    expect(events.slice(inventoryStart).map((event) => event.kind)).toEqual([
+      'operation.started',
+      'operation.completed',
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      operationKind: 'inventory',
+      standaloneCount: 0,
+      bundledCount: 0,
+      resultCount: 0,
+    });
+    const commandsStart = events.length;
+    const listedCommands = await Reflect.apply(listCommands, null, [
+      inventoryPorts,
+      {
+        tools: [],
+        scopes: [],
+        cwd: ROOT,
+        configuration,
+        observation: { context: built.context, emitter },
+      },
+    ]);
+    expect(record(listedCommands) && listedCommands.ok).toBeTrue();
+    expect(events.slice(commandsStart).map((event) => event.kind)).toEqual([
+      'operation.started',
+      'operation.completed',
+    ]);
+    const doctorStart = events.length;
+    const doctorResult = await Reflect.apply(crossScopeDuplicate.run, crossScopeDuplicate, [
+      {
+        env: inventoryPorts,
+        mode: 'doctor',
+        tools: [],
+        scopes: [],
+        cwd: ROOT,
+        configuration,
+        offline: true,
+        logger: { debug: () => {}, info: () => {}, warn: () => {} },
+        observation: { context: built.context, emitter },
+      },
+    ]);
+    expect(Array.isArray(doctorResult)).toBeTrue();
+    expect(events.slice(doctorStart).map((event) => event.kind)).toEqual([
+      'operation.started',
+      'operation.completed',
+    ]);
+
     const verifyEvents: UnknownRecord[] = [];
     const verifyBuilt = makeContext(authority, {
       command: 'skillsmith verify',
@@ -1256,7 +1464,7 @@ describe('EWP-P1-TS11', () => {
           findings: [],
         })),
       });
-    const ports = await defaultRuntimePorts();
+    const ports = inventoryPorts;
     const verified = (await Reflect.apply(runVerify, null, [
       ports,
       {
@@ -1347,6 +1555,38 @@ describe('EWP-P1-TS11', () => {
         },
         'inconclusive',
         'exec-error',
+      ],
+      [
+        {
+          ...baseVerdict,
+          verdict: 'inconclusive',
+          modes: [
+            { ...baseVerdict.modes[0], status: 'error', skipReason: 'exec-error', verdict: null },
+            {
+              ...baseVerdict.modes[0],
+              mode: 'deep',
+              status: 'error',
+              skipReason: 'timeout',
+              verdict: null,
+            },
+          ],
+        },
+        'inconclusive',
+        'timeout',
+      ],
+      [
+        {
+          ...baseVerdict,
+          available: false,
+          toolVersion: null,
+          skipReason: 'not-installed',
+          verdict: 'inconclusive',
+          modes: [
+            { ...baseVerdict.modes[0], status: 'error', skipReason: 'timeout', verdict: null },
+          ],
+        },
+        'unavailable',
+        'not-installed',
       ],
       [
         {
@@ -1465,6 +1705,52 @@ describe('EWP-P1-TS11', () => {
     ]);
     expect(missingEvents.at(-1)).toMatchObject({ verdict: 'fail', errorCode: 'generic' });
 
+    const emptyEvents: UnknownRecord[] = [];
+    const emptyEmitter = createEmitter({
+      observer: { observe: (event: UnknownRecord) => emptyEvents.push(event) },
+      toolIds: ['codex'],
+    });
+    await Reflect.apply(runVerify, null, [
+      ports,
+      {
+        path: VERIFY_FIXTURE,
+        tools: [],
+        observation: { context: verifyBuilt.context, emitter: emptyEmitter },
+      },
+      {},
+    ]);
+    expect(emptyEvents).toEqual([]);
+
+    const shortCircuitEvents: UnknownRecord[] = [];
+    const shortCircuitCalls: string[] = [];
+    const shortCircuitEmitter = createEmitter({
+      observer: { observe: (event: UnknownRecord) => shortCircuitEvents.push(event) },
+      toolIds: ['codex', 'second-tool'],
+    });
+    await Reflect.apply(runVerify, null, [
+      ports,
+      {
+        path: VERIFY_FIXTURE,
+        tools: ['codex', 'second-tool'],
+        observation: { context: verifyBuilt.context, emitter: shortCircuitEmitter },
+      },
+      {
+        codex: async () => {
+          shortCircuitCalls.push('codex');
+          return err(genericError('first failed'));
+        },
+        'second-tool': async () => {
+          shortCircuitCalls.push('second-tool');
+          return ok({ ...baseVerdict, tool: 'second-tool' });
+        },
+      },
+    ]);
+    expect(shortCircuitCalls).toEqual(['codex']);
+    expect(shortCircuitEvents.map((event) => event.kind)).toEqual([
+      'tool.verification.started',
+      'tool.verification.completed',
+    ]);
+
     const controller = new AbortController();
     controller.abort();
     const beforeAbort = verifyEvents.length;
@@ -1550,7 +1836,29 @@ describe('EWP-P1-TS11', () => {
       toolId: 'fixture-tool',
     });
     const allEvents = EVENT_KINDS.map((kind) => createEvent(built.context, eventInputs()[kind]));
-    expect(render('trace', allEvents)).toHaveLength(EVENT_KINDS.length);
+    const traceLines = render('trace', allEvents);
+    expect(traceLines).toHaveLength(EVENT_KINDS.length);
+    for (let index = 0; index < EVENT_KINDS.length; index++) {
+      const kind = EVENT_KINDS[index];
+      const line = traceLines[index] ?? '';
+      expect(line).toStartWith(
+        `trace: ${kind} operation=operation-1 parent=- group=- pair=- attempt=1 at=2026-07-13T00:00:05.000Z monoMs=60`,
+      );
+      let previous = -1;
+      for (const key of PAYLOAD_KEYS[kind]) {
+        const position = line.indexOf(` ${key}=`, previous + 1);
+        expect(position, `${kind} missing/out-of-order ${key}`).toBeGreaterThan(previous);
+        previous = position;
+      }
+      expect(line.endsWith('\n')).toBeTrue();
+    }
+    const debugLines = render('debug', allEvents);
+    expect(debugLines).toHaveLength(EVENT_KINDS.length);
+    for (let index = 0; index < EVENT_KINDS.length; index++) {
+      const kind = EVENT_KINDS[index];
+      const parsed = JSON.parse(debugLines[index]?.slice('debug: '.length) ?? '{}');
+      expect(Object.keys(parsed)).toEqual([...COMMON_KEYS, ...PAYLOAD_KEYS[kind]]);
+    }
     expect(
       render('verbose', [
         createEvent(built.context, eventInputs()['plan.created']),
@@ -1559,13 +1867,17 @@ describe('EWP-P1-TS11', () => {
       ]).map((line) => line.split(' ')[1]),
     ).toEqual(['plan.created', 'operation.started']);
     const secretBuilt = makeContext(authority, {
-      command: 'Bearer sink-secret-canary',
+      command: 'skillsmith secret',
       workflow: 'fixture',
       operationId: 'secret-operation',
     });
     if (secretBuilt.context === undefined) return;
     secretBuilt.setTime('2026-07-13T00:00:06.000Z', 70);
-    const secretEvent = createEvent(secretBuilt.context, { kind: 'command.started' });
+    const secretEvent = createEvent(secretBuilt.context, {
+      kind: 'plan.created',
+      planId: 'Bearer sink-secret-canary',
+      operationCount: 1,
+    });
     for (const verbosity of ['verbose', 'trace', 'debug']) {
       const rendered = render(verbosity, [secretEvent]).join('');
       expect(rendered).not.toContain('sink-secret-canary');
@@ -1620,7 +1932,7 @@ describe('EWP-P1-TS11', () => {
     expect(jsonErrorVerbose.stdout).toBe(jsonErrorNormal.stdout);
     expect(JSON.parse(jsonErrorNormal.stdout)).toEqual(JSON.parse(jsonErrorVerbose.stdout));
     expect(jsonErrorQuiet.stderr).toBe('');
-    expect(jsonErrorVerbose.stderr).toMatch(/^detail: command\.started/m);
+    expect(jsonErrorVerbose.stderr).toBe('');
 
     for (const invocation of [
       ['--version', '-qv'],
@@ -1662,8 +1974,25 @@ describe('EWP-P1-TS11', () => {
       const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
       const file = relative(ROOT, path);
       const beginSpans = new Set<string>();
+      const loggerMethodAliases = new Set<string>();
+      const loggerBearing = /from\s+['"][^'"]*env\/logger\.ts['"]/.test(source);
       const collectBeginSpans = (node: ts.Node): void => {
         if (
+          loggerBearing &&
+          ts.isVariableDeclaration(node) &&
+          node.initializer !== undefined &&
+          ts.isPropertyAccessExpression(node.initializer) &&
+          ['info', 'warn', 'debug'].includes(node.initializer.name.text) &&
+          ts.isIdentifier(node.name)
+        )
+          loggerMethodAliases.add(node.name.text);
+        if (loggerBearing && ts.isBindingElement(node)) {
+          const method = (node.propertyName ?? node.name).getText(tree).replace(/["']/g, '');
+          if (['info', 'warn', 'debug'].includes(method) && ts.isIdentifier(node.name))
+            loggerMethodAliases.add(node.name.text);
+        }
+        if (
+          source.includes('observation') &&
           ts.isVariableDeclaration(node) &&
           ts.isIdentifier(node.name) &&
           node.initializer !== undefined &&
@@ -1720,10 +2049,17 @@ describe('EWP-P1-TS11', () => {
           ts.isCallExpression(node) &&
           ts.isPropertyAccessExpression(node.expression) &&
           ['info', 'warn', 'debug'].includes(node.expression.name.text) &&
-          /(?:^|\.)logger$/i.test(node.expression.expression.getText(tree)) &&
+          loggerBearing &&
           file !== 'packages/core/src/observation/logger-compat.ts'
         )
           findings.push(`${file}: free-form Logger.${node.expression.name.text}`);
+        if (
+          ts.isCallExpression(node) &&
+          ts.isIdentifier(node.expression) &&
+          loggerMethodAliases.has(node.expression.text) &&
+          file !== 'packages/core/src/observation/logger-compat.ts'
+        )
+          findings.push(`${file}: destructured free-form Logger method`);
         if (
           ts.isCallExpression(node) &&
           ts.isPropertyAccessExpression(node.expression) &&
@@ -1732,10 +2068,24 @@ describe('EWP-P1-TS11', () => {
           !ts.isExpressionStatement(node.parent)
         )
           findings.push(`${file}: observation result can drive a decision`);
+        if (
+          file.startsWith('packages/core/src/observation/') &&
+          (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+          /\bprocess(?:\.|\[['"])(?:stdout|stderr)/.test(node.getText(tree))
+        )
+          findings.push(`${file}: observation accesses process stream`);
+        if (
+          source.includes('observation') &&
+          ts.isCallExpression(node) &&
+          ts.isPropertyAccessExpression(node.expression) &&
+          node.expression.name.text === 'begin' &&
+          isDecisionUse(node)
+        )
+          findings.push(`${file}: direct observation begin can drive a decision`);
         if (ts.isIdentifier(node) && beginSpans.has(node.text) && isDecisionUse(node))
           findings.push(`${file}: observation span can drive a decision`);
         if (
-          ts.isStringLiteral(node) &&
+          (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
           [
             'plan.created',
             'transaction.stage.started',
@@ -1762,15 +2112,91 @@ describe('EWP-P1-TS11', () => {
       const source = await readFile(path, 'utf8');
       const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
       const file = relative(ROOT, path);
+      const processAliases = new Set(['process']);
+      const streamAliases = new Set<string>();
+      const collectAliases = (node: ts.Node): void => {
+        if (
+          ts.isImportDeclaration(node) &&
+          ts.isStringLiteral(node.moduleSpecifier) &&
+          node.moduleSpecifier.text === 'node:process'
+        ) {
+          const clause = node.importClause;
+          if (clause?.name) processAliases.add(clause.name.text);
+          if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings))
+            for (const element of clause.namedBindings.elements) {
+              const imported = (element.propertyName ?? element.name).text;
+              if (imported === 'stdout' || imported === 'stderr')
+                streamAliases.add(element.name.text);
+            }
+        }
+        if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
+          if (ts.isIdentifier(node.name)) {
+            const value = node.initializer.getText(tree);
+            if (
+              [...processAliases].some(
+                (alias) =>
+                  value === `${alias}.stdout` ||
+                  value === `${alias}.stderr` ||
+                  value === `${alias}['stdout']` ||
+                  value === `${alias}['stderr']`,
+              ) ||
+              (ts.isIdentifier(node.initializer) && streamAliases.has(node.initializer.text))
+            )
+              streamAliases.add(node.name.text);
+          }
+          if (
+            ts.isObjectBindingPattern(node.name) &&
+            ts.isIdentifier(node.initializer) &&
+            processAliases.has(node.initializer.text)
+          )
+            for (const element of node.name.elements) {
+              const imported = (element.propertyName ?? element.name).getText(tree);
+              if ((imported === 'stdout' || imported === 'stderr') && ts.isIdentifier(element.name))
+                streamAliases.add(element.name.text);
+            }
+        }
+        ts.forEachChild(node, collectAliases);
+      };
+      collectAliases(tree);
       const visit = (node: ts.Node): void => {
         if (
+          file === 'packages/cli/src/runtime/diagnostics.ts' &&
+          ts.isImportDeclaration(node) &&
+          ts.isStringLiteral(node.moduleSpecifier) &&
+          node.moduleSpecifier.text === 'node:process'
+        )
+          findings.push(`${file}: diagnostic sink imports process`);
+        if (
+          file === 'packages/cli/src/runtime/diagnostics.ts' &&
+          (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+          /\bprocess(?:\.|\[['"])(?:stdout|stderr)/.test(node.getText(tree))
+        )
+          findings.push(`${file}: diagnostic sink accesses process stream`);
+        if (
           ts.isCallExpression(node) &&
-          ts.isPropertyAccessExpression(node.expression) &&
-          node.expression.name.text === 'write' &&
-          /process\.(?:stdout|stderr)$/.test(node.expression.expression.getText(tree)) &&
+          ((ts.isPropertyAccessExpression(node.expression) &&
+            node.expression.name.text === 'write' &&
+            (streamAliases.has(node.expression.expression.getText(tree)) ||
+              /process\.(?:stdout|stderr)$/.test(node.expression.expression.getText(tree)))) ||
+            (ts.isElementAccessExpression(node.expression) &&
+              node.expression.argumentExpression.getText(tree).replace(/["']/g, '') === 'write' &&
+              streamAliases.has(node.expression.expression.getText(tree)))) &&
           !processWriteAllowlist.has(file)
         )
           findings.push(`${file}: process stream write outside adapter allowlist`);
+        if (
+          (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+          [
+            'plan.created',
+            'transaction.stage.started',
+            'transaction.stage.completed',
+            'transaction.committed',
+            'transaction.rolled-back',
+            'recovery.started',
+            'recovery.completed',
+          ].includes(node.text)
+        )
+          findings.push(`${file}: future event literal in CLI`);
         ts.forEachChild(node, visit);
       };
       visit(tree);
@@ -1868,6 +2294,14 @@ describe('EWP-P1-TS11', () => {
       findings.push('command registry: command inventory changed');
     if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 128)
       findings.push('command registry: option inventory changed');
+    const optionInventory = CURRENT_COMMAND_SPECS.flatMap((spec) =>
+      spec.options.map((option) => [spec.path, option.flags]),
+    );
+    const optionHash = new Bun.CryptoHasher('sha256')
+      .update(JSON.stringify(optionInventory))
+      .digest('hex');
+    if (optionHash !== '4ecba3ad8ba2a0a8f2254321a63ad4df74ed85b94093b91649862cabe24153fb')
+      findings.push('command registry: option rows changed');
     const adr = await readFile(
       join(ROOT, 'docs/adr/0009-operation-scoped-observation.md'),
       'utf8',
