@@ -13,6 +13,7 @@ packages/
   core/          @skillsmith/core — embeddable, non-interactive library
     src/
       acquire/       install/uninstall orchestration
+      application/   public CommandOutcome and application-service boundary
       agents/        per-tool adapters (claude-code, codex, kilo-code, opencode) + registry
       commands/      installed slash-command domain types
       config/        config discovery, parsing, precedence, and persistence
@@ -62,6 +63,26 @@ This boundary is enforced at **lint time** via `eslint.config.js`:
 - `import/no-restricted-paths` restricts cross-package and in-package import directions.
 
 See [ADR 0001](adr/0001-core-cli-split.md) for the rationale and [ADR 0003](adr/0003-eslint-import-boundaries.md) for the full zone list.
+
+## Application-service foundation
+
+[ADR 0004](adr/0004-command-runtime-application-boundary.md) adds the public semantic boundary used
+to migrate command-local orchestration without weakening the Core/CLI split:
+
+```text
+CommandSpec -> shared CLI runtime -> core application service -> CommandOutcome<Report>
+```
+
+`CommandOutcome` carries a report, structured diagnostics, semantic exit class, mutation summary,
+and deprecations. Core does not assign numeric process exits. `InteractionPort` keeps semantic choice
+and confirmation injectable while TTY, JSON, approval, and noninteractive policy remain CLI-owned.
+
+`CurrentApplicationContext` is deliberately transitional: G1-03 may compose current services with
+the existing `ScanEnv` facade, resolved project context/config, interaction, and signal. G1-04 owns
+the replacement with capability-scoped ports. The first service, `runVersionApplication`, is a
+zero-discovery canary and does not read environment, cwd, project, or config state. Existing command
+handlers migrate in later G1-03 slices; the presence of this foundation does not imply that migration
+is already complete.
 
 ## Result-based error handling
 
@@ -182,6 +203,7 @@ If you find yourself fighting these rules, that's usually a signal to move code,
 | A new core error code | `packages/core/src/errors.ts` + CLI `util/exit-codes.ts` |
 | CLI output format | `packages/cli/src/output/` |
 | CLI help text | `packages/cli/src/help/topics.ts` |
+| A public command use case or outcome type | `packages/core/src/application/` |
 | Enforced architectural rules | `eslint.config.js` (and a new ADR) |
 
 ## Further reading
@@ -189,5 +211,6 @@ If you find yourself fighting these rules, that's usually a signal to move code,
 - [ADR 0001 — core / CLI split](adr/0001-core-cli-split.md)
 - [ADR 0002 — Result-over-exceptions](adr/0002-result-type.md)
 - [ADR 0003 — ESLint import boundaries](adr/0003-eslint-import-boundaries.md)
+- [ADR 0004 — Command runtime and application services](adr/0004-command-runtime-application-boundary.md)
 - [Release process](releases.md)
 - [CONTRIBUTING](../CONTRIBUTING.md)

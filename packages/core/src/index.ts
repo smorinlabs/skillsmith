@@ -5,6 +5,8 @@ export {
   runUninstall,
 } from './acquire/run.ts';
 export { parseSource } from './acquire/source.ts';
+export { runVersionApplication } from './application/current-services.ts';
+export { COMMAND_EXIT_CLASSES, NO_MUTATION } from './application/types.ts';
 export { getAgent, listSupportedTools, registry } from './agents/registry.ts';
 export { SUPPORTED_TOOLS } from './agents/types.ts';
 export { getConfigValue } from './config/accessors.ts';
@@ -32,17 +34,25 @@ export {
 } from './errors.ts';
 export type {
   Agent,
+  ApplicationService,
   CandidateSkill,
   Check,
   CheckRunContext,
   CheckRunMode,
   CheckRunResult,
   CommandEntry,
+  CommandExitClass,
+  CommandOutcome,
   Config,
   ConfigFileLayer,
   ConfigKey,
   ConfigLayer,
+  CurrentApplicationContext,
+  Deprecation,
   DetectOptions,
+  Diagnostic,
+  DiagnosticDetail,
+  DiagnosticSeverity,
   EffectiveConfig,
   EnabledState,
   ExecOptions,
@@ -64,6 +74,10 @@ export type {
   InstallReport,
   InstallResult,
   InstallScope,
+  InteractionChoice,
+  InteractionPort,
+  InteractionRequest,
+  InteractionResolution,
   JournalPhase,
   ListCommandsOpts,
   ListSkillsOpts,
@@ -71,6 +85,7 @@ export type {
   Logger,
   ModeResult,
   ModeStatus,
+  MutationSummary,
   NormalizedSeverity,
   Origin,
   PathKind,
@@ -120,6 +135,8 @@ export type {
   VerifyOutcome,
   VerifyReport,
   VerifyTool,
+  VersionApplicationRequest,
+  VersionReport,
   ValidatedSelectionRequest,
   XdgDirs,
   ResolveEffectiveConfigOptions,

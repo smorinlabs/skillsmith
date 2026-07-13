@@ -97,10 +97,10 @@ export const devCommand = (signal?: AbortSignal): Command =>
       .option('--rollback', 'Restore the prior placement state (undo / crash recovery).', false)
       .option('--dry-run', 'Show the plan without changing anything.', false)
       .option('--json', 'Emit the versioned JSON report on stdout.', false)
-      .option('--no-prompt', 'Accepted no-op — dev never prompts.')
       .option('--yes', 'Accepted no-op — dev never prompts.', false)
       .addHelpText('after', EXAMPLES)
       .action(async (skills: string[], opts: DevFlags, command: Command) => {
+        opts.prompt = (command.optsWithGlobals() as { prompt: boolean }).prompt;
         const selection = validateCliAdapterSelection(
           {
             targets: skills,

@@ -106,9 +106,9 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
       .option('--dry-run', 'Print removals without executing', false)
       .option('--json', 'Emit the versioned JSON report on stdout', false)
       .option('-y, --yes', 'Accepted no-op — uninstall never prompts.', false)
-      .option('--no-prompt', 'Accepted no-op — uninstall never prompts.')
       .addHelpText('after', EXAMPLES)
       .action(async (targets: string[], opts: UninstallFlags, command: Command) => {
+        opts.prompt = (command.optsWithGlobals() as { prompt: boolean }).prompt;
         const selection = validateCliAdapterSelection(
           {
             targets,

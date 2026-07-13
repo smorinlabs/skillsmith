@@ -166,9 +166,9 @@ export const installCommand = (signal?: AbortSignal): Command =>
       .option('--dry-run', 'Print the resolved plan without changing anything', false)
       .option('--json', 'Emit the versioned JSON report on stdout', false)
       .option('-y, --yes', 'Accepted no-op — the picker is a choice, not a confirmation.', false)
-      .option('--no-prompt', 'Force non-TTY behavior: ambiguity lists candidates and exits 2.')
       .addHelpText('after', EXAMPLES)
       .action(async (sources: string[], opts: InstallFlags, command: Command) => {
+        opts.prompt = (command.optsWithGlobals() as { prompt: boolean }).prompt;
         const selection = validateCliAdapterSelection(
           {
             targets: sources,

@@ -7,6 +7,7 @@ Records of non-obvious design decisions. Each ADR follows the [Michael Nygard fo
 | [0001](0001-core-cli-split.md) | Split the codebase into a pure core library and a CLI | Accepted |
 | [0002](0002-result-type.md) | `Result<T, E>` instead of exceptions for expected failures | Accepted |
 | [0003](0003-eslint-import-boundaries.md) | Enforce architectural boundaries with ESLint | Accepted |
+| [0004](0004-command-runtime-application-boundary.md) | Declarative commands, one CLI runtime, and public application services | Accepted |
 
 ## When to write an ADR
 

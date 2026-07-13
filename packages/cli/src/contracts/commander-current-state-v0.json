@@ -72,6 +72,50 @@
     }
   },
   {
+    "key": "option:skillsmith:--no-color",
+    "disposition": "N",
+    "phase": "P17-G1-03",
+    "validationOwner": "EWP-OPT-TS02",
+    "option": {
+      "flags": "--no-color",
+      "short": null,
+      "long": "--no-color",
+      "attributeName": "color",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": true,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith:--no-prompt",
+    "disposition": "C",
+    "phase": "P17-G1-03",
+    "validationOwner": "EWP-OPT-TS02",
+    "option": {
+      "flags": "--no-prompt",
+      "short": null,
+      "long": "--no-prompt",
+      "attributeName": "prompt",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": true,
+      "hidden": false
+    }
+  },
+  {
     "key": "option:skillsmith:-C, --cd <dir>",
     "disposition": "C",
     "phase": "P17-G1-01",
@@ -1263,28 +1307,6 @@
     }
   },
   {
-    "key": "option:skillsmith dev:--no-prompt",
-    "disposition": "C",
-    "phase": "P17-G1-01",
-    "validationOwner": "EWP-CMD-DEV-TS01",
-    "option": {
-      "flags": "--no-prompt",
-      "short": null,
-      "long": "--no-prompt",
-      "attributeName": "prompt",
-      "requiredValue": false,
-      "optionalValue": false,
-      "variadic": false,
-      "valueShape": "boolean",
-      "choices": [],
-      "defaultValue": "null",
-      "defaultSource": "none",
-      "repeatable": false,
-      "negated": true,
-      "hidden": false
-    }
-  },
-  {
     "key": "option:skillsmith dev:--no-verify",
     "disposition": "K",
     "phase": "P17-G3B-01",
@@ -1881,28 +1903,6 @@
       "defaultSource": "literal",
       "repeatable": false,
       "negated": false,
-      "hidden": false
-    }
-  },
-  {
-    "key": "option:skillsmith install:--no-prompt",
-    "disposition": "C",
-    "phase": "P17-G1-01",
-    "validationOwner": "EWP-CMD-INSTALL-TS01",
-    "option": {
-      "flags": "--no-prompt",
-      "short": null,
-      "long": "--no-prompt",
-      "attributeName": "prompt",
-      "requiredValue": false,
-      "optionalValue": false,
-      "variadic": false,
-      "valueShape": "boolean",
-      "choices": [],
-      "defaultValue": "null",
-      "defaultSource": "none",
-      "repeatable": false,
-      "negated": true,
       "hidden": false
     }
   },
@@ -2567,28 +2567,6 @@
     }
   },
   {
-    "key": "option:skillsmith promote:--no-prompt",
-    "disposition": "C",
-    "phase": "P17-G1-01",
-    "validationOwner": "EWP-CMD-PROMOTE-TS01",
-    "option": {
-      "flags": "--no-prompt",
-      "short": null,
-      "long": "--no-prompt",
-      "attributeName": "prompt",
-      "requiredValue": false,
-      "optionalValue": false,
-      "variadic": false,
-      "valueShape": "boolean",
-      "choices": [],
-      "defaultValue": "null",
-      "defaultSource": "none",
-      "repeatable": false,
-      "negated": true,
-      "hidden": false
-    }
-  },
-  {
     "key": "option:skillsmith promote:--no-verify",
     "disposition": "K",
     "phase": "P17-G3B-01",
@@ -2814,28 +2792,6 @@
       "defaultSource": "literal",
       "repeatable": false,
       "negated": false,
-      "hidden": false
-    }
-  },
-  {
-    "key": "option:skillsmith uninstall:--no-prompt",
-    "disposition": "C",
-    "phase": "P17-G1-01",
-    "validationOwner": "EWP-CMD-UNINSTALL-TS01",
-    "option": {
-      "flags": "--no-prompt",
-      "short": null,
-      "long": "--no-prompt",
-      "attributeName": "prompt",
-      "requiredValue": false,
-      "optionalValue": false,
-      "variadic": false,
-      "valueShape": "boolean",
-      "choices": [],
-      "defaultValue": "null",
-      "defaultSource": "none",
-      "repeatable": false,
-      "negated": true,
       "hidden": false
     }
   },

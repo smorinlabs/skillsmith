@@ -1,0 +1,59 @@
+export type CommandGroup = 'discover' | 'manage' | 'develop' | 'declarative' | 'maintain';
+export type OptionValueShape = 'boolean' | 'required' | 'optional';
+export type OptionRelationKind = 'conflicts' | 'requires' | 'cardinality' | 'exclusive-group';
+
+export interface CommandArgumentSpec {
+  readonly name: string;
+  readonly required: boolean;
+  readonly variadic: boolean;
+  readonly choices: readonly string[];
+  readonly defaultValue: unknown;
+}
+
+export interface CommandOptionSpec {
+  readonly flags: string;
+  readonly long: string;
+  readonly short: string | null;
+  readonly attributeName: string;
+  readonly valueShape: OptionValueShape;
+  readonly knownValues: readonly string[];
+  readonly allowedValues: readonly string[];
+  readonly repeatable: boolean;
+  readonly negated: boolean;
+  /** Value represented by absence/presence in the external flag contract. */
+  readonly flagDefault: unknown;
+  /** Value presented to an application request after parser normalization. */
+  readonly parsedDefault: unknown;
+}
+
+export interface CommandSpec {
+  readonly name: string;
+  readonly path: string;
+  readonly aliases: readonly string[];
+  readonly group: CommandGroup;
+  readonly primaryQuestion: string;
+  readonly description: string;
+  readonly arguments: readonly CommandArgumentSpec[];
+  readonly options: readonly CommandOptionSpec[];
+  readonly examples: readonly string[];
+  readonly capability: string;
+  readonly application: string;
+  readonly reportKind?: string;
+}
+
+export interface OptionRelationSpec {
+  readonly id: string;
+  readonly command: string;
+  readonly kind: OptionRelationKind;
+  readonly description: string;
+}
+
+export interface OptionInvocationError {
+  readonly code: 'usage';
+  readonly exitCode: 2;
+  readonly message: string;
+}
+
+export type OptionInvocationResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: OptionInvocationError };

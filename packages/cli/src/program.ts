@@ -1,4 +1,4 @@
-import { VERSION, defaultScanEnv } from '@skillsmith/core';
+import { type VersionReport, defaultScanEnv, runVersionApplication } from '@skillsmith/core';
 import { Argument, Command, Option } from 'commander';
 import { runAgents } from './commands/agents.ts';
 import { checkCommand } from './commands/check.ts';
@@ -15,10 +15,19 @@ import { uninstallCommand } from './commands/uninstall.ts';
 import { verifyCommand } from './commands/verify.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from './help/topics.ts';
 import {
+  failCliError,
   normalizeCliError,
   renderCliError,
   withCliErrorBoundary,
 } from './output/error-boundary.ts';
+import {
+  type ApplicationRegistry,
+  type RendererRegistry,
+  createCliRuntimeAdapter,
+} from './runtime/adapter.ts';
+import { type CliRuntimeIo, processRuntimeIo } from './runtime/io.ts';
+import { CURRENT_COMMAND_SPECS, validateOptionInvocation } from './spec/index.ts';
+import type { CommandSpec } from './spec/types.ts';
 import { type ColorFlag, resolveColorMode } from './util/color.ts';
 
 const applyColorMode = (flag: ColorFlag): void => {
@@ -37,12 +46,112 @@ const applyColorMode = (flag: ColorFlag): void => {
   }
 };
 
-export const buildProgram = (signal?: AbortSignal): Command => {
+export interface ProgramBuildExtensions {
+  readonly additionalSpecs?: readonly CommandSpec[];
+  readonly applications?: ApplicationRegistry;
+  readonly renderers?: RendererRegistry;
+  readonly runtimePorts?: CliRuntimeIo & { readonly interaction?: unknown };
+}
+
+const optionForSpec = (spec: CommandSpec['options'][number]): Option => {
+  const fixtureCompatible = spec as CommandSpec['options'][number] & {
+    readonly choices?: readonly string[];
+    readonly defaultValue?: unknown;
+  };
+  const choices = fixtureCompatible.knownValues ?? fixtureCompatible.choices ?? [];
+  const defaultValue = fixtureCompatible.parsedDefault ?? fixtureCompatible.defaultValue;
+  let option = new Option(spec.flags);
+  if (choices.length > 0) option = option.choices([...choices]);
+  if (spec.repeatable) {
+    option.argParser((value: string, previous: string[] = []) => [...previous, value]);
+    option.default(Array.isArray(defaultValue) ? defaultValue : []);
+  } else if (defaultValue !== undefined && !spec.negated) {
+    option.default(defaultValue);
+  }
+  return option;
+};
+
+const argumentForSpec = (spec: CommandSpec['arguments'][number]): Argument => {
+  const suffix = spec.variadic ? '...' : '';
+  const syntax = spec.required ? `<${spec.name}${suffix}>` : `[${spec.name}${suffix}]`;
+  const argument = new Argument(syntax);
+  if ((spec.choices?.length ?? 0) > 0) argument.choices([...spec.choices]);
+  return argument;
+};
+
+const leafName = (spec: CommandSpec): string =>
+  (spec.path ?? spec.name).split(' ').at(-1) ?? spec.name;
+
+const commandPath = (command: Command): string => {
+  const names: string[] = [];
+  for (let current: Command | null = command; current !== null; current = current.parent) {
+    names.unshift(current.name());
+  }
+  return names.join(' ');
+};
+
+const commandArguments = (command: Command, rawArgs: readonly string[]): readonly string[] => {
+  const path = commandPath(command).split(' ').slice(1);
+  let offset = 0;
+  for (const segment of path) {
+    const index = rawArgs.indexOf(segment, offset);
+    if (index < 0) return rawArgs;
+    offset = index + 1;
+  }
+  return rawArgs.slice(offset);
+};
+
+const addRuntimeCommand = (
+  program: Command,
+  spec: CommandSpec,
+  runtime: ReturnType<typeof createCliRuntimeAdapter>,
+): Command => {
+  const command = new Command(leafName(spec)).description(spec.description);
+  for (const alias of spec.aliases) command.alias(alias);
+  for (const argument of spec.arguments) command.addArgument(argumentForSpec(argument));
+  for (const option of spec.options) command.addOption(optionForSpec(option));
+  const documentation = `\nPRIMARY QUESTION\n  ${spec.primaryQuestion}\n\nEXAMPLES\n  ${spec.examples.join('\n  ')}\n`;
+  const baseHelpInformation = command.helpInformation.bind(command);
+  command.helpInformation = () => `${baseHelpInformation()}${documentation}`;
+  command.action(async (...values: unknown[]) => {
+    const invoked = values.at(-1) as Command;
+    const positional = values.slice(0, Math.max(0, values.length - 2));
+    const options = invoked.optsWithGlobals() as { json?: boolean };
+    await runtime.execute({
+      application: spec.application,
+      reportKind: spec.reportKind ?? spec.application,
+      request: { arguments: positional, options },
+      context: {},
+      format: options.json ? 'json' : 'human',
+    });
+  });
+  program.addCommand(command);
+  return command;
+};
+
+export const buildProgram = (
+  signal?: AbortSignal,
+  extensions: ProgramBuildExtensions = {},
+): Command => {
+  const runtime = createCliRuntimeAdapter({
+    applications: {
+      version: runVersionApplication as ApplicationRegistry[string],
+      ...extensions.applications,
+    },
+    renderers: {
+      version: {
+        human: (outcome) => `${(outcome.report as VersionReport).version}\n`,
+        json: (outcome) => `${JSON.stringify(outcome.report)}\n`,
+      },
+      ...extensions.renderers,
+    },
+    io: extensions.runtimePorts ?? processRuntimeIo,
+  });
   const program = withCliErrorBoundary(
     new Command()
       .name('skillsmith')
       .description('SkillSmith installs and manages agent skills for AI coding tools.')
-      .version(VERSION, '-V, --version')
+      .option('-V, --version', 'Print version')
       .helpOption('-h, --help', 'Show help')
       .option(
         '-v, --verbose',
@@ -58,14 +167,43 @@ export const buildProgram = (signal?: AbortSignal): Command => {
       )
       .option('-C, --cd <dir>', 'Change directory before running', '.')
       .option('--config <file>', 'Use an explicit configuration file')
+      .option('--no-color', 'Disable color output')
+      .option('--no-prompt', 'Disable interactive prompts')
       .option('--debug', 'Print debug traces', false),
   );
 
-  program.hook('preAction', (thisCommand) => {
-    const opts = thisCommand.optsWithGlobals() as { color?: string };
-    const raw = opts.color ?? 'auto';
+  program.hook('preAction', (thisCommand, actionCommand) => {
+    const rawArgs = (program as Command & { rawArgs?: string[] }).rawArgs ?? [];
+    const invocation = rawArgs.slice(2);
+    const rootRelation = validateOptionInvocation('skillsmith', invocation);
+    if (!rootRelation.ok) {
+      const format = invocation.includes('--json') ? 'json' : 'human';
+      return failCliError(rootRelation.error, format, { exitCode: 2 });
+    }
+    const path = commandPath(actionCommand);
+    const relation = validateOptionInvocation(path, commandArguments(actionCommand, invocation));
+    if (!relation.ok) {
+      const format = invocation.includes('--json') ? 'json' : 'human';
+      return failCliError(relation.error, format, { exitCode: 2 });
+    }
+    const opts = thisCommand.optsWithGlobals() as { color?: string | false };
+    const raw = opts.color === false ? 'never' : (opts.color ?? 'auto');
     const flag: ColorFlag = raw === 'always' || raw === 'never' || raw === 'auto' ? raw : 'auto';
     applyColorMode(flag);
+  });
+
+  program.action(async (opts: { version?: boolean }) => {
+    if (!opts.version) {
+      program.outputHelp();
+      return;
+    }
+    await runtime.execute({
+      application: 'version',
+      reportKind: 'version',
+      request: {},
+      context: {},
+      format: 'human',
+    });
   });
 
   program
@@ -127,12 +265,14 @@ export const buildProgram = (signal?: AbortSignal): Command => {
   program.addCommand(installCommand(signal));
   program.addCommand(uninstallCommand(signal));
 
-  program
-    .command('version')
-    .description('Print SkillSmith version')
-    .action(() => {
-      process.stdout.write(`${VERSION}\n`);
-    });
+  const versionSpec = CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith version');
+  if (!versionSpec) throw new Error('current CommandSpec registry is missing version');
+  addRuntimeCommand(program, versionSpec, runtime);
+
+  for (const spec of extensions.additionalSpecs ?? []) {
+    if (program.commands.some((command) => command.name() === leafName(spec))) continue;
+    addRuntimeCommand(program, spec, runtime);
+  }
 
   program
     .command('completion')

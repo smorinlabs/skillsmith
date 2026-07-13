@@ -13,6 +13,22 @@ export type {
   UninstallReport,
   UninstallResult,
 } from './acquire/types.ts';
+export type {
+  ApplicationService,
+  CommandExitClass,
+  CommandOutcome,
+  CurrentApplicationContext,
+  Deprecation,
+  Diagnostic,
+  DiagnosticDetail,
+  DiagnosticSeverity,
+  InteractionChoice,
+  InteractionPort,
+  InteractionRequest,
+  InteractionResolution,
+  MutationSummary,
+} from './application/types.ts';
+export type { VersionApplicationRequest, VersionReport } from './application/current-services.ts';
 export type { Agent, SkillRootsCtx, SupportedTool } from './agents/types.ts';
 export type { CommandEntry } from './commands/types.ts';
 export type {

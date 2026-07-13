@@ -243,49 +243,12 @@ describe('EWP-OPT-TS01', () => {
     const debug = options.findIndex((option) => option.long === '--debug');
     if (debug < 0) throw new Error('live debug option missing');
     options.splice(debug, 1);
-    options.push({
-      flags: '--no-color',
-      short: null,
-      long: '--no-color',
-      attributeName: 'color',
-      requiredValue: false,
-      optionalValue: false,
-      variadic: false,
-      negated: true,
-      choices: [],
-      defaultValue: false,
-      defaultSource: 'literal',
-      repeatable: false,
-      hidden: false,
-    });
-    options.sort((a, b) => a.flags.localeCompare(b.flags));
 
     const migrated = structuredClone(migrationLedger);
     const current = migrated.current as (typeof migrated.current)[number][];
     const debugLedger = current.findIndex((entry) => entry.key === 'option:skillsmith:--debug');
     if (debugLedger < 0) throw new Error('current debug entry missing');
     current.splice(debugLedger, 1);
-    const noColor = migrated.target.find((entry) => entry.key === 'option:skillsmith:--no-color');
-    if (!noColor) throw new Error('target no-color entry missing');
-    current.push({
-      ...structuredClone(noColor),
-      option: {
-        flags: '--no-color',
-        short: null,
-        long: '--no-color',
-        attributeName: 'color',
-        requiredValue: false,
-        optionalValue: false,
-        variadic: false,
-        valueShape: 'boolean',
-        choices: [],
-        defaultValue: 'false',
-        defaultSource: 'literal',
-        repeatable: false,
-        negated: true,
-        hidden: false,
-      },
-    });
     const updatedAuthority = structuredClone(current);
     expect(() => assertClosedMigrationLedger(live, migrated, updatedAuthority)).not.toThrow();
     expect(() => assertClosedMigrationLedger(live, migrated, migrationLedger.current)).toThrow(
@@ -325,7 +288,7 @@ describe('EWP-OPT-TS01', () => {
       option.requiredValue = false;
       option.optionalValue = true;
     });
-    mutateOption('skillsmith dev', '--no-prompt', (option) => {
+    mutateOption('skillsmith', '--no-prompt', (option) => {
       option.negated = false;
     });
   });
@@ -430,7 +393,7 @@ describe('EWP-OPT-TS02', () => {
 
     const install = program.commands.find((command) => command.name() === 'install');
     const verify = program.commands.find((command) => command.name() === 'verify');
-    expect(install?.opts()).toMatchObject({ verify: true, prompt: true, tool: [] });
+    expect(install?.optsWithGlobals()).toMatchObject({ verify: true, prompt: true, tool: [] });
     expect(verify?.opts()).toMatchObject({ tool: [] });
   });
 });
@@ -552,7 +515,9 @@ describe('EWP-OPT-TS04', () => {
     for (const commandName of ['install', 'uninstall', 'dev', 'promote'] as const) {
       const command = program.commands.find((candidate) => candidate.name() === commandName);
       if (!command) throw new Error(`live command missing: ${commandName}`);
-      const options = new Set(command.options.map((option) => option.long));
+      const options = new Set(
+        [program, command].flatMap((owner) => owner.options.map((option) => option.long)),
+      );
       for (const option of ['--dry-run', '--yes', '--no-prompt', '--json']) {
         expect(options.has(option)).toBeTrue();
       }

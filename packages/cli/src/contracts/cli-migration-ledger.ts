@@ -759,7 +759,11 @@ export const assertClosedMigrationLedger = (
     ...ledger.target.map((entry) => entry.key),
   ]);
   for (const historical of authoritativeCurrent) {
-    if (!covered.has(historical.key))
+    const inheritedReplacement = /^option:skillsmith [^:]+:(--no-prompt)$/.exec(historical.key);
+    const promotedGlobal = inheritedReplacement?.[1];
+    const coveredByPromotion =
+      promotedGlobal !== undefined && covered.has(`option:skillsmith:${promotedGlobal}`);
+    if (!covered.has(historical.key) && !coveredByPromotion)
       throw new Error(`historical 0.7 surface lost audit transition: ${historical.key}`);
     if (
       !['K', 'A', 'C', 'D', 'N'].includes(historical.disposition) ||
