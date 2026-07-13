@@ -17,14 +17,22 @@ import {
   CatchallSchema,
   DriftedVersionAndKindSchema,
   FixtureVersion2Schema,
+  InheritedArrayPrototypeSchema,
   MigratingVersion2Schema,
   MixedObjectUnionSchema,
   NestedDefaultPassthroughSchema,
   NestedPassthroughSchema,
+  ObservableStateTransformSchema,
+  OptionalInheritedSchema,
   OptionalVersionSchema,
+  SignedZeroTransformSchema,
+  StatefulBatchTransformSchema,
+  StatefulSharedBatchTransformSchema,
   TransformedGetterSchema,
   TransformedIdentityDriftSchema,
   TransformedSecretSchema,
+  readStatefulBatchTransformCalls,
+  resetStatefulBatchTransformCalls,
   resetTransformedGetterReads,
   transformedGetterReads,
 } from '../../../packages/core/tests/fixtures/wire-codec.ts';
@@ -668,6 +676,141 @@ describe('EWP-P1-TS10', () => {
       ['derived'],
     );
     expect(transformedGetterReads()).toBe(0);
+    resetStatefulBatchTransformCalls();
+    const statefulBatchCodec = createJsonWireCodec(
+      { ...transformedDescriptor, id: 'fixture-stateful-batch' },
+      StatefulBatchTransformSchema,
+    );
+    const firstStatefulEncoding = resultValue(statefulBatchCodec.encode(transformedInput));
+    expect(firstStatefulEncoding).toBe(resultValue(statefulBatchCodec.encode(transformedInput)));
+    expect(firstStatefulEncoding).toBe(
+      '{"schemaVersion":1,"kind":"fixture.expected","value":"batch-0"}',
+    );
+    expect(readStatefulBatchTransformCalls()).toBe(2);
+    const signedZeroCodec = createJsonWireCodec(
+      { ...transformedDescriptor, id: 'fixture-signed-zero' },
+      SignedZeroTransformSchema,
+    );
+    const signedZeroInput = { ...transformedInput, source: -0 };
+    expect(resultValue(signedZeroCodec.encode(signedZeroInput))).toContain(
+      '"value":"negative-zero"',
+    );
+    signedZeroInput.source = 0;
+    expect(resultValue(signedZeroCodec.encode(signedZeroInput))).toContain(
+      '"value":"positive-zero"',
+    );
+    const observableStateCodec = createJsonWireCodec(
+      { ...transformedDescriptor, id: 'fixture-observable-state' },
+      ObservableStateTransformSchema,
+    );
+    const observablePayload = Object.create(null) as UnknownRecord;
+    Object.defineProperty(observablePayload, 'marker', {
+      configurable: true,
+      enumerable: true,
+      value: 'stable',
+      writable: true,
+    });
+    const observableStateInput = { ...transformedInput, payload: observablePayload };
+    expect(resultValue(observableStateCodec.encode(observableStateInput))).toContain(
+      '"value":"null-proto:extensible:writable:configurable"',
+    );
+    Object.setPrototypeOf(observablePayload, Object.prototype);
+    expect(resultValue(observableStateCodec.encode(observableStateInput))).toContain(
+      '"value":"object-proto:extensible:writable:configurable"',
+    );
+    Object.defineProperty(observablePayload, 'marker', { writable: false });
+    expect(resultValue(observableStateCodec.encode(observableStateInput))).toContain(
+      '"value":"object-proto:extensible:readonly:configurable"',
+    );
+    Object.preventExtensions(observablePayload);
+    expect(resultValue(observableStateCodec.encode(observableStateInput))).toContain(
+      '"value":"object-proto:fixed:readonly:configurable"',
+    );
+    const optionalInheritedCodec = createJsonWireCodec(
+      { ...transformedDescriptor, id: 'fixture-optional-inherited' },
+      OptionalInheritedSchema,
+    );
+    let inheritedOptionalReads = 0;
+    const inheritedOptionalDescriptor = Object.getOwnPropertyDescriptor(
+      Object.prototype,
+      'optional',
+    );
+    let inheritedOptionalResult: WireResult | undefined;
+    try {
+      Object.defineProperty(Object.prototype, 'optional', {
+        configurable: true,
+        get() {
+          inheritedOptionalReads++;
+          return `inherited-${inheritedOptionalReads}`;
+        },
+      });
+      inheritedOptionalResult = optionalInheritedCodec.encode(transformedInput);
+    } finally {
+      if (inheritedOptionalDescriptor === undefined) {
+        Reflect.deleteProperty(Object.prototype, 'optional');
+      } else {
+        Object.defineProperty(Object.prototype, 'optional', inheritedOptionalDescriptor);
+      }
+    }
+    expectWireFailure(
+      inheritedOptionalResult ?? { ok: true },
+      'invalid-shape',
+      'fixture-optional-inherited',
+      1,
+      [],
+    );
+    expect(inheritedOptionalReads).toBe(0);
+    const inheritedArrayPrototypeCodec = createJsonWireCodec(
+      { ...transformedDescriptor, id: 'fixture-inherited-array-prototype' },
+      InheritedArrayPrototypeSchema,
+    );
+    const originalArrayPrototypeParent = Object.getPrototypeOf(Array.prototype);
+    let inheritedArrayPrototypeReads = 0;
+    const hostileArrayPrototypeParent = Object.create(originalArrayPrototypeParent, {
+      optional: {
+        configurable: true,
+        get() {
+          inheritedArrayPrototypeReads++;
+          return `inherited-${inheritedArrayPrototypeReads}`;
+        },
+      },
+    });
+    const inheritedArrayPrototypeInput = { ...transformedInput, payload: [] };
+    let inheritedArrayPrototypeResult: WireResult | undefined;
+    try {
+      Object.setPrototypeOf(Array.prototype, hostileArrayPrototypeParent);
+      inheritedArrayPrototypeResult = inheritedArrayPrototypeCodec.encode(
+        inheritedArrayPrototypeInput,
+      );
+    } finally {
+      Object.setPrototypeOf(Array.prototype, originalArrayPrototypeParent);
+    }
+    expectWireFailure(
+      inheritedArrayPrototypeResult ?? { ok: true },
+      'invalid-shape',
+      'fixture-inherited-array-prototype',
+      1,
+      [],
+    );
+    expect(inheritedArrayPrototypeReads).toBe(0);
+    resetStatefulBatchTransformCalls();
+    const statefulSharedBatchCodec = createJsonWireCodec(
+      { ...transformedDescriptor, id: 'fixture-stateful-shared-batch' },
+      StatefulSharedBatchTransformSchema,
+    );
+    const sharedNestedValue = { marker: 'shared' };
+    const sharedStatefulInput = {
+      ...transformedInput,
+      left: sharedNestedValue,
+      right: sharedNestedValue,
+    };
+    const firstSharedStatefulEncoding = resultValue(
+      statefulSharedBatchCodec.encode(sharedStatefulInput),
+    );
+    expect(firstSharedStatefulEncoding).toBe(
+      resultValue(statefulSharedBatchCodec.encode(sharedStatefulInput)),
+    );
+    expect(readStatefulBatchTransformCalls()).toBe(2);
     expect(() =>
       createJsonWireCodec(
         {
@@ -964,6 +1107,49 @@ describe('EWP-P1-TS10', () => {
       1,
       [],
     );
+    const throwingStructuralCodec = {
+      ...formattingDriftCodec,
+      descriptor: {
+        ...formattingDriftCodec.descriptor,
+        id: 'fixture-throwing-structural',
+        formatting: { indent: 0 as const, terminalLf: false },
+      },
+      validate(input: unknown) {
+        if (record(input) && input.value === 'validate-throw') {
+          throw new Error('RAW VALIDATE THROW');
+        }
+        const result = formattingDriftCodec.validate(input);
+        if (result.ok) return result;
+        return {
+          ...result,
+          error: { ...result.error, contractId: 'fixture-throwing-structural' },
+        };
+      },
+      decode(text: string) {
+        if (text === 'decode-throw') throw new Error('RAW DECODE THROW');
+        return this.validate(JSON.parse(text));
+      },
+      encode(dto: unknown) {
+        if (record(dto) && dto.value === 'encode-throw') {
+          throw new Error('RAW ENCODE THROW');
+        }
+        return { ok: true as const, value: JSON.stringify(dto) };
+      },
+    } satisfies WireCodec;
+    const throwingStructuralRegistry = create([throwingStructuralCodec], []);
+    const throwingStructuralOwned = throwingStructuralRegistry.get(
+      'fixture-throwing-structural',
+      1,
+    );
+    expect(throwingStructuralOwned).toBeDefined();
+    if (throwingStructuralOwned === undefined) return;
+    for (const result of [
+      throwingStructuralOwned.validate({ value: 'validate-throw' }),
+      throwingStructuralOwned.decode('decode-throw'),
+      throwingStructuralOwned.encode({ value: 'encode-throw' }),
+    ]) {
+      expectWireFailure(result, 'migration-failed', 'fixture-throwing-structural', 1, []);
+    }
     const fooCodec = {
       ...formattingDriftCodec,
       descriptor: {
@@ -1469,6 +1655,89 @@ describe('EWP-P1-TS10', () => {
       'path',
     ]);
     expect(dynamicPathReads).toBe(0);
+    let inheritedPathReads = 0;
+    const inheritedArrayPrototype = Object.create(Array.prototype, {
+      0: {
+        configurable: true,
+        get() {
+          inheritedPathReads++;
+          return {
+            path: `/inherited-${inheritedPathReads}`,
+            version: '1.0.0',
+            installMethod: 'unknown',
+          };
+        },
+      },
+    });
+    const sparseRecords = new Array(1);
+    Object.setPrototypeOf(sparseRecords, inheritedArrayPrototype);
+    const inheritedGetterDto = {
+      schemaVersion: 1,
+      experimental: true,
+      tools: { fixture: sparseRecords },
+    };
+    expectWireFailure(agents.encode(inheritedGetterDto), 'invalid-shape', 'agents', 1, [
+      'tools',
+      'fixture',
+    ]);
+    expectWireFailure(agents.encode(inheritedGetterDto), 'invalid-shape', 'agents', 1, [
+      'tools',
+      'fixture',
+    ]);
+    expect(inheritedPathReads).toBe(0);
+    let arrayPrototypeReads = 0;
+    const prototypeIndexDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, '3');
+    const prototypeLengthDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, 'length');
+    const prototypeGetterRecords = [
+      { path: '/zero', version: '1.0.0', installMethod: 'unknown' },
+      { path: '/one', version: '1.0.0', installMethod: 'unknown' },
+      { path: '/two', version: '1.0.0', installMethod: 'unknown' },
+    ];
+    prototypeGetterRecords.length = 4;
+    const prototypeGetterDto = {
+      schemaVersion: 1,
+      experimental: true,
+      tools: { fixture: prototypeGetterRecords },
+    };
+    let prototypeGetterResult: WireResult | undefined;
+    try {
+      Object.defineProperty(Array.prototype, '3', {
+        configurable: true,
+        get() {
+          arrayPrototypeReads++;
+          return {
+            path: `/prototype-${arrayPrototypeReads}`,
+            version: '1.0.0',
+            installMethod: 'unknown',
+          };
+        },
+      });
+      prototypeGetterResult = agents.encode(prototypeGetterDto);
+    } finally {
+      if (prototypeIndexDescriptor === undefined) {
+        Reflect.deleteProperty(Array.prototype, '3');
+      } else {
+        Object.defineProperty(Array.prototype, '3', prototypeIndexDescriptor);
+      }
+      if (prototypeLengthDescriptor !== undefined) {
+        Object.defineProperty(Array.prototype, 'length', prototypeLengthDescriptor);
+      }
+    }
+    expectWireFailure(prototypeGetterResult ?? { ok: true }, 'invalid-shape', 'agents', 1, []);
+    expect(arrayPrototypeReads).toBe(0);
+    const sparseMutationRecords: unknown[] = [];
+    const sparseMutationDto = {
+      schemaVersion: 1,
+      experimental: true,
+      tools: { fixture: sparseMutationRecords },
+    };
+    expect(agents.encode(sparseMutationDto).ok).toBeTrue();
+    sparseMutationRecords.length = 1;
+    expectWireFailure(agents.encode(sparseMutationDto), 'invalid-shape', 'agents', 1, [
+      'tools',
+      'fixture',
+      0,
+    ]);
 
     let proxyMessageReads = 0;
     const proxyErrorDto = new Proxy(JSON.parse(CURRENT_JSON_GOLDENS.error) as UnknownRecord, {

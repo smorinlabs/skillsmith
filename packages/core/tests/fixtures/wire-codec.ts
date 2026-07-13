@@ -57,6 +57,17 @@ const TransformInputSchema = z
   .object({ schemaVersion: z.literal(1), kind: z.literal('fixture.expected'), value: z.string() })
   .strict();
 
+export const OptionalInheritedSchema = TransformInputSchema.extend({
+  optional: z.string().optional(),
+});
+
+export const InheritedArrayPrototypeSchema = TransformInputSchema.extend({
+  payload: z.custom<unknown[]>(Array.isArray),
+}).transform((input) => ({
+  ...input,
+  value: String((input.payload as unknown as { readonly optional?: unknown }).optional),
+}));
+
 export const TransformedIdentityDriftSchema = TransformInputSchema.transform((input) => ({
   ...input,
   schemaVersion: 99 as const,
@@ -67,6 +78,51 @@ export const TransformedSecretSchema = TransformInputSchema.transform((input) =>
   ...input,
   secret: 'injected',
 }));
+
+let statefulBatchTransformCalls = 0;
+
+export const resetStatefulBatchTransformCalls = (): void => {
+  statefulBatchTransformCalls = 0;
+};
+
+export const readStatefulBatchTransformCalls = (): number => statefulBatchTransformCalls;
+
+export const StatefulBatchTransformSchema = TransformInputSchema.transform((input) => ({
+  ...input,
+  value: `batch-${Math.floor(statefulBatchTransformCalls++ / 2)}`,
+}));
+
+export const StatefulSharedBatchTransformSchema = TransformInputSchema.extend({
+  left: z.object({ marker: z.string() }).strict(),
+  right: z.object({ marker: z.string() }).strict(),
+}).transform((input) => ({
+  ...input,
+  value: `batch-${Math.floor(statefulBatchTransformCalls++ / 2)}`,
+}));
+
+export const SignedZeroTransformSchema = TransformInputSchema.extend({
+  source: z.number(),
+}).transform((input) => ({
+  ...input,
+  value: Object.is(input.source, -0) ? 'negative-zero' : 'positive-zero',
+}));
+
+export const ObservableStateTransformSchema = TransformInputSchema.extend({
+  payload: z.custom<Record<string, unknown>>(
+    (value) => typeof value === 'object' && value !== null && !Array.isArray(value),
+  ),
+}).transform((input) => {
+  const marker = Object.getOwnPropertyDescriptor(input.payload, 'marker');
+  return {
+    ...input,
+    value: [
+      Object.getPrototypeOf(input.payload) === null ? 'null-proto' : 'object-proto',
+      Object.isExtensible(input.payload) ? 'extensible' : 'fixed',
+      marker?.writable === false ? 'readonly' : 'writable',
+      marker?.configurable === false ? 'permanent' : 'configurable',
+    ].join(':'),
+  };
+});
 
 let getterReads = 0;
 

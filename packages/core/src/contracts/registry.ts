@@ -385,35 +385,42 @@ const ownCodec = (value: unknown): WireCodec => {
     owned = {
       descriptor,
       validate(input: unknown) {
-        const policyError = structuralPolicyFailure(descriptor, input);
-        if (policyError !== undefined) return policyError;
-        return (validate as WireCodec['validate']).call(owned, input);
+        try {
+          const policyError = structuralPolicyFailure(descriptor, input);
+          if (policyError !== undefined) return policyError;
+          return (validate as WireCodec['validate']).call(owned, input);
+        } catch {
+          return behaviorFailure(descriptor, `${descriptor.id} validate behavior threw`);
+        }
       },
       decode(text: string) {
-        const decoded = (decode as WireCodec['decode']).call(owned, text);
-        if (!decoded.ok) return decoded;
-        return owned.validate(decoded.value);
+        try {
+          const decoded = (decode as WireCodec['decode']).call(owned, text);
+          if (!decoded.ok) return decoded;
+          return owned.validate(decoded.value);
+        } catch {
+          return behaviorFailure(descriptor, `${descriptor.id} decode behavior threw`);
+        }
       },
       encode(dto: unknown) {
-        const validated = owned.validate(dto);
-        if (!validated.ok) return validated;
-        let canonical: string | undefined;
         try {
+          const validated = owned.validate(dto);
+          if (!validated.ok) return validated;
           const json = JSON.stringify(
             validated.value,
             null,
             descriptor.formatting.indent === 0 ? undefined : descriptor.formatting.indent,
           );
-          canonical = descriptor.formatting.terminalLf ? `${json}\n` : json;
+          const canonical = descriptor.formatting.terminalLf ? `${json}\n` : json;
+          const encoded = (encode as WireCodec['encode']).call(owned, validated.value);
+          if (!encoded.ok) return encoded;
+          if (encoded.value !== canonical) {
+            return behaviorFailure(descriptor, `${descriptor.id} encode behavior drifted`);
+          }
+          return encoded;
         } catch {
-          return behaviorFailure(descriptor, `could not encode ${descriptor.id} wire value`);
+          return behaviorFailure(descriptor, `${descriptor.id} encode behavior threw`);
         }
-        const encoded = (encode as WireCodec['encode']).call(owned, validated.value);
-        if (!encoded.ok) return encoded;
-        if (encoded.value !== canonical) {
-          return behaviorFailure(descriptor, `${descriptor.id} encode behavior drifted`);
-        }
-        return encoded;
       },
     };
   }

@@ -40,30 +40,111 @@ const issuePath = (issue: z.ZodIssue): readonly (string | number)[] => {
   return issue.path;
 };
 
+interface PrototypeSnapshot {
+  readonly extensible: boolean;
+  readonly properties: readonly (readonly [PropertyKey, PropertyDescriptor])[];
+  readonly prototype: object | null;
+}
+
+const snapshotPrototype = (prototype: object): PrototypeSnapshot => ({
+  extensible: Object.isExtensible(prototype),
+  properties: Reflect.ownKeys(prototype).map((key) => [
+    key,
+    Object.getOwnPropertyDescriptor(prototype, key) as PropertyDescriptor,
+  ]),
+  prototype: Object.getPrototypeOf(prototype),
+});
+
+const OBJECT_PROTOTYPE_SNAPSHOT = snapshotPrototype(Object.prototype);
+const ARRAY_PROTOTYPE_SNAPSHOT = snapshotPrototype(Array.prototype);
+
+const prototypeMatchesSnapshot = (prototype: object, snapshot: PrototypeSnapshot): boolean => {
+  const keys = Reflect.ownKeys(prototype);
+  if (
+    keys.length !== snapshot.properties.length ||
+    Object.getPrototypeOf(prototype) !== snapshot.prototype ||
+    Object.isExtensible(prototype) !== snapshot.extensible
+  ) {
+    return false;
+  }
+  return snapshot.properties.every(([key, expected], index) => {
+    if (keys[index] !== key) return false;
+    const actual = Object.getOwnPropertyDescriptor(prototype, key);
+    return (
+      actual !== undefined &&
+      actual.configurable === expected.configurable &&
+      actual.enumerable === expected.enumerable &&
+      actual.writable === expected.writable &&
+      Object.is(actual.value, expected.value) &&
+      actual.get === expected.get &&
+      actual.set === expected.set
+    );
+  });
+};
+
 const unsafeInputPath = (input: unknown): readonly (string | number)[] | undefined => {
+  if (
+    !prototypeMatchesSnapshot(Object.prototype, OBJECT_PROTOTYPE_SNAPSHOT) ||
+    !prototypeMatchesSnapshot(Array.prototype, ARRAY_PROTOTYPE_SNAPSHOT)
+  ) {
+    return [];
+  }
   const seen = new WeakSet<object>();
   const visit = (
     value: unknown,
     path: readonly (string | number)[],
   ): readonly (string | number)[] | undefined => {
+    if (
+      typeof value === 'bigint' ||
+      typeof value === 'function' ||
+      typeof value === 'symbol' ||
+      (typeof value === 'number' && !Number.isFinite(value))
+    ) {
+      return path;
+    }
     if (typeof value !== 'object' || value === null) return undefined;
     if (utilTypes.isProxy(value)) return path;
     if (seen.has(value)) return undefined;
     seen.add(value);
 
+    const array = Array.isArray(value);
     const prototype = Object.getPrototypeOf(value);
-    if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return path;
+    if (
+      (array && prototype !== Array.prototype) ||
+      (!array && prototype !== Object.prototype && prototype !== null)
+    ) {
+      return path;
+    }
 
-    for (const key of Reflect.ownKeys(value)) {
+    const keys = Reflect.ownKeys(value);
+    if (array) {
+      const lengthProperty = Object.getOwnPropertyDescriptor(value, 'length');
+      const length = lengthProperty?.value;
+      let expectedIndex = 0;
+      for (const key of keys) {
+        if (typeof key !== 'string' || !/^(0|[1-9]\d*)$/.test(key)) continue;
+        const index = Number(key);
+        if (index >= 2 ** 32 - 1) continue;
+        if (index !== expectedIndex) return [...path, expectedIndex];
+        expectedIndex++;
+      }
+      if (typeof length !== 'number' || expectedIndex !== length) {
+        return [...path, expectedIndex];
+      }
+    }
+
+    for (const key of keys) {
       const property = Object.getOwnPropertyDescriptor(value, key);
       if (property === undefined) continue;
       const segment =
-        Array.isArray(value) && typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)
-          ? Number(key)
-          : String(key);
+        array && typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key) ? Number(key) : String(key);
       const propertyPath = [...path, segment];
+      if (typeof key === 'symbol') return propertyPath;
       if ('get' in property || 'set' in property) return propertyPath;
-      if (!property.enumerable) continue;
+      if (!property.enumerable) {
+        if (array && key === 'length') continue;
+        return propertyPath;
+      }
       const nested = visit(property.value, propertyPath);
       if (nested !== undefined) return nested;
     }
@@ -71,6 +152,68 @@ const unsafeInputPath = (input: unknown): readonly (string | number)[] | undefin
   };
 
   return visit(input, []);
+};
+
+const createInputFingerprint = (): ((input: unknown) => string | undefined) => {
+  const identities = new WeakMap<object, number>();
+  let nextIdentity = 0;
+
+  return (input: unknown): string | undefined => {
+    const active = new WeakSet<object>();
+    const references = new WeakMap<object, number>();
+    let nextReference = 0;
+    const visit = (value: unknown): unknown => {
+      if (value === null) return ['null'];
+      if (typeof value === 'number') {
+        return ['number', Object.is(value, -0) ? '-0' : String(value)];
+      }
+      if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'undefined') {
+        return [typeof value, value];
+      }
+      if (typeof value !== 'object') throw new Error('non-JSON wire value');
+      if (active.has(value)) throw new Error('cyclic wire value');
+      const priorReference = references.get(value);
+      if (priorReference !== undefined) return ['reference', priorReference];
+      const reference = nextReference++;
+      references.set(value, reference);
+      let identity = identities.get(value);
+      if (identity === undefined) {
+        identity = nextIdentity++;
+        identities.set(value, identity);
+      }
+      active.add(value);
+      try {
+        const entries: unknown[] = [];
+        for (const key of Reflect.ownKeys(value)) {
+          const property = Object.getOwnPropertyDescriptor(value, key);
+          if (property === undefined || typeof key === 'symbol') continue;
+          if (!property.enumerable && !(Array.isArray(value) && key === 'length')) continue;
+          entries.push([
+            key,
+            property.enumerable,
+            property.configurable,
+            property.writable,
+            visit(property.value),
+          ]);
+        }
+        const prototype = Object.getPrototypeOf(value);
+        const container = Array.isArray(value)
+          ? 'array'
+          : prototype === null
+            ? 'null-object'
+            : 'object';
+        return [container, identity, reference, Object.isExtensible(value), entries];
+      } finally {
+        active.delete(value);
+      }
+    };
+
+    try {
+      return JSON.stringify(visit(input));
+    } catch {
+      return undefined;
+    }
+  };
 };
 
 const ownDescriptor = <Id extends string, Version extends number>(
@@ -285,6 +428,11 @@ export const createJsonWireCodec = <
   const descriptor = ownDescriptor(sourceDescriptor);
   const migrations = ownMigrationHandlers(descriptor, sourceMigrations);
   assertSchemaDescriptor(descriptor, schema);
+  const inputFingerprint = createInputFingerprint();
+  const encodedByInput = new WeakMap<
+    object,
+    { readonly fingerprint: string; readonly value: string }
+  >();
 
   const failure = (
     code: WireCodecErrorCode,
@@ -447,6 +595,15 @@ export const createJsonWireCodec = <
       return validate(input);
     },
     encode(dto: z.infer<Schema>) {
+      const unsafePath = unsafeInputPath(dto);
+      if (unsafePath !== undefined) return invalidShape(unsafePath);
+      const fingerprint = inputFingerprint(dto);
+      if (typeof dto === 'object' && dto !== null && fingerprint !== undefined) {
+        const cached = encodedByInput.get(dto);
+        if (cached !== undefined && cached.fingerprint === fingerprint) {
+          return { ok: true as const, value: cached.value };
+        }
+      }
       const validated = validate(dto);
       if (!validated.ok) return validated;
       try {
@@ -456,6 +613,9 @@ export const createJsonWireCodec = <
           descriptor.formatting.indent === 0 ? undefined : descriptor.formatting.indent,
         );
         const value = descriptor.formatting.terminalLf ? `${encoded}\n` : encoded;
+        if (typeof dto === 'object' && dto !== null && fingerprint !== undefined) {
+          encodedByInput.set(dto, { fingerprint, value });
+        }
         return {
           ok: true as const,
           value,
