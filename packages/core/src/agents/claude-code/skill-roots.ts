@@ -1,12 +1,10 @@
 import { join } from 'node:path';
 import type { Scope } from '../../config/types.ts';
-import type { PlatformPaths, ResolvedRuntimeConfiguration } from '../../ports/types.ts';
+import type { PlatformPaths } from '../../ports/types.ts';
+import type { SkillRootsCtx } from '../adapter-types.ts';
 import { getManagedSkillsDir, isManagedSkillsDisabled } from './managed-path.ts';
 
-export interface SkillRootsCtx {
-  cwd: string;
-  configuration: ResolvedRuntimeConfiguration;
-}
+export type { SkillRootsCtx } from '../adapter-types.ts';
 
 export const getSkillRoots = (
   env: PlatformPaths,

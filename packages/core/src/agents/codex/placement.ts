@@ -1,6 +1,7 @@
 import type { InventoryReadPorts } from '../../ports/types.ts';
+import type { PlacementBundle } from '../adapter-types.ts';
 import type { SkillRootsCtx } from '../claude-code/skill-roots.ts';
-import { type Placement, listPlacements } from '../placement-shared.ts';
+import { type Placement, classifyPlacement, listPlacements } from '../placement-shared.ts';
 import { getSkillRoots } from './skill-roots.ts';
 
 export interface CodexPlacementScan {
@@ -9,6 +10,10 @@ export interface CodexPlacementScan {
   legacyRoot: string; // resolved legacy root (~/.codex/skills or $CODEX_HOME/skills)
   currentRoot: string; // resolved current root (~/.agents/skills)
 }
+
+export const CODEX_LEGACY_ROOT_NOTICE =
+  'codex placement is in the legacy ~/.codex/skills; the current convention is ~/.agents/skills — ' +
+  "a future 'skillsmith install' can migrate it";
 
 export const listCodexPlacements = async (
   env: InventoryReadPorts,
@@ -39,4 +44,42 @@ export const listCodexPlacements = async (
     legacyRoot,
     currentRoot,
   };
+};
+
+export const codexPlacementBundle: PlacementBundle = {
+  roots: getSkillRoots,
+  standardRoots: (env, ctx) => getSkillRoots(env, 'user', ctx),
+  list: async (env, ctx, storeRoot) => {
+    const scan = await listCodexPlacements(env, ctx, storeRoot);
+    return {
+      placements: scan.placements,
+      duplicates: scan.duplicates,
+      currentRoot: scan.currentRoot || null,
+      legacyRoot: scan.legacyRoot || null,
+    };
+  },
+  resolve: async (env, ctx, storeRoot, skill) => {
+    const [currentRoot = '', legacyRoot = ''] = getSkillRoots(env, 'user', ctx);
+    const current = await classifyPlacement(env, currentRoot, skill, storeRoot);
+    const legacy = await classifyPlacement(env, legacyRoot, skill, storeRoot);
+    const currentPresent = current.class !== 'absent';
+    const legacyPresent = legacy.class !== 'absent';
+    if (currentPresent && legacyPresent) {
+      return {
+        placement: current,
+        notices: [],
+        duplicateReason: `found in both ${currentRoot} and ${legacyRoot}; resolve the duplicate first`,
+      };
+    }
+    if (legacyPresent) {
+      return {
+        placement: legacy,
+        notices: [CODEX_LEGACY_ROOT_NOTICE],
+        duplicateReason: null,
+      };
+    }
+    return { placement: current, notices: [], duplicateReason: null };
+  },
+  noticeForRoot: (root, inventory) =>
+    inventory.legacyRoot === root ? CODEX_LEGACY_ROOT_NOTICE : null,
 };

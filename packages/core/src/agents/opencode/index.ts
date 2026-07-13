@@ -1,11 +1,12 @@
-import type { Agent } from '../types.ts';
+import type { InventoryBundle, ToolAdapter } from '../adapter-types.ts';
 import { getCommandRoots } from './command-roots.ts';
+import { opencodeDescriptor } from './descriptor.ts';
 import { detect } from './detect.ts';
 import { installHint } from './install-hint.ts';
 import { getPluginCommandDir, getPluginSkillDir } from './plugin-paths.ts';
 import { getSkillRoots } from './skill-roots.ts';
 
-export const opencodeAgent: Agent = {
+export const opencodeAgent: InventoryBundle<'opencode'> = {
   tool: 'opencode',
   installHint,
   detect,
@@ -13,4 +14,9 @@ export const opencodeAgent: Agent = {
   getCommandRoots,
   getPluginSkillDir,
   getPluginCommandDir,
+};
+
+export const opencodeAdapter: ToolAdapter<'opencode'> = {
+  descriptor: opencodeDescriptor,
+  inventory: opencodeAgent,
 };

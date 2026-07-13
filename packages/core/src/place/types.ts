@@ -1,3 +1,4 @@
+import type { FLIP_TOOLS } from '../agents/registry.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type {
   ClockPort,
@@ -11,6 +12,7 @@ import type {
   ResolvedRuntimeConfiguration,
 } from '../ports/types.ts';
 import type { Result } from '../result.ts';
+export { FLIP_TOOLS } from '../agents/registry.ts';
 
 export type PlacementPorts = PlatformPaths &
   FileReadPort &
@@ -31,7 +33,6 @@ export type SwapPorts = Pick<
     'copyTree' | 'fsyncFile' | 'makeSymlink' | 'removeTree' | 'rename' | 'fsyncDir'
   >;
 
-export const FLIP_TOOLS = ['claude-code', 'codex'] as const;
 export type FlipTool = (typeof FLIP_TOOLS)[number];
 export type FlipOp = 'promote' | 'dev' | 'rollback';
 export type AcquireOp = 'install' | 'uninstall';

@@ -47,10 +47,13 @@ export const writeFixtureAdapter = {
     }),
     gatePolicy: { installDeep: true, promote: 'static+deep' },
     targetManifests: ['.fixture-plugin/plugin.json'],
+    renderedFacts: { deepSkillCoverageSuffix: null, installStaticNotice: null },
   },
   placement: {
     roots: () => [],
+    standardRoots: () => [],
     list: async () => [],
-    legacyNotice: () => null,
+    resolve: async () => ({ placement: null, notices: [], duplicateReason: null }),
+    noticeForRoot: () => null,
   },
 } as const;

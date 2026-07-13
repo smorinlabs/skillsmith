@@ -1,9 +1,11 @@
+import type { VerificationToolId } from '../agents/adapter-types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { DetectionPorts, FileWritePort, IdPort, ProcessPort } from '../ports/types.ts';
 import type { Result } from '../result.ts';
+export { VERIFIED_AGAINST, VERIFY_TOOLS } from '../agents/registry.ts';
+export { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS } from './constants.ts';
 
-export const VERIFY_TOOLS = ['claude-code', 'codex'] as const;
-export type VerifyTool = (typeof VERIFY_TOOLS)[number];
+export type VerifyTool = VerificationToolId;
 
 export type VerifyMode = 'static' | 'deep';
 export type NormalizedSeverity = 'error' | 'warning' | 'info';
@@ -83,12 +85,3 @@ export type ToolVerifier = (
   env: VerifyPorts,
   opts: ToolVerifyOptions,
 ) => Promise<Result<ToolVerdict, SkillSmithError>>;
-
-/** The version matrix this build's parsers were proven against (research 2026-07-06/07). */
-export const VERIFIED_AGAINST: Record<VerifyTool, string> = {
-  'claude-code': '2.1.202',
-  codex: '0.142.5',
-};
-
-export const STATIC_TIMEOUT_MS = 30_000;
-export const DEEP_TIMEOUT_MS = 60_000;

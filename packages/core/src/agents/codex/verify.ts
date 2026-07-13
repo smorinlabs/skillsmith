@@ -1,7 +1,7 @@
 import { basename, join } from 'node:path';
 import { ok } from '../../result.ts';
+import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS } from '../../verify/constants.ts';
 import { extractVersionToken, modeVerdictFor, toolVerdictFor } from '../../verify/normalize.ts';
-import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS, VERIFIED_AGAINST } from '../../verify/types.ts';
 import type {
   ModeResult,
   ToolVerifier,
@@ -10,6 +10,7 @@ import type {
   VerifyMode,
   VerifyPorts,
 } from '../../verify/types.ts';
+import { CODEX_VERIFIED_AGAINST } from './descriptor.ts';
 import { detect } from './detect.ts';
 
 const MARKETPLACE_NAME = 'skillsmith-mkt';
@@ -385,7 +386,7 @@ export const verifyCodex: ToolVerifier = async (env, opts) => {
 
   const binary = record.path;
   const toolVersion = extractVersionToken(record.version);
-  const versionDrift = toolVersion !== null && toolVersion !== VERIFIED_AGAINST.codex;
+  const versionDrift = toolVersion !== null && toolVersion !== CODEX_VERIFIED_AGAINST;
 
   const modes: ModeResult[] = [];
   for (const mode of opts.modes) {
@@ -401,7 +402,7 @@ export const verifyCodex: ToolVerifier = async (env, opts) => {
         checkId: 'codex.version-drift',
         toolSeverity: null,
         normalizedSeverity: 'info',
-        message: `codex ${toolVersion} differs from verified ${VERIFIED_AGAINST.codex}; parsing may be less reliable`,
+        message: `codex ${toolVersion} differs from verified ${CODEX_VERIFIED_AGAINST}; parsing may be less reliable`,
         file: null,
         subject: 'plugin',
       });

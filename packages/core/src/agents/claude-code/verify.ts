@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { ok } from '../../result.ts';
+import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS } from '../../verify/constants.ts';
 import { extractVersionToken, modeVerdictFor, toolVerdictFor } from '../../verify/normalize.ts';
-import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS, VERIFIED_AGAINST } from '../../verify/types.ts';
 import type {
   ModeResult,
   ToolVerifier,
@@ -10,6 +10,7 @@ import type {
   VerifyMode,
   VerifyPorts,
 } from '../../verify/types.ts';
+import { CLAUDE_CODE_VERIFIED_AGAINST } from './descriptor.ts';
 import { detect } from './detect.ts';
 
 // Real `claude plugin validate` output puts the marker alone on a summary line
@@ -293,7 +294,7 @@ export const verifyClaudeCode: ToolVerifier = async (env, opts) => {
 
   const binary = record.path;
   const toolVersion = extractVersionToken(record.version);
-  const versionDrift = toolVersion !== null && toolVersion !== VERIFIED_AGAINST['claude-code'];
+  const versionDrift = toolVersion !== null && toolVersion !== CLAUDE_CODE_VERIFIED_AGAINST;
 
   const modes: ModeResult[] = [];
   for (const mode of opts.modes) {
@@ -309,7 +310,7 @@ export const verifyClaudeCode: ToolVerifier = async (env, opts) => {
         checkId: 'claude.version-drift',
         toolSeverity: null,
         normalizedSeverity: 'info',
-        message: `claude ${toolVersion} differs from verified ${VERIFIED_AGAINST['claude-code']}; parsing may be less reliable`,
+        message: `claude ${toolVersion} differs from verified ${CLAUDE_CODE_VERIFIED_AGAINST}; parsing may be less reliable`,
         file: null,
         subject: 'plugin',
       });
