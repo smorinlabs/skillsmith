@@ -102,6 +102,10 @@ const unique = (values: readonly string[]): boolean => new Set(values).size === 
 const recursivelyFrozen = (value: unknown, seen = new Set<object>()): void => {
   if (typeof value !== 'object' || value === null || seen.has(value)) return;
   seen.add(value);
+  // ECMAScript forbids freezing non-empty typed-array views. The contract requires copied bytes
+  // and recursive freezing only where JavaScript permits; caller/result byte independence is
+  // asserted separately around every edit.
+  if (ArrayBuffer.isView(value) && value.byteLength > 0) return;
   expect(Object.isFrozen(value)).toBeTrue();
   for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
     if ('value' in descriptor) recursivelyFrozen(descriptor.value, seen);
