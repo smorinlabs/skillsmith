@@ -735,7 +735,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 
 ## P17-G2-03 — Lossless human-file editing, atomicity, portability, and secret-redaction boundary
 
-Phase: 2; status: **ready**; dependencies: P17-G2-01, P17-G2-02.
+Phase: 2; status: **active**; dependencies: P17-G2-01, P17-G2-02.
 Required-now validations: EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS04, EWP-P2-TS01, EWP-P2-TS04, EWP-P2-TS07, EWP-WF15.
 Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-P4B-TS07, EWP-WF03, EWP-WF04, EWP-WF07.
 
@@ -743,7 +743,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 - [x] P17-G2-03:mapped _(passed)_
 - [x] P17-G2-03:ready _(passed)_
-- [ ] P17-G2-03:test-first _(pending)_
+- [x] P17-G2-03:test-first _(passed)_
 - [ ] P17-G2-03:minimal-implementation _(pending)_
 - [ ] P17-G2-03:targeted-green _(pending)_
 - [ ] P17-G2-03:impacted-green _(pending)_
@@ -756,9 +756,9 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 - [ ] **EWP-CF-012** — Do not reuse destructive config serialization for human artifacts _(finding; mapped)_
 - [ ] **EWP-CF-030** — Define one portability and secret-redaction boundary _(finding; mapped)_
-- [ ] **EWP-P2-T04** — Complete a bounded lossless-TOML editor spike, then implement strict readers, _(phase-task; ready)_
-- [ ] **EWP-P2-TS04** — Comments around every editable field, unusual whitespace/order, unrelated _(phase-test; planned)_
-- [ ] **EWP-P2-TS07** — Canonical source/path golden matrix for credential-free HTTPS/SSH/scp, rejected _(phase-test; planned)_
+- [ ] **EWP-P2-T04** — Complete a bounded lossless-TOML editor spike, then implement strict readers, _(phase-task; red)_
+- [ ] **EWP-P2-TS04** — Comments around every editable field, unusual whitespace/order, unrelated _(phase-test; failing)_
+- [ ] **EWP-P2-TS07** — Canonical source/path golden matrix for credential-free HTTPS/SSH/scp, rejected _(phase-test; failing)_
 
 ## P17-G2-04 — Pure init request/skeleton/migration operation model without early execution
 

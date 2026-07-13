@@ -2789,7 +2789,7 @@
       "phase": "2",
       "title": "Lossless human-file editing, atomicity, portability, and secret-redaction boundary",
       "dependsOn": ["P17-G2-01", "P17-G2-02"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -2983,8 +2983,8 @@
           "evidence": ["projects/p17/evidence/P17-G2-03.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -3018,7 +3018,8 @@
       "evidence": [
         "projects/p17/plans/P17-G2-03.md",
         "projects/p17/evidence/P17-G2-03.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G2-03.md#ready-plan"
+        "projects/p17/evidence/P17-G2-03.md#ready-plan",
+        "projects/p17/evidence/P17-G2-03.md#test-first-evidence"
       ]
     },
     {
@@ -16829,11 +16830,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G2-03",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-03",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G2-03.md#ready-plan"],
+      "evidence": ["projects/p17/evidence/P17-G2-03.md#test-first-evidence"],
       "secondaryGroups": ["P17-G2-01"],
       "implements": ["EWP-CF-012", "EWP-CF-030"],
       "validatedBy": [
@@ -17028,18 +17029,33 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-03:tests/ergonomics/phase/EWP-P2-TS04.test.ts#EWP-P2-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P2-TS04.test.ts",
+        "selector": "EWP-P2-TS04",
+        "command": "bun test tests/ergonomics/phase/EWP-P2-TS04.test.ts --test-name-pattern EWP-P2-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G2-03.md#red-execution-receipt-ewp-p2-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P2-TS04"],
       "impactedValidations": ["EWP-P2-TS04", "EWP-P2-TS07"],
       "affectedContracts": ["EWP-CF-012", "EWP-CF-030"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P2-TS04.test.ts --test-name-pattern EWP-P2-TS04"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/fixtures/p2-ts04/crash-child.ts",
+        "tests/ergonomics/fixtures/p2-ts04/lock-child.ts",
+        "tests/ergonomics/fixtures/p2-ts04/manifest-cases.json",
+        "tests/ergonomics/fixtures/p2-ts04/public-types.ts",
+        "tests/ergonomics/fixtures/p2-ts04/recovery-cases.json",
+        "tests/ergonomics/fixtures/p2-ts04/tsconfig.json",
+        "tests/ergonomics/phase/EWP-P2-TS04.test.ts"
+      ]
     },
     {
       "id": "EWP-P2-TS05",
@@ -17085,18 +17101,31 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-03:tests/ergonomics/phase/EWP-P2-TS07.test.ts#EWP-P2-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P2-TS07.test.ts",
+        "selector": "EWP-P2-TS07",
+        "command": "bun test tests/ergonomics/phase/EWP-P2-TS07.test.ts --test-name-pattern EWP-P2-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G2-03.md#red-execution-receipt-ewp-p2-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P2-TS07"],
       "impactedValidations": ["EWP-P2-TS04", "EWP-P2-TS07"],
       "affectedContracts": ["EWP-CF-012", "EWP-CF-030"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P2-TS07.test.ts --test-name-pattern EWP-P2-TS07"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/fixtures/p2-ts07/public-types.ts",
+        "tests/ergonomics/fixtures/p2-ts07/redaction-goldens.json",
+        "tests/ergonomics/fixtures/p2-ts07/source-path-goldens.json",
+        "tests/ergonomics/fixtures/p2-ts07/tsconfig.json",
+        "tests/ergonomics/phase/EWP-P2-TS07.test.ts"
+      ]
     },
     {
       "id": "EWP-P2-TS08",
