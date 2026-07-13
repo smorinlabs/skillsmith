@@ -311,6 +311,10 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
       const original = new Uint8Array(input);
       const result = unwrap(api.editManifestBytes(input, item.request));
       expect(input, `${item.id}: caller bytes mutated`).toEqual(original);
+      expect(result.bytes, `${item.id}: result aliases caller view`).not.toBe(input);
+      expect(result.bytes.buffer, `${item.id}: result aliases caller backing buffer`).not.toBe(
+        input.buffer,
+      );
       expect(result.source, item.id).toBe(item.after);
       expect(result.bytes, item.id).toEqual(encoder.encode(item.after));
       expect(result.changed, item.id).toBe(item.changed);
