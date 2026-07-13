@@ -296,27 +296,51 @@ export const createJsonWireCodec = <
     error: freezeError(descriptor, code, requestedVersion, path, message),
   });
 
+  const outputPolicyPath = (output: unknown): readonly (string | number)[] | undefined => {
+    const unsafePath = unsafeInputPath(output);
+    if (unsafePath !== undefined) return unsafePath;
+    if (typeof output !== 'object' || output === null || Array.isArray(output)) return [];
+    const record = output as Record<string, unknown>;
+    if (descriptor.embeddedVersion === null) {
+      if (Object.hasOwn(record, 'schemaVersion')) return ['schemaVersion'];
+    } else if (record[descriptor.embeddedVersion] !== descriptor.version) {
+      return [descriptor.embeddedVersion];
+    }
+    if (descriptor.wireKind === null) {
+      if (Object.hasOwn(record, 'kind')) return ['kind'];
+    } else if (record.kind !== descriptor.wireKind) {
+      return ['kind'];
+    }
+    return undefined;
+  };
+
+  const invalidShape = (path: readonly (string | number)[]) =>
+    failure('invalid-shape', descriptor.version, path, `invalid ${descriptor.id} wire value`);
+
   const parsedCurrent = (input: unknown) => {
     const unsafePath = unsafeInputPath(input);
     if (unsafePath !== undefined) {
-      return failure(
-        'invalid-shape',
-        descriptor.version,
-        unsafePath,
-        `invalid ${descriptor.id} wire value`,
-      );
+      return invalidShape(unsafePath);
     }
     const parsed = schema.safeParse(input);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
-      return failure(
-        'invalid-shape',
-        descriptor.version,
-        first === undefined ? [] : issuePath(first),
-        `invalid ${descriptor.id} wire value`,
-      );
+      return invalidShape(first === undefined ? [] : issuePath(first));
     }
-    return { ok: true as const, value: parsed.data };
+    const parsedPolicyPath = outputPolicyPath(parsed.data);
+    if (parsedPolicyPath !== undefined) return invalidShape(parsedPolicyPath);
+
+    const stabilized = schema.safeParse(parsed.data);
+    if (!stabilized.success) {
+      const first = stabilized.error.issues[0];
+      return invalidShape(first === undefined ? [] : issuePath(first));
+    }
+    const stabilizedPolicyPath = outputPolicyPath(stabilized.data);
+    if (stabilizedPolicyPath !== undefined) return invalidShape(stabilizedPolicyPath);
+    if (JSON.stringify(parsed.data) !== JSON.stringify(stabilized.data)) {
+      return invalidShape([]);
+    }
+    return { ok: true as const, value: stabilized.data };
   };
 
   const validate = (input: unknown) => {

@@ -22,6 +22,11 @@ import {
   NestedDefaultPassthroughSchema,
   NestedPassthroughSchema,
   OptionalVersionSchema,
+  TransformedGetterSchema,
+  TransformedIdentityDriftSchema,
+  TransformedSecretSchema,
+  resetTransformedGetterReads,
+  transformedGetterReads,
 } from '../../../packages/core/tests/fixtures/wire-codec.ts';
 import { writeFixtureAdapter } from '../fixtures/p1-ts09/write-adapter.ts';
 import {
@@ -606,6 +611,63 @@ describe('EWP-P1-TS10', () => {
         MixedObjectUnionSchema,
       ),
     ).toThrow(/object|shape|schema/i);
+    const transformedDescriptor = {
+      id: 'fixture-transformed',
+      version: 1,
+      wireKind: 'fixture.expected',
+      embeddedVersion: 'schemaVersion',
+      unknownFields: 'reject-recursive',
+      formatting: { indent: 0, terminalLf: false },
+      migrations: [],
+      compatibility: 'conservative',
+    } as const;
+    const transformedInput = {
+      schemaVersion: 1 as const,
+      kind: 'fixture.expected' as const,
+      value: 'stable',
+    };
+    const identityDriftCodec = createJsonWireCodec(
+      transformedDescriptor,
+      TransformedIdentityDriftSchema,
+    );
+    expectWireFailure(
+      identityDriftCodec.validate(transformedInput),
+      'invalid-shape',
+      'fixture-transformed',
+      1,
+      ['schemaVersion'],
+    );
+    expectWireFailure(
+      identityDriftCodec.encode(transformedInput),
+      'invalid-shape',
+      'fixture-transformed',
+      1,
+      ['schemaVersion'],
+    );
+    const transformedSecretCodec = createJsonWireCodec(
+      { ...transformedDescriptor, id: 'fixture-transformed-secret' },
+      TransformedSecretSchema,
+    );
+    expectWireFailure(
+      transformedSecretCodec.validate(transformedInput),
+      'invalid-shape',
+      'fixture-transformed-secret',
+      1,
+      ['secret'],
+    );
+    resetTransformedGetterReads();
+    const transformedGetterCodec = createJsonWireCodec(
+      { ...transformedDescriptor, id: 'fixture-transformed-getter' },
+      TransformedGetterSchema,
+    );
+    expectWireFailure(
+      transformedGetterCodec.encode(transformedInput),
+      'invalid-shape',
+      'fixture-transformed-getter',
+      1,
+      ['derived'],
+    );
+    expect(transformedGetterReads()).toBe(0);
     expect(() =>
       createJsonWireCodec(
         {

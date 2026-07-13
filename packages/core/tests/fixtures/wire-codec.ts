@@ -52,3 +52,38 @@ export const MixedObjectUnionSchema = z.union([
 export const AlternativeVersion1Schema = z
   .object({ schemaVersion: z.literal(1), alternate: z.string() })
   .strict();
+
+const TransformInputSchema = z
+  .object({ schemaVersion: z.literal(1), kind: z.literal('fixture.expected'), value: z.string() })
+  .strict();
+
+export const TransformedIdentityDriftSchema = TransformInputSchema.transform((input) => ({
+  ...input,
+  schemaVersion: 99 as const,
+  kind: 'fixture.actual' as const,
+}));
+
+export const TransformedSecretSchema = TransformInputSchema.transform((input) => ({
+  ...input,
+  secret: 'injected',
+}));
+
+let getterReads = 0;
+
+export const resetTransformedGetterReads = (): void => {
+  getterReads = 0;
+};
+
+export const transformedGetterReads = (): number => getterReads;
+
+export const TransformedGetterSchema = TransformInputSchema.transform((input) => {
+  const output = { ...input } as typeof input & { derived?: string };
+  Object.defineProperty(output, 'derived', {
+    enumerable: true,
+    get() {
+      getterReads++;
+      return `derived-${getterReads}`;
+    },
+  });
+  return output;
+});
