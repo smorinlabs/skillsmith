@@ -2748,12 +2748,12 @@
           "evidence": ["projects/p17/evidence/P17-G2-02.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green"]
         },
         "refactor": {
           "status": "pending",
@@ -2777,7 +2777,8 @@
         "projects/p17/evidence/P17-G2-02.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G2-02.md#ready-plan",
         "projects/p17/evidence/P17-G2-02.md#test-first-evidence",
-        "projects/p17/evidence/P17-G2-02.md#minimal-implementation"
+        "projects/p17/evidence/P17-G2-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green"
       ]
     },
     {
@@ -6680,11 +6681,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G2-02",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P2-TS03"],
@@ -8415,11 +8416,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G2-02",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green"],
       "secondaryGroups": [
         "P17-G4B-02",
         "P17-G3B-03",
@@ -16680,11 +16681,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G2-02",
-      "status": "planned",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-02",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green"],
       "secondaryGroups": [],
       "implements": ["D-004", "EWP-CF-027"],
       "validatedBy": ["EWP-P2-TS03"],
@@ -16836,7 +16837,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-02:tests/ergonomics/phase/EWP-P2-TS03.test.ts#EWP-P2-TS03",
       "target": {
@@ -16845,7 +16846,7 @@
         "selector": "EWP-P2-TS03",
         "command": "bun test tests/ergonomics/phase/EWP-P2-TS03.test.ts --test-name-pattern EWP-P2-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-02.md#red-execution-receipt-ewp-p2-ts03"],
+      "evidence": ["projects/p17/evidence/P17-G2-02.md#green-execution-receipt-ewp-p2-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P2-TS03"],
@@ -16857,7 +16858,9 @@
       "ownedFiles": [
         "tests/ergonomics/fixtures/p2-ts03/hash-v1.golden.json",
         "tests/ergonomics/fixtures/p2-ts03/lock-v1.golden.toml",
+        "tests/ergonomics/fixtures/p2-ts03/public-artifact-types.ts",
         "tests/ergonomics/fixtures/p2-ts03/source-content-v1.golden.json",
+        "tests/ergonomics/fixtures/p2-ts03/tsconfig.json",
         "tests/ergonomics/phase/EWP-P2-TS03.test.ts"
       ]
     },

@@ -197,7 +197,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-024 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-025 | P17-G3B-01 | planned | required-pr |
 | EWP-CF-026 | P17-G3B-02 | planned | required-pr |
-| EWP-CF-027 | P17-G2-02 | planned | required-pr |
+| EWP-CF-027 | P17-G2-02 | validated | required-pr |
 | EWP-CF-028 | P17-G3B-03 | planned | required-pr |
 | EWP-CF-029 | P17-G2-05 | planned | required-pr |
 | EWP-CF-030 | P17-G2-03 | planned | required-pr |
@@ -222,7 +222,7 @@ Tracked entities: **425** across **45** change groups.
 | D-001 | P17-G4B-01 | planned | required-pr |
 | D-002 | P17-G4B-02 | planned | required-pr |
 | D-003 | P17-G2-01 | signed-off | required-pr |
-| D-004 | P17-G2-02 | planned | required-pr |
+| D-004 | P17-G2-02 | validated | required-pr |
 | D-005 | P17-G4A-02 | planned | required-pr |
 | D-006 | P17-G4A-01 | planned | required-pr |
 | D-007 | P17-G5-01 | planned | required-pr |
@@ -719,8 +719,8 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 - [x] P17-G2-02:ready _(passed)_
 - [x] P17-G2-02:test-first _(passed)_
 - [x] P17-G2-02:minimal-implementation _(passed)_
-- [ ] P17-G2-02:targeted-green _(pending)_
-- [ ] P17-G2-02:impacted-green _(pending)_
+- [x] P17-G2-02:targeted-green _(passed)_
+- [x] P17-G2-02:impacted-green _(passed)_
 - [ ] P17-G2-02:refactor _(pending)_
 - [ ] P17-G2-02:adversarial-review _(pending)_
 - [ ] P17-G2-02:traceability-closure _(pending)_
@@ -728,10 +728,10 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 
 ### Tracked entities
 
-- [ ] **D-004** — Separate portable lockfile _(decision; planned)_
-- [ ] **EWP-CF-027** — Define versioned hash domains and canonical inputs _(finding; planned)_
-- [ ] **EWP-P2-T03** — Implement the portable lock schema, semantic hash/canonicalization rules, and _(phase-task; planned)_
-- [ ] **EWP-P2-TS03** — Lock determinism, hash schema/domain golden vectors, exact canonical-byte _(phase-test; failing)_
+- [ ] **D-004** — Separate portable lockfile _(decision; validated)_
+- [ ] **EWP-CF-027** — Define versioned hash domains and canonical inputs _(finding; validated)_
+- [ ] **EWP-P2-T03** — Implement the portable lock schema, semantic hash/canonicalization rules, and _(phase-task; green)_
+- [ ] **EWP-P2-TS03** — Lock determinism, hash schema/domain golden vectors, exact canonical-byte _(phase-test; passing)_
 
 ## P17-G2-03 — Lossless human-file editing, atomicity, portability, and secret-redaction boundary
 
