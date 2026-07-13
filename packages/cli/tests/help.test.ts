@@ -16,6 +16,15 @@ const run = async (args: string[]): Promise<{ stdout: string; stderr: string; co
   return { stdout, stderr, code };
 };
 
+const exitCodeLines = (help: string): readonly string[] => {
+  const block = help.match(/\nEXIT CODES\n(?<rows>(?: {2}.+\n?)+)$/)?.groups?.rows;
+  if (block === undefined) throw new Error('generated help has no EXIT CODES block');
+  return block
+    .trim()
+    .split('\n')
+    .map((line) => line.trim().replace(/\s+/g, ' '));
+};
+
 describe('skillsmith help routing', () => {
   test('CLI entrypoint is independent of the test process cwd', async () => {
     expect(isAbsolute(CLI_ENTRYPOINT)).toBe(true);
@@ -33,6 +42,26 @@ describe('skillsmith help routing', () => {
     const r = await run(['--version']);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(pkg.version);
+  });
+
+  test('context-free generated help advertises only observable exit behavior', async () => {
+    const cases = [
+      { args: ['--help'], exits: ['0 top-level help page emitted'] },
+      { args: ['config', '--help'], exits: ['0 configuration help page emitted'] },
+      { args: ['version', '--help'], exits: ['0 version emitted'] },
+      {
+        args: ['completion', '--help'],
+        exits: ['0 completion script emitted', '2 required shell is missing or unsupported'],
+      },
+      { args: ['help', '--help'], exits: ['0 help page emitted', '2 unknown command or topic'] },
+    ] as const;
+
+    for (const fixture of cases) {
+      const result = await run([...fixture.args]);
+      expect(result.code, fixture.args.join(' ')).toBe(0);
+      expect(result.stderr, fixture.args.join(' ')).toBe('');
+      expect(exitCodeLines(result.stdout), fixture.args.join(' ')).toEqual(fixture.exits);
+    }
   });
 
   test('`skillsmith help exit-codes` prints topic page, exit 0', async () => {

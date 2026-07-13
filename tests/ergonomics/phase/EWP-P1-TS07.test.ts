@@ -7,6 +7,7 @@ import { canonicalizeCommanderTree } from '../../../packages/cli/src/contracts/c
 import { buildProgram } from '../../../packages/cli/src/program.ts';
 import type { RuntimeOutcome } from '../../../packages/cli/src/runtime/adapter.ts';
 import { createCurrentRendererRegistry } from '../../../packages/cli/src/runtime/current-renderers.ts';
+import type { CommandSpec } from '../../../packages/cli/src/spec/types.ts';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
 
@@ -416,55 +417,82 @@ describe('EWP-P1-TS07', () => {
   });
 
   test('one fixture spec drives parser, help, completion, docs inventory, and execution', async () => {
-    const fixture = {
+    const fixture: CommandSpec = {
       name: 'fixture',
+      path: 'skillsmith fixture',
       aliases: ['fx'],
       group: 'maintain',
       primaryQuestion: 'Does one declaration drive every CLI artifact?',
       description: 'Exercise the generic command-spec boundary.',
-      arguments: [{ name: 'item', required: true, variadic: false }],
+      arguments: [
+        {
+          name: 'item',
+          required: true,
+          variadic: false,
+          choices: [],
+          defaultValue: undefined,
+          description: 'Fixture item to execute',
+        },
+      ],
       options: [
         {
           flags: '--mode <mode>',
-          choices: ['fast', 'safe'],
-          defaultValue: 'fast',
+          long: '--mode',
+          short: null,
+          attributeName: 'mode',
+          valueShape: 'required',
+          knownValues: ['fast', 'safe'],
+          allowedValues: ['fast', 'safe'],
+          parserValues: ['fast', 'safe'],
           repeatable: false,
           negated: false,
+          flagDefault: 'fast',
+          parsedDefault: 'fast',
+          description: 'Fixture execution mode',
         },
         {
           flags: '--tag <tag>',
-          choices: [],
-          defaultValue: [],
+          long: '--tag',
+          short: null,
+          attributeName: 'tag',
+          valueShape: 'required',
+          knownValues: [],
+          allowedValues: [],
           repeatable: true,
           negated: false,
+          flagDefault: [],
+          parsedDefault: [],
+          description: 'Repeatable fixture tag',
         },
         {
           flags: '--json',
-          choices: [],
-          defaultValue: false,
+          long: '--json',
+          short: null,
+          attributeName: 'json',
+          valueShape: 'boolean',
+          knownValues: [],
+          allowedValues: [],
           repeatable: false,
           negated: false,
+          flagDefault: false,
+          parsedDefault: false,
+          description: 'Emit the fixture JSON report',
         },
       ],
       examples: ['skillsmith fixture sample --mode safe'],
       capability: 'read',
       reportKind: 'fixture-renderer',
       application: 'fixture',
-    } as const;
+    };
     const writes = { stdout: [] as string[], stderr: [] as string[], exits: [] as number[] };
     const application = async (request: unknown) => ({
-      ok: true as const,
-      value: {
-        report: request,
-        diagnostics: [],
-        exitClass: 'success' as const,
-        mutation: { changed: false, attempted: 0, completed: 0 },
-        deprecations: [],
-      },
+      report: request,
+      diagnostics: [],
+      exitClass: 'success' as const,
+      mutation: { kind: 'none' as const, planned: 0, changed: 0, unchanged: 0, failed: 0 },
+      deprecations: [],
     });
-    const program = (
-      buildProgram as unknown as (...args: unknown[]) => ReturnType<typeof buildProgram>
-    )(undefined, {
+    const program = buildProgram(undefined, {
       additionalSpecs: [fixture],
       applications: { fixture: application },
       renderers: {
@@ -477,10 +505,6 @@ describe('EWP-P1-TS07', () => {
         stdout: { write: (value: string) => writes.stdout.push(value) },
         stderr: { write: (value: string) => writes.stderr.push(value) },
         exit: (code: number) => writes.exits.push(code),
-        interaction: {
-          choose: async () => ({ kind: 'unavailable' as const }),
-          confirm: async () => ({ kind: 'unavailable' as const }),
-        },
       },
     });
     const command = program.commands.find((candidate) => candidate.name() === 'fixture');

@@ -1,22 +1,14 @@
 import { Argument, Command, InvalidArgumentError, Option } from 'commander';
 import type { CommandArgumentSpec, CommandOptionSpec, CommandSpec } from '../spec/types.ts';
 
-type FixtureOptionSpec = CommandOptionSpec & {
-  readonly choices?: readonly string[];
-  readonly defaultValue?: unknown;
-};
-
-const optionChoices = (spec: FixtureOptionSpec): readonly string[] =>
-  spec.parserValues ?? spec.choices ?? [];
-
-const optionDefault = (spec: FixtureOptionSpec): unknown => spec.parsedDefault ?? spec.defaultValue;
+const optionChoices = (spec: CommandOptionSpec): readonly string[] => spec.parserValues ?? [];
 
 const isSingular = (spec: CommandOptionSpec): boolean =>
   ['--config', '--file', '--lockfile', '--ref', '--source', '--dest'].includes(spec.long);
 
 const optionForSpec = (spec: CommandOptionSpec): Option => {
   const choices = optionChoices(spec);
-  const defaultValue = optionDefault(spec);
+  const defaultValue = spec.parsedDefault;
   let option = new Option(spec.flags, spec.description ?? '');
   if (choices.length > 0) option = option.choices([...choices]);
   if (spec.repeatable) {

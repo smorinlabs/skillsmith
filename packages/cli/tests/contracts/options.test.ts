@@ -479,6 +479,41 @@ describe('EWP-OPT-TS03', () => {
     ).toBeFalse();
   });
 
+  test('the required relation contract detects exact and nearby root relation deletions', async () => {
+    const api = await requireOptionContractApi();
+    const relations = api.CURRENT_OPTION_RELATIONS as {
+      id: string;
+      command: string;
+      kind: string;
+      options?: readonly string[];
+    }[];
+    for (const [left, right] of [
+      ['--quiet', '--debug'],
+      ['--quiet', '--verbose'],
+    ] as const) {
+      const index = relations.findIndex(
+        (relation) =>
+          relation.command === 'skillsmith' &&
+          relation.kind === 'conflicts' &&
+          relation.options?.includes(left) === true &&
+          relation.options.includes(right),
+      );
+      expect(index, `${left}/${right} fixture`).toBeGreaterThanOrEqual(0);
+      const removed = relations.splice(index, 1)[0];
+      if (removed === undefined) throw new Error(`${left}/${right} relation fixture is missing`);
+      try {
+        expect(api.validateCurrentOptionRelations()).toContain(
+          `missing required current option relation ${removed.id}`,
+        );
+        expect(api.validateOptionInvocation('skillsmith', [left, right])).toEqual({ ok: true });
+      } finally {
+        relations.splice(index, 0, removed);
+      }
+      expect(api.validateOptionInvocation('skillsmith', [left, right]).ok).toBeFalse();
+    }
+    expect(api.validateCurrentOptionRelations()).toEqual([]);
+  });
+
   test('relation validation rejects unknown commands, operands, and incoherent cardinality', async () => {
     const api = await requireOptionContractApi();
     const relations =
@@ -527,6 +562,43 @@ describe('EWP-OPT-TS03', () => {
         ]),
       );
       relations.pop();
+
+      for (const subject of ['ghost', '', null] as const) {
+        relations.push({
+          id: `mutation.bad-cardinality-subject.${String(subject)}`,
+          command: 'skillsmith dev',
+          kind: 'cardinality',
+          subject,
+          whenOption: '--dest',
+          option: '--tool',
+          exact: 1,
+          label: 'mutation fixture',
+          description: 'mutation fixture',
+        } as unknown as (typeof relations)[number]);
+        expect(api.validateCurrentOptionRelations()).toContain(
+          `mutation.bad-cardinality-subject.${String(subject)} has unknown cardinality subject ${String(subject)}`,
+        );
+        relations.pop();
+      }
+
+      const cardinality = relations.find(
+        (relation) =>
+          relation.id === 'skillsmith.dev.dest.one-tool' && relation.kind === 'cardinality',
+      );
+      if (cardinality === undefined) throw new Error('cardinality mutation fixture is missing');
+      const mutableCardinality = cardinality as unknown as { subject: unknown };
+      const originalSubject = mutableCardinality.subject;
+      mutableCardinality.subject = 'ghost';
+      try {
+        expect(api.validateCurrentOptionRelations()).toEqual(
+          expect.arrayContaining([
+            'skillsmith.dev.dest.one-tool does not match the required current option relation contract',
+            'skillsmith.dev.dest.one-tool has unknown cardinality subject ghost',
+          ]),
+        );
+      } finally {
+        mutableCardinality.subject = originalSubject;
+      }
 
       relations.push({
         id: 'mutation.bad-scope-consistency',

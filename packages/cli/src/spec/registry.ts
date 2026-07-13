@@ -243,14 +243,14 @@ const STANDARD_READ_EXIT_CODES = exitCodes(
 );
 
 const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
-  skillsmith: STANDARD_READ_EXIT_CODES,
+  skillsmith: exitCodes([0, 'top-level help page emitted']),
   'skillsmith agents': exitCodes(
     [0, 'tool detection completed successfully'],
     [1, 'tool detection failed'],
     [2, 'invalid tool or output selection'],
     [130, 'cancelled by SIGINT'],
   ),
-  'skillsmith config': STANDARD_READ_EXIT_CODES,
+  'skillsmith config': exitCodes([0, 'configuration help page emitted']),
   'skillsmith config get': exitCodes(
     [0, 'configuration value printed'],
     [1, 'key is unset'],
@@ -331,13 +331,12 @@ const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
     [6, 'skills directory, store, or ledger is not writable'],
     [130, 'cancelled by SIGINT; state is recoverable'],
   ),
-  'skillsmith version': STANDARD_READ_EXIT_CODES,
-  'skillsmith completion': exitCodes([0, 'completion script emitted'], [2, 'unsupported shell']),
-  'skillsmith help': exitCodes(
-    [0, 'help page emitted'],
-    [1, 'known topic content is unavailable'],
-    [2, 'unknown command or topic'],
+  'skillsmith version': exitCodes([0, 'version emitted']),
+  'skillsmith completion': exitCodes(
+    [0, 'completion script emitted'],
+    [2, 'required shell is missing or unsupported'],
   ),
+  'skillsmith help': exitCodes([0, 'help page emitted'], [2, 'unknown command or topic']),
 };
 
 type StateArgument = {
@@ -436,20 +435,14 @@ const scopeRelations = (
   },
 ];
 
-const RELATION_COMMANDS = [
-  'skillsmith',
-  'skillsmith list',
-  'skillsmith commands',
-  'skillsmith doctor',
-  'skillsmith check',
-  'skillsmith verify',
-  'skillsmith install',
-  'skillsmith uninstall',
-  'skillsmith dev',
-  'skillsmith promote',
-] as const;
-
-export const CURRENT_OPTION_RELATIONS: readonly OptionRelationSpec[] = [
+/**
+ * Materialize the required current relation contract.
+ *
+ * Keeping this as a factory gives self-validation an unmodified contract to
+ * compare against when a consumer casts and mutates the exported registry.
+ * Invocation still interprets CURRENT_OPTION_RELATIONS directly.
+ */
+const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   conflicts('skillsmith', '--quiet', '--verbose'),
   conflicts('skillsmith', '--quiet', '--debug'),
   conflicts('skillsmith', '--color', '--no-color'),
@@ -550,6 +543,9 @@ export const CURRENT_OPTION_RELATIONS: readonly OptionRelationSpec[] = [
   },
 ];
 
+export const CURRENT_OPTION_RELATIONS: readonly OptionRelationSpec[] =
+  requiredCurrentOptionRelations();
+
 export const validateCurrentCommandSpecs = (): readonly string[] => {
   const errors: string[] = [];
   if (new Set(commandPaths).size !== commandPaths.length)
@@ -602,12 +598,46 @@ export const validateGlobalOptionPermutation = (): readonly string[] => {
   return errors;
 };
 
+const isRelationRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isStringArray = (value: unknown): value is readonly string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+
 export const validateCurrentOptionRelations = (): readonly string[] => {
   const errors: string[] = [];
-  const ids = CURRENT_OPTION_RELATIONS.map((relation) => relation.id);
+  const currentRelations = CURRENT_OPTION_RELATIONS as readonly unknown[];
+  const requiredRelations = requiredCurrentOptionRelations();
+  const records = currentRelations.filter(isRelationRecord);
+  const ids = records
+    .map((relation) => relation.id)
+    .filter((id): id is string => typeof id === 'string');
   if (new Set(ids).size !== ids.length) errors.push('current option relation IDs duplicate');
-  for (const command of RELATION_COMMANDS) {
-    if (!CURRENT_OPTION_RELATIONS.some((relation) => relation.command === command))
+
+  const requiredById = new Map(requiredRelations.map((relation) => [relation.id, relation]));
+  const currentById = new Map(
+    records
+      .filter(
+        (relation): relation is Readonly<Record<string, unknown>> & { readonly id: string } =>
+          typeof relation.id === 'string',
+      )
+      .map((relation) => [relation.id, relation]),
+  );
+  for (const required of requiredRelations) {
+    const current = currentById.get(required.id);
+    if (current === undefined) {
+      errors.push(`missing required current option relation ${required.id}`);
+    } else if (JSON.stringify(current) !== JSON.stringify(required)) {
+      errors.push(`${required.id} does not match the required current option relation contract`);
+    }
+  }
+  for (const id of currentById.keys()) {
+    if (!requiredById.has(id)) errors.push(`unexpected current option relation ${id}`);
+  }
+
+  const requiredCommands = new Set(requiredRelations.map((relation) => relation.command));
+  for (const command of requiredCommands) {
+    if (!records.some((relation) => relation.command === command))
       errors.push(`missing current option relations for ${command}`);
   }
 
@@ -620,7 +650,7 @@ export const validateCurrentOptionRelations = (): readonly string[] => {
     );
     if (
       sugars.length > 0 &&
-      !CURRENT_OPTION_RELATIONS.some(
+      !records.some(
         (relation) => relation.command === spec.path && relation.kind === 'scope-consistency',
       )
     )
@@ -629,10 +659,27 @@ export const validateCurrentOptionRelations = (): readonly string[] => {
 
   const rootOptions =
     CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith')?.options ?? [];
-  for (const relation of CURRENT_OPTION_RELATIONS) {
+  for (const [index, value] of currentRelations.entries()) {
+    if (!isRelationRecord(value)) {
+      errors.push(`current option relation at index ${index} must be an object`);
+      continue;
+    }
+    const relation = value;
+    const id =
+      typeof relation.id === 'string' && relation.id.length > 0
+        ? relation.id
+        : `current option relation at index ${index}`;
+    if (typeof relation.id !== 'string' || relation.id.length === 0)
+      errors.push(`${id} must have a non-empty string ID`);
+    if (typeof relation.command !== 'string' || relation.command.length === 0) {
+      errors.push(`${id} must name a command`);
+      continue;
+    }
+    if (typeof relation.description !== 'string' || relation.description.length === 0)
+      errors.push(`${id} must have a non-empty description`);
     const spec = CURRENT_COMMAND_SPECS.find((candidate) => candidate.path === relation.command);
     if (spec === undefined) {
-      errors.push(`${relation.id} references unknown command ${relation.command}`);
+      errors.push(`${id} references unknown command ${relation.command}`);
       continue;
     }
     const options = new Map(
@@ -640,47 +687,63 @@ export const validateCurrentOptionRelations = (): readonly string[] => {
         (option) => [option.long, option],
       ),
     );
-    const validateOperand = (operand: string, role: string): void => {
-      if (!options.has(operand)) errors.push(`${relation.id} has unknown ${role} ${operand}`);
+    const validateOperand = (operand: unknown, role: string): void => {
+      if (typeof operand !== 'string' || !options.has(operand))
+        errors.push(`${id} has unknown ${role} ${String(operand)}`);
     };
 
     if (relation.kind === 'conflicts') {
-      if (relation.options.length !== 2 || new Set(relation.options).size !== 2)
-        errors.push(`${relation.id} must name exactly two distinct options`);
-      for (const operand of relation.options) validateOperand(operand, 'option');
+      if (
+        !isStringArray(relation.options) ||
+        relation.options.length !== 2 ||
+        new Set(relation.options).size !== 2
+      )
+        errors.push(`${id} must name exactly two distinct options`);
+      if (isStringArray(relation.options))
+        for (const operand of relation.options) validateOperand(operand, 'option');
       continue;
     }
     if (relation.kind === 'exclusive-group') {
-      if (relation.options.length < 2 || new Set(relation.options).size !== relation.options.length)
-        errors.push(`${relation.id} must name at least two distinct options`);
-      for (const operand of relation.options) validateOperand(operand, 'option');
+      if (
+        !isStringArray(relation.options) ||
+        relation.options.length < 2 ||
+        new Set(relation.options).size !== relation.options.length
+      )
+        errors.push(`${id} must name at least two distinct options`);
+      if (isStringArray(relation.options))
+        for (const operand of relation.options) validateOperand(operand, 'option');
       continue;
     }
     if (relation.kind === 'requires') {
       validateOperand(relation.option, 'option');
       validateOperand(relation.requiredOption, 'required option');
       if (relation.option === relation.requiredOption)
-        errors.push(`${relation.id} cannot require an option to require itself`);
+        errors.push(`${id} cannot require an option to require itself`);
       continue;
     }
     if (relation.kind === 'scope-consistency') {
       validateOperand(relation.scopeOption, 'scope option');
-      const scope = options.get(relation.scopeOption);
-      if (scope?.valueShape === 'boolean')
-        errors.push(`${relation.id} scope option must accept a value`);
-      if (relation.sugars.length === 0)
-        errors.push(`${relation.id} must name at least one scope shorthand`);
+      const scope =
+        typeof relation.scopeOption === 'string' ? options.get(relation.scopeOption) : undefined;
+      if (scope?.valueShape === 'boolean') errors.push(`${id} scope option must accept a value`);
+      const sugars = Array.isArray(relation.sugars) ? relation.sugars : [];
+      if (sugars.length === 0) errors.push(`${id} must name at least one scope shorthand`);
       if (
-        new Set(relation.sugars.map(({ option }) => option)).size !== relation.sugars.length ||
-        new Set(relation.sugars.map(({ value }) => value)).size !== relation.sugars.length
+        !sugars.every(isRelationRecord) ||
+        new Set(sugars.map((sugar) => sugar.option)).size !== sugars.length ||
+        new Set(sugars.map((sugar) => sugar.value)).size !== sugars.length
       )
-        errors.push(`${relation.id} scope shorthand options and values must be unique`);
-      for (const sugar of relation.sugars) {
+        errors.push(`${id} scope shorthand options and values must be unique`);
+      for (const sugar of sugars) {
+        if (!isRelationRecord(sugar)) {
+          errors.push(`${id} scope shorthand must be an object`);
+          continue;
+        }
         validateOperand(sugar.option, 'scope shorthand');
-        if (options.get(sugar.option)?.valueShape !== 'boolean')
-          errors.push(`${relation.id} scope shorthand ${sugar.option} must be boolean`);
-        if (!scope?.allowedValues.includes(sugar.value))
-          errors.push(`${relation.id} has unsupported scope shorthand value ${sugar.value}`);
+        if (typeof sugar.option !== 'string' || options.get(sugar.option)?.valueShape !== 'boolean')
+          errors.push(`${id} scope shorthand ${String(sugar.option)} must be boolean`);
+        if (typeof sugar.value !== 'string' || !scope?.allowedValues.includes(sugar.value))
+          errors.push(`${id} has unsupported scope shorthand value ${String(sugar.value)}`);
       }
       const expectedSugars = spec.options
         .filter(
@@ -690,27 +753,44 @@ export const validateCurrentOptionRelations = (): readonly string[] => {
         )
         .map((option) => option.long)
         .sort();
-      const declaredSugars = relation.sugars.map(({ option }) => option).sort();
+      const declaredSugars = sugars
+        .filter(isRelationRecord)
+        .map((sugar) => sugar.option)
+        .filter((option): option is string => typeof option === 'string')
+        .sort();
       if (JSON.stringify(declaredSugars) !== JSON.stringify(expectedSugars))
-        errors.push(`${relation.id} does not close the command's scope shorthands`);
+        errors.push(`${id} does not close the command's scope shorthands`);
       continue;
     }
 
+    if (relation.kind !== 'cardinality') {
+      errors.push(`${id} has unknown relation kind ${String(relation.kind)}`);
+      continue;
+    }
     validateOperand(relation.whenOption, 'trigger option');
     const bounds = [relation.exact, relation.maximum].filter(
-      (bound): bound is number => bound !== undefined,
+      (bound): bound is unknown => bound !== undefined,
     );
-    if (bounds.length !== 1 || bounds.some((bound) => !Number.isInteger(bound) || bound < 0))
-      errors.push(`${relation.id} must have one non-negative integer cardinality bound`);
+    if (
+      bounds.length !== 1 ||
+      bounds.some((bound) => typeof bound !== 'number' || !Number.isInteger(bound) || bound < 0)
+    )
+      errors.push(`${id} must have one non-negative integer cardinality bound`);
+    if (typeof relation.label !== 'string' || relation.label.length === 0)
+      errors.push(`${id} must have a non-empty cardinality label`);
     if (relation.subject === 'positionals') {
       if (relation.option !== undefined)
-        errors.push(`${relation.id} positional cardinality cannot name an option`);
+        errors.push(`${id} positional cardinality cannot name an option`);
       if (spec.arguments.length === 0)
-        errors.push(`${relation.id} applies positional cardinality to a command without arguments`);
-    } else if (relation.option === undefined) {
-      errors.push(`${relation.id} option-occurrences cardinality must name an option`);
+        errors.push(`${id} applies positional cardinality to a command without arguments`);
+    } else if (relation.subject === 'option-occurrences') {
+      if (relation.option === undefined)
+        errors.push(`${id} option-occurrences cardinality must name an option`);
+      else validateOperand(relation.option, 'counted option');
     } else {
-      validateOperand(relation.option, 'counted option');
+      errors.push(`${id} has unknown cardinality subject ${String(relation.subject)}`);
+      if (relation.option !== undefined)
+        errors.push(`${id} invalid cardinality subject cannot name an option`);
     }
   }
   return errors;
