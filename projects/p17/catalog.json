@@ -1934,6 +1934,7 @@
         "packages/core/src/public-types.ts",
         "packages/cli/src/spec/options.ts",
         "packages/cli/src/contracts/cli-migration-ledger.ts",
+        "packages/cli/src/contracts/commander-current-state-v0.json",
         "packages/cli/src/commands/verify.ts",
         "packages/cli/src/output/verify-json.ts",
         "packages/cli/src/output/verify-human.ts",
