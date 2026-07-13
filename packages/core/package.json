@@ -5,9 +5,18 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./contracts": "./src/contracts/index.ts",
-    "./contracts/v1": "./src/contracts/v1/index.ts",
-    "./contracts/v2": "./src/contracts/v2/index.ts"
+    "./contracts": {
+      "types": "./src/contracts/index.d.ts",
+      "default": "./src/contracts/index.ts"
+    },
+    "./contracts/v1": {
+      "types": "./src/contracts/v1/index.d.ts",
+      "default": "./src/contracts/v1/index.ts"
+    },
+    "./contracts/v2": {
+      "types": "./src/contracts/v2/index.d.ts",
+      "default": "./src/contracts/v2/index.ts"
+    }
   },
   "files": [
     "src",

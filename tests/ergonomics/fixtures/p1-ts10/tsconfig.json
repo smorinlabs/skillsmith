@@ -4,9 +4,9 @@
     "baseUrl": "../../../..",
     "paths": {
       "@skillsmith/core": ["packages/core/src/index.ts"],
-      "@skillsmith/core/contracts": ["packages/core/src/contracts/index.ts"],
-      "@skillsmith/core/contracts/v1": ["packages/core/src/contracts/v1/index.ts"],
-      "@skillsmith/core/contracts/v2": ["packages/core/src/contracts/v2/index.ts"]
+      "@skillsmith/core/contracts": ["packages/core/src/contracts/index.d.ts"],
+      "@skillsmith/core/contracts/v1": ["packages/core/src/contracts/v1/index.d.ts"],
+      "@skillsmith/core/contracts/v2": ["packages/core/src/contracts/v2/index.d.ts"]
     }
   },
   "include": ["./*.ts"]

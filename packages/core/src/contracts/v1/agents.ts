@@ -25,15 +25,23 @@ const AgentsToolsV1Schema = z
     const prototype = Object.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null;
   }, 'agents tools must be an object')
-  .superRefine((tools, context) => {
-    for (const [tool, records] of Object.entries(tools)) {
+  .transform((source, context) => {
+    const tools = Object.create(null) as Record<string, InstallRecordV1Dto[]>;
+    for (const tool of Object.keys(source)) {
+      const records = source[tool];
       if (!Array.isArray(records)) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: [tool], message: 'expected array' });
         continue;
       }
-      for (const [index, record] of records.entries()) {
+      const parsedRecords: InstallRecordV1Dto[] = [];
+      const recordCount = records.length;
+      for (let index = 0; index < recordCount; index++) {
+        const record = records[index];
         const parsed = InstallRecordV1Schema.safeParse(record);
-        if (parsed.success) continue;
+        if (parsed.success) {
+          parsedRecords.push(parsed.data);
+          continue;
+        }
         for (const issue of parsed.error.issues) {
           const unknownKey =
             issue.code === z.ZodIssueCode.unrecognized_keys ? issue.keys[0] : undefined;
@@ -44,9 +52,10 @@ const AgentsToolsV1Schema = z
           });
         }
       }
+      tools[tool] = parsedRecords;
     }
-  })
-  .transform((tools) => Object.assign(Object.create(null) as typeof tools, tools));
+    return tools;
+  });
 
 const AgentsV1Schema = z
   .object({

@@ -222,8 +222,11 @@ export default [
               except: [
                 './index.ts',
                 './contracts/index.ts',
+                './contracts/index.d.ts',
                 './contracts/v1/index.ts',
+                './contracts/v1/index.d.ts',
                 './contracts/v2/index.ts',
+                './contracts/v2/index.d.ts',
               ],
             },
             { target: './packages/cli/src/output', from: './packages/cli/src/commands' },

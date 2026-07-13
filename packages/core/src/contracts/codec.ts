@@ -1,10 +1,15 @@
+import { types as utilTypes } from 'node:util';
 import { z } from 'zod';
+import { WIRE_CODEC_IDENTITY, identityForDescriptor, markFactoryCodecMethod } from './internal.ts';
 import type {
   WireCodec,
   WireCodecDescriptor,
   WireCodecError,
   WireCodecErrorCode,
 } from './types.ts';
+
+export type JsonWireMigration = (input: unknown) => unknown;
+export type JsonWireMigrations = Readonly<Record<number, JsonWireMigration>>;
 
 const freezeError = (
   descriptor: WireCodecDescriptor,
@@ -35,22 +40,238 @@ const issuePath = (issue: z.ZodIssue): readonly (string | number)[] => {
   return issue.path;
 };
 
+const unsafeInputPath = (input: unknown): readonly (string | number)[] | undefined => {
+  const seen = new WeakSet<object>();
+  const visit = (
+    value: unknown,
+    path: readonly (string | number)[],
+  ): readonly (string | number)[] | undefined => {
+    if (typeof value !== 'object' || value === null) return undefined;
+    if (utilTypes.isProxy(value)) return path;
+    if (seen.has(value)) return undefined;
+    seen.add(value);
+
+    const prototype = Object.getPrototypeOf(value);
+    if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return path;
+
+    for (const key of Reflect.ownKeys(value)) {
+      const property = Object.getOwnPropertyDescriptor(value, key);
+      if (property === undefined) continue;
+      const segment =
+        Array.isArray(value) && typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)
+          ? Number(key)
+          : String(key);
+      const propertyPath = [...path, segment];
+      if ('get' in property || 'set' in property) return propertyPath;
+      if (!property.enumerable) continue;
+      const nested = visit(property.value, propertyPath);
+      if (nested !== undefined) return nested;
+    }
+    return undefined;
+  };
+
+  return visit(input, []);
+};
+
 const ownDescriptor = <Id extends string, Version extends number>(
   descriptor: WireCodecDescriptor<Id, Version>,
-): WireCodecDescriptor<Id, Version> =>
-  Object.freeze({
-    id: descriptor.id,
-    version: descriptor.version,
-    wireKind: descriptor.wireKind,
-    embeddedVersion: descriptor.embeddedVersion,
-    unknownFields: descriptor.unknownFields,
+): WireCodecDescriptor<Id, Version> => {
+  const id = descriptor.id;
+  const version = descriptor.version;
+  const wireKind = descriptor.wireKind;
+  const embeddedVersion = descriptor.embeddedVersion;
+  const unknownFields = descriptor.unknownFields;
+  const formatting = descriptor.formatting;
+  const indent = formatting.indent;
+  const terminalLf = formatting.terminalLf;
+  const migrationSource = descriptor.migrations;
+  const compatibility = descriptor.compatibility;
+
+  if (!Number.isSafeInteger(version) || version <= 0) {
+    throw new Error('wire codec version must be a positive safe integer');
+  }
+  if (!Array.isArray(migrationSource)) {
+    throw new Error('wire codec migrations must be an array');
+  }
+  const migrations: number[] = [];
+  const migrationCount = migrationSource.length;
+  for (let index = 0; index < migrationCount; index++) {
+    migrations.push(migrationSource[index] as number);
+  }
+  if (
+    migrations.some(
+      (migration) => !Number.isSafeInteger(migration) || migration <= 0 || migration >= version,
+    ) ||
+    new Set(migrations).size !== migrations.length
+  ) {
+    throw new Error(
+      'wire codec migration versions must be unique positive safe integers older than the current version',
+    );
+  }
+  if (migrations.length > 0 && embeddedVersion === null) {
+    throw new Error('wire codec migrations require an embedded schemaVersion');
+  }
+  return Object.freeze({
+    id,
+    version,
+    wireKind,
+    embeddedVersion,
+    unknownFields,
     formatting: Object.freeze({
-      indent: descriptor.formatting.indent,
-      terminalLf: descriptor.formatting.terminalLf,
+      indent,
+      terminalLf,
     }),
-    migrations: Object.freeze([...descriptor.migrations]),
-    compatibility: descriptor.compatibility,
+    migrations: Object.freeze(migrations),
+    compatibility,
   });
+};
+
+const ownMigrationHandlers = (
+  descriptor: WireCodecDescriptor,
+  source: JsonWireMigrations,
+): ReadonlyMap<number, JsonWireMigration> => {
+  if (typeof source !== 'object' || source === null || Array.isArray(source)) {
+    throw new Error('wire codec migrations must be an object');
+  }
+  const prototype = Object.getPrototypeOf(source);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error('wire codec migrations must be an ordinary object');
+  }
+  const keys = Reflect.ownKeys(source);
+  if (keys.some((key) => typeof key !== 'string' || !/^[1-9]\d*$/.test(key))) {
+    throw new Error('wire codec migration keys must be positive integer versions');
+  }
+  const handlers = new Map<number, JsonWireMigration>();
+  for (const key of keys as string[]) {
+    const version = Number(key);
+    const handler = source[version];
+    if (!Number.isSafeInteger(version) || typeof handler !== 'function') {
+      throw new Error('wire codec migration handlers must be functions at safe-integer versions');
+    }
+    handlers.set(version, handler);
+  }
+  if (
+    handlers.size !== descriptor.migrations.length ||
+    descriptor.migrations.some((version) => !handlers.has(version))
+  ) {
+    throw new Error('wire codec migration handlers must exactly match declared migrations');
+  }
+  if (handlers.size > 0 && descriptor.embeddedVersion === null) {
+    throw new Error('wire codec migrations require an embedded schemaVersion');
+  }
+  return handlers;
+};
+
+const objectBranches = (schema: z.ZodTypeAny): readonly z.AnyZodObject[] | undefined => {
+  if (schema instanceof z.ZodObject) return [schema];
+  if (schema instanceof z.ZodUnion) {
+    const options = schema.options as readonly z.ZodTypeAny[];
+    const branchSets = options.map((option) => objectBranches(option));
+    if (branchSets.some((branches) => branches === undefined)) return undefined;
+    return branchSets.flatMap((branches) => branches ?? []);
+  }
+  if (schema instanceof z.ZodEffects) return objectBranches(schema.innerType());
+  return undefined;
+};
+
+const assertRecursiveUnknownFieldRejection = (
+  schema: z.ZodTypeAny,
+  seen = new Set<z.ZodTypeAny>(),
+): void => {
+  if (seen.has(schema)) return;
+  seen.add(schema);
+  if (schema instanceof z.ZodObject) {
+    if (schema._def.unknownKeys !== 'strict' || !(schema._def.catchall instanceof z.ZodNever)) {
+      throw new Error('wire codec schema objects must recursively reject unknown fields');
+    }
+    for (const nested of Object.values(schema.shape) as z.ZodTypeAny[]) {
+      assertRecursiveUnknownFieldRejection(nested, seen);
+    }
+    return;
+  }
+  if (schema instanceof z.ZodArray) {
+    assertRecursiveUnknownFieldRejection(schema.element, seen);
+    return;
+  }
+  if (schema instanceof z.ZodUnion) {
+    for (const option of schema.options) assertRecursiveUnknownFieldRejection(option, seen);
+    return;
+  }
+  if (schema instanceof z.ZodDiscriminatedUnion) {
+    for (const option of schema.options.values())
+      assertRecursiveUnknownFieldRejection(option, seen);
+    return;
+  }
+  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
+    assertRecursiveUnknownFieldRejection(schema.unwrap(), seen);
+    return;
+  }
+  if (schema instanceof z.ZodDefault) {
+    assertRecursiveUnknownFieldRejection(schema.removeDefault(), seen);
+    return;
+  }
+  if (schema instanceof z.ZodCatch) {
+    assertRecursiveUnknownFieldRejection(schema.removeCatch(), seen);
+    return;
+  }
+  if (schema instanceof z.ZodBranded || schema instanceof z.ZodReadonly) {
+    assertRecursiveUnknownFieldRejection(schema.unwrap(), seen);
+    return;
+  }
+  if (schema instanceof z.ZodEffects) {
+    assertRecursiveUnknownFieldRejection(schema.innerType(), seen);
+    return;
+  }
+  if (schema instanceof z.ZodRecord) {
+    assertRecursiveUnknownFieldRejection(schema.valueSchema, seen);
+    return;
+  }
+  if (schema instanceof z.ZodTuple) {
+    for (const item of schema.items) assertRecursiveUnknownFieldRejection(item, seen);
+    if (schema._def.rest !== null) assertRecursiveUnknownFieldRejection(schema._def.rest, seen);
+    return;
+  }
+  if (schema instanceof z.ZodIntersection) {
+    assertRecursiveUnknownFieldRejection(schema._def.left, seen);
+    assertRecursiveUnknownFieldRejection(schema._def.right, seen);
+    return;
+  }
+  if (schema instanceof z.ZodLazy) {
+    assertRecursiveUnknownFieldRejection(schema.schema, seen);
+    return;
+  }
+  if (schema instanceof z.ZodPipeline) {
+    assertRecursiveUnknownFieldRejection(schema._def.in, seen);
+    assertRecursiveUnknownFieldRejection(schema._def.out, seen);
+  }
+};
+
+const assertSchemaDescriptor = (descriptor: WireCodecDescriptor, schema: z.ZodTypeAny): void => {
+  const branches = objectBranches(schema);
+  if (branches === undefined || branches.length === 0) {
+    throw new Error('wire codec schema must expose object-shaped wire branches');
+  }
+  for (const branch of branches) {
+    const shape = branch.shape;
+    for (const [key, expected] of [
+      [descriptor.embeddedVersion, descriptor.version],
+      [descriptor.wireKind === null ? null : 'kind', descriptor.wireKind],
+    ] as const) {
+      if (key === null) continue;
+      const field = shape[key];
+      if (!(field instanceof z.ZodLiteral) || field.value !== expected) {
+        throw new Error(`wire codec descriptor ${key} drifts from its schema`);
+      }
+    }
+    if (descriptor.embeddedVersion === null && Object.hasOwn(shape, 'schemaVersion')) {
+      throw new Error('wire codec descriptor omits a schemaVersion present in its schema');
+    }
+    if (descriptor.wireKind === null && Object.hasOwn(shape, 'kind')) {
+      throw new Error('wire codec descriptor omits a wire kind present in its schema');
+    }
+  }
+  assertRecursiveUnknownFieldRejection(schema);
+};
 
 export const createJsonWireCodec = <
   const Id extends string,
@@ -59,8 +280,11 @@ export const createJsonWireCodec = <
 >(
   sourceDescriptor: WireCodecDescriptor<Id, Version>,
   schema: Schema,
+  sourceMigrations: JsonWireMigrations = {},
 ): WireCodec<Id, Version, z.infer<Schema>> => {
   const descriptor = ownDescriptor(sourceDescriptor);
+  const migrations = ownMigrationHandlers(descriptor, sourceMigrations);
+  assertSchemaDescriptor(descriptor, schema);
 
   const failure = (
     code: WireCodecErrorCode,
@@ -72,8 +296,40 @@ export const createJsonWireCodec = <
     error: freezeError(descriptor, code, requestedVersion, path, message),
   });
 
+  const parsedCurrent = (input: unknown) => {
+    const unsafePath = unsafeInputPath(input);
+    if (unsafePath !== undefined) {
+      return failure(
+        'invalid-shape',
+        descriptor.version,
+        unsafePath,
+        `invalid ${descriptor.id} wire value`,
+      );
+    }
+    const parsed = schema.safeParse(input);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      return failure(
+        'invalid-shape',
+        descriptor.version,
+        first === undefined ? [] : issuePath(first),
+        `invalid ${descriptor.id} wire value`,
+      );
+    }
+    return { ok: true as const, value: parsed.data };
+  };
+
   const validate = (input: unknown) => {
     try {
+      const unsafePath = unsafeInputPath(input);
+      if (unsafePath !== undefined) {
+        return failure(
+          'invalid-shape',
+          descriptor.version,
+          unsafePath,
+          `invalid ${descriptor.id} wire value`,
+        );
+      }
       if (
         descriptor.embeddedVersion !== null &&
         typeof input === 'object' &&
@@ -81,7 +337,11 @@ export const createJsonWireCodec = <
         !Array.isArray(input)
       ) {
         const candidate = (input as Record<string, unknown>)[descriptor.embeddedVersion];
-        if (typeof candidate === 'number' && candidate !== descriptor.version) {
+        if (
+          typeof candidate === 'number' &&
+          Number.isSafeInteger(candidate) &&
+          candidate !== descriptor.version
+        ) {
           return failure(
             'unsupported-version',
             candidate,
@@ -91,17 +351,7 @@ export const createJsonWireCodec = <
         }
       }
 
-      const parsed = schema.safeParse(input);
-      if (!parsed.success) {
-        const first = parsed.error.issues[0];
-        return failure(
-          'invalid-shape',
-          descriptor.version,
-          first === undefined ? [] : issuePath(first),
-          `invalid ${descriptor.id} wire value`,
-        );
-      }
-      return { ok: true as const, value: parsed.data };
+      return parsedCurrent(input);
     } catch {
       return failure(
         'invalid-shape',
@@ -127,6 +377,49 @@ export const createJsonWireCodec = <
           `${descriptor.id} input is not valid JSON`,
         );
       }
+      if (
+        descriptor.embeddedVersion !== null &&
+        typeof input === 'object' &&
+        input !== null &&
+        !Array.isArray(input)
+      ) {
+        const candidate = (input as Record<string, unknown>)[descriptor.embeddedVersion];
+        if (
+          typeof candidate === 'number' &&
+          Number.isSafeInteger(candidate) &&
+          candidate !== descriptor.version
+        ) {
+          const migrate = migrations.get(candidate);
+          if (migrate === undefined) {
+            return failure(
+              'unsupported-version',
+              candidate,
+              [descriptor.embeddedVersion],
+              `unsupported ${descriptor.id} wire version`,
+            );
+          }
+          try {
+            const migrated = migrate(input);
+            const parsed = parsedCurrent(migrated);
+            if (!parsed.ok) {
+              return failure(
+                'migration-failed',
+                candidate,
+                parsed.error.path,
+                `could not migrate ${descriptor.id} wire value`,
+              );
+            }
+            return parsed;
+          } catch {
+            return failure(
+              'migration-failed',
+              candidate,
+              [descriptor.embeddedVersion],
+              `could not migrate ${descriptor.id} wire value`,
+            );
+          }
+        }
+      }
       return validate(input);
     },
     encode(dto: z.infer<Schema>) {
@@ -138,9 +431,10 @@ export const createJsonWireCodec = <
           null,
           descriptor.formatting.indent === 0 ? undefined : descriptor.formatting.indent,
         );
+        const value = descriptor.formatting.terminalLf ? `${encoded}\n` : encoded;
         return {
           ok: true as const,
-          value: descriptor.formatting.terminalLf ? `${encoded}\n` : encoded,
+          value,
         };
       } catch {
         return failure(
@@ -152,6 +446,14 @@ export const createJsonWireCodec = <
       }
     },
   };
+
+  const identity = identityForDescriptor(descriptor);
+  for (const value of [codec, codec.validate, codec.decode, codec.encode]) {
+    Object.defineProperty(value, WIRE_CODEC_IDENTITY, { value: identity });
+  }
+  for (const method of [codec.validate, codec.decode, codec.encode]) {
+    markFactoryCodecMethod(method);
+  }
 
   return Object.freeze(codec);
 };

@@ -10,6 +10,19 @@ import { CURRENT_COMMAND_SPECS } from '../../../packages/cli/src/spec/registry.t
 import { TOOL_OPERATIONS } from '../../../packages/core/src/agents/adapter-types.ts';
 import { createToolRegistry, toolRegistry } from '../../../packages/core/src/agents/registry.ts';
 import { SCOPES } from '../../../packages/core/src/config/types.ts';
+import { createJsonWireCodec } from '../../../packages/core/src/contracts/codec.ts';
+import {
+  AlternativeVersion1Schema,
+  BroadKindSchema,
+  CatchallSchema,
+  DriftedVersionAndKindSchema,
+  FixtureVersion2Schema,
+  MigratingVersion2Schema,
+  MixedObjectUnionSchema,
+  NestedDefaultPassthroughSchema,
+  NestedPassthroughSchema,
+  OptionalVersionSchema,
+} from '../../../packages/core/tests/fixtures/wire-codec.ts';
 import { writeFixtureAdapter } from '../fixtures/p1-ts09/write-adapter.ts';
 import {
   CURRENT_JSON_GOLDENS,
@@ -506,7 +519,173 @@ describe('EWP-P1-TS10', () => {
     if (base === undefined) return;
     const mutable = mutableCodec(base);
     const mutableDescriptor = mutable.descriptor;
-    const v2 = mutableCodec(base, { version: 2 });
+    const v2 = createJsonWireCodec(
+      {
+        ...base.descriptor,
+        version: 2,
+      },
+      FixtureVersion2Schema,
+    );
+    expect(() =>
+      createJsonWireCodec(
+        {
+          id: 'fixture-drifted',
+          version: 2,
+          wireKind: 'fixture.expected',
+          embeddedVersion: 'schemaVersion',
+          unknownFields: 'reject-recursive',
+          formatting: { indent: 0, terminalLf: false },
+          migrations: [],
+          compatibility: 'conservative',
+        },
+        DriftedVersionAndKindSchema,
+      ),
+    ).toThrow(/drift|version|kind/i);
+    expect(() =>
+      createJsonWireCodec(
+        {
+          id: 'fixture-broad-kind',
+          version: 2,
+          wireKind: 'fixture.expected',
+          embeddedVersion: 'schemaVersion',
+          unknownFields: 'reject-recursive',
+          formatting: { indent: 0, terminalLf: false },
+          migrations: [],
+          compatibility: 'conservative',
+        },
+        BroadKindSchema,
+      ),
+    ).toThrow(/drift|kind|literal/i);
+    expect(() =>
+      createJsonWireCodec(
+        {
+          id: 'fixture-passthrough',
+          version: 2,
+          wireKind: null,
+          embeddedVersion: 'schemaVersion',
+          unknownFields: 'reject-recursive',
+          formatting: { indent: 0, terminalLf: false },
+          migrations: [],
+          compatibility: 'conservative',
+        },
+        NestedPassthroughSchema,
+      ),
+    ).toThrow(/unknown|strict|reject/i);
+    for (const [id, schema] of [
+      ['fixture-default-passthrough', NestedDefaultPassthroughSchema],
+      ['fixture-catchall', CatchallSchema],
+    ] as const) {
+      expect(() =>
+        createJsonWireCodec(
+          {
+            id,
+            version: 2,
+            wireKind: null,
+            embeddedVersion: 'schemaVersion',
+            unknownFields: 'reject-recursive',
+            formatting: { indent: 0, terminalLf: false },
+            migrations: [],
+            compatibility: 'conservative',
+          },
+          schema,
+        ),
+      ).toThrow(/unknown|strict|reject/i);
+    }
+    expect(() =>
+      createJsonWireCodec(
+        {
+          id: 'fixture-nonobject-union',
+          version: 2,
+          wireKind: null,
+          embeddedVersion: 'schemaVersion',
+          unknownFields: 'reject-recursive',
+          formatting: { indent: 0, terminalLf: false },
+          migrations: [],
+          compatibility: 'conservative',
+        },
+        MixedObjectUnionSchema,
+      ),
+    ).toThrow(/object|shape|schema/i);
+    expect(() =>
+      createJsonWireCodec(
+        {
+          id: 'fixture-optional-version',
+          version: 1,
+          wireKind: null,
+          embeddedVersion: null,
+          unknownFields: 'reject-recursive',
+          formatting: { indent: 0, terminalLf: false },
+          migrations: [],
+          compatibility: 'conservative',
+        },
+        OptionalVersionSchema,
+      ),
+    ).toThrow(/schemaVersion|descriptor|omit/i);
+    let factoryDescriptorVersionReads = 0;
+    const accessorFactoryDescriptor = {
+      id: 'fixture-accessor-descriptor',
+      get version() {
+        factoryDescriptorVersionReads++;
+        return factoryDescriptorVersionReads === 1 ? 2 : 0;
+      },
+      wireKind: null,
+      embeddedVersion: 'schemaVersion',
+      unknownFields: 'reject-recursive',
+      formatting: { indent: 0, terminalLf: false },
+      migrations: [],
+      compatibility: 'conservative',
+    } as const;
+    const accessorFactoryCodec = createJsonWireCodec(
+      accessorFactoryDescriptor,
+      FixtureVersion2Schema,
+    );
+    expect(accessorFactoryCodec.descriptor.version).toBe(2);
+    expect(factoryDescriptorVersionReads).toBe(1);
+    const migrationCapable = createJsonWireCodec(
+      {
+        ...v2.descriptor,
+        id: 'fixture-migration-capable',
+        migrations: [1],
+      },
+      MigratingVersion2Schema,
+      {
+        1: (input) => ({
+          schemaVersion: 2,
+          value: record(input) && typeof input.legacy === 'string' ? input.legacy : '',
+        }),
+      },
+    );
+    expect(() => create([migrationCapable], [])).not.toThrow();
+    const alternativeSameIdentity = createJsonWireCodec(base.descriptor, AlternativeVersion1Schema);
+    expect(() =>
+      create(
+        [
+          {
+            descriptor: base.descriptor,
+            validate: base.validate,
+            decode: alternativeSameIdentity.decode,
+            encode: alternativeSameIdentity.encode,
+          },
+        ],
+        [],
+      ),
+    ).toThrow(/factory|private|identity|share/i);
+    const structuralMissingMigration = {
+      descriptor: { ...migrationCapable.descriptor },
+      validate: (input: unknown) => migrationCapable.validate(input),
+      decode: () => ({
+        ok: false as const,
+        error: {
+          code: 'unsupported-version' as const,
+          contractId: migrationCapable.descriptor.id,
+          requestedVersion: 1,
+          path: ['schemaVersion'],
+          message: 'unsupported fixture wire version',
+        },
+      }),
+      encode: (dto: Parameters<typeof migrationCapable.encode>[0]) => migrationCapable.encode(dto),
+    };
+    expect(() => create([structuralMissingMigration], [])).toThrow(/migration|declared/i);
     const fixtureMapping = { commandPath: 'skillsmith fixture', contractId: 'agents', version: 2 };
     const future = create([v2, mutable], [fixtureMapping]);
     expect(future.get('agents', 1)).toBeDefined();
@@ -518,6 +697,10 @@ describe('EWP-P1-TS10', () => {
     expect(Object.isFrozen(future.codecs[0]?.descriptor.formatting)).toBeTrue();
     expect(Object.isFrozen(future.codecs[0]?.descriptor.migrations)).toBeTrue();
     expect(() => create([mutable, mutable], [])).toThrow(/duplicate|identity/i);
+    expect(() => create([mutableCodec(base, { version: 2 })], [])).toThrow(/drift|identity/i);
+    expect(() => create([mutableCodec(base, { id: 'agents-drift' })], [])).toThrow(
+      /drift|identity/i,
+    );
     for (const version of [
       -1,
       0,
@@ -558,6 +741,15 @@ describe('EWP-P1-TS10', () => {
         () => create([{ ...mutable, descriptor } as WireCodec], []),
         `accepted malformed descriptor ${JSON.stringify(descriptor)}`,
       ).toThrow();
+    const shadowedMigrationIterator = [0];
+    Object.defineProperty(shadowedMigrationIterator, Symbol.iterator, {
+      value: function* () {
+        yield* [];
+      },
+    });
+    expect(() =>
+      create([mutableCodec(base, { migrations: shadowedMigrationIterator })], []),
+    ).toThrow(/migration|version|positive/i);
 
     for (const method of ['validate', 'decode', 'encode'] as const) {
       const missing = { ...mutable } as UnknownRecord;
@@ -569,6 +761,275 @@ describe('EWP-P1-TS10', () => {
     }
     expect(() => create([{ ...mutable, extra: true } as unknown as WireCodec], [])).toThrow(
       /codec|exact|descriptor/i,
+    );
+    expect(() =>
+      create(
+        [
+          {
+            ...mutable,
+            decode: (text: string) => mutable.decode(text),
+          },
+        ],
+        [],
+      ),
+    ).toThrow(/complete|identity|attestation/i);
+    const receiverSensitive = {
+      descriptor: mutableDescriptor,
+      validate(this: unknown, input: unknown) {
+        if (this !== receiverSensitive) {
+          return { ok: true as const, value: { schemaVersion: 99, leaked: true } };
+        }
+        return mutable.validate(input);
+      },
+      decode(this: unknown, text: string) {
+        if (this !== receiverSensitive) {
+          return { ok: true as const, value: { schemaVersion: 99, leaked: true } };
+        }
+        return mutable.decode(text);
+      },
+      encode(this: unknown, dto: unknown) {
+        if (this !== receiverSensitive) return { ok: true as const, value: '{"leaked":true}' };
+        return mutable.encode(dto);
+      },
+    } as WireCodec;
+    expect(() => create([receiverSensitive], [])).toThrow(/validate|identity|drift/i);
+    const formattingDriftCodec = {
+      descriptor: {
+        id: 'fixture-formatting-drift',
+        version: 1,
+        wireKind: null,
+        embeddedVersion: null,
+        unknownFields: 'reject-recursive',
+        formatting: { indent: 2, terminalLf: true },
+        migrations: [],
+        compatibility: 'conservative',
+      },
+      validate(input: unknown) {
+        return record(input) && typeof input.value === 'string'
+          ? { ok: true as const, value: { value: input.value } }
+          : {
+              ok: false as const,
+              error: {
+                code: 'invalid-shape' as const,
+                contractId: 'fixture-formatting-drift',
+                requestedVersion: 1,
+                path: [],
+                message: 'invalid fixture value',
+              },
+            };
+      },
+      decode(text: string) {
+        try {
+          return this.validate(JSON.parse(text));
+        } catch {
+          return {
+            ok: false as const,
+            error: {
+              code: 'malformed-json' as const,
+              contractId: 'fixture-formatting-drift',
+              requestedVersion: 1,
+              path: [],
+              message: 'invalid fixture JSON',
+            },
+          };
+        }
+      },
+      encode(dto: unknown) {
+        const validated = this.validate(dto);
+        return validated.ok
+          ? { ok: true as const, value: JSON.stringify(validated.value) }
+          : validated;
+      },
+    } satisfies WireCodec;
+    const formattingDriftRegistry = create([formattingDriftCodec], []);
+    expectWireFailure(
+      formattingDriftRegistry.get('fixture-formatting-drift', 1)?.encode({ value: 'probe' }) ?? {
+        ok: true,
+      },
+      'migration-failed',
+      'fixture-formatting-drift',
+      1,
+      [],
+    );
+    let statefulEncodeCalls = 0;
+    const statefulCodec = {
+      ...formattingDriftCodec,
+      descriptor: {
+        ...formattingDriftCodec.descriptor,
+        id: 'fixture-stateful',
+        formatting: { indent: 0 as const, terminalLf: false },
+      },
+      validate(input: unknown) {
+        const result = formattingDriftCodec.validate(input);
+        if (result.ok) return result;
+        return {
+          ...result,
+          error: { ...result.error, contractId: 'fixture-stateful' },
+        };
+      },
+      decode(text: string) {
+        try {
+          return this.validate(JSON.parse(text));
+        } catch {
+          return {
+            ok: false as const,
+            error: {
+              code: 'malformed-json' as const,
+              contractId: 'fixture-stateful',
+              requestedVersion: 1,
+              path: [],
+              message: 'invalid fixture JSON',
+            },
+          };
+        }
+      },
+      encode(dto: unknown) {
+        statefulEncodeCalls++;
+        return statefulEncodeCalls === 1
+          ? { ok: true as const, value: JSON.stringify(dto) }
+          : { ok: true as const, value: '{"secret":"LEAK"}' };
+      },
+    } satisfies WireCodec;
+    const statefulRegistry = create([statefulCodec], []);
+    const statefulOwned = statefulRegistry.get('fixture-stateful', 1);
+    expect(statefulOwned).toBeDefined();
+    if (statefulOwned === undefined) return;
+    expect(resultValue(statefulOwned.encode({ value: 'stable' }))).toBe('{"value":"stable"}');
+    expectWireFailure(
+      statefulOwned.encode({ value: 'stable' }),
+      'migration-failed',
+      'fixture-stateful',
+      1,
+      [],
+    );
+    const fooCodec = {
+      ...formattingDriftCodec,
+      descriptor: {
+        ...formattingDriftCodec.descriptor,
+        id: 'fixture-foo',
+        formatting: { indent: 0 as const, terminalLf: false },
+      },
+      validate(input: unknown) {
+        if (record(input) && Object.keys(input).length === 1 && typeof input.foo === 'string') {
+          return { ok: true as const, value: { foo: input.foo } };
+        }
+        return {
+          ok: false as const,
+          error: {
+            code: 'invalid-shape' as const,
+            contractId: 'fixture-foo',
+            requestedVersion: 1,
+            path: [],
+            message: 'invalid foo fixture',
+          },
+        };
+      },
+      decode(text: string) {
+        try {
+          return this.validate(JSON.parse(text));
+        } catch {
+          return {
+            ok: false as const,
+            error: {
+              code: 'malformed-json' as const,
+              contractId: 'fixture-foo',
+              requestedVersion: 1,
+              path: [],
+              message: 'invalid foo JSON',
+            },
+          };
+        }
+      },
+      encode(dto: unknown) {
+        const validated = this.validate(dto);
+        return validated.ok
+          ? { ok: true as const, value: JSON.stringify(validated.value) }
+          : validated;
+      },
+    } satisfies WireCodec;
+    const fooRegistry = create([fooCodec], []);
+    const fooOwned = fooRegistry.get('fixture-foo', 1);
+    expect(fooOwned).toBeDefined();
+    if (fooOwned === undefined) return;
+    expect(resultValue(fooOwned.encode({ foo: 'works' }))).toBe('{"foo":"works"}');
+    const proxyMethodCodec = {
+      ...mutable,
+      validate: new Proxy(mutable.validate, {
+        get(target, key, receiver) {
+          if (typeof key === 'symbol') return {};
+          return Reflect.get(target, key, receiver);
+        },
+      }),
+    };
+    expect(() => create([proxyMethodCodec], [])).toThrow(/proxy|function|codec/i);
+    const structuralKindDrift = {
+      descriptor: {
+        id: 'fixture-structural-kind',
+        version: 1,
+        wireKind: 'fixture.expected',
+        embeddedVersion: 'schemaVersion',
+        unknownFields: 'reject-recursive',
+        formatting: { indent: 0 as const, terminalLf: false },
+        migrations: [],
+        compatibility: 'conservative',
+      },
+      validate(input: unknown) {
+        if (
+          record(input) &&
+          input.schemaVersion === 1 &&
+          input.kind === 'fixture.actual' &&
+          typeof input.requiredFirst === 'string'
+        ) {
+          return { ok: true as const, value: { ...input } };
+        }
+        return {
+          ok: false as const,
+          error: {
+            code: 'invalid-shape' as const,
+            contractId: 'fixture-structural-kind',
+            requestedVersion: 1,
+            path: ['requiredFirst'],
+            message: 'missing required fixture field',
+          },
+        };
+      },
+      decode(text: string) {
+        try {
+          return this.validate(JSON.parse(text));
+        } catch {
+          return {
+            ok: false as const,
+            error: {
+              code: 'malformed-json' as const,
+              contractId: 'fixture-structural-kind',
+              requestedVersion: 1,
+              path: [],
+              message: 'invalid fixture JSON',
+            },
+          };
+        }
+      },
+      encode(dto: unknown) {
+        const validated = this.validate(dto);
+        return validated.ok
+          ? { ok: true as const, value: JSON.stringify(validated.value) }
+          : validated;
+      },
+    } satisfies WireCodec;
+    const structuralKindRegistry = create([structuralKindDrift], []);
+    const structuralKindOwned = structuralKindRegistry.get('fixture-structural-kind', 1);
+    expect(structuralKindOwned).toBeDefined();
+    if (structuralKindOwned === undefined) return;
+    expectWireFailure(
+      structuralKindOwned.validate({
+        schemaVersion: 1,
+        kind: 'fixture.actual',
+        requiredFirst: 'present',
+      }),
+      'invalid-shape',
+      'fixture-structural-kind',
+      1,
+      ['kind'],
     );
     expect(() => create([mutable], [fixtureMapping])).toThrow(/unknown|version|contract/i);
     expect(() =>
@@ -679,19 +1140,22 @@ describe('EWP-P1-TS10', () => {
     const configGet = registry.get('config-get', 1);
     const configList = registry.get('config-list', 1);
     const uninstall = registry.get('uninstall', 1);
+    const errorCodec = registry.get('error', 1);
     expect(install).toBeDefined();
     expect(flip).toBeDefined();
     expect(agents).toBeDefined();
     expect(configGet).toBeDefined();
     expect(configList).toBeDefined();
     expect(uninstall).toBeDefined();
+    expect(errorCodec).toBeDefined();
     if (
       install === undefined ||
       flip === undefined ||
       agents === undefined ||
       configGet === undefined ||
       configList === undefined ||
-      uninstall === undefined
+      uninstall === undefined ||
+      errorCodec === undefined
     )
       return;
 
@@ -765,6 +1229,54 @@ describe('EWP-P1-TS10', () => {
       const dto = resultValue(codec.decode(bytes));
       expect(resultValue(codec.encode(dto))).toBe(bytes);
     }
+
+    const migratingV2 = createJsonWireCodec(
+      {
+        id: 'fixture-migrating',
+        version: 2,
+        wireKind: null,
+        embeddedVersion: 'schemaVersion',
+        unknownFields: 'reject-recursive',
+        formatting: { indent: 0, terminalLf: false },
+        migrations: [1],
+        compatibility: 'conservative',
+      },
+      MigratingVersion2Schema,
+      {
+        1: (input) => ({
+          schemaVersion: 2,
+          value: record(input) && typeof input.legacy === 'string' ? input.legacy : '',
+        }),
+      },
+    );
+    const migrated = resultValue(migratingV2.decode('{"schemaVersion":1,"legacy":"kept"}'));
+    expect(migrated).toEqual({ schemaVersion: 2, value: 'kept' });
+    expect(resultValue(migratingV2.encode(migrated))).toBe('{"schemaVersion":2,"value":"kept"}');
+    expectWireFailure(
+      migratingV2.decode('{"schemaVersion":0,"legacy":"old"}'),
+      'unsupported-version',
+      'fixture-migrating',
+      0,
+      ['schemaVersion'],
+    );
+    expect(() =>
+      createJsonWireCodec({ ...migratingV2.descriptor, migrations: [1] }, MigratingVersion2Schema),
+    ).toThrow(/migration|handler/i);
+    for (const migrations of [[0], [2], [3], [1, 1], [1.5]]) {
+      expect(() =>
+        createJsonWireCodec({ ...migratingV2.descriptor, migrations }, MigratingVersion2Schema),
+      ).toThrow(/migration|version|older|integer/i);
+    }
+    const brokenMigration = createJsonWireCodec(migratingV2.descriptor, MigratingVersion2Schema, {
+      1: () => ({ schemaVersion: 2, value: 1 }),
+    });
+    expectWireFailure(
+      brokenMigration.decode('{"schemaVersion":1,"legacy":"broken"}'),
+      'migration-failed',
+      'fixture-migrating',
+      1,
+      ['value'],
+    );
 
     const currentConfigTools = ['claude-code', 'codex', 'kilo-code', 'opencode'] as const;
     const currentLifecycleTools = ['claude-code', 'codex'] as const;
@@ -868,6 +1380,56 @@ describe('EWP-P1-TS10', () => {
       expectWireFailure(agents.validate(exoticDto), 'invalid-shape', 'agents', 1, ['tools']);
       expectWireFailure(agents.encode(exoticDto), 'invalid-shape', 'agents', 1, ['tools']);
     }
+    let dynamicPathReads = 0;
+    const getterRecord = {
+      get path() {
+        dynamicPathReads++;
+        return `/read-${dynamicPathReads}`;
+      },
+      version: '1.0.0',
+      installMethod: 'unknown',
+    };
+    const getterDto = {
+      schemaVersion: 1,
+      experimental: true,
+      tools: { fixture: [getterRecord] },
+    };
+    expectWireFailure(agents.encode(getterDto), 'invalid-shape', 'agents', 1, [
+      'tools',
+      'fixture',
+      0,
+      'path',
+    ]);
+    expectWireFailure(agents.encode(getterDto), 'invalid-shape', 'agents', 1, [
+      'tools',
+      'fixture',
+      0,
+      'path',
+    ]);
+    expect(dynamicPathReads).toBe(0);
+
+    let proxyMessageReads = 0;
+    const proxyErrorDto = new Proxy(JSON.parse(CURRENT_JSON_GOLDENS.error) as UnknownRecord, {
+      get(target, key, receiver) {
+        if (key === 'message') return `dynamic-${++proxyMessageReads}`;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    expectWireFailure(errorCodec.encode(proxyErrorDto), 'invalid-shape', 'error', 1, []);
+    expectWireFailure(errorCodec.encode(proxyErrorDto), 'invalid-shape', 'error', 1, []);
+    expect(proxyMessageReads).toBe(0);
+    let hiddenMessageReads = 0;
+    const hiddenGetterDto = JSON.parse(CURRENT_JSON_GOLDENS.error) as UnknownRecord;
+    Object.defineProperty(hiddenGetterDto, 'message', {
+      enumerable: false,
+      get() {
+        hiddenMessageReads++;
+        return `hidden-${hiddenMessageReads}`;
+      },
+    });
+    expectWireFailure(errorCodec.encode(hiddenGetterDto), 'invalid-shape', 'error', 1, ['message']);
+    expectWireFailure(errorCodec.encode(hiddenGetterDto), 'invalid-shape', 'error', 1, ['message']);
+    expect(hiddenMessageReads).toBe(0);
 
     expect(registry.get('config-get', 99)).toBeUndefined();
     expect(registry.latest('config-get')?.descriptor.version).toBe(1);
@@ -881,6 +1443,10 @@ describe('EWP-P1-TS10', () => {
     const encoded = resultValue(install.encode(dto));
     expect(encoded).toBe(resultValue(install.encode(dto)));
     expect(encoded).toBe(CURRENT_JSON_GOLDENS.install);
+    (dto as UnknownRecord).unexpectedAfterFirstEncode = true;
+    expectWireFailure(install.encode(dto), 'invalid-shape', 'install', 1, [
+      'unexpectedAfterFirstEncode',
+    ]);
   });
 
   test('family 4: compiles public codec-derived DTOs and compile-negative internal fields', async () => {
@@ -1212,6 +1778,17 @@ describe('EWP-P1-TS10', () => {
     expect(typeof contracts?.createWireContractRegistry).toBe('function');
     for (const name of Object.keys(v1 ?? {})) expect(name).not.toMatch(/V2|zod|schema/);
     for (const name of Object.keys(v2 ?? {})) expect(name).not.toMatch(/V1|zod|schema/);
+    for (const declaration of [
+      'packages/core/src/contracts/index.d.ts',
+      'packages/core/src/contracts/v1/index.d.ts',
+      'packages/core/src/contracts/v2/index.d.ts',
+    ]) {
+      const source = await readFile(join(ROOT, declaration), 'utf8');
+      expect(source, `${declaration} leaks Zod`).not.toMatch(/\b(?:zod|Zod\w*|z\.infer)\b/);
+      expect(source, `${declaration} leaks a deep source import`).not.toMatch(
+        /from\s+['"](?:\.\.\/|packages\/core\/src)/,
+      );
+    }
   });
 
   test('family 9: gives codecs sole AST ownership of public JSON construction and parsing', async () => {
