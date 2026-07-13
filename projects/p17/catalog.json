@@ -2038,7 +2038,7 @@
       "phase": "1",
       "title": "Canonical codecs, DTO mappings, and public wire-contract registry",
       "dependsOn": ["P17-G1-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0008-wire-contract-registry.md",
@@ -2124,8 +2124,8 @@
           "evidence": ["projects/p17/evidence/P17-G1-06.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-06.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -16150,18 +16150,44 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-06",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-06:tests/ergonomics/phase/EWP-P1-TS10.test.ts#EWP-P1-TS10",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
+        "selector": "EWP-P1-TS10",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS10.test.ts --test-name-pattern EWP-P1-TS10"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-06.md#red-execution-receipt-ewp-p1-ts10"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS10"],
       "impactedValidations": ["EWP-P1-TS10"],
       "affectedContracts": ["EWP-CF-037"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS10.test.ts --test-name-pattern EWP-P1-TS10"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
+        "tests/ergonomics/fixtures/p1-ts10/tsconfig.json",
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
+        "tests/ergonomics/fixtures/p1-ts10/fixture-codec.ts",
+        "tests/ergonomics/fixtures/p1-ts10/reports.ts",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/agents.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/health.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/commands.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/config-get-unscoped.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/config-get-scoped.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/config-list-unscoped.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/config-list-scoped.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/flip.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/install.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/list.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/uninstall.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/verify.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/error.stdout"
+      ]
     },
     {
       "id": "EWP-P1-TS11",

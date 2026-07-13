@@ -622,7 +622,7 @@ Downstream coverage obligations: EWP-CMD-AGENTS-TS03, EWP-P3B-TS06, EWP-WF01, EW
 
 ## P17-G1-06 — Canonical codecs, DTO mappings, and public wire-contract registry
 
-Phase: 1; status: **ready**; dependencies: P17-G1-03.
+Phase: 1; status: **active**; dependencies: P17-G1-03.
 Required-now validations: EWP-P1-TS10.
 Downstream coverage obligations: EWP-P2-TS08.
 
@@ -630,7 +630,7 @@ Downstream coverage obligations: EWP-P2-TS08.
 
 - [x] P17-G1-06:mapped _(passed)_
 - [x] P17-G1-06:ready _(passed)_
-- [ ] P17-G1-06:test-first _(pending)_
+- [x] P17-G1-06:test-first _(passed)_
 - [ ] P17-G1-06:minimal-implementation _(pending)_
 - [ ] P17-G1-06:targeted-green _(pending)_
 - [ ] P17-G1-06:impacted-green _(pending)_
@@ -643,7 +643,7 @@ Downstream coverage obligations: EWP-P2-TS08.
 
 - [ ] **EWP-CF-037** — Make codecs the canonical wire-contract authority _(finding; planned)_
 - [ ] **EWP-P1-T12** — Add ADR 0008, the canonical wire-contract registry, explicit domain/DTO mappers, _(phase-task; planned)_
-- [ ] **EWP-P1-TS10** — Current JSON byte-parity goldens, codec-derived DTO type checks, internal-field _(phase-test; planned)_
+- [ ] **EWP-P1-TS10** — Current JSON byte-parity goldens, codec-derived DTO type checks, internal-field _(phase-test; failing)_
 
 ## P17-G1-07 — Operation-scoped observation, correlation, redaction, and verbosity behavior
 
