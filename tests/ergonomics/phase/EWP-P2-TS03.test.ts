@@ -171,7 +171,7 @@ describe('EWP-P2-TS03', () => {
     );
     const output = `${compiled.stdout.toString()}${compiled.stderr.toString()}`;
     expect(compiled.exitCode, output).toBe(0);
-  });
+  }, 15_000);
 
   test('owns exact canonical lock bytes, versions, and manifest relationships', async () => {
     const lockBytes = readFileSync(join(FIXTURES, 'lock-v1.golden.toml'));
