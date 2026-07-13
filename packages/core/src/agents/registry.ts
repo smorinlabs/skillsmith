@@ -52,10 +52,14 @@ export interface ToolUsageError {
 
 export type ToolCapabilityResult = ToolOperationFact | ToolCapabilityError | ToolUsageError;
 
-export interface ToolRegistry<ToolId extends string = string> {
+export interface ToolRegistry<
+  ToolId extends string = string,
+  VerificationId extends ToolId = ToolId,
+> {
   readonly adapters: readonly ToolAdapter<ToolId>[];
   readonly ids: readonly ToolId[];
   get(id: string): ToolAdapter<ToolId> | undefined;
+  toolsFor(operation: 'verify-static' | 'verify-deep'): readonly VerificationId[];
   toolsFor(operation: ToolOperation): readonly ToolId[];
   capability(id: string, operation: ToolOperation): ToolCapabilityResult;
 }
@@ -295,10 +299,13 @@ const cloneAdapter = <ToolId extends string>(
 });
 
 type RegisteredId<Adapters extends readonly ToolAdapter<string>[]> = AdapterId<Adapters[number]>;
+type RegisteredVerificationId<Adapters extends readonly ToolAdapter<string>[]> = AdapterId<
+  Extract<Adapters[number], { readonly verification: unknown }>
+>;
 
 export function createToolRegistry<const Adapters extends readonly ToolAdapter<string>[]>(
   input: Adapters,
-): ToolRegistry<RegisteredId<Adapters>>;
+): ToolRegistry<RegisteredId<Adapters>, RegisteredVerificationId<Adapters>>;
 export function createToolRegistry(input: readonly unknown[]): ToolRegistry;
 export function createToolRegistry(input: readonly unknown[]): ToolRegistry {
   const adapters = input as readonly ToolAdapter[];

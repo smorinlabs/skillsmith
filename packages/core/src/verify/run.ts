@@ -1,5 +1,5 @@
 import { basename, dirname, join } from 'node:path';
-import { type ToolRegistry, toolRegistry } from '../agents/registry.ts';
+import { type BuiltInToolId, type ToolRegistry, toolRegistry } from '../agents/registry.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -33,43 +33,43 @@ export interface ResolvedTarget {
   cleanup: () => Promise<void>; // removes the wrapper temp dir; no-op for plugins
 }
 
-type VerifyRegistry<ToolId extends string = string> = Pick<
-  ToolRegistry<ToolId>,
+type VerifyRegistry<ToolId extends string = string, VerificationId extends ToolId = ToolId> = Pick<
+  ToolRegistry<ToolId, VerificationId>,
   'adapters' | 'ids' | 'get' | 'toolsFor'
 >;
-type VerifyDispatch<ToolId extends string> =
-  | VerifyRegistry<ToolId>
-  | Readonly<Record<ToolId, ToolVerifier<ToolId>>>;
+type VerifyDispatch<ToolId extends string, VerificationId extends ToolId = ToolId> =
+  | VerifyRegistry<ToolId, VerificationId>
+  | Readonly<Record<VerificationId, ToolVerifier<VerificationId>>>;
 
-const isVerifyRegistry = <ToolId extends string>(
-  dispatch: VerifyDispatch<ToolId>,
-): dispatch is VerifyRegistry<ToolId> =>
+const isVerifyRegistry = <ToolId extends string, VerificationId extends ToolId>(
+  dispatch: VerifyDispatch<ToolId, VerificationId>,
+): dispatch is VerifyRegistry<ToolId, VerificationId> =>
   'adapters' in dispatch &&
   Array.isArray(dispatch.adapters) &&
   typeof dispatch.get === 'function' &&
   typeof dispatch.toolsFor === 'function';
 
-const targetManifestsFor = <ToolId extends string>(
-  registry: VerifyRegistry<ToolId>,
-): readonly string[] => [
+type TargetRegistry = Pick<ToolRegistry, 'adapters'>;
+
+const targetManifestsFor = (registry: TargetRegistry): readonly string[] => [
   ...new Set(registry.adapters.flatMap((adapter) => adapter.verification?.targetManifests ?? [])),
 ];
 
-const verifiedAgainstFor = <ToolId extends string>(
-  registry: VerifyRegistry<ToolId>,
-): Record<ToolId, string> =>
+const verifiedAgainstFor = <ToolId extends string, VerificationId extends ToolId>(
+  registry: VerifyRegistry<ToolId, VerificationId>,
+): Record<VerificationId, string> =>
   Object.fromEntries(
     registry.adapters.flatMap((adapter) =>
       adapter.verification
         ? [[adapter.descriptor.id, adapter.verification.verifiedAgainst] as const]
         : [],
     ),
-  ) as Record<ToolId, string>;
+  ) as Record<VerificationId, string>;
 
-export const resolveTarget = async <ToolId extends string = VerifyTool>(
+export const resolveTarget = async (
   env: VerifyPorts,
   path: string,
-  registry: VerifyRegistry<ToolId> = toolRegistry as unknown as VerifyRegistry<ToolId>,
+  registry: TargetRegistry = toolRegistry,
 ): Promise<Result<ResolvedTarget, SkillSmithError>> => {
   const targetManifests = targetManifestsFor(registry);
   let isPlugin = false;
@@ -122,32 +122,39 @@ export const resolveTarget = async <ToolId extends string = VerifyTool>(
   );
 };
 
-export const runVerify = async <ToolId extends string = VerifyTool>(
+export function runVerify(
   env: VerifyPorts,
-  opts: VerifyOptions<ToolId>,
-  dispatch: VerifyDispatch<ToolId> = toolRegistry as unknown as VerifyRegistry<ToolId>,
-): Promise<Result<VerifyReport<ToolId>, SkillSmithError>> => {
+  opts: VerifyOptions<VerifyTool>,
+  dispatch?: VerifyDispatch<BuiltInToolId, VerifyTool>,
+): Promise<Result<VerifyReport<VerifyTool>, SkillSmithError>>;
+export function runVerify<ToolId extends string, VerificationId extends ToolId = ToolId>(
+  env: VerifyPorts,
+  opts: VerifyOptions<VerificationId>,
+  registry: VerifyRegistry<ToolId, VerificationId>,
+): Promise<Result<VerifyReport<VerificationId>, SkillSmithError>>;
+export async function runVerify(
+  env: VerifyPorts,
+  opts: VerifyOptions<string>,
+  dispatch: VerifyDispatch<string> = toolRegistry,
+): Promise<Result<VerifyReport<string>, SkillSmithError>> {
   if (opts.signal?.aborted) return err(genericError('runVerify aborted'));
 
   const registry = isVerifyRegistry(dispatch) ? dispatch : null;
-  const targetRegistry = registry ?? (toolRegistry as unknown as VerifyRegistry<ToolId>);
+  const targetRegistry = registry ?? toolRegistry;
   const resolved = await resolveTarget(env, opts.path, targetRegistry);
   if (!resolved.ok) return resolved;
 
   try {
-    const toolSet =
-      opts.tools ??
-      registry?.toolsFor('verify-static') ??
-      (VERIFY_TOOLS as unknown as readonly ToolId[]);
+    const toolSet = opts.tools ?? registry?.toolsFor('verify-static') ?? VERIFY_TOOLS;
     const explicitTools = opts.tools !== undefined && opts.tools.length > 0;
     const modes: VerifyMode[] = opts.deep ? ['static', 'deep'] : ['static'];
     const strict = opts.strict ?? false;
 
-    const toolVerdicts: ToolVerdict<ToolId>[] = [];
+    const toolVerdicts: ToolVerdict<string>[] = [];
     for (const tool of toolSet) {
-      const checker = registry
-        ? registry.get(tool)?.verification?.verify
-        : (dispatch as Readonly<Record<ToolId, ToolVerifier<ToolId>>>)[tool];
+      const checker = isVerifyRegistry(dispatch)
+        ? dispatch.get(tool)?.verification?.verify
+        : dispatch[tool];
       if (checker === undefined) {
         return err(genericError(`no registered verifier for '${tool}'`));
       }
@@ -162,13 +169,11 @@ export const runVerify = async <ToolId extends string = VerifyTool>(
       toolVerdicts.push(result.value);
     }
 
-    const report: VerifyReport<ToolId> = {
+    const report: VerifyReport<string> = {
       schemaVersion: 1,
       target: { path: opts.path, kind: resolved.value.kind },
       requested: { tools: [...toolSet], modes, strict, explicitTools },
-      verifiedAgainst: registry
-        ? verifiedAgainstFor(registry)
-        : (VERIFIED_AGAINST as unknown as Record<ToolId, string>),
+      verifiedAgainst: registry ? verifiedAgainstFor(registry) : VERIFIED_AGAINST,
       summary: summarize(toolVerdicts),
       tools: toolVerdicts,
     };
@@ -179,7 +184,7 @@ export const runVerify = async <ToolId extends string = VerifyTool>(
   } finally {
     await resolved.value.cleanup();
   }
-};
+}
 
 /** `runVerify` wired to the built-in per-agent checkers. */
 export const verifyPlugin = (

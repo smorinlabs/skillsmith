@@ -12,6 +12,7 @@ import type {
   VerifyTool,
 } from '@skillsmith/core';
 import * as core from '@skillsmith/core';
+import { readOnlyFixtureAdapter } from '../../../../tests/ergonomics/fixtures/p1-ts09/read-only-adapter.ts';
 import { writeFixtureAdapter } from '../../../../tests/ergonomics/fixtures/p1-ts09/write-adapter.ts';
 import { verifyClaudeCode } from '../../../core/src/agents/claude-code/verify.ts';
 import { verifyCodex } from '../../../core/src/agents/codex/verify.ts';
@@ -107,6 +108,7 @@ const staticOnlyChecker =
     ok(tool(id, { modes: [mode()] }));
 
 const fixtureRegistry = core.createToolRegistry([writeFixtureAdapter]);
+const mixedFixtureRegistry = core.createToolRegistry([readOnlyFixtureAdapter, writeFixtureAdapter]);
 type VerifyRegistry = typeof fixtureRegistry;
 
 const makeFixtureTarget = async (): Promise<string> => {
@@ -435,6 +437,27 @@ describe('EWP-CMD-VERIFY-TS02', () => {
     expect(
       core.validateSelectionRequest({ targets: [], all: false, tools: ['unknown'] }, verifyPolicy),
     ).toMatchObject({ ok: false, error: { code: 'invalid-enum', exitCode: 2 } });
+  });
+
+  test('auto-selects only verification-capable IDs from a mixed custom registry', async () => {
+    const env = await defaultRuntimePorts();
+    const target = await makeFixtureTarget();
+    try {
+      const result = await runVerify(env, { path: target }, mixedFixtureRegistry);
+      expect(result).toMatchObject({
+        ok: true,
+        value: {
+          requested: { tools: ['fixture-write'] },
+          verifiedAgainst: { 'fixture-write': '1.0.0' },
+          tools: [{ tool: 'fixture-write' }],
+        },
+      });
+      if (result.ok) {
+        expect('fixture-read' in result.value.verifiedAgainst).toBeFalse();
+      }
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
   });
 });
 
