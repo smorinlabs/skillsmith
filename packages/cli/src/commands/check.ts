@@ -18,6 +18,7 @@ import { renderDoctorHuman } from '../output/doctor-human.ts';
 import { type CliDeprecation, renderDoctorJson } from '../output/doctor-json.ts';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
 import { resolveArtifactPair } from '../util/artifact-pair.ts';
+import { renderConfigNotices } from '../util/config-notice.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 import { singularOption } from '../util/singular-option.ts';
@@ -249,6 +250,7 @@ export const checkCommand = (): Command =>
           if (!r.ok) {
             return failCliError(r.error, opts.json ? 'json' : 'human');
           }
+          process.stderr.write(renderConfigNotices(config.value, opts.json ? 'json' : 'human'));
           const deprecations = opts.exitCode ? [EXIT_CODE_DEPRECATION] : [];
           process.stdout.write(
             opts.json ? renderDoctorJson(r.value, deprecations) : renderDoctorHuman(r.value),

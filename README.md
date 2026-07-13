@@ -2,9 +2,10 @@
 
 > P17 disposition: current behavior; authority: packages/cli/src/program.ts
 
-Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill install and sync across Claude Code, Codex, Kilo Code, and opencode.
+Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill discovery
+and management across Claude Code, Codex, Kilo Code, and opencode.
 
-**Today:** `agents`, `list`, `commands`, `doctor`, `check`, `config`, `verify`, `install`, `uninstall`, `dev`/`demote`, `promote`, `completion`, `help`, and `version` are implemented. Write operations currently support Claude Code and Codex where their command contracts allow.
+**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `version`, `completion`, and `help` are implemented.
 **P17 target:** desired-state `init`, `export`, `plan`, `apply`, narrow `sync`, `status`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
 
 ## Example output
@@ -41,7 +42,7 @@ Machine-readable form (`--format json`) wraps results in a small envelope. Shape
 }
 ```
 
-`installMethod` is one of `brew`, `npm-global`, `bun-global`, `standalone`, `unknown`.
+`installMethod` is one of `brew`, `npm-global`, `bun-global`, `native-installer`, `app-bundle`, or `unknown`.
 
 ## Install
 
@@ -59,7 +60,7 @@ bun run dev agents         # fastest way to try it — no build step
 To produce a standalone binary:
 
 ```sh
-bun run build              # darwin-arm64 by default; see package.json for other targets
+bun run build              # compiles for the current host; package.json also has explicit targets
 ./dist/skillsmith --help
 ```
 
@@ -75,9 +76,19 @@ skillsmith agents --format json         # machine-readable (see envelope note ab
 skillsmith agents --detected-only       # skip the "Not detected" section
 skillsmith agents --tool claude-code    # scan one tool only (repeatable)
 skillsmith list                         # inspect installed skills
-skillsmith doctor                       # diagnose environment readiness
+skillsmith config list                  # show effective configuration and source layers
+skillsmith check --report-only          # report CI checks without failing on findings
+skillsmith verify . --static            # statically verify a plugin or bare skill directory
 skillsmith install owner/repo           # acquire a skill from a git host
+skillsmith uninstall my-skill --tool claude-code --user --dry-run
+skillsmith dev my-skill --tool claude-code --dry-run
+skillsmith promote my-skill --tool claude-code --dry-run
+skillsmith completion bash              # emit a Bash completion script
 ```
+
+`check` fails on error findings by default; use `--report-only` when only the report should be
+produced. The inherited `-C <dir>` flag changes the effective working directory, and
+`--config <file>` selects an explicit configuration file.
 
 ## Supported tools
 
@@ -88,7 +99,14 @@ skillsmith install owner/repo           # acquire a skill from a git host
 | `kilo-code`    | `kilo`        | PATH lookup → `--version` → classify install path |
 | `opencode`     | `opencode`    | PATH lookup → `--version` → classify install path |
 
-The install-method classifier recognizes `brew`, `npm-global`, `bun-global`, `standalone`, and falls back to `unknown`. Each tool owns a separate directory under [`packages/core/src/agents/`](packages/core/src/agents/) so any one can diverge from the shared detection pipeline without touching the others.
+The install-method classifier recognizes `brew`, `npm-global`, `bun-global`, `native-installer`,
+and `app-bundle`, and falls back to `unknown`. Each tool owns a separate directory under
+[`packages/core/src/agents/`](packages/core/src/agents/) so any one can diverge from the shared
+detection pipeline without touching the others.
+
+Detection, inventory, `doctor`, and `check` support Claude Code, Codex, Kilo Code, and opencode.
+`verify` supports Claude Code and Codex. Write and mutation commands support Claude Code and Codex;
+Kilo Code is read-only/detection today, and opencode is read-only/detection today.
 
 Missing a tool? Open an issue with a `skillsmith agents --format json` dump and the OS / install method you used.
 
@@ -104,22 +122,18 @@ This repo is a Bun workspace with two packages:
 
 | Package | What it is | On npm? |
 |---|---|---|
-| `@skillsmith/core` | Embeddable library: agent registry, `Result<T, SkillSmithError>` types, and domain/application operations behind injected capability ports; zero CLI dependencies. | Yes |
+| `@skillsmith/core` | Embeddable library: agent registry, `Result<T, SkillSmithError>` types, and domain/application operations behind injected capability ports; zero CLI dependencies. | Workspace only; not published |
 | `skillsmith` | The CLI: `commander` entry, output rendering, help topics. Depends on `@skillsmith/core`. | Build from source (for now) |
 
 ### Using `@skillsmith/core` as a library
 
-If you're building your own tool and want the detection pipeline without the CLI:
-
-```sh
-bun add @skillsmith/core    # or: npm i @skillsmith/core
-```
+The workspace package exposes the detection pipeline to other packages in this repository:
 
 ```ts
 import { registry, defaultScanEnv } from '@skillsmith/core';
 import type { InstallRecord } from '@skillsmith/core';
 
-const env = defaultScanEnv();
+const env = await defaultScanEnv();
 const result = await registry['claude-code'].detect(env);
 if (result.ok) {
   const installs: InstallRecord[] = result.value;

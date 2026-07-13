@@ -217,7 +217,7 @@
       "target": "core-domain-logic-uses-injected-capability-ports-with-no-direct-cli-output-or-process-policy",
       "downstreamOwner": "P17-G0-04",
       "evidencePointers": [
-        { "path": "docs/architecture.md", "line": 34, "contains": "no I/O side effects" }
+        { "path": "docs/architecture.md", "line": 46, "contains": "no I/O side effects" }
       ]
     },
     {

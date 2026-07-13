@@ -6,6 +6,7 @@ import {
 } from '@skillsmith/core';
 import { Command, Option } from 'commander';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
+import { renderConfigNotices } from '../util/config-notice.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { runConfigGet } from './config/get.ts';
 import { runConfigList } from './config/list.ts';
@@ -64,14 +65,23 @@ export const configCommand = (): Command => {
       const env = await defaultScanEnv();
       const context = await resolveCommandProjectContext(command, env);
       if (!context.ok) writeConfigError(context.error, opts.json);
+      let effectiveConfig: Awaited<ReturnType<typeof resolveEffectiveConfig>> | undefined;
       const r = await runConfigGet({
         env,
         key,
         ...(opts.scope ? { scope: opts.scope } : {}),
         json: opts.json,
-        loadConfig: (scanEnv) => resolveEffectiveConfig(scanEnv, context.value),
+        loadConfig: async (scanEnv) => {
+          effectiveConfig = await resolveEffectiveConfig(scanEnv, context.value);
+          return effectiveConfig;
+        },
       });
       if (!r.ok) writeConfigError(r.error, opts.json);
+      if (effectiveConfig?.ok) {
+        process.stderr.write(
+          renderConfigNotices(effectiveConfig.value, opts.json ? 'json' : 'human'),
+        );
+      }
       if (opts.json) {
         process.stdout.write(
           `${JSON.stringify({ key, value: r.value, ...(r.source ? { source: r.source } : {}) }, null, 2)}\n`,
@@ -109,13 +119,22 @@ export const configCommand = (): Command => {
       const env = await defaultScanEnv();
       const context = await resolveCommandProjectContext(command, env);
       if (!context.ok) writeConfigError(context.error, opts.json);
+      let effectiveConfig: Awaited<ReturnType<typeof resolveEffectiveConfig>> | undefined;
       const r = await runConfigList({
         env,
         ...(opts.scope ? { scope: opts.scope } : {}),
         json: opts.json,
-        loadConfig: (scanEnv) => resolveEffectiveConfig(scanEnv, context.value),
+        loadConfig: async (scanEnv) => {
+          effectiveConfig = await resolveEffectiveConfig(scanEnv, context.value);
+          return effectiveConfig;
+        },
       });
       if (!r.ok) writeConfigError(r.error, opts.json);
+      if (effectiveConfig?.ok) {
+        process.stderr.write(
+          renderConfigNotices(effectiveConfig.value, opts.json ? 'json' : 'human'),
+        );
+      }
       process.stdout.write(r.output);
     });
 

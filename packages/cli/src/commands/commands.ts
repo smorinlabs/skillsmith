@@ -10,6 +10,7 @@ import { Command, Option } from 'commander';
 import { renderCommandsHuman } from '../output/commands-human.ts';
 import { renderCommandsJson } from '../output/commands-json.ts';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
+import { renderConfigNotices } from '../util/config-notice.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 import { CLI_SELECTION_POLICIES, validateCliSelection } from './selection-validation.ts';
@@ -115,6 +116,7 @@ export const commandsCommand = (): Command =>
           if (!r.ok) {
             return failCliError(r.error, opts.json ? 'json' : 'human');
           }
+          process.stderr.write(renderConfigNotices(config.value, opts.json ? 'json' : 'human'));
           process.stdout.write(
             opts.json
               ? renderCommandsJson(r.value)

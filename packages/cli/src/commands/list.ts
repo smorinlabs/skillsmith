@@ -11,6 +11,7 @@ import { Command, Option } from 'commander';
 import { failCliError, withCliErrorBoundary } from '../output/error-boundary.ts';
 import { renderListHuman } from '../output/list-human.ts';
 import { renderListJson } from '../output/list-json.ts';
+import { renderConfigNotices } from '../util/config-notice.ts';
 import { resolveCommandProjectContext } from '../util/project-context.ts';
 import { resolveScopeFlags } from '../util/scope-resolver.ts';
 import { CLI_SELECTION_POLICIES, validateCliSelection } from './selection-validation.ts';
@@ -122,6 +123,7 @@ export const listCommand = (): Command =>
           if (!r.ok) {
             return failCliError(r.error, opts.json ? 'json' : 'human');
           }
+          process.stderr.write(renderConfigNotices(config.value, opts.json ? 'json' : 'human'));
           process.stdout.write(
             opts.json ? renderListJson(r.value) : renderListHuman(r.value, { long: opts.long }),
           );

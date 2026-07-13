@@ -31,12 +31,19 @@ const ORDER = [
   'cli',
 ] as const satisfies readonly ConfigLayer[];
 
+interface LoadedLayer {
+  readonly config: Config;
+  readonly exactLegacy: boolean;
+}
+
 const loadLayer = async (
   env: ScanEnv,
   path: string | null,
   readFile: (path: string) => Promise<string>,
-): Promise<Result<Config, SkillSmithError>> => {
-  if (path === null || !(await env.fileExists(path))) return ok({});
+): Promise<Result<LoadedLayer, SkillSmithError>> => {
+  if (path === null || !(await env.fileExists(path))) {
+    return ok({ config: {}, exactLegacy: false });
+  }
   let source: string;
   try {
     source = await readFile(path);
@@ -47,7 +54,10 @@ const loadLayer = async (
   if (!parsed.ok) {
     return parsed.error.code === 'config-error' ? err({ ...parsed.error, file: path }) : parsed;
   }
-  return parsed;
+  return ok({
+    config: parsed.value,
+    exactLegacy: Object.keys(parsed.value).length > 0,
+  });
 };
 
 export const resolveEffectiveConfig = async (
@@ -75,10 +85,10 @@ export const resolveEffectiveConfig = async (
 
   const layers: Record<ConfigLayer, Config> = {
     defaults: {},
-    system: system.value,
-    user: user.value,
-    project: project.value,
-    'explicit-file': explicitFile.value,
+    system: system.value.config,
+    user: user.value.config,
+    project: project.value.config,
+    'explicit-file': explicitFile.value.config,
     env: configFromEnv(options.envVars ?? process.env),
     cli: options.cli ?? {},
   };
@@ -96,5 +106,23 @@ export const resolveEffectiveConfig = async (
     }
   }
 
-  return ok({ value, sources, layers, paths });
+  const projectPath = paths.project;
+  const notices =
+    project.value.exactLegacy && projectPath
+      ? [
+          {
+            code: 'legacy-project-config' as const,
+            path: projectPath,
+            migrationPending: true as const,
+            migrationPhase: 2 as const,
+          },
+        ]
+      : [];
+  return ok({
+    value,
+    sources,
+    layers,
+    paths,
+    ...(notices.length > 0 ? { notices } : {}),
+  });
 };

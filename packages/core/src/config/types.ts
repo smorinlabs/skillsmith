@@ -26,9 +26,17 @@ export const CONFIG_KEYS = ['tool', 'scope', 'path', 'registry.default'] as cons
 
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
+export interface ConfigNotice {
+  readonly code: 'legacy-project-config';
+  readonly path: string;
+  readonly migrationPending: true;
+  readonly migrationPhase: 2;
+}
+
 export interface EffectiveConfig {
   value: Config;
   sources: Partial<Record<ConfigKey, ConfigLayer>>;
   layers: Record<ConfigLayer, Config>;
   paths: Partial<Record<ConfigFileLayer, string>>;
+  notices?: readonly ConfigNotice[];
 }

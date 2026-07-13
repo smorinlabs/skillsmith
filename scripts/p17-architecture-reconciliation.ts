@@ -183,7 +183,7 @@ const DRIFT: Record<string, JsonObject> = {
     target:
       'core-domain-logic-uses-injected-capability-ports-with-no-direct-cli-output-or-process-policy',
     downstreamOwner: 'P17-G0-04',
-    evidencePointers: [{ path: 'docs/architecture.md', line: 34, contains: 'no I/O side effects' }],
+    evidencePointers: [{ path: 'docs/architecture.md', line: 46, contains: 'no I/O side effects' }],
   },
   'EWP-CF-033': {
     classification: 'following-bad-precedent',

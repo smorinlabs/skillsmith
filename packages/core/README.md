@@ -10,6 +10,8 @@ This package is part of the `skillsmith` workspace and is consumed via `"@skills
 
 ## Public API
 
+Representative imports from the current public entry point include:
+
 ```ts
 import {
   // Agent registry
@@ -53,7 +55,9 @@ import type {
 
 ## Design rules
 
-`@skillsmith/core` is a **pure library**. The following are lint-time errors:
+`@skillsmith/core` is an **embeddable, non-interactive library**. Its real default adapters perform
+filesystem and process I/O, while domain operations accept injected capabilities. The following are
+lint-time errors:
 
 - Importing `commander`, `chalk`, `consola`, `@clack/prompts`, or `node:console`.
 - Calling `process.exit(...)` or `console.{log,info,warn,error,debug}(...)`.

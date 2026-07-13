@@ -10,23 +10,35 @@ Skillsmith is a Bun workspace with two packages:
 
 ```
 packages/
-  core/          @skillsmith/core — pure library
+  core/          @skillsmith/core — embeddable, non-interactive library
     src/
+      acquire/       install/uninstall orchestration
       agents/        per-tool adapters (claude-code, codex, kilo-code, opencode) + registry
+      commands/      installed slash-command domain types
+      config/        config discovery, parsing, precedence, and persistence
+      context/       project-context resolution
       detect/        path scanners, install-method classification, detect-types
+      doctor/        diagnostic checks and execution
       env/           ScanEnv, platform/XDG resolution, logger, subprocess exec
+      place/         dev/promote placement transactions
       scan/          orchestrator: detectAll / detectTool
+      selection/     shared tool/scope/target validation
+      skills/        installed-skill parsing and domain types
+      verify/        static/deep verification orchestration
       errors.ts      SkillSmithError tagged union
       result.ts      Result<T, E> helpers (ok/err/isOk/isErr/map/mapErr)
       public-types.ts  single module re-exported by index.ts
       index.ts       public API surface
   cli/           skillsmith — the CLI
     src/
-      commands/      one file per command (currently: agents)
+      commands/      current inventory, diagnostics, config, verify, and lifecycle handlers
+      completion/    shell completion renderers
+      contracts/     reviewed command/option surface snapshots
       output/        pure renderers (markdown, JSON with zod schema)
       help/          topic-based help text
       util/          color-mode resolver, exit-code mapping, SIGINT handler
-      index.ts       commander entry; wires commands to core
+      program.ts     Commander registration and global policy
+      index.ts       process entry, signal handling, and final exit mapping
 ```
 
 ## Core / CLI split
@@ -68,9 +80,16 @@ This means:
 
 Details and alternatives considered: [ADR 0002](adr/0002-result-type.md).
 
-## `ScanEnv` — explicit environment, no globals
+## `ScanEnv` — explicit capabilities and real adapters
 
-Core functions never read `process.env`, `os.homedir()`, or `process.platform` directly. They take a `ScanEnv` argument:
+Domain operations receive filesystem and process capabilities through `ScanEnv`, which keeps those
+operations deterministic under tests. The production `defaultScanEnv()` adapter intentionally reads
+the host environment, home directory, platform, and XDG locations and supplies real filesystem,
+locking, and subprocess implementations. Config composition likewise reads environment variables at
+its production boundary.
+
+The interface includes both read and write capabilities; this excerpt shows its shape rather than an
+exhaustive declaration (the source of truth is `packages/core/src/env/types.ts`):
 
 ```ts
 interface ScanEnv {
@@ -80,11 +99,15 @@ interface ScanEnv {
   path: readonly string[];            // PATH split with platform delimiter
   fileExists(p: string): Promise<boolean>;
   realpath(p: string): Promise<string>;
+  listDir(p: string): Promise<readonly string[]>;
+  readText(p: string): Promise<string>;
   runVersion(
     binaryPath: string,
     args: readonly string[],
     signal?: AbortSignal,
   ): Promise<string | 'unknown'>;
+  exec(cmd: string, args: readonly string[], opts?: ExecOptions): Promise<ExecResult>;
+  // Additional byte, path-kind, write, rename, lock, and timestamp capabilities.
 }
 ```
 
@@ -116,7 +139,7 @@ An `Agent` is the core abstraction for "an AI coding tool that Skillsmith knows 
            ▼
 ┌────────────────────────┐
 │  scanners (detect/)    │   findOnPath, classifyInstallMethod (brew,
-│                        │     npm-global, bun-global, standalone, …)
+│                        │     npm-global, bun-global, native-installer, …)
 └────────────────────────┘
 ```
 
@@ -139,11 +162,15 @@ If you find yourself fighting these rules, that's usually a signal to move code,
 
 ## Runtime flow (the `agents` command)
 
-1. `cli/src/index.ts` — commander parses `skillsmith agents [opts]`, installs the SIGINT handler, calls the command handler.
-2. `cli/src/commands/agents.ts` — builds a `ScanEnv` via `defaultScanEnv()`, resolves the tool filter, calls `detectAll(env, { tools, signal })`.
-3. `core/src/scan/` — orchestrator iterates `listSupportedTools()` (or the filter), delegates to each `Agent.detect(env)`.
-4. Each agent — runs platform-specific scanners (well-known bin dirs, `runVersion`), returns `Result<InstallRecord[], SkillSmithError>`.
-5. Back in the CLI — `output/agents-markdown.ts` or `output/agents-json.ts` renders the inventory; `util/exit-codes.ts` maps any error codes to exit codes.
+1. `cli/src/index.ts` installs the SIGINT handler, builds the program, and asks Commander to parse
+   `skillsmith agents [opts]`.
+2. `cli/src/program.ts` validates CLI selection, builds a `ScanEnv` with `defaultScanEnv()`, and
+   passes it to `runAgents`.
+3. `cli/src/commands/agents.ts` validates the programmatic input and calls
+   `detectAll(env, { tools, signal })`.
+4. `core/src/scan/` — orchestrator iterates `listSupportedTools()` (or the filter), delegates to each `Agent.detect(env)`.
+5. Each agent — runs platform-specific scanners (well-known bin dirs, `runVersion`), returns `Result<InstallRecord[], SkillSmithError>`.
+6. Back in the CLI — `output/agents-markdown.ts` or `output/agents-json.ts` renders the inventory; `util/exit-codes.ts` maps any error codes to exit codes.
 
 ## Where things live
 
