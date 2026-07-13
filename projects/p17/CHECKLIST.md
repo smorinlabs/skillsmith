@@ -11,9 +11,9 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 6 | 22 | 6 |
-| phase-task | 65 | 18 | 47 | 0 |
-| phase-test | 61 | 14 | 47 | 0 |
+| recommendation | 34 | 7 | 21 | 6 |
+| phase-task | 65 | 20 | 45 | 0 |
+| phase-test | 61 | 15 | 46 | 0 |
 | command-test | 157 | 5 | 152 | 0 |
 | option-gate | 10 | 4 | 6 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
@@ -26,7 +26,7 @@ Tracked entities: **425** across **45** change groups.
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
-| 1 | 9 | 62 | 33 | 0 |
+| 1 | 9 | 62 | 37 | 0 |
 | 2 | 5 | 33 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
@@ -136,7 +136,7 @@ Tracked entities: **425** across **45** change groups.
 | P0-02 | P17-G1-01 | signed-off | required-pr |
 | P0-03 | P17-G1-01 | signed-off | required-pr |
 | P0-04 | P17-G1-02B | signed-off | required-pr |
-| P0-05 | P17-G1-02C | planned | required-pr |
+| P0-05 | P17-G1-02C | signed-off | required-pr |
 | P0-06 | P17-G1-02A | signed-off | required-pr |
 | P0-07 | P17-G2-05 | planned | required-pr |
 | P0-08 | P17-G2-05 | planned | required-pr |
@@ -511,7 +511,7 @@ Downstream coverage obligations: none.
 
 ## P17-G1-02C — Current help/docs migration and legacy project-config warning boundary
 
-Phase: 1; status: **active**; dependencies: P17-G1-01, P17-G1-02A.
+Phase: 1; status: **signed-off**; dependencies: P17-G1-01, P17-G1-02A.
 Required-now validations: EWP-P1-TS05.
 Downstream coverage obligations: none.
 
@@ -520,20 +520,20 @@ Downstream coverage obligations: none.
 - [x] P17-G1-02C:mapped _(passed)_
 - [x] P17-G1-02C:ready _(passed)_
 - [x] P17-G1-02C:test-first _(passed)_
-- [ ] P17-G1-02C:minimal-implementation _(pending)_
-- [ ] P17-G1-02C:targeted-green _(pending)_
-- [ ] P17-G1-02C:impacted-green _(pending)_
-- [ ] P17-G1-02C:refactor _(pending)_
-- [ ] P17-G1-02C:adversarial-review _(pending)_
-- [ ] P17-G1-02C:traceability-closure _(pending)_
-- [ ] P17-G1-02C:signed-off _(pending)_
+- [x] P17-G1-02C:minimal-implementation _(passed)_
+- [x] P17-G1-02C:targeted-green _(passed)_
+- [x] P17-G1-02C:impacted-green _(passed)_
+- [x] P17-G1-02C:refactor _(passed)_
+- [x] P17-G1-02C:adversarial-review _(passed)_
+- [x] P17-G1-02C:traceability-closure _(passed)_
+- [x] P17-G1-02C:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-P1-T06** — Current help/README/package docs and all code-adjacent command references updated _(phase-task; planned)_
-- [ ] **EWP-P1-T07** — Preserve legacy project-config reads and emit the Phase 2 migration warning; _(phase-task; planned)_
-- [ ] **EWP-P1-TS05** — Live help/docs declaration gate. _(phase-test; failing)_
-- [ ] **P0-05** — Current docs and help _(recommendation; planned)_
+- [x] **EWP-P1-T06** — Current help/README/package docs and all code-adjacent command references updated _(phase-task; signed-off)_
+- [x] **EWP-P1-T07** — Preserve legacy project-config reads and emit the Phase 2 migration warning; _(phase-task; signed-off)_
+- [x] **EWP-P1-TS05** — Live help/docs declaration gate. _(phase-test; signed-off)_
+- [x] **P0-05** — Current docs and help _(recommendation; signed-off)_
 
 ## P17-G1-03 — Declarative command specifications, shared CLI runtime, and application-service boundary
 
