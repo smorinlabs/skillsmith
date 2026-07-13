@@ -709,7 +709,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD
 
 ## P17-G2-02 — Portable lock schema, semantic hashes, canonicalization, and manifest relationship
 
-Phase: 2; status: **ready**; dependencies: P17-G2-01.
+Phase: 2; status: **active**; dependencies: P17-G2-01.
 Required-now validations: EWP-P2-TS01, EWP-P2-TS03.
 Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS09, EWP-CMD-UPDATE-TS10, EWP-P2-TS04, EWP-P4B-TS03, EWP-WF03, EWP-WF07, EWP-WF09.
 
@@ -717,7 +717,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 
 - [x] P17-G2-02:mapped _(passed)_
 - [x] P17-G2-02:ready _(passed)_
-- [ ] P17-G2-02:test-first _(pending)_
+- [x] P17-G2-02:test-first _(passed)_
 - [ ] P17-G2-02:minimal-implementation _(pending)_
 - [ ] P17-G2-02:targeted-green _(pending)_
 - [ ] P17-G2-02:impacted-green _(pending)_
@@ -731,7 +731,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 - [ ] **D-004** — Separate portable lockfile _(decision; planned)_
 - [ ] **EWP-CF-027** — Define versioned hash domains and canonical inputs _(finding; planned)_
 - [ ] **EWP-P2-T03** — Implement the portable lock schema, semantic hash/canonicalization rules, and _(phase-task; planned)_
-- [ ] **EWP-P2-TS03** — Lock determinism, hash schema/domain golden vectors, exact canonical-byte _(phase-test; planned)_
+- [ ] **EWP-P2-TS03** — Lock determinism, hash schema/domain golden vectors, exact canonical-byte _(phase-test; failing)_
 
 ## P17-G2-03 — Lossless human-file editing, atomicity, portability, and secret-redaction boundary
 
