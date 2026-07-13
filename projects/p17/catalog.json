@@ -2669,7 +2669,7 @@
       "phase": "2",
       "title": "Portable lock schema, semantic hashes, canonicalization, and manifest relationship",
       "dependsOn": ["P17-G2-01"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -2764,12 +2764,12 @@
           "evidence": ["projects/p17/evidence/P17-G2-02.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-02.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-02.md#traceability-and-sign-off"]
         }
       },
       "evidence": [
@@ -2780,7 +2780,8 @@
         "projects/p17/evidence/P17-G2-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G2-02.md#refactor-review",
-        "projects/p17/evidence/P17-G2-02.md#adversarial-review"
+        "projects/p17/evidence/P17-G2-02.md#adversarial-review",
+        "projects/p17/evidence/P17-G2-02.md#traceability-and-sign-off"
       ]
     },
     {
@@ -6683,11 +6684,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-02",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G2-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green"],
+      "evidence": ["projects/p17/evidence/P17-G2-02.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P2-TS03"],
@@ -8418,11 +8419,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-02",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G2-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green"],
+      "evidence": ["projects/p17/evidence/P17-G2-02.md#traceability-and-sign-off"],
       "secondaryGroups": [
         "P17-G4B-02",
         "P17-G3B-03",
@@ -16683,11 +16684,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G2-02",
-      "status": "green",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G2-02.md#targeted-and-impacted-green"],
+      "evidence": ["projects/p17/evidence/P17-G2-02.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": ["D-004", "EWP-CF-027"],
       "validatedBy": ["EWP-P2-TS03"],
@@ -16839,7 +16840,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-02:tests/ergonomics/phase/EWP-P2-TS03.test.ts#EWP-P2-TS03",
       "target": {
@@ -16848,7 +16849,7 @@
         "selector": "EWP-P2-TS03",
         "command": "bun test tests/ergonomics/phase/EWP-P2-TS03.test.ts --test-name-pattern EWP-P2-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-02.md#green-execution-receipt-ewp-p2-ts03"],
+      "evidence": ["projects/p17/evidence/P17-G2-02.md#final-green-execution-receipt-ewp-p2-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P2-TS03"],

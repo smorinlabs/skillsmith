@@ -12,14 +12,14 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 8 | 20 | 6 |
-| phase-task | 65 | 27 | 38 | 0 |
-| phase-test | 61 | 22 | 39 | 0 |
+| phase-task | 65 | 28 | 37 | 0 |
+| phase-test | 61 | 23 | 38 | 0 |
 | command-test | 157 | 14 | 143 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
 | command | 23 | 4 | 19 | 0 |
-| finding | 43 | 21 | 22 | 0 |
-| decision | 16 | 1 | 14 | 1 |
+| finding | 43 | 22 | 21 | 0 |
+| decision | 16 | 2 | 13 | 1 |
 
 ### Phases
 
@@ -27,7 +27,7 @@ Tracked entities: **425** across **45** change groups.
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
-| 2 | 5 | 32 | 15 | 0 |
+| 2 | 5 | 32 | 19 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 66 | 0 | 0 |
@@ -197,7 +197,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-024 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-025 | P17-G3B-01 | planned | required-pr |
 | EWP-CF-026 | P17-G3B-02 | planned | required-pr |
-| EWP-CF-027 | P17-G2-02 | validated | required-pr |
+| EWP-CF-027 | P17-G2-02 | signed-off | required-pr |
 | EWP-CF-028 | P17-G3B-03 | planned | required-pr |
 | EWP-CF-029 | P17-G2-05 | planned | required-pr |
 | EWP-CF-030 | P17-G2-03 | planned | required-pr |
@@ -222,7 +222,7 @@ Tracked entities: **425** across **45** change groups.
 | D-001 | P17-G4B-01 | planned | required-pr |
 | D-002 | P17-G4B-02 | planned | required-pr |
 | D-003 | P17-G2-01 | signed-off | required-pr |
-| D-004 | P17-G2-02 | validated | required-pr |
+| D-004 | P17-G2-02 | signed-off | required-pr |
 | D-005 | P17-G4A-02 | planned | required-pr |
 | D-006 | P17-G4A-01 | planned | required-pr |
 | D-007 | P17-G5-01 | planned | required-pr |
@@ -709,7 +709,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD
 
 ## P17-G2-02 — Portable lock schema, semantic hashes, canonicalization, and manifest relationship
 
-Phase: 2; status: **reviewed**; dependencies: P17-G2-01.
+Phase: 2; status: **signed-off**; dependencies: P17-G2-01.
 Required-now validations: EWP-P2-TS01, EWP-P2-TS03.
 Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS09, EWP-CMD-UPDATE-TS10, EWP-P2-TS04, EWP-P4B-TS03, EWP-WF03, EWP-WF07, EWP-WF09.
 
@@ -723,15 +723,15 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 - [x] P17-G2-02:impacted-green _(passed)_
 - [x] P17-G2-02:refactor _(passed)_
 - [x] P17-G2-02:adversarial-review _(passed)_
-- [ ] P17-G2-02:traceability-closure _(pending)_
-- [ ] P17-G2-02:signed-off _(pending)_
+- [x] P17-G2-02:traceability-closure _(passed)_
+- [x] P17-G2-02:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **D-004** — Separate portable lockfile _(decision; validated)_
-- [ ] **EWP-CF-027** — Define versioned hash domains and canonical inputs _(finding; validated)_
-- [ ] **EWP-P2-T03** — Implement the portable lock schema, semantic hash/canonicalization rules, and _(phase-task; green)_
-- [ ] **EWP-P2-TS03** — Lock determinism, hash schema/domain golden vectors, exact canonical-byte _(phase-test; passing)_
+- [x] **D-004** — Separate portable lockfile _(decision; signed-off)_
+- [x] **EWP-CF-027** — Define versioned hash domains and canonical inputs _(finding; signed-off)_
+- [x] **EWP-P2-T03** — Implement the portable lock schema, semantic hash/canonicalization rules, and _(phase-task; signed-off)_
+- [x] **EWP-P2-TS03** — Lock determinism, hash schema/domain golden vectors, exact canonical-byte _(phase-test; signed-off)_
 
 ## P17-G2-03 — Lossless human-file editing, atomicity, portability, and secret-redaction boundary
 
