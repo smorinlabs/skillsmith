@@ -36,7 +36,10 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
   ? true
   : false;
 type IsAny<T> = 0 extends 1 & T ? true : false;
-type WhenAvailable<T, Check> = IsAny<T> extends true ? true : Check extends true ? true : false;
+// A public contract exported as `any` is not an implementation. Missing imports are also treated
+// as `any` by TypeScript after TS2305, so these checks intentionally reinforce the named-export
+// red until each authority has a closed shape.
+type WhenAvailable<T, Check> = IsAny<T> extends true ? false : Check extends true ? true : false;
 
 type _RetryTuple = Assert<
   Equal<typeof ARTIFACT_LOCK_RETRY_DELAYS_MS, readonly [0, 100, 200, 400, 800, 800]>
