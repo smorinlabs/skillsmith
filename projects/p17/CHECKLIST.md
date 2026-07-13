@@ -12,13 +12,13 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 8 | 20 | 6 |
-| phase-task | 65 | 24 | 41 | 0 |
-| phase-test | 61 | 19 | 42 | 0 |
+| phase-task | 65 | 25 | 40 | 0 |
+| phase-test | 61 | 20 | 41 | 0 |
 | command-test | 157 | 9 | 148 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
 | command | 23 | 3 | 20 | 0 |
-| finding | 43 | 16 | 27 | 0 |
+| finding | 43 | 17 | 26 | 0 |
 | decision | 16 | 0 | 15 | 1 |
 
 ### Phases
@@ -26,7 +26,7 @@ Tracked entities: **425** across **45** change groups.
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
-| 1 | 9 | 62 | 59 | 0 |
+| 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 33 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
@@ -208,7 +208,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-035 | P17-G3B-04 | planned | required-pr |
 | EWP-CF-036 | P17-G1-05 | signed-off | required-pr |
 | EWP-CF-037 | P17-G1-06 | signed-off | required-pr |
-| EWP-CF-038 | P17-G1-07 | planned | required-pr |
+| EWP-CF-038 | P17-G1-07 | signed-off | required-pr |
 | EWP-CF-039 | P17-G0-05 | signed-off | required-pr |
 | EWP-CF-040 | P17-G2-01 | planned | required-pr |
 | EWP-CF-041 | P17-G4A-03 | planned | required-pr |
@@ -647,7 +647,7 @@ Downstream coverage obligations: EWP-P2-TS08.
 
 ## P17-G1-07 — Operation-scoped observation, correlation, redaction, and verbosity behavior
 
-Phase: 1; status: **active**; dependencies: P17-G1-03.
+Phase: 1; status: **signed-off**; dependencies: P17-G1-03.
 Required-now validations: EWP-P1-TS11.
 Downstream coverage obligations: EWP-P3B-TS07.
 
@@ -656,19 +656,19 @@ Downstream coverage obligations: EWP-P3B-TS07.
 - [x] P17-G1-07:mapped _(passed)_
 - [x] P17-G1-07:ready _(passed)_
 - [x] P17-G1-07:test-first _(passed)_
-- [ ] P17-G1-07:minimal-implementation _(pending)_
-- [ ] P17-G1-07:targeted-green _(pending)_
-- [ ] P17-G1-07:impacted-green _(pending)_
-- [ ] P17-G1-07:refactor _(pending)_
-- [ ] P17-G1-07:adversarial-review _(pending)_
-- [ ] P17-G1-07:traceability-closure _(pending)_
-- [ ] P17-G1-07:signed-off _(pending)_
+- [x] P17-G1-07:minimal-implementation _(passed)_
+- [x] P17-G1-07:targeted-green _(passed)_
+- [x] P17-G1-07:impacted-green _(passed)_
+- [x] P17-G1-07:refactor _(passed)_
+- [x] P17-G1-07:adversarial-review _(passed)_
+- [x] P17-G1-07:traceability-closure _(passed)_
+- [x] P17-G1-07:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-038** — Add operation-scoped structured observability _(finding; planned)_
-- [ ] **EWP-P1-T13** — Add ADR 0009, immutable OperationContext, the typed ObserverPort event registry, _(phase-task; planned)_
-- [ ] **EWP-P1-TS11** — Event-taxonomy completeness, command/event correlation, fake-clock timing, _(phase-test; failing)_
+- [x] **EWP-CF-038** — Add operation-scoped structured observability _(finding; signed-off)_
+- [x] **EWP-P1-T13** — Add ADR 0009, immutable OperationContext, the typed ObserverPort event registry, _(phase-task; signed-off)_
+- [x] **EWP-P1-TS11** — Event-taxonomy completeness, command/event correlation, fake-clock timing, _(phase-test; signed-off)_
 
 ## P17-G2-01 — Manifest discovery, ownership, unified schema, identity, and artifact-pair selection
 

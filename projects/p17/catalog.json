@@ -2159,7 +2159,7 @@
       "phase": "1",
       "title": "Operation-scoped observation, correlation, redaction, and verbosity behavior",
       "dependsOn": ["P17-G1-03"],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0009-operation-scoped-observation.md",
@@ -2179,6 +2179,7 @@
         "packages/core/src/scan/list-skills.ts",
         "packages/core/src/scan/list-commands.ts",
         "packages/core/src/doctor/types.ts",
+        "packages/core/src/doctor/run.ts",
         "packages/core/src/doctor/checks/cross-scope-duplicate.ts",
         "packages/core/src/verify/run.ts",
         "packages/core/src/verify/types.ts",
@@ -2199,7 +2200,9 @@
         "packages/core/tests/scan/list-skills.test.ts",
         "packages/core/tests/scan/list-commands.test.ts",
         "packages/core/tests/doctor/checks/built-in.test.ts",
+        "packages/core/tests/doctor/run.test.ts",
         "packages/core/tests/application/current-services.test.ts",
+        "packages/core/tests/application/lifecycle-services.test.ts",
         "packages/core/tests/application/read-services.test.ts",
         "packages/core/tests/public-api.test.ts",
         "packages/core/tests/verify/run.test.ts",
@@ -2207,7 +2210,9 @@
         "packages/cli/tests/runtime/diagnostics.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
         "packages/cli/tests/help.test.ts",
+        "packages/cli/tests/commands/agents.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS08.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/fixtures/p1-ts11/public-observation-types.ts",
         "tests/ergonomics/fixtures/p1-ts11/tsconfig.json"
@@ -2220,7 +2225,7 @@
         "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g1_07_final_core_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -2235,32 +2240,32 @@
           "evidence": ["projects/p17/evidence/P17-G1-07.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-07.md#implementation-and-validation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-07.md#implementation-and-validation"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-07.md#implementation-and-validation"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-07.md#implementation-and-validation"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-07.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-07.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-07.md#traceability-and-sign-off"]
         }
       },
       "evidence": []
@@ -8919,11 +8924,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G1-07",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G1-07",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-07.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G3B-06"],
       "implements": [],
       "validatedBy": ["EWP-P1-TS11", "EWP-P3B-TS07"],
@@ -15906,11 +15911,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G1-07",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-07",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-07.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": ["EWP-CF-038"],
       "validatedBy": ["EWP-P1-TS11"],
@@ -16243,7 +16248,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-07",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-07:tests/ergonomics/phase/EWP-P1-TS11.test.ts#EWP-P1-TS11",
       "target": {
@@ -16252,7 +16257,7 @@
         "selector": "EWP-P1-TS11",
         "command": "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11"
       },
-      "evidence": ["projects/p17/evidence/P17-G1-07.md#red-execution-receipt-ewp-p1-ts11"],
+      "evidence": ["projects/p17/evidence/P17-G1-07.md#execution-receipt-ewp-p1-ts11"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS11"],
