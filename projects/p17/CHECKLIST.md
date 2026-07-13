@@ -565,14 +565,14 @@ Downstream coverage obligations: EWP-WF16.
 
 ## P17-G1-04 — Capability-scoped ports, typed configuration, and compatibility facade
 
-Phase: 1; status: **planned**; dependencies: P17-G1-03.
+Phase: 1; status: **ready**; dependencies: P17-G1-03.
 Required-now validations: EWP-P1-TS08, EWP-WF15.
 Downstream coverage obligations: EWP-WF11, EWP-WF16.
 
 ### Group gates
 
-- [ ] P17-G1-04:mapped _(pending)_
-- [ ] P17-G1-04:ready _(pending)_
+- [x] P17-G1-04:mapped _(passed)_
+- [x] P17-G1-04:ready _(passed)_
 - [ ] P17-G1-04:test-first _(pending)_
 - [ ] P17-G1-04:minimal-implementation _(pending)_
 - [ ] P17-G1-04:targeted-green _(pending)_

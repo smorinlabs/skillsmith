@@ -1465,7 +1465,8 @@ Dependency enforcement:
 Capability-scoped effect ports:
 
 - The application composition root may aggregate `PlatformPaths`, `FileReadPort`, `FileWritePort`,
-  `LockPort`, `ProcessPort`, high-level `GitPort`, `ClockPort`, and `IdPort` as `RuntimePorts`.
+  `LockPort`, `ProcessPort`, high-level `GitPort`, `HttpPort`, `ClockPort`, and `IdPort` as
+  `RuntimePorts`.
   Downstream services accept only their required named subsets; read-only services cannot receive
   write, lock, or arbitrary process capabilities.
 - Resolve raw environment variables once in the runtime into typed configuration. Domain services
@@ -1826,7 +1827,7 @@ registry/codecs/observer foundations, current documentation, and all Phase-1 cat
   dependency zones; migrate every current command before new Phase-2+ commands copy old
   command-local orchestration.
 - **EWP-P1-T10:** Add ADR 0005 and capability-scoped PlatformPaths/FileRead/FileWrite/Lock/Process/
-  Git/Clock/Id ports, typed resolved configuration, one real RuntimePorts composition, and a
+  Git/HTTP/Clock/Id ports, typed resolved configuration, one real RuntimePorts composition, and a
   ScanEnv/defaultScanEnv compatibility adapter through 1.x; migrate current domain signatures and
   forbid new aggregate/raw-environment dependencies.
 - **EWP-P1-T11:** Add ADR 0007 and the validated ToolDescriptor plus inventory/verification/
@@ -1853,7 +1854,7 @@ registry/codecs/observer foundations, current documentation, and all Phase-1 cat
   core import, or duplicate error/interaction policy.
 - **EWP-P1-TS08:** Static signature/import gates, compile-time negative read-only capability
   fixtures, compatibility-adapter/focused-fake behavioral parity, one-real-implementation proof,
-  typed-config secret isolation, high-level GitPort use, structured port errors, and deterministic
+  typed-config secret isolation, high-level GitPort/HttpPort use, structured port errors, and deterministic
   clock/ID behavior across plan, transaction, migration, undo, and GC.
 - **EWP-P1-TS09:** Exact four-tool operation matrix, unique ID/version and descriptor/bundle
   validation, derived CLI/completion/config/manifest/help/capability parity, read-only mutation
@@ -4018,13 +4019,17 @@ later findings; a traceability-table summary alone is not sufficient.
 #### EWP-CF-034 — Replace the growing ScanEnv interface with capability-scoped ports
 
 - **Accepted resolution:** Compose PlatformPaths, FileRead, FileWrite, Lock, Process, high-level Git,
-  Clock, and Id ports at the application boundary, but pass each domain service only its named
+  HTTP, Clock, and Id ports at the application boundary, but pass each domain service only its named
   required subset. Read-only services cannot receive write/lock/arbitrary-process capability. Raw
   environment is resolved once into typed configuration; Git domain logic uses GitPort; time,
   randomness, and IDs are injected; adapter errors become domain errors. Keep ScanEnv and
   defaultScanEnv as a deprecated compatibility aggregate through 1.x, backed by the same real
   adapters; forbid new aggregate signatures and removal before 2.0. Add ADR 0005 plus static
   least-capability gates without creating one-method port sprawl or duplicate implementations.
+- **Consistency amendment (2026-07-12):** `HttpPort` is named explicitly because the current
+  doctor network-reach check performs ambient `fetch`. This closes an omitted existing effect under
+  the accepted “all effects injected” rule; it does not add a command, network behavior, or later
+  capability-registry scope.
 - **Saved before/after scenario:** Today a read-only `listSkills(env: ScanEnv)` can rename, remove,
   write, lock, and execute by type, and tests fake unrelated methods. After migration it receives
   FileReadPort plus PlatformPaths only; ledger writes receive FileWrite/Lock/Clock, and update
@@ -4036,7 +4041,7 @@ later findings; a traceability-table summary alone is not sufficient.
   public compatibility types; test fakes and lint/import boundaries.
 - **Validation:** EWP-P1-TS08, EWP-WF11, EWP-WF15, EWP-WF16, ADR 0005, static signature/import
   gates, and compile-time negative fixtures cover no-new-ScanEnv signatures, no raw process.env in
-  domain code, read-only least capability, GitPort ownership, structured errors, compatibility/focus
+  domain code, read-only least capability, GitPort/HttpPort ownership, structured errors, compatibility/focus
   parity, deterministic clocks/IDs, typed-config secret isolation, and one real implementation for
   compatibility and new ports.
 - **Recorded:** 2026-07-11
