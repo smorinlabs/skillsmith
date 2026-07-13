@@ -12,13 +12,13 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 8 | 20 | 6 |
-| phase-task | 65 | 23 | 42 | 0 |
-| phase-test | 61 | 18 | 43 | 0 |
+| phase-task | 65 | 24 | 41 | 0 |
+| phase-test | 61 | 19 | 42 | 0 |
 | command-test | 157 | 9 | 148 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
 | command | 23 | 3 | 20 | 0 |
-| finding | 43 | 15 | 28 | 0 |
+| finding | 43 | 16 | 27 | 0 |
 | decision | 16 | 0 | 15 | 1 |
 
 ### Phases
@@ -26,7 +26,7 @@ Tracked entities: **425** across **45** change groups.
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
-| 1 | 9 | 62 | 56 | 0 |
+| 1 | 9 | 62 | 59 | 0 |
 | 2 | 5 | 33 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
@@ -207,7 +207,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-034 | P17-G1-04 | signed-off | required-pr |
 | EWP-CF-035 | P17-G3B-04 | planned | required-pr |
 | EWP-CF-036 | P17-G1-05 | signed-off | required-pr |
-| EWP-CF-037 | P17-G1-06 | planned | required-pr |
+| EWP-CF-037 | P17-G1-06 | signed-off | required-pr |
 | EWP-CF-038 | P17-G1-07 | planned | required-pr |
 | EWP-CF-039 | P17-G0-05 | signed-off | required-pr |
 | EWP-CF-040 | P17-G2-01 | planned | required-pr |
@@ -622,7 +622,7 @@ Downstream coverage obligations: EWP-CMD-AGENTS-TS03, EWP-P3B-TS06, EWP-WF01, EW
 
 ## P17-G1-06 — Canonical codecs, DTO mappings, and public wire-contract registry
 
-Phase: 1; status: **active**; dependencies: P17-G1-03.
+Phase: 1; status: **signed-off**; dependencies: P17-G1-03.
 Required-now validations: EWP-P1-TS10.
 Downstream coverage obligations: EWP-P2-TS08.
 
@@ -631,19 +631,19 @@ Downstream coverage obligations: EWP-P2-TS08.
 - [x] P17-G1-06:mapped _(passed)_
 - [x] P17-G1-06:ready _(passed)_
 - [x] P17-G1-06:test-first _(passed)_
-- [ ] P17-G1-06:minimal-implementation _(pending)_
-- [ ] P17-G1-06:targeted-green _(pending)_
-- [ ] P17-G1-06:impacted-green _(pending)_
-- [ ] P17-G1-06:refactor _(pending)_
-- [ ] P17-G1-06:adversarial-review _(pending)_
-- [ ] P17-G1-06:traceability-closure _(pending)_
-- [ ] P17-G1-06:signed-off _(pending)_
+- [x] P17-G1-06:minimal-implementation _(passed)_
+- [x] P17-G1-06:targeted-green _(passed)_
+- [x] P17-G1-06:impacted-green _(passed)_
+- [x] P17-G1-06:refactor _(passed)_
+- [x] P17-G1-06:adversarial-review _(passed)_
+- [x] P17-G1-06:traceability-closure _(passed)_
+- [x] P17-G1-06:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-037** — Make codecs the canonical wire-contract authority _(finding; planned)_
-- [ ] **EWP-P1-T12** — Add ADR 0008, the canonical wire-contract registry, explicit domain/DTO mappers, _(phase-task; planned)_
-- [ ] **EWP-P1-TS10** — Current JSON byte-parity goldens, codec-derived DTO type checks, internal-field _(phase-test; failing)_
+- [x] **EWP-CF-037** — Make codecs the canonical wire-contract authority _(finding; signed-off)_
+- [x] **EWP-P1-T12** — Add ADR 0008, the canonical wire-contract registry, explicit domain/DTO mappers, _(phase-task; signed-off)_
+- [x] **EWP-P1-TS10** — Current JSON byte-parity goldens, codec-derived DTO type checks, internal-field _(phase-test; signed-off)_
 
 ## P17-G1-07 — Operation-scoped observation, correlation, redaction, and verbosity behavior
 
