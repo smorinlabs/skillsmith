@@ -99,6 +99,17 @@ export type { Logger } from './env/logger.ts';
 export type { ExecOptions, ExecResult, PathKind, Platform, ScanEnv, XdgDirs } from './env/types.ts';
 export type { SkillSmithError } from './errors.ts';
 export type {
+  ObservationBundle,
+  ObservationEmitter,
+  ObservationSpan,
+  ObservationVerbosity,
+  ObserverEvent,
+  ObserverEventKind,
+  ObserverEventPayloadMap,
+  ObserverPort,
+  OperationContext,
+} from './observation/index.ts';
+export type {
   PortCapability,
   PortError,
   PortErrorCode,

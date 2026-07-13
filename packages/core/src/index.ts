@@ -50,7 +50,19 @@ export {
   unknownToolError,
 } from './errors.ts';
 export { isPortError, portError, PORT_ERROR_CODES } from './ports/errors.ts';
-export { defaultRuntimePorts } from './ports/default.ts';
+export { defaultClockPort, defaultIdPort, defaultRuntimePorts } from './ports/default.ts';
+export {
+  OBSERVATION_EVENT_KINDS,
+  OPERATION_KINDS,
+  createChildOperationContext,
+  createObservationEmitter,
+  createObserverEvent,
+  createOperationContext,
+  nextOperationAttempt,
+  noopObserver,
+  redactObservationValue,
+  withOperationTarget,
+} from './observation/index.ts';
 export type {
   Agent,
   AnyCurrentApplicationService,
@@ -135,6 +147,15 @@ export type {
   ModeStatus,
   MutationSummary,
   NormalizedSeverity,
+  ObservationBundle,
+  ObservationEmitter,
+  ObservationSpan,
+  ObservationVerbosity,
+  ObserverEvent,
+  ObserverEventKind,
+  ObserverEventPayloadMap,
+  ObserverPort,
+  OperationContext,
   Origin,
   PathKind,
   PathAccessPort,

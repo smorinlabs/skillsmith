@@ -203,7 +203,13 @@ export const failCliError = (
  * invoking an exit override, so suppress that raw write and emit the normalized record here.
  */
 export const withCliErrorBoundary = <T extends Command>(command: T): T => {
-  command.configureOutput({ writeErr: () => undefined });
+  command.configureOutput({
+    writeOut: (value) => {
+      const options = command.optsWithGlobals() as { quiet?: boolean };
+      if (options.quiet !== true) process.stdout.write(value);
+    },
+    writeErr: () => undefined,
+  });
   command.exitOverride((error) => {
     if (error.code === 'commander.helpDisplayed' || error.code === 'commander.version') {
       process.exit(0);

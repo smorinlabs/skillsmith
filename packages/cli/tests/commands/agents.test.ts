@@ -2,10 +2,27 @@ import { describe, expect, test } from 'bun:test';
 import {
   type CurrentApplicationContext,
   type ScanEnv,
+  createObservationEmitter,
+  createOperationContext,
+  noopObserver,
   resolveRuntimeConfiguration,
   runAgentsApplication,
 } from '@skillsmith/core';
 import { runtimePorts } from '../../../core/tests/fixtures/runtime-ports.ts';
+
+const observation = Object.freeze({
+  context: createOperationContext({
+    command: 'skillsmith agents',
+    workflow: 'agents',
+    operationId: 'agents-test-operation',
+    clock: {
+      wallNowIso: () => '2026-07-13T00:00:00.000Z',
+      monotonicMilliseconds: () => 0,
+    },
+    id: { nextId: () => 'unused' },
+  }),
+  emitter: createObservationEmitter({ observer: noopObserver }),
+});
 
 const env = (existing: string[]): ScanEnv => ({
   homeDir: '/Users/u',
@@ -35,6 +52,7 @@ const env = (existing: string[]): ScanEnv => ({
 });
 
 const context = (scanEnv: ScanEnv): CurrentApplicationContext => ({
+  observation,
   ports: runtimePorts(scanEnv),
   configuration: resolveRuntimeConfiguration({}),
   interaction: {

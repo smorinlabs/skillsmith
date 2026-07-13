@@ -1,11 +1,24 @@
 import {
   CURRENT_APPLICATION_SERVICES,
+  type ClockPort,
   type CurrentCommandRequest,
+  type IdPort,
   type InteractionPort,
+  type ObservationBundle,
+  type ObservationVerbosity,
+  createObservationEmitter,
+  createOperationContext,
+  defaultClockPort,
+  defaultIdPort,
+  toolRegistry,
 } from '@skillsmith/core';
 import type { Command } from 'commander';
 import { HELP_TOPIC_NAMES } from './help/topics.ts';
-import { withCliErrorBoundary } from './output/error-boundary.ts';
+import {
+  normalizeCliError,
+  renderCliError,
+  withCliErrorBoundary,
+} from './output/error-boundary.ts';
 import {
   type ApplicationRegistry,
   type RendererRegistry,
@@ -18,8 +31,9 @@ import {
 } from './runtime/command-spec.ts';
 import { createCurrentApplicationContext } from './runtime/context.ts';
 import { createCurrentRendererRegistry } from './runtime/current-renderers.ts';
+import { createCliDiagnosticObserver, resolveObservationVerbosity } from './runtime/diagnostics.ts';
 import { type CliRuntimeIo, processRuntimeIo } from './runtime/io.ts';
-import { installRuntimePreflight } from './runtime/preflight.ts';
+import { assertRootRuntimePreflight, installRuntimePreflight } from './runtime/preflight.ts';
 import { CURRENT_COMMAND_SPECS } from './spec/index.ts';
 import type { CommandSpec } from './spec/types.ts';
 
@@ -28,6 +42,10 @@ export interface ProgramBuildExtensions {
   readonly applications?: ApplicationRegistry;
   readonly renderers?: RendererRegistry;
   readonly runtimePorts?: CliRuntimeIo & { readonly interaction?: InteractionPort };
+  readonly operationPorts?: {
+    readonly clock: Pick<ClockPort, 'wallNowIso' | 'monotonicMilliseconds'>;
+    readonly id: Pick<IdPort, 'nextId'>;
+  };
 }
 
 const commandRequest = (values: readonly unknown[]): CurrentCommandRequest => {
@@ -110,6 +128,41 @@ const invocationFromParse = (
   return argv.slice(from === 'electron' ? 1 : 2);
 };
 
+const eagerPresentationOptions = (
+  invocation: readonly string[],
+): Readonly<{ quiet?: true; debug?: true; verbose: number }> => {
+  let quiet = false;
+  let debug = false;
+  let verbose = 0;
+  for (let index = 0; index < invocation.length; index++) {
+    const token = invocation[index];
+    if (token === undefined || token === '--') break;
+    if (token === '--quiet') quiet = true;
+    if (token === '--debug') debug = true;
+    if (token === '--verbose') verbose++;
+    if (VALUE_LONG_OPTIONS.has(token)) {
+      index++;
+      continue;
+    }
+    if (!token.startsWith('-') || token.startsWith('--') || token === '-') continue;
+    const cluster = token.slice(1);
+    for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex++) {
+      const flag = cluster[clusterIndex];
+      if (flag === 'q') quiet = true;
+      if (flag === 'v') verbose++;
+      if (flag !== undefined && VALUE_SHORT_OPTIONS.has(`-${flag}`)) {
+        if (clusterIndex === cluster.length - 1) index++;
+        break;
+      }
+    }
+  }
+  return {
+    ...(quiet ? { quiet: true as const } : {}),
+    ...(debug ? { debug: true as const } : {}),
+    verbose,
+  };
+};
+
 export const buildProgram = (
   signal?: AbortSignal,
   extensions: ProgramBuildExtensions = {},
@@ -117,6 +170,11 @@ export const buildProgram = (
   const rootSpec = CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith');
   if (rootSpec === undefined) throw new Error('CommandSpec registry is missing skillsmith');
   const program = withCliErrorBoundary(createCommandFromSpec(rootSpec));
+  const runtimeIo = extensions.runtimePorts ?? processRuntimeIo;
+  const operationPorts = extensions.operationPorts ?? {
+    clock: defaultClockPort,
+    id: defaultIdPort,
+  };
 
   const runtime = createCliRuntimeAdapter({
     applications: {
@@ -127,29 +185,101 @@ export const buildProgram = (
       ...createCurrentRendererRegistry(program),
       ...extensions.renderers,
     },
-    io: extensions.runtimePorts ?? processRuntimeIo,
+    io: runtimeIo,
   });
+
+  const createObservation = (
+    command: string,
+    workflow: string,
+    verbosity: ObservationVerbosity,
+  ): {
+    readonly observation: ObservationBundle;
+    readonly diagnosticBuffer: { flush(): void; discard(): void };
+  } => {
+    const pendingDiagnostics: string[] = [];
+    let settled = false;
+    const diagnosticBuffer = Object.freeze({
+      flush: (): void => {
+        if (settled) return;
+        settled = true;
+        for (const line of pendingDiagnostics) runtimeIo.stderr.write(line);
+        pendingDiagnostics.length = 0;
+      },
+      discard: (): void => {
+        settled = true;
+        pendingDiagnostics.length = 0;
+      },
+    });
+    const context = createOperationContext({
+      command,
+      workflow,
+      clock: operationPorts.clock,
+      id: operationPorts.id,
+    });
+    const emitter = createObservationEmitter({
+      observer: createCliDiagnosticObserver(
+        {
+          stdout: { write: () => {} },
+          stderr: {
+            write: (value) => {
+              if (!settled) pendingDiagnostics.push(value);
+            },
+          },
+          exit: () => {},
+        },
+        verbosity,
+      ),
+      toolIds: toolRegistry.ids,
+    });
+    return {
+      observation: Object.freeze({ context, emitter }),
+      diagnosticBuffer,
+    };
+  };
+
+  const failBeforeLifecycle = (error: unknown, format: 'human' | 'json'): void => {
+    const normalized = normalizeCliError(error);
+    const rendered = renderCliError(normalized, format);
+    (format === 'json' ? runtimeIo.stdout : runtimeIo.stderr).write(rendered);
+    runtimeIo.exit(normalized.exitCode);
+  };
 
   const actionFactory: CommandActionFactory = (spec, command) => {
     withCliErrorBoundary(command);
     return async (...values: unknown[]) => {
       const request = commandRequest(values);
       const application = request.options.version === true ? 'version' : spec.application;
-      const context = CONTEXT_FREE_APPLICATIONS.has(application)
-        ? {}
-        : await createCurrentApplicationContext(command, {
-            ...(signal === undefined ? {} : { signal }),
-            ...(extensions.runtimePorts?.interaction === undefined
-              ? {}
-              : { interaction: extensions.runtimePorts.interaction }),
-          });
-      await runtime.execute({
-        application,
-        reportKind: application === 'version' ? 'version' : (spec.reportKind ?? application),
-        request,
-        context,
-        format: requestedFormat(request),
-      });
+      const identity =
+        application === 'version'
+          ? { command: 'skillsmith version', workflow: 'version' }
+          : { command: spec.path, workflow: spec.application };
+      const verbosity = resolveObservationVerbosity(request.options);
+      const format = requestedFormat(request);
+      try {
+        const prepared = createObservation(identity.command, identity.workflow, verbosity);
+        const { observation } = prepared;
+        const context = CONTEXT_FREE_APPLICATIONS.has(application)
+          ? Object.freeze({ observation })
+          : await createCurrentApplicationContext(command, {
+              observation,
+              ...(signal === undefined ? {} : { signal }),
+              ...(extensions.runtimePorts?.interaction === undefined
+                ? {}
+                : { interaction: extensions.runtimePorts.interaction }),
+            });
+        await runtime.execute({
+          application,
+          reportKind: application === 'version' ? 'version' : (spec.reportKind ?? application),
+          request,
+          context,
+          observation,
+          format,
+          quiet: verbosity === 'quiet',
+          diagnosticBuffer: prepared.diagnosticBuffer,
+        });
+      } catch (error) {
+        failBeforeLifecycle(error, format);
+      }
     };
   };
 
@@ -167,14 +297,30 @@ export const buildProgram = (
   const parseAsync = program.parseAsync.bind(program);
   program.parseAsync = (async (...args: Parameters<Command['parseAsync']>) => {
     const [argv, options] = args;
-    if (requestsEagerVersion(invocationFromParse(argv, options?.from))) {
-      await runtime.execute({
-        application: 'version',
-        reportKind: 'version',
-        request: { arguments: [], options: { version: true } },
-        context: {},
-        format: 'human',
-      });
+    const invocation = invocationFromParse(argv, options?.from);
+    if (requestsEagerVersion(invocation)) {
+      assertRootRuntimePreflight(invocation);
+      const presentation = eagerPresentationOptions(invocation);
+      const verbosity = resolveObservationVerbosity(presentation);
+      try {
+        const prepared = createObservation('skillsmith version', 'version', verbosity);
+        const { observation } = prepared;
+        await runtime.execute({
+          application: 'version',
+          reportKind: 'version',
+          request: {
+            arguments: [],
+            options: { version: true, ...presentation },
+          },
+          context: Object.freeze({ observation }),
+          observation,
+          format: 'human',
+          quiet: verbosity === 'quiet',
+          diagnosticBuffer: prepared.diagnosticBuffer,
+        });
+      } catch (error) {
+        failBeforeLifecycle(error, 'human');
+      }
       return program;
     }
     return parseAsync(...args);

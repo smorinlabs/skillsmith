@@ -532,7 +532,11 @@ describe('EWP-P1-TS08', () => {
     );
     expect(removed).toEqual(['/state/.fetch/stale']);
 
-    const allow = new Set(['packages/core/src/ports/default.ts']);
+    const allow = new Set([
+      'packages/core/src/ports/default.ts',
+      // Parses an injected wall-clock value to enforce canonical UTC ISO form; it never reads now.
+      'packages/core/src/observation/operation-context.ts',
+    ]);
     const pattern =
       /\bDate\.now\s*\(|\bnew Date\s*\(|\bDate\s*\(|\bperformance\.now\s*\(|\bBun\.nanoseconds\s*\(|\bMath\.random\s*\(|\brandomUUID\b|\brandomBytes\b|\brandomFill\b|\brandomInt\b|\bgetRandomValues\b|\bprocess\.(?:pid|hrtime|uptime)\b|\bTemporal\.Now\b/;
     const findings: string[] = [];

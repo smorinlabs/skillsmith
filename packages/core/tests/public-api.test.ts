@@ -53,6 +53,18 @@ describe('@skillsmith/core public API', () => {
       'defaultInstallDeps',
       'defaultUninstallDeps',
       'parseSource',
+      'defaultClockPort',
+      'defaultIdPort',
+      'OBSERVATION_EVENT_KINDS',
+      'OPERATION_KINDS',
+      'createOperationContext',
+      'createChildOperationContext',
+      'withOperationTarget',
+      'nextOperationAttempt',
+      'createObserverEvent',
+      'createObservationEmitter',
+      'noopObserver',
+      'redactObservationValue',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);

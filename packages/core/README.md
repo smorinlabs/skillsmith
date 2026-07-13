@@ -53,6 +53,11 @@ import type {
 } from '@skillsmith/core';
 ```
 
+Operation-scoped observation uses immutable contexts, a closed typed event registry, failure-isolated
+observers, and bounded recursive redaction. Core emits no diagnostics directly; CLI or embedding
+adapters own presentation, and events are never state or error authority. The exported `Logger`
+surface remains a deprecated compatibility facade for existing 1.x callers.
+
 Versioned wire contracts use dedicated entry points so DTO authority does not mix with domain and
 1.x compatibility exports:
 

@@ -1,3 +1,4 @@
+import { observationFromLegacyLogger } from '../../observation/index.ts';
 import { listSkills } from '../../scan/list-skills.ts';
 import type { Check, Finding } from '../types.ts';
 
@@ -6,13 +7,18 @@ export const crossScopeDuplicate: Check = {
   severity: 'warning',
   runsIn: ['doctor'],
   run: async (ctx) => {
+    const observation =
+      ctx.observation ??
+      (ctx.logger === undefined
+        ? undefined
+        : observationFromLegacyLogger(ctx.logger, 'diagnostics', [...new Set(ctx.tools)]));
     const r = await listSkills(ctx.env, {
       tools: ctx.tools,
       scopes: ctx.scopes,
       duplicatesOnly: true,
       cwd: ctx.cwd,
       configuration: ctx.configuration,
-      logger: ctx.logger,
+      ...(observation === undefined ? {} : { observation }),
     });
     if (!r.ok) return [];
     const byName = new Map<string, string[]>();

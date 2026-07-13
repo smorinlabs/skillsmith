@@ -1,6 +1,7 @@
 import {
   type CurrentApplicationContext,
   type InteractionPort,
+  type ObservationBundle,
   defaultRuntimePorts,
   resolveRuntimeConfiguration,
 } from '@skillsmith/core';
@@ -14,12 +15,13 @@ import {
 export interface RuntimeContextOptions {
   readonly signal?: AbortSignal;
   readonly interaction?: InteractionPort;
+  readonly observation: ObservationBundle;
 }
 
 /** Construct one capability-scoped application context per invocation. */
 export const createCurrentApplicationContext = async (
   command: Command,
-  options: RuntimeContextOptions = {},
+  options: RuntimeContextOptions,
 ): Promise<CurrentApplicationContext> => {
   const globals = command.optsWithGlobals() as {
     cd?: string;
@@ -37,6 +39,7 @@ export const createCurrentApplicationContext = async (
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
   return {
+    observation: options.observation,
     ports: await defaultRuntimePorts(),
     configuration: resolveRuntimeConfiguration(process.env),
     interaction: createPolicyInteraction(policy, options.interaction ?? promptInteraction()),

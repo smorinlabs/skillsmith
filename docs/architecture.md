@@ -139,7 +139,11 @@ The deprecated public `ScanEnv` and `defaultScanEnv()` remain a 1.x compatibilit
 from the same real adapter path. They gain no Git, HTTP, clock, or ID members and are not precedent
 for new domain signatures.
 
-A separate `Logger` interface lives in `env/logger.ts` and is passed through `DetectOptions` (not `ScanEnv`), so callers that don't want logging can omit it entirely.
+Typed operation observation is the production diagnostic path. `OperationContext` supplies stable
+identity and injected timing, while a best-effort registry-bound emitter produces closed frozen
+events without influencing results or state. The CLI owns redaction-aware verbosity and stderr IO.
+The `Logger` interface in `env/logger.ts` remains only as a deprecated 1.x compatibility facade for
+existing scan callers; new domain/application code uses the atomic observation bundle instead.
 
 ## Tool-adapter registry and detection pipeline
 

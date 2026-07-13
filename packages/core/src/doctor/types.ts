@@ -1,6 +1,7 @@
 import type { SupportedTool } from '../agents/types.ts';
 import type { Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
+import type { ObservationBundle } from '../observation/index.ts';
 import type {
   HttpPort,
   InventoryReadPorts,
@@ -39,7 +40,9 @@ export interface CheckRunContext {
   artifactPair?: { readonly file: string; readonly lockfile: string };
   configuration: ResolvedRuntimeConfiguration;
   offline: boolean;
-  logger: Logger;
+  observation?: ObservationBundle;
+  /** @deprecated Use observation. */
+  logger?: Logger;
   signal?: AbortSignal;
 }
 

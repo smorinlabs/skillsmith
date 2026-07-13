@@ -1,4 +1,9 @@
-import type { CommandExitClass, CommandOutcome } from '@skillsmith/core';
+import type {
+  CommandExitClass,
+  CommandOutcome,
+  ObservationBundle,
+  ObservationSpan,
+} from '@skillsmith/core';
 import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
 import type { ExitCode } from '../util/exit-codes.ts';
 import { type CliRuntimeIo, type RenderedCommandOutput, emitCommandOutput } from './io.ts';
@@ -54,7 +59,15 @@ export interface RuntimeExecutionRequest {
   readonly reportKind: string;
   readonly request: unknown;
   readonly context: unknown;
+  readonly observation: ObservationBundle;
   readonly format: RuntimeFormat;
+  /** Presentation-only policy; JSON output is never suppressed. */
+  readonly quiet?: boolean;
+  /** Internal stderr observation buffer, settled before canonical command output. */
+  readonly diagnosticBuffer?: {
+    flush(): void;
+    discard(): void;
+  };
 }
 
 export interface RuntimeExecution {
@@ -162,6 +175,25 @@ const defaultFailureRenderer: RuntimeFailureRenderer = (failure, format) => {
 const renderedOutput = (value: string | RenderedCommandOutput): RenderedCommandOutput =>
   typeof value === 'string' ? { stdout: value } : value;
 
+const outputForRequest = (
+  output: RenderedCommandOutput,
+  request: Pick<RuntimeExecutionRequest, 'format' | 'quiet'>,
+): RenderedCommandOutput =>
+  request.format === 'human' && request.quiet === true
+    ? { ...(output.stderr === undefined ? {} : { stderr: output.stderr }) }
+    : output;
+
+const settleDiagnosticBuffer = (
+  request: RuntimeExecutionRequest,
+  exitClass: RuntimeExitClass,
+): void => {
+  if (request.format === 'json' && exitClass !== 'success' && exitClass !== 'drift') {
+    request.diagnosticBuffer?.discard();
+    return;
+  }
+  request.diagnosticBuffer?.flush();
+};
+
 const unwrapApplicationResult = (
   result: RuntimeApplicationResult,
 ): { readonly outcome: RuntimeOutcome } | { readonly error: unknown } => {
@@ -175,21 +207,85 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
   const classifyFailure = options.classifyFailure ?? defaultFailure;
   const renderFailure = options.renderFailure ?? defaultFailureRenderer;
 
-  const finishFailure = (error: unknown, format: RuntimeFormat): RuntimeExecution => {
-    const failure = classifyFailure(error);
+  const safeClassification = (error: unknown): RuntimeFailure => {
+    try {
+      return classifyFailure(error);
+    } catch (classificationError) {
+      return defaultFailure(classificationError);
+    }
+  };
+
+  const commandOutcome = (exitClass: RuntimeExitClass): 'success' | 'failure' | 'cancelled' => {
+    if (exitClass === 'cancelled') return 'cancelled';
+    return exitClass === 'success' || exitClass === 'drift' ? 'success' : 'failure';
+  };
+
+  const fallbackErrorCode = (exitClass: Exclude<RuntimeExitClass, 'success' | 'drift'>): string =>
+    exitClass === 'failure' ? 'command-failed' : exitClass;
+
+  const outcomeErrorCode = (outcome: RuntimeOutcome): string | null => {
+    if (outcome.exitClass === 'success' || outcome.exitClass === 'drift') return null;
+    const diagnostic = outcome.diagnostics.find((candidate) => candidate.severity === 'error');
+    if (diagnostic !== undefined) {
+      return normalizeCliError(
+        { code: diagnostic.code },
+        {
+          code: fallbackErrorCode(outcome.exitClass),
+          message: 'Command failed',
+        },
+      ).code;
+    }
+    return fallbackErrorCode(outcome.exitClass);
+  };
+
+  const completeCommand = (
+    observation: ObservationBundle | undefined,
+    span: ObservationSpan<'command.started'> | null,
+    exitClass: RuntimeExitClass,
+    errorCode: string | null,
+  ): void => {
+    observation?.emitter.complete(span, {
+      outcome: commandOutcome(exitClass),
+      exitClass,
+      errorCode,
+    });
+  };
+
+  const finishFailure = (
+    error: unknown,
+    request: RuntimeExecutionRequest,
+    commandSpan: ObservationSpan<'command.started'> | null,
+  ): RuntimeExecution => {
+    let failure = safeClassification(error);
+    let output: RenderedCommandOutput;
+    try {
+      output = renderFailure(failure, request.format);
+    } catch (renderError) {
+      failure = safeClassification(renderError);
+      output = defaultFailureRenderer(failure, request.format);
+    }
     const exitCode = exitCodeForClass(failure.exitClass);
-    emitCommandOutput(options.io, renderFailure(failure, format));
+    completeCommand(request.observation, commandSpan, failure.exitClass, failure.code);
+    settleDiagnosticBuffer(request, failure.exitClass);
+    emitCommandOutput(options.io, outputForRequest(output, request));
     options.io.exit(exitCode);
     return { exitCode, failure };
   };
 
   return {
     execute: async (request): Promise<RuntimeExecution> => {
+      // Kept tolerant at runtime for older embedders while the public type requires the bundle.
+      const observation = request.observation as ObservationBundle | undefined;
+      const commandSpan: ObservationSpan<'command.started'> | null =
+        observation?.emitter.begin<'command.started'>(observation.context, {
+          kind: 'command.started',
+        }) ?? null;
       const application = options.applications[request.application];
       if (application === undefined) {
         return finishFailure(
           new Error(`Application service '${request.application}' is not registered`),
-          request.format,
+          request,
+          commandSpan,
         );
       }
 
@@ -198,26 +294,35 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
         const result = await application(request.request, request.context);
         unwrapped = unwrapApplicationResult(result);
       } catch (error) {
-        return finishFailure(error, request.format);
+        return finishFailure(error, request, commandSpan);
       }
 
-      if ('error' in unwrapped) return finishFailure(unwrapped.error, request.format);
+      if ('error' in unwrapped) return finishFailure(unwrapped.error, request, commandSpan);
 
       const renderer = options.renderers[request.reportKind];
       if (renderer === undefined) {
         return finishFailure(
           new Error(`Renderer '${request.reportKind}' is not registered`),
-          request.format,
+          request,
+          commandSpan,
         );
       }
 
+      let output: RenderedCommandOutput;
       try {
-        const output = renderer[request.format](unwrapped.outcome);
-        emitCommandOutput(options.io, renderedOutput(output));
+        output = renderedOutput(renderer[request.format](unwrapped.outcome));
       } catch (error) {
-        return finishFailure(error, request.format);
+        return finishFailure(error, request, commandSpan);
       }
       const exitCode = exitCodeForClass(unwrapped.outcome.exitClass);
+      completeCommand(
+        observation,
+        commandSpan,
+        unwrapped.outcome.exitClass,
+        outcomeErrorCode(unwrapped.outcome),
+      );
+      settleDiagnosticBuffer(request, unwrapped.outcome.exitClass);
+      emitCommandOutput(options.io, outputForRequest(output, request));
       options.io.exit(exitCode);
       return { exitCode, outcome: unwrapped.outcome };
     },

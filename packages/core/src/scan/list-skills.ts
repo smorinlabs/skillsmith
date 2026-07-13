@@ -5,6 +5,7 @@ import { SCOPES, type Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
 import { noopLogger } from '../env/logger.ts';
 import type { SkillSmithError } from '../errors.ts';
+import { type ObservationBundle, observationFromLegacyLogger } from '../observation/index.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
 import type { InventoryReadPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
@@ -20,6 +21,8 @@ export interface ListSkillsOpts {
   enabledFilter?: 'enabled-only' | 'disabled-only' | 'unconfigured-only';
   cwd: string;
   configuration: ResolvedRuntimeConfiguration;
+  observation?: ObservationBundle;
+  /** @deprecated Use observation. */
   logger?: Logger;
   signal?: AbortSignal;
 }
@@ -121,15 +124,43 @@ export const listSkills = async (
   env: InventoryReadPorts,
   opts: ListSkillsOpts,
 ): Promise<Result<SkillEntry[], SkillSmithError>> => {
-  const logger = opts.logger ?? noopLogger;
   const tools = opts.tools ?? (Object.keys(registry) as readonly SupportedTool[]);
+  const observation =
+    opts.observation ??
+    observationFromLegacyLogger(opts.logger ?? noopLogger, 'list-skills', [...new Set(tools)]);
+  const span = observation.emitter.begin(observation.context, {
+    kind: 'operation.started',
+    operationKind: 'inventory',
+  });
   const scopes = opts.scopes ?? SCOPES;
   const ctx = { cwd: opts.cwd, configuration: opts.configuration };
 
-  const standalone = await scanStandalone(env, tools, scopes, ctx);
-  const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
-  if (!discoveredR.ok) return discoveredR;
-  const pluginBundled = await scanPluginBundled(env, tools, discoveredR.value);
+  let standalone: SkillEntry[] = [];
+  let pluginBundled: SkillEntry[] = [];
+  try {
+    standalone = await scanStandalone(env, tools, scopes, ctx);
+    const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
+    if (!discoveredR.ok) {
+      observation.emitter.complete(span, {
+        outcome: 'failure',
+        errorCode: discoveredR.error.code,
+        standaloneCount: standalone.length,
+        bundledCount: 0,
+        resultCount: 0,
+      });
+      return discoveredR;
+    }
+    pluginBundled = await scanPluginBundled(env, tools, discoveredR.value);
+  } catch (error) {
+    observation.emitter.complete(span, {
+      outcome: 'failure',
+      errorCode: 'generic',
+      standaloneCount: standalone.length,
+      bundledCount: pluginBundled.length,
+      resultCount: 0,
+    });
+    throw error;
+  }
 
   let all = [...standalone, ...pluginBundled];
   all = dedupeByRealpath(all);
@@ -144,9 +175,13 @@ export const listSkills = async (
   const scopeSet = new Set(scopes);
   all = all.filter((e) => scopeSet.has(e.scope));
 
-  logger.debug(
-    `listSkills: ${standalone.length} standalone + ${pluginBundled.length} plugin = ${all.length} after filters`,
-  );
+  observation.emitter.complete(span, {
+    outcome: 'success',
+    errorCode: null,
+    standaloneCount: standalone.length,
+    bundledCount: pluginBundled.length,
+    resultCount: all.length,
+  });
 
   return ok(all);
 };

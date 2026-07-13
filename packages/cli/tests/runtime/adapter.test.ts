@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { ObservationBundle } from '@skillsmith/core';
 import {
   type RuntimeExitClass,
   type RuntimeOutcome,
@@ -20,6 +21,12 @@ const successOutcome = (report: unknown = { value: 1 }): RuntimeOutcome => ({
   mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
   deprecations: [],
 });
+
+const silentObservation = (): ObservationBundle =>
+  ({
+    context: {},
+    emitter: { begin: () => null, complete: () => {}, emit: () => {} },
+  }) as unknown as ObservationBundle;
 
 const memoryIo = (): {
   readonly io: CliRuntimeIo;
@@ -79,6 +86,7 @@ describe('shared CLI runtime adapter', () => {
         reportKind: 'fixture',
         request: { selected: true },
         context: { ignored: true },
+        observation: silentObservation(),
         format,
       });
 
@@ -115,6 +123,7 @@ describe('shared CLI runtime adapter', () => {
         reportKind: 'unused',
         request: {},
         context: {},
+        observation: silentObservation(),
         format: 'human',
       });
       expect(result.exitCode).toBe(1);
@@ -131,6 +140,7 @@ describe('shared CLI runtime adapter', () => {
       reportKind: 'missing',
       request: {},
       context: {},
+      observation: silentObservation(),
       format: 'json',
     });
     expect(result.exitCode).toBe(1);
@@ -172,6 +182,7 @@ describe('shared CLI runtime adapter', () => {
       reportKind: 'unused',
       request: {},
       context: {},
+      observation: silentObservation(),
       format: 'human',
     });
     expect(humanResult).toMatchObject({
@@ -203,6 +214,7 @@ describe('shared CLI runtime adapter', () => {
       reportKind: 'unused',
       request: {},
       context: {},
+      observation: silentObservation(),
       format: 'human',
     });
     expect(returnedResult).toMatchObject({
@@ -236,6 +248,7 @@ describe('shared CLI runtime adapter', () => {
       reportKind: 'unused',
       request: {},
       context: {},
+      observation: silentObservation(),
       format: 'json',
     });
     expect(jsonResult).toMatchObject({
@@ -268,6 +281,7 @@ describe('shared CLI runtime adapter', () => {
       reportKind: 'fixture',
       request: {},
       context: {},
+      observation: silentObservation(),
       format: 'human',
     });
     expect(humanResult).toMatchObject({
@@ -300,6 +314,7 @@ describe('shared CLI runtime adapter', () => {
       reportKind: 'fixture',
       request: {},
       context: {},
+      observation: silentObservation(),
       format: 'json',
     });
     expect(jsonResult).toMatchObject({
@@ -336,6 +351,7 @@ describe('shared CLI runtime adapter', () => {
       reportKind: 'fixture',
       request: {},
       context: {},
+      observation: silentObservation(),
       format: 'human',
     });
     expect(result.exitCode).toBe(4);

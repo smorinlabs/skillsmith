@@ -435,7 +435,7 @@ describe('EWP-P1-TS07', () => {
 
     await program.parseAsync(['node', 'skillsmith', '-qCV', 'install', 'source']);
     expect(calls).toEqual(['install']);
-    expect(writes).toEqual(['install-ran\n']);
+    expect(writes).toEqual([]);
   });
 
   test('one fixture spec drives parser, help, completion, docs inventory, and execution', async () => {
@@ -632,7 +632,14 @@ describe('EWP-P1-TS07', () => {
 
     await program.parseAsync(['node', 'skillsmith']);
     expect(calls).toBe(1);
-    expect(receivedContext).toEqual({});
+    expect(record(receivedContext)).toBeTrue();
+    expect(record(receivedContext) ? Object.keys(receivedContext) : []).toEqual(['observation']);
+    const observation = record(receivedContext) ? receivedContext.observation : undefined;
+    expect(record(observation)).toBeTrue();
+    expect(record(observation) ? observation.context : null).toMatchObject({
+      command: 'skillsmith',
+      workflow: 'rootHelp',
+    });
     expect(writes).toEqual({ stdout: ['injected-root-help\n'], stderr: [], exits: [0] });
   });
 

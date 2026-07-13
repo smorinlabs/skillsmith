@@ -26,6 +26,11 @@ import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { EffectiveConfig } from '../../src/config/types.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
+import {
+  createObservationEmitter,
+  createOperationContext,
+  noopObserver,
+} from '../../src/observation/index.ts';
 import { runtimePorts } from '../fixtures/runtime-ports.ts';
 
 const temporaryRoots: string[] = [];
@@ -97,11 +102,28 @@ const interaction: InteractionPort = {
   confirm: async () => ({ status: 'refused', reason: 'not used by read services' }),
 };
 
+const observation = Object.freeze({
+  context: createOperationContext({
+    command: 'skillsmith test',
+    workflow: 'test',
+    clock: {
+      wallNowIso: () => '2026-01-01T00:00:00.000Z',
+      monotonicMilliseconds: () => 0,
+    },
+    id: { nextId: () => 'test-operation' },
+  }),
+  emitter: createObservationEmitter({
+    observer: noopObserver,
+    toolIds: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+  }),
+});
+
 const context = (
   scanEnv = env(),
   config: EffectiveConfig = effectiveConfig(),
   project: ProjectContext = projectContext(),
 ): CurrentApplicationContext => ({
+  observation,
   ports: runtimePorts(scanEnv),
   configuration: resolveRuntimeConfiguration({}),
   interaction,

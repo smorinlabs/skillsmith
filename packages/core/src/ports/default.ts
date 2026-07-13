@@ -24,8 +24,10 @@ import { isPortError, toPortError } from './errors.ts';
 import { type BinaryProcessPort, createGitPort } from './git.ts';
 import { createHttpPort } from './http.ts';
 import type {
+  ClockPort,
   FileReadPort,
   FileWritePort,
+  IdPort,
   LockPort,
   PathAccessPort,
   ProcessPort,
@@ -33,6 +35,21 @@ import type {
 } from './types.ts';
 
 const DEFAULT_VERSION_TIMEOUT_MS = 2_000;
+
+/** Focused real clock authority for zero-discovery command observation. */
+export const defaultClockPort: ClockPort = Object.freeze({
+  wallNowIso: () => new Date().toISOString(),
+  epochMilliseconds: () => Date.now(),
+  monotonicMilliseconds: () => performance.now(),
+});
+
+/** Focused real ID authority for zero-discovery command observation. */
+export const defaultIdPort: IdPort = Object.freeze({
+  nextId: (purpose: string) =>
+    purpose === 'acquisition-transaction' || purpose === 'placement-transaction'
+      ? randomBytes(4).toString('hex')
+      : `${purpose}-${randomBytes(8).toString('hex')}`,
+});
 
 const resolvePlatform = (): Platform => {
   const value = osPlatform();
@@ -324,13 +341,8 @@ export const defaultRuntimePorts = async (): Promise<RuntimePorts> => {
     ...createLockPort(),
     ...createPathAccessPort(),
     ...processPort,
-    wallNowIso: () => new Date().toISOString(),
-    epochMilliseconds: () => Date.now(),
-    monotonicMilliseconds: () => performance.now(),
-    nextId: (purpose) =>
-      purpose === 'acquisition-transaction' || purpose === 'placement-transaction'
-        ? randomBytes(4).toString('hex')
-        : `${purpose}-${randomBytes(8).toString('hex')}`,
+    ...defaultClockPort,
+    ...defaultIdPort,
     git: createGitPort(processPort, binaryProcessPort),
     http: createHttpPort(),
   };

@@ -4,6 +4,15 @@ import { CURRENT_COMMAND_SPECS, validateOptionInvocation } from '../spec/index.t
 import type { ColorFlag } from '../util/color.ts';
 import { applyRuntimeColorMode } from './environment.ts';
 
+/** Validate root-global relations for action hooks and the zero-discovery eager-version path. */
+export const assertRootRuntimePreflight = (invocation: readonly string[]): void => {
+  const relation = validateOptionInvocation('skillsmith', invocation);
+  if (!relation.ok)
+    failCliError(relation.error, cliErrorFormatFromArgv(invocation), {
+      exitCode: 2,
+    });
+};
+
 const commandPath = (command: Command): string => {
   const names: string[] = [];
   for (let current: Command | null = command; current !== null; current = current.parent) {
@@ -47,8 +56,7 @@ export const installRuntimePreflight = (program: Command): void => {
     const rawArgs = (program as Command & { rawArgs?: string[] }).rawArgs ?? [];
     const invocation = rawArgs.slice(2);
     const format = cliErrorFormatFromArgv(invocation);
-    const rootRelation = validateOptionInvocation('skillsmith', invocation);
-    if (!rootRelation.ok) return failCliError(rootRelation.error, format, { exitCode: 2 });
+    assertRootRuntimePreflight(invocation);
 
     const path = commandPath(actionCommand);
     const relation = validateOptionInvocation(path, commandArguments(actionCommand, invocation));

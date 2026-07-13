@@ -12,6 +12,11 @@ import type {
   InteractionPort,
 } from '../../src/application/types.ts';
 import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
+import {
+  createObservationEmitter,
+  createOperationContext,
+  noopObserver,
+} from '../../src/observation/index.ts';
 import type { runRollback } from '../../src/place/run.ts';
 import type { FlipReport } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
@@ -25,9 +30,23 @@ const noninteractive: InteractionPort = {
   confirm: async () => ({ status: 'refused', reason: 'noninteractive' }),
 };
 
+const observation = Object.freeze({
+  context: createOperationContext({
+    command: 'skillsmith test',
+    workflow: 'test',
+    clock: {
+      wallNowIso: () => '2026-01-01T00:00:00.000Z',
+      monotonicMilliseconds: () => 0,
+    },
+    id: { nextId: () => 'test-operation' },
+  }),
+  emitter: createObservationEmitter({ observer: noopObserver }),
+});
+
 const context = (
   overrides: Partial<CurrentApplicationContext> = {},
 ): CurrentApplicationContext => ({
+  observation,
   ports,
   configuration: resolveRuntimeConfiguration({ HOME: '/home/test' }),
   interaction: noninteractive,

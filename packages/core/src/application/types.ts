@@ -1,5 +1,6 @@
 import type { EffectiveConfig } from '../config/types.ts';
 import type { ProjectContext } from '../context/types.ts';
+import type { ObservationBundle } from '../observation/index.ts';
 import type { ResolvedRuntimeConfiguration, RuntimePorts } from '../ports/types.ts';
 
 /** Semantic exit classes. Numeric CLI exit codes remain presentation policy. */
@@ -93,6 +94,7 @@ export interface InteractionPort {
 
 /** Capability-scoped composition context for application services migrated by G1-04. */
 export interface ApplicationContext {
+  readonly observation: ObservationBundle;
   readonly ports: RuntimePorts;
   readonly configuration: ResolvedRuntimeConfiguration;
   readonly interaction: InteractionPort;

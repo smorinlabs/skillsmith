@@ -11,6 +11,7 @@ Records of non-obvious design decisions. Each ADR follows the [Michael Nygard fo
 | [0005](0005-capability-scoped-ports.md) | Capability-scoped ports and one runtime adapter | Accepted |
 | [0007](0007-tool-adapter-registry.md) | Validated tool-adapter registry as capability authority | Accepted |
 | [0008](0008-wire-contract-registry.md) | Versioned wire codecs and an immutable contract registry | Accepted |
+| [0009](0009-operation-scoped-observation.md) | Operation-scoped typed observation | Accepted |
 
 ## When to write an ADR
 

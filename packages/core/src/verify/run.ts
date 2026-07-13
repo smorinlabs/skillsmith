@@ -6,6 +6,7 @@ import {
   genericError,
   invalidArgumentError,
 } from '../errors.ts';
+import type { ObservationBundle } from '../observation/index.ts';
 import { type Result, err, ok } from '../result.ts';
 import { summarize } from './normalize.ts';
 import {
@@ -25,6 +26,7 @@ export interface VerifyOptions<ToolId extends string = VerifyTool> {
   deep?: boolean; // --deep => modes {static, deep}; otherwise {static}
   strict?: boolean;
   signal?: AbortSignal;
+  observation?: ObservationBundle;
 }
 
 export interface ResolvedTarget {
@@ -50,6 +52,43 @@ const isVerifyRegistry = <ToolId extends string, VerificationId extends ToolId>(
   typeof dispatch.toolsFor === 'function';
 
 type TargetRegistry = Pick<ToolRegistry, 'adapters'>;
+
+type VerificationCompletion = {
+  readonly verdict: 'pass' | 'warn' | 'fail' | 'inconclusive' | 'unavailable';
+  readonly errorCode: string | null;
+};
+
+const verificationCompletion = (verdict: ToolVerdict<string>): VerificationCompletion => {
+  if (
+    !verdict.available ||
+    (verdict.modes.length === 0 && verdict.skipReason === 'not-installed')
+  ) {
+    return { verdict: 'unavailable', errorCode: 'not-installed' };
+  }
+  if (verdict.modes.some((mode) => mode.status === 'error' && mode.skipReason === 'timeout')) {
+    return { verdict: 'inconclusive', errorCode: 'timeout' };
+  }
+  if (verdict.modes.some((mode) => mode.status === 'error' && mode.skipReason === 'exec-error')) {
+    return { verdict: 'inconclusive', errorCode: 'exec-error' };
+  }
+  if (
+    verdict.modes.some((mode) => mode.status === 'skipped' && mode.skipReason === 'not-installed')
+  ) {
+    return { verdict: 'unavailable', errorCode: 'not-installed' };
+  }
+  if (verdict.modes.some((mode) => mode.status === 'skipped' && mode.skipReason === 'timeout')) {
+    return { verdict: 'inconclusive', errorCode: 'timeout' };
+  }
+  if (verdict.modes.some((mode) => mode.status === 'skipped' && mode.skipReason === 'exec-error')) {
+    return { verdict: 'inconclusive', errorCode: 'exec-error' };
+  }
+  if (verdict.verdict === 'fail') {
+    return { verdict: 'fail', errorCode: 'verification-failed' };
+  }
+  if (verdict.verdict === 'warn') return { verdict: 'warn', errorCode: null };
+  if (verdict.verdict === 'pass') return { verdict: 'pass', errorCode: null };
+  return { verdict: 'inconclusive', errorCode: 'verification-inconclusive' };
+};
 
 const targetManifestsFor = (registry: TargetRegistry): readonly string[] => [
   ...new Set(registry.adapters.flatMap((adapter) => adapter.verification?.targetManifests ?? [])),
@@ -152,20 +191,47 @@ export async function runVerify(
 
     const toolVerdicts: ToolVerdict<string>[] = [];
     for (const tool of toolSet) {
+      const span =
+        opts.observation?.emitter.begin(opts.observation.context, {
+          kind: 'tool.verification.started',
+          toolId: tool,
+          modes,
+        }) ?? null;
       const checker = isVerifyRegistry(dispatch)
         ? dispatch.get(tool)?.verification?.verify
         : dispatch[tool];
       if (checker === undefined) {
-        return err(genericError(`no registered verifier for '${tool}'`));
+        const missingChecker = genericError(`no registered verifier for '${tool}'`);
+        opts.observation?.emitter.complete(span, {
+          verdict: 'fail',
+          errorCode: missingChecker.code,
+        });
+        return err(missingChecker);
       }
-      const result = await checker(env, {
-        path: resolved.value.path,
-        modes,
-        strict,
-        kind: resolved.value.kind,
-        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-      });
-      if (!result.ok) return result;
+      let result: Awaited<ReturnType<typeof checker>>;
+      try {
+        result = await checker(env, {
+          path: resolved.value.path,
+          modes,
+          strict,
+          kind: resolved.value.kind,
+          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+        });
+      } catch (error) {
+        opts.observation?.emitter.complete(span, {
+          verdict: 'fail',
+          errorCode: 'generic',
+        });
+        throw error;
+      }
+      if (!result.ok) {
+        opts.observation?.emitter.complete(span, {
+          verdict: 'fail',
+          errorCode: result.error.code,
+        });
+        return result;
+      }
+      opts.observation?.emitter.complete(span, verificationCompletion(result.value));
       toolVerdicts.push(result.value);
     }
 

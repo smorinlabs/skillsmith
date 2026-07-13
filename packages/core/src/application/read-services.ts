@@ -19,7 +19,6 @@ import type { ProjectContext } from '../context/types.ts';
 import { builtInChecks } from '../doctor/registry.ts';
 import { focusDoctorPorts, runChecks } from '../doctor/run.ts';
 import type { CheckRunMode, CheckRunResult } from '../doctor/types.ts';
-import { noopLogger } from '../env/logger.ts';
 import type { SkillSmithError } from '../errors.ts';
 import { detectAll } from '../scan/index.ts';
 import { listCommands } from '../scan/list-commands.ts';
@@ -478,6 +477,7 @@ export const runAgentsApplication: ApplicationService<CurrentCommandRequest, Age
   const detected = await detectAll(context.ports, {
     ...(selection.value.tools.length > 0 ? { tools: selection.value.tools } : {}),
     ...(context.signal === undefined ? {} : { signal: context.signal }),
+    observation: context.observation,
   });
   if (!detected.ok) return failed(report(), detected.error);
   return success({ ...report(), detections: detected.value });
@@ -632,6 +632,7 @@ export const runListApplication: ApplicationService<CurrentCommandRequest, ListR
     cwd: project.value.projectRoot ?? project.value.effectiveCwd,
     configuration: context.configuration,
     ...(context.signal === undefined ? {} : { signal: context.signal }),
+    observation: context.observation,
   });
   if (!listed.ok) return failed(empty, listed.error);
   return success(
@@ -673,6 +674,7 @@ export const runCommandsApplication: ApplicationService<
     cwd: project.value.projectRoot ?? project.value.effectiveCwd,
     configuration: context.configuration,
     ...(context.signal === undefined ? {} : { signal: context.signal }),
+    observation: context.observation,
   });
   if (!listed.ok) return failed(empty, listed.error);
   return success(
@@ -733,7 +735,7 @@ const runHealthApplication = async (
     ...(artifacts === null ? {} : { artifactPair: artifacts }),
     configuration: context.configuration,
     offline: mode === 'doctor' && enabled(request, 'offline'),
-    logger: noopLogger,
+    observation: context.observation,
     ...(context.signal === undefined ? {} : { signal: context.signal }),
   });
   if (!checked.ok) {
@@ -819,6 +821,7 @@ export const runVerifyApplication: ApplicationService<
     deep: enabled(request, 'deep'),
     strict: enabled(request, 'strict'),
     ...(context.signal === undefined ? {} : { signal: context.signal }),
+    observation: context.observation,
   });
   if (!verified.ok) {
     if (context.signal?.aborted) {

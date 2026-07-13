@@ -7,6 +7,7 @@ import type { Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
 import { noopLogger } from '../env/logger.ts';
 import type { SkillSmithError } from '../errors.ts';
+import { type ObservationBundle, observationFromLegacyLogger } from '../observation/index.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
 import type { InventoryReadPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
@@ -20,6 +21,8 @@ export interface ListCommandsOpts {
   enabledFilter?: 'enabled-only' | 'disabled-only' | 'unconfigured-only';
   cwd: string;
   configuration: ResolvedRuntimeConfiguration;
+  observation?: ObservationBundle;
+  /** @deprecated Use observation. */
   logger?: Logger;
   signal?: AbortSignal;
 }
@@ -106,19 +109,47 @@ export const listCommands = async (
   env: InventoryReadPorts,
   opts: ListCommandsOpts,
 ): Promise<Result<CommandEntry[], SkillSmithError>> => {
-  const logger = opts.logger ?? noopLogger;
   const tools = opts.tools ?? (Object.keys(registry) as readonly SupportedTool[]);
+  const observation =
+    opts.observation ??
+    observationFromLegacyLogger(opts.logger ?? noopLogger, 'list-commands', [...new Set(tools)]);
+  const span = observation.emitter.begin(observation.context, {
+    kind: 'operation.started',
+    operationKind: 'inventory',
+  });
   const requestedScopes = opts.scopes ?? COMMAND_SCOPES;
   // commands don't exist at system/managed — filter even if caller requested
   const scopes = requestedScopes.filter((s) => s === 'user' || s === 'project');
 
-  const standalone = await scanStandalone(env, tools, scopes, {
-    cwd: opts.cwd,
-    configuration: opts.configuration,
-  });
-  const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
-  if (!discoveredR.ok) return discoveredR;
-  const pluginBundled = await scanPluginBundled(env, tools, discoveredR.value);
+  let standalone: CommandEntry[] = [];
+  let pluginBundled: CommandEntry[] = [];
+  try {
+    standalone = await scanStandalone(env, tools, scopes, {
+      cwd: opts.cwd,
+      configuration: opts.configuration,
+    });
+    const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
+    if (!discoveredR.ok) {
+      observation.emitter.complete(span, {
+        outcome: 'failure',
+        errorCode: discoveredR.error.code,
+        standaloneCount: standalone.length,
+        bundledCount: 0,
+        resultCount: 0,
+      });
+      return discoveredR;
+    }
+    pluginBundled = await scanPluginBundled(env, tools, discoveredR.value);
+  } catch (error) {
+    observation.emitter.complete(span, {
+      outcome: 'failure',
+      errorCode: 'generic',
+      standaloneCount: standalone.length,
+      bundledCount: pluginBundled.length,
+      resultCount: 0,
+    });
+    throw error;
+  }
 
   let all = [...standalone, ...pluginBundled];
   all = dedupeByRealpath(all);
@@ -130,9 +161,13 @@ export const listCommands = async (
   const scopeSet: Set<Scope> = new Set(scopes);
   all = all.filter((e) => scopeSet.has(e.scope));
 
-  logger.debug(
-    `listCommands: ${standalone.length} standalone + ${pluginBundled.length} plugin = ${all.length}`,
-  );
+  observation.emitter.complete(span, {
+    outcome: 'success',
+    errorCode: null,
+    standaloneCount: standalone.length,
+    bundledCount: pluginBundled.length,
+    resultCount: all.length,
+  });
 
   return ok(all);
 };
