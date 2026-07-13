@@ -11,14 +11,14 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 7 | 21 | 6 |
-| phase-task | 65 | 22 | 43 | 0 |
-| phase-test | 61 | 17 | 44 | 0 |
-| command-test | 157 | 5 | 152 | 0 |
+| recommendation | 34 | 8 | 20 | 6 |
+| phase-task | 65 | 23 | 42 | 0 |
+| phase-test | 61 | 18 | 43 | 0 |
+| command-test | 157 | 9 | 148 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
-| command | 23 | 2 | 21 | 0 |
-| finding | 43 | 13 | 30 | 0 |
+| command | 23 | 3 | 20 | 0 |
+| finding | 43 | 15 | 28 | 0 |
 | decision | 16 | 0 | 15 | 1 |
 
 ### Phases
@@ -26,7 +26,7 @@ Tracked entities: **425** across **45** change groups.
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
-| 1 | 9 | 62 | 46 | 0 |
+| 1 | 9 | 62 | 56 | 0 |
 | 2 | 5 | 33 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
@@ -125,7 +125,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:undo | P17-G5-03 | planned | required-pr |
 | COMMAND:uninstall | P17-G4A-01 | planned | required-pr |
 | COMMAND:update | P17-G5-02 | planned | required-pr |
-| COMMAND:verify | P17-G1-05 | validated | required-pr |
+| COMMAND:verify | P17-G1-05 | signed-off | required-pr |
 | COMMAND:version | P17-G1-03 | signed-off | required-pr |
 
 #### recommendation
@@ -157,7 +157,7 @@ Tracked entities: **425** across **45** change groups.
 | P2-03 | P17-G5-04 | planned | required-pr |
 | P2-04 | P17-G6-02B | planned | supported-platform |
 | P2-05 | P17-G6-02A | planned | required-pr |
-| P2-06 | P17-G1-05 | validated | required-pr |
+| P2-06 | P17-G1-05 | signed-off | required-pr |
 | P2-07 | P17-G3B-03 | planned | required-pr |
 | P2-08 | P17-G6-03 | planned | required-pr |
 | P3-01 | P17-G7-01 | deferred | deferred |
@@ -177,7 +177,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-004 | P17-G1-02A | signed-off | required-pr |
 | EWP-CF-005 | P17-G3B-02 | planned | required-pr |
 | EWP-CF-006 | P17-G3B-03 | planned | required-pr |
-| EWP-CF-007 | P17-G1-05 | validated | required-pr |
+| EWP-CF-007 | P17-G1-05 | signed-off | required-pr |
 | EWP-CF-008 | P17-G5-02 | planned | required-pr |
 | EWP-CF-009 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-010 | P17-G0-02 | signed-off | required-pr |
@@ -206,7 +206,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-033 | P17-G1-03 | signed-off | required-pr |
 | EWP-CF-034 | P17-G1-04 | signed-off | required-pr |
 | EWP-CF-035 | P17-G3B-04 | planned | required-pr |
-| EWP-CF-036 | P17-G1-05 | validated | required-pr |
+| EWP-CF-036 | P17-G1-05 | signed-off | required-pr |
 | EWP-CF-037 | P17-G1-06 | planned | required-pr |
 | EWP-CF-038 | P17-G1-07 | planned | required-pr |
 | EWP-CF-039 | P17-G0-05 | signed-off | required-pr |
@@ -590,7 +590,7 @@ Downstream coverage obligations: EWP-WF11, EWP-WF16.
 
 ## P17-G1-05 — Executable tool-adapter/capability registry and current verify behavior
 
-Phase: 1; status: **active**; dependencies: P17-G1-03.
+Phase: 1; status: **signed-off**; dependencies: P17-G1-03.
 Required-now validations: EWP-CMD-VERIFY-TS01, EWP-CMD-VERIFY-TS02, EWP-CMD-VERIFY-TS03, EWP-CMD-VERIFY-TS04, EWP-P1-TS09.
 Downstream coverage obligations: EWP-CMD-AGENTS-TS03, EWP-P3B-TS06, EWP-WF01, EWP-WF05, EWP-WF07.
 
@@ -603,22 +603,22 @@ Downstream coverage obligations: EWP-CMD-AGENTS-TS03, EWP-P3B-TS06, EWP-WF01, EW
 - [x] P17-G1-05:targeted-green _(passed)_
 - [x] P17-G1-05:impacted-green _(passed)_
 - [x] P17-G1-05:refactor _(passed)_
-- [ ] P17-G1-05:adversarial-review _(pending)_
-- [ ] P17-G1-05:traceability-closure _(pending)_
-- [ ] P17-G1-05:signed-off _(pending)_
+- [x] P17-G1-05:adversarial-review _(passed)_
+- [x] P17-G1-05:traceability-closure _(passed)_
+- [x] P17-G1-05:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:verify** — Develop — Is this skill or plugin valid for the selected tools? _(command; validated)_
-- [ ] **EWP-CF-007** — Make support an operation capability, not one boolean _(finding; validated)_
-- [ ] **EWP-CF-036** — Make the tool-adapter registry the executable capability authority _(finding; validated)_
-- [ ] **EWP-CMD-VERIFY-TS01** — plugin/bare-skill/missing/invalid target resolution. _(command-test; passing)_
-- [ ] **EWP-CMD-VERIFY-TS02** — auto/explicit tools, absent tool, and Claude/Codex static-plus-deep _(command-test; passing)_
-- [ ] **EWP-CMD-VERIFY-TS03** — strict severity and 0/1/2/4/130 exits. _(command-test; passing)_
-- [ ] **EWP-CMD-VERIFY-TS04** — JSON/human/global-context and live-version matrix. _(command-test; passing)_
-- [ ] **EWP-P1-T11** — Add ADR 0007 and the validated ToolDescriptor plus inventory/verification/ _(phase-task; green)_
-- [ ] **EWP-P1-TS09** — Exact four-tool operation matrix, unique ID/version and descriptor/bundle _(phase-test; passing)_
-- [ ] **P2-06** — Capability visibility _(recommendation; validated)_
+- [x] **COMMAND:verify** — Develop — Is this skill or plugin valid for the selected tools? _(command; signed-off)_
+- [x] **EWP-CF-007** — Make support an operation capability, not one boolean _(finding; signed-off)_
+- [x] **EWP-CF-036** — Make the tool-adapter registry the executable capability authority _(finding; signed-off)_
+- [x] **EWP-CMD-VERIFY-TS01** — plugin/bare-skill/missing/invalid target resolution. _(command-test; signed-off)_
+- [x] **EWP-CMD-VERIFY-TS02** — auto/explicit tools, absent tool, and Claude/Codex static-plus-deep _(command-test; signed-off)_
+- [x] **EWP-CMD-VERIFY-TS03** — strict severity and 0/1/2/4/130 exits. _(command-test; signed-off)_
+- [x] **EWP-CMD-VERIFY-TS04** — JSON/human/global-context and live-version matrix. _(command-test; signed-off)_
+- [x] **EWP-P1-T11** — Add ADR 0007 and the validated ToolDescriptor plus inventory/verification/ _(phase-task; signed-off)_
+- [x] **EWP-P1-TS09** — Exact four-tool operation matrix, unique ID/version and descriptor/bundle _(phase-test; signed-off)_
+- [x] **P2-06** — Capability visibility _(recommendation; signed-off)_
 
 ## P17-G1-06 — Canonical codecs, DTO mappings, and public wire-contract registry
 
