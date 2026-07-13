@@ -324,7 +324,6 @@ describe('EWP-P1-TS07', () => {
       ['doctor', '--version'],
       ['install', '--version'],
       ['install', '-V'],
-      ['--version', '-qv'],
     ] as const;
     const contexts: unknown[] = [];
     const commandCalls: string[] = [];
@@ -378,7 +377,30 @@ describe('EWP-P1-TS07', () => {
     }
 
     expect(commandCalls).toEqual([]);
-    expect(contexts).toEqual([{}, {}, {}, {}, {}, {}]);
+    expect(contexts).toHaveLength(invocations.length);
+    for (const context of contexts) {
+      expect(record(context)).toBeTrue();
+      const observation = record(context) ? context.observation : undefined;
+      expect(record(observation)).toBeTrue();
+      if (!record(observation)) continue;
+      expect(Object.keys(observation).sort()).toEqual(['context', 'emitter']);
+      expect(record(observation.context)).toBeTrue();
+      expect(record(observation.emitter)).toBeTrue();
+      if (record(observation.context)) {
+        expect(observation.context.command).toBe('skillsmith version');
+        expect(observation.context.workflow).toBe('version');
+      }
+    }
+
+    for (const invocation of [
+      ['--version', '-qv'],
+      ['--version', '--quiet', '--debug'],
+    ] as const) {
+      const conflict = await runCli(invocation);
+      expect(conflict.exitCode).toBe(2);
+      expect(conflict.stdout).toBe('');
+      expect(conflict.stderr).toMatch(/^error: /);
+    }
   });
 
   test('eager version parsing respects value-taking short options inside clusters', async () => {
