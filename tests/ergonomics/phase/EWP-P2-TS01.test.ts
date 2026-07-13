@@ -838,4 +838,77 @@ describe('EWP-P2-TS01', () => {
     expect(serialized).not.toContain('digest');
     expect(serialized).not.toContain('lockfile');
   });
+
+  test('hashes normalized manifest semantics independently from exact manifest bytes', async () => {
+    const baseSkill: SkillFixture = {
+      name: 'review',
+      source: 'https://github.com/acme/tools.git//skills/review',
+      ref: 'main',
+      tools: ['codex', 'claude-code'],
+      scope: 'project',
+      placement: 'copy',
+      path: './custom/review',
+    };
+    const lintSkill: SkillFixture = {
+      name: 'lint',
+      source: 'acme/tools//skills/lint',
+      ref: 'v1.0.0',
+      tools: ['codex'],
+      scope: 'project',
+      placement: 'symlink',
+      path: './custom/lint',
+    };
+    const base = canonicalManifest({
+      tools: ['codex', 'claude-code'],
+      path: './defaults',
+      skills: [baseSkill, lintSkill],
+    });
+    const formattingEquivalent = canonicalManifest({
+      tools: ['claude-code', 'codex'],
+      path: './defaults',
+      skills: [lintSkill, baseSkill],
+    })
+      .replaceAll('\n', '\r\n')
+      .replace('version = 1', '# formatting only\r\nversion = 1');
+    const semanticMutations = [
+      base.replace('ref = "main"', 'ref = "release/v2"'),
+      base.replace('path = "./defaults"', 'path = "./other-defaults"'),
+    ];
+    guardValidToml([base, formattingEquivalent, ...semanticMutations]);
+
+    const manifestApi = await requireManifestApi();
+    const normalized = normalize(manifestApi, base);
+    const equivalent = normalize(manifestApi, formattingEquivalent);
+    const mutations = semanticMutations.map((source) => normalize(manifestApi, source));
+    expect(manifestApi.projectManifestSemantics(equivalent)).toEqual(
+      manifestApi.projectManifestSemantics(normalized),
+    );
+    for (const mutation of mutations)
+      expect(manifestApi.projectManifestSemantics(mutation)).not.toEqual(
+        manifestApi.projectManifestSemantics(normalized),
+      );
+    expect(formattingEquivalent).not.toBe(base);
+
+    const loaded = await loadModule(ARTIFACTS_MODULE);
+    expect(
+      loaded.ok,
+      loaded.ok ? undefined : `public artifact module failed to load: ${loaded.message}`,
+    ).toBeTrue();
+    if (!loaded.ok) throw new Error(loaded.message);
+    const required = ['hashManifestSemantics', 'hashManifestBytes'] as const;
+    const missing = required.filter((name) => typeof loaded.module[name] !== 'function');
+    expect(missing, 'G2-02 manifest hash authority is incomplete').toEqual([]);
+
+    const hashApi = loaded.module as unknown as {
+      hashManifestSemantics(manifest: NormalizedManifestV1): string;
+      hashManifestBytes(source: string | Uint8Array): string;
+    };
+    const semanticHash = hashApi.hashManifestSemantics(normalized);
+    expect(hashApi.hashManifestSemantics(equivalent)).toBe(semanticHash);
+    for (const mutation of mutations)
+      expect(hashApi.hashManifestSemantics(mutation)).not.toBe(semanticHash);
+    expect(hashApi.hashManifestBytes(formattingEquivalent)).not.toBe(
+      hashApi.hashManifestBytes(base),
+    );
+  });
 });

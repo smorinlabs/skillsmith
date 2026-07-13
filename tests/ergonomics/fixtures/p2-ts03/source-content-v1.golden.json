@@ -1,0 +1,4 @@
+{
+  "canonicalJson": "{\"version\":1,\"exclusionsVersion\":1,\"entries\":[{\"path\":\"empty\",\"type\":\"directory\"},{\"path\":\"link\",\"type\":\"symlink\",\"target\":\"run.sh\"},{\"path\":\"run.sh\",\"type\":\"file\",\"executable\":true,\"length\":2,\"bytes\":\"eAo=\"}]}",
+  "digest": "sha256:9fdbab7c915aabb2b28ce462d90bc0d6f54c50b38105f1094f230239f7ff1ef4"
+}
