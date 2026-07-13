@@ -82,6 +82,11 @@ interface ValueOptionSpellings {
   readonly short: ReadonlyMap<string, 'required' | 'optional'>;
 }
 
+interface EagerValueOptionScope {
+  readonly root: ValueOptionSpellings;
+  readonly active: ValueOptionSpellings;
+}
+
 const valueOptionSpellings = (specs: readonly CommandSpec[]): ValueOptionSpellings => {
   const long = new Map<string, 'required' | 'optional'>();
   const short = new Map<string, 'required' | 'optional'>();
@@ -117,20 +122,108 @@ const consumesFollowingValue = (
   next: string | undefined,
 ): boolean => shape === 'required' || (next !== undefined && !next.startsWith('-'));
 
+const longValueShape = (
+  scope: EagerValueOptionScope,
+  token: string,
+): 'required' | 'optional' | undefined => {
+  const rootShape = scope.root.long.get(token);
+  return rootShape ?? scope.active.long.get(token);
+};
+
+const shortValueShape = (
+  scope: EagerValueOptionScope,
+  flag: string,
+): 'required' | 'optional' | undefined => {
+  const spelling = `-${flag}`;
+  const rootShape = scope.root.short.get(spelling);
+  return rootShape ?? scope.active.short.get(spelling);
+};
+
+const eagerValueOptionScopes = (
+  invocation: readonly string[],
+  rootSpec: CommandSpec,
+  specs: readonly CommandSpec[],
+  attachedAdditionalSpecs: ReadonlySet<CommandSpec>,
+): readonly (EagerValueOptionScope | undefined)[] => {
+  const rootOptions = valueOptionSpellings([rootSpec]);
+  const optionsBySpec = new Map<CommandSpec, ValueOptionSpellings>();
+  for (const spec of specs) {
+    optionsBySpec.set(spec, spec === rootSpec ? rootOptions : valueOptionSpellings([spec]));
+  }
+
+  const directChild = (parent: CommandSpec, token: string): CommandSpec | undefined =>
+    specs.find((candidate) => {
+      if (candidate === rootSpec) return false;
+      const attachedAtRoot = parent === rootSpec && attachedAdditionalSpecs.has(candidate);
+      const declaredParent = candidate.path.split(' ').slice(0, -1).join(' ') === parent.path;
+      return (
+        (attachedAtRoot || declaredParent) &&
+        (candidate.path.split(' ').at(-1) === token || candidate.aliases.includes(token))
+      );
+    });
+
+  const scopes: (EagerValueOptionScope | undefined)[] = [];
+  let activeSpec = rootSpec;
+  let commandPathClosed = false;
+  for (let index = 0; index < invocation.length; index++) {
+    const token = invocation[index];
+    if (token === undefined) continue;
+    const scope = {
+      root: rootOptions,
+      active: optionsBySpec.get(activeSpec) ?? rootOptions,
+    };
+    scopes[index] = scope;
+    if (token === '--') break;
+
+    const longShape = longValueShape(scope, token);
+    if (longShape !== undefined) {
+      if (consumesFollowingValue(longShape, invocation[index + 1])) index++;
+      continue;
+    }
+
+    if (token.startsWith('-') && token !== '-') {
+      if (!token.startsWith('--')) {
+        const cluster = token.slice(1);
+        for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex++) {
+          const flag = cluster[clusterIndex];
+          const shortShape = flag === undefined ? undefined : shortValueShape(scope, flag);
+          if (shortShape === undefined) continue;
+          if (
+            clusterIndex === cluster.length - 1 &&
+            consumesFollowingValue(shortShape, invocation[index + 1])
+          )
+            index++;
+          break;
+        }
+      }
+      continue;
+    }
+
+    if (commandPathClosed) continue;
+    const child = directChild(activeSpec, token);
+    if (child === undefined) {
+      commandPathClosed = true;
+    } else {
+      activeSpec = child;
+    }
+  }
+  return scopes;
+};
+
 const requestsEagerVersion = (
   invocation: readonly string[],
-  valueOptions: ValueOptionSpellings,
+  valueOptionScopes: readonly (EagerValueOptionScope | undefined)[],
 ): boolean => {
   for (let index = 0; index < invocation.length; index++) {
     const token = invocation[index];
-    if (token === undefined || token === '--') return false;
+    if (token === undefined) return false;
+    const valueOptions = valueOptionScopes[index];
+    if (valueOptions === undefined) continue;
+    if (token === '--') return false;
     if (token === '--version') return true;
     if (token === '--help') return false;
-    const longValueShape = valueOptions.long.get(token);
-    if (longValueShape !== undefined) {
-      if (consumesFollowingValue(longValueShape, invocation[index + 1])) index++;
-      continue;
-    }
+    const longShape = longValueShape(valueOptions, token);
+    if (longShape !== undefined) continue;
     if (token.startsWith('--')) continue;
 
     if (!token.startsWith('-') || token === '-') continue;
@@ -138,15 +231,8 @@ const requestsEagerVersion = (
     for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex++) {
       const flag = cluster[clusterIndex];
       if (flag === undefined) continue;
-      const shortValueShape = valueOptions.short.get(`-${flag}`);
-      if (shortValueShape !== undefined) {
-        if (
-          clusterIndex === cluster.length - 1 &&
-          consumesFollowingValue(shortValueShape, invocation[index + 1])
-        )
-          index++;
-        break;
-      }
+      const shortShape = shortValueShape(valueOptions, flag);
+      if (shortShape !== undefined) break;
       if (flag === 'V') return true;
       if (flag === 'h') return false;
     }
@@ -165,37 +251,30 @@ const invocationFromParse = (
 
 const eagerPresentationOptions = (
   invocation: readonly string[],
-  valueOptions: ValueOptionSpellings,
+  valueOptionScopes: readonly (EagerValueOptionScope | undefined)[],
 ): Readonly<{ quiet?: true; debug?: true; verbose: number }> => {
   let quiet = false;
   let debug = false;
   let verbose = 0;
   for (let index = 0; index < invocation.length; index++) {
     const token = invocation[index];
-    if (token === undefined || token === '--') break;
+    if (token === undefined) break;
+    const valueOptions = valueOptionScopes[index];
+    if (valueOptions === undefined) continue;
+    if (token === '--') break;
     if (token === '--quiet') quiet = true;
     if (token === '--debug') debug = true;
     if (token === '--verbose') verbose++;
-    const longValueShape = valueOptions.long.get(token);
-    if (longValueShape !== undefined) {
-      if (consumesFollowingValue(longValueShape, invocation[index + 1])) index++;
-      continue;
-    }
+    const longShape = longValueShape(valueOptions, token);
+    if (longShape !== undefined) continue;
     if (!token.startsWith('-') || token.startsWith('--') || token === '-') continue;
     const cluster = token.slice(1);
     for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex++) {
       const flag = cluster[clusterIndex];
       if (flag === 'q') quiet = true;
       if (flag === 'v') verbose++;
-      const shortValueShape = flag === undefined ? undefined : valueOptions.short.get(`-${flag}`);
-      if (shortValueShape !== undefined) {
-        if (
-          clusterIndex === cluster.length - 1 &&
-          consumesFollowingValue(shortValueShape, invocation[index + 1])
-        )
-          index++;
-        break;
-      }
+      const shortShape = flag === undefined ? undefined : shortValueShape(valueOptions, flag);
+      if (shortShape !== undefined) break;
     }
   }
   return {
@@ -337,15 +416,22 @@ export const buildProgram = (
     program.addCommand(command);
     attachedAdditionalSpecs.push(spec);
   }
-  const valueOptions = valueOptionSpellings([...CURRENT_COMMAND_SPECS, ...attachedAdditionalSpecs]);
+  const eagerSpecs = [...CURRENT_COMMAND_SPECS, ...attachedAdditionalSpecs];
+  valueOptionSpellings(eagerSpecs);
 
   const parseAsync = program.parseAsync.bind(program);
   program.parseAsync = (async (...args: Parameters<Command['parseAsync']>) => {
     const [argv, options] = args;
     const invocation = invocationFromParse(argv, options?.from);
-    if (requestsEagerVersion(invocation, valueOptions)) {
+    const valueOptionScopes = eagerValueOptionScopes(
+      invocation,
+      rootSpec,
+      eagerSpecs,
+      new Set(attachedAdditionalSpecs),
+    );
+    if (requestsEagerVersion(invocation, valueOptionScopes)) {
       assertRootRuntimePreflight(invocation);
-      const presentation = eagerPresentationOptions(invocation, valueOptions);
+      const presentation = eagerPresentationOptions(invocation, valueOptionScopes);
       const verbosity = resolveObservationVerbosity(presentation);
       try {
         const prepared = createObservation('skillsmith version', 'version', verbosity);

@@ -463,6 +463,236 @@ describe('shared CLI runtime adapter', () => {
     ]);
   });
 
+  test('recursively owns and freezes outcome data before hostile renderer access', async () => {
+    const report = {
+      nested: { value: 'original' },
+      entries: [{ value: 'first' }],
+    };
+    const diagnostics = [
+      {
+        code: 'warning-code',
+        severity: 'warning' as const,
+        message: 'original warning',
+        details: { source: 'application' },
+      },
+    ];
+    const mutation = { kind: 'preview' as const, planned: 1, changed: 0, unchanged: 1, failed: 0 };
+    const deprecations = [
+      {
+        spelling: '--old',
+        replacement: '--new',
+        removalVersion: '2.0',
+        message: 'original deprecation',
+      },
+    ];
+    const rendererMutations: string[] = [];
+    const attempt = (label: string, mutate: () => void): void => {
+      mutate();
+      rendererMutations.push(label);
+    };
+    const memory = memoryIo();
+    const runtime = createCliRuntimeAdapter({
+      applications: {
+        fixture: async () => ({
+          report,
+          diagnostics,
+          exitClass: 'success' as const,
+          mutation,
+          deprecations,
+        }),
+      },
+      renderers: {
+        fixture: {
+          human: (outcome) => {
+            const ownedReport = outcome.report as {
+              nested: { value: string };
+              entries: Array<{ value: string }>;
+            };
+            attempt('report object', () => {
+              ownedReport.nested.value = 'renderer-owned';
+            });
+            attempt('report array', () => {
+              ownedReport.entries.push({ value: 'renderer-owned' });
+            });
+            attempt('report array item', () => {
+              const first = ownedReport.entries[0];
+              if (first !== undefined) first.value = 'renderer-owned';
+            });
+            attempt('diagnostics array', () => {
+              (outcome.diagnostics as unknown[]).push({});
+            });
+            attempt('diagnostic object', () => {
+              const diagnostic = outcome.diagnostics[0];
+              if (diagnostic !== undefined)
+                (diagnostic as { message: string }).message = 'renderer-owned';
+            });
+            attempt('diagnostic details', () => {
+              const diagnostic = outcome.diagnostics[0];
+              if (diagnostic?.details !== undefined)
+                (diagnostic.details as { source: string }).source = 'renderer-owned';
+            });
+            attempt('mutation object', () => {
+              (outcome.mutation as { planned: number }).planned = 99;
+            });
+            attempt('deprecations array', () => {
+              (outcome.deprecations as unknown[]).push({});
+            });
+            attempt('deprecation object', () => {
+              const deprecation = outcome.deprecations[0];
+              if (deprecation !== undefined)
+                (deprecation as { message: string }).message = 'renderer-owned';
+            });
+            return 'stable renderer bytes\n';
+          },
+          json: () => '',
+        },
+      },
+      io: memory.io,
+    });
+
+    const result = await runtime.execute({
+      application: 'fixture',
+      reportKind: 'fixture',
+      request: {},
+      context: {},
+      observation: silentObservation(),
+      format: 'human',
+    });
+
+    expect(rendererMutations).toEqual([
+      'report object',
+      'report array',
+      'report array item',
+      'diagnostics array',
+      'diagnostic object',
+      'diagnostic details',
+      'mutation object',
+      'deprecations array',
+      'deprecation object',
+    ]);
+    expect(result.exitCode).toBe(0);
+    expect(result.outcome).toEqual({
+      report: { nested: { value: 'original' }, entries: [{ value: 'first' }] },
+      diagnostics: [
+        {
+          code: 'warning-code',
+          severity: 'warning',
+          message: 'original warning',
+          details: { source: 'application' },
+        },
+      ],
+      exitClass: 'success',
+      mutation: { kind: 'preview', planned: 1, changed: 0, unchanged: 1, failed: 0 },
+      deprecations: [
+        {
+          spelling: '--old',
+          replacement: '--new',
+          removalVersion: '2.0',
+          message: 'original deprecation',
+        },
+      ],
+    });
+    expect(Object.isFrozen(result.outcome)).toBeTrue();
+    expect(Object.isFrozen(result.outcome?.report)).toBeTrue();
+    expect(
+      Object.isFrozen((result.outcome?.report as { nested?: unknown } | undefined)?.nested),
+    ).toBeTrue();
+    expect(Object.isFrozen(result.outcome?.diagnostics)).toBeTrue();
+    expect(Object.isFrozen(result.outcome?.diagnostics[0])).toBeTrue();
+    expect(Object.isFrozen(result.outcome?.diagnostics[0]?.details)).toBeTrue();
+    expect(Object.isFrozen(result.outcome?.mutation)).toBeTrue();
+    expect(Object.isFrozen(result.outcome?.deprecations)).toBeTrue();
+    expect(Object.isFrozen(result.outcome?.deprecations[0])).toBeTrue();
+    expect(memory.stdout).toEqual(['stable renderer bytes\n']);
+    expect(memory.exits).toEqual([0]);
+  });
+
+  test('contains hostile nested snapshot reads through the failure boundary', async () => {
+    const nested = Object.defineProperty({}, 'value', {
+      enumerable: true,
+      get: () => {
+        throw new Error('hostile nested snapshot');
+      },
+    });
+    let rendererCalled = false;
+    const memory = memoryIo();
+    const runtime = createCliRuntimeAdapter({
+      applications: { fixture: async () => successOutcome({ nested }) },
+      renderers: {
+        fixture: {
+          human: () => {
+            rendererCalled = true;
+            return 'unreachable\n';
+          },
+          json: () => '',
+        },
+      },
+      io: memory.io,
+    });
+
+    await expect(
+      runtime.execute({
+        application: 'fixture',
+        reportKind: 'fixture',
+        request: {},
+        context: {},
+        observation: silentObservation(),
+        format: 'human',
+      }),
+    ).resolves.toMatchObject({
+      exitCode: 1,
+      failure: { exitClass: 'failure', message: 'hostile nested snapshot' },
+    });
+    expect(rendererCalled).toBeFalse();
+    expect(memory.stdout).toEqual([]);
+    expect(memory.stderr).toEqual(['error: hostile nested snapshot\n']);
+    expect(memory.exits).toEqual([1]);
+  });
+
+  test('preserves the current ReadonlyMap report contract in the owned snapshot', async () => {
+    const records = [{ path: '/original', version: '1.0.0' }];
+    const detections = new Map([['codex', records]]);
+    const memory = memoryIo();
+    const runtime = createCliRuntimeAdapter({
+      applications: {
+        fixture: async () => successOutcome({ detections }),
+      },
+      renderers: {
+        fixture: {
+          human: (outcome) =>
+            `${JSON.stringify([...(outcome.report as { detections: ReadonlyMap<string, unknown> }).detections])}\n`,
+          json: () => '',
+        },
+      },
+      io: memory.io,
+    });
+
+    const result = await runtime.execute({
+      application: 'fixture',
+      reportKind: 'fixture',
+      request: {},
+      context: {},
+      observation: silentObservation(),
+      format: 'human',
+    });
+    records[0] = { path: '/changed', version: '2.0.0' };
+    detections.set('claude-code', []);
+
+    const stableDetections = (
+      result.outcome?.report as { detections?: ReadonlyMap<string, readonly unknown[]> } | undefined
+    )?.detections;
+    expect(stableDetections?.size).toBe(1);
+    expect(stableDetections?.get('codex')).toEqual([{ path: '/original', version: '1.0.0' }]);
+    expect([...(stableDetections ?? [])]).toEqual([
+      ['codex', [{ path: '/original', version: '1.0.0' }]],
+    ]);
+    expect(Object.isFrozen(stableDetections)).toBeTrue();
+    expect(Object.isFrozen(stableDetections?.get('codex'))).toBeTrue();
+    expect(() => Map.prototype.set.call(stableDetections, 'forged', [])).toThrow();
+    expect(memory.stdout).toEqual(['[["codex",[{"path":"/original","version":"1.0.0"}]]]\n']);
+    expect(memory.exits).toEqual([0]);
+  });
+
   test('owns renderer output, failure classification, and registry reads before effects', async () => {
     const outputMemory = memoryIo();
     const outputRecorded = recordingObservation();

@@ -532,6 +532,192 @@ describe('EWP-P1-TS07', () => {
     expect(writes.at(-1)).toBe('version-ran\n');
   });
 
+  test('unrelated command option shapes cannot shield the eager version flags', async () => {
+    const foreign: CommandSpec = {
+      name: 'foreign-value',
+      path: 'skillsmith foreign-value',
+      aliases: [],
+      group: 'maintain',
+      primaryQuestion: 'Can an unrelated extension borrow eager parsing authority?',
+      description: 'Exercise option value ownership outside the active command.',
+      arguments: [],
+      options: [
+        {
+          flags: '-x, --payload <value>',
+          long: '--payload',
+          short: '-x',
+          attributeName: 'payload',
+          valueShape: 'required',
+          knownValues: [],
+          allowedValues: [],
+          repeatable: false,
+          negated: false,
+          flagDefault: undefined,
+          parsedDefault: undefined,
+          description: 'Foreign payload',
+        },
+      ],
+      examples: [],
+      capability: 'read',
+      reportKind: 'foreign-value',
+      application: 'help',
+    };
+    const invocations = [
+      ['agents', '--ref', '--version'],
+      ['agents', '--file', '--version'],
+      ['agents', '-s', '-V'],
+      ['agents', '--payload', '--version'],
+      ['agents', '-x', '-V'],
+    ] as const;
+
+    for (const invocation of invocations) {
+      const calls: string[] = [];
+      const writes: string[] = [];
+      const program = buildProgram(undefined, {
+        additionalSpecs: [foreign],
+        applications: {
+          version: async () => {
+            calls.push('version');
+            return {
+              report: {},
+              diagnostics: [],
+              exitClass: 'success',
+              mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+              deprecations: [],
+            };
+          },
+          agents: async () => {
+            calls.push('agents');
+            throw new Error('the unrelated option must not suppress eager version handling');
+          },
+        },
+        renderers: {
+          version: { human: () => 'version-ran\n', json: () => '{}' },
+        },
+        runtimePorts: {
+          stdout: { write: (value) => writes.push(value) },
+          stderr: { write: (value) => writes.push(value) },
+          exit: () => {},
+        },
+      });
+
+      await program.parseAsync(['node', 'skillsmith', ...invocation]);
+      expect(calls, invocation.join(' ')).toEqual(['version']);
+      expect(writes, invocation.join(' ')).toEqual(['version-ran\n']);
+    }
+  });
+
+  test('active command and root values retain Commander eager shielding semantics', async () => {
+    const fixture: CommandSpec = {
+      name: 'scoped-values',
+      path: 'skillsmith scoped-values',
+      aliases: [],
+      group: 'maintain',
+      primaryQuestion: 'Do active option values retain parsing authority?',
+      description: 'Exercise required and optional values in the active command scope.',
+      arguments: [],
+      options: [
+        {
+          flags: '-m, --mode <value>',
+          long: '--mode',
+          short: '-m',
+          attributeName: 'mode',
+          valueShape: 'required',
+          knownValues: [],
+          allowedValues: [],
+          repeatable: false,
+          negated: false,
+          flagDefault: undefined,
+          parsedDefault: undefined,
+          description: 'Required active value',
+        },
+        {
+          flags: '-o, --optional [value]',
+          long: '--optional',
+          short: '-o',
+          attributeName: 'optional',
+          valueShape: 'optional',
+          knownValues: [],
+          allowedValues: [],
+          repeatable: false,
+          negated: false,
+          flagDefault: undefined,
+          parsedDefault: undefined,
+          description: 'Optional active value',
+        },
+      ],
+      examples: [],
+      capability: 'read',
+      reportKind: 'scoped-values',
+      application: 'help',
+    };
+    const run = async (invocation: readonly string[]): Promise<readonly string[]> => {
+      const calls: string[] = [];
+      const program = buildProgram(undefined, {
+        additionalSpecs: [fixture],
+        applications: {
+          rootHelp: async (request) => {
+            calls.push(`root:${String(request.options.config)}`);
+            return {
+              report: {},
+              diagnostics: [],
+              exitClass: 'success',
+              mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+              deprecations: [],
+            };
+          },
+          help: async (request) => {
+            calls.push(
+              `active:${String(request.options.mode)}:${String(request.options.optional)}`,
+            );
+            return {
+              report: {},
+              diagnostics: [],
+              exitClass: 'success',
+              mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+              deprecations: [],
+            };
+          },
+          version: async () => {
+            calls.push('version');
+            return {
+              report: {},
+              diagnostics: [],
+              exitClass: 'success',
+              mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+              deprecations: [],
+            };
+          },
+        },
+        renderers: {
+          rootHelp: { human: () => '', json: () => '{}' },
+          'scoped-values': { human: () => '', json: () => '{}' },
+          version: { human: () => '', json: () => '{}' },
+        },
+        runtimePorts: {
+          stdout: { write: () => {} },
+          stderr: { write: () => {} },
+          exit: () => {},
+        },
+      });
+      await program.parseAsync(['node', 'skillsmith', ...invocation]);
+      return calls;
+    };
+
+    expect(await run(['--config', '-V'])).toEqual(['root:-V']);
+    expect(await run(['--config', '--version'])).toEqual(['root:--version']);
+    expect(await run(['scoped-values', '-mV'])).toEqual(['active:V:undefined']);
+    expect(await run(['scoped-values', '-oV'])).toEqual(['active:undefined:V']);
+    expect(await run(['scoped-values', '-o', '-V'])).toEqual(['version']);
+
+    for (const versionFlag of ['-V', '--version'] as const) {
+      const missingRequiredValue = await runCli(['doctor', '--file', versionFlag]);
+      expect(missingRequiredValue.exitCode).toBe(2);
+      expect(missingRequiredValue.stdout).toBe('');
+      expect(missingRequiredValue.stderr).toMatch(/argument missing/);
+    }
+  });
+
   test('attached specs cannot change eager parsing by redefining an option value shape', () => {
     const fixture = (
       name: string,

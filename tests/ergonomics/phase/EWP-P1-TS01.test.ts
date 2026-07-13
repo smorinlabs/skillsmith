@@ -171,19 +171,24 @@ describe('EWP-P1-TS01', () => {
     }
   });
 
-  test('spawned project scans honor -C before discovery in either global-option position', async () => {
+  test('spawned project-aware commands honor global -C/config before or after subcommands', async () => {
     const sandbox = await mkdtemp(join(tmpdir(), 'skillsmith-p1-cd-cli-'));
     const invocationCwd = join(sandbox, 'invocation');
     const repository = join(sandbox, 'repository');
     const nested = join(repository, 'packages', 'api');
     const skillDir = join(repository, '.claude', 'skills', 'root-skill');
+    const commandDir = join(repository, '.claude', 'commands');
     await initializeRepository(repository);
     await Promise.all([
       mkdir(invocationCwd, { recursive: true }),
       mkdir(nested, { recursive: true }),
       mkdir(skillDir, { recursive: true }),
+      mkdir(commandDir, { recursive: true }),
     ]);
     await writeFile(join(skillDir, 'SKILL.md'), '---\nname: root-skill\n---\nfixture\n');
+    await writeFile(join(commandDir, 'root-command.md'), '# Root command\n');
+    await writeFile(join(nested, 'skillsmith.toml'), 'tool = "codex"\n');
+    await writeFile(join(nested, 'team.toml'), 'tool = "claude-code"\n');
     const env = {
       HOME: join(sandbox, 'home'),
       XDG_CONFIG_HOME: join(sandbox, 'config'),
@@ -193,21 +198,75 @@ describe('EWP-P1-TS01', () => {
 
     try {
       const cases = [
-        ['-C', nested, 'list', '--tool', 'claude-code', '--project', '--json'],
-        ['list', '-C', nested, '--tool', 'claude-code', '--project', '--json'],
+        {
+          name: 'list with globals before the subcommand',
+          kind: 'list',
+          args: ['-C', nested, '--config', './team.toml', 'list', '--project', '--json'],
+        },
+        {
+          name: 'list with globals after the subcommand',
+          kind: 'list',
+          args: ['list', '-C', nested, '--config', './team.toml', '--project', '--json'],
+        },
+        {
+          name: 'commands with globals before the subcommand',
+          kind: 'commands',
+          args: ['-C', nested, '--config', './team.toml', 'commands', '--project', '--json'],
+        },
+        {
+          name: 'commands with globals after the subcommand',
+          kind: 'commands',
+          args: ['commands', '-C', nested, '--config', './team.toml', '--project', '--json'],
+        },
+        {
+          name: 'config list with globals before the subcommands',
+          kind: 'config',
+          args: ['-C', nested, '--config', './team.toml', 'config', 'list', '--json'],
+        },
+        {
+          name: 'config list with globals after the subcommands',
+          kind: 'config',
+          args: ['config', 'list', '-C', nested, '--config', './team.toml', '--json'],
+        },
       ] as const;
-      for (const args of cases) {
-        const result = await runCli(args, invocationCwd, env);
+      for (const matrixCase of cases) {
+        const result = await runCli(matrixCase.args, invocationCwd, env);
         expect(result.exitCode).toBe(0);
         expect(result.stderr).toBe('');
-        const output = JSON.parse(result.stdout) as {
-          skills: readonly { name: string; root: string }[];
-        };
-        expect(output.skills).toHaveLength(1);
-        expect(output.skills[0]).toMatchObject({
-          name: 'root-skill',
-          root: join(repository, '.claude', 'skills'),
-        });
+        const output = JSON.parse(result.stdout) as Record<string, unknown>;
+
+        if (matrixCase.kind === 'list') {
+          expect(output).toMatchObject({
+            skills: [
+              {
+                name: 'root-skill',
+                tool: 'claude-code',
+                scope: 'project',
+                root: join(repository, '.claude', 'skills'),
+              },
+            ],
+          });
+        } else if (matrixCase.kind === 'commands') {
+          expect(output).toMatchObject({
+            commands: [
+              {
+                name: 'root-command',
+                tool: 'claude-code',
+                scope: 'project',
+                root: commandDir,
+              },
+            ],
+          });
+        } else {
+          expect(output).toMatchObject({
+            effective: { tool: 'claude-code' },
+            sources: { tool: 'explicit-file' },
+            layers: {
+              project: { tool: 'codex' },
+              'explicit-file': { tool: 'claude-code' },
+            },
+          });
+        }
       }
     } finally {
       await rm(sandbox, { recursive: true, force: true });

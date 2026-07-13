@@ -97,6 +97,115 @@ export const exitCodeForClass = (exitClass: RuntimeExitClass): ExitCode => EXIT_
 const isRecord = (value: unknown): value is Record<PropertyKey, unknown> =>
   (typeof value === 'object' && value !== null) || typeof value === 'function';
 
+const snapshotReadonlyMap = (
+  source: ReadonlyMap<unknown, unknown>,
+  seen: WeakMap<object, unknown>,
+): ReadonlyMap<unknown, unknown> => {
+  let entries: readonly (readonly [unknown, unknown])[] = [];
+  const facade = Object.create(null) as Record<PropertyKey, unknown>;
+  seen.set(source, facade);
+
+  const ownedEntries: Array<readonly [unknown, unknown]> = [];
+  const iterator = Map.prototype.entries.call(source) as MapIterator<[unknown, unknown]>;
+  for (const [key, value] of iterator) {
+    ownedEntries.push(
+      Object.freeze([snapshotOwnedValue(key, seen), snapshotOwnedValue(value, seen)] as const),
+    );
+  }
+  entries = Object.freeze(ownedEntries);
+
+  const get = Object.freeze((key: unknown): unknown => {
+    for (const [candidate, value] of entries) {
+      if (Object.is(candidate, key) || candidate === key) return value;
+    }
+    return undefined;
+  });
+  const has = Object.freeze((key: unknown): boolean => {
+    for (const [candidate] of entries) {
+      if (Object.is(candidate, key) || candidate === key) return true;
+    }
+    return false;
+  });
+  const keys = Object.freeze(function* (): MapIterator<unknown> {
+    for (const [key] of entries) yield key;
+  });
+  const values = Object.freeze(function* (): MapIterator<unknown> {
+    for (const [, value] of entries) yield value;
+  });
+  const mapEntries = Object.freeze(function* (): MapIterator<[unknown, unknown]> {
+    for (const [key, value] of entries) yield [key, value];
+  });
+  const forEach = Object.freeze(
+    (
+      callback: (value: unknown, key: unknown, map: ReadonlyMap<unknown, unknown>) => void,
+      thisArg?: unknown,
+    ): void => {
+      for (const [key, value] of entries) callback.call(thisArg, value, key, facade as never);
+    },
+  );
+
+  Object.defineProperties(facade, {
+    size: { value: entries.length, enumerable: false },
+    get: { value: get, enumerable: false },
+    has: { value: has, enumerable: false },
+    keys: { value: keys, enumerable: false },
+    values: { value: values, enumerable: false },
+    entries: { value: mapEntries, enumerable: false },
+    forEach: { value: forEach, enumerable: false },
+    [Symbol.iterator]: { value: mapEntries, enumerable: false },
+    [Symbol.toStringTag]: { value: 'Map', enumerable: false },
+  });
+  return Object.freeze(facade) as unknown as ReadonlyMap<unknown, unknown>;
+};
+
+const snapshotOwnedValue = (value: unknown, seen: WeakMap<object, unknown>): unknown => {
+  if (value === null || typeof value !== 'object') {
+    if (typeof value === 'function')
+      throw new TypeError('application outcome contains an unsupported function');
+    return value;
+  }
+
+  const existing = seen.get(value);
+  if (existing !== undefined) return existing;
+  if (value instanceof Map) return snapshotReadonlyMap(value, seen);
+
+  const sourceArray = Array.isArray(value) ? value : null;
+  const sourcePrototype = Object.getPrototypeOf(value);
+  const isError = value instanceof Error;
+  if (
+    sourceArray === null &&
+    sourcePrototype !== Object.prototype &&
+    sourcePrototype !== null &&
+    !isError
+  ) {
+    throw new TypeError('application outcome contains an unsupported object');
+  }
+
+  const target: Record<PropertyKey, unknown> | unknown[] =
+    sourceArray === null ? Object.create(isError ? Error.prototype : sourcePrototype) : [];
+  seen.set(value, target);
+  for (const key of Reflect.ownKeys(value)) {
+    if (sourceArray !== null && key === 'length') continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined) continue;
+    const owned = snapshotOwnedValue(Reflect.get(value, key), seen);
+    Object.defineProperty(target, key, {
+      value: owned,
+      enumerable: descriptor.enumerable ?? false,
+      configurable: false,
+      writable: false,
+    });
+  }
+  if (sourceArray !== null) {
+    Object.defineProperty(target, 'length', {
+      value: sourceArray.length,
+      configurable: false,
+      writable: false,
+    });
+  }
+  return Object.freeze(target);
+};
+
 const readProperty = (value: unknown, key: PropertyKey): unknown => {
   if (!isRecord(value)) return undefined;
   try {
@@ -243,14 +352,19 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
     }
   };
 
-  const snapshotOutcome = (outcome: RuntimeOutcome, exitClass: RuntimeExitClass): RuntimeOutcome =>
-    Object.freeze({
-      report: outcome.report,
-      diagnostics: Object.freeze([...outcome.diagnostics]),
+  const snapshotOutcome = (
+    outcome: RuntimeOutcome,
+    exitClass: RuntimeExitClass,
+  ): RuntimeOutcome => {
+    const seen = new WeakMap<object, unknown>();
+    return Object.freeze({
+      report: snapshotOwnedValue(outcome.report, seen),
+      diagnostics: snapshotOwnedValue(outcome.diagnostics, seen),
       exitClass,
-      mutation: outcome.mutation,
-      deprecations: Object.freeze([...outcome.deprecations]),
-    });
+      mutation: snapshotOwnedValue(outcome.mutation, seen),
+      deprecations: snapshotOwnedValue(outcome.deprecations, seen),
+    }) as RuntimeOutcome;
+  };
 
   const commandOutcome = (exitClass: RuntimeExitClass): 'success' | 'failure' | 'cancelled' => {
     if (exitClass === 'cancelled') return 'cancelled';
