@@ -403,7 +403,7 @@ const editOne = (
   }
   if (value === null) {
     if (!existing) return ok(source);
-    return ok(replaceRange(source, existing.line.start, existing.line.end, ''));
+    return ok(replaceRange(source, existing.keyStart, existing.valueEnd, ''));
   }
   if (existing) {
     const rendered =

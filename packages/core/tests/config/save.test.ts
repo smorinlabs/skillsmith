@@ -57,6 +57,49 @@ describe('saveConfig', () => {
     await rm(d, { recursive: true, force: true });
   });
 
+  test('unset removes only key/value syntax while preserving inline trivia byte-for-byte', async () => {
+    const env = await defaultRuntimePorts();
+    for (const [label, scope, before, after] of [
+      [
+        'flat-lf',
+        'user',
+        '# owner\ntool = "codex" # why selected\nscope = "user"\n',
+        '# owner\n # why selected\nscope = "user"\n',
+      ],
+      [
+        'flat-crlf-quoted',
+        'user',
+        '# owner\r\n  "tool"\t=\t"codex"  # why selected\r\nscope = "user"\r\n',
+        '# owner\r\n    # why selected\r\nscope = "user"\r\n',
+      ],
+      ['flat-no-final-newline', 'user', 'tool = "codex" # why selected', ' # why selected'],
+      [
+        'project-lf-quoted',
+        'project',
+        'version = 1\n[defaults]\n"tools" = ["codex"] # why selected\nscope = "project"\n',
+        'version = 1\n[defaults]\n # why selected\nscope = "project"\n',
+      ],
+      [
+        'project-crlf',
+        'project',
+        'version = 1\r\n[defaults]\r\ntools = ["codex"]\t# why selected\r\n',
+        'version = 1\r\n[defaults]\r\n\t# why selected\r\n',
+      ],
+    ] as const) {
+      const d = await tmpDir(`unset-inline-${label}`);
+      const file = join(d, scope === 'project' ? 'skillsmith.toml' : 'config.toml');
+      await writeFile(file, before);
+
+      const result = await saveConfig(env, { scope, file, delete: ['tool'] });
+      expect(result.ok, label).toBeTrue();
+      expect(await readFile(file, 'utf8'), label).toBe(after);
+      expect(await readdir(d), label).toEqual([
+        scope === 'project' ? 'skillsmith.toml' : 'config.toml',
+      ]);
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
   test('losslessly edits canonical CRLF bytes and preserves regular-file mode', async () => {
     const env = await defaultRuntimePorts();
     const d = await tmpDir('canonical');
