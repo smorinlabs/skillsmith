@@ -1,0 +1,332 @@
+{
+  "schemaVersion": 1,
+  "fixtureCanary": "p2-ts04-fixture-canary",
+  "successCases": [
+    {
+      "id": "set-every-existing-field-lf",
+      "newline": "lf",
+      "mode": 416,
+      "before": "version = 1\n# root trivia stays byte-for-byte\n\n[defaults]\ntools = [\"codex\"] # keep this comment\nscope = 'project'\npath = \"./skills\"\n\n[registry]\ndefault = \"github.com/acme\"\n\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\nref = 'main'\ntools = [\"codex\",]\nscope = \"project\"\nplacement = \"symlink\"\npath = \"./old\"\n",
+      "request": {
+        "edits": [
+          { "kind": "set-default", "field": "tools", "value": ["claude-code", "codex"] },
+          { "kind": "set-default", "field": "scope", "value": "user" },
+          { "kind": "set-default", "field": "path", "value": "~/skills" },
+          { "kind": "set-registry-default", "value": "git.example.com/acme" },
+          {
+            "kind": "set-skill-field",
+            "name": "review",
+            "field": "source",
+            "value": "git.example.com/acme/tools//skills/review"
+          },
+          { "kind": "set-skill-field", "name": "review", "field": "ref", "value": "release/v2" },
+          {
+            "kind": "set-skill-field",
+            "name": "review",
+            "field": "tools",
+            "value": ["claude-code"]
+          },
+          { "kind": "set-skill-field", "name": "review", "field": "scope", "value": "user" },
+          { "kind": "set-skill-field", "name": "review", "field": "placement", "value": "copy" },
+          {
+            "kind": "set-skill-field",
+            "name": "review",
+            "field": "path",
+            "value": "~/custom/review"
+          }
+        ]
+      },
+      "after": "version = 1\n# root trivia stays byte-for-byte\n\n[defaults]\ntools = [\"claude-code\", \"codex\"] # keep this comment\nscope = 'user'\npath = \"~/skills\"\n\n[registry]\ndefault = \"git.example.com/acme\"\n\n[[skills]]\nname = \"review\"\nsource = \"git.example.com/acme/tools//skills/review\"\nref = 'release/v2'\ntools = [\"claude-code\",]\nscope = \"user\"\nplacement = \"copy\"\npath = \"~/custom/review\"\n",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [
+        { "kind": "default", "field": "tools" },
+        { "kind": "default", "field": "scope" },
+        { "kind": "default", "field": "path" },
+        { "kind": "registry-default" },
+        { "kind": "skill-field", "name": "review", "field": "source" },
+        { "kind": "skill-field", "name": "review", "field": "ref" },
+        { "kind": "skill-field", "name": "review", "field": "tools" },
+        { "kind": "skill-field", "name": "review", "field": "scope" },
+        { "kind": "skill-field", "name": "review", "field": "placement" },
+        { "kind": "skill-field", "name": "review", "field": "path" }
+      ]
+    },
+    {
+      "id": "unset-defaults-and-registry",
+      "newline": "lf",
+      "mode": 420,
+      "before": "version = 1\n\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\npath = \"./defaults\"\n\n[registry]\ndefault = \"github.com/acme\"\n\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\ntools = [\"codex\"]\nscope = \"project\"\n",
+      "request": {
+        "edits": [
+          { "kind": "unset-default", "field": "path" },
+          { "kind": "unset-default", "field": "scope" },
+          { "kind": "unset-default", "field": "tools" },
+          { "kind": "unset-registry-default" }
+        ]
+      },
+      "after": "version = 1\n\n[defaults]\n\n[registry]\n\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\ntools = [\"codex\"]\nscope = \"project\"\n",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [
+        { "kind": "default", "field": "path" },
+        { "kind": "default", "field": "scope" },
+        { "kind": "default", "field": "tools" },
+        { "kind": "registry-default" }
+      ]
+    },
+    {
+      "id": "unset-every-optional-skill-field",
+      "newline": "lf",
+      "mode": 420,
+      "before": "version = 1\n\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\nref = \"main\"\ntools = [\"claude-code\"]\nscope = \"user\"\nplacement = \"copy\"\npath = \"~/review\"\n",
+      "request": {
+        "edits": [
+          { "kind": "unset-skill-field", "name": "review", "field": "ref" },
+          { "kind": "unset-skill-field", "name": "review", "field": "tools" },
+          { "kind": "unset-skill-field", "name": "review", "field": "scope" },
+          { "kind": "unset-skill-field", "name": "review", "field": "placement" },
+          { "kind": "unset-skill-field", "name": "review", "field": "path" }
+        ]
+      },
+      "after": "version = 1\n\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\n",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [
+        { "kind": "skill-field", "name": "review", "field": "ref" },
+        { "kind": "skill-field", "name": "review", "field": "tools" },
+        { "kind": "skill-field", "name": "review", "field": "scope" },
+        { "kind": "skill-field", "name": "review", "field": "placement" },
+        { "kind": "skill-field", "name": "review", "field": "path" }
+      ]
+    },
+    {
+      "id": "create-defaults-registry-and-add-declaration",
+      "newline": "lf",
+      "mode": 384,
+      "before": "# attached to version\nversion = 1\n",
+      "request": {
+        "edits": [
+          { "kind": "set-default", "field": "tools", "value": ["codex"] },
+          { "kind": "set-default", "field": "scope", "value": "project" },
+          { "kind": "set-registry-default", "value": "github.com/acme" },
+          {
+            "kind": "add-skill",
+            "declaration": {
+              "name": "review",
+              "source": {
+                "host": "github.com",
+                "repository": "acme/tools",
+                "path": "skills/review"
+              },
+              "ref": null,
+              "tools": ["codex"],
+              "scope": "project",
+              "placement": "symlink",
+              "path": null
+            }
+          }
+        ]
+      },
+      "after": "# attached to version\nversion = 1\n\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n\n[registry]\ndefault = \"github.com/acme\"\n\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\n",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [
+        { "kind": "default", "field": "tools" },
+        { "kind": "default", "field": "scope" },
+        { "kind": "registry-default" },
+        { "kind": "skill-declaration", "name": "review" }
+      ]
+    },
+    {
+      "id": "remove-attached-commented-declaration",
+      "newline": "lf",
+      "mode": 420,
+      "before": "version = 1\n\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n\n# owned review explanation\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\n\n# independent lint explanation\n[[skills]]\nname = \"lint\"\nsource = \"github.com/acme/tools//skills/lint\"\n",
+      "request": { "edits": [{ "kind": "remove-skill", "name": "review" }] },
+      "after": "version = 1\n\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n\n# independent lint explanation\n[[skills]]\nname = \"lint\"\nsource = \"github.com/acme/tools//skills/lint\"\n",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [{ "kind": "skill-declaration", "name": "review" }]
+    },
+    {
+      "id": "rename-is-remove-plus-add",
+      "newline": "lf",
+      "mode": 420,
+      "before": "version = 1\n\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n\n[[skills]]\nname = \"old-name\"\nsource = \"github.com/acme/tools//skills/review\"\n",
+      "request": {
+        "edits": [
+          { "kind": "remove-skill", "name": "old-name" },
+          {
+            "kind": "add-skill",
+            "declaration": {
+              "name": "new-name",
+              "source": {
+                "host": "github.com",
+                "repository": "acme/tools",
+                "path": "skills/review"
+              },
+              "ref": null,
+              "tools": ["codex"],
+              "scope": "project",
+              "placement": "symlink",
+              "path": null
+            }
+          }
+        ]
+      },
+      "after": "version = 1\n\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n\n[[skills]]\nname = \"new-name\"\nsource = \"github.com/acme/tools//skills/review\"\n",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [
+        { "kind": "skill-declaration", "name": "old-name" },
+        { "kind": "skill-declaration", "name": "new-name" }
+      ]
+    },
+    {
+      "id": "crlf-local-replacement",
+      "newline": "crlf",
+      "mode": 416,
+      "before": "version = 1\r\n\r\n[defaults]\r\ntools = [\"codex\"]\r\nscope = \"project\"\r\n\r\n[[skills]]\r\nname = \"review\"\r\nsource = \"github.com/acme/tools//skills/review\"\r\n",
+      "request": {
+        "edits": [{ "kind": "set-default", "field": "tools", "value": ["claude-code", "codex"] }]
+      },
+      "after": "version = 1\r\n\r\n[defaults]\r\ntools = [\"claude-code\", \"codex\"]\r\nscope = \"project\"\r\n\r\n[[skills]]\r\nname = \"review\"\r\nsource = \"github.com/acme/tools//skills/review\"\r\n",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [{ "kind": "default", "field": "tools" }]
+    },
+    {
+      "id": "mixed-newline-local-replacement",
+      "newline": "mixed",
+      "mode": 420,
+      "before": "version = 1\r\n\r\n[defaults]\r\ntools = [\"codex\"]\r\nscope = \"project\"\n\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\n",
+      "request": { "edits": [{ "kind": "set-default", "field": "scope", "value": "user" }] },
+      "after": "version = 1\r\n\r\n[defaults]\r\ntools = [\"codex\"]\r\nscope = \"user\"\n\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\n",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [{ "kind": "default", "field": "scope" }]
+    },
+    {
+      "id": "no-final-newline-replacement",
+      "newline": "none-final",
+      "mode": 420,
+      "before": "version = 1\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"",
+      "request": {
+        "edits": [
+          {
+            "kind": "set-skill-field",
+            "name": "review",
+            "field": "source",
+            "value": "git.example.com/acme/tools//skills/review"
+          }
+        ]
+      },
+      "after": "version = 1\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n[[skills]]\nname = \"review\"\nsource = \"git.example.com/acme/tools//skills/review\"",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [{ "kind": "skill-field", "name": "review", "field": "source" }]
+    },
+    {
+      "id": "semantic-no-op-keeps-original-bytes",
+      "newline": "lf",
+      "mode": 420,
+      "before": "version = 1\n\n[defaults]\ntools=[\"codex\"]\nscope='project'\n\n[[skills]]\nname='review'\nsource='github.com/acme/tools//skills/review'\n",
+      "request": { "edits": [{ "kind": "set-default", "field": "scope", "value": "project" }] },
+      "after": "version = 1\n\n[defaults]\ntools=[\"codex\"]\nscope='project'\n\n[[skills]]\nname='review'\nsource='github.com/acme/tools//skills/review'\n",
+      "changed": false,
+      "migrated": false,
+      "touchedTargets": [{ "kind": "default", "field": "scope" }]
+    },
+    {
+      "id": "blank-separated-eof-comment-is-independent",
+      "newline": "lf",
+      "mode": 420,
+      "before": "version = 1\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n\n# independent EOF note\n",
+      "request": { "edits": [{ "kind": "unset-default", "field": "scope" }] },
+      "after": "version = 1\n[defaults]\ntools = [\"codex\"]\n\n# independent EOF note\n",
+      "changed": true,
+      "migrated": false,
+      "touchedTargets": [{ "kind": "default", "field": "scope" }]
+    }
+  ],
+  "unsafeCases": [
+    {
+      "id": "inline-comment-blocks-scalar-unset",
+      "shape": "inline-comment",
+      "source": "version = 1\n[defaults]\ntools = [\"codex\"]\nscope = \"project\" # retain why\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\n",
+      "request": { "edits": [{ "kind": "unset-default", "field": "scope" }] },
+      "reason": "unsafe-human-edit"
+    },
+    {
+      "id": "leading-comment-blocks-scalar-unset",
+      "shape": "leading-comment",
+      "source": "version = 1\n[defaults]\ntools = [\"codex\"]\n# retain why\nscope = \"project\"\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\n",
+      "request": { "edits": [{ "kind": "unset-default", "field": "scope" }] },
+      "reason": "unsafe-human-edit"
+    },
+    {
+      "id": "dotted-key-alias-refuses",
+      "shape": "dotted-key",
+      "source": "version = 1\ndefaults.tools = [\"codex\"]\ndefaults.scope = \"project\"\n",
+      "request": { "edits": [{ "kind": "set-default", "field": "scope", "value": "user" }] },
+      "reason": "unsafe-human-edit"
+    },
+    {
+      "id": "reopened-defaults-refuses",
+      "shape": "reopened-table",
+      "source": "version = 1\n[defaults]\ntools = [\"codex\"]\n[registry]\ndefault = \"github.com/acme\"\n[defaults]\nscope = \"project\"\n",
+      "request": { "edits": [{ "kind": "set-default", "field": "scope", "value": "user" }] },
+      "reason": "invalid-manifest"
+    },
+    {
+      "id": "quoted-decoded-duplicate-refuses",
+      "shape": "duplicate-key",
+      "source": "version = 1\n[defaults]\nscope = \"project\"\n\"scope\" = \"project\"\ntools = [\"codex\"]\n",
+      "request": { "edits": [{ "kind": "set-default", "field": "scope", "value": "user" }] },
+      "reason": "invalid-manifest"
+    },
+    {
+      "id": "multiline-target-value-refuses",
+      "shape": "multiline-array",
+      "source": "version = 1\n[defaults]\ntools = [\n  \"codex\",\n]\nscope = \"project\"\n",
+      "request": {
+        "edits": [{ "kind": "set-default", "field": "tools", "value": ["claude-code"] }]
+      },
+      "reason": "unsafe-human-edit"
+    },
+    {
+      "id": "inline-table-alias-refuses",
+      "shape": "inline-table",
+      "source": "version = 1\ndefaults = { tools = [\"codex\"], scope = \"project\" }\n",
+      "request": { "edits": [{ "kind": "set-default", "field": "scope", "value": "user" }] },
+      "reason": "unsafe-human-edit"
+    },
+    {
+      "id": "deceptive-multiline-string-is-not-structure",
+      "shape": "deceptive-string",
+      "source": "version = 1\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n[registry]\ndefault = \"github.com/acme\"\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\nref = \"\"\"line\n[defaults]\nscope = 'user' # deceptive\n\"\"\"\n",
+      "request": { "edits": [{ "kind": "set-default", "field": "scope", "value": "user" }] },
+      "reason": "invalid-manifest"
+    },
+    {
+      "id": "ambiguous-mixed-newline-insertion-refuses",
+      "shape": "mixed-insertion",
+      "source": "version = 1\r\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\n",
+      "request": { "edits": [{ "kind": "set-registry-default", "value": "github.com/acme" }] },
+      "reason": "unsafe-human-edit"
+    }
+  ],
+  "requestRefusals": [
+    "array-hole",
+    "array-accessor",
+    "symbol-key",
+    "extra-key",
+    "exotic-prototype",
+    "duplicate-target",
+    "remove-update-conflict",
+    "duplicate-final-name",
+    "migration-not-first",
+    "migration-duplicate"
+  ]
+}

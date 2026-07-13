@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "fixtureCanary": "p2-ts04-recovery-canary",
+  "lockConstants": {
+    "retryDelaysMs": [0, 100, 200, 400, 800, 800],
+    "centralStaleMs": 2000,
+    "centralHeartbeatMs": 1000,
+    "compatibilityStaleMs": 30000,
+    "compatibilityHeartbeatMs": 5000
+  },
+  "modes": [384, 416, 420],
+  "topologies": [
+    { "id": "absent", "expected": "accepted" },
+    { "id": "regular", "expected": "accepted" },
+    { "id": "symlink", "expected": "invalid-file-kind" },
+    { "id": "dangling-symlink", "expected": "invalid-file-kind" },
+    { "id": "directory", "expected": "invalid-file-kind" },
+    { "id": "special", "expected": "invalid-file-kind" },
+    { "id": "multi-link", "expected": "invalid-file-kind" },
+    { "id": "leaf-alias", "expected": "artifact-alias" },
+    { "id": "ancestor-retarget", "expected": "external-writer-conflict" }
+  ],
+  "pairStates": ["absent-absent", "present-absent", "absent-present", "present-present"],
+  "externalChanges": [
+    { "id": "no-fact-change", "expected": "commit" },
+    { "id": "format-only-untouched-target", "expected": "replay-once" },
+    { "id": "already-exact-desired", "expected": "converge" },
+    { "id": "semantic-change", "expected": "external-writer-conflict" },
+    { "id": "targeted-before-change", "expected": "external-writer-conflict" },
+    { "id": "lock-bytes-change", "expected": "external-writer-conflict" },
+    { "id": "mode-change", "expected": "external-writer-conflict" },
+    { "id": "identity-change", "expected": "external-writer-conflict" },
+    { "id": "parent-change", "expected": "external-writer-conflict" },
+    { "id": "aba-identity-drift", "expected": "external-writer-conflict" },
+    { "id": "second-change-after-replay", "expected": "external-writer-conflict" }
+  ],
+  "forwardCursors": [
+    "prepared",
+    "staging",
+    "final-guard",
+    "lock-backup",
+    "lock-install",
+    "manifest-backup",
+    "manifest-install",
+    "pair-verify",
+    "committed",
+    "cleanup"
+  ],
+  "rollbackCursors": [
+    "rollback-manifest-remove",
+    "rollback-manifest-restore",
+    "rollback-lock-remove",
+    "rollback-lock-restore",
+    "rollback-verify",
+    "cleanup"
+  ],
+  "barrierGaps": [
+    { "kind": "record-durable", "cursor": "prepared", "role": null, "object": null },
+    {
+      "kind": "mutation-returned",
+      "cursor": "prepared",
+      "role": "manifest",
+      "object": "transaction"
+    },
+    {
+      "kind": "object-verified",
+      "cursor": "prepared",
+      "role": "manifest",
+      "object": "transaction"
+    },
+    { "kind": "mutation-returned", "cursor": "staging", "role": "manifest", "object": "stage" },
+    { "kind": "object-verified", "cursor": "staging", "role": "manifest", "object": "stage" },
+    { "kind": "mutation-returned", "cursor": "lock-backup", "role": "lock", "object": "backup" },
+    { "kind": "object-verified", "cursor": "lock-backup", "role": "lock", "object": "backup" },
+    { "kind": "mutation-returned", "cursor": "lock-install", "role": "lock", "object": "live" },
+    { "kind": "object-verified", "cursor": "lock-install", "role": "lock", "object": "live" },
+    {
+      "kind": "mutation-returned",
+      "cursor": "manifest-backup",
+      "role": "manifest",
+      "object": "backup"
+    },
+    {
+      "kind": "object-verified",
+      "cursor": "manifest-backup",
+      "role": "manifest",
+      "object": "backup"
+    },
+    {
+      "kind": "mutation-returned",
+      "cursor": "manifest-install",
+      "role": "manifest",
+      "object": "live"
+    },
+    {
+      "kind": "object-verified",
+      "cursor": "manifest-install",
+      "role": "manifest",
+      "object": "live"
+    },
+    { "kind": "record-durable", "cursor": "committed", "role": null, "object": null },
+    {
+      "kind": "mutation-returned",
+      "cursor": "cleanup",
+      "role": "manifest",
+      "object": "transaction"
+    },
+    { "kind": "record-removed", "cursor": "cleanup", "role": null, "object": "recovery-record" }
+  ],
+  "overlapFollowups": [
+    { "crashed": ["A", "B"], "requested": ["C", "B"] },
+    { "crashed": ["A", "B"], "requested": ["B", "C"] },
+    { "crashed": ["A", "B"], "requested": ["A", "C"] }
+  ],
+  "cancellationStates": [
+    { "phase": "before-fresh-snapshot", "durableState": "unobserved-before", "revisions": 0 },
+    { "phase": "after-fresh-snapshot", "durableState": "before", "revisions": 2 },
+    { "phase": "after-prepared", "durableState": "before", "revisions": 2 },
+    { "phase": "after-committed", "durableState": "after", "revisions": 2 }
+  ],
+  "idGrammars": {
+    "artifact-transaction": "^[0-9a-f]{16}$",
+    "artifact-operation": "^[0-9a-f]{16}$",
+    "artifact-cas": "^[0-9a-f]{16}$",
+    "artifact-ownership": "^[0-9a-f]{64}$"
+  },
+  "allowedResidue": [
+    "recovery-record",
+    "recovery-cas-temp",
+    "transaction-directory",
+    "collision-directory",
+    "member-owner-marker",
+    "member-lock-sidecar",
+    "stage",
+    "backup",
+    "discard",
+    "temporary-hard-link-set"
+  ]
+}

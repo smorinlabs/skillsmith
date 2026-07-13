@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "acceptedSources": [
+    {
+      "id": "github-shorthand-whole",
+      "input": "owner/repo",
+      "expected": {
+        "identity": { "host": "github.com", "repository": "owner/repo", "path": null },
+        "canonicalSource": "github.com/owner/repo",
+        "canonicalInvocation": "github.com/owner/repo",
+        "originSource": "github.com/owner/repo",
+        "cloneUrl": "https://github.com/owner/repo.git",
+        "selector": { "kind": "whole-repo" },
+        "ref": null
+      }
+    },
+    {
+      "id": "github-shorthand-name-ref",
+      "input": "owner/repo/review@main",
+      "expected": {
+        "identity": { "host": "github.com", "repository": "owner/repo", "path": null },
+        "canonicalSource": "github.com/owner/repo",
+        "canonicalInvocation": "github.com/owner/repo/review@main",
+        "originSource": "github.com/owner/repo",
+        "cloneUrl": "https://github.com/owner/repo.git",
+        "selector": { "kind": "name", "name": "review" },
+        "ref": "main"
+      }
+    },
+    {
+      "id": "explicit-host-whole",
+      "input": "gitlab.example/acme/tools",
+      "expected": {
+        "identity": { "host": "gitlab.example", "repository": "acme/tools", "path": null },
+        "canonicalSource": "gitlab.example/acme/tools",
+        "canonicalInvocation": "gitlab.example/acme/tools",
+        "originSource": "gitlab.example/acme/tools",
+        "cloneUrl": "https://gitlab.example/acme/tools.git",
+        "selector": { "kind": "whole-repo" },
+        "ref": null
+      }
+    },
+    {
+      "id": "https-dot-git",
+      "input": "https://gitlab.example/acme/tools.git",
+      "expected": {
+        "identity": { "host": "gitlab.example", "repository": "acme/tools", "path": null },
+        "canonicalSource": "gitlab.example/acme/tools",
+        "canonicalInvocation": "gitlab.example/acme/tools",
+        "originSource": "gitlab.example/acme/tools",
+        "cloneUrl": "https://gitlab.example/acme/tools.git",
+        "selector": { "kind": "whole-repo" },
+        "ref": null
+      }
+    },
+    {
+      "id": "https-source-path-ref",
+      "input": "https://gitlab.example/acme/tools.git//skills/review@release-2",
+      "expected": {
+        "identity": {
+          "host": "gitlab.example",
+          "repository": "acme/tools",
+          "path": "skills/review"
+        },
+        "canonicalSource": "gitlab.example/acme/tools//skills/review",
+        "canonicalInvocation": "gitlab.example/acme/tools//skills/review@release-2",
+        "originSource": "gitlab.example/acme/tools//skills/review",
+        "cloneUrl": "https://gitlab.example/acme/tools.git",
+        "selector": { "kind": "path", "path": "skills/review" },
+        "ref": "release-2"
+      }
+    },
+    {
+      "id": "ssh-git-source-path",
+      "input": "ssh://git@gitlab.example/acme/tools.git//skills/review",
+      "expected": {
+        "identity": {
+          "host": "gitlab.example",
+          "repository": "acme/tools",
+          "path": "skills/review"
+        },
+        "canonicalSource": "gitlab.example/acme/tools//skills/review",
+        "canonicalInvocation": "gitlab.example/acme/tools//skills/review",
+        "originSource": "gitlab.example/acme/tools//skills/review",
+        "cloneUrl": "ssh://git@gitlab.example/acme/tools.git",
+        "selector": { "kind": "path", "path": "skills/review" },
+        "ref": null
+      }
+    },
+    {
+      "id": "scp-git-source-path-ref",
+      "input": "git@gitlab.example:acme/tools.git//skills/lint@v1.2.0",
+      "expected": {
+        "identity": {
+          "host": "gitlab.example",
+          "repository": "acme/tools",
+          "path": "skills/lint"
+        },
+        "canonicalSource": "gitlab.example/acme/tools//skills/lint",
+        "canonicalInvocation": "gitlab.example/acme/tools//skills/lint@v1.2.0",
+        "originSource": "gitlab.example/acme/tools//skills/lint",
+        "cloneUrl": "git@gitlab.example:acme/tools.git",
+        "selector": { "kind": "path", "path": "skills/lint" },
+        "ref": "v1.2.0"
+      }
+    },
+    {
+      "id": "override-ref",
+      "input": "owner/repo//skills/review",
+      "options": { "overrideRef": "release/2026-07" },
+      "expected": {
+        "identity": {
+          "host": "github.com",
+          "repository": "owner/repo",
+          "path": "skills/review"
+        },
+        "canonicalSource": "github.com/owner/repo//skills/review",
+        "canonicalInvocation": "github.com/owner/repo//skills/review@release/2026-07",
+        "originSource": "github.com/owner/repo//skills/review",
+        "cloneUrl": "https://github.com/owner/repo.git",
+        "selector": { "kind": "path", "path": "skills/review" },
+        "ref": "release/2026-07"
+      }
+    },
+    {
+      "id": "subgroup-trailing-marker-whole",
+      "input": "gitlab.example/acme/platform/tools//",
+      "expected": {
+        "identity": {
+          "host": "gitlab.example",
+          "repository": "acme/platform/tools",
+          "path": null
+        },
+        "canonicalSource": "gitlab.example/acme/platform/tools",
+        "canonicalInvocation": "gitlab.example/acme/platform/tools",
+        "originSource": "gitlab.example/acme/platform/tools",
+        "cloneUrl": "https://gitlab.example/acme/platform/tools.git",
+        "selector": { "kind": "whole-repo" },
+        "ref": null
+      }
+    }
+  ],
+  "rejectedSources": [
+    { "id": "https-user", "input": "https://user@example.com/acme/repo" },
+    { "id": "https-password", "input": "https://user:password@example.com/acme/repo" },
+    { "id": "query-token", "input": "https://example.com/acme/repo?token=value" },
+    { "id": "query-ordinary", "input": "https://example.com/acme/repo?mode=raw" },
+    { "id": "fragment", "input": "https://example.com/acme/repo#readme" },
+    { "id": "encoded-at", "input": "https://user%40example.com/acme/repo" },
+    { "id": "encoded-colon", "input": "https://example.com/acme/repo%3Asecret" },
+    { "id": "encoded-slash", "input": "https://example.com/acme%2Frepo" },
+    { "id": "encoded-query", "input": "https://example.com/acme/repo%3Ftoken=value" },
+    { "id": "encoded-fragment", "input": "https://example.com/acme/repo%23secret" },
+    { "id": "http", "input": "http://example.com/acme/repo" },
+    { "id": "git-protocol", "input": "git://example.com/acme/repo" },
+    { "id": "file-url", "input": "file:///tmp/acme/repo" },
+    { "id": "ftp", "input": "ftp://example.com/acme/repo" },
+    { "id": "ssh-custom-user", "input": "ssh://deploy@example.com/acme/repo" },
+    { "id": "ssh-port", "input": "ssh://git@example.com:2222/acme/repo" },
+    { "id": "scp-custom-user", "input": "deploy@example.com:acme/repo" },
+    { "id": "scp-port", "input": "git@example.com:2222/acme/repo" },
+    { "id": "empty-host", "input": "https:///acme/repo" },
+    { "id": "host-leading-dot", "input": "https://.example.com/acme/repo" },
+    { "id": "host-double-dot", "input": "https://example..com/acme/repo" },
+    { "id": "control", "input": "https://example.com/acme/repo\u0007" },
+    { "id": "whitespace", "input": "https://example.com/acme /repo" },
+    { "id": "repository-traversal", "input": "https://example.com/acme/../repo" },
+    { "id": "path-traversal", "input": "example.com/acme/repo//skills/../review" },
+    {
+      "id": "doubled-repository-segment",
+      "input": "https://example.com/acme//repo//skills/review"
+    },
+    { "id": "empty-path-segment", "input": "example.com/acme/repo//skills//review" },
+    {
+      "id": "inline-and-override-ref",
+      "input": "owner/repo@main",
+      "options": { "overrideRef": "release" }
+    },
+    { "id": "absolute-posix", "input": "/tmp/acme/repo" },
+    { "id": "windows-drive", "input": "C:\\acme\\repo" },
+    { "id": "windows-unc", "input": "\\\\server\\share\\repo" }
+  ],
+  "registry": {
+    "accepted": [
+      { "input": "registry.example", "expected": "registry.example", "legacy": false },
+      { "input": "REGISTRY.EXAMPLE/team", "expected": "registry.example/team", "legacy": false },
+      {
+        "input": "https://Registry.Example/team",
+        "expected": "registry.example/team",
+        "legacy": true
+      }
+    ],
+    "rejected": [
+      { "input": "http://registry.example", "legacy": true },
+      { "input": "https://user@registry.example", "legacy": true },
+      { "input": "https://registry.example:8443", "legacy": true },
+      { "input": "registry.example//team", "legacy": false },
+      { "input": "registry.example?token=value", "legacy": false }
+    ]
+  },
+  "portablePaths": {
+    "accepted": [
+      { "input": "./.agents/skills", "scope": "project" },
+      { "input": "./tools/review", "scope": "project" },
+      { "input": "~/.agents/skills", "scope": "user" },
+      { "input": "~/tools/review", "scope": "user" }
+    ],
+    "rejected": [
+      { "input": "/absolute/path", "scope": "project" },
+      { "input": "C:/absolute/path", "scope": "project" },
+      { "input": "C:relative", "scope": "project" },
+      { "input": "//server/share", "scope": "project" },
+      { "input": "./tools\\review", "scope": "project" },
+      { "input": "./tools/../review", "scope": "project" },
+      { "input": "~/.agents/skills", "scope": "project" },
+      { "input": "./.agents/skills", "scope": "user" },
+      { "input": "./.skillsmith/store/review", "scope": "project" },
+      { "input": "./.skillsmith/ledger/review", "scope": "project" },
+      { "input": "./.skillsmith/dev/review", "scope": "project" },
+      { "input": "./placements.json", "scope": "project" }
+    ]
+  },
+  "artifactSelectors": [
+    { "input": "./state/team.toml", "posix": "portable", "windows": "portable" },
+    { "input": "/state/team.toml", "posix": "machine-bound", "windows": "machine-bound" },
+    { "input": "C:/state/team.toml", "posix": "nonportable", "windows": "machine-bound" },
+    { "input": "C:state/team.toml", "posix": "nonportable", "windows": "nonportable" },
+    { "input": "\\\\server\\share\\team.toml", "posix": "nonportable", "windows": "machine-bound" },
+    { "input": "state\\team.toml", "posix": "nonportable", "windows": "portable" },
+    { "input": "", "posix": "invalid", "windows": "invalid" }
+  ]
+}
