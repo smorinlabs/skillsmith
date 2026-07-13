@@ -1,6 +1,11 @@
 import {
+  type ApplicationContext,
+  type CheckRunContext,
   type ClockPort,
+  type DetectOptions,
   type IdPort,
+  type ListCommandsOpts,
+  type ListSkillsOpts,
   type OBSERVATION_EVENT_KINDS,
   type OPERATION_KINDS,
   type ObservationBundle,
@@ -12,6 +17,7 @@ import {
   type ObserverEventPayloadMap,
   type ObserverPort,
   type OperationContext,
+  type VerifyOptions,
   createChildOperationContext,
   createObservationEmitter,
   createObserverEvent,
@@ -21,6 +27,8 @@ import {
   redactObservationValue,
   withOperationTarget,
 } from '@skillsmith/core';
+import type { ProgramBuildExtensions } from '../../../../packages/cli/src/program.ts';
+import type { RuntimeExecutionRequest } from '../../../../packages/cli/src/runtime/adapter.ts';
 
 type Assert<T extends true> = T;
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
@@ -213,8 +221,11 @@ type _Bundle = Assert<
   Equal<ObservationBundle, Readonly<{ context: OperationContext; emitter: ObservationEmitter }>>
 >;
 type _ObserverReturn = Assert<Equal<ReturnType<ObserverPort['observe']>, void | PromiseLike<void>>>;
+type _ObserverInput = Assert<Equal<Parameters<ObserverPort['observe']>, [event: ObserverEvent]>>;
 type _ObserverKeys = Assert<Equal<keyof ObserverPort, 'observe'>>;
 type _EmitterKeys = Assert<Equal<keyof ObservationEmitter, 'begin' | 'complete' | 'emit'>>;
+type _EmitReturn = Assert<Equal<ReturnType<ObservationEmitter['emit']>, void>>;
+type _CompleteReturn = Assert<Equal<ReturnType<ObservationEmitter['complete']>, void>>;
 type _EventClosure = Assert<Equal<ObserverEvent, ExpectedObserverEvent>>;
 type _CreateContext = Assert<
   Equal<typeof createOperationContext, (input: ExpectedContextInput) => OperationContext>
@@ -248,6 +259,33 @@ type _CreateEmitter = Assert<
   Equal<
     typeof createObservationEmitter,
     (input: { observer: ObserverPort; toolIds?: readonly string[] }) => ObservationEmitter
+  >
+>;
+type _ApplicationObservation = Assert<Equal<ApplicationContext['observation'], ObservationBundle>>;
+type _DetectObservation = Assert<
+  Equal<DetectOptions['observation'], ObservationBundle | undefined>
+>;
+type _ListSkillsObservation = Assert<
+  Equal<ListSkillsOpts['observation'], ObservationBundle | undefined>
+>;
+type _ListCommandsObservation = Assert<
+  Equal<ListCommandsOpts['observation'], ObservationBundle | undefined>
+>;
+type _DoctorObservation = Assert<
+  Equal<CheckRunContext['observation'], ObservationBundle | undefined>
+>;
+type _VerifyObservation = Assert<
+  Equal<VerifyOptions<string>['observation'], ObservationBundle | undefined>
+>;
+type _RuntimeObservation = Assert<Equal<RuntimeExecutionRequest['observation'], ObservationBundle>>;
+type _OperationPorts = Assert<
+  Equal<
+    ProgramBuildExtensions['operationPorts'],
+    | {
+        readonly clock: Pick<ClockPort, 'wallNowIso' | 'monotonicMilliseconds'>;
+        readonly id: Pick<IdPort, 'nextId'>;
+      }
+    | undefined
   >
 >;
 
@@ -363,12 +401,12 @@ emitter.complete(operationSpan, {
 declare const opaqueCommandSpan: NonNullable<ObservationSpan<'command.started'>>;
 // @ts-expect-error observation spans are opaque
 opaqueCommandSpan.context;
-const emittedVoid: undefined = emitter.emit(context, {
+emitter.emit(context, {
   kind: 'plan.created',
   planId: 'plan-2',
   operationCount: 1,
 });
-const completedVoid: undefined = emitter.complete(commandSpan, {
+emitter.complete(commandSpan, {
   outcome: 'success',
   exitClass: 'success',
   errorCode: null,
@@ -394,7 +432,5 @@ void redacted;
 void noop;
 void decision;
 void invalidBundle;
-void emittedVoid;
-void completedVoid;
 void emittedDecision;
 void unsafeEvent;

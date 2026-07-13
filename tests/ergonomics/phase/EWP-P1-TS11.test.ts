@@ -3,12 +3,14 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { buildProgram } from '../../../packages/cli/src/program.ts';
 import { createCliRuntimeAdapter } from '../../../packages/cli/src/runtime/adapter.ts';
 import { CURRENT_COMMAND_SPECS } from '../../../packages/cli/src/spec/registry.ts';
 import { validateOptionInvocation } from '../../../packages/cli/src/spec/relations.ts';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
+import { genericError } from '../../../packages/core/src/errors.ts';
 import { defaultRuntimePorts } from '../../../packages/core/src/ports/default.ts';
-import { ok } from '../../../packages/core/src/result.ts';
+import { err, ok } from '../../../packages/core/src/result.ts';
 import { detectAll } from '../../../packages/core/src/scan/index.ts';
 import { runVerify } from '../../../packages/core/src/verify/run.ts';
 import type { ToolVerifier } from '../../../packages/core/src/verify/types.ts';
@@ -152,7 +154,17 @@ const observationAuthority = async (query: string): Promise<ObservationModule | 
 const runCli = async (args: readonly string[], env: Record<string, string | undefined> = {}) => {
   const child = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
     cwd: ROOT,
-    env: hermeticGitEnv({ CI: '1', NO_COLOR: '1', ...env }),
+    env: hermeticGitEnv({
+      CI: '1',
+      NO_COLOR: '1',
+      HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/home'),
+      XDG_CONFIG_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/xdg/config'),
+      XDG_DATA_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/xdg/data'),
+      XDG_CACHE_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/xdg/cache'),
+      SKILLSMITH_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/skillsmith-home'),
+      CODEX_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/codex-home'),
+      ...env,
+    }),
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -207,7 +219,7 @@ const makeContext = (
   const id = {
     nextId: (purpose: string) => {
       idPurposes.push(purpose);
-      return 'operation-1';
+      return `operation-${idPurposes.length}`;
     },
   };
   const create = callable(authority.createOperationContext);
@@ -468,6 +480,91 @@ describe('EWP-P1-TS11', () => {
         pairId: 'pair-1',
       }),
     ).toThrow(TypeError);
+    for (const clock of [
+      { wallNowIso: () => 'not-iso', monotonicMilliseconds: () => 1 },
+      {
+        wallNowIso: () => '2026-07-13T00:00:00.000Z',
+        monotonicMilliseconds: () => Number.NaN,
+      },
+      {
+        wallNowIso: new Proxy(() => '2026-07-13T00:00:00.000Z', {}),
+        monotonicMilliseconds: () => 1,
+      },
+    ])
+      expect(() =>
+        create({ command: 'fixture', workflow: 'fixture', clock, id: built.id }),
+      ).toThrow(TypeError);
+
+    let explicitIdCalls = 0;
+    const explicit = create({
+      command: 'fixture',
+      workflow: 'fixture',
+      clock: built.clock,
+      id: {
+        nextId: () => {
+          explicitIdCalls++;
+          return 'unused';
+        },
+      },
+      operationId: 'explicit-operation',
+    }) as UnknownRecord;
+    expect(explicitIdCalls).toBe(0);
+    expect(explicit.operationId).toBe('explicit-operation');
+    const createChild = callable(authority.createChildOperationContext);
+    const target = callable(authority.withOperationTarget);
+    const nextAttempt = callable(authority.nextOperationAttempt);
+    expect(createChild).not.toBeNull();
+    expect(target).not.toBeNull();
+    expect(nextAttempt).not.toBeNull();
+    if (createChild === null || target === null || nextAttempt === null) return;
+    built.setTime('2026-07-13T00:00:02.000Z', 30);
+    const childContext = createChild(built.context, {
+      command: 'skillsmith child',
+      workflow: 'child',
+      id: built.id,
+    }) as UnknownRecord;
+    expect(childContext).toMatchObject({
+      operationId: 'operation-2',
+      parentOperationId: 'operation-1',
+      groupId: null,
+      pairId: null,
+      attempt: 1,
+      startedAt: '2026-07-13T00:00:02.000Z',
+      startedMonotonicMilliseconds: 30,
+    });
+    const callsBeforeTarget = built.idPurposes.length;
+    const targeted = target(childContext, {
+      groupId: 'group-1',
+      pairId: 'pair-1',
+    }) as UnknownRecord;
+    expect(built.idPurposes).toHaveLength(callsBeforeTarget);
+    expect(targeted).toMatchObject({
+      operationId: 'operation-2',
+      groupId: 'group-1',
+      pairId: 'pair-1',
+      attempt: 1,
+      startedMonotonicMilliseconds: 30,
+    });
+    built.setTime('2026-07-13T00:00:03.000Z', 45);
+    const attempted = nextAttempt(targeted) as UnknownRecord;
+    expect(built.idPurposes).toHaveLength(callsBeforeTarget);
+    expect(attempted).toMatchObject({
+      operationId: 'operation-2',
+      groupId: 'group-1',
+      pairId: 'pair-1',
+      attempt: 2,
+      startedAt: '2026-07-13T00:00:03.000Z',
+      startedMonotonicMilliseconds: 45,
+    });
+    const overflow = create({
+      command: 'fixture',
+      workflow: 'fixture',
+      clock: built.clock,
+      id: built.id,
+      operationId: 'overflow-operation',
+      attempt: Number.MAX_SAFE_INTEGER,
+    });
+    expect(() => nextAttempt(overflow)).toThrow(TypeError);
     expect(() =>
       create({
         command: 'fixture',
@@ -498,6 +595,46 @@ describe('EWP-P1-TS11', () => {
         extra: 1,
       }),
     ).toThrow(TypeError);
+    for (const invalid of [
+      {
+        kind: 'command.completed',
+        outcome: 'success',
+        exitClass: 'success',
+        errorCode: 'unexpected',
+        durationMilliseconds: 1,
+      },
+      {
+        kind: 'command.completed',
+        outcome: 'failure',
+        exitClass: 'failure',
+        errorCode: null,
+        durationMilliseconds: 1,
+      },
+      { kind: 'plan.created', planId: 'plan-1', operationCount: -1 },
+      { kind: 'tool.verification.started', toolId: 'fixture-tool', modes: [] },
+      {
+        kind: 'tool.verification.started',
+        toolId: 'fixture-tool',
+        modes: ['static', 'static'],
+      },
+      {
+        kind: 'tool.verification.started',
+        toolId: 'fixture-tool',
+        modes: ['deep', 'static'],
+      },
+    ])
+      expect(() => createEvent(built.context, invalid)).toThrow(TypeError);
+    let eventGetterReads = 0;
+    const accessorEvent: UnknownRecord = { kind: 'plan.created', operationCount: 1 };
+    Object.defineProperty(accessorEvent, 'planId', {
+      enumerable: true,
+      get: () => {
+        eventGetterReads++;
+        return 'plan-1';
+      },
+    });
+    expect(() => createEvent(built.context, accessorEvent)).toThrow(TypeError);
+    expect(eventGetterReads).toBe(0);
   }, 20_000);
 
   test('family 2: correlates command/span lifecycle with independent clocks and deterministic error codes', async () => {
@@ -506,6 +643,12 @@ describe('EWP-P1-TS11', () => {
     const createEmitter = callable(authority.createObservationEmitter);
     expect(createEmitter, 'missing createObservationEmitter').not.toBeNull();
     if (createEmitter === null) return;
+    expect(() =>
+      createEmitter({ observer: { observe: () => {} }, toolIds: ['fixture-tool', 'fixture-tool'] }),
+    ).toThrow(TypeError);
+    expect(() =>
+      createEmitter({ observer: { observe: () => {} }, toolIds: ['INVALID_TOOL'] }),
+    ).toThrow(TypeError);
     const timeline: string[] = [];
     const events: UnknownRecord[] = [];
     const built = makeContext(authority);
@@ -523,6 +666,7 @@ describe('EWP-P1-TS11', () => {
       applications: {
         fixture: async () => {
           timeline.push('application');
+          built.setTime('2026-07-13T00:00:03.000Z', 40);
           return {
             report: { value: true },
             diagnostics: [],
@@ -536,6 +680,7 @@ describe('EWP-P1-TS11', () => {
         fixture: {
           human: () => {
             timeline.push('renderer');
+            built.setTime('2026-07-13T00:00:04.000Z', 50);
             return { stdout: 'fixture\n' };
           },
           json: () => ({ stdout: '{"fixture":true}\n' }),
@@ -571,27 +716,253 @@ describe('EWP-P1-TS11', () => {
       'exit:0',
     ]);
     expect(events.map((event) => event.kind)).toEqual(['command.started', 'command.completed']);
-    expect(events[1]).toMatchObject({ outcome: 'success', exitClass: 'success', errorCode: null });
+    for (const event of events)
+      expect(event).toMatchObject({
+        operationId: 'operation-1',
+        parentOperationId: null,
+        command: 'skillsmith fixture',
+        workflow: 'fixture',
+        groupId: null,
+        pairId: null,
+        attempt: 1,
+      });
+    expect(events[0]).toMatchObject({
+      occurredAt: '2026-07-13T00:00:02.000Z',
+      monotonicMilliseconds: 30,
+    });
+    expect(events[1]).toMatchObject({
+      outcome: 'success',
+      exitClass: 'success',
+      errorCode: null,
+      occurredAt: '2026-07-13T00:00:04.000Z',
+      monotonicMilliseconds: 50,
+      durationMilliseconds: 20,
+    });
 
     const begin = callable(emitter.begin);
     const complete = callable(emitter.complete);
     expect(begin).not.toBeNull();
     expect(complete).not.toBeNull();
     if (begin === null || complete === null) return;
-    built.setTime('2026-07-13T00:00:03.000Z', 40);
-    const operationSpan = begin(built.context, {
-      kind: 'operation.started',
-      operationKind: 'inventory',
-    });
-    built.setTime('2026-07-13T00:00:04.000Z', 55);
-    complete(operationSpan, {
-      outcome: 'success',
-      errorCode: null,
-      standaloneCount: 1,
-      bundledCount: 0,
-      resultCount: 1,
-    });
+    built.setTime('2026-07-13T00:00:05.000Z', 60);
+    const operationSpan = Reflect.apply(begin, emitter, [
+      built.context,
+      { kind: 'operation.started', operationKind: 'inventory' },
+    ]);
+    built.setTime('2026-07-13T00:00:06.000Z', 75);
+    Reflect.apply(complete, emitter, [
+      operationSpan,
+      {
+        outcome: 'success',
+        errorCode: null,
+        standaloneCount: 1,
+        bundledCount: 0,
+        resultCount: 1,
+      },
+    ]);
     expect(events.at(-1)).toMatchObject({ kind: 'operation.completed', durationMilliseconds: 15 });
+
+    const modes = ['static', 'deep'];
+    const verificationSpan = Reflect.apply(begin, emitter, [
+      built.context,
+      { kind: 'tool.verification.started', toolId: 'fixture-tool', modes },
+    ]);
+    modes.splice(0, modes.length, 'deep');
+    expect(events.at(-1)).toMatchObject({
+      kind: 'tool.verification.started',
+      modes: ['static', 'deep'],
+    });
+    expect(Object.isFrozen(events.at(-1)?.modes)).toBeTrue();
+    Reflect.apply(complete, emitter, [verificationSpan, { verdict: 'pass', errorCode: null }]);
+
+    const unknownToolSpan = Reflect.apply(begin, emitter, [
+      built.context,
+      { kind: 'tool.detection.started', toolId: 'unknown-tool' },
+    ]);
+    expect(unknownToolSpan).toBeNull();
+    const otherEmitter = createEmitter({
+      observer: { observe: () => timeline.push('other-emitter') },
+      toolIds: ['fixture-tool'],
+    }) as UnknownRecord;
+    const eventCount = events.length;
+    Reflect.apply(callable(otherEmitter.complete) ?? (() => {}), otherEmitter, [
+      operationSpan,
+      {
+        outcome: 'success',
+        errorCode: null,
+        standaloneCount: 1,
+        bundledCount: 0,
+        resultCount: 1,
+      },
+    ]);
+    expect(events).toHaveLength(eventCount);
+    expect(timeline).not.toContain('other-emitter');
+
+    const completionCode = async (
+      exitClass: string,
+      diagnostics: readonly UnknownRecord[],
+    ): Promise<UnknownRecord> => {
+      const localEvents: UnknownRecord[] = [];
+      const local = makeContext(authority, { operationId: `matrix-${exitClass}` });
+      if (local.context === undefined) return {};
+      const localEmitter = createEmitter({
+        observer: { observe: (event: UnknownRecord) => localEvents.push(event) },
+      });
+      const adapter = createCliRuntimeAdapter({
+        applications: {
+          matrix: async () => ({
+            report: {},
+            diagnostics,
+            exitClass,
+            mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+            deprecations: [],
+          }),
+        },
+        renderers: { matrix: { human: () => '', json: () => '' } },
+        io: { stdout: { write: () => {} }, stderr: { write: () => {} }, exit: () => {} },
+      });
+      await Reflect.apply(adapter.execute, adapter, [
+        {
+          application: 'matrix',
+          reportKind: 'matrix',
+          request: {},
+          context: { observation: { context: local.context, emitter: localEmitter } },
+          observation: { context: local.context, emitter: localEmitter },
+          format: 'human',
+        },
+      ]);
+      return localEvents.at(-1) ?? {};
+    };
+    for (const [exitClass, expectedCode] of [
+      ['failure', 'command-failed'],
+      ['usage', 'usage'],
+      ['state', 'state'],
+      ['capability', 'capability'],
+      ['source', 'source'],
+      ['permission', 'permission'],
+      ['cancelled', 'cancelled'],
+    ] as const)
+      expect(await completionCode(exitClass, [])).toMatchObject({
+        kind: 'command.completed',
+        errorCode: expectedCode,
+      });
+    expect(
+      await completionCode('failure', [
+        { code: 'notice', severity: 'warning', message: 'warning' },
+        { code: 'first-error', severity: 'error', message: 'first' },
+        { code: 'second-error', severity: 'error', message: 'second' },
+      ]),
+    ).toMatchObject({ errorCode: 'first-error' });
+    expect(await completionCode('success', [])).toMatchObject({ errorCode: null });
+    expect(await completionCode('drift', [])).toMatchObject({ errorCode: null });
+
+    for (const failureMode of ['throw', 'missing-renderer', 'renderer-throw'] as const) {
+      const failureEvents: UnknownRecord[] = [];
+      const failureBuilt = makeContext(authority, { operationId: `runtime-${failureMode}` });
+      if (failureBuilt.context === undefined) return;
+      const failureEmitter = createEmitter({
+        observer: { observe: (event: UnknownRecord) => failureEvents.push(event) },
+      });
+      const adapter = createCliRuntimeAdapter({
+        applications: {
+          fixture: async () => {
+            if (failureMode === 'throw') throw new Error('classified failure');
+            return {
+              report: {},
+              diagnostics: [],
+              exitClass: 'success',
+              mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+              deprecations: [],
+            };
+          },
+        },
+        renderers:
+          failureMode === 'missing-renderer'
+            ? {}
+            : {
+                fixture: {
+                  human: () => {
+                    if (failureMode === 'renderer-throw') throw new Error('renderer failure');
+                    return '';
+                  },
+                  json: () => '',
+                },
+              },
+        io: { stdout: { write: () => {} }, stderr: { write: () => {} }, exit: () => {} },
+        classifyFailure: () => ({
+          exitClass: 'permission',
+          code: 'classified-runtime',
+          message: 'classified',
+        }),
+        renderFailure: () => ({ stderr: 'error: classified\n' }),
+      });
+      await Reflect.apply(adapter.execute, adapter, [
+        {
+          application: 'fixture',
+          reportKind: 'fixture',
+          request: {},
+          context: { observation: { context: failureBuilt.context, emitter: failureEmitter } },
+          observation: { context: failureBuilt.context, emitter: failureEmitter },
+          format: 'human',
+        },
+      ]);
+      expect(failureEvents.map((event) => event.kind)).toEqual([
+        'command.started',
+        'command.completed',
+      ]);
+      expect(failureEvents.at(-1)).toMatchObject({
+        outcome: 'failure',
+        exitClass: 'permission',
+        errorCode: 'classified-runtime',
+      });
+    }
+
+    const focusedWrites: string[] = [];
+    let focusedContext: unknown;
+    const focusedProgram = buildProgram(undefined, {
+      operationPorts: {
+        clock: {
+          wallNowIso: () => '2026-07-13T01:00:00.000Z',
+          monotonicMilliseconds: () => 100,
+        },
+        id: { nextId: (purpose: string) => `focused-${purpose}` },
+      },
+      applications: {
+        version: async (_request, context) => {
+          focusedContext = context;
+          return {
+            report: { version: '1.2.3-focused' },
+            diagnostics: [],
+            exitClass: 'success',
+            mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+            deprecations: [],
+          };
+        },
+      },
+      renderers: {
+        version: {
+          human: () => '1.2.3-focused\n',
+          json: () => '{"version":"1.2.3-focused"}\n',
+        },
+      },
+      runtimePorts: {
+        stdout: { write: (value) => focusedWrites.push(value) },
+        stderr: { write: (value) => focusedWrites.push(value) },
+        exit: () => {},
+      },
+    });
+    await focusedProgram.parseAsync(['node', 'skillsmith', 'version']);
+    expect(record(focusedContext)).toBeTrue();
+    expect(record(focusedContext) ? Object.keys(focusedContext) : []).toEqual(['observation']);
+    const focusedObservation = record(focusedContext) ? focusedContext.observation : undefined;
+    expect(record(focusedObservation) ? focusedObservation.context : null).toMatchObject({
+      operationId: 'focused-operation',
+      command: 'skillsmith version',
+      workflow: 'version',
+      startedAt: '2026-07-13T01:00:00.000Z',
+      startedMonotonicMilliseconds: 100,
+    });
+    expect(focusedWrites).toContain('1.2.3-focused\n');
   });
 
   test('family 3: isolates synchronous, rejected, and hanging observers without semantic authority', async () => {
@@ -631,11 +1002,14 @@ describe('EWP-P1-TS11', () => {
       if (begin === null || complete === null) continue;
       let span: unknown;
       expect(() => {
-        span = begin(built.context, { kind: 'command.started' });
+        span = Reflect.apply(begin, emitter, [built.context, { kind: 'command.started' }]);
       }).not.toThrow();
       expect(span).not.toBeNull();
       expect(() =>
-        complete(span, { outcome: 'success', exitClass: 'success', errorCode: null }),
+        Reflect.apply(complete, emitter, [
+          span,
+          { outcome: 'success', exitClass: 'success', errorCode: null },
+        ]),
       ).not.toThrow();
     }
     await Promise.resolve();
@@ -648,6 +1022,20 @@ describe('EWP-P1-TS11', () => {
       'hang:command.started',
       'hang:command.completed',
     ]);
+    const baseline = await detectAll(detectionEnv(), { tools: ['codex'] });
+    const throwingEmitter = createEmitter({
+      observer: { observe: () => Promise.reject(new Error('scan observer rejection')) },
+      toolIds: ['codex'],
+    });
+    const observed = (await Reflect.apply(detectAll, null, [
+      detectionEnv(),
+      {
+        tools: ['codex'],
+        observation: { context: built.context, emitter: throwingEmitter },
+      },
+    ])) as typeof baseline;
+    expect(observed).toEqual(baseline);
+    await Promise.resolve();
   });
 
   test('family 4: recursively redacts hostile nested values without reads, leaks, or mutation', async () => {
@@ -682,10 +1070,15 @@ describe('EWP-P1-TS11', () => {
       authorization: 'Bearer key-redaction-canary',
       nested: [
         {
-          text: 'before Bearer value-secret-canary after ghp_abcdefgh sk-abcdefgh',
+          text: 'before Bearer value-secret-canary after ghp_abcdefgh gho_abcdefgh ghu_abcdefgh ghs_abcdefgh ghr_abcdefgh sk-abcdefgh',
           nearMiss: 'ghp_abcdefg sk-abcdefg',
         },
       ],
+      cookieJar: 'cookie-secret-canary',
+      credentialValue: 'credential-secret-canary',
+      passwordValue: 'password-secret-canary',
+      clientSecret: 'named-secret-canary',
+      tokenValue: 'token-secret-canary',
       accessor,
       proxy,
       sharedA: shared,
@@ -694,6 +1087,8 @@ describe('EWP-P1-TS11', () => {
       nonfinite: Number.NaN,
       negativeZero: -0,
       bigint: 1n,
+      undefinedValue: undefined,
+      symbolValue: Symbol('symbol-value-secret-canary'),
       fn: () => 'function-secret-canary',
       exotic: new Date(0),
     };
@@ -701,18 +1096,43 @@ describe('EWP-P1-TS11', () => {
     expect(Object.getPrototypeOf(redacted)).toBeNull();
     expect(Object.isFrozen(redacted)).toBeTrue();
     expect(redacted.authorization).toBe('[REDACTED]');
-    expect(JSON.stringify(redacted)).not.toMatch(
+    for (const key of [
+      'cookieJar',
+      'credentialValue',
+      'passwordValue',
+      'clientSecret',
+      'tokenValue',
+    ])
+      expect(redacted[key]).toBe('[REDACTED]');
+    const serialized = JSON.stringify(redacted);
+    expect(serialized).not.toMatch(
       /key-redaction-canary|value-secret-canary|getter-secret-canary|proxy-secret-canary|function-secret-canary/,
     );
-    expect(JSON.stringify(redacted)).toContain('[REDACTED]');
-    expect(JSON.stringify(redacted)).toContain('[ACCESSOR]');
-    expect(JSON.stringify(redacted)).toContain('[PROXY]');
-    expect(JSON.stringify(redacted)).toContain('[CIRCULAR]');
-    expect(JSON.stringify(redacted)).toContain('[NON_FINITE]');
-    expect(JSON.stringify(redacted)).toContain('[EXOTIC]');
+    expect(serialized).not.toMatch(
+      /cookie-secret-canary|credential-secret-canary|password-secret-canary|named-secret-canary|token-secret-canary|symbol-value-secret-canary/,
+    );
+    for (const marker of [
+      '[REDACTED]',
+      '[ACCESSOR]',
+      '[PROXY]',
+      '[CIRCULAR]',
+      '[NON_FINITE]',
+      '[EXOTIC]',
+      '[UNDEFINED]',
+      '[BIGINT]',
+      '[SYMBOL]',
+      '[FUNCTION]',
+    ])
+      expect(serialized).toContain(marker);
     expect(getterReads).toBe(0);
     expect(proxyReads).toBe(0);
     expect((redacted.sharedA as object) === (redacted.sharedB as object)).toBeFalse();
+    expect(Object.getPrototypeOf((redacted.nested as readonly unknown[])[0])).toBeNull();
+    expect(Object.isFrozen(redacted.nested)).toBeTrue();
+    expect(Object.isFrozen((redacted.nested as readonly unknown[])[0])).toBeTrue();
+    expect((redacted.nested as readonly UnknownRecord[])[0]?.nearMiss).toBe(
+      'ghp_abcdefg sk-abcdefg',
+    );
     expect(Object.is((redacted as UnknownRecord).negativeZero, -0)).toBeTrue();
     const symbolKey = { safe: true, [Symbol('secret')]: 'symbol-secret-canary' };
     expect(redact(symbolKey)).toBe('[SYMBOL]');
@@ -759,6 +1179,53 @@ describe('EWP-P1-TS11', () => {
       'tool.detection.completed',
     ]);
     expect(events[0]?.toolId).toBe('codex');
+
+    const legacyAdapter = callable(authority.observationFromLegacyLogger);
+    expect(legacyAdapter, 'missing Logger compatibility adapter').not.toBeNull();
+    if (legacyAdapter === null) return;
+    const legacyLines: Array<readonly [string, string, unknown?]> = [];
+    const legacy = legacyAdapter(
+      {
+        debug: (message: string, metadata?: unknown) =>
+          legacyLines.push(['debug', message, metadata]),
+        info: (message: string, metadata?: unknown) =>
+          legacyLines.push(['info', message, metadata]),
+        warn: (message: string, metadata?: unknown) =>
+          legacyLines.push(['warn', message, metadata]),
+      },
+      'detect',
+      ['codex'],
+    ) as UnknownRecord;
+    expect(legacy.context).toMatchObject({
+      operationId: 'legacy-observation',
+      parentOperationId: null,
+      command: 'legacy-scan',
+      workflow: 'detect',
+      groupId: null,
+      pairId: null,
+      attempt: 1,
+      startedAt: '1970-01-01T00:00:00.000Z',
+      startedMonotonicMilliseconds: 0,
+    });
+    const legacyEmitter = legacy.emitter as UnknownRecord;
+    const legacyBegin = callable(legacyEmitter.begin);
+    const legacyComplete = callable(legacyEmitter.complete);
+    expect(legacyBegin).not.toBeNull();
+    expect(legacyComplete).not.toBeNull();
+    if (legacyBegin === null || legacyComplete === null || !record(legacy.context)) return;
+    const legacySpan = Reflect.apply(legacyBegin, legacyEmitter, [
+      legacy.context,
+      { kind: 'tool.detection.started', toolId: 'codex' },
+    ]);
+    Reflect.apply(legacyComplete, legacyEmitter, [
+      legacySpan,
+      { outcome: 'failure', errorCode: 'generic', resultCount: 0 },
+    ]);
+    expect(legacyLines).toEqual([
+      ['debug', 'detecting codex', undefined],
+      ['warn', 'detection error for codex', { code: 'generic' }],
+    ]);
+    expect(JSON.stringify(legacyLines)).not.toContain('legacy-observation');
 
     const verifyEvents: UnknownRecord[] = [];
     const verifyBuilt = makeContext(authority, {
@@ -812,6 +1279,216 @@ describe('EWP-P1-TS11', () => {
       verdict: 'pass',
       errorCode: null,
     });
+
+    const verificationCase = async (toolVerdict: UnknownRecord) => {
+      const before = verifyEvents.length;
+      const result = await Reflect.apply(runVerify, null, [
+        ports,
+        {
+          path: VERIFY_FIXTURE,
+          tools: ['codex'],
+          observation: { context: verifyBuilt.context, emitter: verifyEmitter },
+        },
+        { codex: async () => ok(toolVerdict) },
+      ]);
+      expect(record(result) && result.ok).toBeTrue();
+      return verifyEvents.slice(before);
+    };
+    const baseVerdict = {
+      tool: 'codex',
+      available: true,
+      toolVersion: '9.9.9',
+      versionDrift: false,
+      skipReason: null,
+      verdict: 'pass',
+      modes: [
+        {
+          mode: 'static',
+          status: 'ran',
+          skipReason: null,
+          coverage: { manifest: true, skills: true },
+          verdict: 'pass',
+          command: 'codex fixture',
+          findings: [],
+        },
+      ],
+    };
+    const cases: ReadonlyArray<readonly [UnknownRecord, string, string | null]> = [
+      [
+        {
+          ...baseVerdict,
+          available: false,
+          toolVersion: null,
+          skipReason: 'not-installed',
+          verdict: 'inconclusive',
+          modes: [],
+        },
+        'unavailable',
+        'not-installed',
+      ],
+      [
+        {
+          ...baseVerdict,
+          verdict: 'inconclusive',
+          modes: [
+            { ...baseVerdict.modes[0], status: 'error', skipReason: 'timeout', verdict: null },
+          ],
+        },
+        'inconclusive',
+        'timeout',
+      ],
+      [
+        {
+          ...baseVerdict,
+          verdict: 'inconclusive',
+          modes: [
+            { ...baseVerdict.modes[0], status: 'error', skipReason: 'exec-error', verdict: null },
+          ],
+        },
+        'inconclusive',
+        'exec-error',
+      ],
+      [
+        {
+          ...baseVerdict,
+          verdict: 'inconclusive',
+          modes: [
+            {
+              ...baseVerdict.modes[0],
+              status: 'skipped',
+              skipReason: 'not-installed',
+              verdict: null,
+            },
+          ],
+        },
+        'unavailable',
+        'not-installed',
+      ],
+      [
+        {
+          ...baseVerdict,
+          verdict: 'inconclusive',
+          modes: [
+            { ...baseVerdict.modes[0], status: 'skipped', skipReason: 'timeout', verdict: null },
+          ],
+        },
+        'inconclusive',
+        'timeout',
+      ],
+      [
+        {
+          ...baseVerdict,
+          verdict: 'inconclusive',
+          modes: [
+            { ...baseVerdict.modes[0], status: 'skipped', skipReason: 'exec-error', verdict: null },
+          ],
+        },
+        'inconclusive',
+        'exec-error',
+      ],
+      [
+        { ...baseVerdict, verdict: 'fail', modes: [{ ...baseVerdict.modes[0], verdict: 'fail' }] },
+        'fail',
+        'verification-failed',
+      ],
+      [
+        { ...baseVerdict, verdict: 'warn', modes: [{ ...baseVerdict.modes[0], verdict: 'warn' }] },
+        'warn',
+        null,
+      ],
+      [baseVerdict, 'pass', null],
+      [
+        { ...baseVerdict, verdict: 'inconclusive', modes: [] },
+        'inconclusive',
+        'verification-inconclusive',
+      ],
+    ];
+    for (const [toolVerdict, verdict, errorCode] of cases) {
+      const emitted = await verificationCase(toolVerdict);
+      expect(emitted.map((event) => event.kind)).toEqual([
+        'tool.verification.started',
+        'tool.verification.completed',
+      ]);
+      expect(emitted[1]).toMatchObject({ verdict, errorCode });
+    }
+
+    const errorBefore = verifyEvents.length;
+    const returnedError = await Reflect.apply(runVerify, null, [
+      ports,
+      {
+        path: VERIFY_FIXTURE,
+        tools: ['codex'],
+        observation: { context: verifyBuilt.context, emitter: verifyEmitter },
+      },
+      { codex: async () => err(genericError('fixture verify error')) },
+    ]);
+    expect(record(returnedError) && returnedError.ok).toBeFalse();
+    expect(verifyEvents.slice(errorBefore).at(-1)).toMatchObject({
+      verdict: 'fail',
+      errorCode: 'generic',
+    });
+    const throwBefore = verifyEvents.length;
+    await expect(
+      Reflect.apply(runVerify, null, [
+        ports,
+        {
+          path: VERIFY_FIXTURE,
+          tools: ['codex'],
+          observation: { context: verifyBuilt.context, emitter: verifyEmitter },
+        },
+        { codex: async () => Promise.reject(new Error('checker threw')) },
+      ]),
+    ).rejects.toThrow('checker threw');
+    expect(verifyEvents.slice(throwBefore).at(-1)).toMatchObject({
+      verdict: 'fail',
+      errorCode: 'generic',
+    });
+
+    const missingEvents: UnknownRecord[] = [];
+    const missingEmitter = createEmitter({
+      observer: { observe: (event: UnknownRecord) => missingEvents.push(event) },
+      toolIds: ['missing-tool'],
+    });
+    const missing = await Reflect.apply(runVerify, null, [
+      ports,
+      {
+        path: VERIFY_FIXTURE,
+        tools: ['missing-tool'],
+        observation: { context: verifyBuilt.context, emitter: missingEmitter },
+      },
+      {},
+    ]);
+    expect(record(missing) && missing.ok).toBeFalse();
+    expect(missingEvents.map((event) => event.kind)).toEqual([
+      'tool.verification.started',
+      'tool.verification.completed',
+    ]);
+    expect(missingEvents.at(-1)).toMatchObject({ verdict: 'fail', errorCode: 'generic' });
+
+    const controller = new AbortController();
+    controller.abort();
+    const beforeAbort = verifyEvents.length;
+    await Reflect.apply(runVerify, null, [
+      ports,
+      {
+        path: VERIFY_FIXTURE,
+        tools: ['codex'],
+        signal: controller.signal,
+        observation: { context: verifyBuilt.context, emitter: verifyEmitter },
+      },
+      { codex: checker },
+    ]);
+    expect(verifyEvents).toHaveLength(beforeAbort);
+    await Reflect.apply(runVerify, null, [
+      ports,
+      {
+        path: join(VERIFY_FIXTURE, 'missing-target'),
+        tools: ['codex'],
+        observation: { context: verifyBuilt.context, emitter: verifyEmitter },
+      },
+      { codex: checker },
+    ]);
+    expect(verifyEvents).toHaveLength(beforeAbort);
   });
 
   test('family 6: renders exact quiet, normal, verbose, trace, and debug policy through one sink', async () => {
@@ -854,7 +1531,7 @@ describe('EWP-P1-TS11', () => {
       ) as UnknownRecord;
       const observe = callable(sink.observe);
       expect(observe).not.toBeNull();
-      for (const event of events) observe?.(event);
+      if (observe !== null) for (const event of events) Reflect.apply(observe, sink, [event]);
       return writes;
     };
     expect(render('normal', [commandEvent, toolEvent])).toEqual([]);
@@ -872,6 +1549,29 @@ describe('EWP-P1-TS11', () => {
       kind: 'tool.detection.started',
       toolId: 'fixture-tool',
     });
+    const allEvents = EVENT_KINDS.map((kind) => createEvent(built.context, eventInputs()[kind]));
+    expect(render('trace', allEvents)).toHaveLength(EVENT_KINDS.length);
+    expect(
+      render('verbose', [
+        createEvent(built.context, eventInputs()['plan.created']),
+        createEvent(built.context, eventInputs()['operation.started']),
+        toolEvent,
+      ]).map((line) => line.split(' ')[1]),
+    ).toEqual(['plan.created', 'operation.started']);
+    const secretBuilt = makeContext(authority, {
+      command: 'Bearer sink-secret-canary',
+      workflow: 'fixture',
+      operationId: 'secret-operation',
+    });
+    if (secretBuilt.context === undefined) return;
+    secretBuilt.setTime('2026-07-13T00:00:06.000Z', 70);
+    const secretEvent = createEvent(secretBuilt.context, { kind: 'command.started' });
+    for (const verbosity of ['verbose', 'trace', 'debug']) {
+      const rendered = render(verbosity, [secretEvent]).join('');
+      expect(rendered).not.toContain('sink-secret-canary');
+      expect(rendered.split('\n').filter(Boolean)).toHaveLength(1);
+      expect(rendered).toContain('[REDACTED]');
+    }
   });
 
   test('family 7: preserves spawned stdout while verbosity stays on stderr and eager conflicts preflight', async () => {
@@ -904,6 +1604,23 @@ describe('EWP-P1-TS11', () => {
     expect(jsonVerbose.stdout).toBe(jsonNormal.stdout);
     expect(JSON.parse(jsonNormal.stdout)).toEqual(JSON.parse(jsonVerbose.stdout));
     expect(jsonVerbose.stderr).toMatch(/^detail: command\.started/m);
+
+    const [humanErrorQuiet, jsonErrorNormal, jsonErrorQuiet, jsonErrorVerbose] = await Promise.all([
+      runCli(['agents', '--tool', 'ghost', '-q']),
+      runCli(['agents', '--tool', 'ghost', '--format', 'json']),
+      runCli(['agents', '--tool', 'ghost', '--format', 'json', '-q']),
+      runCli(['-v', 'agents', '--tool', 'ghost', '--format', 'json']),
+    ]);
+    expect(humanErrorQuiet).toEqual({
+      exitCode: 2,
+      stdout: '',
+      stderr: "error: unknown tool 'ghost'\n",
+    });
+    expect(jsonErrorQuiet.stdout).toBe(jsonErrorNormal.stdout);
+    expect(jsonErrorVerbose.stdout).toBe(jsonErrorNormal.stdout);
+    expect(JSON.parse(jsonErrorNormal.stdout)).toEqual(JSON.parse(jsonErrorVerbose.stdout));
+    expect(jsonErrorQuiet.stderr).toBe('');
+    expect(jsonErrorVerbose.stderr).toMatch(/^detail: command\.started/m);
 
     for (const invocation of [
       ['--version', '-qv'],
@@ -944,6 +1661,38 @@ describe('EWP-P1-TS11', () => {
       const source = await readFile(path, 'utf8');
       const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
       const file = relative(ROOT, path);
+      const beginSpans = new Set<string>();
+      const collectBeginSpans = (node: ts.Node): void => {
+        if (
+          ts.isVariableDeclaration(node) &&
+          ts.isIdentifier(node.name) &&
+          node.initializer !== undefined &&
+          ts.isCallExpression(node.initializer) &&
+          ts.isPropertyAccessExpression(node.initializer.expression) &&
+          node.initializer.expression.name.text === 'begin'
+        )
+          beginSpans.add(node.name.text);
+        ts.forEachChild(node, collectBeginSpans);
+      };
+      collectBeginSpans(tree);
+      const isDecisionUse = (node: ts.Node): boolean => {
+        for (
+          let parent: ts.Node | undefined = node.parent;
+          parent !== undefined;
+          parent = parent.parent
+        ) {
+          if (
+            ts.isIfStatement(parent) ||
+            ts.isConditionalExpression(parent) ||
+            ts.isWhileStatement(parent) ||
+            ts.isDoStatement(parent) ||
+            ts.isSwitchStatement(parent)
+          )
+            return true;
+          if (ts.isExpressionStatement(parent) || ts.isVariableStatement(parent)) return false;
+        }
+        return false;
+      };
       const visit = (node: ts.Node): void => {
         if (ts.isImportDeclaration(node)) {
           const specifier = ts.isStringLiteral(node.moduleSpecifier)
@@ -951,7 +1700,7 @@ describe('EWP-P1-TS11', () => {
             : node.moduleSpecifier.getText(tree);
           const importsLogger =
             specifier.endsWith('/env/logger.ts') ||
-            node.importClause?.getText(tree).match(/\bLogger\b/) !== null;
+            /\bLogger\b/.test(node.importClause?.getText(tree) ?? '');
           if (importsLogger && !loggerImportAllowlist.has(file))
             findings.push(`${file}: Logger import outside compatibility allowlist`);
           if (
@@ -983,6 +1732,22 @@ describe('EWP-P1-TS11', () => {
           !ts.isExpressionStatement(node.parent)
         )
           findings.push(`${file}: observation result can drive a decision`);
+        if (ts.isIdentifier(node) && beginSpans.has(node.text) && isDecisionUse(node))
+          findings.push(`${file}: observation span can drive a decision`);
+        if (
+          ts.isStringLiteral(node) &&
+          [
+            'plan.created',
+            'transaction.stage.started',
+            'transaction.stage.completed',
+            'transaction.committed',
+            'transaction.rolled-back',
+            'recovery.started',
+            'recovery.completed',
+          ].includes(node.text) &&
+          file !== 'packages/core/src/observation/types.ts'
+        )
+          findings.push(`${file}: future event literal outside registry`);
         ts.forEachChild(node, visit);
       };
       visit(tree);
@@ -1011,28 +1776,98 @@ describe('EWP-P1-TS11', () => {
       visit(tree);
     }
 
-    const packageJson = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8')) as {
-      scripts?: Record<string, string>;
-      dependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-    };
-    for (const name of [
-      ...Object.keys(packageJson.dependencies ?? {}),
-      ...Object.keys(packageJson.devDependencies ?? {}),
-    ])
-      if (/(?:telemetry|opentelemetry|logging|logger)/i.test(name))
-        findings.push(`package.json: forbidden observability dependency ${name}`);
-    for (const name of Object.keys(packageJson.scripts ?? {}))
-      if (/^(?:log|trace|telemetry)(?::|$)/i.test(name))
-        findings.push(`package.json: forbidden observability script ${name}`);
-    if (CURRENT_COMMAND_SPECS.some((spec) => /skillsmith (?:log|trace)$/.test(spec.path)))
-      findings.push('command registry: forbidden log/trace command');
+    const packageInventories = {
+      'package.json': {
+        dependencies: [],
+        devDependencies: [
+          '@skillsmith/core',
+          '@biomejs/biome',
+          '@commitlint/cli',
+          '@commitlint/config-conventional',
+          '@types/bun',
+          '@types/node',
+          '@typescript-eslint/parser',
+          'eslint',
+          'eslint-import-resolver-typescript',
+          'eslint-plugin-import',
+          'eslint-plugin-security',
+          'lefthook',
+          'typescript',
+        ],
+        scripts: [
+          'dev',
+          'test',
+          'typecheck',
+          'lint',
+          'lint:boundaries',
+          'fmt',
+          'actions-lint',
+          'check:p17',
+          'check',
+          'build:darwin-arm64',
+          'build:darwin-x64',
+          'build:linux-x64',
+          'build:linux-arm64',
+          'build',
+          'postinstall',
+        ],
+      },
+      'packages/core/package.json': {
+        dependencies: ['gray-matter', 'proper-lockfile', 'smol-toml', 'zod'],
+        devDependencies: ['@types/proper-lockfile'],
+        scripts: ['test'],
+      },
+      'packages/cli/package.json': {
+        dependencies: [
+          '@clack/prompts',
+          '@skillsmith/core',
+          'chalk',
+          'commander',
+          'consola',
+          'zod',
+        ],
+        devDependencies: [],
+        scripts: ['test'],
+      },
+    } as const;
+    for (const [file, expected] of Object.entries(packageInventories)) {
+      const manifest = JSON.parse(await readFile(join(ROOT, file), 'utf8')) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+        scripts?: Record<string, string>;
+      };
+      for (const key of ['dependencies', 'devDependencies', 'scripts'] as const)
+        if (JSON.stringify(Object.keys(manifest[key] ?? {})) !== JSON.stringify(expected[key]))
+          findings.push(`${file}: ${key} inventory changed`);
+    }
+    const expectedPaths = [
+      'skillsmith',
+      'skillsmith agents',
+      'skillsmith check',
+      'skillsmith commands',
+      'skillsmith completion',
+      'skillsmith config',
+      'skillsmith config get',
+      'skillsmith config list',
+      'skillsmith config set',
+      'skillsmith config unset',
+      'skillsmith dev',
+      'skillsmith doctor',
+      'skillsmith help',
+      'skillsmith install',
+      'skillsmith list',
+      'skillsmith promote',
+      'skillsmith uninstall',
+      'skillsmith verify',
+      'skillsmith version',
+    ];
     if (
-      CURRENT_COMMAND_SPECS.some((spec) =>
-        spec.options.some((option) => /--(?:log|trace|telemetry)$/.test(option.long)),
-      )
+      JSON.stringify(CURRENT_COMMAND_SPECS.map((spec) => spec.path)) !==
+      JSON.stringify(expectedPaths)
     )
-      findings.push('command registry: forbidden log/trace/telemetry option');
+      findings.push('command registry: command inventory changed');
+    if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 128)
+      findings.push('command registry: option inventory changed');
     const adr = await readFile(
       join(ROOT, 'docs/adr/0009-operation-scoped-observation.md'),
       'utf8',
