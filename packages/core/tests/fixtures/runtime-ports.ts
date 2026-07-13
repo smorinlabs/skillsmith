@@ -37,7 +37,13 @@ export const runtimePorts = (env: ScanEnv): RuntimePorts => ({
       try {
         const value = await lstat(path);
         return {
-          kind: value.isSymbolicLink() ? 'symlink' : value.isDirectory() ? 'dir' : 'file',
+          kind: value.isSymbolicLink()
+            ? 'symlink'
+            : value.isDirectory()
+              ? 'dir'
+              : value.isFile()
+                ? 'file'
+                : 'other',
           mode: value.mode & 0o7777,
           identity: `${value.dev}:${value.ino}`,
         };

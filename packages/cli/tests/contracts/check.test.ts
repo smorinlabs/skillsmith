@@ -258,6 +258,45 @@ describe('EWP-CMD-CHECK-TS03', () => {
         }),
       ).toMatchObject({ ok: false, error: { exitCode: 2 } });
     }
+
+    expect(
+      checkApi.resolveCheckInputs({
+        cli: {
+          tools: [],
+          allTools: false,
+          file: './team.toml',
+          lockfile: 'state/../team.toml',
+        },
+        effectiveConfig: {},
+        effectiveCwd: '/repo',
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: 'usage',
+        exitCode: 2,
+        message: 'artifact manifest and lockfile resolve to the same path',
+      },
+    });
+  });
+
+  test('spawned check rejects lexical artifact collisions through the core authority', async () => {
+    for (const command of ['check', 'doctor'] as const) {
+      const result = await runCli([
+        command,
+        '--file',
+        './team.toml',
+        '--lockfile',
+        'state/../team.toml',
+        '--json',
+      ]);
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toBe('');
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        exitCode: 2,
+        message: 'artifact manifest and lockfile resolve to the same path',
+      });
+    }
   });
 
   test('repeated singular artifact selectors fail before project discovery', async () => {

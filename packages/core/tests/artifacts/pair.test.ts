@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { normalize } from 'node:path';
+import { lstat, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, normalize } from 'node:path';
 import {
   type ArtifactPairError,
   type ArtifactPairPorts,
   type ResolvedArtifactPair,
+  type ResolvedExplicitArtifactPair,
   resolveArtifactPair,
+  resolveExplicitArtifactPairLexically,
 } from '../../src/artifacts/pair.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
 import type { Result } from '../../src/result.ts';
@@ -56,8 +60,8 @@ const expectOk = (
   return result.value;
 };
 
-const expectError = (
-  result: Result<ResolvedArtifactPair, ArtifactPairError>,
+const expectError = <T>(
+  result: Result<T, ArtifactPairError>,
   code: ArtifactPairError['code'],
   exitClass: ArtifactPairError['exitClass'] = 'usage',
 ): ArtifactPairError => {
@@ -67,7 +71,61 @@ const expectError = (
   return result.error;
 };
 
+const expectLexicalOk = (
+  result: Result<ResolvedExplicitArtifactPair, ArtifactPairError>,
+): ResolvedExplicitArtifactPair => {
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(result.error.message);
+  return result.value;
+};
+
 describe('artifact pair resolution', () => {
+  test('resolves explicit selectors lexically without filesystem authority', () => {
+    expect(expectLexicalOk(resolveExplicitArtifactPairLexically({ effectiveCwd: ROOT }))).toEqual({
+      file: null,
+      lockfile: null,
+      lockfileSource: null,
+    });
+    expect(
+      expectLexicalOk(
+        resolveExplicitArtifactPairLexically({
+          effectiveCwd: ROOT,
+          file: './state/team.toml',
+        }),
+      ),
+    ).toEqual({
+      file: '/work/repo/state/team.toml',
+      lockfile: '/work/repo/state/team.lock',
+      lockfileSource: 'sibling',
+    });
+
+    expectError(
+      resolveExplicitArtifactPairLexically({
+        effectiveCwd: ROOT,
+        lockfile: './team.lock',
+      }),
+      'artifact-lockfile-requires-file',
+    );
+    expectError(
+      resolveExplicitArtifactPairLexically({
+        effectiveCwd: ROOT,
+        file: './team.toml',
+        lockfile: 'state/../team.toml',
+      }),
+      'artifact-pair-collision',
+    );
+    for (const token of ['C:team.toml', 'state\\team.toml']) {
+      expectError(
+        resolveExplicitArtifactPairLexically({ effectiveCwd: ROOT, file: token }),
+        'artifact-selector-nonportable',
+      );
+    }
+    expectError(
+      resolveExplicitArtifactPairLexically({ effectiveCwd: ROOT, file: 'team\u0001.toml' }),
+      'artifact-selector-invalid',
+    );
+  });
+
   test('derives a portable sibling while retaining the original file token', async () => {
     const pair = expectOk(
       await resolveArtifactPair(new FakePairPorts(), context, { file: './state/team.toml' }),
@@ -140,7 +198,12 @@ describe('artifact pair resolution', () => {
       }),
       'artifact-selector-escape',
     );
-    for (const token of ['C:\\state\\team.lock', '\\\\server\\state\\team.lock']) {
+    for (const token of [
+      'C:\\state\\team.lock',
+      'C:state/team.lock',
+      '\\\\server\\state\\team.lock',
+      'state\\team.lock',
+    ]) {
       expectError(
         await resolveArtifactPair(new FakePairPorts(), context, {
           file: './team.toml',
@@ -149,6 +212,13 @@ describe('artifact pair resolution', () => {
         'artifact-selector-nonportable',
       );
     }
+    expectError(
+      await resolveArtifactPair(new FakePairPorts(), context, {
+        file: './team.toml',
+        lockfile: 'team\u0001.lock',
+      }),
+      'artifact-selector-invalid',
+    );
 
     const ports = new FakePairPorts({
       '/work/repo/team.toml': { kind: 'file', realpath: '/work/repo/team.toml' },
@@ -161,6 +231,57 @@ describe('artifact pair resolution', () => {
       }),
       'artifact-selector-escape',
     );
+  });
+
+  test('realpaths the nearest existing ancestor for absent descendants under symlink directories', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-pair-root-'));
+    const outside = await mkdtemp(join(tmpdir(), 'skillsmith-pair-outside-'));
+    const actual = join(root, 'actual');
+    await mkdir(actual);
+    await symlink(outside, join(root, 'escape'), 'dir');
+    await symlink(actual, join(root, 'inside'), 'dir');
+
+    const realPorts: ArtifactPairPorts = {
+      pathKind: async (path) => {
+        try {
+          const stat = await lstat(path);
+          if (stat.isSymbolicLink()) return 'symlink';
+          if (stat.isFile()) return 'file';
+          return 'dir';
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'absent';
+          throw error;
+        }
+      },
+      realpath,
+    };
+    const realContext: ProjectContext = Object.freeze({
+      ...context,
+      invocationCwd: root,
+      effectiveCwd: root,
+      projectRoot: root,
+      projectIdentity: root,
+      discoveredConfigPath: join(root, 'skillsmith.toml'),
+    });
+
+    try {
+      expectError(
+        await resolveArtifactPair(realPorts, realContext, {
+          file: './escape/missing/team.toml',
+        }),
+        'artifact-selector-escape',
+      );
+      const inRoot = expectOk(
+        await resolveArtifactPair(realPorts, realContext, {
+          file: './inside/missing/team.toml',
+        }),
+      );
+      expect(inRoot.file.path).toBe(join(root, 'inside/missing/team.toml'));
+      expect(inRoot.lockfile.path).toBe(join(root, 'inside/missing/team.lock'));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   test('normalizes portable tokens but keeps machine-bound and discovered selection distinct', async () => {

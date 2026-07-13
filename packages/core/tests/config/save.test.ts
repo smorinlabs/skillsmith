@@ -126,6 +126,192 @@ describe('saveConfig', () => {
     await rm(d, { recursive: true, force: true });
   });
 
+  test('range-migrates legacy newline/mode variants without losing registry or trailing bytes', async () => {
+    const env = await defaultRuntimePorts();
+    for (const [label, newline, mode, finalNewline] of [
+      ['lf-600', '\n', 0o600, true],
+      ['crlf-640', '\r\n', 0o640, true],
+      ['lf-644-no-final', '\n', 0o644, false],
+    ] as const) {
+      const d = await tmpDir(`migration-${label}`);
+      const file = join(d, 'skillsmith.toml');
+      const suffix = finalNewline ? newline : '';
+      const before =
+        [
+          '# retained owner',
+          "'tool'\t=\t'codex' # selected",
+          "scope  =  'project'",
+          'path = "./skills"',
+          '',
+          '# registry attachment retained',
+          '[registry] # team',
+          '"default"\t=\t"https://github.com/acme" # identity',
+          '# trailing bytes retained',
+        ].join(newline) + suffix;
+      const expected = before
+        .replace(
+          "'tool'\t=\t'codex' # selected",
+          `version = 1${newline}${newline}[defaults]${newline}'tools'\t=\t['codex'] # selected`,
+        )
+        .replace('"https://github.com/acme"', '"github.com/acme"');
+      await writeFile(file, before);
+      await chmod(file, mode);
+
+      const result = await saveConfig(env, {
+        scope: 'project',
+        file,
+        patch: { scope: 'project' },
+      });
+      expect(result.ok, label).toBeTrue();
+      expect(await readFile(file, 'utf8')).toBe(expected);
+      expect((await stat(file)).mode & 0o777).toBe(mode);
+      expect((await readFile(file, 'utf8')).match(/\[registry]/g)).toHaveLength(1);
+      expect(await readdir(d)).toEqual(['skillsmith.toml']);
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  test('uses valid TOML quoting when a replacement contains an apostrophe', async () => {
+    const env = await defaultRuntimePorts();
+    const d = await tmpDir('apostrophe');
+    const file = join(d, 'skillsmith.toml');
+    await writeFile(
+      file,
+      "version = 1\n[defaults]\ntools = ['codex']\nscope = 'project'\npath = './skills'\n",
+    );
+    const result = await saveConfig(env, {
+      scope: 'project',
+      file,
+      patch: { path: "./team's-skills" },
+    });
+    expect(result.ok).toBeTrue();
+    expect(await readFile(file, 'utf8')).toContain('path = "./team\'s-skills"');
+    await rm(d, { recursive: true, force: true });
+  });
+
+  test('refuses ambiguous comment/table attachment with a deterministic secret-safe patch', async () => {
+    const env = await defaultRuntimePorts();
+    const canary = 'P17_EDITOR_COMMENT_CANARY';
+    for (const [label, before] of [
+      [
+        'between-tables',
+        `version = 1\n[defaults]\nscope = "project"\n# ${canary}\n[registry]\ndefault = "github.com/acme"\n`,
+      ],
+      [
+        'before-appended-table',
+        `version = 1\n[registry]\ndefault = "github.com/acme"\n# ${canary}\n`,
+      ],
+    ] as const) {
+      const d = await tmpDir(`attachment-${label}`);
+      const file = join(d, 'skillsmith.toml');
+      await writeFile(file, before);
+      const result = await saveConfig(env, {
+        scope: 'project',
+        file,
+        patch: { tool: 'codex' },
+      });
+      expect(result.ok, label).toBeFalse();
+      if (!result.ok) {
+        expect(result.error).toMatchObject({ code: 'invalid-argument' });
+        expect('message' in result.error ? result.error.message : '').toContain(
+          '--- a/config.toml\n+++ b/config.toml\n@@ -1 +1 @@',
+        );
+        expect(JSON.stringify(result.error)).not.toContain(canary);
+      }
+      expect(await readFile(file, 'utf8')).toBe(before);
+      expect(await readdir(d)).toEqual(['skillsmith.toml']);
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  test('cleans every ordinary staging-phase failure and compensates a failed directory flush', async () => {
+    const base = await defaultRuntimePorts();
+    const phases = ['write', 'mode', 'file-fsync', 'rename', 'dir-fsync'] as const;
+    const modes = [0o600, 0o640, 0o644] as const;
+    for (const [index, phase] of phases.entries()) {
+      const d = await tmpDir(`failure-${phase}`);
+      const file = join(d, 'config.toml');
+      const before = '# retained\ntool = "codex"\n';
+      const mode = modes[index % modes.length] ?? 0o600;
+      await writeFile(file, before);
+      await chmod(file, mode);
+      const ports = {
+        ...base,
+        ...(phase === 'write'
+          ? {
+              writeTextFile: async (path: string, text: string) => {
+                await base.writeTextFile(path, text.slice(0, 4));
+                throw new Error('partial stage write');
+              },
+            }
+          : {}),
+        ...(phase === 'mode'
+          ? { setFileMode: async () => Promise.reject(new Error('mode failed')) }
+          : {}),
+        ...(phase === 'file-fsync'
+          ? { fsyncFile: async () => Promise.reject(new Error('file sync failed')) }
+          : {}),
+        ...(phase === 'rename'
+          ? { rename: async () => Promise.reject(new Error('rename failed')) }
+          : {}),
+        ...(phase === 'dir-fsync'
+          ? { fsyncDir: async () => Promise.reject(new Error('directory sync failed')) }
+          : {}),
+      };
+      const result = await saveConfig(ports, {
+        scope: 'user',
+        file,
+        patch: { tool: 'opencode' },
+      });
+      expect(result.ok, phase).toBeFalse();
+      expect(await readFile(file, 'utf8'), phase).toBe(before);
+      expect((await stat(file)).mode & 0o777, phase).toBe(mode);
+      expect((await readdir(d)).sort(), phase).toEqual(['config.toml']);
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects every non-regular metadata kind before reading or mutating', async () => {
+    const base = await defaultRuntimePorts();
+    for (const kind of ['dir', 'symlink', 'other'] as const) {
+      let reads = 0;
+      let mutations = 0;
+      const result = await saveConfig(
+        {
+          ...base,
+          readFileMetadata: async () => ({ kind, mode: 0o600, identity: 'special' }),
+          readText: async () => {
+            reads += 1;
+            return '';
+          },
+          writeTextFile: async () => {
+            mutations += 1;
+          },
+        },
+        { scope: 'user', file: `/special/${kind}`, patch: { tool: 'codex' } },
+      );
+      expect(result).toMatchObject({ ok: false, error: { code: 'config-error' } });
+      expect(reads).toBe(0);
+      expect(mutations).toBe(0);
+    }
+  });
+
+  test('restores an absent destination when its post-rename directory flush fails', async () => {
+    const base = await defaultRuntimePorts();
+    const d = await tmpDir('absent-dir-fsync');
+    const file = join(d, 'config.toml');
+    const result = await saveConfig(
+      {
+        ...base,
+        fsyncDir: async () => Promise.reject(new Error('directory sync failed')),
+      },
+      { scope: 'user', file, patch: { tool: 'codex' } },
+    );
+    expect(result.ok).toBeFalse();
+    expect(await readdir(d)).toEqual([]);
+    await rm(d, { recursive: true, force: true });
+  });
+
   test('classifies rename permission denial and cleans the staged file', async () => {
     const env = await defaultRuntimePorts();
     const d = await tmpDir('permission');

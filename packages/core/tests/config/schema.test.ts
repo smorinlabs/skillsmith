@@ -54,6 +54,16 @@ default = "github.com/acme"
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('config-error');
   });
+
+  test('never echoes malformed TOML source bytes in diagnostics', () => {
+    const canary = 'P17_MALFORMED_TOML_SECRET_CANARY';
+    const result = parseConfig(`tool = "${canary}\n`);
+    expect(result.ok).toBeFalse();
+    if (!result.ok) {
+      expect(JSON.stringify(result.error)).not.toContain(canary);
+      expect(result.error).toMatchObject({ code: 'config-error', message: 'TOML parse error' });
+    }
+  });
 });
 
 describe('project config document boundary', () => {

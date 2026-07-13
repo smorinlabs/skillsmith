@@ -12,7 +12,8 @@ export interface PlatformPaths {
 }
 
 export interface FileMetadata {
-  readonly kind: PathKind;
+  /** `other` covers FIFOs, sockets, block/character devices, and unknown special nodes. */
+  readonly kind: PathKind | 'other';
   /** Permission bits only (setuid/setgid/sticky plus rwx), never the file-type bits. */
   readonly mode: number | null;
   /** Stable identity for change detection; null when the path is absent. */

@@ -51,6 +51,7 @@ export interface ManifestDestination {
 }
 
 export type ArtifactDiscoveryErrorCode =
+  | 'manifest-explicit-selector-mismatch'
   | 'manifest-candidate-invalid'
   | 'manifest-candidate-unreadable'
   | 'manifest-name-required'
@@ -255,8 +256,22 @@ export const selectManifestDestination = (
     );
   }
 
-  if (request.explicitFile !== undefined) {
-    const path = resolve(snapshot.projectContext.effectiveCwd, request.explicitFile);
+  if (snapshot.explicitArtifactPath !== null || request.explicitFile !== undefined) {
+    const requestedPath =
+      request.explicitFile === undefined
+        ? snapshot.explicitArtifactPath
+        : resolve(snapshot.projectContext.effectiveCwd, request.explicitFile);
+    if (snapshot.explicitArtifactPath === null || requestedPath !== snapshot.explicitArtifactPath) {
+      return err(
+        artifactError(
+          'manifest-explicit-selector-mismatch',
+          'usage',
+          'explicit manifest destination must match the preflighted artifact selector',
+          requestedPath === null ? undefined : [requestedPath],
+        ),
+      );
+    }
+    const path = snapshot.explicitArtifactPath;
     const candidate = snapshot.candidates.find(
       (item) => item.role === 'explicit' && item.path === path && item.existence === 'file',
     );
@@ -272,6 +287,16 @@ export const selectManifestDestination = (
           `explicit manifest candidate is invalid: ${path}`,
           [path],
         ),
+      );
+    }
+    if (candidate === undefined && request.mode === 'remove') {
+      return ok(
+        Object.freeze({
+          kind: 'absent' as const,
+          role: null,
+          path: null,
+          names,
+        }),
       );
     }
     return ok(

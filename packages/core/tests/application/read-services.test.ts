@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -201,6 +201,33 @@ describe('validation happens before discovery or effects', () => {
     expect(set.diagnostics[0]?.message).toContain('invalid value');
   });
 
+  test('all config operations reject conflicting scope shorthand before project discovery', async () => {
+    const outcomes = await Promise.all([
+      runConfigGetApplication(
+        request(['tool'], { scope: 'project', user: true }),
+        poisonedContext(),
+      ),
+      runConfigSetApplication(
+        request(['tool', 'codex'], { scope: 'project', user: true }),
+        poisonedContext(),
+      ),
+      runConfigListApplication(request([], { scope: 'project', user: true }), poisonedContext()),
+      runConfigUnsetApplication(
+        request(['tool'], { scope: 'project', user: true }),
+        poisonedContext(),
+      ),
+    ]);
+    expect(outcomes.map((outcome) => outcome.exitClass)).toEqual([
+      'usage',
+      'usage',
+      'usage',
+      'usage',
+    ]);
+    expect(outcomes.every((outcome) => outcome.diagnostics[0]?.message.includes('conflicts'))).toBe(
+      true,
+    );
+  });
+
   test('cross-option relations fail before environment access', async () => {
     const list = await runListApplication(
       request([], { enabled: true, disabled: true }),
@@ -300,6 +327,95 @@ describe('read and config outcomes', () => {
     expect(unset.report.file).toBe(set.report.file);
     expect(unset.mutation.kind).toBe('applied');
     expect(await readFile(unset.report.file as string, 'utf8')).not.toContain('tool');
+  });
+
+  test('get, set, list, and unset honor every shorthand with an injected system path', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-read-scopes-'));
+    temporaryRoots.push(root);
+    const projectFile = join(root, 'skillsmith.toml');
+    const systemFile = join(root, 'system', 'config.toml');
+    const userFile = join(root, '.config', 'skillsmith', 'config.toml');
+    const project = { ...projectContext(root), discoveredConfigPath: projectFile };
+    const base = context(env(root), effectiveConfig(), project);
+    const current: CurrentApplicationContext = {
+      observation: base.observation,
+      configuration: base.configuration,
+      interaction: base.interaction,
+      invocationCwd: base.invocationCwd,
+      globalOptions: base.globalOptions,
+      projectContext: project,
+      ports: {
+        ...base.ports,
+        systemConfigPath: systemFile,
+        fileExists: async (path) =>
+          access(path)
+            .then(() => true)
+            .catch(() => false),
+      },
+    };
+    const scopes = [
+      { scope: 'system', file: systemFile },
+      { scope: 'user', file: userFile },
+      { scope: 'project', file: projectFile },
+    ] as const;
+
+    for (const selected of scopes) {
+      const set = await runConfigSetApplication(
+        request(['tool', 'codex'], { [selected.scope]: true }),
+        current,
+      );
+      expect(set).toMatchObject({
+        exitClass: 'success',
+        report: { key: 'tool', value: 'codex', scope: selected.scope, file: selected.file },
+      });
+    }
+    for (const selected of scopes) {
+      const get = await runConfigGetApplication(
+        request(['tool'], { [selected.scope]: true }),
+        current,
+      );
+      expect(get).toMatchObject({
+        exitClass: 'success',
+        report: { key: 'tool', value: 'codex', scope: selected.scope },
+      });
+      const list = await runConfigListApplication(request([], { [selected.scope]: true }), current);
+      expect(list).toMatchObject({
+        exitClass: 'success',
+        report: { scope: selected.scope, layers: { [selected.scope]: expect.any(Object) } },
+      });
+      const unset = await runConfigUnsetApplication(
+        request(['tool'], { [selected.scope]: true }),
+        current,
+      );
+      expect(unset).toMatchObject({
+        exitClass: 'success',
+        report: { key: 'tool', scope: selected.scope, file: selected.file },
+      });
+      expect(await readFile(selected.file, 'utf8')).not.toContain('codex');
+    }
+  });
+
+  test('permission failures remain semantic exit-class outcomes with no staged residue', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-read-permission-'));
+    temporaryRoots.push(root);
+    const base = context(env(root), effectiveConfig(), projectContext(root));
+    const current: CurrentApplicationContext = {
+      ...base,
+      ports: {
+        ...base.ports,
+        rename: async () => {
+          throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        },
+      },
+    };
+    const outcome = await runConfigSetApplication(
+      request(['tool', 'codex'], { user: true }),
+      current,
+    );
+    expect(outcome.exitClass).toBe('permission');
+    expect(outcome.diagnostics[0]?.code).toBe('permission-denied');
+    const directory = join(root, '.config', 'skillsmith');
+    expect(await readFile(join(directory, 'config.toml'), 'utf8').catch(() => null)).toBeNull();
   });
 
   test('check deprecation remains semantic metadata', () => {

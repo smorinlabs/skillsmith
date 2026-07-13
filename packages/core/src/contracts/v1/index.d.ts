@@ -141,7 +141,14 @@ export interface ConfigGetV1Dto {
 }
 
 export type ConfigListV1Dto =
-  | ConfigV1Dto
+  | {
+      tool?: ConfigToolId | undefined;
+      tools?: readonly ConfigToolId[] | undefined;
+      scope?: ConfigScope | undefined;
+      path?: string | undefined;
+      registry?: { default?: string | undefined } | undefined;
+      notices?: readonly ConfigNoticeV1Dto[] | undefined;
+    }
   | {
       effective: ConfigV1Dto;
       sources: {

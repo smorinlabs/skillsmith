@@ -165,18 +165,52 @@ const lifecycleRenderer = <T>(
 
 const configListHuman = (value: ConfigListReport): string => {
   const lines: string[] = [];
-  if (value.scope !== undefined) {
-    for (const key of CONFIG_KEYS) {
-      const selected = getConfigValue(value.layers[value.scope], key);
-      if (selected !== undefined) lines.push(`${key} = ${JSON.stringify(selected)}`);
+  const appendLayer = (
+    layer: ConfigListReport['layers'][keyof ConfigListReport['layers']],
+    source?: string,
+    canonicalTools = false,
+  ): void => {
+    const tools = layer.tools ?? (layer.tool === undefined ? undefined : [layer.tool]);
+    if ((layer.tools !== undefined || canonicalTools) && tools !== undefined) {
+      lines.push(
+        `tools = ${JSON.stringify(tools)}${source === undefined ? '' : `    # source: ${source}`}`,
+      );
+    } else if (layer.tool !== undefined) {
+      lines.push(
+        `tool = ${JSON.stringify(layer.tool)}${source === undefined ? '' : `    # source: ${source}`}`,
+      );
     }
-  } else {
     for (const key of CONFIG_KEYS) {
+      if (key === 'tool') continue;
+      const selected = getConfigValue(layer, key);
+      if (selected !== undefined) {
+        lines.push(
+          `${key} = ${JSON.stringify(selected)}${source === undefined ? '' : `    # source: ${source}`}`,
+        );
+      }
+    }
+  };
+  if (value.scope !== undefined) {
+    appendLayer(value.layers[value.scope], undefined, value.scope === 'project');
+  } else {
+    const toolSource = value.sources.tool;
+    if (toolSource !== undefined) {
+      const layer = value.layers[toolSource];
+      const tools = layer.tools ?? (layer.tool === undefined ? undefined : [layer.tool]);
+      if (layer.tools !== undefined && tools !== undefined) {
+        lines.push(`tools = ${JSON.stringify(tools)}    # source: ${toolSource}`);
+      } else if (layer.tool !== undefined) {
+        lines.push(`tool = ${JSON.stringify(layer.tool)}    # source: ${toolSource}`);
+      }
+    }
+    for (const key of CONFIG_KEYS) {
+      if (key === 'tool') continue;
       const source = value.sources[key];
       if (source === undefined) continue;
       const selected = getConfigValue(value.layers[source], key);
-      if (selected !== undefined)
+      if (selected !== undefined) {
         lines.push(`${key} = ${JSON.stringify(selected)}    # source: ${source}`);
+      }
     }
   }
   return `${lines.join('\n')}\n`;
@@ -230,18 +264,27 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     ),
     configGet: guarded<ConfigGetReport>(
       (value, outcome) => withDiagnostics(outcome, `${value.value ?? ''}\n`),
-      (value) => encodeWire(currentWireCodecs.configGet, toConfigGetV1Dto(value)),
+      (value, outcome) =>
+        withDiagnostics(outcome, encodeWire(currentWireCodecs.configGet, toConfigGetV1Dto(value))),
     ),
     configSet: guarded<ConfigSetReport>(
-      (value) => ({ stderr: `wrote ${value.file ?? ''}\n` }),
+      (value) => ({
+        stderr: `${value.operation === 'migrate-project-config' ? 'migrated project config and wrote' : 'wrote'} ${value.file ?? ''}\n`,
+      }),
       (value) => encodeWire(currentWireCodecs.configSet, toConfigSetV1Dto(value)),
     ),
     configList: guarded<ConfigListReport>(
       (value, outcome) => withDiagnostics(outcome, configListHuman(value)),
-      (value) => encodeWire(currentWireCodecs.configList, toConfigListV1Dto(value)),
+      (value, outcome) =>
+        withDiagnostics(
+          outcome,
+          encodeWire(currentWireCodecs.configList, toConfigListV1Dto(value)),
+        ),
     ),
     configUnset: guarded<ConfigUnsetReport>(
-      (value) => ({ stderr: `updated ${value.file ?? ''}\n` }),
+      (value) => ({
+        stderr: `${value.operation === 'migrate-project-config' ? 'migrated project config and updated' : 'updated'} ${value.file ?? ''}\n`,
+      }),
       (value) => encodeWire(currentWireCodecs.configUnset, toConfigUnsetV1Dto(value)),
     ),
     list: guarded<ListReport>(

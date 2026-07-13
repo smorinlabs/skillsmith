@@ -293,8 +293,7 @@ export const normalizePortablePath = (
     value.length === expectedPrefix.length ||
     value.includes('\\') ||
     value.includes('//') ||
-    hasControlOrWhitespace(value) ||
-    /^[A-Za-z]:/u.test(value)
+    hasControlOrWhitespace(value)
   ) {
     return stateError(field, SECRET_SAFE_MESSAGES.path);
   }
@@ -302,6 +301,7 @@ export const normalizePortablePath = (
   const segments = relative.split('/');
   const lowered = relative.toLowerCase();
   if (
+    /^[A-Za-z]:/u.test(relative) ||
     segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..') ||
     lowered === 'placements.json' ||
     lowered === '.skillsmith/placements.json' ||

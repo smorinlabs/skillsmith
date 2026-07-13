@@ -1,7 +1,8 @@
-import { join, parse, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { listSupportedTools } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS, type SupportedTool } from '../agents/types.ts';
 import { normalizePortablePath, normalizeRegistryIdentity } from '../artifacts/identity.ts';
+import { resolveArtifactPair as resolveCoreArtifactPair } from '../artifacts/pair.ts';
 import type { CommandEntry } from '../commands/types.ts';
 import { CONFIG_ACCESSORS, getConfigTools, getConfigValue } from '../config/accessors.ts';
 import { resolveEffectiveConfig } from '../config/effective.ts';
@@ -398,11 +399,20 @@ const configScope = (
   request: Readonly<CurrentCommandRequest>,
 ): Exclude<Scope, 'managed'> | ReadServiceError | undefined => {
   const scope = optionalString(request, 'scope');
-  if (scope === undefined) return undefined;
-  if (scope !== 'system' && scope !== 'user' && scope !== 'project') {
+  if (scope !== undefined && scope !== 'system' && scope !== 'user' && scope !== 'project') {
     return usage(`unknown config scope '${scope}' (expected user, project, or system)`);
   }
-  return scope;
+  const shorthand = (['system', 'user', 'project'] as const).filter((name) =>
+    enabled(request, name),
+  );
+  if (shorthand.length > 1) {
+    return usage('--system, --user, and --project are mutually exclusive');
+  }
+  const selected = shorthand[0];
+  if (selected !== undefined && scope !== undefined && selected !== scope) {
+    return usage(`--${selected} conflicts with --scope ${scope}`);
+  }
+  return selected ?? scope;
 };
 
 const configKey = (request: Readonly<CurrentCommandRequest>): ConfigKey | ReadServiceError => {
@@ -488,22 +498,29 @@ const enabledFilter = (
   return undefined;
 };
 
-const artifactPair = (
+const artifactPair = async (
+  ports: CurrentApplicationContext['ports'],
   project: ProjectContext,
   request: Readonly<CurrentCommandRequest>,
-): { readonly file: string; readonly lockfile: string } | null | ReadServiceError => {
+): Promise<{ readonly file: string; readonly lockfile: string } | null | ReadServiceError> => {
   const fileOption = optionalString(request, 'file');
   const lockfileOption = optionalString(request, 'lockfile');
   if (lockfileOption !== undefined && fileOption === undefined) {
     return usage('--lockfile requires --file');
   }
   if (fileOption === undefined) return null;
-  const file = resolve(project.effectiveCwd, fileOption);
-  if (lockfileOption !== undefined) {
-    return { file, lockfile: resolve(project.effectiveCwd, lockfileOption) };
+  const resolved = await resolveCoreArtifactPair(ports, project, {
+    file: fileOption,
+    ...(lockfileOption === undefined ? {} : { lockfile: lockfileOption }),
+  });
+  if (!resolved.ok) {
+    return {
+      code: resolved.error.code,
+      message: resolved.error.message,
+      exitClass: resolved.error.exitClass === 'usage' ? 'usage' : 'state',
+    };
   }
-  const parsed = parse(file);
-  return { file, lockfile: join(parsed.dir, `${parsed.name}.lock`) };
+  return { file: resolved.value.file.path, lockfile: resolved.value.lockfile.path };
 };
 
 export const runAgentsApplication: ApplicationService<CurrentCommandRequest, AgentsReport> = async (
@@ -805,7 +822,7 @@ const runHealthApplication = async (
   if (!selection.ok) return failed(empty, selection.error);
   const project = await projectFor(context);
   if (!project.ok) return failed(empty, project.error);
-  const artifacts = artifactPair(project.value, request);
+  const artifacts = await artifactPair(context.ports, project.value, request);
   if (artifacts && 'code' in artifacts) return failed(empty, artifacts);
   const config = await healthConfigFor(mode, request, context, project.value);
   if (!config.ok) return failed(empty, config.error);

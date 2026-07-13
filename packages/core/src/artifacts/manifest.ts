@@ -70,10 +70,26 @@ const isSkillStructure = (value: unknown): boolean =>
   isOptionalString(value, 'placement') &&
   isOptionalString(value, 'path');
 
-const isCanonicalStructure = (raw: RawRecord): boolean =>
+const hasExactIntegerVersionSyntax = (source: string): boolean => {
+  for (const line of source.split('\n')) {
+    const candidate = line.endsWith('\r') ? line.slice(0, -1) : line;
+    const trimmed = candidate.trimStart();
+    if (trimmed.startsWith('[')) return false;
+    if (trimmed.length === 0 || trimmed.startsWith('#')) continue;
+    const assignment = /^(?:version|"version"|'version')[ \t]*=[ \t]*([^#]*?)[ \t]*(?:#.*)?$/u.exec(
+      trimmed,
+    );
+    if (assignment === null) continue;
+    return /^[+-]?(?:0|[1-9](?:_?[0-9])*)$/u.test(assignment[1] ?? '');
+  }
+  return false;
+};
+
+const isCanonicalStructure = (raw: RawRecord, source: string): boolean =>
   hasOnlyKeys(raw, CANONICAL_ROOT_KEYS) &&
   typeof raw.version === 'number' &&
   Number.isSafeInteger(raw.version) &&
+  hasExactIntegerVersionSyntax(source) &&
   (!('defaults' in raw) || isDefaultsStructure(raw.defaults)) &&
   (!('registry' in raw) || isRegistryStructure(raw.registry)) &&
   (!('skills' in raw) ||
@@ -86,14 +102,14 @@ const isLegacyStructure = (raw: RawRecord): boolean =>
   isOptionalString(raw, 'path') &&
   (!('registry' in raw) || isRegistryStructure(raw.registry));
 
-const classifyParsed = (raw: RawRecord): ManifestShape => {
+const classifyParsed = (raw: RawRecord, source: string): ManifestShape => {
   const keys = Object.keys(raw);
   if (keys.length === 0) return 'empty';
   const hasCanonicalMarker = keys.some((key) => CANONICAL_MARKERS.has(key));
   const hasLegacyMarker = keys.some((key) => LEGACY_MARKERS.has(key));
   if (hasCanonicalMarker && hasLegacyMarker) return 'mixed';
   if (hasCanonicalMarker) {
-    if (!isCanonicalStructure(raw)) return 'unknown';
+    if (!isCanonicalStructure(raw, source)) return 'unknown';
     if ((raw.version as number) > MANIFEST_VERSION) return 'future';
     return raw.version === MANIFEST_VERSION ? 'canonical' : 'unknown';
   }
@@ -134,7 +150,7 @@ const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
 
 export const classifyManifestSource = (source: string): ManifestShape => {
   const parsed = parseSource(source);
-  return parsed.ok ? classifyParsed(parsed.value) : parsed.error;
+  return parsed.ok ? classifyParsed(parsed.value, source) : parsed.error;
 };
 
 export const readManifestSource = (
@@ -144,7 +160,7 @@ export const readManifestSource = (
   if (!parsed.ok) {
     return err(manifestError('manifest source is malformed', { shape: parsed.error }));
   }
-  const shape = classifyParsed(parsed.value);
+  const shape = classifyParsed(parsed.value, source);
   if (shape !== 'canonical' && shape !== 'legacy') {
     return err(manifestError('manifest shape is not readable', { shape }));
   }
@@ -376,7 +392,7 @@ export const normalizeManifestDocument = (
       return err(manifestError('manifest source is malformed', { shape: parsed.error }));
     }
     raw = parsed.value;
-    shape = classifyParsed(raw);
+    shape = classifyParsed(raw, document.source);
   }
   if (shape === 'canonical') return normalizeCanonical(raw);
   if (shape === 'legacy') return normalizeLegacy(raw);
@@ -400,7 +416,7 @@ export const projectManifestSemantics = (
   const registry =
     manifest.registry?.default === undefined ? undefined : { default: manifest.registry.default };
   const skills = [...manifest.skills]
-    .sort((left, right) => left.name.localeCompare(right.name))
+    .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
     .map((entry) => ({
       name: entry.name,
       source: {

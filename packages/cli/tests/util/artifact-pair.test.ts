@@ -49,4 +49,39 @@ describe('resolveArtifactPair', () => {
       },
     });
   });
+
+  test('delegates exact collision and selector validation to core lexical authority', () => {
+    for (const options of [
+      { effectiveCwd: '/work/repo', file: './team.toml', lockfile: 'state/../team.toml' },
+      { effectiveCwd: '/work/repo', file: './team.lock' },
+    ]) {
+      expect(resolveArtifactPair(options)).toEqual({
+        ok: false,
+        error: {
+          code: 'usage',
+          exitCode: 2,
+          message: 'artifact manifest and lockfile resolve to the same path',
+        },
+      });
+    }
+
+    for (const file of ['C:state/team.toml', 'state\\team.toml']) {
+      expect(resolveArtifactPair({ effectiveCwd: '/work/repo', file })).toMatchObject({
+        ok: false,
+        error: {
+          code: 'usage',
+          exitCode: 2,
+          message: expect.stringContaining('foreign absolute-path form'),
+        },
+      });
+    }
+    expect(resolveArtifactPair({ effectiveCwd: '/work/repo', file: 'team\u0001.toml' })).toEqual({
+      ok: false,
+      error: {
+        code: 'usage',
+        exitCode: 2,
+        message: 'artifact file selector is empty or invalid',
+      },
+    });
+  });
 });

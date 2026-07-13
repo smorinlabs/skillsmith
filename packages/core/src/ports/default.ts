@@ -161,11 +161,13 @@ const createFileReadPort = (): FileReadPort & FileMetadataReadPort => ({
   readFileMetadata: async (path) => {
     try {
       const value = await lstat(path);
-      const kind: PathKind = value.isSymbolicLink()
+      const kind = value.isSymbolicLink()
         ? 'symlink'
         : value.isDirectory()
           ? 'dir'
-          : 'file';
+          : value.isFile()
+            ? 'file'
+            : 'other';
       return {
         kind,
         mode: value.mode & 0o7777,

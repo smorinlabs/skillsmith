@@ -125,7 +125,10 @@ const candidate = (
     declaredNames: Object.freeze([...names]),
   });
 
-const snapshot = (candidates: readonly ManifestCandidate[]): ArtifactDiscoverySnapshot =>
+const snapshot = (
+  candidates: readonly ManifestCandidate[],
+  explicitArtifactPath: string | null = null,
+): ArtifactDiscoverySnapshot =>
   Object.freeze({
     projectContext: context(),
     selectedProjectManifest: NESTED,
@@ -133,7 +136,7 @@ const snapshot = (candidates: readonly ManifestCandidate[]): ArtifactDiscoverySn
     userManifest: USER_MANIFEST,
     userConfig: USER_CONFIG,
     explicitConfigPath: null,
-    explicitArtifactPath: null,
+    explicitArtifactPath,
     candidates: Object.freeze([...candidates]),
   });
 
@@ -214,7 +217,7 @@ describe('artifact discovery and destination ownership', () => {
 
     expect(
       expectDestination(
-        selectManifestDestination(base, {
+        selectManifestDestination(snapshot(base.candidates, '/tmp/team.toml'), {
           names: ['anything'],
           scope: 'project',
           mode: 'save',
@@ -305,6 +308,53 @@ describe('artifact discovery and destination ownership', () => {
     ).toMatchObject({ kind: 'new', role: 'user', path: USER_MANIFEST });
   });
 
+  test('binds explicit selection to the snapshot and treats a preflighted absent removal as absent', () => {
+    expectDestinationError(
+      selectManifestDestination(snapshot([]), {
+        names: ['new'],
+        scope: 'project',
+        mode: 'save',
+        explicitFile: '/tmp/unpreflighted.toml',
+      }),
+      'manifest-explicit-selector-mismatch',
+      'usage',
+    );
+    expectDestinationError(
+      selectManifestDestination(snapshot([], '/tmp/preflighted.toml'), {
+        names: ['new'],
+        scope: 'project',
+        mode: 'save',
+        explicitFile: '/tmp/different.toml',
+      }),
+      'manifest-explicit-selector-mismatch',
+      'usage',
+    );
+    expect(
+      expectDestination(
+        selectManifestDestination(snapshot([], '/tmp/preflighted.toml'), {
+          names: ['new'],
+          scope: 'project',
+          mode: 'save',
+        }),
+      ),
+    ).toEqual({
+      kind: 'new',
+      role: 'explicit',
+      path: '/tmp/preflighted.toml',
+      names: ['new'],
+    });
+    expect(
+      expectDestination(
+        selectManifestDestination(snapshot([], '/tmp/preflighted.toml'), {
+          names: ['missing'],
+          scope: 'project',
+          mode: 'remove',
+          explicitFile: '/tmp/preflighted.toml',
+        }),
+      ),
+    ).toEqual({ kind: 'absent', role: null, path: null, names: ['missing'] });
+  });
+
   test('marks a structurally canonical but semantically invalid candidate unsafe', async () => {
     const duplicateNames = manifest(['duplicate', 'duplicate']);
     const discovered = expectSnapshot(
@@ -348,12 +398,15 @@ describe('artifact discovery and destination ownership', () => {
     ).toMatchObject({ kind: 'existing', role: 'user', path: USER_MANIFEST });
 
     expectDestinationError(
-      selectManifestDestination(snapshot([candidate('explicit', '/tmp/team.toml', [], 'mixed')]), {
-        names: ['new'],
-        scope: 'project',
-        mode: 'save',
-        explicitFile: '/tmp/team.toml',
-      }),
+      selectManifestDestination(
+        snapshot([candidate('explicit', '/tmp/team.toml', [], 'mixed')], '/tmp/team.toml'),
+        {
+          names: ['new'],
+          scope: 'project',
+          mode: 'save',
+          explicitFile: '/tmp/team.toml',
+        },
+      ),
       'manifest-candidate-invalid',
       'state',
     );

@@ -266,6 +266,7 @@ const expectError = <T>(result: Result<T>, code: string, exitClass: 'usage' | 's
 const snapshotFixture = (
   candidates: readonly ManifestCandidate[],
   context = frozenContext(),
+  explicitArtifactPath: string | null = null,
 ): ArtifactDiscoverySnapshot =>
   Object.freeze({
     projectContext: context,
@@ -274,7 +275,7 @@ const snapshotFixture = (
     userManifest: USER_MANIFEST,
     userConfig: USER_CONFIG,
     explicitConfigPath: null,
-    explicitArtifactPath: null,
+    explicitArtifactPath,
     candidates: Object.freeze(candidates.map((candidate) => Object.freeze({ ...candidate }))),
   });
 
@@ -476,12 +477,15 @@ describe('EWP-P2-TS02 — artifact discovery, ownership, and pair selection', ()
 
     expect(
       expectOk(
-        api.selectManifestDestination(base, {
-          names: ['anything'],
-          scope: 'project',
-          mode: 'save',
-          explicitFile: '/tmp/team.toml',
-        }),
+        api.selectManifestDestination(
+          snapshotFixture(base.candidates, frozenContext(), '/tmp/team.toml'),
+          {
+            names: ['anything'],
+            scope: 'project',
+            mode: 'save',
+            explicitFile: '/tmp/team.toml',
+          },
+        ),
       ),
     ).toMatchObject({ kind: 'new', role: 'explicit', path: '/tmp/team.toml' });
     expect(
@@ -600,6 +604,38 @@ describe('EWP-P2-TS02 — artifact discovery, ownership, and pair selection', ()
     );
 
     expect(base.candidates.some((item) => item.path === USER_CONFIG)).toBe(false);
+
+    expectError(
+      api.selectManifestDestination(base, {
+        names: ['new'],
+        scope: 'project',
+        mode: 'save',
+        explicitFile: '/tmp/unpreflighted.toml',
+      }),
+      'manifest-explicit-selector-mismatch',
+      'usage',
+    );
+    const preflightedAbsent = snapshotFixture([], frozenContext(), '/tmp/preflighted.toml');
+    expectError(
+      api.selectManifestDestination(preflightedAbsent, {
+        names: ['new'],
+        scope: 'project',
+        mode: 'save',
+        explicitFile: '/tmp/different.toml',
+      }),
+      'manifest-explicit-selector-mismatch',
+      'usage',
+    );
+    expect(
+      expectOk(
+        api.selectManifestDestination(preflightedAbsent, {
+          names: ['missing'],
+          scope: 'project',
+          mode: 'remove',
+          explicitFile: '/tmp/preflighted.toml',
+        }),
+      ),
+    ).toMatchObject({ kind: 'absent', role: null, path: null });
   });
 
   test('resolves one collision-safe, token-preserving, contained artifact pair per invocation', async () => {
@@ -683,7 +719,12 @@ describe('EWP-P2-TS02 — artifact discovery, ownership, and pair selection', ()
       'usage',
     );
 
-    for (const token of ['C:\\state\\team.lock', '\\\\server\\state\\team.lock']) {
+    for (const token of [
+      'C:\\state\\team.lock',
+      'C:state/team.lock',
+      '\\\\server\\state\\team.lock',
+      'state\\team.lock',
+    ]) {
       expectError(
         await api.resolveArtifactPair(new FakeArtifactPorts(), context, {
           file: './team.toml',
@@ -693,6 +734,33 @@ describe('EWP-P2-TS02 — artifact discovery, ownership, and pair selection', ()
         'usage',
       );
     }
+    expectError(
+      await api.resolveArtifactPair(new FakeArtifactPorts(), context, {
+        file: './team.toml',
+        lockfile: 'team\u0001.lock',
+      }),
+      'artifact-selector-invalid',
+      'usage',
+    );
+
+    const ancestorPorts = new FakeArtifactPorts({
+      [REPO]: { kind: 'dir', realpath: REPO },
+      '/work/repo/escape-dir': { kind: 'symlink', realpath: '/outside' },
+      '/work/repo/inside-dir': { kind: 'symlink', realpath: '/work/repo/actual' },
+    });
+    expectError(
+      await api.resolveArtifactPair(ancestorPorts, context, {
+        file: './escape-dir/missing/team.toml',
+      }),
+      'artifact-selector-escape',
+      'usage',
+    );
+    const containedDescendant = expectOk(
+      await api.resolveArtifactPair(ancestorPorts, context, {
+        file: './inside-dir/missing/team.toml',
+      }),
+    );
+    expect(containedDescendant.file.path).toBe('/work/repo/inside-dir/missing/team.toml');
 
     const explicit = expectOk(
       await api.resolveArtifactPair(new FakeArtifactPorts(), context, {

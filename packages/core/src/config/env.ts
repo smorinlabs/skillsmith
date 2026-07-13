@@ -1,4 +1,5 @@
 import { SUPPORTED_TOOLS, type SupportedTool } from '../agents/types.ts';
+import { isCredentialFreeRegistryIdentity } from './schema.ts';
 import { type Config, SCOPES, type Scope } from './types.ts';
 
 const isSupportedTool = (v: string): v is SupportedTool =>
@@ -15,6 +16,8 @@ export const configFromEnv = (env: Record<string, string | undefined>): Config =
   const path = env.SKILLSMITH_PATH;
   if (path !== undefined && path.length > 0) c.path = path;
   const reg = env.SKILLSMITH_REGISTRY;
-  if (reg !== undefined && reg.length > 0) c.registry = { default: reg };
+  if (reg !== undefined && reg.length > 0 && isCredentialFreeRegistryIdentity(reg)) {
+    c.registry = { default: reg };
+  }
   return c;
 };

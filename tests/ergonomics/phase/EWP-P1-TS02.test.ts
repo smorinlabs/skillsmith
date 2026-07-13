@@ -199,7 +199,9 @@ describe('EWP-P1-TS02', () => {
         },
       );
       expect(result.exitCode).toBe(0);
-      expect(result.stderr).toBe('');
+      expect(result.stderr).toBe(
+        `warning: legacy project config detected at ${join(nested, 'skillsmith.toml')}; migrate the project configuration in Phase 2 with config set or config unset\n`,
+      );
       expect(JSON.parse(result.stdout)).toMatchObject({
         effective: { tool: 'claude-code' },
         sources: { tool: 'explicit-file' },
@@ -240,7 +242,9 @@ describe('EWP-P1-TS02', () => {
         env,
       );
       expect(fromEnvironment.exitCode).toBe(0);
-      expect(fromEnvironment.stderr).toBe('');
+      expect(fromEnvironment.stderr).toBe(
+        `warning: legacy project config detected at ${join(nested, 'skillsmith.toml')}; migrate the project configuration in Phase 2 with config set or config unset\n`,
+      );
       expect(JSON.parse(fromEnvironment.stdout)).toMatchObject({
         effective: { tool: 'kilo-code' },
         sources: { tool: 'explicit-file' },
@@ -252,7 +256,9 @@ describe('EWP-P1-TS02', () => {
         env,
       );
       expect(fromFlag.exitCode).toBe(0);
-      expect(fromFlag.stderr).toBe('');
+      expect(fromFlag.stderr).toBe(
+        `warning: legacy project config detected at ${join(nested, 'skillsmith.toml')}; migrate the project configuration in Phase 2 with config set or config unset\n`,
+      );
       expect(JSON.parse(fromFlag.stdout)).toMatchObject({
         effective: { tool: 'claude-code' },
         sources: { tool: 'explicit-file' },

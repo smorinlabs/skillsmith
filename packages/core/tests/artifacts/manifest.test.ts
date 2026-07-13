@@ -46,6 +46,9 @@ describe('manifest authority', () => {
       ['empty', '# comment\n'],
       ['malformed', 'version = [\n'],
       ['unknown', 'version = "1"\n'],
+      ['unknown', 'version = 1.0\n'],
+      ['unknown', 'version = 1e0\n'],
+      ['unknown', 'version = 2.0\n'],
       ['future', 'version = 2\n'],
     ] as const;
     for (const [shape, source] of fixtures) {
@@ -108,6 +111,10 @@ source = "acme/tools//skills/review"
     );
     expectNormalizationError(`${manifest('')}ref = "a..b"\n`);
     expectNormalizationError(manifest('path = "./a/../skills"'));
+    expectNormalizationError(manifest('path = "./C:relative"'));
+    expectNormalizationError(
+      manifest('path = "~/C:relative"').replace('scope = "project"', 'scope = "user"'),
+    );
     expectNormalizationError(manifest('[registry]\ndefault = "https://github.com/acme"'));
     expectNormalizationError(
       manifest('').replace(
@@ -182,5 +189,29 @@ name = "zeta"
     expect(JSON.stringify(firstProjection)).toBe(JSON.stringify(secondProjection));
     expect(firstProjection.skills.map((skill) => skill.name)).toEqual(['alpha', 'zeta']);
     expect(Object.isFrozen(firstProjection.skills[0]?.source)).toBe(true);
+
+    const names = ['z', 'aa', 'a_b', 'a.b', 'a-b', 'a', 'Z', 'A'];
+    const ordered = expectNormalized(`version = 1
+[defaults]
+tools = ["codex"]
+scope = "project"
+${names
+  .map(
+    (name) => `[[skills]]
+name = "${name}"
+source = "acme/tools//skills/${name}"`,
+  )
+  .join('\n')}
+`);
+    expect(projectManifestSemantics(ordered).skills.map((skill) => skill.name)).toEqual([
+      'A',
+      'Z',
+      'a',
+      'a-b',
+      'a.b',
+      'a_b',
+      'aa',
+      'z',
+    ]);
   });
 });

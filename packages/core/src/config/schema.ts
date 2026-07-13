@@ -6,7 +6,7 @@ import {
   normalizeManifestDocument,
   readManifestSource,
 } from '../artifacts/index.ts';
-import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
+import { type SkillSmithError, configError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
   type Config,
@@ -31,8 +31,9 @@ const FlatConfigSchema = z
 const parsedToml = (text: string): Result<unknown, SkillSmithError> => {
   try {
     return ok(parseToml(text));
-  } catch (error) {
-    return err(configError(`TOML parse error: ${errorMessage(error)}`));
+  } catch {
+    // Parser diagnostics may quote the malformed source line. Keep untrusted bytes out of errors.
+    return err(configError('TOML parse error'));
   }
 };
 
@@ -40,8 +41,12 @@ const schemaError = (
   label: string,
   issue: { readonly path: readonly (string | number)[]; readonly message: string } | undefined,
 ): SkillSmithError => {
-  const path = issue?.path.join('.') || '<root>';
-  return configError(`${label}: ${path}: ${issue?.message ?? 'invalid'}`);
+  const safeSegments = new Set(['tool', 'scope', 'path', 'registry', 'default']);
+  const segments = issue?.path.filter(
+    (part): part is string => typeof part === 'string' && safeSegments.has(part),
+  );
+  const path = segments && segments.length > 0 ? segments.join('.') : '<root>';
+  return configError(`${label}: ${path}: invalid value`);
 };
 
 export const classifyConfigDocument = (text: string): ConfigDocumentShape => {
@@ -68,6 +73,10 @@ const portableRegistry = (value: string, canonical: boolean): boolean => {
   }
   return /^[A-Za-z0-9.-]+(?::\d+)?(?:\/[A-Za-z0-9._-]+)*$/.test(value);
 };
+
+/** Credential-free canonical registry identity accepted at environment/CLI boundaries. */
+export const isCredentialFreeRegistryIdentity = (value: string): boolean =>
+  portableRegistry(value, true);
 
 export const parseProjectConfig = (text: string): Result<ParsedConfigDocument, SkillSmithError> => {
   const shape = classifyConfigDocument(text);

@@ -196,17 +196,45 @@ describe('resolveEffectiveConfig compatibility notices', () => {
     const source = 'tool = "codex"\n';
     const { env } = fixture({ [path]: source });
     let reads = 0;
-    const result = await resolveEffectiveConfig(runtimePorts(env), context(path, path), {
-      configuration: resolveRuntimeConfiguration({}),
-      readFile: async () => {
-        reads += 1;
-        return source;
+    let existenceChecks = 0;
+    const ports = runtimePorts(env);
+    const result = await resolveEffectiveConfig(
+      {
+        ...ports,
+        fileExists: async (candidate) => {
+          if (candidate === path) existenceChecks += 1;
+          return ports.fileExists(candidate);
+        },
       },
-    });
+      context(path, path),
+      {
+        configuration: resolveRuntimeConfiguration({}),
+        readFile: async () => {
+          reads += 1;
+          return source;
+        },
+      },
+    );
     expect(result.ok).toBeTrue();
     expect(reads).toBe(1);
+    expect(existenceChecks).toBe(1);
     if (result.ok) {
       expect(result.value.paths).toMatchObject({ project: path, 'explicit-file': path });
+    }
+  });
+
+  test('drops an unsafe registry environment value before effective precedence', async () => {
+    const { env } = fixture({});
+    const result = await resolveEffectiveConfig(runtimePorts(env), context(null), {
+      configuration: resolveRuntimeConfiguration({
+        SKILLSMITH_REGISTRY: 'https://user:P17_ENV_SECRET@github.com/acme',
+      }),
+    });
+    expect(result.ok).toBeTrue();
+    if (result.ok) {
+      expect(result.value.value.registry).toBeUndefined();
+      expect(result.value.layers.env.registry).toBeUndefined();
+      expect(result.value.sources['registry.default']).toBeUndefined();
     }
   });
 });

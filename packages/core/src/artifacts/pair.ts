@@ -1,4 +1,4 @@
-import { isAbsolute, join, parse, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 import type { ProjectContext } from '../context/types.ts';
 import type { FileReadPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -38,6 +38,18 @@ export interface ResolveArtifactPairOptions {
   readonly lockfile?: string;
 }
 
+export interface ResolveExplicitArtifactPairOptions {
+  readonly effectiveCwd: string;
+  readonly file?: string;
+  readonly lockfile?: string;
+}
+
+export interface ResolvedExplicitArtifactPair {
+  readonly file: string | null;
+  readonly lockfile: string | null;
+  readonly lockfileSource: 'explicit' | 'sibling' | null;
+}
+
 export type ArtifactPairPorts = Pick<FileReadPort, 'pathKind' | 'realpath'>;
 
 interface ResolvedSelector {
@@ -72,8 +84,28 @@ const stateError = (
     ...(paths === undefined ? {} : { paths: Object.freeze([...paths]) }),
   });
 
-const hasWindowsAbsoluteForm = (token: string): boolean =>
-  /^[A-Za-z]:[\\/]/u.test(token) || /^(?:\\\\|\/\/)/u.test(token);
+const hasControlCharacter = (token: string): boolean =>
+  [...token].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 0x1f || code === 0x7f;
+  });
+
+const hasForeignWindowsForm = (token: string): boolean =>
+  /^[A-Za-z]:/u.test(token) || /^(?:\\\\|\/\/)/u.test(token) || token.includes('\\');
+
+const explicitSelectorError = (token: string): ArtifactPairError | null => {
+  if (token.length === 0 || hasControlCharacter(token)) {
+    return usageError('artifact-selector-invalid', 'artifact file selector is empty or invalid');
+  }
+  if (process.platform !== 'win32' && hasForeignWindowsForm(token)) {
+    return usageError(
+      'artifact-selector-nonportable',
+      `artifact selector uses a foreign absolute-path form: ${token}`,
+      [token],
+    );
+  }
+  return null;
+};
 
 const isContainedBy = (root: string, target: string): boolean => {
   const displacement = relative(root, target);
@@ -94,26 +126,22 @@ const resolveSelector = (
   context: ProjectContext,
   token: string | null,
   discoveredPath?: string,
+  preResolvedPath?: string,
 ): Result<ResolvedSelector, ArtifactPairError> => {
   const source = token ?? discoveredPath;
-  if (source === undefined || source.length === 0 || source.includes('\0')) {
+  if (source === undefined || source.length === 0 || hasControlCharacter(source)) {
     return err(
       usageError('artifact-selector-invalid', 'artifact file selector is empty or invalid'),
     );
   }
 
-  if (token !== null && hasWindowsAbsoluteForm(token) && !isAbsolute(token)) {
-    return err(
-      usageError(
-        'artifact-selector-nonportable',
-        `artifact selector uses a foreign absolute-path form: ${token}`,
-        [token],
-      ),
-    );
+  if (token !== null) {
+    const selectorError = explicitSelectorError(token);
+    if (selectorError !== null) return err(selectorError);
   }
 
   const relativeOverride = token !== null && !isAbsolute(token);
-  const path = resolve(context.effectiveCwd, source);
+  const path = preResolvedPath ?? resolve(context.effectiveCwd, source);
   if (relativeOverride) {
     if (context.projectRoot === null || !isContainedBy(context.projectRoot, path)) {
       return err(
@@ -142,9 +170,81 @@ const resolveSelector = (
   });
 };
 
+/**
+ * Canonicalize an absent selector through its nearest existing ancestor. This closes the gap where
+ * a lexically in-root destination is below a symlink whose real target is outside the project.
+ */
+const canonicalizeSelectorPath = async (
+  ports: ArtifactPairPorts,
+  path: string,
+): Promise<string> => {
+  const kind = await ports.pathKind(path);
+  if (kind !== 'absent') return ports.realpath(path);
+
+  const missingSegments: string[] = [];
+  let cursor = path;
+  while (true) {
+    const parent = dirname(cursor);
+    if (parent === cursor) return path;
+    missingSegments.unshift(basename(cursor));
+    cursor = parent;
+
+    const ancestorKind = await ports.pathKind(cursor);
+    if (ancestorKind !== 'absent') {
+      const ancestor = await ports.realpath(cursor);
+      return resolve(ancestor, ...missingSegments);
+    }
+  }
+};
+
 const siblingLockPath = (file: string): string => {
   const parts = parse(file);
   return join(parts.dir, `${parts.name}.lock`);
+};
+
+/** Resolve explicit CLI selectors without filesystem, Git, or project-context access. */
+export const resolveExplicitArtifactPairLexically = (
+  options: ResolveExplicitArtifactPairOptions,
+): Result<ResolvedExplicitArtifactPair, ArtifactPairError> => {
+  if (options.lockfile !== undefined && options.file === undefined) {
+    return err(
+      usageError(
+        'artifact-lockfile-requires-file',
+        '--lockfile requires an explicit --file selector',
+      ),
+    );
+  }
+  if (options.file === undefined) {
+    return ok(Object.freeze({ file: null, lockfile: null, lockfileSource: null }));
+  }
+
+  const fileError = explicitSelectorError(options.file);
+  if (fileError !== null) return err(fileError);
+  const file = resolve(options.effectiveCwd, options.file);
+
+  let lockfile: string;
+  let lockfileSource: NonNullable<ResolvedExplicitArtifactPair['lockfileSource']>;
+  if (options.lockfile === undefined) {
+    lockfile = siblingLockPath(file);
+    lockfileSource = 'sibling';
+  } else {
+    const lockfileError = explicitSelectorError(options.lockfile);
+    if (lockfileError !== null) return err(lockfileError);
+    lockfile = resolve(options.effectiveCwd, options.lockfile);
+    lockfileSource = 'explicit';
+  }
+
+  if (file === lockfile) {
+    return err(
+      usageError(
+        'artifact-pair-collision',
+        'artifact manifest and lockfile resolve to the same path',
+        [file, lockfile],
+      ),
+    );
+  }
+
+  return ok(Object.freeze({ file, lockfile, lockfileSource }));
 };
 
 const freezePairPath = (selector: ResolvedSelector): PairPath =>
@@ -163,13 +263,15 @@ export const resolveArtifactPair = async (
   context: ProjectContext,
   options: ResolveArtifactPairOptions,
 ): Promise<Result<ResolvedArtifactPair, ArtifactPairError>> => {
-  if (options.lockfile !== undefined && options.file === undefined) {
-    return err(
-      usageError(
-        'artifact-lockfile-requires-file',
-        '--lockfile requires an explicit --file selector',
-      ),
-    );
+  let explicitPair: ResolvedExplicitArtifactPair | null = null;
+  if (options.file !== undefined || options.lockfile !== undefined) {
+    const lexical = resolveExplicitArtifactPairLexically({
+      effectiveCwd: context.effectiveCwd,
+      ...(options.file === undefined ? {} : { file: options.file }),
+      ...(options.lockfile === undefined ? {} : { lockfile: options.lockfile }),
+    });
+    if (!lexical.ok) return lexical;
+    explicitPair = lexical.value;
   }
 
   if (options.file === undefined && options.discoveredFile == null) {
@@ -180,16 +282,22 @@ export const resolveArtifactPair = async (
     context,
     options.file ?? null,
     options.file === undefined ? (options.discoveredFile ?? undefined) : undefined,
+    explicitPair?.file ?? undefined,
   );
   if (!file.ok) return file;
 
   let lockfile: Result<ResolvedSelector, ArtifactPairError>;
   let lockfileSource: ResolvedArtifactPair['lockfileSource'];
   if (options.lockfile !== undefined) {
-    lockfile = resolveSelector(context, options.lockfile);
+    lockfile = resolveSelector(
+      context,
+      options.lockfile,
+      undefined,
+      explicitPair?.lockfile ?? undefined,
+    );
     lockfileSource = 'explicit';
   } else {
-    const path = siblingLockPath(file.value.path);
+    const path = explicitPair?.lockfile ?? siblingLockPath(file.value.path);
     lockfile = ok({
       token: null,
       path,
@@ -218,8 +326,7 @@ export const resolveArtifactPair = async (
   const canonicalPaths: string[] = [];
   for (const selector of selectors) {
     try {
-      const kind = await ports.pathKind(selector.path);
-      const canonical = kind === 'absent' ? selector.path : await ports.realpath(selector.path);
+      const canonical = await canonicalizeSelectorPath(ports, selector.path);
       canonicalPaths.push(canonical);
       if (
         selector.relativeOverride &&

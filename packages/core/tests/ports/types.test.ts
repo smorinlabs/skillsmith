@@ -62,6 +62,12 @@ describe('capability port contracts', () => {
     expect(broadReadHasMetadata).toBeFalse();
     expect(broadWriteHasMode).toBeFalse();
     expect(await metadata('/config')).toEqual({ kind: 'file', mode: 0o600, identity: '1:2' });
+    const special: Awaited<ReturnType<FileMetadataReadPort['readFileMetadata']>> = {
+      kind: 'other',
+      mode: 0o600,
+      identity: '3:4',
+    };
+    expect(special.kind).toBe('other');
     expect(setMode).toBeFunction();
   });
 });

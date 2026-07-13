@@ -88,7 +88,11 @@ const ConfigListUnscopedV1Schema = z
   })
   .strict();
 
-const ConfigListV1Schema = z.union([ConfigListUnscopedV1Schema, ConfigV1Schema]);
+const ConfigListScopedV1Schema = ConfigV1Schema.extend({
+  notices: z.array(ConfigNoticeV1Schema).readonly().optional(),
+}).strict();
+
+const ConfigListV1Schema = z.union([ConfigListUnscopedV1Schema, ConfigListScopedV1Schema]);
 
 const ConfigSetV1Schema = z
   .object({
@@ -155,7 +159,12 @@ export const toConfigGetV1Dto = (report: ConfigGetReport): ConfigGetV1Dto => {
 };
 
 export const toConfigListV1Dto = (report: ConfigListReport): ConfigListV1Dto => {
-  if (report.scope !== undefined) return toConfigV1Dto(report.layers[report.scope]);
+  if (report.scope !== undefined) {
+    return {
+      ...toConfigV1Dto(report.layers[report.scope]),
+      ...(report.notices === undefined ? {} : { notices: report.notices }),
+    };
+  }
   return {
     effective: toConfigV1Dto(report.effective),
     sources: toSourcesV1Dto(report.sources),

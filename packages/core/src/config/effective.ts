@@ -79,11 +79,21 @@ export const resolveEffectiveConfig = async (
     }
     return pending;
   };
+  const projectLoads = new Map<string, Promise<Result<LoadedLayer, SkillSmithError>>>();
+  const loadProjectLayer = (path: string | null): Promise<Result<LoadedLayer, SkillSmithError>> => {
+    if (path === null) return Promise.resolve(ok({ config: {} }));
+    let pending = projectLoads.get(path);
+    if (pending === undefined) {
+      pending = loadLayer(env, path, readFile, true);
+      projectLoads.set(path, pending);
+    }
+    return pending;
+  };
   const [system, user, project, explicitFile] = await Promise.all([
     loadLayer(env, paths.system, readFile, false),
     loadLayer(env, paths.user, readFile, false),
-    loadLayer(env, paths.project ?? null, readFile, true),
-    loadLayer(env, paths['explicit-file'] ?? null, readFile, true),
+    loadProjectLayer(paths.project ?? null),
+    loadProjectLayer(paths['explicit-file'] ?? null),
   ]);
   if (!system.ok) return system;
   if (!user.ok) return user;

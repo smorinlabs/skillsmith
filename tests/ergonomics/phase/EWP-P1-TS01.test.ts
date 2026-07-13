@@ -232,7 +232,11 @@ describe('EWP-P1-TS01', () => {
       for (const matrixCase of cases) {
         const result = await runCli(matrixCase.args, invocationCwd, env);
         expect(result.exitCode).toBe(0);
-        expect(result.stderr).toBe('');
+        expect(result.stderr).toBe(
+          matrixCase.kind === 'config'
+            ? `warning: legacy project config detected at ${join(nested, 'skillsmith.toml')}; migrate the project configuration in Phase 2 with config set or config unset\n`
+            : '',
+        );
         const output = JSON.parse(result.stdout) as Record<string, unknown>;
 
         if (matrixCase.kind === 'list') {

@@ -2271,7 +2271,7 @@ describe('EWP-P1-TS10', () => {
       visit(tree, []);
     }
     expect(allowed).toEqual({
-      configListHuman: 2,
+      configListHuman: 6,
       metadataRenderer: 1,
       version: 1,
       configSet: 0,

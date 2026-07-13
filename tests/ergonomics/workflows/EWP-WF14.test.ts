@@ -65,7 +65,11 @@ describe('EWP-WF14', () => {
         runCli([...global, 'config', 'list', '--json'], invocationCwd, env),
       ]);
       expect([list.exitCode, commands.exitCode, config.exitCode]).toEqual([0, 0, 0]);
-      expect([list.stderr, commands.stderr, config.stderr]).toEqual(['', '', '']);
+      expect([list.stderr, commands.stderr, config.stderr]).toEqual([
+        '',
+        '',
+        `warning: legacy project config detected at ${join(nested, 'skillsmith.toml')}; migrate the project configuration in Phase 2 with config set or config unset\n`,
+      ]);
 
       const listOutput = JSON.parse(list.stdout) as {
         skills: readonly { name: string; root: string; tool: string; scope: string }[];

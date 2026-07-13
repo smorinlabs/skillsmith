@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultRuntimePorts, defaultScanEnv, isPortError } from '../../src/index.ts';
@@ -146,6 +148,29 @@ describe('defaultRuntimePorts', () => {
         identity: null,
       });
     } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('classifies FIFOs, sockets, and devices as other metadata rather than regular files', async () => {
+    if (process.platform === 'win32') return;
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-special-metadata-'));
+    const fifo = join(root, 'config.fifo');
+    const socket = join(root, 'config.socket');
+    const server = createServer();
+    try {
+      const created = spawnSync('mkfifo', [fifo], { encoding: 'utf8' });
+      expect(created.status, created.stderr).toBe(0);
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(socket, resolve);
+      });
+      expect(await ports.readFileMetadata(fifo)).toMatchObject({ kind: 'other' });
+      expect(await ports.readFileMetadata(socket)).toMatchObject({ kind: 'other' });
+      expect(await ports.readFileMetadata('/dev/null')).toMatchObject({ kind: 'other' });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(root, { recursive: true, force: true });
     }
   });

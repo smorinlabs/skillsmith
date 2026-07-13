@@ -291,6 +291,9 @@ describe('EWP-P2-TS01', () => {
       { shape: 'empty', source: ' \n\t# comment only\n', readable: false },
       { shape: 'malformed', source: 'version = [\n', readable: false },
       { shape: 'unknown', source: 'version = "1"\n', readable: false },
+      { shape: 'unknown', source: 'version = 1.0\n', readable: false },
+      { shape: 'unknown', source: 'version = 1e0\n', readable: false },
+      { shape: 'unknown', source: 'version = 2.0\n', readable: false },
       { shape: 'unknown', source: 'mystery = true\n', readable: false },
       {
         shape: 'unknown',
@@ -600,6 +603,7 @@ describe('EWP-P2-TS01', () => {
       './a/../skills',
       './a//skills',
       './a/./skills',
+      './C:relative',
       './.skillsmith/store/x',
       './placements.json',
       './.skillsmith/dev/x',
@@ -611,6 +615,8 @@ describe('EWP-P2-TS01', () => {
       canonicalManifest({ scope: 'project', path: '~/user-only' }),
       canonicalManifest({ skills: [{ scope: 'user', path: './project-only' }] }),
       canonicalManifest({ skills: [{ scope: 'project', path: '~/user-only' }] }),
+      canonicalManifest({ scope: 'user', path: '~/C:relative' }),
+      canonicalManifest({ skills: [{ scope: 'user', path: '~/C:relative' }] }),
     ];
     guardValidToml([...positive, ...negative]);
     const api = await requireManifestApi();
@@ -796,6 +802,23 @@ describe('EWP-P2-TS01', () => {
     for (const source of mutations)
       expect(api.projectManifestSemantics(normalize(api, source))).not.toEqual(projection);
     expect(api.projectManifestSemantics(normalize(api, base))).toEqual(projection);
+    const codeUnitNames = ['z', 'aa', 'a_b', 'a.b', 'a-b', 'a', 'Z', 'A'];
+    const codeUnitProjection = api.projectManifestSemantics(
+      normalize(
+        api,
+        canonicalManifest({
+          skills: codeUnitNames.map((name) => ({
+            name,
+            source: `acme/tools//skills/${name}`,
+          })),
+        }),
+      ),
+    );
+    expect(
+      (codeUnitProjection.skills as readonly NormalizedManifestDeclaration[]).map(
+        (skill) => skill.name,
+      ),
+    ).toEqual(['A', 'Z', 'a', 'a-b', 'a.b', 'a_b', 'aa', 'z']);
     assertRecursivelyFrozen(projection);
     assertJsonValue(projection);
     const serialized = JSON.stringify(projection);

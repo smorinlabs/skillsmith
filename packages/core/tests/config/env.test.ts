@@ -19,6 +19,16 @@ describe('configFromEnv', () => {
       registry: { default: 'gh/acme' },
     });
   });
+  test('drops unsafe registry environment values before they enter configuration', () => {
+    for (const value of [
+      'https://user:secret@github.com/acme',
+      'github.com/acme?token=secret',
+      'github.com/acme#fragment',
+      'github.com/acme%2fsecret',
+    ]) {
+      expect(configFromEnv({ SKILLSMITH_REGISTRY: value })).toEqual({});
+    }
+  });
   test('ignores unknown SKILLSMITH_* vars', () => {
     expect(configFromEnv({ SKILLSMITH_EXTRA: 'x', SKILLSMITH_TOOL: 'codex' })).toEqual({
       tool: 'codex',

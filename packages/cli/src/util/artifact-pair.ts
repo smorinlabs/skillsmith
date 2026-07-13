@@ -1,5 +1,4 @@
-import { join, parse, resolve } from 'node:path';
-import { type Result, err, ok } from '@skillsmith/core';
+import { type Result, err, resolveExplicitArtifactPairLexically } from '@skillsmith/core';
 
 export interface ResolveArtifactPairOptions {
   readonly effectiveCwd: string;
@@ -19,35 +18,19 @@ export interface ArtifactPairUsageError {
   readonly message: string;
 }
 
-const siblingLockfile = (file: string): string => {
-  const parsed = parse(file);
-  return join(parsed.dir, `${parsed.name}.lock`);
-};
-
 /** Resolve explicit artifact selectors without reading, parsing, or writing either artifact. */
 export const resolveArtifactPair = (
   options: ResolveArtifactPairOptions,
 ): Result<ResolvedArtifactPair, ArtifactPairUsageError> => {
-  if (options.lockfile !== undefined && options.file === undefined) {
-    return err({
-      code: 'usage',
-      exitCode: 2,
-      message: '--lockfile requires --file',
-    });
-  }
-
-  if (options.file === undefined) {
-    return ok({ file: null, lockfile: null, lockfileSource: null });
-  }
-
-  const file = resolve(options.effectiveCwd, options.file);
-  if (options.lockfile !== undefined) {
-    return ok({
-      file,
-      lockfile: resolve(options.effectiveCwd, options.lockfile),
-      lockfileSource: 'explicit',
-    });
-  }
-
-  return ok({ file, lockfile: siblingLockfile(file), lockfileSource: 'sibling' });
+  const resolved = resolveExplicitArtifactPairLexically(options);
+  return resolved.ok
+    ? resolved
+    : err({
+        code: 'usage',
+        exitCode: 2,
+        message:
+          resolved.error.code === 'artifact-lockfile-requires-file'
+            ? '--lockfile requires --file'
+            : resolved.error.message,
+      });
 };

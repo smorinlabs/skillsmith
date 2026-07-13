@@ -29,6 +29,9 @@ interface SourceLine {
 interface EntryRange {
   readonly line: SourceLine;
   readonly key: string;
+  readonly rawKey: string;
+  readonly keyStart: number;
+  readonly keyEnd: number;
   readonly valueStart: number;
   readonly valueEnd: number;
   readonly value: string;
@@ -130,7 +133,10 @@ const entryOf = (line: SourceLine): EntryRange | null => {
   if (trimmed.length === 0 || trimmed.startsWith('#') || trimmed.startsWith('[')) return null;
   const equals = equalsOutsideQuotes(line.body);
   if (equals < 0) return null;
-  const key = decodeKey(line.body.slice(0, equals));
+  const rawKeyPart = line.body.slice(0, equals);
+  const rawKey = rawKeyPart.trim();
+  const keyOffset = rawKeyPart.indexOf(rawKey);
+  const key = decodeKey(rawKey);
   let valueStartInLine = equals + 1;
   while (/\s/.test(line.body[valueStartInLine] ?? '')) valueStartInLine += 1;
   const comment = outsideComment(line.body, valueStartInLine);
@@ -141,6 +147,9 @@ const entryOf = (line: SourceLine): EntryRange | null => {
   return {
     line,
     key,
+    rawKey,
+    keyStart: line.start + keyOffset,
+    keyEnd: line.start + keyOffset + rawKey.length,
     valueStart: line.start + valueStartInLine,
     valueEnd: line.start + valueEndInLine,
     value: line.body.slice(valueStartInLine, valueEndInLine),
@@ -187,13 +196,64 @@ const unsafeEditorShape = (
 const replaceRange = (source: string, start: number, end: number, value: string): string =>
   `${source.slice(0, start)}${value}${source.slice(end)}`;
 
+const manualPatch = (section: string | null, key: string, operation: 'set' | 'unset'): string => {
+  const field = section === null ? key : `${section}.${key}`;
+  return [
+    'manual patch:',
+    '--- a/config.toml',
+    '+++ b/config.toml',
+    '@@ -1 +1 @@',
+    '-# ambiguous source range retained',
+    `+# ${operation} ${field} using a validated value`,
+  ].join('\n');
+};
+
+const ambiguousBoundaryComment = (source: string, section: string | null): boolean => {
+  const lines = linesOf(source);
+  const trailingTriviaHasComment = (before: number): boolean => {
+    let index = before - 1;
+    let sawComment = false;
+    while (index >= 0) {
+      const body = lines[index]?.body.trim() ?? '';
+      if (body === '') {
+        index -= 1;
+        continue;
+      }
+      if (body.startsWith('#')) {
+        sawComment = true;
+        index -= 1;
+        continue;
+      }
+      break;
+    }
+    return sawComment;
+  };
+  const nextHeaderIndex =
+    section === null
+      ? lines.findIndex((line) => /^\s*\[/.test(line.body))
+      : (() => {
+          const headerIndex = lines.findIndex(
+            (line) =>
+              line.body
+                .trim()
+                .match(/^\[([^\[\]]+)]/)?.[1]
+                ?.trim() === section,
+          );
+          if (headerIndex < 0) return -2;
+          const relative = lines
+            .slice(headerIndex + 1)
+            .findIndex((line) => /^\s*\[/.test(line.body));
+          return relative < 0 ? -1 : headerIndex + 1 + relative;
+        })();
+  if (nextHeaderIndex === -2) return trailingTriviaHasComment(lines.length);
+  if (nextHeaderIndex < 0) return trailingTriviaHasComment(lines.length);
+  return trailingTriviaHasComment(nextHeaderIndex);
+};
+
 const quotedLike = (current: string, value: string): string => {
   const trimmed = current.trim();
-  const quote = trimmed.startsWith("'") ? "'" : '"';
-  const escaped =
-    quote === '"'
-      ? value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
-      : value.replaceAll("'", "''");
+  const quote = trimmed.startsWith("'") && !value.includes("'") ? "'" : '"';
+  const escaped = quote === '"' ? value.replaceAll('\\', '\\\\').replaceAll('"', '\\"') : value;
   return `${quote}${escaped}${quote}`;
 };
 
@@ -206,11 +266,9 @@ const arrayLike = (current: string, values: readonly string[]): string => {
   const leading = inner.match(/^\s*/)?.[0] ?? '';
   const trailing = inner.match(/\s*$/)?.[0] ?? '';
   const trailingComma = /,\s*$/.test(inner);
-  const firstQuote = inner.match(/["']/)?.[0] === "'" ? "'" : '"';
+  const prefersLiteral = inner.match(/["']/)?.[0] === "'";
   const rendered = values
-    .map((value) =>
-      firstQuote === "'" ? `'${value.replaceAll("'", "''")}'` : JSON.stringify(value),
-    )
+    .map((value) => (prefersLiteral && !value.includes("'") ? `'${value}'` : JSON.stringify(value)))
     .join(', ');
   return `[${leading}${rendered}${trailingComma ? ',' : ''}${trailing}]`;
 };
@@ -270,7 +328,14 @@ const editOne = (
   kind: 'string' | 'array',
 ): Result<string, SkillSmithError> => {
   const unsafe = unsafeEditorShape(source, section, key);
-  if (unsafe) return err(unsafe);
+  if (unsafe) {
+    const reason = 'message' in unsafe ? unsafe.message : 'cannot safely edit source';
+    return err(
+      invalidArgumentError(
+        `${reason}\n${manualPatch(section, key, value === null ? 'unset' : 'set')}`,
+      ),
+    );
+  }
   const existing = entriesFor(source, section, key)[0];
   if (value === null) {
     return existing
@@ -286,6 +351,13 @@ const editOne = (
         : replaceRange(source, existing.valueStart, existing.valueEnd, rendered),
     );
   }
+  if (ambiguousBoundaryComment(source, section)) {
+    return err(
+      invalidArgumentError(
+        `cannot safely attach ${section === null ? key : `${section}.${key}`} across a comment/table boundary\n${manualPatch(section, key, 'set')}`,
+      ),
+    );
+  }
   const rendered = kind === 'array' ? `[${JSON.stringify(value)}]` : JSON.stringify(value);
   return ok(
     section === null
@@ -298,6 +370,95 @@ const normalizeLegacyRegistry = (value: string | undefined): string | undefined 
   if (value === undefined || !/^https:\/\//i.test(value)) return value;
   const parsed = new URL(value);
   return `${parsed.host}${parsed.pathname.replace(/^\/+|\/+$/g, '') ? `/${parsed.pathname.replace(/^\/+|\/+$/g, '')}` : ''}`;
+};
+
+interface Replacement {
+  readonly start: number;
+  readonly end: number;
+  readonly value: string;
+}
+
+const applyReplacements = (source: string, replacements: readonly Replacement[]): string =>
+  [...replacements]
+    .sort((left, right) => right.start - left.start || right.end - left.end)
+    .reduce(
+      (current, replacement) =>
+        replaceRange(current, replacement.start, replacement.end, replacement.value),
+      source,
+    );
+
+const renamedKey = (rawKey: string, key: string): string =>
+  rawKey.startsWith("'") ? `'${key}'` : rawKey.startsWith('"') ? `"${key}"` : key;
+
+const canonicalizeLegacyRanges = (
+  source: string,
+  config: Config,
+): Result<string, SkillSmithError> => {
+  const newline = newlineOf(source);
+  const lines = linesOf(source);
+  const topEntries = lines
+    .filter((line) => line.section === null)
+    .map(entryOf)
+    .filter(
+      (entry): entry is EntryRange =>
+        entry !== null && ['tool', 'scope', 'path'].includes(entry.key),
+    );
+  const replacements: Replacement[] = [];
+  const firstTop = topEntries[0];
+  if (firstTop) {
+    replacements.push({
+      start: firstTop.line.start,
+      end: firstTop.line.start,
+      value: `version = 1${newline}${newline}[defaults]${newline}`,
+    });
+    const tool = topEntries.find((entry) => entry.key === 'tool');
+    if (tool) {
+      replacements.push({
+        start: tool.keyStart,
+        end: tool.keyEnd,
+        value: renamedKey(tool.rawKey, 'tools'),
+      });
+      replacements.push({
+        start: tool.valueStart,
+        end: tool.valueEnd,
+        value: `[${tool.value}]`,
+      });
+    }
+  } else {
+    const firstStructural = lines.find(
+      (line) => line.body.trim() !== '' && !line.body.trim().startsWith('#'),
+    );
+    const offset = firstStructural?.start ?? source.length;
+    const prefix = offset > 0 && source[offset - 1] !== '\n' ? newline : '';
+    replacements.push({
+      start: offset,
+      end: offset,
+      value: `${prefix}version = 1${newline}${firstStructural ? newline : ''}`,
+    });
+  }
+
+  const legacyRegistry = entriesFor(source, 'registry', 'default')[0];
+  const normalizedRegistry = normalizeLegacyRegistry(config.registry?.default);
+  if (legacyRegistry && normalizedRegistry !== undefined) {
+    const rendered = quotedLike(legacyRegistry.value, normalizedRegistry);
+    if (rendered !== legacyRegistry.value) {
+      replacements.push({
+        start: legacyRegistry.valueStart,
+        end: legacyRegistry.valueEnd,
+        value: rendered,
+      });
+    }
+  }
+
+  const canonical = applyReplacements(source, replacements);
+  const parsed = parseProjectConfig(canonical);
+  return parsed.ok
+    ? ok(canonical)
+    : err(
+        invalidArgumentError(
+          `cannot safely migrate the exact legacy source\n${manualPatch('defaults', 'tools', 'set')}`,
+        ),
+      );
 };
 
 const applySemanticEdit = (config: Config, input: HumanConfigEditInput): Config => {
@@ -323,29 +484,6 @@ const applySemanticEdit = (config: Config, input: HumanConfigEditInput): Config 
   return next;
 };
 
-const migrateLegacy = (source: string, config: Config, input: HumanConfigEditInput): string => {
-  const newline = newlineOf(source);
-  const hadFinalNewline = source.endsWith('\n');
-  const firstEntry = linesOf(source)
-    .map(entryOf)
-    .find((entry) => entry !== null);
-  const leading = firstEntry ? source.slice(0, firstEntry.line.start) : '';
-  const next = applySemanticEdit(config, input);
-  const rendered: string[] = ['version = 1'];
-  const tools = getConfigTools(next);
-  if (tools || next.scope !== undefined || next.path !== undefined) {
-    rendered.push('', '[defaults]');
-    if (tools) rendered.push(`tools = [${tools.map((tool) => JSON.stringify(tool)).join(', ')}]`);
-    if (next.scope !== undefined) rendered.push(`scope = ${JSON.stringify(next.scope)}`);
-    if (next.path !== undefined) rendered.push(`path = ${JSON.stringify(next.path)}`);
-  }
-  const registry = normalizeLegacyRegistry(next.registry?.default);
-  if (registry !== undefined)
-    rendered.push('', '[registry]', `default = ${JSON.stringify(registry)}`);
-  const prefix = leading.replace(/(?:\r?\n)+$/g, newline);
-  return `${prefix}${rendered.join(newline)}${hadFinalNewline ? newline : ''}`;
-};
-
 const validatePatch = (input: HumanConfigEditInput): SkillSmithError | null => {
   const registry = input.patch?.registry?.default;
   if (
@@ -367,6 +505,50 @@ const validatePatch = (input: HumanConfigEditInput): SkillSmithError | null => {
   return null;
 };
 
+const semanticProjection = (config: Config): string =>
+  JSON.stringify({
+    tools: getConfigTools(config) ?? null,
+    scope: config.scope ?? null,
+    path: config.path ?? null,
+    registry: config.registry?.default ?? null,
+  });
+
+const verifyEditedSemantics = (
+  source: string,
+  project: boolean,
+  expected: Config,
+): Result<void, SkillSmithError> => {
+  let actual: Config;
+  if (project) {
+    const parsed = parseProjectConfig(source);
+    if (!parsed.ok) return err(invalidArgumentError('edited config failed semantic validation'));
+    actual = parsed.value.config;
+  } else {
+    const parsed = parseConfig(source);
+    if (!parsed.ok) return err(invalidArgumentError('edited config failed semantic validation'));
+    actual = parsed.value;
+  }
+  return semanticProjection(actual) === semanticProjection(expected)
+    ? ok(undefined)
+    : err(invalidArgumentError('edited config did not preserve the requested semantics'));
+};
+
+const renderNewProjectConfig = (input: HumanConfigEditInput): string => {
+  const config = applySemanticEdit({}, input);
+  const rendered: string[] = ['version = 1'];
+  const tools = getConfigTools(config);
+  if (tools || config.scope !== undefined || config.path !== undefined) {
+    rendered.push('', '[defaults]');
+    if (tools) rendered.push(`tools = [${tools.map((tool) => JSON.stringify(tool)).join(', ')}]`);
+    if (config.scope !== undefined) rendered.push(`scope = ${JSON.stringify(config.scope)}`);
+    if (config.path !== undefined) rendered.push(`path = ${JSON.stringify(config.path)}`);
+  }
+  if (config.registry?.default !== undefined) {
+    rendered.push('', '[registry]', `default = ${JSON.stringify(config.registry.default)}`);
+  }
+  return rendered.join('\n');
+};
+
 export const editConfigSource = (
   source: string,
   input: HumanConfigEditInput,
@@ -375,16 +557,16 @@ export const editConfigSource = (
   if (invalid) return err(invalid);
   const project = input.scope === 'project';
   let config: Config;
+  let edited = source;
+  let migrated = false;
   if (project) {
     const parsed = parseProjectConfig(source);
     if (!parsed.ok) return parsed;
     if (parsed.value.shape === 'legacy') {
-      return ok({
-        source: migrateLegacy(source, parsed.value.config, input),
-        changed: true,
-        migrated: true,
-        operation: 'migrate-project-config',
-      });
+      const canonical = canonicalizeLegacyRanges(source, parsed.value.config);
+      if (!canonical.ok) return canonical;
+      edited = canonical.value;
+      migrated = true;
     }
     config = parsed.value.config;
   } else {
@@ -392,7 +574,6 @@ export const editConfigSource = (
     if (!parsed.ok) return parsed;
     config = parsed.value;
   }
-  let edited = source;
   const patchEntries: readonly [ConfigKey, string | undefined][] = [
     ['tool', input.patch?.tool],
     ['scope', input.patch?.scope],
@@ -431,11 +612,16 @@ export const editConfigSource = (
 
   // A semantic no-op is always byte-identical, even when the source uses unusual trivia.
   const semantic = applySemanticEdit(config, input);
-  const same = JSON.stringify(semantic) === JSON.stringify(config);
+  const same = semanticProjection(semantic) === semanticProjection(config);
+  if (migrated || !same) {
+    const verified = verifyEditedSemantics(edited, project, semantic);
+    if (!verified.ok) return verified;
+  }
   return ok({
-    source: same ? source : edited,
-    changed: !same && edited !== source,
-    migrated: false,
+    source: !migrated && same ? source : edited,
+    changed: migrated || (!same && edited !== source),
+    migrated,
+    ...(migrated ? { operation: 'migrate-project-config' } : {}),
   });
 };
 
@@ -448,7 +634,9 @@ export const createConfigSource = (
   const invalid = validatePatch(input);
   if (invalid) return err(invalid);
   if (input.scope === 'project') {
-    const source = migrateLegacy('', {}, input);
+    const source = renderNewProjectConfig(input);
+    const verified = verifyEditedSemantics(source, true, applySemanticEdit({}, input));
+    if (!verified.ok) return verified;
     return ok({ source, changed: source.length > 0, migrated: false });
   }
   let source = '';
@@ -466,6 +654,10 @@ export const createConfigSource = (
       'default',
       JSON.stringify(input.patch.registry.default),
     );
+  }
+  if (source.length > 0) {
+    const verified = verifyEditedSemantics(source, false, applySemanticEdit({}, input));
+    if (!verified.ok) return verified;
   }
   return ok({ source, changed: source.length > 0, migrated: false });
 };
