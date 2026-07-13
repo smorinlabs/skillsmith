@@ -34,6 +34,16 @@ import {
   // Result helpers
   err, isErr, isOk, map, mapErr, ok,
 
+  // Portable artifact identity
+  HASH_DOMAINS,
+  correlatePortableLock,
+  hashCanonicalInput,
+  hashManifestSemantics,
+  hashSourceContentV1,
+  projectSourceContent,
+  readPortableLockSource,
+  serializePortableLock,
+
   // Version
   VERSION,
 } from '@skillsmith/core';
@@ -44,14 +54,29 @@ import type {
   InstallMethod,
   InstallRecord,
   Logger,
+  PortableLockRelationship,
+  PortableLockV1,
   Platform,
   Result,
   ScanEnv,
   SkillSmithError,
+  SourceContentProjectionV1,
+  SourceContentReadPort,
   SupportedTool,
   XdgDirs,
 } from '@skillsmith/core';
 ```
+
+Portable artifact identity is pure and versioned. Hash inputs use the closed v1 domains and exact
+domain-separated SHA-256 framing. Manifest semantic hashes consume the normalized manifest
+projection, portable locks accept only their one canonical TOML byte form, and source-content
+hashes consume a schema-ordered portable tree projection over injected read capabilities. Lock and
+source errors are fixed, secret-safe `Result` values. The source projector never follows symlinks
+and excludes exactly `.git`; it performs no write or acquisition.
+
+The older placement-store `contentHashOf` digest remains an internal compatibility algorithm for
+existing ledger/store records. It is intentionally independent from the public versioned
+`source-content` hash until a version-aware migration owns that transition.
 
 Operation-scoped observation uses immutable contexts, a closed typed event registry, failure-isolated
 observers, and bounded recursive redaction. Core emits no diagnostics directly; CLI or embedding

@@ -96,6 +96,16 @@ const expectDigest = (actual: ArtifactDigest, expected: string): void => {
   expect(String(actual)).toBe(expected);
 };
 
+const expectHashSuccess = (
+  result: ReturnType<typeof hashCanonicalInput>,
+  expected: string,
+): ArtifactDigest => {
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(result.error.message);
+  expectDigest(result.value, expected);
+  return result.value;
+};
+
 describe('artifact hash authority', () => {
   test('publishes the frozen closed v1 registry and closed public types', () => {
     const version: HashSchemaVersion = HASH_SCHEMA_VERSION;
@@ -134,10 +144,8 @@ describe('artifact hash authority', () => {
     const result = hashCanonicalInput('resource', 1, input);
     input.fill(7);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error(result.error.message);
-    expectDigest(
-      result.value,
+    expectHashSuccess(
+      result,
       'sha256:fc75a6d01152730919216993a2cf1d55bf6c6baa7936c7c3aafed00e50c09c6b',
     );
     expect(
@@ -145,20 +153,66 @@ describe('artifact hash authority', () => {
         .update(Buffer.from('736b696c6c736d6974683a7265736f757263653a76310000fffe8041', 'hex'))
         .digest('hex'),
     ).toBe('fc75a6d01152730919216993a2cf1d55bf6c6baa7936c7c3aafed00e50c09c6b');
+
+    const backing = Uint8Array.of(9, 102, 105, 120, 116, 117, 114, 101, 8);
+    const view = backing.subarray(1, 8);
+    const viewResult = hashCanonicalInput('resource', 1, view);
+    backing.fill(0);
+    expectHashSuccess(
+      viewResult,
+      'sha256:bab42d680e596ad547a777448b64b04e87ec46d71621927ba8de4c6d91cd6593',
+    );
   });
 
-  test('uses WHATWG UTF-8 replacement semantics for unpaired surrogates', () => {
+  test('uses exact byte input and WHATWG UTF-8 string semantics without normalization', () => {
+    expectHashSuccess(
+      hashCanonicalInput('resource', 1, ''),
+      'sha256:60b01fded61bd00bcc727832c7850f77251d9b81b6f731fbec248db43781a066',
+    );
+    const unicode = hashCanonicalInput('resource', 1, 'é');
+    expectHashSuccess(
+      unicode,
+      'sha256:62def40252d519a19e62269cb58d8292d7cd1b4697431d6a33e89df6e2c7d656',
+    );
+    expect(unicode).toEqual(hashCanonicalInput('resource', 1, Uint8Array.of(0xc3, 0xa9)));
+
     expectDigest(
       hashManifestBytes('\ud800'),
       'sha256:7849119f699532f48a6bab80210a12d00d8b641d25830e9e7bbff36356e3f2c5',
     );
     expect(hashManifestBytes('\ud800')).toBe(hashManifestBytes(Uint8Array.of(0xef, 0xbf, 0xbd)));
+    expect(hashManifestBytes('\udc00')).toBe(hashManifestBytes('\ud800'));
+    expect(hashManifestBytes(Uint8Array.of(0xff))).not.toBe(hashManifestBytes('\ufffd'));
+
+    expectDigest(
+      hashManifestBytes(Uint8Array.of(0xff)),
+      'sha256:1fe361bbc412c0a8d9adb2f76fa1257cef917010bffe90384b1e8c1f7749007d',
+    );
+    expectDigest(
+      hashManifestBytes(Uint8Array.of(0xef, 0xbb, 0xbf)),
+      'sha256:9dcd9b1286a95d4147b594c4ea910d05f2215e1ec17a8c05bd06daa16f8c1397',
+    );
+    expectDigest(
+      hashManifestBytes(Uint8Array.of()),
+      'sha256:adb21d6a867fd51eb3f34a1afd936a72f64b0f3251b69cf19c1c588770f32311',
+    );
+    expectDigest(
+      hashManifestBytes(Uint8Array.of(0)),
+      'sha256:252e9c630ec474ca03e6ece85ca12edaf7b6f4f42525a210f18f523d7471f0a1',
+    );
+
+    const exactBytes = Uint8Array.of(0xff);
+    const exactDigest = hashManifestBytes(exactBytes);
+    exactBytes[0] = 0;
+    expectDigest(
+      exactDigest,
+      'sha256:1fe361bbc412c0a8d9adb2f76fa1257cef917010bffe90384b1e8c1f7749007d',
+    );
   });
 
   test('refuses unknown domains and schema versions with fixed secret-safe errors', () => {
     const secretDomain = 'P17_CANARY';
-    const unknown = hashCanonicalInput(secretDomain, 1, 'ignored');
-    expect(unknown).toEqual({
+    const domainError = {
       ok: false,
       error: {
         code: 'artifact-hash',
@@ -166,23 +220,59 @@ describe('artifact hash authority', () => {
         field: 'domain',
         message: 'artifact hash domain is unsupported',
       },
-    });
+    } as const;
+    const unknown = hashCanonicalInput(secretDomain, 1, 'ignored');
+    expect(unknown).toEqual(domainError);
     if (!unknown.ok) {
       expect(Object.isFrozen(unknown.error)).toBe(true);
       expect(JSON.stringify(unknown.error)).not.toContain(secretDomain);
     }
 
-    for (const version of [0, 2, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    for (const domain of [
+      '',
+      'RESOURCE',
+      'Resource',
+      'resource ',
+      ' resource',
+      'resource\n',
+      'source_content',
+      'manifest-semantic:v1',
+      'skillsmith:resource:v1',
+      '__proto__',
+      'toString',
+    ]) {
+      expect(hashCanonicalInput(domain, 1, 'ignored')).toEqual(domainError);
+    }
+
+    const schemaError = {
+      ok: false,
+      error: {
+        code: 'artifact-hash',
+        reason: 'unsupported-hash-schema',
+        field: 'schemaVersion',
+        message: 'artifact hash schema is unsupported',
+      },
+    } as const;
+    for (const version of [
+      0,
+      -0,
+      2,
+      -1,
+      1.1,
+      Number.MIN_VALUE,
+      Number.MAX_SAFE_INTEGER,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      '1' as unknown as number,
+      null as unknown as number,
+      1n as unknown as number,
+      new Number(1) as unknown as number,
+    ]) {
       expect(hashCanonicalInput('resource', version, 'ignored')).toEqual({
-        ok: false,
-        error: {
-          code: 'artifact-hash',
-          reason: 'unsupported-hash-schema',
-          field: 'schemaVersion',
-          message: 'artifact hash schema is unsupported',
-        },
+        ...schemaError,
       });
     }
+    expect(hashCanonicalInput('unknown', 2, 'ignored')).toEqual(domainError);
   });
 
   test('brands only exact lowercase SHA-256 digests after runtime parsing', () => {
@@ -192,13 +282,39 @@ describe('artifact hash authority', () => {
     if (!parsed.ok) throw new Error(parsed.error.message);
     expectDigest(parsed.value, valid);
 
+    for (const accepted of [
+      `sha256:${'0'.repeat(64)}`,
+      `sha256:${'f'.repeat(64)}`,
+      'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    ]) {
+      const result = parseArtifactDigest(accepted);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(result.error.message);
+      expectDigest(result.value, accepted);
+    }
+
+    const secret = { digest: `sha256:${'0'.repeat(63)}P17_CANARY` };
     for (const invalid of [
+      undefined,
       null,
+      false,
       1,
+      1n,
+      Symbol('digest'),
+      {},
+      [],
+      new String(valid),
+      secret,
       '',
       ` ${valid}`,
       `${valid} `,
+      `${valid}\n`,
+      `${valid}\0`,
       valid.toUpperCase(),
+      valid.replace('sha256', 'SHA256'),
+      valid.replace('sha256:', 'sha256::'),
+      valid.slice('sha256:'.length),
+      `sha-256:${'0'.repeat(64)}`,
       `sha512:${'0'.repeat(64)}`,
       `sha256:${'0'.repeat(63)}`,
       `sha256:${'0'.repeat(65)}`,
@@ -214,7 +330,10 @@ describe('artifact hash authority', () => {
           message: 'artifact digest is invalid',
         },
       });
-      if (!result.ok) expect(Object.isFrozen(result.error)).toBe(true);
+      if (!result.ok) {
+        expect(Object.isFrozen(result.error)).toBe(true);
+        expect(JSON.stringify(result.error)).not.toContain('P17_CANARY');
+      }
     }
   });
 

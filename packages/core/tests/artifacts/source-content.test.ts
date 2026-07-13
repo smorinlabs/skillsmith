@@ -129,6 +129,22 @@ const expectError = <T>(
 const castProjection = (value: unknown): SourceContentProjectionV1 =>
   value as SourceContentProjectionV1;
 
+const projectValue = async (
+  nodes: Readonly<Record<string, TreeNode>>,
+): Promise<SourceContentProjectionV1> => {
+  const result = await projectSourceContent(new TreePorts(nodes), ROOT);
+  expect(result.ok).toBeTrue();
+  if (!result.ok) throw new Error(result.error.message);
+  return result.value;
+};
+
+const digestValue = (projection: SourceContentProjectionV1): string => {
+  const result = hashSourceContentV1(projection);
+  expect(result.ok).toBeTrue();
+  if (!result.ok) throw new Error(result.error.message);
+  return String(result.value);
+};
+
 describe('source-content artifact authority', () => {
   test('stays independent from the compatibility-only legacy store hash', () => {
     for (const file of ['hash.ts', 'lock.ts', 'source-content.ts']) {
@@ -206,6 +222,29 @@ describe('source-content artifact authority', () => {
     expect(ports.calls.some(accessesGitDirectory)).toBeFalse();
   });
 
+  test('projects an empty root with the minimum exact bytes and observation transcript', async () => {
+    const ports = new TreePorts({ [ROOT]: { kind: 'dir', children: [] } });
+    const result = await projectSourceContent(ports, ROOT);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value).toEqual({ version: 1, exclusionsVersion: 1, entries: [] });
+    expect(serializeSourceContentProjection(result.value)).toEqual({
+      ok: true,
+      value: '{"version":1,"exclusionsVersion":1,"entries":[]}',
+    });
+    expect(digestValue(result.value)).toBe(
+      'sha256:c16500a0854789ace938c3281dc6576c31dd92bfab67a77c01f82c39d1a91bd9',
+    );
+    expect(ports.calls).toEqual([
+      'metadata:/fixture',
+      'metadata:/fixture',
+      'list:/fixture',
+      'metadata:/fixture',
+      'list:/fixture',
+      'metadata:/fixture',
+    ]);
+  });
+
   test('normalizes names, sorts by UTF-8 bytes, and excludes only .git', async () => {
     const decomposed = 'e\u0301';
     const ports = new TreePorts({
@@ -236,6 +275,67 @@ describe('source-content artifact authority', () => {
     );
   });
 
+  test('makes enumeration order irrelevant and applies unsigned UTF-8 ordering globally', async () => {
+    const names = ['😀', '中', 'é', 'z', 'aa', 'A'];
+    const nodes = Object.fromEntries(
+      names.map((name) => [`${ROOT}/${name}`, { kind: 'file', bytes: bytes(name) } as const]),
+    );
+    const forward = await projectValue({
+      [ROOT]: { kind: 'dir', children: names },
+      ...nodes,
+    });
+    const reverse = await projectValue({
+      [ROOT]: { kind: 'dir', children: [...names].reverse() },
+      ...nodes,
+    });
+    expect(forward).toEqual(reverse);
+    expect(forward.entries.map((entry) => entry.path)).toEqual(['A', 'aa', 'z', 'é', '中', '😀']);
+
+    const nested = await projectValue({
+      [ROOT]: { kind: 'dir', children: ['a0', 'a'] },
+      [`${ROOT}/a`]: { kind: 'dir', children: ['z'] },
+      [`${ROOT}/a/z`]: { kind: 'file', bytes: bytes('z') },
+      [`${ROOT}/a0`]: { kind: 'file', bytes: bytes('zero') },
+    });
+    expect(nested.entries.map((entry) => entry.path)).toEqual(['a', 'a/z', 'a0']);
+  });
+
+  test('rejects every non-portable listed-name class before accessing a child', async () => {
+    const unsafeNames = [
+      '',
+      '.',
+      '..',
+      '/absolute',
+      '//unc/share',
+      'a/b',
+      'a\\b',
+      '\\\\server\\share',
+      'C:drive',
+      'd:/drive',
+      'nul\u0000',
+      'control\u001f',
+      'delete\u007f',
+      `high${String.fromCharCode(0xd800)}`,
+      `low${String.fromCharCode(0xdc00)}`,
+    ];
+    for (const name of unsafeNames) {
+      const ports = new TreePorts({ [ROOT]: { kind: 'dir', children: [name] } });
+      expectError(await projectSourceContent(ports, ROOT), 'unsafe-path', 'entries[].path');
+      expect(ports.calls).toEqual([
+        'metadata:/fixture',
+        'metadata:/fixture',
+        'list:/fixture',
+        'metadata:/fixture',
+      ]);
+    }
+
+    const portableWhitespace = await projectValue({
+      [ROOT]: { kind: 'dir', children: [' space '] },
+      [`${ROOT}/ space `]: { kind: 'file', bytes: bytes('ok') },
+    });
+    expect(portableWhitespace.entries[0]?.path).toBe(' space ');
+  });
+
   test('refuses unsafe names, escaping links, and special nodes without following links', async () => {
     for (const name of ['', '.', '..', 'a/b', 'a\\b', 'C:drive', 'bad\u0000name']) {
       const ports = new TreePorts({ [ROOT]: { kind: 'dir', children: [name] } });
@@ -257,6 +357,107 @@ describe('source-content artifact authority', () => {
       [`${ROOT}/socket`]: { kind: 'other' },
     });
     expectError(await projectSourceContent(special, ROOT), 'unsupported-entry', 'entries[].type');
+  });
+
+  test('excludes every nested .git subtree before metadata while observing lookalikes', async () => {
+    const ports = new TreePorts({
+      [ROOT]: { kind: 'dir', children: ['parent', '.git', '.github', 'git', '.DS_Store'] },
+      [`${ROOT}/parent`]: { kind: 'dir', children: ['.git', 'kept'] },
+      [`${ROOT}/parent/kept`]: { kind: 'file', bytes: bytes('kept') },
+      [`${ROOT}/.github`]: { kind: 'dir', children: [] },
+      [`${ROOT}/git`]: { kind: 'dir', children: [] },
+      [`${ROOT}/.DS_Store`]: { kind: 'file', bytes: bytes('metadata') },
+    });
+    const result = await projectSourceContent(ports, ROOT);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.entries.map((entry) => entry.path)).toEqual([
+      '.DS_Store',
+      '.github',
+      'git',
+      'parent',
+      'parent/kept',
+    ]);
+    expect(ports.calls.some(accessesGitDirectory)).toBeFalse();
+    expect(ports.calls.filter((call) => call.includes('/.github'))).toHaveLength(5);
+    expect(ports.calls.filter((call) => call.includes('/git'))).toHaveLength(5);
+    expect(ports.calls.filter((call) => call.includes('/.DS_Store'))).toHaveLength(5);
+    expect(ports.calls.filter((call) => call.includes('/parent/kept'))).toHaveLength(5);
+  });
+
+  test('canonicalizes safe symlink segments and rejects the complete unsafe target matrix', async () => {
+    const rootSafe = [
+      ['.', '.'],
+      ['a/./b', 'a/b'],
+      ['a/..', '.'],
+      ['a/../b', 'b'],
+      ['e\u0301', 'é'],
+    ] as const;
+    for (const [target, expected] of rootSafe) {
+      const ports = new TreePorts({
+        [ROOT]: { kind: 'dir', children: ['link'] },
+        [`${ROOT}/link`]: { kind: 'symlink', target },
+      });
+      const result = await projectSourceContent(ports, ROOT);
+      expect(result.ok).toBeTrue();
+      if (!result.ok) throw new Error(result.error.message);
+      expect(result.value.entries).toEqual([{ path: 'link', type: 'symlink', target: expected }]);
+      expect(ports.calls.filter((call) => call.startsWith('link:'))).toHaveLength(2);
+      expect(ports.calls.filter((call) => call.startsWith('bytes:'))).toHaveLength(0);
+    }
+
+    const nestedSafe = await projectValue({
+      [ROOT]: { kind: 'dir', children: ['dir'] },
+      [`${ROOT}/dir`]: { kind: 'dir', children: ['link'] },
+      [`${ROOT}/dir/link`]: { kind: 'symlink', target: '../peer' },
+    });
+    expect(nestedSafe.entries.at(-1)).toEqual({
+      path: 'dir/link',
+      type: 'symlink',
+      target: '../peer',
+    });
+
+    const unsafeTargets = [
+      '',
+      '/',
+      '/absolute',
+      '//server/share',
+      'C:/drive',
+      'd:drive',
+      'a/C:drive',
+      'a\\b',
+      '\\\\server\\share',
+      'a//b',
+      'a/',
+      './',
+      'nul\u0000',
+      'control\u001f',
+      'delete\u007f',
+      String.fromCharCode(0xd800),
+      '../escape',
+    ];
+    for (const target of unsafeTargets) {
+      const result = await projectSourceContent(
+        new TreePorts({
+          [ROOT]: { kind: 'dir', children: ['link'] },
+          [`${ROOT}/link`]: { kind: 'symlink', target },
+        }),
+        ROOT,
+      );
+      expectError(result, 'unsafe-symlink', 'entries[].target');
+      if (target.length > 0) expect(JSON.stringify(result)).not.toContain(target);
+    }
+
+    const nestedEscape = new TreePorts({
+      [ROOT]: { kind: 'dir', children: ['dir'] },
+      [`${ROOT}/dir`]: { kind: 'dir', children: ['link'] },
+      [`${ROOT}/dir/link`]: { kind: 'symlink', target: '../../escape' },
+    });
+    expectError(
+      await projectSourceContent(nestedEscape, ROOT),
+      'unsafe-symlink',
+      'entries[].target',
+    );
   });
 
   test('refuses changing bytes, metadata, targets, and membership as unstable reads', async () => {
@@ -295,6 +496,117 @@ describe('source-content artifact authority', () => {
     expectError(await projectSourceContent(membershipRace, ROOT), 'unstable-read', 'entries');
   });
 
+  test('changes digests for every projected fact and ignores excluded permission facts', async () => {
+    const fileProjection = async (content: string, mode: number) =>
+      projectValue({
+        [ROOT]: { kind: 'dir', children: ['entry'] },
+        [`${ROOT}/entry`]: { kind: 'file', bytes: bytes(content), mode },
+      });
+    const base = await fileProjection('a', 0o644);
+    const sameExecutableFact = await fileProjection('a', 0o600);
+    const contentChanged = await fileProjection('b', 0o644);
+    expect(digestValue(sameExecutableFact)).toBe(digestValue(base));
+    expect(digestValue(contentChanged)).not.toBe(digestValue(base));
+
+    for (const mode of [0o100, 0o010, 0o001, 0o111, 0o755]) {
+      const executable = await fileProjection('a', mode);
+      expect(executable.entries[0]).toMatchObject({ executable: true });
+      expect(digestValue(executable)).not.toBe(digestValue(base));
+    }
+
+    const asDirectory = await projectValue({
+      [ROOT]: { kind: 'dir', children: ['entry'] },
+      [`${ROOT}/entry`]: { kind: 'dir', children: [] },
+    });
+    const withEmptyDirectory = await projectValue({
+      [ROOT]: { kind: 'dir', children: ['entry', 'empty'] },
+      [`${ROOT}/entry`]: { kind: 'file', bytes: bytes('a') },
+      [`${ROOT}/empty`]: { kind: 'dir', children: [] },
+    });
+    const asSymlinkA = await projectValue({
+      [ROOT]: { kind: 'dir', children: ['entry'] },
+      [`${ROOT}/entry`]: { kind: 'symlink', target: 'a' },
+    });
+    const asSymlinkB = await projectValue({
+      [ROOT]: { kind: 'dir', children: ['entry'] },
+      [`${ROOT}/entry`]: { kind: 'symlink', target: 'b' },
+    });
+    expect(digestValue(asDirectory)).not.toBe(digestValue(base));
+    expect(digestValue(withEmptyDirectory)).not.toBe(digestValue(base));
+    expect(digestValue(asSymlinkA)).not.toBe(digestValue(base));
+    expect(digestValue(asSymlinkB)).not.toBe(digestValue(asSymlinkA));
+  });
+
+  test('short-circuits every read failure with exact stable error bytes', async () => {
+    const fileTree = {
+      [ROOT]: { kind: 'dir', children: ['file'] } as const,
+      [`${ROOT}/file`]: { kind: 'file', bytes: bytes('a') } as const,
+    };
+    const failureCases = [
+      new TreePorts(fileTree, {
+        fileBytes: { [`${ROOT}/file`]: [new Error('P17_BYTES_A')] },
+      }),
+      new TreePorts(fileTree, {
+        metadata: {
+          [`${ROOT}/file`]: [
+            { kind: 'file', mode: 0o644, identity: 'file' },
+            new Error('P17_METADATA_B'),
+          ],
+        },
+      }),
+      new TreePorts(fileTree, {
+        fileBytes: { [`${ROOT}/file`]: [bytes('a'), new Error('P17_BYTES_B')] },
+      }),
+      new TreePorts(fileTree, {
+        metadata: {
+          [`${ROOT}/file`]: [
+            { kind: 'file', mode: 0o644, identity: 'file' },
+            { kind: 'file', mode: 0o644, identity: 'file' },
+            new Error('P17_METADATA_C'),
+          ],
+        },
+      }),
+      new TreePorts(
+        {
+          [ROOT]: { kind: 'dir', children: ['link'] },
+          [`${ROOT}/link`]: { kind: 'symlink', target: 'a' },
+        },
+        { targets: { [`${ROOT}/link`]: [new Error('P17_LINK_A')] } },
+      ),
+      new TreePorts(
+        {
+          [ROOT]: { kind: 'dir', children: ['dir'] },
+          [`${ROOT}/dir`]: { kind: 'dir', children: [] },
+        },
+        { listings: { [`${ROOT}/dir`]: [new Error('P17_LIST_A')] } },
+      ),
+      new TreePorts(
+        { [ROOT]: { kind: 'dir', children: [] } },
+        { listings: { [ROOT]: [[], new Error('P17_LIST_B')] } },
+      ),
+    ];
+    for (const ports of failureCases) {
+      const result = await projectSourceContent(ports, ROOT);
+      expectError(result, 'unstable-read', 'entries');
+      expect(JSON.stringify(result)).not.toContain('P17_');
+    }
+    expect(failureCases[0]?.calls.filter((call) => call.includes('/file'))).toEqual([
+      'metadata:/fixture/file',
+      'bytes:/fixture/file',
+    ]);
+    expect(failureCases[1]?.calls.filter((call) => call.includes('/file'))).toEqual([
+      'metadata:/fixture/file',
+      'bytes:/fixture/file',
+      'metadata:/fixture/file',
+    ]);
+    expect(failureCases[2]?.calls.filter((call) => call.includes('/file'))).toEqual([
+      'metadata:/fixture/file',
+      'bytes:/fixture/file',
+      'metadata:/fixture/file',
+      'bytes:/fixture/file',
+    ]);
+  });
+
   test('classifies initial-root failures separately and keeps errors secret-safe', async () => {
     const fixtures = [
       new TreePorts({}),
@@ -309,6 +621,80 @@ describe('source-content artifact authority', () => {
       expectError(result, 'invalid-root', 'root');
       expect(JSON.stringify(result)).not.toContain('P17_ROOT_SECRET');
       expect(JSON.stringify(result)).not.toContain(ROOT);
+    }
+  });
+
+  test('validates every root metadata fact and treats every later root change as unstable', async () => {
+    const invalidInitial: readonly FileMetadata[] = [
+      { kind: 'absent', mode: null, identity: null },
+      { kind: 'file', mode: 0o644, identity: 'root' },
+      { kind: 'symlink', mode: 0o777, identity: 'root' },
+      { kind: 'other', mode: 0, identity: 'root' },
+      { kind: 'dir', mode: null, identity: 'root' },
+      { kind: 'dir', mode: -1, identity: 'root' },
+      { kind: 'dir', mode: 1.5, identity: 'root' },
+      { kind: 'dir', mode: 0o10000, identity: 'root' },
+      { kind: 'dir', mode: 0o755, identity: null },
+    ];
+    for (const metadata of invalidInitial) {
+      const ports = new TreePorts(
+        { [ROOT]: { kind: 'dir', children: [] } },
+        { metadata: { [ROOT]: [metadata] } },
+      );
+      expectError(await projectSourceContent(ports, ROOT), 'invalid-root', 'root');
+      expect(ports.calls).toEqual(['metadata:/fixture']);
+    }
+
+    const root = { kind: 'dir', mode: 0o755, identity: 'root' } as const;
+    const changed: readonly Observation<FileMetadata>[] = [
+      new Error('P17_ROOT_A'),
+      { kind: 'absent', mode: null, identity: null },
+      { kind: 'file', mode: 0o755, identity: 'root' },
+      { kind: 'dir', mode: 0o700, identity: 'root' },
+      { kind: 'dir', mode: 0o755, identity: 'other' },
+      { kind: 'dir', mode: 0o755, identity: null },
+    ];
+    for (const metadata of changed) {
+      const ports = new TreePorts(
+        { [ROOT]: { kind: 'dir', children: [] } },
+        { metadata: { [ROOT]: [root, metadata] } },
+      );
+      const result = await projectSourceContent(ports, ROOT);
+      expectError(result, 'unstable-read', 'entries');
+      expect(ports.calls).toEqual(['metadata:/fixture', 'metadata:/fixture']);
+      expect(JSON.stringify(result)).not.toContain('P17_ROOT_A');
+    }
+
+    const ports = new TreePorts({ [ROOT]: { kind: 'dir', children: [] } });
+    expectError(await projectSourceContent(ports, null as never), 'invalid-root', 'root');
+    expect(ports.calls).toEqual([]);
+  });
+
+  test('accepts listing reorder but refuses second-pass invalidity as unstable', async () => {
+    const nodes = {
+      [ROOT]: { kind: 'dir', children: ['a', 'b'] } as const,
+      [`${ROOT}/a`]: { kind: 'file', bytes: bytes('a') } as const,
+      [`${ROOT}/b`]: { kind: 'file', bytes: bytes('b') } as const,
+    };
+    const reordered = new TreePorts(nodes, {
+      listings: {
+        [ROOT]: [
+          ['b', 'a'],
+          ['a', 'b'],
+        ],
+      },
+    });
+    const reorderedResult = await projectSourceContent(reordered, ROOT);
+    expect(reorderedResult.ok).toBeTrue();
+    if (reorderedResult.ok) {
+      expect(reorderedResult.value.entries.map((entry) => entry.path)).toEqual(['a', 'b']);
+    }
+
+    for (const second of [['a'], ['a', 'b', 'b'], ['a', 'unsafe/path']]) {
+      const ports = new TreePorts(nodes, {
+        listings: { [ROOT]: [['a', 'b'], second] },
+      });
+      expectError(await projectSourceContent(ports, ROOT), 'unstable-read', 'entries');
     }
   });
 

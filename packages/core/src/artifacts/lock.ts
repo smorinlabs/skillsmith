@@ -132,7 +132,10 @@ const fail = (
 ): Result<never, PortableLockStateError> => err(lockError(reason, field));
 
 const isRecord = (value: unknown): value is RawRecord =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  !ArrayBuffer.isView(value);
 
 const hasOnlyOwnKeys = (value: RawRecord, expected: ReadonlySet<string>): boolean =>
   Reflect.ownKeys(value).every((key) => typeof key === 'string' && expected.has(key));
@@ -300,7 +303,7 @@ const validateAndOwnSkill = (
   ];
   if (!serializedShape) required.push(fields.requestedRef);
   for (const key of required) {
-    if (!(key in value)) {
+    if (!Object.hasOwn(value, key)) {
       const externalKey =
         key === fields.requestedRef
           ? 'requested_ref'
@@ -324,8 +327,9 @@ const validateAndOwnSkill = (
   const normalizedSource = normalizeLockSource(source);
   if (normalizedSource === null) return fail('invalid-field', `${prefix}.source`);
 
-  const requestedRef =
-    fields.requestedRef in value ? value[fields.requestedRef] : (null as unknown);
+  const requestedRef = Object.hasOwn(value, fields.requestedRef)
+    ? value[fields.requestedRef]
+    : (null as unknown);
   if (
     requestedRef !== null &&
     (typeof requestedRef !== 'string' ||
@@ -379,18 +383,35 @@ const validateAndOwnLock = (
     const manifestHashKey = serializedShape ? 'manifest_hash' : 'manifestHash';
     const skillsKey = 'skills';
 
-    if (!(versionKey in value)) return fail('missing-field', 'version');
-    if (value[versionKey] !== LOCK_VERSION) return fail('invalid-version', 'version');
-    if (!(hashSchemaKey in value)) return fail('missing-field', 'hash_schema_version');
-    if (value[hashSchemaKey] !== HASH_SCHEMA_VERSION) {
-      return fail('unsupported-hash-schema', 'hash_schema_version');
+    if (!Object.hasOwn(value, versionKey)) return fail('missing-field', 'version');
+    if (value[versionKey] !== LOCK_VERSION) {
+      if (
+        typeof value[versionKey] === 'number' &&
+        Number.isSafeInteger(value[versionKey]) &&
+        value[versionKey] > 0
+      ) {
+        return fail('unsupported-lock-version', 'version');
+      }
+      return fail('invalid-version', 'version');
     }
-    if (!(manifestHashKey in value)) return fail('missing-field', 'manifest_hash');
+    if (!Object.hasOwn(value, hashSchemaKey)) return fail('missing-field', 'hash_schema_version');
+    if (value[hashSchemaKey] !== HASH_SCHEMA_VERSION) {
+      if (
+        typeof value[hashSchemaKey] === 'number' &&
+        Number.isSafeInteger(value[hashSchemaKey]) &&
+        value[hashSchemaKey] > 0
+      ) {
+        return fail('unsupported-hash-schema', 'hash_schema_version');
+      }
+      return fail('invalid-field', 'hash_schema_version');
+    }
+    if (!Object.hasOwn(value, manifestHashKey)) return fail('missing-field', 'manifest_hash');
     const manifestHashResult = parseArtifactDigest(value[manifestHashKey]);
     if (!manifestHashResult.ok) return fail('invalid-field', 'manifest_hash');
 
-    if (!serializedShape && !(skillsKey in value)) return fail('missing-field', 'skills');
-    const rawSkills = skillsKey in value ? value[skillsKey] : [];
+    if (!serializedShape && !Object.hasOwn(value, skillsKey))
+      return fail('missing-field', 'skills');
+    const rawSkills = Object.hasOwn(value, skillsKey) ? value[skillsKey] : [];
     if (!Array.isArray(rawSkills)) return fail('invalid-field', 'skills');
     const skills: PortableLockSkillV1[] = [];
     const names = new Set<string>();
@@ -485,7 +506,9 @@ export const readPortableLockSource = (
   }
   if (raw.version !== LOCK_VERSION) return fail('unsupported-lock-version', 'version');
 
-  if (!('hash_schema_version' in raw)) return fail('missing-field', 'hash_schema_version');
+  if (!Object.hasOwn(raw, 'hash_schema_version')) {
+    return fail('missing-field', 'hash_schema_version');
+  }
   const hashSchemaToken = findRootToken(text, 'hash_schema_version');
   if (
     typeof raw.hash_schema_version !== 'number' ||

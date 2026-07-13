@@ -15,6 +15,7 @@ packages/
       acquire/       install/uninstall orchestration
       application/   public CommandOutcome and application-service boundary
       agents/        per-tool adapters (claude-code, codex, kilo-code, opencode) + registry
+      artifacts/     manifest identity, versioned hashes, canonical lock, portable source tree
       commands/      installed slash-command domain types
       config/        config discovery, parsing, precedence, and persistence
       context/       project-context resolution
@@ -201,6 +202,30 @@ the capability snapshot projects only descriptor facts and is not yet a final co
 Consumers import shared types and the builder from `@skillsmith/core/contracts`, V1 DTOs/codecs from
 `@skillsmith/core/contracts/v1`, and V2 DTOs/codecs from `@skillsmith/core/contracts/v2`. See
 [ADR 0008](adr/0008-wire-contract-registry.md) for compatibility and ownership rules.
+
+## Portable artifact identity
+
+Pure artifact authority lives under `packages/core/src/artifacts/`. The human-authored manifest is
+strictly normalized before semantic identity is computed. Hashing uses a frozen seven-domain v1
+registry and exact `skillsmith:<domain>:v1`, NUL, canonical-input framing so identical bytes in
+different domains never share an identity contract.
+
+The portable lock is an immutable v1 model with one canonical generated TOML spelling. Its reader
+uses fatal UTF-8, version-first schema discrimination, strict fields, explicit-host source
+identities, and parse-normalize-reserialize byte equality. Correlation with a normalized manifest
+is a pure frozen `missing-lock | incomplete | stale | current` state; no local placement or store
+path enters the lock.
+
+Source-content v1 projects injected filesystem reads into schema-ordered JSON: NFC relative POSIX
+paths sorted by UTF-8 bytes, preserved empty directories, exact file bytes and executable facts,
+and safe literal internal symlink targets. Symlinks are never followed. Exactly `.git` is excluded;
+special nodes, unsafe paths/targets, normalization collisions, and observable metadata/list/byte/
+target races refuse.
+
+These modules do not write files, resolve Git refs, acquire sources, coordinate artifact pairs, or
+own CLI rendering. The older placement-store `contentHashOf` digest remains a separate compatibility
+algorithm for existing ledger/store records; it is not silently reinterpreted as the versioned
+`source-content` domain.
 
 ## In-package layering
 

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 const ARTIFACTS_MODULE = '../../../packages/core/src/artifacts/index.ts';
 const CORE_MODULE = '../../../packages/core/src/index.ts';
+const ROOT = join(import.meta.dir, '../../..');
 const FIXTURES = join(import.meta.dir, '../fixtures/p2-ts03');
 const encoder = new TextEncoder();
 
@@ -162,6 +163,14 @@ describe('EWP-P2-TS03', () => {
     expectReason(api.hashCanonicalInput('unknown', 1, input), 'unknown-domain');
     expectReason(api.hashCanonicalInput('manifest-semantic', 2, input), 'unsupported-hash-schema');
     expectReason(api.parseArtifactDigest('sha256:ABC'), 'invalid-digest');
+
+    const typeFixture = join(FIXTURES, 'tsconfig.json');
+    const compiled = Bun.spawnSync(
+      [join(ROOT, 'node_modules/.bin/tsc'), '-p', typeFixture, '--noEmit'],
+      { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' },
+    );
+    const output = `${compiled.stdout.toString()}${compiled.stderr.toString()}`;
+    expect(compiled.exitCode, output).toBe(0);
   });
 
   test('owns exact canonical lock bytes, versions, and manifest relationships', async () => {

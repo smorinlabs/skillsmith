@@ -124,7 +124,7 @@ const hasUnpairedSurrogate = (value: string): boolean => {
     const unit = value.charCodeAt(index);
     if (unit >= 0xd800 && unit <= 0xdbff) {
       const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) return true;
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
       index += 1;
       continue;
     }
@@ -270,6 +270,22 @@ const exactKeys = (value: object, expected: readonly string[]): boolean => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
+const exactArrayShape = (value: readonly unknown[]): boolean => {
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== value.length + 1 || !keys.includes('length')) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    const key = String(index);
+    if (!keys.includes(key)) return false;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !('value' in descriptor)) return false;
+  }
+  return keys.every(
+    (key) =>
+      key === 'length' ||
+      (typeof key === 'string' && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < value.length),
+  );
+};
+
 const decodeCanonicalBase64 = (value: unknown): Uint8Array | null => {
   if (
     typeof value !== 'string' ||
@@ -296,6 +312,7 @@ const ownProjection = (
     if (input.version !== 1) return invalidProjection('version');
     if (input.exclusionsVersion !== 1) return invalidProjection('exclusionsVersion');
     if (!Array.isArray(input.entries)) return invalidProjection('entries');
+    if (!exactArrayShape(input.entries)) return invalidProjection('entries');
 
     const entries: SourceContentEntryV1[] = [];
     let previousPath: string | null = null;
@@ -512,17 +529,17 @@ const observeEntry = async (
 
   if (metadataA.kind === 'file') {
     const bytesA = await copyBytes(ports, hostPath);
+    if (bytesA === null) return err(sourceError('unstable-read'));
     const metadataB = await readMetadata(ports, hostPath);
+    if (metadataB === null || !validMetadata(metadataB) || !sameMetadata(metadataA, metadataB)) {
+      return err(sourceError('unstable-read'));
+    }
     const bytesB = await copyBytes(ports, hostPath);
+    if (bytesB === null) return err(sourceError('unstable-read'));
     const metadataC = await readMetadata(ports, hostPath);
     if (
-      bytesA === null ||
-      bytesB === null ||
-      metadataB === null ||
       metadataC === null ||
-      !validMetadata(metadataB) ||
       !validMetadata(metadataC) ||
-      !sameMetadata(metadataA, metadataB) ||
       !sameMetadata(metadataA, metadataC) ||
       !sameBytes(bytesA, bytesB)
     ) {
@@ -539,17 +556,17 @@ const observeEntry = async (
   }
 
   const targetA = await copyTarget(ports, hostPath);
+  if (targetA === null) return err(sourceError('unstable-read'));
   const metadataB = await readMetadata(ports, hostPath);
+  if (metadataB === null || !validMetadata(metadataB) || !sameMetadata(metadataA, metadataB)) {
+    return err(sourceError('unstable-read'));
+  }
   const targetB = await copyTarget(ports, hostPath);
+  if (targetB === null) return err(sourceError('unstable-read'));
   const metadataC = await readMetadata(ports, hostPath);
   if (
-    targetA === null ||
-    targetB === null ||
-    metadataB === null ||
     metadataC === null ||
-    !validMetadata(metadataB) ||
     !validMetadata(metadataC) ||
-    !sameMetadata(metadataA, metadataB) ||
     !sameMetadata(metadataA, metadataC) ||
     targetA !== targetB
   ) {
@@ -571,13 +588,9 @@ const observeDirectory = async (
   state: ProjectionState,
 ): Promise<Result<void, SourceContentError>> => {
   const listingAValue = await copyListing(ports, hostPath);
+  if (listingAValue === null) return err(sourceError('unstable-read'));
   const metadataB = await readMetadata(ports, hostPath);
-  if (
-    listingAValue === null ||
-    metadataB === null ||
-    !validMetadata(metadataB) ||
-    !sameMetadata(metadataA, metadataB)
-  ) {
+  if (metadataB === null || !validMetadata(metadataB) || !sameMetadata(metadataA, metadataB)) {
     return err(sourceError('unstable-read'));
   }
   const listingA = prepareListing(listingAValue, projectedPath);
@@ -597,17 +610,13 @@ const observeDirectory = async (
   }
 
   const listingBValue = await copyListing(ports, hostPath);
+  if (listingBValue === null) return err(sourceError('unstable-read'));
   const metadataC = await readMetadata(ports, hostPath);
-  if (
-    listingBValue === null ||
-    metadataC === null ||
-    !validMetadata(metadataC) ||
-    !sameMetadata(metadataA, metadataC)
-  ) {
+  if (metadataC === null || !validMetadata(metadataC) || !sameMetadata(metadataA, metadataC)) {
     return err(sourceError('unstable-read'));
   }
   const listingB = prepareListing(listingBValue, projectedPath);
-  if (!listingB.ok) return listingB;
+  if (!listingB.ok) return err(sourceError('unstable-read'));
   if (!sameChildNames(listingA.value, listingB.value)) {
     return err(sourceError('unstable-read'));
   }

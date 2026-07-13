@@ -863,31 +863,206 @@ describe('EWP-P2-TS01', () => {
       path: './defaults',
       skills: [baseSkill, lintSkill],
     });
-    const formattingEquivalent = canonicalManifest({
-      tools: ['claude-code', 'codex'],
-      path: './defaults',
-      skills: [lintSkill, baseSkill],
-    })
-      .replaceAll('\n', '\r\n')
-      .replace('version = 1', '# formatting only\r\nversion = 1');
-    const semanticMutations = [
-      base.replace('ref = "main"', 'ref = "release/v2"'),
-      base.replace('path = "./defaults"', 'path = "./other-defaults"'),
+    const formattingEquivalent = [
+      canonicalManifest({
+        tools: ['claude-code', 'codex'],
+        path: './defaults',
+        skills: [lintSkill, baseSkill],
+      }),
+      canonicalManifest({
+        tools: ['claude-code', 'codex'],
+        path: './defaults',
+        skills: [lintSkill, baseSkill],
+      })
+        .replaceAll('\n', '\r\n')
+        .replace('version = 1', '# formatting only\r\nversion = 1'),
+      base.replace('version = 1', '"ver\\u0073ion" = 0x1'),
+      `# reordered keys and declarations
+version = 1
+
+[defaults]
+path = "./defaults"
+scope = "project"
+tools = ["claude-code", "codex"]
+
+[registry]
+default = "github.com/acme"
+
+[[skills]]
+source = "acme/tools//skills/lint"
+name = "lint"
+path = "./custom/lint"
+placement = "symlink"
+scope = "project"
+tools = ["codex"]
+ref = "v1.0.0"
+
+[[skills]]
+source = "https://github.com/acme/tools.git//skills/review"
+name = "review"
+path = "./custom/review"
+placement = "copy"
+scope = "project"
+tools = ["claude-code", "codex"]
+ref = "main"
+`,
     ];
-    guardValidToml([base, formattingEquivalent, ...semanticMutations]);
+    const semanticMutations = [
+      {
+        label: 'defaults removed',
+        source: canonicalManifest({
+          tools: null,
+          scope: null,
+          path: null,
+          skills: [baseSkill, lintSkill],
+        }),
+      },
+      {
+        label: 'default tools changed',
+        source: canonicalManifest({
+          tools: ['codex'],
+          path: './defaults',
+          skills: [baseSkill, lintSkill],
+        }),
+      },
+      {
+        label: 'default scope and its portable path changed',
+        source: canonicalManifest({
+          scope: 'user',
+          path: '~/defaults',
+          skills: [baseSkill, lintSkill],
+        }),
+      },
+      {
+        label: 'default path removed',
+        source: canonicalManifest({ path: null, skills: [baseSkill, lintSkill] }),
+      },
+      {
+        label: 'default path changed',
+        source: canonicalManifest({
+          path: './other-defaults',
+          skills: [baseSkill, lintSkill],
+        }),
+      },
+      {
+        label: 'registry removed',
+        source: canonicalManifest({
+          registry: null,
+          path: './defaults',
+          skills: [baseSkill, lintSkill],
+        }),
+      },
+      {
+        label: 'registry changed',
+        source: canonicalManifest({
+          registry: 'git.example.com/acme',
+          path: './defaults',
+          skills: [baseSkill, lintSkill],
+        }),
+      },
+      {
+        label: 'declaration removed',
+        source: canonicalManifest({ path: './defaults', skills: [baseSkill] }),
+      },
+      {
+        label: 'declaration added',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [baseSkill, lintSkill, { name: 'extra', source: 'acme/tools//skills/extra' }],
+        }),
+      },
+      {
+        label: 'declaration name changed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, name: 'review-2' }, lintSkill],
+        }),
+      },
+      {
+        label: 'source repository changed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, source: 'acme/other//skills/review' }, lintSkill],
+        }),
+      },
+      {
+        label: 'source-relative path changed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, source: 'acme/tools//other/review' }, lintSkill],
+        }),
+      },
+      {
+        label: 'requested ref removed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, ref: null }, lintSkill],
+        }),
+      },
+      {
+        label: 'requested ref changed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, ref: 'release/v2' }, lintSkill],
+        }),
+      },
+      {
+        label: 'tools changed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, tools: ['codex'] }, lintSkill],
+        }),
+      },
+      {
+        label: 'scope and its portable path changed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, scope: 'user', path: '~/custom/review' }, lintSkill],
+        }),
+      },
+      {
+        label: 'placement changed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, placement: 'symlink' }, lintSkill],
+        }),
+      },
+      {
+        label: 'placement path removed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, path: null }, lintSkill],
+        }),
+      },
+      {
+        label: 'placement path changed',
+        source: canonicalManifest({
+          path: './defaults',
+          skills: [{ ...baseSkill, path: './other-review' }, lintSkill],
+        }),
+      },
+    ] as const;
+    guardValidToml([
+      base,
+      ...formattingEquivalent,
+      ...semanticMutations.map((mutation) => mutation.source),
+    ]);
 
     const manifestApi = await requireManifestApi();
     const normalized = normalize(manifestApi, base);
-    const equivalent = normalize(manifestApi, formattingEquivalent);
-    const mutations = semanticMutations.map((source) => normalize(manifestApi, source));
-    expect(manifestApi.projectManifestSemantics(equivalent)).toEqual(
-      manifestApi.projectManifestSemantics(normalized),
-    );
+    const equivalents = formattingEquivalent.map((source) => normalize(manifestApi, source));
+    const mutations = semanticMutations.map(({ label, source }) => ({
+      label,
+      manifest: normalize(manifestApi, source),
+    }));
+    const projection = manifestApi.projectManifestSemantics(normalized);
+    for (const equivalent of equivalents)
+      expect(manifestApi.projectManifestSemantics(equivalent)).toEqual(projection);
     for (const mutation of mutations)
-      expect(manifestApi.projectManifestSemantics(mutation)).not.toEqual(
-        manifestApi.projectManifestSemantics(normalized),
+      expect(manifestApi.projectManifestSemantics(mutation.manifest), mutation.label).not.toEqual(
+        projection,
       );
-    expect(formattingEquivalent).not.toBe(base);
+    for (const source of formattingEquivalent) expect(source).not.toBe(base);
 
     const loaded = await loadModule(ARTIFACTS_MODULE);
     expect(
@@ -898,17 +1073,48 @@ describe('EWP-P2-TS01', () => {
     const required = ['hashManifestSemantics', 'hashManifestBytes'] as const;
     const missing = required.filter((name) => typeof loaded.module[name] !== 'function');
     expect(missing, 'G2-02 manifest hash authority is incomplete').toEqual([]);
+    const core = await loadModule(CORE_MODULE);
+    expect(
+      core.ok,
+      core.ok ? undefined : `public core module failed to load: ${core.message}`,
+    ).toBeTrue();
+    if (!core.ok) throw new Error(core.message);
+    for (const name of required)
+      expect(core.module[name], `root public export ${name}`).toBe(loaded.module[name]);
 
     const hashApi = loaded.module as unknown as {
       hashManifestSemantics(manifest: NormalizedManifestV1): string;
       hashManifestBytes(source: string | Uint8Array): string;
     };
+    const exactSemanticJson =
+      '{"version":1,"defaults":{"tools":["claude-code","codex"],"scope":"project","path":"./defaults"},"registry":{"default":"github.com/acme"},"skills":[{"name":"lint","source":{"host":"github.com","repository":"acme/tools","path":"skills/lint"},"ref":"v1.0.0","tools":["codex"],"scope":"project","placement":"symlink","path":"./custom/lint"},{"name":"review","source":{"host":"github.com","repository":"acme/tools","path":"skills/review"},"ref":"main","tools":["claude-code","codex"],"scope":"project","placement":"copy","path":"./custom/review"}]}';
+    expect(JSON.stringify(projection)).toBe(exactSemanticJson);
     const semanticHash = hashApi.hashManifestSemantics(normalized);
-    expect(hashApi.hashManifestSemantics(equivalent)).toBe(semanticHash);
-    for (const mutation of mutations)
-      expect(hashApi.hashManifestSemantics(mutation)).not.toBe(semanticHash);
-    expect(hashApi.hashManifestBytes(formattingEquivalent)).not.toBe(
-      hashApi.hashManifestBytes(base),
+    expect(semanticHash).toBe(
+      'sha256:1058ed6672e1f4c1206471b6f4ff417fa78a15eebceff77f9a4d83f257a4d04c',
     );
+    for (const equivalent of equivalents)
+      expect(hashApi.hashManifestSemantics(equivalent)).toBe(semanticHash);
+    const mutationHashes = new Set<string>();
+    for (const mutation of mutations) {
+      const digest = hashApi.hashManifestSemantics(mutation.manifest);
+      expect(digest, mutation.label).not.toBe(semanticHash);
+      mutationHashes.add(digest);
+    }
+    expect(mutationHashes.size).toBe(mutations.length);
+
+    const byteHash = hashApi.hashManifestBytes(base);
+    const presentationByteHashes = formattingEquivalent.map((source) =>
+      hashApi.hashManifestBytes(source),
+    );
+    for (const digest of presentationByteHashes) expect(digest).not.toBe(byteHash);
+    expect(new Set([byteHash, ...presentationByteHashes]).size).toBe(
+      1 + formattingEquivalent.length,
+    );
+    expect(hashApi.hashManifestBytes(new TextEncoder().encode(base))).toBe(byteHash);
+    const ownedBytes = new TextEncoder().encode(base);
+    const ownedDigest = hashApi.hashManifestBytes(ownedBytes);
+    ownedBytes.fill(0);
+    expect(ownedDigest).toBe(byteHash);
   });
 });
