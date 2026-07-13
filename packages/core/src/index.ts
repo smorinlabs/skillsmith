@@ -16,7 +16,14 @@ export {
 export * from './application/lifecycle-services.ts';
 export * from './application/read-services.ts';
 export { COMMAND_EXIT_CLASSES, NO_MUTATION } from './application/types.ts';
-export { getAgent, listSupportedTools, registry } from './agents/registry.ts';
+export {
+  createToolRegistry,
+  getAgent,
+  listSupportedTools,
+  registry,
+  toolRegistry,
+} from './agents/registry.ts';
+export { TOOL_OPERATIONS } from './agents/adapter-types.ts';
 export { SUPPORTED_TOOLS } from './agents/types.ts';
 export { getConfigValue } from './config/accessors.ts';
 export { resolveEffectiveConfig } from './config/effective.ts';
@@ -117,6 +124,7 @@ export type {
   InteractionRequest,
   InteractionResolution,
   InventoryReadPorts,
+  InventoryBundle,
   JournalPhase,
   ListCommandsOpts,
   ListSkillsOpts,
@@ -131,7 +139,11 @@ export type {
   PathKind,
   PathAccessPort,
   Placement,
+  PlacementBundle,
   PlacementClass,
+  PlacementInventory,
+  PlacementResolution,
+  PlacementToolId,
   Platform,
   PlatformPaths,
   PortCapability,
@@ -171,6 +183,15 @@ export type {
   SupportedTool,
   TargetSelection,
   TargetSelectionError,
+  ToolAdapter,
+  ToolCapabilityError,
+  ToolCapabilityResult,
+  ToolCapabilityScope,
+  ToolDescriptor,
+  ToolOperation,
+  ToolOperationFact,
+  ToolRegistry,
+  ToolUsageError,
   ToolVerdict,
   ToolVerifier,
   ToolVerifyOptions,
@@ -180,6 +201,10 @@ export type {
   UninstallReport,
   UninstallResult,
   VerifyFinding,
+  VerificationBundle,
+  VerificationGatePolicy,
+  VerificationRenderedFacts,
+  VerificationToolId,
   VerifyMode,
   VerifyOptions,
   VerifyOutcome,
@@ -189,6 +214,8 @@ export type {
   VersionReport,
   ValidatedSelectionRequest,
   XdgDirs,
+  AdaptationBundle,
+  BuiltInToolId,
   ResolveEffectiveConfigOptions,
   ResolveProjectContextOptions,
 } from './public-types.ts';

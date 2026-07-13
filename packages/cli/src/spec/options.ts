@@ -1,7 +1,7 @@
+import { SUPPORTED_TOOLS } from '@skillsmith/core';
 import currentState from '../contracts/commander-current-state-v0.json' with { type: 'json' };
 import type { CommandOptionSpec } from './types.ts';
 
-const KNOWN_TOOLS = ['claude-code', 'codex', 'kilo-code', 'opencode'] as const;
 const KNOWN_SCOPES = ['system', 'user', 'project', 'managed'] as const;
 const KNOWN_COLORS = ['auto', 'always', 'never'] as const;
 
@@ -162,14 +162,14 @@ const optionFromState = (path: string, option: StateOption): CommandOptionSpec =
     attributeName: option.attributeName,
     valueShape: option.valueShape,
     knownValues: isTool
-      ? KNOWN_TOOLS
+      ? SUPPORTED_TOOLS
       : isScope
         ? KNOWN_SCOPES
         : isColor
           ? KNOWN_COLORS
           : option.choices,
     allowedValues: isTool
-      ? KNOWN_TOOLS
+      ? SUPPORTED_TOOLS
       : isScope
         ? (ALLOWED_SCOPES[path] ?? KNOWN_SCOPES)
         : option.choices,

@@ -1,3 +1,4 @@
+import { SUPPORTED_TOOLS } from '@skillsmith/core';
 import targetAuthorityJson from './cli-target-registry-v1.0.0.json';
 import currentAuthorityJson from './commander-current-ledger-v0.7.0.json';
 import currentStateJson from './commander-current-state-v0.json';
@@ -87,7 +88,7 @@ const commandGroup: Readonly<Record<string, string>> = {
   gc: 'P17-G5-04',
 };
 
-const toolChoices = ['claude-code', 'codex', 'kilo-code', 'opencode'] as const;
+const toolChoices = SUPPORTED_TOOLS;
 const scopeChoices: Readonly<Record<string, readonly string[]>> = {
   list: ['user', 'project', 'system', 'managed'],
   commands: ['user', 'project'],

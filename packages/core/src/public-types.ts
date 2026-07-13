@@ -38,7 +38,33 @@ export type {
 } from './application/current-services.ts';
 export type * from './application/lifecycle-services.ts';
 export type * from './application/read-services.ts';
-export type { Agent, SkillRootsCtx, SupportedTool } from './agents/types.ts';
+export type {
+  AdaptationBundle,
+  Agent,
+  BuiltInToolId,
+  InventoryBundle,
+  PlacementBundle,
+  PlacementInventory,
+  PlacementResolution,
+  PlacementToolId,
+  SkillRootsCtx,
+  ToolAdapter,
+  ToolCapabilityScope,
+  ToolDescriptor,
+  ToolOperation,
+  ToolOperationFact,
+  VerificationBundle,
+  VerificationGatePolicy,
+  VerificationRenderedFacts,
+  VerificationToolId,
+} from './agents/adapter-types.ts';
+export type {
+  ToolCapabilityError,
+  ToolCapabilityResult,
+  ToolRegistry,
+  ToolUsageError,
+} from './agents/registry.ts';
+export type { SupportedTool } from './agents/types.ts';
 export type { CommandEntry } from './commands/types.ts';
 export type {
   Config,

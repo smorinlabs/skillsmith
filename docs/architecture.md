@@ -140,13 +140,17 @@ for new domain signatures.
 
 A separate `Logger` interface lives in `env/logger.ts` and is passed through `DetectOptions` (not `ScanEnv`), so callers that don't want logging can omit it entirely.
 
-## Agent registry and detection pipeline
+## Tool-adapter registry and detection pipeline
 
-An `Agent` is the core abstraction for "an AI coding tool that Skillsmith knows how to manage":
+The validated `ToolRegistry` is the executable authority for tool identity, order, operation and
+scope capabilities, verifier availability, and mutation eligibility. Each `ToolAdapter` combines
+an immutable descriptor with a required inventory bundle and optional verification, placement, and
+adaptation bundles. The public `Agent`, `registry`, `SUPPORTED_TOOLS`, `VERIFY_TOOLS`, and
+`FLIP_TOOLS` surfaces remain derived 1.x compatibility projections.
 
 ```
 ┌────────────────────────┐
-│  registry (agents/)    │   getAgent(name) / listSupportedTools()
+│ toolRegistry (agents/) │   capability() / get() / toolsFor()
 └──────────┬─────────────┘
            │
            ▼
@@ -168,7 +172,10 @@ An `Agent` is the core abstraction for "an AI coding tool that Skillsmith knows 
 └────────────────────────┘
 ```
 
-Currently supported tools: **Claude Code, Codex, Kilo Code, opencode** (four agents, one file each under `packages/core/src/agents/`).
+Currently supported tools: **Claude Code, Codex, Kilo Code, opencode**. All four support inventory
+and diagnostics; Claude Code and Codex additionally own verification and placement bundles. See
+[ADR 0007](adr/0007-tool-adapter-registry.md) for the exact operation/scope matrix and validation
+rules.
 
 ## In-package layering
 
@@ -217,5 +224,6 @@ If you find yourself fighting these rules, that's usually a signal to move code,
 - [ADR 0003 — ESLint import boundaries](adr/0003-eslint-import-boundaries.md)
 - [ADR 0004 — Command runtime and application services](adr/0004-command-runtime-application-boundary.md)
 - [ADR 0005 — Capability-scoped ports](adr/0005-capability-scoped-ports.md)
+- [ADR 0007 — Validated tool-adapter registry](adr/0007-tool-adapter-registry.md)
 - [Release process](releases.md)
 - [CONTRIBUTING](../CONTRIBUTING.md)
