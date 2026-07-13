@@ -12,13 +12,13 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 7 | 21 | 6 |
-| phase-task | 65 | 20 | 45 | 0 |
-| phase-test | 61 | 15 | 46 | 0 |
+| phase-task | 65 | 21 | 44 | 0 |
+| phase-test | 61 | 16 | 45 | 0 |
 | command-test | 157 | 5 | 152 | 0 |
-| option-gate | 10 | 4 | 6 | 0 |
+| option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
-| command | 23 | 1 | 22 | 0 |
-| finding | 43 | 11 | 32 | 0 |
+| command | 23 | 2 | 21 | 0 |
+| finding | 43 | 12 | 31 | 0 |
 | decision | 16 | 0 | 15 | 1 |
 
 ### Phases
@@ -26,7 +26,7 @@ Tracked entities: **425** across **45** change groups.
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
-| 1 | 9 | 62 | 37 | 0 |
+| 1 | 9 | 62 | 43 | 0 |
 | 2 | 5 | 33 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
@@ -126,7 +126,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:uninstall | P17-G4A-01 | planned | required-pr |
 | COMMAND:update | P17-G5-02 | planned | required-pr |
 | COMMAND:verify | P17-G1-05 | planned | required-pr |
-| COMMAND:version | P17-G1-03 | planned | required-pr |
+| COMMAND:version | P17-G1-03 | signed-off | required-pr |
 
 #### recommendation
 
@@ -203,7 +203,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-030 | P17-G2-03 | planned | required-pr |
 | EWP-CF-031 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-032 | P17-G6-02A | planned | required-pr |
-| EWP-CF-033 | P17-G1-03 | planned | required-pr |
+| EWP-CF-033 | P17-G1-03 | signed-off | required-pr |
 | EWP-CF-034 | P17-G1-04 | planned | required-pr |
 | EWP-CF-035 | P17-G3B-04 | planned | required-pr |
 | EWP-CF-036 | P17-G1-05 | planned | required-pr |
@@ -241,8 +241,8 @@ Tracked entities: **425** across **45** change groups.
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
 | EWP-OPT-TS01 | P17-G0-02 | signed-off | required-pr |
-| EWP-OPT-TS02 | P17-G1-03 | failing | required-pr |
-| EWP-OPT-TS03 | P17-G1-03 | failing | required-pr |
+| EWP-OPT-TS02 | P17-G1-03 | signed-off | required-pr |
+| EWP-OPT-TS03 | P17-G1-03 | signed-off | required-pr |
 | EWP-OPT-TS04 | P17-G1-02A | signed-off | required-pr |
 | EWP-OPT-TS05 | P17-G6-02A | planned | required-pr |
 | EWP-OPT-TS06 | P17-G1-01 | signed-off | required-pr |
@@ -537,7 +537,7 @@ Downstream coverage obligations: none.
 
 ## P17-G1-03 — Declarative command specifications, shared CLI runtime, and application-service boundary
 
-Phase: 1; status: **active**; dependencies: P17-G1-01, P17-G1-02A, P17-G1-02B, P17-G1-02C.
+Phase: 1; status: **signed-off**; dependencies: P17-G1-01, P17-G1-02A, P17-G1-02B, P17-G1-02C.
 Required-now validations: EWP-OPT-TS02, EWP-OPT-TS03, EWP-P1-TS07, EWP-WF15.
 Downstream coverage obligations: EWP-WF16.
 
@@ -546,22 +546,22 @@ Downstream coverage obligations: EWP-WF16.
 - [x] P17-G1-03:mapped _(passed)_
 - [x] P17-G1-03:ready _(passed)_
 - [x] P17-G1-03:test-first _(passed)_
-- [ ] P17-G1-03:minimal-implementation _(pending)_
-- [ ] P17-G1-03:targeted-green _(pending)_
-- [ ] P17-G1-03:impacted-green _(pending)_
-- [ ] P17-G1-03:refactor _(pending)_
-- [ ] P17-G1-03:adversarial-review _(pending)_
-- [ ] P17-G1-03:traceability-closure _(pending)_
-- [ ] P17-G1-03:signed-off _(pending)_
+- [x] P17-G1-03:minimal-implementation _(passed)_
+- [x] P17-G1-03:targeted-green _(passed)_
+- [x] P17-G1-03:impacted-green _(passed)_
+- [x] P17-G1-03:refactor _(passed)_
+- [x] P17-G1-03:adversarial-review _(passed)_
+- [x] P17-G1-03:traceability-closure _(passed)_
+- [x] P17-G1-03:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:version** — Maintain — Which Skillsmith version is running? _(command; planned)_
-- [ ] **EWP-CF-033** — Add an application-service boundary behind every CLI command _(finding; planned)_
-- [ ] **EWP-OPT-TS02** — Assert types, choices, repeatability, defaults, global permutation, and aliases. _(option-gate; failing)_
-- [ ] **EWP-OPT-TS03** — Exhaust every conflict/requirement pair, including Commander negated-boolean _(option-gate; failing)_
-- [ ] **EWP-P1-T09** — Add ADR 0004, declarative CommandSpec metadata, shared CLI runtime/renderer/exit _(phase-task; planned)_
-- [ ] **EWP-P1-TS07** — Static boundary gates plus spawned human/JSON/error/cancel/noninteractive parity _(phase-test; failing)_
+- [x] **COMMAND:version** — Maintain — Which Skillsmith version is running? _(command; signed-off)_
+- [x] **EWP-CF-033** — Add an application-service boundary behind every CLI command _(finding; signed-off)_
+- [x] **EWP-OPT-TS02** — Assert types, choices, repeatability, defaults, global permutation, and aliases. _(option-gate; signed-off)_
+- [x] **EWP-OPT-TS03** — Exhaust every conflict/requirement pair, including Commander negated-boolean _(option-gate; signed-off)_
+- [x] **EWP-P1-T09** — Add ADR 0004, declarative CommandSpec metadata, shared CLI runtime/renderer/exit _(phase-task; signed-off)_
+- [x] **EWP-P1-TS07** — Static boundary gates plus spawned human/JSON/error/cancel/noninteractive parity _(phase-test; signed-off)_
 
 ## P17-G1-04 — Capability-scoped ports, typed configuration, and compatibility facade
 

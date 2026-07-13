@@ -1612,7 +1612,7 @@
       "phase": "1",
       "title": "Declarative command specifications, shared CLI runtime, and application-service boundary",
       "dependsOn": ["P17-G1-01", "P17-G1-02A", "P17-G1-02B", "P17-G1-02C"],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0004-command-runtime-application-boundary.md",
@@ -1621,17 +1621,34 @@
         "eslint.config.js",
         "packages/core/src/application/types.ts",
         "packages/core/src/application/current-services.ts",
+        "packages/core/src/application/lifecycle-services.ts",
+        "packages/core/src/application/read-services.ts",
+        "packages/core/src/errors.ts",
         "packages/core/src/index.ts",
         "packages/core/src/public-types.ts",
+        "packages/core/src/verify/run.ts",
         "packages/core/tests/application/current-services.test.ts",
+        "packages/core/tests/application/lifecycle-services.test.ts",
+        "packages/core/tests/application/read-services.test.ts",
+        "packages/core/tests/errors.test.ts",
+        "packages/core/tests/verify/run.test.ts",
         "packages/cli/src/spec/types.ts",
         "packages/cli/src/spec/options.ts",
         "packages/cli/src/spec/registry.ts",
+        "packages/cli/src/spec/index.ts",
+        "packages/cli/src/spec/relations.ts",
         "packages/cli/src/runtime/adapter.ts",
+        "packages/cli/src/runtime/command-spec.ts",
+        "packages/cli/src/runtime/context.ts",
+        "packages/cli/src/runtime/current-renderers.ts",
+        "packages/cli/src/runtime/environment.ts",
         "packages/cli/src/runtime/interaction.ts",
         "packages/cli/src/runtime/io.ts",
+        "packages/cli/src/runtime/preflight.ts",
         "packages/cli/src/program.ts",
         "packages/cli/src/index.ts",
+        "packages/cli/src/completion/run.ts",
+        "packages/cli/src/contracts/cli-migration-ledger.ts",
         "packages/cli/src/commands/agents.ts",
         "packages/cli/src/commands/check.ts",
         "packages/cli/src/commands/commands.ts",
@@ -1651,10 +1668,12 @@
         "packages/cli/src/commands/selection-validation.ts",
         "packages/cli/src/output/error-boundary.ts",
         "packages/cli/src/contracts/commander-current-state-v0.json",
+        "packages/cli/src/util/exit-codes.ts",
+        "packages/cli/tests/commands/agents.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
-        "packages/cli/tests/fixtures/spec-cli.ts",
+        "packages/cli/tests/contracts/command-zone-boundary.test.ts",
+        "packages/cli/tests/help.test.ts",
         "packages/cli/tests/runtime/adapter.test.ts",
-        "packages/cli/tests/spec/registry.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
         "tests/ergonomics/workflows/EWP-WF15.test.ts"
       ],
@@ -1675,7 +1694,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF15.test.ts --test-name-pattern EWP-WF15"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g1_03_final_commit_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -1690,32 +1709,32 @@
           "evidence": ["projects/p17/evidence/P17-G1-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-03.md#implementation-and-validation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-03.md#implementation-and-validation"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-03.md#implementation-and-validation"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-03.md#implementation-and-validation"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-03.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-03.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-03.md#traceability-and-sign-off"]
         }
       },
       "evidence": []
@@ -5885,11 +5904,11 @@
       "title": "Maintain — Which Skillsmith version is running?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G1-03",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:version",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-03.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-OPT-TS02", "EWP-OPT-TS03", "EWP-P1-TS07"],
@@ -8517,11 +8536,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G1-03",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G1-03",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-03.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G1-02A", "P17-G6-02A"],
       "implements": [],
       "validatedBy": ["EWP-P1-TS07", "EWP-WF15", "EWP-WF16"],
@@ -14459,7 +14478,7 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-03:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS02",
       "target": {
@@ -14485,7 +14504,7 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-03:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS03",
       "target": {
@@ -15504,11 +15523,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G1-03",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-03",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-03.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": ["COMMAND:version", "EWP-CF-033"],
       "validatedBy": ["EWP-OPT-TS02", "EWP-OPT-TS03", "EWP-P1-TS07"],
@@ -15792,7 +15811,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-03:tests/ergonomics/phase/EWP-P1-TS07.test.ts#EWP-P1-TS07",
       "target": {
