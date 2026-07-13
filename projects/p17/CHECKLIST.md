@@ -590,14 +590,14 @@ Downstream coverage obligations: EWP-WF11, EWP-WF16.
 
 ## P17-G1-05 — Executable tool-adapter/capability registry and current verify behavior
 
-Phase: 1; status: **planned**; dependencies: P17-G1-03.
+Phase: 1; status: **ready**; dependencies: P17-G1-03.
 Required-now validations: EWP-CMD-VERIFY-TS01, EWP-CMD-VERIFY-TS02, EWP-CMD-VERIFY-TS03, EWP-CMD-VERIFY-TS04, EWP-P1-TS09.
 Downstream coverage obligations: EWP-CMD-AGENTS-TS03, EWP-P3B-TS06, EWP-WF01, EWP-WF05, EWP-WF07.
 
 ### Group gates
 
-- [ ] P17-G1-05:mapped _(pending)_
-- [ ] P17-G1-05:ready _(pending)_
+- [x] P17-G1-05:mapped _(passed)_
+- [x] P17-G1-05:ready _(passed)_
 - [ ] P17-G1-05:test-first _(pending)_
 - [ ] P17-G1-05:minimal-implementation _(pending)_
 - [ ] P17-G1-05:targeted-green _(pending)_
