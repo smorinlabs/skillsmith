@@ -537,14 +537,14 @@ Downstream coverage obligations: none.
 
 ## P17-G1-03 — Declarative command specifications, shared CLI runtime, and application-service boundary
 
-Phase: 1; status: **planned**; dependencies: P17-G1-01, P17-G1-02A, P17-G1-02B, P17-G1-02C.
+Phase: 1; status: **active**; dependencies: P17-G1-01, P17-G1-02A, P17-G1-02B, P17-G1-02C.
 Required-now validations: EWP-OPT-TS02, EWP-OPT-TS03, EWP-P1-TS07, EWP-WF15.
 Downstream coverage obligations: EWP-WF16.
 
 ### Group gates
 
-- [ ] P17-G1-03:mapped _(pending)_
-- [ ] P17-G1-03:ready _(pending)_
+- [x] P17-G1-03:mapped _(passed)_
+- [x] P17-G1-03:ready _(passed)_
 - [ ] P17-G1-03:test-first _(pending)_
 - [ ] P17-G1-03:minimal-implementation _(pending)_
 - [ ] P17-G1-03:targeted-green _(pending)_
