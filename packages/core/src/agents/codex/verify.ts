@@ -367,7 +367,7 @@ const MODE_RUNNERS: Partial<Record<VerifyMode, ModeRunner>> = {
   deep: runDeepMode,
 };
 
-export const verifyCodex: ToolVerifier = async (env, opts) => {
+export const verifyCodex: ToolVerifier<'codex'> = async (env, opts) => {
   const detected = await detect(env, opts.signal);
   if (!detected.ok) return detected;
 

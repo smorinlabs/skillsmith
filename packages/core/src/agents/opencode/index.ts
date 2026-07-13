@@ -16,7 +16,7 @@ export const opencodeAgent: InventoryBundle<'opencode'> = {
   getPluginCommandDir,
 };
 
-export const opencodeAdapter: ToolAdapter<'opencode'> = {
+export const opencodeAdapter = {
   descriptor: opencodeDescriptor,
   inventory: opencodeAgent,
-};
+} satisfies ToolAdapter<'opencode'>;

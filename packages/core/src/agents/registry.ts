@@ -1,20 +1,38 @@
 import { type SkillSmithError, unknownToolError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
-  type Agent,
-  type BuiltInToolId,
-  type PlacementToolId,
+  type InventoryBundle,
   TOOL_OPERATIONS,
   type ToolAdapter,
   type ToolCapabilityScope,
   type ToolOperation,
   type ToolOperationFact,
-  type VerificationToolId,
 } from './adapter-types.ts';
 import { claudeCodeAdapter } from './claude-code/index.ts';
 import { codexAdapter } from './codex/index.ts';
 import { kiloCodeAdapter } from './kilo-code/index.ts';
 import { opencodeAdapter } from './opencode/index.ts';
+
+const BUILT_IN_ADAPTERS = [
+  claudeCodeAdapter,
+  codexAdapter,
+  kiloCodeAdapter,
+  opencodeAdapter,
+] as const;
+
+type AdapterId<Adapter> = Adapter extends { readonly descriptor: { readonly id: infer Id } }
+  ? Extract<Id, string>
+  : never;
+type BuiltInAdapter = (typeof BUILT_IN_ADAPTERS)[number];
+
+export type BuiltInToolId = AdapterId<BuiltInAdapter>;
+export type VerificationToolId = AdapterId<
+  Extract<BuiltInAdapter, { readonly verification: unknown }>
+>;
+export type PlacementToolId = AdapterId<Extract<BuiltInAdapter, { readonly placement: unknown }>>;
+
+/** Public 1.x name retained as a derived inventory projection. */
+export type Agent = InventoryBundle<BuiltInToolId>;
 
 export interface ToolCapabilityError {
   readonly code: 'capability';
@@ -34,11 +52,11 @@ export interface ToolUsageError {
 
 export type ToolCapabilityResult = ToolOperationFact | ToolCapabilityError | ToolUsageError;
 
-export interface ToolRegistry {
-  readonly adapters: readonly ToolAdapter[];
-  readonly ids: readonly string[];
-  get(id: string): ToolAdapter | undefined;
-  toolsFor(operation: ToolOperation): readonly string[];
+export interface ToolRegistry<ToolId extends string = string> {
+  readonly adapters: readonly ToolAdapter<ToolId>[];
+  readonly ids: readonly ToolId[];
+  get(id: string): ToolAdapter<ToolId> | undefined;
+  toolsFor(operation: ToolOperation): readonly ToolId[];
   capability(id: string, operation: ToolOperation): ToolCapabilityResult;
 }
 
@@ -61,6 +79,12 @@ const MUTATION_OPERATIONS = new Set<ToolOperation>([
   'sync',
   'update',
 ]);
+const REQUIRED_INVENTORY_OPERATIONS = [
+  'detect',
+  'inventory-skills',
+  'inventory-commands',
+  'diagnostics',
+] as const satisfies readonly ToolOperation[];
 
 const fail = (message: string): never => {
   throw new Error(`tool registry: ${message}`);
@@ -84,6 +108,14 @@ const validateInventory = (adapter: ToolAdapter): void => {
   if (inventory.tool !== adapter.descriptor.id) {
     fail(`${adapter.descriptor.id} descriptor/inventory identity drift`);
   }
+  if (typeof inventory.installHint !== 'string' || inventory.installHint.trim() === '') {
+    fail(`${adapter.descriptor.id} inventory install hint is empty`);
+  }
+  for (const operation of REQUIRED_INVENTORY_OPERATIONS) {
+    if (adapter.descriptor.operations[operation].supported !== true) {
+      fail(`${adapter.descriptor.id} required inventory operation ${operation} is unsupported`);
+    }
+  }
   for (const method of [
     'detect',
     'getSkillRoots',
@@ -97,6 +129,7 @@ const validateInventory = (adapter: ToolAdapter): void => {
 
 const validateOperations = (adapter: ToolAdapter): void => {
   const { id, operations } = adapter.descriptor;
+  if (!operations || typeof operations !== 'object') fail(`${id} operations are missing`);
   const actual = Object.keys(operations).sort();
   const expected = [...TOOL_OPERATIONS].sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) fail(`${id} operations are incomplete`);
@@ -105,14 +138,21 @@ const validateOperations = (adapter: ToolAdapter): void => {
     const capability = operations[operation];
     if (!capability || typeof capability !== 'object')
       fail(`${id} ${operation} capability missing`);
+    if (typeof capability.supported !== 'boolean') {
+      fail(`${id} ${operation} supported must be boolean`);
+    }
     const scopes = capability.scopes;
     if (!Array.isArray(scopes)) fail(`${id} ${operation} scopes must be an array`);
     if (new Set(scopes).size !== scopes.length)
       fail(`${id} ${operation} scopes contain duplicates`);
     for (const scope of scopes) {
+      if (typeof scope !== 'string') fail(`${id} ${operation} scope must be a string`);
       if (!VALID_SCOPES.has(scope)) fail(`${id} ${operation} scope '${scope}' is invalid`);
     }
     if (capability.supported) {
+      if (operation === 'detect' && scopes.length !== 0) {
+        fail(`${id} detect must be unscoped`);
+      }
       if (operation !== 'detect' && scopes.length === 0) {
         fail(`${id} supported ${operation} requires a scope`);
       }
@@ -140,14 +180,59 @@ const validateBundles = (adapter: ToolAdapter): void => {
     fail(`${id} verification bundle is undeclared by its descriptor`);
   }
   if (adapter.verification) {
-    requireFunction(adapter.verification.verify, `${id} verification.verify`);
-    if (!adapter.verification.verifiedAgainst.trim()) fail(`${id} verification version is empty`);
-    const modes = new Set(adapter.verification.modes);
-    if (modes.has('static') !== verifyStatic || modes.has('deep') !== verifyDeep) {
+    const verification = adapter.verification;
+    requireFunction(verification.verify, `${id} verification.verify`);
+    if (
+      typeof verification.verifiedAgainst !== 'string' ||
+      verification.verifiedAgainst.trim() === ''
+    ) {
+      fail(`${id} verification version is empty`);
+    }
+    if (!Array.isArray(verification.modes)) fail(`${id} verification modes must be an array`);
+    const expectedModes = [
+      ...(verifyStatic ? (['static'] as const) : []),
+      ...(verifyDeep ? (['deep'] as const) : []),
+    ];
+    if (JSON.stringify(verification.modes) !== JSON.stringify(expectedModes)) {
       fail(`${id} verification modes drift from its descriptor`);
     }
-    if (adapter.verification.targetManifests.length === 0) {
+    const gatePolicy = verification.gatePolicy;
+    if (
+      !gatePolicy ||
+      typeof gatePolicy !== 'object' ||
+      typeof gatePolicy.installDeep !== 'boolean' ||
+      (gatePolicy.promote !== 'static' && gatePolicy.promote !== 'static+deep')
+    ) {
+      fail(`${id} verification gate policy is invalid`);
+    }
+    if (
+      !verifyStatic ||
+      ((gatePolicy.installDeep || gatePolicy.promote === 'static+deep') && !verifyDeep)
+    ) {
+      fail(`${id} verification gate policy requires unsupported verification modes`);
+    }
+    if (!Array.isArray(verification.targetManifests) || verification.targetManifests.length === 0) {
       fail(`${id} verification target manifests are empty`);
+    }
+    for (const manifest of verification.targetManifests) {
+      if (
+        typeof manifest !== 'string' ||
+        manifest.trim() === '' ||
+        manifest.startsWith('/') ||
+        manifest.split('/').includes('..')
+      ) {
+        fail(`${id} verification target manifest is invalid`);
+      }
+    }
+    const rendered = verification.renderedFacts;
+    if (
+      !rendered ||
+      typeof rendered !== 'object' ||
+      (rendered.deepSkillCoverageSuffix !== null &&
+        typeof rendered.deepSkillCoverageSuffix !== 'string') ||
+      (rendered.installStaticNotice !== null && typeof rendered.installStaticNotice !== 'function')
+    ) {
+      fail(`${id} verification rendered facts are invalid`);
     }
   }
 
@@ -173,9 +258,49 @@ const validateBundles = (adapter: ToolAdapter): void => {
   if (!adaptationDeclared && adapter.adaptation) {
     fail(`${id} adaptation bundle is undeclared by its descriptor`);
   }
+  if (
+    adapter.adaptation &&
+    (!Number.isSafeInteger(adapter.adaptation.version) || adapter.adaptation.version <= 0)
+  ) {
+    fail(`${id} adaptation version must be a positive safe integer`);
+  }
 };
 
-export const createToolRegistry = (input: readonly unknown[]): ToolRegistry => {
+const cloneAdapter = <ToolId extends string>(
+  adapter: ToolAdapter<ToolId>,
+): ToolAdapter<ToolId> => ({
+  descriptor: {
+    ...adapter.descriptor,
+    operations: Object.fromEntries(
+      TOOL_OPERATIONS.map((operation) => {
+        const capability = adapter.descriptor.operations[operation];
+        return [operation, { ...capability, scopes: [...capability.scopes] }] as const;
+      }),
+    ) as unknown as ToolAdapter<ToolId>['descriptor']['operations'],
+  },
+  inventory: { ...adapter.inventory },
+  ...(adapter.verification
+    ? {
+        verification: {
+          ...adapter.verification,
+          modes: [...adapter.verification.modes],
+          gatePolicy: { ...adapter.verification.gatePolicy },
+          targetManifests: [...adapter.verification.targetManifests],
+          renderedFacts: { ...adapter.verification.renderedFacts },
+        },
+      }
+    : {}),
+  ...(adapter.placement ? { placement: { ...adapter.placement } } : {}),
+  ...(adapter.adaptation ? { adaptation: { ...adapter.adaptation } } : {}),
+});
+
+type RegisteredId<Adapters extends readonly ToolAdapter<string>[]> = AdapterId<Adapters[number]>;
+
+export function createToolRegistry<const Adapters extends readonly ToolAdapter<string>[]>(
+  input: Adapters,
+): ToolRegistry<RegisteredId<Adapters>>;
+export function createToolRegistry(input: readonly unknown[]): ToolRegistry;
+export function createToolRegistry(input: readonly unknown[]): ToolRegistry {
   const adapters = input as readonly ToolAdapter[];
   const ids = new Set<string>();
   const orders = new Set<number>();
@@ -194,23 +319,25 @@ export const createToolRegistry = (input: readonly unknown[]): ToolRegistry => {
     if (!Number.isSafeInteger(descriptor.capabilityVersion) || descriptor.capabilityVersion <= 0) {
       fail(`${descriptor.id} capability version must be a positive safe integer`);
     }
-    validateInventory(adapter);
     validateOperations(adapter);
+    validateInventory(adapter);
     validateBundles(adapter);
   }
 
-  const ordered = [...adapters].sort(
-    (left, right) => left.descriptor.order - right.descriptor.order,
-  );
+  const ordered = adapters
+    .map((adapter) => cloneAdapter(adapter))
+    .sort((left, right) => left.descriptor.order - right.descriptor.order);
   const byId = new Map(ordered.map((adapter) => [adapter.descriptor.id, adapter]));
   const registry: ToolRegistry = {
     adapters: ordered,
     ids: ordered.map((adapter) => adapter.descriptor.id),
     get: (id) => byId.get(id),
     toolsFor: (operation) =>
-      ordered
-        .filter((adapter) => adapter.descriptor.operations[operation].supported)
-        .map((adapter) => adapter.descriptor.id),
+      Object.freeze(
+        ordered
+          .filter((adapter) => adapter.descriptor.operations[operation].supported)
+          .map((adapter) => adapter.descriptor.id),
+      ),
     capability: (id, operation) => {
       const adapter = byId.get(id);
       if (!adapter) {
@@ -234,21 +361,16 @@ export const createToolRegistry = (input: readonly unknown[]): ToolRegistry => {
     },
   };
   return deepFreeze(registry);
-};
+}
 
-export const toolRegistry = createToolRegistry([
-  claudeCodeAdapter,
-  codexAdapter,
-  kiloCodeAdapter,
-  opencodeAdapter,
-]);
+export const toolRegistry = createToolRegistry(BUILT_IN_ADAPTERS);
 
 export const SUPPORTED_TOOLS = toolRegistry.ids as readonly [BuiltInToolId, ...BuiltInToolId[]];
-export const VERIFY_TOOLS = toolRegistry.toolsFor('verify-static') as readonly [
+export const VERIFY_TOOLS = Object.freeze([...toolRegistry.toolsFor('verify-static')]) as readonly [
   VerificationToolId,
   ...VerificationToolId[],
 ];
-export const FLIP_TOOLS = toolRegistry.toolsFor('install') as readonly [
+export const FLIP_TOOLS = Object.freeze([...toolRegistry.toolsFor('install')]) as readonly [
   PlacementToolId,
   ...PlacementToolId[],
 ];

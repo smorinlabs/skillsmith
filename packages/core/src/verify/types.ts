@@ -1,4 +1,4 @@
-import type { VerificationToolId } from '../agents/adapter-types.ts';
+import type { VerificationToolId } from '../agents/registry.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { DetectionPorts, FileWritePort, IdPort, ProcessPort } from '../ports/types.ts';
 import type { Result } from '../result.ts';
@@ -34,8 +34,8 @@ export interface ModeResult {
   findings: VerifyFinding[];
 }
 
-export interface ToolVerdict {
-  tool: VerifyTool;
+export interface ToolVerdict<ToolId extends string = VerifyTool> {
+  tool: ToolId;
   available: boolean; // detected on PATH
   toolVersion: string | null; // observed CLI version, or null when unavailable
   versionDrift: boolean; // observed !== VERIFIED_AGAINST[tool]
@@ -44,24 +44,26 @@ export interface ToolVerdict {
   modes: ModeResult[]; // empty when !available
 }
 
-export interface VerifyReport {
+export interface VerifySummary<ToolId extends string = VerifyTool> {
+  verdict: SummaryVerdict;
+  verified: ToolId[]; // tools with a produced pass/warn verdict
+  failed: ToolId[]; // tools with a fail verdict
+  skipped: ToolId[]; // tools that could not run
+  counts: { error: number; warning: number; info: number }; // normalized totals, all findings
+}
+
+export interface VerifyReport<ToolId extends string = VerifyTool> {
   schemaVersion: 1;
   target: { path: string; kind: 'plugin' | 'skill' }; // 'skill' = bare skill dir, wrapped
   requested: {
-    tools: VerifyTool[];
+    tools: ToolId[];
     modes: VerifyMode[];
     strict: boolean;
     explicitTools: boolean;
   };
-  verifiedAgainst: Record<VerifyTool, string>;
-  summary: {
-    verdict: SummaryVerdict;
-    verified: VerifyTool[]; // tools with a produced pass/warn verdict
-    failed: VerifyTool[]; // tools with a fail verdict
-    skipped: VerifyTool[]; // tools that could not run
-    counts: { error: number; warning: number; info: number }; // normalized totals, all findings
-  };
-  tools: ToolVerdict[];
+  verifiedAgainst: Record<ToolId, string>;
+  summary: VerifySummary<ToolId>;
+  tools: ToolVerdict<ToolId>[];
 }
 
 export interface ToolVerifyOptions {
@@ -81,7 +83,7 @@ export type VerifyPorts = DetectionPorts &
   Pick<ProcessPort, 'exec'> &
   Pick<IdPort, 'nextId'>;
 
-export type ToolVerifier = (
+export type ToolVerifier<ToolId extends string = VerifyTool> = (
   env: VerifyPorts,
   opts: ToolVerifyOptions,
-) => Promise<Result<ToolVerdict, SkillSmithError>>;
+) => Promise<Result<ToolVerdict<ToolId>, SkillSmithError>>;

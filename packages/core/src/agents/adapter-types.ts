@@ -6,11 +6,7 @@ import type { Result } from '../result.ts';
 import type { ToolVerifier, VerifyMode } from '../verify/types.ts';
 import type { Placement } from './placement-shared.ts';
 
-export type BuiltInToolId = 'claude-code' | 'codex' | 'kilo-code' | 'opencode';
-export type VerificationToolId = Extract<BuiltInToolId, 'claude-code' | 'codex'>;
-export type PlacementToolId = VerificationToolId;
-
-export const TOOL_OPERATIONS = [
+export const TOOL_OPERATIONS = Object.freeze([
   'detect',
   'inventory-skills',
   'inventory-commands',
@@ -27,7 +23,7 @@ export const TOOL_OPERATIONS = [
   'sync',
   'update',
   'adapt',
-] as const;
+] as const);
 
 export type ToolOperation = (typeof TOOL_OPERATIONS)[number];
 export type ToolCapabilityScope = Scope | 'custom' | 'artifact';
@@ -73,10 +69,10 @@ export interface VerificationRenderedFacts {
   readonly installStaticNotice: ((skill: string) => string) | null;
 }
 
-export interface VerificationBundle {
+export interface VerificationBundle<ToolId extends string = string> {
   readonly verifiedAgainst: string;
   readonly modes: readonly VerifyMode[];
-  readonly verify: ToolVerifier;
+  readonly verify: ToolVerifier<ToolId>;
   readonly gatePolicy: VerificationGatePolicy;
   readonly targetManifests: readonly string[];
   readonly renderedFacts: VerificationRenderedFacts;
@@ -115,13 +111,10 @@ export interface AdaptationBundle {
 export interface ToolAdapter<ToolId extends string = string> {
   readonly descriptor: ToolDescriptor<ToolId>;
   readonly inventory: InventoryBundle<ToolId>;
-  readonly verification?: VerificationBundle;
+  readonly verification?: VerificationBundle<ToolId>;
   readonly placement?: PlacementBundle;
   readonly adaptation?: AdaptationBundle;
 }
-
-/** Public 1.x name retained as a derived inventory projection. */
-export type Agent = InventoryBundle<BuiltInToolId>;
 
 const fact = (
   scopes: readonly ToolCapabilityScope[],

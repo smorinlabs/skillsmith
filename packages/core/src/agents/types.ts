@@ -1,8 +1,7 @@
 export type { InstallMethod, InstallRecord } from '../detect/types.ts';
 export { SUPPORTED_TOOLS } from './registry.ts';
+export type { Agent, BuiltInToolId as SupportedTool } from './registry.ts';
 export type {
-  Agent,
-  BuiltInToolId as SupportedTool,
   InventoryBundle,
   SkillRootsCtx,
   ToolAdapter,

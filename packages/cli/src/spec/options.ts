@@ -173,7 +173,7 @@ const optionFromState = (path: string, option: StateOption): CommandOptionSpec =
       : isScope
         ? (ALLOWED_SCOPES[path] ?? KNOWN_SCOPES)
         : option.choices,
-    parserValues: option.choices,
+    parserValues: isTool ? SUPPORTED_TOOLS : option.choices,
     repeatable: option.repeatable,
     negated: option.negated,
     flagDefault: option.negated ? false : parsed,

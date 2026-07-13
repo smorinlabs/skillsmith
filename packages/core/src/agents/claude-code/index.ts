@@ -18,7 +18,7 @@ export const claudeCodeAgent: InventoryBundle<'claude-code'> = {
   getPluginCommandDir,
 };
 
-export const claudeCodeAdapter: ToolAdapter<'claude-code'> = {
+export const claudeCodeAdapter = {
   descriptor: claudeCodeDescriptor,
   inventory: claudeCodeAgent,
   verification: {
@@ -33,4 +33,4 @@ export const claudeCodeAdapter: ToolAdapter<'claude-code'> = {
     },
   },
   placement: claudeCodePlacementBundle,
-};
+} satisfies ToolAdapter<'claude-code'>;

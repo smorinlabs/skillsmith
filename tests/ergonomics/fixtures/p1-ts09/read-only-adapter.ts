@@ -1,3 +1,5 @@
+import type { ToolAdapter } from '../../../../packages/core/src/agents/adapter-types.ts';
+
 const readScopes = ['user', 'project', 'system', 'managed'] as const;
 
 export const readOnlyFixtureAdapter = {
@@ -33,4 +35,4 @@ export const readOnlyFixtureAdapter = {
     getPluginSkillDir: () => null,
     getPluginCommandDir: () => null,
   },
-} as const;
+} as const satisfies ToolAdapter<'fixture-read'>;

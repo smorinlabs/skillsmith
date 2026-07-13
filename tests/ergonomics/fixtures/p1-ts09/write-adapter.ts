@@ -1,18 +1,23 @@
+import type { ToolAdapter } from '../../../../packages/core/src/agents/adapter-types.ts';
 import { readOnlyFixtureAdapter } from './read-only-adapter.ts';
 
 const writeScopes = ['user', 'project', 'custom'] as const;
-const operations = Object.fromEntries(
-  Object.entries(readOnlyFixtureAdapter.descriptor.operations).map(([id, value]) => [
-    id,
-    ['detect', 'inventory-skills', 'inventory-commands', 'diagnostics'].includes(id)
-      ? value
-      : id === 'verify-static' || id === 'verify-deep'
-        ? { supported: true, scopes: ['artifact'] as const, remediation: null }
-        : id === 'adapt'
-          ? value
-          : { supported: true, scopes: writeScopes, remediation: null },
-  ]),
-);
+const writable = { supported: true, scopes: writeScopes, remediation: null } as const;
+const verifiable = { supported: true, scopes: ['artifact'], remediation: null } as const;
+const operations = {
+  ...readOnlyFixtureAdapter.descriptor.operations,
+  install: writable,
+  uninstall: writable,
+  dev: writable,
+  promote: writable,
+  undo: writable,
+  'verify-static': verifiable,
+  'verify-deep': verifiable,
+  plan: writable,
+  apply: writable,
+  sync: writable,
+  update: writable,
+};
 
 export const writeFixtureAdapter = {
   descriptor: {
@@ -52,8 +57,24 @@ export const writeFixtureAdapter = {
   placement: {
     roots: () => [],
     standardRoots: () => [],
-    list: async () => [],
-    resolve: async () => ({ placement: null, notices: [], duplicateReason: null }),
+    list: async () => ({
+      placements: [],
+      duplicates: [],
+      currentRoot: null,
+      legacyRoot: null,
+    }),
+    resolve: async (_env: unknown, _ctx: unknown, _storeRoot: string, skill: string) => ({
+      placement: {
+        skill,
+        root: '/fixture/skills',
+        path: `/fixture/skills/${skill}`,
+        class: 'absent' as const,
+        symlinkTarget: null,
+        dangling: false,
+      },
+      notices: [],
+      duplicateReason: null,
+    }),
     noticeForRoot: () => null,
   },
-} as const;
+} as const satisfies ToolAdapter<'fixture-write'>;

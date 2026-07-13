@@ -16,7 +16,7 @@ export const kiloCodeAgent: InventoryBundle<'kilo-code'> = {
   getPluginCommandDir,
 };
 
-export const kiloCodeAdapter: ToolAdapter<'kilo-code'> = {
+export const kiloCodeAdapter = {
   descriptor: kiloCodeDescriptor,
   inventory: kiloCodeAgent,
-};
+} satisfies ToolAdapter<'kilo-code'>;

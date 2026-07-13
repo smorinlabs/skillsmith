@@ -275,7 +275,7 @@ const MODE_RUNNERS: Partial<Record<VerifyMode, ModeRunner>> = {
   deep: runDeepMode,
 };
 
-export const verifyClaudeCode: ToolVerifier = async (env, opts) => {
+export const verifyClaudeCode: ToolVerifier<'claude-code'> = async (env, opts) => {
   const detected = await detect(env, opts.signal);
   if (!detected.ok) return detected;
 

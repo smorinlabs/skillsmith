@@ -18,7 +18,7 @@ export const codexAgent: InventoryBundle<'codex'> = {
   getPluginCommandDir,
 };
 
-export const codexAdapter: ToolAdapter<'codex'> = {
+export const codexAdapter = {
   descriptor: codexDescriptor,
   inventory: codexAgent,
   verification: {
@@ -34,4 +34,4 @@ export const codexAdapter: ToolAdapter<'codex'> = {
     },
   },
   placement: codexPlacementBundle,
-};
+} satisfies ToolAdapter<'codex'>;

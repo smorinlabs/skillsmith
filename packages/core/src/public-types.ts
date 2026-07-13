@@ -40,13 +40,10 @@ export type * from './application/lifecycle-services.ts';
 export type * from './application/read-services.ts';
 export type {
   AdaptationBundle,
-  Agent,
-  BuiltInToolId,
   InventoryBundle,
   PlacementBundle,
   PlacementInventory,
   PlacementResolution,
-  PlacementToolId,
   SkillRootsCtx,
   ToolAdapter,
   ToolCapabilityScope,
@@ -56,13 +53,16 @@ export type {
   VerificationBundle,
   VerificationGatePolicy,
   VerificationRenderedFacts,
-  VerificationToolId,
 } from './agents/adapter-types.ts';
 export type {
+  Agent,
+  BuiltInToolId,
+  PlacementToolId,
   ToolCapabilityError,
   ToolCapabilityResult,
   ToolRegistry,
   ToolUsageError,
+  VerificationToolId,
 } from './agents/registry.ts';
 export type { SupportedTool } from './agents/types.ts';
 export type { CommandEntry } from './commands/types.ts';

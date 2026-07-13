@@ -5,12 +5,14 @@ import { basename, join } from 'node:path';
 import type {
   CommandExitClass,
   ModeResult,
+  ToolAdapter,
   ToolVerdict,
   ToolVerifier,
   VerifyReport,
   VerifyTool,
 } from '@skillsmith/core';
 import * as core from '@skillsmith/core';
+import { writeFixtureAdapter } from '../../../../tests/ergonomics/fixtures/p1-ts09/write-adapter.ts';
 import { verifyClaudeCode } from '../../../core/src/agents/claude-code/verify.ts';
 import { verifyCodex } from '../../../core/src/agents/codex/verify.ts';
 import { genericError } from '../../../core/src/errors.ts';
@@ -104,51 +106,8 @@ const staticOnlyChecker =
   async () =>
     ok(tool(id, { modes: [mode()] }));
 
-type VerifyRegistry = {
-  readonly adapters: readonly unknown[];
-  readonly ids: readonly string[];
-  toolsFor(operation: string): readonly string[];
-  get(id: string): unknown;
-};
-
-const fixtureVerifier: ToolVerifier = async (_env, options) =>
-  ok({
-    tool: 'fixture-write' as VerifyTool,
-    available: true,
-    toolVersion: '1.0.0',
-    versionDrift: false,
-    skipReason: null,
-    verdict: 'pass',
-    modes: options.modes.map((verifyMode) => mode({ mode: verifyMode })),
-  });
-
-const fixtureRegistry: VerifyRegistry = {
-  adapters: [
-    {
-      descriptor: {
-        id: 'fixture-write',
-        order: 0,
-        capabilityVersion: 1,
-        operations: {
-          'verify-static': { supported: true, scopes: ['artifact'], remediation: null },
-          'verify-deep': { supported: true, scopes: ['artifact'], remediation: null },
-        },
-      },
-      inventory: {},
-      verification: {
-        verifiedAgainst: '1.0.0',
-        modes: ['static', 'deep'],
-        verify: fixtureVerifier,
-        targetManifests: ['.fixture-plugin/plugin.json'],
-      },
-    },
-  ],
-  ids: ['fixture-write'],
-  toolsFor: (operation) => (operation.startsWith('verify-') ? ['fixture-write'] : []),
-  get(id) {
-    return id === 'fixture-write' ? this.adapters[0] : undefined;
-  },
-};
+const fixtureRegistry = core.createToolRegistry([writeFixtureAdapter]);
+type VerifyRegistry = typeof fixtureRegistry;
 
 const makeFixtureTarget = async (): Promise<string> => {
   const root = await mkdtemp(join(tmpdir(), 'skillsmith-p1-ts09-verify-'));
@@ -230,16 +189,28 @@ describe('EWP-CMD-VERIFY-TS01', () => {
     const env = await defaultRuntimePorts();
     const target = await makeFixtureTarget();
     try {
-      const injectedResolve = resolveTarget as unknown as (
-        ports: typeof env,
-        path: string,
-        registry: VerifyRegistry,
-      ) => ReturnType<typeof resolveTarget>;
-      const resolved = await injectedResolve(env, target, fixtureRegistry);
+      const resolved = await resolveTarget(env, target, fixtureRegistry);
       expect(resolved, 'fixture-only registered manifest must resolve as a plugin').toMatchObject({
         ok: true,
         value: { path: target, kind: 'plugin' },
       });
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps injected target recognition isolated from production verifier manifests', async () => {
+    const env = await defaultRuntimePorts();
+    const target = await mkdtemp(join(tmpdir(), 'skillsmith-p1-ts09-production-only-'));
+    await mkdir(join(target, '.claude-plugin'));
+    await mkdir(join(target, '.codex-plugin'));
+    await writeFile(join(target, '.claude-plugin', 'plugin.json'), '{"name":"claude-only"}\n');
+    await writeFile(join(target, '.codex-plugin', 'plugin.json'), '{"name":"codex-only"}\n');
+    try {
+      expect(
+        await resolveTarget(env, target, fixtureRegistry),
+        'fixture-only registry must not recognize production-only manifests',
+      ).toMatchObject({ ok: false, error: { code: 'invalid-argument' } });
     } finally {
       await rm(target, { recursive: true, force: true });
     }
@@ -251,12 +222,7 @@ describe('EWP-CMD-VERIFY-TS01', () => {
     await writeFile(join(bare, 'SKILL.md'), '---\nname: fixture\ndescription: fixture\n---\n');
     let wrapper: string | undefined;
     try {
-      const injectedResolve = resolveTarget as unknown as (
-        ports: typeof env,
-        path: string,
-        registry: VerifyRegistry,
-      ) => ReturnType<typeof resolveTarget>;
-      const resolved = await injectedResolve(env, bare, fixtureRegistry);
+      const resolved = await resolveTarget(env, bare, fixtureRegistry);
       expect(resolved.ok).toBeTrue();
       if (!resolved.ok) return;
       wrapper = resolved.value.path;
@@ -265,6 +231,14 @@ describe('EWP-CMD-VERIFY-TS01', () => {
           await env.fileExists(join(wrapper, '.fixture-plugin', 'plugin.json')),
           'wrapper manifest derives from fixture verification bundle',
         ).toBeTrue();
+        expect(
+          (await env.listDir(wrapper))
+            .filter((entry) => entry.startsWith('.') && entry.endsWith('-plugin'))
+            .sort(),
+          'wrapper contains exactly the injected registry manifest directory',
+        ).toEqual(['.fixture-plugin']);
+        expect(await env.fileExists(join(wrapper, '.claude-plugin', 'plugin.json'))).toBeFalse();
+        expect(await env.fileExists(join(wrapper, '.codex-plugin', 'plugin.json'))).toBeFalse();
       } finally {
         await resolved.value.cleanup();
       }
@@ -275,39 +249,64 @@ describe('EWP-CMD-VERIFY-TS01', () => {
     }
   });
 
+  test('best-effort removes a partial wrapper without masking the original wrap error', async () => {
+    const base = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-p1-ts09-partial-wrapper-'));
+    const bare = join(root, 'bare');
+    const cache = join(root, 'cache');
+    const wrapper = join(cache, 'skillsmith', 'verify', 'partial-wrapper');
+    const cleanupAttempts: string[] = [];
+    await mkdir(bare);
+    await writeFile(join(bare, 'SKILL.md'), '---\nname: fixture\ndescription: fixture\n---\n');
+    const env = {
+      ...base,
+      xdg: { ...base.xdg, cache },
+      nextId: () => 'partial-wrapper',
+      copyTree: async () => {
+        throw new Error('fixture copy failed');
+      },
+      removeTree: async (path: string) => {
+        cleanupAttempts.push(path);
+        await base.removeTree(path);
+        throw new Error('fixture cleanup failed');
+      },
+    };
+    try {
+      const resolved = await resolveTarget(env, bare, fixtureRegistry);
+      expect(resolved).toMatchObject({ ok: false, error: { code: 'generic' } });
+      if (!resolved.ok && resolved.error.code === 'generic') {
+        expect(resolved.error.message).toContain('fixture copy failed');
+        expect(resolved.error.message).not.toContain('fixture cleanup failed');
+      }
+      expect(cleanupAttempts).toEqual([wrapper]);
+      expect(await base.fileExists(wrapper)).toBeFalse();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('runVerify finally removes a registered bare wrapper on verifier error or throw', async () => {
     const env = await defaultRuntimePorts();
     for (const behavior of ['result-error', 'throw'] as const) {
       const bare = await mkdtemp(join(tmpdir(), `skillsmith-p1-ts09-finally-${behavior}-`));
       await writeFile(join(bare, 'SKILL.md'), '---\nname: fixture\ndescription: fixture\n---\n');
       let wrapper: string | undefined;
-      const failingRegistry = {
-        ...fixtureRegistry,
-        adapters: [
-          {
-            ...(fixtureRegistry.adapters[0] as Record<string, unknown>),
-            verification: {
-              verifiedAgainst: '1.0.0',
-              modes: ['static', 'deep'],
-              targetManifests: ['.fixture-plugin/plugin.json'],
-              verify: async (_ports: unknown, options: { path: string }) => {
-                wrapper = options.path;
-                if (behavior === 'throw') throw new Error('fixture verifier threw');
-                return err(genericError('fixture verifier returned an error'));
-              },
-            },
+      const failingAdapter = {
+        ...writeFixtureAdapter,
+        verification: {
+          ...writeFixtureAdapter.verification,
+          verify: async (_ports, options) => {
+            wrapper = options.path;
+            if (behavior === 'throw') throw new Error('fixture verifier threw');
+            return err(genericError('fixture verifier returned an error'));
           },
-        ],
-      } satisfies VerifyRegistry;
-      const injectedRun = runVerify as unknown as (
-        ports: typeof env,
-        options: { path: string; tools: readonly string[] },
-        registry: VerifyRegistry,
-      ) => Promise<{ ok: boolean }>;
+        },
+      } satisfies ToolAdapter<'fixture-write'>;
+      const failingRegistry = core.createToolRegistry([failingAdapter]);
       let result: { ok: boolean } | undefined;
       let thrown: unknown;
       try {
-        result = await injectedRun(env, { path: bare, tools: ['fixture-write'] }, failingRegistry);
+        result = await runVerify(env, { path: bare, tools: ['fixture-write'] }, failingRegistry);
       } catch (error) {
         thrown = error;
       } finally {
@@ -396,21 +395,19 @@ describe('EWP-CMD-VERIFY-TS02', () => {
 
   test('dispatches a registered fixture verifier and treats read-only tools as capability gaps', async () => {
     const env = await defaultRuntimePorts();
-    const injectedRun = runVerify as unknown as (
-      ports: typeof env,
-      options: { path: string; tools: readonly string[]; deep: boolean },
-      registry: VerifyRegistry,
-    ) => Promise<{ ok: boolean; value?: VerifyReport }>;
+    const target = await makeFixtureTarget();
     let thrown: unknown;
-    let result: Awaited<ReturnType<typeof injectedRun>> | undefined;
+    let result: Awaited<ReturnType<typeof runVerify<'fixture-write'>>> | undefined;
     try {
-      result = await injectedRun(
+      result = await runVerify(
         env,
-        { path: PLUGIN, tools: ['fixture-write'], deep: true },
+        { path: target, tools: ['fixture-write'], deep: true },
         fixtureRegistry,
       );
     } catch (error) {
       thrown = error;
+    } finally {
+      await rm(target, { recursive: true, force: true });
     }
     expect(thrown, 'runVerify must dispatch through the injected registry').toBeUndefined();
     expect(result).toMatchObject({

@@ -30,16 +30,18 @@ export const toolVerdictFor = (modes: readonly ModeResult[]): SummaryVerdict => 
   return worstOutcome(ran.map((m) => m.verdict ?? 'pass'));
 };
 
-const tally = (findings: readonly VerifyFinding[]): VerifyReport['summary']['counts'] => {
+const tally = (findings: readonly VerifyFinding[]): VerifyReport<string>['summary']['counts'] => {
   const counts = { error: 0, warning: 0, info: 0 };
   for (const f of findings) counts[f.normalizedSeverity]++;
   return counts;
 };
 
-export const summarize = (tools: readonly ToolVerdict[]): VerifyReport['summary'] => {
-  const verified: ToolVerdict['tool'][] = [];
-  const failed: ToolVerdict['tool'][] = [];
-  const skipped: ToolVerdict['tool'][] = [];
+export const summarize = <ToolId extends string>(
+  tools: readonly ToolVerdict<ToolId>[],
+): VerifyReport<ToolId>['summary'] => {
+  const verified: ToolId[] = [];
+  const failed: ToolId[] = [];
+  const skipped: ToolId[] = [];
   const allFindings: VerifyFinding[] = [];
   const produced: VerifyOutcome[] = [];
 

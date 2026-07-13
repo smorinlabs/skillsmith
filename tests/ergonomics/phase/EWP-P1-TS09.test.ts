@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { runCompletion } from '../../../packages/cli/src/completion/run.ts';
 import { buildProgram } from '../../../packages/cli/src/program.ts';
 import { optionsForPath } from '../../../packages/cli/src/spec/options.ts';
+import { TOOL_OPERATIONS } from '../../../packages/core/src/agents/adapter-types.ts';
 import { verifyClaudeCode } from '../../../packages/core/src/agents/claude-code/verify.ts';
 import { verifyCodex } from '../../../packages/core/src/agents/codex/verify.ts';
 import { SUPPORTED_TOOLS } from '../../../packages/core/src/agents/types.ts';
@@ -249,6 +250,125 @@ describe('EWP-P1-TS09', () => {
     }
   });
 
+  test('rejects invalid verification modes, gate policy, and required inventory gaps', async () => {
+    const create = await requireBuilder();
+    const verified = (): Adapter => ({
+      ...writeFixtureAdapter,
+      descriptor: {
+        ...writeFixtureAdapter.descriptor,
+        operations: Object.fromEntries(
+          Object.entries(writeFixtureAdapter.descriptor.operations).map(([id, fact]) => [
+            id,
+            { ...fact, scopes: [...fact.scopes] },
+          ]),
+        ),
+      },
+      inventory: writeFixtureAdapter.inventory,
+      verification: {
+        ...writeFixtureAdapter.verification,
+        modes: [...writeFixtureAdapter.verification.modes],
+        gatePolicy: { ...writeFixtureAdapter.verification.gatePolicy },
+      },
+      placement: writeFixtureAdapter.placement,
+    });
+
+    for (const modes of [['static', 'deep', 'future'], ['static', 'static', 'deep'], ['future']]) {
+      const adapter = verified();
+      if (!adapter.verification) throw new Error('fixture verifier is missing');
+      adapter.verification = { ...adapter.verification, modes };
+      expect(() => create([adapter])).toThrow(/verification.*mode|mode.*verification/i);
+    }
+
+    for (const gatePolicy of [
+      { installDeep: 'yes', promote: 'static' },
+      { installDeep: true, promote: 'future' },
+    ]) {
+      const adapter = verified();
+      if (!adapter.verification) throw new Error('fixture verifier is missing');
+      adapter.verification = {
+        ...adapter.verification,
+        gatePolicy: gatePolicy as unknown as NonNullable<Adapter['verification']>['gatePolicy'],
+      };
+      expect(() => create([adapter])).toThrow(/gate.*policy|installDeep|promote/i);
+    }
+
+    const incoherent = verified();
+    incoherent.descriptor.operations['verify-deep'] = {
+      supported: false,
+      scopes: [],
+      remediation: 'deep verification is unavailable',
+    };
+    if (!incoherent.verification) throw new Error('fixture verifier is missing');
+    incoherent.verification = {
+      ...incoherent.verification,
+      modes: ['static'],
+      gatePolicy: { installDeep: true, promote: 'static+deep' },
+    };
+    expect(() => create([incoherent])).toThrow(/gate.*policy|verify-deep|deep.*unsupported/i);
+
+    for (const operation of ['detect', 'inventory-skills', 'inventory-commands', 'diagnostics']) {
+      const adapter = verified();
+      adapter.descriptor.operations[operation] = {
+        supported: false,
+        scopes: [],
+        remediation: `${operation} is unavailable`,
+      };
+      expect(() => create([adapter])).toThrow(/inventory|required|operation/i);
+    }
+  });
+
+  test('freezes registry-owned views without freezing or changing caller-owned adapters', async () => {
+    const create = await requireBuilder();
+    const input = [
+      {
+        descriptor: {
+          ...readOnlyFixtureAdapter.descriptor,
+          operations: Object.fromEntries(
+            Object.entries(readOnlyFixtureAdapter.descriptor.operations).map(([id, fact]) => [
+              id,
+              { ...fact, scopes: [...fact.scopes] },
+            ]),
+          ),
+        },
+        inventory: { ...readOnlyFixtureAdapter.inventory },
+      },
+    ];
+    const adapter = input[0];
+    if (!adapter) throw new Error('caller adapter fixture is missing');
+    const descriptor = adapter.descriptor;
+    const inventory = adapter.inventory;
+    const operations = descriptor.operations;
+    const detect = operations.detect;
+    const before = JSON.stringify(descriptor);
+
+    const fixture = create(input);
+
+    expect(fixture.ids).toEqual(['fixture-read']);
+    expect(input[0]).toBe(adapter);
+    expect(adapter.descriptor).toBe(descriptor);
+    expect(adapter.inventory).toBe(inventory);
+    expect(adapter.descriptor.operations).toBe(operations);
+    expect(adapter.descriptor.operations.detect).toBe(detect);
+    expect(JSON.stringify(adapter.descriptor)).toBe(before);
+    expect(Object.isFrozen(input)).toBeFalse();
+    expect(Object.isFrozen(adapter)).toBeFalse();
+    expect(Object.isFrozen(descriptor)).toBeFalse();
+    expect(Object.isFrozen(inventory)).toBeFalse();
+    expect(Object.isFrozen(operations)).toBeFalse();
+    expect(Object.isFrozen(detect)).toBeFalse();
+  });
+
+  test('publishes runtime-immutable operation and capability projections', async () => {
+    const registry = await requireRegistry();
+    const inventoryTools = registry.toolsFor('inventory-skills');
+    const verifyTools = registry.toolsFor('verify-static');
+    expect(Object.isFrozen(TOOL_OPERATIONS)).toBeTrue();
+    expect(Object.isFrozen(VERIFY_TOOLS)).toBeTrue();
+    expect(Object.isFrozen(FLIP_TOOLS)).toBeTrue();
+    expect(Object.isFrozen(inventoryTools)).toBeTrue();
+    expect(Object.isFrozen(verifyTools)).toBeTrue();
+  });
+
   test('derives every current compatibility and CLI choice view from one registry order', async () => {
     const registry = await requireRegistry();
     const module = await registryModule();
@@ -270,6 +390,8 @@ describe('EWP-P1-TS09', () => {
     );
     expect(toolOption?.knownValues).toEqual(registry.ids);
     expect(toolOption?.allowedValues).toEqual(registry.ids);
+    expect(toolOption?.parserValues).toEqual(registry.ids);
+    expect(toolOption?.parserValues).toBe(registry.ids);
     const program = buildProgram();
     const verify = program.commands.find((command) => command.name() === 'verify');
     const liveTool = verify?.options.find((option) => option.long === '--tool');
