@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.uninstall",
+  "dryRun": false,
+  "requested": {
+    "targets": [
+      "fixture-skill"
+    ],
+    "tools": [
+      "codex"
+    ],
+    "explicitTools": true,
+    "scope": "project",
+    "allScopes": false,
+    "force": false
+  },
+  "results": [
+    {
+      "skill": "fixture-skill",
+      "tool": "codex",
+      "scope": "project",
+      "placementPath": "/fixture/project/skills/fixture-skill",
+      "action": "removed",
+      "reason": null,
+      "before": {
+        "mode": "pinned",
+        "placement": "symlink",
+        "storePath": "/fixture/store/fixture-skill",
+        "symlinkTarget": "/fixture/store/fixture-skill"
+      },
+      "storeRetained": "/fixture/store/fixture-skill",
+      "backupKept": null
+    }
+  ],
+  "summary": {
+    "removed": 1,
+    "noop": 0,
+    "refused": 0,
+    "failed": 0
+  }
+}

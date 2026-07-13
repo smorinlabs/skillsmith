@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.install",
+  "dryRun": false,
+  "requested": {
+    "sources": [
+      "fixture/repository//skills/fixture-skill"
+    ],
+    "tools": [
+      "codex"
+    ],
+    "explicitTools": true,
+    "scope": "project",
+    "explicitScope": true,
+    "ref": "main",
+    "pin": true,
+    "direct": false,
+    "force": false,
+    "verify": "static",
+    "deep": false
+  },
+  "results": [
+    {
+      "source": "fixture/repository//skills/fixture-skill",
+      "skill": "fixture-skill",
+      "tool": "codex",
+      "scope": "project",
+      "placementPath": "/fixture/project/skills/fixture-skill",
+      "action": "installed",
+      "reason": null,
+      "placement": "symlink",
+      "store": {
+        "path": "/fixture/store/fixture-skill",
+        "rev": "main",
+        "gitSha": "1111111111111111111111111111111111111111",
+        "reused": false
+      },
+      "origin": {
+        "host": "github.com",
+        "repo": "fixture/repository",
+        "skillPath": "skills/fixture-skill",
+        "refRequested": "main",
+        "refResolved": "1111111111111111111111111111111111111111",
+        "pin": true
+      },
+      "verify": {
+        "gate": "passed",
+        "verdict": "pass",
+        "mode": "static"
+      },
+      "candidates": null
+    }
+  ],
+  "summary": {
+    "installed": 1,
+    "updated": 0,
+    "repaired": 0,
+    "noop": 0,
+    "skipped": 0,
+    "refused": 0,
+    "failed": 0
+  }
+}

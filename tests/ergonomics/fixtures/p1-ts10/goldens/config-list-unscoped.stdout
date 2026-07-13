@@ -1,0 +1,36 @@
+{
+  "effective": {
+    "tool": "codex",
+    "scope": "project",
+    "path": "./skills",
+    "registry": {
+      "default": "team"
+    }
+  },
+  "sources": {
+    "tool": "user",
+    "scope": "project",
+    "path": "project",
+    "registry.default": "project"
+  },
+  "layers": {
+    "defaults": {
+      "tool": "claude-code",
+      "scope": "user"
+    },
+    "system": {},
+    "user": {
+      "tool": "codex"
+    },
+    "project": {
+      "scope": "project",
+      "path": "./skills",
+      "registry": {
+        "default": "team"
+      }
+    },
+    "explicit-file": {},
+    "env": {},
+    "cli": {}
+  }
+}

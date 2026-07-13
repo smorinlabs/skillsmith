@@ -1,0 +1,7 @@
+{
+  "scope": "project",
+  "path": "./skills",
+  "registry": {
+    "default": "team"
+  }
+}

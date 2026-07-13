@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "experimental": true,
+  "tools": {
+    "claude-code": [
+      {
+        "path": "/fixture/bin/claude",
+        "version": "1.2.3",
+        "installMethod": "native-installer"
+      }
+    ],
+    "codex": [
+      {
+        "path": "/fixture/bin/codex",
+        "version": "4.5.6",
+        "installMethod": "npm-global"
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "experimental": true,
+  "commands": [
+    {
+      "name": "fixture-command",
+      "path": "/fixture/project/commands/fixture-command.md",
+      "realpath": "/fixture/project/commands/fixture-command.md",
+      "tool": "codex",
+      "scope": "project",
+      "root": "/fixture/project/commands",
+      "frontmatter": {
+        "name": "fixture-command",
+        "description": "A deterministic command fixture",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "fixture.plugin",
+        "pluginVersion": "1.0.0",
+        "pluginScope": "project"
+      },
+      "enabled": "on"
+    }
+  ]
+}

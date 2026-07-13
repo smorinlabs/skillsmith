@@ -2066,6 +2066,7 @@
         "packages/core/src/index.ts",
         "packages/core/src/public-types.ts",
         "packages/cli/src/spec/registry.ts",
+        "packages/cli/src/contracts/wire-contracts.ts",
         "packages/cli/src/output/agents-json.ts",
         "packages/cli/src/output/commands-json.ts",
         "packages/cli/src/output/doctor-json.ts",

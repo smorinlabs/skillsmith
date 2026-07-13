@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "experimental": true,
+  "findings": [
+    {
+      "checkId": "fixture.paths",
+      "severity": "warning",
+      "title": "Fixture path needs attention",
+      "message": "The fixture path is illustrative.",
+      "remediation": "Use a real project path.",
+      "tool": "codex",
+      "scope": "project",
+      "path": "/fixture/project",
+      "operation": "read",
+      "reason": "fixture",
+      "scopeInUse": true
+    }
+  ],
+  "counts": {
+    "ok": 2,
+    "warning": 1,
+    "error": 0
+  }
+}

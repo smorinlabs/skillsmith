@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 2,
+  "kind": "skillsmith.flip",
+  "op": "promote",
+  "dryRun": false,
+  "requested": {
+    "targets": [
+      "fixture-skill"
+    ],
+    "all": false,
+    "tools": [
+      "codex"
+    ],
+    "explicitTools": true
+  },
+  "results": [
+    {
+      "skill": "fixture-skill",
+      "tool": "codex",
+      "placementPath": "/fixture/project/skills/fixture-skill",
+      "action": "flipped",
+      "reason": null,
+      "before": {
+        "mode": "dev",
+        "symlinkTarget": "/fixture/source/fixture-skill"
+      },
+      "after": {
+        "mode": "pinned",
+        "storePath": "/fixture/store/fixture-skill"
+      },
+      "store": {
+        "path": "/fixture/store/fixture-skill",
+        "rev": "main",
+        "gitSha": "1111111111111111111111111111111111111111",
+        "dirty": false,
+        "reused": false
+      },
+      "verify": {
+        "gate": "passed",
+        "verdict": "pass"
+      }
+    }
+  ],
+  "summary": {
+    "flipped": 1,
+    "updated": 0,
+    "noop": 0,
+    "skipped": 0,
+    "refused": 0,
+    "failed": 0,
+    "rolledBack": 0,
+    "created": 0,
+    "adopted": 0
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "experimental": true,
+  "skills": [
+    {
+      "name": "fixture-skill",
+      "path": "/fixture/project/skills/fixture-skill",
+      "realpath": "/fixture/store/fixture-skill",
+      "tool": "codex",
+      "scope": "project",
+      "root": "/fixture/project/skills",
+      "frontmatter": {
+        "name": "fixture-skill",
+        "description": "A deterministic skill fixture",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on"
+    }
+  ]
+}
