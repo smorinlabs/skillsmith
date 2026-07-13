@@ -12,13 +12,13 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 7 | 21 | 6 |
-| phase-task | 65 | 21 | 44 | 0 |
-| phase-test | 61 | 16 | 45 | 0 |
+| phase-task | 65 | 22 | 43 | 0 |
+| phase-test | 61 | 17 | 44 | 0 |
 | command-test | 157 | 5 | 152 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
 | command | 23 | 2 | 21 | 0 |
-| finding | 43 | 12 | 31 | 0 |
+| finding | 43 | 13 | 30 | 0 |
 | decision | 16 | 0 | 15 | 1 |
 
 ### Phases
@@ -26,7 +26,7 @@ Tracked entities: **425** across **45** change groups.
 | Phase | Groups | Entities | Signed off | Deferred |
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
-| 1 | 9 | 62 | 43 | 0 |
+| 1 | 9 | 62 | 46 | 0 |
 | 2 | 5 | 33 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
@@ -204,7 +204,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-031 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-032 | P17-G6-02A | planned | required-pr |
 | EWP-CF-033 | P17-G1-03 | signed-off | required-pr |
-| EWP-CF-034 | P17-G1-04 | planned | required-pr |
+| EWP-CF-034 | P17-G1-04 | signed-off | required-pr |
 | EWP-CF-035 | P17-G3B-04 | planned | required-pr |
 | EWP-CF-036 | P17-G1-05 | planned | required-pr |
 | EWP-CF-037 | P17-G1-06 | planned | required-pr |
@@ -565,7 +565,7 @@ Downstream coverage obligations: EWP-WF16.
 
 ## P17-G1-04 — Capability-scoped ports, typed configuration, and compatibility facade
 
-Phase: 1; status: **active**; dependencies: P17-G1-03.
+Phase: 1; status: **signed-off**; dependencies: P17-G1-03.
 Required-now validations: EWP-P1-TS08, EWP-WF15.
 Downstream coverage obligations: EWP-WF11, EWP-WF16.
 
@@ -574,19 +574,19 @@ Downstream coverage obligations: EWP-WF11, EWP-WF16.
 - [x] P17-G1-04:mapped _(passed)_
 - [x] P17-G1-04:ready _(passed)_
 - [x] P17-G1-04:test-first _(passed)_
-- [ ] P17-G1-04:minimal-implementation _(pending)_
-- [ ] P17-G1-04:targeted-green _(pending)_
-- [ ] P17-G1-04:impacted-green _(pending)_
-- [ ] P17-G1-04:refactor _(pending)_
-- [ ] P17-G1-04:adversarial-review _(pending)_
-- [ ] P17-G1-04:traceability-closure _(pending)_
-- [ ] P17-G1-04:signed-off _(pending)_
+- [x] P17-G1-04:minimal-implementation _(passed)_
+- [x] P17-G1-04:targeted-green _(passed)_
+- [x] P17-G1-04:impacted-green _(passed)_
+- [x] P17-G1-04:refactor _(passed)_
+- [x] P17-G1-04:adversarial-review _(passed)_
+- [x] P17-G1-04:traceability-closure _(passed)_
+- [x] P17-G1-04:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-034** — Replace the growing ScanEnv interface with capability-scoped ports _(finding; planned)_
-- [ ] **EWP-P1-T10** — Add ADR 0005 and capability-scoped PlatformPaths/FileRead/FileWrite/Lock/Process/ _(phase-task; planned)_
-- [ ] **EWP-P1-TS08** — Static signature/import gates, compile-time negative read-only capability _(phase-test; failing)_
+- [x] **EWP-CF-034** — Replace the growing ScanEnv interface with capability-scoped ports _(finding; signed-off)_
+- [x] **EWP-P1-T10** — Add ADR 0005 and capability-scoped PlatformPaths/FileRead/FileWrite/Lock/Process/ _(phase-task; signed-off)_
+- [x] **EWP-P1-TS08** — Static signature/import gates, compile-time negative read-only capability _(phase-test; signed-off)_
 
 ## P17-G1-05 — Executable tool-adapter/capability registry and current verify behavior
 

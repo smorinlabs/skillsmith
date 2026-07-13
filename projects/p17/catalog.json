@@ -1744,7 +1744,7 @@
       "phase": "1",
       "title": "Capability-scoped ports, typed configuration, and compatibility facade",
       "dependsOn": ["P17-G1-03"],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0001-core-cli-split.md",
@@ -1844,7 +1844,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF15.test.ts --test-name-pattern EWP-WF15"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g1_04_impl_adversarial",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -1859,32 +1859,32 @@
           "evidence": ["projects/p17/evidence/P17-G1-04.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-04.md#implementation-and-validation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-04.md#implementation-and-validation"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-04.md#implementation-and-validation"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-04.md#implementation-and-validation"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-04.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-04.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-04.md#traceability-and-sign-off"]
         }
       },
       "evidence": []
@@ -8647,11 +8647,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G1-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G1-04",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-04.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G3B-03", "P17-G1-02A", "P17-G6-02A"],
       "implements": [],
       "validatedBy": ["EWP-P1-TS08", "EWP-WF11", "EWP-WF15", "EWP-WF16"],
@@ -15633,11 +15633,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G1-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-04",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G1-04.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": ["EWP-CF-034"],
       "validatedBy": ["EWP-P1-TS08"],
@@ -15928,7 +15928,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-04",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-04:tests/ergonomics/phase/EWP-P1-TS08.test.ts#EWP-P1-TS08",
       "target": {
