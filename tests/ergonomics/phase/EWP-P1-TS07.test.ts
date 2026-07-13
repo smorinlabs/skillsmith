@@ -353,7 +353,7 @@ describe('EWP-P1-TS07', () => {
     expect(command.helpInformation()).toContain(fixture.primaryQuestion);
     expect(command.helpInformation()).toContain(fixture.examples[0]);
 
-    const completion = walk(program).find((node) => node.name === 'fixture');
+    const completion = walk(program)[0]?.subcommands.find((node) => node.name === 'fixture');
     expect(completion).toBeDefined();
     expect(completion?.options.map((option) => option.long)).toEqual(
       expect.arrayContaining(['--mode', '--tag', '--json']),
