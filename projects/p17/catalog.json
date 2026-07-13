@@ -2371,7 +2371,7 @@
         "P17-G1-06",
         "P17-G1-07"
       ],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -2619,7 +2619,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF14.test.ts --test-name-pattern EWP-WF14"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g2_01_trace_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -2634,32 +2634,32 @@
           "evidence": ["projects/p17/evidence/P17-G2-01.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-01.md#implementation-and-validation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-01.md#implementation-and-validation"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-01.md#implementation-and-validation"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-01.md#implementation-and-validation"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-01.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"]
         }
       },
       "evidence": []
@@ -5656,11 +5656,11 @@
       "title": "Maintain — What defaults are active and how do I change them?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:config",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"],
       "secondaryGroups": [
         "P17-G0-02",
         "P17-G0-04",
@@ -6604,11 +6604,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G2-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -7267,11 +7267,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G2-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G4B-02", "P17-G4B-01"],
       "implements": [],
       "validatedBy": [
@@ -7811,11 +7811,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G2-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G4A-02"],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS05", "EWP-P2-TS01", "EWP-WF04"],
@@ -7861,11 +7861,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G2-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G4A-03", "P17-G4A-01", "P17-G0-01", "P17-G1-01"],
       "implements": [],
       "validatedBy": [
@@ -9248,11 +9248,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G2-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G2-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"],
       "secondaryGroups": [
         "P17-G4B-02",
         "P17-G1-02B",
@@ -10920,7 +10920,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-01",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-01:packages/cli/tests/contracts/config.test.ts#EWP-CMD-CONFIG-TS01",
       "target": {
@@ -10929,7 +10929,9 @@
         "selector": "EWP-CMD-CONFIG-TS01",
         "command": "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-01.md#red-execution-receipt-ewp-cmd-config-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G2-01.md#green-execution-receipt-ewp-cmd-config-ts01"
+      ],
       "secondaryGroups": ["P17-G2-03"],
       "implements": [],
       "validatedBy": ["EWP-CMD-CONFIG-TS01"],
@@ -10954,7 +10956,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-01",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-01:packages/cli/tests/contracts/config.test.ts#EWP-CMD-CONFIG-TS02",
       "target": {
@@ -10963,7 +10965,9 @@
         "selector": "EWP-CMD-CONFIG-TS02",
         "command": "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-01.md#red-execution-receipt-ewp-cmd-config-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G2-01.md#green-execution-receipt-ewp-cmd-config-ts02"
+      ],
       "secondaryGroups": ["P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-CONFIG-TS02"],
@@ -10988,7 +10992,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-01",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-01:packages/cli/tests/contracts/config.test.ts#EWP-CMD-CONFIG-TS03",
       "target": {
@@ -10997,7 +11001,9 @@
         "selector": "EWP-CMD-CONFIG-TS03",
         "command": "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-01.md#red-execution-receipt-ewp-cmd-config-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G2-01.md#green-execution-receipt-ewp-cmd-config-ts03"
+      ],
       "secondaryGroups": ["P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-CONFIG-TS03"],
@@ -11022,7 +11028,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-01",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-01:packages/cli/tests/contracts/config.test.ts#EWP-CMD-CONFIG-TS04",
       "target": {
@@ -11031,7 +11037,9 @@
         "selector": "EWP-CMD-CONFIG-TS04",
         "command": "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS04"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-01.md#red-execution-receipt-ewp-cmd-config-ts04"],
+      "evidence": [
+        "projects/p17/evidence/P17-G2-01.md#green-execution-receipt-ewp-cmd-config-ts04"
+      ],
       "secondaryGroups": ["P17-G2-03", "P17-G2-05"],
       "implements": [],
       "validatedBy": ["EWP-CMD-CONFIG-TS04"],
@@ -11056,7 +11064,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-01",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-01:packages/cli/tests/contracts/config.test.ts#EWP-CMD-CONFIG-TS05",
       "target": {
@@ -11065,7 +11073,9 @@
         "selector": "EWP-CMD-CONFIG-TS05",
         "command": "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-01.md#red-execution-receipt-ewp-cmd-config-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G2-01.md#green-execution-receipt-ewp-cmd-config-ts05"
+      ],
       "secondaryGroups": ["P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-CONFIG-TS05"],
@@ -16567,11 +16577,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G2-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G1-01"],
       "implements": ["D-003", "EWP-CF-003", "EWP-CF-021", "EWP-CF-022", "EWP-CF-040"],
       "validatedBy": [
@@ -16602,11 +16612,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G2-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G2-05", "P17-G2-03"],
       "implements": ["D-003", "EWP-CF-019", "EWP-CF-029", "EWP-CF-030"],
       "validatedBy": [
@@ -16725,7 +16735,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-01",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-01:tests/ergonomics/phase/EWP-P2-TS01.test.ts#EWP-P2-TS01",
       "target": {
@@ -16734,7 +16744,7 @@
         "selector": "EWP-P2-TS01",
         "command": "bun test tests/ergonomics/phase/EWP-P2-TS01.test.ts --test-name-pattern EWP-P2-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-01.md#red-execution-receipt-ewp-p2-ts01"],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#green-execution-receipt-ewp-p2-ts01"],
       "secondaryGroups": ["P17-G2-02", "P17-G2-05", "P17-G2-03"],
       "implements": [],
       "validatedBy": ["EWP-P2-TS01"],
@@ -16759,7 +16769,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-01",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-01:tests/ergonomics/phase/EWP-P2-TS02.test.ts#EWP-P2-TS02",
       "target": {
@@ -16768,7 +16778,7 @@
         "selector": "EWP-P2-TS02",
         "command": "bun test tests/ergonomics/phase/EWP-P2-TS02.test.ts --test-name-pattern EWP-P2-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-01.md#red-execution-receipt-ewp-p2-ts02"],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#green-execution-receipt-ewp-p2-ts02"],
       "secondaryGroups": ["P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-P2-TS02"],

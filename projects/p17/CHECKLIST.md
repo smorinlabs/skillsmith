@@ -12,14 +12,14 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 8 | 20 | 6 |
-| phase-task | 65 | 25 | 40 | 0 |
-| phase-test | 61 | 20 | 41 | 0 |
-| command-test | 157 | 9 | 148 | 0 |
+| phase-task | 65 | 27 | 38 | 0 |
+| phase-test | 61 | 22 | 39 | 0 |
+| command-test | 157 | 14 | 143 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
-| command | 23 | 3 | 20 | 0 |
-| finding | 43 | 17 | 26 | 0 |
-| decision | 16 | 0 | 15 | 1 |
+| command | 23 | 4 | 19 | 0 |
+| finding | 43 | 21 | 22 | 0 |
+| decision | 16 | 1 | 14 | 1 |
 
 ### Phases
 
@@ -27,7 +27,7 @@ Tracked entities: **425** across **45** change groups.
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
-| 2 | 5 | 32 | 0 | 0 |
+| 2 | 5 | 32 | 15 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 66 | 0 | 0 |
@@ -109,7 +109,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:check | P17-G1-02B | signed-off | required-pr |
 | COMMAND:commands | P17-G3A-02 | planned | required-pr |
 | COMMAND:completion | P17-G6-02B | planned | supported-platform |
-| COMMAND:config | P17-G2-01 | planned | required-pr |
+| COMMAND:config | P17-G2-01 | signed-off | required-pr |
 | COMMAND:dev | P17-G3B-01 | planned | required-pr |
 | COMMAND:doctor | P17-G3B-03 | planned | required-pr |
 | COMMAND:export | P17-G4A-02 | planned | required-pr |
@@ -173,7 +173,7 @@ Tracked entities: **425** across **45** change groups.
 |---|---|---|---|
 | EWP-CF-001 | P17-G0-03 | signed-off | required-pr |
 | EWP-CF-002 | P17-G3B-01 | planned | required-pr |
-| EWP-CF-003 | P17-G2-01 | planned | required-pr |
+| EWP-CF-003 | P17-G2-01 | signed-off | required-pr |
 | EWP-CF-004 | P17-G1-02A | signed-off | required-pr |
 | EWP-CF-005 | P17-G3B-02 | planned | required-pr |
 | EWP-CF-006 | P17-G3B-03 | planned | required-pr |
@@ -189,9 +189,9 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-016 | P17-G5-04 | planned | required-pr |
 | EWP-CF-017 | P17-G0-04 | signed-off | required-pr |
 | EWP-CF-018 | P17-G0-05 | signed-off | required-pr |
-| EWP-CF-019 | P17-G2-01 | planned | required-pr |
+| EWP-CF-019 | P17-G2-01 | signed-off | required-pr |
 | EWP-CF-020 | P17-G4A-01 | planned | required-pr |
-| EWP-CF-021 | P17-G2-01 | planned | required-pr |
+| EWP-CF-021 | P17-G2-01 | signed-off | required-pr |
 | EWP-CF-022 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-023 | P17-G0-02 | signed-off | required-pr |
 | EWP-CF-024 | P17-G1-01 | signed-off | required-pr |
@@ -210,7 +210,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-037 | P17-G1-06 | signed-off | required-pr |
 | EWP-CF-038 | P17-G1-07 | signed-off | required-pr |
 | EWP-CF-039 | P17-G0-05 | signed-off | required-pr |
-| EWP-CF-040 | P17-G2-01 | planned | required-pr |
+| EWP-CF-040 | P17-G2-01 | signed-off | required-pr |
 | EWP-CF-041 | P17-G4A-03 | planned | required-pr |
 | EWP-CF-042 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-043 | P17-G1-02A | signed-off | required-pr |
@@ -221,7 +221,7 @@ Tracked entities: **425** across **45** change groups.
 |---|---|---|---|
 | D-001 | P17-G4B-01 | planned | required-pr |
 | D-002 | P17-G4B-02 | planned | required-pr |
-| D-003 | P17-G2-01 | planned | required-pr |
+| D-003 | P17-G2-01 | signed-off | required-pr |
 | D-004 | P17-G2-02 | planned | required-pr |
 | D-005 | P17-G4A-02 | planned | required-pr |
 | D-006 | P17-G4A-01 | planned | required-pr |
@@ -672,7 +672,7 @@ Downstream coverage obligations: EWP-P3B-TS07.
 
 ## P17-G2-01 — Manifest discovery, ownership, unified schema, identity, and artifact-pair selection
 
-Phase: 2; status: **active**; dependencies: P17-G0-01, P17-G0-02, P17-G0-04, P17-G0-05, P17-G1-04, P17-G1-05, P17-G1-06, P17-G1-07.
+Phase: 2; status: **signed-off**; dependencies: P17-G0-01, P17-G0-02, P17-G0-04, P17-G0-05, P17-G1-04, P17-G1-05, P17-G1-06, P17-G1-07.
 Required-now validations: EWP-CMD-CHECK-TS03, EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS02, EWP-CMD-CONFIG-TS03, EWP-CMD-CONFIG-TS04, EWP-CMD-CONFIG-TS05, EWP-OPT-TS01, EWP-P0A-TS04, EWP-P0A-TS05, EWP-P0A-TS07, EWP-P0A-TS09, EWP-P1-TS01, EWP-P1-TS02, EWP-P1-TS03, EWP-P1-TS05, EWP-P1-TS06, EWP-P1-TS07, EWP-P1-TS08, EWP-P1-TS09, EWP-P1-TS10, EWP-P1-TS11, EWP-P2-TS01, EWP-P2-TS02, EWP-WF14.
 Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS05, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INSTALL-TS06, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-CMD-STATUS-TS05, EWP-CMD-SYNC-TS07, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UPDATE-TS06, EWP-OPT-TS08, EWP-P4A-TS01, EWP-WF04, EWP-WF07.
 
@@ -681,31 +681,31 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD
 - [x] P17-G2-01:mapped _(passed)_
 - [x] P17-G2-01:ready _(passed)_
 - [x] P17-G2-01:test-first _(passed)_
-- [ ] P17-G2-01:minimal-implementation _(pending)_
-- [ ] P17-G2-01:targeted-green _(pending)_
-- [ ] P17-G2-01:impacted-green _(pending)_
-- [ ] P17-G2-01:refactor _(pending)_
-- [ ] P17-G2-01:adversarial-review _(pending)_
-- [ ] P17-G2-01:traceability-closure _(pending)_
-- [ ] P17-G2-01:signed-off _(pending)_
+- [x] P17-G2-01:minimal-implementation _(passed)_
+- [x] P17-G2-01:targeted-green _(passed)_
+- [x] P17-G2-01:impacted-green _(passed)_
+- [x] P17-G2-01:refactor _(passed)_
+- [x] P17-G2-01:adversarial-review _(passed)_
+- [x] P17-G2-01:traceability-closure _(passed)_
+- [x] P17-G2-01:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:config** — Maintain — What defaults are active and how do I change them? _(command; planned)_
-- [ ] **D-003** — Unified project configuration and manifest _(decision; planned)_
-- [ ] **EWP-CF-003** — One manifest and one paired lock per invocation _(finding; planned)_
-- [ ] **EWP-CF-019** — Use one unique manifest name as portable identity _(finding; planned)_
-- [ ] **EWP-CF-021** — Select saved artifacts by declaration ownership before placement scope _(finding; planned)_
-- [ ] **EWP-CF-040** — Keep sibling lock defaults and expose one uniform advanced override _(finding; planned)_
-- [ ] **EWP-CMD-CONFIG-TS01** — get/set/list/unset round trips at system/user/project with lossless _(command-test; failing)_
-- [ ] **EWP-CMD-CONFIG-TS02** — CLI/env/project/user/system precedence and source labels. _(command-test; failing)_
-- [ ] **EWP-CMD-CONFIG-TS03** — explicit config, `-C` project discovery, nested manifest versus live-root _(command-test; failing)_
-- [ ] **EWP-CMD-CONFIG-TS04** — exact legacy read support and migration to D-003 in the same lossless _(command-test; failing)_
-- [ ] **EWP-CMD-CONFIG-TS05** — unknown keys/values/scopes and JSON output. _(command-test; failing)_
-- [ ] **EWP-P2-T01** — Define project and user manifest discovery/destination paths, paired lock paths, _(phase-task; planned)_
-- [ ] **EWP-P2-T02** — Implement the versioned unified manifest schema, unique-name identity/invariants, _(phase-task; planned)_
-- [ ] **EWP-P2-TS01** — Manifest parser, unique-name/source/ref/scope/tool invariants, unknown-key, _(phase-test; failing)_
-- [ ] **EWP-P2-TS02** — Project/user/explicit-file discovery and paired-lock path matrix, including _(phase-test; failing)_
+- [x] **COMMAND:config** — Maintain — What defaults are active and how do I change them? _(command; signed-off)_
+- [x] **D-003** — Unified project configuration and manifest _(decision; signed-off)_
+- [x] **EWP-CF-003** — One manifest and one paired lock per invocation _(finding; signed-off)_
+- [x] **EWP-CF-019** — Use one unique manifest name as portable identity _(finding; signed-off)_
+- [x] **EWP-CF-021** — Select saved artifacts by declaration ownership before placement scope _(finding; signed-off)_
+- [x] **EWP-CF-040** — Keep sibling lock defaults and expose one uniform advanced override _(finding; signed-off)_
+- [x] **EWP-CMD-CONFIG-TS01** — get/set/list/unset round trips at system/user/project with lossless _(command-test; signed-off)_
+- [x] **EWP-CMD-CONFIG-TS02** — CLI/env/project/user/system precedence and source labels. _(command-test; signed-off)_
+- [x] **EWP-CMD-CONFIG-TS03** — explicit config, `-C` project discovery, nested manifest versus live-root _(command-test; signed-off)_
+- [x] **EWP-CMD-CONFIG-TS04** — exact legacy read support and migration to D-003 in the same lossless _(command-test; signed-off)_
+- [x] **EWP-CMD-CONFIG-TS05** — unknown keys/values/scopes and JSON output. _(command-test; signed-off)_
+- [x] **EWP-P2-T01** — Define project and user manifest discovery/destination paths, paired lock paths, _(phase-task; signed-off)_
+- [x] **EWP-P2-T02** — Implement the versioned unified manifest schema, unique-name identity/invariants, _(phase-task; signed-off)_
+- [x] **EWP-P2-TS01** — Manifest parser, unique-name/source/ref/scope/tool invariants, unknown-key, _(phase-test; signed-off)_
+- [x] **EWP-P2-TS02** — Project/user/explicit-file discovery and paired-lock path matrix, including _(phase-test; signed-off)_
 
 ## P17-G2-02 — Portable lock schema, semantic hashes, canonicalization, and manifest relationship
 
