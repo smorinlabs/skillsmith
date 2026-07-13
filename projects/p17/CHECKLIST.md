@@ -721,7 +721,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 - [x] P17-G2-02:minimal-implementation _(passed)_
 - [x] P17-G2-02:targeted-green _(passed)_
 - [x] P17-G2-02:impacted-green _(passed)_
-- [ ] P17-G2-02:refactor _(pending)_
+- [x] P17-G2-02:refactor _(passed)_
 - [ ] P17-G2-02:adversarial-review _(pending)_
 - [ ] P17-G2-02:traceability-closure _(pending)_
 - [ ] P17-G2-02:signed-off _(pending)_
