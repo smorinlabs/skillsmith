@@ -1,6 +1,11 @@
 export type CommandGroup = 'discover' | 'manage' | 'develop' | 'declarative' | 'maintain';
 export type OptionValueShape = 'boolean' | 'required' | 'optional';
-export type OptionRelationKind = 'conflicts' | 'requires' | 'cardinality' | 'exclusive-group';
+export type OptionRelationKind =
+  | 'conflicts'
+  | 'requires'
+  | 'cardinality'
+  | 'exclusive-group'
+  | 'scope-consistency';
 
 export interface CommandArgumentSpec {
   readonly name: string;
@@ -8,6 +13,7 @@ export interface CommandArgumentSpec {
   readonly variadic: boolean;
   readonly choices: readonly string[];
   readonly defaultValue: unknown;
+  readonly description?: string;
 }
 
 export interface CommandOptionSpec {
@@ -26,6 +32,12 @@ export interface CommandOptionSpec {
   readonly flagDefault: unknown;
   /** Value presented to an application request after parser normalization. */
   readonly parsedDefault: unknown;
+  readonly description?: string;
+}
+
+export interface CommandExitCodeSpec {
+  readonly code: number;
+  readonly meaning: string;
 }
 
 export interface CommandSpec {
@@ -38,17 +50,50 @@ export interface CommandSpec {
   readonly arguments: readonly CommandArgumentSpec[];
   readonly options: readonly CommandOptionSpec[];
   readonly examples: readonly string[];
+  /** Command-specific meanings shown in generated help. */
+  readonly exitCodes?: readonly CommandExitCodeSpec[];
   readonly capability: string;
   readonly application: string;
   readonly reportKind?: string;
 }
 
-export interface OptionRelationSpec {
+interface OptionRelationBase {
   readonly id: string;
   readonly command: string;
-  readonly kind: OptionRelationKind;
   readonly description: string;
 }
+
+export type OptionRelationSpec =
+  | (OptionRelationBase & {
+      readonly kind: 'conflicts';
+      readonly options: readonly [string, string];
+    })
+  | (OptionRelationBase & {
+      readonly kind: 'requires';
+      readonly option: string;
+      readonly requiredOption: string;
+    })
+  | (OptionRelationBase & {
+      readonly kind: 'exclusive-group';
+      readonly options: readonly string[];
+    })
+  | (OptionRelationBase & {
+      readonly kind: 'scope-consistency';
+      readonly scopeOption: string;
+      readonly sugars: readonly {
+        readonly option: string;
+        readonly value: string;
+      }[];
+    })
+  | (OptionRelationBase & {
+      readonly kind: 'cardinality';
+      readonly subject: 'positionals' | 'option-occurrences';
+      readonly whenOption: string;
+      readonly option?: string;
+      readonly exact?: number;
+      readonly maximum?: number;
+      readonly label: string;
+    });
 
 export interface OptionInvocationError {
   readonly code: 'usage';

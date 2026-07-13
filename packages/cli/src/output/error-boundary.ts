@@ -21,6 +21,7 @@ export type CliErrorFormat = 'human' | 'json';
 
 const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
   'generic',
+  'invalid-argument',
   'unknown-tool',
   'config-error',
   'skill-parse-error',

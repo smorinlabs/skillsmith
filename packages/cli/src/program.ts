@@ -1,23 +1,23 @@
-import { type VersionReport, runVersionApplication } from '@skillsmith/core';
-import { Command, Option } from 'commander';
+import {
+  CURRENT_APPLICATION_SERVICES,
+  type CurrentCommandRequest,
+  type InteractionPort,
+} from '@skillsmith/core';
+import type { Command } from 'commander';
+import { HELP_TOPIC_NAMES } from './help/topics.ts';
 import { withCliErrorBoundary } from './output/error-boundary.ts';
 import {
   type ApplicationRegistry,
   type RendererRegistry,
   createCliRuntimeAdapter,
 } from './runtime/adapter.ts';
-import { attachCommandSpecs, configureCommandFromSpec } from './runtime/command-spec.ts';
-import { checkCommand } from './runtime/current/check.ts';
-import { commandsCommand } from './runtime/current/commands.ts';
-import { configCommand } from './runtime/current/config.ts';
-import { devCommand } from './runtime/current/dev.ts';
-import { doctorCommand } from './runtime/current/doctor.ts';
-import { installCommand } from './runtime/current/install.ts';
-import { listCommand } from './runtime/current/list.ts';
-import { promoteCommand } from './runtime/current/promote.ts';
-import { agentsCommand, completionCommand, helpCommand } from './runtime/current/root-commands.ts';
-import { uninstallCommand } from './runtime/current/uninstall.ts';
-import { verifyCommand } from './runtime/current/verify.ts';
+import {
+  type CommandActionFactory,
+  attachCommandSpecs,
+  createCommandFromSpec,
+} from './runtime/command-spec.ts';
+import { createCurrentApplicationContext } from './runtime/context.ts';
+import { createCurrentRendererRegistry } from './runtime/current-renderers.ts';
 import { type CliRuntimeIo, processRuntimeIo } from './runtime/io.ts';
 import { installRuntimePreflight } from './runtime/preflight.ts';
 import { CURRENT_COMMAND_SPECS } from './spec/index.ts';
@@ -27,127 +27,157 @@ export interface ProgramBuildExtensions {
   readonly additionalSpecs?: readonly CommandSpec[];
   readonly applications?: ApplicationRegistry;
   readonly renderers?: RendererRegistry;
-  readonly runtimePorts?: CliRuntimeIo & { readonly interaction?: unknown };
+  readonly runtimePorts?: CliRuntimeIo & { readonly interaction?: InteractionPort };
 }
 
-const addRuntimeCommand = (
-  program: Command,
-  spec: CommandSpec,
-  runtime: ReturnType<typeof createCliRuntimeAdapter>,
-): Command => {
-  const command = configureCommandFromSpec(new Command(), spec);
-  const documentation = `\nPRIMARY QUESTION\n  ${spec.primaryQuestion}\n\nEXAMPLES\n  ${spec.examples.join('\n  ')}\n`;
-  const baseHelpInformation = command.helpInformation.bind(command);
-  command.helpInformation = () => `${baseHelpInformation()}${documentation}`;
-  command.action(async (...values: unknown[]) => {
-    const invoked = values.at(-1) as Command;
-    const positional = values.slice(0, Math.max(0, values.length - 2));
-    const options = invoked.optsWithGlobals() as { json?: boolean };
-    await runtime.execute({
-      application: spec.application,
-      reportKind: spec.reportKind ?? spec.application,
-      request: { arguments: positional, options },
-      context: {},
-      format: options.json ? 'json' : 'human',
-    });
-  });
-  program.addCommand(command);
-  return command;
+const commandRequest = (values: readonly unknown[]): CurrentCommandRequest => {
+  const command = values.at(-1) as Command;
+  const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+  return {
+    arguments: values.slice(0, Math.max(0, values.length - 2)),
+    options:
+      command.name() === 'help'
+        ? {
+            ...options,
+            knownHelpNames: [
+              ...HELP_TOPIC_NAMES,
+              ...(command.parent?.commands.map((candidate) => candidate.name()) ?? []),
+            ],
+          }
+        : options,
+  };
+};
+
+const requestedFormat = (request: CurrentCommandRequest): 'human' | 'json' =>
+  request.options.json === true || request.options.format === 'json' ? 'json' : 'human';
+
+const CONTEXT_FREE_APPLICATIONS = new Set([
+  'version',
+  'rootHelp',
+  'configHelp',
+  'completion',
+  'help',
+]);
+
+const VALUE_LONG_OPTIONS = new Set(
+  CURRENT_COMMAND_SPECS.flatMap((spec) =>
+    spec.options.filter((option) => option.valueShape !== 'boolean').map((option) => option.long),
+  ),
+);
+
+const VALUE_SHORT_OPTIONS = new Set(
+  CURRENT_COMMAND_SPECS.flatMap((spec) =>
+    spec.options.flatMap((option) =>
+      option.valueShape !== 'boolean' && option.short !== null ? [option.short] : [],
+    ),
+  ),
+);
+
+const requestsEagerVersion = (invocation: readonly string[]): boolean => {
+  for (let index = 0; index < invocation.length; index++) {
+    const token = invocation[index];
+    if (token === undefined || token === '--') return false;
+    if (token === '--version') return true;
+    if (token === '--help') return false;
+    if (VALUE_LONG_OPTIONS.has(token)) {
+      index++;
+      continue;
+    }
+    if (token.startsWith('--')) continue;
+
+    if (!token.startsWith('-') || token === '-') continue;
+    const cluster = token.slice(1);
+    for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex++) {
+      const flag = cluster[clusterIndex];
+      if (flag === undefined) continue;
+      if (VALUE_SHORT_OPTIONS.has(`-${flag}`)) {
+        if (clusterIndex === cluster.length - 1) index++;
+        break;
+      }
+      if (flag === 'V') return true;
+      if (flag === 'h') return false;
+    }
+  }
+  return false;
+};
+
+const invocationFromParse = (
+  argv: readonly string[] | undefined,
+  from: 'node' | 'electron' | 'user' | undefined,
+): readonly string[] => {
+  if (argv === undefined) return [];
+  if (from === 'user') return argv;
+  return argv.slice(from === 'electron' ? 1 : 2);
 };
 
 export const buildProgram = (
   signal?: AbortSignal,
   extensions: ProgramBuildExtensions = {},
 ): Command => {
+  const rootSpec = CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith');
+  if (rootSpec === undefined) throw new Error('CommandSpec registry is missing skillsmith');
+  const program = withCliErrorBoundary(createCommandFromSpec(rootSpec));
+
   const runtime = createCliRuntimeAdapter({
     applications: {
-      version: runVersionApplication as ApplicationRegistry[string],
+      ...(CURRENT_APPLICATION_SERVICES as unknown as ApplicationRegistry),
       ...extensions.applications,
     },
     renderers: {
-      version: {
-        human: (outcome) => `${(outcome.report as VersionReport).version}\n`,
-        json: (outcome) => `${JSON.stringify(outcome.report)}\n`,
-      },
+      ...createCurrentRendererRegistry(program),
       ...extensions.renderers,
     },
     io: extensions.runtimePorts ?? processRuntimeIo,
   });
 
-  const program = withCliErrorBoundary(
-    new Command()
-      .name('skillsmith')
-      .description('SkillSmith installs and manages agent skills for AI coding tools.')
-      .option('-V, --version', 'Print version')
-      .helpOption('-h, --help', 'Show help')
-      .option(
-        '-v, --verbose',
-        'Verbose output; repeatable',
-        (_: string, prev: number) => prev + 1,
-        0,
-      )
-      .option('-q, --quiet', 'Suppress non-error output', false)
-      .addOption(
-        new Option('--color <mode>', 'Colorize output')
-          .choices(['auto', 'always', 'never'])
-          .default('auto'),
-      )
-      .option('-C, --cd <dir>', 'Change directory before running', '.')
-      .option('--config <file>', 'Use an explicit configuration file')
-      .option('--no-color', 'Disable color output')
-      .option('--no-prompt', 'Disable interactive prompts')
-      .option('--debug', 'Print debug traces', false),
-  );
-
-  program.action(async (opts: { version?: boolean }) => {
-    if (!opts.version) {
-      program.outputHelp();
-      return;
-    }
-    await runtime.execute({
-      application: 'version',
-      reportKind: 'version',
-      request: {},
-      context: {},
-      format: 'human',
-    });
-  });
-
-  const version = withCliErrorBoundary(
-    new Command('version').description('Print SkillSmith version').action(async () => {
+  const actionFactory: CommandActionFactory = (spec, command) => {
+    withCliErrorBoundary(command);
+    return async (...values: unknown[]) => {
+      const request = commandRequest(values);
+      const application = request.options.version === true ? 'version' : spec.application;
+      const context = CONTEXT_FREE_APPLICATIONS.has(application)
+        ? {}
+        : await createCurrentApplicationContext(command, {
+            ...(signal === undefined ? {} : { signal }),
+            ...(extensions.runtimePorts?.interaction === undefined
+              ? {}
+              : { interaction: extensions.runtimePorts.interaction }),
+          });
       await runtime.execute({
-        application: 'version',
-        reportKind: 'version',
-        request: {},
-        context: {},
-        format: 'human',
+        application,
+        reportKind: application === 'version' ? 'version' : (spec.reportKind ?? application),
+        request,
+        context,
+        format: requestedFormat(request),
       });
-    }),
-  );
+    };
+  };
 
-  const templates = [
-    withCliErrorBoundary(agentsCommand(signal)),
-    configCommand(),
-    listCommand(),
-    commandsCommand(),
-    doctorCommand(),
-    checkCommand(),
-    verifyCommand(signal),
-    promoteCommand(signal),
-    devCommand(signal),
-    installCommand(signal),
-    uninstallCommand(signal),
-    version,
-    withCliErrorBoundary(completionCommand(program)),
-    withCliErrorBoundary(helpCommand(program)),
-  ];
-  attachCommandSpecs(program, CURRENT_COMMAND_SPECS, templates);
+  program.action(actionFactory(rootSpec, program));
+  attachCommandSpecs(program, CURRENT_COMMAND_SPECS, actionFactory);
   installRuntimePreflight(program);
 
   for (const spec of extensions.additionalSpecs ?? []) {
     if (program.commands.some((command) => command.name() === spec.name)) continue;
-    addRuntimeCommand(program, spec, runtime);
+    const command = createCommandFromSpec(spec);
+    command.action(actionFactory(spec, command));
+    program.addCommand(command);
   }
 
+  const parseAsync = program.parseAsync.bind(program);
+  program.parseAsync = (async (...args: Parameters<Command['parseAsync']>) => {
+    const [argv, options] = args;
+    if (requestsEagerVersion(invocationFromParse(argv, options?.from))) {
+      await runtime.execute({
+        application: 'version',
+        reportKind: 'version',
+        request: { arguments: [], options: { version: true } },
+        context: {},
+        format: 'human',
+      });
+      return program;
+    }
+    return parseAsync(...args);
+  }) as Command['parseAsync'];
   return program;
 };

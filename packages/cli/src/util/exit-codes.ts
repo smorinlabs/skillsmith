@@ -24,6 +24,8 @@ export const exitCodeForError = (e: SkillSmithError): ExitCode => {
   switch (e.code) {
     case 'generic':
       return 1;
+    case 'invalid-argument':
+      return 2;
     case 'unknown-tool':
       return 2;
     case 'config-error':

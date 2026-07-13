@@ -1,5 +1,13 @@
 import { VERSION } from '../version.ts';
-import { type ApplicationService, type CommandOutcome, NO_MUTATION } from './types.ts';
+import { LIFECYCLE_APPLICATION_SERVICES } from './lifecycle-services.ts';
+import { CURRENT_READ_APPLICATIONS } from './read-services.ts';
+import {
+  type ApplicationService,
+  type CommandOutcome,
+  type CurrentApplicationContext,
+  type CurrentCommandRequest,
+  NO_MUTATION,
+} from './types.ts';
 
 export type VersionApplicationRequest = Readonly<Record<string, never>>;
 
@@ -21,3 +29,64 @@ export const runVersionApplication: ApplicationService<
   mutation: NO_MUTATION,
   deprecations: [],
 });
+
+export interface CliMetadataReport {
+  readonly command: 'rootHelp' | 'configHelp' | 'completion' | 'help';
+  readonly request: CurrentCommandRequest;
+}
+
+const metadataService =
+  (
+    command: CliMetadataReport['command'],
+  ): ApplicationService<CurrentCommandRequest, CliMetadataReport> =>
+  async (request): Promise<CommandOutcome<CliMetadataReport>> => ({
+    report: { command, request },
+    diagnostics: [],
+    exitClass: 'success',
+    mutation: NO_MUTATION,
+    deprecations: [],
+  });
+
+export const runRootHelpApplication = metadataService('rootHelp');
+export const runConfigHelpApplication = metadataService('configHelp');
+export const runCompletionApplication = metadataService('completion');
+export const runHelpApplication: ApplicationService<
+  CurrentCommandRequest,
+  CliMetadataReport
+> = async (request) => {
+  const topic = request.arguments[0];
+  const known = request.options.knownHelpNames;
+  if (typeof topic === 'string' && Array.isArray(known) && !known.includes(topic)) {
+    return {
+      report: { command: 'help', request },
+      diagnostics: [
+        {
+          code: 'unknown-topic',
+          severity: 'error',
+          message: `'${topic}' is not a known command or topic`,
+        },
+      ],
+      exitClass: 'usage',
+      mutation: NO_MUTATION,
+      deprecations: [],
+    };
+  }
+  return metadataService('help')(request, {} as CurrentApplicationContext);
+};
+
+export type AnyCurrentApplicationService = (
+  request: Readonly<CurrentCommandRequest>,
+  context: CurrentApplicationContext,
+) => Promise<CommandOutcome<unknown>>;
+
+/** Exact public registry consumed by the shared CLI runtime and checked against CommandSpec. */
+export const CURRENT_APPLICATION_SERVICES: Readonly<Record<string, AnyCurrentApplicationService>> =
+  Object.freeze({
+    rootHelp: runRootHelpApplication as AnyCurrentApplicationService,
+    configHelp: runConfigHelpApplication as AnyCurrentApplicationService,
+    version: runVersionApplication as unknown as AnyCurrentApplicationService,
+    completion: runCompletionApplication as AnyCurrentApplicationService,
+    help: runHelpApplication as AnyCurrentApplicationService,
+    ...CURRENT_READ_APPLICATIONS,
+    ...LIFECYCLE_APPLICATION_SERVICES,
+  });

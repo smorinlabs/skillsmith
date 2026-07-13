@@ -3,6 +3,7 @@ import {
   flipFailedError,
   flipRefusedError,
   genericError,
+  invalidArgumentError,
   ledgerError,
   permissionDeniedError,
   placementNotFoundError,
@@ -19,6 +20,10 @@ describe('SkillSmithError', () => {
       expect(e.message).toBe('boom');
       expect((e.cause as Error).message).toBe('root');
     }
+  });
+  test('invalidArgumentError carries a usage-safe message', () => {
+    const e = invalidArgumentError('not a plugin');
+    expect(e).toEqual({ code: 'invalid-argument', message: 'not a plugin' });
   });
   test('unknownToolError carries tool name', () => {
     const e = unknownToolError('foobar');

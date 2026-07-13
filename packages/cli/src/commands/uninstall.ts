@@ -1,1 +1,1 @@
-export * from '../runtime/current/uninstall.ts';
+export {};

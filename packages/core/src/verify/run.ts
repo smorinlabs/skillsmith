@@ -4,7 +4,12 @@ import { basename, join } from 'node:path';
 import { verifyClaudeCode } from '../agents/claude-code/verify.ts';
 import { verifyCodex } from '../agents/codex/verify.ts';
 import type { ScanEnv } from '../env/types.ts';
-import { type SkillSmithError, errorMessage, genericError } from '../errors.ts';
+import {
+  type SkillSmithError,
+  errorMessage,
+  genericError,
+  invalidArgumentError,
+} from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import { summarize } from './normalize.ts';
 import {
@@ -71,7 +76,7 @@ export const resolveTarget = async (
   }
 
   return err(
-    genericError(
+    invalidArgumentError(
       `'${path}' is not a plugin or skill directory (expected .claude-plugin/plugin.json, .codex-plugin/plugin.json, or SKILL.md)`,
     ),
   );

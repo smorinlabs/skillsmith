@@ -143,6 +143,180 @@ describe('shared CLI runtime adapter', () => {
     });
   });
 
+  test('contains hostile failures and return values while retaining safe semantic exits', async () => {
+    const hostile = new Proxy(
+      {
+        message: '\u001B[31mforged\r\nline\t\u001B[0m',
+      },
+      {
+        get(target, key, receiver) {
+          if (key === 'exitClass' || key === 'code' || key === 'name') {
+            throw new Error(`hostile ${String(key)} getter`);
+          }
+          return Reflect.get(target, key, receiver);
+        },
+      },
+    );
+    const human = memoryIo();
+    const humanRuntime = createCliRuntimeAdapter({
+      applications: {
+        hostile: async () => {
+          throw hostile;
+        },
+      },
+      renderers: {},
+      io: human.io,
+    });
+    const humanResult = await humanRuntime.execute({
+      application: 'hostile',
+      reportKind: 'unused',
+      request: {},
+      context: {},
+      format: 'human',
+    });
+    expect(humanResult).toMatchObject({
+      exitCode: 1,
+      failure: { exitClass: 'failure', code: 'generic', message: 'forged line' },
+    });
+    expect(human.stdout).toEqual([]);
+    expect(human.stderr).toEqual(['error: forged line\n']);
+    expect(human.exits).toEqual([1]);
+
+    const returned = memoryIo();
+    const returnedRuntime = createCliRuntimeAdapter({
+      applications: {
+        hostile: async () =>
+          new Proxy(
+            { ok: false as const, error: new Error('unreachable') },
+            {
+              has() {
+                throw new Error('hostile return-value trap\r\nforged');
+              },
+            },
+          ),
+      },
+      renderers: {},
+      io: returned.io,
+    });
+    const returnedResult = await returnedRuntime.execute({
+      application: 'hostile',
+      reportKind: 'unused',
+      request: {},
+      context: {},
+      format: 'human',
+    });
+    expect(returnedResult).toMatchObject({
+      exitCode: 1,
+      failure: {
+        exitClass: 'failure',
+        code: 'generic',
+        message: 'hostile return-value trap forged',
+      },
+    });
+    expect(returned.stdout).toEqual([]);
+    expect(returned.stderr).toEqual(['error: hostile return-value trap forged\n']);
+    expect(returned.exits).toEqual([1]);
+
+    const json = memoryIo();
+    const jsonRuntime = createCliRuntimeAdapter({
+      applications: {
+        hostile: async () => {
+          throw {
+            exitClass: 'permission',
+            code: 'bad code\r\n"x',
+            message: '\u001B[31mdenied\r\nforged\tfield\u001B[0m',
+          };
+        },
+      },
+      renderers: {},
+      io: json.io,
+    });
+    const jsonResult = await jsonRuntime.execute({
+      application: 'hostile',
+      reportKind: 'unused',
+      request: {},
+      context: {},
+      format: 'json',
+    });
+    expect(jsonResult).toMatchObject({
+      exitCode: 6,
+      failure: { exitClass: 'permission', code: 'bad-code-x', message: 'denied forged field' },
+    });
+    expect(json.stderr).toEqual([]);
+    expect(json.stdout).toEqual([
+      '{"schemaVersion":1,"kind":"error","code":"bad-code-x","message":"denied forged field","exitCode":6}\n',
+    ]);
+    expect(json.exits).toEqual([6]);
+  });
+
+  test('contains renderer failures in the requested output format', async () => {
+    const human = memoryIo();
+    const humanRuntime = createCliRuntimeAdapter({
+      applications: { fixture: async () => successOutcome() },
+      renderers: {
+        fixture: {
+          human: () => {
+            throw new Error('\u001B[31mrenderer\r\nfailed\tbadly\u001B[0m');
+          },
+          json: () => '',
+        },
+      },
+      io: human.io,
+    });
+    const humanResult = await humanRuntime.execute({
+      application: 'fixture',
+      reportKind: 'fixture',
+      request: {},
+      context: {},
+      format: 'human',
+    });
+    expect(humanResult).toMatchObject({
+      exitCode: 1,
+      failure: { exitClass: 'failure', code: 'generic', message: 'renderer failed badly' },
+    });
+    expect(human.stdout).toEqual([]);
+    expect(human.stderr).toEqual(['error: renderer failed badly\n']);
+    expect(human.exits).toEqual([1]);
+
+    const json = memoryIo();
+    const jsonRuntime = createCliRuntimeAdapter({
+      applications: { fixture: async () => successOutcome() },
+      renderers: {
+        fixture: {
+          human: () => '',
+          json: () => {
+            throw {
+              exitClass: 'capability',
+              code: 'renderer code\r\nunsafe',
+              message: '\u001B[33mJSON renderer\r\nfailed\u001B[0m',
+            };
+          },
+        },
+      },
+      io: json.io,
+    });
+    const jsonResult = await jsonRuntime.execute({
+      application: 'fixture',
+      reportKind: 'fixture',
+      request: {},
+      context: {},
+      format: 'json',
+    });
+    expect(jsonResult).toMatchObject({
+      exitCode: 4,
+      failure: {
+        exitClass: 'capability',
+        code: 'renderer-code-unsafe',
+        message: 'JSON renderer failed',
+      },
+    });
+    expect(json.stderr).toEqual([]);
+    expect(json.stdout).toEqual([
+      '{"schemaVersion":1,"kind":"error","code":"renderer-code-unsafe","message":"JSON renderer failed","exitCode":4}\n',
+    ]);
+    expect(json.exits).toEqual([4]);
+  });
+
   test('honors a semantic failure outcome after rendering its report', async () => {
     const memory = memoryIo();
     const runtime = createCliRuntimeAdapter({
@@ -175,7 +349,7 @@ describe('shared interaction policy', () => {
   const choice = {
     id: 'skill',
     message: 'Choose a skill',
-    options: [{ value: 'review', label: 'review' }],
+    choices: [{ value: 'review', label: 'review' }],
   } as const;
   const confirmation = { id: 'apply', message: 'Apply changes?' } as const;
 
@@ -191,24 +365,28 @@ describe('shared interaction policy', () => {
         stderrIsTTY: true,
       });
       const interaction = createPolicyInteraction(policy);
-      expect(await interaction.choose(choice)).toEqual({ kind: 'unavailable' });
-      expect(await interaction.confirm(confirmation)).toEqual({ kind: 'answered', value: true });
+      expect(await interaction.choose(choice)).toEqual({
+        status: 'refused',
+        reason: 'interactive input is unavailable',
+      });
+      expect(await interaction.confirm(confirmation)).toEqual({ status: 'resolved', value: true });
     }
   });
 
   test('delegates only with both TTYs and converts an abort to cancellation', async () => {
     const calls: string[] = [];
     const interactive: InteractionPort = {
-      choose: async <T>(request: { readonly options: readonly { readonly value: T }[] }) => {
+      mode: 'interactive',
+      choose: async <T>(request: { readonly choices: readonly { readonly value: T }[] }) => {
         calls.push('choose');
-        const selected = request.options[0];
+        const selected = request.choices[0];
         return selected === undefined
-          ? { kind: 'unavailable' }
-          : { kind: 'answered', value: selected.value };
+          ? { status: 'refused', reason: 'empty' }
+          : { status: 'resolved', value: selected.value };
       },
       confirm: async () => {
         calls.push('confirm');
-        return { kind: 'answered', value: false };
+        return { status: 'resolved', value: false };
       },
     };
     const controller = new AbortController();
@@ -223,11 +401,14 @@ describe('shared interaction policy', () => {
       }),
       interactive,
     );
-    expect(await interaction.choose(choice)).toEqual({ kind: 'answered', value: 'review' });
+    expect(await interaction.choose(choice)).toEqual({ status: 'resolved', value: 'review' });
     controller.abort();
-    expect(await interaction.confirm(confirmation)).toEqual({ kind: 'cancelled' });
+    expect(await interaction.confirm(confirmation)).toEqual({ status: 'cancelled' });
     expect(calls).toEqual(['choose']);
 
-    expect(await noninteractiveInteraction().choose(choice)).toEqual({ kind: 'unavailable' });
+    expect(await noninteractiveInteraction().choose(choice)).toEqual({
+      status: 'refused',
+      reason: 'interactive input is unavailable',
+    });
   });
 });

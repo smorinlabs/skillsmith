@@ -5,12 +5,15 @@ import { pathToFileURL } from 'node:url';
 import { walk } from '../../../packages/cli/src/completion/walk.ts';
 import { canonicalizeCommanderTree } from '../../../packages/cli/src/contracts/commander-surface.ts';
 import { buildProgram } from '../../../packages/cli/src/program.ts';
+import type { RuntimeOutcome } from '../../../packages/cli/src/runtime/adapter.ts';
+import { createCurrentRendererRegistry } from '../../../packages/cli/src/runtime/current-renderers.ts';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
 
 const ROOT = resolve(import.meta.dir, '../../..');
 const COMMANDS_ROOT = join(ROOT, 'packages/cli/src/commands');
 const PROGRAM = join(ROOT, 'packages/cli/src/program.ts');
+const CLI_INDEX = join(ROOT, 'packages/cli/src/index.ts');
 const CORE_INDEX = join(ROOT, 'packages/core/src/index.ts');
 
 const SPEC_MODULES = [
@@ -68,6 +71,8 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 const exportedSpecArray = (module: UnknownRecord): readonly UnknownRecord[] => {
+  const named = module.CURRENT_COMMAND_SPECS;
+  if (Array.isArray(named) && named.length > 0 && named.every(record)) return named;
   const candidates = Object.values(module).filter(
     (value): value is readonly UnknownRecord[] =>
       Array.isArray(value) && value.length > 0 && value.every(record),
@@ -150,6 +155,14 @@ describe('EWP-P1-TS07', () => {
       .filter((path) => path !== 'skillsmith');
     expect([...specPaths.keys()].sort()).toEqual([...livePaths].sort());
 
+    const loadedApplications = await importFirst(APPLICATION_MODULES);
+    expect(loadedApplications).not.toBeNull();
+    const applicationRegistry = loadedApplications?.module.CURRENT_APPLICATION_SERVICES;
+    expect(
+      record(applicationRegistry),
+      'public core must export the exact current application-service registry',
+    ).toBeTrue();
+
     for (const path of livePaths) {
       const spec = specPaths.get(path);
       expect(spec, `${path} has no declarative CommandSpec`).toBeDefined();
@@ -179,6 +192,22 @@ describe('EWP-P1-TS07', () => {
           `${path} must close on one application-service entry point`,
         ).toBeTrue();
       }
+      const service = applicationRef(spec);
+      expect(typeof service, `${path} application reference must be a registry key`).toBe('string');
+      if (typeof service === 'string' && record(applicationRegistry)) {
+        expect(
+          typeof applicationRegistry[service],
+          `${path} application '${service}' is not registered`,
+        ).toBe('function');
+      }
+    }
+    if (record(applicationRegistry)) {
+      const referenced = [
+        ...new Set(
+          specs.map(applicationRef).filter((value): value is string => typeof value === 'string'),
+        ),
+      ].sort();
+      expect(Object.keys(applicationRegistry).sort()).toEqual(referenced);
     }
   });
 
@@ -205,6 +234,18 @@ describe('EWP-P1-TS07', () => {
     const program = await readFile(PROGRAM, 'utf8');
     expect(program).not.toMatch(/\bdefaultScanEnv\b|\bprocess\.(?:exit|stdout|stderr|stdin)\b/);
     expect(program).not.toMatch(/\.command\(['"]version['"]\)/);
+    expect(program).not.toMatch(/runtime\/current\/|commands\//);
+
+    const cliIndex = await readFile(CLI_INDEX, 'utf8');
+    expect(cliIndex).not.toMatch(/\.outputHelp\(/);
+
+    const relocated = await typescriptFiles(join(ROOT, 'packages/cli/src/runtime/current')).catch(
+      () => [],
+    );
+    expect(
+      relocated,
+      'legacy command runtimes must not be relocated under runtime/current',
+    ).toEqual([]);
   });
 
   test('the public core boundary owns CommandOutcome and all semantic failure classes', async () => {
@@ -275,6 +316,105 @@ describe('EWP-P1-TS07', () => {
     ).toBeTrue();
   });
 
+  test('global --version short-circuits every command position through the shared runtime', async () => {
+    const invocations = [
+      ['agents', '--version'],
+      ['--version', 'agents'],
+      ['doctor', '--version'],
+      ['install', '--version'],
+      ['install', '-V'],
+      ['--version', '-qv'],
+    ] as const;
+    const contexts: unknown[] = [];
+    const commandCalls: string[] = [];
+
+    for (const invocation of invocations) {
+      const writes = { stdout: [] as string[], stderr: [] as string[], exits: [] as number[] };
+      const program = buildProgram(undefined, {
+        applications: {
+          version: async (_request, context) => {
+            contexts.push(context);
+            return {
+              report: { version: '1.2.3-runtime-canary' },
+              diagnostics: [],
+              exitClass: 'success',
+              mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+              deprecations: [],
+            };
+          },
+          agents: async () => {
+            commandCalls.push('agents');
+            throw new Error('agents discovery must not run for --version');
+          },
+          doctor: async () => {
+            commandCalls.push('doctor');
+            throw new Error('doctor discovery must not run for --version');
+          },
+          install: async () => {
+            commandCalls.push('install');
+            throw new Error('install validation and discovery must not run for --version');
+          },
+        },
+        renderers: {
+          version: {
+            human: (outcome) => `${(outcome.report as { version: string }).version}\n`,
+            json: (outcome) => `${JSON.stringify(outcome.report)}\n`,
+          },
+        },
+        runtimePorts: {
+          stdout: { write: (value) => writes.stdout.push(value) },
+          stderr: { write: (value) => writes.stderr.push(value) },
+          exit: (code) => writes.exits.push(code),
+        },
+      });
+
+      await program.parseAsync(['node', 'skillsmith', ...invocation]);
+      expect(writes).toEqual({
+        stdout: ['1.2.3-runtime-canary\n'],
+        stderr: [],
+        exits: [0],
+      });
+    }
+
+    expect(commandCalls).toEqual([]);
+    expect(contexts).toEqual([{}, {}, {}, {}, {}, {}]);
+  });
+
+  test('eager version parsing respects value-taking short options inside clusters', async () => {
+    const calls: string[] = [];
+    const writes: string[] = [];
+    const program = buildProgram(undefined, {
+      applications: {
+        version: async () => {
+          calls.push('version');
+          throw new Error('the V after -C is a directory value, not the version flag');
+        },
+        install: async () => {
+          calls.push('install');
+          return {
+            report: { invoked: true },
+            diagnostics: [],
+            exitClass: 'success',
+            mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+            deprecations: [],
+          };
+        },
+      },
+      renderers: {
+        install: { human: () => 'install-ran\n', json: () => '{"install":true}' },
+      },
+      runtimePorts: {
+        stdout: { write: (value) => writes.push(value) },
+        stderr: { write: (value) => writes.push(value) },
+        exit: () => {},
+      },
+    });
+
+    await program.parseAsync(['node', 'skillsmith', '-qCV', 'install', 'source']);
+    expect(calls).toEqual(['install']);
+    expect(writes).toEqual(['install-ran\n']);
+  });
+
   test('one fixture spec drives parser, help, completion, docs inventory, and execution', async () => {
     const fixture = {
       name: 'fixture',
@@ -308,7 +448,7 @@ describe('EWP-P1-TS07', () => {
       ],
       examples: ['skillsmith fixture sample --mode safe'],
       capability: 'read',
-      reportKind: 'fixture',
+      reportKind: 'fixture-renderer',
       application: 'fixture',
     } as const;
     const writes = { stdout: [] as string[], stderr: [] as string[], exits: [] as number[] };
@@ -328,7 +468,7 @@ describe('EWP-P1-TS07', () => {
       additionalSpecs: [fixture],
       applications: { fixture: application },
       renderers: {
-        fixture: {
+        'fixture-renderer': {
           human: () => 'fixture-human\n',
           json: () => '{"kind":"fixture"}\n',
         },
@@ -378,6 +518,140 @@ describe('EWP-P1-TS07', () => {
     expect(writes.exits.at(-1) ?? 0).toBe(0);
   });
 
+  test('a current command resolves injected application and renderer registries through runtime IO', async () => {
+    const writes = { stdout: [] as string[], stderr: [] as string[], exits: [] as number[] };
+    let calls = 0;
+    const program = buildProgram(undefined, {
+      applications: {
+        agents: async () => {
+          calls++;
+          return {
+            report: { injected: true },
+            diagnostics: [],
+            exitClass: 'success',
+            mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+            deprecations: [],
+          };
+        },
+      },
+      renderers: {
+        agents: {
+          human: () => 'injected-agents\n',
+          json: () => '{"injected":true}\n',
+        },
+      },
+      runtimePorts: {
+        stdout: { write: (value) => writes.stdout.push(value) },
+        stderr: { write: (value) => writes.stderr.push(value) },
+        exit: (code) => writes.exits.push(code),
+      },
+    });
+    await program.parseAsync(['node', 'skillsmith', 'agents']);
+    expect(calls).toBe(1);
+    expect(writes.stdout).toEqual(['injected-agents\n']);
+    expect(writes.stderr).toEqual([]);
+    expect(writes.exits).toEqual([0]);
+  });
+
+  test('bare root resolves its declared help application through shared runtime IO', async () => {
+    const writes = { stdout: [] as string[], stderr: [] as string[], exits: [] as number[] };
+    let calls = 0;
+    let receivedContext: unknown;
+    const program = buildProgram(undefined, {
+      applications: {
+        rootHelp: async (_request, context) => {
+          calls++;
+          receivedContext = context;
+          return {
+            report: { injected: true },
+            diagnostics: [],
+            exitClass: 'success',
+            mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+            deprecations: [],
+          };
+        },
+      },
+      renderers: {
+        rootHelp: {
+          human: () => 'injected-root-help\n',
+          json: () => '{"injected":true}\n',
+        },
+      },
+      runtimePorts: {
+        stdout: { write: (value) => writes.stdout.push(value) },
+        stderr: { write: (value) => writes.stderr.push(value) },
+        exit: (code) => writes.exits.push(code),
+      },
+    });
+
+    await program.parseAsync(['node', 'skillsmith']);
+    expect(calls).toBe(1);
+    expect(receivedContext).toEqual({});
+    expect(writes).toEqual({ stdout: ['injected-root-help\n'], stderr: [], exits: [0] });
+  });
+
+  test('lifecycle renderers preserve partial reports and item diagnostics on semantic failure', () => {
+    const program = buildProgram();
+    const renderer = createCurrentRendererRegistry(program).dev;
+    expect(renderer).toBeDefined();
+    if (renderer === undefined) return;
+    const outcome = {
+      report: {
+        command: 'dev',
+        value: {
+          op: 'dev',
+          dryRun: false,
+          requested: { targets: ['example'], all: false, tools: ['codex'], explicitTools: true },
+          results: [
+            {
+              skill: 'example',
+              tool: 'codex',
+              scope: 'user',
+              action: 'refused',
+              placementPath: null,
+              reason: 'no prior state',
+              before: null,
+              after: null,
+              store: null,
+              verify: null,
+              error: { code: 'flip-refused', message: 'no prior state' },
+            },
+          ],
+          summary: {
+            flipped: 0,
+            updated: 0,
+            noop: 0,
+            skipped: 0,
+            refused: 1,
+            failed: 0,
+            rolledBack: 0,
+            created: 0,
+            adopted: 0,
+          },
+        },
+      },
+      diagnostics: [
+        { code: 'skillsmith.flip-refused', severity: 'error', message: 'no prior state' },
+      ],
+      exitClass: 'usage',
+      mutation: { kind: 'none', planned: 1, changed: 0, unchanged: 0, failed: 1 },
+      deprecations: [],
+    } as unknown as RuntimeOutcome;
+
+    const human = renderer.human(outcome);
+    const json = renderer.json(outcome);
+    const jsonStdout = typeof json === 'string' ? json : (json.stdout ?? '');
+    expect(human).toMatchObject({
+      stdout: expect.stringContaining('1 refused.  Exit code: 2'),
+      stderr: 'error: example (codex): no prior state\n',
+    });
+    expect(json).toMatchObject({
+      stdout: expect.stringContaining('"refused"'),
+      stderr: 'error: example (codex): no prior state\n',
+    });
+    expect(jsonStdout.endsWith('\n')).toBeFalse();
+  });
+
   test('spawned current commands preserve representative human, JSON, and usage-error parity', async () => {
     const [human, json, usage] = await Promise.all([
       runCli(['agents', '--tool', 'ghost']),
@@ -417,6 +691,8 @@ describe('EWP-P1-TS07', () => {
     expect(runtime).toContain('cancelled');
     expect(runtime).toContain('130');
     expect(runtime).toMatch(/isTTY|stdin|stderr/);
+    expect(runtime).toMatch(/from ['"]@skillsmith\/core['"]/);
+    expect(runtime).not.toMatch(/interface InteractionPort\b/);
 
     const commandSources = await Promise.all(
       (await typescriptFiles(COMMANDS_ROOT)).map((path) => readFile(path, 'utf8')),

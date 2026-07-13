@@ -80,8 +80,9 @@ and confirmation injectable while TTY, JSON, approval, and noninteractive policy
 the existing `ScanEnv` facade, resolved project context/config, interaction, and signal. G1-04 owns
 the replacement with capability-scoped ports. The first service, `runVersionApplication`, is a
 zero-discovery canary and does not read environment, cwd, project, or config state. The current
-parser graph is reconstructed from `CommandSpec`; compatibility action adapters now live under the
-shared CLI runtime rather than command-local modules.
+parser graph is reconstructed from `CommandSpec`; one action factory resolves every current command
+through the public application registry and shared renderer/exit adapter. Legacy command-local
+runtime handlers have been removed.
 
 ## Result-based error handling
 

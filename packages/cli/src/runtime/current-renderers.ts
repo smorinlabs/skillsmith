@@ -1,0 +1,312 @@
+import {
+  type AgentsReport,
+  CONFIG_KEYS,
+  type CliMetadataReport,
+  type CommandsReport,
+  type ConfigGetReport,
+  type ConfigListReport,
+  type ConfigSetReport,
+  type ConfigUnsetReport,
+  type DevApplicationReport,
+  type FlipReport,
+  type HealthReport,
+  type InstallApplicationReport,
+  type InstallReport,
+  type ListReport,
+  type PromoteApplicationReport,
+  type UninstallApplicationReport,
+  type UninstallReport,
+  type VerifyApplicationReport,
+  type VersionReport,
+  getConfigValue,
+} from '@skillsmith/core';
+import type { Command } from 'commander';
+import { runCompletion } from '../completion/run.ts';
+import { HELP_TOPIC_NAMES, renderTopic } from '../help/topics.ts';
+import { renderAgentsJson } from '../output/agents-json.ts';
+import { renderAgentsMarkdown } from '../output/agents-markdown.ts';
+import { renderCommandsHuman } from '../output/commands-human.ts';
+import { renderCommandsJson } from '../output/commands-json.ts';
+import { renderDoctorHuman } from '../output/doctor-human.ts';
+import { renderDoctorJson } from '../output/doctor-json.ts';
+import { renderCliError } from '../output/error-boundary.ts';
+import { renderFlipHuman } from '../output/flip-human.ts';
+import { renderFlipJson } from '../output/flip-json.ts';
+import { renderInstallHuman, renderUninstallHuman } from '../output/install-human.ts';
+import { renderInstallJson, renderUninstallJson } from '../output/install-json.ts';
+import { renderListHuman } from '../output/list-human.ts';
+import { renderListJson } from '../output/list-json.ts';
+import { renderVerifyHuman } from '../output/verify-human.ts';
+import { renderVerifyJson } from '../output/verify-json.ts';
+import type { RendererRegistry, RuntimeOutcome } from './adapter.ts';
+import { exitCodeForClass } from './adapter.ts';
+
+type RenderableOutcome<T> = RuntimeOutcome & { readonly report: T };
+
+const report = <T>(outcome: RuntimeOutcome): T => (outcome as RenderableOutcome<T>).report;
+
+const warningOutput = (outcome: RuntimeOutcome): string =>
+  `${outcome.diagnostics
+    .filter((diagnostic) => diagnostic.severity === 'warning')
+    .map(
+      (diagnostic) =>
+        `warning: ${diagnostic.message}${diagnostic.remediation ? `; ${diagnostic.remediation}` : ''}\n`,
+    )
+    .join('')}${outcome.deprecations
+    .map(
+      (item) =>
+        `warning: ${item.message}; use ${item.replacement} (removal no earlier than ${item.removalVersion})\n`,
+    )
+    .join('')}`;
+
+const errorOutput = (outcome: RuntimeOutcome, format: 'human' | 'json') => {
+  const diagnostic = outcome.diagnostics.find((item) => item.severity === 'error');
+  if (diagnostic === undefined) return null;
+  const exitCode = exitCodeForClass(outcome.exitClass);
+  const code =
+    diagnostic.code === 'invalid-argument' ? 'commander.invalidArgument' : diagnostic.code;
+  const rendered = renderCliError({ code, message: diagnostic.message, exitCode }, format);
+  return format === 'human' ? { stderr: rendered } : { stdout: rendered };
+};
+
+const withDiagnostics = (
+  outcome: RuntimeOutcome,
+  stdout: string,
+): { readonly stdout: string; readonly stderr?: string } => {
+  const warnings = warningOutput(outcome);
+  return warnings.length === 0 ? { stdout } : { stdout, stderr: warnings };
+};
+
+const guarded = <T>(
+  renderHuman: (value: T, outcome: RuntimeOutcome) => string | { stdout?: string; stderr?: string },
+  renderJson: (value: T, outcome: RuntimeOutcome) => string | { stdout?: string; stderr?: string },
+) => ({
+  human: (outcome: RuntimeOutcome) =>
+    errorOutput(outcome, 'human') ?? renderHuman(report<T>(outcome), outcome),
+  json: (outcome: RuntimeOutcome) =>
+    errorOutput(outcome, 'json') ?? renderJson(report<T>(outcome), outcome),
+});
+
+const renderedLifecycleOutput = (stdout: string, stderr: string) =>
+  stderr.length === 0 ? { stdout } : { stdout, stderr };
+
+const itemLine = (level: 'error' | 'warning', label: string, reason: string): string => {
+  const rendered = renderCliError(
+    { code: 'lifecycle-item', message: `${label}: ${reason}`, exitCode: level === 'error' ? 1 : 0 },
+    'human',
+  );
+  return level === 'error' ? rendered : rendered.replace(/^error:/, 'warning:');
+};
+
+const installStderr = (value: InstallReport): string =>
+  value.results
+    .map((item) => {
+      const label = item.skill ? `${item.skill}${item.tool ? ` (${item.tool})` : ''}` : item.source;
+      if (item.action === 'refused' || item.action === 'failed') {
+        const candidates = item.candidates ?? [];
+        return `${itemLine('error', label, item.reason ?? item.action)}${
+          candidates.length === 0
+            ? ''
+            : `\n${candidates.map((candidate) => `  ${candidate}`).join('\n')}\n\nRe-run with one of the exact paths above.\n`
+        }`;
+      }
+      return item.action !== 'noop' && item.reason ? itemLine('warning', label, item.reason) : '';
+    })
+    .join('');
+
+const uninstallStderr = (value: UninstallReport): string =>
+  value.results
+    .map((item) => {
+      const label = `${item.skill}${item.tool ? ` (${item.tool})` : ''}`;
+      if (item.action === 'refused' || item.action === 'failed') {
+        return itemLine('error', label, item.reason ?? item.action);
+      }
+      return item.action !== 'noop' && item.reason ? itemLine('warning', label, item.reason) : '';
+    })
+    .join('');
+
+const flipStderr = (value: FlipReport): string =>
+  value.results
+    .map((item) => {
+      const label = `${item.skill}${item.tool ? ` (${item.tool})` : ''}`;
+      if (item.action === 'refused' || item.action === 'failed') {
+        return itemLine('error', label, item.reason ?? item.action);
+      }
+      return item.reason ? itemLine('warning', label, item.reason) : '';
+    })
+    .join('');
+
+const lifecycleRenderer = <T>(
+  human: (value: T, outcome: RuntimeOutcome) => string,
+  json: (value: T) => string,
+  stderr: (value: T) => string,
+) => ({
+  human: (outcome: RuntimeOutcome) => {
+    const value = report<{ readonly value: T | null }>(outcome).value;
+    return value === null
+      ? (errorOutput(outcome, 'human') ?? '')
+      : renderedLifecycleOutput(human(value, outcome), stderr(value));
+  },
+  json: (outcome: RuntimeOutcome) => {
+    const value = report<{ readonly value: T | null }>(outcome).value;
+    return value === null
+      ? (errorOutput(outcome, 'json') ?? '')
+      : renderedLifecycleOutput(json(value), stderr(value));
+  },
+});
+
+const configListHuman = (value: ConfigListReport): string => {
+  const lines: string[] = [];
+  if (value.scope !== undefined) {
+    for (const key of CONFIG_KEYS) {
+      const selected = getConfigValue(value.layers[value.scope], key);
+      if (selected !== undefined) lines.push(`${key} = ${JSON.stringify(selected)}`);
+    }
+  } else {
+    for (const key of CONFIG_KEYS) {
+      const source = value.sources[key];
+      if (source === undefined) continue;
+      const selected = getConfigValue(value.layers[source], key);
+      if (selected !== undefined)
+        lines.push(`${key} = ${JSON.stringify(selected)}    # source: ${source}`);
+    }
+  }
+  return `${lines.join('\n')}\n`;
+};
+
+const metadataRenderer = (root: Command) =>
+  guarded<CliMetadataReport>(
+    (value) => {
+      if (value.command === 'rootHelp') return root.helpInformation();
+      if (value.command === 'configHelp')
+        return (
+          root.commands.find((command) => command.name() === 'config')?.helpInformation() ?? ''
+        );
+      if (value.command === 'completion') {
+        const shell = value.request.arguments[0];
+        return typeof shell === 'string'
+          ? runCompletion(root, shell as 'bash' | 'zsh' | 'fish')
+          : '';
+      }
+      const topic = value.request.arguments[0];
+      if (typeof topic !== 'string') return root.helpInformation();
+      if ((HELP_TOPIC_NAMES as readonly string[]).includes(topic)) {
+        const rendered = renderTopic(topic);
+        return rendered.ok ? `${rendered.value}\n` : '';
+      }
+      return root.commands.find((command) => command.name() === topic)?.helpInformation() ?? '';
+    },
+    (value) => JSON.stringify(value),
+  );
+
+export const createCurrentRendererRegistry = (root: Command): RendererRegistry => {
+  const metadata = metadataRenderer(root);
+  return {
+    rootHelp: metadata,
+    configHelp: metadata,
+    completion: metadata,
+    help: metadata,
+    version: guarded<VersionReport>(
+      (value) => `${value.version}\n`,
+      (value) => `${JSON.stringify(value)}\n`,
+    ),
+    agents: guarded<AgentsReport>(
+      (value, outcome) =>
+        withDiagnostics(
+          outcome,
+          `${renderAgentsMarkdown(value.detections as Map<never, never>, {
+            detectedOnly: value.detectedOnly,
+          })}\n`,
+        ),
+      (value) => `${renderAgentsJson(value.detections as Map<never, never>)}\n`,
+    ),
+    configGet: guarded<ConfigGetReport>(
+      (value, outcome) => withDiagnostics(outcome, `${value.value ?? ''}\n`),
+      (value) =>
+        `${JSON.stringify(
+          {
+            key: value.key,
+            value: value.value,
+            ...(value.source === undefined ? {} : { source: value.source }),
+          },
+          null,
+          2,
+        )}\n`,
+    ),
+    configSet: guarded<ConfigSetReport>(
+      (value) => ({ stderr: `wrote ${value.file ?? ''}\n` }),
+      (value) => `${JSON.stringify(value)}\n`,
+    ),
+    configList: guarded<ConfigListReport>(
+      (value, outcome) => withDiagnostics(outcome, configListHuman(value)),
+      (value) =>
+        `${JSON.stringify(
+          value.scope === undefined
+            ? { effective: value.effective, sources: value.sources, layers: value.layers }
+            : value.layers[value.scope],
+          null,
+          2,
+        )}`,
+    ),
+    configUnset: guarded<ConfigUnsetReport>(
+      (value) => ({ stderr: `updated ${value.file ?? ''}\n` }),
+      (value) => `${JSON.stringify(value)}\n`,
+    ),
+    list: guarded<ListReport>(
+      (value, outcome) =>
+        withDiagnostics(outcome, renderListHuman(value.entries, { long: value.long })),
+      (value) => renderListJson(value.entries),
+    ),
+    commands: guarded<CommandsReport>(
+      (value, outcome) =>
+        withDiagnostics(outcome, renderCommandsHuman(value.entries, { long: value.long })),
+      (value) => renderCommandsJson(value.entries),
+    ),
+    doctor: guarded<HealthReport>(
+      (value, outcome) =>
+        withDiagnostics(outcome, value.result === null ? '' : renderDoctorHuman(value.result)),
+      (value, outcome) =>
+        value.result === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : renderDoctorJson(value.result, outcome.deprecations),
+    ),
+    check: guarded<HealthReport>(
+      (value, outcome) =>
+        withDiagnostics(outcome, value.result === null ? '' : renderDoctorHuman(value.result)),
+      (value, outcome) =>
+        value.result === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : renderDoctorJson(value.result, outcome.deprecations),
+    ),
+    verify: guarded<VerifyApplicationReport>(
+      (value, outcome) =>
+        value.result === null
+          ? (errorOutput(outcome, 'human') ?? '')
+          : renderVerifyHuman(value.result, exitCodeForClass(outcome.exitClass)),
+      (value, outcome) =>
+        value.result === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : renderVerifyJson(value.result),
+    ),
+    install: lifecycleRenderer<NonNullable<InstallApplicationReport['value']>>(
+      (value, outcome) => renderInstallHuman(value, exitCodeForClass(outcome.exitClass)),
+      renderInstallJson,
+      installStderr,
+    ),
+    uninstall: lifecycleRenderer<NonNullable<UninstallApplicationReport['value']>>(
+      (value, outcome) => renderUninstallHuman(value, exitCodeForClass(outcome.exitClass)),
+      renderUninstallJson,
+      uninstallStderr,
+    ),
+    dev: lifecycleRenderer<NonNullable<DevApplicationReport['value']>>(
+      (value, outcome) => renderFlipHuman(value, exitCodeForClass(outcome.exitClass)),
+      renderFlipJson,
+      flipStderr,
+    ),
+    promote: lifecycleRenderer<NonNullable<PromoteApplicationReport['value']>>(
+      (value, outcome) => renderFlipHuman(value, exitCodeForClass(outcome.exitClass)),
+      renderFlipJson,
+      flipStderr,
+    ),
+  };
+};

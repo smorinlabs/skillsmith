@@ -1,31 +1,5 @@
-export type InteractionAnswer<T> =
-  | { readonly kind: 'answered'; readonly value: T }
-  | { readonly kind: 'unavailable' }
-  | { readonly kind: 'cancelled' };
-
-export interface ChoiceOption<T> {
-  readonly value: T;
-  readonly label: string;
-  readonly hint?: string;
-}
-
-export interface ChoiceRequest<T> {
-  readonly id: string;
-  readonly message: string;
-  readonly options: readonly ChoiceOption<T>[];
-}
-
-export interface ConfirmRequest {
-  readonly id: string;
-  readonly message: string;
-  readonly initialValue?: boolean;
-}
-
-/** Choice and confirmation are capabilities; services never import a prompt implementation. */
-export interface InteractionPort {
-  choose<T>(request: ChoiceRequest<T>): Promise<InteractionAnswer<T>>;
-  confirm(request: ConfirmRequest): Promise<InteractionAnswer<boolean>>;
-}
+import { confirm, isCancel, select } from '@clack/prompts';
+import type { InteractionPort, InteractionRequest, InteractionResolution } from '@skillsmith/core';
 
 export interface InteractionPolicyInput {
   readonly json: boolean;
@@ -42,7 +16,6 @@ export interface ResolvedInteractionPolicy {
   readonly signal?: AbortSignal;
 }
 
-/** Resolve global/format/TTY policy once, before an application service starts. */
 export const resolveInteractionPolicy = (
   input: InteractionPolicyInput,
 ): ResolvedInteractionPolicy => ({
@@ -51,36 +24,59 @@ export const resolveInteractionPolicy = (
   ...(input.signal === undefined ? {} : { signal: input.signal }),
 });
 
-const cancelled = <T>(): InteractionAnswer<T> => ({ kind: 'cancelled' });
-const unavailable = <T>(): InteractionAnswer<T> => ({ kind: 'unavailable' });
-
-export const noninteractiveInteraction = (): InteractionPort => ({
-  choose: async () => unavailable(),
-  confirm: async () => unavailable(),
+const cancelled = <T>(): InteractionResolution<T> => ({ status: 'cancelled' });
+const refused = <T>(reason = 'interactive input is unavailable'): InteractionResolution<T> => ({
+  status: 'refused',
+  reason,
 });
 
-/**
- * Apply cancellation, noninteractive and `--yes` policy around the sole interactive adapter.
- * `--yes` answers confirmations only; it must never auto-select an ambiguous choice.
- */
+export const noninteractiveInteraction = (): InteractionPort => ({
+  mode: 'noninteractive',
+  choose: async () => refused(),
+  confirm: async () => refused(),
+});
+
+/** The sole @clack adapter; application services depend only on the public core port. */
+export const promptInteraction = (): InteractionPort => ({
+  mode: 'interactive',
+  choose: async <T>(request: InteractionRequest<T>): Promise<InteractionResolution<T>> => {
+    const answer = await select({
+      message: request.message,
+      options: request.choices.map((choice) => ({
+        value: choice.value,
+        label: choice.label,
+        hint: choice.hint ?? '',
+      })) as never[],
+    });
+    return isCancel(answer) ? cancelled() : { status: 'resolved', value: answer as T };
+  },
+  confirm: async (request): Promise<InteractionResolution<boolean>> => {
+    const answer = await confirm({ message: request.message });
+    return isCancel(answer) ? cancelled() : { status: 'resolved', value: Boolean(answer) };
+  },
+});
+
 export const createPolicyInteraction = (
   policy: ResolvedInteractionPolicy,
-  interactive: InteractionPort = noninteractiveInteraction(),
+  interactive: InteractionPort = promptInteraction(),
 ): InteractionPort => {
   const wasCancelled = (): boolean => policy.signal?.aborted === true;
   return {
-    choose: async <T>(request: ChoiceRequest<T>): Promise<InteractionAnswer<T>> => {
+    mode: policy.interactive ? 'interactive' : 'noninteractive',
+    choose: async <T>(request: InteractionRequest<T>): Promise<InteractionResolution<T>> => {
       if (wasCancelled()) return cancelled();
-      if (!policy.interactive) return unavailable();
+      if (!policy.interactive) return refused();
       const answer = await interactive.choose(request);
       return wasCancelled() ? cancelled() : answer;
     },
-    confirm: async (request: ConfirmRequest): Promise<InteractionAnswer<boolean>> => {
+    confirm: async (request): Promise<InteractionResolution<boolean>> => {
       if (wasCancelled()) return cancelled();
-      if (policy.autoConfirm) return { kind: 'answered', value: true };
-      if (!policy.interactive) return unavailable();
+      if (policy.autoConfirm) return { status: 'resolved', value: true };
+      if (!policy.interactive) return refused();
       const answer = await interactive.confirm(request);
       return wasCancelled() ? cancelled() : answer;
     },
   };
 };
+
+export type { InteractionPort, InteractionRequest, InteractionResolution } from '@skillsmith/core';

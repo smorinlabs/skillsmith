@@ -101,9 +101,21 @@ export interface InteractionPort {
 export interface CurrentApplicationContext {
   readonly env: ScanEnv;
   readonly interaction: InteractionPort;
+  readonly invocationCwd: string;
+  readonly envVars: Readonly<Record<string, string | undefined>>;
+  readonly globalOptions: {
+    readonly cd?: string;
+    readonly config?: string;
+  };
   readonly projectContext?: ProjectContext;
   readonly effectiveConfig?: EffectiveConfig;
   readonly signal?: AbortSignal;
+}
+
+/** Parser-normalized request shared by the declarative CLI adapter and current services. */
+export interface CurrentCommandRequest {
+  readonly arguments: readonly unknown[];
+  readonly options: Readonly<Record<string, unknown>>;
 }
 
 export type ApplicationService<

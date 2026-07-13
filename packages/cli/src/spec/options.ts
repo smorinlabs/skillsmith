@@ -18,6 +18,107 @@ const ALLOWED_SCOPES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith uninstall': ['user', 'project'],
 };
 
+const DEFAULT_OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  '--help': 'Show help for this command',
+  '--tool': 'Restrict to a target tool; repeat to select more than one',
+  '--scope': 'Restrict to a supported installation scope',
+  '--user': 'Shorthand for --scope=user',
+  '--project': 'Shorthand for --scope=project',
+  '--system': 'Shorthand for --scope=system',
+  '--managed': 'Shorthand for --scope=managed',
+  '--json': 'Emit a versioned JSON report on stdout',
+  '--strict': 'Treat warnings as failures',
+  '--dry-run': 'Show the plan without changing anything',
+  '--yes': 'Accept confirmations without prompting',
+  '--all': 'Select every eligible placement',
+  '--no-verify': 'Skip the verification gate',
+  '--rollback': 'Restore the prior placement state',
+};
+
+const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  'skillsmith:--version': 'Print version',
+  'skillsmith:--verbose': 'Verbose output; repeatable',
+  'skillsmith:--quiet': 'Suppress non-error output',
+  'skillsmith:--color': 'Colorize output: auto, always, or never',
+  'skillsmith:--no-color': 'Disable color output',
+  'skillsmith:--cd': 'Change directory before running',
+  'skillsmith:--config': 'Use an explicit configuration file',
+  'skillsmith:--no-prompt': 'Disable interactive prompts',
+  'skillsmith:--debug': 'Print debug traces',
+  'skillsmith agents:--tool': 'Narrow the scan to a tool; repeatable',
+  'skillsmith agents:--detected-only': 'Omit the "Not detected" section',
+  'skillsmith agents:--format': 'Output format: markdown or json',
+  'skillsmith list:--tool': 'Narrow to a tool; repeatable',
+  'skillsmith list:--scope': 'Narrow to an installation scope',
+  'skillsmith list:--duplicates': 'Show only cross-scope duplicates',
+  'skillsmith list:--long': 'Show paths and details',
+  'skillsmith list:--enabled': 'Show only enabled entries',
+  'skillsmith list:--disabled': 'Show only disabled entries',
+  'skillsmith list:--unconfigured': 'Show only entries that have never been toggled',
+  'skillsmith commands:--tool': 'Narrow to a tool; repeatable',
+  'skillsmith commands:--scope': 'Narrow to user or project scope',
+  'skillsmith commands:--long': 'Show paths and details',
+  'skillsmith commands:--enabled': 'Show only enabled entries',
+  'skillsmith commands:--disabled': 'Show only disabled entries',
+  'skillsmith commands:--unconfigured': 'Show only entries that have never been toggled',
+  'skillsmith config get:--scope': 'Read from user, project, or system scope',
+  'skillsmith config set:--scope': 'Write to user, project, or system scope',
+  'skillsmith config list:--scope': 'List only user, project, or system scope',
+  'skillsmith config unset:--scope': 'Remove from user, project, or system scope',
+  'skillsmith doctor:--tool': 'Limit checks to tools; repeatable',
+  'skillsmith doctor:--scope': 'Limit checks to a scope',
+  'skillsmith doctor:--file': 'Use an explicit desired-state file',
+  'skillsmith doctor:--lockfile': 'Use an explicit lockfile (requires --file)',
+  'skillsmith doctor:--all-tools': 'Diagnose every known tool instead of the configured default',
+  'skillsmith doctor:--offline': 'Skip network checks',
+  'skillsmith check:--tool': 'Limit checks to tools; repeatable',
+  'skillsmith check:--scope': 'Limit checks to a scope',
+  'skillsmith check:--file': 'Use an explicit desired-state file',
+  'skillsmith check:--lockfile': 'Use an explicit lockfile (requires --file)',
+  'skillsmith check:--all-tools': 'Check every known tool instead of the configured default',
+  'skillsmith check:--report-only': 'Report errors without failing the process',
+  'skillsmith check:--exit-code': 'Deprecated; check already exits non-zero on error findings',
+  'skillsmith verify:--tool': 'Restrict to tools; repeatable; default: all detected',
+  'skillsmith verify:--static': 'Run static verification only; this is the default',
+  'skillsmith verify:--deep': 'Also run isolated session-backed load verification',
+  'skillsmith verify:--strict': 'Treat warnings as failures (exit 1 on any warning)',
+  'skillsmith install:--tool': 'Target tool; repeatable; default: all detected',
+  'skillsmith install:--scope': 'user or project; default: project in a git repo, otherwise user',
+  'skillsmith install:--user': 'Shorthand for --scope=user',
+  'skillsmith install:--project': 'Shorthand for --scope=project',
+  'skillsmith install:--ref': 'Tag, branch, or full SHA; valid with a single source only',
+  'skillsmith install:--pin': 'Freeze the resolved commit SHA in the ledger',
+  'skillsmith install:--direct': 'Copy files instead of symlinking from the store',
+  'skillsmith install:--force': 'Reinstall, replace, or override cross-scope shadowing',
+  'skillsmith install:--strict': 'Make verify warnings block installation',
+  'skillsmith install:--no-verify': 'Skip the verify gate and record that decision in the ledger',
+  'skillsmith install:--deep': 'Run static and deep verification before placement',
+  'skillsmith install:--continue-on-error': 'Keep going after per-source failures',
+  'skillsmith install:--dry-run': 'Print the resolved plan without changing anything',
+  'skillsmith install:--yes': 'Accepted no-op; ambiguity still requires an explicit choice',
+  'skillsmith uninstall:--tool': 'Restrict removal to tools; repeatable',
+  'skillsmith uninstall:--scope': 'Restrict removal to user or project scope',
+  'skillsmith uninstall:--all-scopes': 'Remove from user scope and the current project',
+  'skillsmith uninstall:--force': 'Remove dev-mode or unmanaged placements too',
+  'skillsmith uninstall:--dry-run': 'Print removals without executing them',
+  'skillsmith uninstall:--yes': 'Accepted no-op; uninstall never prompts',
+  'skillsmith dev:--all': 'Demote every pinned placement with a recorded dev source',
+  'skillsmith dev:--tool': 'Restrict to tools; repeatable',
+  'skillsmith dev:--source': 'Create or adopt a placement from this development source',
+  'skillsmith dev:--dest': 'Destination root for a created placement; requires one --tool',
+  'skillsmith dev:--strict': 'Treat verify warnings as blocking on create or adopt',
+  'skillsmith dev:--no-verify': 'Skip the static verify gate on create or adopt',
+  'skillsmith dev:--rollback': 'Undo the last dev flip or recover an interrupted one',
+  'skillsmith dev:--yes': 'Accepted no-op; dev never prompts',
+  'skillsmith promote:--all': 'Promote every dev-mode placement in the selected tools',
+  'skillsmith promote:--tool': 'Restrict to tools; repeatable',
+  'skillsmith promote:--strict': 'Make verify-gate warnings block promotion',
+  'skillsmith promote:--no-verify': 'Skip the verify gate and record the result as unverified',
+  'skillsmith promote:--allow-dirty': 'Allow snapshotting a dirty git tree',
+  'skillsmith promote:--rollback': 'Undo the last promotion or recover an interrupted one',
+  'skillsmith promote:--yes': 'Accepted no-op; promote never prompts',
+};
+
 type StateOption = {
   readonly flags: string;
   readonly short: string | null;
@@ -42,6 +143,9 @@ const decodeDefault = (value: string): unknown => {
 
 const optionFromState = (path: string, option: StateOption): CommandOptionSpec => {
   const long = option.long ?? option.flags;
+  const description = OPTION_DESCRIPTIONS[`${path}:${long}`] ?? DEFAULT_OPTION_DESCRIPTIONS[long];
+  if (description === undefined)
+    throw new Error(`missing current option description for ${path} ${long}`);
   const isTool = long === '--tool';
   const isScope = long === '--scope';
   const isColor = long === '--color';
@@ -74,6 +178,7 @@ const optionFromState = (path: string, option: StateOption): CommandOptionSpec =
     negated: option.negated,
     flagDefault: option.negated ? false : parsed,
     parsedDefault: parsed,
+    description,
   };
 };
 

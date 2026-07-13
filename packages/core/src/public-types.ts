@@ -18,6 +18,7 @@ export type {
   CommandExitClass,
   CommandOutcome,
   CurrentApplicationContext,
+  CurrentCommandRequest,
   Deprecation,
   Diagnostic,
   DiagnosticDetail,
@@ -28,7 +29,14 @@ export type {
   InteractionResolution,
   MutationSummary,
 } from './application/types.ts';
-export type { VersionApplicationRequest, VersionReport } from './application/current-services.ts';
+export type {
+  AnyCurrentApplicationService,
+  CliMetadataReport,
+  VersionApplicationRequest,
+  VersionReport,
+} from './application/current-services.ts';
+export type * from './application/lifecycle-services.ts';
+export type * from './application/read-services.ts';
 export type { Agent, SkillRootsCtx, SupportedTool } from './agents/types.ts';
 export type { CommandEntry } from './commands/types.ts';
 export type {

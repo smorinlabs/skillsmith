@@ -1,5 +1,6 @@
 export type SkillSmithError =
   | { code: 'generic'; message: string; cause?: unknown }
+  | { code: 'invalid-argument'; message: string }
   | { code: 'unknown-tool'; tool: string }
   | { code: 'config-error'; message: string; file?: string; line?: number }
   | { code: 'skill-parse-error'; message: string; file: string }
@@ -15,6 +16,11 @@ export const genericError = (message: string, cause?: unknown): SkillSmithError 
   code: 'generic',
   message,
   ...(cause !== undefined ? { cause } : {}),
+});
+
+export const invalidArgumentError = (message: string): SkillSmithError => ({
+  code: 'invalid-argument',
+  message,
 });
 
 export const unknownToolError = (tool: string): SkillSmithError => ({

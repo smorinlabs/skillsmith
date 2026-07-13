@@ -5,7 +5,16 @@ export {
   runUninstall,
 } from './acquire/run.ts';
 export { parseSource } from './acquire/source.ts';
-export { runVersionApplication } from './application/current-services.ts';
+export {
+  CURRENT_APPLICATION_SERVICES,
+  runCompletionApplication,
+  runConfigHelpApplication,
+  runHelpApplication,
+  runRootHelpApplication,
+  runVersionApplication,
+} from './application/current-services.ts';
+export * from './application/lifecycle-services.ts';
+export * from './application/read-services.ts';
 export { COMMAND_EXIT_CLASSES, NO_MUTATION } from './application/types.ts';
 export { getAgent, listSupportedTools, registry } from './agents/registry.ts';
 export { SUPPORTED_TOOLS } from './agents/types.ts';
@@ -34,12 +43,14 @@ export {
 } from './errors.ts';
 export type {
   Agent,
+  AnyCurrentApplicationService,
   ApplicationService,
   CandidateSkill,
   Check,
   CheckRunContext,
   CheckRunMode,
   CheckRunResult,
+  CliMetadataReport,
   CommandEntry,
   CommandExitClass,
   CommandOutcome,
@@ -48,6 +59,7 @@ export type {
   ConfigKey,
   ConfigLayer,
   CurrentApplicationContext,
+  CurrentCommandRequest,
   Deprecation,
   DetectOptions,
   Diagnostic,

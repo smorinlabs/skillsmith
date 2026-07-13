@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -75,7 +75,23 @@ interface OptionContractApi {
   readonly CURRENT_OPTION_RELATIONS: readonly {
     readonly id: string;
     readonly command: string;
-    readonly kind: 'conflicts' | 'requires' | 'cardinality' | 'exclusive-group';
+    readonly kind:
+      | 'conflicts'
+      | 'requires'
+      | 'cardinality'
+      | 'exclusive-group'
+      | 'scope-consistency';
+    readonly options?: readonly string[];
+    readonly option?: string;
+    readonly requiredOption?: string;
+    readonly whenOption?: string;
+    readonly subject?: 'positionals' | 'option-occurrences';
+    readonly exact?: number;
+    readonly maximum?: number;
+    readonly description?: string;
+    readonly label?: string;
+    readonly scopeOption?: string;
+    readonly sugars?: readonly { readonly option: string; readonly value: string }[];
   }[];
   validateCurrentCommandSpecs(): readonly string[];
   validateGlobalOptionPermutation(): readonly string[];
@@ -407,10 +423,6 @@ describe('EWP-OPT-TS03', () => {
       'skillsmith',
       'skillsmith list',
       'skillsmith commands',
-      'skillsmith config get',
-      'skillsmith config list',
-      'skillsmith config set',
-      'skillsmith config unset',
       'skillsmith doctor',
       'skillsmith check',
       'skillsmith verify',
@@ -424,6 +436,250 @@ describe('EWP-OPT-TS03', () => {
     expect(new Set(api.CURRENT_OPTION_RELATIONS.map((relation) => relation.id)).size).toBe(
       api.CURRENT_OPTION_RELATIONS.length,
     );
+    for (const relation of api.CURRENT_OPTION_RELATIONS) {
+      if (relation.kind === 'conflicts' || relation.kind === 'exclusive-group') {
+        expect(relation.options?.length, relation.id).toBeGreaterThan(1);
+      } else if (relation.kind === 'requires') {
+        expect(relation.option, relation.id).toMatch(/^--/);
+        expect(relation.requiredOption, relation.id).toMatch(/^--/);
+      } else if (relation.kind === 'scope-consistency') {
+        expect(relation.scopeOption, relation.id).toBe('--scope');
+        expect(relation.sugars?.length, relation.id).toBeGreaterThan(0);
+      } else {
+        expect(relation.whenOption, relation.id).toMatch(/^--/);
+        expect(relation.subject, relation.id).toMatch(/positionals|option-occurrences/);
+      }
+    }
+  });
+
+  test('the generic validator is connected to the declarative relation records', async () => {
+    const api = await requireOptionContractApi();
+    const relations = api.CURRENT_OPTION_RELATIONS as {
+      id: string;
+      command: string;
+      kind: 'conflicts' | 'requires' | 'cardinality' | 'exclusive-group' | 'scope-consistency';
+    }[];
+    const index = relations.findIndex(
+      (relation) => relation.command === 'skillsmith verify' && relation.kind === 'conflicts',
+    );
+    expect(index).toBeGreaterThanOrEqual(0);
+    const removed = relations.splice(index, 1)[0];
+    try {
+      expect(api.validateCurrentOptionRelations()).toContain(
+        'missing current option relations for skillsmith verify',
+      );
+      expect(api.validateOptionInvocation('skillsmith verify', ['--static', '--deep'])).toEqual({
+        ok: true,
+      });
+    } finally {
+      if (removed !== undefined) relations.splice(index, 0, removed);
+    }
+    expect(
+      api.validateOptionInvocation('skillsmith verify', ['--static', '--deep']).ok,
+    ).toBeFalse();
+  });
+
+  test('relation validation rejects unknown commands, operands, and incoherent cardinality', async () => {
+    const api = await requireOptionContractApi();
+    const relations =
+      api.CURRENT_OPTION_RELATIONS as (typeof api.CURRENT_OPTION_RELATIONS)[number][];
+    const baseline = relations.length;
+    try {
+      relations.push({
+        id: 'mutation.unknown-command',
+        command: 'skillsmith ghost',
+        kind: 'conflicts',
+        options: ['--quiet', '--verbose'],
+        description: 'mutation fixture',
+      });
+      expect(api.validateCurrentOptionRelations()).toContain(
+        'mutation.unknown-command references unknown command skillsmith ghost',
+      );
+      relations.pop();
+
+      relations.push({
+        id: 'mutation.unknown-operand',
+        command: 'skillsmith doctor',
+        kind: 'conflicts',
+        options: ['--all-tools', '--ghost'],
+        description: 'mutation fixture',
+      });
+      expect(api.validateCurrentOptionRelations()).toContain(
+        'mutation.unknown-operand has unknown option --ghost',
+      );
+      relations.pop();
+
+      relations.push({
+        id: 'mutation.bad-cardinality',
+        command: 'skillsmith dev',
+        kind: 'cardinality',
+        subject: 'option-occurrences',
+        whenOption: '--dest',
+        exact: 1,
+        maximum: 2,
+        label: 'mutation fixture',
+        description: 'mutation fixture',
+      });
+      expect(api.validateCurrentOptionRelations()).toEqual(
+        expect.arrayContaining([
+          'mutation.bad-cardinality must have one non-negative integer cardinality bound',
+          'mutation.bad-cardinality option-occurrences cardinality must name an option',
+        ]),
+      );
+      relations.pop();
+
+      relations.push({
+        id: 'mutation.bad-scope-consistency',
+        command: 'skillsmith doctor',
+        kind: 'scope-consistency',
+        scopeOption: '--user',
+        sugars: [{ option: '--scope', value: 'ghost' }],
+        description: 'mutation fixture',
+      });
+      expect(api.validateCurrentOptionRelations()).toEqual(
+        expect.arrayContaining([
+          'mutation.bad-scope-consistency scope option must accept a value',
+          'mutation.bad-scope-consistency scope shorthand --scope must be boolean',
+          'mutation.bad-scope-consistency has unsupported scope shorthand value ghost',
+          "mutation.bad-scope-consistency does not close the command's scope shorthands",
+        ]),
+      );
+    } finally {
+      relations.splice(baseline);
+    }
+    expect(api.validateCurrentOptionRelations()).toEqual([]);
+  });
+
+  test('scope consistency allows agreement and rejects disagreement before application setup', async () => {
+    const api = await requireOptionContractApi();
+    const commands = [
+      ['skillsmith list', ['user', 'project', 'system', 'managed']],
+      ['skillsmith commands', ['user', 'project']],
+      ['skillsmith doctor', ['user', 'project', 'system']],
+      ['skillsmith check', ['user', 'project', 'system']],
+      ['skillsmith install', ['user', 'project']],
+      ['skillsmith uninstall', ['user', 'project']],
+    ] as const;
+
+    for (const [command, scopes] of commands) {
+      const [selected, other] = scopes;
+      if (selected === undefined || other === undefined) throw new Error(`${command} fixture gap`);
+      expect(
+        api.validateOptionInvocation(command, ['--scope', selected, `--${selected}`]),
+        `${command} agreeing long scope`,
+      ).toEqual({ ok: true });
+      expect(
+        api.validateOptionInvocation(command, [`--${selected}`, `-s${selected}`]),
+        `${command} agreeing attached short scope`,
+      ).toEqual({ ok: true });
+      expect(
+        api.validateOptionInvocation(command, ['--scope', other, `--${selected}`]).ok,
+        `${command} disagreeing scope`,
+      ).toBeFalse();
+      expect(
+        api.validateOptionInvocation(command, [`--${selected}`, `--${other}`]).ok,
+        `${command} multiple scope shorthands`,
+      ).toBeFalse();
+    }
+
+    const relations =
+      api.CURRENT_OPTION_RELATIONS as (typeof api.CURRENT_OPTION_RELATIONS)[number][];
+    const listScope = relations.find(
+      (relation) => relation.command === 'skillsmith list' && relation.kind === 'scope-consistency',
+    );
+    const sugars = listScope?.sugars as { option: string; value: string }[] | undefined;
+    const removed = sugars?.pop();
+    try {
+      expect(api.validateCurrentOptionRelations()).toContain(
+        "skillsmith.list.scope-consistency does not close the command's scope shorthands",
+      );
+      expect(
+        api.validateOptionInvocation('skillsmith list', ['--managed', '--user']).ok,
+      ).toBeTrue();
+    } finally {
+      if (removed !== undefined) sugars?.push(removed);
+    }
+    expect(api.validateOptionInvocation('skillsmith list', ['--managed', '--user']).ok).toBeFalse();
+
+    const configRoot = await mkdtemp(join(tmpdir(), 'skillsmith-scope-relations-'));
+    const configDir = join(configRoot, 'skillsmith');
+    await mkdir(configDir, { recursive: true });
+    try {
+      const env = { CI: '1', NO_COLOR: '1', XDG_CONFIG_HOME: configRoot };
+      const agreeing = await runHermeticCli(
+        ['list', '--scope', 'user', '--user', '--json'],
+        process.cwd(),
+        env,
+      );
+      expect(agreeing).toMatchObject({ code: 0, stderr: '' });
+
+      await writeFile(join(configDir, 'config.toml'), 'garbage = nope bar\n');
+      for (const args of [
+        ['list', '--scope', 'project', '--user', '--json'],
+        ['commands', '--scope', 'project', '--user', '--json'],
+        ['doctor', '--scope', 'project', '--user', '--json'],
+        ['check', '--scope', 'project', '--user', '--json'],
+        ['install', 'source', '--scope', 'project', '--user', '--json', '--no-prompt'],
+        ['uninstall', 'target', '--scope', 'project', '--user', '--json', '--no-prompt'],
+      ] as const) {
+        const result = await runHermeticCli(args, process.cwd(), env);
+        expect(result.code, args[0]).toBe(2);
+        expect(result.stderr, args[0]).toBe('');
+        expect(JSON.parse(result.stdout).message, args[0]).toContain(
+          '--scope project cannot be combined with --user',
+        );
+      }
+    } finally {
+      await rm(configRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('combined short booleans and attached short values match Commander semantics', async () => {
+    const api = await requireOptionContractApi();
+    expect(api.validateOptionInvocation('skillsmith', ['-qv']).ok).toBeFalse();
+    expect(
+      api.validateOptionInvocation('skillsmith doctor', ['--all-tools', '-tcodex']).ok,
+    ).toBeFalse();
+    expect(
+      api.validateOptionInvocation('skillsmith dev', ['target', '-tcodex', '--dest', '/tmp/x']),
+    ).toEqual({ ok: true });
+
+    const relations =
+      api.CURRENT_OPTION_RELATIONS as (typeof api.CURRENT_OPTION_RELATIONS)[number][];
+    const index = relations.findIndex(
+      (relation) =>
+        relation.command === 'skillsmith' &&
+        relation.kind === 'conflicts' &&
+        relation.options?.includes('--quiet') &&
+        relation.options.includes('--verbose'),
+    );
+    const removed = relations.splice(index, 1)[0];
+    try {
+      expect(api.validateOptionInvocation('skillsmith', ['-qv'])).toEqual({ ok: true });
+    } finally {
+      if (removed !== undefined) relations.splice(index, 0, removed);
+    }
+    expect(api.validateOptionInvocation('skillsmith', ['-qv']).ok).toBeFalse();
+
+    const cwd = process.cwd();
+    const env = { CI: '1', NO_COLOR: '1' };
+    const root = await runHermeticCli(['version', '-qv'], cwd, env);
+    expect(root).toMatchObject({ code: 2, stdout: '' });
+    expect(root.stderr).toContain('--quiet cannot be combined with --verbose');
+
+    const doctor = await runHermeticCli(['doctor', '--all-tools', '-tcodex', '--json'], cwd, env);
+    expect(doctor).toMatchObject({ code: 2, stderr: '' });
+    expect(JSON.parse(doctor.stdout)).toMatchObject({
+      message: '--all-tools cannot be combined with --tool',
+      exitCode: 2,
+    });
+
+    const dev = await runHermeticCli(
+      ['dev', 'target', '-tcodex', '--dest', '/tmp/x', '--dry-run', '--json', '--no-prompt'],
+      cwd,
+      env,
+    );
+    expect(`${dev.stdout}${dev.stderr}`).not.toContain('--dest requires exactly one --tool');
   });
 
   test('every current conflict and requirement rejects through one pure preflight', async () => {
@@ -434,8 +690,6 @@ describe('EWP-OPT-TS03', () => {
       ['skillsmith', ['--color', 'always', '--no-color']],
       ['skillsmith list', ['--enabled', '--disabled']],
       ['skillsmith commands', ['--disabled', '--unconfigured']],
-      ['skillsmith config get', ['tool', '--scope', 'user', '--project']],
-      ['skillsmith config list', ['--user', '--system']],
       ['skillsmith doctor', ['--all-tools', '--tool', 'codex']],
       ['skillsmith doctor', ['--lockfile', 'custom.lock']],
       ['skillsmith check', ['--report-only', '--exit-code']],
@@ -506,6 +760,33 @@ describe('EWP-OPT-TS03', () => {
     expect(error.exitCode).toBe(2);
     expect(error.message).toContain('--static');
     expect(error.message).toContain('--deep');
+
+    for (const formatArgs of [['--format', 'json'], ['--format=json']] as const) {
+      const agents = await runHermeticCli(
+        ['agents', ...formatArgs, '--quiet', '--verbose'],
+        cwd,
+        env,
+      );
+      expect(agents.code, formatArgs.join(' ')).toBe(2);
+      expect(agents.stderr, formatArgs.join(' ')).toBe('');
+      expect(JSON.parse(agents.stdout), formatArgs.join(' ')).toMatchObject({
+        schemaVersion: 1,
+        kind: 'error',
+        code: 'usage',
+        message: '--quiet cannot be combined with --verbose',
+        exitCode: 2,
+      });
+    }
+
+    const commandNamedConfigValue = await runHermeticCli(
+      ['--config', 'install', 'install', 'source', '--ref', 'main', '--no-prompt'],
+      cwd,
+      env,
+    );
+    expect(commandNamedConfigValue.code).toBe(2);
+    expect(`${commandNamedConfigValue.stdout}${commandNamedConfigValue.stderr}`).not.toContain(
+      '--ref requires exactly one source',
+    );
   });
 });
 

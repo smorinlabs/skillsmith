@@ -1,4 +1,5 @@
 import type { CommandExitClass, CommandOutcome } from '@skillsmith/core';
+import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
 import type { ExitCode } from '../util/exit-codes.ts';
 import { type CliRuntimeIo, type RenderedCommandOutput, emitCommandOutput } from './io.ts';
 
@@ -81,10 +82,41 @@ const EXIT_CODES = {
 export const exitCodeForClass = (exitClass: RuntimeExitClass): ExitCode => EXIT_CODES[exitClass];
 
 const isRecord = (value: unknown): value is Record<PropertyKey, unknown> =>
-  typeof value === 'object' && value !== null;
+  (typeof value === 'object' && value !== null) || typeof value === 'function';
+
+const readProperty = (value: unknown, key: PropertyKey): unknown => {
+  if (!isRecord(value)) return undefined;
+  try {
+    return value[key];
+  } catch {
+    return undefined;
+  }
+};
 
 const isExitClass = (value: unknown): value is RuntimeExitClass =>
   typeof value === 'string' && Object.hasOwn(EXIT_CODES, value);
+
+const exitClassForCode = (exitCode: ExitCode): RuntimeExitClass => {
+  switch (exitCode) {
+    case 0:
+    case 1:
+      return 'failure';
+    case 2:
+      return 'usage';
+    case 3:
+      return 'state';
+    case 4:
+      return 'capability';
+    case 5:
+      return 'source';
+    case 6:
+      return 'permission';
+    case 7:
+      return 'drift';
+    case 130:
+      return 'cancelled';
+  }
+};
 
 const isOutcome = (value: unknown): value is RuntimeOutcome =>
   isRecord(value) &&
@@ -95,36 +127,36 @@ const isOutcome = (value: unknown): value is RuntimeOutcome =>
   Array.isArray(value.deprecations);
 
 const defaultFailure = (error: unknown): RuntimeFailure => {
-  if (isRecord(error)) {
-    const exitClass = isExitClass(error.exitClass) ? error.exitClass : 'failure';
-    const safeClass = exitClass === 'success' || exitClass === 'drift' ? 'failure' : exitClass;
-    return {
-      exitClass: safeClass,
-      code: typeof error.code === 'string' ? error.code : 'generic',
-      message: typeof error.message === 'string' ? error.message : 'Unexpected error',
-    };
-  }
+  const requestedClass = readProperty(error, 'exitClass');
+  const explicitClass = isExitClass(requestedClass) ? requestedClass : undefined;
+  const fallbackClass =
+    explicitClass === undefined || explicitClass === 'success' || explicitClass === 'drift'
+      ? 'failure'
+      : explicitClass;
+  const normalized = normalizeCliError(error, { exitCode: exitCodeForClass(fallbackClass) });
+  const normalizedClass = exitClassForCode(normalized.exitCode);
+  const exitClass =
+    explicitClass === undefined
+      ? normalizedClass === 'success' || normalizedClass === 'drift'
+        ? 'failure'
+        : normalizedClass
+      : fallbackClass;
   return {
-    exitClass: 'failure',
-    code: 'generic',
-    message: typeof error === 'string' ? error : 'Unexpected error',
+    exitClass,
+    code: normalized.code,
+    message: normalized.message,
   };
 };
 
-const sanitizeLine = (value: string): string => value.replace(/[\r\n\t]+/g, ' ').trim();
-
 const defaultFailureRenderer: RuntimeFailureRenderer = (failure, format) => {
-  const message = sanitizeLine(failure.message) || 'Unexpected error';
-  if (format === 'human') return { stderr: `error: ${message}\n` };
-  return {
-    stdout: `${JSON.stringify({
-      schemaVersion: 1,
-      kind: 'error',
-      code: failure.code,
-      message,
-      exitCode: exitCodeForClass(failure.exitClass),
-    })}\n`,
-  };
+  const normalized = normalizeCliError(failure, {
+    exitCode: exitCodeForClass(failure.exitClass),
+  });
+  const rendered = renderCliError(
+    { ...normalized, exitCode: exitCodeForClass(failure.exitClass) },
+    format,
+  );
+  return format === 'human' ? { stderr: rendered } : { stdout: rendered };
 };
 
 const renderedOutput = (value: string | RenderedCommandOutput): RenderedCommandOutput =>
@@ -161,14 +193,14 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
         );
       }
 
-      let result: RuntimeApplicationResult;
+      let unwrapped: { readonly outcome: RuntimeOutcome } | { readonly error: unknown };
       try {
-        result = await application(request.request, request.context);
+        const result = await application(request.request, request.context);
+        unwrapped = unwrapApplicationResult(result);
       } catch (error) {
         return finishFailure(error, request.format);
       }
 
-      const unwrapped = unwrapApplicationResult(result);
       if ('error' in unwrapped) return finishFailure(unwrapped.error, request.format);
 
       const renderer = options.renderers[request.reportKind];
@@ -179,8 +211,12 @@ export const createCliRuntimeAdapter = (options: RuntimeAdapterOptions): CliRunt
         );
       }
 
-      const output = renderer[request.format](unwrapped.outcome);
-      emitCommandOutput(options.io, renderedOutput(output));
+      try {
+        const output = renderer[request.format](unwrapped.outcome);
+        emitCommandOutput(options.io, renderedOutput(output));
+      } catch (error) {
+        return finishFailure(error, request.format);
+      }
       const exitCode = exitCodeForClass(unwrapped.outcome.exitClass);
       options.io.exit(exitCode);
       return { exitCode, outcome: unwrapped.outcome };

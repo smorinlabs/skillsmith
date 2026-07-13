@@ -53,4 +53,51 @@ describe('skillsmith help routing', () => {
     expect(parsed.schemaVersion).toBe(1);
     expect(typeof parsed.tools).toBe('object');
   });
+
+  test('install help preserves source grammar, option guidance, real examples, and exit meanings', async () => {
+    const r = await run(['install', '--help']);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    expect(r.stdout).toContain('owner/repo[/name], owner/repo//path');
+    expect(r.stdout).toContain('--continue-on-error');
+    expect(r.stdout).toContain('Keep going after per-source failures');
+    expect(r.stdout).toContain('--ref <git-ref>');
+    expect(r.stdout).toContain('Tag, branch, or full SHA');
+    expect(r.stdout).toContain(
+      '$ skillsmith install acme/agent-tools/review@v1.2.0 --project --pin',
+    );
+    expect(r.stdout).toContain('5    source, repository, revision, or skill is unresolvable');
+    expect(r.stdout).not.toContain('See skillsmith help exit-codes.');
+  });
+
+  test('generated help stays descriptive across discover, maintain, and develop groups', async () => {
+    const [list, check, dev] = await Promise.all([
+      run(['list', '--help']),
+      run(['check', '--help']),
+      run(['dev', '--help']),
+    ]);
+    for (const result of [list, check, dev]) {
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain('PRIMARY QUESTION');
+      expect(result.stdout).toContain('EXAMPLES');
+      expect(result.stdout).toContain('EXIT CODES');
+      expect(result.stdout).not.toContain('See skillsmith help exit-codes.');
+    }
+
+    expect(list.stdout).toContain('[glob...]');
+    expect(list.stdout).toContain('Glob filters for installed skill names');
+    expect(list.stdout).toContain('--duplicates');
+    expect(list.stdout).toContain('Show only cross-scope duplicates');
+    expect(list.stdout).toContain('$ skillsmith list "review-*" --tool codex --long');
+
+    expect(check.stdout).toContain('--report-only');
+    expect(check.stdout).toContain('Report errors without failing the process');
+    expect(check.stdout).toContain('1    one or more error findings exist');
+
+    expect(dev.stdout).toContain('--source <path>');
+    expect(dev.stdout).toContain('Create or adopt a placement from this development source');
+    expect(dev.stdout).toContain('$ skillsmith dev --rollback factor-scan');
+    expect(dev.stdout).toContain('5    recorded development source no longer exists');
+  });
 });

@@ -1,1 +1,1 @@
-export * from '../runtime/current/completion.ts';
+export * from '../completion/run.ts';

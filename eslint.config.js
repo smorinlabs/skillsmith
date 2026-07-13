@@ -130,6 +130,10 @@ export default [
             { target: './packages/cli/src/util', from: './packages/cli/src/output' },
             { target: './packages/cli/src/util', from: './packages/cli/src/help' },
             { target: './packages/cli/src/util', from: './packages/cli/src/index.ts' },
+            // The shared runtime may depend on pure compatibility helpers, but it must never
+            // rediscover command-local action implementations.
+            { target: './packages/cli/src/runtime', from: './packages/cli/src/commands' },
+            { target: './packages/cli/src/program.ts', from: './packages/cli/src/commands' },
             { target: './packages/core/src/env', from: './packages/core/src/agents' },
             { target: './packages/core/src/env', from: './packages/core/src/detect' },
             { target: './packages/core/src/detect', from: './packages/core/src/agents' },
@@ -180,7 +184,55 @@ export default [
             { target: './packages/core/src/commands', from: './packages/core/src/acquire' },
             { target: './packages/core/src/verify', from: './packages/core/src/acquire' },
             { target: './packages/core/src/place', from: './packages/core/src/acquire' },
+            // Application services are the top core orchestration layer. Domain modules,
+            // adapters, and codecs may be composed by applications but must not import them.
+            { target: './packages/core/src/acquire', from: './packages/core/src/application' },
+            { target: './packages/core/src/agents', from: './packages/core/src/application' },
+            { target: './packages/core/src/commands', from: './packages/core/src/application' },
+            { target: './packages/core/src/config', from: './packages/core/src/application' },
+            { target: './packages/core/src/context', from: './packages/core/src/application' },
+            { target: './packages/core/src/detect', from: './packages/core/src/application' },
+            { target: './packages/core/src/doctor', from: './packages/core/src/application' },
+            { target: './packages/core/src/env', from: './packages/core/src/application' },
+            { target: './packages/core/src/place', from: './packages/core/src/application' },
+            { target: './packages/core/src/plugins', from: './packages/core/src/application' },
+            { target: './packages/core/src/scan', from: './packages/core/src/application' },
+            { target: './packages/core/src/selection', from: './packages/core/src/application' },
+            { target: './packages/core/src/skills', from: './packages/core/src/application' },
+            { target: './packages/core/src/verify', from: './packages/core/src/application' },
           ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['packages/cli/src/commands/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'commander', message: 'Commander declarations belong to CommandSpec runtime' },
+            { name: '@clack/prompts', message: 'prompts belong to the shared interaction adapter' },
+          ],
+          patterns: [
+            { group: ['../output/**', '../../output/**'], message: 'rendering belongs to runtime' },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[object.name='process'][property.name=/^(exit|stdout|stderr|stdin|env|cwd)$/]",
+          message: 'process policy belongs to the shared runtime context and IO adapters',
         },
       ],
     },

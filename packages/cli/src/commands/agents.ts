@@ -1,1 +1,1 @@
-export * from '../runtime/current/agents.ts';
+export { runAgentsApplication } from '@skillsmith/core';

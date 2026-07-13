@@ -62,8 +62,9 @@ version and does not inspect its request context, cwd, environment, project, or 
 - Core effects are allowed only through injected, testable capabilities. “No ambient or CLI-owned
   I/O” replaces the obsolete shorthand that core has no I/O effects at all.
 
-The CLI runtime/spec migration and its lint zones land in the remaining G1-03 slices. This
-foundation does not claim that existing command handlers have already migrated.
+The CLI runtime/spec migration and its lint zones are enforced across every current command. One
+generic action factory resolves declarative application and report keys; command modules retain
+only temporary pure compatibility exports required by existing consumers.
 
 ## Explicit deferrals
 
@@ -90,8 +91,8 @@ foundation does not claim that existing command handlers have already migrated.
 
 - G1-03 temporarily exposes an aggregate compatibility context that G1-04 must narrow.
 - Command migration adds an adapter layer around already-public domain coordinators.
-- Until the remaining G1-03 slices land, the repository contains both the new foundation and old
-  command-local runtimes; tests and documentation must not overstate completion.
+- Existing public reports constrain the temporary render adapters until G1-06 introduces canonical
+  wire DTOs and codecs.
 
 ## Alternatives considered
 

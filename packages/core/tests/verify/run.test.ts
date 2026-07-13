@@ -95,8 +95,8 @@ describe('resolveTarget', () => {
     try {
       const r = await resolveTarget(env, empty);
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error.code).toBe('generic');
-      if (!r.ok && r.error.code === 'generic') {
+      if (!r.ok) expect(r.error.code).toBe('invalid-argument');
+      if (!r.ok && r.error.code === 'invalid-argument') {
         expect(r.error.message).toContain('is not a plugin or skill directory');
       }
     } finally {
