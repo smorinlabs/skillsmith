@@ -622,14 +622,14 @@ Downstream coverage obligations: EWP-CMD-AGENTS-TS03, EWP-P3B-TS06, EWP-WF01, EW
 
 ## P17-G1-06 — Canonical codecs, DTO mappings, and public wire-contract registry
 
-Phase: 1; status: **planned**; dependencies: P17-G1-03.
+Phase: 1; status: **ready**; dependencies: P17-G1-03.
 Required-now validations: EWP-P1-TS10.
 Downstream coverage obligations: EWP-P2-TS08.
 
 ### Group gates
 
-- [ ] P17-G1-06:mapped _(pending)_
-- [ ] P17-G1-06:ready _(pending)_
+- [x] P17-G1-06:mapped _(passed)_
+- [x] P17-G1-06:ready _(passed)_
 - [ ] P17-G1-06:test-first _(pending)_
 - [ ] P17-G1-06:minimal-implementation _(pending)_
 - [ ] P17-G1-06:targeted-green _(pending)_
