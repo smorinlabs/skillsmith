@@ -1686,8 +1686,8 @@
           "evidence": ["projects/p17/evidence/P17-G1-03.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G1-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -14459,18 +14459,25 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-03:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/options.test.ts",
+        "selector": "EWP-OPT-TS02",
+        "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-03.md#execution-receipt-ewp-opt-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-OPT-TS02"],
       "impactedValidations": ["EWP-OPT-TS02", "EWP-OPT-TS03", "EWP-P1-TS07"],
       "affectedContracts": ["COMMAND:version", "EWP-CF-033"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/options.test.ts"]
     },
     {
       "id": "EWP-OPT-TS03",
@@ -14478,18 +14485,25 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-03:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/options.test.ts",
+        "selector": "EWP-OPT-TS03",
+        "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-03.md#execution-receipt-ewp-opt-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-OPT-TS03"],
       "impactedValidations": ["EWP-OPT-TS02", "EWP-OPT-TS03", "EWP-P1-TS07"],
       "affectedContracts": ["COMMAND:version", "EWP-CF-033"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/options.test.ts"]
     },
     {
       "id": "EWP-OPT-TS04",
@@ -15778,18 +15792,25 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G1-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G1-03:tests/ergonomics/phase/EWP-P1-TS07.test.ts#EWP-P1-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
+        "selector": "EWP-P1-TS07",
+        "command": "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G1-03.md#execution-receipt-ewp-p1-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P1-TS07"],
       "impactedValidations": ["EWP-OPT-TS02", "EWP-OPT-TS03", "EWP-P1-TS07"],
       "affectedContracts": ["COMMAND:version", "EWP-CF-033"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P1-TS07.test.ts"]
     },
     {
       "id": "EWP-P1-TS08",

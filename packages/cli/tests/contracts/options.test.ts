@@ -47,6 +47,79 @@ const runHermeticCli = async (
   };
 };
 
+interface CommandSpecOptionContract {
+  readonly long: string;
+  readonly attributeName: string;
+  readonly valueShape: 'boolean' | 'required' | 'optional';
+  readonly knownValues: readonly string[];
+  readonly allowedValues: readonly string[];
+  readonly repeatable: boolean;
+  readonly negated: boolean;
+  readonly flagDefault: unknown;
+  readonly parsedDefault: unknown;
+}
+
+interface CommandSpecContract {
+  readonly path: string;
+  readonly aliases: readonly string[];
+  readonly options: readonly CommandSpecOptionContract[];
+}
+
+interface OptionInvocationError {
+  readonly exitCode: 2;
+  readonly message: string;
+}
+
+interface OptionContractApi {
+  readonly CURRENT_COMMAND_SPECS: readonly CommandSpecContract[];
+  readonly CURRENT_OPTION_RELATIONS: readonly {
+    readonly id: string;
+    readonly command: string;
+    readonly kind: 'conflicts' | 'requires' | 'cardinality' | 'exclusive-group';
+  }[];
+  validateCurrentCommandSpecs(): readonly string[];
+  validateGlobalOptionPermutation(): readonly string[];
+  validateCurrentOptionRelations(): readonly string[];
+  validateOptionInvocation(
+    command: string,
+    args: readonly string[],
+  ): { readonly ok: true } | { readonly ok: false; readonly error: OptionInvocationError };
+}
+
+const OPTION_CONTRACT_MODULE = '../../src/spec/index.ts';
+
+const loadOptionContractApi = async (): Promise<
+  | { readonly ok: true; readonly api: OptionContractApi }
+  | { readonly ok: false; readonly message: string }
+> => {
+  try {
+    const module = (await import(OPTION_CONTRACT_MODULE)) as Partial<OptionContractApi>;
+    if (
+      !Array.isArray(module.CURRENT_COMMAND_SPECS) ||
+      !Array.isArray(module.CURRENT_OPTION_RELATIONS) ||
+      typeof module.validateCurrentCommandSpecs !== 'function' ||
+      typeof module.validateGlobalOptionPermutation !== 'function' ||
+      typeof module.validateCurrentOptionRelations !== 'function' ||
+      typeof module.validateOptionInvocation !== 'function'
+    ) {
+      return { ok: false, message: 'CommandSpec option-contract exports are incomplete' };
+    }
+    return { ok: true, api: module as OptionContractApi };
+  } catch (error) {
+    return {
+      ok: false,
+      message: `CommandSpec option-contract module is unavailable: ${String(error)}`,
+    };
+  }
+};
+
+const requireOptionContractApi = async (): Promise<OptionContractApi> => {
+  const loaded = await loadOptionContractApi();
+  expect(loaded.ok, loaded.ok ? undefined : loaded.message).toBeTrue();
+  if (!loaded.ok) throw new Error(loaded.message);
+  return loaded.api;
+};
+
 describe('EWP-OPT-TS01', () => {
   test('historical audit inputs retain their provenance hashes', async () => {
     for (const fixture of [
@@ -255,6 +328,221 @@ describe('EWP-OPT-TS01', () => {
     mutateOption('skillsmith dev', '--no-prompt', (option) => {
       option.negated = false;
     });
+  });
+});
+
+describe('EWP-OPT-TS02', () => {
+  test('one declarative registry closes every current command path and alias', async () => {
+    const api = await requireOptionContractApi();
+    expect(api.validateCurrentCommandSpecs()).toEqual([]);
+    expect(api.validateGlobalOptionPermutation()).toEqual([]);
+
+    const live = canonicalizeCommanderTree(buildProgram());
+    expect(api.CURRENT_COMMAND_SPECS.map((spec) => spec.path).sort()).toEqual(
+      live.map((command) => command.path).sort(),
+    );
+    for (const command of live) {
+      const spec = api.CURRENT_COMMAND_SPECS.find((candidate) => candidate.path === command.path);
+      expect(spec, command.path).toBeDefined();
+      expect([...(spec?.aliases ?? [])].sort(), command.path).toEqual([...command.aliases].sort());
+    }
+  });
+
+  test('known enums, allowed capabilities, repetition, and semantic defaults stay distinct', async () => {
+    const api = await requireOptionContractApi();
+    const option = (path: string, long: string): CommandSpecOptionContract => {
+      const value = api.CURRENT_COMMAND_SPECS.find((spec) => spec.path === path)?.options.find(
+        (candidate) => candidate.long === long,
+      );
+      if (!value) throw new Error(`missing CommandSpec option ${path} ${long}`);
+      return value;
+    };
+
+    expect(option('skillsmith', '--verbose')).toMatchObject({
+      valueShape: 'boolean',
+      repeatable: true,
+      parsedDefault: 0,
+    });
+    expect(option('skillsmith', '--color')).toMatchObject({
+      valueShape: 'required',
+      knownValues: ['auto', 'always', 'never'],
+      repeatable: false,
+      parsedDefault: 'auto',
+    });
+    expect(option('skillsmith', '--no-prompt')).toMatchObject({
+      attributeName: 'prompt',
+      negated: true,
+      flagDefault: false,
+      parsedDefault: true,
+    });
+    expect(option('skillsmith install', '--no-verify')).toMatchObject({
+      attributeName: 'verify',
+      negated: true,
+      flagDefault: false,
+      parsedDefault: true,
+    });
+    expect(option('skillsmith list', '--tool')).toMatchObject({
+      knownValues: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      repeatable: true,
+    });
+    expect(option('skillsmith commands', '--scope')).toMatchObject({
+      knownValues: ['system', 'user', 'project', 'managed'],
+      allowedValues: ['user', 'project'],
+      repeatable: false,
+    });
+  });
+
+  test('inherited negated globals are singular and parse in either command position', async () => {
+    const program = buildProgram();
+    const rootOptions = new Set(program.options.map((option) => option.long));
+    expect(rootOptions.has('--no-color')).toBeTrue();
+    expect(rootOptions.has('--no-prompt')).toBeTrue();
+    for (const commandName of ['install', 'uninstall', 'dev', 'promote']) {
+      const command = program.commands.find((candidate) => candidate.name() === commandName);
+      expect(
+        command?.options.some((option) => option.long === '--no-prompt'),
+        commandName,
+      ).toBeFalse();
+    }
+
+    const cwd = process.cwd();
+    const env = { CI: '1', NO_COLOR: '1' };
+    const before = await runHermeticCli(['--no-prompt', 'version'], cwd, env);
+    const after = await runHermeticCli(['version', '--no-prompt'], cwd, env);
+    expect(before).toMatchObject({ code: 0, stderr: '' });
+    expect(after).toEqual(before);
+    const noColor = await runHermeticCli(['--no-color', 'version'], cwd, env);
+    expect(noColor).toMatchObject({ code: 0, stderr: '' });
+  });
+
+  test('current stable aliases and repeatable parser behavior remain exact', () => {
+    const program = buildProgram();
+    const aliases = Object.fromEntries(
+      program.commands.map((command) => [command.name(), [...command.aliases()].sort()]),
+    );
+    expect(aliases).toMatchObject({
+      list: ['ls'],
+      install: ['i'],
+      uninstall: ['remove', 'rm'],
+      dev: ['demote'],
+    });
+
+    const install = program.commands.find((command) => command.name() === 'install');
+    const verify = program.commands.find((command) => command.name() === 'verify');
+    expect(install?.opts()).toMatchObject({ verify: true, prompt: true, tool: [] });
+    expect(verify?.opts()).toMatchObject({ tool: [] });
+  });
+});
+
+describe('EWP-OPT-TS03', () => {
+  test('the relation registry is exhaustive and independently self-validating', async () => {
+    const api = await requireOptionContractApi();
+    expect(api.validateCurrentOptionRelations()).toEqual([]);
+    const commands = new Set(api.CURRENT_OPTION_RELATIONS.map((relation) => relation.command));
+    for (const command of [
+      'skillsmith',
+      'skillsmith list',
+      'skillsmith commands',
+      'skillsmith config get',
+      'skillsmith config list',
+      'skillsmith config set',
+      'skillsmith config unset',
+      'skillsmith doctor',
+      'skillsmith check',
+      'skillsmith verify',
+      'skillsmith install',
+      'skillsmith uninstall',
+      'skillsmith dev',
+      'skillsmith promote',
+    ]) {
+      expect(commands.has(command), `missing relations for ${command}`).toBeTrue();
+    }
+    expect(new Set(api.CURRENT_OPTION_RELATIONS.map((relation) => relation.id)).size).toBe(
+      api.CURRENT_OPTION_RELATIONS.length,
+    );
+  });
+
+  test('every current conflict and requirement rejects through one pure preflight', async () => {
+    const api = await requireOptionContractApi();
+    const cases = [
+      ['skillsmith', ['--quiet', '--verbose']],
+      ['skillsmith', ['--quiet', '--debug']],
+      ['skillsmith', ['--color', 'always', '--no-color']],
+      ['skillsmith list', ['--enabled', '--disabled']],
+      ['skillsmith commands', ['--disabled', '--unconfigured']],
+      ['skillsmith config get', ['tool', '--scope', 'user', '--project']],
+      ['skillsmith config list', ['--user', '--system']],
+      ['skillsmith doctor', ['--all-tools', '--tool', 'codex']],
+      ['skillsmith doctor', ['--lockfile', 'custom.lock']],
+      ['skillsmith check', ['--report-only', '--exit-code']],
+      ['skillsmith check', ['--all-tools', '--tool', 'codex']],
+      ['skillsmith verify', ['--static', '--deep']],
+      ['skillsmith install', ['source', '--deep', '--no-verify']],
+      ['skillsmith install', ['one', 'two', '--ref', 'main']],
+      ['skillsmith install', ['source', '--scope', 'user', '--project']],
+      ['skillsmith install', ['source', '--yes', '--dry-run']],
+      ['skillsmith uninstall', ['skill', '--all-scopes', '--project']],
+      ['skillsmith uninstall', ['skill', '--yes', '--dry-run']],
+      ['skillsmith dev', ['target', '--all']],
+      ['skillsmith dev', ['target', '--yes', '--dry-run']],
+      ['skillsmith dev', ['target', '--rollback', '--source', '/tmp/source']],
+      ['skillsmith dev', ['one', 'two', '--source', '/tmp/source']],
+      ['skillsmith dev', ['target', '--dest', '/tmp/dest']],
+      ['skillsmith promote', ['target', '--rollback', '--allow-dirty']],
+      ['skillsmith promote', ['target', '--all']],
+      ['skillsmith promote', ['target', '--yes', '--dry-run']],
+    ] as const;
+
+    for (const [command, args] of cases) {
+      const result = api.validateOptionInvocation(command, args);
+      expect(result.ok, `${command} ${args.join(' ')}`).toBeFalse();
+      if (result.ok) throw new Error(`invalid option relation passed: ${command}`);
+      expect(result.error.exitCode).toBe(2);
+      expect(result.error.message).toMatch(/--|target|source|tool/i);
+    }
+  });
+
+  test('symmetric conflicts reject in both orders before live command work', async () => {
+    const api = await requireOptionContractApi();
+    for (const [command, left, right] of [
+      ['skillsmith', ['--quiet'], ['--verbose']],
+      ['skillsmith', ['--quiet'], ['--debug']],
+      ['skillsmith check', ['--report-only'], ['--exit-code']],
+      ['skillsmith verify', ['--static'], ['--deep']],
+      ['skillsmith install', ['source', '--deep'], ['--no-verify']],
+    ] as const) {
+      for (const args of [
+        [...left, ...right],
+        [...right, ...left],
+      ]) {
+        expect(
+          api.validateOptionInvocation(command, args).ok,
+          `${command} ${args.join(' ')}`,
+        ).toBeFalse();
+      }
+    }
+  });
+
+  test('observed live parser gaps fail with the intended relation instead of continuing', async () => {
+    const cwd = process.cwd();
+    const env = { CI: '1', NO_COLOR: '1' };
+    for (const args of [
+      ['version', '--quiet', '--verbose'],
+      ['version', '--quiet', '--debug'],
+    ]) {
+      const result = await runHermeticCli(args, cwd, env);
+      expect(result.code, args.join(' ')).toBe(2);
+      expect(result.stderr, args.join(' ')).toContain('--quiet');
+    }
+
+    const verify = await runHermeticCli(['verify', '.', '--static', '--deep', '--json'], cwd, env);
+    expect(verify.code).toBe(2);
+    expect(verify.stderr).toBe('');
+    const error = JSON.parse(verify.stdout) as { message?: string; exitCode?: number };
+    expect(error.exitCode).toBe(2);
+    expect(error.message).toContain('--static');
+    expect(error.message).toContain('--deep');
   });
 });
 

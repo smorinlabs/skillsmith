@@ -241,8 +241,8 @@ Tracked entities: **425** across **45** change groups.
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
 | EWP-OPT-TS01 | P17-G0-02 | signed-off | required-pr |
-| EWP-OPT-TS02 | P17-G1-03 | planned | required-pr |
-| EWP-OPT-TS03 | P17-G1-03 | planned | required-pr |
+| EWP-OPT-TS02 | P17-G1-03 | failing | required-pr |
+| EWP-OPT-TS03 | P17-G1-03 | failing | required-pr |
 | EWP-OPT-TS04 | P17-G1-02A | signed-off | required-pr |
 | EWP-OPT-TS05 | P17-G6-02A | planned | required-pr |
 | EWP-OPT-TS06 | P17-G1-01 | signed-off | required-pr |
@@ -545,7 +545,7 @@ Downstream coverage obligations: EWP-WF16.
 
 - [x] P17-G1-03:mapped _(passed)_
 - [x] P17-G1-03:ready _(passed)_
-- [ ] P17-G1-03:test-first _(pending)_
+- [x] P17-G1-03:test-first _(passed)_
 - [ ] P17-G1-03:minimal-implementation _(pending)_
 - [ ] P17-G1-03:targeted-green _(pending)_
 - [ ] P17-G1-03:impacted-green _(pending)_
@@ -558,10 +558,10 @@ Downstream coverage obligations: EWP-WF16.
 
 - [ ] **COMMAND:version** — Maintain — Which Skillsmith version is running? _(command; planned)_
 - [ ] **EWP-CF-033** — Add an application-service boundary behind every CLI command _(finding; planned)_
-- [ ] **EWP-OPT-TS02** — Assert types, choices, repeatability, defaults, global permutation, and aliases. _(option-gate; planned)_
-- [ ] **EWP-OPT-TS03** — Exhaust every conflict/requirement pair, including Commander negated-boolean _(option-gate; planned)_
+- [ ] **EWP-OPT-TS02** — Assert types, choices, repeatability, defaults, global permutation, and aliases. _(option-gate; failing)_
+- [ ] **EWP-OPT-TS03** — Exhaust every conflict/requirement pair, including Commander negated-boolean _(option-gate; failing)_
 - [ ] **EWP-P1-T09** — Add ADR 0004, declarative CommandSpec metadata, shared CLI runtime/renderer/exit _(phase-task; planned)_
-- [ ] **EWP-P1-TS07** — Static boundary gates plus spawned human/JSON/error/cancel/noninteractive parity _(phase-test; planned)_
+- [ ] **EWP-P1-TS07** — Static boundary gates plus spawned human/JSON/error/cancel/noninteractive parity _(phase-test; failing)_
 
 ## P17-G1-04 — Capability-scoped ports, typed configuration, and compatibility facade
 
