@@ -647,14 +647,14 @@ Downstream coverage obligations: EWP-P2-TS08.
 
 ## P17-G1-07 — Operation-scoped observation, correlation, redaction, and verbosity behavior
 
-Phase: 1; status: **planned**; dependencies: P17-G1-03.
+Phase: 1; status: **ready**; dependencies: P17-G1-03.
 Required-now validations: EWP-P1-TS11.
 Downstream coverage obligations: EWP-P3B-TS07.
 
 ### Group gates
 
-- [ ] P17-G1-07:mapped _(pending)_
-- [ ] P17-G1-07:ready _(pending)_
+- [x] P17-G1-07:mapped _(passed)_
+- [x] P17-G1-07:ready _(passed)_
 - [ ] P17-G1-07:test-first _(pending)_
 - [ ] P17-G1-07:minimal-implementation _(pending)_
 - [ ] P17-G1-07:targeted-green _(pending)_
