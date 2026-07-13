@@ -665,7 +665,7 @@ export const migrationLedger: MigrationLedger = {
         'P17-G6-02A',
         'P17-G1-01',
         'P17-G6-02A',
-        'P17-G2-01',
+        'P17-G5-05',
         'P17-G4B-02',
         'P17-G1-02A',
       ];
@@ -895,7 +895,7 @@ export const assertOptionGateOwnership = (ledger: MigrationLedger): void => {
     'P17-G6-02A',
     'P17-G1-01',
     'P17-G6-02A',
-    'P17-G2-01',
+    'P17-G5-05',
     'P17-G4B-02',
     'P17-G1-02A',
   ];

@@ -190,14 +190,35 @@ Portable identity rules:
   user/project installations belong in their separate user and project manifests.
 - Rename is remove-old plus install-new, never an implicit identity mutation.
 
+The existing scalar `config ... tool` key is a compatibility projection over
+`[defaults].tools`, not permission to collapse a plural manifest default. A singleton projects as
+the current scalar value. Internally, effective configuration carries one ordered plural tool
+selection: each layer replaces rather than merges the lower layer, so CLI tools outrank environment,
+explicit-file, project, user, and system values; a higher scalar replaces a lower plural and a
+higher plural replaces a lower scalar. With two or more effective tools, unscoped `config get tool`
+refuses with state exit 3. A scoped get refuses only when that selected layer is plural. Scoped list
+reports that layer's plural value; unscoped list reports the effective selection and source even
+when a higher scalar shadows a lower plural. No command chooses the first or last value.
+
+`config set tool <id> --project` visibly replaces the array with that singleton, and
+`config unset tool --project` removes the whole default. User/system `config.toml` and environment
+layers retain the scalar key. Config get/list v1 add an optional closed `notices` array for plural
+and migration metadata; representable cases omit it and retain their exact existing bytes. Set and
+unset use named v1 codecs for their current report shapes plus an optional visible migration
+operation. Human and JSON modes keep one stdout document and render the same structured notices on
+stderr. This compatibility rule forbids silent loss.
+
 Canonical source identity is credential-free host, repository path, optional source-relative POSIX
 path, and the separately stored requested ref. The literal acquisition argument and clone URL are
-ephemeral transport inputs, not identity. HTTP(S) user information, password/token components,
-credential-like query parameters, and fragments are rejected with credential-helper/SSH-agent
-guidance. Credential-free HTTPS and SSH/scp forms are accepted; plain HTTP and unauthenticated Git
-protocols refuse with HTTPS/SSH remediation. An SSH username may remain only as non-secret transport
-metadata. `file://` is not a remote install source and redirects users to `dev --source`. Registry
-identity is likewise host/namespace only and cannot contain credentials.
+ephemeral transport inputs, not identity. HTTP(S) user information, password/token components, all
+query components, fragments, and percent-encoded delimiter/credential forms are rejected before
+diagnostic rendering with credential-helper/SSH-agent guidance. Credential-free HTTPS and SSH/scp
+forms are accepted; plain HTTP and unauthenticated Git protocols refuse with HTTPS/SSH remediation.
+An SSH username may remain only as non-secret transport metadata. `file://` is not a remote install
+source and redirects users to `dev --source`. Registry identity is likewise a credential-free
+`host[/namespace]` without scheme/query/fragment; exact legacy credential-free HTTPS registry URLs
+may normalize to that form, while every other noncanonical legacy registry value blocks automatic
+migration with a manual correction.
 
 Reference and pin rules:
 
@@ -311,6 +332,18 @@ Resolution contract:
 7. Install, uninstall, list, commands, status, doctor, config, init, export, plan, apply, sync,
    update, project tool roots, and custom-path validation must use this same context rather than
    resolving cwd/project independently.
+
+The nearest discovered manifest is an intentional desired-state context boundary. Cwd changes
+within the same ancestor chain must select the same candidate; crossing into a subtree with its own
+manifest intentionally selects that nested context without changing `projectRoot`. Automatic
+declaration-owner lookup considers the selected project manifest, the project-root destination when
+it is a distinct file, and the XDG user manifest—not an unbounded repository-tree scan. Every
+existing candidate is shape-checked before ownership is inferred; malformed state refuses. One
+unique owner wins, while any selected/root/user duplicate-name combination refuses with exit 2 and
+names every candidate. For a genuinely new project declaration, the destination remains
+`<projectRoot>/skillsmith.toml`; explicit `--file` still wins. The root destination is therefore
+never misclassified as new when it already owns the name, while nested configuration remains a
+separate context and never rebases live placement.
 
 Before/after example:
 

@@ -97,7 +97,7 @@ group.
 | P17-G1-05 | 1 | G1-03 | Executable tool-adapter/capability registry and current verify behavior |
 | P17-G1-06 | 1 | G1-03 | Canonical codecs, DTO mappings, and public wire-contract registry |
 | P17-G1-07 | 1 | G1-03 | Operation-scoped observation, correlation, redaction, and verbosity behavior |
-| P17-G2-01 | 2 | G1-04, G1-05, G1-06, G1-07 | Manifest discovery, ownership, unified schema, identity, and artifact-pair selection |
+| P17-G2-01 | 2 | G0-01, G0-02, G0-04, G0-05, G1-04, G1-05, G1-06, G1-07 | Manifest discovery, ownership, unified schema, identity, and artifact-pair selection |
 | P17-G2-02 | 2 | G2-01 | Portable lock schema, semantic hashes, canonicalization, and manifest relationship |
 | P17-G2-03 | 2 | G2-01, G2-02 | Lossless human-file editing, atomicity, portability, and secret-redaction boundary |
 | P17-G2-04 | 2 | G2-01, G2-03 | Pure init request/skeleton/migration operation model without early execution |
@@ -121,7 +121,7 @@ group.
 | P17-G5-02 | 5 | G4B-03 | Update discovery, check/preview/apply, refs, pins, and retention |
 | P17-G5-03 | 5 | G4B-03 | Scope-aware pending abort and committed undo with compatibility routing |
 | P17-G5-04 | 5 | G4B-03 | Ledger-authoritative reachability, retention, explicit forget, and safe GC |
-| P17-G5-05 | 5 | G5-01, G5-02, G5-03 | Shared bulk approval, fail-fast/continue scheduling, cancellation, and exits |
+| P17-G5-05 | 5 | G5-01, G5-02, G5-03 | Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure |
 | P17-G6-01 | 6 | G5-04, G5-05 | Native assets, checksums, Homebrew/npm distribution, and clean installs |
 | P17-G6-02A | 6 | G5-04, G5-05 | Shared command metadata, five-group help, progressive options, workflows, and generated docs |
 | P17-G6-02B | 6 | G6-02A | Bash/zsh/fish completion generation and nested completion contracts |

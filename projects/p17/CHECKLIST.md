@@ -27,10 +27,10 @@ Tracked entities: **425** across **45** change groups.
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
-| 2 | 5 | 33 | 0 | 0 |
+| 2 | 5 | 32 | 0 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
-| 5 | 5 | 65 | 0 | 0 |
+| 5 | 5 | 66 | 0 | 0 |
 | 6 | 5 | 39 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
@@ -247,7 +247,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-OPT-TS05 | P17-G6-02A | planned | required-pr |
 | EWP-OPT-TS06 | P17-G1-01 | signed-off | required-pr |
 | EWP-OPT-TS07 | P17-G6-02A | planned | required-pr |
-| EWP-OPT-TS08 | P17-G2-01 | planned | required-pr |
+| EWP-OPT-TS08 | P17-G5-05 | planned | required-pr |
 | EWP-OPT-TS09 | P17-G4B-02 | planned | required-pr |
 | EWP-OPT-TS10 | P17-G1-02A | signed-off | required-pr |
 
@@ -672,14 +672,14 @@ Downstream coverage obligations: EWP-P3B-TS07.
 
 ## P17-G2-01 — Manifest discovery, ownership, unified schema, identity, and artifact-pair selection
 
-Phase: 2; status: **planned**; dependencies: P17-G1-04, P17-G1-05, P17-G1-06, P17-G1-07.
-Required-now validations: EWP-CMD-CHECK-TS03, EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS02, EWP-CMD-CONFIG-TS03, EWP-CMD-CONFIG-TS04, EWP-CMD-CONFIG-TS05, EWP-OPT-TS08, EWP-P2-TS01, EWP-P2-TS02, EWP-WF14.
-Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS05, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INSTALL-TS06, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-CMD-STATUS-TS05, EWP-CMD-SYNC-TS07, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UPDATE-TS06, EWP-P0A-TS04, EWP-P0A-TS07, EWP-P4A-TS01, EWP-WF04, EWP-WF07.
+Phase: 2; status: **ready**; dependencies: P17-G0-01, P17-G0-02, P17-G0-04, P17-G0-05, P17-G1-04, P17-G1-05, P17-G1-06, P17-G1-07.
+Required-now validations: EWP-CMD-CHECK-TS03, EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS02, EWP-CMD-CONFIG-TS03, EWP-CMD-CONFIG-TS04, EWP-CMD-CONFIG-TS05, EWP-P0A-TS04, EWP-P0A-TS05, EWP-P0A-TS07, EWP-P0A-TS09, EWP-P1-TS01, EWP-P1-TS02, EWP-P1-TS03, EWP-P1-TS05, EWP-P1-TS06, EWP-P1-TS07, EWP-P1-TS08, EWP-P1-TS09, EWP-P1-TS10, EWP-P1-TS11, EWP-P2-TS01, EWP-P2-TS02, EWP-WF14.
+Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS05, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INSTALL-TS06, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-CMD-STATUS-TS05, EWP-CMD-SYNC-TS07, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UPDATE-TS06, EWP-OPT-TS08, EWP-P4A-TS01, EWP-WF04, EWP-WF07.
 
 ### Group gates
 
-- [ ] P17-G2-01:mapped _(pending)_
-- [ ] P17-G2-01:ready _(pending)_
+- [x] P17-G2-01:mapped _(passed)_
+- [x] P17-G2-01:ready _(passed)_
 - [ ] P17-G2-01:test-first _(pending)_
 - [ ] P17-G2-01:minimal-implementation _(pending)_
 - [ ] P17-G2-01:targeted-green _(pending)_
@@ -702,7 +702,6 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD
 - [ ] **EWP-CMD-CONFIG-TS03** — explicit config, `-C` project discovery, nested manifest versus live-root _(command-test; planned)_
 - [ ] **EWP-CMD-CONFIG-TS04** — exact legacy read support and migration to D-003 in the same lossless _(command-test; planned)_
 - [ ] **EWP-CMD-CONFIG-TS05** — unknown keys/values/scopes and JSON output. _(command-test; planned)_
-- [ ] **EWP-OPT-TS08** — Assert sibling lock derivation plus the uniform advanced lockfile override on _(option-gate; planned)_
 - [ ] **EWP-P2-T01** — Define project and user manifest discovery/destination paths, paired lock paths, _(phase-task; planned)_
 - [ ] **EWP-P2-T02** — Implement the versioned unified manifest schema, unique-name identity/invariants, _(phase-task; planned)_
 - [ ] **EWP-P2-TS01** — Manifest parser, unique-name/source/ref/scope/tool invariants, unknown-key, _(phase-test; planned)_
@@ -737,7 +736,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 ## P17-G2-03 — Lossless human-file editing, atomicity, portability, and secret-redaction boundary
 
 Phase: 2; status: **planned**; dependencies: P17-G2-01, P17-G2-02.
-Required-now validations: EWP-P2-TS04, EWP-P2-TS07, EWP-WF15.
+Required-now validations: EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS04, EWP-P2-TS01, EWP-P2-TS04, EWP-P2-TS07, EWP-WF15.
 Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-P4B-TS07, EWP-WF03, EWP-WF04, EWP-WF07.
 
 ### Group gates
@@ -1485,10 +1484,10 @@ Downstream coverage obligations: none.
 - [ ] **EWP-WF12** — Removal and GC _(workflow; planned)_
 - [ ] **P2-03** — `gc` _(recommendation; planned)_
 
-## P17-G5-05 — Shared bulk approval, fail-fast/continue scheduling, cancellation, and exits
+## P17-G5-05 — Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure
 
 Phase: 5; status: **planned**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
-Required-now validations: EWP-P5-TS05.
+Required-now validations: EWP-OPT-TS08, EWP-P5-TS05.
 Downstream coverage obligations: none.
 
 ### Group gates
@@ -1506,6 +1505,7 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
+- [ ] **EWP-OPT-TS08** — Assert sibling lock derivation plus the uniform advanced lockfile override on _(option-gate; planned)_
 - [ ] **EWP-P5-TS05** — Bulk confirmation/noninteractive safety plus fail-fast/continue scheduling _(phase-test; planned)_
 - [ ] **P1-04** — Safe bulk mutation _(recommendation; planned)_
 

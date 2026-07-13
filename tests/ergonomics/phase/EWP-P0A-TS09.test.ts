@@ -271,6 +271,77 @@ describe('EWP-P0A-TS09 verification-catalog closure', () => {
     );
   });
 
+  test('keeps late artifact-option closure separate from bulk scheduling and traces G2 contracts exactly', () => {
+    const catalog = freshBaseline();
+    const entity = (id: string): EntityFixture =>
+      required(
+        catalog.entities.find((item) => item.id === id),
+        `missing ${id}`,
+      );
+
+    const option = entity('EWP-OPT-TS08');
+    expect(option.primaryGroup).toBe('P17-G5-05');
+    expect(option.validatedBy).toEqual(['EWP-OPT-TS08']);
+    expect(option.impactedValidations).toEqual(['EWP-OPT-TS08']);
+    expect(option.affectedContracts).toEqual([
+      'COMMAND:apply',
+      'COMMAND:check',
+      'COMMAND:doctor',
+      'COMMAND:export',
+      'COMMAND:install',
+      'COMMAND:plan',
+      'COMMAND:status',
+      'COMMAND:sync',
+      'COMMAND:uninstall',
+      'COMMAND:update',
+      'EWP-CF-003',
+      'EWP-CF-040',
+    ]);
+    expect(new Set(option.secondaryGroups)).toEqual(
+      new Set([
+        'P17-G1-02B',
+        'P17-G2-01',
+        'P17-G3A-01',
+        'P17-G3B-03',
+        'P17-G4A-01',
+        'P17-G4A-02',
+        'P17-G4B-01',
+        'P17-G4B-02',
+        'P17-G5-01',
+        'P17-G5-02',
+      ]),
+    );
+
+    expect(entity('EWP-P5-TS05').impactedValidations).toEqual(['EWP-P5-TS05']);
+    expect(entity('P1-04').validatedBy).toEqual(['EWP-P5-TS05']);
+
+    expect(entity('EWP-CMD-CONFIG-TS03').affectedContracts).toEqual([
+      'COMMAND:config',
+      'D-003',
+      'EWP-CF-022',
+    ]);
+    expect(entity('EWP-CMD-CONFIG-TS04').affectedContracts).toEqual([
+      'COMMAND:config',
+      'D-003',
+      'EWP-CF-012',
+      'EWP-CF-029',
+    ]);
+    expect(entity('EWP-P2-TS01').affectedContracts).toEqual([
+      'D-003',
+      'EWP-CF-019',
+      'EWP-CF-027',
+      'EWP-CF-029',
+      'EWP-CF-030',
+    ]);
+    expect(entity('EWP-P2-TS02').affectedContracts).toEqual([
+      'D-003',
+      'EWP-CF-003',
+      'EWP-CF-021',
+      'EWP-CF-022',
+      'EWP-CF-040',
+    ]);
+  });
+
   test.each([
     ['missing entity', (catalog: CatalogFixture) => catalog.entities.splice(0, 1)],
     [

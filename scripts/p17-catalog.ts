@@ -480,7 +480,7 @@ const optionGroups = [
   'G6-02A',
   'G1-01',
   'G6-02A',
-  'G2-01',
+  'G5-05',
   'G4B-02',
   'G1-02A',
 ];
@@ -595,6 +595,40 @@ function stateModelFor(kind: Kind): Entity['stateModel'] {
 const validationPrefix = '(?:EWP-(?:P(?:0A|1|2|3A|3B|4A|4B|5|6)-TS|CMD-[A-Z]+-TS|OPT-TS)|EWP-WF)';
 
 const explicitValidationOwnership: Record<string, string[]> = {
+  'COMMAND:config': [
+    'EWP-CMD-CONFIG-TS01',
+    'EWP-CMD-CONFIG-TS02',
+    'EWP-CMD-CONFIG-TS03',
+    'EWP-CMD-CONFIG-TS04',
+    'EWP-CMD-CONFIG-TS05',
+    'EWP-P0A-TS05',
+    'EWP-P0A-TS09',
+    'EWP-P1-TS01',
+    'EWP-P1-TS02',
+    'EWP-P1-TS03',
+    'EWP-P1-TS05',
+    'EWP-P1-TS06',
+    'EWP-P1-TS07',
+    'EWP-P1-TS08',
+    'EWP-P1-TS09',
+    'EWP-P1-TS10',
+    'EWP-P1-TS11',
+    'EWP-P2-TS01',
+    'EWP-P2-TS02',
+    'EWP-WF14',
+  ],
+  // EWP-OPT-TS08 is a final cross-command artifact-option gate, not evidence for P1-04's bulk
+  // scheduling contract merely because both close in G5-05.
+  'EWP-OPT-TS08': ['EWP-OPT-TS08'],
+  'EWP-P5-TS05': ['EWP-P5-TS05'],
+  'EWP-P2-T04': [
+    'EWP-CMD-CONFIG-TS01',
+    'EWP-CMD-CONFIG-TS04',
+    'EWP-P2-TS01',
+    'EWP-P2-TS04',
+    'EWP-P2-TS07',
+  ],
+  'P1-04': ['EWP-P5-TS05'],
   // P0-01's project-context/parser slice lands in G1-01. Output/runtime, observer diagnostics,
   // and final TTY/color behavior remain mandatory downstream instead of being falsely signed off.
   'P0-01': [
@@ -623,6 +657,32 @@ const explicitValidationOwnership: Record<string, string[]> = {
     'EWP-CMD-CONFIG-TS04',
     'EWP-WF14',
   ],
+};
+
+const explicitContractOwnership: Record<string, string[]> = {
+  'EWP-CMD-CONFIG-TS01': ['COMMAND:config', 'D-003', 'EWP-CF-012'],
+  'EWP-CMD-CONFIG-TS02': ['COMMAND:config', 'D-003', 'P0-02'],
+  'EWP-CMD-CONFIG-TS03': ['COMMAND:config', 'D-003', 'EWP-CF-022'],
+  'EWP-CMD-CONFIG-TS04': ['COMMAND:config', 'D-003', 'EWP-CF-012', 'EWP-CF-029'],
+  'EWP-CMD-CONFIG-TS05': ['COMMAND:config', 'D-003', 'P0-03'],
+  'EWP-OPT-TS08': [
+    'COMMAND:apply',
+    'COMMAND:check',
+    'COMMAND:doctor',
+    'COMMAND:export',
+    'COMMAND:install',
+    'COMMAND:plan',
+    'COMMAND:status',
+    'COMMAND:sync',
+    'COMMAND:uninstall',
+    'COMMAND:update',
+    'EWP-CF-003',
+    'EWP-CF-040',
+  ],
+  'EWP-P2-T01': ['D-003', 'EWP-CF-003', 'EWP-CF-021', 'EWP-CF-022', 'EWP-CF-040'],
+  'EWP-P2-T02': ['D-003', 'EWP-CF-019', 'EWP-CF-029', 'EWP-CF-030'],
+  'EWP-P2-TS01': ['D-003', 'EWP-CF-019', 'EWP-CF-027', 'EWP-CF-029', 'EWP-CF-030'],
+  'EWP-P2-TS02': ['D-003', 'EWP-CF-003', 'EWP-CF-021', 'EWP-CF-022', 'EWP-CF-040'],
 };
 
 function validationReferences(value: string): string[] {
@@ -829,12 +889,13 @@ function initialize(): Catalog {
       explicitValidationOwnership[item.id] ??
       (tracedValidations.length > 0 ? tracedValidations : fallbackValidations);
     const contracts =
-      item.kind === 'finding'
+      explicitContractOwnership[item.id] ??
+      (item.kind === 'finding'
         ? (findingRelation?.contracts ?? [])
-        : (contractsByGroup.get(item.primaryGroup) ?? []);
+        : (contractsByGroup.get(item.primaryGroup) ?? []));
     const secondaryGroups = [
       ...new Set(
-        validations
+        [...validations, ...contracts]
           .map((id) => baseById.get(id)?.primaryGroup)
           .filter((id): id is string => Boolean(id) && id !== item.primaryGroup),
       ),
