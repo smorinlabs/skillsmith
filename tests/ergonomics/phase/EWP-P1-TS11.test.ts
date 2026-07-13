@@ -160,7 +160,7 @@ const runCli = async (args: readonly string[], env: Record<string, string | unde
       HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/home'),
       XDG_CONFIG_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/xdg/config'),
       XDG_DATA_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/xdg/data'),
-      XDG_CACHE_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/xdg/cache'),
+      XDG_CACHE_HOME: '/tmp/skillsmith-p17-ts11-cache',
       SKILLSMITH_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/skillsmith-home'),
       CODEX_HOME: join(ROOT, 'tests/ergonomics/fixtures/p1-ts11/codex-home'),
       ...env,
