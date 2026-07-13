@@ -1,4 +1,4 @@
-import type { FlipAction, FlipReport, FlipResult } from '@skillsmith/core';
+import { type FlipAction, type FlipReport, type FlipResult, toolRegistry } from '@skillsmith/core';
 
 const SWAP_COL = 60;
 
@@ -40,7 +40,8 @@ const renderPair = (op: FlipReport['op'], r: FlipResult): string[] => {
   if (r.verify) {
     // BF-7b: render the ACTUAL gate mode. `dev --source` create/adopt always gates STATIC (PRD D2),
     // even for codex — only promote runs codex deep. Labeling create/adopt "deep" was a lie.
-    const modeLabel = tool === 'codex' && op === 'promote' ? 'deep' : 'static';
+    const promoteMode = toolRegistry.get(tool)?.verification?.gatePolicy.promote;
+    const modeLabel = op === 'promote' && promoteMode === 'static+deep' ? 'deep' : 'static';
     lines.push(`  verify   ${modeLabel}: ${r.verify.verdict ?? r.verify.gate}`);
   }
 

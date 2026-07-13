@@ -1,16 +1,11 @@
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
-import {
-  claudeCodeSkillRootsUser,
-  listClaudeCodePlacements,
-} from '../agents/claude-code/placement.ts';
-import type { SkillRootsCtx } from '../agents/claude-code/skill-roots.ts';
-import { listCodexPlacements } from '../agents/codex/placement.ts';
-import { getSkillRoots as getCodexSkillRoots } from '../agents/codex/skill-roots.ts';
+import type { PlacementBundle, SkillRootsCtx } from '../agents/adapter-types.ts';
 import {
   type Placement,
   type PlacementClass,
   classifyPlacement,
 } from '../agents/placement-shared.ts';
+import { toolRegistry } from '../agents/registry.ts';
 import { type SkillSmithError, flipRefusedError, placementNotFoundError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import { getPair } from './ledger.ts';
@@ -36,9 +31,24 @@ export interface FlipPlanOutcome {
   preResults: FlipResult[]; // already-decided results (refusals, skips, not-found)
 }
 
-export const LEGACY_ROOT_NOTICE =
-  'codex placement is in the legacy ~/.codex/skills; the current convention is ~/.agents/skills — ' +
-  "a future 'skillsmith install' can migrate it";
+const compatibilityLegacyInventory = {
+  placements: [],
+  duplicates: [],
+  currentRoot: null,
+  legacyRoot: '__skillsmith_legacy_root__',
+} as const;
+
+/** @deprecated Compatibility view; placement bundles own legacy-root notices. */
+export const LEGACY_ROOT_NOTICE = (() => {
+  for (const adapter of toolRegistry.adapters) {
+    const notice = adapter.placement?.noticeForRoot(
+      compatibilityLegacyInventory.legacyRoot,
+      compatibilityLegacyInventory,
+    );
+    if (notice) return notice;
+  }
+  throw new Error('tool registry invariant: no legacy-root notice is registered');
+})();
 
 const emptyFlipResult = (
   skill: string,
@@ -99,14 +109,10 @@ const isRollbackablePair = (ledger: LedgerFile, skill: string, tool: FlipTool): 
   return pair.mode === 'pinned' ? pair.dev != null : pair.pinned != null;
 };
 
-interface CodexRoots {
-  current: string;
-  legacy: string;
-}
-
-const codexRootsOf = (env: PlacementReadPorts, ctx: SkillRootsCtx): CodexRoots => {
-  const [current, legacy] = getCodexSkillRoots(env, 'user', ctx);
-  return { current: current ?? '', legacy: legacy ?? '' };
+const placementBundleFor = (tool: FlipTool): PlacementBundle => {
+  const placement = toolRegistry.get(tool)?.placement;
+  if (placement === undefined) throw new Error(`tool registry invariant: ${tool} has no placement`);
+  return placement;
 };
 
 /** The standard user-scope skills roots a tool owns (claude-code: one; codex: current + legacy).
@@ -116,14 +122,7 @@ const standardRootsFor = (
   env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   tool: FlipTool,
-): string[] => {
-  if (tool === 'claude-code') {
-    const [root] = claudeCodeSkillRootsUser(env, ctx);
-    return [root ?? join(env.homeDir, '.claude', 'skills')];
-  }
-  const roots = codexRootsOf(env, ctx);
-  return [roots.current, roots.legacy].filter((r) => r !== '');
-};
+): readonly string[] => placementBundleFor(tool).standardRoots(env, ctx);
 
 /** BF-1(a): a skill NAME target must be a single leaf — never `.`/`..`/empty/`/`-bearing, which
  *  would classify (and could clobber) the skills ROOT itself rather than a skill in it. */
@@ -136,43 +135,6 @@ interface ToolResolution {
   duplicateReason: string | null;
 }
 
-const resolveClaudeCode = async (
-  env: PlacementReadPorts,
-  ctx: SkillRootsCtx,
-  storeRoot: string,
-  skill: string,
-): Promise<ToolResolution> => {
-  const [root] = claudeCodeSkillRootsUser(env, ctx);
-  const claudeRoot = root ?? join(env.homeDir, '.claude', 'skills');
-  const placement = await classifyPlacement(env, claudeRoot, skill, storeRoot);
-  return { placement, notices: [], duplicateReason: null };
-};
-
-const resolveCodex = async (
-  env: PlacementReadPorts,
-  ctx: SkillRootsCtx,
-  storeRoot: string,
-  skill: string,
-): Promise<ToolResolution> => {
-  const roots = codexRootsOf(env, ctx);
-  const current = await classifyPlacement(env, roots.current, skill, storeRoot);
-  const legacy = await classifyPlacement(env, roots.legacy, skill, storeRoot);
-  const currentPresent = current.class !== 'absent';
-  const legacyPresent = legacy.class !== 'absent';
-
-  if (currentPresent && legacyPresent) {
-    return {
-      placement: current,
-      notices: [],
-      duplicateReason: `found in both ${roots.current} and ${roots.legacy}; resolve the duplicate first`,
-    };
-  }
-  if (legacyPresent) {
-    return { placement: legacy, notices: [LEGACY_ROOT_NOTICE], duplicateReason: null };
-  }
-  return { placement: current, notices: [], duplicateReason: null };
-};
-
 const classifyForTool = (
   env: PlacementReadPorts,
   ctx: SkillRootsCtx,
@@ -180,16 +142,12 @@ const classifyForTool = (
   skill: string,
   tool: FlipTool,
 ): Promise<ToolResolution> =>
-  tool === 'claude-code'
-    ? resolveClaudeCode(env, ctx, storeRoot, skill)
-    : resolveCodex(env, ctx, storeRoot, skill);
+  placementBundleFor(tool)
+    .resolve(env, ctx, storeRoot, skill)
+    .then((resolution) => ({ ...resolution, notices: [...resolution.notices] }));
 
 const searchedRootsDescription = (env: PlacementReadPorts, ctx: SkillRootsCtx): string => {
-  const [claudeRoot] = claudeCodeSkillRootsUser(env, ctx);
-  const codex = codexRootsOf(env, ctx);
-  return [claudeRoot, codex.current, codex.legacy]
-    .filter((r): r is string => Boolean(r))
-    .join(', ');
+  return FLIP_TOOLS.flatMap((tool) => standardRootsFor(env, ctx, tool)).join(', ');
 };
 
 const resolveNamedTarget = async (
@@ -231,7 +189,7 @@ const resolveNamedTarget = async (
       if (normal.duplicateReason || normal.placement.class !== 'absent' || hasPair) {
         anyFlippableFound = true;
         const where = normal.duplicateReason
-          ? 'both codex roots'
+          ? `both ${tool} roots`
           : normal.placement.class !== 'absent'
             ? normal.placement.path
             : 'the placements ledger';
@@ -340,23 +298,21 @@ const resolvePathTarget = async (
     return err(flipRefusedError(reason));
   }
 
-  const [claudeRoot] = claudeCodeSkillRootsUser(env, ctx);
-  const codex = codexRootsOf(env, ctx);
-
   let tool: FlipTool | null = null;
   let notices: string[] = [];
   let root: string | null = null;
-  if (claudeRoot !== undefined && parent === claudeRoot) {
-    tool = 'claude-code';
-    root = claudeRoot;
-  } else if (codex.current !== '' && parent === codex.current) {
-    tool = 'codex';
-    root = codex.current;
-  } else if (codex.legacy !== '' && parent === codex.legacy) {
-    tool = 'codex';
-    notices = [LEGACY_ROOT_NOTICE];
-    root = codex.legacy;
-  } else {
+  for (const candidate of FLIP_TOOLS) {
+    const bundle = placementBundleFor(candidate);
+    const candidateRoot = bundle.standardRoots(env, ctx).find((value) => value === parent);
+    if (candidateRoot === undefined) continue;
+    const inventory = await bundle.list(env, ctx, storeRoot);
+    const notice = bundle.noticeForRoot(candidateRoot, inventory);
+    tool = candidate;
+    notices = notice === null ? [] : [notice];
+    root = candidateRoot;
+    break;
+  }
+  if (tool === null) {
     // BF-1(d): a custom-location path (outside every standard root) is still managed if the ledger
     // records a pair at exactly this placementPath (a `--dest` create). The ledger owns LOCATION.
     for (const t of FLIP_TOOLS) {
@@ -485,18 +441,12 @@ export const planFlips = async (
 
     const flippableClass: PlacementClass = opts.op === 'promote' ? 'dev' : 'pinned';
     const perTool = new Map<FlipTool, Map<string, Placement>>();
+    const inventories = new Map<FlipTool, Awaited<ReturnType<PlacementBundle['list']>>>();
 
     for (const tool of toolsInOrder) {
-      if (tool === 'claude-code') {
-        const list = await listClaudeCodePlacements(env, ctx, storeRoot);
-        const byName = new Map(
-          list.filter((p) => p.class === flippableClass).map((p) => [p.skill, p]),
-        );
-        perTool.set(tool, byName);
-        continue;
-      }
-
-      const scan = await listCodexPlacements(env, ctx, storeRoot);
+      const bundle = placementBundleFor(tool);
+      const scan = await bundle.list(env, ctx, storeRoot);
+      inventories.set(tool, scan);
       const byName = new Map<string, Placement>();
       for (const p of scan.placements) {
         if (p.class !== flippableClass) continue;
@@ -516,8 +466,8 @@ export const planFlips = async (
         preResults.push(
           emptyFlipResult(
             dupSkill,
-            'codex',
-            join(scan.legacyRoot, dupSkill),
+            tool,
+            join(scan.legacyRoot ?? scan.currentRoot ?? '', dupSkill),
             reason,
             flipRefusedError(reason),
           ),
@@ -535,18 +485,22 @@ export const planFlips = async (
       if (toolsInOrder.some((tool) => hasOpenJournal(ledger, skill, tool)))
         allSkillNames.add(skill);
 
-    const codexLegacyRoot = codexRootsOf(env, ctx).legacy;
     for (const skill of [...allSkillNames].sort()) {
       for (const tool of toolsInOrder) {
         const placement = perTool.get(tool)?.get(skill);
+        const bundle = placementBundleFor(tool);
+        const inventory = inventories.get(tool);
+        if (inventory === undefined) {
+          throw new Error(`tool registry invariant: ${tool} placement inventory is missing`);
+        }
 
         // A journaled pair surfaces regardless of filesystem class or the op's dev-source filter,
         // so the run layer's resume/rollback/refuse logic remains reachable (F1).
         if (hasOpenJournal(ledger, skill, tool)) {
           const p =
             placement ?? (await classifyForTool(env, ctx, storeRoot, skill, tool)).placement;
-          const notices =
-            tool === 'codex' && p.root === codexLegacyRoot ? [LEGACY_ROOT_NOTICE] : [];
+          const notice = bundle.noticeForRoot(p.root, inventory);
+          const notices = notice === null ? [] : [notice];
           pairs.push({ skill, tool, placement: p, notices });
           continue;
         }
@@ -568,8 +522,8 @@ export const planFlips = async (
           continue;
         }
 
-        const notices =
-          tool === 'codex' && placement.root === codexLegacyRoot ? [LEGACY_ROOT_NOTICE] : [];
+        const notice = bundle.noticeForRoot(placement.root, inventory);
+        const notices = notice === null ? [] : [notice];
         pairs.push({ skill, tool, placement, notices });
       }
     }

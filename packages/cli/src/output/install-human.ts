@@ -6,6 +6,7 @@ import type {
   UninstallReport,
   UninstallResult,
 } from '@skillsmith/core';
+import { toolRegistry } from '@skillsmith/core';
 
 // Column conventions measured against the mockups in `research/commands/install.md` /
 // `uninstall.md`: a 2-space indent, a 9-wide label field ('verify   ', 'store    ',
@@ -51,10 +52,10 @@ const renderInstallToolBlock = (r: InstallResult): string[] => {
   if (r.verify) {
     const modeLabel = r.verify.mode ?? 'static';
     lines.push(`  ${padLabel('verify')}${modeLabel}: ${r.verify.verdict ?? r.verify.gate}`);
-    if (tool === 'codex' && r.verify.mode === 'static') {
-      lines.push(
-        `${NOTE_INDENT}note: codex static checks the manifest only — run 'skillsmith verify ${r.skill} --deep' for a full load check`,
-      );
+    const staticNotice =
+      toolRegistry.get(tool)?.verification?.renderedFacts.installStaticNotice ?? null;
+    if (r.verify.mode === 'static' && staticNotice !== null && r.skill !== null) {
+      lines.push(`${NOTE_INDENT}note: ${staticNotice(r.skill)}`);
     }
   }
 

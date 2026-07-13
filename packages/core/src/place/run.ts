@@ -1,4 +1,5 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { toolRegistry } from '../agents/registry.ts';
 import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
@@ -183,9 +184,19 @@ const runVerifyGate = async (
   tool: FlipTool,
   sourceDir: string,
   opts: FlipOptions,
-  deep: boolean,
+  requestedMode?: 'static' | 'static+deep',
 ): Promise<GateOutcome> => {
   if (opts.noVerify) return { blocked: null, gate: 'skipped', verdict: null, notice: null };
+  const verification = toolRegistry.get(tool)?.verification;
+  if (verification === undefined) {
+    return {
+      blocked: genericError(`tool registry invariant: ${tool} has no verifier`),
+      gate: 'failed',
+      verdict: 'fail',
+      notice: null,
+    };
+  }
+  const deep = (requestedMode ?? verification.gatePolicy.promote) === 'static+deep';
 
   const vr = await deps.verify(env, {
     path: sourceDir,
@@ -336,7 +347,7 @@ const runPromotePair = async (
   const symlinkRepin = existing?.pinned?.placement === 'symlink' && existing?.origin !== undefined;
   if (symlinkRepin) isReplace = true;
 
-  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, tool === 'codex');
+  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts);
   if (gate.blocked) {
     return {
       ...base,
@@ -670,7 +681,7 @@ const createDevPlacement = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, false);
+  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, 'static');
   if (gate.blocked) return gateFailedResult(base, gate);
 
   const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
@@ -732,7 +743,7 @@ const adoptDevPlacement = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, false);
+  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, 'static');
   if (gate.blocked) return gateFailedResult(base, gate);
 
   // R1: collect provenance FIRST — its async git work is the widest classify->act window. The record

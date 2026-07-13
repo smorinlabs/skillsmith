@@ -1,9 +1,7 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { installHint as claudeCodeInstallHint } from '../agents/claude-code/install-hint.ts';
-import { getSkillRoots as claudeCodeSkillRoots } from '../agents/claude-code/skill-roots.ts';
-import { installHint as codexInstallHint } from '../agents/codex/install-hint.ts';
-import { getSkillRoots as codexSkillRoots } from '../agents/codex/skill-roots.ts';
+import type { PlacementBundle, SkillRootsCtx } from '../agents/adapter-types.ts';
 import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
+import { toolRegistry } from '../agents/registry.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -21,7 +19,6 @@ import {
   writeLedger,
 } from '../place/ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
-import { LEGACY_ROOT_NOTICE } from '../place/plan.ts';
 import {
   type SnapshotResult,
   clampStoreNs,
@@ -86,14 +83,34 @@ const nowOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): stri
 const txIdOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string =>
   deps.newTxId?.() ?? ports.nextId('acquisition-transaction');
 
-const SKILL_ROOTS: Record<FlipTool, typeof claudeCodeSkillRoots> = {
-  'claude-code': claudeCodeSkillRoots,
-  codex: codexSkillRoots,
+const placementBundleFor = (tool: FlipTool): PlacementBundle => {
+  const placement = toolRegistry.get(tool)?.placement;
+  if (placement === undefined) throw new Error(`tool registry invariant: ${tool} has no placement`);
+  return placement;
 };
 
-const INSTALL_HINTS: Record<FlipTool, string> = {
-  'claude-code': claudeCodeInstallHint,
-  codex: codexInstallHint,
+const skillRootsFor = (
+  tool: FlipTool,
+  env: AcquisitionPorts,
+  scope: InstallScope,
+  ctx: SkillRootsCtx,
+): readonly string[] => placementBundleFor(tool).roots(env, scope, ctx);
+
+const primarySkillRootFor = (
+  tool: FlipTool,
+  env: AcquisitionPorts,
+  scope: InstallScope,
+  ctx: SkillRootsCtx,
+): string => {
+  const root = skillRootsFor(tool, env, scope, ctx)[0];
+  if (root === undefined) throw new Error(`tool registry invariant: ${tool} has no ${scope} root`);
+  return root;
+};
+
+const installHintFor = (tool: FlipTool): string => {
+  const hint = toolRegistry.get(tool)?.inventory.installHint;
+  if (hint === undefined) throw new Error(`tool registry invariant: ${tool} has no install hint`);
+  return hint;
 };
 
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
@@ -167,7 +184,12 @@ const runInstallVerifyGate = async (
   if (opts.noVerify) {
     return { blocked: null, gate: 'skipped', verdict: null, mode: null, notice: null };
   }
-  const deep = tool === 'codex' && opts.deep === true;
+  const verification = toolRegistry.get(tool)?.verification;
+  if (verification === undefined) {
+    const blocked = genericError(`tool registry invariant: ${tool} has no verifier`);
+    return { blocked, gate: 'failed', verdict: 'fail', mode: 'static', notice: null };
+  }
+  const deep = verification.gatePolicy.installDeep && opts.deep === true;
   const mode: 'static' | 'static+deep' = deep ? 'static+deep' : 'static';
   const vr = await deps.verify(env, {
     path,
@@ -500,7 +522,7 @@ const placePair = async (
     cwd: p.scope === 'project' ? (p.scopeKey as string) : opts.cwd,
     configuration: opts.configuration,
   };
-  const installRoot = SKILL_ROOTS[tool](env, p.scope, rootsCtx)[0] as string;
+  const installRoot = primarySkillRootFor(tool, env, p.scope, rootsCtx);
   const placementPath = join(installRoot, skill);
   const resultVerify =
     gate.gate === 'skipped' ? null : { gate: gate.gate, verdict: gate.verdict, mode: gate.mode };
@@ -558,14 +580,13 @@ const placePair = async (
     return fail(genericError(`cannot create skills root ${installRoot}: ${errorMessage(e)}`));
   }
 
-  // D15: codex legacy-root conflict (read-only detection; --force does NOT override).
-  if (tool === 'codex' && p.scope === 'user') {
-    const legacyRoot = SKILL_ROOTS.codex(env, 'user', rootsCtx)[1];
-    if (legacyRoot) {
+  // D15: secondary legacy-root conflict (read-only detection; --force does NOT override).
+  if (p.scope === 'user') {
+    for (const legacyRoot of skillRootsFor(tool, env, 'user', rootsCtx).slice(1)) {
       const lp = await classifyPlacement(env, legacyRoot, skill, p.storeRoot);
       if (lp.class !== 'absent') {
         return refuse(
-          `'${skill}' already exists in the legacy codex root ${legacyRoot}. Remove it first: skillsmith uninstall ${skill} --tool codex`,
+          `'${skill}' already exists in the legacy ${tool} root ${legacyRoot}. Remove it first: skillsmith uninstall ${skill} --tool ${tool}`,
         );
       }
     }
@@ -580,7 +601,7 @@ const placePair = async (
       cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
       configuration: opts.configuration,
     };
-    const otherRoot = SKILL_ROOTS[tool](env, otherScope, otherCtx)[0] as string;
+    const otherRoot = primarySkillRootFor(tool, env, otherScope, otherCtx);
     const op = await classifyPlacement(env, otherRoot, skill, p.storeRoot);
     const hasPair = getPairAt(p.ledger, otherKey, skill, tool) !== null;
     if (op.class !== 'absent' || hasPair) {
@@ -750,7 +771,7 @@ const predictPair = async (
     cwd: p.scope === 'project' ? (p.scopeKey as string) : opts.cwd,
     configuration: opts.configuration,
   };
-  const installRoot = SKILL_ROOTS[tool](env, p.scope, rootsCtx)[0] as string;
+  const installRoot = primarySkillRootFor(tool, env, p.scope, rootsCtx);
   const placementPath = join(installRoot, skill);
   const { ns, name } = clampStoreNs(spec.repoPath);
   const expectedStorePath = join(p.storeRoot, ns, `${name}@${sha.slice(0, 12)}`, skill);
@@ -786,15 +807,13 @@ const predictPair = async (
     error: flipRefusedError(reason),
   });
 
-  if (tool === 'codex' && p.scope === 'user') {
-    const legacyRoot = SKILL_ROOTS.codex(env, 'user', rootsCtx)[1];
-    if (
-      legacyRoot &&
-      (await classifyPlacement(env, legacyRoot, skill, p.storeRoot)).class !== 'absent'
-    ) {
-      return refuse(
-        `'${skill}' already exists in the legacy codex root ${legacyRoot}. Remove it first: skillsmith uninstall ${skill} --tool codex`,
-      );
+  if (p.scope === 'user') {
+    for (const legacyRoot of skillRootsFor(tool, env, 'user', rootsCtx).slice(1)) {
+      if ((await classifyPlacement(env, legacyRoot, skill, p.storeRoot)).class !== 'absent') {
+        return refuse(
+          `'${skill}' already exists in the legacy ${tool} root ${legacyRoot}. Remove it first: skillsmith uninstall ${skill} --tool ${tool}`,
+        );
+      }
     }
   }
 
@@ -805,7 +824,7 @@ const predictPair = async (
       cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
       configuration: opts.configuration,
     };
-    const otherRoot = SKILL_ROOTS[tool](env, otherScope, otherCtx)[0] as string;
+    const otherRoot = primarySkillRootFor(tool, env, otherScope, otherCtx);
     const shadowed =
       (await classifyPlacement(env, otherRoot, skill, p.storeRoot)).class !== 'absent' ||
       getPairAt(p.ledger, otherKey, skill, tool) !== null;
@@ -1006,7 +1025,7 @@ export const runInstall = async (
   const planningRefusals: InstallResult[] = [];
   for (const tool of undetectedExplicit) {
     const e = toolUnavailableError(
-      `${tool} is not detected; install it first: ${INSTALL_HINTS[tool]}`,
+      `${tool} is not detected; install it first: ${installHintFor(tool)}`,
     );
     for (const { source } of specs) {
       planningRefusals.push({
@@ -1020,7 +1039,7 @@ export const runInstall = async (
 
   if (detectedTools.length === 0) {
     if (!explicitTools) {
-      const e = toolUnavailableError('no supported tool detected (claude-code, codex)');
+      const e = toolUnavailableError(`no supported tool detected (${FLIP_TOOLS.join(', ')})`);
       const results = specs.map(({ source }) => ({
         ...emptyResult(source, scope, 'refused'),
         reason: msg(e),
@@ -1112,7 +1131,7 @@ export const runInstall = async (
             cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
             configuration: opts.configuration,
           };
-          const installRoot = SKILL_ROOTS[tool](env, scope, rootsCtx)[0] as string;
+          const installRoot = primarySkillRootFor(tool, env, scope, rootsCtx);
           sourceResults.push({
             ...emptyResult(source, scope, 'failed'),
             skill: r.skillName,
@@ -1320,7 +1339,7 @@ const collectUninstallMatches = async (
         cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
         configuration: opts.configuration,
       };
-      const roots = SKILL_ROOTS[tool](env, scope, ctx).filter((r): r is string => r !== undefined);
+      const roots = [...skillRootsFor(tool, env, scope, ctx)];
       const existing = getPairAt(ledger, scopeKey, name, tool);
       const placements = await Promise.all(
         roots.map((root) => classifyPlacement(env, root, name, storeRoot)),
@@ -1341,10 +1360,12 @@ const collectUninstallMatches = async (
       }
       const placement = nonAbsent[0] ?? null;
       if (placement) {
-        const notice =
-          tool === 'codex' && roots.length > 1 && placement.root === roots[1]
-            ? LEGACY_ROOT_NOTICE
+        const resolution =
+          scope === 'user'
+            ? await placementBundleFor(tool).resolve(env, ctx, storeRoot, name)
             : null;
+        const notice =
+          resolution?.placement.root === placement.root ? (resolution.notices[0] ?? null) : null;
         matches.push({ scope, scopeKey, tool, kind: 'live', placement, existing, notice });
         continue;
       }
@@ -1398,73 +1419,46 @@ interface PathTargetMatch {
 // A path target (contains '/', or absolute) resolves to exactly one (tool, scope, root) by
 // dirname match — claude-code user/project, codex current user/project, codex legacy. No
 // ambiguity concept applies (one path, one owning root); outside every root is a hard refusal.
-const resolveUninstallPathTarget = (
+const resolveUninstallPathTarget = async (
   env: AcquisitionPorts,
   opts: UninstallOptions,
   target: string,
   projectRoot: string | null,
+  storeRoot: string,
   toolsToSearch: readonly FlipTool[],
   explicitTools: boolean,
-): Result<PathTargetMatch, SkillSmithError> => {
+): Promise<Result<PathTargetMatch, SkillSmithError>> => {
   const resolved = resolve(opts.cwd, target);
   const parent = dirname(resolved);
   const name = basename(resolved);
 
   const ctxUser = { cwd: opts.cwd, configuration: opts.configuration };
-  const claudeUserRoot = SKILL_ROOTS['claude-code'](env, 'user', ctxUser)[0];
-  const codexUserRoots = SKILL_ROOTS.codex(env, 'user', ctxUser);
-  const codexCurrent = codexUserRoots[0];
-  const codexLegacy = codexUserRoots[1];
-
   const candidates: Omit<PathTargetMatch, 'name'>[] = [];
-  if (claudeUserRoot !== undefined) {
-    candidates.push({
-      scope: 'user',
-      scopeKey: null,
-      tool: 'claude-code',
-      root: claudeUserRoot,
-      notice: null,
-    });
-  }
-  if (codexCurrent !== undefined) {
-    candidates.push({
-      scope: 'user',
-      scopeKey: null,
-      tool: 'codex',
-      root: codexCurrent,
-      notice: null,
-    });
-  }
-  if (codexLegacy !== undefined) {
-    candidates.push({
-      scope: 'user',
-      scopeKey: null,
-      tool: 'codex',
-      root: codexLegacy,
-      notice: LEGACY_ROOT_NOTICE,
-    });
+  for (const tool of FLIP_TOOLS) {
+    const bundle = placementBundleFor(tool);
+    const resolution = await bundle.resolve(env, ctxUser, storeRoot, name);
+    for (const root of bundle.roots(env, 'user', ctxUser)) {
+      candidates.push({
+        scope: 'user',
+        scopeKey: null,
+        tool,
+        root,
+        notice: resolution.placement.root === root ? (resolution.notices[0] ?? null) : null,
+      });
+    }
   }
   if (projectRoot !== null) {
     const ctxProj = { cwd: projectRoot, configuration: opts.configuration };
-    const claudeProjRoot = SKILL_ROOTS['claude-code'](env, 'project', ctxProj)[0];
-    const codexProjRoot = SKILL_ROOTS.codex(env, 'project', ctxProj)[0];
-    if (claudeProjRoot !== undefined) {
-      candidates.push({
-        scope: 'project',
-        scopeKey: projectRoot,
-        tool: 'claude-code',
-        root: claudeProjRoot,
-        notice: null,
-      });
-    }
-    if (codexProjRoot !== undefined) {
-      candidates.push({
-        scope: 'project',
-        scopeKey: projectRoot,
-        tool: 'codex',
-        root: codexProjRoot,
-        notice: null,
-      });
+    for (const tool of FLIP_TOOLS) {
+      for (const root of placementBundleFor(tool).roots(env, 'project', ctxProj)) {
+        candidates.push({
+          scope: 'project',
+          scopeKey: projectRoot,
+          tool,
+          root,
+          notice: null,
+        });
+      }
     }
   }
 
@@ -1788,11 +1782,12 @@ const processUninstallTarget = async (
   dryRun: boolean,
 ): Promise<UninstallResult[]> => {
   if (isUninstallPathTarget(target)) {
-    const resolved = resolveUninstallPathTarget(
+    const resolved = await resolveUninstallPathTarget(
       env,
       opts,
       target,
       projectRoot,
+      storeRoot,
       toolsToSearch,
       explicitTools,
     );
