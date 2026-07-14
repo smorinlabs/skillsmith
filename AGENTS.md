@@ -40,3 +40,16 @@ and prefer precise neutral descriptions. Preserve literal operating-system signa
 error identifiers, source grammar, and test vectors whenever reproducibility requires them. Do not
 obscure intent, evade safeguards, weaken tests, or extend work into unauthorized access, destructive
 testing, data extraction, malware, or real-secret handling.
+
+## Test iteration policy
+
+Start implementation iterations with focused tests and `bun run test:smoke`. The default smoke lane
+samples five representative `EWP-P2-TS04` families—fixture integrity, bounded child protocols,
+public contracts, no-op semantics, and all nine filesystem topologies—without running its long
+crash/permission matrix. When coordinator or recovery behavior is touched, also run
+`bun run test:smoke:p2-ts04:recovery`.
+
+Run the full `EWP-P2-TS04` selector, `bun run test`, or `bun run check` only at a major milestone,
+release/merge sign-off, terminal repository gate, or when the change modifies coordinator,
+recovery, barrier, lock, durable-I/O, cancellation, crash-fixture, or `EWP-P2-TS04` mechanics. Do
+not rerun that full matrix during ordinary inner-loop iterations.

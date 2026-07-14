@@ -13,6 +13,9 @@
   "scripts": {
     "dev": "bun run packages/cli/src/index.ts",
     "test": "bun test",
+    "test:smoke": "bun run test:smoke:p2-ts04",
+    "test:smoke:p2-ts04": "bun test tests/ergonomics/phase/EWP-P2-TS04.test.ts --test-name-pattern 'fixtures are counted|spawn fixtures expose|publishes the closed types|pure and coordinated no-op|all nine real topology rows'",
+    "test:smoke:p2-ts04:recovery": "bun test tests/ergonomics/phase/EWP-P2-TS04.test.ts --test-name-pattern 'discovers exact structured transcripts|serializes absent targets, lock overrides|executes collision retry|executes all eleven one-time replay'",
     "typecheck": "tsc --noEmit",
     "lint": "biome check",
     "lint:boundaries": "eslint 'packages/*/src/**/*.ts' 'packages/*/tests/**/*.ts'",
