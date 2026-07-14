@@ -140,6 +140,50 @@ const snapshot = (
     candidates: Object.freeze([...candidates]),
   });
 
+const hostileThrownValues = (): ReadonlyArray<
+  readonly [label: string, value: unknown, accessCount: () => number]
+> => {
+  const canaryError = new Error('discovery-capability-secret-canary');
+  const canaryPrimitive = 'discovery-capability-secret-canary';
+  let messageAccesses = 0;
+  const accessorError = Object.create(Error.prototype) as object;
+  Object.defineProperty(accessorError, 'message', {
+    get() {
+      messageAccesses += 1;
+      throw new Error('hostile message getter invoked');
+    },
+  });
+  let coercionAccesses = 0;
+  const hostileCoercion = {
+    toString(): string {
+      coercionAccesses += 1;
+      throw new Error('hostile toString invoked');
+    },
+    [Symbol.toPrimitive](): string {
+      coercionAccesses += 1;
+      throw new Error('hostile Symbol.toPrimitive invoked');
+    },
+  };
+  let proxyAccesses = 0;
+  const hostileProxy = new Proxy(Object.create(null) as object, {
+    getPrototypeOf() {
+      proxyAccesses += 1;
+      throw new Error('hostile getPrototypeOf invoked');
+    },
+    get() {
+      proxyAccesses += 1;
+      throw new Error('hostile get invoked');
+    },
+  });
+  return [
+    ['canary Error', canaryError, () => 0],
+    ['canary primitive', canaryPrimitive, () => 0],
+    ['hostile message accessor', accessorError, () => messageAccesses],
+    ['hostile coercion', hostileCoercion, () => coercionAccesses],
+    ['hostile proxy', hostileProxy, () => proxyAccesses],
+  ];
+};
+
 describe('artifact discovery and destination ownership', () => {
   test('discovers selected, root, user, and explicit roles with one parse per path', async () => {
     const ports = new FakeDiscoveryPorts({
@@ -174,6 +218,52 @@ describe('artifact discovery and destination ownership', () => {
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.projectContext)).toBe(true);
     expect(result.candidates.every((item) => Object.isFrozen(item.declaredNames))).toBe(true);
+  });
+
+  test('returns fixed state errors without inspecting rejected capability values', async () => {
+    for (const capability of ['pathKind', 'readText'] as const) {
+      for (const [label, thrown, accessCount] of hostileThrownValues()) {
+        const calls = { pathKind: 0, readText: 0 };
+        const ports: ArtifactDiscoveryPorts = {
+          xdg: Object.freeze({
+            config: '/home/u/.config',
+            data: '/home/u/.local/share',
+            cache: '/home/u/.cache',
+          }),
+          pathKind: async () => {
+            calls.pathKind += 1;
+            if (capability === 'pathKind') throw thrown;
+            return 'file';
+          },
+          readText: async () => {
+            calls.readText += 1;
+            if (capability === 'readText') throw thrown;
+            return manifest(['unused']);
+          },
+        };
+
+        const result = await discoverArtifactSnapshot(ports, context());
+        expect(result.ok, `${capability}: ${label}`).toBe(false);
+        if (result.ok) throw new Error('expected artifact discovery refusal');
+        expect(result.error, `${capability}: ${label}`).toEqual({
+          code: 'manifest-candidate-unreadable',
+          exitClass: 'state',
+          message:
+            capability === 'pathKind'
+              ? 'cannot inspect manifest candidate'
+              : 'cannot read manifest candidate',
+          paths: [NESTED],
+        });
+        expect(Object.isFrozen(result.error)).toBe(true);
+        expect(Object.isFrozen(result.error.paths)).toBe(true);
+        expect(JSON.stringify(result.error)).not.toContain('discovery-capability-secret-canary');
+        expect(accessCount(), `${capability}: ${label}`).toBe(0);
+        expect(calls).toEqual({
+          pathKind: 1,
+          readText: capability === 'readText' ? 1 : 0,
+        });
+      }
+    }
   });
 
   test('keeps the stable Git root and supports an explicit non-Git project destination', async () => {

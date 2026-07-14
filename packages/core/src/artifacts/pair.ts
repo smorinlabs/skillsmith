@@ -366,13 +366,11 @@ export const resolveArtifactPair = async (
           ),
         );
       }
-    } catch (cause) {
+    } catch {
       return err(
-        stateError(
-          'artifact-selector-unresolvable',
-          `cannot resolve artifact selector '${selector.path}': ${cause instanceof Error ? cause.message : String(cause)}`,
-          [selector.path],
-        ),
+        stateError('artifact-selector-unresolvable', 'cannot resolve artifact selector', [
+          selector.path,
+        ]),
       );
     }
   }

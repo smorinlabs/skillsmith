@@ -12,6 +12,7 @@ type PathEntry = Readonly<{
 type ArtifactError = Readonly<{
   code: string;
   exitClass: 'usage' | 'state';
+  message: string;
   paths?: readonly string[];
 }>;
 
@@ -263,6 +264,49 @@ const expectError = <T>(result: Result<T>, code: string, exitClass: 'usage' | 's
   return result.error;
 };
 
+const hostileThrownValues = (
+  canary: string,
+): ReadonlyArray<readonly [label: string, value: unknown, accessCount: () => number]> => {
+  const canaryError = new Error(canary);
+  let messageAccesses = 0;
+  const accessorError = Object.create(Error.prototype) as object;
+  Object.defineProperty(accessorError, 'message', {
+    get() {
+      messageAccesses += 1;
+      throw new Error('hostile message getter invoked');
+    },
+  });
+  let coercionAccesses = 0;
+  const hostileCoercion = {
+    toString(): string {
+      coercionAccesses += 1;
+      throw new Error('hostile toString invoked');
+    },
+    [Symbol.toPrimitive](): string {
+      coercionAccesses += 1;
+      throw new Error('hostile Symbol.toPrimitive invoked');
+    },
+  };
+  let proxyAccesses = 0;
+  const hostileProxy = new Proxy(Object.create(null) as object, {
+    getPrototypeOf() {
+      proxyAccesses += 1;
+      throw new Error('hostile getPrototypeOf invoked');
+    },
+    get() {
+      proxyAccesses += 1;
+      throw new Error('hostile get invoked');
+    },
+  });
+  return [
+    ['canary Error', canaryError, () => 0],
+    ['canary primitive', canary, () => 0],
+    ['hostile message accessor', accessorError, () => messageAccesses],
+    ['hostile coercion', hostileCoercion, () => coercionAccesses],
+    ['hostile proxy', hostileProxy, () => proxyAccesses],
+  ];
+};
+
 const snapshotFixture = (
   candidates: readonly ManifestCandidate[],
   context = frozenContext(),
@@ -464,6 +508,48 @@ describe('EWP-P2-TS02 — artifact discovery, ownership, and pair selection', ()
       role: 'project-root',
       path: `${emptyNonGitCwd}/skillsmith.toml`,
     });
+
+    const canary = 'discovery-capability-secret-canary';
+    for (const capability of ['pathKind', 'readText'] as const) {
+      for (const [label, thrown, accessCount] of hostileThrownValues(canary)) {
+        const hostilePorts = new FakeArtifactPorts();
+        let pathKindCalls = 0;
+        let readTextCalls = 0;
+        hostilePorts.pathKind = async () => {
+          pathKindCalls += 1;
+          if (capability === 'pathKind') throw thrown;
+          return 'file';
+        };
+        hostilePorts.readText = async () => {
+          readTextCalls += 1;
+          if (capability === 'readText') throw thrown;
+          return canonicalManifest(['unused']);
+        };
+        const error = expectError(
+          await api.discoverArtifactSnapshot(hostilePorts, frozenContext()),
+          'manifest-candidate-unreadable',
+          'state',
+        );
+        expect(error, `${capability}: ${label}`).toEqual({
+          code: 'manifest-candidate-unreadable',
+          exitClass: 'state',
+          message:
+            capability === 'pathKind'
+              ? 'cannot inspect manifest candidate'
+              : 'cannot read manifest candidate',
+          paths: [NESTED_MANIFEST],
+        });
+        expect(Object.isFrozen(error)).toBe(true);
+        expect(Object.isFrozen(error.paths)).toBe(true);
+        expect('cause' in error).toBe(false);
+        expect(JSON.stringify(error)).not.toContain(canary);
+        expect(accessCount(), `${capability}: ${label}`).toBe(0);
+        expect({ pathKindCalls, readTextCalls }).toEqual({
+          pathKindCalls: 1,
+          readTextCalls: capability === 'readText' ? 1 : 0,
+        });
+      }
+    }
   });
 
   test('selects unique declaration owners and refuses every ambiguous or unsafe candidate set', async () => {
@@ -814,6 +900,45 @@ describe('EWP-P2-TS02 — artifact discovery, ownership, and pair selection', ()
       portability: 'machine-bound',
       portableToken: null,
     });
+
+    const canary = 'pair-capability-secret-canary';
+    for (const capability of ['pathKind', 'realpath'] as const) {
+      for (const [label, thrown, accessCount] of hostileThrownValues(canary)) {
+        const hostilePorts = new FakeArtifactPorts();
+        let pathKindCalls = 0;
+        let realpathCalls = 0;
+        hostilePorts.pathKind = async () => {
+          pathKindCalls += 1;
+          if (capability === 'pathKind') throw thrown;
+          return 'file';
+        };
+        hostilePorts.realpath = async (path) => {
+          realpathCalls += 1;
+          if (capability === 'realpath') throw thrown;
+          return path;
+        };
+        const error = expectError(
+          await api.resolveArtifactPair(hostilePorts, context, { file: './team.toml' }),
+          'artifact-selector-unresolvable',
+          'state',
+        );
+        expect(error, `${capability}: ${label}`).toEqual({
+          code: 'artifact-selector-unresolvable',
+          exitClass: 'state',
+          message: 'cannot resolve artifact selector',
+          paths: ['/work/repo/team.toml'],
+        });
+        expect(Object.isFrozen(error)).toBe(true);
+        expect(Object.isFrozen(error.paths)).toBe(true);
+        expect('cause' in error).toBe(false);
+        expect(JSON.stringify(error)).not.toContain(canary);
+        expect(accessCount(), `${capability}: ${label}`).toBe(0);
+        expect({ pathKindCalls, realpathCalls }).toEqual({
+          pathKindCalls: 1,
+          realpathCalls: capability === 'realpath' ? 1 : 0,
+        });
+      }
+    }
     expect(context.projectRoot).toBe(REPO);
     expect(context.projectIdentity).toBe(REPO);
     expect(ports.calls.readText).toEqual([]);

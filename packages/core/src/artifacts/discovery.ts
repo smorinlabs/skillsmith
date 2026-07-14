@@ -152,12 +152,12 @@ export const discoverArtifactSnapshot = async (
       let kind: Awaited<ReturnType<ArtifactDiscoveryPorts['pathKind']>>;
       try {
         kind = await ports.pathKind(path);
-      } catch (cause) {
+      } catch {
         return err(
           artifactError(
             'manifest-candidate-unreadable',
             'state',
-            `cannot inspect manifest candidate '${path}': ${cause instanceof Error ? cause.message : String(cause)}`,
+            'cannot inspect manifest candidate',
             [path],
           ),
         );
@@ -174,12 +174,12 @@ export const discoverArtifactSnapshot = async (
       let source: string;
       try {
         source = await ports.readText(path);
-      } catch (cause) {
+      } catch {
         return err(
           artifactError(
             'manifest-candidate-unreadable',
             'state',
-            `cannot read manifest candidate '${path}': ${cause instanceof Error ? cause.message : String(cause)}`,
+            'cannot read manifest candidate',
             [path],
           ),
         );

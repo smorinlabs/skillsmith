@@ -80,6 +80,50 @@ const expectLexicalOk = (
   return result.value;
 };
 
+const hostileThrownValues = (): ReadonlyArray<
+  readonly [label: string, value: unknown, accessCount: () => number]
+> => {
+  const canaryError = new Error('pair-capability-secret-canary');
+  const canaryPrimitive = 'pair-capability-secret-canary';
+  let messageAccesses = 0;
+  const accessorError = Object.create(Error.prototype) as object;
+  Object.defineProperty(accessorError, 'message', {
+    get() {
+      messageAccesses += 1;
+      throw new Error('hostile message getter invoked');
+    },
+  });
+  let coercionAccesses = 0;
+  const hostileCoercion = {
+    toString(): string {
+      coercionAccesses += 1;
+      throw new Error('hostile toString invoked');
+    },
+    [Symbol.toPrimitive](): string {
+      coercionAccesses += 1;
+      throw new Error('hostile Symbol.toPrimitive invoked');
+    },
+  };
+  let proxyAccesses = 0;
+  const hostileProxy = new Proxy(Object.create(null) as object, {
+    getPrototypeOf() {
+      proxyAccesses += 1;
+      throw new Error('hostile getPrototypeOf invoked');
+    },
+    get() {
+      proxyAccesses += 1;
+      throw new Error('hostile get invoked');
+    },
+  });
+  return [
+    ['canary Error', canaryError, () => 0],
+    ['canary primitive', canaryPrimitive, () => 0],
+    ['hostile message accessor', accessorError, () => messageAccesses],
+    ['hostile coercion', hostileCoercion, () => coercionAccesses],
+    ['hostile proxy', hostileProxy, () => proxyAccesses],
+  ];
+};
+
 describe('artifact pair resolution', () => {
   test('classifies Windows selectors independently of the executing host', () => {
     for (const token of ['C:team.toml', 'z:relative/path']) {
@@ -208,6 +252,46 @@ describe('artifact pair resolution', () => {
       pathKind: ['/work/repo/alias.toml', '/work/repo/alias.lock'],
       realpath: ['/work/repo/alias.toml', '/work/repo/alias.lock'],
     });
+  });
+
+  test('returns fixed state errors without inspecting rejected capability values', async () => {
+    for (const capability of ['pathKind', 'realpath'] as const) {
+      for (const [label, thrown, accessCount] of hostileThrownValues()) {
+        const calls = { pathKind: 0, realpath: 0 };
+        const ports: ArtifactPairPorts = {
+          pathKind: async () => {
+            calls.pathKind += 1;
+            if (capability === 'pathKind') throw thrown;
+            return 'file';
+          },
+          realpath: async (path) => {
+            calls.realpath += 1;
+            if (capability === 'realpath') throw thrown;
+            return path;
+          },
+        };
+
+        const error = expectError(
+          await resolveArtifactPair(ports, context, { file: './team.toml' }),
+          'artifact-selector-unresolvable',
+          'state',
+        );
+        expect(error, `${capability}: ${label}`).toEqual({
+          code: 'artifact-selector-unresolvable',
+          exitClass: 'state',
+          message: 'cannot resolve artifact selector',
+          paths: ['/work/repo/team.toml'],
+        });
+        expect(Object.isFrozen(error)).toBe(true);
+        expect(Object.isFrozen(error.paths)).toBe(true);
+        expect(JSON.stringify(error)).not.toContain('pair-capability-secret-canary');
+        expect(accessCount(), `${capability}: ${label}`).toBe(0);
+        expect(calls).toEqual({
+          pathKind: 1,
+          realpath: capability === 'realpath' ? 1 : 0,
+        });
+      }
+    }
   });
 
   test('rejects lexical, foreign-form, and symlink escapes from a relative override', async () => {
