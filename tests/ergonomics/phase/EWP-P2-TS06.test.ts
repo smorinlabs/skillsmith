@@ -520,7 +520,7 @@ const runInterruptedChild = async (root: string): Promise<Readonly<Record<string
         subprocess.send({ kind: 'start' });
       } else if (record.kind === 'migration-armed' && !signalled) {
         signalled = true;
-        subprocess.kill('SIGINT');
+        subprocess.send({ kind: 'interrupt', signal: 'SIGINT' });
       } else if (record.kind === 'signal-ack') {
         acknowledged.resolve();
       } else if (record.kind === 'result') {
@@ -679,7 +679,7 @@ describe('EWP-P2-TS06', () => {
     expect(JSON.parse(childCheck.stdout.toString())).toEqual({
       kind: 'p2-ts06-migration-child-self-check',
       protocolVersion: 1,
-      accepts: ['start'],
+      accepts: ['start', 'interrupt'],
       emits: ['fixture-ready', 'migration-armed', 'signal-ack', 'result', 'fixture-error'],
       signal: 'SIGINT',
       timeoutMs: 30_000,

@@ -2,6 +2,8 @@ import { parse as parseToml } from 'smol-toml';
 import { z } from 'zod';
 import { SUPPORTED_TOOLS } from '../agents/types.ts';
 import {
+  type NormalizedManifestV1,
+  artifactContractRegistry,
   classifyManifestSource,
   normalizeManifestDocument,
   readManifestSource,
@@ -14,6 +16,8 @@ import {
   type ParsedConfigDocument,
   SCOPES,
 } from './types.ts';
+
+const encoder = new TextEncoder();
 
 const RegistrySchema = z
   .object({ default: z.string().min(1).optional() })
@@ -86,11 +90,22 @@ export const parseProjectConfig = (text: string): Result<ParsedConfigDocument, S
   const document = readManifestSource(text);
   if (!document.ok) return err(configError(document.error.message));
   const normalized = normalizeManifestDocument(document.value);
-  if (!normalized.ok) return err(configError(normalized.error.message));
-  const defaults = normalized.value.defaults;
+  let manifest: NormalizedManifestV1;
+  if (normalized.ok) {
+    manifest = normalized.value;
+  } else {
+    if (shape !== 'canonical' || normalized.error.field !== 'registry.default') {
+      return err(configError(normalized.error.message));
+    }
+    const codec = artifactContractRegistry.get('manifest', 1);
+    const decoded = codec?.decode(encoder.encode(text));
+    if (decoded === undefined || !decoded.ok) return err(configError(normalized.error.message));
+    manifest = decoded.value.model as NormalizedManifestV1;
+  }
+  const defaults = manifest.defaults;
   const tools = defaults?.tools;
   const singleton = tools?.length === 1 ? tools[0] : undefined;
-  const registryDefault = normalized.value.registry?.default;
+  const registryDefault = manifest.registry?.default;
   const config: Config = {
     ...(singleton === undefined
       ? tools && tools.length > 1

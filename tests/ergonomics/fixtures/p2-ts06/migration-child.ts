@@ -18,7 +18,7 @@ const TIMEOUT_MS = 30_000;
 const SELF_CHECK = Object.freeze({
   kind: 'p2-ts06-migration-child-self-check',
   protocolVersion: 1,
-  accepts: Object.freeze(['start']),
+  accepts: Object.freeze(['start', 'interrupt']),
   emits: Object.freeze([
     'fixture-ready',
     'migration-armed',
@@ -117,6 +117,20 @@ const isStart = (value: unknown): boolean => {
   );
 };
 
+const isInterrupt = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  return (
+    Reflect.ownKeys(value).length === 2 &&
+    descriptors.kind !== undefined &&
+    'value' in descriptors.kind &&
+    descriptors.kind.value === 'interrupt' &&
+    descriptors.signal !== undefined &&
+    'value' in descriptors.signal &&
+    descriptors.signal.value === 'SIGINT'
+  );
+};
+
 const nextMessage = (): Promise<unknown> =>
   new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('fixture IPC timeout')), TIMEOUT_MS);
@@ -167,10 +181,14 @@ const main = async (): Promise<void> => {
   const abortController = new AbortController();
   let releaseBarrier: (() => void) | null = null;
   let armed = false;
-  process.on('SIGINT', () => {
+  const interrupt = (): void => {
     abortController.abort();
     releaseBarrier?.();
     void send({ kind: 'signal-ack', signal: 'SIGINT', aborted: true }).catch(() => undefined);
+  };
+  process.on('SIGINT', interrupt);
+  process.on('message', (message: unknown) => {
+    if (isInterrupt(message)) interrupt();
   });
 
   const base = await createTestNodeArtifactCoordinatorPorts(COORDINATION_ROOT);
