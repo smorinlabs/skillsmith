@@ -117,10 +117,10 @@
         "P17-G3B-05",
         "P17-G3B-06"
       ],
-      "status": "planned",
+      "status": "active",
       "entry": {
-        "status": "pending",
-        "evidence": []
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/phase-3.md#entry-gate-2026-07-14"]
       },
       "review": {
         "status": "pending",
