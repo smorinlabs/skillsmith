@@ -15,12 +15,12 @@ import { parseSource } from '../../src/acquire/source.ts';
 import type { CandidateSkill, InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
 import type { ExecResult } from '../../src/env/types.ts';
-import type { SkillSmithError } from '../../src/errors.ts';
+import { type SkillSmithError, sourceUnresolvableError } from '../../src/errors.ts';
 import { getPairAt, readLedger, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import type { Journal } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
-import { ok } from '../../src/result.ts';
+import { err, ok } from '../../src/result.ts';
 import { VERIFIED_AGAINST, type VerifyReport } from '../../src/verify/types.ts';
 import {
   type RemoteFixture,
@@ -83,6 +83,7 @@ const makeDeps = (over: Partial<InstallDeps> = {}): InstallDeps => {
   return {
     verify: passVerify,
     detect: detectBoth,
+    transport: fixture.transport,
     now: () => NOW,
     newTxId: () => (0x10000000 + n++).toString(16).slice(-8),
     ...over,
@@ -99,10 +100,14 @@ afterAll(async () => {
 
 let f: FixtureFleet;
 let fsSource: string;
+let fsLabel: string;
 let userOpts: InstallOptions;
 beforeEach(async () => {
   f = await buildFixtureFleet();
-  fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+  fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
+  const parsed = parseSource(fsSource);
+  if (!parsed.ok) throw new Error(msg(parsed.error));
+  fsLabel = parsed.value.canonicalInvocation;
   userOpts = { sources: [fsSource], cwd: f.base, configuration: f.configuration };
 });
 afterEach(async () => {
@@ -143,11 +148,18 @@ describe('runInstall — fresh install', () => {
 
     // full origin: unclamped repo (multi-segment), literal source, resolved HEAD, HEAD => null ref
     const expectedRepo = parseSource(fsSource).ok
-      ? (parseSource(fsSource) as { ok: true; value: { repoPath: string } }).value.repoPath
+      ? (
+          parseSource(fsSource) as {
+            ok: true;
+            value: { identity: { repository: string } };
+          }
+        ).value.identity.repository
       : '';
     expect(ccPair?.origin?.repo).toBe(expectedRepo);
     expect(ccPair?.origin?.repo.includes('/')).toBe(true);
-    expect(ccPair?.origin?.source).toBe(fsSource);
+    expect(ccPair?.origin?.source).toBe(
+      'fixture.invalid/acme/multi//plugins/fh/skills/factor-scan',
+    );
     expect(ccPair?.origin?.skillPath).toBe('plugins/fh/skills/factor-scan');
     expect(ccPair?.origin?.refRequested).toBeNull();
     expect(ccPair?.origin?.refResolved).toBe(fixture.multiHead);
@@ -367,7 +379,7 @@ describe('runInstall — resolution ambiguity', () => {
   test('bare multi repo (3 skills) without pick → refused with 3 //path candidates', async () => {
     const r = await runInstall(
       f.env,
-      { sources: [fixture.multiUrl], cwd: f.base, configuration: f.configuration },
+      { sources: [fixture.multiSource], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -385,7 +397,7 @@ describe('runInstall — resolution ambiguity', () => {
       cands.find((c) => c.path === 'plugins/fh/skills/factor-scan') ?? null;
     const r = await runInstall(
       f.env,
-      { sources: [fixture.multiUrl], cwd: f.base, configuration: f.configuration },
+      { sources: [fixture.multiSource], cwd: f.base, configuration: f.configuration },
       makeDeps({ pick }),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -402,8 +414,8 @@ describe('runInstall — batch semantics', () => {
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
-    const bad = r.value.results.find((x) => x.source === 'onepart');
-    const good = r.value.results.find((x) => x.source === fsSource);
+    const bad = r.value.results.find((x) => x.source === '[REJECTED_SOURCE]');
+    const good = r.value.results.find((x) => x.source === fsLabel);
     expect(bad?.action).toBe('refused');
     expect(good?.action).toBe('skipped');
     expect(good?.reason).toBe('fail-fast');
@@ -413,36 +425,44 @@ describe('runInstall — batch semantics', () => {
   });
 
   test('[valid, bad-fetch] → first installs, second failed exit-5 class', async () => {
-    const bad = `file:///nonexistent/${Math.random().toString(36).slice(2)}.git//x`;
+    const bad = `${fixture.multiSource}//not/a/skill`;
+    const badLabel = parseSource(bad);
+    if (!badLabel.ok) throw new Error(msg(badLabel.error));
     const r = await runInstall(
       f.env,
       { sources: [fsSource, bad], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
-    expect(r.value.results.some((x) => x.source === fsSource && x.action === 'installed')).toBe(
+    expect(r.value.results.some((x) => x.source === fsLabel && x.action === 'installed')).toBe(
       true,
     );
-    const badRes = r.value.results.find((x) => x.source === bad);
+    const badRes = r.value.results.find((x) => x.source === badLabel.value.canonicalInvocation);
     expect(badRes?.action).toBe('failed');
     expect(badRes?.error?.code).toBe('source-unresolvable');
   });
 
   test('[bad-fetch, valid] without continueOnError → later source skipped/fail-fast', async () => {
-    const bad = `file:///nonexistent/${Math.random().toString(36).slice(2)}.git//x`;
+    const bad = `${fixture.multiSource}//not/a/skill`;
+    const badLabel = parseSource(bad);
+    if (!badLabel.ok) throw new Error(msg(badLabel.error));
     const r = await runInstall(
       f.env,
       { sources: [bad, fsSource], cwd: f.base, configuration: f.configuration },
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
-    expect(r.value.results.find((x) => x.source === bad)?.action).toBe('failed');
-    const good = r.value.results.filter((x) => x.source === fsSource);
+    expect(
+      r.value.results.find((x) => x.source === badLabel.value.canonicalInvocation)?.action,
+    ).toBe('failed');
+    const good = r.value.results.filter((x) => x.source === fsLabel);
     expect(good.every((x) => x.action === 'skipped' && x.reason === 'fail-fast')).toBe(true);
   });
 
   test('continueOnError attempts every source', async () => {
-    const bad = `file:///nonexistent/${Math.random().toString(36).slice(2)}.git//x`;
+    const bad = `${fixture.multiSource}//not/a/skill`;
+    const badLabel = parseSource(bad);
+    if (!badLabel.ok) throw new Error(msg(badLabel.error));
     const r = await runInstall(
       f.env,
       {
@@ -454,14 +474,441 @@ describe('runInstall — batch semantics', () => {
       makeDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
-    expect(r.value.results.find((x) => x.source === bad)?.action).toBe('failed');
+    expect(
+      r.value.results.find((x) => x.source === badLabel.value.canonicalInvocation)?.action,
+    ).toBe('failed');
     expect(r.value.summary.installed).toBe(2);
+  });
+
+  test('an unsafe override ref never enters requested.ref and does not relabel a valid source', async () => {
+    const canary = 'P17_SECRET_CANARY_123456789';
+    const r = await runInstall(f.env, { ...userOpts, ref: `token=${canary}` }, makeDeps());
+    if (!r.ok) throw new Error(msg(r.error));
+    expect(r.value.requested.ref).toBe('token=[REDACTED]');
+    expect(r.value.requested.sources).toEqual([fsLabel]);
+    expect(r.value.results[0]?.source).toBe(fsLabel);
+    expect(r.value.results[0]?.action).toBe('refused');
+    expect(JSON.stringify(r.value)).not.toContain(canary);
+  });
+
+  test('an encoded credential name never survives a rejected public source label', async () => {
+    const canary = 'P17_SECRET_CANARY';
+    for (const key of ['%74oken', '%2525252574oken']) {
+      const source = `https://example.test/acme/repo/${key}=${canary}?x=1`;
+      const result = await runInstall(f.env, { ...userOpts, sources: [source] }, makeDeps());
+      if (!result.ok) throw new Error(msg(result.error));
+      expect(JSON.stringify(result.value), key).not.toContain(canary);
+      expect(result.value.requested.sources[0], key).toBe(
+        'https://example.test/acme/repo/token=[REDACTED]',
+      );
+      expect(result.value.results[0]?.source, key).toBe(
+        'https://example.test/acme/repo/token=[REDACTED]',
+      );
+    }
+  });
+});
+
+describe('runInstall — post-transport safety boundary', () => {
+  test('refuses token-shaped remote candidate metadata before materialization or persistence', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    let materializeCalls = 0;
+    const r = await runInstall(
+      f.env,
+      userOpts,
+      makeDeps({
+        transport: {
+          ...fixture.transport,
+          listSkills: async () =>
+            ok({ candidates: [{ path: `skills/${canary}`, name: canary }], scanned: 1 }),
+          materializeSkill: async (...args) => {
+            materializeCalls++;
+            return fixture.transport.materializeSkill(...args);
+          },
+        },
+      }),
+    );
+    if (!r.ok) throw new Error(msg(r.error));
+    expect(r.value.results[0]?.action).toBe('failed');
+    expect(JSON.stringify(r.value)).not.toContain(canary);
+    expect(materializeCalls).toBe(0);
+    expect(await f.env.pathKind(ledgerPathOf(f.data))).toBe('absent');
+  });
+
+  test('redacts injected transport and verification errors at public result boundaries', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    const transportFailure = await runInstall(
+      f.env,
+      userOpts,
+      makeDeps({
+        transport: {
+          ...fixture.transport,
+          fetchRepo: async () => err(sourceUnresolvableError(`cannot fetch: Bearer ${canary}`)),
+        },
+      }),
+    );
+    if (!transportFailure.ok) throw new Error(msg(transportFailure.error));
+    expect(JSON.stringify(transportFailure.value)).not.toContain(canary);
+    expect(transportFailure.value.results[0]?.reason).toContain('[REDACTED]');
+
+    const verificationFailure = await runInstall(
+      f.env,
+      userOpts,
+      makeDeps({
+        verify: async () => err(sourceUnresolvableError(`password=${canary}`)),
+      }),
+    );
+    if (!verificationFailure.ok) throw new Error(msg(verificationFailure.error));
+    expect(JSON.stringify(verificationFailure.value)).not.toContain(canary);
+    expect(verificationFailure.value.results[0]?.reason).toContain('[REDACTED]');
+  });
+
+  test('copies hostile verifier envelopes without reading accessors or proxy traps', async () => {
+    const canary = 'ghp_P17_HOSTILE_VERIFY_123456789';
+    let getterReads = 0;
+    let proxyReads = 0;
+    let promiseAssimilationReads = 0;
+    const accessorEnvelope: Record<string, unknown> = {};
+    Object.defineProperty(accessorEnvelope, 'ok', {
+      enumerable: true,
+      get: () => {
+        getterReads++;
+        return false;
+      },
+    });
+    Object.defineProperty(accessorEnvelope, 'error', {
+      enumerable: true,
+      get: () => {
+        getterReads++;
+        return sourceUnresolvableError(`password=${canary}`);
+      },
+    });
+    const proxyEnvelope = new Proxy(
+      {
+        ok: false as const,
+        error: sourceUnresolvableError(`password=${canary}`),
+      },
+      {
+        get: (target, key, receiver) => {
+          if (key === 'then') {
+            // Returning an object through an async dependency necessarily performs the ECMAScript
+            // thenable check. Track it separately from application inspection of the envelope.
+            promiseAssimilationReads++;
+            return Reflect.get(target, key, receiver);
+          }
+          proxyReads++;
+          return Reflect.get(target, key, receiver);
+        },
+        ownKeys: (target) => {
+          proxyReads++;
+          return Reflect.ownKeys(target);
+        },
+      },
+    );
+
+    for (const envelope of [accessorEnvelope, proxyEnvelope]) {
+      const result = await runInstall(
+        f.env,
+        userOpts,
+        makeDeps({ verify: async () => envelope as never }),
+      );
+      if (!result.ok) throw new Error(msg(result.error));
+      expect(result.value.results[0]?.action).toBe('failed');
+      expect(JSON.stringify(result.value)).not.toContain(canary);
+      expect(result.value.results[0]?.reason).toContain('operation failed');
+    }
+    expect(getterReads).toBe(0);
+    expect(proxyReads).toBe(0);
+    expect(promiseAssimilationReads).toBeGreaterThan(0);
+  });
+
+  test('redacts hostile detector errors without reading accessors or proxy traps', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    let getterReads = 0;
+    let proxyReads = 0;
+    const accessor: Record<string, unknown> = {};
+    Object.defineProperty(accessor, 'password', {
+      enumerable: true,
+      get: () => {
+        getterReads++;
+        return canary;
+      },
+    });
+    const proxy = new Proxy(
+      { password: canary },
+      {
+        get: (target, key, receiver) => {
+          proxyReads++;
+          return Reflect.get(target, key, receiver);
+        },
+        ownKeys: (target) => {
+          proxyReads++;
+          return Reflect.ownKeys(target);
+        },
+      },
+    );
+    const injected = {
+      ok: false as const,
+      error: {
+        code: 'source-unresolvable' as const,
+        message: `password=${canary}`,
+        cause: { accessor, proxy },
+      },
+    };
+
+    const failure = await runInstall(f.env, userOpts, makeDeps({ detect: async () => injected }));
+    expect(failure.ok).toBeFalse();
+    if (failure.ok) throw new Error('expected detector failure');
+    expect(failure.error.code).toBe('source-unresolvable');
+    expect(JSON.stringify(failure)).not.toContain(canary);
+    expect(JSON.stringify(failure)).toContain('[REDACTED]');
+    expect(injected.error.message).toContain(canary);
+    expect(getterReads).toBe(0);
+    expect(proxyReads).toBe(0);
+
+    const hostileEnvelope = new Proxy(injected, {
+      ownKeys: (target) => {
+        proxyReads++;
+        return Reflect.ownKeys(target);
+      },
+    });
+    const closed = await runInstall(
+      f.env,
+      userOpts,
+      makeDeps({ detect: async () => hostileEnvelope }),
+    );
+    expect(closed).toEqual(err({ code: 'generic', message: 'operation failed' }));
+    expect(proxyReads).toBe(0);
+  });
+
+  test('catches a rejected detector without reading an accessor-backed error', async () => {
+    const canary = 'ghp_P17_THROWN_DETECTOR_123456789';
+    let getterReads = 0;
+    const thrown: Record<string, unknown> = { code: 'permission-denied' };
+    Object.defineProperty(thrown, 'message', {
+      enumerable: true,
+      get: () => {
+        getterReads++;
+        return `password=${canary}`;
+      },
+    });
+
+    const result = await runInstall(
+      f.env,
+      userOpts,
+      makeDeps({
+        detect: async () => {
+          throw thrown;
+        },
+      }),
+    );
+    expect(result.ok).toBeFalse();
+    if (result.ok) throw new Error('expected rejected detector');
+    expect(result.error.code).toBe('permission-denied');
+    expect(JSON.stringify(result)).not.toContain(canary);
+    expect(getterReads).toBe(0);
+    expect(Object.getOwnPropertyDescriptor(thrown, 'message')?.get).toBeFunction();
+  });
+
+  test('keeps valid locked success reports mutable with ordinary prototypes', async () => {
+    const result = await runInstall(f.env, { ...userOpts, tools: ['claude-code'] }, makeDeps());
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(Object.getPrototypeOf(result.value)).toBe(Object.prototype);
+    expect(Object.getPrototypeOf(result.value.results)).toBe(Array.prototype);
+    expect(Object.isFrozen(result.value)).toBeFalse();
+    expect(Object.isFrozen(result.value.results)).toBeFalse();
+    const first = result.value.results[0];
+    if (first === undefined) throw new Error('expected install result');
+    const before = result.value.results.length;
+    result.value.results.push(first);
+    expect(result.value.results).toHaveLength(before + 1);
+    result.value.results.pop();
+  });
+
+  test('redacts install ledger-read and outer-lock failures in dry and locked paths', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    const ledgerPath = ledgerPathOf(f.data);
+    const ledgerFailure: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => (path === ledgerPath ? 'file' : f.env.pathKind(path)),
+      readText: async (path) => {
+        if (path === ledgerPath) throw new Error(`password=${canary}`);
+        return f.env.readText(path);
+      },
+    };
+    const lockFailure: RuntimePorts = {
+      ...f.env,
+      withFileLock: async () => {
+        throw new Error(`authorization=Bearer ${canary}`);
+      },
+    };
+
+    const dryLedgerFailure = await runInstall(
+      ledgerFailure,
+      { ...userOpts, dryRun: true },
+      makeDeps(),
+    );
+    const lockedLedgerFailure = await runInstall(ledgerFailure, userOpts, makeDeps());
+    const outerLockFailure = await runInstall(lockFailure, userOpts, makeDeps());
+    const cases = [dryLedgerFailure, lockedLedgerFailure, outerLockFailure];
+    for (const result of cases) {
+      expect(result.ok).toBeFalse();
+      expect(JSON.stringify(result)).not.toContain(canary);
+      expect(JSON.stringify(result)).toContain('[REDACTED]');
+    }
+    if (dryLedgerFailure.ok || lockedLedgerFailure.ok || outerLockFailure.ok) {
+      throw new Error('expected failures');
+    }
+    expect(dryLedgerFailure.error.code).toBe('ledger-error');
+    expect(lockedLedgerFailure.error.code).toBe('ledger-error');
+    expect(outerLockFailure.error.code).toBe('flip-failed');
+  });
+
+  test('redacts a non-ledger committed-journal sweep failure', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    const seeded = await runInstall(f.env, { ...userOpts, tools: ['claude-code'] }, makeDeps());
+    if (!seeded.ok) throw new Error(msg(seeded.error));
+    const ledger = await led();
+    const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
+    if (!pair?.pinned) throw new Error('expected seeded pinned pair');
+    const backupPath = join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef');
+    pair.journal = {
+      op: 'install',
+      txId: 'deadbeef',
+      phase: 'committed',
+      startedAt: NOW,
+      completedAt: NOW,
+      before: {
+        mode: 'pinned',
+        storePath: pair.pinned.storePath,
+        contentHash: pair.pinned.contentHash,
+        liveKind: 'symlink',
+      },
+      stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
+      backupPath,
+    };
+    const persisted = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    if (!persisted.ok) throw new Error(msg(persisted.error));
+    const sweepFailure: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === backupPath) throw new Error(`password=${canary}`);
+        return f.env.pathKind(path);
+      },
+    };
+
+    const result = await runInstall(
+      sweepFailure,
+      { ...userOpts, tools: ['claude-code'] },
+      makeDeps(),
+    );
+    expect(result.ok).toBeFalse();
+    if (result.ok) throw new Error('expected sweep failure');
+    expect(result.error.code).toBe('flip-failed');
+    expect(JSON.stringify(result)).not.toContain(canary);
+    expect(JSON.stringify(result)).toContain('[REDACTED]');
+  });
+
+  test('fails closed on hostile transport envelopes, accessors, and scanned values', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    let getterReads = 0;
+    let proxyReads = 0;
+    const fetchValue: Record<string, unknown> = {};
+    Object.defineProperty(fetchValue, 'sha', {
+      enumerable: true,
+      get: () => {
+        getterReads++;
+        return canary;
+      },
+    });
+    const hostileProxy = new Proxy(
+      { ok: true, value: { sha: canary } },
+      {
+        ownKeys: () => {
+          proxyReads++;
+          return ['ok', 'value'];
+        },
+      },
+    );
+    const candidate: Record<string, unknown> = { name: 'review' };
+    Object.defineProperty(candidate, 'path', {
+      enumerable: true,
+      get: () => {
+        getterReads++;
+        return `skills/${canary}`;
+      },
+    });
+
+    const cases: readonly Partial<InstallDeps['transport']>[] = [
+      {
+        fetchRepo: async () =>
+          ({ ok: true, value: fetchValue }) as Awaited<
+            ReturnType<NonNullable<InstallDeps['transport']>['fetchRepo']>
+          >,
+      },
+      {
+        fetchRepo: async () =>
+          hostileProxy as Awaited<ReturnType<NonNullable<InstallDeps['transport']>['fetchRepo']>>,
+      },
+      {
+        fetchRepo: async () =>
+          ({
+            ok: true,
+            value: { sha: fixture.multiHead, raw: `access_token=${canary}` },
+          }) as Awaited<ReturnType<NonNullable<InstallDeps['transport']>['fetchRepo']>>,
+      },
+      {
+        listSkills: async () =>
+          ({ ok: true, value: { candidates: [candidate], scanned: 1 } }) as unknown as Awaited<
+            ReturnType<NonNullable<InstallDeps['transport']>['listSkills']>
+          >,
+      },
+      {
+        listSkills: async () =>
+          ({ ok: true, value: { candidates: [], scanned: canary } }) as unknown as Awaited<
+            ReturnType<NonNullable<InstallDeps['transport']>['listSkills']>
+          >,
+      },
+      {
+        listSkills: async () => ok({ candidates: [], scanned: 1 }),
+      },
+      {
+        materializeSkill: async () =>
+          ({ ok: true, value: '[REDACTED]' }) as Awaited<
+            ReturnType<NonNullable<InstallDeps['transport']>['materializeSkill']>
+          >,
+      },
+    ];
+
+    for (const transportCase of cases) {
+      const result = await runInstall(
+        f.env,
+        userOpts,
+        makeDeps({ transport: { ...fixture.transport, ...transportCase } }),
+      );
+      if (!result.ok) throw new Error(msg(result.error));
+      expect(result.value.results[0]?.action).toBe('failed');
+      expect(JSON.stringify(result.value)).not.toContain(canary);
+    }
+    expect(getterReads).toBe(0);
+    expect(proxyReads).toBe(0);
+  });
+
+  test('preserves duplicate order with stable numeric request identity', async () => {
+    const r = await runInstall(
+      f.env,
+      { ...userOpts, sources: [fsSource, fsSource], dryRun: true },
+      makeDeps(),
+    );
+    if (!r.ok) throw new Error(msg(r.error));
+    expect(r.value.requested.sources).toEqual([fsLabel, fsLabel]);
+    expect(r.value.results.map(({ requestIndex }) => requestIndex)).toEqual([0, 0, 1, 1]);
+    expect(r.value.results.every(({ source }) => source === fsLabel)).toBeTrue();
   });
 });
 
 describe('runInstall — fetch elision', () => {
   test('re-install of a stored SHA succeeds offline (fetch forbidden)', async () => {
-    const shaSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan@${fixture.multiTagSha}`;
+    const shaSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan@${fixture.multiTagSha}`;
     // seed: install online at the tag SHA
     const seed = await runInstall(
       f.env,

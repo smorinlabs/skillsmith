@@ -78,6 +78,20 @@ The older placement-store `contentHashOf` digest remains an internal compatibili
 existing ledger/store records. It is intentionally independent from the public versioned
 `source-content` hash until a version-aware migration owns that transition.
 
+Human artifact writes preserve that pure identity boundary. A bounded lossless TOML editor verifies
+its semantic delta through the strict manifest reader; an injected, focused artifact coordinator
+then commits manifest/lock pairs with last-moment identity guards, no-replace staging, compatible
+target locks, and private durable forward/rollback recovery. The coordinator does not receive Git,
+HTTP, process, placement, store, ledger, or general runtime authority. Config saving uses the same
+one-file mechanics while retaining its existing public operation.
+
+Remote acquisition exposes only canonical, credential-free source DTOs. Literal arguments,
+userinfo, query strings, fragments, and local/foreign path spellings are rejected before transport
+or persistence. `containsSensitiveMaterial`, `redactSensitiveString`, and
+`redactSensitiveValue` form one shared policy; the observation compatibility export is the same
+function object. Presentation boundaries redact recursively, while persistence boundaries refuse
+sensitive values rather than writing `[REDACTED]` into domain artifacts.
+
 Operation-scoped observation uses immutable contexts, a closed typed event registry, failure-isolated
 observers, and bounded recursive redaction. Core emits no diagnostics directly; CLI or embedding
 adapters own presentation, and events are never state or error authority. The exported `Logger`

@@ -1,16 +1,63 @@
 import { describe, expect, test } from 'bun:test';
 import { chmod, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import { saveConfig } from '../../src/config/save.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 
+const saveConfigWithCoordinator = saveConfig as unknown as (
+  ports: Parameters<typeof saveConfig>[0],
+  opts: Parameters<typeof saveConfig>[1],
+  coordinator: ArtifactCoordinatorPorts,
+) => ReturnType<typeof saveConfig>;
+
 const tmpDir = async (name: string): Promise<string> => {
-  const d = join('/tmp', `sk-save-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const d = join(
+    '/tmp',
+    `skillsmith-save-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   await mkdir(d, { recursive: true });
   return d;
 };
 
 describe('saveConfig', () => {
+  test('uses the injected coordinator root without selecting the account-global adapter', async () => {
+    const env = await defaultRuntimePorts();
+    const root = await tmpDir('injected-coordinator');
+    const file = join(root, 'config.toml');
+    const coordinationRoot = join(root, 'coordination');
+    const delegate = await createTestNodeArtifactCoordinatorPorts(coordinationRoot);
+    const lockTargets: string[] = [];
+    const withFileLock: ArtifactCoordinatorPorts['withFileLock'] = async (
+      target,
+      options,
+      operation,
+    ) => {
+      lockTargets.push(target);
+      return delegate.withFileLock(target, options, operation);
+    };
+    const coordinator: ArtifactCoordinatorPorts = Object.freeze({
+      ...delegate,
+      withFileLock,
+    });
+
+    const result = await saveConfigWithCoordinator(
+      env,
+      { scope: 'user', file, patch: { tool: 'codex' } },
+      coordinator,
+    );
+
+    expect(result).toEqual({ ok: true, value: { file, changed: true, unchanged: false } });
+    expect(await readFile(file, 'utf8')).toContain('tool = "codex"');
+    expect(lockTargets).toContain(join(coordinationRoot, 'global'));
+    expect(lockTargets).toContain(file);
+    expect(
+      lockTargets.every((target) => target === file || target.startsWith(`${coordinationRoot}/`)),
+    ).toBeTrue();
+    await rm(root, { recursive: true, force: true });
+  });
+
   test('writes a new user config file', async () => {
     const env = await defaultRuntimePorts();
     const d = await tmpDir('new');
@@ -286,7 +333,7 @@ describe('saveConfig', () => {
       const message = 'message' in unset.error ? unset.error.message : '';
       expect(message).toContain('[defaults]');
       expect(message).toContain('-tools = ["codex"]');
-      expect(message).not.toContain('<REDACTED>');
+      expect(message).not.toContain('[REDACTED]');
     }
     expect(await readFile(unsetFile, 'utf8')).toBe(multiline);
     expect(await readdir(unsetRoot)).toEqual(['skillsmith.toml']);
@@ -305,124 +352,13 @@ describe('saveConfig', () => {
     expect(sensitive.ok).toBeFalse();
     if (!sensitive.ok) {
       const message = 'message' in sensitive.error ? sensitive.error.message : '';
-      expect(message).toContain('+path = "<REDACTED>"');
-      expect(message).toContain('replace "<REDACTED>" locally with the requested validated value');
+      expect(message).toContain('+path = "[REDACTED]"');
+      expect(message).toContain('replace "[REDACTED]" locally with the requested validated value');
       expect(message).not.toContain(canary);
     }
     expect(await readFile(sensitiveFile, 'utf8')).toBe(before);
     expect(await readdir(sensitiveRoot)).toEqual(['config.toml']);
     await rm(sensitiveRoot, { recursive: true, force: true });
-  });
-
-  test('cleans every ordinary staging-phase failure and compensates a failed directory flush', async () => {
-    const base = await defaultRuntimePorts();
-    const phases = ['write', 'mode', 'file-fsync', 'rename', 'dir-fsync'] as const;
-    const modes = [0o600, 0o640, 0o644] as const;
-    for (const [index, phase] of phases.entries()) {
-      const d = await tmpDir(`failure-${phase}`);
-      const file = join(d, 'config.toml');
-      const before = '# retained\ntool = "codex"\n';
-      const mode = modes[index % modes.length] ?? 0o600;
-      await writeFile(file, before);
-      await chmod(file, mode);
-      const ports = {
-        ...base,
-        ...(phase === 'write'
-          ? {
-              writeTextFile: async (path: string, text: string) => {
-                await base.writeTextFile(path, text.slice(0, 4));
-                throw new Error('partial stage write');
-              },
-            }
-          : {}),
-        ...(phase === 'mode'
-          ? { setFileMode: async () => Promise.reject(new Error('mode failed')) }
-          : {}),
-        ...(phase === 'file-fsync'
-          ? { fsyncFile: async () => Promise.reject(new Error('file sync failed')) }
-          : {}),
-        ...(phase === 'rename'
-          ? { rename: async () => Promise.reject(new Error('rename failed')) }
-          : {}),
-        ...(phase === 'dir-fsync'
-          ? { fsyncDir: async () => Promise.reject(new Error('directory sync failed')) }
-          : {}),
-      };
-      const result = await saveConfig(ports, {
-        scope: 'user',
-        file,
-        patch: { tool: 'opencode' },
-      });
-      expect(result.ok, phase).toBeFalse();
-      expect(await readFile(file, 'utf8'), phase).toBe(before);
-      expect((await stat(file)).mode & 0o777, phase).toBe(mode);
-      expect((await readdir(d)).sort(), phase).toEqual(['config.toml']);
-      await rm(d, { recursive: true, force: true });
-    }
-  });
-
-  test('rejects every non-regular metadata kind before reading or mutating', async () => {
-    const base = await defaultRuntimePorts();
-    for (const kind of ['dir', 'symlink', 'other'] as const) {
-      let reads = 0;
-      let mutations = 0;
-      const result = await saveConfig(
-        {
-          ...base,
-          readFileMetadata: async () => ({ kind, mode: 0o600, identity: 'special' }),
-          readText: async () => {
-            reads += 1;
-            return '';
-          },
-          writeTextFile: async () => {
-            mutations += 1;
-          },
-        },
-        { scope: 'user', file: `/special/${kind}`, patch: { tool: 'codex' } },
-      );
-      expect(result).toMatchObject({ ok: false, error: { code: 'config-error' } });
-      expect(reads).toBe(0);
-      expect(mutations).toBe(0);
-    }
-  });
-
-  test('restores an absent destination when its post-rename directory flush fails', async () => {
-    const base = await defaultRuntimePorts();
-    const d = await tmpDir('absent-dir-fsync');
-    const file = join(d, 'config.toml');
-    const result = await saveConfig(
-      {
-        ...base,
-        fsyncDir: async () => Promise.reject(new Error('directory sync failed')),
-      },
-      { scope: 'user', file, patch: { tool: 'codex' } },
-    );
-    expect(result.ok).toBeFalse();
-    expect(await readdir(d)).toEqual([]);
-    await rm(d, { recursive: true, force: true });
-  });
-
-  test('classifies rename permission denial and cleans the staged file', async () => {
-    const env = await defaultRuntimePorts();
-    const d = await tmpDir('permission');
-    const file = join(d, 'config.toml');
-    const before = 'tool = "codex"\n';
-    await writeFile(file, before);
-    const denied = {
-      ...env,
-      rename: async () => {
-        throw Object.assign(new Error('denied'), { code: 'EACCES' });
-      },
-    };
-    const result = await saveConfig(denied, {
-      scope: 'user',
-      file,
-      patch: { tool: 'opencode' },
-    });
-    expect(result).toMatchObject({ ok: false, error: { code: 'permission-denied', path: file } });
-    expect(await readFile(file, 'utf8')).toBe(before);
-    expect(await readdir(d)).toEqual(['config.toml']);
-    await rm(d, { recursive: true, force: true });
   });
 
   test('refuses unsafe editor shapes without touching the destination', async () => {

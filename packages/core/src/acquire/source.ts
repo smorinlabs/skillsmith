@@ -1,263 +1,298 @@
+import {
+  normalizeSourceIdentity,
+  validateManifestName,
+  validateRequestedRef,
+} from '../artifacts/identity.ts';
 import { type SkillSmithError, flipRefusedError, sourceUnresolvableError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
+import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import type { SourceSpec } from './types.ts';
 
 type Selector = SourceSpec['selector'];
 
-const SHORT_SHA_RE = /^[0-9a-f]{7,39}$/;
-const SCP_RE = /^([^/\s]+)@([^/:\s]+):(.*)$/s;
-const ALLOWED_SCHEMES = ['https', 'http', 'ssh', 'git', 'file'];
-
+const SHORT_SHA_RE = /^[0-9a-f]{7,39}$/u;
+const SCP_RE = /^([^@/:]+)@([^/:]+):(.+)$/u;
+const PERCENT_ESCAPE = /%[0-9a-f]{2}/iu;
 const ONE_PART_MSG = "one-part names are reserved for a future registry; use 'owner/repo[/<name>]'";
 const AMBIGUOUS_SUBGROUP_MSG =
   "ambiguous subgroup path — use '<host>/group/sub/repo//path/to/skill' or a trailing '//' for a whole-repo scan";
-const DOT_PREFIX_MSG = 'dot-prefixed skills are invisible to placement detection';
+const INVALID_SOURCE_MSG = 'install source is invalid';
+const INVALID_REF_MSG = 'install requested ref is invalid';
+const INLINE_OVERRIDE_MSG = 'inline source ref conflicts with override ref';
 
-const stripDotGit = (s: string): string => (s.endsWith('.git') ? s.slice(0, -4) : s);
-
-const isLocalPath = (body: string): boolean =>
-  body === '.' ||
-  body === '..' ||
-  body.startsWith('/') ||
-  body.startsWith('./') ||
-  body.startsWith('../') ||
-  body.startsWith('~');
-
-const stripUserinfo = (authority: string): string => {
-  const at = authority.lastIndexOf('@');
-  return at === -1 ? authority : authority.slice(at + 1);
+const hasControlOrWhitespace = (input: string): boolean => {
+  for (const character of input) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (codePoint <= 0x20 || codePoint === 0x7f || /\s/u.test(character)) return true;
+  }
+  return false;
 };
 
-// The last '@' before the last '/' — reject unless it's a URL/scp authority ('@' isn't the
-// ref separator there, but a legitimate userinfo/scp marker).
-const embeddedAtReject = (raw: string, atIdx: number): SkillSmithError => {
-  const afterAt = raw.slice(atIdx + 1);
-  const relSlash = afterAt.indexOf('/');
-  const end = relSlash === -1 ? raw.length : atIdx + 1 + relSlash;
-  const refToken = raw.slice(atIdx + 1, end);
-  const rebuilt = `${raw.slice(0, atIdx)}${raw.slice(end)}@${refToken}`;
-  return flipRefusedError(`place '@${refToken}' after the skill path: '${rebuilt}'`);
-};
+export interface ParseSourceOptions {
+  readonly overrideRef?: string;
+}
 
-const splitRef = (raw: string): Result<{ body: string; ref: string | null }, SkillSmithError> => {
-  const lastSlash = raw.lastIndexOf('/');
-  const lastAt = raw.lastIndexOf('@');
+const refused = (message = INVALID_SOURCE_MSG): Result<never, SkillSmithError> =>
+  err(flipRefusedError(message));
 
-  if (lastAt > lastSlash) {
-    return ok({ body: raw.slice(0, lastAt), ref: raw.slice(lastAt + 1) });
-  }
-  if (lastAt === -1) {
-    return ok({ body: raw, ref: null });
-  }
+const splitInlineRef = (
+  input: string,
+): Result<Readonly<{ body: string; inlineRef: string | null }>, SkillSmithError> => {
+  const lastAt = input.lastIndexOf('@');
+  if (lastAt < 0) return ok({ body: input, inlineRef: null });
 
-  // '@' is present but not after the last '/' — legitimate only as URL userinfo or scp authority.
-  const schemeIdx = raw.indexOf('://');
-  if (schemeIdx !== -1) {
-    const authorityEnd = raw.indexOf('/', schemeIdx + 3);
-    const boundary = authorityEnd === -1 ? raw.length : authorityEnd;
-    if (lastAt < boundary) return ok({ body: raw, ref: null });
-  }
-  if (SCP_RE.test(raw)) {
-    return ok({ body: raw, ref: null });
-  }
-  return err(embeddedAtReject(raw, lastAt));
-};
-
-const buildSelector = (skillPathRaw: string | null): Result<Selector, SkillSmithError> => {
-  if (skillPathRaw === null || skillPathRaw === '') return ok({ kind: 'whole-repo' });
-
-  const segments = skillPathRaw.split('/');
-  for (const seg of segments) {
-    if (seg === '' || seg === '.' || seg === '..') {
-      return err(flipRefusedError(`invalid skill path segment '${seg}'`));
+  const schemeIndex = input.indexOf('://');
+  if (schemeIndex >= 0) {
+    const authorityEndRaw = input.indexOf('/', schemeIndex + 3);
+    const authorityEnd = authorityEndRaw < 0 ? input.length : authorityEndRaw;
+    if (lastAt < authorityEnd) return ok({ body: input, inlineRef: null });
+  } else {
+    const firstAt = input.indexOf('@');
+    const colon = input.indexOf(':', firstAt + 1);
+    if (firstAt >= 0 && colon > firstAt && lastAt === firstAt) {
+      return ok({ body: input, inlineRef: null });
     }
   }
 
-  const final = segments[segments.length - 1] ?? '';
-  if (final.startsWith('.')) return err(flipRefusedError(DOT_PREFIX_MSG));
-
-  return ok({ kind: 'path', path: segments.join('/') });
+  const lastSlash = input.lastIndexOf('/');
+  if (lastAt < lastSlash) return refused();
+  return ok({ body: input.slice(0, lastAt), inlineRef: input.slice(lastAt + 1) });
 };
 
-// Shared repo-path / selector / cloneUrl derivation for URL and scp forms: both are an
-// authority (host, possibly with userinfo already stripped) followed by a path that may carry
-// an optional `//skillpath` marker.
-const buildFromAuthorityPath = (
-  raw: string,
-  body: string,
-  ref: string | null,
-  host: string,
-  pathPortion: string,
-  pathAbsStart: number,
-  leadingSlash: boolean,
-): Result<SourceSpec, SkillSmithError> => {
-  const dsIdx = pathPortion.indexOf('//');
-
-  let repoRaw: string;
-  let skillPathRaw: string | null;
-  let cloneUrl: string;
-
-  if (dsIdx === -1) {
-    repoRaw = leadingSlash ? pathPortion.slice(1) : pathPortion;
-    skillPathRaw = null;
-    cloneUrl = body;
-  } else {
-    repoRaw = leadingSlash ? pathPortion.slice(1, dsIdx) : pathPortion.slice(0, dsIdx);
-    skillPathRaw = pathPortion.slice(dsIdx + 2);
-    cloneUrl = body.slice(0, pathAbsStart + dsIdx);
+const selectorForPath = (path: string | null): Result<Selector, SkillSmithError> => {
+  if (path === null || path === '') return ok(Object.freeze({ kind: 'whole-repo' as const }));
+  const segments = path.split('/');
+  if (
+    path.startsWith('/') ||
+    path.endsWith('/') ||
+    path.includes('\\') ||
+    hasControlOrWhitespace(path) ||
+    segments.some((segment) => segment === '' || segment === '.' || segment === '..')
+  ) {
+    return refused();
   }
+  return ok(Object.freeze({ kind: 'path' as const, path }));
+};
 
-  const selectorResult = buildSelector(skillPathRaw);
-  if (!selectorResult.ok) return selectorResult;
+interface SplitRepository {
+  readonly repository: string;
+  readonly selector: Selector;
+  readonly hadDotGit: boolean;
+}
 
+const splitRepository = (input: string): Result<SplitRepository, SkillSmithError> => {
+  const marker = input.indexOf('//');
+  const repositoryRaw = marker < 0 ? input : input.slice(0, marker);
+  const selectorRaw = marker < 0 ? null : input.slice(marker + 2);
+  const hadDotGit = repositoryRaw.endsWith('.git');
+  const repository = hadDotGit ? repositoryRaw.slice(0, -4) : repositoryRaw;
+  const selector = selectorForPath(selectorRaw);
+  if (!selector.ok) return selector;
+  return ok({ repository, selector: selector.value, hadDotGit });
+};
+
+interface ParsedProjection {
+  readonly host: string;
+  readonly repository: string;
+  readonly selector: Selector;
+  readonly cloneUrl: string;
+}
+
+const parseUrl = (body: string): Result<ParsedProjection, SkillSmithError> => {
+  if (body.includes('?') || body.includes('#') || PERCENT_ESCAPE.test(body)) return refused();
+  const raw = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/]*)(?:\/(.*))?$/u.exec(body);
+  if (raw === null) return refused();
+  const rawScheme = (raw[1] ?? '').toLowerCase();
+  const rawAuthority = raw[2] ?? '';
+  const rawPath = raw[3] ?? '';
+  const rawHost =
+    rawScheme === 'ssh' && rawAuthority.startsWith('git@') ? rawAuthority.slice(4) : rawAuthority;
+  if (
+    rawAuthority.length === 0 ||
+    rawHost.length === 0 ||
+    rawHost.includes(':') ||
+    rawPath.split('/').some((segment) => segment === '.' || segment === '..')
+  ) {
+    return refused();
+  }
+  let url: URL;
+  try {
+    url = new URL(body);
+  } catch {
+    return refused();
+  }
+  const scheme = url.protocol.toLowerCase();
+  if (scheme !== 'https:' && scheme !== 'ssh:') return refused();
+  if (
+    url.hostname.length === 0 ||
+    url.port.length > 0 ||
+    url.password.length > 0 ||
+    (scheme === 'https:' && url.username.length > 0) ||
+    (scheme === 'ssh:' && url.username !== 'git')
+  ) {
+    return refused();
+  }
+  const path = url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname;
+  if (path.length === 0) return refused();
+  const split = splitRepository(path);
+  if (!split.ok) return split;
+  const cloneUrl = `${scheme}//${scheme === 'ssh:' ? 'git@' : ''}${url.hostname.toLowerCase()}/${split.value.repository}${split.value.hadDotGit ? '.git' : ''}`;
   return ok({
-    raw,
-    host,
-    repoPath: stripDotGit(repoRaw),
+    host: url.hostname.toLowerCase(),
+    repository: split.value.repository,
+    selector: split.value.selector,
     cloneUrl,
-    selector: selectorResult.value,
-    ref,
   });
 };
 
-const parseUrlForm = (
-  raw: string,
-  body: string,
-  ref: string | null,
-): Result<SourceSpec, SkillSmithError> => {
-  const schemeIdx = body.indexOf('://');
-  const scheme = body.slice(0, schemeIdx);
-  if (!ALLOWED_SCHEMES.includes(scheme)) {
-    return err(
-      flipRefusedError(`unsupported URL scheme '${scheme}' — use https, http, ssh, git, or file`),
-    );
+const parseScp = (match: RegExpMatchArray): Result<ParsedProjection, SkillSmithError> => {
+  if (match[1] !== 'git') return refused();
+  const host = match[2] ?? '';
+  const path = match[3] ?? '';
+  if (/^\d+\//u.test(path)) return refused();
+  const split = splitRepository(path);
+  if (!split.ok) return split;
+  return ok({
+    host: host.toLowerCase(),
+    repository: split.value.repository,
+    selector: split.value.selector,
+    cloneUrl: `git@${host.toLowerCase()}:${split.value.repository}${split.value.hadDotGit ? '.git' : ''}`,
+  });
+};
+
+const parseShorthand = (body: string): Result<ParsedProjection, SkillSmithError> => {
+  const marker = body.indexOf('//');
+  const base = marker < 0 ? body : body.slice(0, marker);
+  const selectorRaw = marker < 0 ? null : body.slice(marker + 2);
+  const segments = base.split('/');
+  const first = segments[0] ?? '';
+  const explicitHost = first.includes('.');
+  const host = explicitHost ? first.toLowerCase() : 'github.com';
+  const rest = explicitHost ? segments.slice(1) : segments;
+  if (first.includes(':') || rest.some((segment) => segment.length === 0)) return refused();
+
+  let repositorySegments: readonly string[];
+  let selector: Selector;
+  if (marker >= 0) {
+    repositorySegments = rest;
+    const built = selectorForPath(selectorRaw);
+    if (!built.ok) return built;
+    selector = built.value;
+  } else if (!explicitHost && rest.length === 1) {
+    return refused(ONE_PART_MSG);
+  } else if (rest.length === 2) {
+    repositorySegments = rest;
+    selector = Object.freeze({ kind: 'whole-repo' as const });
+  } else if (rest.length === 3) {
+    repositorySegments = rest.slice(0, 2);
+    const name = rest[2] ?? '';
+    if (!validateManifestName(name, 'install.selector').ok) return refused();
+    selector = Object.freeze({ kind: 'name' as const, name });
+  } else {
+    return refused(AMBIGUOUS_SUBGROUP_MSG);
   }
 
-  const afterScheme = schemeIdx + 3;
-  const pathStart = body.indexOf('/', afterScheme);
-  const authority = pathStart === -1 ? body.slice(afterScheme) : body.slice(afterScheme, pathStart);
-  const pathPortion = pathStart === -1 ? '' : body.slice(pathStart);
-  const pathAbsStart = pathStart === -1 ? body.length : pathStart;
+  const rawRepository = repositorySegments.join('/');
+  const repository = rawRepository.endsWith('.git') ? rawRepository.slice(0, -4) : rawRepository;
+  return ok({
+    host,
+    repository,
+    selector,
+    cloneUrl: `https://${host}/${repository}.git`,
+  });
+};
 
-  return buildFromAuthorityPath(
-    raw,
-    body,
-    ref,
-    stripUserinfo(authority),
-    pathPortion,
-    pathAbsStart,
-    true,
+const buildSpec = (
+  projection: ParsedProjection,
+  ref: string | null,
+): Result<SourceSpec, SkillSmithError> => {
+  const pathSuffix = projection.selector.kind === 'path' ? `//${projection.selector.path}` : '';
+  const normalized = normalizeSourceIdentity(
+    `https://${projection.host}/${projection.repository}${pathSuffix}`,
+    'install.source',
+  );
+  if (!normalized.ok) return refused();
+  if (
+    normalized.value.host !== projection.host ||
+    normalized.value.repository !== projection.repository ||
+    normalized.value.path !==
+      (projection.selector.kind === 'path' ? projection.selector.path : null)
+  ) {
+    return refused();
+  }
+
+  const canonicalSource = `${normalized.value.host}/${normalized.value.repository}${pathSuffix}`;
+  const selectorSuffix = projection.selector.kind === 'name' ? `/${projection.selector.name}` : '';
+  const canonicalInvocation = `${canonicalSource}${selectorSuffix}${ref === null ? '' : `@${ref}`}`;
+  const checked = [
+    projection.host,
+    projection.repository,
+    projection.cloneUrl,
+    canonicalSource,
+    canonicalInvocation,
+    ...(projection.selector.kind === 'whole-repo'
+      ? []
+      : [
+          projection.selector.kind === 'name' ? projection.selector.name : projection.selector.path,
+        ]),
+    ...(ref === null ? [] : [ref]),
+  ];
+  if (checked.some(containsSensitiveMaterial)) return refused();
+
+  return ok(
+    Object.freeze({
+      identity: normalized.value,
+      canonicalSource,
+      canonicalInvocation,
+      originSource: canonicalSource,
+      cloneUrl: projection.cloneUrl,
+      selector: projection.selector,
+      ref,
+    }),
   );
 };
 
-const parseScpForm = (
-  raw: string,
-  body: string,
-  ref: string | null,
-  match: RegExpMatchArray,
+/** The sole acquisition parse/build boundary for inline and override refs. */
+export const parseSource = (
+  input: string,
+  options: ParseSourceOptions = {},
 ): Result<SourceSpec, SkillSmithError> => {
-  const host = match[2] ?? '';
-  const pathPortion = match[3] ?? '';
-  const pathAbsStart = body.length - pathPortion.length;
-
-  return buildFromAuthorityPath(raw, body, ref, host, pathPortion, pathAbsStart, false);
-};
-
-const parseSugarOrHostExplicit = (
-  raw: string,
-  body: string,
-  ref: string | null,
-): Result<SourceSpec, SkillSmithError> => {
-  const dsIdx = body.indexOf('//');
-  let base: string;
-  let skillPathRaw: string | null;
-
-  if (dsIdx === -1) {
-    base = body.endsWith('/') ? body.slice(0, -1) : body;
-    skillPathRaw = null;
-  } else {
-    base = body.slice(0, dsIdx);
-    skillPathRaw = body.slice(dsIdx + 2);
+  if (
+    input.length === 0 ||
+    hasControlOrWhitespace(input) ||
+    input.includes('\\') ||
+    PERCENT_ESCAPE.test(input)
+  ) {
+    return refused();
+  }
+  const split = splitInlineRef(input);
+  if (!split.ok) return split;
+  const { body, inlineRef } = split.value;
+  if (inlineRef !== null && options.overrideRef !== undefined) return refused(INLINE_OVERRIDE_MSG);
+  const ref = inlineRef ?? options.overrideRef ?? null;
+  if (ref !== null) {
+    if (
+      PERCENT_ESCAPE.test(ref) ||
+      containsSensitiveMaterial(ref) ||
+      !validateRequestedRef(ref, 'install.ref').ok
+    ) {
+      return refused(INVALID_REF_MSG);
+    }
+    if (SHORT_SHA_RE.test(ref)) {
+      return err(
+        sourceUnresolvableError(
+          'short SHAs cannot be resolved remotely; use a full 40-hex SHA, a tag, or a branch',
+        ),
+      );
+    }
   }
 
-  const segments = base.split('/');
-  const first = segments[0] ?? '';
-  const isHostExplicit = first.includes('.') || first.includes(':');
-  const host = isHostExplicit ? first : 'github.com';
-  const rest = isHostExplicit ? segments.slice(1) : segments;
-
-  let repoSegments: string[];
-  let nameSelector: string | null = null;
-
-  if (dsIdx !== -1) {
-    // With `//`, ALL segments after the host are the repo path (any depth).
-    repoSegments = rest;
-  } else if (!isHostExplicit && rest.length === 1) {
-    return err(flipRefusedError(ONE_PART_MSG));
-  } else if (rest.length === 2) {
-    repoSegments = rest;
-  } else if (rest.length === 3) {
-    repoSegments = rest.slice(0, 2);
-    nameSelector = rest[2] ?? '';
-  } else {
-    return err(flipRefusedError(AMBIGUOUS_SUBGROUP_MSG));
+  let projection: Result<ParsedProjection, SkillSmithError>;
+  if (body.includes('://')) projection = parseUrl(body);
+  else {
+    const scp = body.match(SCP_RE);
+    projection = scp === null ? parseShorthand(body) : parseScp(scp);
   }
-
-  if (nameSelector?.startsWith('.')) {
-    return err(flipRefusedError(DOT_PREFIX_MSG));
-  }
-
-  const repoPath = stripDotGit(repoSegments.join('/'));
-  const cloneUrl = `https://${host}/${repoPath}.git`;
-
-  if (nameSelector !== null) {
-    return ok({
-      raw,
-      host,
-      repoPath,
-      cloneUrl,
-      selector: { kind: 'name', name: nameSelector },
-      ref,
-    });
-  }
-
-  const selectorResult = buildSelector(skillPathRaw);
-  if (!selectorResult.ok) return selectorResult;
-
-  return ok({ raw, host, repoPath, cloneUrl, selector: selectorResult.value, ref });
-};
-
-export const parseSource = (raw: string): Result<SourceSpec, SkillSmithError> => {
-  const splitResult = splitRef(raw);
-  if (!splitResult.ok) return splitResult;
-  const { body, ref } = splitResult.value;
-
-  // The ONE grammar rejection that is source-unresolvable (exit 5), not flip-refused: the
-  // source is well-formed but a short SHA cannot be resolved remotely.
-  if (ref !== null && SHORT_SHA_RE.test(ref)) {
-    return err(
-      sourceUnresolvableError(
-        'short SHAs cannot be resolved remotely; use a full 40-hex SHA, a tag, or a branch',
-      ),
-    );
-  }
-
-  if (body.includes('://')) {
-    return parseUrlForm(raw, body, ref);
-  }
-
-  const scpMatch = body.match(SCP_RE);
-  if (scpMatch) {
-    return parseScpForm(raw, body, ref, scpMatch);
-  }
-
-  if (isLocalPath(body)) {
-    return err(
-      flipRefusedError(
-        `install acquires remote sources only — '${raw}' is a local path. For a local checkout use 'skillsmith dev <skill> --source <path>' then 'skillsmith promote <skill>'`,
-      ),
-    );
-  }
-
-  return parseSugarOrHostExplicit(raw, body, ref);
+  if (!projection.ok) return projection;
+  return buildSpec(projection.value, ref);
 };

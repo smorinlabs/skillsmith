@@ -6,6 +6,7 @@ import {
   flipFailedError,
   genericError,
   permissionDeniedError,
+  safeErrorCode,
 } from '../errors.ts';
 import type {
   FileReadPort,
@@ -14,22 +15,22 @@ import type {
   GitWorktreeInspection,
 } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import { redactSensitiveValue } from '../safety/redaction.ts';
 import type { Provenance } from './types.ts';
 
 const HASH_PREFIX = 'sha256:';
 const SHA_HEX_40 = /^[0-9a-f]{40}$/;
 const encoder = new TextEncoder();
 
-const isPermError = (e: unknown): boolean =>
-  typeof e === 'object' &&
-  e !== null &&
-  'code' in e &&
-  ((e as { code: unknown }).code === 'EACCES' || (e as { code: unknown }).code === 'EPERM');
+const isPermError = (e: unknown): boolean => {
+  const code = safeErrorCode(e);
+  return code === 'EACCES' || code === 'EPERM';
+};
 
 const mapFsError = (e: unknown, context: string): SkillSmithError =>
   isPermError(e)
     ? permissionDeniedError(`${context}: ${errorMessage(e)}`)
-    : genericError(`${context}: ${errorMessage(e)}`, e);
+    : genericError(`${context}: ${errorMessage(e)}`, redactSensitiveValue(e));
 
 const sha256Hex = (data: Uint8Array | string): string =>
   createHash('sha256').update(data).digest('hex');

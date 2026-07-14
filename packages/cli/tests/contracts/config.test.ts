@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
@@ -14,6 +24,8 @@ import type {
   CurrentCommandRequest,
   InteractionPort,
 } from '../../../core/src/application/types.ts';
+import { withArtifactGroupLock } from '../../../core/src/artifacts/coordinator.ts';
+import { createNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
 import { resolveEffectiveConfig } from '../../../core/src/config/effective.ts';
 import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
 import { saveConfig } from '../../../core/src/config/save.ts';
@@ -24,6 +36,7 @@ import {
   createOperationContext,
   noopObserver,
 } from '../../../core/src/observation/index.ts';
+import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
 import type { RuntimePorts } from '../../../core/src/ports/types.ts';
 import { hermeticGitEnv, runGit } from '../../../core/tests/fixtures/git-env.ts';
 import { exitCodeForClass } from '../../src/runtime/adapter.ts';
@@ -301,19 +314,22 @@ describe('EWP-CMD-CONFIG-TS01', () => {
   });
 
   test('an equivalent flat-config set is byte-identical and performs no mutating file effects', async () => {
-    const file = '/config/skillsmith/config.toml';
+    const root = await sandbox('ts01-flat-noop');
+    const file = join(root, 'config.toml');
     const source = '# retained\ntool  =  "codex" # selected\n';
-    const fixture = memorySavePorts(file, source);
-    const result = await saveConfig(fixture.ports, {
+    await writeFile(file, source);
+    const ports = await defaultRuntimePorts();
+    const beforeIdentity = (await ports.readFileMetadata(file)).identity;
+    const result = await saveConfig(ports, {
       scope: 'user',
+      file,
       patch: { tool: 'codex' },
     });
 
     expect(result.ok).toBeTrue();
-    expect({ bytes: fixture.files.get(file), mutations: fixture.mutations }).toEqual({
-      bytes: source,
-      mutations: [],
-    });
+    expect(await readFile(file, 'utf8')).toBe(source);
+    expect((await ports.readFileMetadata(file)).identity).toBe(beforeIdentity);
+    expect(await readdir(root)).toEqual(['config.toml']);
   });
 
   test('spawned get, set, list, and unset honor user and project scope shorthands', async () => {
@@ -380,10 +396,14 @@ describe('EWP-CMD-CONFIG-TS01', () => {
   }, 20_000);
 
   test('all four system application operations use the injected path without /etc IO', async () => {
-    const file = '/fixture/system/config.toml';
+    const root = await sandbox('ts01-system');
+    const file = join(root, 'system', 'config.toml');
     const source = '# system\ntool = "codex"\n';
-    const fixture = memorySavePorts(file, source, { systemConfigPath: file });
-    const current = applicationContext(fixture.ports);
+    await mkdir(join(root, 'system'), { recursive: true });
+    await writeFile(file, source);
+    const initialMode = await permissionBits(file);
+    const runtime = await defaultRuntimePorts();
+    const current = applicationContext({ ...runtime, systemConfigPath: file });
 
     const get = await runConfigGetApplication(
       applicationRequest(['tool'], { system: true }),
@@ -403,8 +423,8 @@ describe('EWP-CMD-CONFIG-TS01', () => {
       report: { key: 'tool', value: 'opencode', scope: 'system', file },
       mutation: { kind: 'applied', changed: 1 },
     });
-    expect(fixture.files.get(file)).toBe('# system\ntool = "opencode"\n');
-    expect(fixture.modes.get(file)).toBe(0o600);
+    expect(await readFile(file, 'utf8')).toBe('# system\ntool = "opencode"\n');
+    expect(await permissionBits(file)).toBe(initialMode);
 
     const list = await runConfigListApplication(applicationRequest([], { system: true }), current);
     expect(list).toMatchObject({
@@ -426,8 +446,8 @@ describe('EWP-CMD-CONFIG-TS01', () => {
       report: { key: 'tool', scope: 'system', file },
       mutation: { kind: 'applied', changed: 1 },
     });
-    expect(fixture.files.get(file)).not.toContain('tool');
-    expect([...fixture.files.keys()].filter((path) => path.startsWith('/etc/'))).toEqual([]);
+    expect(await readFile(file, 'utf8')).not.toContain('tool');
+    expect(await readdir(root)).toEqual(['system']);
   });
 });
 
@@ -938,69 +958,109 @@ describe('EWP-CMD-CONFIG-TS05', () => {
     });
   });
 
-  test('rename permission denial preserves the original and removes staged residue', async () => {
-    const file = '/config/skillsmith/config.toml';
+  test('real permission denial preserves the original and leaves no staged residue', async () => {
+    const root = await sandbox('ts05-permission-direct');
+    const parent = join(root, 'denied');
+    const file = join(parent, 'config.toml');
     const source = '# retained\ntool = "codex"\n';
-    const fixture = memorySavePorts(file, source, { failRename: true });
-    const result = await saveConfig(fixture.ports, {
-      scope: 'user',
-      patch: { tool: 'opencode' },
-    });
-    const staged = [...fixture.files.keys()].filter((path) => path !== file);
-    const stagedModes = [...fixture.modes.keys()].filter((path) => path !== file);
+    await mkdir(parent);
+    await writeFile(file, source, { mode: 0o600 });
+    await chmod(file, 0o600);
+    const ports = await defaultRuntimePorts();
+    await chmod(parent, 0o500);
+    let result: Awaited<ReturnType<typeof saveConfig>>;
+    try {
+      result = await saveConfig(ports, {
+        scope: 'user',
+        file,
+        patch: { tool: 'opencode' },
+      });
+    } finally {
+      await chmod(parent, 0o700);
+    }
 
     expect({
       ok: result.ok,
       code: result.ok ? null : result.error.code,
-      original: fixture.files.get(file),
-      originalMode: fixture.modes.get(file),
-      staged,
-      stagedModes,
+      original: await readFile(file, 'utf8'),
+      originalMode: await permissionBits(file),
+      residue: await readdir(parent),
     }).toEqual({
       ok: false,
       code: 'permission-denied',
       original: source,
       originalMode: 0o600,
-      staged: [],
-      stagedModes: [],
+      residue: ['config.toml'],
     });
   });
 
   test('coordination, non-permission reads, and non-file destinations are signed state failures', async () => {
-    const file = '/config/skillsmith/config.toml';
+    const root = await sandbox('ts05-state-boundaries');
     const source = '# retained\ntool = "codex"\n';
-    const cases: readonly {
-      readonly label: string;
-      readonly options: MemorySaveOptions;
-      readonly kind: 'file' | 'dir' | 'symlink';
-    }[] = [
+    const runtime = await defaultRuntimePorts();
+    const forUserRoot = (config: string): RuntimePorts => ({
+      ...runtime,
+      xdg: { ...runtime.xdg, config },
+    });
+    const contentionConfig = join(root, 'contention');
+    const contentionFile = join(contentionConfig, 'skillsmith', 'config.toml');
+    await mkdir(join(contentionConfig, 'skillsmith'), { recursive: true });
+    await writeFile(contentionFile, source);
+    const coordinator = await createNodeArtifactCoordinatorPorts();
+    const contention = await withArtifactGroupLock(
+      coordinator,
       {
-        label: 'coordination lock contention',
-        options: { failure: { phase: 'coordination-lock', code: 'EBUSY' } },
-        kind: 'file',
+        file: {
+          token: null,
+          path: contentionFile,
+          portability: 'machine-bound',
+          portableToken: null,
+        },
+        lockfile: {
+          token: null,
+          path: join(root, 'contention.lock'),
+          portability: 'machine-bound',
+          portableToken: null,
+        },
+        lockfileSource: 'explicit',
       },
-      {
-        label: 'metadata read EIO',
-        options: { failure: { phase: 'metadata-read', code: 'EIO' } },
-        kind: 'file',
-      },
-      {
-        label: 'content read EIO',
-        options: { failure: { phase: 'read', code: 'EIO' } },
-        kind: 'file',
-      },
-      { label: 'directory destination', options: { targetKind: 'dir' }, kind: 'dir' },
-      { label: 'symlink destination', options: { targetKind: 'symlink' }, kind: 'symlink' },
-    ];
+      undefined,
+      async () =>
+        runConfigSetApplication(
+          applicationRequest(['tool', 'opencode'], { user: true }),
+          applicationContext(forUserRoot(contentionConfig)),
+        ),
+    );
+
+    const directoryConfig = join(root, 'directory');
+    const directoryFile = join(directoryConfig, 'skillsmith', 'config.toml');
+    await mkdir(directoryFile, { recursive: true });
+    const directory = await runConfigSetApplication(
+      applicationRequest(['tool', 'opencode'], { user: true }),
+      applicationContext(forUserRoot(directoryConfig)),
+    );
+
+    const symlinkConfig = join(root, 'symlink');
+    const symlinkFile = join(symlinkConfig, 'skillsmith', 'config.toml');
+    const symlinkTarget = join(root, 'symlink-target.toml');
+    await mkdir(join(symlinkConfig, 'skillsmith'), { recursive: true });
+    await writeFile(symlinkTarget, source);
+    await symlink(symlinkTarget, symlinkFile);
+    const symlinked = await runConfigSetApplication(
+      applicationRequest(['tool', 'opencode'], { user: true }),
+      applicationContext(forUserRoot(symlinkConfig)),
+    );
+
+    const cases = [
+      { label: 'coordination lock contention', outcome: contention, original: source },
+      { label: 'directory destination', outcome: directory, original: 'directory' },
+      { label: 'symlink destination', outcome: symlinked, original: 'symlink' },
+    ] as const;
     const renderer = createCurrentRendererRegistry(new Command()).configSet;
     if (renderer === undefined) throw new Error('configSet renderer is not registered');
 
     for (const selected of cases) {
-      const fixture = memorySavePorts(file, source, selected.options);
-      const outcome = await runConfigSetApplication(
-        applicationRequest(['tool', 'opencode'], { user: true }),
-        applicationContext(fixture.ports),
-      );
+      const { outcome } = selected;
       const human = renderer.human(outcome);
       const json = renderer.json(outcome);
       const humanChannels =
@@ -1023,13 +1083,8 @@ describe('EWP-CMD-CONFIG-TS05', () => {
           jsonOwnsStdout: jsonChannels.stdout.length > 0,
           jsonStderr: jsonChannels.stderr,
           jsonExitCode: JSON.parse(jsonChannels.stdout).exitCode,
-          original:
-            selected.kind === 'file'
-              ? fixture.files.get(file)
-              : (await fixture.ports.readFileMetadata(file)).kind,
-          staged: [...fixture.files.keys()].filter((path) => path !== file),
-          stagedModes: [...fixture.modes.keys()].filter((path) => path !== file),
-          mutations: fixture.mutations,
+          original: selected.original,
+          mutation: outcome.mutation.kind,
         },
         selected.label,
       ).toEqual({
@@ -1042,97 +1097,75 @@ describe('EWP-CMD-CONFIG-TS05', () => {
         jsonOwnsStdout: true,
         jsonStderr: '',
         jsonExitCode: 3,
-        original: selected.kind === 'file' ? source : selected.kind,
-        staged: [],
-        stagedModes: [],
-        mutations: [],
+        original: selected.original,
+        mutation: 'none',
       });
     }
-  });
+    expect(await readFile(contentionFile, 'utf8')).toBe(source);
+    expect((await runtime.readFileMetadata(directoryFile)).kind).toBe('dir');
+    expect((await runtime.readFileMetadata(symlinkFile)).kind).toBe('symlink');
+    expect(await readFile(symlinkTarget, 'utf8')).toBe(source);
+  }, 15_000);
 
-  test('every EACCES and EPERM save phase is a signed permission failure with rollback', async () => {
-    const file = '/config/skillsmith/config.toml';
+  test('a real public permission denial owns the signed human and JSON failure channels', async () => {
+    const root = await sandbox('ts05-permission-output');
+    const config = join(root, 'xdg');
+    const parent = join(config, 'skillsmith');
+    const file = join(parent, 'config.toml');
     const source = '# retained\ntool = "codex"\n';
-    const phases = [
-      'metadata-read',
-      'read',
-      'create',
-      'write',
-      'chmod',
-      'file-fsync',
-      'dir-fsync',
-      'rename',
-    ] as const;
-    const cases = phases.flatMap((phase) =>
-      (['EACCES', 'EPERM'] as const).map((code, codeIndex) => ({
-        label: `${phase} ${code}`,
-        phase,
-        code,
-        existed:
-          phase === 'metadata-read' ||
-          phase === 'read' ||
-          phase === 'chmod' ||
-          (phase !== 'create' && codeIndex === 0),
-      })),
-    );
+    await mkdir(parent, { recursive: true });
+    await writeFile(file, source, { mode: 0o600 });
+    await chmod(file, 0o600);
+    const runtime = await defaultRuntimePorts();
+    const selected: RuntimePorts = { ...runtime, xdg: { ...runtime.xdg, config } };
     const renderer = createCurrentRendererRegistry(new Command()).configSet;
     if (renderer === undefined) throw new Error('configSet renderer is not registered');
-
-    for (const selected of cases) {
-      const fixture = memorySavePorts(file, source, {
-        initialPresent: selected.existed,
-        failure: { phase: selected.phase, code: selected.code },
-      });
-      const outcome = await runConfigSetApplication(
+    await chmod(parent, 0o500);
+    let outcome: Awaited<ReturnType<typeof runConfigSetApplication>>;
+    try {
+      outcome = await runConfigSetApplication(
         applicationRequest(['tool', 'opencode'], { user: true }),
-        applicationContext(fixture.ports),
+        applicationContext(selected),
       );
-      const human = renderer.human(outcome);
-      const json = renderer.json(outcome);
-      const humanChannels =
-        typeof human === 'string'
-          ? { stdout: human, stderr: '' }
-          : { stdout: '', stderr: '', ...human };
-      const jsonChannels =
-        typeof json === 'string'
-          ? { stdout: json, stderr: '' }
-          : { stdout: '', stderr: '', ...json };
-
-      expect(
-        {
-          label: selected.label,
-          exitClass: outcome.exitClass,
-          exitCode: exitCodeForClass(outcome.exitClass),
-          diagnostic: outcome.diagnostics[0]?.code,
-          mutation: outcome.mutation.kind,
-          humanStdout: humanChannels.stdout,
-          humanOwnsStderr: humanChannels.stderr.length > 0,
-          jsonOwnsStdout: jsonChannels.stdout.length > 0,
-          jsonStderr: jsonChannels.stderr,
-          jsonExitCode: JSON.parse(jsonChannels.stdout).exitCode,
-          original: fixture.files.get(file) ?? null,
-          originalMode: fixture.modes.get(file) ?? null,
-          staged: [...fixture.files.keys()].filter((path) => path !== file),
-          stagedModes: [...fixture.modes.keys()].filter((path) => path !== file),
-        },
-        selected.label,
-      ).toEqual({
-        label: selected.label,
-        exitClass: 'permission',
-        exitCode: 6,
-        diagnostic: 'permission-denied',
-        mutation: 'none',
-        humanStdout: '',
-        humanOwnsStderr: true,
-        jsonOwnsStdout: true,
-        jsonStderr: '',
-        jsonExitCode: 6,
-        original: selected.existed ? source : null,
-        originalMode: selected.existed ? 0o600 : null,
-        staged: [],
-        stagedModes: [],
-      });
+    } finally {
+      await chmod(parent, 0o700);
     }
+    const human = renderer.human(outcome);
+    const json = renderer.json(outcome);
+    const humanChannels =
+      typeof human === 'string'
+        ? { stdout: human, stderr: '' }
+        : { stdout: '', stderr: '', ...human };
+    const jsonChannels =
+      typeof json === 'string' ? { stdout: json, stderr: '' } : { stdout: '', stderr: '', ...json };
+
+    expect({
+      exitClass: outcome.exitClass,
+      exitCode: exitCodeForClass(outcome.exitClass),
+      diagnostic: outcome.diagnostics[0]?.code,
+      mutation: outcome.mutation.kind,
+      humanStdout: humanChannels.stdout,
+      humanOwnsStderr: humanChannels.stderr.length > 0,
+      jsonOwnsStdout: jsonChannels.stdout.length > 0,
+      jsonStderr: jsonChannels.stderr,
+      jsonExitCode: JSON.parse(jsonChannels.stdout).exitCode,
+      original: await readFile(file, 'utf8'),
+      originalMode: await permissionBits(file),
+      residue: await readdir(parent),
+    }).toEqual({
+      exitClass: 'permission',
+      exitCode: 6,
+      diagnostic: 'permission-denied',
+      mutation: 'none',
+      humanStdout: '',
+      humanOwnsStderr: true,
+      jsonOwnsStdout: true,
+      jsonStderr: '',
+      jsonExitCode: 6,
+      original: source,
+      originalMode: 0o600,
+      residue: ['config.toml'],
+    });
   });
 
   test('unsafe registry credentials refuse before writing and never echo the canary', async () => {

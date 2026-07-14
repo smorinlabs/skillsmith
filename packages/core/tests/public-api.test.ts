@@ -66,6 +66,9 @@ describe('@skillsmith/core public API', () => {
       'createObservationEmitter',
       'noopObserver',
       'redactObservationValue',
+      'containsSensitiveMaterial',
+      'redactSensitiveString',
+      'redactSensitiveValue',
       'HASH_SCHEMA_VERSION',
       'HASH_DOMAINS',
       'hashCanonicalInput',
@@ -82,6 +85,16 @@ describe('@skillsmith/core public API', () => {
       'projectSourceContent',
       'serializeSourceContentProjection',
       'hashSourceContentV1',
+      'ARTIFACT_LOCK_RETRY_DELAYS_MS',
+      'ARTIFACT_CENTRAL_LOCK_STALE_MS',
+      'ARTIFACT_CENTRAL_LOCK_HEARTBEAT_MS',
+      'ARTIFACT_COMPATIBILITY_LOCK_STALE_MS',
+      'ARTIFACT_COMPATIBILITY_LOCK_HEARTBEAT_MS',
+      'editManifestBytes',
+      'withArtifactGroupLock',
+      'commitArtifactPair',
+      'recoverArtifactPair',
+      'readCoordinatedArtifactPair',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);
@@ -108,6 +121,26 @@ describe('@skillsmith/core public API', () => {
     ] as const) {
       expect(core[name], name).toBe(artifacts[name]);
     }
+  });
+
+  test('re-exports one mutation and redaction authority by identity', () => {
+    for (const name of [
+      'ARTIFACT_LOCK_RETRY_DELAYS_MS',
+      'ARTIFACT_CENTRAL_LOCK_STALE_MS',
+      'ARTIFACT_CENTRAL_LOCK_HEARTBEAT_MS',
+      'ARTIFACT_COMPATIBILITY_LOCK_STALE_MS',
+      'ARTIFACT_COMPATIBILITY_LOCK_HEARTBEAT_MS',
+      'editManifestBytes',
+      'withArtifactGroupLock',
+      'commitArtifactPair',
+      'recoverArtifactPair',
+      'readCoordinatedArtifactPair',
+    ] as const) {
+      expect(core[name], name).toBe(artifacts[name]);
+    }
+    expect(core.redactObservationValue).toBe(core.redactSensitiveValue);
+    expect(core.saveConfig.length).toBe(2);
+    expect(core).not.toHaveProperty('saveConfigWithCoordinator');
   });
 
   test('exports the validated registry without breaking the 1.x inventory projection', () => {

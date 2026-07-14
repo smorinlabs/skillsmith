@@ -2797,6 +2797,7 @@
         "packages/cli/src/output/install-human.ts",
         "packages/cli/tests/commands/install-exit-codes.test.ts",
         "packages/cli/tests/commands/install-live.test.ts",
+        "packages/cli/tests/contracts/config.test.ts",
         "packages/cli/tests/output/error-boundary.test.ts",
         "packages/cli/tests/output/install-human.test.ts",
         "packages/cli/tests/output/install-json.test.ts",
@@ -2814,9 +2815,14 @@
         "packages/core/src/artifacts/recovery-file.ts",
         "packages/core/src/config/human-edit.ts",
         "packages/core/src/config/save.ts",
+        "packages/core/src/errors.ts",
         "packages/core/src/index.ts",
         "packages/core/src/observation/index.ts",
         "packages/core/src/observation/redaction.ts",
+        "packages/core/src/place/ledger.ts",
+        "packages/core/src/place/run.ts",
+        "packages/core/src/place/store.ts",
+        "packages/core/src/place/swap.ts",
         "packages/core/src/place/types.ts",
         "packages/core/src/public-types.ts",
         "packages/core/src/safety/index.ts",
@@ -2980,7 +2986,10 @@
         },
         "ready": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G2-03.md#ready-plan"]
+          "evidence": [
+            "projects/p17/evidence/P17-G2-03.md#ready-plan",
+            "projects/p17/evidence/P17-G2-03.md#ready-ownership-amendment"
+          ]
         },
         "test-first": {
           "status": "passed",
@@ -3019,6 +3028,7 @@
         "projects/p17/plans/P17-G2-03.md",
         "projects/p17/evidence/P17-G2-03.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G2-03.md#ready-plan",
+        "projects/p17/evidence/P17-G2-03.md#ready-ownership-amendment",
         "projects/p17/evidence/P17-G2-03.md#test-first-evidence"
       ]
     },
@@ -16875,9 +16885,14 @@
         "packages/core/src/artifacts/recovery-file.ts",
         "packages/core/src/config/human-edit.ts",
         "packages/core/src/config/save.ts",
+        "packages/core/src/errors.ts",
         "packages/core/src/index.ts",
         "packages/core/src/observation/index.ts",
         "packages/core/src/observation/redaction.ts",
+        "packages/core/src/place/ledger.ts",
+        "packages/core/src/place/run.ts",
+        "packages/core/src/place/store.ts",
+        "packages/core/src/place/swap.ts",
         "packages/core/src/place/types.ts",
         "packages/core/src/public-types.ts",
         "packages/core/src/safety/index.ts",

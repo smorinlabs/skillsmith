@@ -90,6 +90,7 @@ let installN = 0;
 const installDeps = (): InstallDeps => ({
   verify: passVerify,
   detect: detectClaudeOnly,
+  transport: fixture.transport,
   now: () => NOW,
   newTxId: () => (0x10000000 + installN++).toString(16).slice(-8),
 });
@@ -158,7 +159,7 @@ let f: FixtureFleet;
 let fsSource: string;
 beforeEach(async () => {
   f = await buildFixtureFleet();
-  fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+  fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
 });
 afterEach(async () => {
   await destroyFixtureFleet(f);

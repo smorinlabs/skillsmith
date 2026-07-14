@@ -144,6 +144,9 @@ type _RuntimePortsUnchanged = Assert<
 type _OneFileAuthorityIsInternal = Assert<
   Equal<'updateCoordinatedHumanFile' extends keyof typeof publicCore ? true : false, false>
 >;
+type _SaveConfigRetainsTwoArgumentContract = Assert<
+  Equal<Parameters<typeof publicCore.saveConfig>['length'], 2>
+>;
 
 const _edit: (
   bytes: Uint8Array,

@@ -221,10 +221,30 @@ and safe literal internal symlink targets. Symlinks are never followed. Exactly 
 special nodes, unsafe paths/targets, normalization collisions, and observable metadata/list/byte/
 target races refuse.
 
-These modules do not write files, resolve Git refs, acquire sources, coordinate artifact pairs, or
-own CLI rendering. The older placement-store `contentHashOf` digest remains a separate compatibility
-algorithm for existing ledger/store records; it is not silently reinterpreted as the versioned
-`source-content` domain.
+The identity modules do not write files or resolve Git refs. Human-artifact mutation is a separate
+authority in the same directory: a bounded lexical TOML scanner preserves every untouched byte,
+the manifest editor verifies the exact semantic delta through the strict reader, and the pair
+coordinator installs only copied, verified manifest bytes and canonical lock bytes. Coordination
+uses a focused `ArtifactCoordinatorPorts` capability instead of widening `RuntimePorts`.
+
+Pair writes take an account-stable global lock and the complete sorted set of compatibility target
+locks, reobserve file and parent identities at the last responsible moment, and use exclusive
+transaction directories plus no-replace links. A private versioned recovery record is saved before
+mutation and drives deterministic forward or rollback recovery after process death. Recovery data
+contains paths, digests, modes, identities, cursors, and ownership markers—never human artifact
+bytes, source arguments, errors, or credentials. The one-file config writer delegates to the same
+mechanics without making its private recovery repository a public artifact codec.
+
+Acquisition has one credential-free source boundary. Accepted transport spellings project through
+the canonical source identity authority; raw input, userinfo, query, fragment, and foreign path
+forms never enter `SourceSpec` or persisted origin data. One recursive safety module owns string,
+URL, key, nested-object, Error, cycle, proxy, accessor, depth, and node-bound redaction. Observation,
+CLI error, and acquisition presentation reuse that exact function object/policy, while persistence
+boundaries reject sensitive material instead of storing redaction placeholders.
+
+The older placement-store `contentHashOf` digest remains a separate compatibility algorithm for
+existing ledger/store records; it is not silently reinterpreted as the versioned `source-content`
+domain.
 
 ## In-package layering
 

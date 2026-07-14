@@ -6,6 +6,7 @@ export type {
   InstallReport,
   InstallResult,
   InstallScope,
+  InstallSourceTransport,
   SourceSpec,
   UninstallAction,
   UninstallDeps,
@@ -69,6 +70,40 @@ export type * from './artifacts/types.ts';
 export type * from './artifacts/hash.ts';
 export type * from './artifacts/lock.ts';
 export type * from './artifacts/source-content.ts';
+export type {
+  ArtifactBarrierIdentity,
+  ArtifactBarrierOperation,
+  ArtifactCoordinatorPorts,
+  ArtifactFileRevision,
+  ArtifactGroupLockLease,
+  ArtifactMutationError,
+  ArtifactMutationErrorReason,
+  ArtifactPairBarrier,
+  ArtifactPairMutationRequest,
+  ArtifactPairMutationResult,
+  ArtifactPairRecoveryPort,
+  ArtifactPairRecoveryRecord,
+  ArtifactPairSnapshot,
+  ArtifactParentRevision,
+  ArtifactPathObservation,
+  ArtifactRecordedAfterState,
+  ArtifactRecordedBeforeState,
+  ArtifactRecordedParent,
+  ArtifactRecoveryCursor,
+  ArtifactRecoveryDirectory,
+  ArtifactRecoveryEnvelope,
+  ArtifactRecoveryObject,
+  GeneratedLockAction,
+  HumanManifestAction,
+} from './artifacts/coordinator-types.ts';
+export type {
+  ManifestDefaultSetEdit,
+  ManifestEdit,
+  ManifestEditRequest,
+  ManifestEditResult,
+  ManifestEditTarget,
+  ManifestSkillSetEdit,
+} from './artifacts/manifest-edit.ts';
 export type { CommandEntry } from './commands/types.ts';
 export type {
   Config,

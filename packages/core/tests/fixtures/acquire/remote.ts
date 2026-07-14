@@ -1,5 +1,12 @@
 import { mkdir, writeFile, symlink, chmod, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import {
+  fetchRepo,
+  lsTreeSkills,
+  resolveRefViaLsRemote,
+  sparseCheckoutSkill,
+} from '../../../src/acquire/fetch.ts';
+import type { InstallSourceTransport } from '../../../src/acquire/types.ts';
 import { runGit } from '../git-env.ts';
 import { buildInTemporaryRoot } from '../temporary-root.ts';
 
@@ -8,6 +15,11 @@ export interface RemoteFixture {
   multiUrl: string; // file://<base>/multi.git — several skills incl. a duplicate basename
   singleUrl: string; // file://<base>/single.git — exactly one skill, nested deep
   rootUrl: string; // file://<base>/root.git — SKILL.md at the repo root
+  multiSource: string; // safe parser-facing HTTPS identity (trusted transport maps it locally)
+  singleSource: string;
+  rootSource: string;
+  transport: InstallSourceTransport;
+  gitRewriteEnv: Readonly<Record<string, string>>;
   multiWork: string; // <base>/multi-work — the working clone multi.git was made from
   multiHead: string; // full 40-hex HEAD SHA of multi (main)
   multiTagSha: string; // full 40-hex SHA of tag v1.0.0 (the FIRST commit — differs from HEAD)
@@ -262,12 +274,56 @@ name: rootskill
   const multiUrl = `file://${multiGit}`;
   const singleUrl = `file://${singleGit}`;
   const rootUrl = `file://${rootGit}`;
+  const multiSource = 'https://fixture.invalid/acme/multi.git';
+  const singleSource = 'https://fixture.invalid/acme/single.git';
+  const rootSource = 'https://fixture.invalid/acme/root.git';
+  const localByCanonicalClone = new Map([
+    [multiSource, multiUrl],
+    [singleSource, singleUrl],
+    [rootSource, rootUrl],
+  ]);
+  const localClone = (cloneUrl: string): string =>
+    localByCanonicalClone.get(cloneUrl) ?? cloneUrl;
+  const transport: InstallSourceTransport = Object.freeze({
+    resolveRef: (
+      ports: Parameters<InstallSourceTransport['resolveRef']>[0],
+      cloneUrl: string,
+      ref: string | null,
+      signal?: AbortSignal,
+    ) =>
+      resolveRefViaLsRemote(ports, localClone(cloneUrl), ref, signal),
+    fetchRepo: (
+      ports: Parameters<InstallSourceTransport['fetchRepo']>[0],
+      options: Parameters<InstallSourceTransport['fetchRepo']>[1],
+    ) =>
+      fetchRepo(ports, { ...options, cloneUrl: localClone(options.cloneUrl) }),
+    listSkills: lsTreeSkills,
+    materializeSkill: sparseCheckoutSkill,
+  });
+  const rewrites = [
+    [multiSource, multiUrl],
+    [singleSource, singleUrl],
+    [rootSource, rootUrl],
+  ] as const;
+  const gitRewriteEnv: Record<string, string> = {
+    GIT_CONFIG_COUNT: String(rewrites.length),
+    GIT_ALLOW_PROTOCOL: 'file:https',
+  };
+  for (const [index, [insteadOf, local]] of rewrites.entries()) {
+    gitRewriteEnv[`GIT_CONFIG_KEY_${index}`] = `url.${local}.insteadOf`;
+    gitRewriteEnv[`GIT_CONFIG_VALUE_${index}`] = insteadOf;
+  }
 
   const fixture: RemoteFixture = {
     base,
     multiUrl,
     singleUrl,
     rootUrl,
+    multiSource,
+    singleSource,
+    rootSource,
+    transport,
+    gitRewriteEnv: Object.freeze(gitRewriteEnv),
     multiWork,
     multiHead,
     multiTagSha,

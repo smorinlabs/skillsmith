@@ -17,6 +17,7 @@ import { ledgerPathOf } from '../../src/place/paths.ts';
 import { LEGACY_ROOT_NOTICE } from '../../src/place/plan.ts';
 import { runDev } from '../../src/place/run.ts';
 import type { FlipDeps, Journal } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import { ok } from '../../src/result.ts';
 import { VERIFIED_AGAINST, type VerifyReport } from '../../src/verify/types.ts';
 import {
@@ -80,6 +81,7 @@ const installDeps = (): InstallDeps => {
   return {
     verify: passVerify,
     detect: detectBoth,
+    transport: fixture.transport,
     now: () => NOW,
     newTxId: () => (0x10000000 + start * 1000 + n++).toString(16).slice(-8),
   };
@@ -120,7 +122,7 @@ let f: FixtureFleet;
 let fsSource: string;
 beforeEach(async () => {
   f = await buildFixtureFleet();
-  fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+  fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
 });
 afterEach(async () => {
   await destroyFixtureFleet(f);
@@ -631,5 +633,155 @@ describe('runUninstall — dry run', () => {
     const after = await f.env.readText(ledgerPathOf(f.data));
     expect(after).toBe(before);
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('symlink');
+  });
+});
+
+describe('runUninstall — public error boundary', () => {
+  test('redacts ledger-read and outer-lock failures in dry and locked paths', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    const ledgerPath = ledgerPathOf(f.data);
+    const ledgerFailure: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => (path === ledgerPath ? 'file' : f.env.pathKind(path)),
+      readText: async (path) => {
+        if (path === ledgerPath) throw new Error(`password=${canary}`);
+        return f.env.readText(path);
+      },
+    };
+    const lockFailure: RuntimePorts = {
+      ...f.env,
+      withFileLock: async () => {
+        throw new Error(`authorization=Bearer ${canary}`);
+      },
+    };
+    const options = {
+      targets: ['not-installed'],
+      tools: ['claude-code'] as const,
+      cwd: f.base,
+      configuration: f.configuration,
+    };
+
+    const dryLedgerFailure = await runUninstall(
+      ledgerFailure,
+      { ...options, dryRun: true },
+      uninstallDeps(),
+    );
+    const lockedLedgerFailure = await runUninstall(ledgerFailure, options, uninstallDeps());
+    const outerLockFailure = await runUninstall(lockFailure, options, uninstallDeps());
+    const cases = [dryLedgerFailure, lockedLedgerFailure, outerLockFailure];
+    for (const result of cases) {
+      expect(result.ok).toBeFalse();
+      expect(JSON.stringify(result)).not.toContain(canary);
+      expect(JSON.stringify(result)).toContain('[REDACTED]');
+    }
+    if (dryLedgerFailure.ok || lockedLedgerFailure.ok || outerLockFailure.ok) {
+      throw new Error('expected failures');
+    }
+    expect(dryLedgerFailure.error.code).toBe('ledger-error');
+    expect(lockedLedgerFailure.error.code).toBe('ledger-error');
+    expect(outerLockFailure.error.code).toBe('flip-failed');
+  });
+
+  test('returns redacted Results for hostile proxy throwables without invoking traps', async () => {
+    const canary = 'ghp_P17_PROXY_THROWABLE_123456789';
+    let trapReads = 0;
+    const hostile = new Proxy(
+      { code: 'EIO', message: `password=${canary}` },
+      {
+        get: () => {
+          trapReads++;
+          throw new Error('get trap fired');
+        },
+        has: () => {
+          trapReads++;
+          throw new Error('has trap fired');
+        },
+        ownKeys: () => {
+          trapReads++;
+          throw new Error('ownKeys trap fired');
+        },
+      },
+    );
+    const ledgerPath = ledgerPathOf(f.data);
+    const ledgerFailure: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => (path === ledgerPath ? 'file' : f.env.pathKind(path)),
+      readText: async (path) => {
+        if (path === ledgerPath) throw hostile;
+        return f.env.readText(path);
+      },
+    };
+    const lockFailure: RuntimePorts = {
+      ...f.env,
+      withFileLock: async () => {
+        throw hostile;
+      },
+    };
+    const options = {
+      targets: ['not-installed'],
+      tools: ['claude-code'] as const,
+      cwd: f.base,
+      configuration: f.configuration,
+    };
+
+    const results = [
+      await runUninstall(ledgerFailure, { ...options, dryRun: true }, uninstallDeps()),
+      await runUninstall(lockFailure, options, uninstallDeps()),
+    ];
+    for (const result of results) {
+      expect(result.ok).toBeFalse();
+      expect(JSON.stringify(result)).not.toContain(canary);
+      expect(JSON.stringify(result)).toContain('[PROXY]');
+    }
+    expect(trapReads).toBe(0);
+  });
+
+  test('redacts a non-ledger committed-journal sweep failure', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    await installUser();
+    const ledger = await led();
+    const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
+    if (!pair?.pinned) throw new Error('expected seeded pinned pair');
+    const backupPath = join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef');
+    pair.journal = {
+      op: 'uninstall',
+      txId: 'deadbeef',
+      phase: 'committed',
+      startedAt: NOW,
+      completedAt: NOW,
+      before: {
+        mode: 'pinned',
+        storePath: pair.pinned.storePath,
+        contentHash: pair.pinned.contentHash,
+        liveKind: 'symlink',
+      },
+      stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
+      backupPath,
+    };
+    const persisted = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    if (!persisted.ok) throw new Error(msg(persisted.error));
+    const sweepFailure: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === backupPath) throw new Error(`password=${canary}`);
+        return f.env.pathKind(path);
+      },
+    };
+
+    const result = await runUninstall(
+      sweepFailure,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+    );
+    expect(result.ok).toBeFalse();
+    if (result.ok) throw new Error('expected sweep failure');
+    expect(result.error.code).toBe('flip-failed');
+    expect(JSON.stringify(result)).not.toContain(canary);
+    expect(JSON.stringify(result)).toContain('[REDACTED]');
   });
 });

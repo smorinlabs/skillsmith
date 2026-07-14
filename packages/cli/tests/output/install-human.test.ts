@@ -258,6 +258,54 @@ describe('renderInstallHuman', () => {
     expect(out).toContain("'review' matches 2 skills");
     expect(out).toContain('1 refused.  Exit code: 2');
   });
+
+  test('groups real duplicate requests by numeric request identity, not their safe display label', () => {
+    const result = (requestIndex: number) => ({
+      source: '[REJECTED_SOURCE]',
+      requestIndex,
+      skill: null,
+      tool: null,
+      scope: 'user' as const,
+      placementPath: null,
+      action: 'refused' as const,
+      reason: 'source input was refused',
+      placement: null,
+      store: null,
+      origin: null,
+      verify: null,
+      candidates: null,
+    });
+    const report: InstallReport = {
+      dryRun: false,
+      requested: {
+        sources: ['[REJECTED_SOURCE]', '[REJECTED_SOURCE]'],
+        tools: ['codex'],
+        explicitTools: false,
+        scope: 'user',
+        explicitScope: false,
+        ref: null,
+        pin: false,
+        direct: false,
+        force: false,
+        verify: 'static',
+        deep: false,
+      },
+      results: [result(0), result(1)],
+      summary: {
+        installed: 0,
+        updated: 0,
+        repaired: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 2,
+        failed: 0,
+      },
+    };
+
+    const output = renderInstallHuman(report, 2);
+    expect(output.match(/^Installing \[REJECTED_SOURCE\]$/gmu)).toHaveLength(2);
+    expect(output).toContain('2 refused.  Exit code: 2');
+  });
 });
 
 describe('renderUninstallHuman', () => {

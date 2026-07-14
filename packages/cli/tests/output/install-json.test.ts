@@ -144,6 +144,20 @@ describe('renderInstallJson', () => {
     for (const r of rendered.results) expect('error' in r).toBe(false);
   });
 
+  test('the core-only numeric request identity never appears in the v1 wire output', () => {
+    const withRequestIndex: InstallReport = {
+      ...installReport,
+      results: installReport.results.map((result, requestIndex) => ({
+        ...result,
+        requestIndex,
+      })),
+    };
+    const rendered = JSON.parse(renderInstallJson(withRequestIndex)) as {
+      results: Record<string, unknown>[];
+    };
+    for (const result of rendered.results) expect('requestIndex' in result).toBeFalse();
+  });
+
   test('schema rejects an install action foreign to the install action enum (`flipped`)', () => {
     const bad = {
       ...installReport,

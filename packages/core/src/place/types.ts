@@ -40,9 +40,9 @@ export type JournalOp = FlipOp | AcquireOp; // FlipOp is NOT widened
 export type { Placement, PlacementClass } from '../agents/placement-shared.ts';
 
 export interface OriginRecord {
-  source: string; // the literal user argument ('smorinlabs/smorinlabs-harness/factor-scan')
-  host: string; // 'github.com'
-  repo: string; // UNCLAMPED repo path (subgroups keep their '/')
+  source: string; // canonical source identity; selector/ref persist in the dedicated fields below
+  host: string; // canonical lowercase host ('github.com')
+  repo: string; // canonical unclamped repository path (subgroups keep their '/')
   skillPath: string; // repo-relative git tree path; '' for a root skill
   refRequested: string | null; // '@ref' / --ref as given; null = HEAD default
   refResolved: string; // always the full 40-hex SHA

@@ -132,6 +132,7 @@ export type {
   InstallReport,
   InstallResult,
   InstallScope,
+  InstallSourceTransport,
   InteractionChoice,
   InteractionPort,
   InteractionRequest,
@@ -244,6 +245,11 @@ export type {
 export { defaultFlipDeps, runDev, runPromote, runRollback } from './place/run.ts';
 export { FLIP_TOOLS } from './place/types.ts';
 export { err, isErr, isOk, map, mapErr, ok } from './result.ts';
+export {
+  containsSensitiveMaterial,
+  redactSensitiveString,
+  redactSensitiveValue,
+} from './safety/index.ts';
 export { detectAll, detectTool } from './scan/index.ts';
 export { listCommands } from './scan/list-commands.ts';
 export { listSkills } from './scan/list-skills.ts';

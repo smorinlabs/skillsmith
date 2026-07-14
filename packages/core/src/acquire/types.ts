@@ -1,4 +1,5 @@
 import type { InstallRecord } from '../agents/types.ts';
+import type { CanonicalSourceIdentity } from '../artifacts/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { FlipTool, JournalPhase } from '../place/types.ts';
 import type {
@@ -24,15 +25,16 @@ export type AcquisitionPorts = PlatformPaths &
   IdPort & { readonly git: GitPort };
 
 export interface SourceSpec {
-  raw: string; // the literal user argument, ref suffix included
-  host: string; // 'github.com' for sugar; the host segment (may carry ':port') or URL/scp authority host
-  repoPath: string; // UNCLAMPED '/'-joined repo path ('acme/platform/tools'); trailing '.git' stripped
-  cloneUrl: string; // sugar/host-explicit: `https://<host>/<repoPath>.git`; URL/scp forms: verbatim minus `//path` and `@ref`
-  selector:
-    | { kind: 'whole-repo' }
-    | { kind: 'name'; name: string }
-    | { kind: 'path'; path: string }; // normalized: no leading/trailing '/', no empty/'.'/'..' segments
-  ref: string | null; // the `@ref` as given; null = HEAD (remote default branch)
+  readonly identity: CanonicalSourceIdentity;
+  readonly canonicalSource: string;
+  readonly canonicalInvocation: string;
+  readonly originSource: string;
+  readonly cloneUrl: string;
+  readonly selector:
+    | { readonly kind: 'whole-repo' }
+    | { readonly kind: 'name'; readonly name: string }
+    | { readonly kind: 'path'; readonly path: string };
+  readonly ref: string | null;
 }
 
 export interface CandidateSkill {
@@ -99,6 +101,7 @@ export interface InstallResult {
   } | null; // mode actually run for THIS tool
   candidates: string[] | null; // `<repoPath>//<path>` re-run lines on R2/R3 ambiguity
   error?: SkillSmithError; // CORE-ONLY: drives the CLI exit code; NOT rendered in JSON
+  readonly requestIndex?: number; // CORE-ONLY: duplicate-safe human grouping; omitted from public v1
 }
 
 export interface InstallReport {
@@ -138,6 +141,14 @@ export interface InstallDeps {
   now?: () => string;
   newTxId?: () => string; // 8-hex
   pick?: (candidates: readonly CandidateSkill[]) => Promise<CandidateSkill | null>;
+  readonly transport?: InstallSourceTransport;
+}
+
+export interface InstallSourceTransport {
+  readonly resolveRef: typeof import('./fetch.ts').resolveRefViaLsRemote;
+  readonly fetchRepo: typeof import('./fetch.ts').fetchRepo;
+  readonly listSkills: typeof import('./fetch.ts').lsTreeSkills;
+  readonly materializeSkill: typeof import('./fetch.ts').sparseCheckoutSkill;
 }
 
 export type UninstallAction = 'removed' | 'noop' | 'refused' | 'failed';

@@ -92,6 +92,7 @@ let txN = 0;
 const makeDeps = (verify: InstallDeps['verify']): InstallDeps => ({
   verify,
   detect: detectBoth,
+  transport: fixture.transport,
   now: () => NOW,
   newTxId: () => (0x10000000 + txN++).toString(16).slice(-8),
 });
@@ -112,7 +113,7 @@ describe('runInstall — verify gate matrix', () => {
 
   beforeEach(async () => {
     f = await buildFixtureFleet();
-    source = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+    source = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
     baseOpts = {
       sources: [source],
       cwd: f.base, // outside any work tree → user scope

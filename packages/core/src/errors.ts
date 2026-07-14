@@ -1,3 +1,5 @@
+import { redactSensitiveValue } from './safety/redaction.ts';
+
 export type SkillSmithError =
   | { code: 'generic'; message: string; cause?: unknown }
   | { code: 'invalid-argument'; message: string }
@@ -28,17 +30,26 @@ export const unknownToolError = (tool: string): SkillSmithError => ({
   tool,
 });
 
+export const safeErrorCode = (error: unknown): string | null => {
+  const safe = redactSensitiveValue(error);
+  if (safe === null || typeof safe !== 'object') return null;
+  const descriptor = Object.getOwnPropertyDescriptor(safe, 'code');
+  return descriptor && 'value' in descriptor && typeof descriptor.value === 'string'
+    ? descriptor.value
+    : null;
+};
+
 export const errorMessage = (error: unknown): string => {
-  if (error instanceof Error) return error.message;
-  if (
-    error !== null &&
-    typeof error === 'object' &&
-    'message' in error &&
-    typeof error.message === 'string'
-  ) {
-    return error.message;
+  const safe = redactSensitiveValue(error);
+  if (typeof safe === 'string') return safe;
+  if (safe !== null && typeof safe === 'object') {
+    const descriptor = Object.getOwnPropertyDescriptor(safe, 'message');
+    if (descriptor && 'value' in descriptor && typeof descriptor.value === 'string') {
+      return descriptor.value;
+    }
   }
-  return String(error);
+  if (typeof safe === 'number' || typeof safe === 'boolean') return String(safe);
+  return 'operation failed';
 };
 
 export const configError = (

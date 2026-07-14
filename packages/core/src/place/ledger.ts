@@ -6,6 +6,7 @@ import {
   flipFailedError,
   ledgerError,
   permissionDeniedError,
+  safeErrorCode,
 } from '../errors.ts';
 import type { ClockPort, FileReadPort, FileWritePort, IdPort, LockPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -20,11 +21,10 @@ type LedgerWritePorts = Pick<
   IdPort;
 type LedgerLockPorts = Pick<FileWritePort, 'makeDir'> & LockPort;
 
-const isPermError = (e: unknown): boolean =>
-  typeof e === 'object' &&
-  e !== null &&
-  'code' in e &&
-  ((e as { code: unknown }).code === 'EACCES' || (e as { code: unknown }).code === 'EPERM');
+const isPermError = (e: unknown): boolean => {
+  const code = safeErrorCode(e);
+  return code === 'EACCES' || code === 'EPERM';
+};
 
 const DevRecordSchema = z.object({
   sourcePath: z.string(),

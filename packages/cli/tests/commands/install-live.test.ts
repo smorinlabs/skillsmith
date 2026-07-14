@@ -139,7 +139,7 @@ describe.skipIf(!E2E)('skillsmith install/uninstall live e2e (real process SIGKI
     const fixture = await buildRemoteFixture();
     const f = await buildFixtureFleet();
     try {
-      const fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+      const fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
       const livePath = join(f.home, '.claude', 'skills', SKILL);
       const skillsRoot = join(f.home, '.claude', 'skills');
       const ledgerPath = join(f.data, 'placements.json');
@@ -147,6 +147,7 @@ describe.skipIf(!E2E)('skillsmith install/uninstall live e2e (real process SIGKI
       const proc = spawnCli(
         ['install', fsSource, '--tool', 'claude-code', '--no-verify', '--user'],
         {
+          ...fixture.gitRewriteEnv,
           HOME: f.home,
           SKILLSMITH_HOME: f.data,
           SKILLSMITH_E2E: '1',
@@ -184,6 +185,7 @@ describe.skipIf(!E2E)('skillsmith install/uninstall live e2e (real process SIGKI
       const rerun = await run(
         ['install', fsSource, '--tool', 'claude-code', '--no-verify', '--user'],
         {
+          ...fixture.gitRewriteEnv,
           HOME: f.home,
           SKILLSMITH_HOME: f.data,
           SKILLSMITH_E2E: '1',
@@ -207,7 +209,7 @@ describe.skipIf(!E2E)('skillsmith install/uninstall live e2e (real process SIGKI
     const fixture = await buildRemoteFixture();
     const f = await buildFixtureFleet();
     try {
-      const fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+      const fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
       const livePath = join(f.home, '.claude', 'skills', SKILL);
       const skillsRoot = join(f.home, '.claude', 'skills');
       const ledgerPath = join(f.data, 'placements.json');
@@ -215,6 +217,7 @@ describe.skipIf(!E2E)('skillsmith install/uninstall live e2e (real process SIGKI
       const proc = spawnCli(
         ['install', fsSource, '--tool', 'claude-code', '--no-verify', '--user'],
         {
+          ...fixture.gitRewriteEnv,
           HOME: f.home,
           SKILLSMITH_HOME: f.data,
           SKILLSMITH_E2E: '1',
@@ -252,7 +255,7 @@ describe.skipIf(!E2E)('skillsmith install/uninstall live e2e (real process SIGKI
     const fixture = await buildRemoteFixture();
     const f = await buildFixtureFleet();
     try {
-      const fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+      const fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
       const livePath = join(f.home, '.claude', 'skills', SKILL);
       const skillsRoot = join(f.home, '.claude', 'skills');
       const ledgerPath = join(f.data, 'placements.json');
@@ -260,6 +263,7 @@ describe.skipIf(!E2E)('skillsmith install/uninstall live e2e (real process SIGKI
       const seed = await run(
         ['install', fsSource, '--tool', 'claude-code', '--no-verify', '--user'],
         {
+          ...fixture.gitRewriteEnv,
           HOME: f.home,
           SKILLSMITH_HOME: f.data,
           SKILLSMITH_E2E: '1',

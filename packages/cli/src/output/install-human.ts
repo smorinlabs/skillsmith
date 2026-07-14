@@ -88,14 +88,17 @@ const INSTALL_BUCKET_LABEL: Record<InstallAction, string> = {
  *  not here — this renderer covers the per-source/per-tool report and the summary line. */
 export const renderInstallHuman = (report: InstallReport, exitCode: number): string => {
   const lines: string[] = [];
-  const bySource = new Map<string, InstallResult[]>();
+  const groups = new Map<string, { readonly source: string; readonly results: InstallResult[] }>();
   for (const r of report.results) {
-    const list = bySource.get(r.source) ?? [];
-    list.push(r);
-    bySource.set(r.source, list);
+    const indexed =
+      r.requestIndex !== undefined && Number.isSafeInteger(r.requestIndex) && r.requestIndex >= 0;
+    const key = indexed ? `request:${r.requestIndex}` : `legacy-source:${r.source}`;
+    const group = groups.get(key) ?? { source: r.source, results: [] };
+    group.results.push(r);
+    groups.set(key, group);
   }
 
-  for (const [source, results] of bySource) {
+  for (const { source, results } of groups.values()) {
     const resolved = results.find((r) => r.skill !== null);
     const allNoop = results.length > 0 && results.every((r) => r.action === 'noop');
     const originResult = results.find((r) => r.origin !== null);

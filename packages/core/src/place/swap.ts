@@ -7,6 +7,7 @@ import {
   flipRefusedError,
   genericError,
   permissionDeniedError,
+  safeErrorCode,
 } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import { deletePairAt, getPairAt, setPairAt } from './ledger.ts';
@@ -32,11 +33,10 @@ const PHASE_INDEX: Record<JournalPhase, number> = {
   committed: 4,
 };
 
-const isPermError = (e: unknown): boolean =>
-  typeof e === 'object' &&
-  e !== null &&
-  'code' in e &&
-  ((e as { code: unknown }).code === 'EACCES' || (e as { code: unknown }).code === 'EPERM');
+const isPermError = (e: unknown): boolean => {
+  const code = safeErrorCode(e);
+  return code === 'EACCES' || code === 'EPERM';
+};
 
 const mapFsErr = (e: unknown, context: string): SkillSmithError =>
   isPermError(e)

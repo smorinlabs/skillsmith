@@ -1,5 +1,6 @@
 import { type SkillSmithError, invalidArgumentError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
+import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import { CONFIG_ACCESSORS, getConfigTools } from './accessors.ts';
 import { parseConfig, parseProjectConfig } from './schema.ts';
 import type { Config, ConfigKey, Scope } from './types.ts';
@@ -198,30 +199,13 @@ const replaceRange = (source: string, start: number, end: number, value: string)
 
 type ManualValue = string | readonly string[];
 
-const sensitiveManualValue = (value: string): boolean => {
-  try {
-    const url = new URL(value);
-    if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
-      return true;
-    }
-  } catch {
-    // Non-URL values still receive the explicit credential-marker checks below.
-  }
-  return (
-    /:\/\/[^/\s:@]+(?::[^/@\s]+)?@/.test(value) ||
-    /(?:^|[?&#;\s])(?:api[_-]?key|auth(?:orization)?|credential|password|secret|token)\s*[=:]/i.test(
-      value,
-    )
-  );
-};
-
 const renderManualValue = (
   value: ManualValue,
   kind: 'string' | 'array',
 ): { readonly rendered: string; readonly redacted: boolean } => {
   const values = typeof value === 'string' ? [value] : value;
-  const redacted = values.some(sensitiveManualValue);
-  if (redacted) return { rendered: '"<REDACTED>"', redacted: true };
+  const redacted = values.some(containsSensitiveMaterial);
+  if (redacted) return { rendered: '"[REDACTED]"', redacted: true };
   return {
     rendered:
       kind === 'array'
@@ -257,7 +241,7 @@ const manualPatch = (
   }
   if (redacted) {
     lines.push(
-      'replace "<REDACTED>" locally with the requested validated value before applying this patch',
+      'replace "[REDACTED]" locally with the requested validated value before applying this patch',
     );
   }
   return lines.join('\n');

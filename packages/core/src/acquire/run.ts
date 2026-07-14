@@ -3,11 +3,17 @@ import type { PlacementBundle, SkillRootsCtx } from '../agents/adapter-types.ts'
 import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
 import {
+  normalizeSourceIdentity,
+  validateManifestName,
+  validateRequestedRef,
+} from '../artifacts/identity.ts';
+import {
   type SkillSmithError,
   errorMessage,
   flipFailedError,
   flipRefusedError,
   genericError,
+  sourceUnresolvableError,
   toolUnavailableError,
 } from '../errors.ts';
 import {
@@ -44,9 +50,14 @@ import {
   type SwapPlan,
 } from '../place/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import {
+  containsSensitiveMaterial,
+  redactSensitiveString,
+  redactSensitiveValue,
+} from '../safety/redaction.ts';
 import { detectTool } from '../scan/index.ts';
 import { verifyPlugin } from '../verify/run.ts';
-import type { ToolVerdict } from '../verify/types.ts';
+import type { ToolVerdict, VerifyReport } from '../verify/types.ts';
 import {
   fetchRepo,
   lsTreeSkills,
@@ -65,6 +76,7 @@ import type {
   InstallReport,
   InstallResult,
   InstallScope,
+  InstallSourceTransport,
   SourceSpec,
   UninstallAction,
   UninstallDeps,
@@ -73,10 +85,17 @@ import type {
   UninstallResult,
 } from './types.ts';
 
-export const defaultInstallDeps: Omit<InstallDeps, 'pick'> = {
+export const defaultInstallDeps: Omit<InstallDeps, 'pick' | 'transport'> = {
   verify: verifyPlugin,
   detect: (env, tool, signal) => detectTool(env, tool, signal),
 };
+
+export const defaultInstallSourceTransport: InstallSourceTransport = Object.freeze({
+  resolveRef: resolveRefViaLsRemote,
+  fetchRepo,
+  listSkills: lsTreeSkills,
+  materializeSkill: sparseCheckoutSkill,
+});
 
 const nowOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string =>
   deps.now?.() ?? ports.wallNowIso();
@@ -113,7 +132,108 @@ const installHintFor = (tool: FlipTool): string => {
   return hint;
 };
 
-const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
+const msg = (e: SkillSmithError): string =>
+  redactSensitiveString('message' in e ? e.message : e.code);
+
+const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
+  'generic',
+  'invalid-argument',
+  'unknown-tool',
+  'config-error',
+  'skill-parse-error',
+  'placement-not-found',
+  'source-unresolvable',
+  'ledger-error',
+  'permission-denied',
+  'flip-refused',
+  'flip-failed',
+  'tool-unavailable',
+]);
+
+const safeError = (error: unknown): SkillSmithError => {
+  const redacted = redactSensitiveValue(error);
+  if (
+    redacted !== null &&
+    typeof redacted === 'object' &&
+    'code' in redacted &&
+    typeof redacted.code === 'string' &&
+    SKILLSMITH_ERROR_CODES.has(redacted.code as SkillSmithError['code'])
+  ) {
+    return redacted as SkillSmithError;
+  }
+  return genericError('operation failed');
+};
+
+type SafeTransportResult =
+  | { readonly kind: 'ok'; readonly value: unknown }
+  | { readonly kind: 'error'; readonly error: SkillSmithError }
+  | { readonly kind: 'invalid' };
+
+const dataRecord = (value: unknown): Readonly<Record<string, unknown>> | null =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : null;
+
+const ownDataValue = (value: Readonly<Record<string, unknown>>, key: string): unknown => {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor && 'value' in descriptor ? descriptor.value : undefined;
+};
+
+const hasExactOwnKeys = (
+  value: Readonly<Record<string, unknown>>,
+  expected: readonly string[],
+): boolean => {
+  const keys = Reflect.ownKeys(value);
+  return (
+    keys.length === expected.length &&
+    keys.every((key) => typeof key === 'string' && expected.includes(key))
+  );
+};
+
+const safeTransportResult = (input: unknown): SafeTransportResult => {
+  const copied = dataRecord(redactSensitiveValue(input));
+  if (copied === null) return { kind: 'invalid' };
+  const okValue = ownDataValue(copied, 'ok');
+  if (okValue === true) {
+    if (!hasExactOwnKeys(copied, ['ok', 'value'])) return { kind: 'invalid' };
+    const descriptor = Object.getOwnPropertyDescriptor(copied, 'value');
+    return descriptor && 'value' in descriptor
+      ? { kind: 'ok', value: descriptor.value }
+      : { kind: 'invalid' };
+  }
+  if (okValue === false) {
+    if (!hasExactOwnKeys(copied, ['ok', 'error'])) return { kind: 'invalid' };
+    const descriptor = Object.getOwnPropertyDescriptor(copied, 'error');
+    return descriptor && 'value' in descriptor
+      ? { kind: 'error', error: safeError(descriptor.value) }
+      : { kind: 'invalid' };
+  }
+  return { kind: 'invalid' };
+};
+
+/**
+ * The acquisition entry points accept injectable ports, so even values statically typed as a
+ * Result are untrusted at the public boundary. Copy the envelope without invoking accessors or
+ * proxy traps and redact every error payload before it can escape.
+ */
+const safeDependencyResult = <T>(input: unknown): Result<T, SkillSmithError> => {
+  const safe = safeTransportResult(input);
+  if (safe.kind === 'ok') return ok(safe.value as T);
+  if (safe.kind === 'error') return err(safe.error);
+  return err(genericError('operation failed'));
+};
+
+const safeUnknownMessage = (error: unknown): string => {
+  const redacted = redactSensitiveValue(error);
+  if (typeof redacted === 'string') return redacted;
+  if (redacted !== null && typeof redacted === 'object') {
+    const descriptor = Object.getOwnPropertyDescriptor(redacted, 'message');
+    if (descriptor && 'value' in descriptor && typeof descriptor.value === 'string') {
+      return descriptor.value;
+    }
+  }
+  return 'operation failed';
+};
 
 const lastSegment = (repoPath: string): string =>
   repoPath
@@ -124,7 +244,7 @@ const lastSegment = (repoPath: string): string =>
 const selectorLabel = (spec: SourceSpec): string => {
   if (spec.selector.kind === 'path') return spec.selector.path;
   if (spec.selector.kind === 'name') return spec.selector.name;
-  return spec.repoPath;
+  return spec.identity.repository;
 };
 
 const resolveSymlinkAbsolute = (placementPath: string, literalTarget: string): string =>
@@ -138,6 +258,7 @@ const emptyResult = (
   source: string,
   scope: InstallScope,
   action: InstallAction,
+  requestIndex?: number,
 ): InstallResult => ({
   source,
   skill: null,
@@ -151,6 +272,7 @@ const emptyResult = (
   origin: null,
   verify: null,
   candidates: null,
+  ...(requestIndex === undefined ? {} : { requestIndex }),
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -191,14 +313,29 @@ const runInstallVerifyGate = async (
   }
   const deep = verification.gatePolicy.installDeep && opts.deep === true;
   const mode: 'static' | 'static+deep' = deep ? 'static+deep' : 'static';
-  const vr = await deps.verify(env, {
-    path,
-    tools: [tool],
-    deep,
-    strict: opts.strict ?? false,
-    ...(opts.signal ? { signal: opts.signal } : {}),
-  });
-  if (!vr.ok) return { blocked: vr.error, gate: 'failed', verdict: 'fail', mode, notice: null };
+  let untrustedVerification: unknown;
+  try {
+    untrustedVerification = await deps.verify(env, {
+      path,
+      tools: [tool],
+      deep,
+      strict: opts.strict ?? false,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    });
+  } catch (error) {
+    const blocked = sourceUnresolvableError(`verification failed: ${safeUnknownMessage(error)}`);
+    return { blocked, gate: 'failed', verdict: 'fail', mode, notice: null };
+  }
+  const vr = safeDependencyResult<VerifyReport>(untrustedVerification);
+  if (!vr.ok) {
+    return {
+      blocked: safeError(vr.error),
+      gate: 'failed',
+      verdict: 'fail',
+      mode,
+      notice: null,
+    };
+  }
 
   const tv = vr.value.tools.find((t) => t.tool === tool);
   const verdict = tv?.verdict ?? vr.value.summary.verdict;
@@ -265,20 +402,38 @@ type ResolveOutcome =
   | { kind: 'resolved'; r: Resolved }
   | { kind: 'result'; result: InstallResult; fetchDir: string | null };
 
+const sourcePathIsValid = (path: string): boolean => {
+  if (path === '') return true;
+  const normalized = normalizeSourceIdentity(
+    `https://fixture.invalid/acme/repository//${path}`,
+    'install.candidate.path',
+  );
+  return normalized.ok && normalized.value.path === path;
+};
+
 // Elision (F-fetch): a full-SHA-resolvable ref whose skill path is known without a tree scan and
 // whose store entry already exists — skip the clone entirely (restricted to //path or a
 // ledger-recorded origin so R2's never-guess is not bypassed).
 const tryElide = async (
   env: AcquisitionPorts,
+  transport: InstallSourceTransport,
   spec: SourceSpec,
   storeRoot: string,
   ledger: LedgerFile,
   scopeKey: string | null,
   signal: AbortSignal | undefined,
 ): Promise<Resolved | null> => {
-  const probe = await resolveRefViaLsRemote(env, spec.cloneUrl, spec.ref, signal);
-  if (!probe.ok || !probe.value) return null;
+  let rawProbe: unknown;
+  try {
+    rawProbe = await transport.resolveRef(env, spec.cloneUrl, spec.ref, signal);
+  } catch {
+    return null;
+  }
+  const probe = safeTransportResult(rawProbe);
+  if (probe.kind !== 'ok' || (probe.value !== null && typeof probe.value !== 'string')) return null;
+  if (probe.value === null) return null;
   const sha = probe.value;
+  if (!/^[0-9a-f]{40}$/u.test(sha) || containsSensitiveMaterial(sha)) return null;
 
   let name: string | null = null;
   let path: string | null = null;
@@ -293,7 +448,7 @@ const tryElide = async (
       const tools = tree[skill]?.tools ?? {};
       for (const tool of Object.keys(tools) as FlipTool[]) {
         const origin = tools[tool]?.origin;
-        if (origin && origin.repo === spec.repoPath && origin.refResolved === sha) {
+        if (origin && origin.repo === spec.identity.repository && origin.refResolved === sha) {
           if (spec.selector.kind === 'name' && skill !== spec.selector.name) continue;
           matches.push({ name: skill, path: origin.skillPath });
         }
@@ -303,13 +458,28 @@ const tryElide = async (
       (m, i) => matches.findIndex((x) => x.name === m.name && x.path === m.path) === i,
     );
     if (unique.length === 1 && unique[0]) {
-      name = unique[0].name;
-      path = unique[0].path;
+      if (
+        validateManifestName(unique[0].name, 'install.skill.name').ok &&
+        sourcePathIsValid(unique[0].path) &&
+        !containsSensitiveMaterial(unique[0].name) &&
+        !containsSensitiveMaterial(unique[0].path)
+      ) {
+        name = unique[0].name;
+        path = unique[0].path;
+      }
     }
   }
   if (name === null || path === null) return null;
+  if (
+    !validateManifestName(name, 'install.skill.name').ok ||
+    !sourcePathIsValid(path) ||
+    containsSensitiveMaterial(name) ||
+    containsSensitiveMaterial(path)
+  ) {
+    return null;
+  }
 
-  const { ns, name: nsName } = clampStoreNs(spec.repoPath);
+  const { ns, name: nsName } = clampStoreNs(spec.identity.repository);
   const storeEntry = join(storeRoot, ns, `${nsName}@${sha.slice(0, 12)}`, name);
   if ((await env.pathKind(storeEntry)) === 'absent') return null;
 
@@ -327,60 +497,174 @@ const resolveSource = async (
   ledger: LedgerFile,
   opts: InstallOptions,
 ): Promise<ResolveOutcome> => {
-  const elided = await tryElide(env, spec, storeRoot, ledger, scopeKey, opts.signal);
+  const transport = deps.transport ?? defaultInstallSourceTransport;
+  const elided = await tryElide(env, transport, spec, storeRoot, ledger, scopeKey, opts.signal);
   if (elided) return { kind: 'resolved', r: elided };
 
   const fetchDir = join(dataDir, '.fetch', txIdOf(env, deps));
-  const fr = await fetchRepo(env, {
-    cloneUrl: spec.cloneUrl,
-    ref: spec.ref,
-    fetchDir,
-    ...(opts.signal ? { signal: opts.signal } : {}),
-  });
-  if (!fr.ok) {
+  let rawFetchResult: unknown;
+  try {
+    rawFetchResult = await transport.fetchRepo(env, {
+      cloneUrl: spec.cloneUrl,
+      ref: spec.ref,
+      fetchDir,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    });
+  } catch (error) {
+    rawFetchResult = err(
+      sourceUnresolvableError(`source transport failed: ${safeUnknownMessage(error)}`),
+    );
+  }
+  const fr = safeTransportResult(rawFetchResult);
+  if (fr.kind !== 'ok') {
+    const error =
+      fr.kind === 'error'
+        ? fr.error
+        : sourceUnresolvableError('source transport returned invalid result metadata');
     const result = {
-      ...emptyResult(spec.raw, scope, 'failed'),
-      reason: msg(fr.error),
-      error: fr.error,
+      ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
+      reason: msg(error),
+      error,
     };
     return { kind: 'result', result, fetchDir };
   }
-  const sha = fr.value.sha;
+  const fetchValue = dataRecord(fr.value);
+  if (fetchValue !== null && !hasExactOwnKeys(fetchValue, ['sha'])) {
+    const error = sourceUnresolvableError('source transport returned invalid result metadata');
+    return {
+      kind: 'result',
+      result: {
+        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
+        reason: msg(error),
+        error,
+      },
+      fetchDir,
+    };
+  }
+  const sha = fetchValue === null ? undefined : ownDataValue(fetchValue, 'sha');
+  if (typeof sha !== 'string') {
+    const error = sourceUnresolvableError('source transport returned invalid result metadata');
+    return {
+      kind: 'result',
+      result: {
+        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
+        reason: msg(error),
+        error,
+      },
+      fetchDir,
+    };
+  }
+  if (!/^[0-9a-f]{40}$/u.test(sha) || containsSensitiveMaterial(sha)) {
+    const error = sourceUnresolvableError('remote source produced invalid ref metadata');
+    return {
+      kind: 'result',
+      result: {
+        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
+        reason: msg(error),
+        error,
+      },
+      fetchDir,
+    };
+  }
 
-  const lst = await lsTreeSkills(env, fetchDir, opts.signal);
-  if (!lst.ok) {
+  let rawListResult: unknown;
+  try {
+    rawListResult = await transport.listSkills(env, fetchDir, opts.signal);
+  } catch (error) {
+    rawListResult = err(
+      sourceUnresolvableError(`source listing failed: ${safeUnknownMessage(error)}`),
+    );
+  }
+  const lst = safeTransportResult(rawListResult);
+  if (lst.kind !== 'ok') {
+    const error =
+      lst.kind === 'error'
+        ? lst.error
+        : sourceUnresolvableError('source transport returned invalid candidate metadata');
     const result = {
-      ...emptyResult(spec.raw, scope, 'failed'),
-      reason: msg(lst.error),
-      error: lst.error,
+      ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
+      reason: msg(error),
+      error,
     };
     return { kind: 'result', result, fetchDir };
   }
-  const candidates: CandidateSkill[] = lst.value.candidates.map((c) => ({
-    path: c.path,
-    name: c.path === '' ? lastSegment(spec.repoPath) : c.name,
-  }));
+  const candidateFailure = (): ResolveOutcome => {
+    const error = sourceUnresolvableError(
+      'remote source produced invalid or sensitive skill metadata',
+    );
+    return {
+      kind: 'result',
+      result: {
+        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
+        reason: msg(error),
+        error,
+      },
+      fetchDir,
+    };
+  };
+  const listValue = dataRecord(lst.value);
+  if (listValue !== null && !hasExactOwnKeys(listValue, ['candidates', 'scanned'])) {
+    return candidateFailure();
+  }
+  const candidateValues = listValue === null ? undefined : ownDataValue(listValue, 'candidates');
+  const scanned = listValue === null ? undefined : ownDataValue(listValue, 'scanned');
+  if (
+    !Array.isArray(candidateValues) ||
+    typeof scanned !== 'number' ||
+    !Number.isSafeInteger(scanned) ||
+    scanned < 0 ||
+    scanned !== candidateValues.length
+  ) {
+    return candidateFailure();
+  }
+  const candidates: CandidateSkill[] = [];
+  for (const candidateValue of candidateValues) {
+    const candidate = dataRecord(candidateValue);
+    if (candidate !== null && !hasExactOwnKeys(candidate, ['path', 'name'])) {
+      return candidateFailure();
+    }
+    const path = candidate === null ? undefined : ownDataValue(candidate, 'path');
+    const candidateName = candidate === null ? undefined : ownDataValue(candidate, 'name');
+    if (typeof path !== 'string' || typeof candidateName !== 'string') {
+      return candidateFailure();
+    }
+    const name = path === '' ? lastSegment(spec.identity.repository) : candidateName;
+    if (
+      !sourcePathIsValid(path) ||
+      !validateManifestName(name, 'install.candidate.name').ok ||
+      containsSensitiveMaterial(path) ||
+      containsSensitiveMaterial(name)
+    ) {
+      return candidateFailure();
+    }
+    candidates.push(Object.freeze({ path, name }));
+  }
   const matches = matchCandidates(candidates, spec.selector);
-  const selection = await selectSkill(matches, lst.value.scanned, deps.pick);
+  const selection = await selectSkill(matches, scanned, deps.pick);
 
   if (selection.kind === 'none') {
     const e = {
       code: 'source-unresolvable' as const,
-      message: `'${selectorLabel(spec)}' matched no skills in ${spec.repoPath} @ ${sha.slice(0, 12)}: searched ${selection.searched} SKILL.md directories`,
+      message: `'${selectorLabel(spec)}' matched no skills in ${spec.identity.repository} @ ${sha.slice(0, 12)}: searched ${selection.searched} SKILL.md directories`,
     };
     return {
       kind: 'result',
-      result: { ...emptyResult(spec.raw, scope, 'failed'), reason: e.message, error: e },
+      result: {
+        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
+        reason: e.message,
+        error: e,
+      },
       fetchDir,
     };
   }
   if (selection.kind === 'ambiguous') {
-    const cands = selection.candidates.map((m) => `${spec.repoPath}//${m.path}`);
+    const cands = selection.candidates.map((m) => `${spec.identity.repository}//${m.path}`);
+    if (cands.some(containsSensitiveMaterial)) return candidateFailure();
     const reason = `'${selectorLabel(spec)}' matches ${selection.candidates.length} skills — re-run with one of the exact paths above`;
     return {
       kind: 'result',
       result: {
-        ...emptyResult(spec.raw, scope, 'refused'),
+        ...emptyResult(spec.canonicalInvocation, scope, 'refused'),
         reason,
         candidates: cands,
         error: flipRefusedError(reason),
@@ -390,15 +674,49 @@ const resolveSource = async (
   }
 
   const skillPath = selection.skill.path;
-  const skillName = skillPath === '' ? lastSegment(spec.repoPath) : selection.skill.name;
-  const co = await sparseCheckoutSkill(env, fetchDir, skillPath, opts.signal);
-  if (!co.ok) {
+  const skillName = skillPath === '' ? lastSegment(spec.identity.repository) : selection.skill.name;
+  if (
+    !sourcePathIsValid(skillPath) ||
+    !validateManifestName(skillName, 'install.skill.name').ok ||
+    containsSensitiveMaterial(skillPath) ||
+    containsSensitiveMaterial(skillName)
+  ) {
+    return candidateFailure();
+  }
+  let rawMaterializeResult: unknown;
+  try {
+    rawMaterializeResult = await transport.materializeSkill(env, fetchDir, skillPath, opts.signal);
+  } catch (error) {
+    rawMaterializeResult = err(
+      sourceUnresolvableError(`source materialization failed: ${safeUnknownMessage(error)}`),
+    );
+  }
+  const co = safeTransportResult(rawMaterializeResult);
+  if (co.kind !== 'ok') {
+    const error =
+      co.kind === 'error'
+        ? co.error
+        : sourceUnresolvableError('source transport returned invalid materialization metadata');
     const result = {
-      ...emptyResult(spec.raw, scope, 'failed'),
-      reason: msg(co.error),
-      error: co.error,
+      ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
+      reason: msg(error),
+      error,
     };
     return { kind: 'result', result, fetchDir };
+  }
+  if (typeof co.value !== 'string' || containsSensitiveMaterial(co.value)) {
+    const error = sourceUnresolvableError(
+      'source transport returned invalid materialization metadata',
+    );
+    return {
+      kind: 'result',
+      result: {
+        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
+        reason: msg(error),
+        error,
+      },
+      fetchDir,
+    };
   }
 
   return {
@@ -435,9 +753,9 @@ const buildOrigin = (
   opts: InstallOptions,
   now: string,
 ): OriginRecord => ({
-  source: spec.raw,
-  host: spec.host,
-  repo: spec.repoPath,
+  source: spec.originSource,
+  host: spec.identity.host,
+  repo: spec.identity.repository,
   skillPath,
   refRequested: spec.ref,
   refResolved: sha,
@@ -527,8 +845,8 @@ const placePair = async (
   const resultVerify =
     gate.gate === 'skipped' ? null : { gate: gate.gate, verdict: gate.verdict, mode: gate.mode };
   const originOut = {
-    host: spec.host,
-    repo: spec.repoPath,
+    host: spec.identity.host,
+    repo: spec.identity.repository,
     skillPath: resolved.skillPath,
     refRequested: spec.ref,
     refResolved: sha,
@@ -542,7 +860,7 @@ const placePair = async (
   };
 
   const base: InstallResult = {
-    source: spec.raw,
+    source: spec.canonicalInvocation,
     skill,
     tool,
     scope: p.scope,
@@ -571,7 +889,7 @@ const placePair = async (
     placement: null,
     store: null,
     origin: null,
-    error: e,
+    error: safeError(e),
   });
 
   try {
@@ -644,7 +962,7 @@ const placePair = async (
           : base.store,
       };
     }
-    return refuse(refusedMessage(existing.journal.op, skill, spec.raw));
+    return refuse(refusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
   }
 
   const live = await classifyPlacement(env, installRoot, skill, p.storeRoot);
@@ -736,7 +1054,7 @@ const placePair = async (
   }
 
   // Replace. A managed pair for this same repo may update freely; anything else needs --force.
-  const managed = existing?.origin?.repo === spec.repoPath;
+  const managed = existing?.origin?.repo === spec.identity.repository;
   if (!managed && !opts.force) {
     const recorded = existing?.origin ? existing.origin.repo : 'unmanaged';
     return refuse(
@@ -773,11 +1091,11 @@ const predictPair = async (
   };
   const installRoot = primarySkillRootFor(tool, env, p.scope, rootsCtx);
   const placementPath = join(installRoot, skill);
-  const { ns, name } = clampStoreNs(spec.repoPath);
+  const { ns, name } = clampStoreNs(spec.identity.repository);
   const expectedStorePath = join(p.storeRoot, ns, `${name}@${sha.slice(0, 12)}`, skill);
 
   const base: InstallResult = {
-    source: spec.raw,
+    source: spec.canonicalInvocation,
     skill,
     tool,
     scope: p.scope,
@@ -787,8 +1105,8 @@ const predictPair = async (
     placement: build,
     store: { path: expectedStorePath, rev: sha.slice(0, 12), gitSha: sha, reused: false },
     origin: {
-      host: spec.host,
-      repo: spec.repoPath,
+      host: spec.identity.host,
+      repo: spec.identity.repository,
       skillPath: resolved.skillPath,
       refRequested: spec.ref,
       refResolved: sha,
@@ -844,7 +1162,7 @@ const predictPair = async (
         action: existing.journal.before.mode === 'absent' ? 'installed' : 'updated',
       };
     }
-    return refuse(refusedMessage(existing.journal.op, skill, spec.raw));
+    return refuse(refusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
   }
 
   const live = await classifyPlacement(env, installRoot, skill, p.storeRoot);
@@ -859,7 +1177,7 @@ const predictPair = async (
     }
     return { ...base, action: 'repaired', placement: null };
   }
-  const managed = existing?.origin?.repo === spec.repoPath;
+  const managed = existing?.origin?.repo === spec.identity.repository;
   if (!managed && !opts.force) {
     const recorded = existing?.origin ? existing.origin.repo : 'unmanaged';
     return refuse(
@@ -910,14 +1228,24 @@ const buildReport = (
   return { dryRun, requested, results, summary };
 };
 
+const rejectedSourceLabel = (input: string): string => {
+  const safe = redactSensitiveString(input);
+  return safe === input ? '[REJECTED_SOURCE]' : safe;
+};
+
+const rejectedRefLabel = (input: string): string => {
+  const safe = redactSensitiveString(input);
+  return safe === input ? '[REJECTED_REF]' : safe;
+};
+
 // ---------------------------------------------------------------------------------------------
 // orchestrator
 // ---------------------------------------------------------------------------------------------
 
-export const runInstall = async (
+const runInstallInternal = async (
   env: AcquisitionPorts,
   opts: InstallOptions,
-  deps: InstallDeps = { ...defaultInstallDeps },
+  deps: InstallDeps,
 ): Promise<Result<InstallReport, SkillSmithError>> => {
   const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
@@ -925,12 +1253,34 @@ export const runInstall = async (
   const explicitTools = opts.tools !== undefined && opts.tools.length > 0;
 
   // ---- Phase 0: pure pre-flight (no I/O) ----
-  const parsed = opts.sources.map((source) => ({ source, res: parseSource(source) }));
+  const overrideAllowed = opts.ref !== undefined && opts.sources.length === 1;
+  const parsed = opts.sources.map((input, requestIndex) => {
+    const baseRes = parseSource(input);
+    const res = overrideAllowed ? parseSource(input, { overrideRef: opts.ref as string }) : baseRes;
+    return { input, requestIndex, baseRes, res };
+  });
+  const sourceLabel = (
+    input: string,
+    baseRes: (typeof parsed)[number]['baseRes'],
+    res: (typeof parsed)[number]['res'],
+  ): string =>
+    res.ok
+      ? res.value.canonicalInvocation
+      : baseRes.ok
+        ? baseRes.value.canonicalInvocation
+        : rejectedSourceLabel(input);
+  const sourceLabels = parsed.map(({ input, baseRes, res }) => sourceLabel(input, baseRes, res));
   const fallbackScope: InstallScope = opts.scope ?? 'user';
+  const requestedRef =
+    opts.ref === undefined
+      ? null
+      : containsSensitiveMaterial(opts.ref) || !validateRequestedRef(opts.ref, 'install.ref').ok
+        ? rejectedRefLabel(opts.ref)
+        : opts.ref;
   const requestedBase = {
-    sources: [...opts.sources],
+    sources: sourceLabels,
     explicitTools,
-    ref: opts.ref ?? null,
+    ref: requestedRef,
     pin: opts.pin ?? false,
     direct: opts.direct ?? false,
     force: opts.force ?? false,
@@ -941,15 +1291,19 @@ export const runInstall = async (
   const anyParseFail = parsed.some((x) => !x.res.ok);
   if (anyParseFail) {
     // Resolution 3: whole invocation refuses before any I/O.
-    const results: InstallResult[] = parsed.map(({ source, res }) => {
+    const results: InstallResult[] = parsed.map(({ input, requestIndex, baseRes, res }) => {
+      const label = sourceLabel(input, baseRes, res);
       if (!res.ok) {
         return {
-          ...emptyResult(source, fallbackScope, 'refused'),
+          ...emptyResult(label, fallbackScope, 'refused', requestIndex),
           reason: msg(res.error),
-          error: res.error,
+          error: safeError(res.error),
         };
       }
-      return { ...emptyResult(source, fallbackScope, 'skipped'), reason: 'fail-fast' };
+      return {
+        ...emptyResult(label, fallbackScope, 'skipped', requestIndex),
+        reason: 'fail-fast',
+      };
     });
     return ok(
       buildReport(
@@ -967,8 +1321,8 @@ export const runInstall = async (
 
   // --ref rules.
   if (opts.ref !== undefined && opts.sources.length > 1) {
-    const results = parsed.map(({ source }) => ({
-      ...emptyResult(source, fallbackScope, 'refused'),
+    const results = parsed.map(({ input, requestIndex, baseRes, res }) => ({
+      ...emptyResult(sourceLabel(input, baseRes, res), fallbackScope, 'refused', requestIndex),
       reason: '--ref is only valid with exactly one <source>',
       error: flipRefusedError('--ref is only valid with exactly one <source>'),
     }));
@@ -986,15 +1340,10 @@ export const runInstall = async (
     );
   }
 
-  const specs: { source: string; spec: SourceSpec; refConflict: boolean }[] = parsed.map(
-    ({ source, res }) => {
+  const specs: { source: string; spec: SourceSpec; requestIndex: number }[] = parsed.map(
+    ({ requestIndex, res }) => {
       const spec = (res as { ok: true; value: SourceSpec }).value;
-      if (opts.ref !== undefined && spec.ref !== null) {
-        return { source, spec, refConflict: true };
-      }
-      const effective: SourceSpec =
-        opts.ref !== undefined && spec.ref === null ? { ...spec, ref: opts.ref } : spec;
-      return { source, spec: effective, refConflict: false };
+      return { source: spec.canonicalInvocation, spec, requestIndex };
     },
   );
 
@@ -1008,8 +1357,9 @@ export const runInstall = async (
   const detectedTools: FlipTool[] = [];
   const undetectedExplicit: FlipTool[] = [];
   for (const tool of candidateTools) {
-    const d = await deps.detect(env, tool, opts.signal);
+    const d = safeDependencyResult<readonly unknown[]>(await deps.detect(env, tool, opts.signal));
     if (!d.ok) return d;
+    if (!Array.isArray(d.value)) return err(genericError('tool detection failed'));
     if (d.value.length > 0) detectedTools.push(tool);
     else if (explicitTools) undetectedExplicit.push(tool);
   }
@@ -1027,12 +1377,12 @@ export const runInstall = async (
     const e = toolUnavailableError(
       `${tool} is not detected; install it first: ${installHintFor(tool)}`,
     );
-    for (const { source } of specs) {
+    for (const { source, requestIndex } of specs) {
       planningRefusals.push({
-        ...emptyResult(source, scope, 'refused'),
+        ...emptyResult(source, scope, 'refused', requestIndex),
         tool,
         reason: msg(e),
-        error: e,
+        error: safeError(e),
       });
     }
   }
@@ -1040,10 +1390,10 @@ export const runInstall = async (
   if (detectedTools.length === 0) {
     if (!explicitTools) {
       const e = toolUnavailableError(`no supported tool detected (${FLIP_TOOLS.join(', ')})`);
-      const results = specs.map(({ source }) => ({
-        ...emptyResult(source, scope, 'refused'),
+      const results = specs.map(({ source, requestIndex }) => ({
+        ...emptyResult(source, scope, 'refused', requestIndex),
         reason: msg(e),
-        error: e,
+        error: safeError(e),
       }));
       return ok(buildReport(false, requested, results));
     }
@@ -1066,23 +1416,19 @@ export const runInstall = async (
     };
     let failFast = false;
 
-    for (const { source, spec, refConflict } of specs) {
+    for (const { source, spec, requestIndex } of specs) {
       if (opts.signal?.aborted) {
-        results.push({ ...emptyResult(source, scope, 'skipped'), reason: 'interrupted' });
+        results.push({
+          ...emptyResult(source, scope, 'skipped', requestIndex),
+          reason: 'interrupted',
+        });
         continue;
       }
       if (failFast) {
-        results.push({ ...emptyResult(source, scope, 'skipped'), reason: 'fail-fast' });
-        continue;
-      }
-      if (refConflict) {
-        const reason = `--ref conflicts with the '@ref' already in '${source}'`;
         results.push({
-          ...emptyResult(source, scope, 'refused'),
-          reason,
-          error: flipRefusedError(reason),
+          ...emptyResult(source, scope, 'skipped', requestIndex),
+          reason: 'fail-fast',
         });
-        if (!opts.continueOnError) failFast = true;
         continue;
       }
 
@@ -1102,13 +1448,30 @@ export const runInstall = async (
       };
 
       if (resolved.kind === 'result') {
-        results.push(resolved.result);
+        results.push({ ...resolved.result, requestIndex });
         await cleanup(resolved.fetchDir);
         if (resolved.result.error && !opts.continueOnError) failFast = true;
         continue;
       }
 
       const r = resolved.r;
+      if (
+        [dataDir, storeRoot, r.materializedDir, r.skillName, r.skillPath].some(
+          containsSensitiveMaterial,
+        )
+      ) {
+        const error = sourceUnresolvableError(
+          'remote source produced invalid or sensitive derived metadata',
+        );
+        results.push({
+          ...emptyResult(source, scope, 'failed', requestIndex),
+          reason: msg(error),
+          error,
+        });
+        await cleanup(r.fetchDir);
+        if (!opts.continueOnError) failFast = true;
+        continue;
+      }
       const sourceResults: InstallResult[] = [];
       let snap: SnapshotResult | null = null;
       let snapErr: SkillSmithError | null = null;
@@ -1117,10 +1480,32 @@ export const runInstall = async (
       for (const tool of detectedTools) {
         if (opts.signal?.aborted) {
           sourceResults.push({
-            ...emptyResult(source, scope, 'skipped'),
+            ...emptyResult(source, scope, 'skipped', requestIndex),
             skill: r.skillName,
             tool,
             reason: 'interrupted',
+          });
+          continue;
+        }
+
+        const derivedRootsContext = {
+          cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
+          configuration: opts.configuration,
+        };
+        const derivedPlacementPath = join(
+          primarySkillRootFor(tool, env, scope, derivedRootsContext),
+          r.skillName,
+        );
+        if (containsSensitiveMaterial(derivedPlacementPath)) {
+          const error = sourceUnresolvableError(
+            'remote source produced invalid or sensitive derived metadata',
+          );
+          sourceResults.push({
+            ...emptyResult(source, scope, 'failed', requestIndex),
+            skill: r.skillName,
+            tool,
+            reason: msg(error),
+            error,
           });
           continue;
         }
@@ -1133,24 +1518,27 @@ export const runInstall = async (
           };
           const installRoot = primarySkillRootFor(tool, env, scope, rootsCtx);
           sourceResults.push({
-            ...emptyResult(source, scope, 'failed'),
+            ...emptyResult(source, scope, 'failed', requestIndex),
             skill: r.skillName,
             tool,
             placementPath: join(installRoot, r.skillName),
             reason: msg(gate.blocked),
             verify: { gate: gate.gate, verdict: gate.verdict, mode: gate.mode },
-            error: gate.blocked,
+            error: safeError(gate.blocked),
           });
           continue;
         }
 
         if (dryRun) {
-          sourceResults.push(await predictPair(placeCtx, spec, r, tool));
+          sourceResults.push({
+            ...(await predictPair(placeCtx, spec, r, tool)),
+            requestIndex,
+          });
           continue;
         }
 
         if (snap === null && snapErr === null) {
-          const { ns, name } = clampStoreNs(spec.repoPath);
+          const { ns, name } = clampStoreNs(spec.identity.repository);
           const provenance: Provenance = {
             kind: 'git-clean',
             gitSha: r.sha,
@@ -1158,7 +1546,7 @@ export const runInstall = async (
             name,
             repoRoot: null,
             sourceRelPath: null,
-            remote: spec.repoPath,
+            remote: spec.identity.repository,
             dirtySummary: null,
           };
           const s = await snapshotToStore(env, {
@@ -1173,11 +1561,11 @@ export const runInstall = async (
         }
         if (snapErr) {
           sourceResults.push({
-            ...emptyResult(source, scope, 'failed'),
+            ...emptyResult(source, scope, 'failed', requestIndex),
             skill: r.skillName,
             tool,
             reason: msg(snapErr),
-            error: snapErr,
+            error: safeError(snapErr),
           });
           continue;
         }
@@ -1193,7 +1581,7 @@ export const runInstall = async (
           storeReused,
         );
         snapConsumed = true;
-        sourceResults.push(placed);
+        sourceResults.push({ ...placed, requestIndex });
       }
 
       results.push(...sourceResults);
@@ -1207,48 +1595,68 @@ export const runInstall = async (
   // ---- dry-run: no lock, no writes ----
   if (opts.dryRun) {
     const ledgerRes = await readLedger(env, ledgerPath);
-    if (!ledgerRes.ok) return ledgerRes;
+    if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
     const results = await processAll(ledgerRes.value, true);
     return ok(buildReport(true, requested, results));
   }
 
   // ---- Phase 2: the locked batch (ONE lock across fetch + verify + placement) ----
-  const locked = await withLedgerLock(
-    env,
-    ledgerPath,
-    async (): Promise<Result<InstallReport, SkillSmithError>> => {
-      await sweepStaging(env, storeRoot);
-      await sweepFetchOrphans(env, dataDir);
-      const ledgerRes = await readLedger(env, ledgerPath);
-      if (!ledgerRes.ok) return ledgerRes;
-      const ledger = ledgerRes.value;
+  const executeLocked = async (): Promise<Result<InstallReport, SkillSmithError>> => {
+    await sweepStaging(env, storeRoot);
+    await sweepFetchOrphans(env, dataDir);
+    const ledgerRes = await readLedger(env, ledgerPath);
+    if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
+    const ledger = ledgerRes.value;
 
-      const swept = await sweepCommittedAcquireJournals(
-        makeSwapCtx({
-          env,
-          deps,
-          opts,
-          ledger,
-          ledgerPath,
-          storeRoot,
-          scope,
-          scopeKey,
-          projectRoot,
-        }),
+    const swept = await sweepCommittedAcquireJournals(
+      makeSwapCtx({
+        env,
+        deps,
+        opts,
+        ledger,
+        ledgerPath,
+        storeRoot,
+        scope,
+        scopeKey,
+        projectRoot,
+      }),
+    );
+    if (!swept.ok) {
+      const sweepError = safeError(swept.error);
+      return err(
+        sweepError.code === 'ledger-error' ? flipFailedError(msg(sweepError)) : sweepError,
       );
-      if (!swept.ok) {
-        return err(
-          swept.error.code === 'ledger-error' ? flipFailedError(msg(swept.error)) : swept.error,
-        );
-      }
+    }
 
-      const results = await processAll(ledger, false);
-      return ok(buildReport(false, requested, results));
-    },
-  );
+    const results = await processAll(ledger, false);
+    return ok(buildReport(false, requested, results));
+  };
+  const completed = Symbol('install-ledger-callback-completed');
+  let batchResult: Result<InstallReport, SkillSmithError> | undefined;
+  const locked = await withLedgerLock(env, ledgerPath, async (): Promise<typeof completed> => {
+    batchResult = await executeLocked();
+    return completed;
+  });
 
-  if (!locked.ok) return locked;
-  return locked.value;
+  if (!locked.ok) return err(safeError(locked.error));
+  const settled = batchResult;
+  if (locked.value !== completed || settled === undefined) {
+    return err(genericError('operation failed'));
+  }
+  return settled.ok ? settled : err(safeError(settled.error));
+};
+
+export const runInstall = async (
+  env: AcquisitionPorts,
+  opts: InstallOptions,
+  deps: InstallDeps = { ...defaultInstallDeps },
+): Promise<Result<InstallReport, SkillSmithError>> => {
+  try {
+    const result = await runInstallInternal(env, opts, deps);
+    return result.ok ? result : err(safeError(result.error));
+  } catch (error) {
+    return err(safeError(error));
+  }
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -1523,7 +1931,7 @@ const processUninstallMatch = async (
     before: null,
     storeRetained: null,
     backupKept: null,
-    error: e,
+    error: safeError(e),
   });
 
   // Constraint #6: an uncommitted journal on the pair refuses every op except a same-op re-run
@@ -1797,7 +2205,7 @@ const processUninstallTarget = async (
         {
           ...emptyUninstallResult(name, null, null, 'refused'),
           reason: msg(resolved.error),
-          error: resolved.error,
+          error: safeError(resolved.error),
         },
       ];
     }
@@ -1861,10 +2269,10 @@ const buildUninstallReport = (
   return { dryRun, requested, results, summary };
 };
 
-export const runUninstall = async (
+const runUninstallInternal = async (
   env: AcquisitionPorts,
   opts: UninstallOptions,
-  deps: UninstallDeps = { ...defaultUninstallDeps },
+  deps: UninstallDeps,
 ): Promise<Result<UninstallReport, SkillSmithError>> => {
   const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
@@ -1919,42 +2327,62 @@ export const runUninstall = async (
   // Uninstall needs no binary detection and no fetch/verify — dry-run only needs a ledger read.
   if (opts.dryRun) {
     const ledgerRes = await readLedger(env, ledgerPath);
-    if (!ledgerRes.ok) return ledgerRes;
+    if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
     const results = await processAll(ledgerRes.value, true);
     return ok(buildUninstallReport(true, requested, results));
   }
 
-  const locked = await withLedgerLock(
-    env,
-    ledgerPath,
-    async (): Promise<Result<UninstallReport, SkillSmithError>> => {
-      await sweepStaging(env, storeRoot);
-      await sweepFetchOrphans(env, dataDir);
-      const ledgerRes = await readLedger(env, ledgerPath);
-      if (!ledgerRes.ok) return ledgerRes;
-      const ledger = ledgerRes.value;
+  const executeLocked = async (): Promise<Result<UninstallReport, SkillSmithError>> => {
+    await sweepStaging(env, storeRoot);
+    await sweepFetchOrphans(env, dataDir);
+    const ledgerRes = await readLedger(env, ledgerPath);
+    if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
+    const ledger = ledgerRes.value;
 
-      const swept = await sweepCommittedAcquireJournals({
-        env,
-        ledgerPath,
-        ledger,
-        persist: () => writeLedger(env, ledgerPath, ledger),
-        now: () => nowOf(env, deps),
-        newTxId: () => txIdOf(env, deps),
-        pauseAt: opts.testPauseAt,
-        signal: opts.signal,
-      });
-      if (!swept.ok) {
-        return err(
-          swept.error.code === 'ledger-error' ? flipFailedError(msg(swept.error)) : swept.error,
-        );
-      }
+    const swept = await sweepCommittedAcquireJournals({
+      env,
+      ledgerPath,
+      ledger,
+      persist: () => writeLedger(env, ledgerPath, ledger),
+      now: () => nowOf(env, deps),
+      newTxId: () => txIdOf(env, deps),
+      pauseAt: opts.testPauseAt,
+      signal: opts.signal,
+    });
+    if (!swept.ok) {
+      const sweepError = safeError(swept.error);
+      return err(
+        sweepError.code === 'ledger-error' ? flipFailedError(msg(sweepError)) : sweepError,
+      );
+    }
 
-      const results = await processAll(ledger, false);
-      return ok(buildUninstallReport(false, requested, results));
-    },
-  );
+    const results = await processAll(ledger, false);
+    return ok(buildUninstallReport(false, requested, results));
+  };
+  const completed = Symbol('uninstall-ledger-callback-completed');
+  let batchResult: Result<UninstallReport, SkillSmithError> | undefined;
+  const locked = await withLedgerLock(env, ledgerPath, async (): Promise<typeof completed> => {
+    batchResult = await executeLocked();
+    return completed;
+  });
 
-  if (!locked.ok) return locked;
-  return locked.value;
+  if (!locked.ok) return err(safeError(locked.error));
+  const settled = batchResult;
+  if (locked.value !== completed || settled === undefined) {
+    return err(genericError('operation failed'));
+  }
+  return settled.ok ? settled : err(safeError(settled.error));
+};
+
+export const runUninstall = async (
+  env: AcquisitionPorts,
+  opts: UninstallOptions,
+  deps: UninstallDeps = { ...defaultUninstallDeps },
+): Promise<Result<UninstallReport, SkillSmithError>> => {
+  try {
+    const result = await runUninstallInternal(env, opts, deps);
+    return result.ok ? result : err(safeError(result.error));
+  } catch (error) {
+    return err(safeError(error));
+  }
 };

@@ -7,6 +7,7 @@ import {
   flipFailedError,
   flipRefusedError,
   genericError,
+  safeErrorCode,
   sourceUnresolvableError,
 } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -53,8 +54,7 @@ const midSwapError = (e: SkillSmithError): SkillSmithError =>
 const resolveSymlinkAbsolute = (placementPath: string, literalTarget: string): string =>
   isAbsolute(literalTarget) ? literalTarget : join(dirname(placementPath), literalTarget);
 
-const isEexist = (e: unknown): boolean =>
-  typeof e === 'object' && e !== null && 'code' in e && (e as { code: unknown }).code === 'EEXIST';
+const isEexist = (e: unknown): boolean => safeErrorCode(e) === 'EEXIST';
 
 /** Non-blocking (T5 hard-kill orphan): remove any stale `.skillsmith-staging-<skill>-*` entries for
  *  THIS placement name before an S1 create publishes. A staging entry for this name can only be an

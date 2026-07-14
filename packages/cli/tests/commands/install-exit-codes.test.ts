@@ -45,7 +45,8 @@ import { exitCodeForError } from '../../src/util/exit-codes.ts';
 // mirrors flip-exit-codes.test.ts's shape (one row, one assertion of the FINAL exit code) but for
 // the acquisition verbs. Rows that are pure pre-flight (grammar rejection, `--ref` with two
 // sources, an explicitly undetected tool, a corrupt ledger) need no fixture/fetch at all; the
-// fetch-dependent rows use the hermetic `file://` RemoteFixture. This also closes the Task-9
+// fetch-dependent rows use safe fixture HTTPS identities with an injected trusted transport. This
+// also closes the Task-9
 // coverage gap noted in the brief: install.test.ts previously had no hermetic real-flow smoke.
 setDefaultTimeout(60_000);
 
@@ -116,6 +117,7 @@ const installDeps = (
   detect,
   now: () => NOW,
   newTxId: () => (0x10000000 + txN++).toString(16).slice(-8),
+  transport: fixture.transport,
 });
 
 let unTxN = 0;
@@ -149,7 +151,7 @@ let f: FixtureFleet;
 let fsSource: string;
 beforeEach(async () => {
   f = await buildFixtureFleet();
-  fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+  fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
 });
 afterEach(async () => {
   await destroyFixtureFleet(f);
@@ -260,7 +262,7 @@ describe('install/uninstall exit-code table (§13)', () => {
     const r = await runInstall(
       f.env,
       {
-        sources: [fixture.multiUrl],
+        sources: [fixture.multiSource],
         cwd: f.base,
         configuration: resolveRuntimeConfiguration(f.envVars),
       },
@@ -396,7 +398,7 @@ describe('install/uninstall exit-code table (§13)', () => {
   });
 
   test('unreachable URL / bad ref / zero-match name -> exit 5', async () => {
-    const zeroMatch = `${fixture.multiUrl}/totally-not-a-real-skill-name`;
+    const zeroMatch = `${fixture.multiSource}/totally-not-a-real-skill-name`;
     const r = await runInstall(
       f.env,
       {
@@ -518,11 +520,12 @@ describe('install/uninstall exit-code table (§13)', () => {
   });
 
   test('mixed batch: one installed + one refused -> exit 2 (max rule, with and without --continue-on-error)', async () => {
-    // `fixture.multiUrl` bare (whole-repo, R2-ambiguous: 3 skills) must be a DIFFERENT repo than the
+    // `fixture.multiSource` bare (whole-repo, R2-ambiguous: 3 skills) must be a DIFFERENT repo than
+    // the
     // one installed first — F-fetch elision (tryElide) trusts an already-installed (repo, sha) pair
     // and would otherwise resolve the bare source straight to that one skill (a 'noop', not R2).
-    const singleSource = `${fixture.singleUrl}//tools/deep/skills/lint`;
-    const sources = [singleSource, fixture.multiUrl];
+    const singleSource = `${fixture.singleSource}//tools/deep/skills/lint`;
+    const sources = [singleSource, fixture.multiSource];
 
     const withoutCoe = await runInstall(
       f.env,

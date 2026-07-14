@@ -1,5 +1,9 @@
 import { stripVTControlCharacters } from 'node:util';
-import type { SkillSmithError } from '@skillsmith/core';
+import {
+  type SkillSmithError,
+  redactSensitiveString,
+  redactSensitiveValue,
+} from '@skillsmith/core';
 import { errorV1Codec, toErrorV1Dto } from '@skillsmith/core/contracts/v1';
 import type { Command } from 'commander';
 import { type ExitCode, exitCodeForError } from '../util/exit-codes.ts';
@@ -47,7 +51,7 @@ const WHITESPACE = /\s+/g;
 const UNSAFE_CODE_CHARACTER = /[^A-Za-z0-9._-]+/g;
 
 const sanitizeMessage = (value: string, fallback: string): string => {
-  const sanitized = stripVTControlCharacters(value)
+  const sanitized = stripVTControlCharacters(redactSensitiveString(value))
     .replace(CONTROL_OR_LINE_SEPARATOR, ' ')
     .replace(WHITESPACE, ' ')
     .trim();
@@ -93,12 +97,16 @@ const fallbackError = (fallback?: string | CliErrorFallback): NormalizedCliError
     return { ...DEFAULT_ERROR, message: sanitizeMessage(fallback, DEFAULT_ERROR.message) };
   }
 
-  const code = sanitizeCode(readString(fallback, 'code') ?? DEFAULT_ERROR.code, DEFAULT_ERROR.code);
+  const safeFallback = redactSensitiveValue(fallback);
+  const code = sanitizeCode(
+    readString(safeFallback, 'code') ?? DEFAULT_ERROR.code,
+    DEFAULT_ERROR.code,
+  );
   const message = sanitizeMessage(
-    readString(fallback, 'message') ?? DEFAULT_ERROR.message,
+    readString(safeFallback, 'message') ?? DEFAULT_ERROR.message,
     DEFAULT_ERROR.message,
   );
-  const exitCode = readProperty(fallback, 'exitCode');
+  const exitCode = readProperty(safeFallback, 'exitCode');
   return { code, message, exitCode: isExitCode(exitCode) ? exitCode : DEFAULT_ERROR.exitCode };
 };
 
@@ -118,14 +126,18 @@ export const normalizeCliError = (
   fallback?: string | CliErrorFallback,
 ): NormalizedCliError => {
   const safeFallback = fallbackError(fallback);
-  const rawCode = readString(error, 'code');
-  const rawName = readString(error, 'name');
+  // Convert hostile values to the shared frozen data-only shape before reading a property. This
+  // avoids invoking caller accessors/proxy traps and applies the same recursive secret policy used
+  // by observations and acquisition reports.
+  const safeError = redactSensitiveValue(error);
+  const rawCode = readString(safeError, 'code');
+  const rawName = readString(safeError, 'name');
 
   if (rawName === 'AbortError' || rawCode === 'ABORT_ERR') {
     return {
       code: 'cancelled',
       message: sanitizeMessage(
-        readString(error, 'message') ?? 'Interrupted by user',
+        readString(safeError, 'message') ?? 'Interrupted by user',
         safeFallback.message,
       ),
       exitCode: 130,
@@ -134,7 +146,7 @@ export const normalizeCliError = (
 
   if (rawCode?.startsWith('commander.') === true) {
     const informational = rawCode === 'commander.helpDisplayed' || rawCode === 'commander.version';
-    const commanderMessage = (readString(error, 'message') ?? safeFallback.message).replace(
+    const commanderMessage = (readString(safeError, 'message') ?? safeFallback.message).replace(
       /^error:\s*/i,
       '',
     );
@@ -145,17 +157,30 @@ export const normalizeCliError = (
     };
   }
 
+  if (rawCode === 'artifact-mutation') {
+    const exitCode = readProperty(safeError, 'exitCode');
+    return {
+      code: rawCode,
+      message: sanitizeMessage(
+        readString(safeError, 'message') ?? 'Artifact mutation failed',
+        safeFallback.message,
+      ),
+      exitCode: isExitCode(exitCode) ? exitCode : 3,
+    };
+  }
+
   if (rawCode !== undefined && SKILLSMITH_ERROR_CODES.has(rawCode as SkillSmithError['code'])) {
     const code = rawCode as SkillSmithError['code'];
     return {
       code,
-      message: sanitizeMessage(messageForSkillSmithError(error, code), safeFallback.message),
-      exitCode: exitCodeForError(error as SkillSmithError),
+      message: sanitizeMessage(messageForSkillSmithError(safeError, code), safeFallback.message),
+      exitCode: exitCodeForError(safeError as SkillSmithError),
     };
   }
 
   const message =
-    readString(error, 'message') ?? (typeof error === 'string' ? error : safeFallback.message);
+    readString(safeError, 'message') ??
+    (typeof safeError === 'string' ? safeError : safeFallback.message);
   return {
     code: rawCode === undefined ? safeFallback.code : sanitizeCode(rawCode, safeFallback.code),
     message: sanitizeMessage(message, safeFallback.message),
