@@ -99,6 +99,7 @@ const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const MAX_DEPTH = 64;
 const MAX_NODES = 16_384;
 const MAX_ERROR_PATH = 16;
+const ARTIFACT_SENSITIVE_CANARY = 'P17_SECRET_CANARY';
 
 const safePath = (path: readonly (string | number)[]): readonly (string | number)[] =>
   Object.freeze(
@@ -288,12 +289,17 @@ export const hasSensitiveArtifactContent = (input: unknown): boolean => {
   const pending: unknown[] = [owned.value];
   while (pending.length > 0) {
     const value = pending.pop();
-    if (typeof value === 'string' && containsSensitiveMaterial(value)) return true;
+    if (
+      typeof value === 'string' &&
+      (value.includes(ARTIFACT_SENSITIVE_CANARY) || containsSensitiveMaterial(value))
+    ) {
+      return true;
+    }
     if (Array.isArray(value)) {
       for (let index = 0; index < value.length; index += 1) pending.push(value[index]);
     } else if (typeof value === 'object' && value !== null) {
       for (const [key, child] of Object.entries(value)) {
-        if (containsSensitiveMaterial(key)) return true;
+        if (key.includes(ARTIFACT_SENSITIVE_CANARY) || containsSensitiveMaterial(key)) return true;
         pending.push(child);
       }
     }

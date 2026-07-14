@@ -93,6 +93,7 @@ describe('artifact codec foundation', () => {
     expect(hasSensitiveArtifactContent({ nested: ['safe', 'authorization=Bearer abcdefgh'] })).toBe(
       true,
     );
+    expect(hasSensitiveArtifactContent({ nested: ['safe', 'P17_SECRET_CANARY'] })).toBe(true);
     expect(hasSensitiveArtifactContent({ nested: ['safe', 'sha256:abcd'] })).toBe(false);
     expect(hasSensitiveArtifactContent(new Proxy({}, {}))).toBe(true);
   });
