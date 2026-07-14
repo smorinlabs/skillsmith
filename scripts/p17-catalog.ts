@@ -630,6 +630,14 @@ const explicitValidationOwnership: Record<string, string[]> = {
     'EWP-P2-TS04',
     'EWP-P2-TS07',
   ],
+  'EWP-P2-T05': [
+    'EWP-CMD-CONFIG-TS01',
+    'EWP-CMD-CONFIG-TS04',
+    'EWP-P1-TS08',
+    'EWP-P2-TS01',
+    'EWP-P2-TS04',
+    'EWP-P2-TS05',
+  ],
   'P1-04': ['EWP-P5-TS05'],
   // P0-01's project-context/parser slice lands in G1-01. Output/runtime, observer diagnostics,
   // and final TTY/color behavior remain mandatory downstream instead of being falsely signed off.

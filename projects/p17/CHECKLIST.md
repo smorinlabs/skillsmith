@@ -762,14 +762,14 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G2-04 — Pure init request/skeleton/migration operation model without early execution
 
-Phase: 2; status: **mapped**; dependencies: P17-G2-01, P17-G2-03.
-Required-now validations: EWP-P2-TS05.
+Phase: 2; status: **ready**; dependencies: P17-G2-01, P17-G2-03.
+Required-now validations: EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS04, EWP-P1-TS08, EWP-P2-TS01, EWP-P2-TS04, EWP-P2-TS05.
 Downstream coverage obligations: none.
 
 ### Group gates
 
 - [x] P17-G2-04:mapped _(passed)_
-- [ ] P17-G2-04:ready _(pending)_
+- [x] P17-G2-04:ready _(passed)_
 - [ ] P17-G2-04:test-first _(pending)_
 - [ ] P17-G2-04:minimal-implementation _(pending)_
 - [ ] P17-G2-04:targeted-green _(pending)_
@@ -781,7 +781,7 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
-- [ ] **EWP-P2-T05** — Define init request validation, canonical skeleton construction, and pure _(phase-task; planned)_
+- [ ] **EWP-P2-T05** — Define init request validation, canonical skeleton construction, and pure _(phase-task; ready)_
 - [ ] **EWP-P2-TS05** — Init skeleton and supported legacy-migration outputs immediately round-trip _(phase-test; planned)_
 
 ## P17-G2-05 — Versioned manifest/lock/plan/ledger/journal codecs and migration repositories

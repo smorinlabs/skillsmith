@@ -3049,24 +3049,67 @@
       "phase": "2",
       "title": "Pure init request/skeleton/migration operation model without early execution",
       "dependsOn": ["P17-G2-01", "P17-G2-03"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
-      "impactedValidations": ["EWP-P2-TS05"],
-      "requiredNowValidations": ["EWP-P2-TS05"],
+      "ownedFiles": [
+        "docs/architecture.md",
+        "packages/core/README.md",
+        "packages/core/src/artifacts/human-toml.ts",
+        "packages/core/src/artifacts/index.ts",
+        "packages/core/src/artifacts/init.ts",
+        "packages/core/src/artifacts/legacy-migration.ts",
+        "packages/core/src/artifacts/manifest-edit.ts",
+        "packages/core/src/config/human-edit.ts",
+        "packages/core/src/public-types.ts",
+        "packages/core/tests/artifacts/human-toml.test.ts",
+        "packages/core/tests/artifacts/init.test.ts",
+        "packages/core/tests/artifacts/manifest-edit.test.ts",
+        "packages/core/tests/config/save.test.ts",
+        "packages/core/tests/public-api.test.ts",
+        "tests/ergonomics/fixtures/p2-ts05/init-cases.json",
+        "tests/ergonomics/fixtures/p2-ts05/public-types.ts",
+        "tests/ergonomics/fixtures/p2-ts05/tsconfig.json",
+        "tests/ergonomics/phase/EWP-P2-TS05.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
+      "impactedValidations": [
+        "EWP-CMD-CONFIG-TS01",
+        "EWP-CMD-CONFIG-TS04",
+        "EWP-P1-TS08",
+        "EWP-P2-TS01",
+        "EWP-P2-TS04",
+        "EWP-P2-TS05"
+      ],
+      "requiredNowValidations": [
+        "EWP-CMD-CONFIG-TS01",
+        "EWP-CMD-CONFIG-TS04",
+        "EWP-P1-TS08",
+        "EWP-P2-TS01",
+        "EWP-P2-TS04",
+        "EWP-P2-TS05"
+      ],
       "downstreamCoverage": [],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS01",
+        "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS04",
+        "bun test tests/ergonomics/phase/EWP-P1-TS08.test.ts --test-name-pattern EWP-P1-TS08",
+        "bun test tests/ergonomics/phase/EWP-P2-TS01.test.ts --test-name-pattern EWP-P2-TS01",
+        "bun test tests/ergonomics/phase/EWP-P2-TS04.test.ts --test-name-pattern EWP-P2-TS04",
+        "bun test tests/ergonomics/phase/EWP-P2-TS05.test.ts --test-name-pattern EWP-P2-TS05"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G2-04.md#mapping-and-prerequisites"]
+          "evidence": [
+            "projects/p17/evidence/P17-G2-04.md#mapping-and-prerequisites",
+            "projects/p17/evidence/P17-G2-04.md#mapping-amendment"
+          ]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-04.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
@@ -3101,7 +3144,12 @@
           "evidence": []
         }
       },
-      "evidence": ["projects/p17/evidence/P17-G2-04.md#mapping-and-prerequisites"]
+      "evidence": [
+        "projects/p17/plans/P17-G2-04.md",
+        "projects/p17/evidence/P17-G2-04.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G2-04.md#mapping-amendment",
+        "projects/p17/evidence/P17-G2-04.md#ready-plan"
+      ]
     },
     {
       "id": "P17-G2-05",
@@ -16920,18 +16968,47 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G2-04",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-04",
       "target": null,
-      "evidence": [],
-      "secondaryGroups": [],
+      "evidence": ["projects/p17/evidence/P17-G2-04.md#ready-plan"],
+      "secondaryGroups": ["P17-G2-01", "P17-G1-04", "P17-G2-03"],
       "implements": [],
-      "validatedBy": ["EWP-P2-TS05"],
-      "impactedValidations": ["EWP-P2-TS05"],
+      "validatedBy": [
+        "EWP-CMD-CONFIG-TS01",
+        "EWP-CMD-CONFIG-TS04",
+        "EWP-P1-TS08",
+        "EWP-P2-TS01",
+        "EWP-P2-TS04",
+        "EWP-P2-TS05"
+      ],
+      "impactedValidations": [
+        "EWP-CMD-CONFIG-TS01",
+        "EWP-CMD-CONFIG-TS04",
+        "EWP-P1-TS08",
+        "EWP-P2-TS01",
+        "EWP-P2-TS04",
+        "EWP-P2-TS05"
+      ],
       "affectedContracts": [],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS01",
+        "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS04",
+        "bun test tests/ergonomics/phase/EWP-P1-TS08.test.ts --test-name-pattern EWP-P1-TS08",
+        "bun test tests/ergonomics/phase/EWP-P2-TS01.test.ts --test-name-pattern EWP-P2-TS01",
+        "bun test tests/ergonomics/phase/EWP-P2-TS04.test.ts --test-name-pattern EWP-P2-TS04",
+        "bun test tests/ergonomics/phase/EWP-P2-TS05.test.ts --test-name-pattern EWP-P2-TS05"
+      ],
+      "ownedFiles": [
+        "packages/core/src/artifacts/human-toml.ts",
+        "packages/core/src/artifacts/index.ts",
+        "packages/core/src/artifacts/init.ts",
+        "packages/core/src/artifacts/legacy-migration.ts",
+        "packages/core/src/artifacts/manifest-edit.ts",
+        "packages/core/src/config/human-edit.ts",
+        "packages/core/src/public-types.ts"
+      ]
     },
     {
       "id": "EWP-P2-T06",
