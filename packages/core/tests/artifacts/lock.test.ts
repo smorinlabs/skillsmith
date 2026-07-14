@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import { fromLockV1Dto, lockV1Codec, toLockV1Dto } from '../../src/artifacts/lock-codec.ts';
 import {
   type PortableLockSkillV1,
   type PortableLockStateError,
@@ -902,5 +903,164 @@ name = "review"
     );
     expect(malformed.ok).toBeFalse();
     if (!malformed.ok) expect(JSON.stringify(malformed.error)).not.toContain(canary);
+  });
+});
+
+describe('portable lock artifact codec adapter', () => {
+  test('publishes the exact frozen descriptor and identity-preserving mappers', () => {
+    expect(lockV1Codec.descriptor).toEqual({
+      id: 'lock',
+      version: 1,
+      syntax: 'toml',
+      discriminator: { kind: 'field', field: 'version' },
+      wireKind: null,
+      presentation: { decode: 'canonical', encode: 'canonical' },
+      terminalLf: true,
+      unknownFields: 'reject-recursive',
+      migrations: [],
+      compatibility: 'conservative',
+    });
+    expectRecursivelyFrozen(lockV1Codec.descriptor);
+
+    const decoded = unwrap(lockV1Codec.decode(fixtureBytes));
+    expect(decoded).toMatchObject({
+      source: { kind: 'version', version: 1 },
+      canonical: true,
+      migration: null,
+    });
+    const dto = unwrap(toLockV1Dto(decoded.model));
+    const reordered = { ...dto, skills: [...dto.skills].reverse() };
+    const remapped = unwrap(fromLockV1Dto(reordered));
+    expect(remapped.skills.map(({ name }) => name)).toEqual(['lint', 'review']);
+    expect(unwrap(lockV1Codec.encode(remapped))).toEqual(fixtureBytes);
+    expectRecursivelyFrozen(decoded);
+    expectRecursivelyFrozen(dto);
+    expectRecursivelyFrozen(remapped);
+  });
+
+  test('maps signed lock refusals to fixed codec errors with exact precedence', () => {
+    const cases = [
+      {
+        id: 'empty',
+        bytes: new Uint8Array(),
+        reason: 'malformed',
+        requestedVersion: null,
+        path: [],
+      },
+      {
+        id: 'bom',
+        bytes: Uint8Array.from([0xef, 0xbb, 0xbf, ...fixtureBytes]),
+        reason: 'malformed',
+        requestedVersion: null,
+        path: [],
+      },
+      {
+        id: 'invalid-version',
+        bytes: encoder.encode('version = 0\n'),
+        reason: 'invalid-shape',
+        requestedVersion: null,
+        path: ['version'],
+      },
+      {
+        id: 'future-before-unknown',
+        bytes: encoder.encode('version = 2\nunknown = true\n'),
+        reason: 'unsupported-version',
+        requestedVersion: 2,
+        path: ['version'],
+      },
+      {
+        id: 'unknown-root',
+        bytes: encoder.encode(
+          fixtureSource.replace('version = 1\n', 'version = 1\nunknown = true\n'),
+        ),
+        reason: 'invalid-shape',
+        requestedVersion: 1,
+        path: [],
+      },
+      {
+        id: 'noncanonical',
+        bytes: fixtureBytes.slice(0, -1),
+        reason: 'noncanonical',
+        requestedVersion: 1,
+        path: [],
+      },
+    ] as const;
+    for (const fixture of cases) {
+      const result = lockV1Codec.decode(fixture.bytes);
+      expect(result.ok, fixture.id).toBeFalse();
+      if (result.ok) continue;
+      expect(result.error, fixture.id).toEqual({
+        code: 'artifact-codec',
+        artifactId: 'lock',
+        requestedVersion: fixture.requestedVersion,
+        reason: fixture.reason,
+        path: fixture.path,
+        exitCode: 3,
+        message:
+          fixture.reason === 'malformed'
+            ? 'artifact source is malformed'
+            : fixture.reason === 'invalid-shape'
+              ? 'artifact shape is invalid'
+              : fixture.reason === 'unsupported-version'
+                ? 'artifact version is not supported'
+                : 'artifact bytes are not canonical',
+      });
+    }
+  });
+
+  test('rejects sensitive canonical bytes after canonicality and hostile DTOs without throwing', () => {
+    const decoded = unwrap(lockV1Codec.decode(fixtureBytes));
+    const poison = {
+      ...decoded.model,
+      skills: decoded.model.skills.map((skill, index) =>
+        index === 1 ? { ...skill, requestedRef: 'P17_SECRET_CANARY' } : skill,
+      ),
+    };
+    const canonicalPoison = encoder.encode(unwrap(serializePortableLock(poison)));
+    const sensitive = lockV1Codec.decode(canonicalPoison);
+    expect(sensitive).toEqual({
+      ok: false,
+      error: {
+        code: 'artifact-codec',
+        artifactId: 'lock',
+        requestedVersion: 1,
+        reason: 'sensitive-content',
+        path: [],
+        exitCode: 3,
+        message: 'artifact contains sensitive content',
+      },
+    });
+    const noncanonical = lockV1Codec.decode(canonicalPoison.slice(0, -1));
+    expect(noncanonical).toMatchObject({
+      ok: false,
+      error: { reason: 'noncanonical' },
+    });
+    const mapped = fromLockV1Dto(poison);
+    expect(mapped).toMatchObject({
+      ok: false,
+      error: { reason: 'sensitive-content' },
+    });
+    if (!mapped.ok) expect(JSON.stringify(mapped.error)).not.toContain('P17_SECRET_CANARY');
+
+    const accessor = Object.defineProperty({}, 'version', {
+      enumerable: true,
+      get() {
+        throw new Error('P17_SECRET_CANARY');
+      },
+    });
+    const hostile = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('P17_SECRET_CANARY');
+        },
+      },
+    );
+    for (const value of [accessor, hostile, Object.create({ version: 1 }), new Array(2)]) {
+      expect(() => lockV1Codec.validate(value)).not.toThrow();
+      const result = lockV1Codec.validate(value);
+      expect(result).toMatchObject({ ok: false, error: { reason: 'invalid-shape' } });
+      if (!result.ok) expect(JSON.stringify(result.error)).not.toContain('P17_SECRET_CANARY');
+    }
   });
 });
