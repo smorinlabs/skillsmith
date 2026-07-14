@@ -360,7 +360,12 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
     ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
     expect(
       mutateFile('projects/p17/EXECUTION.md', (text) =>
-        text.replace('Phase 2 is `active`', 'Phase 2 is `planned`'),
+        text.replace('Phase 2 is `approved`', 'Phase 2 is `planned`'),
+      ),
+    ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
+    expect(
+      mutateFile('projects/p17/EXECUTION.md', (text) =>
+        text.replace('Phase 3 is `active`', 'Phase 3 is `planned`'),
       ),
     ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
     expect(
@@ -405,6 +410,33 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
         'projects/p17/EXECUTION.md status must match live catalog phase and gate facts',
       ]),
     );
+
+    const futureCatalog = JSON.parse(
+      readFileSync(resolve(ROOT, 'projects/p17/catalog.json'), 'utf8'),
+    ) as JsonObject;
+    const phases = futureCatalog.phases as JsonObject[];
+    const phase3 = phases.find((row) => row.id === '3');
+    const phase4 = phases.find((row) => row.id === '4');
+    if (!phase3 || !phase4) throw new Error('missing future phase catalog rows');
+    phase3.status = 'approved';
+    (phase3.review as JsonObject).status = 'passed';
+    (phase3.approval as JsonObject).status = 'passed';
+    (phase3.exit as JsonObject).status = 'passed';
+    phase4.status = 'active';
+    (phase4.entry as JsonObject).status = 'passed';
+    const futureExecution = readFileSync(
+      resolve(ROOT, 'projects/p17/EXECUTION.md'),
+      'utf8',
+    ).replace(
+      'Phase 3 is `active`; its entry gate is passed.',
+      'Phase 3 is `approved`; its entry, whole-phase review, standing approval, and exit are passed. Phase 4 is `active`; its entry gate is passed.',
+    );
+    expect(
+      validateDocumentationDrift(copy(), {
+        'projects/p17/catalog.json': JSON.stringify(futureCatalog),
+        'projects/p17/EXECUTION.md': futureExecution,
+      }),
+    ).toEqual([]);
   });
 
   test('EWP-P0A-TS05 closes architecture drift, stale families, and downstream deferral', () => {
