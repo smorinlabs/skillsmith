@@ -661,7 +661,7 @@
         "bun test tests/ergonomics/phase/EWP-P0A-TS05.test.ts --test-name-pattern EWP-P0A-TS05"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g0_04_review",
+      "reviewer": "/root/phase3_entry_orientation",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -693,18 +693,29 @@
         },
         "adversarial-review": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G0-04.md#adversarial-review"]
+          "evidence": [
+            "projects/p17/evidence/P17-G0-04.md#adversarial-review",
+            "projects/p17/evidence/P17-G0-04.md#phase-progression-status-amendment-2026-07-14"
+          ]
         },
         "traceability-closure": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G0-04.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G0-04.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G0-04.md#phase-progression-status-amendment-2026-07-14"
+          ]
         },
         "signed-off": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G0-04.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G0-04.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G0-04.md#phase-progression-status-amendment-2026-07-14"
+          ]
         }
       },
-      "evidence": []
+      "evidence": [
+        "projects/p17/evidence/P17-G0-04.md#phase-progression-status-amendment-2026-07-14"
+      ]
     },
     {
       "id": "P17-G0-05",
@@ -16150,7 +16161,9 @@
         "selector": "EWP-P0A-TS05",
         "command": "bun test tests/ergonomics/phase/EWP-P0A-TS05.test.ts --test-name-pattern EWP-P0A-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G0-04.md#signed-execution-receipt-ewp-p0a-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G0-04.md#phase-progression-final-execution-receipt-ewp-p0a-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P0A-TS05"],
