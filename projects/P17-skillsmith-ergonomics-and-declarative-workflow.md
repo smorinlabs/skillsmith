@@ -43,7 +43,7 @@ None.
 - [x] [P17-TS01] Preparation package validated and PR-openable.
 - [x] [P17-T01] Phase 0 executable consistency/control-plane gate approved.
 - [x] [P17-T02] Phase 1 CLI truthfulness approved.
-- [ ] [P17-T03] Phase 2 portable artifact foundation approved.
+- [x] [P17-T03] Phase 2 portable artifact foundation approved.
 - [ ] [P17-T04] Phase 3 inspection and operation foundation approved.
 - [ ] [P17-T05] Phase 4 desired-state mutation, planner, and apply approved.
 - [ ] [P17-T06] Phase 5 sync, update, undo, and GC approved.

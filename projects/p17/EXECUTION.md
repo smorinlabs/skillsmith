@@ -5,7 +5,7 @@
 **Status:** Phase 0 is `approved`. `P17-G0-01` through `P17-G0-05` are `signed-off`; all group
 lifecycle gates are passed. Whole-phase review, catalog recording of standing approval, and exit are
 passed. Phase 1 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
-Phase 2 is `active`; its entry gate is passed.
+Phase 2 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
 `catalog.json` is the machine-readable status authority.
 
 This file groups the consolidated plan into reviewable changes. It does not replace product

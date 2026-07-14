@@ -82,24 +82,26 @@
       "id": "2",
       "dependsOn": "1",
       "requiredGroups": ["P17-G2-01", "P17-G2-02", "P17-G2-03", "P17-G2-04", "P17-G2-05"],
-      "status": "active",
+      "status": "approved",
       "entry": {
         "status": "passed",
         "evidence": ["projects/p17/evidence/phase-2.md#entry-gate-2026-07-13"]
       },
       "review": {
-        "status": "pending",
-        "evidence": [],
-        "reviewer": null
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/phase-2.md#whole-phase-adversarial-review-2026-07-14"],
+        "reviewer": "/root/phase2_whole_review"
       },
       "approval": {
-        "status": "pending",
-        "evidence": [],
-        "approvedBy": null
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/standing-authorization.md"],
+        "approvedBy": "user-standing-authorization-2026-07-12"
       },
       "exit": {
-        "status": "pending",
-        "evidence": []
+        "status": "passed",
+        "evidence": [
+          "projects/p17/evidence/phase-2.md#standing-approval-and-phase-2-exit-2026-07-14"
+        ]
       }
     },
     {
@@ -2619,7 +2621,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF14.test.ts --test-name-pattern EWP-WF14"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g2_01_trace_review",
+      "reviewer": "/root/g2_01_phase_exit_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -2651,15 +2653,24 @@
         },
         "adversarial-review": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G2-01.md#adversarial-review"]
+          "evidence": [
+            "projects/p17/evidence/P17-G2-01.md#adversarial-review",
+            "projects/p17/evidence/P17-G2-01.md#phase-exit-hostile-capability-amendment"
+          ]
         },
         "traceability-closure": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G2-01.md#phase-exit-hostile-capability-amendment"
+          ]
         },
         "signed-off": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G2-01.md#phase-exit-hostile-capability-amendment"
+          ]
         }
       },
       "evidence": ["projects/p17/evidence/P17-G2-01.md#phase-exit-hostile-capability-amendment"]
@@ -17212,7 +17223,7 @@
         "selector": "EWP-P2-TS02",
         "command": "bun test tests/ergonomics/phase/EWP-P2-TS02.test.ts --test-name-pattern EWP-P2-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G2-01.md#green-execution-receipt-ewp-p2-ts02"],
+      "evidence": ["projects/p17/evidence/P17-G2-01.md#phase-exit-final-green-receipt-ewp-p2-ts02"],
       "secondaryGroups": ["P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-P2-TS02"],
