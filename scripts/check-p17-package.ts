@@ -107,6 +107,7 @@ type Gate = { status?: string; evidence?: string[] };
 type Catalog = {
   counts?: { total?: number };
   groups?: Array<{
+    id?: string;
     phase?: string;
     status?: string;
     gates?: Record<string, Gate>;
@@ -168,6 +169,79 @@ function terminalP17(catalog: Catalog): boolean {
       /^projects\/p17\/evidence\/.*p14-handoff.*\.md(?:#.*)?$/i.test(value),
     );
   return requiredEntities && requiredGroups && requiredPhases && phase7 && final;
+}
+
+const lifecycleGateNames = [
+  'mapped',
+  'ready',
+  'test-first',
+  'minimal-implementation',
+  'targeted-green',
+  'impacted-green',
+  'refactor',
+  'adversarial-review',
+  'traceability-closure',
+  'signed-off',
+] as const;
+
+function renderCheckOutputV1(baseLine: string): string {
+  // Frozen compatibility renderer: this is the complete pre-progress stdout contract.
+  return baseLine;
+}
+
+function renderCheckOutputV2(baseLine: string, catalog: Catalog): string {
+  const entities = catalog.entities ?? [];
+  const groups = catalog.groups ?? [];
+  const phases = catalog.phases ?? [];
+  const requiredEntities = entities.filter((entity) => entity.tier !== 'deferred');
+  const signedEntities = requiredEntities.filter((entity) => entity.status === 'signed-off').length;
+  const deferredEntities = entities.length - requiredEntities.length;
+  const requiredGroups = groups.filter((group) => group.phase !== '7');
+  const signedGroups = requiredGroups.filter((group) => group.status === 'signed-off').length;
+  const activeGroups = requiredGroups.filter((group) => group.status === 'active').length;
+  const plannedGroups = requiredGroups.filter((group) => group.status === 'planned').length;
+  const otherOpenGroups = requiredGroups.length - signedGroups - activeGroups - plannedGroups;
+  const requiredPhases = phases.filter((phase) => phase.id !== '7');
+  const approvedPhases = requiredPhases.filter((phase) => phase.status === 'approved').length;
+  const activePhases = requiredPhases
+    .filter((phase) => phase.status === 'active')
+    .map((phase) => `Phase ${phase.id}`);
+  const groupParts = [
+    `${signedGroups}/${requiredGroups.length} required groups signed off`,
+    `${activeGroups} active`,
+    `${plannedGroups} planned`,
+  ];
+  if (otherOpenGroups > 0) groupParts.push(`${otherOpenGroups} other open`);
+
+  const lines = [
+    baseLine,
+    '',
+    'recorded progress:',
+    `  phases:   ${approvedPhases}/${requiredPhases.length} approved${activePhases.length > 0 ? `; ${activePhases.join(', ')} active` : ''}`,
+    `  groups:   ${groupParts.join('; ')}`,
+    `  entities: ${signedEntities}/${requiredEntities.length} required entities signed off; ${requiredEntities.length - signedEntities} incomplete; ${deferredEntities} deferred`,
+  ];
+
+  const currentGroups = requiredGroups.filter(
+    (group) => !['planned', 'signed-off', 'deferred'].includes(group.status ?? ''),
+  );
+  for (const group of currentGroups) {
+    const gates = group.gates ?? {};
+    const passed = lifecycleGateNames.filter((name) => gates[name]?.status === 'passed').length;
+    const nextGate = lifecycleGateNames.find((name) => gates[name]?.status !== 'passed');
+    lines.push(
+      `  current:  ${group.id ?? 'unknown group'} — ${group.status ?? 'unknown'} — ${passed}/${lifecycleGateNames.length} lifecycle gates passed`,
+    );
+    if (nextGate) {
+      lines.push(
+        `  next:     ${group.id ?? 'unknown group'}:${nextGate} (${gates[nextGate]?.status ?? 'missing'})`,
+      );
+    }
+  }
+  lines.push(
+    `  final:    review ${catalog.finalReview?.status ?? 'missing'}; approval ${catalog.finalApproval?.status ?? 'missing'}; sign-off ${catalog.finalSignoff?.status ?? 'missing'}`,
+  );
+  return lines.join('\n');
 }
 
 const mode = Bun.argv[2] ?? '--check';
@@ -766,4 +840,14 @@ const label =
   mode === '--pr-openable'
     ? 'pr-openable'
     : 'structurally valid; preparation/PR/merge readiness was not asserted';
-console.log(`${label}: ${prepById.size} prep IDs, ${links} local links, ${catalogResult}`);
+const baseOutput = `${label}: ${prepById.size} prep IDs, ${links} local links, ${catalogResult}`;
+// Atomic output cutover: version 1 remains available as the immediate rollback path.
+const outputVersion = process.env.P17_CHECK_OUTPUT_VERSION ?? '2';
+if (outputVersion !== '1' && outputVersion !== '2') {
+  fail(`unsupported P17_CHECK_OUTPUT_VERSION ${outputVersion}; use 1 or 2`);
+}
+console.log(
+  outputVersion === '1'
+    ? renderCheckOutputV1(baseOutput)
+    : renderCheckOutputV2(baseOutput, catalog),
+);
