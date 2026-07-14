@@ -11,14 +11,14 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 8 | 20 | 6 |
-| phase-task | 65 | 30 | 35 | 0 |
-| phase-test | 61 | 26 | 35 | 0 |
+| recommendation | 34 | 10 | 18 | 6 |
+| phase-task | 65 | 31 | 34 | 0 |
+| phase-test | 61 | 28 | 33 | 0 |
 | command-test | 157 | 14 | 143 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
 | command | 23 | 4 | 19 | 0 |
-| finding | 43 | 24 | 19 | 0 |
+| finding | 43 | 25 | 18 | 0 |
 | decision | 16 | 2 | 13 | 1 |
 
 ### Phases
@@ -27,7 +27,7 @@ Tracked entities: **425** across **45** change groups.
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
-| 2 | 5 | 32 | 26 | 0 |
+| 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 66 | 0 | 0 |
@@ -138,8 +138,8 @@ Tracked entities: **425** across **45** change groups.
 | P0-04 | P17-G1-02B | signed-off | required-pr |
 | P0-05 | P17-G1-02C | signed-off | required-pr |
 | P0-06 | P17-G1-02A | signed-off | required-pr |
-| P0-07 | P17-G2-05 | validated | required-pr |
-| P0-08 | P17-G2-05 | validated | required-pr |
+| P0-07 | P17-G2-05 | signed-off | required-pr |
+| P0-08 | P17-G2-05 | signed-off | required-pr |
 | P1-01 | P17-G3A-02 | planned | required-pr |
 | P1-02 | P17-G3A-01 | planned | required-pr |
 | P1-03 | P17-G3A-02 | planned | required-pr |
@@ -199,7 +199,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-026 | P17-G3B-02 | planned | required-pr |
 | EWP-CF-027 | P17-G2-02 | signed-off | required-pr |
 | EWP-CF-028 | P17-G3B-03 | planned | required-pr |
-| EWP-CF-029 | P17-G2-05 | validated | required-pr |
+| EWP-CF-029 | P17-G2-05 | signed-off | required-pr |
 | EWP-CF-030 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-031 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-032 | P17-G6-02A | planned | required-pr |
@@ -786,7 +786,7 @@ Downstream coverage obligations: none.
 
 ## P17-G2-05 — Versioned manifest/lock/plan/ledger/journal codecs and migration repositories
 
-Phase: 2; status: **active**; dependencies: P17-G2-02, P17-G2-03, P17-G2-04.
+Phase: 2; status: **signed-off**; dependencies: P17-G2-02, P17-G2-03, P17-G2-04.
 Required-now validations: EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS02, EWP-CMD-CONFIG-TS03, EWP-CMD-CONFIG-TS04, EWP-CMD-CONFIG-TS05, EWP-P1-TS01, EWP-P1-TS02, EWP-P1-TS03, EWP-P1-TS04, EWP-P1-TS05, EWP-P1-TS06, EWP-P1-TS07, EWP-P2-TS02, EWP-P2-TS06, EWP-P2-TS08, EWP-WF14.
 Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-DOCTOR-TS01, EWP-CMD-DOCTOR-TS02, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS04, EWP-CMD-DOCTOR-TS05, EWP-CMD-DOCTOR-TS06, EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-CMD-SYNC-TS01, EWP-CMD-SYNC-TS02, EWP-CMD-SYNC-TS03, EWP-CMD-SYNC-TS04, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-SYNC-TS09, EWP-CMD-SYNC-TS10, EWP-CMD-UNINSTALL-TS01, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS05, EWP-CMD-UNINSTALL-TS06, EWP-CMD-UNINSTALL-TS07, EWP-WF03, EWP-WF16.
 
@@ -799,18 +799,18 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 - [x] P17-G2-05:targeted-green _(passed)_
 - [x] P17-G2-05:impacted-green _(passed)_
 - [x] P17-G2-05:refactor _(passed)_
-- [ ] P17-G2-05:adversarial-review _(pending)_
-- [ ] P17-G2-05:traceability-closure _(pending)_
-- [ ] P17-G2-05:signed-off _(pending)_
+- [x] P17-G2-05:adversarial-review _(passed)_
+- [x] P17-G2-05:traceability-closure _(passed)_
+- [x] P17-G2-05:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-029** — Define the legacy project-config-to-manifest transition _(finding; validated)_
-- [ ] **EWP-P2-T06** — Implement manifest, lock, plan, ledger v1/v2, and journal codecs plus explicit _(phase-task; green)_
-- [ ] **EWP-P2-TS06** — Exact legacy/canonical/mixed/empty/malformed/unknown shape matrix; read-only and _(phase-test; passing)_
-- [ ] **EWP-P2-TS08** — Per-version artifact golden fixtures; encode/decode round trips; prior-version _(phase-test; passing)_
-- [ ] **P0-07** — Resolve project config/manifest collision _(recommendation; validated)_
-- [ ] **P0-08** — User-promise integration tests _(recommendation; validated)_
+- [x] **EWP-CF-029** — Define the legacy project-config-to-manifest transition _(finding; signed-off)_
+- [x] **EWP-P2-T06** — Implement manifest, lock, plan, ledger v1/v2, and journal codecs plus explicit _(phase-task; signed-off)_
+- [x] **EWP-P2-TS06** — Exact legacy/canonical/mixed/empty/malformed/unknown shape matrix; read-only and _(phase-test; signed-off)_
+- [x] **EWP-P2-TS08** — Per-version artifact golden fixtures; encode/decode round trips; prior-version _(phase-test; signed-off)_
+- [x] **P0-07** — Resolve project config/manifest collision _(recommendation; signed-off)_
+- [x] **P0-08** — User-promise integration tests _(recommendation; signed-off)_
 
 ## P17-G3A-01 — Canonical correlated read model and status state-product surface
 
