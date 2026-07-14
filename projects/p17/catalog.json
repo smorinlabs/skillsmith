@@ -3162,7 +3162,7 @@
       "phase": "2",
       "title": "Versioned manifest/lock/plan/ledger/journal codecs and migration repositories",
       "dependsOn": ["P17-G2-02", "P17-G2-03", "P17-G2-04"],
-      "status": "planned",
+      "status": "mapped",
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
@@ -3355,8 +3355,8 @@
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-05.md#mapping-and-prerequisites"]
         },
         "ready": {
           "status": "pending",
@@ -3395,7 +3395,7 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": ["projects/p17/evidence/P17-G2-05.md#mapping-and-prerequisites"]
     },
     {
       "id": "P17-G3A-01",
