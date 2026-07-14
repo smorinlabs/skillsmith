@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.transaction-journal",
+  "transactionId": "tx:migrate-ledger-committed",
+  "intent": {
+    "operationId": "operation:migrate-ledger",
+    "groupId": "group:ledger",
+    "pairId": null,
+    "kind": "migrate-ledger",
+    "skill": null,
+    "source": null,
+    "tool": null,
+    "scope": null,
+    "before": {
+      "kind": "ledger",
+      "projectRoot": null,
+      "schemaVersion": 1,
+      "byteHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "after": {
+      "kind": "ledger",
+      "projectRoot": null,
+      "schemaVersion": 2,
+      "byteHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "mutates": {
+      "live": false,
+      "manifest": false,
+      "lock": false,
+      "ledger": true
+    },
+    "reversibility": {
+      "kind": "none",
+      "retentionResourceIds": []
+    },
+    "conflict": null
+  },
+  "context": {
+    "parentOperationId": null,
+    "command": "skillsmith:apply",
+    "workflow": "workflow:migrate-ledger",
+    "attempt": 1,
+    "startedAt": "2026-07-14T12:00:00.000Z"
+  },
+  "disposition": "forward",
+  "phase": "committed",
+  "actual": {
+    "before": [
+      {
+        "resourceId": "resource:ledger-user",
+        "role": "ledger",
+        "state": "present",
+        "repositoryRevision": {
+          "kind": "artifact-bytes",
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "schemaVersion": 1,
+        "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    ],
+    "after": [
+      {
+        "resourceId": "resource:ledger-user",
+        "role": "ledger",
+        "state": "present",
+        "repositoryRevision": {
+          "kind": "artifact-bytes",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "schemaVersion": 2,
+        "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    ],
+    "retained": []
+  },
+  "updatedAt": "2026-07-14T12:00:01.000Z",
+  "completedAt": "2026-07-14T12:00:01.000Z"
+}

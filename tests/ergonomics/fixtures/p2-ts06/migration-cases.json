@@ -1,0 +1,603 @@
+{
+  "schemaVersion": 1,
+  "fixtureCanary": "p2-ts06-migration-contract-canary",
+  "signedDependencies": [
+    {
+      "group": "G2-02",
+      "revision": "2efd38991a3bbaf8d0041615561a81d9c26c30be"
+    },
+    {
+      "group": "G2-03",
+      "revision": "6151cdea0ece5727e5a11f36d619e278b64792bf"
+    },
+    {
+      "group": "G2-04",
+      "revision": "5c902f700a14a83e33118d183e9eef08bab2c308"
+    }
+  ],
+  "projectMigrations": [
+    {
+      "id": "lf-heading-attached-comments",
+      "before": "# project heading\ntool = \"codex\" # tool inline\nscope = \"project\"\npath = \"./skills\"\n\n# registry heading\n[registry]\n# registry field\ndefault = \"https://github.com/acme\" # registry inline\n# eof comment\n",
+      "after": "# project heading\nversion = 1\n\n[defaults]\ntools = [\"codex\"] # tool inline\nscope = \"project\"\npath = \"./skills\"\n\n# registry heading\n[registry]\n# registry field\ndefault = \"github.com/acme\" # registry inline\n# eof comment\n",
+      "mode": 416,
+      "sourceByteRevision": "sha256:2259ba8586293c3fc38ce6cd916afcdd94d69a9a4719c69f8e1120d80563cae0",
+      "resultByteRevision": "sha256:ef72448de45f05065559dc2b6f137f66e9d56842e13d9f3d5618950dac3c4b04",
+      "resultManifestByteHash": "sha256:920d22b6ccfbab87f4b1abc3781424cbe4ee54b873db89ae4a5800b24dce5bdf",
+      "semanticRevision": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5"
+    },
+    {
+      "id": "crlf-quoted-keys-spacing",
+      "before": "# café heading\r\n'tool' = \"codex\"\r\n",
+      "after": "# café heading\r\nversion = 1\r\n\r\n[defaults]\r\n'tools' = [\"codex\"]\r\n",
+      "mode": 384,
+      "sourceByteRevision": "sha256:78acb653ba7c62f447c200d81a1f4172d7a3494a49c085afbd3daa787e94cd76",
+      "resultByteRevision": "sha256:3d2640e3679bd4538e2200b2a281744891f32cbdbb33248f2aa03400ae046122",
+      "resultManifestByteHash": "sha256:2ba17d126e79b77ac83113bf13b91c78b959761aefe7f5f31937120a3295bdac",
+      "semanticRevision": "sha256:33f0252bd1d4b12fe0bb99c19b5d99f22e35ba2b51c7f8de601d6b4877015bbe"
+    },
+    {
+      "id": "crlf-quoted-tool-key",
+      "before": "# heading\r\n\"tool\"  =  'claude-code' # retained\r\nscope=\"user\"\r\n",
+      "after": "# heading\r\nversion = 1\r\n\r\n[defaults]\r\n\"tools\"  =  ['claude-code'] # retained\r\nscope=\"user\"\r\n",
+      "mode": 420,
+      "sourceByteRevision": "sha256:110262135ebaff0ba2088aa52be06f96c72ea7a08feade28ab71d26a382815c2",
+      "resultByteRevision": "sha256:967a4621b286f317d1a116ae169377844bf21e06b8432fe6cdd7d96b67eb5365",
+      "resultManifestByteHash": "sha256:bb02e29dab3ad315829a40a0c000758f3e051a3e83323089562517ac77c53f3f",
+      "semanticRevision": "sha256:b8e66f96dd92cad9b35eeada92c60ad6585aba535da639ceb71a71fdca53aa92"
+    },
+    {
+      "id": "no-final-newline",
+      "before": "tool='codex'\nscope = 'project'\npath='./skills'",
+      "after": "version = 1\n\n[defaults]\ntools=['codex']\nscope = 'project'\npath='./skills'",
+      "mode": 416,
+      "sourceByteRevision": "sha256:87b447eed209da7880ac1b1f3b87b36c91123809244bff164c88ddcd4e8e6778",
+      "resultByteRevision": "sha256:c9a2d709ded413104bcfac6c6794c5c318fa9017f394becc907c197121e8163b",
+      "resultManifestByteHash": "sha256:7124cc3e8f66ed62a609a40b793efc0e5491b93f06fc91115bc3b7b95794106f",
+      "semanticRevision": "sha256:2aec6c59caec29f96c7c8a7f5ae951087cc10374215545c8f9bfdfcd244b2b61"
+    },
+    {
+      "id": "registry-only",
+      "before": "# registry only\n[registry]\n# attached\ndefault='https://github.com/acme'\n",
+      "after": "# registry only\nversion = 1\n\n[registry]\n# attached\ndefault='github.com/acme'\n",
+      "mode": 384,
+      "sourceByteRevision": "sha256:21f23e160805cd2b94826b4c258f08e13387fae33c63bac713700ad1206f62d2",
+      "resultByteRevision": "sha256:cf31737de3ab36f4c83ad4cd17083736780f6e162b2e7a50ebced77881f111ec",
+      "resultManifestByteHash": "sha256:2badc3747d389301e770829e7e931e01b82aaabf7f5d649bf1a55083c4a19b6d",
+      "semanticRevision": "sha256:e709697db03dbee1cf3f886637d7c36926a5ad2af4e02812b9c47da69c8acd0d"
+    }
+  ],
+  "effectCases": [
+    {
+      "id": "fresh-commit",
+      "migrationId": "lf-heading-attached-comments",
+      "interference": "none",
+      "expected": "committed"
+    },
+    {
+      "id": "stale-before-execute",
+      "migrationId": "lf-heading-attached-comments",
+      "interference": "before-execute",
+      "expected": "external-writer-conflict"
+    },
+    {
+      "id": "concurrent-after-compatibility-lock",
+      "migrationId": "lf-heading-attached-comments",
+      "interference": "after-compatibility-lock",
+      "expected": "external-writer-conflict"
+    },
+    {
+      "id": "sigint-after-central-lock",
+      "migrationId": "crlf-quoted-keys-spacing",
+      "interference": "sigint-after-central-lock",
+      "expected": "cancelled"
+    }
+  ],
+  "savedMigrationOperations": [
+    {
+      "id": "saved-project-config-migration",
+      "operation": {
+        "operationId": "operation:migrate-project-config",
+        "groupId": "group:project-config",
+        "pairId": null,
+        "kind": "migrate-project-config",
+        "dependsOn": [],
+        "skill": null,
+        "source": null,
+        "tool": null,
+        "scope": null,
+        "before": {
+          "kind": "manifest",
+          "location": { "kind": "portable", "token": "project:skillsmith.toml" },
+          "shape": "legacy",
+          "version": 1,
+          "byteHash": "sha256:4c56b54579076b0082e678dd9c3850589c3cbc007ec448670c03c510b3fffee9",
+          "semanticHash": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5",
+          "value": {
+            "version": 1,
+            "defaults": {
+              "tools": ["codex"],
+              "scope": "project",
+              "path": "./skills"
+            },
+            "registry": { "default": "github.com/acme" },
+            "skills": []
+          }
+        },
+        "after": {
+          "kind": "manifest",
+          "location": { "kind": "portable", "token": "project:skillsmith.toml" },
+          "shape": "canonical",
+          "version": 1,
+          "byteHash": "sha256:920d22b6ccfbab87f4b1abc3781424cbe4ee54b873db89ae4a5800b24dce5bdf",
+          "semanticHash": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5",
+          "value": {
+            "version": 1,
+            "defaults": {
+              "tools": ["codex"],
+              "scope": "project",
+              "path": "./skills"
+            },
+            "registry": { "default": "github.com/acme" },
+            "skills": []
+          }
+        },
+        "reason": {
+          "code": "legacy-project-config",
+          "message": "project configuration requires migration"
+        },
+        "selectionSource": "explicit-targets",
+        "preconditionIds": ["precondition:manifest-bytes", "precondition:manifest-semantic"],
+        "requiredCheckIds": ["check:project-migration-preconditions"],
+        "reversibility": { "kind": "none", "retentionResourceIds": [] },
+        "mutates": { "live": false, "manifest": true, "lock": false, "ledger": false },
+        "conflict": null
+      },
+      "resourcePreconditions": [
+        {
+          "preconditionId": "precondition:manifest-bytes",
+          "resource": {
+            "kind": "manifest-bytes",
+            "location": { "kind": "portable", "token": "project:skillsmith.toml" }
+          },
+          "expectedState": "present",
+          "expectedHash": {
+            "domain": "manifest-bytes",
+            "hashSchemaVersion": 1,
+            "digest": "sha256:4c56b54579076b0082e678dd9c3850589c3cbc007ec448670c03c510b3fffee9"
+          },
+          "expectedRevision": {
+            "kind": "artifact-bytes",
+            "digest": "sha256:2259ba8586293c3fc38ce6cd916afcdd94d69a9a4719c69f8e1120d80563cae0"
+          }
+        },
+        {
+          "preconditionId": "precondition:manifest-semantic",
+          "resource": {
+            "kind": "manifest-bytes",
+            "location": { "kind": "portable", "token": "project:skillsmith.toml" }
+          },
+          "expectedState": "present",
+          "expectedHash": {
+            "domain": "manifest-semantic",
+            "hashSchemaVersion": 1,
+            "digest": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5"
+          },
+          "expectedRevision": {
+            "kind": "artifact-bytes",
+            "digest": "sha256:2259ba8586293c3fc38ce6cd916afcdd94d69a9a4719c69f8e1120d80563cae0"
+          }
+        }
+      ],
+      "postMigrationObservation": {
+        "byteRevision": "sha256:ef72448de45f05065559dc2b6f137f66e9d56842e13d9f3d5618950dac3c4b04",
+        "manifestByteHash": "sha256:920d22b6ccfbab87f4b1abc3781424cbe4ee54b873db89ae4a5800b24dce5bdf",
+        "semanticRevision": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5",
+        "schemaVersion": 1
+      }
+    },
+    {
+      "id": "saved-ledger-migration",
+      "operation": {
+        "operationId": "operation:migrate-ledger",
+        "groupId": "group:ledger",
+        "pairId": null,
+        "kind": "migrate-ledger",
+        "dependsOn": [],
+        "skill": null,
+        "source": null,
+        "tool": null,
+        "scope": null,
+        "before": {
+          "kind": "ledger",
+          "projectRoot": null,
+          "schemaVersion": 1,
+          "byteHash": "sha256:c7706d3192bcc1465c7cf8d5728d13e27ccfda50b1b69d6d1e4b8cb5078b377a",
+          "semanticHash": "sha256:b415627c5191666843a4972fe05e1afa6de518a877babb6384ffbcc7fedc0465"
+        },
+        "after": {
+          "kind": "ledger",
+          "projectRoot": null,
+          "schemaVersion": 2,
+          "byteHash": "sha256:ead653a2fd20410fc833385c7a76b3d0e75ab5f3bf9945fd481eaa2d5a3e1ae2",
+          "semanticHash": "sha256:b415627c5191666843a4972fe05e1afa6de518a877babb6384ffbcc7fedc0465"
+        },
+        "reason": {
+          "code": "legacy-ledger-schema",
+          "message": "placement ledger requires migration"
+        },
+        "selectionSource": "explicit-targets",
+        "preconditionIds": ["precondition:ledger-schema-v1"],
+        "requiredCheckIds": ["check:ledger-migration-preconditions"],
+        "reversibility": { "kind": "none", "retentionResourceIds": [] },
+        "mutates": { "live": false, "manifest": false, "lock": false, "ledger": true },
+        "conflict": null
+      },
+      "resourcePreconditions": [
+        {
+          "preconditionId": "precondition:ledger-schema-v1",
+          "resource": { "kind": "ledger-schema", "projectRoot": null },
+          "expectedState": "present",
+          "expectedHash": {
+            "domain": "resource",
+            "hashSchemaVersion": 1,
+            "digest": "sha256:c7706d3192bcc1465c7cf8d5728d13e27ccfda50b1b69d6d1e4b8cb5078b377a"
+          },
+          "expectedRevision": {
+            "kind": "artifact-bytes",
+            "digest": "sha256:c7706d3192bcc1465c7cf8d5728d13e27ccfda50b1b69d6d1e4b8cb5078b377a"
+          }
+        }
+      ],
+      "postMigrationObservation": {
+        "byteRevision": "sha256:ead653a2fd20410fc833385c7a76b3d0e75ab5f3bf9945fd481eaa2d5a3e1ae2",
+        "semanticRevision": "sha256:b415627c5191666843a4972fe05e1afa6de518a877babb6384ffbcc7fedc0465",
+        "schemaVersion": 2
+      }
+    }
+  ],
+  "savedPlan": {
+    "schemaVersion": 1,
+    "kind": "skillsmith.plan",
+    "skillsmithVersion": "0.7.0",
+    "executorSchemaVersion": 1,
+    "hashSchemaVersion": 1,
+    "portability": {
+      "kind": "portable",
+      "reasons": []
+    },
+    "artifactPair": {
+      "manifest": { "kind": "portable", "token": "project:skillsmith.toml" },
+      "lock": { "kind": "portable", "token": "project:skillsmith.lock" },
+      "lockSource": "sibling"
+    },
+    "manifestSemanticHash": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5",
+    "lockCanonicalHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "options": {
+      "prune": false,
+      "locked": false
+    },
+    "selection": {
+      "selectionSource": "explicit-targets",
+      "skills": [],
+      "tools": [],
+      "scopes": []
+    },
+    "operations": [
+      {
+        "operationId": "operation:migrate-project-config",
+        "groupId": "group:project-config",
+        "pairId": null,
+        "kind": "migrate-project-config",
+        "dependsOn": [],
+        "skill": null,
+        "source": null,
+        "tool": null,
+        "scope": null,
+        "before": {
+          "kind": "manifest",
+          "location": { "kind": "portable", "token": "project:skillsmith.toml" },
+          "shape": "legacy",
+          "version": 1,
+          "byteHash": "sha256:4c56b54579076b0082e678dd9c3850589c3cbc007ec448670c03c510b3fffee9",
+          "semanticHash": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5",
+          "value": {
+            "version": 1,
+            "defaults": {
+              "tools": ["codex"],
+              "scope": "project",
+              "path": "./skills"
+            },
+            "registry": { "default": "github.com/acme" },
+            "skills": []
+          }
+        },
+        "after": {
+          "kind": "manifest",
+          "location": { "kind": "portable", "token": "project:skillsmith.toml" },
+          "shape": "canonical",
+          "version": 1,
+          "byteHash": "sha256:920d22b6ccfbab87f4b1abc3781424cbe4ee54b873db89ae4a5800b24dce5bdf",
+          "semanticHash": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5",
+          "value": {
+            "version": 1,
+            "defaults": {
+              "tools": ["codex"],
+              "scope": "project",
+              "path": "./skills"
+            },
+            "registry": { "default": "github.com/acme" },
+            "skills": []
+          }
+        },
+        "reason": {
+          "code": "legacy-project-config",
+          "message": "project configuration requires migration"
+        },
+        "selectionSource": "explicit-targets",
+        "preconditionIds": ["precondition:manifest-bytes", "precondition:manifest-semantic"],
+        "requiredCheckIds": ["check:project-migration-preconditions"],
+        "reversibility": { "kind": "none", "retentionResourceIds": [] },
+        "mutates": { "live": false, "manifest": true, "lock": false, "ledger": false },
+        "conflict": null
+      },
+      {
+        "operationId": "operation:migrate-ledger",
+        "groupId": "group:ledger",
+        "pairId": null,
+        "kind": "migrate-ledger",
+        "dependsOn": [],
+        "skill": null,
+        "source": null,
+        "tool": null,
+        "scope": null,
+        "before": {
+          "kind": "ledger",
+          "projectRoot": null,
+          "schemaVersion": 1,
+          "byteHash": "sha256:c7706d3192bcc1465c7cf8d5728d13e27ccfda50b1b69d6d1e4b8cb5078b377a",
+          "semanticHash": "sha256:b415627c5191666843a4972fe05e1afa6de518a877babb6384ffbcc7fedc0465"
+        },
+        "after": {
+          "kind": "ledger",
+          "projectRoot": null,
+          "schemaVersion": 2,
+          "byteHash": "sha256:ead653a2fd20410fc833385c7a76b3d0e75ab5f3bf9945fd481eaa2d5a3e1ae2",
+          "semanticHash": "sha256:b415627c5191666843a4972fe05e1afa6de518a877babb6384ffbcc7fedc0465"
+        },
+        "reason": {
+          "code": "legacy-ledger-schema",
+          "message": "placement ledger requires migration"
+        },
+        "selectionSource": "explicit-targets",
+        "preconditionIds": ["precondition:ledger-schema-v1"],
+        "requiredCheckIds": ["check:ledger-migration-preconditions"],
+        "reversibility": { "kind": "none", "retentionResourceIds": [] },
+        "mutates": { "live": false, "manifest": false, "lock": false, "ledger": true },
+        "conflict": null
+      }
+    ],
+    "checks": [
+      {
+        "checkId": "check:ledger-migration-preconditions",
+        "blocking": true,
+        "operationIds": ["operation:migrate-ledger"],
+        "kind": "precondition-validation",
+        "preconditionIds": ["precondition:ledger-schema-v1"]
+      },
+      {
+        "checkId": "check:project-migration-preconditions",
+        "blocking": true,
+        "operationIds": ["operation:migrate-project-config"],
+        "kind": "precondition-validation",
+        "preconditionIds": ["precondition:manifest-bytes", "precondition:manifest-semantic"]
+      }
+    ],
+    "diagnostics": [],
+    "resourcePreconditions": [
+      {
+        "preconditionId": "precondition:ledger-schema-v1",
+        "resource": { "kind": "ledger-schema", "projectRoot": null },
+        "expectedState": "present",
+        "expectedHash": {
+          "domain": "resource",
+          "hashSchemaVersion": 1,
+          "digest": "sha256:c7706d3192bcc1465c7cf8d5728d13e27ccfda50b1b69d6d1e4b8cb5078b377a"
+        },
+        "expectedRevision": {
+          "kind": "artifact-bytes",
+          "digest": "sha256:c7706d3192bcc1465c7cf8d5728d13e27ccfda50b1b69d6d1e4b8cb5078b377a"
+        }
+      },
+      {
+        "preconditionId": "precondition:manifest-bytes",
+        "resource": {
+          "kind": "manifest-bytes",
+          "location": { "kind": "portable", "token": "project:skillsmith.toml" }
+        },
+        "expectedState": "present",
+        "expectedHash": {
+          "domain": "manifest-bytes",
+          "hashSchemaVersion": 1,
+          "digest": "sha256:4c56b54579076b0082e678dd9c3850589c3cbc007ec448670c03c510b3fffee9"
+        },
+        "expectedRevision": {
+          "kind": "artifact-bytes",
+          "digest": "sha256:2259ba8586293c3fc38ce6cd916afcdd94d69a9a4719c69f8e1120d80563cae0"
+        }
+      },
+      {
+        "preconditionId": "precondition:manifest-semantic",
+        "resource": {
+          "kind": "manifest-bytes",
+          "location": { "kind": "portable", "token": "project:skillsmith.toml" }
+        },
+        "expectedState": "present",
+        "expectedHash": {
+          "domain": "manifest-semantic",
+          "hashSchemaVersion": 1,
+          "digest": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5"
+        },
+        "expectedRevision": {
+          "kind": "artifact-bytes",
+          "digest": "sha256:2259ba8586293c3fc38ce6cd916afcdd94d69a9a4719c69f8e1120d80563cae0"
+        }
+      }
+    ],
+    "selectionPreconditions": [],
+    "capabilityPreconditions": []
+  },
+  "repositoryCases": [
+    {
+      "id": "plan-wrong-kind-before-discriminator",
+      "presentation": "canonical",
+      "mutation": {
+        "kind": "skillsmith.not-plan",
+        "schemaVersion": 2,
+        "rootUnknown": true
+      },
+      "expected": {
+        "artifactId": "plan",
+        "requestedVersion": null,
+        "reason": "invalid-shape",
+        "path": ["kind"],
+        "exitCode": 3,
+        "message": "artifact shape is invalid"
+      }
+    },
+    {
+      "id": "plan-missing-kind-before-discriminator",
+      "presentation": "canonical",
+      "mutation": {
+        "omitKind": true,
+        "schemaVersion": 2,
+        "rootUnknown": true
+      },
+      "expected": {
+        "artifactId": "plan",
+        "requestedVersion": null,
+        "reason": "invalid-shape",
+        "path": ["kind"],
+        "exitCode": 3,
+        "message": "artifact shape is invalid"
+      }
+    },
+    {
+      "id": "plan-discriminator-before-unknown",
+      "presentation": "canonical",
+      "mutation": {
+        "schemaVersion": "2",
+        "rootUnknown": true
+      },
+      "expected": {
+        "artifactId": "plan",
+        "requestedVersion": null,
+        "reason": "invalid-shape",
+        "path": ["schemaVersion"],
+        "exitCode": 3,
+        "message": "artifact shape is invalid"
+      }
+    },
+    {
+      "id": "plan-future-version-before-unknown",
+      "presentation": "canonical",
+      "mutation": {
+        "schemaVersion": 2,
+        "rootUnknown": true
+      },
+      "expected": {
+        "artifactId": "plan",
+        "requestedVersion": 2,
+        "reason": "unsupported-version",
+        "path": ["schemaVersion"],
+        "exitCode": 3,
+        "message": "artifact version is not supported"
+      }
+    },
+    {
+      "id": "plan-recursive-shape-before-canonicality",
+      "presentation": "compact",
+      "mutation": {
+        "optionsUnknown": true
+      },
+      "expected": {
+        "artifactId": "plan",
+        "requestedVersion": 1,
+        "reason": "invalid-shape",
+        "path": ["options", "unexpected"],
+        "exitCode": 3,
+        "message": "artifact shape is invalid"
+      }
+    },
+    {
+      "id": "plan-noncanonical",
+      "presentation": "compact",
+      "mutation": {},
+      "expected": {
+        "artifactId": "plan",
+        "requestedVersion": 1,
+        "reason": "noncanonical",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact bytes are not canonical"
+      }
+    },
+    {
+      "id": "plan-canonicality-before-sensitive",
+      "presentation": "compact",
+      "mutation": {
+        "skillsmithVersion": "__RUNTIME_CANARY__"
+      },
+      "expected": {
+        "artifactId": "plan",
+        "requestedVersion": 1,
+        "reason": "noncanonical",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact bytes are not canonical"
+      }
+    },
+    {
+      "id": "plan-sensitive-canonical",
+      "presentation": "canonical",
+      "mutation": {
+        "skillsmithVersion": "__RUNTIME_CANARY__"
+      },
+      "expected": {
+        "artifactId": "plan",
+        "requestedVersion": 1,
+        "reason": "sensitive-content",
+        "path": ["skillsmithVersion"],
+        "exitCode": 3,
+        "message": "artifact contains sensitive content"
+      }
+    }
+  ],
+  "ledgerMigrations": [
+    {
+      "id": "empty-v1",
+      "before": "{\n  \"schemaVersion\": 1,\n  \"kind\": \"skillsmith.placements\",\n  \"updatedAt\": \"x\",\n  \"skills\": {}\n}",
+      "after": "{\n  \"schemaVersion\": 2,\n  \"kind\": \"skillsmith.placements\",\n  \"updatedAt\": \"x\",\n  \"skills\": {},\n  \"projects\": {},\n  \"projectRegistrations\": {},\n  \"transactions\": {},\n  \"history\": []\n}\n",
+      "sourceByteRevision": "sha256:c7706d3192bcc1465c7cf8d5728d13e27ccfda50b1b69d6d1e4b8cb5078b377a",
+      "targetByteRevision": "sha256:ead653a2fd20410fc833385c7a76b3d0e75ab5f3bf9945fd481eaa2d5a3e1ae2",
+      "semanticRevision": "sha256:b415627c5191666843a4972fe05e1afa6de518a877babb6384ffbcc7fedc0465",
+      "preservedLegacyJournals": []
+    },
+    {
+      "id": "project-journal-v1",
+      "before": "{\n  \"schemaVersion\": 1,\n  \"kind\": \"skillsmith.placements\",\n  \"updatedAt\": \"2026-07-14T00:00:00.000Z\",\n  \"skills\": {},\n  \"projects\": {\n    \"/workspace/demo\": {\n      \"skills\": {\n        \"review\": {\n          \"tools\": {\n            \"codex\": {\n              \"placementPath\": \"/workspace/demo/.codex/skills/review\",\n              \"mode\": \"dev\",\n              \"dev\": {\n                \"sourcePath\": \"./skills/review\",\n                \"resolvedPath\": \"/workspace/demo/skills/review\",\n                \"repoRoot\": \"/workspace/demo\",\n                \"sourceRelPath\": \"skills/review\",\n                \"remote\": null,\n                \"recordedAt\": \"x\"\n              },\n              \"pinned\": {\n                \"storePath\": \"/home/test/.skillsmith/store/review\",\n                \"rev\": \"r1\",\n                \"gitSha\": null,\n                \"dirty\": false,\n                \"contentHash\": \"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\n                \"snapshotAt\": \"x\",\n                \"verify\": \"passed\"\n              },\n              \"journal\": {\n                \"op\": \"promote\",\n                \"txId\": \"seed0001\",\n                \"phase\": \"committed\",\n                \"startedAt\": \"x\",\n                \"completedAt\": \"x\",\n                \"before\": {\n                  \"mode\": \"absent\"\n                },\n                \"stagingPath\": \"/tmp/stage\",\n                \"backupPath\": \"/tmp/backup\"\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}",
+      "after": "{\n  \"schemaVersion\": 2,\n  \"kind\": \"skillsmith.placements\",\n  \"updatedAt\": \"2026-07-14T00:00:00.000Z\",\n  \"skills\": {},\n  \"projects\": {\n    \"/workspace/demo\": {\n      \"skills\": {\n        \"review\": {\n          \"tools\": {\n            \"codex\": {\n              \"placementPath\": \"/workspace/demo/.codex/skills/review\",\n              \"mode\": \"dev\",\n              \"dev\": {\n                \"sourcePath\": \"./skills/review\",\n                \"resolvedPath\": \"/workspace/demo/skills/review\",\n                \"repoRoot\": \"/workspace/demo\",\n                \"sourceRelPath\": \"skills/review\",\n                \"remote\": null,\n                \"recordedAt\": \"x\"\n              },\n              \"pinned\": {\n                \"storePath\": \"/home/test/.skillsmith/store/review\",\n                \"rev\": \"r1\",\n                \"gitSha\": null,\n                \"dirty\": false,\n                \"contentHash\": \"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\n                \"snapshotAt\": \"x\",\n                \"verify\": \"passed\"\n              },\n              \"journal\": {\n                \"op\": \"promote\",\n                \"txId\": \"seed0001\",\n                \"phase\": \"committed\",\n                \"startedAt\": \"x\",\n                \"completedAt\": \"x\",\n                \"before\": {\n                  \"mode\": \"absent\"\n                },\n                \"stagingPath\": \"/tmp/stage\",\n                \"backupPath\": \"/tmp/backup\"\n              }\n            }\n          }\n        }\n      }\n    }\n  },\n  \"projectRegistrations\": {\n    \"/workspace/demo\": {\n      \"consumers\": [\n        {\n          \"skill\": \"review\",\n          \"tool\": \"codex\",\n          \"placementPath\": \"/workspace/demo/.codex/skills/review\",\n          \"store\": {\n            \"path\": \"/home/test/.skillsmith/store/review\",\n            \"contentHash\": \"sha256:1111111111111111111111111111111111111111111111111111111111111111\"\n          }\n        }\n      ]\n    }\n  },\n  \"transactions\": {},\n  \"history\": []\n}\n",
+      "sourceByteRevision": "sha256:774e33f7e1c802e790628c52c105af54be0f6a85ad7ded3055b1d768729af38a",
+      "targetByteRevision": "sha256:10d70de1f61af42e166ce42f1979f2e498f23af4f22fff1965f36a4cca392607",
+      "semanticRevision": "sha256:16cc92412b9f55245c8053c0c996f31707e9ed63642ce2254444646d51939318",
+      "preservedLegacyJournals": [
+        {
+          "scope": { "kind": "project", "root": "/workspace/demo" },
+          "skill": "review",
+          "tool": "codex",
+          "txId": "seed0001"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,408 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "manifest-future-version",
+      "artifact": "manifest",
+      "codecVersion": 1,
+      "source": "manifest-v1.golden.toml",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "version = 1\n\n[defaults]",
+        "to": "version = 2\n\n[defaults]"
+      },
+      "expectedReason": "unsupported-version"
+    },
+    {
+      "id": "manifest-zero-version",
+      "artifact": "manifest",
+      "codecVersion": 1,
+      "source": "manifest-v1.golden.toml",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "version = 1\n\n[defaults]",
+        "to": "version = 0\n\n[defaults]"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "manifest-unknown-root",
+      "artifact": "manifest",
+      "codecVersion": 1,
+      "source": "manifest-v1.golden.toml",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "version = 1\n\n[defaults]",
+        "to": "version = 1\nunknown = true\n\n[defaults]"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "manifest-unknown-nested-default",
+      "artifact": "manifest",
+      "codecVersion": 1,
+      "source": "manifest-v1.golden.toml",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "[defaults]\ntools = [\"claude-code\", \"codex\"]",
+        "to": "[defaults]\nunknown = true\ntools = [\"claude-code\", \"codex\"]"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "manifest-truncated-table",
+      "artifact": "manifest",
+      "codecVersion": 1,
+      "literalUtf8": "version = 1\n[defaults\n",
+      "expectedReason": "malformed"
+    },
+    {
+      "id": "manifest-invalid-utf8",
+      "artifact": "manifest",
+      "codecVersion": 1,
+      "literalHex": "ff",
+      "expectedReason": "malformed"
+    },
+    {
+      "id": "lock-future-version",
+      "artifact": "lock",
+      "codecVersion": 1,
+      "source": "lock-v1.golden.toml",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "version = 1\nhash_schema_version = 1",
+        "to": "version = 2\nhash_schema_version = 1"
+      },
+      "expectedReason": "unsupported-version"
+    },
+    {
+      "id": "lock-zero-version",
+      "artifact": "lock",
+      "codecVersion": 1,
+      "source": "lock-v1.golden.toml",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "version = 1\nhash_schema_version = 1",
+        "to": "version = 0\nhash_schema_version = 1"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "lock-unknown-root",
+      "artifact": "lock",
+      "codecVersion": 1,
+      "source": "lock-v1.golden.toml",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "version = 1\nhash_schema_version = 1",
+        "to": "version = 1\nunknown = true\nhash_schema_version = 1"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "lock-unknown-nested-skill",
+      "artifact": "lock",
+      "codecVersion": 1,
+      "source": "lock-v1.golden.toml",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "name = \"lint\"\nsource = \"github.com/acme/skills//skills/lint\"",
+        "to": "name = \"lint\"\nunknown = true\nsource = \"github.com/acme/skills//skills/lint\""
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "lock-noncanonical-missing-lf",
+      "artifact": "lock",
+      "codecVersion": 1,
+      "source": "lock-v1.golden.toml",
+      "mutation": {
+        "kind": "truncate-bytes",
+        "count": 1
+      },
+      "expectedReason": "noncanonical"
+    },
+    {
+      "id": "lock-noncanonical-key-order",
+      "artifact": "lock",
+      "codecVersion": 1,
+      "source": "lock-v1.golden.toml",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "version = 1\nhash_schema_version = 1",
+        "to": "hash_schema_version = 1\nversion = 1"
+      },
+      "expectedReason": "noncanonical"
+    },
+    {
+      "id": "plan-future-version",
+      "artifact": "plan",
+      "codecVersion": 1,
+      "source": "plan-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "\"schemaVersion\": 1",
+        "to": "\"schemaVersion\": 2"
+      },
+      "expectedReason": "unsupported-version"
+    },
+    {
+      "id": "plan-zero-version",
+      "artifact": "plan",
+      "codecVersion": 1,
+      "source": "plan-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "\"schemaVersion\": 1",
+        "to": "\"schemaVersion\": 0"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "plan-unknown-root",
+      "artifact": "plan",
+      "codecVersion": 1,
+      "source": "plan-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "  \"capabilityPreconditions\": [",
+        "to": "  \"unknown\": true,\n  \"capabilityPreconditions\": ["
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "plan-unknown-nested-portability",
+      "artifact": "plan",
+      "codecVersion": 1,
+      "source": "plan-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "    \"kind\": \"portable\",\n    \"reasons\": []",
+        "to": "    \"kind\": \"portable\",\n    \"unknown\": true,\n    \"reasons\": []"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "plan-truncated-json",
+      "artifact": "plan",
+      "codecVersion": 1,
+      "source": "plan-v1.golden.json",
+      "mutation": {
+        "kind": "truncate-bytes",
+        "count": 2
+      },
+      "expectedReason": "malformed"
+    },
+    {
+      "id": "plan-duplicate-version",
+      "artifact": "plan",
+      "codecVersion": 1,
+      "source": "plan-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "  \"schemaVersion\": 1,",
+        "to": "  \"schemaVersion\": 1,\n  \"schemaVersion\": 1,"
+      },
+      "expectedReason": "malformed"
+    },
+    {
+      "id": "plan-noncanonical-missing-lf",
+      "artifact": "plan",
+      "codecVersion": 1,
+      "source": "plan-v1.golden.json",
+      "mutation": {
+        "kind": "truncate-bytes",
+        "count": 1
+      },
+      "expectedReason": "noncanonical"
+    },
+    {
+      "id": "plan-noncanonical-indent-drift",
+      "artifact": "plan",
+      "codecVersion": 1,
+      "source": "plan-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "  \"schemaVersion\": 1,",
+        "to": "    \"schemaVersion\": 1,"
+      },
+      "expectedReason": "noncanonical"
+    },
+    {
+      "id": "ledger-v1-unknown-nested-pair",
+      "artifact": "ledger",
+      "codecVersion": 1,
+      "source": "ledger-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "          \"placementPath\": \"/home/fixture/.codex/skills/review\",",
+        "to": "          \"placementPath\": \"/home/fixture/.codex/skills/review\",\n          \"unknown\": true,"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "ledger-future-version",
+      "artifact": "ledger",
+      "codecVersion": 2,
+      "source": "ledger-v2.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "{\n  \"schemaVersion\": 2,\n  \"kind\": \"skillsmith.placements\"",
+        "to": "{\n  \"schemaVersion\": 3,\n  \"kind\": \"skillsmith.placements\""
+      },
+      "expectedReason": "unsupported-version"
+    },
+    {
+      "id": "ledger-zero-version",
+      "artifact": "ledger",
+      "codecVersion": 2,
+      "source": "ledger-v2.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "{\n  \"schemaVersion\": 2,\n  \"kind\": \"skillsmith.placements\"",
+        "to": "{\n  \"schemaVersion\": 0,\n  \"kind\": \"skillsmith.placements\""
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "ledger-unknown-root",
+      "artifact": "ledger",
+      "codecVersion": 2,
+      "source": "ledger-v2.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "  \"history\": [",
+        "to": "  \"unknown\": true,\n  \"history\": ["
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "ledger-v2-private-nested-staging-path",
+      "artifact": "ledger",
+      "codecVersion": 2,
+      "source": "ledger-v2.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "      \"transactionId\": \"tx:migrate-ledger-live\",\n      \"intent\": {",
+        "to": "      \"transactionId\": \"tx:migrate-ledger-live\",\n      \"stagingPath\": \"/fixture/private-stage\",\n      \"intent\": {"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "ledger-truncated-json",
+      "artifact": "ledger",
+      "codecVersion": 2,
+      "source": "ledger-v2.golden.json",
+      "mutation": {
+        "kind": "truncate-bytes",
+        "count": 2
+      },
+      "expectedReason": "malformed"
+    },
+    {
+      "id": "ledger-v2-noncanonical-missing-lf",
+      "artifact": "ledger",
+      "codecVersion": 2,
+      "source": "ledger-v2.golden.json",
+      "mutation": {
+        "kind": "truncate-bytes",
+        "count": 1
+      },
+      "expectedReason": "noncanonical"
+    },
+    {
+      "id": "ledger-v2-noncanonical-key-order",
+      "artifact": "ledger",
+      "codecVersion": 2,
+      "source": "ledger-v2.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "  \"schemaVersion\": 2,\n  \"kind\": \"skillsmith.placements\",",
+        "to": "  \"kind\": \"skillsmith.placements\",\n  \"schemaVersion\": 2,"
+      },
+      "expectedReason": "noncanonical"
+    },
+    {
+      "id": "journal-future-version",
+      "artifact": "journal",
+      "codecVersion": 1,
+      "source": "journal-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "{\n  \"schemaVersion\": 1,\n  \"kind\": \"skillsmith.transaction-journal\"",
+        "to": "{\n  \"schemaVersion\": 2,\n  \"kind\": \"skillsmith.transaction-journal\""
+      },
+      "expectedReason": "unsupported-version"
+    },
+    {
+      "id": "journal-zero-version",
+      "artifact": "journal",
+      "codecVersion": 1,
+      "source": "journal-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "{\n  \"schemaVersion\": 1,\n  \"kind\": \"skillsmith.transaction-journal\"",
+        "to": "{\n  \"schemaVersion\": 0,\n  \"kind\": \"skillsmith.transaction-journal\""
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "journal-unknown-root",
+      "artifact": "journal",
+      "codecVersion": 1,
+      "source": "journal-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "  \"completedAt\":",
+        "to": "  \"unknown\": true,\n  \"completedAt\":"
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "journal-private-nested-recovery-cursor",
+      "artifact": "journal",
+      "codecVersion": 1,
+      "source": "journal-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "    \"parentOperationId\": null,\n    \"command\": \"skillsmith:apply\"",
+        "to": "    \"parentOperationId\": null,\n    \"recoveryCursor\": \"private\",\n    \"command\": \"skillsmith:apply\""
+      },
+      "expectedReason": "invalid-shape"
+    },
+    {
+      "id": "journal-truncated-json",
+      "artifact": "journal",
+      "codecVersion": 1,
+      "source": "journal-v1.golden.json",
+      "mutation": {
+        "kind": "truncate-bytes",
+        "count": 2
+      },
+      "expectedReason": "malformed"
+    },
+    {
+      "id": "journal-noncanonical-missing-lf",
+      "artifact": "journal",
+      "codecVersion": 1,
+      "source": "journal-v1.golden.json",
+      "mutation": {
+        "kind": "truncate-bytes",
+        "count": 1
+      },
+      "expectedReason": "noncanonical"
+    },
+    {
+      "id": "journal-noncanonical-key-order",
+      "artifact": "journal",
+      "codecVersion": 1,
+      "source": "journal-v1.golden.json",
+      "mutation": {
+        "kind": "replace-once",
+        "from": "  \"schemaVersion\": 1,\n  \"kind\": \"skillsmith.transaction-journal\",",
+        "to": "  \"kind\": \"skillsmith.transaction-journal\",\n  \"schemaVersion\": 1,"
+      },
+      "expectedReason": "noncanonical"
+    }
+  ]
+}

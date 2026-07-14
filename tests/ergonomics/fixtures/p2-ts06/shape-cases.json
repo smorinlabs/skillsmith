@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "fixtureCanary": "p2-ts06-shape-contract-canary",
+  "cases": [
+    {
+      "id": "canonical-minimal",
+      "encoding": "utf8",
+      "source": "version = 1\n",
+      "signedShape": "canonical",
+      "expected": {
+        "state": "present",
+        "sourceVersion": 1,
+        "currentVersion": 1,
+        "canonical": true,
+        "migration": false
+      }
+    },
+    {
+      "id": "canonical-populated",
+      "encoding": "utf8",
+      "source": "version = 1\n\n[defaults]\ntools = [\"codex\", \"claude-code\"]\nscope = \"project\"\npath = \"./skills\"\n\n[registry]\ndefault = \"https://github.com/acme\"\n\n[[skills]]\nname = \"review\"\nsource = \"github.com/acme/tools//skills/review\"\nref = \"main\"\ntools = [\"opencode\", \"codex\"]\nscope = \"user\"\nplacement = \"copy\"\npath = \"~/review\"\n",
+      "signedShape": "canonical",
+      "expected": {
+        "state": "present",
+        "sourceVersion": 1,
+        "currentVersion": 1,
+        "canonical": false,
+        "migration": false
+      }
+    },
+    {
+      "id": "canonical-human-crlf",
+      "encoding": "utf8",
+      "source": "# retained heading\r\nversion = 1\r\n",
+      "signedShape": "canonical",
+      "expected": {
+        "state": "present",
+        "sourceVersion": 1,
+        "currentVersion": 1,
+        "canonical": false,
+        "migration": false
+      }
+    },
+    {
+      "id": "legacy-comment-lf",
+      "encoding": "utf8",
+      "source": "# project heading\ntool = \"codex\" # tool inline\nscope = \"project\"\npath = \"./skills\"\n\n# registry heading\n[registry]\n# registry field\ndefault = \"https://github.com/acme\" # registry inline\n# eof comment\n",
+      "signedShape": "legacy",
+      "expected": {
+        "state": "present",
+        "sourceVersion": "legacy",
+        "currentVersion": 1,
+        "canonical": false,
+        "migration": true
+      }
+    },
+    {
+      "id": "legacy-quoted-crlf",
+      "encoding": "utf8",
+      "source": "# café heading\r\n'tool' = \"codex\"\r\n",
+      "signedShape": "legacy",
+      "expected": {
+        "state": "present",
+        "sourceVersion": "legacy",
+        "currentVersion": 1,
+        "canonical": false,
+        "migration": true
+      }
+    },
+    {
+      "id": "mixed-version-and-legacy",
+      "encoding": "utf8",
+      "source": "version = 1\ntool = \"codex\"\n",
+      "signedShape": "mixed",
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": 1,
+        "reason": "invalid-shape",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact shape is invalid"
+      }
+    },
+    {
+      "id": "empty-source",
+      "encoding": "utf8",
+      "source": "",
+      "signedShape": "empty",
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": null,
+        "reason": "malformed",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact source is malformed"
+      }
+    },
+    {
+      "id": "whitespace-source",
+      "encoding": "utf8",
+      "source": " \n\t",
+      "signedShape": "empty",
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": null,
+        "reason": "malformed",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact source is malformed"
+      }
+    },
+    {
+      "id": "malformed-toml",
+      "encoding": "utf8",
+      "source": "version = [\n",
+      "signedShape": "malformed",
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": null,
+        "reason": "malformed",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact source is malformed"
+      }
+    },
+    {
+      "id": "unknown-root",
+      "encoding": "utf8",
+      "source": "mystery = true\n",
+      "signedShape": "unknown",
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": null,
+        "reason": "invalid-shape",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact shape is invalid"
+      }
+    },
+    {
+      "id": "future-version",
+      "encoding": "utf8",
+      "source": "version = 2\n",
+      "signedShape": "future",
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": 2,
+        "reason": "unsupported-version",
+        "path": ["version"],
+        "exitCode": 3,
+        "message": "artifact version is not supported"
+      }
+    },
+    {
+      "id": "utf8-bom",
+      "encoding": "base64",
+      "source": "77u/dmVyc2lvbiA9IDEK",
+      "signedShape": null,
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": null,
+        "reason": "malformed",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact source is malformed"
+      }
+    },
+    {
+      "id": "invalid-utf8",
+      "encoding": "base64",
+      "source": "//79",
+      "signedShape": null,
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": null,
+        "reason": "malformed",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact source is malformed"
+      }
+    },
+    {
+      "id": "legacy-nonportable",
+      "encoding": "utf8",
+      "source": "scope = \"project\"\npath = \"skills\"\n",
+      "signedShape": "legacy",
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": null,
+        "reason": "migration-failed",
+        "path": [],
+        "exitCode": 3,
+        "message": "artifact migration failed"
+      }
+    },
+    {
+      "id": "canonical-sensitive-runtime",
+      "encoding": "utf8",
+      "source": "version = 1\n\n[defaults]\nscope = \"project\"\npath = \"./__RUNTIME_CANARY__\"\n",
+      "signedShape": "canonical",
+      "expected": {
+        "artifactId": "manifest",
+        "requestedVersion": 1,
+        "reason": "sensitive-content",
+        "path": ["defaults", "path"],
+        "exitCode": 3,
+        "message": "artifact contains sensitive content"
+      }
+    }
+  ]
+}

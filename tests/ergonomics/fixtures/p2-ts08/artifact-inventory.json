@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "artifactCount": 6,
+  "goldenByteTotal": 24594,
+  "artifacts": [
+    {
+      "identity": "manifest@1",
+      "id": "manifest",
+      "version": 1,
+      "syntax": "toml",
+      "discriminator": {
+        "kind": "classifier",
+        "id": "manifest-v1-or-legacy-project-config"
+      },
+      "wireKind": null,
+      "presentation": {
+        "decode": "human",
+        "encode": "canonical"
+      },
+      "terminalLf": true,
+      "unknownFields": "reject-recursive",
+      "migrations": [
+        {
+          "source": {
+            "kind": "shape",
+            "id": "legacy-project-config"
+          },
+          "targetVersion": 1,
+          "mapperId": "legacy-project-config-to-manifest-v1"
+        }
+      ],
+      "compatibility": "conservative",
+      "golden": {
+        "file": "manifest-v1.golden.toml",
+        "byteLength": 387,
+        "sha256": "sha256:30215174d1e74a49d90e362dc5eb3a0ddf91957b3c33d4ee09a858bd0bac08c9"
+      }
+    },
+    {
+      "identity": "lock@1",
+      "id": "lock",
+      "version": 1,
+      "syntax": "toml",
+      "discriminator": {
+        "kind": "field",
+        "field": "version"
+      },
+      "wireKind": null,
+      "presentation": {
+        "decode": "canonical",
+        "encode": "canonical"
+      },
+      "terminalLf": true,
+      "unknownFields": "reject-recursive",
+      "migrations": [],
+      "compatibility": "conservative",
+      "golden": {
+        "file": "lock-v1.golden.toml",
+        "byteLength": 644,
+        "sha256": "sha256:6a8260a974bf7f2317f0e218fee44ea3b0be8378351bc9b12c17d2887b00e17f"
+      }
+    },
+    {
+      "identity": "plan@1",
+      "id": "plan",
+      "version": 1,
+      "syntax": "json",
+      "discriminator": {
+        "kind": "field",
+        "field": "schemaVersion"
+      },
+      "wireKind": "skillsmith.plan",
+      "presentation": {
+        "decode": "canonical",
+        "encode": "canonical"
+      },
+      "terminalLf": true,
+      "unknownFields": "reject-recursive",
+      "migrations": [],
+      "compatibility": "conservative",
+      "golden": {
+        "file": "plan-v1.golden.json",
+        "byteLength": 8377,
+        "sha256": "sha256:c3d12a0fea80819c3a7adf5aae56386569141e5ac965301072eb8aa536e4d981"
+      }
+    },
+    {
+      "identity": "ledger@1",
+      "id": "ledger",
+      "version": 1,
+      "syntax": "json",
+      "discriminator": {
+        "kind": "field",
+        "field": "schemaVersion"
+      },
+      "wireKind": "skillsmith.placements",
+      "presentation": {
+        "decode": "human",
+        "encode": "compatibility"
+      },
+      "terminalLf": false,
+      "unknownFields": "reject-recursive",
+      "migrations": [],
+      "compatibility": "conservative",
+      "golden": {
+        "file": "ledger-v1.golden.json",
+        "byteLength": 3456,
+        "sha256": "sha256:269ea3a4e9bdfb47c7ba475314a64bf26b8d670c34058db23e4a20da2b1252cd"
+      }
+    },
+    {
+      "identity": "ledger@2",
+      "id": "ledger",
+      "version": 2,
+      "syntax": "json",
+      "discriminator": {
+        "kind": "field",
+        "field": "schemaVersion"
+      },
+      "wireKind": "skillsmith.placements",
+      "presentation": {
+        "decode": "canonical",
+        "encode": "canonical"
+      },
+      "terminalLf": true,
+      "unknownFields": "reject-recursive",
+      "migrations": [
+        {
+          "source": {
+            "kind": "version",
+            "version": 1
+          },
+          "targetVersion": 2,
+          "mapperId": "ledger-v1-to-v2"
+        }
+      ],
+      "compatibility": "conservative",
+      "golden": {
+        "file": "ledger-v2.golden.json",
+        "byteLength": 9349,
+        "sha256": "sha256:0fe449f42c99dd160e49d731a1ba4374ed173652288094d95320cf5a77b6dbd2"
+      }
+    },
+    {
+      "identity": "journal@1",
+      "id": "journal",
+      "version": 1,
+      "syntax": "json",
+      "discriminator": {
+        "kind": "field",
+        "field": "schemaVersion"
+      },
+      "wireKind": "skillsmith.transaction-journal",
+      "presentation": {
+        "decode": "canonical",
+        "encode": "canonical"
+      },
+      "terminalLf": true,
+      "unknownFields": "reject-recursive",
+      "migrations": [],
+      "compatibility": "conservative",
+      "golden": {
+        "file": "journal-v1.golden.json",
+        "byteLength": 2381,
+        "sha256": "sha256:e882ac1fbbf4e5063a876acd5a2570e43872d0e2733b312c9f858f63adaa2b72"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+version = 1
+
+[defaults]
+tools = ["claude-code", "codex"]
+scope = "project"
+path = "./.agents/skills"
+
+[registry]
+default = "github.com/acme/skills"
+
+[[skills]]
+name = "lint"
+source = "github.com/acme/skills//skills/lint"
+ref = "v1.2.3"
+placement = "copy"
+path = "./.agents/lint"
+
+[[skills]]
+name = "review"
+source = "git.example.com/team/skills//review"
+tools = ["codex"]
+scope = "user"

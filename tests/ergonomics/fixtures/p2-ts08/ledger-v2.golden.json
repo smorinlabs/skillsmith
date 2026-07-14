@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 2,
+  "kind": "skillsmith.placements",
+  "updatedAt": "2026-07-14T12:00:00Z",
+  "skills": {
+    "review": {
+      "tools": {
+        "codex": {
+          "placementPath": "/home/fixture/.codex/skills/review",
+          "mode": "pinned",
+          "dev": null,
+          "pinned": {
+            "storePath": "/home/fixture/.local/share/skillsmith/store/review",
+            "rev": "89abcdef0123",
+            "gitSha": "89abcdef0123456789abcdef0123456789abcdef",
+            "dirty": false,
+            "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "snapshotAt": "2026-07-14T11:59:00Z",
+            "verify": "passed",
+            "placement": "symlink"
+          },
+          "origin": {
+            "source": "git.example.com/team/skills/review",
+            "host": "git.example.com",
+            "repo": "team/skills",
+            "skillPath": "review",
+            "refRequested": null,
+            "refResolved": "89abcdef0123456789abcdef0123456789abcdef",
+            "pin": true,
+            "installedAt": "2026-07-14T11:59:00Z"
+          },
+          "journal": {
+            "op": "install",
+            "txId": "legacy:review-install",
+            "phase": "committed",
+            "startedAt": "2026-07-14T11:58:59Z",
+            "completedAt": "2026-07-14T11:59:00Z",
+            "before": {
+              "mode": "absent"
+            },
+            "stagingPath": "/home/fixture/.codex/skills/.review.stage",
+            "backupPath": "/home/fixture/.codex/skills/.review.backup"
+          }
+        }
+      }
+    }
+  },
+  "projects": {
+    "/workspace/project": {
+      "skills": {
+        "lint": {
+          "tools": {
+            "claude-code": {
+              "placementPath": "/workspace/project/.claude/skills/lint",
+              "mode": "dev",
+              "dev": {
+                "sourcePath": "/workspace/skills/lint",
+                "resolvedPath": "/workspace/skills/lint",
+                "repoRoot": "/workspace/skills",
+                "sourceRelPath": "lint",
+                "remote": "git.example.com/team/skills",
+                "recordedAt": "2026-07-14T11:57:00Z"
+              },
+              "pinned": {
+                "storePath": "/home/fixture/.local/share/skillsmith/store/lint",
+                "rev": "0123456789ab",
+                "gitSha": "0123456789abcdef0123456789abcdef01234567",
+                "dirty": false,
+                "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "snapshotAt": "2026-07-14T11:56:00Z",
+                "verify": "warned",
+                "placement": "copy"
+              },
+              "journal": {
+                "op": "dev",
+                "txId": "legacy:lint-dev",
+                "phase": "live",
+                "startedAt": "2026-07-14T11:57:00Z",
+                "completedAt": null,
+                "before": {
+                  "mode": "pinned",
+                  "storePath": "/home/fixture/.local/share/skillsmith/store/lint",
+                  "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "liveKind": "dir"
+                },
+                "stagingPath": "/workspace/project/.claude/skills/.lint.stage",
+                "backupPath": "/workspace/project/.claude/skills/.lint.backup"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "projectRegistrations": {
+    "/workspace/project": {
+      "consumers": [
+        {
+          "skill": "lint",
+          "tool": "claude-code",
+          "placementPath": "/workspace/project/.claude/skills/lint",
+          "store": {
+            "path": "/home/fixture/.local/share/skillsmith/store/lint",
+            "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      ]
+    }
+  },
+  "transactions": {
+    "tx:migrate-ledger-live": {
+      "schemaVersion": 1,
+      "kind": "skillsmith.transaction-journal",
+      "transactionId": "tx:migrate-ledger-live",
+      "intent": {
+        "operationId": "operation:migrate-ledger",
+        "groupId": "group:ledger",
+        "pairId": null,
+        "kind": "migrate-ledger",
+        "skill": null,
+        "source": null,
+        "tool": null,
+        "scope": null,
+        "before": {
+          "kind": "ledger",
+          "projectRoot": null,
+          "schemaVersion": 1,
+          "byteHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "after": {
+          "kind": "ledger",
+          "projectRoot": null,
+          "schemaVersion": 2,
+          "byteHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "mutates": {
+          "live": false,
+          "manifest": false,
+          "lock": false,
+          "ledger": true
+        },
+        "reversibility": {
+          "kind": "none",
+          "retentionResourceIds": []
+        },
+        "conflict": null
+      },
+      "context": {
+        "parentOperationId": null,
+        "command": "skillsmith:apply",
+        "workflow": "workflow:migrate-ledger",
+        "attempt": 1,
+        "startedAt": "2026-07-14T12:00:00.000Z"
+      },
+      "disposition": "forward",
+      "phase": "live",
+      "actual": {
+        "before": [
+          {
+            "resourceId": "resource:ledger-user",
+            "role": "ledger",
+            "state": "present",
+            "repositoryRevision": {
+              "kind": "artifact-bytes",
+              "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "schemaVersion": 1,
+            "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ],
+        "after": [
+          {
+            "resourceId": "resource:ledger-user",
+            "role": "ledger",
+            "state": "present",
+            "repositoryRevision": {
+              "kind": "artifact-bytes",
+              "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+            },
+            "schemaVersion": 2,
+            "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ],
+        "retained": []
+      },
+      "updatedAt": "2026-07-14T12:00:01.000Z",
+      "completedAt": null
+    }
+  },
+  "history": [
+    {
+      "schemaVersion": 1,
+      "kind": "skillsmith.transaction-journal",
+      "transactionId": "tx:migrate-ledger-committed",
+      "intent": {
+        "operationId": "operation:migrate-ledger",
+        "groupId": "group:ledger",
+        "pairId": null,
+        "kind": "migrate-ledger",
+        "skill": null,
+        "source": null,
+        "tool": null,
+        "scope": null,
+        "before": {
+          "kind": "ledger",
+          "projectRoot": null,
+          "schemaVersion": 1,
+          "byteHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "after": {
+          "kind": "ledger",
+          "projectRoot": null,
+          "schemaVersion": 2,
+          "byteHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "mutates": {
+          "live": false,
+          "manifest": false,
+          "lock": false,
+          "ledger": true
+        },
+        "reversibility": {
+          "kind": "none",
+          "retentionResourceIds": []
+        },
+        "conflict": null
+      },
+      "context": {
+        "parentOperationId": null,
+        "command": "skillsmith:apply",
+        "workflow": "workflow:migrate-ledger",
+        "attempt": 1,
+        "startedAt": "2026-07-14T12:00:00.000Z"
+      },
+      "disposition": "forward",
+      "phase": "committed",
+      "actual": {
+        "before": [
+          {
+            "resourceId": "resource:ledger-user",
+            "role": "ledger",
+            "state": "present",
+            "repositoryRevision": {
+              "kind": "artifact-bytes",
+              "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "schemaVersion": 1,
+            "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ],
+        "after": [
+          {
+            "resourceId": "resource:ledger-user",
+            "role": "ledger",
+            "state": "present",
+            "repositoryRevision": {
+              "kind": "artifact-bytes",
+              "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+            },
+            "schemaVersion": 2,
+            "semanticHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ],
+        "retained": []
+      },
+      "updatedAt": "2026-07-14T12:00:01.000Z",
+      "completedAt": "2026-07-14T12:00:01.000Z"
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.placements",
+  "updatedAt": "2026-07-14T12:00:00Z",
+  "skills": {
+    "review": {
+      "tools": {
+        "codex": {
+          "placementPath": "/home/fixture/.codex/skills/review",
+          "mode": "pinned",
+          "dev": null,
+          "pinned": {
+            "storePath": "/home/fixture/.local/share/skillsmith/store/review",
+            "rev": "89abcdef0123",
+            "gitSha": "89abcdef0123456789abcdef0123456789abcdef",
+            "dirty": false,
+            "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "snapshotAt": "2026-07-14T11:59:00Z",
+            "verify": "passed",
+            "placement": "symlink"
+          },
+          "origin": {
+            "source": "git.example.com/team/skills/review",
+            "host": "git.example.com",
+            "repo": "team/skills",
+            "skillPath": "review",
+            "refRequested": null,
+            "refResolved": "89abcdef0123456789abcdef0123456789abcdef",
+            "pin": true,
+            "installedAt": "2026-07-14T11:59:00Z"
+          },
+          "journal": {
+            "op": "install",
+            "txId": "legacy:review-install",
+            "phase": "committed",
+            "startedAt": "2026-07-14T11:58:59Z",
+            "completedAt": "2026-07-14T11:59:00Z",
+            "before": {
+              "mode": "absent"
+            },
+            "stagingPath": "/home/fixture/.codex/skills/.review.stage",
+            "backupPath": "/home/fixture/.codex/skills/.review.backup"
+          }
+        }
+      }
+    }
+  },
+  "projects": {
+    "/workspace/project": {
+      "skills": {
+        "lint": {
+          "tools": {
+            "claude-code": {
+              "placementPath": "/workspace/project/.claude/skills/lint",
+              "mode": "dev",
+              "dev": {
+                "sourcePath": "/workspace/skills/lint",
+                "resolvedPath": "/workspace/skills/lint",
+                "repoRoot": "/workspace/skills",
+                "sourceRelPath": "lint",
+                "remote": "git.example.com/team/skills",
+                "recordedAt": "2026-07-14T11:57:00Z"
+              },
+              "pinned": {
+                "storePath": "/home/fixture/.local/share/skillsmith/store/lint",
+                "rev": "0123456789ab",
+                "gitSha": "0123456789abcdef0123456789abcdef01234567",
+                "dirty": false,
+                "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "snapshotAt": "2026-07-14T11:56:00Z",
+                "verify": "warned",
+                "placement": "copy"
+              },
+              "journal": {
+                "op": "dev",
+                "txId": "legacy:lint-dev",
+                "phase": "live",
+                "startedAt": "2026-07-14T11:57:00Z",
+                "completedAt": null,
+                "before": {
+                  "mode": "pinned",
+                  "storePath": "/home/fixture/.local/share/skillsmith/store/lint",
+                  "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "liveKind": "dir"
+                },
+                "stagingPath": "/workspace/project/.claude/skills/.lint.stage",
+                "backupPath": "/workspace/project/.claude/skills/.lint.backup"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
