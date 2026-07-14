@@ -26,3 +26,17 @@ either file can navigate to the other without prior knowledge of
 the conventions. See
 `skills/project-audit/references/references-block.md` for the
 full format and the discovery helper.
+
+## Skillsmith scope and safety context
+
+Skillsmith is an open-source CLI for installing, updating, and managing agent-skill packages whose
+primary artifact is `SKILL.md`. Work in this repository is authorized local product development.
+Reliability tests use hermetic fixtures, synthetic sensitive-data markers, local filesystem failure
+simulation, and deterministic interruption of local test subprocesses. They do not target external
+systems, real accounts, real credentials, or third-party networks.
+
+In plans, delegated tasks, reviews, and progress reports, lead with that product/reliability context
+and prefer precise neutral descriptions. Preserve literal operating-system signals, API names,
+error identifiers, source grammar, and test vectors whenever reproducibility requires them. Do not
+obscure intent, evade safeguards, weaken tests, or extend work into unauthorized access, destructive
+testing, data extraction, malware, or real-secret handling.
