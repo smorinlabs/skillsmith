@@ -903,9 +903,9 @@ describe('EWP-P2-TS07', () => {
       const ledgerFailureEnv = {
         ...fleet.env,
         pathKind: async (path: string) => (path === ledgerPath ? 'file' : fleet.env.pathKind(path)),
-        readText: async (path: string) => {
+        readBytes: async (path: string) => {
           if (path === ledgerPath) throw hostileThrowable;
-          return fleet.env.readText(path);
+          return fleet.env.readBytes(path);
         },
       };
       const outerLockFailureEnv = {

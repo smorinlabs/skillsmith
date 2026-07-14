@@ -1087,6 +1087,58 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
       }
     }
 
+    for (const entry of inventory.artifacts) {
+      const codec = registry.get(entry.id, entry.version);
+      expect(codec, `${entry.identity} prototype-key codec`).toBeDefined();
+      if (codec === undefined) continue;
+      const decoded = unwrap(codec.decode(fixtureBytes(entry.golden.file)), entry.identity);
+      const dto = unwrap(codec.toDto(decoded.model), `${entry.identity} prototype-key DTO`);
+      const poisoned = structuredClone(dto) as UnknownRecord;
+      Object.defineProperty(poisoned, '__proto__', {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: { polluted: true },
+      });
+      const result = codec.validate(poisoned);
+      expect(result.ok, `${entry.identity} prototype-key refusal`).toBeFalse();
+      if (!result.ok) expect(result.error.reason).toBe('invalid-shape');
+      expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+    }
+
+    for (const entry of inventory.artifacts) {
+      const codec = registry.get(entry.id, entry.version);
+      expect(codec, `${entry.identity} precedence codec`).toBeDefined();
+      if (codec === undefined) continue;
+      const decoded = unwrap(codec.decode(fixtureBytes(entry.golden.file)), entry.identity);
+      const dto = unwrap(codec.toDto(decoded.model), `${entry.identity} precedence DTO`);
+
+      const sensitiveUnknown = structuredClone(dto) as UnknownRecord;
+      Object.defineProperty(sensitiveUnknown, 'ghp_P17_SECRET_CANARY_123456789', {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: SECRET_CANARY,
+      });
+      const unknownResult = codec.validate(sensitiveUnknown);
+      expect(unknownResult.ok, `${entry.identity} shape before sensitivity`).toBeFalse();
+      if (!unknownResult.ok) {
+        expect(unknownResult.error.reason, entry.identity).toBe('invalid-shape');
+        expect(JSON.stringify(unknownResult.error), entry.identity).not.toContain(SECRET_CANARY);
+      }
+
+      const invalidDiscriminator = structuredClone(dto) as UnknownRecord;
+      invalidDiscriminator[entry.syntax === 'json' ? 'schemaVersion' : 'version'] = SECRET_CANARY;
+      const discriminatorResult = codec.validate(invalidDiscriminator);
+      expect(discriminatorResult.ok, `${entry.identity} grammar before sensitivity`).toBeFalse();
+      if (!discriminatorResult.ok) {
+        expect(discriminatorResult.error.reason, entry.identity).toBe('invalid-shape');
+        expect(JSON.stringify(discriminatorResult.error), entry.identity).not.toContain(
+          SECRET_CANARY,
+        );
+      }
+    }
+
     const journalCodec = registry.get('journal', 1);
     expect(journalCodec, 'journal private-field codec').toBeDefined();
     if (journalCodec !== undefined) {
@@ -1102,6 +1154,566 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
           expect(JSON.stringify(result.error), probe.id).not.toContain('private-mechanics');
         }
       }
+    }
+    if (journalCodec !== undefined) {
+      const decoded = unwrap(
+        journalCodec.decode(fixtureBytes('journal-v1.golden.json')),
+        'journal precedence decode',
+      );
+      const candidate = structuredClone(
+        unwrap(journalCodec.toDto(decoded.model), 'journal precedence DTO'),
+      ) as UnknownRecord;
+      ((candidate.intent as UnknownRecord).operationId as unknown) = SECRET_CANARY;
+      ((candidate.actual as UnknownRecord).after as unknown[]) = [];
+      const result = journalCodec.validate(candidate);
+      expect(result.ok, 'journal relationships precede sensitivity').toBeFalse();
+      if (!result.ok) expect(result.error.reason).toBe('invalid-shape');
+    }
+    const ledgerV2Codec = registry.get('ledger', 2);
+    expect(ledgerV2Codec).toBeDefined();
+    if (ledgerV2Codec !== undefined) {
+      const candidate = JSON.parse(
+        readFileSync(join(FIXTURES, 'ledger-v2.golden.json'), 'utf8'),
+      ) as UnknownRecord;
+      const transactions = candidate.transactions as UnknownRecord;
+      const transaction = transactions['tx:migrate-ledger-live'] as UnknownRecord;
+      (transaction.context as UnknownRecord).command = SECRET_CANARY;
+      ((candidate.history as UnknownRecord[])[0] as UnknownRecord).phase = 'live';
+      const result = ledgerV2Codec.validate(candidate);
+      expect(result.ok, 'ledger relationships precede whole-artifact sensitivity').toBeFalse();
+      if (!result.ok) expect(result.error.reason).toBe('invalid-shape');
+    }
+  });
+
+  test('EWP-P2-TS08 family 4b: saved-plan relationships fail closed', async () => {
+    const { registry } = await requireRegistry();
+    const planCodec = registry.get('plan', 1);
+    expect(planCodec).toBeDefined();
+    if (planCodec === undefined) return;
+    const golden = JSON.parse(
+      readFileSync(join(FIXTURES, 'plan-v1.golden.json'), 'utf8'),
+    ) as UnknownRecord;
+    const migrations = JSON.parse(
+      readFileSync(join(ROOT, 'tests/ergonomics/fixtures/p2-ts06/migration-cases.json'), 'utf8'),
+    ) as UnknownRecord;
+    const savedMigrationPlan = migrations.savedPlan as UnknownRecord;
+    const expectValid = (candidate: UnknownRecord, label: string): void => {
+      const result = planCodec.validate(candidate);
+      expect(result.ok, result.ok ? label : `${label}: ${JSON.stringify(result.error)}`).toBeTrue();
+    };
+    const expectInvalid = (candidate: UnknownRecord, label: string): void => {
+      const result = planCodec.validate(candidate);
+      expect(result.ok, label).toBeFalse();
+      if (!result.ok) {
+        expect(result.error.reason, label).toBe('invalid-shape');
+        expect(JSON.stringify(result.error), label).not.toContain(SECRET_CANARY);
+      }
+    };
+    const operationsOf = (plan: UnknownRecord): UnknownRecord[] =>
+      plan.operations as UnknownRecord[];
+    const resourcesOf = (plan: UnknownRecord): UnknownRecord[] =>
+      plan.resourcePreconditions as UnknownRecord[];
+    const warningDiagnostic = (
+      correlation: UnknownRecord,
+      affected: UnknownRecord = {
+        skill: 'review',
+        source: null,
+        tool: 'codex',
+        scope: 'project',
+        path: null,
+      },
+    ): UnknownRecord => ({
+      diagnosticId: 'diagnostic:relationship-probe',
+      kind: 'warning',
+      severity: 'warning',
+      refusalClass: null,
+      affected,
+      correlation,
+      reason: { code: 'relationship-probe', message: 'relationship probe' },
+      selectionSource: 'explicit-targets',
+    });
+
+    expectValid(structuredClone(savedMigrationPlan), 'signed migration plan control');
+    for (const removedId of ['precondition:manifest-semantic', 'precondition:manifest-bytes']) {
+      const candidate = structuredClone(savedMigrationPlan);
+      const operation = operationsOf(candidate)[0] as UnknownRecord;
+      operation.preconditionIds = (operation.preconditionIds as string[]).filter(
+        (id) => id !== removedId,
+      );
+      expectInvalid(candidate, `project migration requires ${removedId}`);
+    }
+    {
+      const candidate = structuredClone(savedMigrationPlan);
+      const bytePrecondition = resourcesOf(candidate).find(
+        ({ preconditionId }) => preconditionId === 'precondition:manifest-bytes',
+      ) as UnknownRecord;
+      (bytePrecondition.expectedHash as UnknownRecord).digest =
+        'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      expectInvalid(candidate, 'project migration byte hash must match its before image');
+    }
+    {
+      const candidate = structuredClone(savedMigrationPlan);
+      const operation = operationsOf(candidate)[1] as UnknownRecord;
+      operation.preconditionIds = ['precondition:manifest-bytes'];
+      expectInvalid(candidate, 'ledger migration requires its ledger-schema precondition');
+    }
+    {
+      const candidate = structuredClone(savedMigrationPlan);
+      const ledgerPrecondition = resourcesOf(candidate).find(
+        ({ preconditionId }) => preconditionId === 'precondition:ledger-schema-v1',
+      ) as UnknownRecord;
+      (ledgerPrecondition.expectedRevision as UnknownRecord).digest =
+        'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      expectInvalid(candidate, 'ledger migration revision must match its v1 image');
+    }
+
+    const correlated = structuredClone(golden);
+    correlated.diagnostics = [
+      warningDiagnostic({
+        groupId: 'group:review',
+        pairId: 'pair:review-codex-project',
+        operationId: 'operation:install-review-codex',
+      }),
+    ];
+    expectValid(correlated, 'fully correlated diagnostic control');
+    for (const [label, correlation] of [
+      [
+        'missing group correlation',
+        {
+          groupId: 'group:missing',
+          pairId: 'pair:review-codex-project',
+          operationId: 'operation:install-review-codex',
+        },
+      ],
+      [
+        'missing pair correlation',
+        {
+          groupId: 'group:review',
+          pairId: 'pair:missing',
+          operationId: 'operation:install-review-codex',
+        },
+      ],
+      [
+        'missing operation correlation',
+        {
+          groupId: 'group:review',
+          pairId: 'pair:review-codex-project',
+          operationId: 'operation:missing',
+        },
+      ],
+      [
+        'pair correlation requires a group',
+        {
+          groupId: null,
+          pairId: 'pair:review-codex-project',
+          operationId: 'operation:install-review-codex',
+        },
+      ],
+    ] as const) {
+      const candidate = structuredClone(golden);
+      candidate.diagnostics = [warningDiagnostic(correlation)];
+      expectInvalid(candidate, label);
+    }
+    {
+      const candidate = structuredClone(golden);
+      const second = structuredClone(operationsOf(candidate)[0] as UnknownRecord);
+      second.operationId = 'operation:install-review-codex-second';
+      second.groupId = 'group:review-second';
+      second.pairId = 'pair:review-codex-project-second';
+      operationsOf(candidate).push(second);
+      candidate.diagnostics = [
+        warningDiagnostic({
+          groupId: second.groupId,
+          pairId: null,
+          operationId: 'operation:install-review-codex',
+        }),
+      ];
+      expectInvalid(candidate, 'operation correlation must agree with its group');
+    }
+
+    {
+      const candidate = structuredClone(savedMigrationPlan);
+      candidate.manifestSemanticHash =
+        'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      expectInvalid(candidate, 'root manifest hash binds the selected current image');
+    }
+    {
+      const candidate = structuredClone(savedMigrationPlan);
+      const migration = operationsOf(candidate)[0] as UnknownRecord;
+      for (const imageKey of ['before', 'after']) {
+        const image = migration[imageKey] as UnknownRecord;
+        image.location = { kind: 'portable', token: 'project:other.toml' };
+      }
+      for (const precondition of resourcesOf(candidate)) {
+        if ((precondition.resource as UnknownRecord).kind === 'manifest-bytes') {
+          (precondition.resource as UnknownRecord).location = {
+            kind: 'portable',
+            token: 'project:other.toml',
+          };
+        }
+      }
+      candidate.manifestSemanticHash =
+        'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      expectInvalid(candidate, 'migration images cannot bypass the selected manifest pair');
+    }
+    {
+      const candidate = structuredClone(savedMigrationPlan);
+      const migration = operationsOf(candidate)[0] as UnknownRecord;
+      const after = migration.after as UnknownRecord;
+      after.semanticHash =
+        'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      expectInvalid(candidate, 'project migration preserves semantic identity');
+    }
+    {
+      const candidate = structuredClone(savedMigrationPlan);
+      const migration = operationsOf(candidate)[1] as UnknownRecord;
+      const after = migration.after as UnknownRecord;
+      after.projectRoot = { kind: 'portable', token: 'project:other-root' };
+      expectInvalid(candidate, 'ledger migration preserves project identity');
+    }
+
+    {
+      const candidate = structuredClone(golden);
+      const selection = (candidate.selectionPreconditions as UnknownRecord[])[0] as UnknownRecord;
+      const member = (selection.members as UnknownRecord[])[0] as UnknownRecord;
+      (member.resourceHash as UnknownRecord).domain = 'source-content';
+      expectInvalid(candidate, 'selection member hashes match their resource domains');
+    }
+    {
+      const candidate = structuredClone(golden);
+      const capabilityCheck = (candidate.checks as UnknownRecord[]).find(
+        ({ kind }) => kind === 'capability',
+      ) as UnknownRecord;
+      capabilityCheck.capabilityPreconditionId = 'precondition:live-absent';
+      expectInvalid(candidate, 'capability checks resolve within the capability family');
+    }
+    {
+      const candidate = structuredClone(golden);
+      (candidate.artifactPair as UnknownRecord).manifest = {
+        kind: 'portable',
+        token: '/workspace/private/skills.toml',
+      };
+      expectInvalid(candidate, 'portable location tags cannot hide absolute paths');
+    }
+    for (const token of [
+      'https://example.com/skills.toml',
+      '../outside/skills.toml',
+      'project:../outside/skills.toml',
+    ]) {
+      const candidate = structuredClone(golden);
+      (candidate.artifactPair as UnknownRecord).manifest = { kind: 'portable', token };
+      expectInvalid(candidate, `portable location rejects URL or escape spelling: ${token}`);
+    }
+    {
+      const candidate = structuredClone(golden);
+      (candidate.artifactPair as UnknownRecord).manifest = {
+        kind: 'machine-bound',
+        path: 'project:relative-manifest',
+      };
+      candidate.portability = {
+        kind: 'machine-bound',
+        reasons: [
+          {
+            code: 'absolute-artifact-selector',
+            message: 'plan binds an absolute artifact selector',
+            path: 'project:relative-manifest',
+            preconditionIds: ['precondition:live-absent'],
+          },
+        ],
+      };
+      expectInvalid(candidate, 'machine-bound location tags require absolute paths');
+    }
+    {
+      const candidate = structuredClone(golden);
+      const operation = operationsOf(candidate)[0] as UnknownRecord;
+      const sources = [
+        operation.source as UnknownRecord,
+        (operation.after as UnknownRecord).source as UnknownRecord,
+        ...(candidate.checks as UnknownRecord[]).flatMap((check) =>
+          check.kind === 'source-resolution' || check.kind === 'content-integrity'
+            ? [check.source as UnknownRecord]
+            : [],
+        ),
+      ];
+      for (const source of sources) {
+        (source.identity as UnknownRecord).host = 'https://git.example.com/team/skills.git';
+      }
+      expectInvalid(candidate, 'portable sources require canonical credential-free identities');
+    }
+    {
+      const candidate = structuredClone(golden);
+      const source = (operationsOf(candidate)[0] as UnknownRecord).source as UnknownRecord;
+      source.sourcePath = 'different/path';
+      expectInvalid(candidate, 'portable source paths match canonical source identity');
+    }
+    const lockCodec = registry.get('lock', 1);
+    expect(lockCodec).toBeDefined();
+    if (lockCodec === undefined) return;
+    const lockDecoded = unwrap(
+      lockCodec.decode(fixtureBytes('lock-v1.golden.toml')),
+      'lock relationship control decode',
+    );
+    const lockValue = unwrap(lockCodec.toDto(lockDecoded.model), 'lock relationship control DTO');
+    const lockControl = structuredClone(golden);
+    operationsOf(lockControl).push({
+      operationId: 'operation:write-lock',
+      groupId: 'group:write-lock',
+      pairId: null,
+      kind: 'write-lock',
+      dependsOn: [],
+      skill: null,
+      source: null,
+      tool: null,
+      scope: null,
+      before: {
+        kind: 'lock',
+        location: structuredClone((lockControl.artifactPair as UnknownRecord).lock),
+        version: 1,
+        canonicalHash: lockControl.lockCanonicalHash,
+        value: lockValue,
+      },
+      after: {
+        kind: 'lock',
+        location: structuredClone((lockControl.artifactPair as UnknownRecord).lock),
+        version: 1,
+        canonicalHash: lockControl.lockCanonicalHash,
+        value: lockValue,
+      },
+      reason: { code: 'write-lock', message: 'write lock' },
+      selectionSource: 'explicit-targets',
+      preconditionIds: [],
+      requiredCheckIds: [],
+      reversibility: { kind: 'none', retentionResourceIds: [] },
+      mutates: { live: false, manifest: false, lock: true, ledger: false },
+      conflict: null,
+    });
+    expectValid(lockControl, 'root lock hash control');
+    {
+      const candidate = structuredClone(lockControl);
+      candidate.lockCanonicalHash =
+        'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      expectInvalid(candidate, 'root lock hash binds the selected current image');
+    }
+    {
+      const candidate = structuredClone(lockControl);
+      const operation = operationsOf(candidate).find(
+        ({ kind }) => kind === 'write-lock',
+      ) as UnknownRecord;
+      (operation.before as UnknownRecord).location = {
+        kind: 'portable',
+        token: 'project:other.lock',
+      };
+      (operation.after as UnknownRecord).location = {
+        kind: 'portable',
+        token: 'project:other.lock',
+      };
+      expectInvalid(candidate, 'lock operations cannot bypass the selected artifact pair');
+    }
+    const absentLock = structuredClone(golden);
+    absentLock.lockCanonicalHash = null;
+    resourcesOf(absentLock).push({
+      preconditionId: 'precondition:lock-absent',
+      resource: {
+        kind: 'lock',
+        location: structuredClone((absentLock.artifactPair as UnknownRecord).lock),
+      },
+      expectedState: 'absent',
+      expectedHash: {
+        domain: 'lock-canonical',
+        hashSchemaVersion: 1,
+        digest: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      },
+      expectedRevision: null,
+    });
+    expectValid(absentLock, 'null root lock hash with absent precondition control');
+    {
+      const candidate = structuredClone(absentLock);
+      candidate.resourcePreconditions = resourcesOf(candidate).filter(
+        ({ preconditionId }) => preconditionId !== 'precondition:lock-absent',
+      );
+      expectInvalid(candidate, 'null root lock hash requires an absent precondition');
+    }
+    {
+      const candidate = structuredClone(absentLock);
+      const precondition = resourcesOf(candidate).find(
+        ({ preconditionId }) => preconditionId === 'precondition:lock-absent',
+      ) as UnknownRecord;
+      (precondition.resource as UnknownRecord).location = {
+        kind: 'portable',
+        token: 'project:other.lock',
+      };
+      expectInvalid(candidate, 'null root lock hash binds absence at the selected lock');
+    }
+
+    const machineReason = (code: string, message: string, path: string): UnknownRecord => ({
+      code,
+      message,
+      path,
+      preconditionIds: ['precondition:live-absent'],
+    });
+    const machineControl = (
+      code: string,
+      message: string,
+      path: string,
+      mutate: (plan: UnknownRecord) => void,
+    ): UnknownRecord => {
+      const candidate = structuredClone(golden);
+      mutate(candidate);
+      candidate.portability = {
+        kind: 'machine-bound',
+        reasons: [machineReason(code, message, path)],
+      };
+      return candidate;
+    };
+    const machineCases = [
+      machineControl(
+        'absolute-artifact-selector',
+        'plan binds an absolute artifact selector',
+        '/workspace/skills.toml',
+        (plan) => {
+          (plan.artifactPair as UnknownRecord).manifest = {
+            kind: 'machine-bound',
+            path: '/workspace/skills.toml',
+          };
+        },
+      ),
+      machineControl(
+        'local-project-root',
+        'plan binds a local project root',
+        '/workspace/project',
+        (plan) => {
+          const location = { kind: 'machine-bound', path: '/workspace/project' };
+          for (const operation of operationsOf(plan)) {
+            for (const key of ['before', 'after']) {
+              const image = operation[key] as UnknownRecord;
+              const resource = image.resource as UnknownRecord;
+              resource.projectRoot = structuredClone(location);
+            }
+          }
+          for (const precondition of resourcesOf(plan)) {
+            (precondition.resource as UnknownRecord).projectRoot = structuredClone(location);
+          }
+          for (const precondition of plan.selectionPreconditions as UnknownRecord[]) {
+            for (const member of precondition.members as UnknownRecord[]) {
+              (member.resource as UnknownRecord).projectRoot = structuredClone(location);
+            }
+          }
+        },
+      ),
+      machineControl(
+        'local-dev-source',
+        'plan binds a local development source',
+        '/workspace/dev-skill',
+        (plan) => {
+          plan.diagnostics = [
+            warningDiagnostic(
+              { groupId: null, pairId: null, operationId: null },
+              {
+                skill: null,
+                source: {
+                  kind: 'local-dev',
+                  path: '/workspace/dev-skill',
+                  contentHash:
+                    'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+                },
+                tool: null,
+                scope: null,
+                path: null,
+              },
+            ),
+          ];
+        },
+      ),
+      machineControl(
+        'absolute-live-placement',
+        'plan binds an absolute live placement',
+        '/workspace/.codex/skills/review',
+        (plan) => {
+          const location = {
+            kind: 'machine-bound',
+            path: '/workspace/.codex/skills/review',
+          };
+          for (const operation of operationsOf(plan)) {
+            for (const key of ['before', 'after']) {
+              const image = operation[key] as UnknownRecord;
+              (image.resource as UnknownRecord).location = structuredClone(location);
+            }
+          }
+          for (const precondition of resourcesOf(plan)) {
+            (precondition.resource as UnknownRecord).location = structuredClone(location);
+          }
+          for (const precondition of plan.selectionPreconditions as UnknownRecord[]) {
+            for (const member of precondition.members as UnknownRecord[]) {
+              (member.resource as UnknownRecord).location = structuredClone(location);
+            }
+          }
+        },
+      ),
+      machineControl(
+        'custom-absolute-target',
+        'plan binds a custom absolute target',
+        '/workspace/custom-target',
+        (plan) => {
+          plan.diagnostics = [
+            warningDiagnostic(
+              { groupId: null, pairId: null, operationId: null },
+              {
+                skill: null,
+                source: null,
+                tool: null,
+                scope: null,
+                path: { kind: 'machine-bound', path: '/workspace/custom-target' },
+              },
+            ),
+          ];
+        },
+      ),
+    ];
+    for (const [index, candidate] of machineCases.entries()) {
+      expectValid(candidate, `machine binding code ${index} control`);
+    }
+    {
+      const candidate = structuredClone(savedMigrationPlan);
+      const migration = operationsOf(candidate)[0] as UnknownRecord;
+      for (const imageKey of ['before', 'after']) {
+        const image = migration[imageKey] as UnknownRecord;
+        const defaults = (image.value as UnknownRecord).defaults as UnknownRecord;
+        defaults.path = '/workspace/skills';
+      }
+      expectInvalid(candidate, 'portable plans reject absolute manifest snapshot paths');
+    }
+    {
+      const candidate = structuredClone(machineCases[0] as UnknownRecord);
+      const reason = ((candidate.portability as UnknownRecord).reasons as UnknownRecord[])[0];
+      if (reason === undefined) throw new Error('missing machine reason control');
+      reason.message = 'wrong interpolated message';
+      expectInvalid(candidate, 'machine reasons use fixed messages');
+    }
+    {
+      const candidate = structuredClone(machineCases[0] as UnknownRecord);
+      const reason = ((candidate.portability as UnknownRecord).reasons as UnknownRecord[])[0];
+      if (reason === undefined) throw new Error('missing machine reason control');
+      reason.preconditionIds = ['precondition:selection'];
+      expectInvalid(candidate, 'machine reasons reference resource preconditions only');
+    }
+    {
+      const candidate = structuredClone(machineCases[0] as UnknownRecord);
+      (candidate.portability as UnknownRecord).reasons = [];
+      expectInvalid(candidate, 'machine bindings require a complete reason bijection');
+    }
+    {
+      const candidate = structuredClone(golden);
+      candidate.portability = {
+        kind: 'machine-bound',
+        reasons: [
+          machineReason(
+            'absolute-artifact-selector',
+            'plan binds an absolute artifact selector',
+            '/workspace/extra',
+          ),
+        ],
+      };
+      expectInvalid(candidate, 'machine reasons cannot exceed the actual bindings');
     }
   });
 

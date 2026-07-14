@@ -24,7 +24,7 @@ import type { ClockPort, FileReadPort, FileWritePort, IdPort, LockPort } from '.
 import { type Result, err, ok } from '../result.ts';
 import { FLIP_TOOLS, type FlipTool, type LedgerFile, type PairRecord } from './types.ts';
 
-type LedgerReadPorts = Pick<FileReadPort, 'pathKind' | 'readText'> & Pick<ClockPort, 'wallNowIso'>;
+type LedgerReadPorts = Pick<FileReadPort, 'pathKind' | 'readBytes'> & Pick<ClockPort, 'wallNowIso'>;
 type LedgerWritePorts = Pick<
   FileWritePort,
   'writeTextFile' | 'fsyncFile' | 'rename' | 'fsyncDir' | 'removeTree'
@@ -38,7 +38,6 @@ const isPermError = (e: unknown): boolean => {
   return code === 'EACCES' || code === 'EPERM';
 };
 
-const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const ledgerV1Codec = artifactContractRegistry.get('ledger', 1) as ArtifactCodec<
   'ledger',
@@ -206,9 +205,9 @@ export const readLedger = async (
     return ok(emptyLedger(env.wallNowIso()));
   }
 
-  let text: string;
+  let bytes: Uint8Array;
   try {
-    text = await env.readText(ledgerPath);
+    bytes = await env.readBytes(ledgerPath);
   } catch (e) {
     if (isPermError(e)) {
       return err(permissionDeniedError(`cannot read ledger: ${errorMessage(e)}`, ledgerPath));
@@ -216,7 +215,6 @@ export const readLedger = async (
     return err(ledgerError(`cannot read ledger: ${errorMessage(e)}`, ledgerPath));
   }
 
-  const bytes = encoder.encode(text);
   const decodedV1 = ledgerV1Codec.decode(bytes);
   if (decodedV1.ok) {
     const dto = ledgerV1Codec.toDto(decodedV1.value.model);

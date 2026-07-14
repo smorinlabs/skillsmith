@@ -14,7 +14,8 @@ import { type ProjectConfigMigration, planProjectConfigMigration } from './repos
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
-const exactKeys = (input: object, expected: readonly string[]): boolean => {
+const exactKeys = (input: unknown, expected: readonly string[]): boolean => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return false;
   const actual = Object.keys(input);
   return actual.length === expected.length && expected.every((key) => actual.includes(key));
 };

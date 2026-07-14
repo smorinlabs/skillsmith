@@ -15,6 +15,7 @@ import {
   readManifestArtifact,
   readSavedPlanArtifact,
 } from '../../src/artifacts/repository.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
 
 const TS08 = join(import.meta.dir, '../../../../tests/ergonomics/fixtures/p2-ts08');
 const TS06_MIGRATIONS = join(
@@ -151,6 +152,23 @@ describe('artifact repository', () => {
     }
   });
 
+  test('reads production filesystem Buffer results through the owned repository boundary', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-artifact-production-read-'));
+    roots.push(root);
+    const path = join(root, 'skillsmith.toml');
+    await writeFile(path, await readFile(join(TS08, 'manifest-v1.golden.toml')));
+    const ports = await defaultRuntimePorts();
+    const envelope = unwrap(await readManifestArtifact(ports, path));
+    expect(envelope).toMatchObject({
+      state: 'present',
+      artifact: 'manifest',
+      sourceVersion: 1,
+      currentVersion: 1,
+      canonical: true,
+      migration: null,
+    });
+  });
+
   test('plans the exact lossless manifest migration and exposes it on legacy reads', async () => {
     const fixtures = await Bun.file(TS06_MIGRATIONS).json();
     for (const fixture of fixtures.projectMigrations as readonly {
@@ -194,6 +212,97 @@ describe('artifact repository', () => {
       '/fixture/plan.json',
     );
     expectError(canonical, 'sensitive-content', 3);
+
+    const exactCanaryPlan = await Bun.file(join(TS08, 'plan-v1.golden.json')).json();
+    exactCanaryPlan.skillsmithVersion = 'P17_SECRET_CANARY';
+    const reordered = Object.fromEntries([
+      ['kind', exactCanaryPlan.kind],
+      ['schemaVersion', exactCanaryPlan.schemaVersion],
+      ...Object.entries(exactCanaryPlan).filter(
+        ([key]) => key !== 'kind' && key !== 'schemaVersion',
+      ),
+    ]);
+    const mixed = await readSavedPlanArtifact(
+      readPorts(encoder.encode(`${JSON.stringify(reordered, null, 2)}\n`)),
+      '/fixture/plan.json',
+    );
+    expectError(mixed, 'noncanonical', 3);
+    const exactCanonical = await readSavedPlanArtifact(
+      readPorts(encoder.encode(`${JSON.stringify(exactCanaryPlan, null, 2)}\n`)),
+      '/fixture/plan.json',
+    );
+    expectError(exactCanonical, 'sensitive-content', 3);
+  });
+
+  test('preserves distinct sensitive values while probing repository precedence', async () => {
+    const plan = await Bun.file(join(TS08, 'plan-v1.golden.json')).json();
+    const paths = ['/workspace/ghp_AAAAAAAAA', '/workspace/ghp_BBBBBBBBB'];
+    plan.diagnostics = paths.map((path, index) => ({
+      diagnosticId: `diagnostic:sensitive-${index}`,
+      kind: 'warning',
+      severity: 'warning',
+      refusalClass: null,
+      affected: {
+        skill: null,
+        source: null,
+        tool: null,
+        scope: null,
+        path: { kind: 'machine-bound', path },
+      },
+      correlation: { groupId: null, pairId: null, operationId: null },
+      reason: { code: 'probe', message: 'probe' },
+      selectionSource: 'explicit-targets',
+    }));
+    plan.portability = {
+      kind: 'machine-bound',
+      reasons: paths.map((path) => ({
+        code: 'custom-absolute-target',
+        message: 'plan binds a custom absolute target',
+        path,
+        preconditionIds: ['precondition:live-absent'],
+      })),
+    };
+    const source = `${JSON.stringify(plan, null, 2)}\n`;
+
+    const safeControl = unwrap(
+      await readSavedPlanArtifact(
+        readPorts(
+          encoder.encode(
+            source
+              .replaceAll('ghp_AAAAAAAAA', 'private-a')
+              .replaceAll('ghp_BBBBBBBBB', 'private-b'),
+          ),
+        ),
+        '/fixture/plan.json',
+      ),
+    );
+    expect(safeControl).toMatchObject({ state: 'present', canonical: true });
+
+    const result = await readSavedPlanArtifact(
+      readPorts(encoder.encode(source)),
+      '/fixture/plan.json',
+    );
+    expectError(result, 'sensitive-content', 3);
+    expect(JSON.stringify(result)).not.toContain('ghp_AAAAAAAAA');
+    expect(JSON.stringify(result)).not.toContain('ghp_BBBBBBBBB');
+
+    const reversed = structuredClone(plan);
+    reversed.portability.reasons.reverse();
+    const reversedResult = await readSavedPlanArtifact(
+      readPorts(encoder.encode(`${JSON.stringify(reversed, null, 2)}\n`)),
+      '/fixture/plan.json',
+    );
+    expectError(reversedResult, 'noncanonical', 3);
+
+    const collision = structuredClone(plan);
+    const ordinary = '/workspace/redacted-value-000001';
+    collision.diagnostics[1].affected.path.path = ordinary;
+    collision.portability.reasons[1].path = ordinary;
+    const collisionResult = await readSavedPlanArtifact(
+      readPorts(encoder.encode(`${JSON.stringify(collision, null, 2)}\n`)),
+      '/fixture/plan.json',
+    );
+    expectError(collisionResult, 'sensitive-content', 3);
   });
 
   test('executes only an exact fresh migration through the single-file coordinator', async () => {
@@ -210,6 +319,11 @@ describe('artifact repository', () => {
     await chmod(path, fixture.mode);
     const operation = unwrap(planProjectConfigMigration(fixture.before));
     const ports = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const invalid = await executeProjectConfigMigration(ports, path, null as never);
+    expect(invalid).toMatchObject({
+      ok: false,
+      error: { code: 'artifact-mutation', reason: 'invalid-request' },
+    });
     const result = unwrap(await executeProjectConfigMigration(ports, path, operation));
     expect(result.outcome).toBe('committed');
     expect(await readFile(path, 'utf8')).toBe(fixture.after);

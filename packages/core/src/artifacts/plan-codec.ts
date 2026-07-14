@@ -1,5 +1,6 @@
 import { types as utilTypes } from 'node:util';
 import { z } from 'zod';
+import { SUPPORTED_TOOLS } from '../agents/registry.ts';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import {
@@ -9,124 +10,36 @@ import {
   canonicalJsonBytes,
   decodeArtifactUtf8,
 } from './codec.ts';
+import {
+  normalizePortablePath,
+  normalizeRegistryIdentity,
+  normalizeSourceIdentity,
+  validateManifestName,
+  validateRequestedRef,
+} from './identity.ts';
+import { classifyArtifactSelectorToken } from './pair.ts';
 import type {
   PlanImageV1,
+  PlanLocationV1,
   PlanOperationIntentV1,
   PlanOperationV1,
+  PlanSourceV1,
+  ResourceIdentityV1,
+  ResourcePreconditionV1,
   SavedPlanV1,
   SavedPlanV1Dto,
 } from './plan-types.ts';
 
+const STATIC_PATHS = new Set(
+  'schemaVersion kind skillsmithVersion executorSchemaVersion hashSchemaVersion portability artifactPair manifestSemanticHash lockCanonicalHash options selection operations checks diagnostics resourcePreconditions selectionPreconditions capabilityPreconditions reasons manifest lock lockSource prune locked selectionSource skills tools scopes operationId groupId pairId dependsOn skill source tool scope before after reason preconditionIds requiredCheckIds reversibility mutates conflict resource classification representation linkTarget dangling contentHash location shape version byteHash semanticHash value projectRoot identity host repository path requestedRef resolvedSha sourcePath defaults registry default name ref placement hashSchemaVersion manifestHash expectedState expectedHash expectedRevision domain digest members resourceHash operation capabilityVersion supported live ledger retentionResourceIds code message class normal forced target backup checkId blocking operationIds capabilityPreconditionId expectedContentHash mode diagnosticId severity refusalClass affected correlation unexpected'.split(
+    ' ',
+  ),
+);
 const SECRET_CANARY = 'P17_SECRET_CANARY';
-const STATIC_PATHS = new Set([
-  'schemaVersion',
-  'kind',
-  'skillsmithVersion',
-  'executorSchemaVersion',
-  'hashSchemaVersion',
-  'portability',
-  'artifactPair',
-  'manifestSemanticHash',
-  'lockCanonicalHash',
-  'options',
-  'selection',
-  'operations',
-  'checks',
-  'diagnostics',
-  'resourcePreconditions',
-  'selectionPreconditions',
-  'capabilityPreconditions',
-  'reasons',
-  'manifest',
-  'lock',
-  'lockSource',
-  'prune',
-  'locked',
-  'selectionSource',
-  'skills',
-  'tools',
-  'scopes',
-  'operationId',
-  'groupId',
-  'pairId',
-  'dependsOn',
-  'skill',
-  'source',
-  'tool',
-  'scope',
-  'before',
-  'after',
-  'reason',
-  'preconditionIds',
-  'requiredCheckIds',
-  'reversibility',
-  'mutates',
-  'conflict',
-  'resource',
-  'classification',
-  'representation',
-  'linkTarget',
-  'dangling',
-  'contentHash',
-  'location',
-  'shape',
-  'version',
-  'byteHash',
-  'semanticHash',
-  'value',
-  'projectRoot',
-  'identity',
-  'host',
-  'repository',
-  'path',
-  'requestedRef',
-  'resolvedSha',
-  'sourcePath',
-  'defaults',
-  'registry',
-  'default',
-  'name',
-  'ref',
-  'placement',
-  'hashSchemaVersion',
-  'manifestHash',
-  'expectedState',
-  'expectedHash',
-  'expectedRevision',
-  'domain',
-  'digest',
-  'members',
-  'resourceHash',
-  'operation',
-  'capabilityVersion',
-  'supported',
-  'live',
-  'ledger',
-  'retentionResourceIds',
-  'code',
-  'message',
-  'class',
-  'normal',
-  'forced',
-  'target',
-  'backup',
-  'checkId',
-  'blocking',
-  'operationIds',
-  'capabilityPreconditionId',
-  'expectedContentHash',
-  'mode',
-  'diagnosticId',
-  'severity',
-  'refusalClass',
-  'affected',
-  'correlation',
-  'unexpected',
-]);
 
 type Path = readonly (string | number)[];
 type SnapshotFailure = {
-  readonly reason: 'invalid-shape' | 'sensitive-content';
+  readonly reason: 'invalid-shape';
   readonly path: Path;
 };
 
@@ -145,9 +58,6 @@ const codecError = (
     ),
   );
 
-const isSensitive = (value: string): boolean =>
-  value.includes(SECRET_CANARY) || containsSensitiveMaterial(value);
-
 const snapshotOrdinary = (
   input: unknown,
   path: Path = [],
@@ -159,7 +69,7 @@ const snapshotOrdinary = (
     return err({ reason: 'invalid-shape', path });
   }
   if (typeof input === 'string') {
-    return isSensitive(input) ? err({ reason: 'sensitive-content', path }) : ok(input);
+    return ok(input);
   }
   if (
     input === null ||
@@ -206,19 +116,19 @@ const snapshotOrdinary = (
     }
     const clone: Record<string, unknown> = {};
     for (const key of Reflect.ownKeys(input)) {
-      if (typeof key !== 'string' || isSensitive(key)) {
-        return err({
-          reason: typeof key === 'string' ? 'sensitive-content' : 'invalid-shape',
-          path,
-        });
-      }
+      if (typeof key !== 'string') return err({ reason: 'invalid-shape', path });
       const descriptor = Object.getOwnPropertyDescriptor(input, key);
       if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
         return err({ reason: 'invalid-shape', path: [...path, key] });
       }
       const child = snapshotOrdinary(descriptor.value, [...path, key], active, budget);
       if (!child.ok) return child;
-      clone[key] = child.value;
+      Object.defineProperty(clone, key, {
+        value: child.value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     return ok(clone);
   } catch {
@@ -226,6 +136,37 @@ const snapshotOrdinary = (
   } finally {
     active.delete(input);
   }
+};
+
+const sensitiveArtifactPath = (input: unknown): Path | null => {
+  const pending: { readonly value: unknown; readonly path: Path }[] = [{ value: input, path: [] }];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined) break;
+    if (
+      typeof current.value === 'string' &&
+      (current.value.includes(SECRET_CANARY) || containsSensitiveMaterial(current.value))
+    ) {
+      return current.path;
+    }
+    if (Array.isArray(current.value)) {
+      for (let index = current.value.length - 1; index >= 0; index -= 1) {
+        pending.push({ value: current.value[index], path: [...current.path, index] });
+      }
+    } else if (typeof current.value === 'object' && current.value !== null) {
+      const entries = Object.entries(current.value);
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index];
+        if (entry === undefined) continue;
+        const [key, value] = entry;
+        if (key.includes(SECRET_CANARY) || containsSensitiveMaterial(key)) {
+          return [...current.path, key];
+        }
+        pending.push({ value, path: [...current.path, key] });
+      }
+    }
+  }
+  return null;
 };
 
 const hasForbiddenScalar = (value: string): boolean =>
@@ -238,13 +179,12 @@ const ordinaryString = (maximum: number) =>
     .string()
     .min(1)
     .max(maximum)
-    .refine((value) => !hasForbiddenScalar(value))
-    .refine((value) => !isSensitive(value));
+    .refine((value) => !hasForbiddenScalar(value));
 const scalarString = ordinaryString(4096);
 const id = ordinaryString(256).refine((value) => value.trim() === value && value.length > 0);
 const code = z.string().regex(/^[a-z][a-z0-9-]{0,127}$/u);
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/u);
-const tool = z.enum(['claude-code', 'codex', 'kilo-code', 'opencode']);
+const tool = z.enum(SUPPORTED_TOOLS);
 const scope = z.enum(['user', 'project']);
 const selectionSource = z.enum(['explicit-targets', 'explicit-all', 'bounded-default']);
 const unique = <T>(values: readonly T[]): boolean => new Set(values).size === values.length;
@@ -262,20 +202,81 @@ const classUnion = (options: readonly z.ZodTypeAny[]): z.ZodTypeAny =>
     options as unknown as [ClassUnionOption, ClassUnionOption, ...ClassUnionOption[]],
   );
 
+type SourceIdentityValue = Readonly<{
+  host: string;
+  repository: string;
+  path: string | null;
+}>;
+
+const portableToken = (value: string): boolean => {
+  if (
+    classifyArtifactSelectorToken(value, 'posix') !== 'portable' ||
+    classifyArtifactSelectorToken(value, 'windows') !== 'portable'
+  ) {
+    return false;
+  }
+  let relative = value;
+  if (relative.startsWith('./') || relative.startsWith('~/')) {
+    relative = relative.slice(2);
+  } else {
+    const namespaced = /^(?:project|store|user):(.*)$/u.exec(relative);
+    if (namespaced !== null) relative = namespaced[1] ?? '';
+    else if (relative.includes(':')) return false;
+  }
+  return (
+    relative.length > 0 &&
+    !relative.startsWith('/') &&
+    !relative.endsWith('/') &&
+    !relative.includes('//') &&
+    relative
+      .split('/')
+      .every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')
+  );
+};
+const machineBoundPath = (value: string): boolean =>
+  classifyArtifactSelectorToken(value, 'posix') === 'machine-bound' ||
+  classifyArtifactSelectorToken(value, 'windows') === 'machine-bound';
+
+const canonicalSourceIdentity = (value: SourceIdentityValue): boolean => {
+  const token = `${value.host}/${value.repository}${value.path === null ? '' : `//${value.path}`}`;
+  const normalized = normalizeSourceIdentity(token);
+  return (
+    normalized.ok &&
+    normalized.value.host === value.host &&
+    normalized.value.repository === value.repository &&
+    normalized.value.path === value.path
+  );
+};
+
+const canonicalLockSource = (value: string): SourceIdentityValue | null => {
+  const normalized = normalizeSourceIdentity(value);
+  if (!normalized.ok) return null;
+  const canonical = `${normalized.value.host}/${normalized.value.repository}${
+    normalized.value.path === null ? '' : `//${normalized.value.path}`
+  }`;
+  return canonical === value ? normalized.value : null;
+};
+
+const validRequestedRef = (value: string | null): boolean =>
+  value === null || validateRequestedRef(value).ok;
+const requestedRef = scalarString.refine((value) => validateRequestedRef(value).ok).nullable();
+const resolvedSha = z.string().regex(/^[0-9a-f]{40}$/u);
+const manifestName = scalarString.refine((value) => validateManifestName(value).ok);
+
 const location = kindUnion([
-  strictSchema({ kind: z.literal('portable'), token: scalarString }),
-  strictSchema({ kind: z.literal('machine-bound'), path: scalarString }),
+  strictSchema({ kind: z.literal('portable'), token: scalarString.refine(portableToken) }),
+  strictSchema({ kind: z.literal('machine-bound'), path: scalarString.refine(machineBoundPath) }),
 ]);
 const sourceIdentity = strictSchema({
   host: scalarString,
   repository: scalarString,
   path: scalarString.nullable(),
-});
+}).refine((value) => canonicalSourceIdentity(value as SourceIdentityValue));
 const portableSource = strictSchema({
   kind: z.literal('portable'),
   identity: sourceIdentity,
-  requestedRef: scalarString.nullable(),
-  resolvedSha: scalarString,
+  requestedRef,
+  resolvedSha,
   sourcePath: scalarString,
   contentHash: digest,
 });
@@ -289,19 +290,34 @@ const manifestSnapshot = strictSchema({
     tools: z.array(tool).refine(unique).nullable(),
     scope: scope.nullable(),
     path: scalarString.nullable(),
+  })
+    .refine(
+      (value) =>
+        value.path === null ||
+        (value.scope !== null && normalizePortablePath(value.path, value.scope).ok),
+    )
+    .nullable(),
+  registry: strictSchema({
+    default: scalarString
+      .refine((value) => {
+        const normalized = normalizeRegistryIdentity(value);
+        return normalized.ok && normalized.value === value;
+      })
+      .nullable(),
   }).nullable(),
-  registry: strictSchema({ default: scalarString.nullable() }).nullable(),
   skills: z
     .array(
       strictSchema({
-        name: scalarString,
+        name: manifestName,
         source: sourceIdentity,
-        ref: scalarString.nullable(),
+        ref: requestedRef,
         tools: z.array(tool).min(1).refine(unique),
         scope,
         placement: z.enum(['symlink', 'copy']),
         path: scalarString.nullable(),
-      }),
+      }).refine(
+        (value) => value.path === null || normalizePortablePath(value.path, value.scope).ok,
+      ),
     )
     .refine((values) => unique(values.map(({ name }) => name))),
 });
@@ -312,12 +328,24 @@ const lockSnapshot = strictSchema({
   skills: z
     .array(
       strictSchema({
-        name: scalarString,
+        name: manifestName,
         source: scalarString,
-        requestedRef: scalarString.nullable(),
-        resolvedSha: scalarString,
+        requestedRef,
+        resolvedSha,
         sourcePath: scalarString,
         contentHash: digest,
+      }).refine((untypedValue) => {
+        const value = untypedValue as Readonly<{
+          source: string;
+          requestedRef: string | null;
+          sourcePath: string;
+        }>;
+        const identity = canonicalLockSource(value.source);
+        return (
+          identity !== null &&
+          validRequestedRef(value.requestedRef) &&
+          value.sourcePath === (identity.path ?? '.')
+        );
       }),
     )
     .refine((values) => unique(values.map(({ name }) => name))),
@@ -645,6 +673,19 @@ const SavedPlanSchema = strictSchema({
   const operationSet = new Set(operationIds);
   const checkSet = new Set(checkIds);
   const preconditionSet = new Set(preconditionIds);
+  const capabilitySet = new Set(
+    value.capabilityPreconditions.map(({ preconditionId }) => preconditionId),
+  );
+  const operationById = new Map(value.operations.map((item) => [item.operationId, item]));
+  const resourceById = new Map(
+    value.resourcePreconditions.map((item) => [item.preconditionId, item]),
+  );
+  const groupSet = new Set(value.operations.map(({ groupId }) => groupId));
+  const pairGroups = new Set(
+    value.operations.flatMap(({ pairId, groupId }) =>
+      pairId === null ? [] : [`${pairId}\0${groupId}`],
+    ),
+  );
   for (const [index, item] of value.operations.entries()) {
     const earlier = new Set(operationIds.slice(0, index));
     if (item.dependsOn.some((candidate) => !earlier.has(candidate))) {
@@ -657,12 +698,19 @@ const SavedPlanSchema = strictSchema({
       add(['operations', index, 'preconditionIds']);
     }
     if (!operationMatchesMatrix(item as PlanOperationV1)) add(['operations', index]);
+    if (!operationSourceRelationshipsMatch(item)) add(['operations', index, 'source']);
+    if (!artifactOperationTargetsMatch(item, value.artifactPair)) {
+      add(['operations', index]);
+    }
+    if (!migrationPreconditionsMatch(item, resourceById, value.artifactPair.manifest)) {
+      add(['operations', index, 'preconditionIds']);
+    }
   }
   for (const [index, item] of value.checks.entries()) {
     if (item.operationIds.some((candidate) => !operationSet.has(candidate))) {
       add(['checks', index, 'operationIds']);
     }
-    if (item.kind === 'capability' && !preconditionSet.has(item.capabilityPreconditionId)) {
+    if (item.kind === 'capability' && !capabilitySet.has(item.capabilityPreconditionId)) {
       add(['checks', index, 'capabilityPreconditionId']);
     }
     if (
@@ -670,6 +718,12 @@ const SavedPlanSchema = strictSchema({
       item.preconditionIds.some((candidate) => !preconditionSet.has(candidate))
     ) {
       add(['checks', index, 'preconditionIds']);
+    }
+    if (
+      (item.kind === 'source-resolution' || item.kind === 'content-integrity') &&
+      !portableSourceRelationshipMatches(item.source)
+    ) {
+      add(['checks', index, 'source']);
     }
   }
   for (const [index, item] of value.diagnostics.entries()) {
@@ -685,8 +739,31 @@ const SavedPlanSchema = strictSchema({
     if (item.correlation.operationId !== null && !operationSet.has(item.correlation.operationId)) {
       add(['diagnostics', index, 'correlation', 'operationId']);
     }
-    if (item.correlation.pairId !== null && item.correlation.groupId === null) {
+    if (item.correlation.groupId !== null && !groupSet.has(item.correlation.groupId)) {
+      add(['diagnostics', index, 'correlation', 'groupId']);
+    }
+    if (
+      item.correlation.pairId !== null &&
+      (item.correlation.groupId === null ||
+        !pairGroups.has(`${item.correlation.pairId}\0${item.correlation.groupId}`))
+    ) {
       add(['diagnostics', index, 'correlation']);
+    }
+    const correlatedOperation =
+      item.correlation.operationId === null
+        ? undefined
+        : operationById.get(item.correlation.operationId);
+    if (
+      correlatedOperation !== undefined &&
+      ((item.correlation.groupId !== null &&
+        item.correlation.groupId !== correlatedOperation.groupId) ||
+        (item.correlation.pairId !== null &&
+          item.correlation.pairId !== correlatedOperation.pairId))
+    ) {
+      add(['diagnostics', index, 'correlation']);
+    }
+    if (!portableSourceRelationshipMatches(item.affected.source)) {
+      add(['diagnostics', index, 'affected', 'source']);
     }
   }
   for (const [index, item] of value.resourcePreconditions.entries()) {
@@ -698,7 +775,29 @@ const SavedPlanSchema = strictSchema({
       add(['resourcePreconditions', index]);
     }
   }
-  if (value.portability.kind === 'portable' && containsMachineBinding(value)) {
+  for (const [index, item] of value.selectionPreconditions.entries()) {
+    if (
+      item.members.some(
+        (member) => !resourceHashPairMatches(member.resource.kind, member.resourceHash.domain),
+      )
+    ) {
+      add(['selectionPreconditions', index, 'members']);
+    }
+  }
+  if (!rootManifestHashMatches(value)) add(['manifestSemanticHash']);
+  if (!rootLockHashMatches(value)) add(['lockCanonicalHash']);
+  if (
+    value.lockCanonicalHash === null &&
+    !value.resourcePreconditions.some(
+      (item) =>
+        item.resource.kind === 'lock' &&
+        sameLocation(item.resource.location, value.artifactPair.lock) &&
+        item.expectedState === 'absent',
+    )
+  ) {
+    add(['lockCanonicalHash']);
+  }
+  if (!portabilityMatchesBindings(value, resourceById)) {
     add(['portability']);
   }
 });
@@ -712,12 +811,282 @@ const resourceHashPairMatches = (kind: string, domain: string): boolean => {
   return domain === 'resource';
 };
 
-const containsMachineBinding = (value: unknown): boolean => {
-  if (Array.isArray(value)) return value.some(containsMachineBinding);
-  if (value === null || typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
-  if (record.kind === 'machine-bound' || record.kind === 'local-dev') return true;
-  return Object.values(record).some(containsMachineBinding);
+const portableSourceRelationshipMatches = (source: PlanSourceV1 | null): boolean =>
+  source === null ||
+  source.kind === 'local-dev' ||
+  source.sourcePath === (source.identity.path ?? '.');
+
+const imageSourceRelationshipMatches = (imageValue: PlanImageV1): boolean =>
+  imageValue.kind !== 'placement' || portableSourceRelationshipMatches(imageValue.source);
+
+const operationSourceRelationshipsMatch = (operation: PlanOperationV1): boolean =>
+  portableSourceRelationshipMatches(operation.source) &&
+  imageSourceRelationshipMatches(operation.before) &&
+  imageSourceRelationshipMatches(operation.after);
+
+const sameLocation = (left: PlanLocationV1 | null, right: PlanLocationV1 | null): boolean =>
+  left === null || right === null
+    ? left === right
+    : left.kind === 'portable' && right.kind === 'portable'
+      ? left.token === right.token
+      : left.kind === 'machine-bound' && right.kind === 'machine-bound'
+        ? left.path === right.path
+        : false;
+
+const migrationPreconditionsMatch = (
+  operation: PlanOperationV1,
+  resourceById: ReadonlyMap<string, ResourcePreconditionV1>,
+  manifestLocation: PlanLocationV1,
+): boolean => {
+  if (operation.kind !== 'migrate-project-config' && operation.kind !== 'migrate-ledger') {
+    return true;
+  }
+  const referenced = operation.preconditionIds.flatMap((id) => {
+    const item = resourceById.get(id);
+    return item === undefined ? [] : [item];
+  });
+  if (operation.kind === 'migrate-project-config') {
+    const before = operation.before;
+    const after = operation.after;
+    if (
+      before.kind !== 'manifest' ||
+      after.kind !== 'manifest' ||
+      !sameLocation(before.location, manifestLocation) ||
+      !sameLocation(before.location, after.location) ||
+      before.semanticHash !== after.semanticHash
+    ) {
+      return false;
+    }
+    const matching = (item: ResourcePreconditionV1, domain: string, digest: string): boolean =>
+      item.resource.kind === 'manifest-bytes' &&
+      sameLocation(item.resource.location, before.location) &&
+      item.expectedState === 'present' &&
+      item.expectedHash.domain === domain &&
+      item.expectedHash.digest === digest;
+    return (
+      referenced.some((item) => matching(item, 'manifest-semantic', before.semanticHash)) &&
+      referenced.some((item) => matching(item, 'manifest-bytes', before.byteHash))
+    );
+  }
+  const before = operation.before;
+  const after = operation.after;
+  if (
+    before.kind !== 'ledger' ||
+    before.schemaVersion !== 1 ||
+    after.kind !== 'ledger' ||
+    !sameLocation(before.projectRoot, after.projectRoot) ||
+    before.semanticHash !== after.semanticHash
+  ) {
+    return false;
+  }
+  return referenced.some(
+    (item) =>
+      item.resource.kind === 'ledger-schema' &&
+      sameLocation(item.resource.projectRoot, before.projectRoot) &&
+      item.expectedState === 'present' &&
+      item.expectedHash.domain === 'resource' &&
+      item.expectedHash.digest === before.byteHash &&
+      item.expectedRevision?.kind === 'artifact-bytes' &&
+      item.expectedRevision.digest === before.byteHash,
+  );
+};
+
+const artifactOperationTargetsMatch = (
+  operation: PlanOperationV1,
+  artifactPair: SavedPlanV1Dto['artifactPair'],
+): boolean => {
+  if (operation.kind === 'write-manifest') {
+    return (
+      operation.after.kind === 'manifest' &&
+      sameLocation(operation.after.location, artifactPair.manifest) &&
+      (operation.before.kind === 'manifest'
+        ? sameLocation(operation.before.location, artifactPair.manifest)
+        : operation.before.kind === 'absent' &&
+          operation.before.resource.kind === 'manifest-bytes' &&
+          sameLocation(operation.before.resource.location, artifactPair.manifest))
+    );
+  }
+  if (operation.kind === 'migrate-project-config') {
+    return (
+      operation.before.kind === 'manifest' &&
+      operation.after.kind === 'manifest' &&
+      sameLocation(operation.before.location, artifactPair.manifest) &&
+      sameLocation(operation.after.location, artifactPair.manifest)
+    );
+  }
+  if (operation.kind === 'write-lock') {
+    return (
+      operation.after.kind === 'lock' &&
+      sameLocation(operation.after.location, artifactPair.lock) &&
+      (operation.before.kind === 'lock'
+        ? sameLocation(operation.before.location, artifactPair.lock)
+        : operation.before.kind === 'absent' &&
+          operation.before.resource.kind === 'lock' &&
+          sameLocation(operation.before.resource.location, artifactPair.lock))
+    );
+  }
+  return true;
+};
+
+const rootManifestHashMatches = (value: SavedPlanV1Dto): boolean =>
+  value.operations.every(
+    ({ before }) =>
+      before.kind !== 'manifest' ||
+      (sameLocation(before.location, value.artifactPair.manifest) &&
+        before.semanticHash === value.manifestSemanticHash),
+  );
+
+const rootLockHashMatches = (value: SavedPlanV1Dto): boolean =>
+  value.operations.every(({ before }) => {
+    if (before.kind === 'lock' && sameLocation(before.location, value.artifactPair.lock)) {
+      return value.lockCanonicalHash !== null && before.canonicalHash === value.lockCanonicalHash;
+    }
+    if (before.kind === 'lock') return false;
+    if (
+      before.kind === 'absent' &&
+      before.resource.kind === 'lock' &&
+      sameLocation(before.resource.location, value.artifactPair.lock)
+    ) {
+      return value.lockCanonicalHash === null;
+    }
+    if (before.kind === 'absent' && before.resource.kind === 'lock') return false;
+    return true;
+  });
+
+type MachineReasonCode = SavedPlanV1Dto['portability'] extends infer Portability
+  ? Portability extends {
+      readonly kind: 'machine-bound';
+      readonly reasons: readonly (infer Reason)[];
+    }
+    ? Reason extends { readonly code: infer Code }
+      ? Code
+      : never
+    : never
+  : never;
+
+const MACHINE_REASON_MESSAGES: Readonly<Record<MachineReasonCode, string>> = Object.freeze({
+  'absolute-artifact-selector': 'plan binds an absolute artifact selector',
+  'local-project-root': 'plan binds a local project root',
+  'local-dev-source': 'plan binds a local development source',
+  'absolute-live-placement': 'plan binds an absolute live placement',
+  'custom-absolute-target': 'plan binds a custom absolute target',
+});
+
+const collectMachineBindings = (value: SavedPlanV1Dto): ReadonlySet<string> => {
+  const bindings = new Set<string>();
+  const isAbsolutePath = (path: string | null): path is string =>
+    path !== null && (/^(?:\/|[a-z]:[\\/]|\\\\)/iu.test(path) || path.startsWith('//'));
+  const addCustomPath = (path: string | null): void => {
+    if (isAbsolutePath(path)) bindings.add(`custom-absolute-target\0${path}`);
+  };
+  const addLocation = (code: MachineReasonCode, locationValue: PlanLocationV1 | null): void => {
+    if (locationValue?.kind === 'machine-bound') bindings.add(`${code}\0${locationValue.path}`);
+  };
+  const addSource = (source: PlanOperationV1['source']): void => {
+    if (source?.kind === 'local-dev') {
+      bindings.add(`local-dev-source\0${source.path}`);
+    } else if (source?.kind === 'portable') {
+      addCustomPath(source.identity.path);
+      addCustomPath(source.sourcePath);
+    }
+  };
+  const addResource = (resource: ResourceIdentityV1): void => {
+    switch (resource.kind) {
+      case 'manifest-bytes':
+      case 'lock':
+        addLocation('absolute-artifact-selector', resource.location);
+        return;
+      case 'ledger':
+      case 'ledger-schema':
+        addLocation('local-project-root', resource.projectRoot);
+        return;
+      case 'live':
+        addLocation('local-project-root', resource.projectRoot);
+        addLocation('absolute-live-placement', resource.location);
+        return;
+      case 'project-context':
+        addLocation('local-project-root', resource.root);
+        return;
+      case 'store':
+        return;
+    }
+  };
+  const addImage = (imageValue: PlanImageV1): void => {
+    switch (imageValue.kind) {
+      case 'absent':
+        addResource(imageValue.resource);
+        return;
+      case 'placement':
+        addResource(imageValue.resource);
+        addLocation('custom-absolute-target', imageValue.linkTarget);
+        addSource(imageValue.source);
+        return;
+      case 'manifest':
+        addLocation('absolute-artifact-selector', imageValue.location);
+        addCustomPath(imageValue.value.defaults?.path ?? null);
+        for (const skill of imageValue.value.skills) {
+          addCustomPath(skill.source.path);
+          addCustomPath(skill.path);
+        }
+        return;
+      case 'lock':
+        addLocation('absolute-artifact-selector', imageValue.location);
+        for (const skill of imageValue.value.skills) addCustomPath(skill.sourcePath);
+        return;
+      case 'ledger':
+        addLocation('local-project-root', imageValue.projectRoot);
+        return;
+    }
+  };
+
+  addLocation('absolute-artifact-selector', value.artifactPair.manifest);
+  addLocation('absolute-artifact-selector', value.artifactPair.lock);
+  for (const operation of value.operations) {
+    addSource(operation.source);
+    addImage(operation.before);
+    addImage(operation.after);
+    if (operation.conflict !== null) addResource(operation.conflict.target);
+  }
+  for (const check of value.checks) {
+    if (check.kind === 'source-resolution' || check.kind === 'content-integrity') {
+      addSource(check.source);
+    }
+  }
+  for (const diagnostic of value.diagnostics) {
+    addSource(diagnostic.affected.source);
+    addLocation(
+      diagnostic.affected.skill !== null &&
+        diagnostic.affected.tool !== null &&
+        diagnostic.affected.scope !== null
+        ? 'absolute-live-placement'
+        : 'custom-absolute-target',
+      diagnostic.affected.path,
+    );
+  }
+  for (const precondition of value.resourcePreconditions) addResource(precondition.resource);
+  for (const precondition of value.selectionPreconditions) {
+    for (const member of precondition.members) addResource(member.resource);
+  }
+  return bindings;
+};
+
+const portabilityMatchesBindings = (
+  value: SavedPlanV1Dto,
+  resourceById: ReadonlyMap<string, ResourcePreconditionV1>,
+): boolean => {
+  const expected = collectMachineBindings(value);
+  if (value.portability.kind === 'portable') return expected.size === 0;
+  const actual = new Set(value.portability.reasons.map(({ code, path }) => `${code}\0${path}`));
+  return (
+    expected.size > 0 &&
+    actual.size === expected.size &&
+    [...expected].every((binding) => actual.has(binding)) &&
+    value.portability.reasons.every(
+      (reason) =>
+        reason.message === MACHINE_REASON_MESSAGES[reason.code] &&
+        reason.preconditionIds.every((id) => resourceById.has(id)),
+    )
+  );
 };
 
 const flagsEqual = (
@@ -863,9 +1232,14 @@ export const operationMatchesMatrix = (item: PlanOperationV1): boolean => {
   }
 };
 
-export const validatePlanOperationIntentV1 = (
+type ParsedPlanOperationIntent = Readonly<{
+  value: PlanOperationIntentV1;
+  snapshot: unknown;
+}>;
+
+const parsePlanOperationIntentV1 = (
   input: unknown,
-): Result<PlanOperationIntentV1, ArtifactCodecError> => {
+): Result<ParsedPlanOperationIntent, ArtifactCodecError> => {
   const snapshot = ownArtifactDto('journal', input);
   if (!snapshot.ok) return snapshot;
   const parsed = operationIntent.safeParse(snapshot.value);
@@ -881,6 +1255,9 @@ export const validatePlanOperationIntentV1 = (
     requiredCheckIds: [],
   };
   if (!operationMatchesMatrix(full)) return err(codecError('journal', 'invalid-shape'));
+  if (!operationSourceRelationshipsMatch(full)) {
+    return err(codecError('journal', 'invalid-shape', ['source']));
+  }
   const value = parsed.data as PlanOperationIntentV1;
   const canonical: PlanOperationIntentV1 = {
     operationId: value.operationId,
@@ -900,7 +1277,25 @@ export const validatePlanOperationIntentV1 = (
     } as PlanOperationV1['reversibility'],
     conflict: value.conflict,
   };
-  return ok(deepFreeze(canonical));
+  return ok(Object.freeze({ value: deepFreeze(canonical), snapshot: snapshot.value }));
+};
+
+export const validatePlanOperationIntentShapeV1 = (
+  input: unknown,
+): Result<PlanOperationIntentV1, ArtifactCodecError> => {
+  const parsed = parsePlanOperationIntentV1(input);
+  return parsed.ok ? ok(parsed.value.value) : parsed;
+};
+
+export const validatePlanOperationIntentV1 = (
+  input: unknown,
+): Result<PlanOperationIntentV1, ArtifactCodecError> => {
+  const parsed = parsePlanOperationIntentV1(input);
+  if (!parsed.ok) return parsed;
+  const sensitivePath = sensitiveArtifactPath(parsed.value.snapshot);
+  return sensitivePath === null
+    ? ok(parsed.value.value)
+    : err(codecError('journal', 'sensitive-content', sensitivePath));
 };
 
 const firstZodPath = (error: z.ZodError): Path => {
@@ -921,13 +1316,24 @@ export const ownArtifactDto = (
     : err(codecError(artifactId, snapshot.error.reason, snapshot.error.path));
 };
 
-const parsePlan = (input: unknown): Result<SavedPlanV1Dto, ArtifactCodecError> => {
+const parsePlanShape = (input: unknown): Result<SavedPlanV1Dto, ArtifactCodecError> => {
   const snapshot = ownArtifactDto('plan', input);
   if (!snapshot.ok) return snapshot;
   const parsed = SavedPlanSchema.safeParse(snapshot.value);
-  return parsed.success
-    ? ok(parsed.data as SavedPlanV1Dto)
-    : err(codecError('plan', 'invalid-shape', firstZodPath(parsed.error)));
+  if (!parsed.success) {
+    return err(codecError('plan', 'invalid-shape', firstZodPath(parsed.error)));
+  }
+  return ok(parsed.data as SavedPlanV1Dto);
+};
+
+const parsePlan = (input: unknown): Result<SavedPlanV1Dto, ArtifactCodecError> => {
+  const parsed = parsePlanShape(input);
+  if (!parsed.ok) return parsed;
+  const sensitivePath = sensitiveArtifactPath(parsed.value);
+  if (sensitivePath !== null) {
+    return err(codecError('plan', 'sensitive-content', sensitivePath));
+  }
+  return parsed;
 };
 
 const sortStrings = <T extends string>(values: readonly T[]): T[] => [...values].sort();
@@ -1056,6 +1462,13 @@ export const validateSavedPlanV1Dto = (
   return parsed.ok ? ok(deepFreeze(canonicalizePlan(parsed.value))) : parsed;
 };
 
+const validateSavedPlanV1DtoShape = (
+  input: unknown,
+): Result<SavedPlanV1Dto, ArtifactCodecError> => {
+  const parsed = parsePlanShape(input);
+  return parsed.ok ? ok(deepFreeze(canonicalizePlan(parsed.value))) : parsed;
+};
+
 export const fromSavedPlanV1Dto = (dto: SavedPlanV1Dto): Result<SavedPlanV1, ArtifactCodecError> =>
   validateSavedPlanV1Dto(dto);
 
@@ -1148,9 +1561,6 @@ const duplicateJsonMember = (sourceText: string): boolean => {
   return duplicate;
 };
 
-const bytesEqual = (left: Uint8Array, right: Uint8Array): boolean =>
-  left.byteLength === right.byteLength && left.every((value, index) => value === right[index]);
-
 const descriptor = deepFreeze({
   id: 'plan' as const,
   version: 1 as const,
@@ -1199,12 +1609,14 @@ export const savedPlanV1Codec: ArtifactCodec<'plan', 1, SavedPlanV1Dto, SavedPla
       if (version !== 1) {
         return err(codecError('plan', 'unsupported-version', ['schemaVersion'], version));
       }
-      const model = fromSavedPlanV1Dto(input as SavedPlanV1Dto);
+      const model = validateSavedPlanV1DtoShape(input);
       if (!model.ok) return model;
-      const canonical = savedPlanV1Codec.encode(model.value);
-      if (!canonical.ok) return canonical;
-      if (!bytesEqual(decoded.value.bytes, canonical.value)) {
+      if (decoded.value.source !== `${JSON.stringify(model.value, null, 2)}\n`) {
         return err(codecError('plan', 'noncanonical'));
+      }
+      const sensitivePath = sensitiveArtifactPath(model.value);
+      if (sensitivePath !== null) {
+        return err(codecError('plan', 'sensitive-content', sensitivePath));
       }
       return ok(
         deepFreeze({

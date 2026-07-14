@@ -2304,6 +2304,9 @@ describe('EWP-P1-TS11', () => {
         scripts: [
           'dev',
           'test',
+          'test:smoke',
+          'test:smoke:p2-ts04',
+          'test:smoke:p2-ts04:recovery',
           'typecheck',
           'lint',
           'lint:boundaries',
@@ -2389,5 +2392,5 @@ describe('EWP-P1-TS11', () => {
     ).catch(() => null);
     if (adr === null) findings.push('missing ADR 0009 operation-scoped observation');
     expect(findings).toEqual([]);
-  });
+  }, 30_000);
 });

@@ -1056,7 +1056,7 @@ describe('portable lock artifact codec adapter', () => {
         },
       },
     );
-    for (const value of [accessor, hostile, Object.create({ version: 1 }), new Array(2)]) {
+    for (const value of [null, accessor, hostile, Object.create({ version: 1 }), new Array(2)]) {
       expect(() => lockV1Codec.validate(value)).not.toThrow();
       const result = lockV1Codec.validate(value);
       expect(result).toMatchObject({ ok: false, error: { reason: 'invalid-shape' } });

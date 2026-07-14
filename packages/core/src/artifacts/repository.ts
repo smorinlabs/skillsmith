@@ -1,14 +1,15 @@
 import { types as utilTypes } from 'node:util';
 import type { FileReadPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
-import { containsSensitiveMaterial, redactSensitiveString } from '../safety/redaction.ts';
+import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import {
   type ArtifactCodec,
   type ArtifactCodecError,
   type ArtifactId,
   type DecodedArtifact,
   hasSensitiveArtifactContent,
-  ownArtifactBytes,
+  ownArtifactReadBytes,
+  sanitizeArtifactErrorPath,
 } from './codec.ts';
 import { type ArtifactDigest, hashCanonicalInput, hashManifestSemantics } from './hash.ts';
 import type { LogicalJournalV1 } from './journal-types.ts';
@@ -90,25 +91,6 @@ const ERROR_MESSAGES: Readonly<Record<ArtifactRepositoryErrorReason, string>> = 
 });
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
-const REDACTED = '[REDACTED]';
-const SAFE_REDACTION = 'redacted-value';
-
-const safePath = (path: readonly (string | number)[]): readonly (string | number)[] =>
-  Object.freeze(
-    path.slice(0, 16).map((segment) =>
-      typeof segment === 'number' && Number.isSafeInteger(segment) && segment >= 0
-        ? segment
-        : typeof segment === 'string' &&
-            segment.length > 0 &&
-            segment.length <= 64 &&
-            ![...segment].some((character) => {
-              const point = character.codePointAt(0) ?? 0;
-              return point <= 0x1f || point === 0x7f;
-            })
-          ? segment
-          : '*',
-    ),
-  );
 
 export const artifactRepositoryError = (
   artifactId: ArtifactId,
@@ -124,7 +106,7 @@ export const artifactRepositoryError = (
         ? requestedVersion
         : null,
     reason,
-    path: safePath(path),
+    path: sanitizeArtifactErrorPath(artifactId, path),
     exitCode: reason === 'invalid-request' ? 2 : reason === 'permission-denied' ? 6 : 3,
     message: ERROR_MESSAGES[reason],
   });
@@ -205,47 +187,9 @@ const decodeOwnedSource = (
   }
 };
 
-const obviouslyNoncanonical = (codec: ArtifactCodec, source: string): boolean => {
-  if (codec.descriptor.presentation.decode !== 'canonical') return false;
-  if (codec.descriptor.terminalLf && !source.endsWith('\n')) return true;
-  if (codec.descriptor.syntax !== 'json') return false;
-  if (!source.startsWith('{\n') || source.includes('\r') || source.includes('\t')) return true;
-  const lines = source.split('\n');
-  return lines.some((line, index) => {
-    if (line.length === 0 || index === lines.length - 1) return false;
-    if (line.endsWith(' ')) return true;
-    const indentation = line.length - line.trimStart().length;
-    return indentation % 2 !== 0;
-  });
-};
-
-const normalizeSensitivePrecedence = (
-  codec: ArtifactCodec,
-  source: string,
-  error: ArtifactCodecError,
-): ArtifactCodecError => {
-  if (
-    error.reason !== 'sensitive-content' ||
-    codec.descriptor.presentation.decode !== 'canonical'
-  ) {
-    return error;
-  }
-  const redacted = redactSensitiveString(source).split(REDACTED).join(SAFE_REDACTION);
-  if (redacted !== source) {
-    const sanitized = codec.decode(encoder.encode(redacted));
-    if (!sanitized.ok && sanitized.error.reason === 'noncanonical') {
-      return Object.freeze({ ...error, reason: 'noncanonical' as const, path: Object.freeze([]) });
-    }
-  }
-  return obviouslyNoncanonical(codec, source)
-    ? Object.freeze({ ...error, reason: 'noncanonical' as const, path: Object.freeze([]) })
-    : error;
-};
-
 const decodeFromRegistry = (
   artifactId: ArtifactId,
   bytes: Uint8Array,
-  source: string,
 ): Result<
   Readonly<{ codec: ArtifactCodec; decoded: DecodedArtifact<unknown> }>,
   ArtifactRepositoryError
@@ -269,7 +213,7 @@ const decodeFromRegistry = (
     }
   }
   if (!decoded.ok) {
-    return err(mapCodecError(normalizeSensitivePrecedence(codec, source, decoded.error)));
+    return err(mapCodecError(decoded.error));
   }
   return ok(Object.freeze({ codec, decoded: decoded.value }));
 };
@@ -347,11 +291,11 @@ const readArtifact = async <Model>(
   } catch (error) {
     return err(portError(artifactId, error));
   }
-  const owned = ownArtifactBytes(artifactId, input);
+  const owned = ownArtifactReadBytes(artifactId, input);
   if (!owned.ok) return err(artifactRepositoryError(artifactId, null, 'read-failed'));
   const source = decodeOwnedSource(artifactId, owned.value);
   if (!source.ok) return source;
-  const decoded = decodeFromRegistry(artifactId, owned.value, source.value);
+  const decoded = decodeFromRegistry(artifactId, owned.value);
   if (!decoded.ok) return decoded;
   const sourceVersion =
     decoded.value.decoded.source.kind === 'shape'

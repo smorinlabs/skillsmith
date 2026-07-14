@@ -110,7 +110,7 @@ export interface LedgerMigrationV1ToV2 {
       | Readonly<{ readonly kind: 'user' }>
       | Readonly<{ readonly kind: 'project'; readonly root: string }>;
     readonly skill: string;
-    readonly tool: 'claude-code' | 'codex';
+    readonly tool: ToolId;
     readonly txId: string;
   }>[];
 }

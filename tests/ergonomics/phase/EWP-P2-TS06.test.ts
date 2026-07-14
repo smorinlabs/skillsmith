@@ -1499,7 +1499,7 @@ describe('EWP-P2-TS06', () => {
     const readResult = await legacyRead(
       {
         pathKind: async () => 'file',
-        readText: async () => v2Source,
+        readBytes: async () => new TextEncoder().encode(v2Source),
         wallNowIso: () => 'never-used',
       },
       '/fixture/placements.json',

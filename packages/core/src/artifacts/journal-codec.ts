@@ -6,6 +6,7 @@ import {
   artifactCodecError,
   canonicalJsonBytes,
   decodeArtifactUtf8,
+  hasSensitiveArtifactContent,
   unsignedUtf16Compare,
 } from './codec.ts';
 import type {
@@ -15,50 +16,16 @@ import type {
   LogicalJournalV1,
   LogicalJournalV1Dto,
 } from './journal-types.ts';
-import { ownArtifactDto, validatePlanOperationIntentV1 } from './registry.ts';
+import { classifyArtifactSelectorToken } from './pair.ts';
+import { ownArtifactDto, validatePlanOperationIntentShapeV1 } from './registry.ts';
 
 type Path = readonly (string | number)[];
 
-const STATIC_PATHS = new Set([
-  'schemaVersion',
-  'kind',
-  'transactionId',
-  'intent',
-  'context',
-  'parentOperationId',
-  'command',
-  'workflow',
-  'attempt',
-  'startedAt',
-  'disposition',
-  'phase',
-  'actual',
-  'before',
-  'after',
-  'retained',
-  'resourceId',
-  'role',
-  'state',
-  'repositoryRevision',
-  'placementPath',
-  'liveKind',
-  'mode',
-  'symlinkTarget',
-  'contentHash',
-  'location',
-  'shape',
-  'version',
-  'byteHash',
-  'semanticHash',
-  'canonicalHash',
-  'projectRoot',
-  'sourceRole',
-  'path',
-  'retainUntil',
-  'updatedAt',
-  'completedAt',
-  'digest',
-]);
+const STATIC_PATHS = new Set(
+  'schemaVersion kind transactionId intent context parentOperationId command workflow attempt startedAt disposition phase actual before after retained resourceId role state repositoryRevision placementPath liveKind mode symlinkTarget contentHash location shape version byteHash semanticHash canonicalHash projectRoot sourceRole path retainUntil updatedAt completedAt digest'.split(
+    ' ',
+  ),
+);
 
 const codecError = (
   reason: ArtifactCodecError['reason'],
@@ -88,19 +55,62 @@ const ordinaryString = (maximum: number) =>
 const scalarString = ordinaryString(4096);
 const id = ordinaryString(256).refine((value) => value.trim() === value && value.length > 0);
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/u);
+const isLeapYear = (year: number): boolean =>
+  year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+const canonicalTimestamp = (value: string): boolean => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})Z$/u.exec(value);
+  if (match === null) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
+  const monthLengths = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const maximumDay = monthLengths[month - 1] ?? 0;
+  return day >= 1 && day <= maximumDay;
+};
 const timestamp = z
   .string()
   .min(1)
   .max(4096)
   .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u)
   .refine((value) => !hasForbiddenScalar(value))
-  .refine((value) => {
-    const parsed = new Date(value);
-    return !Number.isNaN(parsed.valueOf()) && parsed.toISOString() === value;
-  });
+  .refine(canonicalTimestamp);
+const portableToken = (value: string): boolean => {
+  if (
+    classifyArtifactSelectorToken(value, 'posix') !== 'portable' ||
+    classifyArtifactSelectorToken(value, 'windows') !== 'portable'
+  ) {
+    return false;
+  }
+  let relative = value;
+  if (relative.startsWith('./') || relative.startsWith('~/')) {
+    relative = relative.slice(2);
+  } else {
+    const namespaced = /^(?:project|store|user):(.*)$/u.exec(relative);
+    if (namespaced !== null) relative = namespaced[1] ?? '';
+    else if (relative.includes(':')) return false;
+  }
+  return (
+    relative.length > 0 &&
+    !relative.startsWith('/') &&
+    !relative.endsWith('/') &&
+    !relative.includes('//') &&
+    relative
+      .split('/')
+      .every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')
+  );
+};
+const machineBoundPath = (value: string): boolean =>
+  classifyArtifactSelectorToken(value, 'posix') === 'machine-bound' ||
+  classifyArtifactSelectorToken(value, 'windows') === 'machine-bound';
 const location = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('portable'), token: scalarString }).strict(),
-  z.object({ kind: z.literal('machine-bound'), path: scalarString }).strict(),
+  z.object({ kind: z.literal('portable'), token: scalarString.refine(portableToken) }).strict(),
+  z
+    .object({ kind: z.literal('machine-bound'), path: scalarString.refine(machineBoundPath) })
+    .strict(),
 ]);
 const revision = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('artifact-bytes'), digest }).strict(),
@@ -367,7 +377,9 @@ const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
   return Object.freeze(value);
 };
 
-export const validateJournalV1Dto = (input: unknown): Result<JournalV1Dto, ArtifactCodecError> => {
+export const validateJournalV1DtoShape = (
+  input: unknown,
+): Result<JournalV1Dto, ArtifactCodecError> => {
   const owned = ownArtifactDto('journal', input);
   if (!owned.ok) return owned;
   const parsed = JournalSchema.safeParse(owned.value);
@@ -377,7 +389,7 @@ export const validateJournalV1Dto = (input: unknown): Result<JournalV1Dto, Artif
   const data = parsed.data as unknown as Omit<LogicalJournalV1Dto, 'intent'> & {
     readonly intent: unknown;
   };
-  const intent = validatePlanOperationIntentV1(data.intent);
+  const intent = validatePlanOperationIntentShapeV1(data.intent);
   if (!intent.ok) return intent;
   const value: LogicalJournalV1Dto = {
     schemaVersion: data.schemaVersion,
@@ -393,6 +405,13 @@ export const validateJournalV1Dto = (input: unknown): Result<JournalV1Dto, Artif
   };
   if (!journalRelationshipsValid(value)) return err(codecError('invalid-shape'));
   return ok(deepFreeze(canonicalizeJournal(value)));
+};
+
+export const validateJournalV1Dto = (input: unknown): Result<JournalV1Dto, ArtifactCodecError> => {
+  const shaped = validateJournalV1DtoShape(input);
+  if (!shaped.ok) return shaped;
+  if (hasSensitiveArtifactContent(input)) return err(codecError('sensitive-content'));
+  return shaped;
 };
 
 export const fromJournalV1Dto = (dto: JournalV1Dto): Result<LogicalJournalV1, ArtifactCodecError> =>
@@ -484,9 +503,6 @@ const duplicateJsonMember = (sourceText: string): boolean => {
   return duplicate;
 };
 
-const bytesEqual = (left: Uint8Array, right: Uint8Array): boolean =>
-  left.byteLength === right.byteLength && left.every((value, index) => value === right[index]);
-
 const descriptor = deepFreeze({
   id: 'journal' as const,
   version: 1 as const,
@@ -531,13 +547,12 @@ export const journalV1Codec: ArtifactCodec<'journal', 1, JournalV1Dto, LogicalJo
       if (version !== 1) {
         return err(codecError('unsupported-version', ['schemaVersion'], version));
       }
-      const model = fromJournalV1Dto(input as JournalV1Dto);
+      const model = validateJournalV1DtoShape(input);
       if (!model.ok) return model;
-      const canonical = journalV1Codec.encode(model.value);
-      if (!canonical.ok) return canonical;
-      if (!bytesEqual(decoded.value.bytes, canonical.value)) {
+      if (decoded.value.source !== `${JSON.stringify(model.value, null, 2)}\n`) {
         return err(codecError('noncanonical'));
       }
+      if (hasSensitiveArtifactContent(model.value)) return err(codecError('sensitive-content'));
       return ok(
         deepFreeze({
           source: { kind: 'version' as const, version: 1 },

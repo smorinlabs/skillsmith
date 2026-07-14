@@ -101,6 +101,24 @@ const MAX_DEPTH = 64;
 const MAX_NODES = 16_384;
 const MAX_ERROR_PATH = 16;
 const ARTIFACT_SENSITIVE_CANARY = 'P17_SECRET_CANARY';
+const staticErrorPaths = (fields: string): ReadonlySet<string> => new Set(fields.split(' '));
+const STATIC_ERROR_PATHS: Readonly<Record<ArtifactId, ReadonlySet<string>>> = Object.freeze({
+  manifest: staticErrorPaths(
+    '* version defaults tools scope path registry default skills name source ref placement',
+  ),
+  lock: staticErrorPaths(
+    '* version hashSchemaVersion manifestHash skills name source requestedRef resolvedSha sourcePath contentHash',
+  ),
+  plan: staticErrorPaths(
+    '* schemaVersion kind skillsmithVersion executorSchemaVersion hashSchemaVersion portability artifactPair manifestSemanticHash lockCanonicalHash options selection operations checks diagnostics resourcePreconditions selectionPreconditions capabilityPreconditions reasons manifest lock lockSource prune locked selectionSource skills tools scopes operationId groupId pairId dependsOn skill source tool scope before after reason preconditionIds requiredCheckIds reversibility mutates conflict resource classification representation linkTarget dangling contentHash location shape version byteHash semanticHash value projectRoot identity host repository path requestedRef resolvedSha sourcePath defaults registry default name ref placement manifestHash expectedState expectedHash expectedRevision domain digest members resourceHash operation capabilityVersion supported live ledger retentionResourceIds code message class normal forced target backup checkId blocking operationIds capabilityPreconditionId expectedContentHash mode diagnosticId severity refusalClass affected correlation unexpected',
+  ),
+  ledger: staticErrorPaths(
+    '* schemaVersion kind updatedAt skills projects projectRegistrations transactions history tools placementPath mode dev sourcePath resolvedPath repoRoot sourceRelPath remote recordedAt pinned storePath rev gitSha dirty contentHash snapshotAt verify placement origin source host repo skillPath refRequested refResolved pin installedAt journal op txId phase startedAt completedAt before liveKind symlinkTarget stagingPath backupPath consumers skill tool store path transactionId',
+  ),
+  journal: staticErrorPaths(
+    '* schemaVersion kind transactionId intent context parentOperationId command workflow attempt startedAt disposition phase actual before after retained resourceId role state repositoryRevision placementPath liveKind mode symlinkTarget contentHash location shape version byteHash semanticHash canonicalHash projectRoot sourceRole path retainUntil updatedAt completedAt digest',
+  ),
+});
 const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype) as object;
 const typedArrayBufferGetter = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'buffer')?.get;
 const typedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
@@ -109,23 +127,24 @@ const typedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
 )?.get;
 const copyUint8Array = Uint8Array.prototype.set;
 
-/**
- * Filesystem reads return Node Buffers. Keep the public byte-ownership guard
- * strict while allowing the decode boundary to copy an exact, non-shared
- * Buffer without consulting caller-defined properties.
- */
-const ownFilesystemBufferBytes = (
+type OwnedByteViewKind = 'filesystem-buffer' | 'uint8array';
+
+const ownExactByteView = (
   artifactId: ArtifactId,
   input: unknown,
   requestedVersion: number | null,
+  kind: OwnedByteViewKind,
 ): Result<Uint8Array, ArtifactCodecError> => {
   try {
+    if (typeof input !== 'object' || input === null || utilTypes.isProxy(input)) {
+      return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
+    }
+    const exactView =
+      kind === 'filesystem-buffer'
+        ? Buffer.isBuffer(input) && Object.getPrototypeOf(input) === Buffer.prototype
+        : utilTypes.isUint8Array(input) && Object.getPrototypeOf(input) === Uint8Array.prototype;
     if (
-      typeof input !== 'object' ||
-      input === null ||
-      utilTypes.isProxy(input) ||
-      !Buffer.isBuffer(input) ||
-      Object.getPrototypeOf(input) !== Buffer.prototype ||
+      !exactView ||
       typedArrayBufferGetter === undefined ||
       typedArrayByteLengthGetter === undefined
     ) {
@@ -170,17 +189,34 @@ const ownFilesystemBufferBytes = (
   }
 };
 
-const safePath = (path: readonly (string | number)[]): readonly (string | number)[] =>
+const boundedOwnPath = (path: readonly (string | number)[]): readonly (string | number)[] =>
   Object.freeze(
-    path
-      .slice(0, MAX_ERROR_PATH)
-      .map((segment) =>
-        typeof segment === 'number' && Number.isSafeInteger(segment) && segment >= 0
+    path.slice(0, MAX_ERROR_PATH).map((segment) =>
+      typeof segment === 'number' && Number.isSafeInteger(segment) && segment >= 0
+        ? segment
+        : typeof segment === 'string' &&
+            segment.length > 0 &&
+            segment.length <= 64 &&
+            !segment.includes(ARTIFACT_SENSITIVE_CANARY) &&
+            !containsSensitiveMaterial(segment) &&
+            ![...segment].some((character) => {
+              const point = character.codePointAt(0) ?? 0;
+              return point <= 0x1f || point === 0x7f;
+            })
           ? segment
-          : typeof segment === 'string' && segment.length > 0 && segment.length <= 64
-            ? segment
-            : '*',
-      ),
+          : '*',
+    ),
+  );
+
+/** Keep only numeric indexes and artifact-schema segments in externally visible error paths. */
+export const sanitizeArtifactErrorPath = (
+  artifactId: ArtifactId,
+  path: readonly (string | number)[],
+): readonly (string | number)[] =>
+  Object.freeze(
+    boundedOwnPath(path).map((segment) =>
+      typeof segment === 'number' || STATIC_ERROR_PATHS[artifactId].has(segment) ? segment : '*',
+    ),
   );
 
 export const artifactCodecError = (
@@ -197,7 +233,7 @@ export const artifactCodecError = (
         ? requestedVersion
         : null,
     reason,
-    path: safePath(path),
+    path: sanitizeArtifactErrorPath(artifactId, path),
     exitCode: 3 as const,
     message: ERROR_MESSAGES[reason],
   });
@@ -207,56 +243,31 @@ export const ownArtifactBytes = (
   artifactId: ArtifactId,
   input: unknown,
   requestedVersion: number | null = null,
+): Result<Uint8Array, ArtifactCodecError> =>
+  ownExactByteView(artifactId, input, requestedVersion, 'uint8array');
+
+/**
+ * Filesystem reads return Node Buffers. Keep the public byte-ownership guard
+ * strict while allowing the decode boundary to copy an exact, non-shared
+ * Buffer without consulting caller-defined properties.
+ */
+const ownFilesystemBufferBytes = (
+  artifactId: ArtifactId,
+  input: unknown,
+  requestedVersion: number | null,
+): Result<Uint8Array, ArtifactCodecError> =>
+  ownExactByteView(artifactId, input, requestedVersion, 'filesystem-buffer');
+
+/** Copy exact bytes returned by the filesystem port without relaxing the public ownership guard. */
+export const ownArtifactReadBytes = (
+  artifactId: ArtifactId,
+  input: unknown,
+  requestedVersion: number | null = null,
 ): Result<Uint8Array, ArtifactCodecError> => {
-  try {
-    if (
-      typeof input !== 'object' ||
-      input === null ||
-      utilTypes.isProxy(input) ||
-      !utilTypes.isUint8Array(input) ||
-      Object.getPrototypeOf(input) !== Uint8Array.prototype ||
-      typedArrayBufferGetter === undefined ||
-      typedArrayByteLengthGetter === undefined
-    ) {
-      return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
-    }
-    const buffer = Reflect.apply(typedArrayBufferGetter, input, []) as ArrayBufferLike;
-    const byteLength = Reflect.apply(typedArrayByteLengthGetter, input, []) as number;
-    const keys = Reflect.ownKeys(input);
-    if (
-      !utilTypes.isArrayBuffer(buffer) ||
-      utilTypes.isSharedArrayBuffer(buffer) ||
-      Object.getPrototypeOf(buffer) !== ArrayBuffer.prototype ||
-      !Number.isSafeInteger(byteLength) ||
-      byteLength < 0 ||
-      keys.length !== byteLength ||
-      keys.some((key, index) => typeof key !== 'string' || key !== String(index))
-    ) {
-      return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
-    }
-    const descriptors = Object.getOwnPropertyDescriptors(input);
-    for (let index = 0; index < byteLength; index += 1) {
-      const descriptor = descriptors[String(index)];
-      if (
-        descriptor === undefined ||
-        !('value' in descriptor) ||
-        typeof descriptor.value !== 'number' ||
-        !Number.isInteger(descriptor.value) ||
-        descriptor.value < 0 ||
-        descriptor.value > 255 ||
-        descriptor.writable !== true ||
-        descriptor.enumerable !== true ||
-        descriptor.configurable !== true
-      ) {
-        return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
-      }
-    }
-    const owned = new Uint8Array(byteLength);
-    Reflect.apply(copyUint8Array, owned, [input]);
-    return ok(owned);
-  } catch {
-    return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
-  }
+  const strictBytes = ownArtifactBytes(artifactId, input, requestedVersion);
+  return strictBytes.ok
+    ? strictBytes
+    : ownFilesystemBufferBytes(artifactId, input, requestedVersion);
 };
 
 /** Fatal UTF-8 decode with BOM rejection, returning both owned bytes and source text. */
@@ -265,10 +276,7 @@ export const decodeArtifactUtf8 = (
   input: unknown,
   requestedVersion: number | null = null,
 ): Result<Readonly<{ bytes: Uint8Array; source: string }>, ArtifactCodecError> => {
-  const strictBytes = ownArtifactBytes(artifactId, input, requestedVersion);
-  const owned = strictBytes.ok
-    ? strictBytes
-    : ownFilesystemBufferBytes(artifactId, input, requestedVersion);
+  const owned = ownArtifactReadBytes(artifactId, input, requestedVersion);
   if (!owned.ok) return owned;
   if (
     owned.value.length >= 3 &&
@@ -293,7 +301,7 @@ const ownPlainData = (input: unknown): Result<unknown, OwnFailure> => {
 
   const visit = (value: unknown, path: readonly (string | number)[], depth: number): unknown => {
     nodes += 1;
-    if (nodes > MAX_NODES || depth > MAX_DEPTH) throw Object.freeze({ path: safePath(path) });
+    if (nodes > MAX_NODES || depth > MAX_DEPTH) throw Object.freeze({ path: boundedOwnPath(path) });
     if (
       value === null ||
       typeof value === 'string' ||
@@ -303,17 +311,17 @@ const ownPlainData = (input: unknown): Result<unknown, OwnFailure> => {
       return value;
     }
     if (typeof value !== 'object' || utilTypes.isProxy(value)) {
-      throw Object.freeze({ path: safePath(path) });
+      throw Object.freeze({ path: boundedOwnPath(path) });
     }
-    if (ancestors.has(value)) throw Object.freeze({ path: safePath(path) });
+    if (ancestors.has(value)) throw Object.freeze({ path: boundedOwnPath(path) });
 
     const proto = Object.getPrototypeOf(value);
     if (Array.isArray(value)) {
-      if (proto !== Array.prototype) throw Object.freeze({ path: safePath(path) });
+      if (proto !== Array.prototype) throw Object.freeze({ path: boundedOwnPath(path) });
       const descriptors = Object.getOwnPropertyDescriptors(value);
       const length = Object.getOwnPropertyDescriptor(value, 'length');
       if (!length || !('value' in length) || length.value !== value.length) {
-        throw Object.freeze({ path: safePath(path) });
+        throw Object.freeze({ path: boundedOwnPath(path) });
       }
       const keys = Reflect.ownKeys(descriptors);
       if (
@@ -322,7 +330,7 @@ const ownPlainData = (input: unknown): Result<unknown, OwnFailure> => {
             typeof key !== 'string' || (key !== 'length' && !/^(?:0|[1-9][0-9]*)$/u.test(key)),
         )
       ) {
-        throw Object.freeze({ path: safePath(path) });
+        throw Object.freeze({ path: boundedOwnPath(path) });
       }
       ancestors.add(value);
       const output: unknown[] = [];
@@ -330,7 +338,7 @@ const ownPlainData = (input: unknown): Result<unknown, OwnFailure> => {
         const descriptor = descriptors[String(index)];
         if (!descriptor || descriptor.enumerable !== true || !('value' in descriptor)) {
           ancestors.delete(value);
-          throw Object.freeze({ path: safePath([...path, index]) });
+          throw Object.freeze({ path: boundedOwnPath([...path, index]) });
         }
         output.push(visit(descriptor.value, [...path, index], depth + 1));
       }
@@ -339,12 +347,12 @@ const ownPlainData = (input: unknown): Result<unknown, OwnFailure> => {
     }
 
     if (proto !== Object.prototype && proto !== null) {
-      throw Object.freeze({ path: safePath(path) });
+      throw Object.freeze({ path: boundedOwnPath(path) });
     }
     const descriptors = Object.getOwnPropertyDescriptors(value);
     const keys = Reflect.ownKeys(descriptors);
     if (keys.some((key) => typeof key !== 'string')) {
-      throw Object.freeze({ path: safePath(path) });
+      throw Object.freeze({ path: boundedOwnPath(path) });
     }
     ancestors.add(value);
     const output: Record<string, unknown> = {};
@@ -352,9 +360,14 @@ const ownPlainData = (input: unknown): Result<unknown, OwnFailure> => {
       const descriptor = descriptors[key];
       if (!descriptor || descriptor.enumerable !== true || !('value' in descriptor)) {
         ancestors.delete(value);
-        throw Object.freeze({ path: safePath([...path, key]) });
+        throw Object.freeze({ path: boundedOwnPath([...path, key]) });
       }
-      output[key] = visit(descriptor.value, [...path, key], depth + 1);
+      Object.defineProperty(output, key, {
+        value: visit(descriptor.value, [...path, key], depth + 1),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     ancestors.delete(value);
     return Object.freeze(output);
@@ -371,7 +384,7 @@ const ownPlainData = (input: unknown): Result<unknown, OwnFailure> => {
       Array.isArray(Object.getOwnPropertyDescriptor(failure, 'path')?.value)
         ? (Object.getOwnPropertyDescriptor(failure, 'path')?.value as readonly (string | number)[])
         : [];
-    return err(Object.freeze({ path: safePath(path) }));
+    return err(Object.freeze({ path: boundedOwnPath(path) }));
   }
 };
 

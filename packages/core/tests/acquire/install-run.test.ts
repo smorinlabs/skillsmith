@@ -730,9 +730,9 @@ describe('runInstall — post-transport safety boundary', () => {
     const ledgerFailure: RuntimePorts = {
       ...f.env,
       pathKind: async (path) => (path === ledgerPath ? 'file' : f.env.pathKind(path)),
-      readText: async (path) => {
+      readBytes: async (path) => {
         if (path === ledgerPath) throw new Error(`password=${canary}`);
-        return f.env.readText(path);
+        return f.env.readBytes(path);
       },
     };
     const lockFailure: RuntimePorts = {

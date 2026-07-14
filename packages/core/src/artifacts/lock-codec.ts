@@ -68,6 +68,9 @@ const normalizeLock = (input: unknown): Result<NormalizedLock, ArtifactCodecErro
   const owned = deepOwnFreeze<Readonly<Record<string, unknown>>>('lock', input);
   if (!owned.ok) return owned;
   const root = owned.value;
+  if (typeof root !== 'object' || root === null || Array.isArray(root)) {
+    return fail('invalid-shape', null);
+  }
   const requestedVersion =
     typeof root.version === 'number' && Number.isSafeInteger(root.version) && root.version > 0
       ? root.version

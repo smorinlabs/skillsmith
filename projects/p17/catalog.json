@@ -3193,6 +3193,8 @@
         "packages/core/src/place/ledger.ts",
         "packages/core/src/place/types.ts",
         "packages/core/src/public-types.ts",
+        "packages/core/tests/acquire/install-run.test.ts",
+        "packages/core/tests/acquire/uninstall-run.test.ts",
         "packages/core/tests/artifacts/codec.test.ts",
         "packages/core/tests/artifacts/lock.test.ts",
         "packages/core/tests/artifacts/manifest.test.ts",
@@ -3218,7 +3220,9 @@
         "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
         "tests/ergonomics/fixtures/p2-ts08/tsconfig.json",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS06.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS08.test.ts"
       ],
       "integrationOwner": "root-codex-goal",

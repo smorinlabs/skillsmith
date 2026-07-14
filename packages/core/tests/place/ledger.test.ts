@@ -104,6 +104,21 @@ describe('readLedger', () => {
     if (!r.ok) expect(r.error.code).toBe('ledger-error');
   });
 
+  test('invalid UTF-8 inside JSON is corrupt at the exact-byte facade boundary', async () => {
+    const p = join(base, 'placements.json');
+    await writeFile(
+      p,
+      Buffer.concat([
+        Buffer.from('{"schemaVersion":1,"kind":"skillsmith.placements","updatedAt":"', 'utf8'),
+        Buffer.from([0xc3, 0x28]),
+        Buffer.from('","skills":{}}', 'utf8'),
+      ]),
+    );
+    const r = await readLedger(env, p);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('ledger-error');
+  });
+
   test('valid JSON but wrong shape → ledger-error', async () => {
     const p = join(base, 'placements.json');
     await writeFile(

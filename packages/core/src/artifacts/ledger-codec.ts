@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FLIP_TOOLS } from '../agents/registry.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
   type ArtifactCodec,
@@ -25,66 +26,16 @@ import type {
   LedgerV2Dto,
   PreservedLegacyJournalIdentityV1,
 } from './ledger-types.ts';
-import { validateJournalV1Dto } from './registry.ts';
+import { validateJournalV1DtoShape } from './registry.ts';
 
 type Path = readonly (string | number)[];
 type JsonRecord = Record<string, unknown>;
 
-const STATIC_PATHS = new Set([
-  'schemaVersion',
-  'kind',
-  'updatedAt',
-  'skills',
-  'projects',
-  'projectRegistrations',
-  'transactions',
-  'history',
-  'tools',
-  'placementPath',
-  'mode',
-  'dev',
-  'sourcePath',
-  'resolvedPath',
-  'repoRoot',
-  'sourceRelPath',
-  'remote',
-  'recordedAt',
-  'pinned',
-  'storePath',
-  'rev',
-  'gitSha',
-  'dirty',
-  'contentHash',
-  'snapshotAt',
-  'verify',
-  'placement',
-  'origin',
-  'source',
-  'host',
-  'repo',
-  'skillPath',
-  'refRequested',
-  'refResolved',
-  'pin',
-  'installedAt',
-  'journal',
-  'op',
-  'txId',
-  'phase',
-  'startedAt',
-  'completedAt',
-  'before',
-  'liveKind',
-  'symlinkTarget',
-  'stagingPath',
-  'backupPath',
-  'consumers',
-  'skill',
-  'tool',
-  'store',
-  'path',
-  'transactionId',
-]);
+const STATIC_PATHS = new Set(
+  'schemaVersion kind updatedAt skills projects projectRegistrations transactions history tools placementPath mode dev sourcePath resolvedPath repoRoot sourceRelPath remote recordedAt pinned storePath rev gitSha dirty contentHash snapshotAt verify placement origin source host repo skillPath refRequested refResolved pin installedAt journal op txId phase startedAt completedAt before liveKind symlinkTarget stagingPath backupPath consumers skill tool store path transactionId'.split(
+    ' ',
+  ),
+);
 
 const codecError = (
   reason: ArtifactCodecError['reason'],
@@ -177,12 +128,7 @@ const PairSchema = z
     journal: LegacyJournalSchema.nullable().optional(),
   })
   .strict();
-const ToolsV1Schema = z
-  .object({
-    'claude-code': PairSchema.optional(),
-    codex: PairSchema.optional(),
-  })
-  .strict();
+const ToolsV1Schema = z.record(z.enum(FLIP_TOOLS), PairSchema);
 const SkillsV1Schema = z.record(string, z.object({ tools: ToolsV1Schema }).strict());
 const ToolsV2Schema = z.record(z.string().regex(/^[a-z][a-z0-9-]*$/u), PairSchema);
 const SkillsV2Schema = z.record(string, z.object({ tools: ToolsV2Schema }).strict());
@@ -356,9 +302,6 @@ const ownAndParse = <T>(
 ): Result<T, ArtifactCodecError> => {
   const owned = deepOwnFreeze<unknown>('ledger', input, requestedVersion);
   if (!owned.ok) return owned;
-  if (hasSensitiveArtifactContent(owned.value)) {
-    return err(codecError('sensitive-content', [], requestedVersion));
-  }
   const parsed = schema.safeParse(owned.value);
   return parsed.success
     ? ok(parsed.data)
@@ -382,6 +325,9 @@ export const validateLedgerV1Dto = (input: unknown): Result<LedgerV1Dto, Artifac
           })),
         }),
   };
+  if (hasSensitiveArtifactContent(value)) {
+    return err(codecError('sensitive-content', [], 1));
+  }
   return ok(deepFreeze(canonical));
 };
 
@@ -397,8 +343,10 @@ const validateLogicalJournals = (
 > => {
   const transactionEntries: [string, LogicalJournalV1Dto][] = [];
   for (const [key, input] of sortedEntries(transactions)) {
-    const journal = validateJournalV1Dto(input);
-    if (!journal.ok) return err(codecError('invalid-shape', ['transactions', key], 2));
+    const journal = validateJournalV1DtoShape(input);
+    if (!journal.ok) {
+      return err(codecError('invalid-shape', ['transactions', key], 2));
+    }
     if (journal.value.transactionId !== key || journal.value.phase === 'committed') {
       return err(codecError('invalid-shape', ['transactions', key], 2));
     }
@@ -406,8 +354,11 @@ const validateLogicalJournals = (
   }
   const canonicalHistory: LogicalJournalV1Dto[] = [];
   for (const [index, input] of history.entries()) {
-    const journal = validateJournalV1Dto(input);
-    if (!journal.ok || journal.value.phase !== 'committed') {
+    const journal = validateJournalV1DtoShape(input);
+    if (!journal.ok) {
+      return err(codecError('invalid-shape', ['history', index], 2));
+    }
+    if (journal.value.phase !== 'committed') {
       return err(codecError('invalid-shape', ['history', index], 2));
     }
     canonicalHistory.push(journal.value);
@@ -415,7 +366,7 @@ const validateLogicalJournals = (
   return ok({ transactions: Object.fromEntries(transactionEntries), history: canonicalHistory });
 };
 
-export const validateLedgerV2Dto = (input: unknown): Result<LedgerV2Dto, ArtifactCodecError> => {
+const validateLedgerV2DtoShape = (input: unknown): Result<LedgerV2Dto, ArtifactCodecError> => {
   const parsed = ownAndParse(input, LedgerV2Schema, 2);
   if (!parsed.ok) return parsed;
   const value = parsed.value as unknown as LedgerV2Dto;
@@ -442,6 +393,14 @@ export const validateLedgerV2Dto = (input: unknown): Result<LedgerV2Dto, Artifac
       history: journals.value.history,
     }),
   );
+};
+
+export const validateLedgerV2Dto = (input: unknown): Result<LedgerV2Dto, ArtifactCodecError> => {
+  const shaped = validateLedgerV2DtoShape(input);
+  if (!shaped.ok) return shaped;
+  return hasSensitiveArtifactContent(shaped.value)
+    ? err(codecError('sensitive-content', [], 2))
+    : shaped;
 };
 
 export const migrateLedgerV1DtoToV2Dto = (
@@ -494,9 +453,10 @@ export const toLedgerV2Dto = (model: LedgerModel): Result<LedgerV2Dto, ArtifactC
     history: model.history,
   });
 
+const LEGACY_TOOLS = new Set<string>(FLIP_TOOLS);
 const v1ToolsOnly = (skills: LedgerSkillsV2Dto): boolean =>
   Object.values(skills).every((entry) =>
-    Object.keys(entry.tools).every((tool) => tool === 'claude-code' || tool === 'codex'),
+    Object.keys(entry.tools).every((tool) => LEGACY_TOOLS.has(tool)),
   );
 
 export const toLedgerV1Dto = (model: LedgerModel): Result<LedgerV1Dto, ArtifactCodecError> => {
@@ -726,17 +686,20 @@ export const ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel>
         }),
       );
     }
-    const model = fromLedgerV2Dto(parsed.value.input as unknown as LedgerV2Dto);
-    if (!model.ok) return model;
-    const canonical = ledgerV2Codec.encode(model.value);
-    if (!canonical.ok) return canonical;
-    if (!bytesEqual(parsed.value.bytes, canonical.value)) {
+    const dto = validateLedgerV2DtoShape(parsed.value.input);
+    if (!dto.ok) return dto;
+    const canonical = new TextEncoder().encode(`${JSON.stringify(dto.value, null, 2)}\n`);
+    if (!bytesEqual(parsed.value.bytes, canonical)) {
       return err(codecError('noncanonical', [], 2));
     }
+    if (hasSensitiveArtifactContent(dto.value)) {
+      return err(codecError('sensitive-content', [], 2));
+    }
+    const model = modelFromV2(dto.value);
     return ok(
       deepFreeze({
         source: { kind: 'version' as const, version: 2 },
-        model: model.value,
+        model,
         canonical: true,
         migration: null,
       }),

@@ -6,6 +6,7 @@ import {
   deepOwnFreeze,
   hasSensitiveArtifactContent,
   ownArtifactBytes,
+  ownArtifactReadBytes,
   unsignedUtf16Compare,
 } from '../../src/artifacts/codec.ts';
 
@@ -70,12 +71,16 @@ describe('artifact codec foundation', () => {
     expect(decodeArtifactUtf8('journal', Uint8Array.of(0xc3, 0x28), 1).ok).toBe(false);
   });
 
-  test('copies filesystem Buffers only at the UTF-8 decode boundary', () => {
+  test('copies filesystem Buffers only at the read and UTF-8 decode boundaries', () => {
     const source = Buffer.from('{"ok":true}\n');
+    const readBytes = ownArtifactReadBytes('plan', source, 1);
+    expect(readBytes.ok).toBe(true);
     const decoded = decodeArtifactUtf8('plan', source, 1);
     expect(decoded.ok).toBe(true);
-    if (!decoded.ok) return;
+    if (!readBytes.ok || !decoded.ok) return;
     source.fill(0);
+    expect(decoder.decode(readBytes.value)).toBe('{"ok":true}\n');
+    expect(Object.getPrototypeOf(readBytes.value)).toBe(Uint8Array.prototype);
     expect(decoder.decode(decoded.value.bytes)).toBe('{"ok":true}\n');
     expect(Object.getPrototypeOf(decoded.value.bytes)).toBe(Uint8Array.prototype);
     expect(ownArtifactBytes('plan', Buffer.from([1]), 1).ok).toBe(false);
@@ -93,6 +98,17 @@ describe('artifact codec foundation', () => {
     expect(Object.isFrozen(owned.value.nested)).toBe(true);
     expect(Object.isFrozen(owned.value.nested[0])).toBe(true);
 
+    const protoKey = JSON.parse('{"__proto__":{"polluted":true}}') as Record<string, unknown>;
+    const ownedProtoKey = deepOwnFreeze<Record<string, unknown>>('ledger', protoKey, 2);
+    expect(ownedProtoKey.ok).toBe(true);
+    if (ownedProtoKey.ok) {
+      expect(Object.hasOwn(ownedProtoKey.value, '__proto__')).toBeTrue();
+      expect(Object.getOwnPropertyDescriptor(ownedProtoKey.value, '__proto__')?.value).toEqual({
+        polluted: true,
+      });
+      expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+    }
+
     let reads = 0;
     const accessor = Object.defineProperty({}, 'secret', {
       enumerable: true,
@@ -102,6 +118,29 @@ describe('artifact codec foundation', () => {
       },
     });
     expect(deepOwnFreeze('ledger', accessor, 2).ok).toBe(false);
+    expect(reads).toBe(0);
+    const sensitiveKeyAccessor = Object.defineProperty({}, 'ghp_P17_SECRET_CANARY_123456789', {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return 'value';
+      },
+    });
+    const sensitiveKeyResult = deepOwnFreeze('ledger', sensitiveKeyAccessor, 2);
+    expect(sensitiveKeyResult.ok).toBe(false);
+    expect(JSON.stringify(sensitiveKeyResult)).not.toContain('P17_SECRET_CANARY');
+    expect(reads).toBe(0);
+    const dynamicKeyAccessor = Object.defineProperty({}, 'private-project-alpha', {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return 'value';
+      },
+    });
+    const dynamicKeyResult = deepOwnFreeze('lock', dynamicKeyAccessor, 1);
+    expect(dynamicKeyResult.ok).toBe(false);
+    if (!dynamicKeyResult.ok) expect(dynamicKeyResult.error.path).toEqual(['*']);
+    expect(JSON.stringify(dynamicKeyResult)).not.toContain('private-project-alpha');
     expect(reads).toBe(0);
     expect(deepOwnFreeze('ledger', new Proxy({}, {}), 2).ok).toBe(false);
     const sparse = Array.from({ length: 3 }) as unknown[];

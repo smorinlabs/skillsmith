@@ -1,5 +1,9 @@
 import type { ArtifactCodec, ArtifactContractRegistry, ArtifactId } from './codec.ts';
-import { journalV1Codec, validateJournalV1Dto } from './journal-codec.ts';
+import {
+  journalV1Codec,
+  validateJournalV1Dto,
+  validateJournalV1DtoShape,
+} from './journal-codec.ts';
 import {
   describeLedgerV1Migration,
   fromLedgerV1Dto,
@@ -11,7 +15,12 @@ import {
 } from './ledger-codec.ts';
 import { lockV1Codec } from './lock-codec.ts';
 import { manifestV1Codec } from './manifest-codec.ts';
-import { ownArtifactDto, savedPlanV1Codec, validatePlanOperationIntentV1 } from './plan-codec.ts';
+import {
+  ownArtifactDto,
+  savedPlanV1Codec,
+  validatePlanOperationIntentShapeV1,
+  validatePlanOperationIntentV1,
+} from './plan-codec.ts';
 
 let codecs: readonly ArtifactCodec[] | undefined;
 
@@ -57,6 +66,8 @@ export {
   ledgerSemanticRevision,
   ownArtifactDto,
   validateJournalV1Dto,
+  validateJournalV1DtoShape,
   validateLedgerV1Dto,
+  validatePlanOperationIntentShapeV1,
   validatePlanOperationIntentV1,
 };
