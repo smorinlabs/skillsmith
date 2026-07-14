@@ -814,14 +814,14 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G3A-01 — Canonical correlated read model and status state-product surface
 
-Phase: 3A; status: **mapped**; dependencies: P17-G2-05.
+Phase: 3A; status: **ready**; dependencies: P17-G2-05.
 Required-now validations: EWP-CMD-STATUS-TS01, EWP-CMD-STATUS-TS02, EWP-CMD-STATUS-TS03, EWP-CMD-STATUS-TS04, EWP-CMD-STATUS-TS05, EWP-CMD-STATUS-TS06, EWP-P3A-TS02, EWP-P3A-TS04.
 Downstream coverage obligations: none.
 
 ### Group gates
 
 - [x] P17-G3A-01:mapped _(passed)_
-- [ ] P17-G3A-01:ready _(pending)_
+- [x] P17-G3A-01:ready _(passed)_
 - [ ] P17-G3A-01:test-first _(pending)_
 - [ ] P17-G3A-01:minimal-implementation _(pending)_
 - [ ] P17-G3A-01:targeted-green _(pending)_
@@ -841,8 +841,8 @@ Downstream coverage obligations: none.
 - [ ] **EWP-CMD-STATUS-TS04** — pending/committed journal, version-1 migration-pending without rewrite, _(command-test; planned)_
 - [ ] **EWP-CMD-STATUS-TS05** — target/tool/scope filters, cross-scope shadowing, and project identity _(command-test; planned)_
 - [ ] **EWP-CMD-STATUS-TS06** — check exit and versioned JSON. _(command-test; planned)_
-- [ ] **EWP-P3A-T02** — Version-discriminating, non-mutating ledger reader plus _(phase-task; planned)_
-- [ ] **EWP-P3A-T03** — Status command. _(phase-task; planned)_
+- [ ] **EWP-P3A-T02** — Version-discriminating, non-mutating ledger reader plus _(phase-task; ready)_
+- [ ] **EWP-P3A-T03** — Status command. _(phase-task; ready)_
 - [ ] **EWP-P3A-TS02** — Status state-product matrix including missing, version 1, version 2, _(phase-test; planned)_
 - [ ] **EWP-P3A-TS04** — Realistic mixed-fleet inspection fixture. _(phase-test; planned)_
 - [ ] **P1-02** — Ledger-aware `status` _(recommendation; planned)_

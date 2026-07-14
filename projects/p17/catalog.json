@@ -3511,10 +3511,59 @@
       "phase": "3A",
       "title": "Canonical correlated read model and status state-product surface",
       "dependsOn": ["P17-G2-05"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "README.md",
+        "docs/architecture.md",
+        "packages/cli/README.md",
+        "packages/cli/src/contracts/commander-current-state-v0.json",
+        "packages/cli/src/contracts/wire-contracts.ts",
+        "packages/cli/src/output/status-human.ts",
+        "packages/cli/src/output/status-json.ts",
+        "packages/cli/src/runtime/current-renderers.ts",
+        "packages/cli/src/spec/options.ts",
+        "packages/cli/src/spec/registry.ts",
+        "packages/cli/tests/contracts/options.test.ts",
+        "packages/cli/tests/contracts/status.test.ts",
+        "packages/cli/tests/output/status-human.test.ts",
+        "packages/cli/tests/output/status-json.test.ts",
+        "packages/core/README.md",
+        "packages/core/src/application/read-services.ts",
+        "packages/core/src/artifacts/discovery.ts",
+        "packages/core/src/artifacts/index.ts",
+        "packages/core/src/contracts/v1/index.d.ts",
+        "packages/core/src/contracts/v1/index.ts",
+        "packages/core/src/contracts/v1/status.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/public-types.ts",
+        "packages/core/src/status/index.ts",
+        "packages/core/src/status/join.ts",
+        "packages/core/src/status/read.ts",
+        "packages/core/src/status/types.ts",
+        "packages/core/tests/application/read-services.test.ts",
+        "packages/core/tests/artifacts/discovery.test.ts",
+        "packages/core/tests/public-api.test.ts",
+        "packages/core/tests/status/read.test.ts",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/status.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
+        "tests/ergonomics/fixtures/p1-ts10/reports.ts",
+        "tests/ergonomics/fixtures/p3a-ts02/ledger-state-cases.json",
+        "tests/ergonomics/fixtures/p3a-ts02/public-types.ts",
+        "tests/ergonomics/fixtures/p3a-ts02/tsconfig.json",
+        "tests/ergonomics/fixtures/p3a-ts04/mixed-fleet.json",
+        "tests/ergonomics/fixtures/p3a-ts04/status-human.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts04/status-v1.golden.json",
+        "tests/ergonomics/phase/EWP-P1-TS05.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS02.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
+        "tests/ergonomics/phase/EWP-P3A-TS02.test.ts",
+        "tests/ergonomics/phase/EWP-P3A-TS04.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": [
         "EWP-CMD-STATUS-TS01",
         "EWP-CMD-STATUS-TS02",
@@ -3536,8 +3585,22 @@
         "EWP-P3A-TS04"
       ],
       "downstreamCoverage": [],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS01",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS02",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS03",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS04",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS05",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS06",
+        "bun test tests/ergonomics/phase/EWP-P3A-TS02.test.ts --test-name-pattern EWP-P3A-TS02",
+        "bun test tests/ergonomics/phase/EWP-P3A-TS04.test.ts --test-name-pattern EWP-P3A-TS04"
+      ],
+      "implementers": [
+        "root-codex-goal",
+        "/root/g3a01_test_implementation",
+        "/root/g3a01_core_implementation",
+        "/root/g3a01_cli_implementation"
+      ],
       "reviewer": null,
       "gates": {
         "mapped": {
@@ -3545,8 +3608,8 @@
           "evidence": ["projects/p17/evidence/P17-G3A-01.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-01.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
@@ -3581,7 +3644,11 @@
           "evidence": []
         }
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-01.md#mapping-and-prerequisites"]
+      "evidence": [
+        "projects/p17/plans/P17-G3A-01.md",
+        "projects/p17/evidence/P17-G3A-01.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G3A-01.md#ready-plan"
+      ]
     },
     {
       "id": "P17-G3A-02",
@@ -17515,11 +17582,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3A-01",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3A-01.md#ready-plan"],
       "secondaryGroups": [],
       "implements": ["COMMAND:status", "D-008", "P1-02"],
       "validatedBy": [
@@ -17543,8 +17610,24 @@
         "EWP-P3A-TS04"
       ],
       "affectedContracts": ["COMMAND:status", "D-008", "P1-02"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS01",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS02",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS03",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS04",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS05",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS06",
+        "bun test tests/ergonomics/phase/EWP-P3A-TS02.test.ts --test-name-pattern EWP-P3A-TS02",
+        "bun test tests/ergonomics/phase/EWP-P3A-TS04.test.ts --test-name-pattern EWP-P3A-TS04"
+      ],
+      "ownedFiles": [
+        "packages/core/src/artifacts/discovery.ts",
+        "packages/core/src/artifacts/index.ts",
+        "packages/core/src/status/index.ts",
+        "packages/core/src/status/join.ts",
+        "packages/core/src/status/read.ts",
+        "packages/core/src/status/types.ts"
+      ]
     },
     {
       "id": "EWP-P3A-T03",
@@ -17552,11 +17635,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3A-01",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3A-01.md#ready-plan"],
       "secondaryGroups": [],
       "implements": ["COMMAND:status", "D-008", "P1-02"],
       "validatedBy": [
@@ -17580,8 +17663,31 @@
         "EWP-P3A-TS04"
       ],
       "affectedContracts": ["COMMAND:status", "D-008", "P1-02"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS01",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS02",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS03",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS04",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS05",
+        "bun test packages/cli/tests/contracts/status.test.ts --test-name-pattern EWP-CMD-STATUS-TS06",
+        "bun test tests/ergonomics/phase/EWP-P3A-TS02.test.ts --test-name-pattern EWP-P3A-TS02",
+        "bun test tests/ergonomics/phase/EWP-P3A-TS04.test.ts --test-name-pattern EWP-P3A-TS04"
+      ],
+      "ownedFiles": [
+        "packages/cli/src/contracts/commander-current-state-v0.json",
+        "packages/cli/src/contracts/wire-contracts.ts",
+        "packages/cli/src/output/status-human.ts",
+        "packages/cli/src/output/status-json.ts",
+        "packages/cli/src/runtime/current-renderers.ts",
+        "packages/cli/src/spec/options.ts",
+        "packages/cli/src/spec/registry.ts",
+        "packages/core/src/application/read-services.ts",
+        "packages/core/src/contracts/v1/index.d.ts",
+        "packages/core/src/contracts/v1/index.ts",
+        "packages/core/src/contracts/v1/status.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/public-types.ts"
+      ]
     },
     {
       "id": "EWP-P3A-T04",
