@@ -12,13 +12,13 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 8 | 20 | 6 |
-| phase-task | 65 | 28 | 37 | 0 |
-| phase-test | 61 | 23 | 38 | 0 |
+| phase-task | 65 | 29 | 36 | 0 |
+| phase-test | 61 | 25 | 36 | 0 |
 | command-test | 157 | 14 | 143 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
 | command | 23 | 4 | 19 | 0 |
-| finding | 43 | 22 | 21 | 0 |
+| finding | 43 | 24 | 19 | 0 |
 | decision | 16 | 2 | 13 | 1 |
 
 ### Phases
@@ -27,7 +27,7 @@ Tracked entities: **425** across **45** change groups.
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
-| 2 | 5 | 32 | 19 | 0 |
+| 2 | 5 | 32 | 24 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 66 | 0 | 0 |
@@ -182,7 +182,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-009 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-010 | P17-G0-02 | signed-off | required-pr |
 | EWP-CF-011 | P17-G4A-02 | planned | required-pr |
-| EWP-CF-012 | P17-G2-03 | mapped | required-pr |
+| EWP-CF-012 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-013 | P17-G6-02A | planned | required-pr |
 | EWP-CF-014 | P17-G6-02B | planned | supported-platform |
 | EWP-CF-015 | P17-G4B-02 | planned | required-pr |
@@ -200,7 +200,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-027 | P17-G2-02 | signed-off | required-pr |
 | EWP-CF-028 | P17-G3B-03 | planned | required-pr |
 | EWP-CF-029 | P17-G2-05 | planned | required-pr |
-| EWP-CF-030 | P17-G2-03 | mapped | required-pr |
+| EWP-CF-030 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-031 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-032 | P17-G6-02A | planned | required-pr |
 | EWP-CF-033 | P17-G1-03 | signed-off | required-pr |
@@ -735,7 +735,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-DOCTOR-TS03, EWP-CM
 
 ## P17-G2-03 — Lossless human-file editing, atomicity, portability, and secret-redaction boundary
 
-Phase: 2; status: **active**; dependencies: P17-G2-01, P17-G2-02.
+Phase: 2; status: **signed-off**; dependencies: P17-G2-01, P17-G2-02.
 Required-now validations: EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS04, EWP-P1-TS08, EWP-P2-TS01, EWP-P2-TS04, EWP-P2-TS07, EWP-WF15.
 Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-P4B-TS07, EWP-WF03, EWP-WF04, EWP-WF07.
 
@@ -744,21 +744,21 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 - [x] P17-G2-03:mapped _(passed)_
 - [x] P17-G2-03:ready _(passed)_
 - [x] P17-G2-03:test-first _(passed)_
-- [ ] P17-G2-03:minimal-implementation _(pending)_
-- [ ] P17-G2-03:targeted-green _(pending)_
-- [ ] P17-G2-03:impacted-green _(pending)_
-- [ ] P17-G2-03:refactor _(pending)_
-- [ ] P17-G2-03:adversarial-review _(pending)_
-- [ ] P17-G2-03:traceability-closure _(pending)_
-- [ ] P17-G2-03:signed-off _(pending)_
+- [x] P17-G2-03:minimal-implementation _(passed)_
+- [x] P17-G2-03:targeted-green _(passed)_
+- [x] P17-G2-03:impacted-green _(passed)_
+- [x] P17-G2-03:refactor _(passed)_
+- [x] P17-G2-03:adversarial-review _(passed)_
+- [x] P17-G2-03:traceability-closure _(passed)_
+- [x] P17-G2-03:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-012** — Do not reuse destructive config serialization for human artifacts _(finding; mapped)_
-- [ ] **EWP-CF-030** — Define one portability and secret-redaction boundary _(finding; mapped)_
-- [ ] **EWP-P2-T04** — Complete a bounded lossless-TOML editor spike, then implement strict readers, _(phase-task; red)_
-- [ ] **EWP-P2-TS04** — Comments around every editable field, unusual whitespace/order, unrelated _(phase-test; failing)_
-- [ ] **EWP-P2-TS07** — Canonical source/path golden matrix for credential-free HTTPS/SSH/scp, rejected _(phase-test; failing)_
+- [x] **EWP-CF-012** — Do not reuse destructive config serialization for human artifacts _(finding; signed-off)_
+- [x] **EWP-CF-030** — Define one portability and secret-redaction boundary _(finding; signed-off)_
+- [x] **EWP-P2-T04** — Complete a bounded lossless-TOML editor spike, then implement strict readers, _(phase-task; signed-off)_
+- [x] **EWP-P2-TS04** — Comments around every editable field, unusual whitespace/order, unrelated _(phase-test; signed-off)_
+- [x] **EWP-P2-TS07** — Canonical source/path golden matrix for credential-free HTTPS/SSH/scp, rejected _(phase-test; signed-off)_
 
 ## P17-G2-04 — Pure init request/skeleton/migration operation model without early execution
 
