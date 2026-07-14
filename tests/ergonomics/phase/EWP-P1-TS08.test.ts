@@ -334,6 +334,8 @@ describe('EWP-P1-TS08', () => {
 
     const allow = new Set([
       'packages/core/src/env/git.ts',
+      // Private account-helper process adapter; it does not execute Git or accept Git argv.
+      'packages/core/src/artifacts/node-coordinator.ts',
       'packages/core/src/ports/default.ts',
       'packages/core/src/ports/git.ts',
       'packages/core/src/ports/compatibility.ts',
@@ -533,6 +535,8 @@ describe('EWP-P1-TS08', () => {
     expect(removed).toEqual(['/state/.fetch/stale']);
 
     const allow = new Set([
+      // Focused production ID adapter for private artifact coordination.
+      'packages/core/src/artifacts/node-coordinator.ts',
       'packages/core/src/ports/default.ts',
       // Parses an injected wall-clock value to enforce canonical UTC ISO form; it never reads now.
       'packages/core/src/observation/operation-context.ts',
@@ -611,7 +615,11 @@ describe('EWP-P1-TS08', () => {
     ]);
     const fetchAllow = new Set(['packages/core/src/ports/http.ts']);
     const uidAllow = new Set(['packages/core/src/ports/default.ts']);
-    const realImplementationAllow = new Set(['packages/core/src/ports/default.ts']);
+    const realImplementationAllow = new Set([
+      'packages/core/src/artifacts/node-coordinator.ts',
+      'packages/core/src/artifacts/recovery-file.ts',
+      'packages/core/src/ports/default.ts',
+    ]);
     const defaultAdapterImportAllow = new Set([
       'packages/core/src/env/default.ts',
       'packages/core/src/index.ts',
@@ -633,7 +641,7 @@ describe('EWP-P1-TS08', () => {
       if (/\bfetch\s*\(/.test(source) && !fetchAllow.has(name))
         rawFindings.push(`${name}: ambient fetch`);
       if (realEffectImport.test(source) && !realImplementationAllow.has(name))
-        rawFindings.push(`${name}: real effect implementation outside default adapter`);
+        rawFindings.push(`${name}: real effect implementation outside reviewed adapters`);
       if (/ports\/default(?:\.ts)?['"]/.test(source) && !defaultAdapterImportAllow.has(name))
         rawFindings.push(`${name}: real adapter import outside composition`);
     }

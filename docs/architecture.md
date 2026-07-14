@@ -114,10 +114,13 @@ probe for diagnostics, version probing for detection, named Git/HTTP operations 
 explicit write/lock/clock/ID capabilities for mutation. `RuntimePorts` exists only at real-adapter
 and application composition boundaries.
 
-`defaultRuntimePorts()` owns the production Node/Bun effects. Raw environment input is decoded once
-into `ResolvedRuntimeConfiguration`; domain and application requests do not carry `process.env` or
-an unfiltered record. Real adapter failures are scalar-only `PortError` values that public
-coordinators translate to the existing result error contract.
+`defaultRuntimePorts()` owns the general-purpose production Node/Bun effects. Two focused artifact
+adapters own only account identity, private filesystem durability and locking, recovery records,
+and cryptographic transaction IDs behind `ArtifactCoordinatorPorts`; they do not expose Git, HTTP,
+raw environment, or arbitrary process authority. Raw environment input is decoded once into
+`ResolvedRuntimeConfiguration`; domain and application requests do not carry `process.env` or an
+unfiltered record. Real adapter failures are scalar-only `PortError` values that public coordinators
+translate to the existing result error contract.
 
 The focused read shape illustrates the authority boundary (the source of truth is
 `packages/core/src/ports/types.ts`):

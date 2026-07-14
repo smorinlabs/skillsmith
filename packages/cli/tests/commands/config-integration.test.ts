@@ -19,7 +19,7 @@ const run = async (args: string[], env: Record<string, string> = {}) => {
 
 describe('skillsmith config', () => {
   test('get/set round-trip at user scope', async () => {
-    const d = join('/tmp', `sk-rt-${Date.now()}`);
+    const d = join('/tmp', `skillsmith-config-rt-${Date.now()}`);
     await mkdir(d, { recursive: true });
     try {
       const setR = await run(['config', 'set', 'tool', 'codex'], { XDG_CONFIG_HOME: d });
@@ -48,7 +48,7 @@ describe('skillsmith config', () => {
   });
 
   test('unset removes a key', async () => {
-    const d = join('/tmp', `sk-unset-${Date.now()}`);
+    const d = join('/tmp', `skillsmith-config-unset-${Date.now()}`);
     await mkdir(join(d, 'skillsmith'), { recursive: true });
     await writeFile(join(d, 'skillsmith/config.toml'), 'tool = "codex"\nscope = "user"\n');
     try {

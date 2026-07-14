@@ -44,11 +44,6 @@ const decoder = new TextDecoder('utf-8', { fatal: true });
 let cachedAccountInfo: ReturnType<typeof userInfo> | null = null;
 const stableAccountInfo = (): ReturnType<typeof userInfo> => {
   if (cachedAccountInfo !== null) return cachedAccountInfo;
-  const authorityVariables = new Set(['HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH']);
-  const env = Object.fromEntries(
-    // eslint-disable-next-line skillsmith/capability-ownership -- Account-root derivation owns the clean child environment.
-    Object.entries(process.env).filter(([key]) => !authorityVariables.has(key.toUpperCase())),
-  );
   const observed = userInfo();
   const compiled =
     process.argv[1]?.startsWith('/$bunfs/root/') === true ||
@@ -56,7 +51,7 @@ const stableAccountInfo = (): ReturnType<typeof userInfo> => {
   const child = spawnSync(process.execPath, compiled ? [] : [import.meta.path], {
     argv0: ACCOUNT_HELPER_ARGV0,
     encoding: 'utf8',
-    env,
+    env: {},
     maxBuffer: 16_384,
     timeout: 5_000,
     windowsHide: true,
@@ -96,7 +91,7 @@ const stableAccountInfo = (): ReturnType<typeof userInfo> => {
     !isAbsolute(account.homedir) ||
     typeof account.shell !== 'string' ||
     account.shell.length === 0 ||
-    account.username !== observed.username ||
+    (process.platform === 'win32' && account.username !== observed.username) ||
     account.uid !== observed.uid ||
     account.gid !== observed.gid
   ) {

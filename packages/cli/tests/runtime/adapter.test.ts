@@ -205,10 +205,10 @@ describe('shared CLI runtime adapter', () => {
     });
     expect(humanResult).toMatchObject({
       exitCode: 1,
-      failure: { exitClass: 'failure', code: 'generic', message: 'forged line' },
+      failure: { exitClass: 'failure', code: 'generic', message: '[PROXY]' },
     });
     expect(human.stdout).toEqual([]);
-    expect(human.stderr).toEqual(['error: forged line\n']);
+    expect(human.stderr).toEqual(['error: [PROXY]\n']);
     expect(human.exits).toEqual([1]);
 
     const returned = memoryIo();

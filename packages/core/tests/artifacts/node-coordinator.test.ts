@@ -244,7 +244,7 @@ describe('Node artifact coordinator adapter', () => {
     }
   });
 
-  test('ignores HOME that was already spoofed when the Bun process started', async () => {
+  test('ignores account environment that was already spoofed when Bun started', async () => {
     if (process.platform === 'win32') return;
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-node-startup-home-'));
     roots.push(root);
@@ -257,7 +257,13 @@ describe('Node artifact coordinator adapter', () => {
       ],
       {
         encoding: 'utf8',
-        env: { ...process.env, HOME: root },
+        env: {
+          ...process.env,
+          HOME: root,
+          LOGNAME: 'p17-spoofed-account',
+          SHELL: join(root, 'shell'),
+          USER: 'p17-spoofed-account',
+        },
         maxBuffer: 16_384,
         timeout: 10_000,
       },

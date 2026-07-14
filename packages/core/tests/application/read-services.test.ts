@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, chmod, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -398,23 +398,17 @@ describe('read and config outcomes', () => {
   test('permission failures remain semantic exit-class outcomes with no staged residue', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-read-permission-'));
     temporaryRoots.push(root);
-    const base = context(env(root), effectiveConfig(), projectContext(root));
-    const current: CurrentApplicationContext = {
-      ...base,
-      ports: {
-        ...base.ports,
-        rename: async () => {
-          throw Object.assign(new Error('denied'), { code: 'EACCES' });
-        },
-      },
-    };
-    const outcome = await runConfigSetApplication(
-      request(['tool', 'codex'], { user: true }),
-      current,
-    );
+    const current = context(env(root), effectiveConfig(), projectContext(root));
+    const directory = join(root, '.config', 'skillsmith');
+    await chmod(root, 0o500);
+    let outcome: Awaited<ReturnType<typeof runConfigSetApplication>>;
+    try {
+      outcome = await runConfigSetApplication(request(['tool', 'codex'], { user: true }), current);
+    } finally {
+      await chmod(root, 0o700);
+    }
     expect(outcome.exitClass).toBe('permission');
     expect(outcome.diagnostics[0]?.code).toBe('permission-denied');
-    const directory = join(root, '.config', 'skillsmith');
     expect(await readFile(join(directory, 'config.toml'), 'utf8').catch(() => null)).toBeNull();
   });
 

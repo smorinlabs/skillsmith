@@ -625,6 +625,7 @@ const explicitValidationOwnership: Record<string, string[]> = {
   'EWP-P2-T04': [
     'EWP-CMD-CONFIG-TS01',
     'EWP-CMD-CONFIG-TS04',
+    'EWP-P1-TS08',
     'EWP-P2-TS01',
     'EWP-P2-TS04',
     'EWP-P2-TS07',

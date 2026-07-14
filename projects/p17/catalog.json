@@ -2795,12 +2795,14 @@
         "docs/architecture.md",
         "packages/cli/src/output/error-boundary.ts",
         "packages/cli/src/output/install-human.ts",
+        "packages/cli/tests/commands/config-integration.test.ts",
         "packages/cli/tests/commands/install-exit-codes.test.ts",
         "packages/cli/tests/commands/install-live.test.ts",
         "packages/cli/tests/contracts/config.test.ts",
         "packages/cli/tests/output/error-boundary.test.ts",
         "packages/cli/tests/output/install-human.test.ts",
         "packages/cli/tests/output/install-json.test.ts",
+        "packages/cli/tests/runtime/adapter.test.ts",
         "packages/core/README.md",
         "packages/core/src/acquire/run.ts",
         "packages/core/src/acquire/source.ts",
@@ -2832,6 +2834,7 @@
         "packages/core/tests/acquire/interop-roundtrip.test.ts",
         "packages/core/tests/acquire/source.test.ts",
         "packages/core/tests/acquire/uninstall-run.test.ts",
+        "packages/core/tests/application/read-services.test.ts",
         "packages/core/tests/artifacts/coordinator.test.ts",
         "packages/core/tests/artifacts/file-state.test.ts",
         "packages/core/tests/artifacts/human-toml.test.ts",
@@ -2853,6 +2856,7 @@
         "tests/ergonomics/fixtures/p2-ts07/redaction-goldens.json",
         "tests/ergonomics/fixtures/p2-ts07/source-path-goldens.json",
         "tests/ergonomics/fixtures/p2-ts07/tsconfig.json",
+        "tests/ergonomics/phase/EWP-P1-TS08.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS04.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS07.test.ts"
       ],
@@ -2903,6 +2907,7 @@
         "EWP-CMD-PLAN-TS10",
         "EWP-CMD-PLAN-TS11",
         "EWP-CMD-PLAN-TS12",
+        "EWP-P1-TS08",
         "EWP-P2-TS01",
         "EWP-P2-TS04",
         "EWP-P2-TS07",
@@ -2915,6 +2920,7 @@
       "requiredNowValidations": [
         "EWP-CMD-CONFIG-TS01",
         "EWP-CMD-CONFIG-TS04",
+        "EWP-P1-TS08",
         "EWP-P2-TS01",
         "EWP-P2-TS04",
         "EWP-P2-TS07",
@@ -2972,6 +2978,7 @@
       "testCommands": [
         "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS01",
         "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS04",
+        "bun test tests/ergonomics/phase/EWP-P1-TS08.test.ts --test-name-pattern EWP-P1-TS08",
         "bun test tests/ergonomics/phase/EWP-P2-TS01.test.ts --test-name-pattern EWP-P2-TS01",
         "bun test tests/ergonomics/phase/EWP-P2-TS04.test.ts --test-name-pattern EWP-P2-TS04",
         "bun test tests/ergonomics/phase/EWP-P2-TS07.test.ts --test-name-pattern EWP-P2-TS07",
@@ -16845,11 +16852,12 @@
       "plannedTarget": "planned:P17-G2-03",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G2-03.md#test-first-evidence"],
-      "secondaryGroups": ["P17-G2-01"],
+      "secondaryGroups": ["P17-G2-01", "P17-G1-04"],
       "implements": ["EWP-CF-012", "EWP-CF-030"],
       "validatedBy": [
         "EWP-CMD-CONFIG-TS01",
         "EWP-CMD-CONFIG-TS04",
+        "EWP-P1-TS08",
         "EWP-P2-TS01",
         "EWP-P2-TS04",
         "EWP-P2-TS07"
@@ -16857,6 +16865,7 @@
       "impactedValidations": [
         "EWP-CMD-CONFIG-TS01",
         "EWP-CMD-CONFIG-TS04",
+        "EWP-P1-TS08",
         "EWP-P2-TS01",
         "EWP-P2-TS04",
         "EWP-P2-TS07"
@@ -16865,6 +16874,7 @@
       "testCommands": [
         "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS01",
         "bun test packages/cli/tests/contracts/config.test.ts --test-name-pattern EWP-CMD-CONFIG-TS04",
+        "bun test tests/ergonomics/phase/EWP-P1-TS08.test.ts --test-name-pattern EWP-P1-TS08",
         "bun test tests/ergonomics/phase/EWP-P2-TS01.test.ts --test-name-pattern EWP-P2-TS01",
         "bun test tests/ergonomics/phase/EWP-P2-TS04.test.ts --test-name-pattern EWP-P2-TS04",
         "bun test tests/ergonomics/phase/EWP-P2-TS07.test.ts --test-name-pattern EWP-P2-TS07"
