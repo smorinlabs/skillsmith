@@ -3162,7 +3162,7 @@
       "phase": "2",
       "title": "Versioned manifest/lock/plan/ledger/journal codecs and migration repositories",
       "dependsOn": ["P17-G2-02", "P17-G2-03", "P17-G2-04"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "CHANGELOG.md",
@@ -3435,8 +3435,8 @@
           "evidence": ["projects/p17/evidence/P17-G2-05.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-05.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -3470,7 +3470,8 @@
       "evidence": [
         "projects/p17/plans/P17-G2-05.md",
         "projects/p17/evidence/P17-G2-05.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G2-05.md#ready-plan"
+        "projects/p17/evidence/P17-G2-05.md#ready-plan",
+        "projects/p17/evidence/P17-G2-05.md#test-first-evidence"
       ]
     },
     {
@@ -17098,11 +17099,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G2-05",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-05",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G2-05.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G2-05.md#ready-plan",
+        "projects/p17/evidence/P17-G2-05.md#test-first-evidence"
+      ],
       "secondaryGroups": [],
       "implements": ["EWP-CF-029", "P0-07", "P0-08"],
       "validatedBy": ["EWP-P2-TS06", "EWP-P2-TS08"],
@@ -17323,18 +17327,32 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-05:tests/ergonomics/phase/EWP-P2-TS06.test.ts#EWP-P2-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P2-TS06.test.ts",
+        "selector": "EWP-P2-TS06",
+        "command": "bun test tests/ergonomics/phase/EWP-P2-TS06.test.ts --test-name-pattern EWP-P2-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G2-05.md#red-execution-receipt-ewp-p2-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P2-TS06"],
       "impactedValidations": ["EWP-P2-TS06", "EWP-P2-TS08"],
       "affectedContracts": ["EWP-CF-029", "P0-07", "P0-08"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P2-TS06.test.ts --test-name-pattern EWP-P2-TS06"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/fixtures/p2-ts06/migration-cases.json",
+        "tests/ergonomics/fixtures/p2-ts06/migration-child.ts",
+        "tests/ergonomics/fixtures/p2-ts06/public-types.ts",
+        "tests/ergonomics/fixtures/p2-ts06/shape-cases.json",
+        "tests/ergonomics/fixtures/p2-ts06/tsconfig.json",
+        "tests/ergonomics/phase/EWP-P2-TS06.test.ts"
+      ]
     },
     {
       "id": "EWP-P2-TS07",
@@ -17374,18 +17392,37 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-05:tests/ergonomics/phase/EWP-P2-TS08.test.ts#EWP-P2-TS08",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
+        "selector": "EWP-P2-TS08",
+        "command": "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08"
+      },
+      "evidence": ["projects/p17/evidence/P17-G2-05.md#red-execution-receipt-ewp-p2-ts08"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P2-TS08"],
       "impactedValidations": ["EWP-P2-TS06", "EWP-P2-TS08"],
       "affectedContracts": ["EWP-CF-029", "P0-07", "P0-08"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/fixtures/p2-ts08/artifact-inventory.json",
+        "tests/ergonomics/fixtures/p2-ts08/fuzz-corpus.json",
+        "tests/ergonomics/fixtures/p2-ts08/journal-v1.golden.json",
+        "tests/ergonomics/fixtures/p2-ts08/ledger-v1.golden.json",
+        "tests/ergonomics/fixtures/p2-ts08/ledger-v2.golden.json",
+        "tests/ergonomics/fixtures/p2-ts08/lock-v1.golden.toml",
+        "tests/ergonomics/fixtures/p2-ts08/manifest-v1.golden.toml",
+        "tests/ergonomics/fixtures/p2-ts08/plan-v1.golden.json",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
+        "tests/ergonomics/fixtures/p2-ts08/tsconfig.json",
+        "tests/ergonomics/phase/EWP-P2-TS08.test.ts"
+      ]
     },
     {
       "id": "EWP-P3A-T01",
