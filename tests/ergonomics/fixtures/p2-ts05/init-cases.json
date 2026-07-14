@@ -1,0 +1,333 @@
+{
+  "schemaVersion": 1,
+  "fixtureCanary": "p2-ts05-init-contract-canary",
+  "skeletonCases": [
+    {
+      "id": "empty",
+      "skeleton": {},
+      "expected": "version = 1\n",
+      "semanticJson": "{\"version\":1,\"skills\":[]}",
+      "byteHash": "sha256:f59632b3a21636f59c5f3f93b747c27663df80cb2a9bc9c4f7a1f19803c6049b",
+      "semanticHash": "sha256:cd8e75a20fadb8a5e7a05138f382a0abb5d31f405f315180b8bfec3e597d4229"
+    },
+    {
+      "id": "empty-defaults",
+      "skeleton": { "defaults": {} },
+      "expected": "version = 1\n",
+      "byteHash": "sha256:f59632b3a21636f59c5f3f93b747c27663df80cb2a9bc9c4f7a1f19803c6049b",
+      "semanticHash": "sha256:cd8e75a20fadb8a5e7a05138f382a0abb5d31f405f315180b8bfec3e597d4229"
+    },
+    {
+      "id": "tools-only-sorted",
+      "skeleton": { "defaults": { "tools": ["codex", "claude-code"] } },
+      "expected": "version = 1\n\n[defaults]\ntools = [\"claude-code\", \"codex\"]\n",
+      "byteHash": "sha256:3485bb4b04a71dba48773c155d70986a8be36a48ebcd49ca5b83c17ad0746ac2",
+      "semanticHash": "sha256:51b35dee16790ab9114e68d844541f8cbe41fa79a2fe921468f9ea0a6d9f2da3"
+    },
+    {
+      "id": "defaults-only",
+      "skeleton": {
+        "defaults": {
+          "tools": ["codex"],
+          "scope": "project",
+          "path": "./skills"
+        }
+      },
+      "expected": "version = 1\n\n[defaults]\ntools = [\"codex\"]\nscope = \"project\"\npath = \"./skills\"\n",
+      "byteHash": "sha256:c610a7e20d14a202fb9d58be90191e262432ccf3e08fa90d2f338de979b864f6",
+      "semanticHash": "sha256:2aec6c59caec29f96c7c8a7f5ae951087cc10374215545c8f9bfdfcd244b2b61"
+    },
+    {
+      "id": "registry-only",
+      "skeleton": { "registry": { "default": "github.com/acme" } },
+      "expected": "version = 1\n\n[registry]\ndefault = \"github.com/acme\"\n",
+      "byteHash": "sha256:dfab866504101d56ec865b9825864f977d3162d2bf7d2b0343ec00f6c9d0697d",
+      "semanticHash": "sha256:e709697db03dbee1cf3f886637d7c36926a5ad2af4e02812b9c47da69c8acd0d"
+    },
+    {
+      "id": "complete",
+      "skeleton": {
+        "defaults": {
+          "tools": ["codex", "claude-code"],
+          "scope": "project",
+          "path": "./skills"
+        },
+        "registry": { "default": "github.com/acme" }
+      },
+      "expected": "version = 1\n\n[defaults]\ntools = [\"claude-code\", \"codex\"]\nscope = \"project\"\npath = \"./skills\"\n\n[registry]\ndefault = \"github.com/acme\"\n",
+      "semanticJson": "{\"version\":1,\"defaults\":{\"tools\":[\"claude-code\",\"codex\"],\"scope\":\"project\",\"path\":\"./skills\"},\"registry\":{\"default\":\"github.com/acme\"},\"skills\":[]}",
+      "byteHash": "sha256:172fbfa6e7e18a49e4e18f7a6c67634126372206ea46d9e4ba676f8cf061ab0f",
+      "semanticHash": "sha256:9da7341bbb0511a56795cf6b025f12d01d9dfe23e41dd2406b2a0a1cbce3a1f5"
+    }
+  ],
+  "requestRefusals": [
+    { "id": "missing-legacy-intent", "field": "legacyIntent" },
+    { "id": "missing-force", "field": "force" },
+    { "id": "present-undefined-defaults", "field": "skeleton.defaults" },
+    { "id": "duplicate-tools", "field": "skeleton.defaults.tools" },
+    { "id": "unknown-tool", "field": "skeleton.defaults.tools" },
+    { "id": "path-without-scope", "field": "skeleton.defaults.path" },
+    { "id": "nonportable-path", "field": "skeleton.defaults.path" },
+    { "id": "legacy-registry-url", "field": "skeleton.registry.default" },
+    { "id": "duplicate-intent", "field": "legacyIntent.requireMatch" },
+    { "id": "out-of-order-intent", "field": "legacyIntent.requireMatch" },
+    { "id": "intent-field-absent", "field": "legacyIntent.requireMatch" },
+    { "id": "shared-buffer", "field": "current.bytes" },
+    { "id": "shadowed-buffer", "field": "current.bytes" }
+  ],
+  "migrationCases": [
+    {
+      "id": "lf-heading-attached-comments",
+      "before": "# project heading\ntool = \"codex\" # tool inline\nscope = \"project\"\npath = \"./skills\"\n\n# registry heading\n[registry]\n# registry field\ndefault = \"https://github.com/acme\" # registry inline\n# eof comment\n",
+      "after": "# project heading\nversion = 1\n\n[defaults]\ntools = [\"codex\"] # tool inline\nscope = \"project\"\npath = \"./skills\"\n\n# registry heading\n[registry]\n# registry field\ndefault = \"github.com/acme\" # registry inline\n# eof comment\n",
+      "semanticJson": "{\"version\":1,\"defaults\":{\"tools\":[\"codex\"],\"scope\":\"project\",\"path\":\"./skills\"},\"registry\":{\"default\":\"github.com/acme\"},\"skills\":[]}",
+      "byteHash": "sha256:920d22b6ccfbab87f4b1abc3781424cbe4ee54b873db89ae4a5800b24dce5bdf",
+      "semanticHash": "sha256:2bcc77c3f1b72de6b9aa208dfce104125bd22092d1db2abecd4750ff49950ce5"
+    },
+    {
+      "id": "crlf-quoted-keys-spacing",
+      "before": "# café heading\r\n'tool' = \"codex\"\r\n",
+      "after": "# café heading\r\nversion = 1\r\n\r\n[defaults]\r\n'tools' = [\"codex\"]\r\n",
+      "byteHash": "sha256:2ba17d126e79b77ac83113bf13b91c78b959761aefe7f5f31937120a3295bdac",
+      "semanticHash": "sha256:33f0252bd1d4b12fe0bb99c19b5d99f22e35ba2b51c7f8de601d6b4877015bbe"
+    },
+    {
+      "id": "crlf-quoted-tool-key",
+      "before": "# heading\r\n\"tool\"  =  'claude-code' # retained\r\nscope=\"user\"\r\n",
+      "after": "# heading\r\nversion = 1\r\n\r\n[defaults]\r\n\"tools\"  =  ['claude-code'] # retained\r\nscope=\"user\"\r\n",
+      "byteHash": "sha256:bb02e29dab3ad315829a40a0c000758f3e051a3e83323089562517ac77c53f3f",
+      "semanticHash": "sha256:b8e66f96dd92cad9b35eeada92c60ad6585aba535da639ceb71a71fdca53aa92"
+    },
+    {
+      "id": "no-final-newline",
+      "before": "tool='codex'\nscope = 'project'\npath='./skills'",
+      "after": "version = 1\n\n[defaults]\ntools=['codex']\nscope = 'project'\npath='./skills'",
+      "byteHash": "sha256:7124cc3e8f66ed62a609a40b793efc0e5491b93f06fc91115bc3b7b95794106f",
+      "semanticHash": "sha256:2aec6c59caec29f96c7c8a7f5ae951087cc10374215545c8f9bfdfcd244b2b61"
+    },
+    {
+      "id": "registry-only",
+      "before": "# registry only\n[registry]\n# attached\ndefault='https://github.com/acme'\n",
+      "after": "# registry only\nversion = 1\n\n[registry]\n# attached\ndefault='github.com/acme'\n",
+      "byteHash": "sha256:2badc3747d389301e770829e7e931e01b82aaabf7f5d649bf1a55083c4a19b6d",
+      "semanticHash": "sha256:e709697db03dbee1cf3f886637d7c36926a5ad2af4e02812b9c47da69c8acd0d"
+    }
+  ],
+  "unsafeLegacyCases": [
+    {
+      "id": "mixed-newlines",
+      "source": "tool = \"codex\"\r\nscope = \"project\"\n",
+      "reason": "unsafe-range"
+    },
+    {
+      "id": "reopened-registry",
+      "source": "tool = \"codex\"\n[registry]\ndefault = \"https://github.com/acme\"\n[registry]\n",
+      "reason": "invalid-input"
+    },
+    {
+      "id": "duplicate-tool-target",
+      "source": "tool = \"codex\"\ntool = \"claude-code\"\n",
+      "reason": "invalid-input"
+    },
+    { "id": "multiline-tool", "source": "tool = \"\"\"codex\"\"\"\n", "reason": "unsafe-range" },
+    {
+      "id": "nonportable-path",
+      "source": "scope = \"project\"\npath = \"skills\"\n",
+      "reason": "invalid-input"
+    }
+  ],
+  "matrixCases": [
+    {
+      "id": "absent-create",
+      "skeletonId": "empty",
+      "current": null,
+      "requireMatch": [],
+      "force": false,
+      "expected": { "kind": "create-manifest" }
+    },
+    {
+      "id": "absent-force-create",
+      "skeletonId": "empty",
+      "current": null,
+      "requireMatch": [],
+      "force": true,
+      "expected": { "kind": "create-manifest" }
+    },
+    {
+      "id": "legacy-preserve-all",
+      "skeletonId": "empty",
+      "currentMigrationId": "lf-heading-attached-comments",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "kind": "migrate-project-config" }
+    },
+    {
+      "id": "legacy-partial-intent-equal",
+      "skeletonId": "complete",
+      "currentMigrationId": "lf-heading-attached-comments",
+      "requireMatch": ["defaults.scope", "defaults.path", "registry.default"],
+      "force": true,
+      "expected": { "kind": "migrate-project-config" }
+    },
+    {
+      "id": "legacy-multi-field-conflict",
+      "skeletonId": "complete",
+      "current": "tool = \"codex\"\nscope = \"user\"\n",
+      "requireMatch": ["defaults.tools", "defaults.scope"],
+      "force": true,
+      "expected": { "reason": "legacy-intent-conflict", "exitCode": 3, "shape": "legacy" }
+    },
+    {
+      "id": "legacy-named-field-absent-conflict",
+      "skeletonId": "complete",
+      "current": "tool = \"codex\"\nscope = \"project\"\npath = \"./skills\"\n",
+      "requireMatch": ["registry.default"],
+      "force": false,
+      "expected": { "reason": "legacy-intent-conflict", "exitCode": 3, "shape": "legacy" }
+    },
+    {
+      "id": "unsafe-legacy-force-refusal",
+      "skeletonId": "empty",
+      "currentUnsafeId": "mixed-newlines",
+      "requireMatch": [],
+      "force": true,
+      "expected": { "reason": "unsafe-legacy-migration", "exitCode": 3, "shape": "legacy" }
+    },
+    {
+      "id": "unsafe-legacy-refusal",
+      "skeletonId": "empty",
+      "currentUnsafeId": "mixed-newlines",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "reason": "unsafe-legacy-migration", "exitCode": 3, "shape": "legacy" }
+    },
+    {
+      "id": "canonical-semantic-noop",
+      "skeletonId": "empty",
+      "current": "# retained\nversion=1\n",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "kind": "noop" }
+    },
+    {
+      "id": "canonical-semantic-force-noop",
+      "skeletonId": "empty",
+      "current": "# retained\nversion=1\n",
+      "requireMatch": [],
+      "force": true,
+      "expected": { "kind": "noop" }
+    },
+    {
+      "id": "canonical-different-refusal",
+      "skeletonId": "empty",
+      "current": "version = 1\n\n[defaults]\ntools = [\"codex\"]\n",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "reason": "existing-manifest", "exitCode": 3, "shape": "canonical" }
+    },
+    {
+      "id": "canonical-different-force-replace",
+      "skeletonId": "empty",
+      "current": "version = 1\n\n[defaults]\ntools = [\"codex\"]\n",
+      "requireMatch": [],
+      "force": true,
+      "expected": { "kind": "replace-manifest" }
+    },
+    {
+      "id": "canonical-invalid-refusal",
+      "skeletonId": "empty",
+      "current": "version = 1\n\n[defaults]\npath = \"./skills\"\n",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "reason": "existing-manifest", "exitCode": 3, "shape": "canonical" }
+    },
+    {
+      "id": "canonical-invalid-force-replace",
+      "skeletonId": "empty",
+      "current": "version = 1\n\n[defaults]\npath = \"./skills\"\n",
+      "requireMatch": [],
+      "force": true,
+      "expected": { "kind": "replace-manifest" }
+    },
+    {
+      "id": "mixed-refusal",
+      "skeletonId": "empty",
+      "current": "version = 1\ntool = \"codex\"\n",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "reason": "existing-manifest", "exitCode": 3, "shape": "mixed" }
+    },
+    {
+      "id": "mixed-force-replace",
+      "skeletonId": "empty",
+      "current": "version = 1\ntool = \"codex\"\n",
+      "requireMatch": [],
+      "force": true,
+      "expected": { "kind": "replace-manifest" }
+    },
+    {
+      "id": "empty-refusal",
+      "skeletonId": "empty",
+      "current": "",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "reason": "existing-manifest", "exitCode": 3, "shape": "empty" }
+    },
+    {
+      "id": "empty-force-replace",
+      "skeletonId": "empty",
+      "current": "",
+      "requireMatch": [],
+      "force": true,
+      "expected": { "kind": "replace-manifest" }
+    },
+    {
+      "id": "malformed-refusal",
+      "skeletonId": "empty",
+      "current": "version = [\n",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "reason": "existing-manifest", "exitCode": 3, "shape": "malformed" }
+    },
+    {
+      "id": "malformed-force-replace",
+      "skeletonId": "empty",
+      "current": "version = [\n",
+      "requireMatch": [],
+      "force": true,
+      "expected": { "kind": "replace-manifest" }
+    },
+    {
+      "id": "unknown-refusal",
+      "skeletonId": "empty",
+      "current": "other = 1\n",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "reason": "existing-manifest", "exitCode": 3, "shape": "unknown" }
+    },
+    {
+      "id": "unknown-force-replace",
+      "skeletonId": "empty",
+      "current": "other = 1\n",
+      "requireMatch": [],
+      "force": true,
+      "expected": { "kind": "replace-manifest" }
+    },
+    {
+      "id": "future-refusal",
+      "skeletonId": "empty",
+      "current": "version = 2\nfuture = true\n",
+      "requireMatch": [],
+      "force": false,
+      "expected": { "reason": "future-manifest", "exitCode": 3, "shape": "future" }
+    },
+    {
+      "id": "future-force-refusal",
+      "skeletonId": "empty",
+      "current": "version = 2\nfuture = true\n",
+      "requireMatch": [],
+      "force": true,
+      "expected": { "reason": "future-manifest", "exitCode": 3, "shape": "future" }
+    }
+  ]
+}

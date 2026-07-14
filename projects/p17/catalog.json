@@ -3049,7 +3049,7 @@
       "phase": "2",
       "title": "Pure init request/skeleton/migration operation model without early execution",
       "dependsOn": ["P17-G2-01", "P17-G2-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -3112,8 +3112,8 @@
           "evidence": ["projects/p17/evidence/P17-G2-04.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G2-04.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -3148,7 +3148,8 @@
         "projects/p17/plans/P17-G2-04.md",
         "projects/p17/evidence/P17-G2-04.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G2-04.md#mapping-amendment",
-        "projects/p17/evidence/P17-G2-04.md#ready-plan"
+        "projects/p17/evidence/P17-G2-04.md#ready-plan",
+        "projects/p17/evidence/P17-G2-04.md#test-first-evidence"
       ]
     },
     {
@@ -16968,11 +16969,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G2-04",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-04",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G2-04.md#ready-plan"],
+      "evidence": ["projects/p17/evidence/P17-G2-04.md#test-first-evidence"],
       "secondaryGroups": ["P17-G2-01", "P17-G1-04", "P17-G2-03"],
       "implements": [],
       "validatedBy": [
@@ -17170,18 +17171,30 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G2-04",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G2-04:tests/ergonomics/phase/EWP-P2-TS05.test.ts#EWP-P2-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P2-TS05.test.ts",
+        "selector": "EWP-P2-TS05",
+        "command": "bun test tests/ergonomics/phase/EWP-P2-TS05.test.ts --test-name-pattern EWP-P2-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G2-04.md#red-execution-receipt-ewp-p2-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P2-TS05"],
       "impactedValidations": ["EWP-P2-TS05"],
       "affectedContracts": [],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P2-TS05.test.ts --test-name-pattern EWP-P2-TS05"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/fixtures/p2-ts05/init-cases.json",
+        "tests/ergonomics/fixtures/p2-ts05/public-types.ts",
+        "tests/ergonomics/fixtures/p2-ts05/tsconfig.json",
+        "tests/ergonomics/phase/EWP-P2-TS05.test.ts"
+      ]
     },
     {
       "id": "EWP-P2-TS06",
