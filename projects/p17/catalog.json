@@ -3511,7 +3511,7 @@
       "phase": "3A",
       "title": "Canonical correlated read model and status state-product surface",
       "dependsOn": ["P17-G2-05"],
-      "status": "planned",
+      "status": "mapped",
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
@@ -3541,8 +3541,8 @@
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-01.md#mapping-and-prerequisites"]
         },
         "ready": {
           "status": "pending",
@@ -3581,7 +3581,7 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": ["projects/p17/evidence/P17-G3A-01.md#mapping-and-prerequisites"]
     },
     {
       "id": "P17-G3A-02",
