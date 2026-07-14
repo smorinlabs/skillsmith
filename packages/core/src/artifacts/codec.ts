@@ -246,7 +246,7 @@ const ownPlainData = (input: unknown): Result<unknown, OwnFailure> => {
     if (Array.isArray(value)) {
       if (proto !== Array.prototype) throw Object.freeze({ path: safePath(path) });
       const descriptors = Object.getOwnPropertyDescriptors(value);
-      const length = descriptors.length;
+      const length = Object.getOwnPropertyDescriptor(value, 'length');
       if (!length || !('value' in length) || length.value !== value.length) {
         throw Object.freeze({ path: safePath(path) });
       }
