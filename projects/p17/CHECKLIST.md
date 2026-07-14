@@ -762,13 +762,13 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G2-04 — Pure init request/skeleton/migration operation model without early execution
 
-Phase: 2; status: **planned**; dependencies: P17-G2-01, P17-G2-03.
+Phase: 2; status: **mapped**; dependencies: P17-G2-01, P17-G2-03.
 Required-now validations: EWP-P2-TS05.
 Downstream coverage obligations: none.
 
 ### Group gates
 
-- [ ] P17-G2-04:mapped _(pending)_
+- [x] P17-G2-04:mapped _(passed)_
 - [ ] P17-G2-04:ready _(pending)_
 - [ ] P17-G2-04:test-first _(pending)_
 - [ ] P17-G2-04:minimal-implementation _(pending)_
