@@ -12,8 +12,8 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 8 | 20 | 6 |
-| phase-task | 65 | 29 | 36 | 0 |
-| phase-test | 61 | 25 | 36 | 0 |
+| phase-task | 65 | 30 | 35 | 0 |
+| phase-test | 61 | 26 | 35 | 0 |
 | command-test | 157 | 14 | 143 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
@@ -27,7 +27,7 @@ Tracked entities: **425** across **45** change groups.
 |---|---:|---:|---:|---:|
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
-| 2 | 5 | 32 | 24 | 0 |
+| 2 | 5 | 32 | 26 | 0 |
 | 3 | 8 | 84 | 0 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 66 | 0 | 0 |
@@ -762,7 +762,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G2-04 — Pure init request/skeleton/migration operation model without early execution
 
-Phase: 2; status: **active**; dependencies: P17-G2-01, P17-G2-03.
+Phase: 2; status: **signed-off**; dependencies: P17-G2-01, P17-G2-03.
 Required-now validations: EWP-CMD-CONFIG-TS01, EWP-CMD-CONFIG-TS04, EWP-P1-TS08, EWP-P2-TS01, EWP-P2-TS04, EWP-P2-TS05.
 Downstream coverage obligations: none.
 
@@ -771,18 +771,18 @@ Downstream coverage obligations: none.
 - [x] P17-G2-04:mapped _(passed)_
 - [x] P17-G2-04:ready _(passed)_
 - [x] P17-G2-04:test-first _(passed)_
-- [ ] P17-G2-04:minimal-implementation _(pending)_
-- [ ] P17-G2-04:targeted-green _(pending)_
-- [ ] P17-G2-04:impacted-green _(pending)_
-- [ ] P17-G2-04:refactor _(pending)_
-- [ ] P17-G2-04:adversarial-review _(pending)_
-- [ ] P17-G2-04:traceability-closure _(pending)_
-- [ ] P17-G2-04:signed-off _(pending)_
+- [x] P17-G2-04:minimal-implementation _(passed)_
+- [x] P17-G2-04:targeted-green _(passed)_
+- [x] P17-G2-04:impacted-green _(passed)_
+- [x] P17-G2-04:refactor _(passed)_
+- [x] P17-G2-04:adversarial-review _(passed)_
+- [x] P17-G2-04:traceability-closure _(passed)_
+- [x] P17-G2-04:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-P2-T05** — Define init request validation, canonical skeleton construction, and pure _(phase-task; red)_
-- [ ] **EWP-P2-TS05** — Init skeleton and supported legacy-migration outputs immediately round-trip _(phase-test; failing)_
+- [x] **EWP-P2-T05** — Define init request validation, canonical skeleton construction, and pure _(phase-task; signed-off)_
+- [x] **EWP-P2-TS05** — Init skeleton and supported legacy-migration outputs immediately round-trip _(phase-test; signed-off)_
 
 ## P17-G2-05 — Versioned manifest/lock/plan/ledger/journal codecs and migration repositories
 
