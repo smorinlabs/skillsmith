@@ -35,6 +35,10 @@
         ".release-please-manifest.json"
       ],
       "formatter": { "enabled": false }
+    },
+    {
+      "include": ["tests/ergonomics/fixtures/p2-ts08/*.golden.json"],
+      "formatter": { "enabled": false }
     }
   ]
 }
