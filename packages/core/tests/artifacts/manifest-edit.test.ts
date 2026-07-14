@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { SUPPORTED_TOOLS } from '../../src/agents/registry.ts';
 import type { ArtifactMutationErrorReason } from '../../src/artifacts/coordinator-types.ts';
 import { type ArtifactDigest, hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import { migrateLegacyManifestBytes } from '../../src/artifacts/legacy-migration.ts';
 import { type ManifestEditTarget, editManifestBytes } from '../../src/artifacts/manifest-edit.ts';
 import { normalizeManifestDocument, readManifestSource } from '../../src/artifacts/manifest.ts';
 
@@ -174,6 +175,105 @@ describe('closed lossless manifest edit algebra', () => {
         edits: [{ kind: 'set-default', field: 'scope', value: 'user' }, { kind: 'migrate-legacy' }],
       }),
     ).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+  });
+
+  test('losslessly migrates legacy trivia, key quotes, registry identity, and newline form', () => {
+    for (const [before, after] of [
+      [
+        '# project heading\ntool = "codex" # selected\nscope = "project"\npath = "./skills"\n\n# registry heading\n[registry]\n# field\ndefault = "https://github.com/acme" # identity\n',
+        '# project heading\nversion = 1\n\n[defaults]\ntools = ["codex"] # selected\nscope = "project"\npath = "./skills"\n\n# registry heading\n[registry]\n# field\ndefault = "github.com/acme" # identity\n',
+      ],
+      [
+        "# café heading\r\n'tool'\t=\t'codex' # selected\r\nscope  =  'project'\r\n",
+        "# café heading\r\nversion = 1\r\n\r\n[defaults]\r\n'tools'\t=\t['codex'] # selected\r\nscope  =  'project'\r\n",
+      ],
+      [
+        "tool='codex'\nscope = 'project'\npath='./skills'",
+        "version = 1\n\n[defaults]\ntools=['codex']\nscope = 'project'\npath='./skills'",
+      ],
+      [
+        "# registry only\n[registry]\n# attached\ndefault='https://github.com/acme'\n",
+        "# registry only\nversion = 1\n\n[registry]\n# attached\ndefault='github.com/acme'\n",
+      ],
+    ] as const) {
+      const result = migrateLegacyManifestBytes(encoder.encode(before));
+      expect(result.ok, result.ok ? undefined : result.error.reason).toBeTrue();
+      if (!result.ok) continue;
+      expect(result.value.source).toBe(after);
+      expect(result.value.beforeSemanticHash).toBe(semantics(before));
+      expect(result.value.afterSemanticHash).toBe(semantics(after));
+      expect(Object.isFrozen(result.value)).toBeTrue();
+    }
+  });
+
+  test('delegates migration before following canonical edits without losing preserved trivia', () => {
+    const before = encoder.encode(
+      '# retained\n"tool"  =  \'codex\' # selected\nscope = "project"\n',
+    );
+    const result = editManifestBytes(before, {
+      edits: [{ kind: 'migrate-legacy' }, { kind: 'set-default', field: 'scope', value: 'user' }],
+    });
+    expect(result.ok, result.ok ? undefined : result.error.message).toBeTrue();
+    if (!result.ok) return;
+    expect(result.value.source).toBe(
+      '# retained\nversion = 1\n\n[defaults]\n"tools"  =  [\'codex\'] # selected\nscope = "user"\n',
+    );
+    expect(result.value.migrated).toBeTrue();
+    expect(result.value.touchedTargets).toEqual([
+      { kind: 'migration' },
+      { kind: 'default', field: 'scope' },
+    ]);
+  });
+
+  test('refuses ambiguous legacy ranges and sensitive retained content with fixed local errors', () => {
+    expect(
+      migrateLegacyManifestBytes(encoder.encode('tool = "codex"\r\nscope = "project"\n')),
+    ).toMatchObject({ ok: false, error: { reason: 'unsafe-range' } });
+    expect(migrateLegacyManifestBytes(encoder.encode('tool = """codex"""\n'))).toMatchObject({
+      ok: false,
+      error: { reason: 'unsafe-range' },
+    });
+    expect(
+      migrateLegacyManifestBytes(encoder.encode('tool = "codex"\n# token = ghp_P17SECRET1\n')),
+    ).toMatchObject({ ok: false, error: { reason: 'unsafe-content' } });
+  });
+
+  test('owns only ordinary unshadowed bytes for legacy conversion', () => {
+    const source = encoder.encode('tool = "codex"\n');
+    Object.defineProperty(source, 'buffer', { value: source.buffer });
+    expect(migrateLegacyManifestBytes(source)).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-input' },
+    });
+
+    for (const key of ['extra', Symbol.iterator] as const) {
+      const decorated = encoder.encode('tool = "codex"\n');
+      Object.defineProperty(decorated, key, { value: 1 });
+      expect(migrateLegacyManifestBytes(decorated)).toMatchObject({
+        ok: false,
+        error: { reason: 'invalid-input' },
+      });
+    }
+
+    const shared = new Uint8Array(new SharedArrayBuffer(32));
+    shared.set(encoder.encode('tool = "codex"\n'));
+    expect(migrateLegacyManifestBytes(shared)).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-input' },
+    });
+
+    let traps = 0;
+    const proxied = new Proxy(encoder.encode('tool = "codex"\n'), {
+      ownKeys: () => {
+        traps += 1;
+        return [];
+      },
+    });
+    expect(migrateLegacyManifestBytes(proxied)).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-input' },
+    });
+    expect(traps).toBe(0);
   });
 
   test('applies root edits before existing-skill edits regardless of request interleaving', () => {

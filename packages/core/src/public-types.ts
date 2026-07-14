@@ -104,6 +104,18 @@ export type {
   ManifestEditTarget,
   ManifestSkillSetEdit,
 } from './artifacts/manifest-edit.ts';
+export type {
+  InitManifestBeforeImage,
+  InitManifestCurrentInput,
+  InitManifestDefaultsInput,
+  InitManifestIntentField,
+  InitManifestLegacyIntentInput,
+  InitManifestOperationInput,
+  InitManifestRefusal,
+  InitManifestRequest,
+  InitManifestSkeletonInput,
+  InitManifestWriteImage,
+} from './artifacts/init.ts';
 export type { CommandEntry } from './commands/types.ts';
 export type {
   Config,

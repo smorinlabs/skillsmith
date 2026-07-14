@@ -1,3 +1,4 @@
+import { migrateLegacyManifestBytes } from '../artifacts/legacy-migration.ts';
 import { type SkillSmithError, invalidArgumentError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial } from '../safety/redaction.ts';
@@ -413,108 +414,6 @@ const editOne = (
   );
 };
 
-const normalizeLegacyRegistry = (value: string | undefined): string | undefined => {
-  if (value === undefined || !/^https:\/\//i.test(value)) return value;
-  const parsed = new URL(value);
-  return `${parsed.host}${parsed.pathname.replace(/^\/+|\/+$/g, '') ? `/${parsed.pathname.replace(/^\/+|\/+$/g, '')}` : ''}`;
-};
-
-interface Replacement {
-  readonly start: number;
-  readonly end: number;
-  readonly value: string;
-}
-
-const applyReplacements = (source: string, replacements: readonly Replacement[]): string =>
-  [...replacements]
-    .sort((left, right) => right.start - left.start || right.end - left.end)
-    .reduce(
-      (current, replacement) =>
-        replaceRange(current, replacement.start, replacement.end, replacement.value),
-      source,
-    );
-
-const renamedKey = (rawKey: string, key: string): string =>
-  rawKey.startsWith("'") ? `'${key}'` : rawKey.startsWith('"') ? `"${key}"` : key;
-
-const canonicalizeLegacyRanges = (
-  source: string,
-  config: Config,
-): Result<string, SkillSmithError> => {
-  const newline = newlineOf(source);
-  const lines = linesOf(source);
-  const topEntries = lines
-    .filter((line) => line.section === null)
-    .map(entryOf)
-    .filter(
-      (entry): entry is EntryRange =>
-        entry !== null && ['tool', 'scope', 'path'].includes(entry.key),
-    );
-  const replacements: Replacement[] = [];
-  const firstTop = topEntries[0];
-  if (firstTop) {
-    replacements.push({
-      start: firstTop.line.start,
-      end: firstTop.line.start,
-      value: `version = 1${newline}${newline}[defaults]${newline}`,
-    });
-    const tool = topEntries.find((entry) => entry.key === 'tool');
-    if (tool) {
-      replacements.push({
-        start: tool.keyStart,
-        end: tool.keyEnd,
-        value: renamedKey(tool.rawKey, 'tools'),
-      });
-      replacements.push({
-        start: tool.valueStart,
-        end: tool.valueEnd,
-        value: `[${tool.value}]`,
-      });
-    }
-  } else {
-    const firstStructural = lines.find(
-      (line) => line.body.trim() !== '' && !line.body.trim().startsWith('#'),
-    );
-    const offset = firstStructural?.start ?? source.length;
-    const prefix = offset > 0 && source[offset - 1] !== '\n' ? newline : '';
-    replacements.push({
-      start: offset,
-      end: offset,
-      value: `${prefix}version = 1${newline}${firstStructural ? newline : ''}`,
-    });
-  }
-
-  const legacyRegistry = entriesFor(source, 'registry', 'default')[0];
-  const normalizedRegistry = normalizeLegacyRegistry(config.registry?.default);
-  if (legacyRegistry && normalizedRegistry !== undefined) {
-    const rendered = quotedLike(legacyRegistry.value, normalizedRegistry);
-    if (rendered !== legacyRegistry.value) {
-      replacements.push({
-        start: legacyRegistry.valueStart,
-        end: legacyRegistry.valueEnd,
-        value: rendered,
-      });
-    }
-  }
-
-  const canonical = applyReplacements(source, replacements);
-  const parsed = parseProjectConfig(canonical);
-  return parsed.ok
-    ? ok(canonical)
-    : err(
-        invalidArgumentError(
-          `cannot safely migrate the exact legacy source\n${manualPatch(
-            'defaults',
-            'tools',
-            'set',
-            getConfigTools(config) ?? [],
-            'array',
-            getConfigTools(config),
-          )}`,
-        ),
-      );
-};
-
 const applySemanticEdit = (config: Config, input: HumanConfigEditInput): Config => {
   const next: Config = {
     ...(config.tool === undefined ? {} : { tool: config.tool }),
@@ -624,9 +523,11 @@ export const editConfigSource = (
     const parsed = parseProjectConfig(source);
     if (!parsed.ok) return parsed;
     if (parsed.value.shape === 'legacy') {
-      const canonical = canonicalizeLegacyRanges(source, parsed.value.config);
-      if (!canonical.ok) return canonical;
-      edited = canonical.value;
+      const migration = migrateLegacyManifestBytes(new TextEncoder().encode(source));
+      if (!migration.ok) {
+        return err(invalidArgumentError('cannot safely migrate the exact legacy source'));
+      }
+      edited = migration.value.source;
       migrated = true;
     }
     config = parsed.value.config;

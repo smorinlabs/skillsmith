@@ -40,6 +40,8 @@ import {
   hashCanonicalInput,
   hashManifestSemantics,
   hashSourceContentV1,
+  INIT_MANIFEST_OPERATION_KINDS,
+  planInitManifest,
   projectSourceContent,
   readPortableLockSource,
   serializePortableLock,
@@ -53,6 +55,9 @@ import type {
   DetectOptions,
   InstallMethod,
   InstallRecord,
+  InitManifestOperationInput,
+  InitManifestRequest,
+  InitManifestRefusal,
   Logger,
   PortableLockRelationship,
   PortableLockV1,
@@ -84,6 +89,15 @@ then commits manifest/lock pairs with last-moment identity guards, no-replace st
 target locks, and private durable forward/rollback recovery. The coordinator does not receive Git,
 HTTP, process, placement, store, ledger, or general runtime authority. Config saving uses the same
 one-file mechanics while retaining its existing public operation.
+
+`planInitManifest` is the pure input beneath future init orchestration. It validates an
+already-resolved skeleton request plus an absent/present manifest snapshot and returns one frozen,
+path-free `create-manifest | replace-manifest | migrate-project-config | noop` input or a fixed
+refusal. Canonical declaration-empty bytes and their byte/semantic hashes are constructed together;
+before images contain hashes and shape only, never raw source bytes. Legacy project conversion is
+one internal range-preserving authority shared by init, manifest editing, and project-config edits.
+This API does not discover destinations, register a CLI command, read or write files, acquire locks,
+or execute the returned input.
 
 Remote acquisition exposes only canonical, credential-free source DTOs. Literal arguments,
 userinfo, query strings, fragments, and local/foreign path spellings are rejected before transport

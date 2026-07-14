@@ -1,6 +1,19 @@
 export * from './discovery.ts';
 export * from './hash.ts';
 export * from './identity.ts';
+export { INIT_MANIFEST_OPERATION_KINDS, planInitManifest } from './init.ts';
+export type {
+  InitManifestBeforeImage,
+  InitManifestCurrentInput,
+  InitManifestDefaultsInput,
+  InitManifestIntentField,
+  InitManifestLegacyIntentInput,
+  InitManifestOperationInput,
+  InitManifestRefusal,
+  InitManifestRequest,
+  InitManifestSkeletonInput,
+  InitManifestWriteImage,
+} from './init.ts';
 export * from './lock.ts';
 export * from './manifest.ts';
 export {

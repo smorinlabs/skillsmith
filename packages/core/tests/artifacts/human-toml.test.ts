@@ -118,6 +118,38 @@ describe('lossless human TOML scanner', () => {
     expect(scanned.assignments[2]).toMatchObject({ keyPath: ['registry'], dotted: false });
   });
 
+  test('reports immutable key ranges in decoded JavaScript source-code-unit offsets', () => {
+    const source =
+      '# leading non-ASCII: café 😀\n' +
+      'bare = 1\n' +
+      "  'quoted key' = 2\n" +
+      '\t"escaped\\u0020key" = 3\n';
+    const scanned = unwrap(scanHumanToml(encoder.encode(source)));
+    const expected = [
+      { rawKey: 'bare', decoded: ['bare'] },
+      { rawKey: "'quoted key'", decoded: ['quoted key'] },
+      { rawKey: '"escaped\\u0020key"', decoded: ['escaped key'] },
+    ];
+
+    expect(scanned.assignments).toHaveLength(expected.length);
+    for (const [index, assignment] of scanned.assignments.entries()) {
+      const expectation = expected[index];
+      if (expectation === undefined) throw new Error('missing expected key fixture');
+      expect(assignment.rawKey).toBe(expectation.rawKey);
+      expect(assignment.keyPath).toEqual(expectation.decoded);
+      expect(Object.isFrozen(assignment.keyRange)).toBeTrue();
+      expect(source.slice(assignment.keyRange.start, assignment.keyRange.end)).toBe(
+        expectation.rawKey,
+      );
+    }
+
+    const firstAssignment = scanned.assignments[0];
+    if (firstAssignment === undefined) throw new Error('missing first scanned assignment');
+    const firstKey = firstAssignment.keyRange;
+    expect(firstKey.start).toBe(source.indexOf('bare'));
+    expect(encoder.encode(source.slice(0, firstKey.start)).length).toBeGreaterThan(firstKey.start);
+  });
+
   test('renders bounded values and rejects overlapping range applications', () => {
     expect(renderHumanTomlString('safe', 'literal')).toBe("'safe'");
     expect(renderHumanTomlString("can't", 'literal')).toBe('"can\'t"');

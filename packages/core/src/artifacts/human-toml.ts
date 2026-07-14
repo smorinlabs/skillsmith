@@ -41,6 +41,7 @@ export interface HumanTomlAssignment extends HumanTomlRange {
   readonly keyPath: readonly string[];
   readonly dotted: boolean;
   readonly rawKey: string;
+  readonly keyRange: HumanTomlRange;
   readonly value: string;
   readonly valueRange: HumanTomlRange;
   readonly multiline: boolean;
@@ -473,9 +474,11 @@ export const scanHumanToml = (input: Uint8Array): Result<HumanTomlDocument, Huma
     const body = source.slice(line.start, line.bodyEnd);
     const equals = assignmentEquals(body);
     if (equals < 0) continue;
-    const rawKey = body.slice(0, equals).trim();
+    const keySource = body.slice(0, equals);
+    const rawKey = keySource.trim();
     const keyPath = parseKeyPath(rawKey);
     if (keyPath === null) continue;
+    const keyStart = line.start + (keySource.length - keySource.trimStart().length);
     let localValueStart = equals + 1;
     while (body[localValueStart] === ' ' || body[localValueStart] === '\t') localValueStart += 1;
     const valueStart = line.start + localValueStart;
@@ -497,6 +500,7 @@ export const scanHumanToml = (input: Uint8Array): Result<HumanTomlDocument, Huma
       keyPath,
       dotted: keyPath.length > 1,
       rawKey,
+      keyRange: frozenRange(keyStart, keyStart + rawKey.length),
       value: rawValue,
       valueRange: frozenRange(valueStart, value.end),
       multiline: value.multiline || value.endLineIndex !== lineIndex,

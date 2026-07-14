@@ -304,10 +304,10 @@ const _ledgerRequest: InitManifestRequest = { ..._request, ledger: null };
 const _liveRequest: InitManifestRequest = { ..._request, live: null };
 // @ts-expect-error mutable planner policy is outside the pure init input
 const _policyRequest: InitManifestRequest = { ..._request, plannerPolicy: {} };
-// @ts-expect-error a current image carries bytes, never a filesystem path
 const _pathfulCurrent: InitManifestCurrentInput = {
   state: 'present',
   bytes: new Uint8Array(),
+  // @ts-expect-error a current image carries bytes, never a filesystem path
   path: '/tmp/skillsmith.toml',
 };
 // @ts-expect-error init skeletons are declaration-empty

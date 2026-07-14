@@ -230,6 +230,15 @@ the manifest editor verifies the exact semantic delta through the strict reader,
 coordinator installs only copied, verified manifest bytes and canonical lock bytes. Coordination
 uses a focused `ArtifactCoordinatorPorts` capability instead of widening `RuntimePorts`.
 
+Pure init input planning is also artifact-local. `planInitManifest` accepts only an already-resolved
+skeleton and an absent/present owned byte snapshot. It constructs one canonical declaration-empty
+manifest, classifies existing bytes with future-schema and force precedence, and returns a frozen,
+path-free create/replace/migrate/noop input or fixed refusal. Before images expose only exact and
+semantic hashes plus shape. The range-based legacy conversion is a single internal leaf reused by
+init planning, manifest edits, and project-config edits, so comments, line endings, quote class, and
+semantic identity follow one rule. Destination discovery, CLI policy, locking, persistence, and
+execution remain later application/planner responsibilities.
+
 Pair writes take an account-stable global lock and the complete sorted set of compatibility target
 locks, reobserve file and parent identities at the last responsible moment, and use exclusive
 transaction directories plus no-replace links. A private versioned recovery record is saved before

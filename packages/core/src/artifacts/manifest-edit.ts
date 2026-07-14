@@ -14,6 +14,7 @@ import {
   renderHumanTomlStringArray,
   scanHumanToml,
 } from './human-toml.ts';
+import { migrateLegacyManifestBytes } from './legacy-migration.ts';
 import {
   normalizeManifestDocument,
   projectManifestSemantics,
@@ -1104,7 +1105,24 @@ export const editManifestBytes = (
 
   let candidate: string;
   if (read.value.shape === 'legacy') {
-    candidate = serializeCanonicalManifest(expected.mutable, globalNewline(document) ?? '\n');
+    const migrated = migrateLegacyManifestBytes(document.bytes);
+    if (!migrated.ok) return unsafe(validated.value.edits[0] as ManifestEdit);
+    candidate = migrated.value.source;
+    const materialEdits = validated.value.edits.filter((edit) => edit.kind !== 'migrate-legacy');
+    if (materialEdits.length > 0) {
+      const migratedScan = scanHumanToml(new TextEncoder().encode(candidate));
+      if (!migratedScan.ok) return unsafe(materialEdits[0] as ManifestEdit);
+      const migratedBefore = normalizeSource(candidate);
+      if (!migratedBefore.ok) return unsafe(materialEdits[0] as ManifestEdit);
+      const edited = editCanonicalSource(
+        migratedScan.value,
+        migratedBefore.value,
+        expected.mutable,
+        materialEdits,
+      );
+      if (!edited.ok) return edited;
+      candidate = edited.value;
+    }
   } else {
     const edited = editCanonicalSource(document, before, expected.mutable, validated.value.edits);
     if (!edited.ok) return edited;
