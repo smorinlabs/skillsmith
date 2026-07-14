@@ -138,8 +138,8 @@ Tracked entities: **425** across **45** change groups.
 | P0-04 | P17-G1-02B | signed-off | required-pr |
 | P0-05 | P17-G1-02C | signed-off | required-pr |
 | P0-06 | P17-G1-02A | signed-off | required-pr |
-| P0-07 | P17-G2-05 | planned | required-pr |
-| P0-08 | P17-G2-05 | planned | required-pr |
+| P0-07 | P17-G2-05 | validated | required-pr |
+| P0-08 | P17-G2-05 | validated | required-pr |
 | P1-01 | P17-G3A-02 | planned | required-pr |
 | P1-02 | P17-G3A-01 | planned | required-pr |
 | P1-03 | P17-G3A-02 | planned | required-pr |
@@ -199,7 +199,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-026 | P17-G3B-02 | planned | required-pr |
 | EWP-CF-027 | P17-G2-02 | signed-off | required-pr |
 | EWP-CF-028 | P17-G3B-03 | planned | required-pr |
-| EWP-CF-029 | P17-G2-05 | planned | required-pr |
+| EWP-CF-029 | P17-G2-05 | validated | required-pr |
 | EWP-CF-030 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-031 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-032 | P17-G6-02A | planned | required-pr |
@@ -795,22 +795,22 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 - [x] P17-G2-05:mapped _(passed)_
 - [x] P17-G2-05:ready _(passed)_
 - [x] P17-G2-05:test-first _(passed)_
-- [ ] P17-G2-05:minimal-implementation _(pending)_
-- [ ] P17-G2-05:targeted-green _(pending)_
-- [ ] P17-G2-05:impacted-green _(pending)_
-- [ ] P17-G2-05:refactor _(pending)_
+- [x] P17-G2-05:minimal-implementation _(passed)_
+- [x] P17-G2-05:targeted-green _(passed)_
+- [x] P17-G2-05:impacted-green _(passed)_
+- [x] P17-G2-05:refactor _(passed)_
 - [ ] P17-G2-05:adversarial-review _(pending)_
 - [ ] P17-G2-05:traceability-closure _(pending)_
 - [ ] P17-G2-05:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-029** — Define the legacy project-config-to-manifest transition _(finding; planned)_
-- [ ] **EWP-P2-T06** — Implement manifest, lock, plan, ledger v1/v2, and journal codecs plus explicit _(phase-task; red)_
-- [ ] **EWP-P2-TS06** — Exact legacy/canonical/mixed/empty/malformed/unknown shape matrix; read-only and _(phase-test; failing)_
-- [ ] **EWP-P2-TS08** — Per-version artifact golden fixtures; encode/decode round trips; prior-version _(phase-test; failing)_
-- [ ] **P0-07** — Resolve project config/manifest collision _(recommendation; planned)_
-- [ ] **P0-08** — User-promise integration tests _(recommendation; planned)_
+- [ ] **EWP-CF-029** — Define the legacy project-config-to-manifest transition _(finding; validated)_
+- [ ] **EWP-P2-T06** — Implement manifest, lock, plan, ledger v1/v2, and journal codecs plus explicit _(phase-task; green)_
+- [ ] **EWP-P2-TS06** — Exact legacy/canonical/mixed/empty/malformed/unknown shape matrix; read-only and _(phase-test; passing)_
+- [ ] **EWP-P2-TS08** — Per-version artifact golden fixtures; encode/decode round trips; prior-version _(phase-test; passing)_
+- [ ] **P0-07** — Resolve project config/manifest collision _(recommendation; validated)_
+- [ ] **P0-08** — User-promise integration tests _(recommendation; validated)_
 
 ## P17-G3A-01 — Canonical correlated read model and status state-product surface
 
