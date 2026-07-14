@@ -248,207 +248,190 @@ const tool = z.enum(['claude-code', 'codex', 'kilo-code', 'opencode']);
 const scope = z.enum(['user', 'project']);
 const selectionSource = z.enum(['explicit-targets', 'explicit-all', 'bounded-default']);
 const unique = <T>(values: readonly T[]): boolean => new Set(values).size === values.length;
+type KindUnionOption = z.ZodDiscriminatedUnionOption<'kind'>;
+type ClassUnionOption = z.ZodDiscriminatedUnionOption<'class'>;
+const strictSchema = (shape: z.ZodRawShape): z.AnyZodObject => z.object(shape).strict();
+const kindUnion = (options: readonly z.ZodTypeAny[]): z.ZodTypeAny =>
+  z.discriminatedUnion(
+    'kind',
+    options as unknown as [KindUnionOption, KindUnionOption, ...KindUnionOption[]],
+  );
+const classUnion = (options: readonly z.ZodTypeAny[]): z.ZodTypeAny =>
+  z.discriminatedUnion(
+    'class',
+    options as unknown as [ClassUnionOption, ClassUnionOption, ...ClassUnionOption[]],
+  );
 
-const location = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('portable'), token: scalarString }).strict(),
-  z.object({ kind: z.literal('machine-bound'), path: scalarString }).strict(),
+const location = kindUnion([
+  strictSchema({ kind: z.literal('portable'), token: scalarString }),
+  strictSchema({ kind: z.literal('machine-bound'), path: scalarString }),
 ]);
-const sourceIdentity = z
-  .object({ host: scalarString, repository: scalarString, path: scalarString.nullable() })
-  .strict();
-const portableSource = z
-  .object({
-    kind: z.literal('portable'),
-    identity: sourceIdentity,
-    requestedRef: scalarString.nullable(),
-    resolvedSha: scalarString,
-    sourcePath: scalarString,
-    contentHash: digest,
-  })
-  .strict();
-const source = z.discriminatedUnion('kind', [
+const sourceIdentity = strictSchema({
+  host: scalarString,
+  repository: scalarString,
+  path: scalarString.nullable(),
+});
+const portableSource = strictSchema({
+  kind: z.literal('portable'),
+  identity: sourceIdentity,
+  requestedRef: scalarString.nullable(),
+  resolvedSha: scalarString,
+  sourcePath: scalarString,
+  contentHash: digest,
+});
+const source = kindUnion([
   portableSource,
-  z.object({ kind: z.literal('local-dev'), path: scalarString, contentHash: digest }).strict(),
+  strictSchema({ kind: z.literal('local-dev'), path: scalarString, contentHash: digest }),
 ]);
-const manifestSnapshot = z
-  .object({
-    version: z.literal(1),
-    defaults: z
-      .object({
-        tools: z.array(tool).refine(unique).nullable(),
-        scope: scope.nullable(),
+const manifestSnapshot = strictSchema({
+  version: z.literal(1),
+  defaults: strictSchema({
+    tools: z.array(tool).refine(unique).nullable(),
+    scope: scope.nullable(),
+    path: scalarString.nullable(),
+  }).nullable(),
+  registry: strictSchema({ default: scalarString.nullable() }).nullable(),
+  skills: z
+    .array(
+      strictSchema({
+        name: scalarString,
+        source: sourceIdentity,
+        ref: scalarString.nullable(),
+        tools: z.array(tool).min(1).refine(unique),
+        scope,
+        placement: z.enum(['symlink', 'copy']),
         path: scalarString.nullable(),
-      })
-      .strict()
-      .nullable(),
-    registry: z.object({ default: scalarString.nullable() }).strict().nullable(),
-    skills: z
-      .array(
-        z
-          .object({
-            name: scalarString,
-            source: sourceIdentity,
-            ref: scalarString.nullable(),
-            tools: z.array(tool).min(1).refine(unique),
-            scope,
-            placement: z.enum(['symlink', 'copy']),
-            path: scalarString.nullable(),
-          })
-          .strict(),
-      )
-      .refine((values) => unique(values.map(({ name }) => name))),
-  })
-  .strict();
-const lockSnapshot = z
-  .object({
-    version: z.literal(1),
-    hashSchemaVersion: z.literal(1),
-    manifestHash: digest,
-    skills: z
-      .array(
-        z
-          .object({
-            name: scalarString,
-            source: scalarString,
-            requestedRef: scalarString.nullable(),
-            resolvedSha: scalarString,
-            sourcePath: scalarString,
-            contentHash: digest,
-          })
-          .strict(),
-      )
-      .refine((values) => unique(values.map(({ name }) => name))),
-  })
-  .strict();
+      }),
+    )
+    .refine((values) => unique(values.map(({ name }) => name))),
+});
+const lockSnapshot = strictSchema({
+  version: z.literal(1),
+  hashSchemaVersion: z.literal(1),
+  manifestHash: digest,
+  skills: z
+    .array(
+      strictSchema({
+        name: scalarString,
+        source: scalarString,
+        requestedRef: scalarString.nullable(),
+        resolvedSha: scalarString,
+        sourcePath: scalarString,
+        contentHash: digest,
+      }),
+    )
+    .refine((values) => unique(values.map(({ name }) => name))),
+});
 
 const resourceIdentity: z.ZodTypeAny = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('manifest-bytes'), location }).strict(),
-    z.object({ kind: z.literal('lock'), location }).strict(),
-    z.object({ kind: z.literal('ledger'), projectRoot: location.nullable() }).strict(),
-    z.object({ kind: z.literal('ledger-schema'), projectRoot: location.nullable() }).strict(),
-    z
-      .object({
+  kindUnion([
+    strictSchema({ kind: z.literal('manifest-bytes'), location }),
+    strictSchema({ kind: z.literal('lock'), location }),
+    strictSchema({ kind: z.literal('ledger'), projectRoot: location.nullable() }),
+    strictSchema({ kind: z.literal('ledger-schema'), projectRoot: location.nullable() }),
+    strictSchema({
+      kind: z.literal('live'),
+      skill: scalarString,
+      tool,
+      scope,
+      projectRoot: location.nullable(),
+      location,
+    }),
+    strictSchema({ kind: z.literal('store'), contentHash: digest }),
+    strictSchema({ kind: z.literal('project-context'), root: location }),
+  ]),
+);
+const image: z.ZodTypeAny = z.lazy(() =>
+  kindUnion([
+    strictSchema({ kind: z.literal('absent'), resource: resourceIdentity }),
+    strictSchema({
+      kind: z.literal('placement'),
+      resource: strictSchema({
         kind: z.literal('live'),
         skill: scalarString,
         tool,
         scope,
         projectRoot: location.nullable(),
         location,
-      })
-      .strict(),
-    z.object({ kind: z.literal('store'), contentHash: digest }).strict(),
-    z.object({ kind: z.literal('project-context'), root: location }).strict(),
+      }),
+      classification: z.enum(['dev', 'pinned', 'store-linked', 'unmanaged']),
+      representation: z.enum(['symlink', 'copy', 'other']),
+      linkTarget: location.nullable(),
+      dangling: z.boolean(),
+      source: source.nullable(),
+      contentHash: digest.nullable(),
+    }),
+    strictSchema({
+      kind: z.literal('manifest'),
+      location,
+      shape: z.enum(['canonical', 'legacy']),
+      version: z.literal(1),
+      byteHash: digest,
+      semanticHash: digest,
+      value: manifestSnapshot,
+    }),
+    strictSchema({
+      kind: z.literal('lock'),
+      location,
+      version: z.literal(1),
+      canonicalHash: digest,
+      value: lockSnapshot,
+    }),
+    strictSchema({
+      kind: z.literal('ledger'),
+      projectRoot: location.nullable(),
+      schemaVersion: z.union([z.literal(1), z.literal(2)]),
+      byteHash: digest,
+      semanticHash: digest,
+    }),
   ]),
 );
-const image: z.ZodTypeAny = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('absent'), resource: resourceIdentity }).strict(),
-    z
-      .object({
-        kind: z.literal('placement'),
-        resource: z
-          .object({
-            kind: z.literal('live'),
-            skill: scalarString,
-            tool,
-            scope,
-            projectRoot: location.nullable(),
-            location,
-          })
-          .strict(),
-        classification: z.enum(['dev', 'pinned', 'store-linked', 'unmanaged']),
-        representation: z.enum(['symlink', 'copy', 'other']),
-        linkTarget: location.nullable(),
-        dangling: z.boolean(),
-        source: source.nullable(),
-        contentHash: digest.nullable(),
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('manifest'),
-        location,
-        shape: z.enum(['canonical', 'legacy']),
-        version: z.literal(1),
-        byteHash: digest,
-        semanticHash: digest,
-        value: manifestSnapshot,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('lock'),
-        location,
-        version: z.literal(1),
-        canonicalHash: digest,
-        value: lockSnapshot,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('ledger'),
-        projectRoot: location.nullable(),
-        schemaVersion: z.union([z.literal(1), z.literal(2)]),
-        byteHash: digest,
-        semanticHash: digest,
-      })
-      .strict(),
+const hashFact = strictSchema({
+  domain: z.enum([
+    'manifest-semantic',
+    'manifest-bytes',
+    'lock-canonical',
+    'source-content',
+    'resource',
+    'selection-set',
+    'capability',
   ]),
-);
-const hashFact = z
-  .object({
-    domain: z.enum([
-      'manifest-semantic',
-      'manifest-bytes',
-      'lock-canonical',
-      'source-content',
-      'resource',
-      'selection-set',
-      'capability',
-    ]),
-    hashSchemaVersion: z.literal(1),
-    digest,
-  })
-  .strict();
-const revision = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('artifact-bytes'), digest }).strict(),
-  z.object({ kind: z.literal('resource'), digest }).strict(),
+  hashSchemaVersion: z.literal(1),
+  digest,
+});
+const revision = kindUnion([
+  strictSchema({ kind: z.literal('artifact-bytes'), digest }),
+  strictSchema({ kind: z.literal('resource'), digest }),
 ]);
-const mutationFlags = z
-  .object({ live: z.boolean(), manifest: z.boolean(), lock: z.boolean(), ledger: z.boolean() })
-  .strict();
-const reversibility = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('none'), retentionResourceIds: z.tuple([]) }).strict(),
-  z
-    .object({
-      kind: z.enum(['reversible', 'conditional']),
-      retentionResourceIds: z.array(id).min(1).refine(unique),
-    })
-    .strict(),
+const mutationFlags = strictSchema({
+  live: z.boolean(),
+  manifest: z.boolean(),
+  lock: z.boolean(),
+  ledger: z.boolean(),
+});
+const reversibility = kindUnion([
+  strictSchema({ kind: z.literal('none'), retentionResourceIds: z.tuple([]) }),
+  strictSchema({
+    kind: z.enum(['reversible', 'conditional']),
+    retentionResourceIds: z.array(id).min(1).refine(unique),
+  }),
 ]);
-const conflict = z
-  .discriminatedUnion('class', [
-    z
-      .object({
-        class: z.enum(['unmanaged-target', 'modified-managed-target', 'destination-exists']),
-        normal: z.literal('refuse'),
-        forced: z.literal('backup-and-replace'),
-        target: resourceIdentity,
-        backup: z.literal('required'),
-      })
-      .strict(),
-    z
-      .object({
-        class: z.literal('source-changed'),
-        normal: z.literal('refuse'),
-        forced: z.literal('replace'),
-        target: resourceIdentity,
-        backup: z.literal('none'),
-      })
-      .strict(),
-  ])
-  .nullable();
+const conflict = classUnion([
+  strictSchema({
+    class: z.enum(['unmanaged-target', 'modified-managed-target', 'destination-exists']),
+    normal: z.literal('refuse'),
+    forced: z.literal('backup-and-replace'),
+    target: resourceIdentity,
+    backup: z.literal('required'),
+  }),
+  strictSchema({
+    class: z.literal('source-changed'),
+    normal: z.literal('refuse'),
+    forced: z.literal('replace'),
+    target: resourceIdentity,
+    backup: z.literal('none'),
+  }),
+]).nullable();
 const operationKind = z.enum([
   'install',
   'update',
@@ -464,28 +447,26 @@ const operationKind = z.enum([
   'migrate-ledger',
 ]);
 
-const operation = z
-  .object({
-    operationId: id,
-    groupId: id,
-    pairId: id.nullable(),
-    kind: operationKind,
-    dependsOn: z.array(id).refine(unique),
-    skill: scalarString.nullable(),
-    source: source.nullable(),
-    tool: tool.nullable(),
-    scope: scope.nullable(),
-    before: image,
-    after: image,
-    reason: z.object({ code, message: scalarString }).strict(),
-    selectionSource,
-    preconditionIds: z.array(id).refine(unique),
-    requiredCheckIds: z.array(id).refine(unique),
-    reversibility,
-    mutates: mutationFlags,
-    conflict,
-  })
-  .strict();
+const operation = strictSchema({
+  operationId: id,
+  groupId: id,
+  pairId: id.nullable(),
+  kind: operationKind,
+  dependsOn: z.array(id).refine(unique),
+  skill: scalarString.nullable(),
+  source: source.nullable(),
+  tool: tool.nullable(),
+  scope: scope.nullable(),
+  before: image,
+  after: image,
+  reason: strictSchema({ code, message: scalarString }),
+  selectionSource,
+  preconditionIds: z.array(id).refine(unique),
+  requiredCheckIds: z.array(id).refine(unique),
+  reversibility,
+  mutates: mutationFlags,
+  conflict,
+});
 const operationIntent = operation.omit({
   dependsOn: true,
   reason: true,
@@ -499,250 +480,228 @@ const checkCommon = {
   blocking: z.literal(true),
   operationIds: z.array(id).min(1).refine(unique),
 };
-const check = z.discriminatedUnion('kind', [
-  z
-    .object({ ...checkCommon, kind: z.literal('source-resolution'), source: portableSource })
-    .strict(),
-  z
-    .object({ ...checkCommon, kind: z.literal('capability'), capabilityPreconditionId: id })
-    .strict(),
-  z
-    .object({
-      ...checkCommon,
-      kind: z.literal('content-integrity'),
-      source,
-      expectedContentHash: digest,
-    })
-    .strict(),
-  z
-    .object({
-      ...checkCommon,
-      kind: z.literal('verification'),
-      tool,
-      mode: z.enum(['static', 'static+deep']),
-      expectedContentHash: digest,
-    })
-    .strict(),
-  z
-    .object({
-      ...checkCommon,
-      kind: z.literal('precondition-validation'),
-      preconditionIds: z.array(id).min(1).refine(unique),
-    })
-    .strict(),
+const check = kindUnion([
+  strictSchema({ ...checkCommon, kind: z.literal('source-resolution'), source: portableSource }),
+  strictSchema({ ...checkCommon, kind: z.literal('capability'), capabilityPreconditionId: id }),
+  strictSchema({
+    ...checkCommon,
+    kind: z.literal('content-integrity'),
+    source,
+    expectedContentHash: digest,
+  }),
+  strictSchema({
+    ...checkCommon,
+    kind: z.literal('verification'),
+    tool,
+    mode: z.enum(['static', 'static+deep']),
+    expectedContentHash: digest,
+  }),
+  strictSchema({
+    ...checkCommon,
+    kind: z.literal('precondition-validation'),
+    preconditionIds: z.array(id).min(1).refine(unique),
+  }),
 ]);
-const reason = z.object({ code, message: scalarString }).strict();
-const diagnostic = z
-  .object({
-    diagnosticId: id,
-    kind: z.enum(['noop', 'skip', 'refuse', 'conflict', 'warning']),
-    severity: z.enum(['info', 'warning', 'error']),
-    refusalClass: z.enum(['usage', 'state', 'capability', 'source', 'permission']).nullable(),
-    affected: z
-      .object({
-        skill: scalarString.nullable(),
-        source: source.nullable(),
-        tool: tool.nullable(),
-        scope: scope.nullable(),
-        path: location.nullable(),
-      })
-      .strict(),
-    correlation: z
-      .object({ groupId: id.nullable(), pairId: id.nullable(), operationId: id.nullable() })
-      .strict(),
-    reason,
-    selectionSource,
-  })
-  .strict();
-const resourcePrecondition = z
-  .object({
-    preconditionId: id,
-    resource: resourceIdentity,
-    expectedState: z.enum(['absent', 'present']),
-    expectedHash: hashFact,
-    expectedRevision: revision.nullable(),
-  })
-  .strict();
-const selectionPrecondition = z
-  .object({
-    preconditionId: id,
-    domain: z.literal('selection-set'),
-    hashSchemaVersion: z.literal(1),
-    expectedHash: digest,
+const reason = strictSchema({ code, message: scalarString });
+const diagnostic = strictSchema({
+  diagnosticId: id,
+  kind: z.enum(['noop', 'skip', 'refuse', 'conflict', 'warning']),
+  severity: z.enum(['info', 'warning', 'error']),
+  refusalClass: z.enum(['usage', 'state', 'capability', 'source', 'permission']).nullable(),
+  affected: strictSchema({
+    skill: scalarString.nullable(),
+    source: source.nullable(),
+    tool: tool.nullable(),
+    scope: scope.nullable(),
+    path: location.nullable(),
+  }),
+  correlation: strictSchema({
+    groupId: id.nullable(),
+    pairId: id.nullable(),
+    operationId: id.nullable(),
+  }),
+  reason,
+  selectionSource,
+});
+const resourcePrecondition = strictSchema({
+  preconditionId: id,
+  resource: resourceIdentity,
+  expectedState: z.enum(['absent', 'present']),
+  expectedHash: hashFact,
+  expectedRevision: revision.nullable(),
+});
+const selectionPrecondition = strictSchema({
+  preconditionId: id,
+  domain: z.literal('selection-set'),
+  hashSchemaVersion: z.literal(1),
+  expectedHash: digest,
+  selectionSource,
+  skills: z.array(scalarString).refine(unique),
+  tools: z.array(tool).refine(unique),
+  scopes: z.array(scope).refine(unique),
+  members: z
+    .array(strictSchema({ resource: resourceIdentity, resourceHash: hashFact }))
+    .refine((values) => unique(values.map((value) => JSON.stringify(value.resource)))),
+});
+const capabilityPrecondition = strictSchema({
+  preconditionId: id,
+  domain: z.literal('capability'),
+  hashSchemaVersion: z.literal(1),
+  expectedHash: digest,
+  tool,
+  operation: z.enum([
+    'detect',
+    'inventory-skills',
+    'inventory-commands',
+    'diagnostics',
+    'install',
+    'uninstall',
+    'dev',
+    'promote',
+    'undo',
+    'verify-static',
+    'verify-deep',
+    'plan',
+    'apply',
+    'sync',
+    'update',
+    'adapt',
+  ]),
+  capabilityVersion: z.number().int().positive().safe(),
+  supported: z.literal(true),
+  scopes: z
+    .array(z.enum(['user', 'project', 'system', 'managed', 'custom', 'artifact']))
+    .refine(unique),
+});
+const machineReason = strictSchema({
+  code: z.enum([
+    'absolute-artifact-selector',
+    'local-project-root',
+    'local-dev-source',
+    'absolute-live-placement',
+    'custom-absolute-target',
+  ]),
+  message: scalarString,
+  path: scalarString,
+  preconditionIds: z.array(id).min(1).refine(unique),
+});
+const portability = z.union([
+  strictSchema({ kind: z.literal('portable'), reasons: z.tuple([]) }),
+  strictSchema({ kind: z.literal('machine-bound'), reasons: z.array(machineReason).min(1) }).refine(
+    (value) =>
+      unique(
+        value.reasons.map(
+          ({ code, path }: { readonly code: string; readonly path: string }) => `${code}\0${path}`,
+        ),
+      ),
+  ),
+]);
+
+const SavedPlanSchema = strictSchema({
+  schemaVersion: z.literal(1),
+  kind: z.literal('skillsmith.plan'),
+  skillsmithVersion: scalarString,
+  executorSchemaVersion: z.literal(1),
+  hashSchemaVersion: z.literal(1),
+  portability,
+  artifactPair: strictSchema({
+    manifest: location,
+    lock: location,
+    lockSource: z.enum(['explicit', 'sibling']),
+  }),
+  manifestSemanticHash: digest,
+  lockCanonicalHash: digest.nullable(),
+  options: strictSchema({ prune: z.boolean(), locked: z.boolean() }),
+  selection: strictSchema({
     selectionSource,
     skills: z.array(scalarString).refine(unique),
     tools: z.array(tool).refine(unique),
     scopes: z.array(scope).refine(unique),
-    members: z
-      .array(z.object({ resource: resourceIdentity, resourceHash: hashFact }).strict())
-      .refine((values) => unique(values.map((value) => JSON.stringify(value.resource)))),
-  })
-  .strict();
-const capabilityPrecondition = z
-  .object({
-    preconditionId: id,
-    domain: z.literal('capability'),
-    hashSchemaVersion: z.literal(1),
-    expectedHash: digest,
-    tool,
-    operation: z.enum([
-      'detect',
-      'inventory-skills',
-      'inventory-commands',
-      'diagnostics',
-      'install',
-      'uninstall',
-      'dev',
-      'promote',
-      'undo',
-      'verify-static',
-      'verify-deep',
-      'plan',
-      'apply',
-      'sync',
-      'update',
-      'adapt',
-    ]),
-    capabilityVersion: z.number().int().positive().safe(),
-    supported: z.literal(true),
-    scopes: z
-      .array(z.enum(['user', 'project', 'system', 'managed', 'custom', 'artifact']))
-      .refine(unique),
-  })
-  .strict();
-const machineReason = z
-  .object({
-    code: z.enum([
-      'absolute-artifact-selector',
-      'local-project-root',
-      'local-dev-source',
-      'absolute-live-placement',
-      'custom-absolute-target',
-    ]),
-    message: scalarString,
-    path: scalarString,
-    preconditionIds: z.array(id).min(1).refine(unique),
-  })
-  .strict();
-const portability = z.union([
-  z.object({ kind: z.literal('portable'), reasons: z.tuple([]) }).strict(),
-  z
-    .object({ kind: z.literal('machine-bound'), reasons: z.array(machineReason).min(1) })
-    .strict()
-    .refine((value) => unique(value.reasons.map(({ code, path }) => `${code}\0${path}`))),
-]);
-
-const SavedPlanSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    kind: z.literal('skillsmith.plan'),
-    skillsmithVersion: scalarString,
-    executorSchemaVersion: z.literal(1),
-    hashSchemaVersion: z.literal(1),
-    portability,
-    artifactPair: z
-      .object({ manifest: location, lock: location, lockSource: z.enum(['explicit', 'sibling']) })
-      .strict(),
-    manifestSemanticHash: digest,
-    lockCanonicalHash: digest.nullable(),
-    options: z.object({ prune: z.boolean(), locked: z.boolean() }).strict(),
-    selection: z
-      .object({
-        selectionSource,
-        skills: z.array(scalarString).refine(unique),
-        tools: z.array(tool).refine(unique),
-        scopes: z.array(scope).refine(unique),
-      })
-      .strict(),
-    operations: z.array(operation),
-    checks: z.array(check),
-    diagnostics: z.array(diagnostic),
-    resourcePreconditions: z.array(resourcePrecondition),
-    selectionPreconditions: z.array(selectionPrecondition),
-    capabilityPreconditions: z.array(capabilityPrecondition),
-  })
-  .strict()
-  .superRefine((untypedValue, context) => {
-    const value = untypedValue as unknown as SavedPlanV1Dto;
-    const add = (path: Path): void =>
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'invalid plan relationship',
-        path: [...path],
-      });
-    const operationIds = value.operations.map(({ operationId }) => operationId);
-    const checkIds = value.checks.map(({ checkId }) => checkId);
-    const preconditionIds = [
-      ...value.resourcePreconditions,
-      ...value.selectionPreconditions,
-      ...value.capabilityPreconditions,
-    ].map(({ preconditionId }) => preconditionId);
-    if (!unique(operationIds)) add(['operations']);
-    if (!unique(checkIds)) add(['checks']);
-    if (!unique(preconditionIds)) add(['resourcePreconditions']);
-    const operationSet = new Set(operationIds);
-    const checkSet = new Set(checkIds);
-    const preconditionSet = new Set(preconditionIds);
-    for (const [index, item] of value.operations.entries()) {
-      const earlier = new Set(operationIds.slice(0, index));
-      if (item.dependsOn.some((candidate) => !earlier.has(candidate))) {
-        add(['operations', index, 'dependsOn']);
-      }
-      if (item.requiredCheckIds.some((candidate) => !checkSet.has(candidate))) {
-        add(['operations', index, 'requiredCheckIds']);
-      }
-      if (item.preconditionIds.some((candidate) => !preconditionSet.has(candidate))) {
-        add(['operations', index, 'preconditionIds']);
-      }
-      if (!operationMatchesMatrix(item as PlanOperationV1)) add(['operations', index]);
+  }),
+  operations: z.array(operation),
+  checks: z.array(check),
+  diagnostics: z.array(diagnostic),
+  resourcePreconditions: z.array(resourcePrecondition),
+  selectionPreconditions: z.array(selectionPrecondition),
+  capabilityPreconditions: z.array(capabilityPrecondition),
+}).superRefine((untypedValue, context) => {
+  const value = untypedValue as unknown as SavedPlanV1Dto;
+  const add = (path: Path): void =>
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'invalid plan relationship',
+      path: [...path],
+    });
+  const operationIds = value.operations.map(({ operationId }) => operationId);
+  const checkIds = value.checks.map(({ checkId }) => checkId);
+  const preconditionIds = [
+    ...value.resourcePreconditions,
+    ...value.selectionPreconditions,
+    ...value.capabilityPreconditions,
+  ].map(({ preconditionId }) => preconditionId);
+  if (!unique(operationIds)) add(['operations']);
+  if (!unique(checkIds)) add(['checks']);
+  if (!unique(preconditionIds)) add(['resourcePreconditions']);
+  const operationSet = new Set(operationIds);
+  const checkSet = new Set(checkIds);
+  const preconditionSet = new Set(preconditionIds);
+  for (const [index, item] of value.operations.entries()) {
+    const earlier = new Set(operationIds.slice(0, index));
+    if (item.dependsOn.some((candidate) => !earlier.has(candidate))) {
+      add(['operations', index, 'dependsOn']);
     }
-    for (const [index, item] of value.checks.entries()) {
-      if (item.operationIds.some((candidate) => !operationSet.has(candidate))) {
-        add(['checks', index, 'operationIds']);
-      }
-      if (item.kind === 'capability' && !preconditionSet.has(item.capabilityPreconditionId)) {
-        add(['checks', index, 'capabilityPreconditionId']);
-      }
-      if (
-        item.kind === 'precondition-validation' &&
-        item.preconditionIds.some((candidate) => !preconditionSet.has(candidate))
-      ) {
-        add(['checks', index, 'preconditionIds']);
-      }
+    if (item.requiredCheckIds.some((candidate) => !checkSet.has(candidate))) {
+      add(['operations', index, 'requiredCheckIds']);
     }
-    for (const [index, item] of value.diagnostics.entries()) {
-      const informational = item.kind === 'noop' || item.kind === 'skip';
-      const warning = item.kind === 'warning';
-      if (
-        (informational && (item.severity !== 'info' || item.refusalClass !== null)) ||
-        (warning && (item.severity !== 'warning' || item.refusalClass !== null)) ||
-        (!informational && !warning && (item.severity !== 'error' || item.refusalClass === null))
-      ) {
-        add(['diagnostics', index]);
-      }
-      if (
-        item.correlation.operationId !== null &&
-        !operationSet.has(item.correlation.operationId)
-      ) {
-        add(['diagnostics', index, 'correlation', 'operationId']);
-      }
-      if (item.correlation.pairId !== null && item.correlation.groupId === null) {
-        add(['diagnostics', index, 'correlation']);
-      }
+    if (item.preconditionIds.some((candidate) => !preconditionSet.has(candidate))) {
+      add(['operations', index, 'preconditionIds']);
     }
-    for (const [index, item] of value.resourcePreconditions.entries()) {
-      if (
-        (item.expectedState === 'absent' && item.expectedRevision !== null) ||
-        (item.expectedState === 'present' && item.expectedRevision === null) ||
-        !resourceHashPairMatches(item.resource.kind, item.expectedHash.domain)
-      ) {
-        add(['resourcePreconditions', index]);
-      }
+    if (!operationMatchesMatrix(item as PlanOperationV1)) add(['operations', index]);
+  }
+  for (const [index, item] of value.checks.entries()) {
+    if (item.operationIds.some((candidate) => !operationSet.has(candidate))) {
+      add(['checks', index, 'operationIds']);
     }
-    if (value.portability.kind === 'portable' && containsMachineBinding(value)) {
-      add(['portability']);
+    if (item.kind === 'capability' && !preconditionSet.has(item.capabilityPreconditionId)) {
+      add(['checks', index, 'capabilityPreconditionId']);
     }
-  });
+    if (
+      item.kind === 'precondition-validation' &&
+      item.preconditionIds.some((candidate) => !preconditionSet.has(candidate))
+    ) {
+      add(['checks', index, 'preconditionIds']);
+    }
+  }
+  for (const [index, item] of value.diagnostics.entries()) {
+    const informational = item.kind === 'noop' || item.kind === 'skip';
+    const warning = item.kind === 'warning';
+    if (
+      (informational && (item.severity !== 'info' || item.refusalClass !== null)) ||
+      (warning && (item.severity !== 'warning' || item.refusalClass !== null)) ||
+      (!informational && !warning && (item.severity !== 'error' || item.refusalClass === null))
+    ) {
+      add(['diagnostics', index]);
+    }
+    if (item.correlation.operationId !== null && !operationSet.has(item.correlation.operationId)) {
+      add(['diagnostics', index, 'correlation', 'operationId']);
+    }
+    if (item.correlation.pairId !== null && item.correlation.groupId === null) {
+      add(['diagnostics', index, 'correlation']);
+    }
+  }
+  for (const [index, item] of value.resourcePreconditions.entries()) {
+    if (
+      (item.expectedState === 'absent' && item.expectedRevision !== null) ||
+      (item.expectedState === 'present' && item.expectedRevision === null) ||
+      !resourceHashPairMatches(item.resource.kind, item.expectedHash.domain)
+    ) {
+      add(['resourcePreconditions', index]);
+    }
+  }
+  if (value.portability.kind === 'portable' && containsMachineBinding(value)) {
+    add(['portability']);
+  }
+});
 
 const resourceHashPairMatches = (kind: string, domain: string): boolean => {
   if (kind === 'manifest-bytes') {
