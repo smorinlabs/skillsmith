@@ -69,6 +69,24 @@ describe('lossless human TOML scanner', () => {
     });
   });
 
+  test('rejects spoofed byte views and shared backing stores by internal brand', () => {
+    const forgedView = new Uint8ClampedArray(encoder.encode('version = 1\n'));
+    Object.setPrototypeOf(forgedView, Uint8Array.prototype);
+    expect(scanHumanToml(forgedView as unknown as Uint8Array)).toMatchObject({
+      ok: false,
+      error: { reason: 'unsafe-human-edit' },
+    });
+
+    const sharedBuffer = new SharedArrayBuffer(16);
+    const shared = new Uint8Array(sharedBuffer);
+    shared.set(encoder.encode('version = 1\n'));
+    Object.setPrototypeOf(sharedBuffer, ArrayBuffer.prototype);
+    expect(scanHumanToml(shared)).toMatchObject({
+      ok: false,
+      error: { reason: 'unsafe-human-edit' },
+    });
+  });
+
   test('does not mistake multiline string and array contents for structure', () => {
     const scanned = unwrap(
       scanHumanToml(

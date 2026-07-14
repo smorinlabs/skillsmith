@@ -266,6 +266,7 @@ const ownBytes = (value: unknown): Uint8Array | null => {
       typeof value !== 'object' ||
       value === null ||
       utilTypes.isProxy(value) ||
+      !utilTypes.isUint8Array(value) ||
       Object.getPrototypeOf(value) !== Uint8Array.prototype ||
       Object.getOwnPropertySymbols(value).length > 0 ||
       typedArrayBufferGetter === undefined ||
@@ -277,6 +278,8 @@ const ownBytes = (value: unknown): Uint8Array | null => {
     if (
       typeof buffer !== 'object' ||
       buffer === null ||
+      !utilTypes.isArrayBuffer(buffer) ||
+      utilTypes.isSharedArrayBuffer(buffer) ||
       Object.getPrototypeOf(buffer) !== ArrayBuffer.prototype
     ) {
       return null;

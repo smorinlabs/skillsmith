@@ -54,7 +54,7 @@ const ownOrdinaryBytes = (input: Uint8Array): Result<Uint8Array, LegacyManifestM
   try {
     if (
       utilTypes.isProxy(input) ||
-      !(input instanceof Uint8Array) ||
+      !utilTypes.isUint8Array(input) ||
       Object.getPrototypeOf(input) !== Uint8Array.prototype ||
       Object.getOwnPropertySymbols(input).length > 0 ||
       bufferGetter === undefined ||
@@ -66,7 +66,8 @@ const ownOrdinaryBytes = (input: Uint8Array): Result<Uint8Array, LegacyManifestM
     const byteLength = Reflect.apply(byteLengthGetter, input, []) as number;
     const propertyKeys = Reflect.ownKeys(input);
     if (
-      !(buffer instanceof ArrayBuffer) ||
+      !utilTypes.isArrayBuffer(buffer) ||
+      utilTypes.isSharedArrayBuffer(buffer) ||
       Object.getPrototypeOf(buffer) !== ArrayBuffer.prototype ||
       !Number.isSafeInteger(byteLength) ||
       byteLength < 0 ||
@@ -166,7 +167,7 @@ const exactLegacyRanges = (
     [registryAssignments, before.registry?.default === undefined ? 0 : 1],
   ] as const;
   if (expectedCounts.some(([entries, count]) => entries.length !== count)) return null;
-  if ((registryAssignments.length === 1) !== (registryHeaders.length === 1)) return null;
+  if (registryAssignments.length === 1 && registryHeaders.length !== 1) return null;
 
   return Object.freeze({
     root: Object.freeze(root),

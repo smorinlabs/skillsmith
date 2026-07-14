@@ -71,16 +71,39 @@ const scanError = (reason: HumanTomlScanErrorReason, message: string): HumanToml
 
 const frozenRange = (start: number, end: number): HumanTomlRange => Object.freeze({ start, end });
 
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype) as object;
+const bufferGetter = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'buffer')?.get;
+const byteLengthGetter = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'byteLength')?.get;
+const copyBytes = Uint8Array.prototype.set;
+
 const ownBytes = (input: Uint8Array): Result<Uint8Array, HumanTomlScanError> => {
   try {
     if (
       utilTypes.isProxy(input) ||
-      !(input instanceof Uint8Array) ||
-      Object.getPrototypeOf(input) !== Uint8Array.prototype
+      !utilTypes.isUint8Array(input) ||
+      Object.getPrototypeOf(input) !== Uint8Array.prototype ||
+      bufferGetter === undefined ||
+      byteLengthGetter === undefined
     ) {
       return err(scanError('unsafe-human-edit', 'human TOML input must be owned bytes'));
     }
-    return ok(new Uint8Array(input));
+    const buffer = Reflect.apply(bufferGetter, input, []) as ArrayBufferLike;
+    const byteLength = Reflect.apply(byteLengthGetter, input, []) as number;
+    const keys = Reflect.ownKeys(input);
+    if (
+      !utilTypes.isArrayBuffer(buffer) ||
+      utilTypes.isSharedArrayBuffer(buffer) ||
+      Object.getPrototypeOf(buffer) !== ArrayBuffer.prototype ||
+      !Number.isSafeInteger(byteLength) ||
+      byteLength < 0 ||
+      keys.length !== byteLength ||
+      keys.some((key, index) => typeof key !== 'string' || key !== String(index))
+    ) {
+      return err(scanError('unsafe-human-edit', 'human TOML input must be owned bytes'));
+    }
+    const owned = new Uint8Array(byteLength);
+    Reflect.apply(copyBytes, owned, [input]);
+    return ok(owned);
   } catch {
     return err(scanError('invalid-utf8', 'human TOML bytes are unavailable'));
   }

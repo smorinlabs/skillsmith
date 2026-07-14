@@ -8,6 +8,7 @@ const ROOT = join(import.meta.dir, '../../..');
 const FIXTURES = join(import.meta.dir, '../fixtures/p2-ts05');
 const INIT_PATH = join(ROOT, 'packages/core/src/artifacts/init.ts');
 const MIGRATION_PATH = join(ROOT, 'packages/core/src/artifacts/legacy-migration.ts');
+const HUMAN_TOML_PATH = join(ROOT, 'packages/core/src/artifacts/human-toml.ts');
 const ARTIFACTS_PATH = join(ROOT, 'packages/core/src/artifacts/index.ts');
 const CORE_PATH = join(ROOT, 'packages/core/src/index.ts');
 const encoder = new TextEncoder();
@@ -79,6 +80,10 @@ interface InitApi {
 
 interface MigrationApi {
   migrateLegacyManifestBytes(bytes: Uint8Array): Result<Readonly<Record<string, unknown>>>;
+}
+
+interface HumanTomlApi {
+  scanHumanToml(bytes: Uint8Array): Result<Readonly<Record<string, unknown>>>;
 }
 
 const fixtureSource = readFileSync(join(FIXTURES, 'init-cases.json'), 'utf8');
@@ -366,6 +371,24 @@ describe('EWP-P2-TS05', () => {
       expect(result.ok, item.id).toBeFalse();
       if (!result.ok) expect(result.error.reason, item.id).toBe(item.reason);
     }
+    for (const [id, before, after] of [
+      ['empty-registry-final-newline', '[registry]\n', 'version = 1\n\n[registry]\n'],
+      ['empty-registry-no-final-newline', '[registry]', 'version = 1\n\n[registry]'],
+    ] as const) {
+      expect(unwrap(api.migrateLegacyManifestBytes(encoder.encode(before)), id).source, id).toBe(
+        after,
+      );
+    }
+
+    const forgedView = new Uint8ClampedArray(encoder.encode('tool = "codex"\n'));
+    Object.setPrototypeOf(forgedView, Uint8Array.prototype);
+    expect(api.migrateLegacyManifestBytes(forgedView as unknown as Uint8Array).ok).toBeFalse();
+    const disguisedSharedBuffer = new SharedArrayBuffer(32);
+    const disguisedShared = new Uint8Array(disguisedSharedBuffer);
+    disguisedShared.set(encoder.encode('tool = "codex"\n'));
+    Object.setPrototypeOf(disguisedSharedBuffer, ArrayBuffer.prototype);
+    expect(api.migrateLegacyManifestBytes(disguisedShared).ok).toBeFalse();
+
     for (const bytes of [
       Uint8Array.from([0xef, 0xbb, 0xbf, ...encoder.encode('tool = "codex"\n')]),
       Uint8Array.from([0xff, 0xfe, 0xfd]),
@@ -406,12 +429,24 @@ describe('EWP-P2-TS05', () => {
         }
       }
     }
+
+    const emptyRegistry = unwrap(
+      api.planInitManifest(makeRequest({}, '[registry]\n', [], false)),
+      'empty registry legacy migration',
+    );
+    expect(emptyRegistry.kind).toBe('migrate-project-config');
+    expect((emptyRegistry.after as Readonly<Record<string, unknown>>).source).toBe(
+      'version = 1\n\n[registry]\n',
+    );
   });
 
   test('EWP-P2-TS05 immutable total hostile-input and safe-error family', async () => {
     const loaded = await requireAuthority(INIT_PATH, 'planInitManifest', 'safety');
     if (loaded === null) return;
     const api = loaded as unknown as InitApi;
+    const scannerLoad = await requireAuthority(HUMAN_TOML_PATH, 'scanHumanToml', 'scanner safety');
+    if (scannerLoad === null) return;
+    const scanner = scannerLoad as unknown as HumanTomlApi;
     const valid = makeRequest({}, null, [], false);
     const first = unwrap(api.planInitManifest(valid), 'deterministic create');
     const second = unwrap(api.planInitManifest(valid), 'deterministic create repeat');
@@ -508,6 +543,28 @@ describe('EWP-P2-TS05', () => {
       api.planInitManifest({
         ...valid,
         current: { state: 'present', bytes: new Uint8Array(new SharedArrayBuffer(8)) },
+      }).ok,
+    ).toBeFalse();
+
+    const forgedView = new Uint8ClampedArray(encoder.encode('version = 1\n'));
+    Object.setPrototypeOf(forgedView, Uint8Array.prototype);
+    expect(scanner.scanHumanToml(forgedView as unknown as Uint8Array).ok).toBeFalse();
+    expect(
+      api.planInitManifest({
+        ...valid,
+        current: { state: 'present', bytes: forgedView as unknown as Uint8Array },
+      }).ok,
+    ).toBeFalse();
+
+    const disguisedSharedBuffer = new SharedArrayBuffer(16);
+    const disguisedShared = new Uint8Array(disguisedSharedBuffer);
+    disguisedShared.set(encoder.encode('version = 1\n'));
+    Object.setPrototypeOf(disguisedSharedBuffer, ArrayBuffer.prototype);
+    expect(scanner.scanHumanToml(disguisedShared).ok).toBeFalse();
+    expect(
+      api.planInitManifest({
+        ...valid,
+        current: { state: 'present', bytes: disguisedShared },
       }).ok,
     ).toBeFalse();
 

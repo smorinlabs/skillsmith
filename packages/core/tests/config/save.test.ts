@@ -216,6 +216,30 @@ describe('saveConfig', () => {
     await rm(d, { recursive: true, force: true });
   });
 
+  test('migrates an empty legacy registry table without inventing defaults or losing EOF form', async () => {
+    const env = await defaultRuntimePorts();
+    for (const [label, before, after] of [
+      ['final-newline', '[registry]\n', 'version = 1\n\n[registry]\n'],
+      ['no-final-newline', '[registry]', 'version = 1\n\n[registry]'],
+    ] as const) {
+      const d = await tmpDir(`migration-empty-registry-${label}`);
+      const file = join(d, 'skillsmith.toml');
+      await writeFile(file, before);
+      const result = await saveConfig(env, {
+        scope: 'project',
+        file,
+        delete: ['registry.default'],
+      });
+      expect(result, label).toMatchObject({
+        ok: true,
+        value: { changed: true, unchanged: false, operation: 'migrate-project-config' },
+      });
+      expect(await readFile(file, 'utf8'), label).toBe(after);
+      expect(await readdir(d), label).toEqual(['skillsmith.toml']);
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
   test('range-migrates legacy newline/mode variants without losing registry or trailing bytes', async () => {
     const env = await defaultRuntimePorts();
     for (const [label, newline, mode, finalNewline] of [

@@ -155,6 +155,22 @@ describe('pure init manifest authority', () => {
       expect(Object.isFrozen(sharedResult.error)).toBeTrue();
     }
 
+    const forgedView = new Uint8ClampedArray(encoder.encode('version = 1\n'));
+    Object.setPrototypeOf(forgedView, Uint8Array.prototype);
+    expect(
+      planInitManifest(
+        request({}, { state: 'present', bytes: forgedView as unknown as Uint8Array }),
+      ).ok,
+    ).toBeFalse();
+
+    const disguisedSharedBuffer = new SharedArrayBuffer(16);
+    const disguisedShared = new Uint8Array(disguisedSharedBuffer);
+    disguisedShared.set(encoder.encode('version = 1\n'));
+    Object.setPrototypeOf(disguisedSharedBuffer, ArrayBuffer.prototype);
+    expect(
+      planInitManifest(request({}, { state: 'present', bytes: disguisedShared })).ok,
+    ).toBeFalse();
+
     const shadowed = encoder.encode('version = 1\n');
     Object.defineProperty(shadowed, 'constructor', { value: Uint8Array });
     expect(planInitManifest(request({}, { state: 'present', bytes: shadowed })).ok).toBeFalse();

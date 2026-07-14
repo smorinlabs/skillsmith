@@ -191,6 +191,8 @@ describe('closed lossless manifest edit algebra', () => {
         "tool='codex'\nscope = 'project'\npath='./skills'",
         "version = 1\n\n[defaults]\ntools=['codex']\nscope = 'project'\npath='./skills'",
       ],
+      ['[registry]\n', 'version = 1\n\n[registry]\n'],
+      ['[registry]', 'version = 1\n\n[registry]'],
       [
         "# registry only\n[registry]\n# attached\ndefault='https://github.com/acme'\n",
         "# registry only\nversion = 1\n\n[registry]\n# attached\ndefault='github.com/acme'\n",
@@ -254,6 +256,22 @@ describe('closed lossless manifest edit algebra', () => {
         error: { reason: 'invalid-input' },
       });
     }
+
+    const forgedView = new Uint8ClampedArray(encoder.encode('tool = "codex"\n'));
+    Object.setPrototypeOf(forgedView, Uint8Array.prototype);
+    expect(migrateLegacyManifestBytes(forgedView as unknown as Uint8Array)).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-input' },
+    });
+
+    const disguisedSharedBuffer = new SharedArrayBuffer(32);
+    const disguisedShared = new Uint8Array(disguisedSharedBuffer);
+    disguisedShared.set(encoder.encode('tool = "codex"\n'));
+    Object.setPrototypeOf(disguisedSharedBuffer, ArrayBuffer.prototype);
+    expect(migrateLegacyManifestBytes(disguisedShared)).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-input' },
+    });
 
     const shared = new Uint8Array(new SharedArrayBuffer(32));
     shared.set(encoder.encode('tool = "codex"\n'));
