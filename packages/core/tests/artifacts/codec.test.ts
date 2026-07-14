@@ -40,6 +40,17 @@ describe('artifact codec foundation', () => {
     if (typeof SharedArrayBuffer !== 'undefined') {
       expect(ownArtifactBytes('plan', new Uint8Array(new SharedArrayBuffer(1)), 1).ok).toBe(false);
     }
+    let shadowReads = 0;
+    const shadowed = Uint8Array.of(1);
+    Object.defineProperty(shadowed, 'buffer', {
+      configurable: true,
+      get: () => {
+        shadowReads += 1;
+        return new ArrayBuffer(1);
+      },
+    });
+    expect(ownArtifactBytes('plan', shadowed, 1).ok).toBe(false);
+    expect(shadowReads).toBe(0);
     let traps = 0;
     const hostile = new Proxy(source, {
       getPrototypeOf: () => {

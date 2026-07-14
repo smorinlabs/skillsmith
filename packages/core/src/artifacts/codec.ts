@@ -100,6 +100,13 @@ const MAX_DEPTH = 64;
 const MAX_NODES = 16_384;
 const MAX_ERROR_PATH = 16;
 const ARTIFACT_SENSITIVE_CANARY = 'P17_SECRET_CANARY';
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype) as object;
+const typedArrayBufferGetter = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'buffer')?.get;
+const typedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  'byteLength',
+)?.get;
+const copyUint8Array = Uint8Array.prototype.set;
 
 const safePath = (path: readonly (string | number)[]): readonly (string | number)[] =>
   Object.freeze(
@@ -133,26 +140,61 @@ export const artifactCodecError = (
     message: ERROR_MESSAGES[reason],
   });
 
-const isSharedView = (value: Uint8Array): boolean =>
-  typeof SharedArrayBuffer !== 'undefined' && value.buffer instanceof SharedArrayBuffer;
-
 /** Own a plain, non-shared byte view without retaining caller storage. */
 export const ownArtifactBytes = (
   artifactId: ArtifactId,
   input: unknown,
   requestedVersion: number | null = null,
 ): Result<Uint8Array, ArtifactCodecError> => {
-  if (
-    typeof input !== 'object' ||
-    input === null ||
-    utilTypes.isProxy(input) ||
-    !utilTypes.isUint8Array(input) ||
-    Object.getPrototypeOf(input) !== Uint8Array.prototype ||
-    isSharedView(input)
-  ) {
+  try {
+    if (
+      typeof input !== 'object' ||
+      input === null ||
+      utilTypes.isProxy(input) ||
+      !utilTypes.isUint8Array(input) ||
+      Object.getPrototypeOf(input) !== Uint8Array.prototype ||
+      typedArrayBufferGetter === undefined ||
+      typedArrayByteLengthGetter === undefined
+    ) {
+      return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
+    }
+    const buffer = Reflect.apply(typedArrayBufferGetter, input, []) as ArrayBufferLike;
+    const byteLength = Reflect.apply(typedArrayByteLengthGetter, input, []) as number;
+    const keys = Reflect.ownKeys(input);
+    if (
+      !utilTypes.isArrayBuffer(buffer) ||
+      utilTypes.isSharedArrayBuffer(buffer) ||
+      Object.getPrototypeOf(buffer) !== ArrayBuffer.prototype ||
+      !Number.isSafeInteger(byteLength) ||
+      byteLength < 0 ||
+      keys.length !== byteLength ||
+      keys.some((key, index) => typeof key !== 'string' || key !== String(index))
+    ) {
+      return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(input);
+    for (let index = 0; index < byteLength; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (
+        descriptor === undefined ||
+        !('value' in descriptor) ||
+        typeof descriptor.value !== 'number' ||
+        !Number.isInteger(descriptor.value) ||
+        descriptor.value < 0 ||
+        descriptor.value > 255 ||
+        descriptor.writable !== true ||
+        descriptor.enumerable !== true ||
+        descriptor.configurable !== true
+      ) {
+        return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
+      }
+    }
+    const owned = new Uint8Array(byteLength);
+    Reflect.apply(copyUint8Array, owned, [input]);
+    return ok(owned);
+  } catch {
     return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
   }
-  return ok(new Uint8Array(input));
 };
 
 /** Fatal UTF-8 decode with BOM rejection, returning both owned bytes and source text. */
