@@ -10,8 +10,9 @@ through object spreading or schema stripping, a parser can accept fields another
 and framing or property order can change without an explicit contract-version decision.
 
 The accepted bytes must remain unchanged. Domain reports must also remain separate from public DTOs,
-and the generic contract machinery must not know the current CLI command set. Persisted artifact
-formats (manifests, locks, plans, ledgers, and journals) remain a later decision.
+and the generic contract machinery must not know the current CLI command set. The original decision
+deferred persisted manifests, locks, plans, ledgers, and journals; P17-G2-05 now supplies their
+separate contract authority without changing the signed CLI JSON surface.
 
 ## Decision
 
@@ -50,15 +51,50 @@ and shared codec types; versioned entry points own their exact DTOs, codecs, and
 Verify codec construction receives a validated tool registry, and the capability mapper projects
 only immutable descriptor facts in canonical operation order.
 
+Persisted artifacts use a second, deliberately distinct abstraction. `ArtifactCodec` operates on
+owned bytes and maps versioned DTOs to immutable semantic models; it is not a `WireCodec`, and
+`artifactContractRegistry` is not the CLI's `WireContractRegistry`. The single production artifact
+registry owns this ordered inventory:
+
+```text
+manifest@1, lock@1, plan@1, ledger@1, ledger@2, journal@1
+```
+
+Concrete artifact codecs and DTO mappers are exported only from the versioned
+`@skillsmith/core/contracts/v1` and `@skillsmith/core/contracts/v2` entry points. Shared
+`ArtifactCodec` types remain available from `@skillsmith/core/contracts`; ordinary
+`@skillsmith/core` exposes the registry and five read functions, not concrete codecs or a migration
+executor. Registry, repository, contract barrels, and the placement compatibility facade do not
+own duplicate parsers or serializers.
+
+The artifact repository reads manifest, lock, saved plan, ledger, and journal files through only
+`pathKind` and `readBytes`. It never locks or writes. A legacy project configuration is decoded as
+manifest v1 with descriptive migration metadata, and ledger v1 is projected to the ledger v2 model
+with byte/semantic revisions, canonical target source, and preserved legacy-journal identities.
+That metadata conveys no write authority. Ledger v1 encoding remains compatibility-only; the
+legacy mutable ledger facade refuses v2 before any write-side effect so it cannot truncate or
+downgrade a newer ledger.
+
+Artifact codecs recursively reject unknown fields, hostile non-ordinary inputs, invalid UTF-8 or
+framing, and sensitive material before returning persistable bytes. Errors are fixed, bounded,
+cause-free values that do not echo artifact contents, paths, parser details, or secret canaries.
+
 Any public field, enum, meaning, embedded kind/version, property order, formatting, or framing
 change is breaking under the conservative policy. It requires a new codec version; backward decode
-is available only through an explicitly registered migration. Current codecs declare no migrations.
+is available only through an explicitly registered migration. Current CLI `WireCodec`s declare no
+migrations. Artifact migration descriptors are limited to legacy project configuration to manifest
+v1 and ledger v1 to ledger v2.
 
 ## Consequences
 
 Public JSON now has one versioned owner, strict parsing, explicit domain projection, deterministic
 bytes, and an extensible registry that can host fixture or future codecs without global mutation.
 The CLI retains presentation and command-selection policy while core owns portable wire shapes.
+
+Persisted artifacts likewise have one ordered production registry, one parser/serializer owner per
+version, immutable read envelopes, and visible but non-executable migration descriptions. Keeping
+the artifact and CLI wire registries separate avoids conflating text-command output with durable
+filesystem state.
 
 The cost is a larger explicit schema and mapper surface, plus deliberate version management for
 changes that previously looked like renderer refactors. Recursive unknown-field rejection also
@@ -74,8 +110,9 @@ means additive fields are intentionally not silent compatibility changes.
   policy and fixtures or other embedders need independent mappings.
 - **Adopt additive compatibility by default.** Rejected because unknown-field acceptance would make
   property and semantic changes invisible to conservative consumers.
-- **Migrate persisted artifacts in the same decision.** Rejected because repository decoding,
-  migrations, and portable-artifact policy are owned by the Phase-2 artifact work.
+- **Merge persisted artifacts into the CLI wire registry.** Rejected because repository decoding,
+  byte framing, migration metadata, and portable-artifact policy are durable filesystem concerns,
+  not command-output selection policy.
 
 ## References
 
@@ -83,3 +120,4 @@ means additive fields are intentionally not silent compatibility changes.
 - [ADR 0002 — Result type](0002-result-type.md)
 - [ADR 0007 — Tool-adapter registry](0007-tool-adapter-registry.md)
 - [P17-G1-06 implementation plan](../../projects/p17/plans/P17-G1-06.md)
+- [P17-G2-05 implementation plan](../../projects/p17/plans/P17-G2-05.md)

@@ -36,3 +36,29 @@ export {
 } from './lifecycle.ts';
 export type { VerifyV1Dto } from './verify.ts';
 export { createVerifyV1Codec, toVerifyV1Dto, verifyV1Codec } from './verify.ts';
+export type { ManifestV1Dto } from '../../artifacts/manifest-codec.ts';
+export {
+  fromManifestV1Dto,
+  manifestV1Codec,
+  toManifestV1Dto,
+} from '../../artifacts/manifest-codec.ts';
+export type { LockV1Dto } from '../../artifacts/lock-codec.ts';
+export { fromLockV1Dto, lockV1Codec, toLockV1Dto } from '../../artifacts/lock-codec.ts';
+export type { SavedPlanV1Dto } from '../../artifacts/plan-types.ts';
+export {
+  fromSavedPlanV1Dto,
+  savedPlanV1Codec,
+  toSavedPlanV1Dto,
+} from '../../artifacts/plan-codec.ts';
+export type { JournalV1Dto } from '../../artifacts/journal-types.ts';
+export {
+  fromJournalV1Dto,
+  journalV1Codec,
+  toJournalV1Dto,
+} from '../../artifacts/journal-codec.ts';
+export type { LedgerV1Dto } from '../../artifacts/ledger-types.ts';
+export {
+  fromLedgerV1Dto,
+  ledgerV1Codec,
+  toLedgerV1Dto,
+} from '../../artifacts/ledger-codec.ts';

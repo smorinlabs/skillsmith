@@ -15,7 +15,7 @@ import type {
   LogicalJournalV1,
   LogicalJournalV1Dto,
 } from './journal-types.ts';
-import { ownArtifactDto, validatePlanOperationIntentV1 } from './plan-codec.ts';
+import { ownArtifactDto, validatePlanOperationIntentV1 } from './registry.ts';
 
 type Path = readonly (string | number)[];
 

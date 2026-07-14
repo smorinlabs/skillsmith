@@ -121,6 +121,7 @@ const STATIC_PATHS = new Set([
   'refusalClass',
   'affected',
   'correlation',
+  'unexpected',
 ]);
 
 type Path = readonly (string | number)[];
@@ -744,7 +745,9 @@ const SavedPlanSchema = z
   });
 
 const resourceHashPairMatches = (kind: string, domain: string): boolean => {
-  if (kind === 'manifest-bytes') return domain === 'manifest-bytes';
+  if (kind === 'manifest-bytes') {
+    return domain === 'manifest-semantic' || domain === 'manifest-bytes';
+  }
   if (kind === 'lock') return domain === 'lock-canonical';
   if (kind === 'store') return domain === 'source-content';
   return domain === 'resource';
@@ -941,7 +944,13 @@ export const validatePlanOperationIntentV1 = (
   return ok(deepFreeze(canonical));
 };
 
-const firstZodPath = (error: z.ZodError): Path => error.issues[0]?.path ?? [];
+const firstZodPath = (error: z.ZodError): Path => {
+  const issue = error.issues[0];
+  if (issue?.code === 'unrecognized_keys' && issue.keys[0] !== undefined) {
+    return [...issue.path, issue.keys[0]];
+  }
+  return issue?.path ?? [];
+};
 
 export const ownArtifactDto = (
   artifactId: 'plan' | 'journal',

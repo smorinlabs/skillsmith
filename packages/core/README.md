@@ -128,6 +128,58 @@ return sanitized `Result` errors rather than throwing for untrusted input. Expli
 mappers keep domain-only fields out of public wire shapes. See
 [ADR 0008](../../docs/adr/0008-wire-contract-registry.md).
 
+## Persisted artifact contracts
+
+Persisted files use a separate, byte-oriented `ArtifactCodec` contract. The existing `WireCodec`
+registry above remains the authority for signed command output; the frozen
+`artifactContractRegistry` is the single persisted-artifact registry and orders exactly
+`manifest@1`, `lock@1`, `plan@1`, `ledger@1`, `ledger@2`, and `journal@1`.
+
+```ts
+import {
+  artifactContractRegistry,
+  planProjectConfigMigration,
+  readJournalArtifact,
+  readLedgerArtifact,
+  readLockArtifact,
+  readManifestArtifact,
+  readSavedPlanArtifact,
+} from '@skillsmith/core';
+import type { ArtifactCodec, ArtifactCodecError } from '@skillsmith/core/contracts';
+import {
+  journalV1Codec,
+  ledgerV1Codec,
+  lockV1Codec,
+  manifestV1Codec,
+  savedPlanV1Codec,
+} from '@skillsmith/core/contracts/v1';
+import {
+  ledgerV2Codec,
+  migrateLedgerV1DtoToV2Dto,
+} from '@skillsmith/core/contracts/v2';
+```
+
+The versioned subpaths also export their DTO types and `to*Dto`/`from*Dto` mappers. Their runtime
+codecs are the same objects held by `artifactContractRegistry`; they do not construct another
+registry. The artifact repository exposes five injected, read-only functions for manifests,
+locks, saved plans, ledgers, and journals. Reads never write, lock, retry, or execute a migration.
+Legacy project configurations read as manifest v1 and ledger v1 files read as ledger v2; both
+return descriptive migration metadata, including source and target revisions.
+`planProjectConfigMigration` is likewise a pure planner; there is no migration executor in the
+root package API.
+
+Parsing and serialization remain codec-owned. The repository resolves codecs through
+`artifactContractRegistry`, while versioned exports and the legacy placement facade delegate to
+those same codec objects instead of maintaining alternate parsers or serializers. Compatibility
+formats retain their declared presentation rules, including the historical no-final-newline
+`ledger@1` encoding. The legacy placement writer refuses ledger v2 and future versions before any
+write, preventing an implicit downgrade.
+
+Artifact boundaries defensively own and validate untrusted bytes and values, reject unknown or
+inconsistent shapes, and return deeply immutable results. Recursive sensitive content is refused
+rather than persisted or replaced with redaction text; fixed errors do not echo source values,
+raw bytes, operating-system messages, or thrown causes.
+
 ## Design rules
 
 `@skillsmith/core` is an **embeddable, non-interactive library**. Its real default adapters perform

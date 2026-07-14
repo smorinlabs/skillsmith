@@ -176,7 +176,13 @@ const decode = (
   const source = decodeArtifactUtf8('lock', bytes);
   if (!source.ok) return source;
   const decoded = readPortableLockSource(source.value.bytes);
-  if (!decoded.ok) return mapLockError(decoded.error, source.value.source);
+  if (!decoded.ok) {
+    if (!source.value.source.endsWith('\n')) {
+      const withTerminalLf = readPortableLockSource(encoder.encode(`${source.value.source}\n`));
+      if (withTerminalLf.ok) return fail('noncanonical', 1);
+    }
+    return mapLockError(decoded.error, source.value.source);
+  }
   if (hasSensitiveArtifactContent(source.value.source)) return fail('sensitive-content', 1);
   return ok(
     Object.freeze({

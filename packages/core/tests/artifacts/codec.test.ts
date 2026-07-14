@@ -70,6 +70,17 @@ describe('artifact codec foundation', () => {
     expect(decodeArtifactUtf8('journal', Uint8Array.of(0xc3, 0x28), 1).ok).toBe(false);
   });
 
+  test('copies filesystem Buffers only at the UTF-8 decode boundary', () => {
+    const source = Buffer.from('{"ok":true}\n');
+    const decoded = decodeArtifactUtf8('plan', source, 1);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    source.fill(0);
+    expect(decoder.decode(decoded.value.bytes)).toBe('{"ok":true}\n');
+    expect(Object.getPrototypeOf(decoded.value.bytes)).toBe(Uint8Array.prototype);
+    expect(ownArtifactBytes('plan', Buffer.from([1]), 1).ok).toBe(false);
+  });
+
   test('deeply owns and freezes plain data without invoking accessors or proxy traps', () => {
     const source = { nested: [{ value: 1 }] };
     const owned = deepOwnFreeze<typeof source>('ledger', source, 2);

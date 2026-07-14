@@ -67,3 +67,25 @@ export type {
 export * from './pair.ts';
 export * from './source-content.ts';
 export * from './types.ts';
+export { artifactContractRegistry } from './registry.ts';
+export {
+  planProjectConfigMigration,
+  readJournalArtifact,
+  readLedgerArtifact,
+  readLockArtifact,
+  readManifestArtifact,
+  readSavedPlanArtifact,
+} from './repository.ts';
+export type { ArtifactCodecError } from './codec.ts';
+export type { LogicalJournalV1 } from './journal-types.ts';
+export type { LedgerModel } from './ledger-types.ts';
+export type { SavedPlanV1 } from './plan-types.ts';
+export type {
+  ArtifactAbsent,
+  ArtifactReadEnvelope,
+  ArtifactReadPorts,
+  ArtifactReadResult,
+  ArtifactRepositoryError,
+  ArtifactRepositoryErrorReason,
+  ProjectConfigMigration,
+} from './repository.ts';

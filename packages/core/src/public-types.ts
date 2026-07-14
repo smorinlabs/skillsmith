@@ -14,6 +14,18 @@ export type {
   UninstallReport,
   UninstallResult,
 } from './acquire/types.ts';
+export type { LogicalJournalV1 } from './artifacts/journal-types.ts';
+export type { LedgerModel } from './artifacts/ledger-types.ts';
+export type { SavedPlanV1 } from './artifacts/plan-types.ts';
+export type {
+  ArtifactAbsent,
+  ArtifactReadEnvelope,
+  ArtifactReadPorts,
+  ArtifactReadResult,
+  ArtifactRepositoryError,
+  ArtifactRepositoryErrorReason,
+  ProjectConfigMigration,
+} from './artifacts/repository.ts';
 export type {
   ApplicationContext,
   ApplicationService,

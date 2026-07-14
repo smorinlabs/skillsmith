@@ -1,5 +1,6 @@
 import type {
   AgentsReport,
+  ArtifactDigest,
   CheckRunResult,
   CommandsReport,
   ConfigGetReport,
@@ -8,11 +9,20 @@ import type {
   ConfigUnsetReport,
   Deprecation,
   InstallReport,
+  LedgerModel,
+  LogicalJournalV1,
+  ManifestScope,
+  ManifestTool,
+  NormalizedManifestDeclaration,
+  NormalizedManifestV1,
+  PortableLockV1,
+  Result,
+  SavedPlanV1,
   ToolRegistry,
   UninstallReport,
   VerifyReport,
 } from '@skillsmith/core';
-import type { WireCodec } from '@skillsmith/core/contracts';
+import type { ArtifactCodec, ArtifactCodecError, WireCodec } from '@skillsmith/core/contracts';
 
 type ToolId = 'claude-code' | 'codex';
 type ConfigToolId = ToolId | 'kilo-code' | 'opencode';
@@ -367,3 +377,151 @@ export declare const capabilitySnapshotV1Codec: WireCodec<
 export declare const toCapabilitySnapshotV1Dto: (
   source: Pick<ToolRegistry, 'adapters'>,
 ) => CapabilitySnapshotV1Dto;
+
+type DeepMutable<T> = T extends Readonly<ArtifactDigest>
+  ? ArtifactDigest
+  : T extends string | number | boolean | bigint | symbol | null | undefined
+    ? T
+    : T extends (...args: never[]) => unknown
+      ? T
+      : T extends readonly unknown[]
+        ? { -readonly [K in keyof T]: DeepMutable<T[K]> }
+        : T extends object
+          ? { -readonly [K in keyof T]: DeepMutable<T[K]> }
+          : T;
+
+type SavedPlanV1Dto = DeepMutable<SavedPlanV1>;
+type MutableJournalV1 = DeepMutable<LogicalJournalV1>;
+type JournalV1Dto = Omit<MutableJournalV1, 'actual'> & {
+  actual: {
+    before: readonly MutableJournalV1['actual']['before'][number][];
+    after: readonly MutableJournalV1['actual']['after'][number][];
+    retained: readonly MutableJournalV1['actual']['retained'][number][];
+  };
+};
+
+interface LedgerDevV1Dto {
+  readonly sourcePath: string;
+  readonly resolvedPath: string;
+  readonly repoRoot: string | null;
+  readonly sourceRelPath: string | null;
+  readonly remote: string | null;
+  readonly recordedAt: string;
+}
+
+interface LedgerPinnedV1Dto {
+  readonly storePath: string;
+  readonly rev: string;
+  readonly gitSha: string | null;
+  readonly dirty: boolean;
+  readonly contentHash: string;
+  readonly snapshotAt: string;
+  readonly verify: 'passed' | 'warned' | 'skipped';
+  readonly placement?: 'symlink' | 'copy';
+}
+
+interface LedgerOriginV1Dto {
+  readonly source: string;
+  readonly host: string;
+  readonly repo: string;
+  readonly skillPath: string;
+  readonly refRequested: string | null;
+  readonly refResolved: string;
+  readonly pin: boolean;
+  readonly installedAt: string;
+}
+
+type LegacyPairBeforeV1Dto =
+  | Readonly<{ mode: 'dev'; symlinkTarget: string; liveKind?: 'symlink' | 'dir' }>
+  | Readonly<{
+      mode: 'pinned';
+      storePath: string | null;
+      contentHash: string | null;
+      liveKind?: 'symlink' | 'dir';
+      symlinkTarget?: string;
+    }>
+  | Readonly<{ mode: 'absent' }>;
+
+interface LegacyPairJournalV1Dto {
+  readonly op: 'promote' | 'dev' | 'rollback' | 'install' | 'uninstall';
+  readonly txId: string;
+  readonly phase: 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';
+  readonly startedAt: string;
+  readonly completedAt: string | null;
+  readonly before: LegacyPairBeforeV1Dto;
+  readonly stagingPath: string;
+  readonly backupPath: string;
+}
+
+interface LedgerPairV1Dto {
+  readonly placementPath: string;
+  readonly mode: 'dev' | 'pinned';
+  readonly dev: LedgerDevV1Dto | null;
+  readonly pinned?: LedgerPinnedV1Dto | null;
+  readonly origin?: LedgerOriginV1Dto;
+  readonly journal?: LegacyPairJournalV1Dto | null;
+}
+
+type LedgerSkillsV1Dto = Readonly<
+  Record<
+    string,
+    Readonly<{
+      readonly tools: Readonly<Partial<Record<'claude-code' | 'codex', LedgerPairV1Dto>>>;
+    }>
+  >
+>;
+
+interface LedgerV1Dto {
+  readonly schemaVersion: 1;
+  readonly kind: 'skillsmith.placements';
+  readonly updatedAt: string;
+  readonly skills: LedgerSkillsV1Dto;
+  readonly projects?: Readonly<Record<string, Readonly<{ readonly skills: LedgerSkillsV1Dto }>>>;
+}
+
+export interface ManifestV1Dto {
+  readonly version: 1;
+  readonly defaults?: Readonly<{
+    readonly tools?: readonly ManifestTool[];
+    readonly scope?: ManifestScope;
+    readonly path?: string;
+  }>;
+  readonly registry?: Readonly<{ readonly default?: string }>;
+  readonly skills?: readonly NormalizedManifestDeclaration[];
+}
+
+export type LockV1Dto = PortableLockV1;
+export type { JournalV1Dto, LedgerV1Dto, SavedPlanV1Dto };
+
+export declare const manifestV1Codec: ArtifactCodec<
+  'manifest',
+  1,
+  ManifestV1Dto,
+  NormalizedManifestV1
+>;
+export declare const toManifestV1Dto: (
+  model: NormalizedManifestV1,
+) => Result<ManifestV1Dto, ArtifactCodecError>;
+export declare const fromManifestV1Dto: (
+  dto: ManifestV1Dto,
+) => Result<NormalizedManifestV1, ArtifactCodecError>;
+export declare const lockV1Codec: ArtifactCodec<'lock', 1, LockV1Dto, PortableLockV1>;
+export declare const toLockV1Dto: (model: PortableLockV1) => Result<LockV1Dto, ArtifactCodecError>;
+export declare const fromLockV1Dto: (dto: LockV1Dto) => Result<PortableLockV1, ArtifactCodecError>;
+export declare const savedPlanV1Codec: ArtifactCodec<'plan', 1, SavedPlanV1Dto, SavedPlanV1>;
+export declare const toSavedPlanV1Dto: (
+  model: SavedPlanV1,
+) => Result<SavedPlanV1Dto, ArtifactCodecError>;
+export declare const fromSavedPlanV1Dto: (
+  dto: SavedPlanV1Dto,
+) => Result<SavedPlanV1, ArtifactCodecError>;
+export declare const journalV1Codec: ArtifactCodec<'journal', 1, JournalV1Dto, LogicalJournalV1>;
+export declare const toJournalV1Dto: (
+  model: LogicalJournalV1,
+) => Result<JournalV1Dto, ArtifactCodecError>;
+export declare const fromJournalV1Dto: (
+  dto: JournalV1Dto,
+) => Result<LogicalJournalV1, ArtifactCodecError>;
+export declare const ledgerV1Codec: ArtifactCodec<'ledger', 1, LedgerV1Dto, LedgerModel>;
+export declare const toLedgerV1Dto: (model: LedgerModel) => Result<LedgerV1Dto, ArtifactCodecError>;
+export declare const fromLedgerV1Dto: (dto: LedgerV1Dto) => Result<LedgerModel, ArtifactCodecError>;

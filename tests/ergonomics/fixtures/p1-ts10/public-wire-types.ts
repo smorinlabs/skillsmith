@@ -129,10 +129,35 @@ type _V1RuntimeClosure = Assert<
     | 'toErrorV1Dto'
     | 'capabilitySnapshotV1Codec'
     | 'toCapabilitySnapshotV1Dto'
+    | 'manifestV1Codec'
+    | 'toManifestV1Dto'
+    | 'fromManifestV1Dto'
+    | 'lockV1Codec'
+    | 'toLockV1Dto'
+    | 'fromLockV1Dto'
+    | 'savedPlanV1Codec'
+    | 'toSavedPlanV1Dto'
+    | 'fromSavedPlanV1Dto'
+    | 'ledgerV1Codec'
+    | 'toLedgerV1Dto'
+    | 'fromLedgerV1Dto'
+    | 'journalV1Codec'
+    | 'toJournalV1Dto'
+    | 'fromJournalV1Dto'
   >
 >;
 type _V2RuntimeClosure = Assert<
-  Equal<keyof V2Runtime, 'flipV2Codec' | 'toFlipV2Dto' | 'listV2Codec' | 'toListV2Dto'>
+  Equal<
+    keyof V2Runtime,
+    | 'flipV2Codec'
+    | 'toFlipV2Dto'
+    | 'listV2Codec'
+    | 'toListV2Dto'
+    | 'ledgerV2Codec'
+    | 'toLedgerV2Dto'
+    | 'fromLedgerV2Dto'
+    | 'migrateLedgerV1DtoToV2Dto'
+  >
 >;
 
 interface FixtureDto {

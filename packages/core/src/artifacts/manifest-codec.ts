@@ -11,6 +11,8 @@ import {
   hasSensitiveArtifactContent,
   unsignedUtf16Compare,
 } from './codec.ts';
+import { applyHumanTomlReplacements, renderHumanTomlString, scanHumanToml } from './human-toml.ts';
+import { normalizeRegistryIdentity } from './identity.ts';
 import { migrateLegacyManifestBytes } from './legacy-migration.ts';
 import { type ManifestEdit, editManifestBytes } from './manifest-edit.ts';
 import {
@@ -486,6 +488,52 @@ const requestedVersion = (source: string): number | null => {
   }
 };
 
+const adaptCanonicalLegacyRegistry = (
+  bytes: Uint8Array,
+  source: string,
+): NormalizedManifestV1 | null => {
+  let raw: unknown;
+  try {
+    raw = parseToml(source);
+  } catch {
+    return null;
+  }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const registry = (raw as Readonly<Record<string, unknown>>).registry;
+  if (typeof registry !== 'object' || registry === null || Array.isArray(registry)) return null;
+  const legacyValue = (registry as Readonly<Record<string, unknown>>).default;
+  if (typeof legacyValue !== 'string' || !/^https:\/\//iu.test(legacyValue)) return null;
+  const identity = normalizeRegistryIdentity(legacyValue, { legacy: true });
+  if (!identity.ok) return null;
+
+  const scanned = scanHumanToml(bytes);
+  if (!scanned.ok) return null;
+  const assignments = scanned.value.assignments.filter(
+    (entry) =>
+      entry.arrayTableIndex === null &&
+      !entry.dotted &&
+      entry.tablePath.length === 1 &&
+      entry.tablePath[0] === 'registry' &&
+      entry.keyPath.length === 1 &&
+      entry.keyPath[0] === 'default' &&
+      !entry.multiline,
+  );
+  const assignment = assignments[0];
+  if (assignments.length !== 1 || assignment === undefined) return null;
+  const rewritten = applyHumanTomlReplacements(source, [
+    {
+      start: assignment.valueRange.start,
+      end: assignment.valueRange.end,
+      text: renderHumanTomlString(identity.value, assignment.quote),
+    },
+  ]);
+  if (!rewritten.ok) return null;
+  const read = readManifestSource(rewritten.value);
+  if (!read.ok || read.value.shape !== 'canonical') return null;
+  const normalized = normalizeManifestDocument(read.value);
+  return normalized.ok ? normalized.value : null;
+};
+
 const decode = (
   bytes: Uint8Array,
 ): ReturnType<ArtifactCodec<'manifest', 1, ManifestV1Dto, NormalizedManifestV1>['decode']> => {
@@ -526,7 +574,11 @@ const decode = (
 
   const read = readManifestSource(owned.value.source);
   if (!read.ok) return fail('invalid-shape', 1);
-  const normalized = normalizeManifestDocument(read.value);
+  let normalized = normalizeManifestDocument(read.value);
+  if (!normalized.ok && normalized.error.field === 'registry.default') {
+    const adapted = adaptCanonicalLegacyRegistry(owned.value.bytes, owned.value.source);
+    if (adapted !== null) normalized = ok(adapted);
+  }
   if (!normalized.ok) {
     return fail('invalid-shape', 1, fieldPath(normalized.error.field));
   }

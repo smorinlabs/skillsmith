@@ -97,6 +97,13 @@ describe('@skillsmith/core public API', () => {
       'commitArtifactPair',
       'recoverArtifactPair',
       'readCoordinatedArtifactPair',
+      'artifactContractRegistry',
+      'readManifestArtifact',
+      'readLockArtifact',
+      'readSavedPlanArtifact',
+      'readLedgerArtifact',
+      'readJournalArtifact',
+      'planProjectConfigMigration',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);
@@ -145,6 +152,21 @@ describe('@skillsmith/core public API', () => {
     expect(core.redactObservationValue).toBe(core.redactSensitiveValue);
     expect(core.saveConfig.length).toBe(2);
     expect(core).not.toHaveProperty('saveConfigWithCoordinator');
+  });
+
+  test('re-exports the read-only artifact repository without its internal executor', () => {
+    for (const name of [
+      'artifactContractRegistry',
+      'readManifestArtifact',
+      'readLockArtifact',
+      'readSavedPlanArtifact',
+      'readLedgerArtifact',
+      'readJournalArtifact',
+      'planProjectConfigMigration',
+    ] as const) {
+      expect(core[name], name).toBe(artifacts[name]);
+    }
+    expect(core).not.toHaveProperty('executeProjectConfigMigration');
   });
 
   test('exports the validated registry without breaking the 1.x inventory projection', () => {

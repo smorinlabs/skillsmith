@@ -1,5 +1,6 @@
-import type { FlipReport, ListReport } from '@skillsmith/core';
-import type { WireCodec } from '@skillsmith/core/contracts';
+import type { ArtifactDigest, FlipReport, LedgerModel, ListReport, Result } from '@skillsmith/core';
+import type { ArtifactCodec, ArtifactCodecError, WireCodec } from '@skillsmith/core/contracts';
+import type { LedgerV1Dto } from '@skillsmith/core/contracts/v1';
 
 type ToolId = 'claude-code' | 'codex';
 type EntryOrigin =
@@ -89,7 +90,38 @@ export interface ListV2Dto {
   }>;
 }
 
+export type LedgerV2Dto = Readonly<{
+  readonly schemaVersion: 2;
+  readonly kind: 'skillsmith.placements';
+}> &
+  LedgerModel;
+
+export interface LedgerMigrationV1ToV2 {
+  readonly kind: 'ledger-v1-to-v2';
+  readonly fromSchemaVersion: 1;
+  readonly toSchemaVersion: 2;
+  readonly sourceByteRevision: ArtifactDigest;
+  readonly sourceSemanticRevision: ArtifactDigest;
+  readonly targetSemanticRevision: ArtifactDigest;
+  readonly targetByteRevision: ArtifactDigest;
+  readonly targetCanonicalSource: string;
+  readonly preservedLegacyJournals: readonly Readonly<{
+    readonly scope:
+      | Readonly<{ readonly kind: 'user' }>
+      | Readonly<{ readonly kind: 'project'; readonly root: string }>;
+    readonly skill: string;
+    readonly tool: 'claude-code' | 'codex';
+    readonly txId: string;
+  }>[];
+}
+
 export declare const flipV2Codec: WireCodec<'flip', 2, FlipV2Dto>;
 export declare const toFlipV2Dto: (report: FlipReport) => FlipV2Dto;
 export declare const listV2Codec: WireCodec<'list', 2, ListV2Dto>;
 export declare const toListV2Dto: (report: ListReport) => ListV2Dto;
+export declare const ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel>;
+export declare const toLedgerV2Dto: (model: LedgerModel) => Result<LedgerV2Dto, ArtifactCodecError>;
+export declare const fromLedgerV2Dto: (dto: LedgerV2Dto) => Result<LedgerModel, ArtifactCodecError>;
+export declare const migrateLedgerV1DtoToV2Dto: (
+  dto: LedgerV1Dto,
+) => Result<LedgerV2Dto, ArtifactCodecError>;

@@ -51,6 +51,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Added
+- Persisted artifact contracts: a byte-oriented `ArtifactCodec` API and the single ordered `artifactContractRegistry` for `manifest@1`, `lock@1`, `plan@1`, `ledger@1`, `ledger@2`, and `journal@1`, distinct from the existing command-output `WireCodec` registry.
+- Versioned persisted-artifact codec, DTO, and mapper exports on `@skillsmith/core/contracts/v1` and `@skillsmith/core/contracts/v2`, backed by the same codec objects as `artifactContractRegistry`.
+- A read-only, capability-injected repository for manifest, lock, saved-plan, ledger, and journal artifacts. Legacy project configuration to manifest v1 and ledger v1 to v2 reads return descriptive migration metadata; the root API exposes no migration executor.
+- Defensive artifact handling owns and validates untrusted values, refuses sensitive content with fixed safe errors, preserves declared compatibility framing, and prevents the legacy placement writer from downgrading ledger v2 or future versions.
 - MVP-2b.1.1: plugin-bundled skill discovery — `skillsmith list --tool claude-code` now finds skills shipped by installed plugins in addition to standalone skills. Fixes a bug where a machine with 40+ active skills reported only 1.
 - New top-level `skillsmith commands` subcommand lists slash commands discovered across `user` and `project` scopes.
 - New `managed` scope (Claude Code policy-managed skills) with `CLAUDE_CODE_MANAGED_SETTINGS_PATH` override and `CLAUDE_CODE_DISABLE_POLICY_SKILLS` honored.

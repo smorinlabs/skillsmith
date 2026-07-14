@@ -1,5 +1,17 @@
 import { dirname } from 'node:path';
-import { z } from 'zod';
+import type { ArtifactCodec } from '../artifacts/codec.ts';
+import type {
+  LedgerModel,
+  LedgerPairV1Dto,
+  LedgerSkillsV1Dto,
+  LedgerV1Dto,
+  LedgerV2Dto,
+} from '../artifacts/ledger-types.ts';
+import {
+  artifactContractRegistry,
+  fromLedgerV1Dto,
+  validateLedgerV1Dto,
+} from '../artifacts/registry.ts';
 import {
   type SkillSmithError,
   errorMessage,
@@ -26,86 +38,158 @@ const isPermError = (e: unknown): boolean => {
   return code === 'EACCES' || code === 'EPERM';
 };
 
-const DevRecordSchema = z.object({
-  sourcePath: z.string(),
-  resolvedPath: z.string(),
-  repoRoot: z.string().nullable(),
-  sourceRelPath: z.string().nullable(),
-  remote: z.string().nullable(),
-  recordedAt: z.string(),
-});
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+const ledgerV1Codec = artifactContractRegistry.get('ledger', 1) as ArtifactCodec<
+  'ledger',
+  1,
+  LedgerV1Dto,
+  LedgerModel
+>;
+const ledgerV2Codec = artifactContractRegistry.get('ledger', 2) as ArtifactCodec<
+  'ledger',
+  2,
+  LedgerV2Dto,
+  LedgerModel
+>;
 
-const PinnedRecordSchema = z.object({
-  storePath: z.string(),
-  rev: z.string(),
-  gitSha: z.string().nullable(),
-  dirty: z.boolean(),
-  contentHash: z.string(),
-  snapshotAt: z.string(),
-  verify: z.enum(['passed', 'warned', 'skipped']),
-  placement: z.enum(['symlink', 'copy']).optional(),
-});
+const CORRUPT_LEDGER_MESSAGE = 'ledger is invalid or corrupt';
+const FUTURE_LEDGER_MESSAGE = 'ledger schema version requires a newer skillsmith; upgrade required';
+const V2_READ_ONLY_MESSAGE =
+  'ledger schema v2 is read-only until the canonical ledger writer lands';
+const LEGACY_WRITE_REFUSAL_MESSAGE =
+  'legacy ledger writer accepts only schema v1; refusing a lossy or downgrade write';
 
-const OriginRecordSchema = z.object({
-  source: z.string(),
-  host: z.string(),
-  repo: z.string(),
-  skillPath: z.string(),
-  refRequested: z.string().nullable(),
-  refResolved: z.string(),
-  pin: z.boolean(),
-  installedAt: z.string(),
-});
+const corruptLedger = (ledgerPath: string): Result<never, SkillSmithError> =>
+  err(ledgerError(CORRUPT_LEDGER_MESSAGE, ledgerPath));
 
-const JournalSchema = z.object({
-  op: z.enum(['promote', 'dev', 'rollback', 'install', 'uninstall']),
-  txId: z.string(),
-  phase: z.enum(['prepared', 'staged', 'backed-up', 'live', 'committed']),
-  startedAt: z.string(),
-  completedAt: z.string().nullable(),
-  before: z.union([
-    z.object({
-      mode: z.literal('dev'),
-      symlinkTarget: z.string(),
-      liveKind: z.enum(['symlink', 'dir']).optional(),
-    }),
-    z.object({
-      mode: z.literal('pinned'),
-      storePath: z.string().nullable(),
-      contentHash: z.string().nullable(),
-      liveKind: z.enum(['symlink', 'dir']).optional(),
-      symlinkTarget: z.string().optional(),
-    }),
-    z.object({ mode: z.literal('absent') }),
-  ]),
-  stagingPath: z.string(),
-  backupPath: z.string(),
-});
+const defineEntry = <T>(target: Record<string, T>, key: string, value: T): void => {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+};
 
-const PairRecordSchema = z.object({
-  placementPath: z.string(),
-  mode: z.enum(['dev', 'pinned']),
-  dev: DevRecordSchema.nullable(),
-  // P13: a dev-only record (dev --source create/adopt) OMITS `pinned` and `journal` entirely — a
-  // new legal shape. Keep them nullable AND optional so both the absent-key shape and the
-  // explicit-null shape (every P12-written record) parse.
-  pinned: PinnedRecordSchema.nullable().optional(),
-  origin: OriginRecordSchema.optional(),
-  journal: JournalSchema.nullable().optional(),
-});
+const clonePairRecord = (record: LedgerPairV1Dto): PairRecord => {
+  const dev =
+    record.dev === null
+      ? null
+      : {
+          sourcePath: record.dev.sourcePath,
+          resolvedPath: record.dev.resolvedPath,
+          repoRoot: record.dev.repoRoot,
+          sourceRelPath: record.dev.sourceRelPath,
+          remote: record.dev.remote,
+          recordedAt: record.dev.recordedAt,
+        };
+  const output: PairRecord = {
+    placementPath: record.placementPath,
+    mode: record.mode,
+    dev,
+  };
+  if (Object.hasOwn(record, 'pinned') && record.pinned !== undefined) {
+    output.pinned =
+      record.pinned === null
+        ? record.pinned
+        : {
+            storePath: record.pinned.storePath,
+            rev: record.pinned.rev,
+            gitSha: record.pinned.gitSha,
+            dirty: record.pinned.dirty,
+            contentHash: record.pinned.contentHash,
+            snapshotAt: record.pinned.snapshotAt,
+            verify: record.pinned.verify,
+            ...(record.pinned.placement === undefined
+              ? {}
+              : { placement: record.pinned.placement }),
+          };
+  }
+  if (record.origin !== undefined) {
+    output.origin = {
+      source: record.origin.source,
+      host: record.origin.host,
+      repo: record.origin.repo,
+      skillPath: record.origin.skillPath,
+      refRequested: record.origin.refRequested,
+      refResolved: record.origin.refResolved,
+      pin: record.origin.pin,
+      installedAt: record.origin.installedAt,
+    };
+  }
+  if (Object.hasOwn(record, 'journal') && record.journal !== undefined) {
+    if (record.journal === null) {
+      output.journal = record.journal;
+    } else {
+      const before =
+        record.journal.before.mode === 'absent'
+          ? { mode: 'absent' as const }
+          : record.journal.before.mode === 'dev'
+            ? {
+                mode: 'dev' as const,
+                symlinkTarget: record.journal.before.symlinkTarget,
+                ...(record.journal.before.liveKind === undefined
+                  ? {}
+                  : { liveKind: record.journal.before.liveKind }),
+              }
+            : {
+                mode: 'pinned' as const,
+                storePath: record.journal.before.storePath,
+                contentHash: record.journal.before.contentHash,
+                ...(record.journal.before.liveKind === undefined
+                  ? {}
+                  : { liveKind: record.journal.before.liveKind }),
+                ...(record.journal.before.symlinkTarget === undefined
+                  ? {}
+                  : { symlinkTarget: record.journal.before.symlinkTarget }),
+              };
+      output.journal = {
+        op: record.journal.op,
+        txId: record.journal.txId,
+        phase: record.journal.phase,
+        startedAt: record.journal.startedAt,
+        completedAt: record.journal.completedAt,
+        before,
+        stagingPath: record.journal.stagingPath,
+        backupPath: record.journal.backupPath,
+      };
+    }
+  }
+  return output;
+};
 
-const SkillsTreeSchema = z.record(
-  z.string(),
-  z.object({ tools: z.record(z.enum(FLIP_TOOLS), PairRecordSchema) }),
-);
+type LegacySkillsTree = LedgerFile['skills'];
 
-const LedgerSchema = z.object({
-  schemaVersion: z.literal(1),
-  kind: z.literal('skillsmith.placements'),
-  updatedAt: z.string(),
-  skills: SkillsTreeSchema,
-  projects: z.record(z.string(), z.object({ skills: SkillsTreeSchema })).optional(),
-});
+const cloneSkillsTree = (tree: LedgerSkillsV1Dto): LegacySkillsTree => {
+  const output: LegacySkillsTree = {};
+  for (const [skill, entry] of Object.entries(tree)) {
+    const tools: LegacySkillsTree[string]['tools'] = {};
+    for (const tool of FLIP_TOOLS) {
+      const record = entry.tools[tool];
+      if (record !== undefined) tools[tool] = clonePairRecord(record);
+    }
+    defineEntry(output, skill, { tools });
+  }
+  return output;
+};
+
+const cloneLedgerV1 = (ledger: LedgerV1Dto): LedgerFile => {
+  const output: LedgerFile = {
+    schemaVersion: 1,
+    kind: 'skillsmith.placements',
+    updatedAt: ledger.updatedAt,
+    skills: cloneSkillsTree(ledger.skills),
+  };
+  if (ledger.projects !== undefined) {
+    const projects: NonNullable<LedgerFile['projects']> = {};
+    for (const [root, project] of Object.entries(ledger.projects)) {
+      defineEntry(projects, root, { skills: cloneSkillsTree(project.skills) });
+    }
+    output.projects = projects;
+  }
+  return output;
+};
 
 export const emptyLedger = (now: string): LedgerFile => ({
   schemaVersion: 1,
@@ -132,22 +216,26 @@ export const readLedger = async (
     return err(ledgerError(`cannot read ledger: ${errorMessage(e)}`, ledgerPath));
   }
 
-  if (text.trim().length === 0) return ok(emptyLedger(env.wallNowIso()));
-
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (e) {
-    return err(ledgerError(`ledger is not valid JSON: ${errorMessage(e)}`, ledgerPath));
+  const bytes = encoder.encode(text);
+  const decodedV1 = ledgerV1Codec.decode(bytes);
+  if (decodedV1.ok) {
+    const dto = ledgerV1Codec.toDto(decodedV1.value.model);
+    return dto.ok ? ok(cloneLedgerV1(dto.value)) : corruptLedger(ledgerPath);
   }
-
-  const parsed = LedgerSchema.safeParse(raw);
-  if (!parsed.success) {
-    const first = parsed.error.issues[0];
-    const path = first?.path.join('.') || '<root>';
-    return err(ledgerError(`ledger schema: ${path}: ${first?.message ?? 'invalid'}`, ledgerPath));
+  if (decodedV1.error.requestedVersion === 2) {
+    const decodedV2 = ledgerV2Codec.decode(bytes);
+    return decodedV2.ok
+      ? err(ledgerError(V2_READ_ONLY_MESSAGE, ledgerPath))
+      : corruptLedger(ledgerPath);
   }
-  return ok(parsed.data as LedgerFile);
+  if (
+    decodedV1.error.reason === 'unsupported-version' &&
+    decodedV1.error.requestedVersion !== null &&
+    decodedV1.error.requestedVersion > 2
+  ) {
+    return err(ledgerError(FUTURE_LEDGER_MESSAGE, ledgerPath));
+  }
+  return corruptLedger(ledgerPath);
 };
 
 export const writeLedger = async (
@@ -155,7 +243,18 @@ export const writeLedger = async (
   ledgerPath: string,
   ledger: LedgerFile,
 ): Promise<Result<void, SkillSmithError>> => {
-  const serialized = JSON.stringify({ ...ledger, updatedAt: env.wallNowIso() }, null, 2);
+  const validated = validateLedgerV1Dto(ledger as unknown);
+  if (!validated.ok) return err(ledgerError(LEGACY_WRITE_REFUSAL_MESSAGE, ledgerPath));
+  const stamped = validateLedgerV1Dto({
+    ...validated.value,
+    updatedAt: env.wallNowIso(),
+  });
+  if (!stamped.ok) return err(ledgerError(LEGACY_WRITE_REFUSAL_MESSAGE, ledgerPath));
+  const model = fromLedgerV1Dto(stamped.value);
+  if (!model.ok) return err(ledgerError(LEGACY_WRITE_REFUSAL_MESSAGE, ledgerPath));
+  const encoded = ledgerV1Codec.encode(model.value);
+  if (!encoded.ok) return err(ledgerError(LEGACY_WRITE_REFUSAL_MESSAGE, ledgerPath));
+  const serialized = decoder.decode(encoded.value);
   const tmp = `${ledgerPath}.tmp-${env.nextId('ledger-write')}`;
   try {
     await env.writeTextFile(tmp, serialized);

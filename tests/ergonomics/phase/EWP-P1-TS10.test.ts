@@ -207,8 +207,32 @@ const V1_RUNTIME_EXPORTS = [
   'toVerifyV1Dto',
   'uninstallV1Codec',
   'verifyV1Codec',
+  'manifestV1Codec',
+  'toManifestV1Dto',
+  'fromManifestV1Dto',
+  'lockV1Codec',
+  'toLockV1Dto',
+  'fromLockV1Dto',
+  'savedPlanV1Codec',
+  'toSavedPlanV1Dto',
+  'fromSavedPlanV1Dto',
+  'ledgerV1Codec',
+  'toLedgerV1Dto',
+  'fromLedgerV1Dto',
+  'journalV1Codec',
+  'toJournalV1Dto',
+  'fromJournalV1Dto',
 ] as const;
-const V2_RUNTIME_EXPORTS = ['flipV2Codec', 'listV2Codec', 'toFlipV2Dto', 'toListV2Dto'] as const;
+const V2_RUNTIME_EXPORTS = [
+  'flipV2Codec',
+  'listV2Codec',
+  'toFlipV2Dto',
+  'toListV2Dto',
+  'ledgerV2Codec',
+  'toLedgerV2Dto',
+  'fromLedgerV2Dto',
+  'migrateLedgerV1DtoToV2Dto',
+] as const;
 
 type UnknownRecord = Record<PropertyKey, unknown>;
 type WireResult = { readonly ok: boolean; readonly value?: unknown; readonly error?: unknown };
@@ -2134,7 +2158,9 @@ describe('EWP-P1-TS10', () => {
     expect(Object.keys(v2 ?? {}).sort()).toEqual([...V2_RUNTIME_EXPORTS].sort());
     expect(typeof contracts?.createWireContractRegistry).toBe('function');
     for (const name of Object.keys(v1 ?? {})) expect(name).not.toMatch(/V2|zod|schema/);
-    for (const name of Object.keys(v2 ?? {})) expect(name).not.toMatch(/V1|zod|schema/);
+    for (const name of Object.keys(v2 ?? {})) {
+      if (name !== 'migrateLedgerV1DtoToV2Dto') expect(name).not.toMatch(/V1|zod|schema/);
+    }
     for (const declaration of [
       'packages/core/src/contracts/index.d.ts',
       'packages/core/src/contracts/v1/index.d.ts',

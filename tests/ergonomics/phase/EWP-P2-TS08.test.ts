@@ -110,6 +110,8 @@ const EXPECTED_WIRE_IDENTITIES = [
   'commands@1',
   'config-get@1',
   'config-list@1',
+  'config-set@1',
+  'config-unset@1',
   'flip@2',
   'install@1',
   'list@2',

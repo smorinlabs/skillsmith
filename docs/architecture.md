@@ -205,6 +205,38 @@ Consumers import shared types and the builder from `@skillsmith/core/contracts`,
 `@skillsmith/core/contracts/v1`, and V2 DTOs/codecs from `@skillsmith/core/contracts/v2`. See
 [ADR 0008](adr/0008-wire-contract-registry.md) for compatibility and ownership rules.
 
+## Persisted artifact contracts
+
+Durable manifests, locks, saved plans, ledgers, and journals use `ArtifactCodec`, a byte-oriented
+contract separate from the CLI JSON `WireCodec` above. The single immutable
+`artifactContractRegistry` contains six codecs in this order: `manifest@1`, `lock@1`, `plan@1`,
+`ledger@1`, `ledger@2`, and `journal@1`. The two ledger versions coexist so existing v1 state can
+be read without weakening the canonical v2 contract.
+
+Concrete codecs, DTO types, and explicit mappers live only in the versioned
+`@skillsmith/core/contracts/v1` and `@skillsmith/core/contracts/v2` entry points. The unversioned
+contracts entry point exposes shared `ArtifactCodec` types alongside the existing wire-contract
+types. The ordinary core root exposes `artifactContractRegistry` and the five domain readers—not
+the concrete codecs and not a migration executor. Registry and repository code resolve codecs
+through the one artifact registry; public barrels and the legacy placement facade do not parse or
+serialize the formats again.
+
+`readManifestArtifact`, `readLockArtifact`, `readSavedPlanArtifact`, `readLedgerArtifact`, and
+`readJournalArtifact` form a read-only repository over injected `pathKind` and `readBytes`
+capabilities. Reads return an absent state or a frozen envelope with source/current version,
+canonicality, byte revision, semantic revision where defined, and normalized model. They acquire no
+lock and never mutate the filesystem. Legacy project configuration produces a pure manifest-v1
+migration description. Ledger v1 produces a pure v1-to-v2 description containing exact source and
+target revisions, canonical v2 source, and preserved pair-journal identities. Neither description
+is executable write authority.
+
+Compatibility remains explicit. Ledger v1 encoding is available for existing callers, while v2 is
+the current canonical generated form. The mutable legacy placement facade accepts and writes only
+closed v1 state and refuses v2 before clock, ID, temporary-file, lock, or write activity; it cannot
+silently downgrade the ledger. Canonical codecs reject noncanonical generated forms, and every
+artifact boundary rejects recursive unknown fields, hostile inputs, and sensitive content with
+fixed sanitized errors rather than persisting redaction placeholders or echoing raw values.
+
 ## Portable artifact identity
 
 Pure artifact authority lives under `packages/core/src/artifacts/`. The human-authored manifest is

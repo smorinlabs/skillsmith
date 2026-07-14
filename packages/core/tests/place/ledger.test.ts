@@ -85,12 +85,15 @@ describe('readLedger', () => {
     expect(r.value.skills).toEqual({});
   });
 
-  test('empty/whitespace file → emptyLedger', async () => {
+  test('existing empty/whitespace file → fixed ledger error (never missing)', async () => {
     const p = join(base, 'placements.json');
     await writeFile(p, '   \n  ');
     const r = await readLedger(env, p);
-    if (!r.ok) throw new Error(msg(r.error));
-    expect(r.value.skills).toEqual({});
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('ledger-error');
+      expect(msg(r.error)).not.toContain('JSON');
+    }
   });
 
   test('truncated JSON → ledger-error (never regenerate)', async () => {
@@ -110,6 +113,63 @@ describe('readLedger', () => {
     const r = await readLedger(env, p);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('ledger-error');
+  });
+
+  test('valid v2 is a fixed read-only refusal through the legacy facade', async () => {
+    const p = join(base, 'placements.json');
+    await writeFile(
+      p,
+      `${JSON.stringify(
+        {
+          schemaVersion: 2,
+          kind: 'skillsmith.placements',
+          updatedAt: '2026-07-14T00:00:00Z',
+          skills: {},
+          projects: {},
+          projectRegistrations: {},
+          transactions: {},
+          history: [],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const r = await readLedger(env, p);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('ledger-error');
+      expect(msg(r.error)).toContain('read-only');
+      expect(msg(r.error)).not.toContain(p);
+    }
+  });
+
+  test('future versions produce a fixed upgrade-required error without parser details', async () => {
+    const p = join(base, 'placements.json');
+    await writeFile(
+      p,
+      JSON.stringify({
+        schemaVersion: 3,
+        kind: 'skillsmith.placements',
+        updatedAt: 'future',
+        skills: {},
+      }),
+    );
+    const r = await readLedger(env, p);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('ledger-error');
+      expect(msg(r.error)).toContain('upgrade');
+      expect(msg(r.error)).not.toContain('schemaVersion');
+    }
+  });
+
+  test('valid v1 returns a mutable compatibility clone', async () => {
+    const r = await readLedger(env, GOLDEN);
+    if (!r.ok) throw new Error(msg(r.error));
+    expect(Object.isFrozen(r.value)).toBe(false);
+    expect(Object.isFrozen(r.value.skills)).toBe(false);
+    r.value.skills.alpha = { tools: {} };
+    expect(r.value.skills.alpha).toEqual({ tools: {} });
   });
 });
 
@@ -165,9 +225,68 @@ describe('writeLedger', () => {
     expect(w.ok).toBe(true);
     const siblings = await readdir(dirname(p));
     expect(siblings.some((n) => n.includes('.tmp-'))).toBe(false);
+    const source = await env.readText(p);
+    expect(source.endsWith('\n')).toBe(false);
+    expect(Object.keys(JSON.parse(source))).toEqual([
+      'schemaVersion',
+      'kind',
+      'updatedAt',
+      'skills',
+    ]);
     const back = await readLedger(env, p);
     if (!back.ok) throw new Error(msg(back.error));
     expect(getPair(back.value, 'alpha', 'claude-code')?.dev?.remote).toBe('owner/repo');
+  });
+
+  test('refuses v2 and malformed runtime values before every write-side effect', async () => {
+    for (const candidate of [
+      {
+        schemaVersion: 2,
+        kind: 'skillsmith.placements',
+        updatedAt: '2026-07-14T00:00:00Z',
+        skills: {},
+        projects: {},
+        projectRegistrations: {},
+        transactions: {},
+        history: [],
+      },
+      { ...emptyLedger('2026-07-14T00:00:00Z'), unknown: true },
+      null,
+    ]) {
+      const calls: string[] = [];
+      const r = await writeLedger(
+        {
+          wallNowIso: () => {
+            calls.push('wallNowIso');
+            return 'never-used';
+          },
+          nextId: () => {
+            calls.push('nextId');
+            return 'never-used';
+          },
+          writeTextFile: async () => {
+            calls.push('writeTextFile');
+          },
+          fsyncFile: async () => {
+            calls.push('fsyncFile');
+          },
+          rename: async () => {
+            calls.push('rename');
+          },
+          fsyncDir: async () => {
+            calls.push('fsyncDir');
+          },
+          removeTree: async () => {
+            calls.push('removeTree');
+          },
+        },
+        '/fixture/placements.json',
+        candidate as LedgerFile,
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('ledger-error');
+      expect(calls).toEqual([]);
+    }
   });
 });
 
@@ -238,7 +357,7 @@ describe('losslessness (D5) at the record level', () => {
   });
 });
 
-describe('zod enum locks', () => {
+describe('codec enum locks', () => {
   let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {

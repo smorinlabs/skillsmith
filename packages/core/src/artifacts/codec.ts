@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { types as utilTypes } from 'node:util';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial } from '../safety/redaction.ts';
@@ -41,7 +42,7 @@ export interface ArtifactMigrationInfo {
   readonly targetVersion: number;
 }
 
-export interface DecodedArtifact<Model> {
+export interface DecodedArtifact<Model = unknown> {
   readonly source: ArtifactSource;
   readonly model: Model;
   readonly canonical: boolean;
@@ -107,6 +108,67 @@ const typedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
   'byteLength',
 )?.get;
 const copyUint8Array = Uint8Array.prototype.set;
+
+/**
+ * Filesystem reads return Node Buffers. Keep the public byte-ownership guard
+ * strict while allowing the decode boundary to copy an exact, non-shared
+ * Buffer without consulting caller-defined properties.
+ */
+const ownFilesystemBufferBytes = (
+  artifactId: ArtifactId,
+  input: unknown,
+  requestedVersion: number | null,
+): Result<Uint8Array, ArtifactCodecError> => {
+  try {
+    if (
+      typeof input !== 'object' ||
+      input === null ||
+      utilTypes.isProxy(input) ||
+      !Buffer.isBuffer(input) ||
+      Object.getPrototypeOf(input) !== Buffer.prototype ||
+      typedArrayBufferGetter === undefined ||
+      typedArrayByteLengthGetter === undefined
+    ) {
+      return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
+    }
+    const buffer = Reflect.apply(typedArrayBufferGetter, input, []) as ArrayBufferLike;
+    const byteLength = Reflect.apply(typedArrayByteLengthGetter, input, []) as number;
+    const keys = Reflect.ownKeys(input);
+    if (
+      !utilTypes.isArrayBuffer(buffer) ||
+      utilTypes.isSharedArrayBuffer(buffer) ||
+      Object.getPrototypeOf(buffer) !== ArrayBuffer.prototype ||
+      !Number.isSafeInteger(byteLength) ||
+      byteLength < 0 ||
+      keys.length !== byteLength ||
+      keys.some((key, index) => typeof key !== 'string' || key !== String(index))
+    ) {
+      return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(input);
+    for (let index = 0; index < byteLength; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (
+        descriptor === undefined ||
+        !('value' in descriptor) ||
+        typeof descriptor.value !== 'number' ||
+        !Number.isInteger(descriptor.value) ||
+        descriptor.value < 0 ||
+        descriptor.value > 255 ||
+        descriptor.writable !== true ||
+        descriptor.enumerable !== true ||
+        descriptor.configurable !== true
+      ) {
+        return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
+      }
+    }
+    const owned = new Uint8Array(byteLength);
+    Reflect.apply(copyUint8Array, owned, [input]);
+    return ok(owned);
+  } catch {
+    return err(artifactCodecError(artifactId, requestedVersion, 'malformed'));
+  }
+};
 
 const safePath = (path: readonly (string | number)[]): readonly (string | number)[] =>
   Object.freeze(
@@ -203,7 +265,10 @@ export const decodeArtifactUtf8 = (
   input: unknown,
   requestedVersion: number | null = null,
 ): Result<Readonly<{ bytes: Uint8Array; source: string }>, ArtifactCodecError> => {
-  const owned = ownArtifactBytes(artifactId, input, requestedVersion);
+  const strictBytes = ownArtifactBytes(artifactId, input, requestedVersion);
+  const owned = strictBytes.ok
+    ? strictBytes
+    : ownFilesystemBufferBytes(artifactId, input, requestedVersion);
   if (!owned.ok) return owned;
   if (
     owned.value.length >= 3 &&

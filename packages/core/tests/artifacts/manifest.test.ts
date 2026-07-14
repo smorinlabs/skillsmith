@@ -320,6 +320,18 @@ tools = ["codex"]
     expect(decodedHuman.value.canonical).toBeFalse();
     expect(decodedHuman.value.migration).toBeNull();
 
+    const legacyRegistryPresentation = manifestV1Codec.decode(
+      encoder.encode('version = 1\n\n[registry]\ndefault = "https://github.com/acme"\n'),
+    );
+    expect(legacyRegistryPresentation).toMatchObject({
+      ok: true,
+      value: {
+        model: { registry: { default: 'github.com/acme' } },
+        canonical: false,
+        migration: null,
+      },
+    });
+
     const legacy = manifestV1Codec.decode(
       encoder.encode(
         '# retained\ntool = "codex"\nscope = "project"\npath = "./skills"\n[registry]\ndefault = "https://github.com/acme"\n',
