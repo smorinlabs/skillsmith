@@ -3515,6 +3515,7 @@
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
+        "biome.json",
         "docs/architecture.md",
         "packages/cli/README.md",
         "packages/cli/src/contracts/commander-current-state-v0.json",

@@ -37,7 +37,10 @@
       "formatter": { "enabled": false }
     },
     {
-      "include": ["tests/ergonomics/fixtures/p2-ts08/*.golden.json"],
+      "include": [
+        "tests/ergonomics/fixtures/p2-ts08/*.golden.json",
+        "tests/ergonomics/fixtures/p3a-ts04/*.golden.json"
+      ],
       "formatter": { "enabled": false }
     }
   ]
