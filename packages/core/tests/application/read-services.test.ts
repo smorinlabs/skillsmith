@@ -261,6 +261,49 @@ describe('validation happens before discovery or effects', () => {
 });
 
 describe('read and config outcomes', () => {
+  test('status preserves cancellation during project placement and artifact-pair selection', async () => {
+    const nonGit = projectContext('/workspace');
+    const explicitProject = {
+      ...nonGit,
+      projectRoot: null,
+      projectIdentity: null,
+      projectKind: 'non-git' as const,
+    };
+    const placementCancelled = await runStatusApplication(
+      request([], { scope: 'project' }),
+      context(
+        env('/workspace', {
+          realpath: async () => {
+            throw { code: 'ABORT_ERR' };
+          },
+        }),
+        effectiveConfig(),
+        explicitProject,
+      ),
+    );
+    expect(placementCancelled).toMatchObject({
+      exitClass: 'cancelled',
+      diagnostics: [{ code: 'cancelled' }],
+    });
+
+    const artifactCancelled = await runStatusApplication(
+      request(),
+      context(
+        env('/project', {
+          realpath: async (path) => path,
+          pathKind: async (path) => {
+            if (path === '/project/skillsmith.toml') throw { code: 'ABORT_ERR' };
+            return 'absent';
+          },
+        }),
+      ),
+    );
+    expect(artifactCancelled).toMatchObject({
+      exitClass: 'cancelled',
+      diagnostics: [{ code: 'cancelled' }],
+    });
+  });
+
   test('agents, list, and commands return structured no-mutation reports', async () => {
     const current = context(env(), effectiveConfig({ tool: 'codex' }));
     const [agents, skills, commands] = await Promise.all([

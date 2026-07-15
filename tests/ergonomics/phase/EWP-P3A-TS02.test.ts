@@ -73,6 +73,7 @@ const request = Object.freeze({
   projectPlacement: Object.freeze({
     state: 'selected',
     source: 'shared-project',
+    canonicalCwd: '/repo',
     root: '/repo',
     identity: '/repo',
   }),

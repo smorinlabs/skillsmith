@@ -179,6 +179,7 @@ const statusRequest = (overrides: ReadonlyUnknownRecord = {}): ReadonlyUnknownRe
     projectPlacement: Object.freeze({
       state: 'selected',
       source: 'shared-project',
+      canonicalCwd: '/repo',
       root: '/repo',
       identity: '/repo',
     }),
@@ -1329,6 +1330,24 @@ describe('EWP-CMD-STATUS-TS04', () => {
     });
     validateDto(ranked, 'missing path carries coherent missing checks');
 
+    const duplicateLogicalRetention = cloneGolden();
+    const duplicateLogicalRow = placementAt(
+      entryNamed(duplicateLogicalRetention, 'shadowed-fleet'),
+      1,
+      'duplicate logical retention resource ID',
+    );
+    const duplicateLogicalJournal = duplicateLogicalRow.journal as UnknownRecord;
+    const duplicateLogicalRequirements = duplicateLogicalJournal.retention as UnknownRecord[];
+    const duplicateLogicalRequirement = duplicateLogicalRequirements[0];
+    if (duplicateLogicalRequirement === undefined) {
+      throw new Error('missing logical retention to duplicate');
+    }
+    duplicateLogicalRequirements.push(structuredClone(duplicateLogicalRequirement));
+    expect(
+      statusV1Codec.validate(duplicateLogicalRetention).ok,
+      'logical retained resource IDs are unique',
+    ).toBeFalse();
+
     const legacy = cloneGolden();
     const legacyRow = placementAt(entryNamed(legacy, 'shadowed-fleet'), 1, 'legacy retention');
     legacyRow.journal = {
@@ -1392,6 +1411,45 @@ describe('EWP-CMD-STATUS-TS04', () => {
     expect(renderedLegacy).toContain(
       'content hash: not-recorded; domain null; expected null; observed null',
     );
+
+    const preparedLegacy = structuredClone(legacy);
+    const preparedLegacyRow = placementAt(
+      entryNamed(preparedLegacy, 'shadowed-fleet'),
+      1,
+      'prepared legacy backup absence',
+    );
+    const preparedLegacyJournal = preparedLegacyRow.journal as UnknownRecord;
+    preparedLegacyJournal.phase = 'prepared';
+    const preparedLegacyRetention = (preparedLegacyJournal.retention as UnknownRecord[])[0];
+    if (preparedLegacyRetention === undefined) throw new Error('missing prepared legacy retention');
+    preparedLegacyRetention.structural = {
+      state: 'satisfied',
+      expected: { kind: 'absent', linkTarget: null },
+      observed: { kind: 'absent', linkTarget: null },
+    };
+    validateDto(preparedLegacy, 'prepared legacy backup is absent');
+
+    const impossiblePreparedDirectory = structuredClone(preparedLegacy);
+    const impossiblePreparedDirectoryRow = placementAt(
+      entryNamed(impossiblePreparedDirectory, 'shadowed-fleet'),
+      1,
+      'prepared legacy directory backup',
+    );
+    const impossiblePreparedDirectoryRetention = (
+      (impossiblePreparedDirectoryRow.journal as UnknownRecord).retention as UnknownRecord[]
+    )[0];
+    if (impossiblePreparedDirectoryRetention === undefined) {
+      throw new Error('missing impossible prepared legacy retention');
+    }
+    impossiblePreparedDirectoryRetention.structural = {
+      state: 'satisfied',
+      expected: { kind: 'directory', linkTarget: null },
+      observed: { kind: 'directory', linkTarget: null },
+    };
+    expect(
+      statusV1Codec.validate(impossiblePreparedDirectory).ok,
+      'prepared/staged legacy journals cannot retain a backup node',
+    ).toBeFalse();
 
     const recordedSymlink = structuredClone(legacy);
     const recordedSymlinkRow = placementAt(
@@ -1712,7 +1770,7 @@ describe('EWP-CMD-STATUS-TS04', () => {
       reverseEligibility: 'eligible',
       remediation: { reverse: (pendingLegacy.remediation as UnknownRecord).abort },
       format: pendingLegacy.format,
-      operation: pendingLegacy.operation,
+      operation: 'uninstall',
     };
     validateDto(committed, 'committed exact reverse argv');
     const invalidCommitted = structuredClone(committed);
@@ -1758,7 +1816,152 @@ describe('EWP-CMD-STATUS-TS04', () => {
     )[0] as UnknownRecord;
     committedDevBackupRetention.role = 'backup';
     committedDevBackupRetention.sourceRole = 'live';
-    validateDto(committedDevBackup, 'committed pinned dev backup fallback');
+    expect(
+      statusV1Codec.validate(committedDevBackup).ok,
+      'eligible committed pinned dev reversal is store-only',
+    ).toBeFalse();
+
+    const committedDevBackupFallback = structuredClone(committed);
+    const committedDevBackupFallbackRow = placementAt(
+      entryNamed(committedDevBackupFallback, 'shadowed-fleet'),
+      1,
+      'committed pinned dev backup fallback',
+    );
+    const committedDevBackupFallbackJournal =
+      committedDevBackupFallbackRow.journal as UnknownRecord;
+    committedDevBackupFallbackJournal.operation = 'dev';
+    committedDevBackupFallbackJournal.reverseEligibility = 'not-reversible';
+    (committedDevBackupFallbackJournal.remediation as UnknownRecord).reverse = null;
+    validateDto(
+      committedDevBackupFallback,
+      'missing committed dev store is conservatively not reversible',
+    );
+
+    const committedAbsent = (
+      operation: 'install' | 'uninstall',
+      eligibility: 'eligible' | 'not-reversible',
+    ): UnknownRecord => {
+      const dto = structuredClone(committed);
+      const row = placementAt(
+        entryNamed(dto, 'shadowed-fleet'),
+        1,
+        `committed absent ${operation} ${eligibility}`,
+      );
+      const journal = row.journal as UnknownRecord;
+      journal.operation = operation;
+      journal.before = 'absent';
+      journal.reverseEligibility = eligibility;
+      (journal.remediation as UnknownRecord).reverse =
+        eligibility === 'eligible'
+          ? [
+              'skillsmith',
+              'undo',
+              (row.identity as UnknownRecord).path,
+              '--tool',
+              (row.identity as UnknownRecord).tool,
+              '--scope',
+              (row.identity as UnknownRecord).scope,
+            ]
+          : null;
+      const retention = (journal.retention as UnknownRecord[])[0];
+      if (retention === undefined) throw new Error('missing committed absent retention');
+      retention.structural = {
+        state: 'satisfied',
+        expected: { kind: 'absent', linkTarget: null },
+        observed: { kind: 'absent', linkTarget: null },
+      };
+      return dto;
+    };
+    expect(
+      statusV1Codec.validate(committedAbsent('install', 'eligible')).ok,
+      'committed install before absence is not reversible',
+    ).toBeFalse();
+    expect(
+      statusV1Codec.validate(committedAbsent('uninstall', 'eligible')).ok,
+      'committed uninstall before absence has no recoverable node',
+    ).toBeFalse();
+    validateDto(
+      committedAbsent('install', 'not-reversible'),
+      'committed install before absence is not reversible',
+    );
+    validateDto(
+      committedAbsent('uninstall', 'not-reversible'),
+      'committed uninstall before absence is not reversible',
+    );
+
+    const committedPromoteDev = structuredClone(committed);
+    const committedPromoteDevRow = placementAt(
+      entryNamed(committedPromoteDev, 'shadowed-fleet'),
+      1,
+      'committed promote from dev',
+    );
+    const committedPromoteDevJournal = committedPromoteDevRow.journal as UnknownRecord;
+    committedPromoteDevJournal.operation = 'promote';
+    committedPromoteDevJournal.before = 'dev';
+    validateDto(committedPromoteDev, 'committed promote from dev backup');
+
+    for (const [label, operation, before] of [
+      ['committed install from pinned', 'install', 'pinned'],
+      ['committed rollback from pinned', 'rollback', 'pinned'],
+      ['committed promote from pinned', 'promote', 'pinned'],
+      ['committed dev from dev', 'dev', 'dev'],
+    ] as const) {
+      const impossible = structuredClone(committed);
+      const row = placementAt(entryNamed(impossible, 'shadowed-fleet'), 1, label);
+      const journal = row.journal as UnknownRecord;
+      journal.operation = operation;
+      journal.before = before;
+      expect(statusV1Codec.validate(impossible).ok, label).toBeFalse();
+    }
+
+    const backedUpPinnedNotReversible = structuredClone(legacy);
+    const backedUpPinnedNotReversibleRow = placementAt(
+      entryNamed(backedUpPinnedNotReversible, 'shadowed-fleet'),
+      1,
+      'backed-up pinned legacy hidden source failure',
+    );
+    const backedUpPinnedNotReversibleJournal =
+      backedUpPinnedNotReversibleRow.journal as UnknownRecord;
+    backedUpPinnedNotReversibleJournal.abortEligibility = 'not-reversible';
+    (backedUpPinnedNotReversibleJournal.remediation as UnknownRecord).abort = null;
+    validateDto(
+      backedUpPinnedNotReversible,
+      'hidden pinned source failure is conservatively not reversible',
+    );
+
+    const backedUpDevNotReversible = structuredClone(backedUpPinnedNotReversible);
+    const backedUpDevNotReversibleRow = placementAt(
+      entryNamed(backedUpDevNotReversible, 'shadowed-fleet'),
+      1,
+      'backed-up dev legacy not reversible',
+    );
+    (backedUpDevNotReversibleRow.journal as UnknownRecord).before = 'dev';
+    expect(
+      statusV1Codec.validate(backedUpDevNotReversible).ok,
+      'backed-up dev eligibility comes from retained state',
+    ).toBeFalse();
+
+    for (const [label, dto] of [
+      ['committed pinned uninstall hidden source failure', structuredClone(committed)],
+      ['committed pinned dev hidden source failure', structuredClone(committedStore)],
+    ] as const) {
+      const row = placementAt(entryNamed(dto, 'shadowed-fleet'), 1, label);
+      const journal = row.journal as UnknownRecord;
+      journal.reverseEligibility = 'not-reversible';
+      (journal.remediation as UnknownRecord).reverse = null;
+      validateDto(dto, label);
+    }
+
+    const preparedIntentFailure = structuredClone(preparedLegacy);
+    const preparedIntentFailureRow = placementAt(
+      entryNamed(preparedIntentFailure, 'shadowed-fleet'),
+      1,
+      'prepared legacy intent failure',
+    );
+    const preparedIntentFailureJournal = preparedIntentFailureRow.journal as UnknownRecord;
+    preparedIntentFailureJournal.abortEligibility = 'not-reversible';
+    (preparedIntentFailureJournal.remediation as UnknownRecord).abort = null;
+    validateDto(preparedIntentFailure, 'prepared legacy intent gate can fail before retention');
 
     for (const [label, mutate] of [
       [

@@ -754,6 +754,13 @@ const legacyLiveMatches = (
   journal: LegacyPairJournalV1Dto,
 ): boolean => {
   if (journal.before.mode === 'absent') return live === null;
+  if (
+    journal.before.mode === 'pinned' &&
+    journal.before.liveKind === 'symlink' &&
+    journal.before.symlinkTarget === undefined
+  ) {
+    return false;
+  }
   if (live === null) return false;
   const observed = live.observation;
   if (journal.before.mode === 'dev') {
@@ -781,8 +788,8 @@ const legacyExpectedNode = (
   if (journal.before.mode === 'dev') {
     return { kind: 'symlink', linkTarget: journal.before.symlinkTarget };
   }
-  return journal.before.liveKind === 'symlink' && journal.before.symlinkTarget !== undefined
-    ? { kind: 'symlink', linkTarget: journal.before.symlinkTarget }
+  return journal.before.liveKind === 'symlink'
+    ? { kind: 'symlink', linkTarget: journal.before.symlinkTarget ?? '' }
     : { kind: 'directory', linkTarget: null };
 };
 
@@ -990,6 +997,13 @@ const legacyEligibility = (
   | 'retention-missing'
   | 'retention-mismatch'
   | 'retention-unverified' => {
+  if (
+    journal.before.mode === 'pinned' &&
+    journal.before.liveKind === 'symlink' &&
+    journal.before.symlinkTarget === undefined
+  ) {
+    return 'not-reversible';
+  }
   const backup = retention[0];
   const store = retention.find((requirement) => requirement.role === 'store');
   if (journal.phase === 'prepared' || journal.phase === 'staged') {
@@ -1009,6 +1023,7 @@ const legacyEligibility = (
         ? 'not-reversible'
         : retentionEligibility([backup]);
   }
+  if (journal.op === 'uninstall' && journal.before.mode === 'absent') return 'not-reversible';
   if (journal.op === 'uninstall' && backup !== undefined) return retentionEligibility([backup]);
   if (journal.op === 'promote' && journal.before.mode === 'dev' && backup !== undefined) {
     return retentionEligibility([backup]);
@@ -1690,11 +1705,85 @@ const rowSort = (left: MutableRow, right: MutableRow): number =>
   compare(left.projectIdentity ?? '', right.projectIdentity ?? '') ||
   compare(left.path ?? '', right.path ?? '');
 
+const statusRowMatchesTarget = (row: MutableRow, target: string): boolean =>
+  row.name === target || row.path === target;
+
+const statusRowSelected = (row: MutableRow, request: StatusReadRequest): boolean =>
+  request.selectionSource !== 'explicit-targets' ||
+  request.targets.some((target) => statusRowMatchesTarget(row, target));
+
+interface StatusJournalCorrelation {
+  readonly desiredCollection: ReturnType<typeof collectDesired>;
+  readonly ledgerCollection: ReturnType<typeof collectLedger>;
+  readonly rows: Map<string, MutableRow[]>;
+  readonly logicalJournals: ReturnType<typeof attachLogicalJournals>;
+}
+
+/** One pure journal precedence/attachment authority shared by retention reads and final join. */
+const correlateStatusJournals = (input: StatusJoinInput): StatusJournalCorrelation => {
+  const desiredCollection = collectDesired(input);
+  const ledgerCollection = collectLedger(input);
+  const rows = buildRows(input, desiredCollection.selected, ledgerCollection.selected);
+  attachLegacyJournals(rows, input);
+  const logicalJournals = attachLogicalJournals(rows, input);
+  return { desiredCollection, ledgerCollection, rows, logicalJournals };
+};
+
+export type StatusRetentionPlan =
+  | Readonly<{ readonly format: 'logical'; readonly journal: LogicalJournalV1Dto }>
+  | Readonly<{
+      readonly format: 'legacy-pair';
+      readonly journal: LegacyPairJournalV1Dto;
+      readonly resources: readonly LegacyStatusRetentionPlan[];
+    }>;
+
+/**
+ * Select only definitive attached journal winners, then expose their displayed retention order.
+ * Unattached, multi-resource, unselected-placement, and superseded candidates never enter the plan.
+ */
+export const planStatusRetention = (
+  input: Omit<StatusJoinInput, 'retention'>,
+): readonly StatusRetentionPlan[] => {
+  const emptyInput: StatusJoinInput = { ...input, retention: Object.freeze([]) };
+  const correlation = correlateStatusJournals(emptyInput);
+  const journals =
+    input.ledger.state === 'present'
+      ? [...Object.values(input.ledger.model.transactions), ...input.ledger.model.history]
+      : [];
+  const plans: StatusRetentionPlan[] = [];
+  const rows = [...correlation.rows.values()]
+    .flat()
+    .sort((left, right) => compare(left.name, right.name) || rowSort(left, right));
+  for (const row of rows) {
+    if (row.journal.state === 'none' || !statusRowSelected(row, input.request)) continue;
+    const selectedJournal = row.journal;
+    if (selectedJournal.format === 'logical') {
+      const journal = journals.find(
+        (candidate) => candidate.transactionId === selectedJournal.transactionId,
+      );
+      if (journal !== undefined) plans.push(Object.freeze({ format: 'logical', journal }));
+      continue;
+    }
+    const pair = row.ledger;
+    const journal = pair?.journal;
+    if (pair !== null && journal !== undefined && journal !== null) {
+      plans.push(
+        Object.freeze({
+          format: 'legacy-pair',
+          journal,
+          resources: legacyStatusRetentionPlan(pair, row.live),
+        }),
+      );
+    }
+  }
+  return Object.freeze(plans);
+};
+
 export const joinStatus = (
   input: StatusJoinInput,
 ): Result<StatusReport, StatusJoinSelectionError> => {
-  const desiredCollection = collectDesired(input);
-  const ledgerCollection = collectLedger(input);
+  const correlation = correlateStatusJournals(input);
+  const { desiredCollection, ledgerCollection, rows, logicalJournals } = correlation;
   const ledgers = ledgerCollection.selected;
   const selectedDesiredNames = new Set(
     desiredCollection.selected.map((item) => item.declaration.name),
@@ -1736,9 +1825,6 @@ export const joinStatus = (
   for (const member of collectFilteredLogicalMembership(input)) filteredNames.add(member);
   for (const skill of lockSkills) if (!visibleLocks.includes(skill)) filteredNames.add(skill.name);
 
-  const rows = buildRows(input, desiredCollection.selected, ledgers);
-  attachLegacyJournals(rows, input);
-  const logicalJournals = attachLogicalJournals(rows, input);
   const unmatchedJournals = logicalJournals.unmatched;
   const entries = new Map<string, MutableEntry>();
   const entry = (name: string): MutableEntry => {
@@ -1779,7 +1865,7 @@ export const joinStatus = (
           selected.set(candidate, null);
           continue;
         }
-        const matchingRows = candidate.rows.filter((row) => row.path === target);
+        const matchingRows = candidate.rows.filter((row) => statusRowMatchesTarget(row, target));
         if (matchingRows.length === 0) continue;
         matched = true;
         const existing = selected.get(candidate);

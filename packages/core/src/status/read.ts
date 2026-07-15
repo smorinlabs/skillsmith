@@ -4,8 +4,6 @@ import { toolRegistry } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS } from '../agents/types.ts';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
 import { hashCanonicalInput, hashManifestBytes } from '../artifacts/hash.ts';
-import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
-import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import { readPortableLockSource } from '../artifacts/lock.ts';
 import type { ArtifactRepositoryError } from '../artifacts/repository.ts';
 import {
@@ -25,11 +23,10 @@ import { type Result, err, ok } from '../result.ts';
 import { parseSkillFrontmatter } from '../skills/frontmatter.ts';
 import {
   type StatusLiveInput,
+  type StatusRetentionPlan,
   type StatusRetentionProbeInput,
   joinStatus,
-  legacyStatusRetentionPlan,
-  logicalJournalMembership,
-  selectedStatusPairTool,
+  planStatusRetention,
 } from './join.ts';
 import type {
   StatusBrokenReason,
@@ -96,7 +93,7 @@ const domExceptionName =
   typeof DOMException === 'undefined'
     ? undefined
     : Object.getOwnPropertyDescriptor(DOMException.prototype, 'name')?.get;
-const isCancelled = (signal: AbortSignal | undefined): boolean =>
+export const isStatusReadCancelled = (signal: AbortSignal | undefined): boolean =>
   signal !== undefined && abortSignalAborted?.call(signal) === true;
 
 const nativeDomExceptionName = (value: unknown): string | null => {
@@ -128,6 +125,10 @@ const thrownKind = (value: unknown): 'cancelled' | 'permission' | 'not-found' | 
     : 'other';
 };
 
+/** One defensive cancellation authority for branded signals and native/owned thrown values. */
+export const isStatusReadCancellation = (value: unknown, signal?: AbortSignal): boolean =>
+  isStatusReadCancelled(signal) || thrownKind(value) === 'cancelled';
+
 interface CancellationTracker {
   readonly track: <T>(operation: () => Promise<T>) => Promise<T>;
   readonly cancelled: (signal?: AbortSignal) => boolean;
@@ -141,21 +142,21 @@ const createCancellationTracker = (): CancellationTracker => {
       try {
         return await operation();
       } catch (error) {
-        if (thrownKind(error) === 'cancelled') portCancelled = true;
+        if (isStatusReadCancellation(error)) portCancelled = true;
         throw error;
       }
     },
-    cancelled: (signal?: AbortSignal): boolean => portCancelled || isCancelled(signal),
+    cancelled: (signal?: AbortSignal): boolean => portCancelled || isStatusReadCancelled(signal),
   };
 };
 
 const mapThrowable = (value: unknown, signal?: AbortSignal): StatusReadError => {
-  if (isCancelled(signal) || thrownKind(value) === 'cancelled') return CANCELLED;
+  if (isStatusReadCancellation(value, signal)) return CANCELLED;
   return thrownKind(value) === 'permission' ? PERMISSION_DENIED : OBSERVATION_FAILED;
 };
 
 const artifactError = (value: ArtifactRepositoryError, signal?: AbortSignal): StatusReadError => {
-  if (isCancelled(signal)) return CANCELLED;
+  if (isStatusReadCancelled(signal)) return CANCELLED;
   if (value.reason === 'permission-denied') return PERMISSION_DENIED;
   if (value.reason === 'read-failed') return OBSERVATION_FAILED;
   if (value.reason === 'invalid-request') return INVALID_REQUEST;
@@ -175,6 +176,9 @@ const uniqueStrings = (values: readonly string[]): boolean =>
   new Set(values).size === values.length;
 const sameStrings = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index]);
+
+const isNormalizedAbsolute = (value: unknown): value is string =>
+  isNonemptyString(value) && isAbsolute(value) && resolve(value) === value;
 
 const isWithin = (root: string, candidate: string): boolean => {
   const offset = relative(resolve(root), resolve(candidate));
@@ -421,7 +425,7 @@ const snapshotRequest = (value: unknown): Readonly<StatusReadRequest> | null => 
   const projectPlacement = plainData(
     request.projectPlacement,
     ['state'],
-    ['source', 'root', 'identity'],
+    ['source', 'root', 'identity', 'canonicalCwd'],
   );
   const artifactSelection = plainData(
     request.artifactSelection,
@@ -499,25 +503,27 @@ const snapshotRequest = (value: unknown): Readonly<StatusReadRequest> | null => 
     placement = Object.freeze({ state: 'unselected' });
   } else if (projectPlacement.state === 'selected') {
     if (
-      Reflect.ownKeys(projectPlacement).length !== 4 ||
+      Reflect.ownKeys(projectPlacement).length !== 5 ||
       (projectPlacement.source !== 'shared-project' &&
         projectPlacement.source !== 'explicit-non-git') ||
-      !isNonemptyString(projectPlacement.root) ||
-      !isAbsolute(projectPlacement.root) ||
-      !isNonemptyString(projectPlacement.identity) ||
-      !isAbsolute(projectPlacement.identity)
+      !isNormalizedAbsolute(projectPlacement.root) ||
+      !isNormalizedAbsolute(projectPlacement.identity) ||
+      !isNormalizedAbsolute(projectPlacement.canonicalCwd)
     ) {
       return null;
     }
     if (
       (projectPlacement.source === 'shared-project' &&
         (projectPlacement.root !== projectContext.projectRoot ||
-          projectPlacement.identity !== projectContext.projectIdentity)) ||
+          projectPlacement.identity !== projectContext.projectIdentity ||
+          !isWithin(projectPlacement.root, projectPlacement.canonicalCwd) ||
+          !isWithin(projectPlacement.identity, projectPlacement.canonicalCwd))) ||
       (projectPlacement.source === 'explicit-non-git' &&
         (projectContext.projectKind !== 'non-git' ||
           projectContext.projectRoot !== null ||
           projectContext.projectIdentity !== null ||
-          projectPlacement.root !== projectPlacement.identity))
+          projectPlacement.root !== projectPlacement.identity ||
+          projectPlacement.canonicalCwd !== projectPlacement.root))
     ) {
       return null;
     }
@@ -526,6 +532,7 @@ const snapshotRequest = (value: unknown): Readonly<StatusReadRequest> | null => 
       source: projectPlacement.source,
       root: projectPlacement.root,
       identity: projectPlacement.identity,
+      canonicalCwd: projectPlacement.canonicalCwd,
     });
   } else {
     return null;
@@ -563,11 +570,9 @@ const snapshotRequest = (value: unknown): Readonly<StatusReadRequest> | null => 
         artifactSelection.source !== 'project-default' &&
         artifactSelection.source !== 'user-default') ||
       (artifactSelection.lockSource !== 'sibling' && artifactSelection.lockSource !== 'explicit') ||
-      !isNonemptyString(artifactSelection.manifestPath) ||
-      !isAbsolute(artifactSelection.manifestPath) ||
-      !isNonemptyString(artifactSelection.lockPath) ||
-      !isAbsolute(artifactSelection.lockPath) ||
-      artifactSelection.manifestPath === artifactSelection.lockPath ||
+      !isNormalizedAbsolute(artifactSelection.manifestPath) ||
+      !isNormalizedAbsolute(artifactSelection.lockPath) ||
+      resolve(artifactSelection.manifestPath) === resolve(artifactSelection.lockPath) ||
       (artifactSelection.source !== 'explicit' && artifactSelection.lockSource !== 'sibling') ||
       (artifactSelection.lockSource === 'sibling' &&
         artifactSelection.lockPath !== siblingLockPath(artifactSelection.manifestPath))
@@ -660,7 +665,7 @@ const observeSkillFile = async (
   } else if (metadata.kind !== 'file') {
     return { state: 'invalid', brokenReason: 'skill-file-invalid' };
   }
-  if (isCancelled(signal)) throw CANCELLED;
+  if (isStatusReadCancelled(signal)) throw CANCELLED;
   const bytes = await ports.readBytes(path);
   if (!(bytes instanceof Uint8Array)) throw OBSERVATION_FAILED;
   let source: string;
@@ -780,13 +785,13 @@ const observeSelectedRoots = async (
           'status read capability is unavailable',
         );
       }
-      if (isCancelled(request.signal)) throw CANCELLED;
+      if (isStatusReadCancelled(request.signal)) throw CANCELLED;
       const roots = adapter.inventory.getSkillRoots(ports, scope, {
         cwd,
         configuration: request.configuration,
       });
       for (const root of roots) {
-        if (isCancelled(request.signal)) throw CANCELLED;
+        if (isStatusReadCancelled(request.signal)) throw CANCELLED;
         const kind = await ports.pathKind(root);
         if (kind === 'absent') continue;
         const canonicalRoot = await ports.realpath(root);
@@ -820,31 +825,6 @@ const observeSelectedRoots = async (
   return live;
 };
 
-const selectedJournal = (
-  journal: LogicalJournalV1Dto,
-  request: Readonly<StatusReadRequest>,
-): boolean => {
-  const membership = logicalJournalMembership(journal);
-  if (
-    membership === null ||
-    !request.tools.includes(membership.tool as (typeof request.tools)[number]) ||
-    !request.scopes.includes(membership.scope)
-  ) {
-    return false;
-  }
-  if (membership.scope === 'project') {
-    if (request.projectPlacement.state === 'unselected') return false;
-    if (membership.projectIdentity !== request.projectPlacement.identity) return false;
-  } else if (membership.projectIdentity !== null) {
-    return false;
-  }
-  if (request.selectionSource !== 'explicit-targets') return true;
-  return (
-    request.targets.includes(membership.name) ||
-    (membership.path !== null && request.targets.includes(membership.path))
-  );
-};
-
 interface RetainedPhysicalObservation {
   readonly pathState: 'satisfied' | 'missing' | 'unverified';
   readonly repositoryDigest: string | null;
@@ -866,6 +846,7 @@ interface RetainedObservationNeeds {
   readonly repositoryKind: 'artifact-bytes' | 'resource' | null;
   readonly contentKind: RetainedContentKind;
   readonly structuralNode: boolean;
+  readonly followSourceSymlink: boolean;
 }
 
 const logicalRetainedContentKind = (
@@ -905,7 +886,7 @@ const observeRetainedPhysical = async (
 ): Promise<RetainedPhysicalObservation> => {
   try {
     const metadata = await ports.readFileMetadata(path);
-    if (isCancelled(signal)) throw CANCELLED;
+    if (isStatusReadCancelled(signal)) throw CANCELLED;
     if (metadata.kind === 'absent') {
       return {
         pathState: 'missing',
@@ -947,7 +928,7 @@ const observeRetainedPhysical = async (
           hashCanonicalInput('resource', 1, JSON.stringify(['symlink', linkTarget])),
         );
       }
-      if (needs.contentKind === 'source-content') {
+      if (needs.contentKind === 'source-content' && needs.followSourceSymlink) {
         try {
           const resolved = await ports.realpath(path);
           const projection = await projectRetainedSourceContent(ports, resolved, signal);
@@ -956,7 +937,7 @@ const observeRetainedPhysical = async (
             sourceDigest = source.ok ? source.value : null;
           }
         } catch (error) {
-          if (error === CANCELLED || thrownKind(error) === 'cancelled' || isCancelled(signal)) {
+          if (error === CANCELLED || isStatusReadCancellation(error, signal)) {
             throw CANCELLED;
           }
           sourceDigest = null;
@@ -979,7 +960,7 @@ const observeRetainedPhysical = async (
         }
       }
     }
-    if (isCancelled(signal)) throw CANCELLED;
+    if (isStatusReadCancelled(signal)) throw CANCELLED;
 
     let contentDigest: string | null = null;
     if (needs.contentKind === 'source-content') {
@@ -994,7 +975,7 @@ const observeRetainedPhysical = async (
         contentDigest = observedDigest(hashCanonicalInput('lock-canonical', 1, bytes));
       }
     }
-    if (isCancelled(signal)) throw CANCELLED;
+    if (isStatusReadCancelled(signal)) throw CANCELLED;
     return {
       pathState: 'satisfied',
       repositoryDigest,
@@ -1011,7 +992,7 @@ const observeRetainedPhysical = async (
       },
     };
   } catch (error) {
-    if (error === CANCELLED || thrownKind(error) === 'cancelled' || isCancelled(signal)) {
+    if (error === CANCELLED || isStatusReadCancellation(error, signal)) {
       throw CANCELLED;
     }
     return {
@@ -1025,34 +1006,50 @@ const observeRetainedPhysical = async (
 
 const observeRetention = async (
   ports: StatusReadPorts,
-  ledger: LedgerModel,
+  plans: readonly StatusRetentionPlan[],
   request: Readonly<StatusReadRequest>,
-  live: readonly StatusLiveInput[],
 ): Promise<readonly StatusRetentionProbeInput[]> => {
   const probes: StatusRetentionProbeInput[] = [];
-  const journals = [...Object.values(ledger.transactions), ...ledger.history];
-  for (const journal of journals) {
-    if (!selectedJournal(journal, request)) continue;
-    for (const retained of journal.actual.retained) {
-      if (isCancelled(request.signal)) throw CANCELLED;
+  for (const plan of plans) {
+    const resources =
+      plan.format === 'logical'
+        ? plan.journal.actual.retained.map((retained) => ({
+            resourceId: retained.resourceId,
+            path: retained.path,
+            repositoryKind: retained.repositoryRevision.kind,
+            contentKind: logicalRetainedContentKind({
+              role: retained.role,
+              sourceRole: retained.role === 'store' ? null : retained.sourceRole,
+            }),
+            structuralNode: false,
+            followSourceSymlink: true,
+          }))
+        : plan.resources.map((resource) => ({
+            resourceId: null,
+            path: resource.path,
+            repositoryKind: null,
+            contentKind: resource.contentHash === null ? null : ('source-content' as const),
+            structuralNode: true,
+            followSourceSymlink: false,
+          }));
+    for (const resource of resources) {
+      if (isStatusReadCancelled(request.signal)) throw CANCELLED;
       const observed = await observeRetainedPhysical(
         ports,
-        retained.path,
+        resource.path,
         {
-          repositoryKind: retained.repositoryRevision.kind,
-          contentKind: logicalRetainedContentKind({
-            role: retained.role,
-            sourceRole: retained.role === 'store' ? null : retained.sourceRole,
-          }),
-          structuralNode: false,
+          repositoryKind: resource.repositoryKind,
+          contentKind: resource.contentKind,
+          structuralNode: resource.structuralNode,
+          followSourceSymlink: resource.followSourceSymlink,
         },
         request.signal,
       );
       const missing = observed.pathState === 'missing';
       probes.push({
-        transactionId: journal.transactionId,
-        resourceId: retained.resourceId,
-        path: retained.path,
+        transactionId: plan.format === 'logical' ? plan.journal.transactionId : plan.journal.txId,
+        resourceId: resource.resourceId,
+        path: resource.path,
         pathState: observed.pathState,
         repositoryRevision:
           observed.repositoryDigest === null
@@ -1065,77 +1062,6 @@ const observeRetention = async (
         node: observed.node,
       });
     }
-  }
-  const appendLegacy = async (
-    skills: LedgerModel['skills'],
-    scope: 'user' | 'project',
-  ): Promise<void> => {
-    if (!request.scopes.includes(scope)) return;
-    for (const [name, skill] of Object.entries(skills)) {
-      for (const [tool, pair] of Object.entries(skill.tools)) {
-        const journal = pair.journal;
-        if (
-          journal === undefined ||
-          journal === null ||
-          !selectedStatusPairTool(tool, request) ||
-          (request.selectionSource === 'explicit-targets' &&
-            !request.targets.includes(name) &&
-            !request.targets.includes(pair.placementPath))
-        ) {
-          continue;
-        }
-        const projectIdentity =
-          scope === 'project' && request.projectPlacement.state === 'selected'
-            ? request.projectPlacement.identity
-            : null;
-        const liveGroup = live.filter(
-          (candidate) =>
-            candidate.name === name &&
-            candidate.tool === tool &&
-            candidate.scope === scope &&
-            candidate.projectIdentity === projectIdentity,
-        );
-        const selectedLive =
-          liveGroup.find((candidate) => candidate.path === pair.placementPath) ??
-          (liveGroup.length === 1 ? liveGroup[0] : null) ??
-          null;
-        const resources = legacyStatusRetentionPlan(pair, selectedLive);
-        for (const resource of resources) {
-          if (isCancelled(request.signal)) throw CANCELLED;
-          const observed = await observeRetainedPhysical(
-            ports,
-            resource.path,
-            {
-              repositoryKind: null,
-              contentKind: resource.contentHash === null ? null : 'source-content',
-              structuralNode: true,
-            },
-            request.signal,
-          );
-          const missing = observed.pathState === 'missing';
-          probes.push({
-            transactionId: journal.txId,
-            resourceId: null,
-            path: resource.path,
-            pathState: observed.pathState,
-            repositoryRevision:
-              observed.repositoryDigest === null
-                ? { state: missing ? 'missing' : 'unverified', digest: null }
-                : { state: 'observed', digest: observed.repositoryDigest },
-            contentHash:
-              observed.contentDigest === null
-                ? { state: missing ? 'missing' : 'unverified', digest: null }
-                : { state: 'observed', digest: observed.contentDigest },
-            node: observed.node,
-          });
-        }
-      }
-    }
-  };
-  await appendLegacy(ledger.skills, 'user');
-  if (request.projectPlacement.state === 'selected') {
-    const project = ledger.projects[request.projectPlacement.identity];
-    if (project !== undefined) await appendLegacy(project.skills, 'project');
   }
   return probes;
 };
@@ -1158,7 +1084,7 @@ export const readStatus = async (
   ) {
     return err(INVALID_REQUEST);
   }
-  if (isCancelled(request.signal)) return err(CANCELLED);
+  if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
 
   try {
     const tracker = createCancellationTracker();
@@ -1176,13 +1102,13 @@ export const readStatus = async (
       if (tracker.cancelled(request.signal)) return err(CANCELLED);
       if (!manifestRead.ok) return err(artifactError(manifestRead.error, request.signal));
       manifest = manifestRead.value;
-      if (isCancelled(request.signal)) return err(CANCELLED);
+      if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
 
       const lockRead = await readLockArtifact(artifactPorts, request.artifactSelection.lockPath);
       if (tracker.cancelled(request.signal)) return err(CANCELLED);
       if (!lockRead.ok) return err(artifactError(lockRead.error, request.signal));
       lock = lockRead.value;
-      if (isCancelled(request.signal)) return err(CANCELLED);
+      if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
     }
 
     const dataDir = resolveDataDir({ xdg: ports.xdg }, request.configuration);
@@ -1190,15 +1116,21 @@ export const readStatus = async (
     const ledgerRead = await readLedgerArtifact(artifactPorts, ledgerPath);
     if (tracker.cancelled(request.signal)) return err(CANCELLED);
     if (!ledgerRead.ok) return err(artifactError(ledgerRead.error, request.signal));
-    if (isCancelled(request.signal)) return err(CANCELLED);
+    if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
 
     const live = await observeSelectedRoots(ports, request, storeRootOf(dataDir));
-    if (isCancelled(request.signal)) return err(CANCELLED);
-    const retention =
-      ledgerRead.value.state === 'present'
-        ? await observeRetention(ports, ledgerRead.value.model, request, live)
-        : [];
-    if (isCancelled(request.signal)) return err(CANCELLED);
+    if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
+    const retentionPlan = planStatusRetention({
+      homeDir: ports.homeDir,
+      request,
+      manifest,
+      lock,
+      ledger: ledgerRead.value,
+      ledgerPath,
+      live,
+    });
+    const retention = await observeRetention(ports, retentionPlan, request);
+    if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
     const joined = joinStatus({
       homeDir: ports.homeDir,
       request,

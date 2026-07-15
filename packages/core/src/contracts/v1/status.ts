@@ -718,6 +718,13 @@ const JournalSchema = z
       });
     }
     if (value.format === 'logical') {
+      const resourceIds = value.retention.map((retention) => retention.resourceId);
+      if (new Set(resourceIds).size !== resourceIds.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'logical journal retention resource IDs must be unique',
+        });
+      }
       if (value.before === 'multi-resource' && eligibility !== 'not-reversible') {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -763,15 +770,73 @@ const JournalSchema = z
         });
       }
       const retention = value.retention[0];
-      if (
-        retention?.format === 'legacy-pair' &&
-        retention.role === 'store' &&
-        !(value.state === 'committed' && value.operation === 'dev' && value.before === 'pinned')
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'legacy store retention requires committed pinned dev reversal',
-        });
+      if (retention?.format === 'legacy-pair') {
+        const committedPinnedDev =
+          value.state === 'committed' && value.operation === 'dev' && value.before === 'pinned';
+        if (
+          (retention.role === 'store' && !committedPinnedDev) ||
+          (committedPinnedDev && retention.role === 'backup' && eligibility !== 'not-reversible')
+        ) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'legacy retention role must match the exact reversal resource',
+          });
+        }
+
+        const expectedKind = retention.structural.expected.kind;
+        const preBackupPhase =
+          value.state === 'pending' && (value.phase === 'prepared' || value.phase === 'staged');
+        const mayRetainAtLive =
+          value.state === 'pending' &&
+          value.phase === 'backed-up' &&
+          (value.before === 'dev' || value.before === 'pinned');
+        const mustExpectAbsent = value.before === 'absent' || preBackupPhase;
+        if (
+          (mustExpectAbsent && expectedKind !== 'absent') ||
+          (!mustExpectAbsent && !mayRetainAtLive && expectedKind === 'absent') ||
+          (value.before === 'dev' && expectedKind === 'directory') ||
+          (committedPinnedDev && retention.role === 'store' && expectedKind !== 'directory')
+        ) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'legacy structural expectation must match phase and before state',
+          });
+        }
+
+        const aggregateEligibility =
+          aggregate === 'satisfied' ? 'eligible' : (`retention-${aggregate}` as const);
+        if (value.state === 'committed') {
+          const reversibleCombination =
+            (value.operation === 'uninstall' && value.before !== 'absent') ||
+            (value.operation === 'promote' && value.before === 'dev') ||
+            committedPinnedDev;
+          const expectedEligibility = reversibleCombination
+            ? aggregateEligibility
+            : 'not-reversible';
+          const hiddenPinnedSourceFailure =
+            value.before === 'pinned' &&
+            (value.operation === 'uninstall' || value.operation === 'dev') &&
+            eligibility === 'not-reversible';
+          if (eligibility !== expectedEligibility && !hiddenPinnedSourceFailure) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'committed legacy eligibility must match operation and retained state',
+            });
+          }
+        } else {
+          const mayFailIntentGate =
+            ((value.phase === 'prepared' || value.phase === 'staged') &&
+              (value.before === 'dev' || value.before === 'pinned')) ||
+            value.before === 'pinned';
+          if (!(mayFailIntentGate && eligibility === 'not-reversible')) {
+            if (eligibility !== aggregateEligibility) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'pending legacy eligibility must match its compatibility gate',
+              });
+            }
+          }
+        }
       }
     }
     if ((eligibility === 'eligible') !== (remediation !== null)) {

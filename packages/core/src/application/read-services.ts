@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { listSupportedTools } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS, type SupportedTool } from '../agents/types.ts';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
@@ -36,7 +36,7 @@ import type {
   ValidatedSelectionRequest,
 } from '../selection/types.ts';
 import type { SkillEntry } from '../skills/types.ts';
-import { readStatus } from '../status/read.ts';
+import { isStatusReadCancellation, readStatus } from '../status/read.ts';
 import type {
   StatusArtifactSelection,
   StatusProjectPlacementContext,
@@ -993,32 +993,57 @@ export const runVerifyApplication: ApplicationService<
   return success({ result: verified.value }, { exitClass: verifyExitClass(verified.value) });
 };
 
+const STATUS_APPLICATION_CANCELLED: ReadServiceError = Object.freeze({
+  code: 'cancelled',
+  message: 'status read was cancelled',
+  exitClass: 'cancelled',
+});
+
 const statusProjectPlacement = async (
   ports: CurrentApplicationContext['ports'],
   project: ProjectContext,
   explicitScope: Scope | null,
+  signal?: AbortSignal,
 ): Promise<StatusProjectPlacementContext | ReadServiceError> => {
-  if (project.projectRoot !== null && project.projectIdentity !== null) {
-    return Object.freeze({
-      state: 'selected',
-      source: 'shared-project',
-      root: `${project.projectRoot}`,
-      identity: `${project.projectIdentity}`,
-    });
-  }
-  if (explicitScope !== 'project') return Object.freeze({ state: 'unselected' });
+  const shared = project.projectRoot !== null && project.projectIdentity !== null;
+  if (!shared && explicitScope !== 'project') return Object.freeze({ state: 'unselected' });
+  if (isStatusReadCancellation(undefined, signal)) return STATUS_APPLICATION_CANCELLED;
   try {
-    const root = await ports.realpath(project.effectiveCwd);
+    const canonicalCwd = `${await ports.realpath(project.effectiveCwd)}`;
+    if (shared) {
+      const displacement = relative(project.projectRoot as string, canonicalCwd);
+      if (
+        displacement !== '' &&
+        (displacement === '..' || displacement.startsWith(`..${sep}`) || isAbsolute(displacement))
+      ) {
+        return {
+          code: 'status-project-context',
+          message: 'resolved cwd is outside the selected project context',
+          exitClass: 'failure',
+        };
+      }
+      return Object.freeze({
+        state: 'selected',
+        source: 'shared-project',
+        canonicalCwd,
+        root: `${project.projectRoot}`,
+        identity: `${project.projectIdentity}`,
+      });
+    }
     return Object.freeze({
       state: 'selected',
       source: 'explicit-non-git',
-      root: `${root}`,
-      identity: `${root}`,
+      canonicalCwd,
+      root: canonicalCwd,
+      identity: canonicalCwd,
     });
-  } catch {
+  } catch (error) {
+    if (isStatusReadCancellation(error, signal)) return STATUS_APPLICATION_CANCELLED;
     return {
       code: 'status-project-context',
-      message: 'cannot resolve explicit non-Git project context',
+      message: shared
+        ? 'cannot resolve selected project context'
+        : 'cannot resolve explicit non-Git project context',
       exitClass: 'failure',
     };
   }
@@ -1091,7 +1116,12 @@ export const runStatusApplication: ApplicationService<
 
   const project = await projectFor(context);
   if (!project.ok) return failed(empty, project.error);
-  const placement = await statusProjectPlacement(context.ports, project.value, scope.value);
+  const placement = await statusProjectPlacement(
+    context.ports,
+    project.value,
+    scope.value,
+    context.signal,
+  );
   if ('code' in placement) return failed(empty, placement);
 
   const configuration = await configFor(context, project.value);
@@ -1124,8 +1154,29 @@ export const runStatusApplication: ApplicationService<
   if (readable.state === 'unselected') {
     artifactSelection = Object.freeze({ state: 'unselected', reason: readable.reason });
   } else {
+    if (isStatusReadCancellation(undefined, context.signal)) {
+      return failed(empty, STATUS_APPLICATION_CANCELLED);
+    }
+    let selectorCancelled = false;
     const pair = await resolveCoreArtifactPair(
-      context.ports,
+      {
+        pathKind: async (path) => {
+          try {
+            return await context.ports.pathKind(path);
+          } catch (error) {
+            if (isStatusReadCancellation(error, context.signal)) selectorCancelled = true;
+            throw error;
+          }
+        },
+        realpath: async (path) => {
+          try {
+            return await context.ports.realpath(path);
+          } catch (error) {
+            if (isStatusReadCancellation(error, context.signal)) selectorCancelled = true;
+            throw error;
+          }
+        },
+      },
       project.value,
       readable.source === 'explicit'
         ? {
@@ -1134,6 +1185,9 @@ export const runStatusApplication: ApplicationService<
           }
         : { discoveredFile: readable.file },
     );
+    if (selectorCancelled || isStatusReadCancellation(undefined, context.signal)) {
+      return failed(empty, STATUS_APPLICATION_CANCELLED);
+    }
     if (!pair.ok) {
       return failed(empty, {
         code: pair.error.code,

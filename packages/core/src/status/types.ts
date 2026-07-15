@@ -24,6 +24,7 @@ export type StatusProjectPlacementContext =
   | Readonly<{
       readonly state: 'selected';
       readonly source: 'shared-project' | 'explicit-non-git';
+      readonly canonicalCwd: string;
       readonly root: string;
       readonly identity: string;
     }>;

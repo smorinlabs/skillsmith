@@ -28,6 +28,7 @@ import {
   type StatusLiveInput,
   type StatusRetentionProbeInput,
   joinStatus,
+  planStatusRetention,
 } from '../../src/status/join.ts';
 import type { StatusReadRequest, StatusReport } from '../../src/status/types.ts';
 
@@ -40,6 +41,7 @@ type StatusReader = (
       | Readonly<{
           state: 'selected';
           source: 'shared-project' | 'explicit-non-git';
+          canonicalCwd: string;
           root: string;
           identity: string;
         }>;
@@ -185,6 +187,7 @@ const request = (
     projectPlacement: Object.freeze({
       state: 'selected' as const,
       source: 'shared-project' as const,
+      canonicalCwd: ROOT,
       root: ROOT,
       identity: ROOT,
     }),
@@ -1060,6 +1063,27 @@ describe('G3A-01 focused status reader', () => {
         projectPlacement: {
           state: 'selected' as const,
           source: 'shared-project' as const,
+          canonicalCwd: '/outside/repo',
+          root: ROOT,
+          identity: ROOT,
+        },
+      },
+      {
+        ...request(),
+        projectPlacement: {
+          state: 'selected' as const,
+          source: 'shared-project' as const,
+          canonicalCwd: '/repo/nested/..',
+          root: ROOT,
+          identity: ROOT,
+        },
+      },
+      {
+        ...request(),
+        projectPlacement: {
+          state: 'selected' as const,
+          source: 'shared-project' as const,
+          canonicalCwd: '/other',
           root: '/other',
           identity: '/other',
         },
@@ -1070,6 +1094,18 @@ describe('G3A-01 focused status reader', () => {
         projectPlacement: {
           state: 'selected' as const,
           source: 'explicit-non-git' as const,
+          canonicalCwd: '/other',
+          root: ROOT,
+          identity: ROOT,
+        },
+      },
+      {
+        ...request(),
+        projectContext: nullContext,
+        projectPlacement: {
+          state: 'selected' as const,
+          source: 'explicit-non-git' as const,
+          canonicalCwd: ROOT,
           root: ROOT,
           identity: '/other',
         },
@@ -1084,6 +1120,7 @@ describe('G3A-01 focused status reader', () => {
         projectPlacement: {
           state: 'selected' as const,
           source: 'explicit-non-git' as const,
+          canonicalCwd: ROOT,
           root: ROOT,
           identity: ROOT,
         },
@@ -1094,6 +1131,7 @@ describe('G3A-01 focused status reader', () => {
         projectPlacement: {
           state: 'selected' as const,
           source: 'explicit-non-git' as const,
+          canonicalCwd: ROOT,
           root: ROOT,
           identity: ROOT,
         },
@@ -1141,6 +1179,7 @@ describe('G3A-01 focused status reader', () => {
       projectPlacement: {
         state: 'selected',
         source: 'explicit-non-git',
+        canonicalCwd: ROOT,
         root: ROOT,
         identity: ROOT,
       },
@@ -1249,6 +1288,17 @@ describe('G3A-01 focused status reader', () => {
         signal: controller.signal,
       },
       {
+        ...request(selected('explicit', MANIFEST_PATH, LOCK_PATH)),
+        projectPlacement: {
+          state: 'selected',
+          source: 'shared-project',
+          canonicalCwd: '/repo/nested',
+          root: ROOT,
+          identity: ROOT,
+        },
+        signal: controller.signal,
+      },
+      {
         ...request(selected('user-default', userManifest, userLock)),
         signal: controller.signal,
       },
@@ -1288,6 +1338,7 @@ describe('G3A-01 focused status reader', () => {
         projectPlacement: {
           state: 'selected',
           source: 'explicit-non-git',
+          canonicalCwd: ROOT,
           root: ROOT,
           identity: ROOT,
         },
@@ -1325,6 +1376,9 @@ describe('G3A-01 focused status reader', () => {
       ),
       request(selected('user-default', userManifest, userLock, 'explicit')),
       request(selected('explicit', MANIFEST_PATH, '/elsewhere/skillsmith.lock')),
+      request(selected('explicit', '/repo/./skillsmith.toml', LOCK_PATH, 'explicit')),
+      request(selected('explicit', MANIFEST_PATH, '/repo/nested/../skillsmith.lock', 'explicit')),
+      request(selected('explicit', '/repo/artifacts/..', ROOT, 'explicit')),
       {
         ...request(selected('user-default', userManifest, userLock)),
         scopes: ['system'],
@@ -1344,6 +1398,7 @@ describe('G3A-01 focused status reader', () => {
         projectPlacement: {
           state: 'selected',
           source: 'shared-project',
+          canonicalCwd: '/other',
           root: '/other',
           identity: '/other',
         },
@@ -1765,6 +1820,95 @@ describe('G3A-01 focused status reader', () => {
         },
       ],
       remediation: { abort: null },
+    });
+  });
+
+  test('fails closed for legacy before-images that v1 cannot reverse unambiguously', () => {
+    const absentPath = join(CODEX_ROOT, 'absent-before');
+    const absentBackup = `${absentPath}.backup`;
+    const absentPair: LedgerPairV1Dto = {
+      ...pairFor('absent-before'),
+      placementPath: absentPath,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:absent-before',
+        phase: 'committed',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: '2026-07-14T00:00:01.000Z',
+        before: { mode: 'absent' },
+        stagingPath: `${absentPath}.stage`,
+        backupPath: absentBackup,
+      },
+    };
+    const missingTargetPath = join(CODEX_ROOT, 'missing-target');
+    const missingTargetBackup = `${missingTargetPath}.backup`;
+    const missingTargetPair: LedgerPairV1Dto = {
+      ...pairFor('missing-target'),
+      placementPath: missingTargetPath,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:missing-target',
+        phase: 'committed',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: '2026-07-14T00:00:01.000Z',
+        before: {
+          mode: 'pinned',
+          storePath: join(DATA_ROOT, 'store', 'missing-target'),
+          contentHash: CONTENT_HASH,
+          liveKind: 'symlink',
+        },
+        stagingPath: `${missingTargetPath}.stage`,
+        backupPath: missingTargetBackup,
+      },
+    };
+    const report = unwrapJoin(
+      joinInput({
+        ledger: artifactPresent(
+          'ledger',
+          emptyLedgerModel({
+            skills: {
+              'absent-before': { tools: { codex: absentPair } },
+              'missing-target': { tools: { codex: missingTargetPair } },
+            },
+          }),
+          2,
+        ),
+        retention: [
+          {
+            transactionId: 'tx:absent-before',
+            resourceId: null,
+            path: absentBackup,
+            pathState: 'satisfied',
+            repositoryRevision: { state: 'unverified', digest: null },
+            contentHash: { state: 'unverified', digest: null },
+            node: { state: 'observed', kind: 'absent', linkTarget: null },
+          },
+          {
+            transactionId: 'tx:missing-target',
+            resourceId: null,
+            path: missingTargetBackup,
+            pathState: 'satisfied',
+            repositoryRevision: { state: 'unverified', digest: null },
+            contentHash: { state: 'unverified', digest: null },
+            node: { state: 'observed', kind: 'symlink', linkTarget: '' },
+          },
+        ],
+      }),
+    );
+    const journals = Object.fromEntries(
+      report.entries.map((entry) => [entry.name, entry.placements[0]?.journal]),
+    );
+    expect(journals['absent-before']).toMatchObject({
+      state: 'committed',
+      reverseEligibility: 'not-reversible',
+      remediation: { reverse: null },
+    });
+    expect(journals['missing-target']).toMatchObject({
+      state: 'committed',
+      before: 'pinned',
+      reverseEligibility: 'not-reversible',
+      retention: [{ structural: { expected: { kind: 'symlink' } } }],
+      remediation: { reverse: null },
     });
   });
 
@@ -2441,6 +2585,290 @@ describe('G3A-01 focused status reader', () => {
     });
   });
 
+  test('probes retention only for definitive attached journal winners in display order', async () => {
+    const readStatus = await loadReader();
+    const run = async (
+      ledger: LedgerModel,
+      retainedPaths: ReadonlySet<string>,
+      readRequest: Readonly<StatusReadRequest> = request(),
+    ): Promise<readonly string[]> => {
+      const encoded = ledgerV2Codec.encode(ledger);
+      if (!encoded.ok) {
+        throw new Error(`retention-plan ledger encoding failed: ${JSON.stringify(encoded.error)}`);
+      }
+      const base = readPorts({ bytes: new Map([[LEDGER_PATH, encoded.value]]) });
+      const probed: string[] = [];
+      const result = await readStatus(
+        {
+          ...base,
+          readFileMetadata: async (path) => {
+            if (retainedPaths.has(path)) probed.push(path);
+            return base.readFileMetadata(path);
+          },
+        },
+        readRequest,
+      );
+      expect(result.ok).toBeTrue();
+      return probed;
+    };
+    const retained = (label: string) => retainedResource(`/retained/${label}`);
+    const reversibilityFor = (
+      resources: readonly [
+        LogicalJournalV1Dto['actual']['retained'][number],
+        ...LogicalJournalV1Dto['actual']['retained'][number][],
+      ],
+    ): LogicalJournalV1Dto['intent']['reversibility'] => ({
+      kind: 'conditional',
+      retentionResourceIds: [
+        resources[0].resourceId,
+        ...resources.slice(1).map((resource) => resource.resourceId),
+      ],
+    });
+
+    const pendingRetained = retained('pending-winner');
+    const committedRetained = retained('committed-loser');
+    const pending = logicalJournal({
+      name: 'pending-vs-committed',
+      path: join(CODEX_ROOT, 'pending-vs-committed'),
+      transactionId: 'tx:pending-winner',
+      retained: [pendingRetained],
+      reversibility: reversibilityFor([pendingRetained]),
+    });
+    const committed = logicalJournal({
+      name: 'pending-vs-committed',
+      path: join(CODEX_ROOT, 'pending-vs-committed'),
+      transactionId: 'tx:committed-loser',
+      phase: 'committed',
+      updatedAt: '2026-07-14T00:00:09.000Z',
+      retained: [committedRetained],
+      reversibility: reversibilityFor([committedRetained]),
+    });
+    expect(
+      await run(
+        emptyLedgerModel({
+          transactions: { [pending.transactionId]: pending },
+          history: [committed],
+        }),
+        new Set([pendingRetained.path, committedRetained.path]),
+      ),
+    ).toEqual([pendingRetained.path]);
+
+    const olderRetained = retained('older-loser');
+    const newerRetained = retained('newer-winner');
+    const older = logicalJournal({
+      name: 'pending-rank',
+      path: join(CODEX_ROOT, 'pending-rank'),
+      transactionId: 'tx:older-loser',
+      updatedAt: '2026-07-14T00:00:01.000Z',
+      retained: [olderRetained],
+      reversibility: reversibilityFor([olderRetained]),
+    });
+    const newer = logicalJournal({
+      name: 'pending-rank',
+      path: join(CODEX_ROOT, 'pending-rank'),
+      transactionId: 'tx:newer-winner',
+      updatedAt: '2026-07-14T00:00:02.000Z',
+      retained: [newerRetained],
+      reversibility: reversibilityFor([newerRetained]),
+    });
+    expect(
+      await run(
+        emptyLedgerModel({
+          transactions: {
+            [older.transactionId]: older,
+            [newer.transactionId]: newer,
+          },
+        }),
+        new Set([olderRetained.path, newerRetained.path]),
+      ),
+    ).toEqual([newerRetained.path]);
+
+    const tiePath = join(CODEX_ROOT, 'format-tie');
+    const logicalRetained = retained('logical-winner');
+    const logical = logicalJournal({
+      name: 'format-tie',
+      path: tiePath,
+      transactionId: 'tx:format-tie',
+      updatedAt: '2026-07-14T00:00:02.000Z',
+      retained: [logicalRetained],
+      reversibility: reversibilityFor([logicalRetained]),
+    });
+    const legacyBackup = `${tiePath}.legacy-backup`;
+    const legacyPair: LedgerPairV1Dto = {
+      ...pairFor('format-tie'),
+      placementPath: tiePath,
+      journal: {
+        op: 'uninstall',
+        txId: logical.transactionId,
+        phase: 'live',
+        startedAt: logical.updatedAt,
+        completedAt: null,
+        before: { mode: 'absent' },
+        stagingPath: `${tiePath}.stage`,
+        backupPath: legacyBackup,
+      },
+    };
+    expect(
+      await run(
+        emptyLedgerModel({
+          skills: { 'format-tie': { tools: { codex: legacyPair } } },
+          transactions: { [logical.transactionId]: logical },
+        }),
+        new Set([logicalRetained.path, legacyBackup]),
+      ),
+    ).toEqual([logicalRetained.path]);
+
+    const sharedLegacyId = 'tx:shared-legacy';
+    const legacyFor = (name: string): LedgerPairV1Dto => {
+      const path = join(CODEX_ROOT, name);
+      return {
+        ...pairFor(name),
+        placementPath: path,
+        journal: {
+          op: 'uninstall',
+          txId: sharedLegacyId,
+          phase: 'live',
+          startedAt: '2026-07-14T00:00:01.000Z',
+          completedAt: null,
+          before: { mode: 'absent' },
+          stagingPath: `${path}.stage`,
+          backupPath: `${path}.backup`,
+        },
+      };
+    };
+    const alphaLegacy = legacyFor('alpha-shared');
+    const betaLegacy = legacyFor('beta-shared');
+    const alphaLegacyBackup = alphaLegacy.journal?.backupPath ?? '';
+    const betaLegacyBackup = betaLegacy.journal?.backupPath ?? '';
+    expect(
+      await run(
+        emptyLedgerModel({
+          skills: {
+            'beta-shared': { tools: { codex: betaLegacy } },
+            'alpha-shared': { tools: { codex: alphaLegacy } },
+          },
+        }),
+        new Set([alphaLegacyBackup, betaLegacyBackup]),
+      ),
+    ).toEqual([alphaLegacyBackup, betaLegacyBackup]);
+
+    const unselectedRetained = retained('unselected-placement');
+    const unselected = logicalJournal({
+      name: 'unselected',
+      path: join(CODEX_ROOT, 'alternate', 'unselected'),
+      transactionId: 'tx:unselected',
+      retained: [unselectedRetained],
+      reversibility: reversibilityFor([unselectedRetained]),
+    });
+    const unrelatedPath = join(CODEX_ROOT, 'unrelated');
+    const unrelatedBackup = `${unrelatedPath}.backup`;
+    const unrelatedPair: LedgerPairV1Dto = {
+      ...pairFor('unrelated'),
+      placementPath: unrelatedPath,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:unrelated',
+        phase: 'live',
+        startedAt: '2026-07-14T00:00:01.000Z',
+        completedAt: null,
+        before: { mode: 'absent' },
+        stagingPath: `${unrelatedPath}.stage`,
+        backupPath: unrelatedBackup,
+      },
+    };
+    expect(
+      await run(
+        emptyLedgerModel({
+          skills: {
+            unselected: { tools: { codex: pairFor('unselected') } },
+            unrelated: { tools: { codex: unrelatedPair } },
+          },
+          transactions: { [unselected.transactionId]: unselected },
+        }),
+        new Set([unselectedRetained.path, unrelatedBackup]),
+        {
+          ...request(),
+          targets: ['unselected'],
+          selectionSource: 'explicit-targets',
+        },
+      ),
+    ).toEqual([]);
+
+    const multiRetained = retained('multi-resource');
+    const multiBase = logicalJournal({
+      name: 'multi',
+      path: join(CODEX_ROOT, 'multi'),
+      transactionId: 'tx:multi',
+      retained: [multiRetained],
+      reversibility: reversibilityFor([multiRetained]),
+    });
+    const beforeLive = multiBase.actual.before.find((resource) => resource.role === 'live');
+    const afterLive = multiBase.actual.after.find((resource) => resource.role === 'live');
+    if (beforeLive === undefined || afterLive === undefined) {
+      throw new Error('missing multi-resource live fixture');
+    }
+    const multi: LogicalJournalV1Dto = {
+      ...multiBase,
+      actual: {
+        ...multiBase.actual,
+        before: [
+          ...multiBase.actual.before,
+          {
+            ...beforeLive,
+            resourceId: 'resource:multi:second-before',
+            placementPath: join(CODEX_ROOT, 'alternate', 'multi'),
+          },
+        ],
+        after: [
+          ...multiBase.actual.after,
+          {
+            ...afterLive,
+            resourceId: 'resource:multi:second-after',
+            placementPath: join(CODEX_ROOT, 'alternate', 'multi'),
+          },
+        ],
+      },
+    };
+    const { retention: _retention, ...multiInput } = joinInput({
+      request: { ...request(), targets: ['multi'], selectionSource: 'explicit-targets' },
+      ledger: artifactPresent(
+        'ledger',
+        emptyLedgerModel({ transactions: { [multi.transactionId]: multi } }),
+        2,
+      ),
+    });
+    expect(planStatusRetention(multiInput)).toEqual([]);
+
+    const alphaFirst = retained('alpha-signed-first');
+    const alphaSecond = retained('alpha-signed-second');
+    const beta = retained('beta');
+    const betaJournal = logicalJournal({
+      name: 'beta-order',
+      path: join(CODEX_ROOT, 'beta-order'),
+      transactionId: 'tx:beta-order',
+      retained: [beta],
+      reversibility: reversibilityFor([beta]),
+    });
+    const alphaJournal = logicalJournal({
+      name: 'alpha-order',
+      path: join(CODEX_ROOT, 'alpha-order'),
+      transactionId: 'tx:alpha-order',
+      retained: [alphaFirst, alphaSecond],
+      reversibility: reversibilityFor([alphaFirst, alphaSecond]),
+    });
+    expect(
+      await run(
+        emptyLedgerModel({
+          transactions: {
+            [betaJournal.transactionId]: betaJournal,
+            [alphaJournal.transactionId]: alphaJournal,
+          },
+        }),
+        new Set([alphaFirst.path, alphaSecond.path, beta.path]),
+      ),
+    ).toEqual([alphaFirst.path, alphaSecond.path, beta.path]);
+  });
+
   test('requires user logical journals to carry an explicit null project root in reader and join', async () => {
     const readStatus = await loadReader();
     const validRetained = retainedResource('/retained/valid-user');
@@ -2611,6 +3039,74 @@ describe('G3A-01 focused status reader', () => {
         {
           structural: { state: 'satisfied' },
           contentHash: { state: 'not-recorded' },
+        },
+      ],
+    });
+    expect(retainedLinks).toBe(1);
+    expect(retainedRealpaths).toBe(0);
+  });
+
+  test('does not reinterpret a legacy expected-directory backup symlink as source content', async () => {
+    const readStatus = await loadReader();
+    const path = join(CODEX_ROOT, 'legacy-directory-link');
+    const backupPath = `${path}.backup`;
+    const linkTarget = '/foreign/legacy-directory-link';
+    const pair: LedgerPairV1Dto = {
+      ...pairFor('legacy-directory-link'),
+      placementPath: path,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:legacy-directory-link',
+        phase: 'live',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: null,
+        before: {
+          mode: 'pinned',
+          storePath: join(DATA_ROOT, 'store', 'legacy-directory-link'),
+          contentHash: CONTENT_HASH,
+          liveKind: 'dir',
+        },
+        stagingPath: `${path}.stage`,
+        backupPath,
+      },
+    };
+    const encoded = ledgerV2Codec.encode(
+      emptyLedgerModel({
+        skills: { 'legacy-directory-link': { tools: { codex: pair } } },
+      }),
+    );
+    if (!encoded.ok) throw new Error('legacy directory-link ledger encoding failed');
+    const base = readPorts({ bytes: new Map([[LEDGER_PATH, encoded.value]]) });
+    let retainedLinks = 0;
+    let retainedRealpaths = 0;
+    const result = await readStatus(
+      {
+        ...base,
+        readFileMetadata: async (candidate) =>
+          candidate === backupPath
+            ? { kind: 'symlink', mode: 0o777, identity: 'legacy-directory-link' }
+            : base.readFileMetadata(candidate),
+        readLink: async (candidate) => {
+          if (candidate !== backupPath) return base.readLink(candidate);
+          retainedLinks += 1;
+          return linkTarget;
+        },
+        realpath: async (candidate) => {
+          if (candidate === backupPath) retainedRealpaths += 1;
+          return candidate === backupPath ? linkTarget : base.realpath(candidate);
+        },
+      },
+      request(),
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error('expected legacy directory-link report');
+    expect(result.value.entries[0]?.placements[0]?.journal).toMatchObject({
+      state: 'pending',
+      abortEligibility: 'retention-mismatch',
+      retention: [
+        {
+          structural: { state: 'mismatch', expected: { kind: 'directory' } },
+          contentHash: { state: 'unverified' },
         },
       ],
     });
