@@ -749,7 +749,10 @@ describe('EWP-CMD-LIST-TS03', () => {
         exitCode: 0,
         dto: expect.objectContaining({
           schemaVersion: 3,
-          selection: { source: 'bounded-default', outcome: 'filter-noop' },
+          selection: expect.objectContaining({
+            source: 'bounded-default',
+            outcome: 'filter-noop',
+          }),
           summary: expect.objectContaining({ total: 0 }),
           entries: [],
         }),

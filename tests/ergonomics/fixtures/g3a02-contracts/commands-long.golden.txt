@@ -1,7 +1,7 @@
 Installed slash commands
 | Tool | Scope | Name | State | Logical path | Real path | Root | Origin | Version | Frontmatter | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| claude-code | user | alpha |  | /home/alice/.claude/commands/alpha.md | /home/alice/.claude/commands/alpha.md | /home/alice/.claude/commands | standalone | 1.0.0 | {name=alpha;description=Run alpha checks;version=1.0.0} | Run alpha checks |
+| claude-code | user | alpha |  | /home/alice/.claude/commands/alpha.md | /home/alice/.claude/commands/alpha.md | /home/alice/.claude/commands | standalone | 1.0.0 | {description=Run alpha checks;version=1.0.0} | Run alpha checks |
 | claude-code | user | beta-tools:beta | disabled | /plugins/beta/commands/beta.md | /store/beta/commands/beta.md | /plugins/beta/commands | plugin:beta-tools@marketplace@2.1.0:user | 2.1.0 | {description=Run beta checks;version=2.1.0} | Run beta checks |
 | claude-code | project | deploy |  | /repo/.claude/commands/deploy.md | /repo/.claude/commands/deploy.md | /repo/.claude/commands | standalone | 3.0.0 | {description=Deploy the service;version=3.0.0} | Deploy the service |
 | claude-code | project | release-kit:release | unconfigured | /plugins/release/commands/release.md | /store/release/commands/release.md | /plugins/release/commands | plugin:release-kit@marketplace@3.1.0:project | 3.1.0 | {description=Prepare a release;version=3.1.0} | Prepare a release |

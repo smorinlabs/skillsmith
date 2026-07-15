@@ -18,8 +18,8 @@ const LITERAL_GUARDS = Object.freeze([
   }),
   Object.freeze({
     path: join(FIXTURE_ROOT, 'commands-long.golden.txt'),
-    bytes: 3941,
-    sha256: '5d689b1f6d5202b3309f2748c0af0f7b06fb1fe9d627baf8073fd8f5aed170eb',
+    bytes: 3930,
+    sha256: '11dd262778e9a518d9f7e0a81e4f8e2ea29f40753217b5373b1cc84d13893070',
   }),
   Object.freeze({
     path: join(FIXTURE_ROOT, 'commands-v2.golden.json'),

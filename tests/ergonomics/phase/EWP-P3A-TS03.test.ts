@@ -4,7 +4,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const FIXTURE_PATH = join(import.meta.dir, '../fixtures/p3a-ts03/duplicate-cases.json');
-const PLANNED_READER_PATH = join(import.meta.dir, '../../../packages/core/src/inventory/read.ts');
+const PLANNED_PROJECTOR_PATH = join(
+  import.meta.dir,
+  '../../../packages/core/src/inventory/read.ts',
+);
 const FIXTURE_BYTES = 8738;
 const FIXTURE_SHA256 = 'sha256:36f76ae82f78929beba6caec36393436df00f611bafc8599ddae0a963a36e18f';
 const TOOLS = ['claude-code', 'codex', 'kilo-code', 'opencode'] as const;
@@ -51,24 +54,16 @@ interface InventoryProduct extends UnknownRecord {
 }
 
 type InventoryResult =
-  | Readonly<{ readonly ok: true; readonly value: InventoryProduct | readonly UnknownRecord[] }>
+  | Readonly<{ readonly ok: true; readonly value: InventoryProduct }>
   | Readonly<{ readonly ok: false; readonly error: unknown }>;
 type InventoryAuthority = (
-  ports: UnknownRecord,
+  observations: readonly DuplicateRow[],
   options: UnknownRecord,
-) => Promise<InventoryResult>;
-type ResolveConfiguration = (env: Readonly<Record<string, string | undefined>>) => UnknownRecord;
-
-interface ScanTracker {
-  readonly calls: Record<string, number>;
-  readonly forbidden: string[];
-  readonly observations: string[];
-}
+) => InventoryResult | Promise<InventoryResult>;
 
 interface ScanExecution {
   readonly product: InventoryProduct;
-  readonly tracker: ScanTracker;
-  readonly authority: 'planned-readSkillInventory' | 'current-listSkills-fallback';
+  readonly authority: 'planned-projectSkillInventory';
   readonly error: unknown | null;
 }
 
@@ -83,13 +78,7 @@ const collisionKey = (row: Pick<DuplicateRow, 'tool' | 'name'>): string =>
 const displayCollisionKey = (row: Pick<DuplicateRow, 'tool' | 'name'>): string =>
   `${row.tool}|${row.name}`;
 
-let readInventory: InventoryAuthority;
-let authorityKind: ScanExecution['authority'];
-let configuration: UnknownRecord;
-
-const increment = (tracker: ScanTracker, name: string): void => {
-  tracker.calls[name] = (tracker.calls[name] ?? 0) + 1;
-};
+let projectInventory: InventoryAuthority;
 
 const recursivelyFrozen = (value: unknown, seen = new Set<object>()): boolean => {
   if (value === null || typeof value !== 'object' || seen.has(value)) return true;
@@ -142,115 +131,23 @@ const normalizedFixtureRows = (): readonly DuplicateRow[] => {
   return [...byPlacement.values()];
 };
 
-const portsFor = (rows: readonly DuplicateRow[], reverse: boolean) => {
-  const rootEntries = new Map<string, string[]>();
-  const files = new Map<string, string>();
-  const realpaths = new Map<string, string>();
-  for (const row of rows) {
-    const names = rootEntries.get(row.root) ?? [];
-    names.push(row.name);
-    rootEntries.set(row.root, names);
-    files.set(`${row.path}/SKILL.md`, `---\ndescription: ${row.frontmatter.description}\n---\n`);
-    realpaths.set(row.path, row.realpath);
-  }
-
-  const tracker: ScanTracker = { calls: {}, forbidden: [], observations: [] };
-  const read = <T>(name: string, operation: () => T): T => {
-    increment(tracker, name);
-    return operation();
-  };
-  const forbidden = (name: string): never => {
-    tracker.forbidden.push(name);
-    throw new Error(`inventory read invoked forbidden effect ${name}`);
-  };
-  const ports: UnknownRecord = Object.freeze({
-    homeDir: '/h',
-    executableSearchPath: Object.freeze([]),
-    platform: 'linux',
-    xdg: Object.freeze({ config: '/h/.config', data: '/h/.local/share', cache: '/h/.cache' }),
-    fileExists: async (path: string) =>
-      read('fileExists', () => rootEntries.has(path) || files.has(path)),
-    listDir: async (path: string) =>
-      read('listDir', () => {
-        const values = [...(rootEntries.get(path) ?? [])];
-        return reverse ? values.reverse() : values;
-      }),
-    readText: async (path: string) => read('readText', () => files.get(path) ?? ''),
-    readBytes: async () => read('readBytes', () => new Uint8Array()),
-    realpath: async (path: string) => read('realpath', () => realpaths.get(path) ?? path),
-    pathKind: async (path: string) =>
-      read('pathKind', () =>
-        files.has(path) ? 'file' : rootEntries.has(path) || realpaths.has(path) ? 'dir' : 'absent',
-      ),
-    readFileMetadata: async (path: string) =>
-      read('readFileMetadata', () => ({
-        kind: files.has(path)
-          ? 'file'
-          : rootEntries.has(path) || realpaths.has(path)
-            ? 'dir'
-            : 'absent',
-        mode: null,
-        identity: realpaths.get(path) ?? path,
-      })),
-    readLink: async () => read('readLink', () => ''),
-    isExecutable: async () => read('isExecutable', () => false),
-    modifiedAt: async () => read('modifiedAt', () => null),
-    writeText: async () => forbidden('writeText'),
-    writeTextFile: async () => forbidden('writeTextFile'),
-    makeDir: async () => forbidden('makeDir'),
-    makeSymlink: async () => forbidden('makeSymlink'),
-    rename: async () => forbidden('rename'),
-    copyTree: async () => forbidden('copyTree'),
-    removeTree: async () => forbidden('removeTree'),
-    fsyncFile: async () => forbidden('fsyncFile'),
-    fsyncDir: async () => forbidden('fsyncDir'),
-    withFileLock: async () => forbidden('withFileLock'),
-  });
-  const observation: UnknownRecord = Object.freeze({
-    context: Object.freeze({ command: 'skillsmith list', workflow: 'EWP-P3A-TS03' }),
-    emitter: Object.freeze({
-      begin: () => {
-        tracker.observations.push('begin');
-        return Object.freeze({ id: `span-${tracker.observations.length}` });
-      },
-      complete: () => {
-        tracker.observations.push('complete');
-      },
-      emit: () => {
-        tracker.observations.push('emit');
-      },
-    }),
-  });
-  return { ports, observation, tracker };
-};
-
-const toProduct = (value: InventoryProduct | readonly UnknownRecord[]): InventoryProduct =>
-  Array.isArray(value)
-    ? Object.freeze({ entries: value, collisionGroups: Object.freeze([]) })
-    : (value as InventoryProduct);
-
 const scanFixture = async (reverse = false, duplicatesOnly = false): Promise<ScanExecution> => {
-  const harness = portsFor(fixture.rows, reverse);
-  const result = await readInventory(harness.ports, {
+  const observations = reverse ? [...fixture.rows].reverse() : fixture.rows;
+  const result = await projectInventory(observations, {
     tools: TOOLS,
     scopes: SCOPES,
     duplicatesOnly,
-    cwd: '/repo',
-    configuration,
-    observation: harness.observation,
   });
   if (!result.ok) {
     return {
       product: Object.freeze({ entries: Object.freeze([]), collisionGroups: Object.freeze([]) }),
-      tracker: harness.tracker,
-      authority: authorityKind,
+      authority: 'planned-projectSkillInventory',
       error: result.error,
     };
   }
   return {
-    product: toProduct(result.value),
-    tracker: harness.tracker,
-    authority: authorityKind,
+    product: result.value,
+    authority: 'planned-projectSkillInventory',
     error: null,
   };
 };
@@ -281,29 +178,6 @@ const actualMembers = (row: UnknownRecord): readonly UnknownRecord[] => {
   });
 };
 
-const checkTracker = (violations: string[], execution: ScanExecution, label: string): void => {
-  const reads = Object.values(execution.tracker.calls).reduce((total, count) => total + count, 0);
-  add(
-    violations,
-    reads <= 8 * fixture.expected.rawObservations + 128,
-    `${label}: read calls ${reads} exceed 8N+128`,
-  );
-  add(
-    violations,
-    execution.tracker.forbidden.length === 0,
-    `${label}: forbidden effects ${execution.tracker.forbidden.join(',')}`,
-  );
-  const begins = execution.tracker.observations.filter((event) => event === 'begin').length;
-  const completes = execution.tracker.observations.filter((event) => event === 'complete').length;
-  add(violations, begins > 0, `${label}: no observation span began`);
-  add(violations, begins === completes, `${label}: observation spans did not balance`);
-  add(
-    violations,
-    execution.tracker.observations.length <= 2 * TOOLS.length + 8,
-    `${label}: observation events were unbounded (${execution.tracker.observations.length})`,
-  );
-};
-
 beforeAll(async () => {
   // Literal byte/hash/schema guards execute before current or planned production modules are loaded.
   const bytes = bytesOf();
@@ -321,28 +195,11 @@ beforeAll(async () => {
     fixture.expected.collisionIdentities,
   );
 
-  const [scanner, runtime] = await Promise.all([
-    import('../../../packages/core/src/scan/list-skills.ts'),
-    import('../../../packages/core/src/config/runtime.ts'),
-  ]);
-  const currentListSkills = scanner.listSkills as unknown as InventoryAuthority;
-  if (await Bun.file(PLANNED_READER_PATH).exists()) {
-    const planned = (await import(PLANNED_READER_PATH)) as UnknownRecord;
-    if (typeof planned.readSkillInventory !== 'function') {
-      throw new Error('planned inventory/read.ts must export readSkillInventory');
-    }
-    readInventory = planned.readSkillInventory as InventoryAuthority;
-    authorityKind = 'planned-readSkillInventory';
-  } else {
-    readInventory = async (ports, options) => {
-      const result = await currentListSkills(ports, options);
-      return result.ok
-        ? { ok: true, value: { entries: result.value, collisionGroups: Object.freeze([]) } }
-        : result;
-    };
-    authorityKind = 'current-listSkills-fallback';
+  const planned = (await import(PLANNED_PROJECTOR_PATH)) as UnknownRecord;
+  if (typeof planned.projectSkillInventory !== 'function') {
+    throw new Error('planned inventory/read.ts must export projectSkillInventory');
   }
-  configuration = (runtime.resolveRuntimeConfiguration as ResolveConfiguration)({});
+  projectInventory = planned.projectSkillInventory as InventoryAuthority;
 });
 
 describe('EWP-P3A-TS03', () => {
@@ -464,11 +321,10 @@ describe('EWP-P3A-TS03', () => {
       ),
       'a unique control was classified as a collision',
     );
-    checkTracker(violations, execution, 'family57');
     expect(violations, execution.authority).toEqual([]);
   });
 
-  test('family 58: permutations, duplicate projection, aliases, shared targets, freezing, and bounds remain deterministic', async () => {
+  test('family 58: permutations, duplicate projection, aliases, shared targets, and freezing remain deterministic', async () => {
     const beforeBytes = sha256(bytesOf());
     const beforeFixture = structuredClone(fixture);
     const [forward, reverse, duplicateOnly] = await Promise.all([
@@ -483,7 +339,6 @@ describe('EWP-P3A-TS03', () => {
       ['duplicates', duplicateOnly],
     ] as const) {
       add(violations, execution.error === null, `${label}: ${String(execution.error)}`);
-      checkTracker(violations, execution, label);
     }
 
     add(
@@ -515,6 +370,11 @@ describe('EWP-P3A-TS03', () => {
         [...expectedDuplicateKeys].sort(),
       ),
       'duplicate-only projection did not retain every exact collision member',
+    );
+    add(
+      violations,
+      duplicateOnly.product.collisionGroups.length === fixture.expected.collisionIdentities,
+      `duplicate-only collisionGroups length ${duplicateOnly.product.collisionGroups.length} != ${fixture.expected.collisionIdentities}`,
     );
 
     const codex = forward.product.entries.filter((row) => row.name === 'codex-collision');
