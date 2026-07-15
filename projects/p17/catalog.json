@@ -3917,10 +3917,60 @@
       "phase": "3B",
       "title": "Immutable operations/results and migration of current mutator planning/dry-run paths",
       "dependsOn": ["P17-G3A-02"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "eslint.config.js",
+        "packages/cli/src/contracts/commander-current-state-v0.json",
+        "packages/cli/src/contracts/wire-contracts.ts",
+        "packages/cli/src/output/flip-json.ts",
+        "packages/cli/src/spec/options.ts",
+        "packages/cli/src/spec/registry.ts",
+        "packages/cli/tests/commands/dev.test.ts",
+        "packages/cli/tests/commands/flip-exit-codes.test.ts",
+        "packages/cli/tests/commands/promote.test.ts",
+        "packages/cli/tests/contracts/dev.test.ts",
+        "packages/cli/tests/contracts/options.test.ts",
+        "packages/cli/tests/contracts/promote.test.ts",
+        "packages/cli/tests/fixtures/flip-report-v3.golden.json",
+        "packages/cli/tests/help.test.ts",
+        "packages/cli/tests/output/flip-json.test.ts",
+        "packages/cli/tests/output/flip-report-v2.test.ts",
+        "packages/cli/tests/output/flip-report-v3.test.ts",
+        "packages/core/src/acquire/run.ts",
+        "packages/core/src/acquire/types.ts",
+        "packages/core/src/application/lifecycle-services.ts",
+        "packages/core/src/artifacts/plan-types.ts",
+        "packages/core/src/contracts/v3/flip.ts",
+        "packages/core/src/contracts/v3/index.d.ts",
+        "packages/core/src/contracts/v3/index.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/place/plan.ts",
+        "packages/core/src/place/run.ts",
+        "packages/core/src/place/types.ts",
+        "packages/core/src/planning/compatibility.ts",
+        "packages/core/src/planning/create.ts",
+        "packages/core/src/planning/index.ts",
+        "packages/core/src/planning/order.ts",
+        "packages/core/src/planning/types.ts",
+        "packages/core/src/planning/vocabulary.ts",
+        "packages/core/src/public-types.ts",
+        "packages/core/tests/acquire/install-run.test.ts",
+        "packages/core/tests/acquire/uninstall-run.test.ts",
+        "packages/core/tests/application/lifecycle-services.test.ts",
+        "packages/core/tests/place/dev-source.test.ts",
+        "packages/core/tests/place/plan.test.ts",
+        "packages/core/tests/place/roundtrip.test.ts",
+        "packages/core/tests/place/run.test.ts",
+        "packages/core/tests/planning/compatibility.test.ts",
+        "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/planning/order.test.ts",
+        "packages/core/tests/planning/types.test.ts",
+        "packages/core/tests/public-api.test.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS02.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": [
         "EWP-CMD-DEV-TS01",
         "EWP-CMD-DEV-TS02",
@@ -3970,8 +4020,7 @@
         "EWP-CMD-PROMOTE-TS06",
         "EWP-OPT-TS04",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "downstreamCoverage": [
         "EWP-CMD-EXPORT-TS05",
@@ -3989,10 +4038,32 @@
         "EWP-CMD-UNINSTALL-TS05",
         "EWP-P4B-TS01",
         "EWP-P4B-TS02",
-        "EWP-P4B-TS03"
+        "EWP-P4B-TS03",
+        "EWP-WF05"
       ],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS01",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS02",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS03",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS04",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS05",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS06",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS01",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS02",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS03",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS04",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS05",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS06",
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS04",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS01.test.ts --test-name-pattern EWP-P3B-TS01",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS02.test.ts --test-name-pattern EWP-P3B-TS02"
+      ],
+      "implementers": [
+        "root-codex-goal",
+        "/root/g3b01_operation_domain",
+        "/root/g3b01_mutator_migration",
+        "/root/g3b01_command_contract"
+      ],
       "reviewer": null,
       "gates": {
         "mapped": {
@@ -4000,8 +4071,8 @@
           "evidence": ["projects/p17/evidence/P17-G3B-01.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-01.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
@@ -4036,7 +4107,11 @@
           "evidence": []
         }
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#mapping-and-prerequisites"]
+      "evidence": [
+        "projects/p17/plans/P17-G3B-01.md",
+        "projects/p17/evidence/P17-G3B-01.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G3B-01.md#ready-plan"
+      ]
     },
     {
       "id": "P17-G3B-02",
@@ -5313,6 +5388,8 @@
       "ownedFiles": [],
       "integrationOwner": null,
       "impactedValidations": [
+        "EWP-CMD-DEV-TS05",
+        "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
         "EWP-CMD-UNDO-TS03",
@@ -5322,9 +5399,12 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "requiredNowValidations": [
+        "EWP-CMD-DEV-TS05",
+        "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
         "EWP-CMD-UNDO-TS03",
@@ -5334,7 +5414,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "downstreamCoverage": [],
       "testCommands": [],
@@ -6271,7 +6352,7 @@
       "plannedTarget": "surface:dev",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-DEV-TS01",
@@ -6688,7 +6769,7 @@
       "plannedTarget": "surface:promote",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-DEV-TS01",
@@ -6833,7 +6914,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
@@ -6845,7 +6927,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -7386,7 +7469,7 @@
       "plannedTarget": "coverage:P17-G3B-01",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-DEV-TS01",
@@ -9634,7 +9717,7 @@
       "plannedTarget": "coverage:P17-G6-02A",
       "target": null,
       "evidence": [],
-      "secondaryGroups": ["P17-G6-02B", "P17-G4A-01", "P17-G3B-01", "P17-G1-02A"],
+      "secondaryGroups": ["P17-G6-02B", "P17-G4A-01", "P17-G5-03", "P17-G1-02A"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-COMPLETION-TS01",
@@ -9742,7 +9825,7 @@
       "plannedTarget": "coverage:P17-G1-05",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G1-05.md#traceability-and-sign-off"],
-      "secondaryGroups": ["P17-G3A-02", "P17-G3B-05", "P17-G4A-01", "P17-G3B-01", "P17-G4B-02"],
+      "secondaryGroups": ["P17-G3A-02", "P17-G3B-05", "P17-G4A-01", "P17-G5-03", "P17-G4B-02"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-AGENTS-TS03",
@@ -11818,8 +11901,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -11853,8 +11935,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -11888,8 +11969,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -11897,7 +11977,7 @@
     },
     {
       "id": "EWP-CMD-DEV-TS04",
-      "title": "pinned-to-dev plus unscoped/scoped user+project all selection and exact",
+      "title": "Pinned-to-dev and scoped bulk selection with canonical planned group policy.",
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
@@ -11923,8 +12003,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -11932,7 +12011,7 @@
     },
     {
       "id": "EWP-CMD-DEV-TS05",
-      "title": "dry-run/JSON/rollback compatibility/undo equivalence plus yes conflict and",
+      "title": "Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts.",
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
@@ -11958,8 +12037,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -11993,8 +12071,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -14179,8 +14256,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -14214,8 +14290,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -14249,8 +14324,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -14258,7 +14332,7 @@
     },
     {
       "id": "EWP-CMD-PROMOTE-TS04",
-      "title": "unscoped/scoped user+project all selection, bulk confirmation, and",
+      "title": "Scoped bulk and partial multi-tool planning with canonical group policy.",
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
@@ -14284,8 +14358,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -14293,7 +14366,7 @@
     },
     {
       "id": "EWP-CMD-PROMOTE-TS05",
-      "title": "dry-run/JSON/rollback compatibility/undo equivalence plus yes conflict",
+      "title": "Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts.",
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
@@ -14319,8 +14392,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -14354,8 +14426,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -14927,7 +14998,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -14957,7 +15029,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -14987,7 +15060,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15017,7 +15091,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15047,7 +15122,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15077,7 +15153,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15107,7 +15184,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15137,7 +15215,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15167,7 +15246,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -18502,11 +18582,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-01",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#ready-plan"],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "validatedBy": [
@@ -18523,8 +18603,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "impactedValidations": [
         "EWP-CMD-DEV-TS01",
@@ -18540,12 +18619,55 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS01",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS02",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS03",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS04",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS05",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS06",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS01",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS02",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS03",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS04",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS05",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS06",
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS04",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS01.test.ts --test-name-pattern EWP-P3B-TS01",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS02.test.ts --test-name-pattern EWP-P3B-TS02"
+      ],
+      "ownedFiles": [
+        "eslint.config.js",
+        "packages/cli/src/contracts/wire-contracts.ts",
+        "packages/cli/src/output/flip-json.ts",
+        "packages/cli/tests/contracts/options.test.ts",
+        "packages/cli/tests/fixtures/flip-report-v3.golden.json",
+        "packages/cli/tests/output/flip-json.test.ts",
+        "packages/cli/tests/output/flip-report-v2.test.ts",
+        "packages/cli/tests/output/flip-report-v3.test.ts",
+        "packages/core/src/artifacts/plan-types.ts",
+        "packages/core/src/contracts/v3/flip.ts",
+        "packages/core/src/contracts/v3/index.d.ts",
+        "packages/core/src/contracts/v3/index.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/planning/compatibility.ts",
+        "packages/core/src/planning/create.ts",
+        "packages/core/src/planning/index.ts",
+        "packages/core/src/planning/order.ts",
+        "packages/core/src/planning/types.ts",
+        "packages/core/src/planning/vocabulary.ts",
+        "packages/core/src/public-types.ts",
+        "packages/core/tests/planning/compatibility.test.ts",
+        "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/planning/order.test.ts",
+        "packages/core/tests/planning/types.test.ts",
+        "packages/core/tests/public-api.test.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS02.test.ts"
+      ]
     },
     {
       "id": "EWP-P3B-T02",
@@ -18572,11 +18694,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-01",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#ready-plan"],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "validatedBy": [
@@ -18593,8 +18715,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "impactedValidations": [
         "EWP-CMD-DEV-TS01",
@@ -18610,12 +18731,50 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS01",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS02",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS03",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS04",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS05",
+        "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS06",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS01",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS02",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS03",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS04",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS05",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS06",
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS04",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS01.test.ts --test-name-pattern EWP-P3B-TS01",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS02.test.ts --test-name-pattern EWP-P3B-TS02"
+      ],
+      "ownedFiles": [
+        "packages/cli/src/contracts/commander-current-state-v0.json",
+        "packages/cli/src/spec/options.ts",
+        "packages/cli/src/spec/registry.ts",
+        "packages/cli/tests/commands/dev.test.ts",
+        "packages/cli/tests/commands/flip-exit-codes.test.ts",
+        "packages/cli/tests/commands/promote.test.ts",
+        "packages/cli/tests/contracts/dev.test.ts",
+        "packages/cli/tests/contracts/promote.test.ts",
+        "packages/cli/tests/help.test.ts",
+        "packages/core/src/acquire/run.ts",
+        "packages/core/src/acquire/types.ts",
+        "packages/core/src/application/lifecycle-services.ts",
+        "packages/core/src/place/plan.ts",
+        "packages/core/src/place/run.ts",
+        "packages/core/src/place/types.ts",
+        "packages/core/tests/acquire/install-run.test.ts",
+        "packages/core/tests/acquire/uninstall-run.test.ts",
+        "packages/core/tests/application/lifecycle-services.test.ts",
+        "packages/core/tests/place/dev-source.test.ts",
+        "packages/core/tests/place/plan.test.ts",
+        "packages/core/tests/place/roundtrip.test.ts",
+        "packages/core/tests/place/run.test.ts"
+      ]
     },
     {
       "id": "EWP-P3B-T04",
@@ -18739,8 +18898,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -18774,8 +18932,7 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
-        "EWP-WF05"
+        "EWP-P3B-TS02"
       ],
       "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
       "testCommands": [],
@@ -19861,9 +20018,11 @@
       "plannedTarget": "planned:P17-G5-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G3B-01"],
       "implements": ["COMMAND:undo", "P1-11"],
       "validatedBy": [
+        "EWP-CMD-DEV-TS05",
+        "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
         "EWP-CMD-UNDO-TS03",
@@ -19873,9 +20032,12 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "impactedValidations": [
+        "EWP-CMD-DEV-TS05",
+        "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
         "EWP-CMD-UNDO-TS03",
@@ -19885,7 +20047,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -20020,7 +20183,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -20537,33 +20701,37 @@
       "title": "Local development lifecycle",
       "kind": "workflow",
       "stateModel": "validation",
-      "primaryGroup": "P17-G3B-01",
+      "primaryGroup": "P17-G5-03",
       "status": "planned",
       "tier": "required-pr",
-      "plannedTarget": "planned:P17-G3B-01:tests/ergonomics/workflows/EWP-WF05.test.ts#EWP-WF05",
+      "plannedTarget": "planned:P17-G5-03:tests/ergonomics/workflows/EWP-WF05.test.ts#EWP-WF05",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G3B-01"],
       "implements": [],
       "validatedBy": ["EWP-WF05"],
       "impactedValidations": [
-        "EWP-CMD-DEV-TS01",
-        "EWP-CMD-DEV-TS02",
-        "EWP-CMD-DEV-TS03",
-        "EWP-CMD-DEV-TS04",
-        "EWP-CMD-DEV-TS05",
-        "EWP-CMD-DEV-TS06",
-        "EWP-CMD-PROMOTE-TS01",
-        "EWP-CMD-PROMOTE-TS02",
-        "EWP-CMD-PROMOTE-TS03",
-        "EWP-CMD-PROMOTE-TS04",
-        "EWP-CMD-PROMOTE-TS05",
-        "EWP-CMD-PROMOTE-TS06",
-        "EWP-P3B-TS01",
-        "EWP-P3B-TS02",
+        "EWP-CMD-UNDO-TS01",
+        "EWP-CMD-UNDO-TS02",
+        "EWP-CMD-UNDO-TS03",
+        "EWP-CMD-UNDO-TS04",
+        "EWP-CMD-UNDO-TS05",
+        "EWP-CMD-UNDO-TS06",
+        "EWP-CMD-UNDO-TS07",
+        "EWP-CMD-UNDO-TS08",
+        "EWP-CMD-UNDO-TS09",
+        "EWP-P5-TS03",
         "EWP-WF05"
       ],
-      "affectedContracts": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
+      "affectedContracts": [
+        "COMMAND:dev",
+        "COMMAND:promote",
+        "COMMAND:undo",
+        "D-009",
+        "EWP-CF-002",
+        "EWP-CF-025",
+        "P1-11"
+      ],
       "testCommands": [],
       "ownedFiles": []
     },
@@ -21655,7 +21823,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
@@ -21667,7 +21836,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03"
+        "EWP-P5-TS03",
+        "EWP-WF05"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],

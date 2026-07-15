@@ -28,9 +28,9 @@ Tracked entities: **425** across **45** change groups.
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
-| 3 | 8 | 84 | 37 | 0 |
+| 3 | 8 | 83 | 37 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
-| 5 | 5 | 66 | 0 | 0 |
+| 5 | 5 | 67 | 0 | 0 |
 | 6 | 5 | 39 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
@@ -259,7 +259,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF02 | P17-G4A-01 | planned | required-pr |
 | EWP-WF03 | P17-G4A-03 | planned | required-pr |
 | EWP-WF04 | P17-G4A-02 | planned | required-pr |
-| EWP-WF05 | P17-G3B-01 | planned | required-pr |
+| EWP-WF05 | P17-G5-03 | planned | required-pr |
 | EWP-WF06 | P17-G4B-01 | planned | required-pr |
 | EWP-WF07 | P17-G4B-02 | planned | required-pr |
 | EWP-WF08 | P17-G4B-01 | planned | required-pr |
@@ -895,14 +895,14 @@ Downstream coverage obligations: none.
 
 ## P17-G3B-01 — Immutable operations/results and migration of current mutator planning/dry-run paths
 
-Phase: 3B; status: **mapped**; dependencies: P17-G3A-02.
-Required-now validations: EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-OPT-TS04, EWP-P3B-TS01, EWP-P3B-TS02, EWP-WF05.
-Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS09, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS05, EWP-P4B-TS01, EWP-P4B-TS02, EWP-P4B-TS03.
+Phase: 3B; status: **ready**; dependencies: P17-G3A-02.
+Required-now validations: EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-OPT-TS04, EWP-P3B-TS01, EWP-P3B-TS02.
+Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS09, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS05, EWP-P4B-TS01, EWP-P4B-TS02, EWP-P4B-TS03, EWP-WF05.
 
 ### Group gates
 
 - [x] P17-G3B-01:mapped _(passed)_
-- [ ] P17-G3B-01:ready _(pending)_
+- [x] P17-G3B-01:ready _(passed)_
 - [ ] P17-G3B-01:test-first _(pending)_
 - [ ] P17-G3B-01:minimal-implementation _(pending)_
 - [ ] P17-G3B-01:targeted-green _(pending)_
@@ -922,20 +922,19 @@ Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD
 - [ ] **EWP-CMD-DEV-TS01** — create/adopt/noop/mismatch/foreign/absent state machine. _(command-test; planned)_
 - [ ] **EWP-CMD-DEV-TS02** — source/dest/name/path/tool/scope validation, unique unscoped inference, _(command-test; planned)_
 - [ ] **EWP-CMD-DEV-TS03** — static verify/strict/no-verify behavior. _(command-test; planned)_
-- [ ] **EWP-CMD-DEV-TS04** — pinned-to-dev plus unscoped/scoped user+project all selection and exact _(command-test; planned)_
-- [ ] **EWP-CMD-DEV-TS05** — dry-run/JSON/rollback compatibility/undo equivalence plus yes conflict and _(command-test; planned)_
+- [ ] **EWP-CMD-DEV-TS04** — Pinned-to-dev and scoped bulk selection with canonical planned group policy. _(command-test; planned)_
+- [ ] **EWP-CMD-DEV-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; planned)_
 - [ ] **EWP-CMD-DEV-TS06** — crash recovery and source/store retention. _(command-test; planned)_
 - [ ] **EWP-CMD-PROMOTE-TS01** — dev/pinned/store-linked/unmanaged selection and convergence across _(command-test; planned)_
 - [ ] **EWP-CMD-PROMOTE-TS02** — clean/dirty/non-Git provenance and allow-dirty. _(command-test; planned)_
 - [ ] **EWP-CMD-PROMOTE-TS03** — per-tool verify mode, strict, inconclusive, no-verify. _(command-test; planned)_
-- [ ] **EWP-CMD-PROMOTE-TS04** — unscoped/scoped user+project all selection, bulk confirmation, and _(command-test; planned)_
-- [ ] **EWP-CMD-PROMOTE-TS05** — dry-run/JSON/rollback compatibility/undo equivalence plus yes conflict _(command-test; planned)_
+- [ ] **EWP-CMD-PROMOTE-TS04** — Scoped bulk and partial multi-tool planning with canonical group policy. _(command-test; planned)_
+- [ ] **EWP-CMD-PROMOTE-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; planned)_
 - [ ] **EWP-CMD-PROMOTE-TS06** — content hash, store reuse, crash recovery, residue cleanup. _(command-test; planned)_
-- [ ] **EWP-P3B-T01** — Immutable executable-operation, diagnostic, and execution-result types with _(phase-task; planned)_
-- [ ] **EWP-P3B-T03** — Adapt existing install/uninstall/promote/dev planning and dry-run paths to the _(phase-task; planned)_
+- [ ] **EWP-P3B-T01** — Immutable executable-operation, diagnostic, and execution-result types with _(phase-task; ready)_
+- [ ] **EWP-P3B-T03** — Adapt existing install/uninstall/promote/dev planning and dry-run paths to the _(phase-task; ready)_
 - [ ] **EWP-P3B-TS01** — Operation and diagnostic snapshot matrix for every existing action/outcome. _(phase-test; planned)_
 - [ ] **EWP-P3B-TS02** — Determinism/property tests and dry-run/execution operation equality. _(phase-test; planned)_
-- [ ] **EWP-WF05** — Local development lifecycle _(workflow; planned)_
 
 ## P17-G3B-02 — Lock hierarchy, deterministic scheduler, coordinator, and partial-pair semantics
 
@@ -1415,7 +1414,7 @@ Downstream coverage obligations: none.
 ## P17-G5-03 — Scope-aware pending abort and committed undo with compatibility routing
 
 Phase: 5; status: **planned**; dependencies: P17-G4B-03.
-Required-now validations: EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-P5-TS03.
+Required-now validations: EWP-CMD-DEV-TS05, EWP-CMD-PROMOTE-TS05, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-P5-TS03, EWP-WF05.
 Downstream coverage obligations: none.
 
 ### Group gates
@@ -1445,6 +1444,7 @@ Downstream coverage obligations: none.
 - [ ] **EWP-CMD-UNDO-TS09** — migration/undo ordering, crash during either operation, and repeated _(command-test; planned)_
 - [ ] **EWP-P5-T05** — Unified scope-aware undo selection and compatibility aliases. _(phase-task; planned)_
 - [ ] **EWP-P5-TS03** — Undo operation-family and user/project ambiguity/inference matrix. _(phase-test; planned)_
+- [ ] **EWP-WF05** — Local development lifecycle _(workflow; planned)_
 - [ ] **P1-11** — `undo` _(recommendation; planned)_
 
 ## P17-G5-04 — Ledger-authoritative reachability, retention, explicit forget, and safe GC

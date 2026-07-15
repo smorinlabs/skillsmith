@@ -4758,11 +4758,12 @@ tests pass, the relevant holistic workflow passes, and the repo's full gate pass
   ambiguity and scope/path disagreement refusal, absent-create default scope, absolute recording,
   and target-or-all requirement with no empty/unmatched widening.
 - **EWP-CMD-DEV-TS03:** static verify/strict/no-verify behavior.
-- **EWP-CMD-DEV-TS04:** pinned-to-dev plus unscoped/scoped user+project all selection and exact
-  bulk confirmation, targets-plus-all refusal, explicit-all metadata, filter-to-zero no-op, and
-  deterministic fail-fast/continue group scheduling.
-- **EWP-CMD-DEV-TS05:** dry-run/JSON/rollback compatibility/undo equivalence plus yes conflict and
-  no-prompt assertion before discovery/I/O.
+- **EWP-CMD-DEV-TS04:** Pinned-to-dev and scoped bulk selection with canonical planned group policy.
+  Covers exact confirmation, targets-plus-all refusal, and explicit-all/filter-to-zero metadata.
+  Actual fail-fast/continue execution is replayed under EWP-P3B-TS03.
+- **EWP-CMD-DEV-TS05:** Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts.
+  Covers yes/no-prompt refusal before discovery or I/O. Public undo equivalence is replayed with the
+  G5 undo command tests.
 - **EWP-CMD-DEV-TS06:** crash recovery and source/store retention.
 
 ### `promote`
@@ -4772,11 +4773,12 @@ tests pass, the relevant holistic workflow passes, and the repo's full gate pass
   no-widening cases.
 - **EWP-CMD-PROMOTE-TS02:** clean/dirty/non-Git provenance and allow-dirty.
 - **EWP-CMD-PROMOTE-TS03:** per-tool verify mode, strict, inconclusive, no-verify.
-- **EWP-CMD-PROMOTE-TS04:** unscoped/scoped user+project all selection, bulk confirmation, and
-  targets-plus-all refusal, explicit-all/filter-to-zero metadata, partial multi-tool results, and
-  deterministic fail-fast/continue group scheduling.
-- **EWP-CMD-PROMOTE-TS05:** dry-run/JSON/rollback compatibility/undo equivalence plus yes conflict
-  and no-prompt assertion before discovery/I/O.
+- **EWP-CMD-PROMOTE-TS04:** Scoped bulk and partial multi-tool planning with canonical group policy.
+  Covers confirmation, targets-plus-all refusal, and explicit-all/filter-to-zero metadata. Actual
+  fail-fast/continue execution is replayed under EWP-P3B-TS03.
+- **EWP-CMD-PROMOTE-TS05:** Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts.
+  Covers yes/no-prompt refusal before discovery or I/O. Public undo equivalence is replayed with the
+  G5 undo command tests.
 - **EWP-CMD-PROMOTE-TS06:** content hash, store reuse, crash recovery, residue cleanup.
 
 ### `verify`
