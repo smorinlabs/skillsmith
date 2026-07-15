@@ -11,6 +11,7 @@ import {
   errorV1Codec,
   healthV1Codec,
   installV1Codec,
+  statusV1Codec,
   uninstallV1Codec,
   verifyV1Codec,
 } from '@skillsmith/core/contracts/v1';
@@ -33,6 +34,7 @@ export const currentWireCommandMappings = Object.freeze([
   mapping('skillsmith install', 'install', 1),
   mapping('skillsmith list', 'list', 2),
   mapping('skillsmith promote', 'flip', 2),
+  mapping('skillsmith status', 'status', 1),
   mapping('skillsmith uninstall', 'uninstall', 1),
   mapping('skillsmith verify', 'verify', 1),
 ]);
@@ -74,6 +76,7 @@ export const currentWireContractRegistry = createWireContractRegistry(
     flipV2Codec,
     installV1Codec,
     listV2Codec,
+    statusV1Codec,
     uninstallV1Codec,
     verifyV1Codec,
     errorV1Codec,
@@ -113,6 +116,7 @@ export const currentWireCodecs = Object.freeze({
   install: boundCodec('skillsmith install', installV1Codec),
   list: boundCodec('skillsmith list', listV2Codec),
   promote: boundCodec('skillsmith promote', flipV2Codec),
+  status: boundCodec('skillsmith status', statusV1Codec),
   uninstall: boundCodec('skillsmith uninstall', uninstallV1Codec),
   verify: boundCodec('skillsmith verify', verifyV1Codec),
 });

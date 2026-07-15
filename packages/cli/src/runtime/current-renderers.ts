@@ -14,6 +14,7 @@ import {
   type InstallReport,
   type ListReport,
   type PromoteApplicationReport,
+  type StatusApplicationReport,
   type UninstallApplicationReport,
   type UninstallReport,
   type VerifyApplicationReport,
@@ -43,6 +44,8 @@ import { renderInstallHuman, renderUninstallHuman } from '../output/install-huma
 import { renderInstallJson, renderUninstallJson } from '../output/install-json.ts';
 import { renderListHuman } from '../output/list-human.ts';
 import { renderListJson } from '../output/list-json.ts';
+import { renderStatusHuman } from '../output/status-human.ts';
+import { renderStatusJson } from '../output/status-json.ts';
 import { renderVerifyHuman } from '../output/verify-human.ts';
 import { renderVerifyJson } from '../output/verify-json.ts';
 import { encodeWire } from '../output/wire-codec.ts';
@@ -312,6 +315,16 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
         value.result === null
           ? (errorOutput(outcome, 'json') ?? '')
           : renderDoctorJson(value.result, outcome.deprecations, currentWireCodecs.check),
+    ),
+    status: guarded<StatusApplicationReport>(
+      (value, outcome) =>
+        value.result === null
+          ? (errorOutput(outcome, 'human') ?? '')
+          : withDiagnostics(outcome, renderStatusHuman(value.result)),
+      (value, outcome) =>
+        value.result === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : renderStatusJson(value.result),
     ),
     verify: guarded<VerifyApplicationReport>(
       (value, outcome) =>

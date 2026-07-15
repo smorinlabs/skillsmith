@@ -1,6 +1,7 @@
 import { join, resolve } from 'node:path';
 import { listSupportedTools } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS, type SupportedTool } from '../agents/types.ts';
+import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
 import { normalizePortablePath, normalizeRegistryIdentity } from '../artifacts/identity.ts';
 import { resolveArtifactPair as resolveCoreArtifactPair } from '../artifacts/pair.ts';
 import type { CommandEntry } from '../commands/types.ts';
@@ -19,10 +20,12 @@ import {
 } from '../config/types.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
+import { type StatusV1Dto, statusV1Codec, toStatusV1Dto } from '../contracts/v1/status.ts';
 import { builtInChecks } from '../doctor/registry.ts';
 import { focusDoctorPorts, runChecks } from '../doctor/run.ts';
 import type { CheckRunMode, CheckRunResult } from '../doctor/types.ts';
 import type { SkillSmithError } from '../errors.ts';
+import { redactSensitiveValue } from '../safety/redaction.ts';
 import { detectAll } from '../scan/index.ts';
 import { listCommands } from '../scan/list-commands.ts';
 import { listSkills } from '../scan/list-skills.ts';
@@ -33,6 +36,13 @@ import type {
   ValidatedSelectionRequest,
 } from '../selection/types.ts';
 import type { SkillEntry } from '../skills/types.ts';
+import { readStatus } from '../status/read.ts';
+import type {
+  StatusArtifactSelection,
+  StatusProjectPlacementContext,
+  StatusReadError,
+  StatusReadPorts,
+} from '../status/types.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import { VERIFY_TOOLS, type VerifyReport, type VerifyTool } from '../verify/types.ts';
 import {
@@ -47,7 +57,11 @@ import {
   NO_MUTATION,
 } from './types.ts';
 
-type ApplicationError = SkillSmithError | SelectionValidationError | ReadServiceError;
+type ApplicationError =
+  | SkillSmithError
+  | SelectionValidationError
+  | ReadServiceError
+  | StatusReadError;
 
 interface ReadServiceError {
   readonly code: string;
@@ -114,6 +128,10 @@ export interface VerifyApplicationReport {
   readonly result: VerifyReport | null;
 }
 
+export interface StatusApplicationReport {
+  readonly result: StatusV1Dto | null;
+}
+
 export interface CurrentReadApplicationReports {
   readonly agents: AgentsReport;
   readonly configGet: ConfigGetReport;
@@ -125,6 +143,7 @@ export interface CurrentReadApplicationReports {
   readonly doctor: HealthReport;
   readonly check: HealthReport;
   readonly verify: VerifyApplicationReport;
+  readonly status: StatusApplicationReport;
 }
 
 export type CurrentReadApplicationRegistry = Readonly<{
@@ -156,6 +175,11 @@ const HEALTH_POLICY: SelectionPolicy = {
 const VERIFY_POLICY: SelectionPolicy = {
   ...READ_POLICY,
   allowedTools: VERIFY_TOOLS,
+};
+
+const STATUS_POLICY: SelectionPolicy = {
+  ...READ_POLICY,
+  allowedScopes: SCOPES,
 };
 
 const success = <T>(
@@ -259,6 +283,25 @@ const argumentStrings = (
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string');
   return typeof value === 'string' ? [value] : [];
 };
+
+const focusStatusPorts = (ports: CurrentApplicationContext['ports']): StatusReadPorts =>
+  Object.freeze({
+    homeDir: ports.homeDir,
+    executableSearchPath: Object.freeze([...ports.executableSearchPath]),
+    platform: ports.platform,
+    xdg: Object.freeze({ ...ports.xdg }),
+    ...(ports.systemConfigPath === undefined ? {} : { systemConfigPath: ports.systemConfigPath }),
+    fileExists: (path: string) => ports.fileExists(path),
+    pathKind: (path: string) => ports.pathKind(path),
+    realpath: (path: string) => ports.realpath(path),
+    listDir: (path: string) => ports.listDir(path),
+    readText: (path: string) => ports.readText(path),
+    readBytes: (path: string) => ports.readBytes(path),
+    readLink: (path: string) => ports.readLink(path),
+    isExecutable: (path: string) => ports.isExecutable(path),
+    modifiedAt: (path: string) => ports.modifiedAt(path),
+    readFileMetadata: (path: string) => ports.readFileMetadata(path),
+  });
 
 const resolveScope = (
   request: Readonly<CurrentCommandRequest>,
@@ -953,6 +996,169 @@ export const runVerifyApplication: ApplicationService<
   return success({ result: verified.value }, { exitClass: verifyExitClass(verified.value) });
 };
 
+const statusProjectPlacement = async (
+  ports: CurrentApplicationContext['ports'],
+  project: ProjectContext,
+  explicitScope: Scope | null,
+): Promise<StatusProjectPlacementContext | ReadServiceError> => {
+  if (project.projectRoot !== null && project.projectIdentity !== null) {
+    return Object.freeze({
+      state: 'selected',
+      source: 'shared-project',
+      root: `${project.projectRoot}`,
+      identity: `${project.projectIdentity}`,
+    });
+  }
+  if (explicitScope !== 'project') return Object.freeze({ state: 'unselected' });
+  try {
+    const root = await ports.realpath(project.effectiveCwd);
+    return Object.freeze({
+      state: 'selected',
+      source: 'explicit-non-git',
+      root: `${root}`,
+      identity: `${root}`,
+    });
+  } catch {
+    return {
+      code: 'status-project-context',
+      message: 'cannot resolve explicit non-Git project context',
+      exitClass: 'failure',
+    };
+  }
+};
+
+const statusHasDrift = (dto: StatusV1Dto): boolean =>
+  dto.facts.some((fact) => fact.impact === 'drift') ||
+  dto.entries.some(
+    (entry) =>
+      entry.facts.some((fact) => fact.impact === 'drift') ||
+      entry.placements.some((placement) => placement.facts.some((fact) => fact.impact === 'drift')),
+  );
+
+const statusRenderingFailure = (): ReadServiceError => ({
+  code: 'status-rendering-failed',
+  message: 'status report could not be rendered safely',
+  exitClass: 'failure',
+});
+
+export const runStatusApplication: ApplicationService<
+  CurrentCommandRequest,
+  StatusApplicationReport
+> = async (request, context) => {
+  const empty: StatusApplicationReport = { result: null };
+  const file = optionalString(request, 'file');
+  const lockfile = optionalString(request, 'lockfile');
+  if (lockfile !== undefined && file === undefined) {
+    return failed(empty, usage('--lockfile requires --file'));
+  }
+
+  const scope = resolveScope(request, ['system', 'user', 'project', 'managed']);
+  if (!scope.ok) return failed(empty, scope.error);
+  const validated = validateSelectionRequest(
+    {
+      targets: argumentStrings(request, 0),
+      all: false,
+      tools: strings(request, 'tool'),
+      scopes: scope.value === null ? [] : [scope.value],
+      capability: 'read',
+    },
+    STATUS_POLICY,
+  );
+  if (!validated.ok) return failed(empty, validated.error);
+
+  const project = await projectFor(context);
+  if (!project.ok) return failed(empty, project.error);
+  const placement = await statusProjectPlacement(context.ports, project.value, scope.value);
+  if ('code' in placement) return failed(empty, placement);
+
+  const configuration = await configFor(context, project.value);
+  if (!configuration.ok) return failed(empty, configuration.error);
+  const configuredTools = effectiveTools(configuration.value);
+  const tools =
+    validated.value.tools.length > 0
+      ? validated.value.tools
+      : configuredTools.length > 0
+        ? configuredTools
+        : SUPPORTED_TOOLS;
+  const toolSelectionSource =
+    validated.value.tools.length > 0
+      ? ('explicit' as const)
+      : configuredTools.length > 0
+        ? ('effective-config' as const)
+        : ('unbounded-default' as const);
+  const scopes =
+    scope.value !== null
+      ? [scope.value]
+      : placement.state === 'selected'
+        ? SCOPES
+        : SCOPES.filter((candidate) => candidate !== 'project');
+
+  const readable = selectReadableArtifactContext(context.ports, project.value, {
+    ...(file === undefined ? {} : { explicitFile: file }),
+    scope: scope.value,
+  });
+  let artifactSelection: StatusArtifactSelection;
+  if (readable.state === 'unselected') {
+    artifactSelection = Object.freeze({ state: 'unselected', reason: readable.reason });
+  } else {
+    const pair = await resolveCoreArtifactPair(
+      context.ports,
+      project.value,
+      readable.source === 'explicit'
+        ? {
+            file: file as string,
+            ...(lockfile === undefined ? {} : { lockfile }),
+          }
+        : { discoveredFile: readable.file },
+    );
+    if (!pair.ok) {
+      return failed(empty, {
+        code: pair.error.code,
+        message: pair.error.message,
+        exitClass: pair.error.exitClass === 'usage' ? 'usage' : 'state',
+      });
+    }
+    artifactSelection = Object.freeze({
+      state: 'selected',
+      source: readable.source,
+      manifestPath: `${pair.value.file.path}`,
+      lockPath: `${pair.value.lockfile.path}`,
+      lockSource: pair.value.lockfileSource,
+    });
+  }
+
+  const read = await readStatus(focusStatusPorts(context.ports), {
+    projectContext: project.value,
+    projectPlacement: placement,
+    configuration: context.configuration,
+    targets: Object.freeze([...validated.value.targets]),
+    tools: Object.freeze([...tools]),
+    toolSelectionSource,
+    scopes: Object.freeze([...scopes]),
+    scopeSelectionSource: scope.value === null ? 'unbounded-default' : 'explicit',
+    selectionSource:
+      validated.value.selectionSource === 'explicit-targets'
+        ? 'explicit-targets'
+        : 'bounded-default',
+    artifactSelection,
+    ...(context.signal === undefined ? {} : { signal: context.signal }),
+  });
+  if (!read.ok) return failed(empty, read.error);
+
+  let candidate: unknown;
+  try {
+    candidate = redactSensitiveValue(toStatusV1Dto(read.value));
+  } catch {
+    return failed(empty, statusRenderingFailure());
+  }
+  const parsed = statusV1Codec.validate(candidate);
+  if (!parsed.ok) return failed(empty, statusRenderingFailure());
+  return success(
+    { result: parsed.value },
+    { exitClass: enabled(request, 'check') && statusHasDrift(parsed.value) ? 'drift' : 'success' },
+  );
+};
+
 export const CURRENT_READ_APPLICATIONS: CurrentReadApplicationRegistry = Object.freeze({
   agents: runAgentsApplication,
   configGet: runConfigGetApplication,
@@ -964,4 +1170,5 @@ export const CURRENT_READ_APPLICATIONS: CurrentReadApplicationRegistry = Object.
   doctor: runDoctorApplication,
   check: runCheckApplication,
   verify: runVerifyApplication,
+  status: runStatusApplication,
 });

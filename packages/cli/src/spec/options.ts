@@ -8,6 +8,7 @@ const KNOWN_COLORS = ['auto', 'always', 'never'] as const;
 const ALLOWED_SCOPES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith list': KNOWN_SCOPES,
   'skillsmith commands': ['user', 'project'],
+  'skillsmith status': KNOWN_SCOPES,
   'skillsmith doctor': ['user', 'project', 'system'],
   'skillsmith check': ['user', 'project', 'system'],
   'skillsmith config get': ['user', 'project', 'system'],
@@ -78,6 +79,11 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith check:--all-tools': 'Check every known tool instead of the configured default',
   'skillsmith check:--report-only': 'Report errors without failing the process',
   'skillsmith check:--exit-code': 'Deprecated; check already exits non-zero on error findings',
+  'skillsmith status:--tool': 'Restrict status to a target tool; repeatable',
+  'skillsmith status:--scope': 'Restrict status to one installation scope',
+  'skillsmith status:--file': 'Read desired state from an explicit manifest',
+  'skillsmith status:--lockfile': 'Read an explicit lockfile (requires --file)',
+  'skillsmith status:--check': 'Exit 7 when the selected status product contains drift',
   'skillsmith verify:--tool': 'Restrict to tools; repeatable; default: all detected',
   'skillsmith verify:--static': 'Run static verification only; this is the default',
   'skillsmith verify:--deep': 'Also run isolated session-backed load verification',
@@ -191,7 +197,23 @@ export const optionsForPath = (path: string): readonly CommandOptionSpec[] => {
   const prefix = `option:${path}:`;
   const options = optionRows
     .filter((row) => row.key.startsWith(prefix))
+    .filter((row) => path !== 'skillsmith status' || row.option.long !== '--help')
     .map((row) => optionFromState(path, row.option));
 
+  if (path === 'skillsmith status') {
+    const order = [
+      '--file',
+      '--lockfile',
+      '--tool',
+      '--scope',
+      '--system',
+      '--user',
+      '--project',
+      '--managed',
+      '--check',
+      '--json',
+    ];
+    return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
+  }
   return options.sort((left, right) => left.flags.localeCompare(right.flags));
 };

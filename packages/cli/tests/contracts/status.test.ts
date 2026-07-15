@@ -218,12 +218,12 @@ beforeAll(async () => {
   ) {
     throw new Error('missing G3A-01 status authority');
   }
-  readStatus = statusModule.readStatus as ReadStatus;
+  readStatus = statusModule.readStatus as unknown as ReadStatus;
   selectReadableArtifactContext =
-    discoveryModule.selectReadableArtifactContext as SelectReadableArtifactContext;
-  runStatusApplication = applicationModule.runStatusApplication as RunStatusApplication;
+    discoveryModule.selectReadableArtifactContext as unknown as SelectReadableArtifactContext;
+  runStatusApplication = applicationModule.runStatusApplication as unknown as RunStatusApplication;
   currentReadApplications = applicationModule.CURRENT_READ_APPLICATIONS as ReadonlyUnknownRecord;
-  statusV1Codec = contractModule.statusV1Codec as StatusCodec;
+  statusV1Codec = contractModule.statusV1Codec as unknown as StatusCodec;
   currentCommandSpecs = registryModule.CURRENT_COMMAND_SPECS as readonly ReadonlyUnknownRecord[];
   currentOptionRelations =
     registryModule.CURRENT_OPTION_RELATIONS as readonly ReadonlyUnknownRecord[];
@@ -231,8 +231,8 @@ beforeAll(async () => {
     wireModule.currentWireCommandMappings as readonly ReadonlyUnknownRecord[];
   currentWireContractRegistry =
     wireModule.currentWireContractRegistry as unknown as ReadonlyUnknownRecord;
-  renderStatusHuman = humanModule.renderStatusHuman as RenderStatus;
-  renderStatusJson = jsonModule.renderStatusJson as RenderStatus;
+  renderStatusHuman = humanModule.renderStatusHuman as unknown as RenderStatus;
+  renderStatusJson = jsonModule.renderStatusJson as unknown as RenderStatus;
 });
 
 describe('EWP-CMD-STATUS-TS01', () => {

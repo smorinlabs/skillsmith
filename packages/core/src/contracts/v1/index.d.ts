@@ -18,6 +18,7 @@ import type {
   PortableLockV1,
   Result,
   SavedPlanV1,
+  StatusReport,
   ToolRegistry,
   UninstallReport,
   VerifyReport,
@@ -337,6 +338,19 @@ export interface CapabilitySnapshotV1Dto {
   }>;
 }
 
+export interface StatusV1Dto {
+  schemaVersion: 1;
+  kind: 'skillsmith.status';
+  selection: DeepMutable<StatusReport['selection']>;
+  context: DeepMutable<StatusReport['context']>;
+  artifacts: DeepMutable<StatusReport['artifacts']>;
+  ledger: DeepMutable<StatusReport['ledger']>;
+  journals: DeepMutable<StatusReport['journals']>;
+  facts: DeepMutable<StatusReport['facts']>;
+  entries: DeepMutable<StatusReport['entries']>;
+  summary: DeepMutable<StatusReport['summary']>;
+}
+
 export declare const agentsV1Codec: WireCodec<'agents', 1, AgentsV1Dto>;
 export declare const toAgentsV1Dto: (report: AgentsReport) => AgentsV1Dto;
 export declare const healthV1Codec: WireCodec<'health', 1, HealthV1Dto>;
@@ -363,6 +377,8 @@ export declare const createVerifyV1Codec: (
   registry: Pick<ToolRegistry, 'toolsFor'>,
 ) => WireCodec<'verify', 1, VerifyV1Dto>;
 export declare const toVerifyV1Dto: (report: VerifyReport<string>) => VerifyV1Dto;
+export declare const statusV1Codec: WireCodec<'status', 1, StatusV1Dto>;
+export declare const toStatusV1Dto: (report: StatusReport) => StatusV1Dto;
 export declare const errorV1Codec: WireCodec<'error', 1, ErrorV1Dto>;
 export declare const toErrorV1Dto: (source: {
   readonly code: string;

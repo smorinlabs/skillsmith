@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path';
+import type { Scope } from '../config/types.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { FileReadPort, PlatformPaths } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -34,6 +35,19 @@ export interface DiscoverArtifactOptions {
   readonly explicitConfig?: string;
   readonly explicitFile?: string;
   readonly explicitProjectScope?: boolean;
+}
+
+export type ReadableArtifactContext =
+  | Readonly<{ readonly state: 'unselected'; readonly reason: 'live-only-scope' }>
+  | Readonly<{
+      readonly state: 'selected';
+      readonly source: 'explicit' | 'discovered-project' | 'project-default' | 'user-default';
+      readonly file: string;
+    }>;
+
+export interface SelectReadableArtifactContextRequest {
+  readonly explicitFile?: string;
+  readonly scope: Scope | null;
 }
 
 export interface ManifestDestinationRequest {
@@ -114,6 +128,58 @@ const freezeCandidate = (
 
 const uniquePaths = (paths: readonly string[]): readonly string[] =>
   Object.freeze([...new Set(paths)]);
+
+/**
+ * Select the one readable portable-artifact context for status. This is a total, content-free
+ * decision: the application remains the sole artifact-pair resolver and repository reader.
+ */
+export const selectReadableArtifactContext = (
+  paths: Pick<PlatformPaths, 'xdg'>,
+  context: ProjectContext,
+  request: Readonly<SelectReadableArtifactContextRequest>,
+): ReadableArtifactContext => {
+  if (request.explicitFile !== undefined) {
+    return Object.freeze({
+      state: 'selected' as const,
+      source: 'explicit' as const,
+      file: resolve(context.effectiveCwd, request.explicitFile),
+    });
+  }
+
+  if (request.scope === 'system' || request.scope === 'managed') {
+    return Object.freeze({ state: 'unselected' as const, reason: 'live-only-scope' as const });
+  }
+
+  if (request.scope === 'user') {
+    return Object.freeze({
+      state: 'selected' as const,
+      source: 'user-default' as const,
+      file: join(paths.xdg.config, USER_DIRECTORY, MANIFEST_NAME),
+    });
+  }
+
+  if (context.discoveredConfigPath !== null) {
+    return Object.freeze({
+      state: 'selected' as const,
+      source: 'discovered-project' as const,
+      file: context.discoveredConfigPath,
+    });
+  }
+
+  if (request.scope === 'project' || context.projectRoot !== null) {
+    return Object.freeze({
+      state: 'selected' as const,
+      source: 'project-default' as const,
+      file: join(context.projectRoot ?? context.effectiveCwd, MANIFEST_NAME),
+    });
+  }
+
+  return Object.freeze({
+    state: 'selected' as const,
+    source: 'user-default' as const,
+    file: join(paths.xdg.config, USER_DIRECTORY, MANIFEST_NAME),
+  });
+};
 
 /**
  * Build the complete read-only artifact view for one already-resolved project context.

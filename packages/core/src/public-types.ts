@@ -182,6 +182,7 @@ export type {
 export type {
   ClockPort,
   DetectionPorts,
+  FileMetadataReadPort,
   FileReadPort,
   FileWritePort,
   GitBlobRequest,
@@ -247,6 +248,7 @@ export type {
   PluginProvenanceScope,
   SkillEntry,
 } from './skills/types.ts';
+export type * from './status/types.ts';
 export type {
   ModeResult,
   ModeStatus,

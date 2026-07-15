@@ -96,6 +96,7 @@ export type {
   EnabledState,
   ExecOptions,
   ExecResult,
+  FileMetadataReadPort,
   FileReadPort,
   FileWritePort,
   Finding,
@@ -255,6 +256,7 @@ export { listCommands } from './scan/list-commands.ts';
 export { listSkills } from './scan/list-skills.ts';
 export { resolveTargetSelection, validateSelectionRequest } from './selection/resolve.ts';
 export { SELECTION_CAPABILITIES } from './selection/types.ts';
+export * from './status/index.ts';
 export { parseSkillFrontmatter } from './skills/frontmatter.ts';
 export { resolveTarget, runVerify, verifyPlugin } from './verify/run.ts';
 export { VERIFIED_AGAINST, VERIFY_TOOLS } from './verify/types.ts';

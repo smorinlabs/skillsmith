@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import { hashManifestSemantics, parseArtifactDigest } from '../../src/artifacts/hash.ts';
 import { fromLedgerV2Dto, ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
 import type { LedgerPairV1Dto, LedgerV2Dto } from '../../src/artifacts/ledger-types.ts';
 import { type PortableLockV1, serializePortableLock } from '../../src/artifacts/lock.ts';
@@ -95,7 +95,13 @@ const DATA_ROOT = join(HOME, '.local', 'share', 'skillsmith');
 const LEDGER_PATH = join(DATA_ROOT, 'placements.json');
 const CODEX_ROOT = join(HOME, '.agents', 'skills');
 const SHA = '3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80';
-const CONTENT_HASH = 'sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+const CONTENT_HASH = (() => {
+  const parsed = parseArtifactDigest(
+    'sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+  );
+  if (!parsed.ok) throw new Error('invalid status fixture content hash');
+  return parsed.value;
+})();
 const STATUS_MODULE: string = '../../src/status/index.ts';
 
 const loadReader = async (): Promise<StatusReader> => {

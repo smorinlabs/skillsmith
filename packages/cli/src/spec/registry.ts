@@ -73,6 +73,12 @@ const PROFILE: Readonly<
     capability: 'read',
     application: 'commands',
   },
+  'skillsmith status': {
+    group: 'discover',
+    question: 'How do desired, locked, ledger, and live states relate?',
+    capability: 'read',
+    application: 'status',
+  },
   'skillsmith doctor': {
     group: 'maintain',
     question: 'Is the local SkillSmith environment healthy?',
@@ -145,6 +151,7 @@ const DESCRIPTION: Readonly<Record<string, string>> = {
   'skillsmith config unset': 'Remove a config value (default scope: user)',
   'skillsmith list': 'List installed skills across tools and scopes',
   'skillsmith commands': 'List installed slash commands across tools and scopes',
+  'skillsmith status': 'Correlate desired, locked, ledger, and live skill state',
   'skillsmith doctor': 'Diagnose SkillSmith and target-tool readiness',
   'skillsmith check': 'Error-severity subset of doctor, suitable for CI',
   'skillsmith verify': 'Verify that a plugin loads under each target tool',
@@ -171,6 +178,7 @@ const ARGUMENT_DESCRIPTIONS: Readonly<Record<string, string>> = {
     'owner/repo[/name], owner/repo//path, host/owner/repo[/name], or a git URL; append @ref when needed',
   'skillsmith list:glob': 'Glob filters for installed skill names',
   'skillsmith promote:skill': 'Skill names or placement paths',
+  'skillsmith status:skill': 'Skill names or exact placement paths',
   'skillsmith uninstall:skill':
     'Installed skill names or placement paths; use scope or tool flags to disambiguate',
   'skillsmith verify:path': 'Plugin or bare skill directory',
@@ -197,6 +205,7 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith commands': ['skillsmith commands', 'skillsmith commands "git-*" --project --long'],
   'skillsmith doctor': ['skillsmith doctor', 'skillsmith doctor --all-tools --strict'],
   'skillsmith check': ['skillsmith check', 'skillsmith check --all-tools --json'],
+  'skillsmith status': ['skillsmith status', 'skillsmith status review --tool codex --check'],
   'skillsmith verify': [
     'skillsmith verify ./skills/review',
     'skillsmith verify ./plugin --deep --strict',
@@ -284,6 +293,17 @@ const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
     [1, 'one or more error findings exist'],
     [2, 'invalid tool, scope, artifact, or exit-policy selection'],
     [3, 'configuration is unreadable'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith status': exitCodes(
+    [0, 'selected status completed successfully'],
+    [1, 'status observation failed'],
+    [2, 'invalid usage or unmatched target'],
+    [3, 'manifest, lock, or ledger state is invalid'],
+    [4, 'a required read capability is unavailable'],
+    [5, 'a signed source dependency failed'],
+    [6, 'a selected path could not be read due to permissions'],
+    [7, 'the selected status product contains drift'],
     [130, 'cancelled by SIGINT'],
   ),
   'skillsmith verify': exitCodes(
@@ -402,6 +422,7 @@ export const CURRENT_COMMAND_SPECS: readonly CommandSpec[] = commandPaths.map((p
     exitCodes: commandExitCodes,
     capability: profile.capability,
     application: profile.application,
+    ...(path === 'skillsmith status' ? { reportKind: 'status' } : {}),
   });
 });
 
@@ -450,6 +471,27 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   ...scopeRelations('skillsmith list', ['user', 'project', 'system', 'managed']),
   exclusive('skillsmith commands', ['--enabled', '--disabled', '--unconfigured']),
   ...scopeRelations('skillsmith commands', ['user', 'project']),
+  exclusive('skillsmith status', ['--system', '--user', '--project', '--managed']),
+  ...scopeRelations('skillsmith status', ['system', 'user', 'project', 'managed']),
+  {
+    id: 'skillsmith.status.lockfile.requires.file',
+    command: 'skillsmith status',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  {
+    id: 'skillsmith.status.scope.single',
+    command: 'skillsmith status',
+    kind: 'cardinality',
+    subject: 'option-occurrences',
+    whenOption: '--scope',
+    option: '--scope',
+    maximum: 1,
+    label: '--scope may only be specified once',
+    description: '--scope may only be specified once',
+  },
   ...scopeRelations('skillsmith config get', ['user', 'project', 'system']),
   ...scopeRelations('skillsmith config set', ['user', 'project', 'system']),
   ...scopeRelations('skillsmith config list', ['user', 'project', 'system']),

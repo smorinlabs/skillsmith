@@ -36,6 +36,8 @@ export {
 } from './lifecycle.ts';
 export type { VerifyV1Dto } from './verify.ts';
 export { createVerifyV1Codec, toVerifyV1Dto, verifyV1Codec } from './verify.ts';
+export type { StatusV1Dto } from './status.ts';
+export { statusV1Codec, toStatusV1Dto } from './status.ts';
 export type { ManifestV1Dto } from '../../artifacts/manifest-codec.ts';
 export {
   fromManifestV1Dto,
