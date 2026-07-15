@@ -14,6 +14,7 @@ export const opencodeAgent: InventoryBundle<'opencode'> = {
   getCommandRoots,
   getPluginSkillDir,
   getPluginCommandDir,
+  resolveInventoryCollision: () => null,
 };
 
 export const opencodeAdapter = {

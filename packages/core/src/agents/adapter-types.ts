@@ -3,6 +3,7 @@ import type { InstallRecord } from '../detect/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { DetectionPorts, InventoryReadPorts, PlatformPaths } from '../ports/types.ts';
 import type { Result } from '../result.ts';
+import type { Origin } from '../skills/types.ts';
 import type { ToolVerifier, VerifyMode } from '../verify/types.ts';
 import type { Placement } from './placement-shared.ts';
 
@@ -46,6 +47,22 @@ export interface SkillRootsCtx {
   readonly configuration: import('../ports/types.ts').ResolvedRuntimeConfiguration;
 }
 
+/** Frozen, read-only surface supplied to adapter-owned inventory identity logic. */
+export interface InventoryIdentitySurface {
+  readonly name: string;
+  readonly scope: Scope;
+  readonly origin: Origin;
+  readonly rootOrdinal: number;
+  readonly root: string;
+  readonly path: string;
+  readonly realpath: string;
+}
+
+export type InventoryIdentity = (surface: InventoryIdentitySurface) => string;
+export type InventoryCollisionResolver = (
+  candidates: readonly InventoryIdentitySurface[],
+) => string | null;
+
 export interface InventoryBundle<ToolId extends string = string> {
   readonly tool: ToolId;
   readonly installHint: string;
@@ -57,6 +74,10 @@ export interface InventoryBundle<ToolId extends string = string> {
   getCommandRoots(env: PlatformPaths, scope: Scope, ctx: SkillRootsCtx): readonly string[];
   getPluginSkillDir(installPath: string): string | null;
   getPluginCommandDir(installPath: string): string | null;
+  /** Project the runtime-visible skill name. The raw scanned name is the compatible default. */
+  readonly inventoryIdentity?: InventoryIdentity;
+  /** Return the winning logical path, or null when precedence is intentionally ambiguous. */
+  readonly resolveInventoryCollision?: InventoryCollisionResolver;
 }
 
 export interface VerificationGatePolicy {

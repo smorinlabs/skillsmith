@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { InventoryReadPorts } from '../../src/ports/types.ts';
-import { listCommands } from '../../src/scan/list-commands.ts';
+import { listCommands, observeCommandPlacements } from '../../src/scan/list-commands.ts';
 
 const configuration = resolveRuntimeConfiguration({});
 
@@ -72,5 +72,72 @@ describe('listCommands', () => {
       expect(cmd?.origin.kind).toBe('plugin');
       expect(cmd?.enabled).toBe('on');
     }
+  });
+});
+
+const failingPorts = (listDirs: string[]): InventoryReadPorts => ({
+  homeDir: '/home/alice',
+  executableSearchPath: Object.freeze([]),
+  platform: 'linux',
+  xdg: Object.freeze({
+    config: '/home/alice/.config',
+    data: '/home/alice/.local/share',
+    cache: '/home/alice/.cache',
+  }),
+  fileExists: async () => true,
+  pathKind: async () => 'dir',
+  realpath: async (path) => path,
+  listDir: async (path) => {
+    listDirs.push(path);
+    throw new Error(`failed:${path}`);
+  },
+  readText: async () => '',
+  readBytes: async () => new Uint8Array(),
+  readLink: async () => '',
+  isExecutable: async () => false,
+  modifiedAt: async () => null,
+});
+
+describe('inventory command observation seam', () => {
+  test('attempts every selected root before exposing a deterministic aggregate', async () => {
+    const listDirs: string[] = [];
+    let failure: unknown;
+    try {
+      await observeCommandPlacements(failingPorts(listDirs), {
+        tools: ['claude-code'],
+        scopes: ['user', 'project'],
+        cwd: '/repo',
+        configuration,
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(listDirs).toEqual(['/home/alice/.claude/commands', '/repo/.claude/commands']);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(Object.isFrozen((failure as AggregateError).errors)).toBeTrue();
+    expect((failure as AggregateError).errors.map(String)).toEqual([
+      'Error: failed:/home/alice/.claude/commands',
+      'Error: failed:/repo/.claude/commands',
+    ]);
+  });
+
+  test('pre-cancellation wins before any root read', async () => {
+    const listDirs: string[] = [];
+    const controller = new AbortController();
+    controller.abort(new Error('private reason'));
+    let failure: unknown;
+    try {
+      await observeCommandPlacements(failingPorts(listDirs), {
+        tools: ['claude-code'],
+        scopes: ['user', 'project'],
+        cwd: '/repo',
+        configuration,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(listDirs).toEqual([]);
+    expect(failure).toEqual({ code: 'cancelled', message: 'inventory read cancelled' });
   });
 });

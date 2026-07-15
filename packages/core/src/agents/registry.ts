@@ -129,6 +129,11 @@ const validateInventory = (adapter: ToolAdapter): void => {
   ] as const) {
     requireFunction(inventory[method], `${adapter.descriptor.id} inventory.${method}`);
   }
+  for (const method of ['inventoryIdentity', 'resolveInventoryCollision'] as const) {
+    if (inventory[method] !== undefined) {
+      requireFunction(inventory[method], `${adapter.descriptor.id} inventory.${method}`);
+    }
+  }
 };
 
 const validateOperations = (adapter: ToolAdapter): void => {

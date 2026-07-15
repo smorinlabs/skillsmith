@@ -16,6 +16,7 @@ export const codexAgent: InventoryBundle<'codex'> = {
   getCommandRoots,
   getPluginSkillDir,
   getPluginCommandDir,
+  resolveInventoryCollision: () => null,
 };
 
 export const codexAdapter = {

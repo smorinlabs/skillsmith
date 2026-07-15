@@ -5,6 +5,8 @@ import { SCOPES, type Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
 import { noopLogger } from '../env/logger.ts';
 import type { SkillSmithError } from '../errors.ts';
+import { throwIfInventoryCancelled } from '../inventory/cancellation.ts';
+import type { InventoryMode } from '../inventory/types.ts';
 import { type ObservationBundle, observationFromLegacyLogger } from '../observation/index.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
@@ -19,6 +21,11 @@ export interface ListSkillsOpts {
   globs?: readonly string[];
   duplicatesOnly?: boolean;
   enabledFilter?: 'enabled-only' | 'disabled-only' | 'unconfigured-only';
+  modeFilter?: InventoryMode;
+  sourceGlob?: string;
+  revisionGlob?: string;
+  descriptionGlob?: string;
+  verificationFilter?: 'verified' | 'unverified';
   cwd: string;
   configuration: ResolvedRuntimeConfiguration;
   observation?: ObservationBundle;
@@ -68,24 +75,41 @@ const scanStandalone = async (
   tools: readonly SupportedTool[],
   scopes: readonly Scope[],
   ctx: { cwd: string; configuration: ResolvedRuntimeConfiguration },
+  signal?: AbortSignal,
 ): Promise<SkillEntry[]> => {
   const out: SkillEntry[] = [];
+  const failures: unknown[] = [];
   for (const tool of tools) {
+    throwIfInventoryCancelled(signal);
     for (const scope of scopes) {
+      throwIfInventoryCancelled(signal);
       const agent = registry[tool];
       const roots = agent.getSkillRoots(env, scope, ctx);
       const origin = standaloneOriginFor(scope);
       for (const root of roots) {
-        const entries = await walkSkillDir(env, {
-          tool,
-          scope,
-          root,
-          origin,
-          enabled: 'on',
-        });
-        out.push(...entries);
+        throwIfInventoryCancelled(signal);
+        try {
+          const entries = await walkSkillDir(env, {
+            tool,
+            scope,
+            root,
+            origin,
+            enabled: 'on',
+          });
+          out.push(...entries);
+        } catch (failure) {
+          throwIfInventoryCancelled(signal);
+          failures.push(failure);
+        }
       }
     }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    const errors = Object.freeze([...failures]);
+    const aggregate = new AggregateError(errors, 'multiple skill inventory roots failed');
+    Object.freeze(aggregate.errors);
+    throw aggregate;
   }
   return out;
 };
@@ -94,11 +118,15 @@ const scanPluginBundled = async (
   env: InventoryReadPorts,
   tools: readonly SupportedTool[],
   discovered: readonly DiscoveredPlugin[],
+  signal?: AbortSignal,
 ): Promise<SkillEntry[]> => {
   const out: SkillEntry[] = [];
+  const failures: unknown[] = [];
   for (const tool of tools) {
+    throwIfInventoryCancelled(signal);
     const agent = registry[tool];
     for (const p of discovered) {
+      throwIfInventoryCancelled(signal);
       const root = agent.getPluginSkillDir(p.installation.installPath);
       if (!root) continue;
       const origin: Origin = {
@@ -107,22 +135,35 @@ const scanPluginBundled = async (
         pluginVersion: p.installation.version,
         pluginScope: p.installation.scope,
       };
-      const entries = await walkSkillDir(env, {
-        tool,
-        scope: pluginScopeToScope(p.installation.scope),
-        root,
-        origin,
-        enabled: p.enablement.enabled,
-      });
-      out.push(...entries);
+      try {
+        const entries = await walkSkillDir(env, {
+          tool,
+          scope: pluginScopeToScope(p.installation.scope),
+          root,
+          origin,
+          enabled: p.enablement.enabled,
+        });
+        out.push(...entries);
+      } catch (failure) {
+        throwIfInventoryCancelled(signal);
+        failures.push(failure);
+      }
     }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    const errors = Object.freeze([...failures]);
+    const aggregate = new AggregateError(errors, 'multiple plugin skill inventory roots failed');
+    Object.freeze(aggregate.errors);
+    throw aggregate;
   }
   return out;
 };
 
-export const listSkills = async (
+const scanSkillPlacements = async (
   env: InventoryReadPorts,
   opts: ListSkillsOpts,
+  project: (entries: SkillEntry[], scopes: readonly Scope[]) => SkillEntry[],
 ): Promise<Result<SkillEntry[], SkillSmithError>> => {
   const tools = opts.tools ?? (Object.keys(registry) as readonly SupportedTool[]);
   const observation =
@@ -138,7 +179,9 @@ export const listSkills = async (
   let standalone: SkillEntry[] = [];
   let pluginBundled: SkillEntry[] = [];
   try {
-    standalone = await scanStandalone(env, tools, scopes, ctx);
+    throwIfInventoryCancelled(opts.signal);
+    standalone = await scanStandalone(env, tools, scopes, ctx, opts.signal);
+    throwIfInventoryCancelled(opts.signal);
     const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
     if (!discoveredR.ok) {
       observation.emitter.complete(span, {
@@ -150,7 +193,8 @@ export const listSkills = async (
       });
       return discoveredR;
     }
-    pluginBundled = await scanPluginBundled(env, tools, discoveredR.value);
+    pluginBundled = await scanPluginBundled(env, tools, discoveredR.value, opts.signal);
+    throwIfInventoryCancelled(opts.signal);
   } catch (error) {
     observation.emitter.complete(span, {
       outcome: 'failure',
@@ -162,18 +206,13 @@ export const listSkills = async (
     throw error;
   }
 
-  let all = [...standalone, ...pluginBundled];
-  all = dedupeByRealpath(all);
-  if (opts.globs && opts.globs.length > 0) all = applyGlobs(all, opts.globs);
-  if (opts.duplicatesOnly) all = filterCrossScopeDuplicates(all);
-  if (opts.enabledFilter === 'enabled-only') all = all.filter((e) => e.enabled === 'on');
-  if (opts.enabledFilter === 'disabled-only') all = all.filter((e) => e.enabled === 'off');
-  if (opts.enabledFilter === 'unconfigured-only') all = all.filter((e) => e.enabled === 'unset');
-
   // scope filter applies after plugin expansion because plugin-bundled entries
   // have their scope computed from pluginScope
   const scopeSet = new Set(scopes);
-  all = all.filter((e) => scopeSet.has(e.scope));
+  const all = project(
+    [...standalone, ...pluginBundled].filter((entry) => scopeSet.has(entry.scope)),
+    scopes,
+  );
 
   observation.emitter.complete(span, {
     outcome: 'success',
@@ -185,3 +224,30 @@ export const listSkills = async (
 
   return ok(all);
 };
+
+/** Internal all-observations seam. It intentionally does not apply legacy realpath dedupe. */
+export const observeSkillPlacements = async (
+  env: InventoryReadPorts,
+  opts: ListSkillsOpts,
+): Promise<Result<SkillEntry[], SkillSmithError>> =>
+  scanSkillPlacements(env, opts, (entries) => entries);
+
+export const listSkills = async (
+  env: InventoryReadPorts,
+  opts: ListSkillsOpts,
+): Promise<Result<SkillEntry[], SkillSmithError>> =>
+  scanSkillPlacements(env, opts, (entries) => {
+    let projected = dedupeByRealpath(entries);
+    if (opts.globs && opts.globs.length > 0) projected = applyGlobs(projected, opts.globs);
+    if (opts.duplicatesOnly) projected = filterCrossScopeDuplicates(projected);
+    if (opts.enabledFilter === 'enabled-only') {
+      projected = projected.filter((entry) => entry.enabled === 'on');
+    }
+    if (opts.enabledFilter === 'disabled-only') {
+      projected = projected.filter((entry) => entry.enabled === 'off');
+    }
+    if (opts.enabledFilter === 'unconfigured-only') {
+      projected = projected.filter((entry) => entry.enabled === 'unset');
+    }
+    return projected;
+  });
