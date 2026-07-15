@@ -938,7 +938,7 @@ Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD
 
 ## P17-G3B-02 — Lock hierarchy, deterministic scheduler, coordinator, and partial-pair semantics
 
-Phase: 3B; status: **ready**; dependencies: P17-G3B-01.
+Phase: 3B; status: **active**; dependencies: P17-G3B-01.
 Required-now validations: EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-OPT-TS04, EWP-P3B-TS01, EWP-P3B-TS03, EWP-WF15.
 Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-SYNC-TS01, EWP-CMD-SYNC-TS02, EWP-CMD-SYNC-TS03, EWP-CMD-SYNC-TS04, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-SYNC-TS09, EWP-CMD-SYNC-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-CMD-UNINSTALL-TS01, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS05, EWP-CMD-UNINSTALL-TS06, EWP-CMD-UNINSTALL-TS07, EWP-CMD-UPDATE-TS01, EWP-CMD-UPDATE-TS02, EWP-CMD-UPDATE-TS03, EWP-CMD-UPDATE-TS04, EWP-CMD-UPDATE-TS05, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-CMD-UPDATE-TS10, EWP-P4A-TS02, EWP-P5-TS05, EWP-WF05, EWP-WF09, EWP-WF10, EWP-WF13.
 
@@ -946,7 +946,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 - [x] P17-G3B-02:mapped _(passed)_
 - [x] P17-G3B-02:ready _(passed)_
-- [ ] P17-G3B-02:test-first _(pending)_
+- [x] P17-G3B-02:test-first _(passed)_
 - [ ] P17-G3B-02:minimal-implementation _(pending)_
 - [ ] P17-G3B-02:targeted-green _(pending)_
 - [ ] P17-G3B-02:impacted-green _(pending)_
@@ -959,8 +959,8 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 - [ ] **EWP-CF-005** — Define declaration-group and placement transaction boundaries _(finding; planned)_
 - [ ] **EWP-CF-026** — Use one deterministic batch scheduler for every multi-target mutator _(finding; planned)_
-- [ ] **EWP-P3B-T02** — Shared mutation-lock hierarchy, operation preconditions, and transaction coordinator with deterministic group/pair scheduling for live placement, manifest, lock, and ledger commit points. _(phase-task; ready)_
-- [ ] **EWP-P3B-TS03** — Lock ordering, concurrent-process exclusion, per-pair partial failure, and crash/resume tests at the existing ledger/live boundaries, including identical user/project names and fail-fast/continue/cancellation scheduling. _(phase-test; planned)_
+- [ ] **EWP-P3B-T02** — Shared mutation-lock hierarchy, operation preconditions, and transaction coordinator with deterministic group/pair scheduling for live placement, manifest, lock, and ledger commit points. _(phase-task; red)_
+- [ ] **EWP-P3B-TS03** — Lock ordering, concurrent-process exclusion, per-pair partial failure, and crash/resume tests at the existing ledger/live boundaries, including identical user/project names and fail-fast/continue/cancellation scheduling. _(phase-test; failing)_
 
 ## P17-G3B-03 — Ledger writer, journals, recovery/resume/abort, history, and deterministic repair
 

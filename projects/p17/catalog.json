@@ -4145,7 +4145,7 @@
       "phase": "3B",
       "title": "Lock hierarchy, deterministic scheduler, coordinator, and partial-pair semantics",
       "dependsOn": ["P17-G3B-01"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "CHANGELOG.md",
@@ -4431,8 +4431,8 @@
           "evidence": ["projects/p17/evidence/P17-G3B-02.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-02.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -4466,7 +4466,8 @@
       "evidence": [
         "projects/p17/plans/P17-G3B-02.md",
         "projects/p17/evidence/P17-G3B-02.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G3B-02.md#ready-plan"
+        "projects/p17/evidence/P17-G3B-02.md#ready-plan",
+        "projects/p17/evidence/P17-G3B-02.md#test-first-evidence"
       ]
     },
     {
@@ -18951,11 +18952,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-02",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3B-02.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-02.md#ready-plan",
+        "projects/p17/evidence/P17-G3B-02.md#test-first-evidence"
+      ],
       "secondaryGroups": ["P17-G3B-01"],
       "implements": ["EWP-CF-005", "EWP-CF-026"],
       "validatedBy": ["EWP-P3B-TS01", "EWP-P3B-TS03"],
@@ -19350,18 +19354,29 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-02:tests/ergonomics/phase/EWP-P3B-TS03.test.ts#EWP-P3B-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P3B-TS03.test.ts",
+        "selector": "EWP-P3B-TS03",
+        "command": "bun test tests/ergonomics/phase/EWP-P3B-TS03.test.ts --test-name-pattern EWP-P3B-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3B-02.md#red-execution-receipt-ewp-p3b-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS03"],
       "impactedValidations": ["EWP-P3B-TS03"],
       "affectedContracts": ["EWP-CF-005", "EWP-CF-026"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P3B-TS03.test.ts --test-name-pattern EWP-P3B-TS03"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/fixtures/p3b-ts03/cases.json",
+        "tests/ergonomics/fixtures/p3b-ts03/worker.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS03.test.ts"
+      ]
     },
     {
       "id": "EWP-P3B-TS04",
