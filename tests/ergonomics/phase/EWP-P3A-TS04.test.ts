@@ -13,8 +13,8 @@ const EXPECTED_FIXTURES = Object.freeze({
     sha256: 'sha256:b74c036389944872147ba4eef4eded5a2fae78c34340ffcdfe2acc2d9ca98666',
   }),
   'status-human.golden.txt': Object.freeze({
-    bytes: 6421,
-    sha256: 'sha256:ee46d0d201a6b5b97f7171bdec79d8c85fe544547e90e95bc43f75873fc8a437',
+    bytes: 6671,
+    sha256: 'sha256:d1093ccc0bec667959897a591224508c63f67bb3a48e5695929437aac1526803',
   }),
   'status-v1.golden.json': Object.freeze({
     bytes: 40893,

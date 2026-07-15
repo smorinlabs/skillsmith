@@ -6,11 +6,16 @@ import type {
   LedgerPairV1Dto,
   LegacyPairJournalV1Dto,
 } from '../artifacts/ledger-types.ts';
-import { type PortableLockV1, correlatePortableLock } from '../artifacts/lock.ts';
+import {
+  type PortableLockFact,
+  type PortableLockV1,
+  correlatePortableLock,
+} from '../artifacts/lock.ts';
 import type { ArtifactReadResult } from '../artifacts/repository.ts';
 import type { NormalizedManifestDeclaration, NormalizedManifestV1 } from '../artifacts/types.ts';
 import { SCOPES, type Scope } from '../config/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import { STATUS_FACT_AUTHORITY, STATUS_FACT_CODES } from './types.ts';
 import type {
   StatusArtifactRelationship,
   StatusBrokenReason,
@@ -21,6 +26,7 @@ import type {
   StatusJournalState,
   StatusLedgerObservation,
   StatusLedgerSummary,
+  StatusLegacyExpectedNode,
   StatusLegacyObservedNode,
   StatusLegacyRetentionRequirement,
   StatusLiveClass,
@@ -126,40 +132,9 @@ interface MutableEntry {
 const FILTER_NOOP_REASON = 'valid selection was reduced to zero by active filters' as const;
 const TOOL_ORDER = new Map<string, number>(SUPPORTED_TOOLS.map((tool, index) => [tool, index]));
 const SCOPE_ORDER = new Map<string, number>(SCOPES.map((scope, index) => [scope, index]));
-const FACT_ORDER = [
-  'manifest-only',
-  'lock-only',
-  'ledger-only',
-  'live-only',
-  'lock-missing-entry',
-  'lock-extra-entry',
-  'lock-manifest-hash',
-  'lock-source',
-  'lock-ref',
-  'lock-source-path',
-  'live-missing',
-  'live-undeclared',
-  'ledger-missing',
-  'source-drift',
-  'revision-drift',
-  'content-drift',
-  'placement-drift',
-  'broken-live',
-  'shadowed',
-  'duplicate-live',
-  'journal-pending',
-  'journal-committed',
-  'retention-missing',
-  'retention-mismatch',
-  'retention-unverified',
-  'retention-incomplete',
-  'ledger-migration-pending',
-  'verify-passed',
-  'verify-warned',
-  'verify-skipped',
-  'verify-unrecorded',
-] as const satisfies readonly StatusFactCode[];
-const FACT_RANK = new Map<StatusFactCode, number>(FACT_ORDER.map((code, index) => [code, index]));
+const FACT_RANK = new Map<StatusFactCode, number>(
+  STATUS_FACT_CODES.map((code, index) => [code, index]),
+);
 
 const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
   if (typeof value !== 'object' || value === null || seen.has(value)) return value;
@@ -172,34 +147,11 @@ const compare = (left: string, right: string): number => (left < right ? -1 : le
 const uniqueSorted = (values: readonly string[]): readonly string[] =>
   Object.freeze([...new Set(values)].sort(compare));
 
-const factContract = (code: StatusFactCode): Pick<StatusFact, 'subject' | 'impact'> => {
-  if (code === 'manifest-only') return { subject: 'manifest', impact: 'drift' };
-  if (code === 'lock-only' || code.startsWith('lock-')) return { subject: 'lock', impact: 'drift' };
-  if (
-    code === 'ledger-only' ||
-    code === 'ledger-missing' ||
-    code === 'source-drift' ||
-    code === 'revision-drift' ||
-    code === 'content-drift'
-  ) {
-    return { subject: 'ledger', impact: 'drift' };
-  }
-  if (code === 'ledger-migration-pending') return { subject: 'ledger', impact: 'info' };
-  if (code.startsWith('verify-')) return { subject: 'verification', impact: 'info' };
-  if (code === 'shadowed' || code === 'duplicate-live')
-    return { subject: 'shadow', impact: 'drift' };
-  if (code === 'journal-committed') return { subject: 'journal', impact: 'info' };
-  if (code.startsWith('journal-') || code.startsWith('retention-')) {
-    return { subject: 'journal', impact: 'drift' };
-  }
-  return { subject: 'live', impact: 'drift' };
-};
-
 const makeFact = (
   code: StatusFactCode,
   expected: string | null,
   actual: string | null,
-): StatusFact => ({ code, ...factContract(code), expected, actual });
+): StatusFact => ({ code, ...STATUS_FACT_AUTHORITY[code], expected, actual });
 
 const sortFacts = (facts: readonly StatusFact[]): readonly StatusFact[] =>
   Object.freeze(
@@ -314,25 +266,34 @@ const statusLocked = (value: PortableLockV1['skills'][number]): StatusLockedStat
 const selectedTool = (tool: string, input: StatusJoinInput): boolean =>
   input.request.tools.includes(tool as (typeof input.request.tools)[number]);
 
+/** One pure authority for known pair tools and forward-compatible unbounded v2 pair tools. */
+export const selectedStatusPairTool = (
+  tool: string,
+  request: Pick<StatusReadRequest, 'tools' | 'toolSelectionSource'>,
+): boolean =>
+  TOOL_ORDER.has(tool)
+    ? request.tools.includes(tool as (typeof request.tools)[number])
+    : request.toolSelectionSource === 'unbounded-default';
+
 const selectedScope = (scope: Scope, input: StatusJoinInput): boolean =>
   input.request.scopes.includes(scope);
 
-const collectLedger = (input: StatusJoinInput): readonly LedgerCandidate[] => {
-  if (input.ledger.state === 'absent') return [];
+const collectLedger = (
+  input: StatusJoinInput,
+): Readonly<{ selected: readonly LedgerCandidate[]; filtered: ReadonlySet<string> }> => {
+  const filtered = new Set<string>();
+  if (input.ledger.state === 'absent') return { selected: [], filtered };
   const candidates: LedgerCandidate[] = [];
   const append = (
     skills: LedgerModel['skills'],
     scope: 'user' | 'project',
     projectIdentity: string | null,
   ): void => {
-    if (!selectedScope(scope, input)) return;
     for (const [name, skill] of Object.entries(skills)) {
       for (const [tool, pair] of Object.entries(skill.tools)) {
-        const known = TOOL_ORDER.has(tool);
-        if (
-          (known && !selectedTool(tool, input)) ||
-          (!known && input.request.toolSelectionSource !== 'unbounded-default')
-        ) {
+        if (!selectedScope(scope, input) || !selectedStatusPairTool(tool, input.request)) {
+          filtered.add(name);
+          filtered.add(pair.placementPath);
           continue;
         }
         candidates.push({ name, tool, scope, projectIdentity, pair });
@@ -346,7 +307,7 @@ const collectLedger = (input: StatusJoinInput): readonly LedgerCandidate[] => {
       append(project.skills, 'project', input.request.projectPlacement.identity);
     }
   }
-  return candidates;
+  return { selected: candidates, filtered };
 };
 
 const collectDesired = (
@@ -569,7 +530,11 @@ const ledgerObservation = (pair: LedgerPairV1Dto): StatusLedgerObservation => ({
   source:
     pair.origin === undefined
       ? null
-      : { host: pair.origin.host, repository: pair.origin.repo, path: pair.origin.skillPath },
+      : {
+          host: pair.origin.host,
+          repository: pair.origin.repo,
+          path: pair.origin.skillPath === '' ? null : pair.origin.skillPath,
+        },
   requestedRef: pair.origin?.refRequested ?? null,
   resolvedRevision: pair.origin?.refResolved ?? pair.pinned?.gitSha ?? pair.pinned?.rev ?? null,
   contentHash: pair.pinned?.contentHash ?? null,
@@ -730,16 +695,21 @@ const factsForRow = (
         : row.journal.reverseEligibility;
     if (eligibility === 'retention-incomplete') {
       facts.push(makeFact('retention-incomplete', 'complete', 'incomplete'));
-    }
-    for (const requirement of row.journal.retention) {
-      if (requirement.state === 'satisfied') continue;
-      facts.push(
-        makeFact(
-          `retention-${requirement.state}`,
-          JSON.stringify([requirement.resourceId, requirement.path]),
-          requirement.state,
-        ),
-      );
+    } else if (
+      eligibility === 'retention-missing' ||
+      eligibility === 'retention-mismatch' ||
+      eligibility === 'retention-unverified'
+    ) {
+      for (const requirement of row.journal.retention) {
+        if (requirement.state === 'satisfied') continue;
+        facts.push(
+          makeFact(
+            `retention-${requirement.state}`,
+            JSON.stringify([requirement.resourceId, requirement.path]),
+            requirement.state,
+          ),
+        );
+      }
     }
   }
   facts.push(makeFact(`verify-${verification}`, 'recorded', verification));
@@ -779,6 +749,21 @@ const setShadows = (entries: Map<string, MutableEntry>): void => {
 const journalBefore = (pair: LedgerPairV1Dto): 'dev' | 'pinned' | 'absent' | 'multi-resource' =>
   pair.journal?.before.mode ?? 'multi-resource';
 
+const legacyLiveMatches = (
+  live: StatusLiveInput | null,
+  journal: LegacyPairJournalV1Dto,
+): boolean => {
+  if (journal.before.mode === 'absent') return live === null;
+  if (live === null) return false;
+  const observed = live.observation;
+  if (journal.before.mode === 'dev') {
+    return observed.nodeKind === 'symlink' && observed.linkTarget === journal.before.symlinkTarget;
+  }
+  return journal.before.liveKind === 'symlink'
+    ? observed.nodeKind === 'symlink' && observed.linkTarget === journal.before.symlinkTarget
+    : observed.nodeKind === 'directory';
+};
+
 const legacyExpectedNode = (
   journal: LegacyPairJournalV1Dto,
   role: 'backup' | 'store',
@@ -801,67 +786,112 @@ const legacyExpectedNode = (
     : { kind: 'directory', linkTarget: null };
 };
 
+export interface LegacyStatusRetentionPlan {
+  readonly role: 'backup' | 'store';
+  readonly sourceRole: 'live' | null;
+  readonly path: string;
+  readonly expected: StatusLegacyExpectedNode;
+  readonly contentHash: string | null;
+}
+
+/**
+ * Shared legacy retention authority. The reader uses this to avoid observing digests that the
+ * correlated join will discard, while the join uses the same expected-node/content decision.
+ */
+export const legacyStatusRetentionPlan = (
+  pair: LedgerPairV1Dto,
+  live: StatusLiveInput | null,
+): readonly LegacyStatusRetentionPlan[] => {
+  const journal = pair.journal;
+  if (journal === undefined || journal === null) return [];
+  const committedPinnedDev =
+    journal.phase === 'committed' &&
+    journal.op === 'dev' &&
+    journal.before.mode === 'pinned' &&
+    journal.before.storePath !== null;
+  const resources: Array<
+    Readonly<{ role: 'backup' | 'store'; path: string; contentHash: string | null }>
+  > = committedPinnedDev
+    ? [
+        {
+          role: 'store',
+          path: journal.before.storePath as string,
+          contentHash: journal.before.contentHash,
+        },
+      ]
+    : [
+        {
+          role: 'backup',
+          path: journal.backupPath,
+          contentHash: journal.before.mode === 'pinned' ? journal.before.contentHash : null,
+        },
+      ];
+  const liveMatches = legacyLiveMatches(live, journal);
+  return resources.map((resource) => {
+    const expected = legacyExpectedNode(journal, resource.role, liveMatches);
+    return Object.freeze({
+      role: resource.role,
+      sourceRole: resource.role === 'backup' ? ('live' as const) : null,
+      path: resource.path,
+      expected,
+      contentHash: expected.kind === 'directory' ? resource.contentHash : null,
+    });
+  });
+};
+
 const legacyRetention = (
   journal: LegacyPairJournalV1Dto,
   input: StatusJoinInput,
   row: MutableRow,
 ): readonly StatusLegacyRetentionRequirement[] => {
-  const resources: Array<
-    Readonly<{
-      role: 'backup' | 'store';
-      path: string;
-      contentHash: string | null;
-    }>
-  > = [
-    {
-      role: 'backup',
-      path: journal.backupPath,
-      contentHash: journal.before.mode === 'pinned' ? journal.before.contentHash : null,
-    },
-  ];
-  if (
-    journal.phase === 'committed' &&
-    journal.op === 'dev' &&
-    journal.before.mode === 'pinned' &&
-    journal.before.storePath !== null
-  ) {
-    resources.push({
-      role: 'store',
-      path: journal.before.storePath,
-      contentHash: journal.before.contentHash,
-    });
-  }
+  const resources = legacyStatusRetentionPlan(row.ledger as LedgerPairV1Dto, row.live);
   return resources.map((resource): StatusLegacyRetentionRequirement => {
-    const expected = legacyExpectedNode(journal, resource.role, legacyLiveMatches(row, journal));
-    const expectedContentHash = expected.kind === 'absent' ? null : resource.contentHash;
+    const expected = resource.expected;
+    const expectedContentHash = resource.contentHash;
     const probe = input.retention.find(
       (candidate) =>
         candidate.transactionId === journal.txId &&
         candidate.resourceId === null &&
         candidate.path === resource.path,
     );
+    const rawPathState = probe?.pathState ?? 'unverified';
+    const observedAbsent =
+      rawPathState === 'missing' ||
+      (probe?.node.state === 'observed' && probe.node.kind === 'absent');
+    const pathState =
+      rawPathState === 'unverified' || probe?.node.state !== 'observed'
+        ? ('unverified' as const)
+        : observedAbsent
+          ? expected.kind === 'absent'
+            ? ('satisfied' as const)
+            : ('missing' as const)
+          : ('satisfied' as const);
     const observedNode: StatusLegacyObservedNode | null =
-      probe?.node.state !== 'observed'
+      pathState === 'unverified'
         ? null
-        : probe.node.kind === 'symlink'
-          ? { kind: 'symlink', linkTarget: probe.node.linkTarget ?? '' }
-          : probe.node.kind === 'directory'
-            ? { kind: 'directory', linkTarget: null }
-            : probe.node.kind === 'absent'
-              ? { kind: 'absent', linkTarget: null }
-              : { kind: probe.node.kind, linkTarget: null };
+        : observedAbsent
+          ? { kind: 'absent', linkTarget: null }
+          : probe?.node.state === 'observed' && probe.node.kind === 'symlink'
+            ? { kind: 'symlink', linkTarget: probe.node.linkTarget ?? '' }
+            : probe?.node.state === 'observed' && probe.node.kind === 'directory'
+              ? { kind: 'directory', linkTarget: null }
+              : probe?.node.state === 'observed' &&
+                  (probe.node.kind === 'file' || probe.node.kind === 'other')
+                ? { kind: probe.node.kind, linkTarget: null }
+                : null;
     const structural: StatusLegacyRetentionRequirement['structural'] =
-      probe?.node.state !== 'observed'
+      pathState === 'unverified'
         ? { state: 'unverified', expected, observed: null }
-        : probe.node.kind === 'absent' && expected.kind !== 'absent'
+        : pathState === 'missing'
           ? {
               state: 'missing',
-              expected,
+              expected: expected as Exclude<StatusLegacyExpectedNode, { readonly kind: 'absent' }>,
               observed: { kind: 'absent', linkTarget: null },
             }
           : {
               state:
-                probe.node.kind === expected.kind && probe.node.linkTarget === expected.linkTarget
+                observedNode?.kind === expected.kind &&
+                observedNode.linkTarget === expected.linkTarget
                   ? 'satisfied'
                   : 'mismatch',
               expected,
@@ -875,29 +905,42 @@ const legacyRetention = (
             expected: null,
             observed: null,
           } as const)
-        : probe?.contentHash.state === 'observed'
+        : pathState === 'missing'
           ? ({
-              state: probe.contentHash.digest === expectedContentHash ? 'satisfied' : 'mismatch',
-              domain: 'source-content',
-              expected: expectedContentHash,
-              observed: probe.contentHash.digest,
-            } as const)
-          : ({
-              state: probe?.contentHash.state === 'missing' ? 'missing' : 'unverified',
+              state: 'missing',
               domain: 'source-content',
               expected: expectedContentHash,
               observed: null,
-            } as const);
-    const pathState =
-      expected.kind === 'absent' && probe?.node.state === 'observed' && probe.node.kind === 'absent'
-        ? ('satisfied' as const)
-        : (probe?.pathState ?? 'unverified');
+            } as const)
+          : pathState === 'unverified'
+            ? ({
+                state: 'unverified',
+                domain: 'source-content',
+                expected: expectedContentHash,
+                observed: null,
+              } as const)
+            : probe?.contentHash.state === 'observed'
+              ? ({
+                  state:
+                    probe.contentHash.digest === expectedContentHash ? 'satisfied' : 'mismatch',
+                  domain: 'source-content',
+                  expected: expectedContentHash,
+                  observed: probe.contentHash.digest,
+                } as const)
+              : ({
+                  state: 'unverified',
+                  domain: 'source-content',
+                  expected: expectedContentHash,
+                  observed: null,
+                } as const);
     const state =
-      structural.state === 'missing' || contentHash.state === 'missing'
+      pathState === 'missing' || structural.state === 'missing' || contentHash.state === 'missing'
         ? ('missing' as const)
         : structural.state === 'mismatch' || contentHash.state === 'mismatch'
           ? ('mismatch' as const)
-          : structural.state === 'unverified' || contentHash.state === 'unverified'
+          : pathState === 'unverified' ||
+              structural.state === 'unverified' ||
+              contentHash.state === 'unverified'
             ? ('unverified' as const)
             : ('satisfied' as const);
     return {
@@ -937,18 +980,6 @@ const retentionEligibility = (
   return 'eligible';
 };
 
-const legacyLiveMatches = (row: MutableRow, journal: LegacyPairJournalV1Dto): boolean => {
-  if (journal.before.mode === 'absent') return row.live === null;
-  if (row.live === null) return false;
-  const observed = row.live.observation;
-  if (journal.before.mode === 'dev') {
-    return observed.nodeKind === 'symlink' && observed.linkTarget === journal.before.symlinkTarget;
-  }
-  return journal.before.liveKind === 'symlink'
-    ? observed.nodeKind === 'symlink' && observed.linkTarget === journal.before.symlinkTarget
-    : observed.nodeKind === 'directory';
-};
-
 const legacyEligibility = (
   row: MutableRow,
   journal: LegacyPairJournalV1Dto,
@@ -962,7 +993,7 @@ const legacyEligibility = (
   const backup = retention[0];
   const store = retention.find((requirement) => requirement.role === 'store');
   if (journal.phase === 'prepared' || journal.phase === 'staged') {
-    if (journal.before.mode !== 'absent' && !legacyLiveMatches(row, journal)) {
+    if (journal.before.mode !== 'absent' && !legacyLiveMatches(row.live, journal)) {
       return 'not-reversible';
     }
     return backup === undefined ? 'not-reversible' : retentionEligibility([backup]);
@@ -1027,13 +1058,46 @@ const attachLegacyJournals = (rows: Map<string, MutableRow[]>, input: StatusJoin
   }
 };
 
-const logicalPath = (journal: LogicalJournalV1Dto): string | null => {
+export interface LogicalJournalMembership {
+  readonly name: string;
+  readonly tool: string;
+  readonly scope: 'user' | 'project';
+  readonly projectIdentity: string | null;
+  readonly path: string | null;
+}
+
+/** One pure authority for the pair identity shared by journal probing and report projection. */
+export const logicalJournalMembership = (
+  journal: LogicalJournalV1Dto,
+): LogicalJournalMembership | null => {
+  if (
+    journal.intent.skill === null ||
+    journal.intent.tool === null ||
+    journal.intent.scope === null
+  ) {
+    return null;
+  }
   const paths = new Set(
     [...journal.actual.before, ...journal.actual.after]
       .filter((resource) => resource.role === 'live')
       .map((resource) => resource.placementPath),
   );
-  return paths.size === 1 ? ([...paths][0] ?? null) : null;
+  const roots = new Set<string | null>();
+  for (const image of [journal.intent.before, journal.intent.after]) {
+    if ((image.kind === 'placement' || image.kind === 'absent') && image.resource.kind === 'live') {
+      const root = image.resource.projectRoot;
+      if (root !== null && root.kind !== 'machine-bound') return null;
+      roots.add(root === null ? null : root.path);
+    }
+  }
+  if (roots.size !== 1) return null;
+  return {
+    name: journal.intent.skill,
+    tool: journal.intent.tool,
+    scope: journal.intent.scope,
+    projectIdentity: [...roots][0] ?? null,
+    path: paths.size === 1 ? ([...paths][0] ?? null) : null,
+  };
 };
 
 const logicalBefore = (
@@ -1273,18 +1337,6 @@ type RankedJournalCandidate =
       candidate: LegacyPairJournalV1Dto;
     }>;
 
-const journalProjectRoot = (journal: LogicalJournalV1Dto): string | null | undefined => {
-  const roots = new Set<string | null>();
-  for (const image of [journal.intent.before, journal.intent.after]) {
-    if ((image.kind === 'placement' || image.kind === 'absent') && image.resource.kind === 'live') {
-      const root = image.resource.projectRoot;
-      if (root !== null && root.kind !== 'machine-bound') return undefined;
-      roots.add(root === null ? null : root.path);
-    }
-  }
-  return roots.size === 1 ? [...roots][0] : undefined;
-};
-
 const collectLogicalJournals = (input: StatusJoinInput): readonly LogicalJournalCandidate[] => {
   if (input.ledger.state === 'absent') return [];
   const values = [
@@ -1297,30 +1349,30 @@ const collectLogicalJournals = (input: StatusJoinInput): readonly LogicalJournal
   const candidates: LogicalJournalCandidate[] = [];
   for (const value of values) {
     const { journal } = value;
+    const membership = logicalJournalMembership(journal);
     if (
-      journal.intent.skill === null ||
-      journal.intent.tool === null ||
-      journal.intent.scope === null ||
-      !selectedTool(journal.intent.tool, input) ||
-      !selectedScope(journal.intent.scope, input)
+      membership === null ||
+      !selectedTool(membership.tool, input) ||
+      !selectedScope(membership.scope, input)
     ) {
       continue;
     }
     let projectIdentity: string | null = null;
-    if (journal.intent.scope === 'project') {
+    if (membership.scope === 'project') {
       if (input.request.projectPlacement.state === 'unselected') continue;
-      const root = journalProjectRoot(journal);
-      if (root !== input.request.projectPlacement.identity) continue;
+      if (membership.projectIdentity !== input.request.projectPlacement.identity) continue;
       projectIdentity = input.request.projectPlacement.identity;
+    } else if (membership.projectIdentity !== null) {
+      continue;
     }
     const candidate: LogicalJournalCandidate = {
       journal,
       pending: value.pending && journal.phase !== 'committed',
-      name: journal.intent.skill,
-      tool: journal.intent.tool,
-      scope: journal.intent.scope,
+      name: membership.name,
+      tool: membership.tool,
+      scope: membership.scope,
       projectIdentity,
-      path: logicalPath(journal),
+      path: membership.path,
     };
     if (
       input.request.selectionSource === 'explicit-targets' &&
@@ -1334,15 +1386,61 @@ const collectLogicalJournals = (input: StatusJoinInput): readonly LogicalJournal
   return candidates;
 };
 
+const collectFilteredLogicalMembership = (input: StatusJoinInput): ReadonlySet<string> => {
+  const filtered = new Set<string>();
+  if (input.ledger.state === 'absent') return filtered;
+  const journals = [
+    ...Object.values(input.ledger.model.transactions),
+    ...input.ledger.model.history,
+  ];
+  for (const journal of journals) {
+    const membership = logicalJournalMembership(journal);
+    if (membership === null) continue;
+    const path = membership.path;
+    if (
+      input.request.selectionSource === 'explicit-targets' &&
+      !input.request.targets.includes(membership.name) &&
+      (path === null || !input.request.targets.includes(path))
+    ) {
+      continue;
+    }
+    if (membership.scope === 'user') {
+      if (membership.projectIdentity !== null) continue;
+    } else if (input.request.projectPlacement.state === 'unselected') {
+      filtered.add(membership.name);
+      if (path !== null) filtered.add(path);
+      continue;
+    } else if (membership.projectIdentity !== input.request.projectPlacement.identity) {
+      continue;
+    }
+    if (!selectedScope(membership.scope, input) || !selectedTool(membership.tool, input)) {
+      filtered.add(membership.name);
+      if (path !== null) filtered.add(path);
+    }
+  }
+  return filtered;
+};
+
 const attachLogicalJournals = (
   rows: Map<string, MutableRow[]>,
   input: StatusJoinInput,
-): readonly StatusUnmatchedJournal[] => {
+): Readonly<{
+  unmatched: readonly StatusUnmatchedJournal[];
+  reportLevelNames: ReadonlySet<string>;
+}> => {
+  const concretePaths = new Map<string, ReadonlySet<string>>(
+    [...rows].map(([key, values]) => [
+      key,
+      new Set(values.flatMap((row) => (row.path === null ? [] : [row.path]))),
+    ]),
+  );
   const candidates = collectLogicalJournals(input);
   const unmatched: StatusUnmatchedJournal[] = [];
+  const reportLevelNames = new Set<string>();
   const grouped = new Map<string, LogicalJournalCandidate[]>();
   for (const candidate of candidates) {
     if (candidate.path === null) {
+      reportLevelNames.add(candidate.name);
       unmatched.push({
         format: 'logical',
         operation: candidate.journal.intent.kind,
@@ -1367,6 +1465,26 @@ const attachLogicalJournals = (
     const seed = candidatesAtPath[0];
     if (seed === undefined || seed.path === null) continue;
     const group = rowGroupKey(seed.name, seed.tool, seed.scope, seed.projectIdentity);
+    const selectedByNameOnly =
+      input.request.selectionSource === 'explicit-targets' &&
+      input.request.targets.includes(seed.name) &&
+      !input.request.targets.includes(seed.path);
+    const concreteAtOtherPlacement =
+      concretePaths.get(group)?.size !== undefined &&
+      (concretePaths.get(group)?.size ?? 0) > 0 &&
+      !concretePaths.get(group)?.has(seed.path);
+    if (selectedByNameOnly && concreteAtOtherPlacement) {
+      for (const candidate of candidatesAtPath) {
+        unmatched.push({
+          format: 'logical',
+          operation: candidate.journal.intent.kind,
+          transactionId: candidate.journal.transactionId,
+          phase: candidate.journal.phase,
+          reason: 'unselected-placement',
+        });
+      }
+      continue;
+    }
     let values = rows.get(group);
     if (values === undefined) {
       values = [];
@@ -1398,8 +1516,8 @@ const attachLogicalJournals = (
       (left, right) =>
         Number(right.pending) - Number(left.pending) ||
         compare(right.timestamp, left.timestamp) ||
-        (left.format === right.format ? 0 : left.format === 'logical' ? -1 : 1) ||
-        compare(left.transactionId, right.transactionId),
+        compare(left.transactionId, right.transactionId) ||
+        (left.format === right.format ? 0 : left.format === 'logical' ? -1 : 1),
     );
     const winner = ranked[0];
     if (winner?.format === 'logical') {
@@ -1425,10 +1543,13 @@ const attachLogicalJournals = (
       );
     }
   }
-  return unmatched.sort(
-    (left, right) =>
-      compare(left.transactionId, right.transactionId) || compare(left.reason, right.reason),
-  );
+  return {
+    unmatched: unmatched.sort(
+      (left, right) =>
+        compare(left.transactionId, right.transactionId) || compare(left.reason, right.reason),
+    ),
+    reportLevelNames,
+  };
 };
 
 const relationshipFor = (
@@ -1442,41 +1563,69 @@ const relationshipFor = (
   if (manifestPresent && input.manifest.sourceVersion === 'legacy') {
     return lockPresent && selectedNames.size > 0 ? { state: 'lock-only' } : { state: 'none' };
   }
-  if (selectedNames.size === 0) {
-    return manifestPresent && input.manifest.model.skills.length === 0 && !lockPresent
+  const manifestNames = new Set(
+    manifestPresent ? input.manifest.model.skills.map((skill) => skill.name) : [],
+  );
+  const lockNames = new Set(lockPresent ? input.lock.model.skills.map((skill) => skill.name) : []);
+  const selectedManifest = [...selectedNames].some((name) => manifestNames.has(name));
+  const selectedLock = [...selectedNames].some((name) => lockNames.has(name));
+  if (manifestPresent && !lockPresent) {
+    return input.manifest.model.skills.length === 0 || selectedManifest
       ? { state: 'missing-lock' }
       : { state: 'none' };
   }
-  if (manifestPresent && !lockPresent) return { state: 'missing-lock' };
-  if (!manifestPresent && lockPresent) return { state: 'lock-only' };
+  if (!manifestPresent && lockPresent) {
+    return selectedLock ? { state: 'lock-only' } : { state: 'none' };
+  }
   if (!manifestPresent || !lockPresent) return { state: 'none' };
   const relationship = correlatePortableLock(input.manifest.model, input.lock.model);
-  if (relationship.state === 'missing-lock' || relationship.state === 'current')
-    return relationship;
-  if (relationship.state === 'incomplete') {
-    const facts = relationship.facts.filter((fact) => selectedNames.has(fact.name));
-    if (facts.length === 0) return { state: 'none' };
+  const comparableSelected = [...selectedNames].some(
+    (name) => manifestNames.has(name) && lockNames.has(name),
+  );
+  if (relationship.state === 'current') {
+    return comparableSelected ? relationship : { state: 'none' };
+  }
+  if (relationship.state === 'missing-lock') return relationship;
+  const retainedNameFacts = relationship.facts.filter(
+    (fact) => 'name' in fact && selectedNames.has(fact.name),
+  );
+  const retainedMembershipFacts = retainedNameFacts.filter(
+    (fact) => fact.reason === 'missing-entry' || fact.reason === 'extra-entry',
+  );
+  if (retainedMembershipFacts.length > 0) {
     return {
       state: 'incomplete',
       missingNames: uniqueSorted(
-        facts.filter((fact) => fact.reason === 'missing-entry').map((fact) => fact.name),
+        retainedMembershipFacts
+          .filter((fact) => fact.reason === 'missing-entry')
+          .map((fact) => fact.name),
       ),
-      facts,
+      facts: retainedMembershipFacts,
     };
   }
+  const portableUniverse = new Set([...manifestNames, ...lockNames]);
+  const retainedPortable = new Set([...selectedNames].filter((name) => portableUniverse.has(name)));
   const completeUniverse =
-    selectedNames.size ===
-    new Set([
-      ...input.manifest.model.skills.map((skill) => skill.name),
-      ...input.lock.model.skills.map((skill) => skill.name),
-    ]).size;
-  const facts = relationship.facts.filter(
-    (fact) =>
+    retainedPortable.size === portableUniverse.size &&
+    [...portableUniverse].every((name) => retainedPortable.has(name));
+  const facts: Exclude<PortableLockFact, { readonly reason: 'missing-entry' }>[] = [];
+  for (const fact of relationship.facts) {
+    if (fact.reason === 'missing-entry' || fact.reason === 'extra-entry') continue;
+    if (
       (fact.reason === 'manifest-hash-mismatch' && completeUniverse) ||
-      ('name' in fact && selectedNames.has(fact.name)),
-  );
-  return facts.length === 0 ? { state: 'current' } : { state: 'stale', facts };
+      ('name' in fact && selectedNames.has(fact.name))
+    ) {
+      facts.push(fact);
+    }
+  }
+  if (facts.length > 0) return { state: 'stale', facts };
+  return comparableSelected ? { state: 'current' } : { state: 'none' };
 };
+
+const portableSource = (declaration: NormalizedManifestDeclaration): string =>
+  `${declaration.source.host}/${declaration.source.repository}${
+    declaration.source.path === null ? '' : `//${declaration.source.path}`
+  }`;
 
 const portableEntryFacts = (
   input: StatusJoinInput,
@@ -1484,36 +1633,52 @@ const portableEntryFacts = (
   desired: StatusDesiredState | null,
   locked: StatusLockedState | null,
 ): readonly StatusFact[] => {
+  if (desired === null && locked === null) return Object.freeze([]);
+  const canonicalPair =
+    input.manifest !== null &&
+    input.manifest.state === 'present' &&
+    input.manifest.sourceVersion !== 'legacy' &&
+    input.lock !== null &&
+    input.lock.state === 'present';
+  if (canonicalPair) {
+    const relationship = correlatePortableLock(input.manifest.model, input.lock.model);
+    if (relationship.state === 'current' || relationship.state === 'missing-lock') return [];
+    const declaration = input.manifest.model.skills.find((skill) => skill.name === name);
+    const lockSkill = input.lock.model.skills.find((skill) => skill.name === name);
+    const facts = relationship.facts.flatMap((item): StatusFact[] => {
+      if (!('name' in item) || item.name !== name) return [];
+      if (item.reason === 'missing-entry') {
+        return [makeFact('lock-missing-entry', 'present', 'absent')];
+      }
+      if (item.reason === 'extra-entry') {
+        return [makeFact('lock-extra-entry', 'absent', 'present')];
+      }
+      if (item.reason === 'source-mismatch') {
+        return declaration === undefined || lockSkill === undefined
+          ? []
+          : [makeFact('lock-source', portableSource(declaration), lockSkill.source)];
+      }
+      if (item.reason === 'requested-ref-mismatch') {
+        return declaration === undefined || lockSkill === undefined
+          ? []
+          : [makeFact('lock-ref', declaration.ref, lockSkill.requestedRef)];
+      }
+      if (item.reason === 'source-path-mismatch') {
+        return declaration === undefined || lockSkill === undefined
+          ? []
+          : [makeFact('lock-source-path', declaration.source.path ?? '.', lockSkill.sourcePath)];
+      }
+      return [];
+    });
+    return sortFacts(facts);
+  }
   if (desired !== null && (input.lock === null || input.lock.state === 'absent')) {
     return Object.freeze([makeFact('manifest-only', 'absent', 'present')]);
   }
   if (locked !== null && desired === null) {
     return Object.freeze([makeFact('lock-only', 'absent', 'present')]);
   }
-  if (
-    input.manifest === null ||
-    input.manifest.state === 'absent' ||
-    input.manifest.sourceVersion === 'legacy' ||
-    input.lock === null ||
-    input.lock.state === 'absent'
-  ) {
-    return Object.freeze([]);
-  }
-  const relationship = correlatePortableLock(input.manifest.model, input.lock.model);
-  if (relationship.state === 'current' || relationship.state === 'missing-lock') return [];
-  const facts = relationship.facts.flatMap((item): StatusFact[] => {
-    if (!('name' in item) || item.name !== name) return [];
-    const mapping: Partial<Record<typeof item.reason, StatusFactCode>> = {
-      'missing-entry': 'lock-missing-entry',
-      'extra-entry': 'lock-extra-entry',
-      'source-mismatch': 'lock-source',
-      'requested-ref-mismatch': 'lock-ref',
-      'source-path-mismatch': 'lock-source-path',
-    };
-    const code = mapping[item.reason];
-    return code === undefined ? [] : [makeFact(code, 'current', 'mismatch')];
-  });
-  return sortFacts(facts);
+  return Object.freeze([]);
 };
 
 const rowSort = (left: MutableRow, right: MutableRow): number =>
@@ -1529,9 +1694,17 @@ export const joinStatus = (
   input: StatusJoinInput,
 ): Result<StatusReport, StatusJoinSelectionError> => {
   const desiredCollection = collectDesired(input);
-  const ledgers = collectLedger(input);
+  const ledgerCollection = collectLedger(input);
+  const ledgers = ledgerCollection.selected;
   const selectedDesiredNames = new Set(
     desiredCollection.selected.map((item) => item.declaration.name),
+  );
+  const canonicalDesiredNames = new Set(
+    input.manifest !== null &&
+      input.manifest.state === 'present' &&
+      input.manifest.sourceVersion !== 'legacy'
+      ? input.manifest.model.skills.map((item) => item.name)
+      : [],
   );
   const ledgerNames = new Set(ledgers.map((item) => item.name));
   const lockSkills =
@@ -1549,7 +1722,9 @@ export const joinStatus = (
         (legacyDefaults.scope !== 'project' || input.request.projectPlacement.state === 'selected')
       : null;
   const visibleLocks = lockSkills.filter((skill) => {
-    if (selectedDesiredNames.has(skill.name) || ledgerNames.has(skill.name)) return true;
+    if (selectedDesiredNames.has(skill.name)) return true;
+    if (canonicalDesiredNames.has(skill.name)) return false;
+    if (ledgerNames.has(skill.name)) return true;
     if (legacyQualified !== null) return legacyQualified;
     return (
       input.request.toolSelectionSource === 'unbounded-default' &&
@@ -1557,11 +1732,14 @@ export const joinStatus = (
     );
   });
   const filteredNames = new Set(desiredCollection.filtered);
+  for (const member of ledgerCollection.filtered) filteredNames.add(member);
+  for (const member of collectFilteredLogicalMembership(input)) filteredNames.add(member);
   for (const skill of lockSkills) if (!visibleLocks.includes(skill)) filteredNames.add(skill.name);
 
   const rows = buildRows(input, desiredCollection.selected, ledgers);
   attachLegacyJournals(rows, input);
-  const unmatchedJournals = attachLogicalJournals(rows, input);
+  const logicalJournals = attachLogicalJournals(rows, input);
+  const unmatchedJournals = logicalJournals.unmatched;
   const entries = new Map<string, MutableEntry>();
   const entry = (name: string): MutableEntry => {
     let value = entries.get(name);
@@ -1581,7 +1759,6 @@ export const joinStatus = (
   for (const values of rows.values()) {
     for (const row of values) entry(row.name).rows.push(row);
   }
-  setShadows(entries);
 
   for (const value of entries.values()) {
     value.facts = [...portableEntryFacts(input, value.name, value.desired, value.locked)];
@@ -1589,27 +1766,54 @@ export const joinStatus = (
 
   let selectedEntries = [...entries.values()];
   if (input.request.selectionSource === 'explicit-targets') {
-    const selected = new Set<MutableEntry>();
+    const selected = new Map<MutableEntry, Set<MutableRow> | null>();
     const unmatched: string[] = [];
     let filtered = false;
+    let selectedReportLevel = false;
     for (const target of input.request.targets) {
-      const matches = selectedEntries.filter(
-        (candidate) =>
-          candidate.name === target || candidate.rows.some((row) => row.path === target),
-      );
-      if (matches.length === 0) {
+      let matched = logicalJournals.reportLevelNames.has(target);
+      if (matched) selectedReportLevel = true;
+      for (const candidate of selectedEntries) {
+        if (candidate.name === target) {
+          matched = true;
+          selected.set(candidate, null);
+          continue;
+        }
+        const matchingRows = candidate.rows.filter((row) => row.path === target);
+        if (matchingRows.length === 0) continue;
+        matched = true;
+        const existing = selected.get(candidate);
+        if (existing === null) continue;
+        const selectedRows = existing ?? new Set<MutableRow>();
+        for (const row of matchingRows) selectedRows.add(row);
+        selected.set(candidate, selectedRows);
+      }
+      if (!matched) {
         if (filteredNames.has(target)) filtered = true;
         else unmatched.push(target);
       }
-      for (const match of matches) selected.add(match);
     }
     if (unmatched.length > 0) return err({ reason: 'unmatched-target' });
-    selectedEntries = [...selected];
-    if (selectedEntries.length === 0 && !filtered) return err({ reason: 'unmatched-target' });
+    selectedEntries = [...selected].map(([candidate, selectedRows]) =>
+      selectedRows === null
+        ? candidate
+        : {
+            ...candidate,
+            rows: [...selectedRows],
+          },
+    );
+    if (selectedEntries.length === 0 && !filtered && !selectedReportLevel) {
+      return err({ reason: 'unmatched-target' });
+    }
   }
 
+  setShadows(new Map(selectedEntries.map((value) => [value.name, value])));
   selectedEntries.sort((left, right) => compare(left.name, right.name));
-  const selectedNameSet = new Set(selectedEntries.map((value) => value.name));
+  const selectedPortableNameSet = new Set(
+    selectedEntries
+      .filter((value) => value.desired !== null || value.locked !== null)
+      .map((value) => value.name),
+  );
   const projectedEntries: StatusEntry[] = selectedEntries.map((value) => {
     value.rows.sort(rowSort);
     const placements: StatusPlacement[] = value.rows.map((row) => {
@@ -1662,7 +1866,7 @@ export const joinStatus = (
     };
   });
 
-  const relationship = relationshipFor(input, selectedNameSet);
+  const relationship = relationshipFor(input, selectedPortableNameSet);
   const summaryMigration =
     (input.manifest !== null &&
       input.manifest.state === 'present' &&
@@ -1695,6 +1899,7 @@ export const joinStatus = (
   }
   const filterNoop =
     projectedEntries.length === 0 &&
+    unmatchedJournals.length === 0 &&
     (input.request.selectionSource === 'explicit-targets'
       ? input.request.targets.some((target) => filteredNames.has(target))
       : filteredNames.size > 0);

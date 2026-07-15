@@ -1,13 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import { hashManifestSemantics, parseArtifactDigest } from '../../src/artifacts/hash.ts';
+import { validateJournalV1DtoShape } from '../../src/artifacts/journal-codec.ts';
+import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import { fromLedgerV2Dto, ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
-import type { LedgerPairV1Dto, LedgerV2Dto } from '../../src/artifacts/ledger-types.ts';
+import type {
+  LedgerModel,
+  LedgerPairV1Dto,
+  LedgerV2Dto,
+} from '../../src/artifacts/ledger-types.ts';
 import { type PortableLockV1, serializePortableLock } from '../../src/artifacts/lock.ts';
 import { manifestV1Codec } from '../../src/artifacts/manifest-codec.ts';
+import type { ArtifactReadResult } from '../../src/artifacts/repository.ts';
 import type { NormalizedManifestV1 } from '../../src/artifacts/types.ts';
 import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
+import { toStatusV1Dto } from '../../src/contracts/v1/status.ts';
 import type {
   FileMetadata,
   FileMetadataReadPort,
@@ -15,6 +23,13 @@ import type {
   ResolvedRuntimeConfiguration,
 } from '../../src/ports/types.ts';
 import type { Result } from '../../src/result.ts';
+import {
+  type StatusJoinInput,
+  type StatusLiveInput,
+  type StatusRetentionProbeInput,
+  joinStatus,
+} from '../../src/status/join.ts';
+import type { StatusReadRequest, StatusReport } from '../../src/status/types.ts';
 
 type StatusReader = (
   ports: InventoryReadPorts & FileMetadataReadPort,
@@ -70,12 +85,27 @@ interface StatusReportShape {
     readonly state: string;
     readonly relationship?: { readonly state: string };
   };
+  readonly context: {
+    readonly effectiveCwd: string;
+  };
   readonly entries: readonly {
     readonly name: string;
     readonly convergence: string;
     readonly placements: readonly {
       readonly classification: string;
+      readonly brokenReason: string | null;
       readonly verification: string;
+      readonly live: { readonly state: string };
+      readonly journal:
+        | { readonly state: 'none' }
+        | {
+            readonly state: string;
+            readonly transactionId: string;
+            readonly retention: readonly {
+              readonly state: string;
+              readonly repositoryRevision: { readonly state: string };
+            }[];
+          };
       readonly facts: readonly { readonly code: string; readonly impact: string }[];
     }[];
   }[];
@@ -144,7 +174,7 @@ const request = (
         lockSource: 'sibling' | 'explicit';
       }> = Object.freeze({
     state: 'selected',
-    source: 'discovered-project',
+    source: 'explicit',
     manifestPath: MANIFEST_PATH,
     lockPath: LOCK_PATH,
     lockSource: 'sibling',
@@ -167,6 +197,13 @@ const request = (
     selectionSource: 'bounded-default' as const,
     artifactSelection,
   });
+
+const liveOnlyRequest = (scope: 'system' | 'managed' = 'system'): Readonly<StatusReadRequest> => ({
+  ...request(),
+  scopes: Object.freeze([scope]),
+  scopeSelectionSource: 'explicit',
+  artifactSelection: Object.freeze({ state: 'unselected', reason: 'live-only-scope' }),
+});
 
 const pairFor = (name: string): LedgerPairV1Dto => ({
   placementPath: join(CODEX_ROOT, name),
@@ -355,6 +392,276 @@ const hostileValues = (): ReadonlyArray<
   ];
 };
 
+const statusRequest = (
+  overrides: Partial<StatusReadRequest> = {},
+): Readonly<StatusReadRequest> => ({
+  ...request(Object.freeze({ state: 'unselected', reason: 'live-only-scope' })),
+  ...overrides,
+});
+
+const selectedArtifactRequest = (
+  overrides: Partial<StatusReadRequest> = {},
+): Readonly<StatusReadRequest> =>
+  statusRequest({
+    artifactSelection: {
+      state: 'selected',
+      source: 'discovered-project',
+      manifestPath: MANIFEST_PATH,
+      lockPath: LOCK_PATH,
+      lockSource: 'sibling',
+    },
+    ...overrides,
+  });
+
+const artifactPresent = <T>(
+  artifact: 'manifest' | 'lock' | 'ledger',
+  model: T,
+  sourceVersion: 1 | 2,
+): ArtifactReadResult<T> => ({
+  state: 'present',
+  artifact,
+  sourceVersion,
+  currentVersion: artifact === 'ledger' ? 2 : 1,
+  source: '',
+  byteLength: 0,
+  byteRevision: CONTENT_HASH,
+  semanticRevision: CONTENT_HASH,
+  model,
+  canonical: true,
+  migration: null,
+});
+
+const emptyLedgerModel = (overrides: Partial<LedgerModel> = {}): LedgerModel => ({
+  updatedAt: '2026-07-14T00:00:00.000Z',
+  skills: {},
+  projects: {},
+  projectRegistrations: {},
+  transactions: {},
+  history: [],
+  ...overrides,
+});
+
+const manifestModel = (names: readonly string[]): NormalizedManifestV1 => ({
+  version: 1,
+  skills: names.map((name) => ({
+    name,
+    source: { host: 'github.com', repository: 'acme/skills', path: name },
+    ref: null,
+    tools: ['codex'],
+    scope: 'user',
+    placement: 'copy',
+    path: `~/.agents/skills/${name}`,
+  })),
+});
+
+const lockModel = (names: readonly string[], manifest: NormalizedManifestV1): PortableLockV1 => ({
+  version: 1,
+  hashSchemaVersion: 1,
+  manifestHash: hashManifestSemantics(manifest),
+  skills: names.map((name) => ({
+    name,
+    source: `github.com/acme/skills//${name}`,
+    requestedRef: null,
+    resolvedSha: SHA,
+    sourcePath: name,
+    contentHash: CONTENT_HASH,
+  })),
+});
+
+const liveInput = (
+  name: string,
+  path: string,
+  scope: 'user' | 'project' = 'user',
+): StatusLiveInput => ({
+  name,
+  tool: 'codex',
+  scope,
+  projectIdentity: scope === 'project' ? ROOT : null,
+  path,
+  observation: {
+    path,
+    realpath: path,
+    nodeKind: 'directory',
+    linkTarget: null,
+    skillFile: 'valid',
+  },
+  physicalClass: 'directory',
+  brokenReason: null,
+});
+
+interface LogicalJournalOptions {
+  readonly name: string;
+  readonly path: string;
+  readonly transactionId: string;
+  readonly tool?: 'codex' | 'claude-code';
+  readonly scope?: 'user' | 'project';
+  readonly projectRoot?: string | null;
+  readonly phase?: LogicalJournalV1Dto['phase'];
+  readonly updatedAt?: string;
+  readonly retained?: LogicalJournalV1Dto['actual']['retained'];
+  readonly reversibility?: LogicalJournalV1Dto['intent']['reversibility'];
+}
+
+const logicalJournal = (options: LogicalJournalOptions): LogicalJournalV1Dto => {
+  const projectRoot =
+    options.projectRoot === null || options.projectRoot === undefined
+      ? null
+      : ({ kind: 'machine-bound', path: options.projectRoot } as const);
+  const resource = {
+    kind: 'live' as const,
+    skill: options.name,
+    tool: options.tool ?? 'codex',
+    scope: options.scope ?? 'user',
+    projectRoot,
+    location: { kind: 'machine-bound' as const, path: options.path },
+  };
+  const actual = {
+    resourceId: `resource:${options.name}:live`,
+    role: 'live' as const,
+    state: 'present' as const,
+    repositoryRevision: { kind: 'resource' as const, digest: CONTENT_HASH },
+    placementPath: options.path,
+    liveKind: 'directory' as const,
+    mode: 'pinned' as const,
+    symlinkTarget: null,
+    contentHash: CONTENT_HASH,
+  };
+  const ledgerActual = {
+    resourceId: `resource:${options.name}:ledger`,
+    role: 'ledger' as const,
+    state: 'present' as const,
+    repositoryRevision: { kind: 'artifact-bytes' as const, digest: CONTENT_HASH },
+    schemaVersion: 2 as const,
+    semanticHash: CONTENT_HASH,
+  };
+  const phase = options.phase ?? 'live';
+  return {
+    schemaVersion: 1,
+    kind: 'skillsmith.transaction-journal',
+    transactionId: options.transactionId,
+    intent: {
+      operationId: `operation:${options.transactionId}`,
+      groupId: `group:${options.transactionId}`,
+      pairId: `pair:${options.name}:${options.tool ?? 'codex'}`,
+      kind: 'repair',
+      skill: options.name,
+      source: {
+        kind: 'portable',
+        identity: { host: 'github.com', repository: 'acme/skills', path: options.name },
+        requestedRef: null,
+        resolvedSha: SHA,
+        sourcePath: options.name,
+        contentHash: CONTENT_HASH,
+      },
+      tool: options.tool ?? 'codex',
+      scope: options.scope ?? 'user',
+      before: {
+        kind: 'placement',
+        resource,
+        classification: 'pinned',
+        representation: 'copy',
+        linkTarget: null,
+        dangling: false,
+        source: null,
+        contentHash: CONTENT_HASH,
+      },
+      after: {
+        kind: 'placement',
+        resource,
+        classification: 'pinned',
+        representation: 'copy',
+        linkTarget: null,
+        dangling: false,
+        source: null,
+        contentHash: CONTENT_HASH,
+      },
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+      reversibility: options.reversibility ?? {
+        kind: 'none',
+        retentionResourceIds: [],
+      },
+      conflict: null,
+    },
+    context: {
+      parentOperationId: null,
+      command: 'skillsmith:apply',
+      workflow: `workflow:${options.transactionId}`,
+      attempt: 1,
+      startedAt: '2026-07-14T00:00:00.000Z',
+    },
+    disposition: 'forward',
+    phase,
+    actual: {
+      before: [actual, ledgerActual],
+      after: [actual, ledgerActual],
+      retained: options.retained ?? [],
+    },
+    updatedAt: options.updatedAt ?? '2026-07-14T00:00:01.000Z',
+    completedAt: phase === 'committed' ? '2026-07-14T00:00:02.000Z' : null,
+  };
+};
+
+const retainedResource = (
+  path: string,
+  repositoryKind: 'artifact-bytes' | 'resource' = 'resource',
+): LogicalJournalV1Dto['actual']['retained'][number] => ({
+  resourceId: `resource:retained:${path}`,
+  role: 'backup',
+  sourceRole: 'live',
+  path,
+  repositoryRevision: { kind: repositoryKind, digest: CONTENT_HASH },
+  contentHash: CONTENT_HASH,
+  retainUntil: null,
+});
+
+const journalLedgerBytes = (
+  journals: readonly LogicalJournalV1Dto[],
+): ReadonlyMap<string, Uint8Array> => {
+  for (const journal of journals) {
+    const validated = validateJournalV1DtoShape(journal);
+    if (!validated.ok) {
+      throw new Error(
+        `journal ${journal.transactionId} invalid: ${JSON.stringify(validated.error)}`,
+      );
+    }
+  }
+  const model = emptyLedgerModel({
+    transactions: Object.fromEntries(
+      journals
+        .filter((journal) => journal.phase !== 'committed')
+        .map((journal) => [journal.transactionId, journal]),
+    ),
+    history: journals.filter((journal) => journal.phase === 'committed'),
+  });
+  const encoded = ledgerV2Codec.encode(model);
+  if (!encoded.ok)
+    throw new Error(`journal ledger encoding failed: ${JSON.stringify(encoded.error)}`);
+  return new Map([[LEDGER_PATH, encoded.value]]);
+};
+
+const joinInput = (overrides: Partial<StatusJoinInput> = {}): StatusJoinInput => ({
+  homeDir: HOME,
+  request: statusRequest(),
+  manifest: null,
+  lock: null,
+  ledger: { state: 'absent', artifact: 'ledger', migration: null },
+  ledgerPath: LEDGER_PATH,
+  live: [],
+  retention: [],
+  ...overrides,
+});
+
+const unwrapJoin = (input: StatusJoinInput) => {
+  const result = joinStatus(input);
+  if (!result.ok) throw new Error(`unexpected join selection error: ${result.error.reason}`);
+  return result.value;
+};
+
+const relationshipOf = (report: StatusReport) => {
+  if (report.artifacts.state !== 'selected') throw new Error('expected selected artifacts');
+  return report.artifacts.relationship;
+};
+
 describe('G3A-01 focused status reader', () => {
   test('owns a recursively immutable and permutation-stable converged product', async () => {
     const readStatus = await loadReader();
@@ -424,10 +731,7 @@ describe('G3A-01 focused status reader', () => {
         return Reflect.get(target, property, receiver);
       },
     });
-    const result = await readStatus(
-      ports,
-      request(Object.freeze({ state: 'unselected', reason: 'live-only-scope' })),
-    );
+    const result = await readStatus(ports, liveOnlyRequest());
     expect(result.ok).toBeTrue();
     if (!result.ok) throw new Error('expected all-absent status product');
     expect(result.value.entries).toEqual([]);
@@ -435,7 +739,7 @@ describe('G3A-01 focused status reader', () => {
       source: 'bounded-default',
       tools: ['codex'],
       toolSource: 'explicit',
-      scopes: ['user'],
+      scopes: ['system'],
       scopeSource: 'explicit',
       outcome: 'selected',
       reason: null,
@@ -473,6 +777,2032 @@ describe('G3A-01 focused status reader', () => {
       expect(JSON.stringify(result.error), label).not.toContain('status-reader-secret-canary');
       expect(accesses(), label).toBe(0);
       expectDeepFrozen(result.error);
+    }
+  });
+
+  test('preserves native cancellation through every primary artifact pathKind/readBytes boundary and live observation', async () => {
+    const readStatus = await loadReader();
+    const bytes = artifactBytes(['alpha']);
+    for (const [artifactPath, operation] of [
+      [MANIFEST_PATH, 'pathKind'],
+      [MANIFEST_PATH, 'readBytes'],
+      [LOCK_PATH, 'pathKind'],
+      [LOCK_PATH, 'readBytes'],
+      [LEDGER_PATH, 'pathKind'],
+      [LEDGER_PATH, 'readBytes'],
+    ] as const) {
+      const base = readPorts({ bytes });
+      const cancelled = new DOMException('primary cancellation canary', 'AbortError');
+      const result = await readStatus(
+        {
+          ...base,
+          pathKind: async (path) => {
+            if (operation === 'pathKind' && path === artifactPath) throw cancelled;
+            return base.pathKind(path);
+          },
+          readBytes: async (path) => {
+            if (operation === 'readBytes' && path === artifactPath) throw cancelled;
+            return base.readBytes(path);
+          },
+        },
+        request(),
+      );
+      expect(result, `${artifactPath}:${operation}`).toEqual({
+        ok: false,
+        error: {
+          code: 'status-read',
+          reason: 'cancelled',
+          exitClass: 'cancelled',
+          message: 'status read was cancelled',
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain('primary cancellation canary');
+    }
+
+    const liveBase = readPorts();
+    const live = await readStatus(
+      {
+        ...liveBase,
+        listDir: async (path) => {
+          if (path === CODEX_ROOT) throw new DOMException('live cancellation canary', 'AbortError');
+          return liveBase.listDir(path);
+        },
+      },
+      request(),
+    );
+    expect(live).toMatchObject({ ok: false, error: { reason: 'cancelled' } });
+    expect(JSON.stringify(live)).not.toContain('live cancellation canary');
+  });
+
+  test('does not trust a frozen structural spoof of an internally owned status error', async () => {
+    const readStatus = await loadReader();
+    const spoof = Object.freeze({
+      code: 'status-read',
+      reason: 'permission-denied',
+      exitClass: 'permission',
+      message: 'status-reader-spoof-canary',
+    });
+    const base = readPorts();
+    const result = await readStatus(
+      {
+        ...base,
+        listDir: async (path) => {
+          if (path === CODEX_ROOT) throw spoof;
+          return Object.freeze([]);
+        },
+      },
+      request(),
+    );
+    expect(result.ok).toBeFalse();
+    if (result.ok) throw new Error('expected structural spoof to be rejected');
+    expect(result.error).toEqual({
+      code: 'status-read',
+      reason: 'observation-failed',
+      exitClass: 'failure',
+      message: 'status observation failed',
+    });
+    expect(JSON.stringify(result.error)).not.toContain('status-reader-spoof-canary');
+  });
+
+  test('rejects every request discriminator family before any port access', async () => {
+    const readStatus = await loadReader();
+    const liveOnly = liveOnlyRequest();
+    const selectedArtifact = request().artifactSelection;
+    if (selectedArtifact.state !== 'selected')
+      throw new Error('expected selected artifact fixture');
+    const invalidRequests: ReadonlyArray<readonly [string, unknown]> = [
+      ['tool source', { ...liveOnly, toolSelectionSource: 'unknown' }],
+      ['scope source', { ...liveOnly, scopeSelectionSource: 'unknown' }],
+      ['selection source', { ...liveOnly, selectionSource: 'unknown' }],
+      [
+        'project kind',
+        { ...liveOnly, projectContext: { ...liveOnly.projectContext, projectKind: 'unknown' } },
+      ],
+      [
+        'placement state',
+        { ...liveOnly, projectPlacement: { ...liveOnly.projectPlacement, state: 'unknown' } },
+      ],
+      [
+        'placement source',
+        {
+          ...liveOnly,
+          projectPlacement: {
+            state: 'selected',
+            source: 'unknown',
+            root: ROOT,
+            identity: ROOT,
+          },
+        },
+      ],
+      ['artifact state', { ...liveOnly, artifactSelection: { state: 'unknown' } }],
+      [
+        'artifact source',
+        { ...liveOnly, artifactSelection: { ...selectedArtifact, source: 'unknown' } },
+      ],
+      [
+        'lock source',
+        { ...liveOnly, artifactSelection: { ...selectedArtifact, lockSource: 'unknown' } },
+      ],
+      [
+        'artifact path collision',
+        {
+          ...liveOnly,
+          artifactSelection: { ...selectedArtifact, lockPath: selectedArtifact.manifestPath },
+        },
+      ],
+      ['target/source mismatch', { ...liveOnly, targets: ['alpha'] }],
+      [
+        'hostile request proxy',
+        new Proxy(Object.create(null) as object, {
+          get() {
+            throw new Error('hostile request getter');
+          },
+        }),
+      ],
+    ];
+    for (const [label, invalidRequest] of invalidRequests) {
+      let portAccesses = 0;
+      const ports = new Proxy(readPorts(), {
+        get(target, property, receiver) {
+          portAccesses += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      const result = await readStatus(ports, invalidRequest as never);
+      expect(result.ok, label).toBeFalse();
+      if (result.ok) throw new Error(`expected invalid request: ${label}`);
+      expect(result.error, label).toEqual({
+        code: 'status-read',
+        reason: 'invalid-request',
+        exitClass: 'usage',
+        message: 'status request is invalid',
+      });
+      expect(portAccesses, label).toBe(0);
+    }
+  });
+
+  test('snapshots all request-owned data and rejects accessors, exotics, and fake signals before I/O', async () => {
+    const readStatus = await loadReader();
+    const assertInvalidWithoutIo = async (
+      label: string,
+      invalidRequest: unknown,
+    ): Promise<void> => {
+      let portAccesses = 0;
+      const ports = new Proxy(readPorts(), {
+        get(target, property, receiver) {
+          portAccesses += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      const result = await readStatus(ports, invalidRequest as never);
+      expect(result, label).toEqual({
+        ok: false,
+        error: {
+          code: 'status-read',
+          reason: 'invalid-request',
+          exitClass: 'usage',
+          message: 'status request is invalid',
+        },
+      });
+      expect(portAccesses, label).toBe(0);
+    };
+
+    const accessorConfiguration = { ...configuration };
+    Object.defineProperty(accessorConfiguration, 'forceColor', {
+      enumerable: true,
+      get() {
+        throw new Error('request accessor canary');
+      },
+    });
+    await assertInvalidWithoutIo('nested accessor', {
+      ...request(),
+      configuration: accessorConfiguration,
+    });
+    await assertInvalidWithoutIo('nested proxy', {
+      ...request(),
+      projectContext: new Proxy(projectContext, {}),
+    });
+    await assertInvalidWithoutIo('array subclass', {
+      ...request(),
+      tools: new (class extends Array<string> {} as typeof Array)(...'codex'.split(',')),
+    });
+    await assertInvalidWithoutIo('fake signal', { ...request(), signal: { aborted: false } });
+
+    const controller = new AbortController();
+    controller.abort();
+    let cancelledPortAccesses = 0;
+    const cancelled = await readStatus(
+      new Proxy(readPorts(), {
+        get(target, property, receiver) {
+          cancelledPortAccesses += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      }),
+      { ...request(), signal: controller.signal },
+    );
+    expect(cancelled).toEqual({
+      ok: false,
+      error: {
+        code: 'status-read',
+        reason: 'cancelled',
+        exitClass: 'cancelled',
+        message: 'status read was cancelled',
+      },
+    });
+    expect(cancelledPortAccesses).toBe(0);
+
+    const mutable = {
+      ...request(),
+      projectContext: { ...projectContext },
+      configuration: { ...configuration, configLayer: { ...configuration.configLayer } },
+      targets: [] as string[],
+      tools: ['codex'] as Array<'codex' | 'claude-code'>,
+      scopes: ['user'] as Array<'user' | 'project'>,
+    };
+    const base = readPorts();
+    let mutated = false;
+    const snapshotted = await readStatus(
+      {
+        ...base,
+        pathKind: async (path) => {
+          if (!mutated) {
+            mutated = true;
+            mutable.tools[0] = 'claude-code';
+            mutable.scopes[0] = 'project';
+            mutable.projectContext.effectiveCwd = '/mutated-after-io';
+            mutable.configuration.codexHome = '/mutated-codex-home';
+          }
+          return base.pathKind(path);
+        },
+      },
+      mutable,
+    );
+    expect(snapshotted.ok).toBeTrue();
+    if (!snapshotted.ok) throw new Error('expected immutable request snapshot');
+    expect(snapshotted.value.selection).toMatchObject({ tools: ['codex'], scopes: ['user'] });
+    expect(snapshotted.value.context.effectiveCwd).toBe(ROOT);
+  });
+
+  test('enforces project-placement provenance coherence before I/O', async () => {
+    const readStatus = await loadReader();
+    const nullContext: ProjectContext = {
+      invocationCwd: ROOT,
+      effectiveCwd: ROOT,
+      projectRoot: null,
+      projectIdentity: null,
+      projectKind: 'non-git',
+      discoveredConfigPath: null,
+      explicitConfigPath: null,
+    };
+    const invalid = [
+      {
+        ...request(),
+        projectPlacement: {
+          state: 'selected' as const,
+          source: 'shared-project' as const,
+          root: '/other',
+          identity: '/other',
+        },
+      },
+      {
+        ...request(),
+        projectContext: nullContext,
+        projectPlacement: {
+          state: 'selected' as const,
+          source: 'explicit-non-git' as const,
+          root: ROOT,
+          identity: '/other',
+        },
+      },
+      {
+        ...request(),
+        projectPlacement: { state: 'unselected' as const },
+      },
+      {
+        ...request(),
+        projectContext: nullContext,
+        projectPlacement: {
+          state: 'selected' as const,
+          source: 'explicit-non-git' as const,
+          root: ROOT,
+          identity: ROOT,
+        },
+      },
+      {
+        ...request(),
+        projectContext: nullContext,
+        projectPlacement: {
+          state: 'selected' as const,
+          source: 'explicit-non-git' as const,
+          root: ROOT,
+          identity: ROOT,
+        },
+        scopes: ['system', 'user', 'project', 'managed'],
+        scopeSelectionSource: 'unbounded-default' as const,
+      },
+      {
+        ...request(),
+        tools: ['codex', 'claude-code', 'kilo-code', 'opencode'],
+        toolSelectionSource: 'unbounded-default' as const,
+      },
+      {
+        ...request(),
+        scopes: ['system', 'user', 'managed'],
+        scopeSelectionSource: 'unbounded-default' as const,
+      },
+      {
+        ...request(),
+        scopes: ['user', 'system'],
+        scopeSelectionSource: 'explicit' as const,
+      },
+      {
+        ...request(),
+        artifactSelection: { state: 'unselected' as const, reason: 'live-only-scope' as const },
+      },
+    ];
+    for (const candidate of invalid) {
+      let accesses = 0;
+      const result = await readStatus(
+        new Proxy(readPorts(), {
+          get(target, property, receiver) {
+            accesses += 1;
+            return Reflect.get(target, property, receiver);
+          },
+        }),
+        candidate as never,
+      );
+      expect(result).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+      expect(accesses).toBe(0);
+    }
+
+    const explicit = await readStatus(readPorts(), {
+      ...request(),
+      projectContext: nullContext,
+      projectPlacement: {
+        state: 'selected',
+        source: 'explicit-non-git',
+        root: ROOT,
+        identity: ROOT,
+      },
+      scopes: ['project'],
+      scopeSelectionSource: 'explicit',
+    });
+    expect(explicit.ok).toBeTrue();
+
+    const controller = new AbortController();
+    controller.abort();
+    const selectedUnbounded = await readStatus(readPorts(), {
+      ...request(),
+      tools: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      toolSelectionSource: 'unbounded-default',
+      scopes: ['system', 'user', 'project', 'managed'],
+      scopeSelectionSource: 'unbounded-default',
+      signal: controller.signal,
+    });
+    expect(selectedUnbounded).toMatchObject({
+      ok: false,
+      error: { reason: 'cancelled' },
+    });
+    const unselectedUnbounded = await readStatus(readPorts(), {
+      ...request(),
+      projectContext: nullContext,
+      projectPlacement: { state: 'unselected' },
+      artifactSelection: {
+        state: 'selected',
+        source: 'user-default',
+        manifestPath: join(HOME, '.config', 'skillsmith', 'skillsmith.toml'),
+        lockPath: join(HOME, '.config', 'skillsmith', 'skillsmith.lock'),
+        lockSource: 'sibling',
+      },
+      tools: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      toolSelectionSource: 'unbounded-default',
+      scopes: ['system', 'user', 'managed'],
+      scopeSelectionSource: 'unbounded-default',
+      signal: controller.signal,
+    });
+    expect(unselectedUnbounded).toMatchObject({
+      ok: false,
+      error: { reason: 'cancelled' },
+    });
+  });
+
+  test('enforces complete project and selected-artifact provenance before filesystem methods', async () => {
+    const readStatus = await loadReader();
+    const controller = new AbortController();
+    controller.abort();
+    const userManifest = join(HOME, '.config', 'skillsmith', 'skillsmith.toml');
+    const userLock = join(HOME, '.config', 'skillsmith', 'skillsmith.lock');
+    const noDiscoveryContext: ProjectContext = {
+      ...projectContext,
+      discoveredConfigPath: null,
+    };
+    const outsideContext: ProjectContext = {
+      invocationCwd: ROOT,
+      effectiveCwd: ROOT,
+      projectRoot: null,
+      projectIdentity: null,
+      projectKind: 'non-git',
+      discoveredConfigPath: null,
+      explicitConfigPath: null,
+    };
+    const nonGitDiscoveredContext: ProjectContext = {
+      ...projectContext,
+      projectKind: 'non-git',
+    };
+    const withMethodCounter = () => {
+      const base = readPorts();
+      let methodCalls = 0;
+      const ports = new Proxy(base, {
+        get(target, property, receiver) {
+          const value = Reflect.get(target, property, receiver);
+          if (typeof value !== 'function') return value;
+          return (...args: never[]) => {
+            methodCalls += 1;
+            return (value as (...values: never[]) => unknown)(...args);
+          };
+        },
+      });
+      return { ports, methodCalls: () => methodCalls };
+    };
+    const readBeforeMethods = async (candidate: Readonly<StatusReadRequest>) => {
+      const counted = withMethodCounter();
+      const result = await readStatus(counted.ports, candidate);
+      expect(counted.methodCalls()).toBe(0);
+      return result;
+    };
+    const selected = (
+      source: 'explicit' | 'discovered-project' | 'project-default' | 'user-default',
+      manifestPath: string,
+      lockPath: string,
+      lockSource: 'sibling' | 'explicit' = 'sibling',
+    ) => ({ state: 'selected' as const, source, manifestPath, lockPath, lockSource });
+
+    const valid: readonly Readonly<StatusReadRequest>[] = [
+      ...(['system', 'user', 'project', 'managed'] as const).map((scope) => ({
+        ...request(selected('explicit', MANIFEST_PATH, LOCK_PATH)),
+        scopes: [scope],
+        scopeSelectionSource: 'explicit' as const,
+        signal: controller.signal,
+      })),
+      {
+        ...request(selected('explicit', MANIFEST_PATH, '/custom/status.lock', 'explicit')),
+        signal: controller.signal,
+      },
+      {
+        ...request(selected('user-default', userManifest, userLock)),
+        signal: controller.signal,
+      },
+      {
+        ...request(selected('discovered-project', MANIFEST_PATH, LOCK_PATH)),
+        scopes: ['project'],
+        scopeSelectionSource: 'explicit',
+        signal: controller.signal,
+      },
+      {
+        ...request(selected('project-default', MANIFEST_PATH, LOCK_PATH)),
+        projectContext: noDiscoveryContext,
+        scopes: ['project'],
+        scopeSelectionSource: 'explicit',
+        signal: controller.signal,
+      },
+      {
+        ...request(selected('discovered-project', MANIFEST_PATH, LOCK_PATH)),
+        projectContext: nonGitDiscoveredContext,
+        scopes: ['project'],
+        scopeSelectionSource: 'explicit',
+        signal: controller.signal,
+      },
+      {
+        ...request(selected('user-default', userManifest, userLock)),
+        projectContext: outsideContext,
+        projectPlacement: { state: 'unselected' },
+        tools: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+        toolSelectionSource: 'unbounded-default',
+        scopes: ['system', 'user', 'managed'],
+        scopeSelectionSource: 'unbounded-default',
+        signal: controller.signal,
+      },
+      {
+        ...request(selected('project-default', MANIFEST_PATH, LOCK_PATH)),
+        projectContext: outsideContext,
+        projectPlacement: {
+          state: 'selected',
+          source: 'explicit-non-git',
+          root: ROOT,
+          identity: ROOT,
+        },
+        scopes: ['project'],
+        scopeSelectionSource: 'explicit',
+        signal: controller.signal,
+      },
+    ];
+    for (const [index, candidate] of valid.entries()) {
+      const result = await readBeforeMethods(candidate);
+      expect(result, `valid provenance ${index}`).toMatchObject({
+        ok: false,
+        error: { reason: 'cancelled' },
+      });
+    }
+
+    const invalid: readonly Readonly<StatusReadRequest>[] = [
+      request(selected('discovered-project', MANIFEST_PATH, LOCK_PATH)),
+      request(selected('discovered-project', '/repo/other.toml', '/repo/other.lock')),
+      request(selected('project-default', MANIFEST_PATH, LOCK_PATH)),
+      {
+        ...request(selected('discovered-project', MANIFEST_PATH, LOCK_PATH)),
+        projectContext: noDiscoveryContext,
+        scopes: ['project'],
+        scopeSelectionSource: 'explicit',
+      },
+      {
+        ...request(selected('project-default', '/repo/other.toml', '/repo/other.lock')),
+        projectContext: noDiscoveryContext,
+        scopes: ['project'],
+        scopeSelectionSource: 'explicit',
+      },
+      request(
+        selected('user-default', '/home/wrong/skillsmith.toml', '/home/wrong/skillsmith.lock'),
+      ),
+      request(selected('user-default', userManifest, userLock, 'explicit')),
+      request(selected('explicit', MANIFEST_PATH, '/elsewhere/skillsmith.lock')),
+      {
+        ...request(selected('user-default', userManifest, userLock)),
+        scopes: ['system'],
+        scopeSelectionSource: 'explicit',
+      },
+      {
+        ...request(),
+        projectContext: { ...outsideContext, projectRoot: ROOT, projectIdentity: ROOT },
+      },
+      {
+        ...request(),
+        projectContext: {
+          ...nonGitDiscoveredContext,
+          projectRoot: '/other',
+          projectIdentity: '/other',
+        },
+        projectPlacement: {
+          state: 'selected',
+          source: 'shared-project',
+          root: '/other',
+          identity: '/other',
+        },
+      },
+      {
+        ...request(),
+        projectContext: { ...projectContext, discoveredConfigPath: '/repo/other.toml' },
+      },
+      {
+        ...request(),
+        projectContext: { ...projectContext, discoveredConfigPath: '/outside/skillsmith.toml' },
+      },
+    ];
+    for (const [index, candidate] of invalid.entries()) {
+      const result = await readBeforeMethods(candidate);
+      expect(result, `invalid provenance ${index}`).toMatchObject({
+        ok: false,
+        error: { reason: 'invalid-request' },
+      });
+    }
+  });
+
+  test('ignores stale listed children unless durable ledger state derives absence', async () => {
+    const readStatus = await loadReader();
+    const liveOnly = await readStatus(readPorts({ listing: ['ghost'] }), request());
+    expect(liveOnly.ok).toBeTrue();
+    if (!liveOnly.ok) throw new Error('expected stale listing to be ignored');
+    expect(liveOnly.value.entries).toEqual([]);
+
+    const durable = await readStatus(
+      readPorts({ listing: ['ghost'], bytes: artifactBytes(['ghost']) }),
+      request(),
+    );
+    expect(durable.ok).toBeTrue();
+    if (!durable.ok) throw new Error('expected ledger-derived absent placement');
+    expect(durable.value.entries).toHaveLength(1);
+    expect(durable.value.entries[0]?.name).toBe('ghost');
+    expect(durable.value.entries[0]?.placements).toHaveLength(1);
+    expect(durable.value.entries[0]?.placements[0]).toMatchObject({
+      classification: 'broken',
+      brokenReason: 'ledger-recorded-absence',
+      live: { state: 'absent' },
+    });
+  });
+
+  test('projects canonical pair membership and mismatch facts with exact values', () => {
+    const manifest = manifestModel(['alpha']);
+    const missing = unwrapJoin(
+      joinInput({
+        request: selectedArtifactRequest(),
+        manifest: artifactPresent('manifest', manifest, 1),
+        lock: artifactPresent('lock', lockModel([], manifest), 1),
+      }),
+    );
+    expect(relationshipOf(missing)).toMatchObject({
+      state: 'incomplete',
+      missingNames: ['alpha'],
+    });
+    expect(missing.entries[0]?.facts).toContainEqual(
+      expect.objectContaining({
+        code: 'lock-missing-entry',
+        expected: 'present',
+        actual: 'absent',
+      }),
+    );
+    expect(missing.entries[0]?.facts.map((fact) => fact.code)).not.toContain('manifest-only');
+
+    const emptyManifest = manifestModel([]);
+    const extra = unwrapJoin(
+      joinInput({
+        request: selectedArtifactRequest({
+          toolSelectionSource: 'unbounded-default',
+          scopeSelectionSource: 'unbounded-default',
+        }),
+        manifest: artifactPresent('manifest', emptyManifest, 1),
+        lock: artifactPresent('lock', lockModel(['alpha'], emptyManifest), 1),
+      }),
+    );
+    expect(relationshipOf(extra)).toMatchObject({ state: 'incomplete', missingNames: [] });
+    expect(extra.entries[0]?.facts).toContainEqual(
+      expect.objectContaining({
+        code: 'lock-extra-entry',
+        expected: 'absent',
+        actual: 'present',
+      }),
+    );
+    expect(extra.entries[0]?.facts.map((fact) => fact.code)).not.toContain('lock-only');
+
+    const staleLock = lockModel(['alpha'], manifest);
+    const stale = unwrapJoin(
+      joinInput({
+        request: selectedArtifactRequest(),
+        manifest: artifactPresent('manifest', manifest, 1),
+        lock: artifactPresent(
+          'lock',
+          {
+            ...staleLock,
+            skills: [
+              {
+                ...(staleLock.skills[0] as PortableLockV1['skills'][number]),
+                source: 'github.com/other/repository//wrong',
+                requestedRef: 'v9',
+                sourcePath: 'wrong',
+              },
+            ],
+          },
+          1,
+        ),
+      }),
+    );
+    expect(relationshipOf(stale).state).toBe('stale');
+    expect(stale.entries[0]?.facts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'lock-source',
+          expected: 'github.com/acme/skills//alpha',
+          actual: 'github.com/other/repository//wrong',
+        }),
+        expect.objectContaining({ code: 'lock-ref', expected: null, actual: 'v9' }),
+        expect.objectContaining({
+          code: 'lock-source-path',
+          expected: 'alpha',
+          actual: 'wrong',
+        }),
+      ]),
+    );
+  });
+
+  test('suppresses a correlated lock when its canonical declaration is context-filtered', () => {
+    const userManifest = manifestModel(['alpha']);
+    const projectManifest: NormalizedManifestV1 = {
+      ...userManifest,
+      skills: userManifest.skills.map((skill) => ({
+        ...skill,
+        scope: 'project',
+        path: './.agents/skills/alpha',
+      })),
+    };
+    const context: ProjectContext = {
+      invocationCwd: ROOT,
+      effectiveCwd: ROOT,
+      projectRoot: null,
+      projectIdentity: null,
+      projectKind: 'non-git',
+      discoveredConfigPath: null,
+      explicitConfigPath: null,
+    };
+    const canonicalLock = lockModel(['alpha'], projectManifest);
+    const canonicalSkill = canonicalLock.skills[0];
+    if (canonicalSkill === undefined) throw new Error('missing canonical lock fixture');
+    const report = unwrapJoin(
+      joinInput({
+        request: selectedArtifactRequest({
+          projectContext: context,
+          projectPlacement: { state: 'unselected' },
+          targets: ['alpha'],
+          selectionSource: 'explicit-targets',
+          tools: ['codex'],
+          toolSelectionSource: 'unbounded-default',
+          scopes: ['user'],
+          scopeSelectionSource: 'unbounded-default',
+        }),
+        manifest: artifactPresent('manifest', projectManifest, 1),
+        lock: artifactPresent(
+          'lock',
+          {
+            ...canonicalLock,
+            manifestHash: CONTENT_HASH,
+            skills: [
+              {
+                ...canonicalSkill,
+                source: 'github.com/other/repository//wrong',
+                requestedRef: 'v9',
+                sourcePath: 'wrong',
+              },
+            ],
+          },
+          1,
+        ),
+        ledger: artifactPresent(
+          'ledger',
+          emptyLedgerModel({ skills: { alpha: { tools: { codex: pairFor('alpha') } } } }),
+          2,
+        ),
+        live: [liveInput('alpha', join(CODEX_ROOT, 'alpha'))],
+      }),
+    );
+    expect(report.selection).toMatchObject({ outcome: 'selected' });
+    expect(report.entries).toHaveLength(1);
+    expect(report.entries[0]).toMatchObject({
+      name: 'alpha',
+      desired: { state: 'absent' },
+      locked: { state: 'absent' },
+    });
+    expect(report.entries[0]?.facts.map((fact) => fact.code)).not.toEqual(
+      expect.arrayContaining([
+        'lock-missing-entry',
+        'lock-extra-entry',
+        'lock-source',
+        'lock-ref',
+        'lock-source-path',
+      ]),
+    );
+    expect(relationshipOf(report)).toEqual({ state: 'none' });
+    expect(report.facts.map((fact) => fact.code)).not.toEqual(
+      expect.arrayContaining(['lock-only', 'lock-manifest-hash']),
+    );
+  });
+
+  test('normalizes ledger root origin skill paths to null without changing nested paths', () => {
+    const rootPair: LedgerPairV1Dto = {
+      ...pairFor('root'),
+      origin: {
+        ...(pairFor('root').origin as NonNullable<LedgerPairV1Dto['origin']>),
+        skillPath: '',
+      },
+    };
+    const nestedPair = pairFor('nested');
+    const ledger = emptyLedgerModel({
+      skills: {
+        root: { tools: { codex: rootPair } },
+        nested: { tools: { codex: nestedPair } },
+      },
+    });
+    const report = unwrapJoin(
+      joinInput({
+        ledger: artifactPresent('ledger', ledger, 2),
+      }),
+    );
+    const sources = Object.fromEntries(
+      report.entries.map((entry) => [
+        entry.name,
+        entry.placements[0]?.ledger.state === 'present'
+          ? entry.placements[0].ledger.value.source?.path
+          : undefined,
+      ]),
+    );
+    expect(sources).toEqual({ nested: 'nested', root: null });
+  });
+
+  test('projects committed legacy pinned-to-dev reversal as one store-only retention requirement', () => {
+    const path = join(CODEX_ROOT, 'alpha');
+    const storePath = join(DATA_ROOT, 'store', 'retained-alpha');
+    const pair: LedgerPairV1Dto = {
+      ...pairFor('alpha'),
+      placementPath: path,
+      mode: 'dev',
+      dev: {
+        sourcePath: '/source/alpha',
+        resolvedPath: '/source/alpha',
+        repoRoot: '/source',
+        sourceRelPath: 'alpha',
+        remote: null,
+        recordedAt: '2026-07-14T00:00:00.000Z',
+      },
+      pinned: null,
+      journal: {
+        op: 'dev',
+        txId: 'tx:pinned-to-dev',
+        phase: 'committed',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: '2026-07-14T00:00:01.000Z',
+        before: {
+          mode: 'pinned',
+          storePath,
+          contentHash: CONTENT_HASH,
+          liveKind: 'dir',
+        },
+        stagingPath: `${path}.stage`,
+        backupPath: `${path}.backup`,
+      },
+    };
+    const retention: StatusRetentionProbeInput = {
+      transactionId: 'tx:pinned-to-dev',
+      resourceId: null,
+      path: storePath,
+      pathState: 'satisfied',
+      repositoryRevision: { state: 'unverified', digest: null },
+      contentHash: { state: 'observed', digest: CONTENT_HASH },
+      node: { state: 'observed', kind: 'directory', linkTarget: null },
+    };
+    const report = unwrapJoin(
+      joinInput({
+        ledger: artifactPresent(
+          'ledger',
+          emptyLedgerModel({ skills: { alpha: { tools: { codex: pair } } } }),
+          2,
+        ),
+        live: [
+          {
+            ...liveInput('alpha', path),
+            physicalClass: 'dev',
+            observation: {
+              path,
+              realpath: '/source/alpha',
+              nodeKind: 'symlink',
+              linkTarget: '/source/alpha',
+              skillFile: 'valid',
+            },
+          },
+        ],
+        retention: [retention],
+      }),
+    );
+    expect(report.entries[0]?.placements[0]?.journal).toMatchObject({
+      state: 'committed',
+      format: 'legacy-pair',
+      reverseEligibility: 'eligible',
+      retention: [
+        {
+          role: 'store',
+          sourceRole: null,
+          path: storePath,
+          state: 'satisfied',
+        },
+      ],
+      remediation: {
+        reverse: ['skillsmith', 'undo', path, '--tool', 'codex', '--scope', 'user'],
+      },
+    });
+    const journal = report.entries[0]?.placements[0]?.journal;
+    expect(journal === undefined || journal.state === 'none' ? [] : journal.retention).toHaveLength(
+      1,
+    );
+  });
+
+  test('uses literal structure alone for recoverable pinned legacy symlinks', () => {
+    const path = join(CODEX_ROOT, 'alpha');
+    const backupPath = `${path}.backup`;
+    const linkTarget = '/retained/source/alpha';
+    const reportFor = (
+      phase: 'live' | 'committed',
+      observedKind: 'symlink' | 'directory',
+      observedTarget: string | null,
+    ) => {
+      const pair: LedgerPairV1Dto = {
+        ...pairFor('alpha'),
+        journal: {
+          op: 'uninstall',
+          txId: `tx:pinned-${phase}-${observedKind}`,
+          phase,
+          startedAt: '2026-07-14T00:00:00.000Z',
+          completedAt: phase === 'committed' ? '2026-07-14T00:00:01.000Z' : null,
+          before: {
+            mode: 'pinned',
+            storePath: join(DATA_ROOT, 'store', 'retained-alpha'),
+            contentHash: CONTENT_HASH,
+            liveKind: observedKind === 'directory' ? 'dir' : 'symlink',
+            ...(observedKind === 'symlink' ? { symlinkTarget: linkTarget } : {}),
+          },
+          stagingPath: `${path}.stage`,
+          backupPath,
+        },
+      };
+      const retention: StatusRetentionProbeInput = {
+        transactionId: pair.journal?.txId ?? '',
+        resourceId: null,
+        path: backupPath,
+        pathState: 'satisfied',
+        repositoryRevision: { state: 'unverified', digest: null },
+        contentHash: { state: 'unverified', digest: null },
+        node: {
+          state: 'observed',
+          kind: observedKind,
+          linkTarget: observedTarget,
+        },
+      };
+      return unwrapJoin(
+        joinInput({
+          ledger: artifactPresent(
+            'ledger',
+            emptyLedgerModel({ skills: { alpha: { tools: { codex: pair } } } }),
+            2,
+          ),
+          retention: [retention],
+        }),
+      ).entries[0]?.placements[0]?.journal;
+    };
+
+    for (const phase of ['live', 'committed'] as const) {
+      const exact = reportFor(phase, 'symlink', linkTarget);
+      expect(exact, phase).toMatchObject({
+        state: phase === 'live' ? 'pending' : 'committed',
+        retention: [
+          {
+            structural: { state: 'satisfied' },
+            contentHash: { state: 'not-recorded' },
+            state: 'satisfied',
+          },
+        ],
+        ...(phase === 'live'
+          ? {
+              abortEligibility: 'eligible',
+              remediation: { abort: expect.any(Array) },
+            }
+          : {
+              reverseEligibility: 'eligible',
+              remediation: { reverse: expect.any(Array) },
+            }),
+      });
+    }
+
+    const wrongTarget = reportFor('live', 'symlink', '/wrong/target');
+    expect(wrongTarget).toMatchObject({
+      state: 'pending',
+      abortEligibility: 'retention-mismatch',
+      retention: [{ structural: { state: 'mismatch' }, state: 'mismatch' }],
+      remediation: { abort: null },
+    });
+    const directory = reportFor('live', 'directory', null);
+    expect(directory).toMatchObject({
+      state: 'pending',
+      abortEligibility: 'retention-unverified',
+      retention: [
+        {
+          structural: { state: 'satisfied' },
+          contentHash: { state: 'unverified' },
+          state: 'unverified',
+        },
+      ],
+      remediation: { abort: null },
+    });
+  });
+
+  test('includes legacy path state in the aggregate before mapping to status@1', () => {
+    const path = join(CODEX_ROOT, 'path-state');
+    const backupPath = `${path}.backup`;
+    const pair: LedgerPairV1Dto = {
+      ...pairFor('path-state'),
+      placementPath: path,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:path-state',
+        phase: 'committed',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: '2026-07-14T00:00:01.000Z',
+        before: {
+          mode: 'pinned',
+          storePath: join(DATA_ROOT, 'store', 'path-state'),
+          contentHash: null,
+          liveKind: 'dir',
+        },
+        stagingPath: `${path}.stage`,
+        backupPath,
+      },
+    };
+    const report = unwrapJoin(
+      joinInput({
+        ledger: artifactPresent(
+          'ledger',
+          emptyLedgerModel({ skills: { 'path-state': { tools: { codex: pair } } } }),
+          2,
+        ),
+        retention: [
+          {
+            transactionId: 'tx:path-state',
+            resourceId: null,
+            path: backupPath,
+            pathState: 'unverified',
+            repositoryRevision: { state: 'unverified', digest: null },
+            contentHash: { state: 'unverified', digest: null },
+            node: { state: 'observed', kind: 'directory', linkTarget: null },
+          },
+        ],
+      }),
+    );
+    expect(report.entries[0]?.placements[0]?.journal).toMatchObject({
+      state: 'committed',
+      reverseEligibility: 'retention-unverified',
+      retention: [
+        {
+          pathState: 'unverified',
+          structural: { state: 'unverified', observed: null },
+          contentHash: { state: 'not-recorded' },
+          state: 'unverified',
+        },
+      ],
+    });
+    expect(() => toStatusV1Dto(report)).not.toThrow();
+  });
+
+  test('uses the exact selected portable set for pair-global manifest hash projection', () => {
+    const manifest = manifestModel(['alpha', 'beta']);
+    const canonical = lockModel(['alpha', 'beta'], manifest);
+    const staleLock: PortableLockV1 = { ...canonical, manifestHash: CONTENT_HASH };
+    const alphaAndLocal = unwrapJoin(
+      joinInput({
+        request: selectedArtifactRequest({
+          targets: ['alpha', 'local-only'],
+          selectionSource: 'explicit-targets',
+        }),
+        manifest: artifactPresent('manifest', manifest, 1),
+        lock: artifactPresent('lock', staleLock, 1),
+        live: [liveInput('local-only', join(CODEX_ROOT, 'local-only'))],
+      }),
+    );
+    expect(alphaAndLocal.entries.map((entry) => entry.name)).toEqual(['alpha', 'local-only']);
+    expect(relationshipOf(alphaAndLocal).state).toBe('current');
+    expect(alphaAndLocal.facts.map((fact) => fact.code)).not.toContain('lock-manifest-hash');
+
+    const completePortableSet = unwrapJoin(
+      joinInput({
+        request: selectedArtifactRequest(),
+        manifest: artifactPresent('manifest', manifest, 1),
+        lock: artifactPresent('lock', staleLock, 1),
+      }),
+    );
+    expect(relationshipOf(completePortableSet).state).toBe('stale');
+    expect(completePortableSet.facts).toContainEqual(
+      expect.objectContaining({ code: 'lock-manifest-hash' }),
+    );
+    const completePortableSetPlusLocal = unwrapJoin(
+      joinInput({
+        request: selectedArtifactRequest({
+          targets: ['alpha', 'beta', 'local-only'],
+          selectionSource: 'explicit-targets',
+        }),
+        manifest: artifactPresent('manifest', manifest, 1),
+        lock: artifactPresent('lock', staleLock, 1),
+        live: [liveInput('local-only', join(CODEX_ROOT, 'local-only'))],
+      }),
+    );
+    expect(relationshipOf(completePortableSetPlusLocal).state).toBe('stale');
+    expect(completePortableSetPlusLocal.facts).toContainEqual(
+      expect.objectContaining({ code: 'lock-manifest-hash' }),
+    );
+  });
+
+  test('bounds exact-path projection to matched rows before facts, journals, and shadows', () => {
+    const userPath = join(CODEX_ROOT, 'alpha');
+    const projectPath = join(ROOT, '.agents', 'skills', 'alpha');
+    const userPair = { ...pairFor('alpha'), placementPath: userPath };
+    const projectPair = {
+      ...pairFor('alpha'),
+      placementPath: projectPath,
+      journal: {
+        op: 'install' as const,
+        txId: 'tx:unselected-project',
+        phase: 'live' as const,
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: null,
+        before: { mode: 'absent' as const },
+        stagingPath: `${projectPath}.stage`,
+        backupPath: `${projectPath}.backup`,
+      },
+    };
+    const ledger = emptyLedgerModel({
+      skills: { alpha: { tools: { codex: userPair } } },
+      projects: {
+        [ROOT]: { skills: { alpha: { tools: { codex: projectPair } } } },
+      },
+    });
+    const report = unwrapJoin(
+      joinInput({
+        request: statusRequest({
+          targets: [userPath],
+          selectionSource: 'explicit-targets',
+          scopes: ['user', 'project'],
+        }),
+        ledger: artifactPresent('ledger', ledger, 2),
+        live: [liveInput('alpha', userPath), liveInput('alpha', projectPath, 'project')],
+      }),
+    );
+    expect(report.entries).toHaveLength(1);
+    expect(report.entries[0]?.placements).toHaveLength(1);
+    expect(report.entries[0]?.placements[0]).toMatchObject({
+      identity: { path: userPath, scope: 'user' },
+      shadow: { state: 'none' },
+      journal: { state: 'none' },
+    });
+    expect(report.entries[0]?.placements[0]?.facts.map((fact) => fact.code)).not.toEqual(
+      expect.arrayContaining(['shadowed', 'duplicate-live', 'journal-pending']),
+    );
+  });
+
+  test('bounds exact-mappable journals by name versus placement without inventing mismatched rows', () => {
+    const concretePath = join(CODEX_ROOT, 'alpha');
+    const journalPath = join(CODEX_ROOT, 'alternate', 'alpha');
+    const otherPath = join(CODEX_ROOT, 'other', 'alpha');
+    const journal = logicalJournal({
+      name: 'alpha',
+      path: journalPath,
+      transactionId: 'tx:placement-matrix',
+    });
+    const ledger = artifactPresent(
+      'ledger',
+      emptyLedgerModel({ transactions: { [journal.transactionId]: journal } }),
+      2,
+    );
+    const withConcrete = (requestValue: Readonly<StatusReadRequest>) =>
+      joinInput({ request: requestValue, ledger, live: [liveInput('alpha', concretePath)] });
+
+    const nameOnly = unwrapJoin(
+      withConcrete(statusRequest({ targets: ['alpha'], selectionSource: 'explicit-targets' })),
+    );
+    expect(nameOnly.entries[0]?.placements.map((placement) => placement.identity.path)).toEqual([
+      concretePath,
+    ]);
+    expect(nameOnly.entries[0]?.placements[0]?.journal).toEqual({ state: 'none' });
+    expect(nameOnly.journals).toContainEqual(
+      expect.objectContaining({
+        transactionId: journal.transactionId,
+        reason: 'unselected-placement',
+      }),
+    );
+    expect(nameOnly.facts).toContainEqual(expect.objectContaining({ code: 'journal-pending' }));
+
+    const exactJournalPath = unwrapJoin(
+      withConcrete(statusRequest({ targets: [journalPath], selectionSource: 'explicit-targets' })),
+    );
+    expect(exactJournalPath.entries[0]?.placements).toHaveLength(1);
+    expect(exactJournalPath.entries[0]?.placements[0]).toMatchObject({
+      identity: { path: journalPath },
+      classification: 'absent',
+      journal: { state: 'pending', transactionId: journal.transactionId },
+    });
+    expect(exactJournalPath.journals).toEqual([]);
+
+    const exactConcretePath = unwrapJoin(
+      withConcrete(statusRequest({ targets: [concretePath], selectionSource: 'explicit-targets' })),
+    );
+    expect(exactConcretePath.entries[0]?.placements).toHaveLength(1);
+    expect(exactConcretePath.entries[0]?.placements[0]).toMatchObject({
+      identity: { path: concretePath },
+      journal: { state: 'none' },
+    });
+    expect(exactConcretePath.journals).toEqual([]);
+
+    const exactOtherPath = joinStatus(
+      withConcrete(statusRequest({ targets: [otherPath], selectionSource: 'explicit-targets' })),
+    );
+    expect(exactOtherPath).toEqual({ ok: false, error: { reason: 'unmatched-target' } });
+
+    const bounded = unwrapJoin(withConcrete(statusRequest()));
+    expect(bounded.entries[0]?.placements.map((placement) => placement.identity.path)).toEqual([
+      concretePath,
+      journalPath,
+    ]);
+    expect(
+      bounded.entries[0]?.placements.find((placement) => placement.identity.path === journalPath)
+        ?.journal,
+    ).toMatchObject({ state: 'pending', transactionId: journal.transactionId });
+
+    const noConcrete = unwrapJoin(
+      joinInput({
+        request: statusRequest({ targets: ['alpha'], selectionSource: 'explicit-targets' }),
+        ledger,
+      }),
+    );
+    expect(noConcrete.entries[0]?.placements).toHaveLength(1);
+    expect(noConcrete.entries[0]?.placements[0]).toMatchObject({
+      identity: { path: journalPath },
+      journal: { state: 'pending', transactionId: journal.transactionId },
+    });
+  });
+
+  test('retains selected top-level multi-resource journals as real selection context', () => {
+    const base = logicalJournal({
+      name: 'alpha',
+      path: join(CODEX_ROOT, 'alpha'),
+      transactionId: 'tx:multi-resource',
+    });
+    const firstBefore = base.actual.before.find((resource) => resource.role === 'live');
+    const firstAfter = base.actual.after.find((resource) => resource.role === 'live');
+    if (firstBefore === undefined || firstAfter === undefined) {
+      throw new Error('missing logical live fixture');
+    }
+    const journal: LogicalJournalV1Dto = {
+      ...base,
+      actual: {
+        ...base.actual,
+        before: [
+          ...base.actual.before,
+          {
+            ...firstBefore,
+            resourceId: 'resource:alpha:second-before',
+            placementPath: join(CODEX_ROOT, 'alternate', 'alpha'),
+          },
+        ],
+        after: [
+          ...base.actual.after,
+          {
+            ...firstAfter,
+            resourceId: 'resource:alpha:second-after',
+            placementPath: join(CODEX_ROOT, 'alternate', 'alpha'),
+          },
+        ],
+      },
+    };
+    const filteredPair = pairFor('beta');
+    const ledger = (withFiltered: boolean) =>
+      artifactPresent(
+        'ledger',
+        emptyLedgerModel({
+          skills: withFiltered ? { beta: { tools: { 'claude-code': filteredPair } } } : {},
+          transactions: { [journal.transactionId]: journal },
+        }),
+        2,
+      );
+
+    const explicit = unwrapJoin(
+      joinInput({
+        request: statusRequest({ targets: ['alpha'], selectionSource: 'explicit-targets' }),
+        ledger: ledger(false),
+      }),
+    );
+    expect(explicit.selection).toMatchObject({ outcome: 'selected' });
+    expect(explicit.entries).toEqual([]);
+    expect(explicit.summary).toMatchObject({ entries: 0, converged: 0, drifting: 0 });
+    expect(explicit.journals).toEqual([
+      expect.objectContaining({ transactionId: journal.transactionId, reason: 'multi-resource' }),
+    ]);
+    expect(explicit.facts).toContainEqual(expect.objectContaining({ code: 'journal-pending' }));
+
+    const bounded = unwrapJoin(joinInput({ ledger: ledger(false) }));
+    expect(bounded.selection).toMatchObject({ outcome: 'selected' });
+    expect(bounded.entries).toEqual([]);
+    expect(bounded.journals).toHaveLength(1);
+
+    const mixed = unwrapJoin(
+      joinInput({
+        request: statusRequest({
+          targets: ['alpha', 'beta'],
+          selectionSource: 'explicit-targets',
+        }),
+        ledger: ledger(true),
+      }),
+    );
+    expect(mixed.selection).toMatchObject({ outcome: 'selected', reason: null });
+    expect(mixed.entries).toEqual([]);
+    expect(mixed.journals).toHaveLength(1);
+    expect(mixed.facts).toContainEqual(expect.objectContaining({ code: 'journal-pending' }));
+
+    const pathTarget = joinStatus(
+      joinInput({
+        request: statusRequest({
+          targets: [join(CODEX_ROOT, 'alpha')],
+          selectionSource: 'explicit-targets',
+        }),
+        ledger: ledger(false),
+      }),
+    );
+    expect(pathTarget).toEqual({ ok: false, error: { reason: 'unmatched-target' } });
+  });
+
+  test('distinguishes filtered ledger and logical membership from unmatched live-only targets', () => {
+    const filteredLedger = emptyLedgerModel({
+      skills: { alpha: { tools: { 'claude-code': pairFor('alpha') } } },
+    });
+    const ledgerNoop = unwrapJoin(
+      joinInput({
+        request: statusRequest({ targets: ['alpha'], selectionSource: 'explicit-targets' }),
+        ledger: artifactPresent('ledger', filteredLedger, 2),
+      }),
+    );
+    expect(ledgerNoop.selection).toMatchObject({ outcome: 'filter-noop' });
+
+    const filteredLogical = logicalJournal({
+      name: 'beta',
+      path: join(HOME, '.claude', 'skills', 'beta'),
+      transactionId: 'tx:filtered-logical',
+      tool: 'claude-code',
+    });
+    const logicalNoop = unwrapJoin(
+      joinInput({
+        request: statusRequest({ targets: ['beta'], selectionSource: 'explicit-targets' }),
+        ledger: artifactPresent(
+          'ledger',
+          emptyLedgerModel({ transactions: { [filteredLogical.transactionId]: filteredLogical } }),
+          2,
+        ),
+      }),
+    );
+    expect(logicalNoop.selection).toMatchObject({ outcome: 'filter-noop' });
+
+    const scopeFilteredLedger = emptyLedgerModel({
+      projects: {
+        [ROOT]: { skills: { gamma: { tools: { codex: pairFor('gamma') } } } },
+      },
+    });
+    const ledgerScopeNoop = unwrapJoin(
+      joinInput({
+        request: statusRequest({ targets: ['gamma'], selectionSource: 'explicit-targets' }),
+        ledger: artifactPresent('ledger', scopeFilteredLedger, 2),
+      }),
+    );
+    expect(ledgerScopeNoop.selection).toMatchObject({ outcome: 'filter-noop' });
+
+    const scopeFilteredLogical = logicalJournal({
+      name: 'delta',
+      path: join(ROOT, '.agents', 'skills', 'delta'),
+      transactionId: 'tx:scope-filtered-logical',
+      scope: 'project',
+      projectRoot: ROOT,
+    });
+    const logicalScopeNoop = unwrapJoin(
+      joinInput({
+        request: statusRequest({ targets: ['delta'], selectionSource: 'explicit-targets' }),
+        ledger: artifactPresent(
+          'ledger',
+          emptyLedgerModel({
+            transactions: { [scopeFilteredLogical.transactionId]: scopeFilteredLogical },
+          }),
+          2,
+        ),
+      }),
+    );
+    expect(logicalScopeNoop.selection).toMatchObject({ outcome: 'filter-noop' });
+
+    const unmatched = joinStatus(
+      joinInput({
+        request: statusRequest({
+          targets: ['unselected-live-only'],
+          selectionSource: 'explicit-targets',
+        }),
+      }),
+    );
+    expect(unmatched).toEqual({ ok: false, error: { reason: 'unmatched-target' } });
+  });
+
+  test('uses one known-or-unbounded predicate for unknown v2 pair journals and retention probes', async () => {
+    const readStatus = await loadReader();
+    const unknownTool = 'future-tool';
+    const legacyPath = join(CODEX_ROOT, 'future-legacy');
+    const legacyBackup = `${legacyPath}.backup`;
+    const legacyPair: LedgerPairV1Dto = {
+      ...pairFor('future-legacy'),
+      placementPath: legacyPath,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:future-legacy',
+        phase: 'live',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: null,
+        before: { mode: 'absent' },
+        stagingPath: `${legacyPath}.stage`,
+        backupPath: legacyBackup,
+      },
+    };
+    const model = emptyLedgerModel({
+      skills: {
+        'future-legacy': { tools: { [unknownTool]: legacyPair } },
+      },
+    });
+    const allKnownTools = ['claude-code', 'codex', 'kilo-code', 'opencode'] as const;
+
+    for (const source of ['explicit', 'effective-config'] as const) {
+      const filtered = unwrapJoin(
+        joinInput({
+          request: statusRequest({
+            tools: allKnownTools,
+            toolSelectionSource: source,
+          }),
+          ledger: artifactPresent('ledger', model, 2),
+        }),
+      );
+      expect(filtered.selection, source).toMatchObject({ outcome: 'filter-noop' });
+      expect(filtered.entries, source).toEqual([]);
+      expect(filtered.journals, source).toEqual([]);
+    }
+
+    const retained = unwrapJoin(
+      joinInput({
+        request: statusRequest({
+          tools: allKnownTools,
+          toolSelectionSource: 'unbounded-default',
+        }),
+        ledger: artifactPresent('ledger', model, 2),
+        retention: [
+          {
+            transactionId: 'tx:future-legacy',
+            resourceId: null,
+            path: legacyBackup,
+            pathState: 'missing',
+            repositoryRevision: { state: 'missing', digest: null },
+            contentHash: { state: 'missing', digest: null },
+            node: { state: 'observed', kind: 'absent', linkTarget: null },
+          },
+        ],
+      }),
+    );
+    expect(retained.entries.map((entry) => entry.name)).toEqual(['future-legacy']);
+    expect(retained.entries[0]?.placements[0]?.identity.tool).toBe(unknownTool);
+    expect(
+      retained.entries.map((entry) => {
+        const journal = entry.placements[0]?.journal;
+        return journal === undefined || !('retention' in journal)
+          ? null
+          : journal.retention[0]?.state;
+      }),
+    ).toEqual(['satisfied']);
+
+    const encoded = ledgerV2Codec.encode(model);
+    if (!encoded.ok) {
+      throw new Error(`unknown ledger encoding failed: ${JSON.stringify(encoded.error)}`);
+    }
+    const bytes = new Map([[LEDGER_PATH, encoded.value]]);
+    for (const source of ['explicit', 'effective-config'] as const) {
+      const filteredProbes: string[] = [];
+      const filteredBase = readPorts({ bytes });
+      const filtered = await readStatus(
+        {
+          ...filteredBase,
+          readFileMetadata: async (path) => {
+            if (path === legacyBackup) filteredProbes.push(path);
+            return filteredBase.readFileMetadata(path);
+          },
+        },
+        { ...request(), tools: allKnownTools, toolSelectionSource: source },
+      );
+      expect(filtered.ok, source).toBeTrue();
+      if (!filtered.ok) throw new Error(`expected ${source} filtered status product`);
+      expect(filtered.value.selection, source).toMatchObject({ outcome: 'filter-noop' });
+      expect(filtered.value.entries, source).toEqual([]);
+      expect(filteredProbes, source).toEqual([]);
+    }
+    const probed: string[] = [];
+    const base = readPorts({ bytes });
+    const observed = await readStatus(
+      {
+        ...base,
+        readFileMetadata: async (path) => {
+          if (path === legacyBackup) probed.push(path);
+          return base.readFileMetadata(path);
+        },
+      },
+      {
+        ...request(),
+        tools: allKnownTools,
+        toolSelectionSource: 'unbounded-default',
+      },
+    );
+    expect(observed.ok).toBeTrue();
+    if (!observed.ok) throw new Error('expected unbounded unknown-pair status product');
+    expect(probed).toEqual([legacyBackup]);
+    expect(observed.value.entries.map((entry) => entry.name)).toEqual(['future-legacy']);
+    expect(
+      observed.value.entries.map((entry) => {
+        const journal = entry.placements[0]?.journal;
+        if (journal === undefined || !('retention' in journal)) return null;
+        return journal.retention[0]?.state;
+      }),
+    ).toEqual(['satisfied']);
+  });
+
+  test('emits retention facts only after the corresponding failure gate', () => {
+    const retained = {
+      resourceId: 'resource:retained',
+      role: 'backup' as const,
+      sourceRole: 'live' as const,
+      path: '/retained/alpha',
+      repositoryRevision: { kind: 'resource' as const, digest: CONTENT_HASH },
+      contentHash: CONTENT_HASH,
+      retainUntil: null,
+    };
+    const probe = (state: 'satisfied' | 'missing'): StatusRetentionProbeInput => ({
+      transactionId: 'tx:retention',
+      resourceId: retained.resourceId,
+      path: retained.path,
+      pathState: state,
+      repositoryRevision:
+        state === 'satisfied'
+          ? { state: 'observed', digest: CONTENT_HASH }
+          : { state: 'missing', digest: null },
+      contentHash:
+        state === 'satisfied'
+          ? { state: 'observed', digest: CONTENT_HASH }
+          : { state: 'missing', digest: null },
+      node: {
+        state: 'observed',
+        kind: state === 'satisfied' ? 'directory' : 'absent',
+        linkTarget: null,
+      },
+    });
+    const factsFor = (
+      reversibility: LogicalJournalV1Dto['intent']['reversibility'],
+      actualRetained: LogicalJournalV1Dto['actual']['retained'],
+      retention: readonly StatusRetentionProbeInput[],
+    ): readonly string[] => {
+      const journal = logicalJournal({
+        name: 'alpha',
+        path: join(CODEX_ROOT, 'alpha'),
+        transactionId: 'tx:retention',
+        reversibility,
+        retained: actualRetained,
+      });
+      const report = unwrapJoin(
+        joinInput({
+          ledger: artifactPresent(
+            'ledger',
+            emptyLedgerModel({ transactions: { [journal.transactionId]: journal } }),
+            2,
+          ),
+          retention,
+        }),
+      );
+      return report.entries[0]?.placements[0]?.facts.map((fact) => fact.code) ?? [];
+    };
+    expect(
+      factsFor(
+        { kind: 'reversible', retentionResourceIds: [retained.resourceId] },
+        [retained],
+        [probe('satisfied')],
+      ).filter((code) => code.startsWith('retention-')),
+    ).toEqual([]);
+    expect(
+      factsFor({ kind: 'none', retentionResourceIds: [] }, [retained], [probe('missing')]).filter(
+        (code) => code.startsWith('retention-'),
+      ),
+    ).toEqual([]);
+    expect(
+      factsFor(
+        {
+          kind: 'conditional',
+          retentionResourceIds: [retained.resourceId, 'resource:unrecorded'],
+        },
+        [retained],
+        [probe('missing')],
+      ).filter((code) => code.startsWith('retention-')),
+    ).toEqual(['retention-incomplete']);
+    expect(
+      factsFor(
+        { kind: 'conditional', retentionResourceIds: [retained.resourceId] },
+        [retained],
+        [probe('missing')],
+      ).filter((code) => code.startsWith('retention-')),
+    ).toEqual(['retention-missing']);
+  });
+
+  test('ranks journals by pending, timestamp, transaction id, then format', () => {
+    const path = join(CODEX_ROOT, 'alpha');
+    const winnerFor = (
+      transactions: readonly LogicalJournalV1Dto[],
+      history: readonly LogicalJournalV1Dto[] = [],
+      pair: LedgerPairV1Dto | null = null,
+    ): Readonly<{ transactionId: string; format: string }> => {
+      const ledger = emptyLedgerModel({
+        skills: pair === null ? {} : { alpha: { tools: { codex: pair } } },
+        transactions: Object.fromEntries(
+          transactions.map((journal) => [journal.transactionId, journal]),
+        ),
+        history,
+      });
+      const report = unwrapJoin(joinInput({ ledger: artifactPresent('ledger', ledger, 2) }));
+      const journal = report.entries[0]?.placements[0]?.journal;
+      if (journal === undefined || journal.state === 'none') throw new Error('missing journal');
+      return { transactionId: journal.transactionId, format: journal.format };
+    };
+    const journal = (
+      transactionId: string,
+      updatedAt: string,
+      phase: LogicalJournalV1Dto['phase'] = 'live',
+    ) => logicalJournal({ name: 'alpha', path, transactionId, updatedAt, phase });
+
+    expect(
+      winnerFor(
+        [journal('tx:pending-older', '2026-07-14T00:00:01.000Z')],
+        [journal('tx:committed-newer', '2026-07-14T00:00:09.000Z', 'committed')],
+      ).transactionId,
+    ).toBe('tx:pending-older');
+    expect(
+      winnerFor([
+        journal('tx:older', '2026-07-14T00:00:01.000Z'),
+        journal('tx:newer', '2026-07-14T00:00:02.000Z'),
+      ]).transactionId,
+    ).toBe('tx:newer');
+    expect(
+      winnerFor([
+        journal('tx:b', '2026-07-14T00:00:02.000Z'),
+        journal('tx:a', '2026-07-14T00:00:02.000Z'),
+      ]).transactionId,
+    ).toBe('tx:a');
+    const legacyPair = (transactionId: string): LedgerPairV1Dto => ({
+      ...pairFor('alpha'),
+      placementPath: path,
+      journal: {
+        op: 'install',
+        txId: transactionId,
+        phase: 'live',
+        startedAt: '2026-07-14T00:00:02.000Z',
+        completedAt: null,
+        before: { mode: 'absent' },
+        stagingPath: `${path}.stage`,
+        backupPath: `${path}.backup`,
+      },
+    });
+    expect(
+      winnerFor([journal('tx:b', '2026-07-14T00:00:02.000Z')], [], legacyPair('tx:a')),
+    ).toEqual({ transactionId: 'tx:a', format: 'legacy-pair' });
+    expect(
+      winnerFor([journal('tx:same', '2026-07-14T00:00:02.000Z')], [], legacyPair('tx:same')),
+    ).toEqual({
+      transactionId: 'tx:same',
+      format: 'logical',
+    });
+  });
+
+  test('requires user logical journals to carry an explicit null project root in reader and join', async () => {
+    const readStatus = await loadReader();
+    const validRetained = retainedResource('/retained/valid-user');
+    const foreignRetained = retainedResource('/retained/foreign-user');
+    const valid = logicalJournal({
+      name: 'valid-user',
+      path: join(CODEX_ROOT, 'valid-user'),
+      transactionId: 'tx:valid-user',
+      retained: [validRetained],
+      reversibility: { kind: 'conditional', retentionResourceIds: [validRetained.resourceId] },
+    });
+    const foreign = logicalJournal({
+      name: 'foreign-user',
+      path: join(CODEX_ROOT, 'foreign-user'),
+      transactionId: 'tx:foreign-user',
+      projectRoot: ROOT,
+      retained: [foreignRetained],
+      reversibility: { kind: 'conditional', retentionResourceIds: [foreignRetained.resourceId] },
+    });
+    const base = readPorts({ bytes: journalLedgerBytes([valid, foreign]) });
+    const probed: string[] = [];
+    const result = await readStatus(
+      {
+        ...base,
+        readFileMetadata: async (path) => {
+          if (path === validRetained.path || path === foreignRetained.path) probed.push(path);
+          return base.readFileMetadata(path);
+        },
+      },
+      request(),
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error('expected journal-root isolation product');
+    expect(result.value.entries.map((entry) => entry.name)).toEqual(['valid-user']);
+    expect(result.value.entries[0]?.placements[0]?.journal).toMatchObject({
+      state: 'pending',
+      transactionId: valid.transactionId,
+    });
+    expect(probed).toEqual([validRetained.path]);
+  });
+
+  test('rethrows direct and nested retained-probe AbortError/ABORT_ERR as cancellation', async () => {
+    const readStatus = await loadReader();
+    const retained = retainedResource('/retained/cancelled');
+    const journal = logicalJournal({
+      name: 'cancelled',
+      path: join(CODEX_ROOT, 'cancelled'),
+      transactionId: 'tx:cancelled',
+      retained: [retained],
+      reversibility: { kind: 'conditional', retentionResourceIds: [retained.resourceId] },
+    });
+    const bytes = journalLedgerBytes([journal]);
+    const directBase = readPorts({ bytes });
+    const directAbort = Object.defineProperty(new Error('direct abort canary'), 'name', {
+      value: 'AbortError',
+      enumerable: true,
+    });
+    const direct = await readStatus(
+      {
+        ...directBase,
+        readFileMetadata: async (path) => {
+          if (path === retained.path) throw directAbort;
+          return directBase.readFileMetadata(path);
+        },
+      },
+      request(),
+    );
+    expect(direct).toEqual({
+      ok: false,
+      error: {
+        code: 'status-read',
+        reason: 'cancelled',
+        exitClass: 'cancelled',
+        message: 'status read was cancelled',
+      },
+    });
+
+    const nestedTarget = '/resolved/retained/cancelled';
+    const nestedBase = readPorts({ bytes });
+    const nestedAbort = Object.assign(new Error('nested abort canary'), { code: 'ABORT_ERR' });
+    const nested = await readStatus(
+      {
+        ...nestedBase,
+        realpath: async (path) => (path === retained.path ? nestedTarget : path),
+        readLink: async (path) => {
+          if (path === retained.path) return nestedTarget;
+          return nestedBase.readLink(path);
+        },
+        readFileMetadata: async (path) => {
+          if (path === retained.path) {
+            return { kind: 'symlink', mode: 0o777, identity: 'retained-link' };
+          }
+          if (path === nestedTarget) throw nestedAbort;
+          return nestedBase.readFileMetadata(path);
+        },
+      },
+      request(),
+    );
+    expect(nested).toEqual({
+      ok: false,
+      error: {
+        code: 'status-read',
+        reason: 'cancelled',
+        exitClass: 'cancelled',
+        message: 'status read was cancelled',
+      },
+    });
+  });
+
+  test('does not follow a structural-only legacy retained symlink', async () => {
+    const readStatus = await loadReader();
+    const path = join(CODEX_ROOT, 'legacy-link');
+    const backupPath = `${path}.backup`;
+    const linkTarget = '/source/legacy-link';
+    const pair: LedgerPairV1Dto = {
+      ...pairFor('legacy-link'),
+      placementPath: path,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:legacy-link',
+        phase: 'live',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: null,
+        before: {
+          mode: 'pinned',
+          storePath: join(DATA_ROOT, 'store', 'legacy-link'),
+          contentHash: CONTENT_HASH,
+          liveKind: 'symlink',
+          symlinkTarget: linkTarget,
+        },
+        stagingPath: `${path}.stage`,
+        backupPath,
+      },
+    };
+    const ledger = emptyLedgerModel({
+      skills: { 'legacy-link': { tools: { codex: pair } } },
+    });
+    const encoded = ledgerV2Codec.encode(ledger);
+    if (!encoded.ok) throw new Error('legacy no-follow ledger encoding failed');
+    const base = readPorts({ bytes: new Map([[LEDGER_PATH, encoded.value]]) });
+    let retainedRealpaths = 0;
+    let retainedLinks = 0;
+    const result = await readStatus(
+      {
+        ...base,
+        readFileMetadata: async (candidate) =>
+          candidate === backupPath
+            ? { kind: 'symlink', mode: 0o777, identity: 'legacy-retained-link' }
+            : base.readFileMetadata(candidate),
+        readLink: async (candidate) => {
+          if (candidate !== backupPath) return base.readLink(candidate);
+          retainedLinks += 1;
+          return linkTarget;
+        },
+        realpath: async (candidate) => {
+          if (candidate === backupPath) retainedRealpaths += 1;
+          return candidate === backupPath ? linkTarget : base.realpath(candidate);
+        },
+      },
+      request(),
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error('expected structural-only legacy symlink product');
+    expect(result.value.entries[0]?.placements[0]?.journal).toMatchObject({
+      state: 'pending',
+      abortEligibility: 'eligible',
+      retention: [
+        {
+          structural: { state: 'satisfied' },
+          contentHash: { state: 'not-recorded' },
+        },
+      ],
+    });
+    expect(retainedLinks).toBe(1);
+    expect(retainedRealpaths).toBe(0);
+  });
+
+  test('does not project a legacy backup directory when the live before-image makes it structural-only', async () => {
+    const readStatus = await loadReader();
+    const path = join(CODEX_ROOT, 'legacy-directory');
+    const backupPath = `${path}.backup`;
+    const pair: LedgerPairV1Dto = {
+      ...pairFor('legacy-directory'),
+      placementPath: path,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:legacy-directory',
+        phase: 'backed-up',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: null,
+        before: {
+          mode: 'pinned',
+          storePath: join(DATA_ROOT, 'store', 'legacy-directory'),
+          contentHash: CONTENT_HASH,
+          liveKind: 'dir',
+        },
+        stagingPath: `${path}.stage`,
+        backupPath,
+      },
+    };
+    const ledger = emptyLedgerModel({
+      skills: { 'legacy-directory': { tools: { codex: pair } } },
+    });
+    const encoded = ledgerV2Codec.encode(ledger);
+    if (!encoded.ok) throw new Error('legacy directory no-project ledger encoding failed');
+    const base = readPorts({
+      names: ['legacy-directory'],
+      bytes: new Map([[LEDGER_PATH, encoded.value]]),
+    });
+    let projectedBackup = 0;
+    const result = await readStatus(
+      {
+        ...base,
+        readFileMetadata: async (candidate) =>
+          candidate === backupPath
+            ? { kind: 'dir', mode: 0o755, identity: 'legacy-retained-directory' }
+            : base.readFileMetadata(candidate),
+        listDir: async (candidate) => {
+          if (candidate === backupPath) projectedBackup += 1;
+          return candidate === backupPath ? [] : base.listDir(candidate);
+        },
+      },
+      request(),
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error('expected structural-only legacy directory product');
+    expect(result.value.entries[0]?.placements[0]?.journal).toMatchObject({
+      state: 'pending',
+      abortEligibility: 'retention-mismatch',
+      retention: [
+        {
+          structural: { state: 'mismatch', expected: { kind: 'absent' } },
+          contentHash: { state: 'not-recorded' },
+        },
+      ],
+    });
+    expect(projectedBackup).toBe(0);
+  });
+
+  test('projects only logical retained digests consumed by the selected artifact-source checks', async () => {
+    const readStatus = await loadReader();
+    const cases = (['manifest', 'lock', 'ledger'] as const).flatMap((sourceRole) =>
+      (['artifact-symlink', 'resource-symlink', 'artifact-directory'] as const).map(
+        (representation) => {
+          const path = `/retained/${sourceRole}-${representation}`;
+          const repositoryKind = representation.startsWith('artifact')
+            ? ('artifact-bytes' as const)
+            : ('resource' as const);
+          const retained = {
+            ...retainedResource(path, repositoryKind),
+            sourceRole,
+          };
+          return {
+            sourceRole,
+            representation,
+            path,
+            retained,
+            journal: logicalJournal({
+              name: `${sourceRole}-${representation}`,
+              path: join(CODEX_ROOT, `${sourceRole}-${representation}`),
+              transactionId: `tx:${sourceRole}-${representation}`,
+              retained: [retained],
+              reversibility: {
+                kind: 'conditional',
+                retentionResourceIds: [retained.resourceId],
+              },
+            }),
+          };
+        },
+      ),
+    );
+    const retainedPaths = new Set(cases.map((candidate) => candidate.path));
+    const symlinkPaths = new Set(
+      cases
+        .filter((candidate) => candidate.representation.endsWith('symlink'))
+        .map((candidate) => candidate.path),
+    );
+    const resourceSymlinks = new Set(
+      cases
+        .filter((candidate) => candidate.representation === 'resource-symlink')
+        .map((candidate) => candidate.path),
+    );
+    const base = readPorts({
+      bytes: journalLedgerBytes(cases.map((candidate) => candidate.journal)),
+    });
+    const realpaths: string[] = [];
+    const links: string[] = [];
+    const projectedDirectories: string[] = [];
+    const result = await readStatus(
+      {
+        ...base,
+        readFileMetadata: async (path) => {
+          if (!retainedPaths.has(path)) return base.readFileMetadata(path);
+          return symlinkPaths.has(path)
+            ? { kind: 'symlink', mode: 0o777, identity: `logical:${path}` }
+            : { kind: 'dir', mode: 0o755, identity: `logical:${path}` };
+        },
+        readLink: async (path) => {
+          if (!retainedPaths.has(path)) return base.readLink(path);
+          links.push(path);
+          return `${path}.target`;
+        },
+        realpath: async (path) => {
+          if (retainedPaths.has(path)) realpaths.push(path);
+          return retainedPaths.has(path) ? `${path}.target` : base.realpath(path);
+        },
+        listDir: async (path) => {
+          if (retainedPaths.has(path)) projectedDirectories.push(path);
+          return retainedPaths.has(path) ? [] : base.listDir(path);
+        },
+      },
+      request(),
+    );
+    expect(result.ok).toBeTrue();
+    expect(realpaths).toEqual([]);
+    expect(projectedDirectories).toEqual([]);
+    expect(links.sort()).toEqual([...resourceSymlinks].sort());
+  });
+
+  test('leaves artifact-bytes revision unverified for retained directories and symlinks', async () => {
+    const readStatus = await loadReader();
+    for (const representation of ['dir', 'symlink'] as const) {
+      const retained = retainedResource(`/retained/wrong-${representation}`, 'artifact-bytes');
+      const journal = logicalJournal({
+        name: `wrong-${representation}`,
+        path: join(CODEX_ROOT, `wrong-${representation}`),
+        transactionId: `tx:wrong-${representation}`,
+        retained: [retained],
+        reversibility: { kind: 'conditional', retentionResourceIds: [retained.resourceId] },
+      });
+      const target = `${retained.path}.target`;
+      const base = readPorts({ bytes: journalLedgerBytes([journal]) });
+      const result = await readStatus(
+        {
+          ...base,
+          realpath: async (path) => (path === retained.path ? target : path),
+          readLink: async (path) => {
+            if (path === retained.path && representation === 'symlink') return target;
+            return base.readLink(path);
+          },
+          readFileMetadata: async (path) => {
+            if (path === retained.path) {
+              return {
+                kind: representation,
+                mode: representation === 'dir' ? 0o755 : 0o777,
+                identity: `retained-${representation}`,
+              };
+            }
+            if (path === target) return { kind: 'dir', mode: 0o755, identity: 'retained-target' };
+            return base.readFileMetadata(path);
+          },
+        },
+        request(),
+      );
+      expect(result.ok, representation).toBeTrue();
+      if (!result.ok) throw new Error(`expected wrong-${representation} status product`);
+      const requirement = result.value.entries[0]?.placements[0]?.journal;
+      expect(requirement, representation).toMatchObject({
+        state: 'pending',
+        transactionId: journal.transactionId,
+        retention: [{ repositoryRevision: { state: 'unverified' } }],
+      });
     }
   });
 });

@@ -103,6 +103,8 @@ shadowed-fleet — drift
     verify-passed (info): expected recorded; actual passed
     journal logical/update tx-shadowed-fleet — pending backed-up; before: pinned; abort: eligible
       retained-live backup/live /data/skillsmith/backups/shadowed-fleet — satisfied; retain until: 2026-08-01T00:00:00.000Z
+        repository revision: satisfied; expected resource:sha256:retained-revision; observed resource:sha256:retained-revision
+        content hash: satisfied; domain source-content; expected sha256:retained-content; observed sha256:retained-content
       resume: rerun the same operation
       abort: 'skillsmith' 'undo' '/repo/.agents/skills/shadowed-fleet' '--tool' 'codex' '--scope' 'project'
 

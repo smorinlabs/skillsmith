@@ -9,46 +9,118 @@ type StatusRetention = Extract<
   { readonly state: 'pending' | 'committed' }
 >['retention'][number];
 
-const scalar = (value: string | null): string => value ?? 'null';
+/** Encode untrusted DTO scalars without allowing terminal or line control. */
+const display = (value: string | null): string => {
+  if (value === null) return 'null';
+  return [...value]
+    .map((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined &&
+        (codePoint <= 0x1f ||
+          (codePoint >= 0x7f && codePoint <= 0x9f) ||
+          codePoint === 0x2028 ||
+          codePoint === 0x2029)
+        ? `\\u${codePoint.toString(16).padStart(4, '0')}`
+        : character;
+    })
+    .join('');
+};
 
 const factLine = (fact: StatusFact, indent: string): string =>
-  `${indent}${fact.code} (${fact.impact}): expected ${scalar(fact.expected)}; actual ${scalar(fact.actual)}`;
+  `${indent}${display(fact.code)} (${display(fact.impact)}): expected ${display(fact.expected)}; actual ${display(fact.actual)}`;
 
 const desiredLine = (entry: StatusEntry): string => {
   if (entry.desired.state === 'absent') return '  desired: absent';
   const desired = entry.desired.value;
   const path = desired.source.path === null ? '' : `/${desired.source.path}`;
   const ref = desired.ref === null ? '' : `@${desired.ref}`;
-  return `  desired: ${desired.source.host}/${desired.source.repository}${path}${ref}`;
+  return `  desired: ${display(desired.source.host)}/${display(desired.source.repository)}${display(path)}${display(ref)}`;
 };
 
 const lockedLine = (entry: StatusEntry): string =>
   entry.locked.state === 'absent'
     ? '  locked: absent'
-    : `  locked: ${entry.locked.value.resolvedSha}`;
+    : `  locked: ${display(entry.locked.value.resolvedSha)}`;
 
 const shadowLabel = (shadow: StatusPlacement['shadow']): string => {
   if (shadow.state === 'none') return 'shadow: none';
-  if (shadow.state === 'shadowed') return `shadowed by ${shadow.winner}`;
-  if (shadow.state === 'winner') return `shadows ${shadow.shadows.join(', ')}`;
+  if (shadow.state === 'shadowed') return `shadowed by ${display(shadow.winner)}`;
+  if (shadow.state === 'winner') return `shadows ${shadow.shadows.map(display).join(', ')}`;
   return 'shadow: duplicate';
 };
 
 const placementLine = (placement: StatusPlacement): string => {
   const path = placement.identity.path ?? '(default path)';
   const broken = placement.brokenReason === null ? '' : ` (${placement.brokenReason})`;
-  return `  ${placement.identity.tool}/${placement.identity.scope} ${path} — ${placement.classification}${broken}; verification: ${placement.verification}; ${shadowLabel(placement.shadow)}`;
+  return `  ${display(placement.identity.tool)}/${display(placement.identity.scope)} ${display(path)} — ${display(placement.classification)}${display(broken)}; verification: ${display(placement.verification)}; ${shadowLabel(placement.shadow)}`;
 };
 
-const quoteArg = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+const quoteArg = (value: string): string => `'${display(value).replaceAll("'", "'\\''")}'`;
 const argv = (value: readonly string[] | null): string =>
   value === null ? 'unavailable' : value.map(quoteArg).join(' ');
 
-const retentionLine = (retention: StatusRetention): string => {
+const retentionSummaryLine = (retention: StatusRetention): string => {
   const id = retention.resourceId ?? 'legacy';
   const source =
     retention.sourceRole === null ? retention.role : `${retention.role}/${retention.sourceRole}`;
-  return `      ${id} ${source} ${retention.path} — ${retention.state}; retain until: ${retention.retainUntil ?? 'none'}`;
+  return `      ${display(id)} ${display(source)} ${display(retention.path)} — ${display(retention.state)}; retain until: ${display(retention.retainUntil ?? 'none')}`;
+};
+
+const revisionValue = (
+  value:
+    | Extract<
+        StatusRetention['repositoryRevision'],
+        { state: 'satisfied' | 'mismatch' }
+      >['expected']
+    | null,
+): string => (value === null ? 'null' : `${display(value.kind)}:${display(value.digest)}`);
+
+const repositoryRevisionLine = (retention: StatusRetention): string => {
+  const check = retention.repositoryRevision;
+  if (check.state === 'not-recorded') {
+    return '        repository revision: not-recorded; expected null; observed null';
+  }
+  return `        repository revision: ${display(check.state)}; expected ${revisionValue(check.expected)}; observed ${revisionValue(check.observed)}`;
+};
+
+const contentHashLine = (retention: StatusRetention): string => {
+  const check = retention.contentHash;
+  if (check.state === 'not-recorded') {
+    return '        content hash: not-recorded; domain null; expected null; observed null';
+  }
+  return `        content hash: ${display(check.state)}; domain ${display(check.domain)}; expected ${display(check.expected)}; observed ${display(check.observed)}`;
+};
+
+const quoteHumanText = (value: string): string =>
+  `"${[...value]
+    .map((character) => {
+      if (character === '"') return '\\"';
+      if (character === '\\') return '\\\\';
+      return display(character);
+    })
+    .join('')}"`;
+
+const legacyNode = (
+  node:
+    | Extract<StatusRetention, { readonly format: 'legacy-pair' }>['structural']['expected']
+    | NonNullable<
+        Extract<StatusRetention, { readonly format: 'legacy-pair' }>['structural']['observed']
+      >
+    | null,
+): string => {
+  if (node === null) return 'null';
+  return node.kind === 'symlink' ? `symlink -> ${quoteHumanText(node.linkTarget)}` : node.kind;
+};
+
+const retentionLines = (retention: StatusRetention): readonly string[] => {
+  const lines = [retentionSummaryLine(retention)];
+  if (retention.format === 'legacy-pair') {
+    lines.push(
+      `        structural: ${display(retention.structural.state)}; expected ${legacyNode(retention.structural.expected)}; observed ${legacyNode(retention.structural.observed)}`,
+    );
+  }
+  lines.push(repositoryRevisionLine(retention), contentHashLine(retention));
+  return lines;
 };
 
 const journalLines = (journal: StatusJournal): readonly string[] => {
@@ -57,11 +129,11 @@ const journalLines = (journal: StatusJournal): readonly string[] => {
   const eligibility =
     journal.state === 'pending' ? journal.abortEligibility : journal.reverseEligibility;
   const lines = [
-    `    journal ${journal.format}/${journal.operation} ${journal.transactionId} — ${journal.state} ${journal.phase}; before: ${journal.before}; ${action}: ${eligibility}`,
-    ...journal.retention.map(retentionLine),
+    `    journal ${display(journal.format)}/${display(journal.operation)} ${display(journal.transactionId)} — ${display(journal.state)} ${display(journal.phase)}; before: ${display(journal.before)}; ${display(action)}: ${display(eligibility)}`,
+    ...journal.retention.flatMap(retentionLines),
   ];
   if (journal.state === 'pending') {
-    lines.push(`      resume: ${journal.remediation.resume}`);
+    lines.push(`      resume: ${display(journal.remediation.resume)}`);
     lines.push(`      abort: ${argv(journal.remediation.abort)}`);
   } else {
     lines.push(`      reverse: ${argv(journal.remediation.reverse)}`);
@@ -82,9 +154,9 @@ const lockLabel = (
 
 const artifactsLine = (artifacts: StatusV1Dto['artifacts']): string => {
   if (artifacts.state === 'unselected') {
-    return `Artifacts — unselected (${artifacts.reason})`;
+    return `Artifacts — unselected (${display(artifacts.reason)})`;
   }
-  return `Artifacts — ${artifacts.source}; manifest: ${manifestLabel(artifacts.manifest)}; lock: ${lockLabel(artifacts.lock)}; relationship: ${artifacts.relationship.state}`;
+  return `Artifacts — ${display(artifacts.source)}; manifest: ${display(manifestLabel(artifacts.manifest))}; lock: ${display(lockLabel(artifacts.lock))}; relationship: ${display(artifacts.relationship.state)}`;
 };
 
 const ledgerLabel = (ledger: StatusV1Dto['ledger']): string => {
@@ -94,7 +166,7 @@ const ledgerLabel = (ledger: StatusV1Dto['ledger']): string => {
 
 const entryLines = (entry: StatusEntry): readonly string[] => {
   const lines = [
-    `${entry.name} — ${entry.convergence}`,
+    `${display(entry.name)} — ${display(entry.convergence)}`,
     desiredLine(entry),
     lockedLine(entry),
     ...entry.facts.map((fact: StatusFact) => factLine(fact, '  ')),
@@ -112,12 +184,12 @@ export const renderStatusHuman = (dto: StatusV1Dto): string => {
   const lines: string[] = [];
   const selectionReason = dto.selection.reason === null ? '' : `; reason: ${dto.selection.reason}`;
   lines.push(
-    `Status — targets: ${dto.selection.source}; tools: ${dto.selection.toolSource}; scopes: ${dto.selection.scopeSource}; outcome: ${dto.selection.outcome}${selectionReason}`,
+    `Status — targets: ${display(dto.selection.source)}; tools: ${display(dto.selection.toolSource)}; scopes: ${display(dto.selection.scopeSource)}; outcome: ${display(dto.selection.outcome)}${display(selectionReason)}`,
   );
   lines.push(
     dto.context.projectRoot === null
-      ? `Context — cwd: ${dto.context.effectiveCwd}; project: none`
-      : `Context — cwd: ${dto.context.effectiveCwd}; project: ${dto.context.projectRoot} (${dto.context.projectSource})`,
+      ? `Context — cwd: ${display(dto.context.effectiveCwd)}; project: none`
+      : `Context — cwd: ${display(dto.context.effectiveCwd)}; project: ${display(dto.context.projectRoot)} (${display(dto.context.projectSource)})`,
   );
   lines.push(artifactsLine(dto.artifacts));
   lines.push(
@@ -126,7 +198,7 @@ export const renderStatusHuman = (dto: StatusV1Dto): string => {
   for (const fact of dto.facts) lines.push(factLine(fact, '  '));
   for (const journal of dto.journals) {
     lines.push(
-      `Journal — ${journal.format}/${journal.operation} ${journal.transactionId}; ${journal.phase}; ${journal.reason}`,
+      `Journal — ${display(journal.format)}/${display(journal.operation)} ${display(journal.transactionId)}; ${display(journal.phase)}; ${display(journal.reason)}`,
     );
   }
   lines.push('');

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Command } from 'commander';
 import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
 import { redactSensitiveValue } from '../../../core/src/safety/redaction.ts';
 import { parseSkillFrontmatter } from '../../../core/src/skills/frontmatter.ts';
@@ -73,6 +74,26 @@ interface StatusCodec {
   encode(value: UnknownRecord): Result<string>;
 }
 type RenderStatus = (dto: ReadonlyUnknownRecord) => string;
+type FinalizeStatusApplicationReport = (report: ReadonlyUnknownRecord) => Result<UnknownRecord>;
+type CreateDiagnosticObserver = (
+  io: ReadonlyUnknownRecord,
+  verbosity: 'debug',
+) => Readonly<{ observe(event: ReadonlyUnknownRecord): void }>;
+type NormalizeCliError = (
+  error: unknown,
+  fallback?: ReadonlyUnknownRecord,
+) => Readonly<{ readonly code: string; readonly message: string; readonly exitCode: number }>;
+type RenderCliError = (
+  error: Readonly<{ readonly code: string; readonly message: string; readonly exitCode: number }>,
+  format: 'human' | 'json',
+) => string;
+type StatusOutcomeRenderer = Readonly<{
+  human(outcome: ReadonlyUnknownRecord): unknown;
+  json(outcome: ReadonlyUnknownRecord): unknown;
+}>;
+type CreateCurrentRendererRegistry = (
+  root: Command,
+) => Readonly<{ readonly status: StatusOutcomeRenderer }>;
 
 const golden = JSON.parse(readFileSync(STATUS_GOLDEN_PATH, 'utf8')) as UnknownRecord;
 const humanGolden = readFileSync(STATUS_HUMAN_PATH, 'utf8');
@@ -105,12 +126,26 @@ const unwrap = <T>(result: Result<T>, label: string): T => {
   return result.value;
 };
 
+const renderedOutputText = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value !== 'object' || value === null) return '';
+  const output = value as ReadonlyUnknownRecord;
+  return [output.stdout, output.stderr]
+    .filter((candidate): candidate is string => typeof candidate === 'string')
+    .join('');
+};
+
 let readStatus: ReadStatus;
 let runStatusApplication: RunStatusApplication;
 let selectReadableArtifactContext: SelectReadableArtifactContext;
 let statusV1Codec: StatusCodec;
 let renderStatusHuman: RenderStatus;
 let renderStatusJson: RenderStatus;
+let finalizeStatusApplicationReport: FinalizeStatusApplicationReport;
+let createDiagnosticObserver: CreateDiagnosticObserver;
+let normalizeCliError: NormalizeCliError;
+let renderCliError: RenderCliError;
+let createCurrentRendererRegistry: CreateCurrentRendererRegistry;
 let currentCommandSpecs: readonly ReadonlyUnknownRecord[];
 let currentOptionRelations: readonly ReadonlyUnknownRecord[];
 let currentReadApplications: ReadonlyUnknownRecord;
@@ -120,6 +155,16 @@ let currentWireContractRegistry: ReadonlyUnknownRecord;
 const validateDto = (dto: UnknownRecord, label: string): UnknownRecord =>
   unwrap(statusV1Codec.validate(dto), label);
 
+const setLogicalPathFailure = (retention: UnknownRecord, state: 'missing' | 'unverified'): void => {
+  retention.pathState = state;
+  for (const checkName of ['repositoryRevision', 'contentHash'] as const) {
+    const check = retention[checkName] as UnknownRecord;
+    check.state = state;
+    check.observed = null;
+  }
+  retention.state = state;
+};
+
 const statusRequest = (overrides: ReadonlyUnknownRecord = {}): ReadonlyUnknownRecord =>
   Object.freeze({
     projectContext: Object.freeze({
@@ -128,7 +173,7 @@ const statusRequest = (overrides: ReadonlyUnknownRecord = {}): ReadonlyUnknownRe
       projectRoot: '/repo',
       projectIdentity: '/repo',
       projectKind: 'git',
-      discoveredConfigPath: null,
+      discoveredConfigPath: '/repo/skillsmith.toml',
       explicitConfigPath: null,
     }),
     projectPlacement: Object.freeze({
@@ -144,7 +189,13 @@ const statusRequest = (overrides: ReadonlyUnknownRecord = {}): ReadonlyUnknownRe
     scopes: Object.freeze(['user']),
     scopeSelectionSource: 'explicit',
     selectionSource: 'bounded-default',
-    artifactSelection: Object.freeze({ state: 'unselected', reason: 'live-only-scope' }),
+    artifactSelection: Object.freeze({
+      state: 'selected',
+      source: 'user-default',
+      manifestPath: '/config/skillsmith/skillsmith.toml',
+      lockPath: '/config/skillsmith/skillsmith.lock',
+      lockSource: 'sibling',
+    }),
     ...overrides,
   });
 
@@ -184,6 +235,9 @@ beforeAll(async () => {
     wireModule,
     humanModule,
     jsonModule,
+    diagnosticsModule,
+    errorBoundaryModule,
+    currentRenderersModule,
   ] = await Promise.all([
     import('../../../core/src/status/index.ts').catch(() => null),
     import('../../../core/src/artifacts/discovery.ts').catch(() => null),
@@ -193,6 +247,9 @@ beforeAll(async () => {
     import('../../src/contracts/wire-contracts.ts').catch(() => null),
     import('../../src/output/status-human.ts').catch(() => null),
     import('../../src/output/status-json.ts').catch(() => null),
+    import('../../src/runtime/diagnostics.ts').catch(() => null),
+    import('../../src/output/error-boundary.ts').catch(() => null),
+    import('../../src/runtime/current-renderers.ts').catch(() => null),
   ]);
   if (
     statusModule === null ||
@@ -201,6 +258,7 @@ beforeAll(async () => {
     typeof discoveryModule.selectReadableArtifactContext !== 'function' ||
     applicationModule === null ||
     typeof applicationModule.runStatusApplication !== 'function' ||
+    typeof applicationModule.finalizeStatusApplicationReport !== 'function' ||
     typeof applicationModule.CURRENT_READ_APPLICATIONS !== 'object' ||
     contractModule === null ||
     typeof contractModule.toStatusV1Dto !== 'function' ||
@@ -214,7 +272,14 @@ beforeAll(async () => {
     humanModule === null ||
     typeof humanModule.renderStatusHuman !== 'function' ||
     jsonModule === null ||
-    typeof jsonModule.renderStatusJson !== 'function'
+    typeof jsonModule.renderStatusJson !== 'function' ||
+    diagnosticsModule === null ||
+    typeof diagnosticsModule.createCliDiagnosticObserver !== 'function' ||
+    errorBoundaryModule === null ||
+    typeof errorBoundaryModule.normalizeCliError !== 'function' ||
+    typeof errorBoundaryModule.renderCliError !== 'function' ||
+    currentRenderersModule === null ||
+    typeof currentRenderersModule.createCurrentRendererRegistry !== 'function'
   ) {
     throw new Error('missing G3A-01 status authority');
   }
@@ -233,6 +298,14 @@ beforeAll(async () => {
     wireModule.currentWireContractRegistry as unknown as ReadonlyUnknownRecord;
   renderStatusHuman = humanModule.renderStatusHuman as unknown as RenderStatus;
   renderStatusJson = jsonModule.renderStatusJson as unknown as RenderStatus;
+  finalizeStatusApplicationReport =
+    applicationModule.finalizeStatusApplicationReport as unknown as FinalizeStatusApplicationReport;
+  createDiagnosticObserver =
+    diagnosticsModule.createCliDiagnosticObserver as unknown as CreateDiagnosticObserver;
+  normalizeCliError = errorBoundaryModule.normalizeCliError as unknown as NormalizeCliError;
+  renderCliError = errorBoundaryModule.renderCliError as unknown as RenderCliError;
+  createCurrentRendererRegistry =
+    currentRenderersModule.createCurrentRendererRegistry as unknown as CreateCurrentRendererRegistry;
 });
 
 describe('EWP-CMD-STATUS-TS01', () => {
@@ -585,6 +658,34 @@ describe('EWP-CMD-STATUS-TS03', () => {
         },
       ]);
     }
+
+    for (const [label, mutate] of [
+      [
+        'unknown fact code',
+        (fact: UnknownRecord) => {
+          fact.code = 'unknown-fact';
+        },
+      ],
+      [
+        'wrong fact subject',
+        (fact: UnknownRecord) => {
+          fact.subject = 'live';
+        },
+      ],
+      [
+        'wrong fact impact',
+        (fact: UnknownRecord) => {
+          fact.impact = 'drift';
+        },
+      ],
+    ] as const) {
+      const invalid = cloneGolden();
+      const row = placementsOf(entryNamed(invalid, 'clean-pinned-copy'))[0];
+      const fact = (row?.facts as UnknownRecord[] | undefined)?.[0];
+      if (fact === undefined) throw new Error(`missing verification fact for ${label}`);
+      mutate(fact);
+      expect(statusV1Codec.validate(invalid).ok, label).toBeFalse();
+    }
   });
 });
 
@@ -605,6 +706,17 @@ describe('EWP-CMD-STATUS-TS04', () => {
       row.ledger = { state: 'absent' };
       row.live = { state: 'absent' };
       row.journal = { ...structuredClone(pending), phase, before: 'absent' };
+      const identity = row.identity as UnknownRecord;
+      identity.path = `/home/test/.agents/skills/journal-only-${phase}`;
+      ((row.journal as UnknownRecord).remediation as UnknownRecord).abort = [
+        'skillsmith',
+        'undo',
+        identity.path,
+        '--tool',
+        identity.tool,
+        '--scope',
+        identity.scope,
+      ];
       row.facts = [
         {
           code: 'journal-pending',
@@ -625,6 +737,239 @@ describe('EWP-CMD-STATUS-TS04', () => {
       dto.summary = { entries: 1, converged: 0, drifting: 1, migrationPending: false };
       validateDto(dto, `logical pending ${phase} from absent`);
     }
+
+    type PendingPhase = 'prepared' | 'staged' | 'backed-up' | 'live';
+    type PendingBefore = 'dev' | 'pinned' | 'absent' | 'multi-resource';
+    type RetentionState = 'satisfied' | 'missing' | 'unverified';
+    const logicalGateScenario = (
+      phase: PendingPhase,
+      before: PendingBefore,
+      eligibility:
+        | 'eligible'
+        | 'not-reversible'
+        | 'retention-incomplete'
+        | 'retention-missing'
+        | 'retention-unverified',
+      retentionState: RetentionState,
+    ): UnknownRecord => {
+      const dto = cloneGolden();
+      const row = placementAt(entryNamed(dto, 'shadowed-fleet'), 1, 'logical gate scenario');
+      const journal = row.journal as UnknownRecord;
+      journal.phase = phase;
+      journal.before = before;
+      journal.abortEligibility = eligibility;
+      const retention = (journal.retention as UnknownRecord[])[0];
+      if (retention === undefined) throw new Error('missing logical gate retention');
+      if (retentionState !== 'satisfied') setLogicalPathFailure(retention, retentionState);
+      const remediation = journal.remediation as UnknownRecord;
+      remediation.abort = eligibility === 'eligible' ? remediation.abort : null;
+      const facts = row.facts as UnknownRecord[];
+      const journalFact = facts.find((fact) => fact.code === 'journal-pending');
+      if (journalFact !== undefined) journalFact.actual = phase;
+      row.facts = facts.filter((fact) => !String(fact.code).startsWith('retention-'));
+      if (eligibility === 'retention-incomplete') {
+        (row.facts as UnknownRecord[]).push({
+          code: 'retention-incomplete',
+          impact: 'drift',
+          subject: 'journal',
+          expected: 'complete',
+          actual: 'incomplete',
+        });
+      } else if (eligibility === 'retention-missing' || eligibility === 'retention-unverified') {
+        (row.facts as UnknownRecord[]).push({
+          code: eligibility,
+          impact: 'drift',
+          subject: 'journal',
+          expected: '["retained-live","/data/skillsmith/backups/shadowed-fleet"]',
+          actual: retentionState,
+        });
+      }
+      return dto;
+    };
+
+    for (const phase of phases) {
+      for (const retentionState of ['missing', 'unverified'] as const) {
+        const dto = logicalGateScenario(phase, 'absent', 'eligible', retentionState);
+        const decoded = validateDto(dto, `${phase} absent with incidental ${retentionState}`);
+        const row = placementAt(
+          entryNamed(decoded, 'shadowed-fleet'),
+          1,
+          `${phase} absent decoded retention`,
+        );
+        expect((row.journal as UnknownRecord).abortEligibility).toBe('eligible');
+        expect(((row.journal as UnknownRecord).retention as UnknownRecord[])[0]).toMatchObject({
+          state: retentionState,
+        });
+        expect(((row.journal as UnknownRecord).remediation as UnknownRecord).abort).toEqual([
+          'skillsmith',
+          'undo',
+          '/repo/.agents/skills/shadowed-fleet',
+          '--tool',
+          'codex',
+          '--scope',
+          'project',
+        ]);
+      }
+    }
+    for (const phase of ['prepared', 'staged'] as const) {
+      for (const before of ['dev', 'pinned'] as const) {
+        for (const retentionState of ['missing', 'unverified'] as const) {
+          validateDto(
+            logicalGateScenario(phase, before, 'eligible', retentionState),
+            `${phase} ${before} with incidental ${retentionState}`,
+          );
+        }
+      }
+    }
+
+    for (const [label, dto] of [
+      [
+        'absent pending cannot report retention failure',
+        logicalGateScenario('live', 'absent', 'retention-missing', 'missing'),
+      ],
+      [
+        'absent pending cannot be not-reversible',
+        logicalGateScenario('prepared', 'absent', 'not-reversible', 'satisfied'),
+      ],
+      [
+        'early dev pending cannot report incomplete retention',
+        logicalGateScenario('prepared', 'dev', 'retention-incomplete', 'satisfied'),
+      ],
+      [
+        'early pinned pending cannot report retention failure',
+        logicalGateScenario('staged', 'pinned', 'retention-unverified', 'unverified'),
+      ],
+      [
+        'multi-resource pending must be not-reversible',
+        logicalGateScenario('backed-up', 'multi-resource', 'eligible', 'satisfied'),
+      ],
+      [
+        'multi-resource pending cannot report retention failure',
+        logicalGateScenario('live', 'multi-resource', 'retention-missing', 'missing'),
+      ],
+      [
+        'later dev pending requires satisfied eligible retention',
+        logicalGateScenario('backed-up', 'dev', 'eligible', 'missing'),
+      ],
+      [
+        'later pinned pending requires satisfied eligible retention',
+        logicalGateScenario('live', 'pinned', 'eligible', 'unverified'),
+      ],
+    ] as const) {
+      expect(statusV1Codec.validate(dto).ok, label).toBeFalse();
+    }
+    validateDto(
+      logicalGateScenario('prepared', 'dev', 'not-reversible', 'unverified'),
+      'early dev intent-gate not-reversible',
+    );
+    validateDto(
+      logicalGateScenario('live', 'multi-resource', 'not-reversible', 'missing'),
+      'multi-resource intent-gate not-reversible',
+    );
+
+    const committedLogical = logicalGateScenario('backed-up', 'pinned', 'eligible', 'missing');
+    const committedLogicalRow = placementAt(
+      entryNamed(committedLogical, 'shadowed-fleet'),
+      1,
+      'committed logical retention gate',
+    );
+    const pendingLogicalJournal = committedLogicalRow.journal as UnknownRecord;
+    const pendingLogicalRemediation = pendingLogicalJournal.remediation as UnknownRecord;
+    committedLogicalRow.journal = {
+      state: 'committed',
+      transactionId: pendingLogicalJournal.transactionId,
+      phase: 'committed',
+      before: pendingLogicalJournal.before,
+      retention: pendingLogicalJournal.retention,
+      reverseEligibility: 'eligible',
+      remediation: { reverse: pendingLogicalRemediation.abort },
+      format: 'logical',
+      operation: pendingLogicalJournal.operation,
+    };
+    expect(
+      statusV1Codec.validate(committedLogical).ok,
+      'committed logical eligible requires satisfied retention',
+    ).toBeFalse();
+
+    const committedMultiResource = cloneGolden();
+    const committedMultiResourceRow = placementAt(
+      entryNamed(committedMultiResource, 'shadowed-fleet'),
+      1,
+      'committed logical multi-resource',
+    );
+    const pendingMultiResourceJournal = committedMultiResourceRow.journal as UnknownRecord;
+    const pendingMultiResourceRemediation =
+      pendingMultiResourceJournal.remediation as UnknownRecord;
+    committedMultiResourceRow.journal = {
+      state: 'committed',
+      transactionId: pendingMultiResourceJournal.transactionId,
+      phase: 'committed',
+      before: 'multi-resource',
+      retention: pendingMultiResourceJournal.retention,
+      reverseEligibility: 'not-reversible',
+      remediation: { reverse: null },
+      format: 'logical',
+      operation: pendingMultiResourceJournal.operation,
+    };
+    validateDto(committedMultiResource, 'committed logical multi-resource is not-reversible');
+    const invalidCommittedMultiResource = structuredClone(committedMultiResource);
+    const invalidCommittedMultiResourceRow = placementAt(
+      entryNamed(invalidCommittedMultiResource, 'shadowed-fleet'),
+      1,
+      'eligible committed logical multi-resource',
+    );
+    const invalidCommittedMultiResourceJournal =
+      invalidCommittedMultiResourceRow.journal as UnknownRecord;
+    invalidCommittedMultiResourceJournal.reverseEligibility = 'eligible';
+    (invalidCommittedMultiResourceJournal.remediation as UnknownRecord).reverse =
+      pendingMultiResourceRemediation.abort;
+    expect(
+      statusV1Codec.validate(invalidCommittedMultiResource).ok,
+      'committed logical multi-resource cannot be eligible',
+    ).toBeFalse();
+
+    const legacyEarly = logicalGateScenario('prepared', 'absent', 'eligible', 'satisfied');
+    const legacyEarlyRow = placementAt(
+      entryNamed(legacyEarly, 'shadowed-fleet'),
+      1,
+      'legacy pre-retention lookalike',
+    );
+    const legacyEarlyJournal = legacyEarlyRow.journal as UnknownRecord;
+    legacyEarlyJournal.format = 'legacy-pair';
+    legacyEarlyJournal.operation = 'promote';
+    legacyEarlyJournal.retention = [
+      {
+        format: 'legacy-pair',
+        resourceId: null,
+        retainUntil: null,
+        structural: {
+          state: 'unverified',
+          expected: { kind: 'symlink', linkTarget: '/fixture/source' },
+          observed: null,
+        },
+        repositoryRevision: {
+          state: 'not-recorded',
+          domain: null,
+          expected: null,
+          observed: null,
+        },
+        contentHash: {
+          state: 'not-recorded',
+          domain: null,
+          expected: null,
+          observed: null,
+        },
+        role: 'backup',
+        sourceRole: 'live',
+        path: '/data/skillsmith/backups/legacy-early',
+        pathState: 'satisfied',
+        state: 'unverified',
+      },
+    ];
+    expect(
+      statusV1Codec.validate(legacyEarly).ok,
+      'legacy eligible still requires satisfied retention',
+    ).toBeFalse();
     expect(['pending-logical', 'pending-legacy', 'committed-logical', 'committed-legacy']).toEqual([
       'pending-logical',
       'pending-legacy',
@@ -687,6 +1032,20 @@ describe('EWP-CMD-STATUS-TS04', () => {
       const journal = row.journal as UnknownRecord;
       journal.abortEligibility = eligibility;
       (journal.remediation as UnknownRecord).abort = null;
+      const retention = (journal.retention as UnknownRecord[])[0] as UnknownRecord;
+      if (eligibility === 'retention-missing') {
+        setLogicalPathFailure(retention, 'missing');
+      } else if (eligibility === 'retention-mismatch') {
+        const contentHash = retention.contentHash as UnknownRecord;
+        contentHash.state = 'mismatch';
+        contentHash.observed = 'sha256:different-retained-content';
+        retention.state = 'mismatch';
+      } else if (eligibility === 'retention-unverified') {
+        const contentHash = retention.contentHash as UnknownRecord;
+        contentHash.state = 'unverified';
+        contentHash.observed = null;
+        retention.state = 'unverified';
+      }
       const existingFacts = row.facts as UnknownRecord[];
       const verification = existingFacts.find((fact) => String(fact.code).startsWith('verify-'));
       row.facts = [
@@ -705,6 +1064,784 @@ describe('EWP-CMD-STATUS-TS04', () => {
       ];
       validateDto(dto, eligibility);
     }
+
+    const retentionScenario = (
+      requirements: readonly ('missing' | 'mismatch' | 'unverified')[],
+    ): UnknownRecord => {
+      const dto = cloneGolden();
+      const row = placementAt(entryNamed(dto, 'shadowed-fleet'), 1, 'retention multiset');
+      const journal = row.journal as UnknownRecord;
+      const source = (journal.retention as UnknownRecord[])[0] as UnknownRecord;
+      const retention = requirements.map((state, index) => {
+        const requirement = structuredClone(source);
+        requirement.resourceId = `retained-${String.fromCharCode(97 + index)}`;
+        requirement.path = `/retained/${String.fromCharCode(97 + index)}`;
+        requirement.state = state;
+        if (state === 'missing') {
+          setLogicalPathFailure(requirement, 'missing');
+        } else if (state === 'unverified') {
+          setLogicalPathFailure(requirement, 'unverified');
+        } else {
+          const contentHash = requirement.contentHash as UnknownRecord;
+          contentHash.state = state;
+          contentHash.observed = state === 'mismatch' ? `sha256:different-${index}` : null;
+        }
+        return requirement;
+      });
+      journal.retention = retention;
+      journal.abortEligibility = requirements.includes('missing')
+        ? 'retention-missing'
+        : requirements.includes('mismatch')
+          ? 'retention-mismatch'
+          : 'retention-unverified';
+      (journal.remediation as UnknownRecord).abort = null;
+      const factRank = { missing: 0, mismatch: 1, unverified: 2 } as const;
+      const retentionFacts = retention
+        .map((requirement) => ({
+          code: `retention-${String(requirement.state)}`,
+          impact: 'drift',
+          subject: 'journal',
+          expected: JSON.stringify([requirement.resourceId, requirement.path]),
+          actual: requirement.state,
+        }))
+        .sort(
+          (left, right) =>
+            factRank[left.actual as keyof typeof factRank] -
+              factRank[right.actual as keyof typeof factRank] ||
+            String(left.expected).localeCompare(String(right.expected)),
+        );
+      const existingFacts = row.facts as UnknownRecord[];
+      const verification = existingFacts.find((fact) => String(fact.code).startsWith('verify-'));
+      row.facts = [
+        ...existingFacts.filter((fact) => !String(fact.code).startsWith('verify-')),
+        ...retentionFacts,
+        ...(verification === undefined ? [] : [verification]),
+      ];
+      return dto;
+    };
+
+    const sameState = retentionScenario(['mismatch', 'mismatch']);
+    validateDto(sameState, 'same-state retention fact multiset');
+    const mixedState = retentionScenario(['unverified', 'missing', 'mismatch']);
+    validateDto(mixedState, 'mixed multi-resource retention fact multiset');
+    const mixedRow = placementAt(entryNamed(mixedState, 'shadowed-fleet'), 1, 'mixed facts');
+    const mixedFacts = (mixedRow.facts as UnknownRecord[]).filter((fact) =>
+      String(fact.code).startsWith('retention-'),
+    );
+    expect(mixedFacts.map((fact) => fact.code)).toEqual([
+      'retention-missing',
+      'retention-mismatch',
+      'retention-unverified',
+    ]);
+    for (const [label, mutateFacts] of [
+      ['missing fact', (facts: UnknownRecord[]) => facts.splice(1, 1)],
+      [
+        'duplicate fact',
+        (facts: UnknownRecord[]) => {
+          const duplicate = facts[0];
+          if (duplicate !== undefined) facts.push(structuredClone(duplicate));
+        },
+      ],
+      [
+        'wrong fact tuple',
+        (facts: UnknownRecord[]) => {
+          if (facts[0] !== undefined) facts[0].expected = '["wrong","/retained/path"]';
+        },
+      ],
+      ['unsorted facts', (facts: UnknownRecord[]) => facts.reverse()],
+    ] as const) {
+      const invalid = structuredClone(mixedState);
+      const row = placementAt(entryNamed(invalid, 'shadowed-fleet'), 1, label);
+      const facts = (row.facts as UnknownRecord[]).filter((fact) =>
+        String(fact.code).startsWith('retention-'),
+      );
+      mutateFacts(facts);
+      row.facts = [
+        ...(row.facts as UnknownRecord[]).filter(
+          (fact) => !String(fact.code).startsWith('retention-'),
+        ),
+        ...facts,
+      ];
+      expect(statusV1Codec.validate(invalid).ok, label).toBeFalse();
+    }
+    for (const eligibility of ['eligible', 'not-reversible'] as const) {
+      const invalid = cloneGolden();
+      const row = placementAt(entryNamed(invalid, 'shadowed-fleet'), 1, eligibility);
+      const journal = row.journal as UnknownRecord;
+      journal.abortEligibility = eligibility;
+      (journal.remediation as UnknownRecord).abort =
+        eligibility === 'eligible' ? (journal.remediation as UnknownRecord).abort : null;
+      (row.facts as UnknownRecord[]).push({
+        code: 'retention-missing',
+        impact: 'drift',
+        subject: 'journal',
+        expected: '["retained-live","/data/skillsmith/backups/shadowed-fleet"]',
+        actual: 'missing',
+      });
+      expect(statusV1Codec.validate(invalid).ok, `${eligibility} retention facts`).toBeFalse();
+    }
+
+    const rejected = (label: string, mutate: (row: UnknownRecord) => void): void => {
+      const dto = cloneGolden();
+      const row = placementAt(entryNamed(dto, 'shadowed-fleet'), 1, label);
+      mutate(row);
+      expect(statusV1Codec.validate(dto).ok, label).toBeFalse();
+    };
+    const rejectedLogicalPathCoherence = (
+      label: string,
+      state: 'missing' | 'mismatch' | 'unverified',
+      mutate: (retention: UnknownRecord) => void,
+    ): void => {
+      const dto = cloneGolden();
+      const row = placementAt(entryNamed(dto, 'shadowed-fleet'), 1, label);
+      const journal = row.journal as UnknownRecord;
+      const retention = (journal.retention as UnknownRecord[])[0];
+      if (retention === undefined) throw new Error(`missing logical retention for ${label}`);
+      mutate(retention);
+      retention.state = state;
+      journal.abortEligibility = `retention-${state}`;
+      (journal.remediation as UnknownRecord).abort = null;
+      (row.facts as UnknownRecord[]).push({
+        code: `retention-${state}`,
+        impact: 'drift',
+        subject: 'journal',
+        expected: '["retained-live","/data/skillsmith/backups/shadowed-fleet"]',
+        actual: state,
+      });
+      expect(statusV1Codec.validate(dto).ok, label).toBeFalse();
+    };
+    rejectedLogicalPathCoherence('missing path with present checks', 'missing', (retention) => {
+      retention.pathState = 'missing';
+    });
+    rejectedLogicalPathCoherence(
+      'unverified path with present checks',
+      'unverified',
+      (retention) => {
+        retention.pathState = 'unverified';
+      },
+    );
+    rejectedLogicalPathCoherence('satisfied path with missing revision', 'missing', (retention) => {
+      retention.repositoryRevision = {
+        ...(retention.repositoryRevision as UnknownRecord),
+        state: 'missing',
+        observed: null,
+      };
+    });
+    rejectedLogicalPathCoherence(
+      'observed checks on an unverified path',
+      'mismatch',
+      (retention) => {
+        retention.pathState = 'unverified';
+        const revision = retention.repositoryRevision as UnknownRecord;
+        revision.state = 'mismatch';
+        revision.observed = {
+          ...(revision.expected as UnknownRecord),
+          digest: 'sha256:different-retained-revision',
+        };
+        const content = retention.contentHash as UnknownRecord;
+        content.state = 'mismatch';
+        content.observed = 'sha256:different-retained-content';
+      },
+    );
+    rejected('satisfied revision equality', (row) => {
+      const retention = ((row.journal as UnknownRecord).retention as UnknownRecord[])[0];
+      if (retention === undefined) throw new Error('missing logical retention');
+      ((retention.repositoryRevision as UnknownRecord).observed as UnknownRecord).digest =
+        'sha256:different-retained-revision';
+    });
+    rejected('revision representation coherence', (row) => {
+      const retention = ((row.journal as UnknownRecord).retention as UnknownRecord[])[0];
+      if (retention === undefined) throw new Error('missing logical retention');
+      ((retention.repositoryRevision as UnknownRecord).observed as UnknownRecord).kind =
+        'artifact-bytes';
+    });
+    rejected('satisfied content equality', (row) => {
+      const retention = ((row.journal as UnknownRecord).retention as UnknownRecord[])[0];
+      if (retention === undefined) throw new Error('missing logical retention');
+      (retention.contentHash as UnknownRecord).observed = 'sha256:different-retained-content';
+    });
+    rejected('aggregate retention state', (row) => {
+      const retention = ((row.journal as UnknownRecord).retention as UnknownRecord[])[0];
+      if (retention === undefined) throw new Error('missing logical retention');
+      retention.state = 'mismatch';
+    });
+    rejected('journal retention format', (row) => {
+      const journal = row.journal as UnknownRecord;
+      journal.format = 'legacy-pair';
+      journal.operation = 'promote';
+    });
+    rejected('eligible remediation required', (row) => {
+      ((row.journal as UnknownRecord).remediation as UnknownRecord).abort = null;
+    });
+    rejected('eligible remediation exact placement argv', (row) => {
+      const abort = ((row.journal as UnknownRecord).remediation as UnknownRecord).abort as string[];
+      abort[2] = '/wrong/placement';
+    });
+    rejected('eligible retention aggregate', (row) => {
+      const retention = ((row.journal as UnknownRecord).retention as UnknownRecord[])[0];
+      if (retention === undefined) throw new Error('missing logical retention');
+      retention.pathState = 'missing';
+      retention.state = 'missing';
+    });
+    rejected('noneligible remediation forbidden', (row) => {
+      const journal = row.journal as UnknownRecord;
+      journal.abortEligibility = 'retention-incomplete';
+      (row.facts as UnknownRecord[]).push({
+        code: 'retention-incomplete',
+        impact: 'drift',
+        subject: 'journal',
+        expected: 'complete',
+        actual: 'incomplete',
+      });
+    });
+    for (const checkName of ['repositoryRevision', 'contentHash'] as const) {
+      rejected(`${checkName} mismatch equality`, (row) => {
+        const journal = row.journal as UnknownRecord;
+        const retention = (journal.retention as UnknownRecord[])[0] as UnknownRecord;
+        const check = retention[checkName] as UnknownRecord;
+        check.state = 'mismatch';
+        retention.state = 'mismatch';
+        journal.abortEligibility = 'retention-mismatch';
+        (journal.remediation as UnknownRecord).abort = null;
+        (row.facts as UnknownRecord[]).push({
+          code: 'retention-mismatch',
+          impact: 'drift',
+          subject: 'journal',
+          expected: 'satisfied',
+          actual: 'mismatch',
+        });
+      });
+    }
+
+    const ranked = cloneGolden();
+    const rankedRow = placementAt(entryNamed(ranked, 'shadowed-fleet'), 1, 'aggregate rank');
+    const rankedJournal = rankedRow.journal as UnknownRecord;
+    const rankedRetention = (rankedJournal.retention as UnknownRecord[])[0] as UnknownRecord;
+    setLogicalPathFailure(rankedRetention, 'missing');
+    rankedJournal.abortEligibility = 'retention-missing';
+    (rankedJournal.remediation as UnknownRecord).abort = null;
+    (rankedRow.facts as UnknownRecord[]).push({
+      code: 'retention-missing',
+      impact: 'drift',
+      subject: 'journal',
+      expected: '["retained-live","/data/skillsmith/backups/shadowed-fleet"]',
+      actual: 'missing',
+    });
+    validateDto(ranked, 'missing path carries coherent missing checks');
+
+    const legacy = cloneGolden();
+    const legacyRow = placementAt(entryNamed(legacy, 'shadowed-fleet'), 1, 'legacy retention');
+    legacyRow.journal = {
+      state: 'pending',
+      transactionId: 'tx-legacy-retention',
+      phase: 'backed-up',
+      before: 'pinned',
+      retention: [
+        {
+          format: 'legacy-pair',
+          resourceId: null,
+          retainUntil: null,
+          structural: {
+            state: 'satisfied',
+            expected: { kind: 'symlink', linkTarget: '/fixture/source' },
+            observed: { kind: 'symlink', linkTarget: '/fixture/source' },
+          },
+          repositoryRevision: {
+            state: 'not-recorded',
+            domain: null,
+            expected: null,
+            observed: null,
+          },
+          contentHash: {
+            state: 'not-recorded',
+            domain: null,
+            expected: null,
+            observed: null,
+          },
+          role: 'backup',
+          sourceRole: 'live',
+          path: '/data/skillsmith/backups/legacy-shadowed-fleet',
+          pathState: 'satisfied',
+          state: 'satisfied',
+        },
+      ],
+      abortEligibility: 'eligible',
+      remediation: {
+        resume: 'rerun the same operation',
+        abort: [
+          'skillsmith',
+          'undo',
+          '/repo/.agents/skills/shadowed-fleet',
+          '--tool',
+          'codex',
+          '--scope',
+          'project',
+        ],
+      },
+      format: 'legacy-pair',
+      operation: 'promote',
+    };
+    const validLegacy = validateDto(legacy, 'legacy structural retention');
+    const renderedLegacy = renderStatusHuman(validLegacy);
+    expect(renderedLegacy).toContain(
+      'structural: satisfied; expected symlink -> "/fixture/source"; observed symlink -> "/fixture/source"',
+    );
+    expect(renderedLegacy).toContain(
+      'repository revision: not-recorded; expected null; observed null',
+    );
+    expect(renderedLegacy).toContain(
+      'content hash: not-recorded; domain null; expected null; observed null',
+    );
+
+    const recordedSymlink = structuredClone(legacy);
+    const recordedSymlinkRow = placementAt(
+      entryNamed(recordedSymlink, 'shadowed-fleet'),
+      1,
+      'recorded legacy symlink content',
+    );
+    const recordedSymlinkRetention = (
+      (recordedSymlinkRow.journal as UnknownRecord).retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    recordedSymlinkRetention.contentHash = {
+      state: 'satisfied',
+      domain: 'source-content',
+      expected: 'sha256:legacy-source-content',
+      observed: 'sha256:legacy-source-content',
+    };
+    expect(
+      statusV1Codec.validate(recordedSymlink).ok,
+      'literal legacy symlink cannot carry recorded content',
+    ).toBeFalse();
+
+    const recordedLegacy = structuredClone(legacy);
+    const recordedLegacyRow = placementAt(
+      entryNamed(recordedLegacy, 'shadowed-fleet'),
+      1,
+      'recorded legacy content',
+    );
+    const recordedRetention = (
+      (recordedLegacyRow.journal as UnknownRecord).retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    recordedRetention.structural = {
+      state: 'satisfied',
+      expected: { kind: 'directory', linkTarget: null },
+      observed: { kind: 'directory', linkTarget: null },
+    };
+    recordedRetention.contentHash = {
+      state: 'satisfied',
+      domain: 'source-content',
+      expected: 'sha256:legacy-source-content',
+      observed: 'sha256:legacy-source-content',
+    };
+    validateDto(recordedLegacy, 'source-content legacy retention');
+
+    const legacyFailureScenario = (
+      label: string,
+      state: 'missing' | 'unverified',
+      mutate: (retention: UnknownRecord) => void,
+    ): UnknownRecord => {
+      const dto = structuredClone(recordedLegacy);
+      const row = placementAt(entryNamed(dto, 'shadowed-fleet'), 1, label);
+      const journal = row.journal as UnknownRecord;
+      const retention = (journal.retention as UnknownRecord[])[0];
+      if (retention === undefined) throw new Error(`missing legacy retention for ${label}`);
+      mutate(retention);
+      retention.state = state;
+      journal.abortEligibility = `retention-${state}`;
+      (journal.remediation as UnknownRecord).abort = null;
+      (row.facts as UnknownRecord[]).push({
+        code: `retention-${state}`,
+        impact: 'drift',
+        subject: 'journal',
+        expected: '[null,"/data/skillsmith/backups/legacy-shadowed-fleet"]',
+        actual: state,
+      });
+      return dto;
+    };
+    const coherentLegacyMissing = legacyFailureScenario(
+      'coherent missing legacy directory',
+      'missing',
+      (retention) => {
+        retention.pathState = 'missing';
+        retention.structural = {
+          state: 'missing',
+          expected: { kind: 'directory', linkTarget: null },
+          observed: { kind: 'absent', linkTarget: null },
+        };
+        retention.contentHash = {
+          ...(retention.contentHash as UnknownRecord),
+          state: 'missing',
+          observed: null,
+        };
+      },
+    );
+    validateDto(coherentLegacyMissing, 'coherent missing legacy directory');
+    const coherentLegacyUnverified = legacyFailureScenario(
+      'coherent unverified legacy directory',
+      'unverified',
+      (retention) => {
+        retention.pathState = 'unverified';
+        retention.structural = {
+          state: 'unverified',
+          expected: { kind: 'directory', linkTarget: null },
+          observed: null,
+        };
+        retention.contentHash = {
+          ...(retention.contentHash as UnknownRecord),
+          state: 'unverified',
+          observed: null,
+        };
+      },
+    );
+    validateDto(coherentLegacyUnverified, 'coherent unverified legacy directory');
+
+    const directoryWithoutRecordedContent = structuredClone(recordedLegacy);
+    const directoryWithoutRecordedContentRow = placementAt(
+      entryNamed(directoryWithoutRecordedContent, 'shadowed-fleet'),
+      1,
+      'directory without recorded content',
+    );
+    const directoryWithoutRecordedContentRetention = (
+      (directoryWithoutRecordedContentRow.journal as UnknownRecord).retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    directoryWithoutRecordedContentRetention.contentHash = {
+      state: 'not-recorded',
+      domain: null,
+      expected: null,
+      observed: null,
+    };
+    validateDto(
+      directoryWithoutRecordedContent,
+      'legacy structural-only directory without recorded content',
+    );
+
+    for (const [label, dto] of [
+      [
+        'legacy missing structural state with satisfied path',
+        legacyFailureScenario('missing structural satisfied path', 'missing', (retention) => {
+          retention.structural = {
+            state: 'missing',
+            expected: { kind: 'directory', linkTarget: null },
+            observed: { kind: 'absent', linkTarget: null },
+          };
+          retention.contentHash = {
+            ...(retention.contentHash as UnknownRecord),
+            state: 'unverified',
+            observed: null,
+          };
+        }),
+      ],
+      [
+        'legacy unverified structural state with satisfied path',
+        legacyFailureScenario('unverified structural satisfied path', 'unverified', (retention) => {
+          retention.structural = {
+            state: 'unverified',
+            expected: { kind: 'directory', linkTarget: null },
+            observed: null,
+          };
+          retention.contentHash = {
+            ...(retention.contentHash as UnknownRecord),
+            state: 'unverified',
+            observed: null,
+          };
+        }),
+      ],
+      [
+        'legacy satisfied structural state with unverified path',
+        legacyFailureScenario('satisfied structural unverified path', 'unverified', (retention) => {
+          retention.pathState = 'unverified';
+          retention.contentHash = {
+            state: 'not-recorded',
+            domain: null,
+            expected: null,
+            observed: null,
+          };
+        }),
+      ],
+      [
+        'legacy missing path with unverified content',
+        legacyFailureScenario('missing path unverified content', 'missing', (retention) => {
+          retention.pathState = 'missing';
+          retention.structural = {
+            state: 'missing',
+            expected: { kind: 'directory', linkTarget: null },
+            observed: { kind: 'absent', linkTarget: null },
+          };
+          retention.contentHash = {
+            ...(retention.contentHash as UnknownRecord),
+            state: 'unverified',
+            observed: null,
+          };
+        }),
+      ],
+      [
+        'legacy unverified path with missing content',
+        legacyFailureScenario('unverified path missing content', 'missing', (retention) => {
+          retention.pathState = 'unverified';
+          retention.structural = {
+            state: 'unverified',
+            expected: { kind: 'directory', linkTarget: null },
+            observed: null,
+          };
+          retention.contentHash = {
+            ...(retention.contentHash as UnknownRecord),
+            state: 'missing',
+            observed: null,
+          };
+        }),
+      ],
+      [
+        'legacy satisfied path with missing content',
+        legacyFailureScenario('satisfied path missing content', 'missing', (retention) => {
+          retention.contentHash = {
+            ...(retention.contentHash as UnknownRecord),
+            state: 'missing',
+            observed: null,
+          };
+        }),
+      ],
+    ] as const) {
+      expect(statusV1Codec.validate(dto).ok, label).toBeFalse();
+    }
+
+    const wrongLegacyDomain = structuredClone(recordedLegacy);
+    const wrongDomainRow = placementAt(
+      entryNamed(wrongLegacyDomain, 'shadowed-fleet'),
+      1,
+      'wrong legacy content domain',
+    );
+    const wrongDomainRetention = (
+      (wrongDomainRow.journal as UnknownRecord).retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    (wrongDomainRetention.contentHash as UnknownRecord).domain = 'resource';
+    expect(statusV1Codec.validate(wrongLegacyDomain).ok).toBeFalse();
+
+    const impossibleLegacyContent = structuredClone(recordedLegacy);
+    const impossibleContentRow = placementAt(
+      entryNamed(impossibleLegacyContent, 'shadowed-fleet'),
+      1,
+      'impossible legacy content',
+    );
+    const impossibleRetention = (
+      (impossibleContentRow.journal as UnknownRecord).retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    impossibleRetention.structural = {
+      state: 'satisfied',
+      expected: { kind: 'absent', linkTarget: null },
+      observed: { kind: 'absent', linkTarget: null },
+    };
+    expect(statusV1Codec.validate(impossibleLegacyContent).ok).toBeFalse();
+
+    const unobservedLegacyNode = structuredClone(recordedLegacy);
+    const unobservedNodeRow = placementAt(
+      entryNamed(unobservedLegacyNode, 'shadowed-fleet'),
+      1,
+      'unobserved legacy node with digest',
+    );
+    const unobservedNodeJournal = unobservedNodeRow.journal as UnknownRecord;
+    const unobservedNodeRetention = (
+      unobservedNodeJournal.retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    unobservedNodeRetention.structural = {
+      state: 'unverified',
+      expected: { kind: 'directory', linkTarget: null },
+      observed: null,
+    };
+    unobservedNodeRetention.state = 'unverified';
+    unobservedNodeJournal.abortEligibility = 'retention-unverified';
+    (unobservedNodeJournal.remediation as UnknownRecord).abort = null;
+    (unobservedNodeRow.facts as UnknownRecord[]).push({
+      code: 'retention-unverified',
+      impact: 'drift',
+      subject: 'journal',
+      expected: '[null,"/data/skillsmith/backups/legacy-shadowed-fleet"]',
+      actual: 'unverified',
+    });
+    expect(statusV1Codec.validate(unobservedLegacyNode).ok).toBeFalse();
+
+    const invalidLegacy = structuredClone(legacy);
+    const invalidLegacyRow = placementAt(
+      entryNamed(invalidLegacy, 'shadowed-fleet'),
+      1,
+      'invalid legacy target',
+    );
+    const invalidLegacyRetention = (
+      (invalidLegacyRow.journal as UnknownRecord).retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    const invalidLegacyObserved = (invalidLegacyRetention.structural as UnknownRecord)
+      .observed as UnknownRecord;
+    invalidLegacyObserved.linkTarget = '/fixture/different-source';
+    expect(statusV1Codec.validate(invalidLegacy).ok).toBeFalse();
+
+    const equalLegacyMismatch = structuredClone(legacy);
+    const equalLegacyRow = placementAt(
+      entryNamed(equalLegacyMismatch, 'shadowed-fleet'),
+      1,
+      'equal legacy mismatch',
+    );
+    const equalLegacyJournal = equalLegacyRow.journal as UnknownRecord;
+    const equalLegacyRetention = (
+      equalLegacyJournal.retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    (equalLegacyRetention.structural as UnknownRecord).state = 'mismatch';
+    equalLegacyRetention.state = 'mismatch';
+    equalLegacyJournal.abortEligibility = 'retention-mismatch';
+    (equalLegacyJournal.remediation as UnknownRecord).abort = null;
+    (equalLegacyRow.facts as UnknownRecord[]).push({
+      code: 'retention-mismatch',
+      impact: 'drift',
+      subject: 'journal',
+      expected: 'satisfied',
+      actual: 'mismatch',
+    });
+    expect(statusV1Codec.validate(equalLegacyMismatch).ok).toBeFalse();
+
+    const committed = structuredClone(legacy);
+    const committedRow = placementAt(
+      entryNamed(committed, 'shadowed-fleet'),
+      1,
+      'committed remediation',
+    );
+    const pendingLegacy = committedRow.journal as UnknownRecord;
+    committedRow.journal = {
+      state: 'committed',
+      transactionId: pendingLegacy.transactionId,
+      phase: 'committed',
+      before: pendingLegacy.before,
+      retention: pendingLegacy.retention,
+      reverseEligibility: 'eligible',
+      remediation: { reverse: (pendingLegacy.remediation as UnknownRecord).abort },
+      format: pendingLegacy.format,
+      operation: pendingLegacy.operation,
+    };
+    validateDto(committed, 'committed exact reverse argv');
+    const invalidCommitted = structuredClone(committed);
+    const invalidCommittedRow = placementAt(
+      entryNamed(invalidCommitted, 'shadowed-fleet'),
+      1,
+      'invalid committed remediation',
+    );
+    ((invalidCommittedRow.journal as UnknownRecord).remediation as UnknownRecord).reverse = null;
+    expect(statusV1Codec.validate(invalidCommitted).ok).toBeFalse();
+
+    const committedStore = structuredClone(recordedLegacy);
+    const committedStoreRow = placementAt(
+      entryNamed(committedStore, 'shadowed-fleet'),
+      1,
+      'committed pinned dev store reversal',
+    );
+    const pendingStoreJournal = committedStoreRow.journal as UnknownRecord;
+    const pendingStoreRetention = (pendingStoreJournal.retention as UnknownRecord[])[0];
+    if (pendingStoreRetention === undefined) throw new Error('missing committed store retention');
+    pendingStoreRetention.role = 'store';
+    pendingStoreRetention.sourceRole = null;
+    committedStoreRow.journal = {
+      state: 'committed',
+      transactionId: pendingStoreJournal.transactionId,
+      phase: 'committed',
+      before: 'pinned',
+      retention: pendingStoreJournal.retention,
+      reverseEligibility: 'eligible',
+      remediation: { reverse: (pendingStoreJournal.remediation as UnknownRecord).abort },
+      format: 'legacy-pair',
+      operation: 'dev',
+    };
+    validateDto(committedStore, 'committed pinned dev store reversal');
+    const committedDevBackup = structuredClone(committedStore);
+    const committedDevBackupRow = placementAt(
+      entryNamed(committedDevBackup, 'shadowed-fleet'),
+      1,
+      'committed pinned dev backup fallback',
+    );
+    const committedDevBackupRetention = (
+      (committedDevBackupRow.journal as UnknownRecord).retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    committedDevBackupRetention.role = 'backup';
+    committedDevBackupRetention.sourceRole = 'live';
+    validateDto(committedDevBackup, 'committed pinned dev backup fallback');
+
+    for (const [label, mutate] of [
+      [
+        'legacy journal cannot omit retention',
+        (row: UnknownRecord) => {
+          (row.journal as UnknownRecord).retention = [];
+        },
+      ],
+      [
+        'legacy journal cannot duplicate retention',
+        (row: UnknownRecord) => {
+          const journal = row.journal as UnknownRecord;
+          const retention = journal.retention as UnknownRecord[];
+          journal.retention = [...retention, structuredClone(retention[0])];
+        },
+      ],
+      [
+        'pending legacy journal cannot retain a store',
+        (row: UnknownRecord) => {
+          const retention = ((row.journal as UnknownRecord).retention as UnknownRecord[])[0];
+          if (retention === undefined) throw new Error('missing pending legacy retention');
+          retention.role = 'store';
+          retention.sourceRole = null;
+        },
+      ],
+      [
+        'legacy journal cannot use multi-resource before',
+        (row: UnknownRecord) => {
+          (row.journal as UnknownRecord).before = 'multi-resource';
+        },
+      ],
+      [
+        'legacy journal cannot report incomplete retention',
+        (row: UnknownRecord) => {
+          const journal = row.journal as UnknownRecord;
+          journal.abortEligibility = 'retention-incomplete';
+          (journal.remediation as UnknownRecord).abort = null;
+          (row.facts as UnknownRecord[]).push({
+            code: 'retention-incomplete',
+            impact: 'drift',
+            subject: 'journal',
+            expected: 'complete',
+            actual: 'incomplete',
+          });
+        },
+      ],
+      [
+        'legacy backup must identify live as its source role',
+        (row: UnknownRecord) => {
+          const retention = ((row.journal as UnknownRecord).retention as UnknownRecord[])[0];
+          if (retention === undefined) throw new Error('missing legacy source-role retention');
+          retention.sourceRole = null;
+        },
+      ],
+    ] as const) {
+      const invalid = structuredClone(legacy);
+      const row = placementAt(entryNamed(invalid, 'shadowed-fleet'), 1, label);
+      mutate(row);
+      expect(statusV1Codec.validate(invalid).ok, label).toBeFalse();
+    }
+    const invalidCommittedStore = structuredClone(committedStore);
+    const invalidCommittedStoreRow = placementAt(
+      entryNamed(invalidCommittedStore, 'shadowed-fleet'),
+      1,
+      'committed promote store retention',
+    );
+    (invalidCommittedStoreRow.journal as UnknownRecord).operation = 'promote';
+    expect(
+      statusV1Codec.validate(invalidCommittedStore).ok,
+      'legacy store retention is exclusive to committed pinned dev',
+    ).toBeFalse();
+    const invalidCommittedLegacyMulti = structuredClone(committed);
+    const invalidCommittedLegacyMultiRow = placementAt(
+      entryNamed(invalidCommittedLegacyMulti, 'shadowed-fleet'),
+      1,
+      'committed legacy multi-resource before',
+    );
+    (invalidCommittedLegacyMultiRow.journal as UnknownRecord).before = 'multi-resource';
+    expect(
+      statusV1Codec.validate(invalidCommittedLegacyMulti).ok,
+      'committed legacy journal cannot be multi-resource',
+    ).toBeFalse();
+
     expect(placementsOf(entryNamed(golden, 'placement-drift')).map((row) => row.identity)).toEqual([
       expect.objectContaining({ path: '/repo/.kilo/skills/placement-drift' }),
       expect.objectContaining({ path: '/repo/.agents/skills/placement-drift' }),
@@ -1056,7 +2193,7 @@ describe('EWP-CMD-STATUS-TS06', () => {
     );
   });
 
-  test('family 22: recursive credential canaries are redacted across human, JSON, debug, error, and refusal paths', () => {
+  test('family 22: recursive credential canaries are redacted across human, JSON, debug, error, and refusal paths', async () => {
     const canary = 'sk-statusCanary123456789';
     const candidate = cloneGolden();
     (candidate.context as UnknownRecord).effectiveCwd = `/repo/token=${canary}`;
@@ -1081,6 +2218,117 @@ describe('EWP-CMD-STATUS-TS06', () => {
     expect(
       JSON.stringify(redactSensitiveValue({ debug: { error: new Error(canary) } })),
     ).not.toContain(canary);
+
+    const diagnosticWrites: string[] = [];
+    const diagnosticObserver = createDiagnosticObserver(
+      {
+        stdout: { write: (_value: string) => undefined },
+        stderr: { write: (value: string) => diagnosticWrites.push(value) },
+        exit: (_code: number) => undefined,
+      },
+      'debug',
+    );
+    diagnosticObserver.observe({
+      kind: 'command.completed',
+      operationId: 'status-op',
+      parentOperationId: null,
+      command: `skillsmith status authorization=Bearer ${canary}`,
+      workflow: 'status',
+      groupId: null,
+      pairId: null,
+      attempt: 1,
+      occurredAt: '2026-07-14T00:00:00.000Z',
+      monotonicMilliseconds: 1,
+      outcome: 'failure',
+      exitClass: 'failure',
+      errorCode: `status-token=${canary}`,
+      durationMilliseconds: 1,
+    });
+    const diagnosticOutput = diagnosticWrites.join('');
+    expect(diagnosticOutput).toStartWith('debug: ');
+    expect(diagnosticOutput).not.toContain(canary);
+    expect(diagnosticOutput).toContain('[REDACTED]');
+
+    const normalized = normalizeCliError(
+      { code: 'generic', message: `status authorization=Bearer ${canary}` },
+      { code: 'status-error', message: 'status failed', exitCode: 1 },
+    );
+    const boundaryHuman = renderCliError(normalized, 'human');
+    const boundaryJson = renderCliError(normalized, 'json');
+    for (const output of [boundaryHuman, boundaryJson]) {
+      expect(output).not.toContain(canary);
+      expect(output).not.toContain('skillsmith.status');
+      expect(output).not.toContain('"entries"');
+    }
+
+    const refused = await runStatusApplication(
+      {
+        arguments: [],
+        options: { tool: [`future-tool authorization=Bearer ${canary}`], json: true },
+      },
+      new Proxy(
+        {},
+        {
+          get: (_target, property) => {
+            throw new Error(`refused status touched context ${String(property)} token=${canary}`);
+          },
+        },
+      ),
+    );
+    expect(refused).toMatchObject({
+      report: { result: null },
+      exitClass: 'usage',
+      mutation: { kind: 'none' },
+    });
+    expect(JSON.stringify(refused)).not.toContain(canary);
+    const renderer = createCurrentRendererRegistry(new Command()).status;
+    const refusedOutputs = [
+      renderedOutputText(renderer.human(refused)),
+      renderedOutputText(renderer.json(refused)),
+    ];
+    for (const output of refusedOutputs) {
+      expect(output).not.toContain(canary);
+      expect(output).not.toContain('skillsmith.status');
+      expect(output).not.toContain('"entries"');
+    }
+
+    const invalidReport = cloneGolden();
+    const poisonedDesired = entryNamed(invalidReport, 'clean-pinned-copy').desired as UnknownRecord;
+    (poisonedDesired.value as UnknownRecord).scope = `project authorization=Bearer ${canary}`;
+    const finalized = finalizeStatusApplicationReport(invalidReport);
+    expect(finalized).toEqual({
+      ok: false,
+      error: {
+        code: 'status-rendering-failed',
+        message: 'status report could not be rendered safely',
+        exitClass: 'failure',
+      },
+    });
+    expect(JSON.stringify(finalized)).not.toContain(canary);
+    const finalizedError = (finalized as Readonly<{ error: UnknownRecord }>).error;
+    const fixedOutcome = {
+      report: { result: null },
+      diagnostics: [
+        {
+          code: finalizedError.code,
+          message: finalizedError.message,
+          severity: 'error',
+        },
+      ],
+      exitClass: finalizedError.exitClass,
+      mutation: { kind: 'none' },
+      deprecations: [],
+    };
+    for (const output of [
+      renderedOutputText(renderer.human(fixedOutcome)),
+      renderedOutputText(renderer.json(fixedOutcome)),
+    ]) {
+      expect(output).toContain('status report could not be rendered safely');
+      expect(output).not.toContain(canary);
+      expect(output).not.toContain('skillsmith.status');
+      expect(output).not.toContain('"entries"');
+      expect(output).not.toContain('Summary —');
+    }
   });
 
   test('family 23: no-write canaries, selected-root failure, and unreadable unselected Claude isolation', async () => {

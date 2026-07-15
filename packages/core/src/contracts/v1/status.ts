@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  STATUS_FACT_AUTHORITY,
+  STATUS_FACT_CODES,
+  STATUS_FACT_IMPACTS,
+  STATUS_FACT_SUBJECTS,
+} from '../../status/types.ts';
 import type {
   StatusArtifactRelationship,
   StatusDesiredState,
@@ -302,26 +308,46 @@ const RecordedRevisionSchema = z
     if (value.observed !== null && value.expected.kind !== value.observed.kind) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'revision kinds must agree' });
     }
+    if (value.observed === null) return;
+    const equal =
+      value.expected.kind === value.observed.kind &&
+      value.expected.digest === value.observed.digest;
+    if ((value.state === 'satisfied') !== equal) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'revision state must describe expected/observed equality',
+      });
+    }
   });
 
-const RecordedContentSchema = z.union([
-  z
-    .object({
-      state: z.enum(['satisfied', 'mismatch']),
-      domain: z.enum(['manifest-bytes', 'lock-canonical', 'source-content', 'resource']),
-      expected: z.string(),
-      observed: z.string(),
-    })
-    .strict(),
-  z
-    .object({
-      state: z.enum(['missing', 'unverified']),
-      domain: z.enum(['manifest-bytes', 'lock-canonical', 'source-content', 'resource']),
-      expected: z.string(),
-      observed: z.null(),
-    })
-    .strict(),
-]);
+const RecordedContentSchema = z
+  .union([
+    z
+      .object({
+        state: z.enum(['satisfied', 'mismatch']),
+        domain: z.enum(['manifest-bytes', 'lock-canonical', 'source-content', 'resource']),
+        expected: z.string(),
+        observed: z.string(),
+      })
+      .strict(),
+    z
+      .object({
+        state: z.enum(['missing', 'unverified']),
+        domain: z.enum(['manifest-bytes', 'lock-canonical', 'source-content', 'resource']),
+        expected: z.string(),
+        observed: z.null(),
+      })
+      .strict(),
+  ])
+  .superRefine((value, context) => {
+    if (value.observed === null) return;
+    if ((value.state === 'satisfied') !== (value.expected === value.observed)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'content state must describe expected/observed equality',
+      });
+    }
+  });
 
 const UnrecordedCheckSchema = z
   .object({
@@ -340,30 +366,54 @@ const LegacyObservedNodeSchema = z.union([
   LegacyExpectedNodeSchema,
   z.object({ kind: z.enum(['file', 'other']), linkTarget: z.null() }).strict(),
 ]);
-const LegacyStructuralSchema = z.union([
-  z
-    .object({
-      state: z.enum(['satisfied', 'mismatch']),
-      expected: LegacyExpectedNodeSchema,
-      observed: LegacyObservedNodeSchema,
-    })
-    .strict(),
-  z
-    .object({
-      state: z.literal('missing'),
-      expected: LegacyExpectedNodeSchema,
-      observed: z.object({ kind: z.literal('absent'), linkTarget: z.null() }).strict(),
-    })
-    .strict()
-    .refine((value) => value.expected.kind !== 'absent', 'missing legacy node must be expected'),
-  z
-    .object({
-      state: z.literal('unverified'),
-      expected: LegacyExpectedNodeSchema,
-      observed: z.null(),
-    })
-    .strict(),
-]);
+const LegacyStructuralSchema = z
+  .union([
+    z
+      .object({
+        state: z.enum(['satisfied', 'mismatch']),
+        expected: LegacyExpectedNodeSchema,
+        observed: LegacyObservedNodeSchema,
+      })
+      .strict(),
+    z
+      .object({
+        state: z.literal('missing'),
+        expected: LegacyExpectedNodeSchema,
+        observed: z.object({ kind: z.literal('absent'), linkTarget: z.null() }).strict(),
+      })
+      .strict()
+      .refine((value) => value.expected.kind !== 'absent', 'missing legacy node must be expected'),
+    z
+      .object({
+        state: z.literal('unverified'),
+        expected: LegacyExpectedNodeSchema,
+        observed: z.null(),
+      })
+      .strict(),
+  ])
+  .superRefine((value, context) => {
+    if (value.observed === null) return;
+    const equal =
+      value.expected.kind === value.observed.kind &&
+      value.expected.linkTarget === value.observed.linkTarget;
+    if ((value.state === 'satisfied') !== equal) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'structural state must describe expected/observed equality',
+      });
+    }
+  });
+
+type RetentionCheckState = 'satisfied' | 'missing' | 'mismatch' | 'unverified';
+
+const aggregateRetentionState = (
+  states: readonly (RetentionCheckState | 'not-recorded')[],
+): RetentionCheckState => {
+  if (states.includes('missing')) return 'missing';
+  if (states.includes('mismatch')) return 'mismatch';
+  if (states.includes('unverified')) return 'unverified';
+  return 'satisfied';
+};
 
 const RetentionCommon = {
   path: z.string(),
@@ -412,35 +462,140 @@ const LogicalRetentionSchema = z
         message: 'retention content domain mismatch',
       });
     }
+    if (
+      value.pathState === 'missing' &&
+      (value.repositoryRevision.state !== 'missing' || value.contentHash.state !== 'missing')
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'missing logical path requires missing checks',
+      });
+    }
+    if (
+      value.pathState === 'unverified' &&
+      (value.repositoryRevision.state !== 'unverified' || value.contentHash.state !== 'unverified')
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'unverified logical path requires unverified checks',
+      });
+    }
+    if (
+      value.pathState === 'satisfied' &&
+      (value.repositoryRevision.state === 'missing' || value.contentHash.state === 'missing')
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'satisfied logical path cannot have missing checks',
+      });
+    }
+    if (
+      value.pathState !== 'satisfied' &&
+      (value.repositoryRevision.observed !== null || value.contentHash.observed !== null)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'observed logical checks require a satisfied path',
+      });
+    }
+    const aggregate = aggregateRetentionState([
+      value.pathState,
+      value.repositoryRevision.state,
+      value.contentHash.state,
+    ]);
+    if (value.state !== aggregate) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'retention state must equal its aggregate check state',
+      });
+    }
   });
-const LegacyRetentionSchema = z.union([
-  z
-    .object({
-      format: z.literal('legacy-pair'),
-      resourceId: z.null(),
-      retainUntil: z.null(),
-      structural: LegacyStructuralSchema,
-      repositoryRevision: UnrecordedCheckSchema,
-      contentHash: z.union([RecordedContentSchema, UnrecordedCheckSchema]),
-      role: z.literal('backup'),
-      sourceRole: z.literal('live'),
-      ...RetentionCommon,
-    })
-    .strict(),
-  z
-    .object({
-      format: z.literal('legacy-pair'),
-      resourceId: z.null(),
-      retainUntil: z.null(),
-      structural: LegacyStructuralSchema,
-      repositoryRevision: UnrecordedCheckSchema,
-      contentHash: z.union([RecordedContentSchema, UnrecordedCheckSchema]),
-      role: z.literal('store'),
-      sourceRole: z.null(),
-      ...RetentionCommon,
-    })
-    .strict(),
-]);
+const LegacyRetentionSchema = z
+  .union([
+    z
+      .object({
+        format: z.literal('legacy-pair'),
+        resourceId: z.null(),
+        retainUntil: z.null(),
+        structural: LegacyStructuralSchema,
+        repositoryRevision: UnrecordedCheckSchema,
+        contentHash: z.union([RecordedContentSchema, UnrecordedCheckSchema]),
+        role: z.literal('backup'),
+        sourceRole: z.literal('live'),
+        ...RetentionCommon,
+      })
+      .strict(),
+    z
+      .object({
+        format: z.literal('legacy-pair'),
+        resourceId: z.null(),
+        retainUntil: z.null(),
+        structural: LegacyStructuralSchema,
+        repositoryRevision: UnrecordedCheckSchema,
+        contentHash: z.union([RecordedContentSchema, UnrecordedCheckSchema]),
+        role: z.literal('store'),
+        sourceRole: z.null(),
+        ...RetentionCommon,
+      })
+      .strict(),
+  ])
+  .superRefine((value, context) => {
+    const contentRecorded = value.contentHash.state !== 'not-recorded';
+    if (contentRecorded && value.structural.expected.kind !== 'directory') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'recorded legacy content requires a directory expectation',
+      });
+    }
+    const expectedPathState =
+      value.structural.state === 'missing'
+        ? 'missing'
+        : value.structural.state === 'unverified'
+          ? 'unverified'
+          : 'satisfied';
+    if (value.pathState !== expectedPathState) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'legacy structural state must equal path state',
+      });
+    }
+    if (contentRecorded) {
+      if (value.contentHash.domain !== 'source-content') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'legacy retention content must use the source-content domain',
+        });
+      }
+      if (
+        (value.pathState === 'missing' && value.contentHash.state !== 'missing') ||
+        (value.pathState === 'unverified' && value.contentHash.state !== 'unverified') ||
+        (value.pathState === 'satisfied' && value.contentHash.state === 'missing')
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'legacy content state must agree with its path state',
+        });
+      }
+      if (value.contentHash.observed !== null && value.pathState !== 'satisfied') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'observed legacy content requires a satisfied path',
+        });
+      }
+    }
+    const aggregate = aggregateRetentionState([
+      value.pathState,
+      value.structural.state,
+      value.repositoryRevision.state,
+      value.contentHash.state,
+    ]);
+    if (value.state !== aggregate) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'retention state must equal its aggregate check state',
+      });
+    }
+  });
 const RetentionSchema = z.union([LogicalRetentionSchema, LegacyRetentionSchema]);
 
 const LogicalOperationSchema = z.enum([
@@ -489,104 +644,156 @@ const CommittedJournalBase = {
   reverseEligibility: EligibilitySchema,
   remediation: z.object({ reverse: z.array(z.string()).nullable() }).strict(),
 } as const;
-const JournalSchema = z.union([
-  z.object({ state: z.literal('none') }).strict(),
-  z
-    .object({
-      ...PendingJournalBase,
-      format: z.literal('logical'),
-      operation: LogicalOperationSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...PendingJournalBase,
-      format: z.literal('legacy-pair'),
-      operation: LegacyOperationSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...CommittedJournalBase,
-      format: z.literal('logical'),
-      operation: LogicalOperationSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...CommittedJournalBase,
-      format: z.literal('legacy-pair'),
-      operation: LegacyOperationSchema,
-    })
-    .strict(),
-]);
+const JournalSchema = z
+  .union([
+    z.object({ state: z.literal('none') }).strict(),
+    z
+      .object({
+        ...PendingJournalBase,
+        format: z.literal('logical'),
+        operation: LogicalOperationSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...PendingJournalBase,
+        format: z.literal('legacy-pair'),
+        operation: LegacyOperationSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...CommittedJournalBase,
+        format: z.literal('logical'),
+        operation: LogicalOperationSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...CommittedJournalBase,
+        format: z.literal('legacy-pair'),
+        operation: LegacyOperationSchema,
+      })
+      .strict(),
+  ])
+  .superRefine((value, context) => {
+    if (value.state === 'none') return;
+    if (value.retention.some((retention) => retention.format !== value.format)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'journal and retention formats must agree',
+      });
+    }
 
-const FactCodes = [
-  'manifest-only',
-  'lock-only',
-  'ledger-only',
-  'live-only',
-  'lock-missing-entry',
-  'lock-extra-entry',
-  'lock-manifest-hash',
-  'lock-source',
-  'lock-ref',
-  'lock-source-path',
-  'live-missing',
-  'live-undeclared',
-  'ledger-missing',
-  'source-drift',
-  'revision-drift',
-  'content-drift',
-  'placement-drift',
-  'broken-live',
-  'shadowed',
-  'duplicate-live',
-  'journal-pending',
-  'journal-committed',
-  'retention-missing',
-  'retention-mismatch',
-  'retention-unverified',
-  'retention-incomplete',
-  'ledger-migration-pending',
-  'verify-passed',
-  'verify-warned',
-  'verify-skipped',
-  'verify-unrecorded',
-] as const;
-const factAuthority = (code: (typeof FactCodes)[number]): readonly [string, string] => {
-  if (code === 'manifest-only') return ['manifest', 'drift'];
-  if (code === 'lock-only' || code.startsWith('lock-')) return ['lock', 'drift'];
-  if (
-    ['ledger-only', 'ledger-missing', 'source-drift', 'revision-drift', 'content-drift'].includes(
-      code,
-    )
-  )
-    return ['ledger', 'drift'];
-  if (
-    ['live-only', 'live-missing', 'live-undeclared', 'placement-drift', 'broken-live'].includes(
-      code,
-    )
-  )
-    return ['live', 'drift'];
-  if (code === 'shadowed' || code === 'duplicate-live') return ['shadow', 'drift'];
-  if (code === 'journal-committed') return ['journal', 'info'];
-  if (code === 'journal-pending' || code.startsWith('retention-')) return ['journal', 'drift'];
-  if (code === 'ledger-migration-pending') return ['ledger', 'info'];
-  return ['verification', 'info'];
-};
+    const eligibility =
+      value.state === 'pending' ? value.abortEligibility : value.reverseEligibility;
+    const remediation =
+      value.state === 'pending' ? value.remediation.abort : value.remediation.reverse;
+    const aggregate = aggregateRetentionState(value.retention.map((retention) => retention.state));
+    const expectedAggregate = eligibility.startsWith('retention-')
+      ? eligibility.slice('retention-'.length)
+      : null;
+    const isLogicalPreRetentionGate =
+      value.state === 'pending' &&
+      value.format === 'logical' &&
+      (value.before === 'absent' ||
+        ((value.phase === 'prepared' || value.phase === 'staged') &&
+          (value.before === 'dev' || value.before === 'pinned')));
+
+    if (eligibility === 'eligible' && aggregate !== 'satisfied' && !isLogicalPreRetentionGate) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'eligible journal requires satisfied retention',
+      });
+    }
+    if (
+      (expectedAggregate === 'missing' ||
+        expectedAggregate === 'mismatch' ||
+        expectedAggregate === 'unverified') &&
+      aggregate !== expectedAggregate
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'retention eligibility must equal aggregate retention state',
+      });
+    }
+    if (value.format === 'logical') {
+      if (value.before === 'multi-resource' && eligibility !== 'not-reversible') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'multi-resource logical journal must be not-reversible',
+        });
+      }
+      if (value.state === 'pending' && value.before === 'absent' && eligibility !== 'eligible') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'absent-before pending journal must be eligible',
+        });
+      }
+      if (
+        value.state === 'pending' &&
+        (value.phase === 'prepared' || value.phase === 'staged') &&
+        (value.before === 'dev' || value.before === 'pinned') &&
+        eligibility !== 'eligible' &&
+        eligibility !== 'not-reversible'
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'early pending journal must use an intent-gate eligibility',
+        });
+      }
+    }
+    if (value.format === 'legacy-pair') {
+      if (value.before === 'multi-resource') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'legacy journal cannot have a multi-resource before state',
+        });
+      }
+      if (eligibility === 'retention-incomplete') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'legacy journal cannot have incomplete retention',
+        });
+      }
+      if (value.retention.length !== 1) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'legacy journal requires exactly one retention record',
+        });
+      }
+      const retention = value.retention[0];
+      if (
+        retention?.format === 'legacy-pair' &&
+        retention.role === 'store' &&
+        !(value.state === 'committed' && value.operation === 'dev' && value.before === 'pinned')
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'legacy store retention requires committed pinned dev reversal',
+        });
+      }
+    }
+    if ((eligibility === 'eligible') !== (remediation !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'remediation argv exists if and only if the journal is eligible',
+      });
+    }
+  });
+
 const FactSchema = z
   .object({
-    code: z.enum(FactCodes),
-    impact: z.enum(['drift', 'info']),
-    subject: z.enum(['manifest', 'lock', 'ledger', 'live', 'verification', 'shadow', 'journal']),
+    code: z.enum(STATUS_FACT_CODES),
+    impact: z.enum(STATUS_FACT_IMPACTS),
+    subject: z.enum(STATUS_FACT_SUBJECTS),
     expected: z.string().nullable(),
     actual: z.string().nullable(),
   })
   .strict()
   .superRefine((value, context) => {
-    const [subject, impact] = factAuthority(value.code);
-    if (value.subject !== subject || value.impact !== impact) {
+    const authority = STATUS_FACT_AUTHORITY[value.code];
+    if (value.subject !== authority.subject || value.impact !== authority.impact) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'fact authority mismatch' });
     }
   });
@@ -623,6 +830,81 @@ const PlacementSchema = z
   .superRefine((value, context) => {
     if ((value.classification === 'broken') !== (value.brokenReason !== null)) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'broken reason/class mismatch' });
+    }
+    if (value.journal.state === 'none') return;
+
+    if (value.identity.path === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'journal placement requires a canonical path',
+      });
+      return;
+    }
+
+    const eligibility =
+      value.journal.state === 'pending'
+        ? value.journal.abortEligibility
+        : value.journal.reverseEligibility;
+    const remediation =
+      value.journal.state === 'pending'
+        ? value.journal.remediation.abort
+        : value.journal.remediation.reverse;
+    if (eligibility === 'eligible' && remediation !== null) {
+      const expected = [
+        'skillsmith',
+        'undo',
+        value.identity.path,
+        '--tool',
+        value.identity.tool,
+        '--scope',
+        value.identity.scope,
+      ];
+      if (
+        remediation.length !== expected.length ||
+        remediation.some((argument, index) => argument !== expected[index])
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'eligible remediation argv must identify the exact placement',
+        });
+      }
+    }
+
+    const retentionFactRank = new Map(
+      [
+        'retention-missing',
+        'retention-mismatch',
+        'retention-unverified',
+        'retention-incomplete',
+      ].map((code, index) => [code, index]),
+    );
+    const actualRetentionFacts = value.facts
+      .filter((fact) => fact.code.startsWith('retention-'))
+      .map((fact) => ({ code: fact.code, expected: fact.expected, actual: fact.actual }));
+    const expectedRetentionFacts = (
+      eligibility === 'retention-incomplete'
+        ? [{ code: 'retention-incomplete', expected: 'complete', actual: 'incomplete' }]
+        : eligibility.startsWith('retention-')
+          ? value.journal.retention
+              .filter((requirement) => requirement.state !== 'satisfied')
+              .map((requirement) => ({
+                code: `retention-${requirement.state}`,
+                expected: JSON.stringify([requirement.resourceId, requirement.path]),
+                actual: requirement.state,
+              }))
+          : []
+    ).sort(
+      (left, right) =>
+        (retentionFactRank.get(left.code) ?? Number.MAX_SAFE_INTEGER) -
+          (retentionFactRank.get(right.code) ?? Number.MAX_SAFE_INTEGER) ||
+        (left.expected < right.expected ? -1 : left.expected > right.expected ? 1 : 0) ||
+        (left.actual < right.actual ? -1 : left.actual > right.actual ? 1 : 0),
+    );
+    if (JSON.stringify(actualRetentionFacts) !== JSON.stringify(expectedRetentionFacts)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'retention facts must exactly describe every failed requirement',
+      });
     }
   });
 

@@ -83,7 +83,13 @@ const request = Object.freeze({
   scopes: Object.freeze(['user']),
   scopeSelectionSource: 'explicit',
   selectionSource: 'bounded-default',
-  artifactSelection: Object.freeze({ state: 'unselected', reason: 'live-only-scope' }),
+  artifactSelection: Object.freeze({
+    state: 'selected',
+    source: 'user-default',
+    manifestPath: '/home/test/.config/skillsmith/skillsmith.toml',
+    lockPath: '/home/test/.config/skillsmith/skillsmith.lock',
+    lockSource: 'sibling',
+  }),
 });
 
 const portsFor = (
@@ -100,7 +106,11 @@ const portsFor = (
     homeDir: '/home/test',
     executableSearchPath: Object.freeze([]),
     platform: 'linux',
-    xdg: Object.freeze({ config: '/config', data: '/data', cache: '/cache' }),
+    xdg: Object.freeze({
+      config: '/home/test/.config',
+      data: '/data',
+      cache: '/cache',
+    }),
     fileExists: async (path: string) => path === LEDGER_PATH && present,
     pathKind: async (path: string) => (path === LEDGER_PATH && present ? 'file' : 'absent'),
     realpath: async (path: string) => path,

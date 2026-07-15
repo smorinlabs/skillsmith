@@ -42,6 +42,7 @@ import type {
   StatusProjectPlacementContext,
   StatusReadError,
   StatusReadPorts,
+  StatusReport,
 } from '../status/types.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import { VERIFY_TOOLS, type VerifyReport, type VerifyTool } from '../verify/types.ts';
@@ -231,13 +232,9 @@ const exitClassForError = (error: ApplicationError): CommandExitClass => {
 
 const failed = <T>(report: T, error: ApplicationError): CommandOutcome<T> =>
   success(report, {
-    diagnostics: [
-      {
-        code: error.code,
-        severity: 'error',
-        message: messageForError(error),
-      },
-    ],
+    diagnostics: redactSensitiveValue([
+      { code: error.code, severity: 'error', message: messageForError(error) },
+    ]) as readonly Diagnostic[],
     exitClass: exitClassForError(error),
   });
 
@@ -1035,11 +1032,37 @@ const statusHasDrift = (dto: StatusV1Dto): boolean =>
       entry.placements.some((placement) => placement.facts.some((fact) => fact.impact === 'drift')),
   );
 
-const statusRenderingFailure = (): ReadServiceError => ({
+export interface StatusReportRenderingError {
+  readonly code: 'status-rendering-failed';
+  readonly message: 'status report could not be rendered safely';
+  readonly exitClass: 'failure';
+}
+
+export type FinalizedStatusApplicationReport =
+  | Readonly<{ readonly ok: true; readonly value: StatusV1Dto }>
+  | Readonly<{ readonly ok: false; readonly error: StatusReportRenderingError }>;
+
+const STATUS_RENDERING_FAILURE: StatusReportRenderingError = Object.freeze({
   code: 'status-rendering-failed',
   message: 'status report could not be rendered safely',
   exitClass: 'failure',
 });
+
+/** Internal application boundary: redact first, then accept only the closed status@1 contract. */
+export const finalizeStatusApplicationReport = (
+  report: StatusReport,
+): FinalizedStatusApplicationReport => {
+  let candidate: unknown;
+  try {
+    candidate = redactSensitiveValue(toStatusV1Dto(report));
+  } catch {
+    return { ok: false, error: STATUS_RENDERING_FAILURE };
+  }
+  const parsed = statusV1Codec.validate(candidate);
+  return parsed.ok
+    ? { ok: true, value: parsed.value }
+    : { ok: false, error: STATUS_RENDERING_FAILURE };
+};
 
 export const runStatusApplication: ApplicationService<
   CurrentCommandRequest,
@@ -1145,14 +1168,8 @@ export const runStatusApplication: ApplicationService<
   });
   if (!read.ok) return failed(empty, read.error);
 
-  let candidate: unknown;
-  try {
-    candidate = redactSensitiveValue(toStatusV1Dto(read.value));
-  } catch {
-    return failed(empty, statusRenderingFailure());
-  }
-  const parsed = statusV1Codec.validate(candidate);
-  if (!parsed.ok) return failed(empty, statusRenderingFailure());
+  const parsed = finalizeStatusApplicationReport(read.value);
+  if (!parsed.ok) return failed(empty, parsed.error);
   return success(
     { result: parsed.value },
     { exitClass: enabled(request, 'check') && statusHasDrift(parsed.value) ? 'drift' : 'success' },

@@ -1,10 +1,12 @@
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 import { types as utilTypes } from 'node:util';
 import { toolRegistry } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS } from '../agents/types.ts';
+import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
 import { hashCanonicalInput, hashManifestBytes } from '../artifacts/hash.ts';
 import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
+import { readPortableLockSource } from '../artifacts/lock.ts';
 import type { ArtifactRepositoryError } from '../artifacts/repository.ts';
 import {
   readLedgerArtifact,
@@ -16,11 +18,19 @@ import {
   projectSourceContent,
   serializeSourceContentProjection,
 } from '../artifacts/source-content.ts';
+import type { SourceContentReadPort } from '../artifacts/source-content.ts';
 import { SCOPES, type Scope } from '../config/types.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
 import { type Result, err, ok } from '../result.ts';
 import { parseSkillFrontmatter } from '../skills/frontmatter.ts';
-import { type StatusLiveInput, type StatusRetentionProbeInput, joinStatus } from './join.ts';
+import {
+  type StatusLiveInput,
+  type StatusRetentionProbeInput,
+  joinStatus,
+  legacyStatusRetentionPlan,
+  logicalJournalMembership,
+  selectedStatusPairTool,
+} from './join.ts';
 import type {
   StatusBrokenReason,
   StatusLiveObservation,
@@ -41,11 +51,19 @@ const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
   return Object.freeze(value);
 };
 
+const ownedStatusErrors = new WeakSet<object>();
 const statusError = (
   reason: StatusReadError['reason'],
   exitClass: StatusReadError['exitClass'],
   message: string,
-): StatusReadError => deepFreeze({ code: 'status-read', reason, exitClass, message });
+): StatusReadError => {
+  const value = deepFreeze({ code: 'status-read' as const, reason, exitClass, message });
+  ownedStatusErrors.add(value);
+  return value;
+};
+
+const isOwnedStatusError = (value: unknown): value is StatusReadError =>
+  typeof value === 'object' && value !== null && ownedStatusErrors.has(value);
 
 const INVALID_REQUEST = statusError('invalid-request', 'usage', 'status request is invalid');
 const UNMATCHED_TARGET = statusError('unmatched-target', 'usage', 'status target was not found');
@@ -73,21 +91,71 @@ const ownString = (value: unknown, property: string): string | null => {
   }
 };
 
+const abortSignalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')?.get;
+const domExceptionName =
+  typeof DOMException === 'undefined'
+    ? undefined
+    : Object.getOwnPropertyDescriptor(DOMException.prototype, 'name')?.get;
+const isCancelled = (signal: AbortSignal | undefined): boolean =>
+  signal !== undefined && abortSignalAborted?.call(signal) === true;
+
+const nativeDomExceptionName = (value: unknown): string | null => {
+  if (
+    domExceptionName === undefined ||
+    typeof DOMException === 'undefined' ||
+    typeof value !== 'object' ||
+    value === null ||
+    utilTypes.isProxy(value)
+  ) {
+    return null;
+  }
+  try {
+    return Object.getPrototypeOf(value) === DOMException.prototype
+      ? (domExceptionName.call(value) as string)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 const thrownKind = (value: unknown): 'cancelled' | 'permission' | 'not-found' | 'other' => {
   const code = ownString(value, 'code');
   if (code === 'cancelled' || code === 'ABORT_ERR' || code === 'AbortError') return 'cancelled';
   if (code === 'permission' || code === 'EACCES' || code === 'EPERM') return 'permission';
   if (code === 'not-found' || code === 'ENOENT') return 'not-found';
-  return ownString(value, 'name') === 'AbortError' ? 'cancelled' : 'other';
+  return ownString(value, 'name') === 'AbortError' || nativeDomExceptionName(value) === 'AbortError'
+    ? 'cancelled'
+    : 'other';
+};
+
+interface CancellationTracker {
+  readonly track: <T>(operation: () => Promise<T>) => Promise<T>;
+  readonly cancelled: (signal?: AbortSignal) => boolean;
+}
+
+/** Track cancellation that nested read authorities may translate into an ordinary result. */
+const createCancellationTracker = (): CancellationTracker => {
+  let portCancelled = false;
+  return {
+    track: async <T>(operation: () => Promise<T>): Promise<T> => {
+      try {
+        return await operation();
+      } catch (error) {
+        if (thrownKind(error) === 'cancelled') portCancelled = true;
+        throw error;
+      }
+    },
+    cancelled: (signal?: AbortSignal): boolean => portCancelled || isCancelled(signal),
+  };
 };
 
 const mapThrowable = (value: unknown, signal?: AbortSignal): StatusReadError => {
-  if (signal?.aborted === true || thrownKind(value) === 'cancelled') return CANCELLED;
+  if (isCancelled(signal) || thrownKind(value) === 'cancelled') return CANCELLED;
   return thrownKind(value) === 'permission' ? PERMISSION_DENIED : OBSERVATION_FAILED;
 };
 
 const artifactError = (value: ArtifactRepositoryError, signal?: AbortSignal): StatusReadError => {
-  if (signal?.aborted === true) return CANCELLED;
+  if (isCancelled(signal)) return CANCELLED;
   if (value.reason === 'permission-denied') return PERMISSION_DENIED;
   if (value.reason === 'read-failed') return OBSERVATION_FAILED;
   if (value.reason === 'invalid-request') return INVALID_REQUEST;
@@ -105,52 +173,456 @@ const isNonemptyString = (value: unknown): value is string =>
 
 const uniqueStrings = (values: readonly string[]): boolean =>
   new Set(values).size === values.length;
-const isCancelled = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
-
-const validRequest = (request: Readonly<StatusReadRequest>): boolean => {
-  if (!Array.isArray(request.targets) || !request.targets.every(isNonemptyString)) return false;
-  if (!Array.isArray(request.tools) || request.tools.length === 0) return false;
-  if (!request.tools.every((tool) => knownTools.has(tool)) || !uniqueStrings(request.tools)) {
-    return false;
-  }
-  if (!Array.isArray(request.scopes) || request.scopes.length === 0) return false;
-  if (!request.scopes.every((scope) => knownScopes.has(scope)) || !uniqueStrings(request.scopes)) {
-    return false;
-  }
-  if (
-    (request.selectionSource === 'explicit-targets') !== request.targets.length > 0 ||
-    !uniqueStrings(request.targets)
-  ) {
-    return false;
-  }
-  if (request.projectPlacement.state === 'unselected' && request.scopes.includes('project')) {
-    return false;
-  }
-  if (request.projectPlacement.state === 'selected') {
-    if (
-      !isNonemptyString(request.projectPlacement.root) ||
-      !isAbsolute(request.projectPlacement.root) ||
-      !isNonemptyString(request.projectPlacement.identity)
-    ) {
-      return false;
-    }
-  }
-  if (request.artifactSelection.state === 'selected') {
-    if (
-      !isNonemptyString(request.artifactSelection.manifestPath) ||
-      !isAbsolute(request.artifactSelection.manifestPath) ||
-      !isNonemptyString(request.artifactSelection.lockPath) ||
-      !isAbsolute(request.artifactSelection.lockPath)
-    ) {
-      return false;
-    }
-  }
-  return true;
-};
+const sameStrings = (left: readonly string[], right: readonly string[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
 
 const isWithin = (root: string, candidate: string): boolean => {
   const offset = relative(resolve(root), resolve(candidate));
   return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset));
+};
+
+const siblingLockPath = (manifestPath: string): string => {
+  const parts = parse(manifestPath);
+  return join(parts.dir, `${parts.name}.lock`);
+};
+
+type PlainData = Readonly<Record<string, unknown>>;
+
+const plainData = (
+  value: unknown,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): PlainData | null => {
+  if (typeof value !== 'object' || value === null || utilTypes.isProxy(value)) return null;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return null;
+  const allowed = new Set([...required, ...optional]);
+  const keys = Reflect.ownKeys(value);
+  if (
+    keys.some((key) => typeof key !== 'string' || !allowed.has(key)) ||
+    required.some((key) => !keys.includes(key))
+  ) {
+    return null;
+  }
+  const snapshot: Record<string, unknown> = Object.create(null);
+  for (const key of keys) {
+    if (typeof key !== 'string') return null;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !('value' in descriptor)) return null;
+    snapshot[key] = descriptor.value;
+  }
+  return snapshot;
+};
+
+const stringArray = (value: unknown): readonly string[] | null => {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    utilTypes.isProxy(value) ||
+    !Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Array.prototype
+  ) {
+    return null;
+  }
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+  if (
+    lengthDescriptor === undefined ||
+    !('value' in lengthDescriptor) ||
+    typeof lengthDescriptor.value !== 'number'
+  ) {
+    return null;
+  }
+  const length = lengthDescriptor.value;
+  const keys = Reflect.ownKeys(value);
+  if (
+    !Number.isSafeInteger(length) ||
+    length < 0 ||
+    keys.some(
+      (key) =>
+        typeof key !== 'string' ||
+        (key !== 'length' && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= length)),
+    ) ||
+    keys.length !== length + 1
+  ) {
+    return null;
+  }
+  const snapshot: string[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, `${index}`);
+    if (
+      descriptor === undefined ||
+      !('value' in descriptor) ||
+      typeof descriptor.value !== 'string'
+    ) {
+      return null;
+    }
+    snapshot.push(descriptor.value);
+  }
+  return Object.freeze(snapshot);
+};
+
+const optionalString = (value: unknown): value is string | undefined =>
+  value === undefined || isNonemptyString(value);
+const nullableAbsolute = (value: unknown): value is string | null =>
+  value === null || (isNonemptyString(value) && isAbsolute(value));
+const genuineAbortSignal = (value: unknown): value is AbortSignal => {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    utilTypes.isProxy(value) ||
+    Object.getPrototypeOf(value) !== AbortSignal.prototype ||
+    Reflect.ownKeys(value).length !== 0 ||
+    abortSignalAborted === undefined
+  ) {
+    return false;
+  }
+  try {
+    return typeof abortSignalAborted.call(value) === 'boolean';
+  } catch {
+    return false;
+  }
+};
+
+const snapshotConfigLayer = (
+  value: unknown,
+): StatusReadRequest['configuration']['configLayer'] | null => {
+  const layer = plainData(value, [], ['tool', 'tools', 'scope', 'path', 'registry']);
+  if (layer === null) return null;
+  if (layer.tool !== undefined && (typeof layer.tool !== 'string' || !knownTools.has(layer.tool))) {
+    return null;
+  }
+  let tools: readonly string[] | undefined;
+  if (layer.tools !== undefined) {
+    const selected = stringArray(layer.tools);
+    if (
+      selected === null ||
+      selected.length === 0 ||
+      !selected.every((tool) => knownTools.has(tool)) ||
+      !uniqueStrings(selected)
+    ) {
+      return null;
+    }
+    tools = selected;
+  }
+  if (
+    layer.scope !== undefined &&
+    (typeof layer.scope !== 'string' || !knownScopes.has(layer.scope))
+  ) {
+    return null;
+  }
+  if (layer.path !== undefined && !isNonemptyString(layer.path)) return null;
+  let registry: Readonly<{ default?: string }> | undefined;
+  if (layer.registry !== undefined) {
+    const value = plainData(layer.registry, [], ['default']);
+    if (value === null || (value.default !== undefined && !isNonemptyString(value.default))) {
+      return null;
+    }
+    registry = Object.freeze(value.default === undefined ? {} : { default: value.default });
+  }
+  return Object.freeze({
+    ...(layer.tool === undefined ? {} : { tool: layer.tool as (typeof SUPPORTED_TOOLS)[number] }),
+    ...(tools === undefined ? {} : { tools: tools as readonly (typeof SUPPORTED_TOOLS)[number][] }),
+    ...(layer.scope === undefined ? {} : { scope: layer.scope as Scope }),
+    ...(layer.path === undefined ? {} : { path: layer.path as string }),
+    ...(registry === undefined ? {} : { registry }),
+  });
+};
+
+const snapshotConfiguration = (value: unknown): StatusReadRequest['configuration'] | null => {
+  const configuration = plainData(value, [
+    'configLayer',
+    'explicitConfigPath',
+    'skillsmithHome',
+    'claudeConfigDir',
+    'claudePolicySkillsDisabled',
+    'claudeManagedSettingsPath',
+    'codexHome',
+    'kiloExternalSkillsDisabled',
+    'opencodeConfigDir',
+    'opencodeClaudeSkillsDisabled',
+    'forceColor',
+    'noColor',
+    'journalPause',
+  ]);
+  if (configuration === null) return null;
+  const configLayer = snapshotConfigLayer(configuration.configLayer);
+  if (configLayer === null) return null;
+  const paths = [
+    configuration.explicitConfigPath,
+    configuration.skillsmithHome,
+    configuration.claudeConfigDir,
+    configuration.claudeManagedSettingsPath,
+    configuration.codexHome,
+    configuration.opencodeConfigDir,
+  ];
+  if (!paths.every(optionalString)) return null;
+  const booleans = [
+    configuration.claudePolicySkillsDisabled,
+    configuration.kiloExternalSkillsDisabled,
+    configuration.opencodeClaudeSkillsDisabled,
+    configuration.forceColor,
+    configuration.noColor,
+  ];
+  if (!booleans.every((candidate) => typeof candidate === 'boolean')) return null;
+  if (
+    configuration.journalPause !== undefined &&
+    configuration.journalPause !== 'prepared' &&
+    configuration.journalPause !== 'staged' &&
+    configuration.journalPause !== 'backed-up' &&
+    configuration.journalPause !== 'live' &&
+    configuration.journalPause !== 'committed'
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    configLayer,
+    explicitConfigPath: configuration.explicitConfigPath as string | undefined,
+    skillsmithHome: configuration.skillsmithHome as string | undefined,
+    claudeConfigDir: configuration.claudeConfigDir as string | undefined,
+    claudePolicySkillsDisabled: configuration.claudePolicySkillsDisabled as boolean,
+    claudeManagedSettingsPath: configuration.claudeManagedSettingsPath as string | undefined,
+    codexHome: configuration.codexHome as string | undefined,
+    kiloExternalSkillsDisabled: configuration.kiloExternalSkillsDisabled as boolean,
+    opencodeConfigDir: configuration.opencodeConfigDir as string | undefined,
+    opencodeClaudeSkillsDisabled: configuration.opencodeClaudeSkillsDisabled as boolean,
+    forceColor: configuration.forceColor as boolean,
+    noColor: configuration.noColor as boolean,
+    journalPause: configuration.journalPause as StatusReadRequest['configuration']['journalPause'],
+  });
+};
+
+const snapshotRequest = (value: unknown): Readonly<StatusReadRequest> | null => {
+  const request = plainData(
+    value,
+    [
+      'projectContext',
+      'projectPlacement',
+      'configuration',
+      'targets',
+      'tools',
+      'toolSelectionSource',
+      'scopes',
+      'scopeSelectionSource',
+      'selectionSource',
+      'artifactSelection',
+    ],
+    ['signal'],
+  );
+  if (request === null) return null;
+  const projectContext = plainData(request.projectContext, [
+    'invocationCwd',
+    'effectiveCwd',
+    'projectRoot',
+    'projectIdentity',
+    'projectKind',
+    'discoveredConfigPath',
+    'explicitConfigPath',
+  ]);
+  const projectPlacement = plainData(
+    request.projectPlacement,
+    ['state'],
+    ['source', 'root', 'identity'],
+  );
+  const artifactSelection = plainData(
+    request.artifactSelection,
+    ['state'],
+    ['reason', 'source', 'manifestPath', 'lockPath', 'lockSource'],
+  );
+  const configuration = snapshotConfiguration(request.configuration);
+  const targets = stringArray(request.targets);
+  const tools = stringArray(request.tools);
+  const scopes = stringArray(request.scopes);
+  if (
+    projectContext === null ||
+    projectPlacement === null ||
+    artifactSelection === null ||
+    configuration === null ||
+    targets === null ||
+    tools === null ||
+    scopes === null
+  ) {
+    return null;
+  }
+  if (
+    !isNonemptyString(projectContext.invocationCwd) ||
+    !isAbsolute(projectContext.invocationCwd) ||
+    !isNonemptyString(projectContext.effectiveCwd) ||
+    !isAbsolute(projectContext.effectiveCwd) ||
+    !nullableAbsolute(projectContext.projectRoot) ||
+    !nullableAbsolute(projectContext.projectIdentity) ||
+    projectContext.projectRoot !== projectContext.projectIdentity ||
+    (projectContext.projectKind !== 'git' && projectContext.projectKind !== 'non-git') ||
+    (projectContext.projectKind === 'git' && projectContext.projectRoot === null) ||
+    !nullableAbsolute(projectContext.discoveredConfigPath) ||
+    !nullableAbsolute(projectContext.explicitConfigPath) ||
+    (projectContext.discoveredConfigPath !== null &&
+      (basename(projectContext.discoveredConfigPath) !== 'skillsmith.toml' ||
+        projectContext.projectRoot === null ||
+        !isWithin(projectContext.projectRoot, projectContext.discoveredConfigPath))) ||
+    (projectContext.projectKind === 'non-git' &&
+      (projectContext.discoveredConfigPath === null
+        ? projectContext.projectRoot !== null
+        : projectContext.projectRoot !== dirname(projectContext.discoveredConfigPath)))
+  ) {
+    return null;
+  }
+  if (
+    (request.toolSelectionSource !== 'explicit' &&
+      request.toolSelectionSource !== 'effective-config' &&
+      request.toolSelectionSource !== 'unbounded-default') ||
+    (request.scopeSelectionSource !== 'explicit' &&
+      request.scopeSelectionSource !== 'unbounded-default') ||
+    (request.selectionSource !== 'explicit-targets' &&
+      request.selectionSource !== 'bounded-default') ||
+    tools.length === 0 ||
+    !tools.every((tool) => knownTools.has(tool)) ||
+    !uniqueStrings(tools) ||
+    scopes.length === 0 ||
+    !scopes.every((scope) => knownScopes.has(scope)) ||
+    !uniqueStrings(scopes) ||
+    !targets.every(isNonemptyString) ||
+    !uniqueStrings(targets) ||
+    (request.selectionSource === 'explicit-targets') !== targets.length > 0
+  ) {
+    return null;
+  }
+  let placement: StatusReadRequest['projectPlacement'];
+  if (projectPlacement.state === 'unselected') {
+    if (
+      Reflect.ownKeys(projectPlacement).length !== 1 ||
+      scopes.includes('project') ||
+      projectContext.projectRoot !== null ||
+      projectContext.projectIdentity !== null
+    ) {
+      return null;
+    }
+    placement = Object.freeze({ state: 'unselected' });
+  } else if (projectPlacement.state === 'selected') {
+    if (
+      Reflect.ownKeys(projectPlacement).length !== 4 ||
+      (projectPlacement.source !== 'shared-project' &&
+        projectPlacement.source !== 'explicit-non-git') ||
+      !isNonemptyString(projectPlacement.root) ||
+      !isAbsolute(projectPlacement.root) ||
+      !isNonemptyString(projectPlacement.identity) ||
+      !isAbsolute(projectPlacement.identity)
+    ) {
+      return null;
+    }
+    if (
+      (projectPlacement.source === 'shared-project' &&
+        (projectPlacement.root !== projectContext.projectRoot ||
+          projectPlacement.identity !== projectContext.projectIdentity)) ||
+      (projectPlacement.source === 'explicit-non-git' &&
+        (projectContext.projectKind !== 'non-git' ||
+          projectContext.projectRoot !== null ||
+          projectContext.projectIdentity !== null ||
+          projectPlacement.root !== projectPlacement.identity))
+    ) {
+      return null;
+    }
+    placement = Object.freeze({
+      state: 'selected',
+      source: projectPlacement.source,
+      root: projectPlacement.root,
+      identity: projectPlacement.identity,
+    });
+  } else {
+    return null;
+  }
+  const expectedUnboundedScopes =
+    placement.state === 'selected' ? SCOPES : SCOPES.filter((scope) => scope !== 'project');
+  if (
+    (request.toolSelectionSource === 'unbounded-default' && !sameStrings(tools, SUPPORTED_TOOLS)) ||
+    (request.scopeSelectionSource === 'unbounded-default' &&
+      !sameStrings(scopes, expectedUnboundedScopes)) ||
+    (request.scopeSelectionSource === 'explicit' && scopes.length !== 1) ||
+    (placement.state === 'selected' &&
+      placement.source === 'explicit-non-git' &&
+      (request.scopeSelectionSource !== 'explicit' || !sameStrings(scopes, ['project'])))
+  ) {
+    return null;
+  }
+  let artifacts: StatusReadRequest['artifactSelection'];
+  if (artifactSelection.state === 'unselected') {
+    if (
+      Reflect.ownKeys(artifactSelection).length !== 2 ||
+      artifactSelection.reason !== 'live-only-scope' ||
+      request.scopeSelectionSource !== 'explicit' ||
+      scopes.length !== 1 ||
+      (scopes[0] !== 'system' && scopes[0] !== 'managed')
+    ) {
+      return null;
+    }
+    artifacts = Object.freeze({ state: 'unselected', reason: 'live-only-scope' });
+  } else if (artifactSelection.state === 'selected') {
+    if (
+      Reflect.ownKeys(artifactSelection).length !== 5 ||
+      (artifactSelection.source !== 'explicit' &&
+        artifactSelection.source !== 'discovered-project' &&
+        artifactSelection.source !== 'project-default' &&
+        artifactSelection.source !== 'user-default') ||
+      (artifactSelection.lockSource !== 'sibling' && artifactSelection.lockSource !== 'explicit') ||
+      !isNonemptyString(artifactSelection.manifestPath) ||
+      !isAbsolute(artifactSelection.manifestPath) ||
+      !isNonemptyString(artifactSelection.lockPath) ||
+      !isAbsolute(artifactSelection.lockPath) ||
+      artifactSelection.manifestPath === artifactSelection.lockPath ||
+      (artifactSelection.source !== 'explicit' && artifactSelection.lockSource !== 'sibling') ||
+      (artifactSelection.lockSource === 'sibling' &&
+        artifactSelection.lockPath !== siblingLockPath(artifactSelection.manifestPath))
+    ) {
+      return null;
+    }
+    artifacts = Object.freeze({
+      state: 'selected',
+      source: artifactSelection.source,
+      manifestPath: artifactSelection.manifestPath,
+      lockPath: artifactSelection.lockPath,
+      lockSource: artifactSelection.lockSource,
+    });
+  } else {
+    return null;
+  }
+  const signal = request.signal;
+  if (signal !== undefined && !genuineAbortSignal(signal)) return null;
+  return Object.freeze({
+    projectContext: Object.freeze({
+      invocationCwd: projectContext.invocationCwd,
+      effectiveCwd: projectContext.effectiveCwd,
+      projectRoot: projectContext.projectRoot,
+      projectIdentity: projectContext.projectIdentity,
+      projectKind: projectContext.projectKind,
+      discoveredConfigPath: projectContext.discoveredConfigPath,
+      explicitConfigPath: projectContext.explicitConfigPath,
+    }),
+    projectPlacement: placement,
+    configuration,
+    targets,
+    tools: tools as readonly (typeof SUPPORTED_TOOLS)[number][],
+    toolSelectionSource: request.toolSelectionSource,
+    scopes: scopes as readonly Scope[],
+    scopeSelectionSource: request.scopeSelectionSource,
+    selectionSource: request.selectionSource,
+    artifactSelection: artifacts,
+    ...(signal === undefined ? {} : { signal }),
+  });
+};
+
+const validArtifactSelectionProvenance = (
+  xdg: StatusReadPorts['xdg'],
+  request: Readonly<StatusReadRequest>,
+): boolean => {
+  const selected = request.artifactSelection;
+  if (selected.state === 'unselected' || selected.source === 'explicit') return true;
+  const expected = selectReadableArtifactContext({ xdg }, request.projectContext, {
+    scope: request.scopeSelectionSource === 'explicit' ? (request.scopes[0] as Scope) : null,
+  });
+  return (
+    expected.state === 'selected' &&
+    expected.source === selected.source &&
+    expected.file === selected.manifestPath
+  );
 };
 
 interface ObservedSkillFile {
@@ -211,8 +683,9 @@ const observeLive = async (
   path: string,
   storeRoot: string,
   signal?: AbortSignal,
-): Promise<StatusLiveInput> => {
+): Promise<StatusLiveInput | null> => {
   const metadata = await ports.readFileMetadata(path);
+  if (metadata.kind === 'absent') return null;
   let realpath: string | null = null;
   let linkTarget: string | null = null;
   let physicalClass: StatusLiveInput['physicalClass'] = 'broken';
@@ -263,12 +736,7 @@ const observeLive = async (
     observation: {
       path,
       realpath,
-      nodeKind:
-        metadata.kind === 'dir'
-          ? 'directory'
-          : metadata.kind === 'absent'
-            ? 'other'
-            : metadata.kind,
+      nodeKind: metadata.kind === 'dir' ? 'directory' : metadata.kind,
       linkTarget,
       skillFile,
     },
@@ -333,19 +801,18 @@ const observeSelectedRoots = async (
           const key = JSON.stringify([tool, scope, path]);
           if (seen.has(key)) continue;
           seen.add(key);
-          live.push(
-            await observeLive(
-              ports,
-              tool,
-              scope,
-              scope === 'project' && request.projectPlacement.state === 'selected'
-                ? request.projectPlacement.identity
-                : null,
-              path,
-              storeRoot,
-              request.signal,
-            ),
+          const observed = await observeLive(
+            ports,
+            tool,
+            scope,
+            scope === 'project' && request.projectPlacement.state === 'selected'
+              ? request.projectPlacement.identity
+              : null,
+            path,
+            storeRoot,
+            request.signal,
           );
+          if (observed !== null) live.push(observed);
         }
       }
     }
@@ -353,49 +820,28 @@ const observeSelectedRoots = async (
   return live;
 };
 
-const journalPlacementPath = (journal: LogicalJournalV1Dto): string | null => {
-  const paths = new Set(
-    [...journal.actual.before, ...journal.actual.after]
-      .filter((resource) => resource.role === 'live')
-      .map((resource) => resource.placementPath),
-  );
-  return paths.size === 1 ? ([...paths][0] ?? null) : null;
-};
-
-const journalProjectIdentity = (journal: LogicalJournalV1Dto): string | null | undefined => {
-  const roots = new Set<string | null>();
-  for (const image of [journal.intent.before, journal.intent.after]) {
-    if ((image.kind === 'placement' || image.kind === 'absent') && image.resource.kind === 'live') {
-      const root = image.resource.projectRoot;
-      if (root !== null && root.kind !== 'machine-bound') return undefined;
-      roots.add(root === null ? null : root.path);
-    }
-  }
-  return roots.size === 1 ? [...roots][0] : undefined;
-};
-
 const selectedJournal = (
   journal: LogicalJournalV1Dto,
   request: Readonly<StatusReadRequest>,
 ): boolean => {
+  const membership = logicalJournalMembership(journal);
   if (
-    journal.intent.skill === null ||
-    journal.intent.tool === null ||
-    journal.intent.scope === null ||
-    !request.tools.includes(journal.intent.tool) ||
-    !request.scopes.includes(journal.intent.scope)
+    membership === null ||
+    !request.tools.includes(membership.tool as (typeof request.tools)[number]) ||
+    !request.scopes.includes(membership.scope)
   ) {
     return false;
   }
-  if (journal.intent.scope === 'project') {
+  if (membership.scope === 'project') {
     if (request.projectPlacement.state === 'unselected') return false;
-    if (journalProjectIdentity(journal) !== request.projectPlacement.identity) return false;
+    if (membership.projectIdentity !== request.projectPlacement.identity) return false;
+  } else if (membership.projectIdentity !== null) {
+    return false;
   }
   if (request.selectionSource !== 'explicit-targets') return true;
-  const path = journalPlacementPath(journal);
   return (
-    request.targets.includes(journal.intent.skill) ||
-    (path !== null && request.targets.includes(path))
+    request.targets.includes(membership.name) ||
+    (membership.path !== null && request.targets.includes(membership.path))
   );
 };
 
@@ -409,17 +855,56 @@ interface RetainedPhysicalObservation {
 const observedDigest = (result: ReturnType<typeof hashCanonicalInput>): string | null =>
   result.ok ? result.value : null;
 
-const observeRetainedPhysical = async (
-  ports: StatusReadPorts,
+type RetainedContentKind =
+  | 'source-content'
+  | 'manifest-bytes'
+  | 'lock-canonical'
+  | 'resource-bytes'
+  | null;
+
+interface RetainedObservationNeeds {
+  readonly repositoryKind: 'artifact-bytes' | 'resource' | null;
+  readonly contentKind: RetainedContentKind;
+  readonly structuralNode: boolean;
+}
+
+const logicalRetainedContentKind = (
   retained: Readonly<{
-    path: string;
     role: 'backup' | 'store';
     sourceRole: 'live' | 'manifest' | 'lock' | 'ledger' | null;
   }>,
+): Exclude<RetainedContentKind, null> => {
+  if (retained.role === 'store' || retained.sourceRole === 'live') return 'source-content';
+  if (retained.sourceRole === 'manifest') return 'manifest-bytes';
+  if (retained.sourceRole === 'lock') return 'lock-canonical';
+  return 'resource-bytes';
+};
+
+const projectRetainedSourceContent = async (
+  ports: StatusReadPorts,
+  path: string,
+  signal?: AbortSignal,
+): ReturnType<typeof projectSourceContent> => {
+  const tracker = createCancellationTracker();
+  const focused: SourceContentReadPort = {
+    readFileMetadata: (target) => tracker.track(() => ports.readFileMetadata(target)),
+    listDir: (target) => tracker.track(() => ports.listDir(target)),
+    readBytes: (target) => tracker.track(() => ports.readBytes(target)),
+    readLink: (target) => tracker.track(() => ports.readLink(target)),
+  };
+  const result = await projectSourceContent(focused, path);
+  if (tracker.cancelled(signal)) throw CANCELLED;
+  return result;
+};
+
+const observeRetainedPhysical = async (
+  ports: StatusReadPorts,
+  path: string,
+  needs: RetainedObservationNeeds,
   signal?: AbortSignal,
 ): Promise<RetainedPhysicalObservation> => {
   try {
-    const metadata = await ports.readFileMetadata(retained.path);
+    const metadata = await ports.readFileMetadata(path);
     if (isCancelled(signal)) throw CANCELLED;
     if (metadata.kind === 'absent') {
       return {
@@ -435,56 +920,77 @@ const observeRetainedPhysical = async (
     let sourceDigest: string | null = null;
     let linkTarget: string | null = null;
     if (metadata.kind === 'file') {
-      const value = await ports.readBytes(retained.path);
-      if (!(value instanceof Uint8Array)) {
-        return {
-          pathState: 'satisfied',
-          repositoryDigest: null,
-          contentDigest: null,
-          node: { state: 'observed', kind: 'file', linkTarget: null },
-        };
-      }
-      bytes = new Uint8Array(value);
-      repositoryDigest = observedDigest(hashCanonicalInput('resource', 1, bytes));
-    } else if (metadata.kind === 'symlink') {
-      const target = await ports.readLink(retained.path);
-      linkTarget = target;
-      repositoryDigest = observedDigest(
-        hashCanonicalInput('resource', 1, JSON.stringify(['symlink', target])),
-      );
-      try {
-        const resolved = await ports.realpath(retained.path);
-        const projection = await projectSourceContent(ports, resolved);
-        if (projection.ok) {
-          const source = hashSourceContentV1(projection.value);
-          sourceDigest = source.ok ? source.value : null;
+      if (
+        needs.repositoryKind !== null ||
+        (needs.contentKind !== null && needs.contentKind !== 'source-content')
+      ) {
+        const value = await ports.readBytes(path);
+        if (!(value instanceof Uint8Array)) {
+          return {
+            pathState: 'satisfied',
+            repositoryDigest: null,
+            contentDigest: null,
+            node: { state: 'observed', kind: 'file', linkTarget: null },
+          };
         }
-      } catch {
-        sourceDigest = null;
+        bytes = new Uint8Array(value);
+        if (needs.repositoryKind !== null) {
+          repositoryDigest = observedDigest(hashCanonicalInput('resource', 1, bytes));
+        }
+      }
+    } else if (metadata.kind === 'symlink') {
+      if (needs.structuralNode || needs.repositoryKind === 'resource') {
+        linkTarget = await ports.readLink(path);
+      }
+      if (needs.repositoryKind === 'resource' && linkTarget !== null) {
+        repositoryDigest = observedDigest(
+          hashCanonicalInput('resource', 1, JSON.stringify(['symlink', linkTarget])),
+        );
+      }
+      if (needs.contentKind === 'source-content') {
+        try {
+          const resolved = await ports.realpath(path);
+          const projection = await projectRetainedSourceContent(ports, resolved, signal);
+          if (projection.ok) {
+            const source = hashSourceContentV1(projection.value);
+            sourceDigest = source.ok ? source.value : null;
+          }
+        } catch (error) {
+          if (error === CANCELLED || thrownKind(error) === 'cancelled' || isCancelled(signal)) {
+            throw CANCELLED;
+          }
+          sourceDigest = null;
+        }
       }
     } else if (metadata.kind === 'dir') {
-      const projection = await projectSourceContent(ports, retained.path);
-      if (projection.ok) {
-        const serialized = serializeSourceContentProjection(projection.value);
-        repositoryDigest = serialized.ok
-          ? observedDigest(hashCanonicalInput('resource', 1, serialized.value))
-          : null;
-        const source = hashSourceContentV1(projection.value);
-        sourceDigest = source.ok ? source.value : null;
+      if (needs.repositoryKind === 'resource' || needs.contentKind === 'source-content') {
+        const projection = await projectRetainedSourceContent(ports, path, signal);
+        if (projection.ok) {
+          if (needs.repositoryKind === 'resource') {
+            const serialized = serializeSourceContentProjection(projection.value);
+            repositoryDigest = serialized.ok
+              ? observedDigest(hashCanonicalInput('resource', 1, serialized.value))
+              : null;
+          }
+          if (needs.contentKind === 'source-content') {
+            const source = hashSourceContentV1(projection.value);
+            sourceDigest = source.ok ? source.value : null;
+          }
+        }
       }
     }
     if (isCancelled(signal)) throw CANCELLED;
 
     let contentDigest: string | null = null;
-    if (retained.role === 'store' || retained.sourceRole === 'live') {
+    if (needs.contentKind === 'source-content') {
       contentDigest = sourceDigest;
-    } else if (retained.sourceRole === 'manifest' && bytes !== null) {
+    } else if (needs.contentKind === 'manifest-bytes' && bytes !== null) {
       contentDigest = hashManifestBytes(bytes);
-    } else if (retained.sourceRole === 'ledger' && bytes !== null) {
+    } else if (needs.contentKind === 'resource-bytes' && bytes !== null) {
       contentDigest = observedDigest(hashCanonicalInput('resource', 1, bytes));
-    } else if (retained.sourceRole === 'lock' && bytes !== null) {
-      const decoded = await readLockArtifact(ports, retained.path);
-      if (decoded.ok && decoded.value.state === 'present' && decoded.value.canonical) {
+    } else if (needs.contentKind === 'lock-canonical' && bytes !== null) {
+      const decoded = readPortableLockSource(bytes);
+      if (decoded.ok) {
         contentDigest = observedDigest(hashCanonicalInput('lock-canonical', 1, bytes));
       }
     }
@@ -505,7 +1011,9 @@ const observeRetainedPhysical = async (
       },
     };
   } catch (error) {
-    if (error === CANCELLED || isCancelled(signal)) throw CANCELLED;
+    if (error === CANCELLED || thrownKind(error) === 'cancelled' || isCancelled(signal)) {
+      throw CANCELLED;
+    }
     return {
       pathState: 'unverified',
       repositoryDigest: null,
@@ -519,6 +1027,7 @@ const observeRetention = async (
   ports: StatusReadPorts,
   ledger: LedgerModel,
   request: Readonly<StatusReadRequest>,
+  live: readonly StatusLiveInput[],
 ): Promise<readonly StatusRetentionProbeInput[]> => {
   const probes: StatusRetentionProbeInput[] = [];
   const journals = [...Object.values(ledger.transactions), ...ledger.history];
@@ -528,10 +1037,14 @@ const observeRetention = async (
       if (isCancelled(request.signal)) throw CANCELLED;
       const observed = await observeRetainedPhysical(
         ports,
+        retained.path,
         {
-          path: retained.path,
-          role: retained.role,
-          sourceRole: retained.role === 'store' ? null : retained.sourceRole,
+          repositoryKind: retained.repositoryRevision.kind,
+          contentKind: logicalRetainedContentKind({
+            role: retained.role,
+            sourceRole: retained.role === 'store' ? null : retained.sourceRole,
+          }),
+          structuralNode: false,
         },
         request.signal,
       );
@@ -564,35 +1077,41 @@ const observeRetention = async (
         if (
           journal === undefined ||
           journal === null ||
-          !request.tools.includes(tool as (typeof request.tools)[number]) ||
+          !selectedStatusPairTool(tool, request) ||
           (request.selectionSource === 'explicit-targets' &&
             !request.targets.includes(name) &&
             !request.targets.includes(pair.placementPath))
         ) {
           continue;
         }
-        const resources: Array<
-          Readonly<{
-            path: string;
-            role: 'backup' | 'store';
-            sourceRole: 'live' | null;
-          }>
-        > = [{ path: journal.backupPath, role: 'backup', sourceRole: 'live' }];
-        if (
-          journal.phase === 'committed' &&
-          journal.op === 'dev' &&
-          journal.before.mode === 'pinned' &&
-          journal.before.storePath !== null
-        ) {
-          resources.push({
-            path: journal.before.storePath,
-            role: 'store',
-            sourceRole: null,
-          });
-        }
+        const projectIdentity =
+          scope === 'project' && request.projectPlacement.state === 'selected'
+            ? request.projectPlacement.identity
+            : null;
+        const liveGroup = live.filter(
+          (candidate) =>
+            candidate.name === name &&
+            candidate.tool === tool &&
+            candidate.scope === scope &&
+            candidate.projectIdentity === projectIdentity,
+        );
+        const selectedLive =
+          liveGroup.find((candidate) => candidate.path === pair.placementPath) ??
+          (liveGroup.length === 1 ? liveGroup[0] : null) ??
+          null;
+        const resources = legacyStatusRetentionPlan(pair, selectedLive);
         for (const resource of resources) {
           if (isCancelled(request.signal)) throw CANCELLED;
-          const observed = await observeRetainedPhysical(ports, resource, request.signal);
+          const observed = await observeRetainedPhysical(
+            ports,
+            resource.path,
+            {
+              repositoryKind: null,
+              contentKind: resource.contentHash === null ? null : 'source-content',
+              structuralNode: true,
+            },
+            request.signal,
+          );
           const missing = observed.pathState === 'missing';
           probes.push({
             transactionId: journal.txId,
@@ -623,24 +1142,44 @@ const observeRetention = async (
 
 export const readStatus = async (
   ports: StatusReadPorts,
-  request: Readonly<StatusReadRequest>,
+  rawRequest: Readonly<StatusReadRequest>,
 ): Promise<Result<StatusReport, StatusReadError>> => {
-  if (!validRequest(request)) return err(INVALID_REQUEST);
+  let request: Readonly<StatusReadRequest> | null = null;
+  try {
+    request = snapshotRequest(rawRequest);
+  } catch {
+    return err(INVALID_REQUEST);
+  }
+  if (request === null) return err(INVALID_REQUEST);
+  if (
+    request.artifactSelection.state === 'selected' &&
+    request.artifactSelection.source !== 'explicit' &&
+    !validArtifactSelectionProvenance(ports.xdg, request)
+  ) {
+    return err(INVALID_REQUEST);
+  }
   if (isCancelled(request.signal)) return err(CANCELLED);
 
   try {
+    const tracker = createCancellationTracker();
+    const artifactPorts = {
+      pathKind: (path: string) => tracker.track(() => ports.pathKind(path)),
+      readBytes: (path: string) => tracker.track(() => ports.readBytes(path)),
+    };
     let manifest = null;
     let lock = null;
     if (request.artifactSelection.state === 'selected') {
       const manifestRead = await readManifestArtifact(
-        ports,
+        artifactPorts,
         request.artifactSelection.manifestPath,
       );
+      if (tracker.cancelled(request.signal)) return err(CANCELLED);
       if (!manifestRead.ok) return err(artifactError(manifestRead.error, request.signal));
       manifest = manifestRead.value;
       if (isCancelled(request.signal)) return err(CANCELLED);
 
-      const lockRead = await readLockArtifact(ports, request.artifactSelection.lockPath);
+      const lockRead = await readLockArtifact(artifactPorts, request.artifactSelection.lockPath);
+      if (tracker.cancelled(request.signal)) return err(CANCELLED);
       if (!lockRead.ok) return err(artifactError(lockRead.error, request.signal));
       lock = lockRead.value;
       if (isCancelled(request.signal)) return err(CANCELLED);
@@ -648,7 +1187,8 @@ export const readStatus = async (
 
     const dataDir = resolveDataDir({ xdg: ports.xdg }, request.configuration);
     const ledgerPath = ledgerPathOf(dataDir);
-    const ledgerRead = await readLedgerArtifact(ports, ledgerPath);
+    const ledgerRead = await readLedgerArtifact(artifactPorts, ledgerPath);
+    if (tracker.cancelled(request.signal)) return err(CANCELLED);
     if (!ledgerRead.ok) return err(artifactError(ledgerRead.error, request.signal));
     if (isCancelled(request.signal)) return err(CANCELLED);
 
@@ -656,7 +1196,7 @@ export const readStatus = async (
     if (isCancelled(request.signal)) return err(CANCELLED);
     const retention =
       ledgerRead.value.state === 'present'
-        ? await observeRetention(ports, ledgerRead.value.model, request)
+        ? await observeRetention(ports, ledgerRead.value.model, request, live)
         : [];
     if (isCancelled(request.signal)) return err(CANCELLED);
     const joined = joinStatus({
@@ -675,10 +1215,7 @@ export const readStatus = async (
       error === CANCELLED ||
       error === OBSERVATION_FAILED ||
       error === PERMISSION_DENIED ||
-      (typeof error === 'object' &&
-        error !== null &&
-        Object.isFrozen(error) &&
-        ownString(error, 'code') === 'status-read')
+      isOwnedStatusError(error)
     ) {
       return err(error as StatusReadError);
     }

@@ -246,47 +246,93 @@ export type StatusShadow =
   | Readonly<{ readonly state: 'shadowed'; readonly winner: string }>
   | Readonly<{ readonly state: 'duplicate'; readonly winner: null }>;
 
-export type StatusFactImpact = 'drift' | 'info';
-export type StatusFactSubject =
-  | 'manifest'
-  | 'lock'
-  | 'ledger'
-  | 'live'
-  | 'verification'
-  | 'shadow'
-  | 'journal';
-export type StatusFactCode =
-  | 'manifest-only'
-  | 'lock-only'
-  | 'ledger-only'
-  | 'live-only'
-  | 'lock-missing-entry'
-  | 'lock-extra-entry'
-  | 'lock-manifest-hash'
-  | 'lock-source'
-  | 'lock-ref'
-  | 'lock-source-path'
-  | 'live-missing'
-  | 'live-undeclared'
-  | 'ledger-missing'
-  | 'source-drift'
-  | 'revision-drift'
-  | 'content-drift'
-  | 'placement-drift'
-  | 'broken-live'
-  | 'shadowed'
-  | 'duplicate-live'
-  | 'journal-pending'
-  | 'journal-committed'
-  | 'retention-missing'
-  | 'retention-mismatch'
-  | 'retention-unverified'
-  | 'retention-incomplete'
-  | 'ledger-migration-pending'
-  | 'verify-passed'
-  | 'verify-warned'
-  | 'verify-skipped'
-  | 'verify-unrecorded';
+export const STATUS_FACT_IMPACTS = ['drift', 'info'] as const;
+export type StatusFactImpact = (typeof STATUS_FACT_IMPACTS)[number];
+
+export const STATUS_FACT_SUBJECTS = [
+  'manifest',
+  'lock',
+  'ledger',
+  'live',
+  'verification',
+  'shadow',
+  'journal',
+] as const;
+export type StatusFactSubject = (typeof STATUS_FACT_SUBJECTS)[number];
+
+export const STATUS_FACT_CODES = [
+  'manifest-only',
+  'lock-only',
+  'ledger-only',
+  'live-only',
+  'lock-missing-entry',
+  'lock-extra-entry',
+  'lock-manifest-hash',
+  'lock-source',
+  'lock-ref',
+  'lock-source-path',
+  'live-missing',
+  'live-undeclared',
+  'ledger-missing',
+  'source-drift',
+  'revision-drift',
+  'content-drift',
+  'placement-drift',
+  'broken-live',
+  'shadowed',
+  'duplicate-live',
+  'journal-pending',
+  'journal-committed',
+  'retention-missing',
+  'retention-mismatch',
+  'retention-unverified',
+  'retention-incomplete',
+  'ledger-migration-pending',
+  'verify-passed',
+  'verify-warned',
+  'verify-skipped',
+  'verify-unrecorded',
+] as const;
+export type StatusFactCode = (typeof STATUS_FACT_CODES)[number];
+
+export const STATUS_FACT_AUTHORITY = {
+  'manifest-only': { subject: 'manifest', impact: 'drift' },
+  'lock-only': { subject: 'lock', impact: 'drift' },
+  'ledger-only': { subject: 'ledger', impact: 'drift' },
+  'live-only': { subject: 'live', impact: 'drift' },
+  'lock-missing-entry': { subject: 'lock', impact: 'drift' },
+  'lock-extra-entry': { subject: 'lock', impact: 'drift' },
+  'lock-manifest-hash': { subject: 'lock', impact: 'drift' },
+  'lock-source': { subject: 'lock', impact: 'drift' },
+  'lock-ref': { subject: 'lock', impact: 'drift' },
+  'lock-source-path': { subject: 'lock', impact: 'drift' },
+  'live-missing': { subject: 'live', impact: 'drift' },
+  'live-undeclared': { subject: 'live', impact: 'drift' },
+  'ledger-missing': { subject: 'ledger', impact: 'drift' },
+  'source-drift': { subject: 'ledger', impact: 'drift' },
+  'revision-drift': { subject: 'ledger', impact: 'drift' },
+  'content-drift': { subject: 'ledger', impact: 'drift' },
+  'placement-drift': { subject: 'live', impact: 'drift' },
+  'broken-live': { subject: 'live', impact: 'drift' },
+  shadowed: { subject: 'shadow', impact: 'drift' },
+  'duplicate-live': { subject: 'shadow', impact: 'drift' },
+  'journal-pending': { subject: 'journal', impact: 'drift' },
+  'journal-committed': { subject: 'journal', impact: 'info' },
+  'retention-missing': { subject: 'journal', impact: 'drift' },
+  'retention-mismatch': { subject: 'journal', impact: 'drift' },
+  'retention-unverified': { subject: 'journal', impact: 'drift' },
+  'retention-incomplete': { subject: 'journal', impact: 'drift' },
+  'ledger-migration-pending': { subject: 'ledger', impact: 'info' },
+  'verify-passed': { subject: 'verification', impact: 'info' },
+  'verify-warned': { subject: 'verification', impact: 'info' },
+  'verify-skipped': { subject: 'verification', impact: 'info' },
+  'verify-unrecorded': { subject: 'verification', impact: 'info' },
+} as const satisfies Readonly<
+  Record<
+    StatusFactCode,
+    Readonly<{ readonly subject: StatusFactSubject; readonly impact: StatusFactImpact }>
+  >
+>;
 
 export interface StatusFact {
   readonly code: StatusFactCode;
