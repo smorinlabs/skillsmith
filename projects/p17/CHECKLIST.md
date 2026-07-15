@@ -814,7 +814,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G3A-01 — Canonical correlated read model and status state-product surface
 
-Phase: 3A; status: **active**; dependencies: P17-G2-05.
+Phase: 3A; status: **reviewed**; dependencies: P17-G2-05.
 Required-now validations: EWP-CMD-STATUS-TS01, EWP-CMD-STATUS-TS02, EWP-CMD-STATUS-TS03, EWP-CMD-STATUS-TS04, EWP-CMD-STATUS-TS05, EWP-CMD-STATUS-TS06, EWP-P3A-TS02, EWP-P3A-TS04.
 Downstream coverage obligations: none.
 
@@ -826,8 +826,8 @@ Downstream coverage obligations: none.
 - [x] P17-G3A-01:minimal-implementation _(passed)_
 - [x] P17-G3A-01:targeted-green _(passed)_
 - [x] P17-G3A-01:impacted-green _(passed)_
-- [ ] P17-G3A-01:refactor _(pending)_
-- [ ] P17-G3A-01:adversarial-review _(pending)_
+- [x] P17-G3A-01:refactor _(passed)_
+- [x] P17-G3A-01:adversarial-review _(passed)_
 - [ ] P17-G3A-01:traceability-closure _(pending)_
 - [ ] P17-G3A-01:signed-off _(pending)_
 

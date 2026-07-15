@@ -3511,7 +3511,7 @@
       "phase": "3A",
       "title": "Canonical correlated read model and status state-product surface",
       "dependsOn": ["P17-G2-05"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -3603,7 +3603,7 @@
         "/root/g3a01_core_implementation",
         "/root/g3a01_cli_implementation"
       ],
-      "reviewer": null,
+      "reviewer": "/root/g3a01_final_combined_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -3630,12 +3630,12 @@
           "evidence": ["projects/p17/evidence/P17-G3A-01.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-01.md#refactor-review"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-01.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -3652,7 +3652,9 @@
         "projects/p17/evidence/P17-G3A-01.md#ready-plan",
         "projects/p17/evidence/P17-G3A-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G3A-01.md#minimal-implementation",
-        "projects/p17/evidence/P17-G3A-01.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G3A-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3A-01.md#refactor-review",
+        "projects/p17/evidence/P17-G3A-01.md#adversarial-review"
       ]
     },
     {
