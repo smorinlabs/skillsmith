@@ -849,14 +849,14 @@ Downstream coverage obligations: none.
 
 ## P17-G3A-02 — Deterministic agents/list/commands inventory, duplicates, and capability presentation
 
-Phase: 3A; status: **mapped**; dependencies: P17-G3A-01.
+Phase: 3A; status: **ready**; dependencies: P17-G3A-01.
 Required-now validations: EWP-CMD-AGENTS-TS01, EWP-CMD-AGENTS-TS02, EWP-CMD-AGENTS-TS03, EWP-CMD-COMMANDS-TS01, EWP-CMD-COMMANDS-TS02, EWP-CMD-COMMANDS-TS03, EWP-CMD-COMMANDS-TS04, EWP-CMD-LIST-TS01, EWP-CMD-LIST-TS02, EWP-CMD-LIST-TS03, EWP-CMD-LIST-TS04, EWP-CMD-LIST-TS05, EWP-CMD-LIST-TS06, EWP-CMD-LIST-TS07, EWP-P3A-TS01, EWP-P3A-TS03.
 Downstream coverage obligations: none.
 
 ### Group gates
 
 - [x] P17-G3A-02:mapped _(passed)_
-- [ ] P17-G3A-02:ready _(pending)_
+- [x] P17-G3A-02:ready _(passed)_
 - [ ] P17-G3A-02:test-first _(pending)_
 - [ ] P17-G3A-02:minimal-implementation _(pending)_
 - [ ] P17-G3A-02:targeted-green _(pending)_
@@ -885,9 +885,9 @@ Downstream coverage obligations: none.
 - [ ] **EWP-CMD-LIST-TS05** — enabled/disabled/unconfigured exclusivity and display. _(command-test; planned)_
 - [ ] **EWP-CMD-LIST-TS06** — versioned complete JSON independent of human verbosity. _(command-test; planned)_
 - [ ] **EWP-CMD-LIST-TS07** — large-fleet performance and bounded default output. _(command-test; planned)_
-- [ ] **EWP-P3A-T01** — Deterministic compact list model/renderers. _(phase-task; planned)_
-- [ ] **EWP-P3A-T04** — Tool-qualified duplicate/shadow analysis. _(phase-task; planned)_
-- [ ] **EWP-P3A-T05** — Per-operation tool/scope capability reporting. _(phase-task; planned)_
+- [ ] **EWP-P3A-T01** — Deterministic compact list model/renderers. _(phase-task; ready)_
+- [ ] **EWP-P3A-T04** — Tool-qualified duplicate/shadow analysis. _(phase-task; ready)_
+- [ ] **EWP-P3A-T05** — Per-operation tool/scope capability reporting. _(phase-task; ready)_
 - [ ] **EWP-P3A-TS01** — List compact/long/JSON goldens. _(phase-test; planned)_
 - [ ] **EWP-P3A-TS03** — Duplicate cross-tool/cross-scope regressions. _(phase-test; planned)_
 - [ ] **P1-01** — Compact deterministic `list` _(recommendation; planned)_
