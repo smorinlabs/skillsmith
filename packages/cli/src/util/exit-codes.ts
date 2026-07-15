@@ -46,5 +46,7 @@ export const exitCodeForError = (e: SkillSmithError): ExitCode => {
       return 6;
     case 'tool-unavailable':
       return 4;
+    case 'cancelled':
+      return 130;
   }
 };

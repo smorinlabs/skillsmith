@@ -1593,6 +1593,28 @@
     }
   },
   {
+    "key": "option:skillsmith dev:--continue-on-error",
+    "disposition": "A",
+    "phase": "P17-G3B-02",
+    "validationOwner": "EWP-CMD-DEV-TS04",
+    "option": {
+      "flags": "--continue-on-error",
+      "short": null,
+      "long": "--continue-on-error",
+      "attributeName": "continueOnError",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
     "key": "option:skillsmith dev:--dest <path>",
     "disposition": "K",
     "phase": "P17-G3B-01",
@@ -3060,6 +3082,28 @@
       "short": null,
       "long": "--allow-dirty",
       "attributeName": "allowDirty",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith promote:--continue-on-error",
+    "disposition": "A",
+    "phase": "P17-G3B-02",
+    "validationOwner": "EWP-CMD-PROMOTE-TS04",
+    "option": {
+      "flags": "--continue-on-error",
+      "short": null,
+      "long": "--continue-on-error",
+      "attributeName": "continueOnError",
       "requiredValue": false,
       "optionalValue": false,
       "variadic": false,

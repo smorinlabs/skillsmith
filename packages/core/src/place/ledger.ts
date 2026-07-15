@@ -14,6 +14,7 @@ import {
 } from '../artifacts/registry.ts';
 import {
   type SkillSmithError,
+  cancelledError,
   errorMessage,
   flipFailedError,
   ledgerError,
@@ -273,6 +274,7 @@ export const withLedgerLock = async <T>(
   env: LedgerLockPorts,
   ledgerPath: string,
   fn: () => Promise<T>,
+  options?: Readonly<{ signal?: AbortSignal }>,
 ): Promise<Result<T, SkillSmithError>> => {
   try {
     await env.makeDir(dirname(ledgerPath));
@@ -293,9 +295,13 @@ export const withLedgerLock = async <T>(
   // (`placements.json.lock`) as the target, which mkdir'd `placements.json.lock.lock` — a DIFFERENT
   // dir than old binaries held, so the two never excluded each other (split-brain).
   try {
-    const value = await env.withFileLock(ledgerPath, fn);
+    const value = await env.withFileLock(ledgerPath, fn, options);
     return ok(value);
   } catch (e) {
+    const code = safeErrorCode(e);
+    if (code === 'cancelled' || code === 'ABORT_ERR' || code === 'AbortError') {
+      return err(cancelledError('ledger lock wait cancelled'));
+    }
     return err(flipFailedError(`another skillsmith operation is running: ${errorMessage(e)}`));
   }
 };

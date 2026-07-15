@@ -779,7 +779,14 @@ describe('EWP-P3B-TS03', () => {
       plan,
       bindings: [
         {
-          ...bindingFor(operation, calls),
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: operation.pairId,
+          unstartedForce: null,
+          observeActualBefore: async () => {
+            events.push('observe-actual-before');
+            return operation.before;
+          },
           execute: async () => {
             events.push('execute');
             calls.push(operation.operationId);
@@ -808,7 +815,7 @@ describe('EWP-P3B-TS03', () => {
       },
     });
 
-    expect(events).toEqual(['acquire', 'reread', 'execute', 'release']);
+    expect(events).toEqual(['acquire', 'reread', 'observe-actual-before', 'execute', 'release']);
     expect(calls).toEqual([operation.operationId]);
     expect(results[0]?.operationId).toBe(operation.operationId);
   });
@@ -845,7 +852,11 @@ describe('EWP-P3B-TS03', () => {
         plan,
         bindings: [
           {
-            ...bindingFor(operation, []),
+            operationId: operation.operationId,
+            groupId: operation.groupId,
+            pairId: operation.pairId,
+            unstartedForce: null,
+            observeActualBefore: async () => operation.before,
             execute: async () => {
               bindingCalls += 1;
               throw new Error('changed precondition invoked its binding');

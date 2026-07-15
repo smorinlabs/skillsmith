@@ -136,14 +136,20 @@ const uninstallStderr = (value: UninstallReport): string =>
     })
     .join('');
 
-const flipStderr = (value: FlipReport): string =>
+export const renderFlipLifecycleStderr = (value: FlipReport): string =>
   value.results
     .map((item) => {
       const label = `${item.skill}${item.tool ? ` (${item.tool})` : ''}`;
       if (item.action === 'refused' || item.action === 'failed') {
         return itemLine('error', label, item.reason ?? item.action);
       }
-      return item.reason ? itemLine('warning', label, item.reason) : '';
+      // Scheduling-only rows are already represented in the canonical result/summary. Retain the
+      // historical warning behavior for every other non-error action carrying a reason.
+      const schedulingOnly =
+        item.action === 'skipped' && (item.reason === 'fail-fast' || item.reason === 'interrupted');
+      return !schedulingOnly && item.action !== 'noop' && item.reason
+        ? itemLine('warning', label, item.reason)
+        : '';
     })
     .join('');
 
@@ -369,12 +375,12 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     dev: lifecycleRenderer<NonNullable<DevApplicationReport['value']>>(
       (value, outcome) => renderFlipHuman(value, exitCodeForClass(outcome.exitClass)),
       (value) => renderFlipJson(value, currentWireCodecs.dev),
-      flipStderr,
+      renderFlipLifecycleStderr,
     ),
     promote: lifecycleRenderer<NonNullable<PromoteApplicationReport['value']>>(
       (value, outcome) => renderFlipHuman(value, exitCodeForClass(outcome.exitClass)),
       (value) => renderFlipJson(value, currentWireCodecs.promote),
-      flipStderr,
+      renderFlipLifecycleStderr,
     ),
   };
 };

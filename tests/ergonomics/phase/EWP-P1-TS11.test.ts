@@ -2385,7 +2385,7 @@ describe('EWP-P1-TS11', () => {
     const optionHash = new Bun.CryptoHasher('sha256')
       .update(JSON.stringify(optionInventory))
       .digest('hex');
-    if (optionHash !== '158674c55207c8384e875bea9978467369862864e1f89a94e6a0ec9f586b8152')
+    if (optionHash !== '3a74f029bf3d7c0f85fb3b1c86424762f8efbd6408480cfb8b7c71c6217a39dd')
       findings.push('command registry: option rows changed');
     const adr = await readFile(
       join(ROOT, 'docs/adr/0009-operation-scoped-observation.md'),

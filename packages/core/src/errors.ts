@@ -12,7 +12,8 @@ export type SkillSmithError =
   | { code: 'permission-denied'; message: string; path?: string }
   | { code: 'flip-refused'; message: string }
   | { code: 'flip-failed'; message: string }
-  | { code: 'tool-unavailable'; message: string };
+  | { code: 'tool-unavailable'; message: string }
+  | { code: 'cancelled'; message: string };
 
 export const genericError = (message: string, cause?: unknown): SkillSmithError => ({
   code: 'generic',
@@ -102,5 +103,10 @@ export const flipFailedError = (message: string): SkillSmithError => ({
 
 export const toolUnavailableError = (message: string): SkillSmithError => ({
   code: 'tool-unavailable',
+  message,
+});
+
+export const cancelledError = (message: string): SkillSmithError => ({
+  code: 'cancelled',
   message,
 });

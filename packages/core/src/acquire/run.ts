@@ -9,6 +9,7 @@ import {
 } from '../artifacts/identity.ts';
 import {
   type SkillSmithError,
+  cancelledError,
   errorMessage,
   flipFailedError,
   flipRefusedError,
@@ -16,6 +17,16 @@ import {
   sourceUnresolvableError,
   toolUnavailableError,
 } from '../errors.ts';
+import {
+  createExecutionPrecondition,
+  executeOperationPlan,
+  validateExecutionPreconditions,
+} from '../execution/index.ts';
+import type {
+  ExecutionPrecondition,
+  PreparedExecutionBinding,
+  ValidatedExecutionBinding,
+} from '../execution/types.ts';
 import {
   deletePairAt,
   getPairAt,
@@ -59,6 +70,7 @@ import {
   createPlanningDiagnosticId,
 } from '../planning/create.ts';
 import type {
+  CurrentMutatorOperationPlan,
   ExecutableOperation,
   OperationExecutionResult,
   OperationImage,
@@ -166,6 +178,7 @@ const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
   'flip-refused',
   'flip-failed',
   'tool-unavailable',
+  'cancelled',
 ]);
 
 const safeError = (error: unknown): SkillSmithError => {
@@ -902,12 +915,23 @@ const placePair = async (
   });
   const fail = (e: SkillSmithError): InstallResult => ({
     ...base,
-    action: 'failed',
-    reason: msg(e),
-    placement: null,
-    store: null,
-    origin: null,
-    error: safeError(e),
+    ...(e.code === 'cancelled' || (opts.signal?.aborted && msg(e) === 'interrupted')
+      ? {
+          action: 'skipped' as const,
+          reason: 'interrupted',
+          placement: null,
+          store: null,
+          origin: null,
+          error: cancelledError('interrupted'),
+        }
+      : {
+          action: 'failed' as const,
+          reason: msg(e),
+          placement: null,
+          store: null,
+          origin: null,
+          error: safeError(e),
+        }),
   });
 
   try {
@@ -1237,6 +1261,86 @@ const acquireLiveResource = (skill: string, tool: FlipTool, scope: InstallScope,
   location: { kind: 'machine-bound' as const, path },
 });
 
+interface AcquirePlacementFacts {
+  readonly pathKind: 'absent' | 'file' | 'dir' | 'symlink';
+  readonly canonicalPath: string;
+  readonly placement: Placement;
+  readonly contentHash: string | null;
+}
+
+interface AcquireContentFacts {
+  readonly path: string;
+  readonly pathKind: 'absent' | 'file' | 'dir' | 'symlink';
+  readonly contentHash: string | null;
+}
+
+const acquireContentFacts = async (
+  env: AcquisitionPorts,
+  path: string,
+): Promise<AcquireContentFacts> => {
+  const pathKind = await env.pathKind(path);
+  const hash = pathKind === 'dir' ? await contentHashOf(env, path) : null;
+  if (hash !== null && !hash.ok) throw hash.error;
+  return {
+    path: resolve(path),
+    pathKind,
+    contentHash: hash?.value ?? null,
+  };
+};
+
+const acquirePlacementFacts = async (
+  env: AcquisitionPorts,
+  root: string,
+  skill: string,
+  storeRoot: string,
+): Promise<AcquirePlacementFacts> => {
+  const path = join(root, skill);
+  const [pathKind, placement] = await Promise.all([
+    env.pathKind(path),
+    classifyPlacement(env, root, skill, storeRoot),
+  ]);
+  const hash = pathKind === 'dir' ? await contentHashOf(env, path) : null;
+  if (hash !== null && !hash.ok) throw hash.error;
+  return {
+    pathKind,
+    canonicalPath: resolve(path),
+    placement,
+    contentHash: hash?.value ?? null,
+  };
+};
+
+const acquireActualBefore = (
+  resource: Extract<OperationImage, { kind: 'placement' }>['resource'],
+  facts: AcquirePlacementFacts,
+  pair: PairRecord | null,
+): OperationImage => {
+  if (facts.placement.class === 'absent') return { kind: 'absent', resource };
+  const representation =
+    facts.pathKind === 'symlink' ? 'symlink' : facts.pathKind === 'dir' ? 'copy' : 'other';
+  return {
+    kind: 'placement',
+    resource,
+    classification: pair === null ? 'unmanaged' : facts.placement.class,
+    representation,
+    linkTarget:
+      facts.placement.symlinkTarget === null
+        ? null
+        : { kind: 'machine-bound', path: facts.placement.symlinkTarget },
+    dangling: facts.placement.dangling,
+    source: null,
+    // The current operation-image contract couples a content hash to a typed source. Acquire's
+    // legacy ledger does not always retain that source for unmanaged/copied placements, so the
+    // complete hash remains in the private precondition snapshot instead of fabricating a source.
+    contentHash: null,
+  };
+};
+
+const preconditionStateChanged = (error: unknown): boolean =>
+  error !== null &&
+  typeof error === 'object' &&
+  'code' in error &&
+  (error.code === 'precondition-state-changed' || error.code === 'precondition-observation-failed');
+
 const acquireAbsentImage = (
   skill: string,
   tool: FlipTool,
@@ -1456,8 +1560,12 @@ const installExecutionResultFor = (
   operation: ExecutableOperation,
   result: InstallResult | undefined,
   requested: InstallReport['requested'],
+  actualBefore: OperationImage = operation.before,
 ): OperationExecutionResult => {
-  const cancelled = result?.action === 'skipped';
+  const cancelled =
+    result?.action === 'skipped' &&
+    (result.reason === 'interrupted' || result.error?.code === 'cancelled');
+  const skippedAfterFailure = result?.action === 'skipped' && result.reason === 'fail-fast';
   const succeeded =
     result?.action === 'installed' || result?.action === 'updated' || result?.action === 'repaired';
   const actualAfter =
@@ -1470,10 +1578,10 @@ const installExecutionResultFor = (
           'pinned',
           result.placement ?? 'copy',
         )
-      : operation.before;
+      : actualBefore;
   const common = {
     operationId: operation.operationId,
-    actualBefore: operation.before,
+    actualBefore,
     actualAfter,
     force: createBoundedForceEffect({
       supported: true,
@@ -1483,6 +1591,13 @@ const installExecutionResultFor = (
   } as const;
   if (cancelled) {
     return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
+  }
+  if (skippedAfterFailure) {
+    return createOperationExecutionResult({
+      ...common,
+      outcome: 'skipped-after-failure',
+      error: null,
+    });
   }
   if (!succeeded) {
     return createOperationExecutionResult({
@@ -1713,19 +1828,115 @@ const runInstallInternal = async (
 
   interface PreparedInstallBinding {
     readonly preview: InstallResult;
+    readonly expected: InstallPreconditionFacts;
+    readonly actualBefore: OperationImage;
+    observe(): Promise<InstallPreconditionFacts>;
     execute(): Promise<InstallResult>;
   }
   interface PreparedInstallBatch {
     readonly preview: PlannedInstallReport;
     readonly bindings: ReadonlyMap<string, PreparedInstallBinding>;
+    readonly preconditions: readonly ExecutionPrecondition[];
     cleanup(): Promise<void>;
   }
+
+  interface InstallPreconditionFacts {
+    readonly projectRoot: string | null;
+    readonly selectedPair: PairRecord | null;
+    readonly live: AcquirePlacementFacts;
+    readonly legacy: readonly AcquirePlacementFacts[];
+    readonly shadow: Readonly<{
+      pair: PairRecord | null;
+      live: AcquirePlacementFacts;
+    }> | null;
+    readonly source: Readonly<{
+      canonicalSource: string;
+      repository: string;
+      resolvedSha: string;
+      skillPath: string;
+      content: Readonly<{
+        pathKind: AcquireContentFacts['pathKind'];
+        contentHash: string | null;
+      }>;
+    }>;
+    readonly store: AcquireContentFacts;
+  }
+
+  interface InstallBindingSeed {
+    readonly preview: InstallResult;
+    readonly spec: SourceSpec;
+    readonly resolved: Resolved;
+    readonly tool: FlipTool;
+    execute(): Promise<InstallResult>;
+  }
+
+  const observeInstallState = async (
+    seed: InstallBindingSeed,
+  ): Promise<Readonly<{ ledger: LedgerFile; facts: InstallPreconditionFacts }>> => {
+    const { preview, spec, resolved: resolvedSource, tool } = seed;
+    if (preview.skill === null || preview.placementPath === null || preview.store === null) {
+      throw new Error('prepared install facts require an executable result');
+    }
+    const rootsCtx = {
+      cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
+      configuration: opts.configuration,
+    };
+    const installRoot = primarySkillRootFor(tool, env, scope, rootsCtx);
+    const ledgerResult = await readLedger(env, ledgerPath);
+    if (!ledgerResult.ok) throw ledgerResult.error;
+    const selectedPair = getPairAt(ledgerResult.value, scopeKey, preview.skill, tool);
+    const live = await acquirePlacementFacts(env, installRoot, preview.skill, storeRoot);
+    const legacy =
+      scope === 'user'
+        ? await Promise.all(
+            skillRootsFor(tool, env, 'user', rootsCtx)
+              .slice(1)
+              .map((root) => acquirePlacementFacts(env, root, preview.skill as string, storeRoot)),
+          )
+        : [];
+    const otherScope: InstallScope = scope === 'project' ? 'user' : 'project';
+    const otherKey = otherScope === 'project' ? projectRoot : null;
+    let shadow: InstallPreconditionFacts['shadow'] = null;
+    if (!(otherScope === 'project' && otherKey === null)) {
+      const otherCtx = {
+        cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
+        configuration: opts.configuration,
+      };
+      const otherRoot = primarySkillRootFor(tool, env, otherScope, otherCtx);
+      shadow = {
+        pair: structuredClone(getPairAt(ledgerResult.value, otherKey, preview.skill, tool)),
+        live: await acquirePlacementFacts(env, otherRoot, preview.skill, storeRoot),
+      };
+    }
+    const sourceContent = await acquireContentFacts(env, resolvedSource.materializedDir);
+    return {
+      ledger: ledgerResult.value,
+      facts: {
+        projectRoot,
+        selectedPair: structuredClone(selectedPair),
+        live,
+        legacy,
+        shadow,
+        source: {
+          canonicalSource: spec.canonicalSource,
+          repository: spec.identity.repository,
+          resolvedSha: resolvedSource.sha,
+          skillPath: resolvedSource.skillPath,
+          content: {
+            pathKind: sourceContent.pathKind,
+            contentHash: sourceContent.contentHash,
+          },
+        },
+        store: await acquireContentFacts(env, preview.store.path),
+      },
+    };
+  };
 
   // Resolve and verify the whole selection into immutable work before any store/placement binding
   // can run. Fetch materialization remains inside the existing outer lock for normal execution.
   const prepareAll = async (ledger: LedgerFile): Promise<PreparedInstallBatch> => {
     const results: InstallResult[] = [...planningRefusals];
-    const candidateBindings = new Map<InstallResult, PreparedInstallBinding>();
+    const candidateBindings = new Map<InstallResult, InstallBindingSeed>();
     const cleanupDirs = new Set<string>();
     const placeCtx: PlaceCtx = {
       env,
@@ -1884,6 +2095,9 @@ const runInstallInternal = async (
         }
         candidateBindings.set(preview, {
           preview,
+          spec,
+          resolved: r,
+          tool,
           execute: async (): Promise<InstallResult> => {
             if (snap === null && snapErr === null) {
               const { ns, name } = clampStoreNs(spec.identity.repository);
@@ -1938,10 +2152,84 @@ const runInstallInternal = async (
       }
     }
 
-    const planning = createInstallPlanning(requested, results, Boolean(opts.continueOnError));
+    const initialPlanning = createInstallPlanning(
+      requested,
+      results,
+      Boolean(opts.continueOnError),
+    );
+    const preparedBindings = new Map<string, PreparedInstallBinding>();
+    const preconditions: ExecutionPrecondition[] = [];
+    const operations: ExecutableOperation[] = [];
+    for (const operation of initialPlanning.plan.operations) {
+      const previewResult = initialPlanning.operationResults.get(operation.operationId);
+      const seed = previewResult === undefined ? undefined : candidateBindings.get(previewResult);
+      if (seed === undefined) throw new Error('prepared install operation binding is missing');
+      const expectedFacts = (await observeInstallState(seed)).facts;
+      const resource =
+        operation.before.kind === 'absent' || operation.before.kind === 'placement'
+          ? operation.before.resource
+          : null;
+      if (resource === null) throw new Error('prepared install resource is not live');
+      if (resource.kind !== 'live') throw new Error('prepared install resource is not live');
+      const actualBefore = acquireActualBefore(
+        resource,
+        expectedFacts.live,
+        expectedFacts.selectedPair,
+      );
+      const expected = {
+        command: 'install',
+        operationId: operation.operationId,
+        groupId: operation.groupId,
+        pairId: operation.pairId,
+        skill: operation.skill,
+        tool: operation.tool,
+        scope: operation.scope,
+        ...expectedFacts,
+      } as const;
+      const precondition = createExecutionPrecondition({
+        operationIds: [operation.operationId],
+        resource,
+        expected,
+        observe: async () => ({
+          command: 'install',
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: operation.pairId,
+          skill: operation.skill,
+          tool: operation.tool,
+          scope: operation.scope,
+          ...(await observeInstallState(seed)).facts,
+        }),
+      });
+      preconditions.push(precondition);
+      operations.push({
+        ...operation,
+        before: actualBefore,
+        preconditionIds: [precondition.preconditionId],
+      });
+      preparedBindings.set(operation.operationId, {
+        preview: seed.preview,
+        expected: expectedFacts,
+        actualBefore,
+        observe: async () => {
+          const current = await observeInstallState(seed);
+          // Preparation and approval may be separated from execution by another completed
+          // ledger mutation. Rebind the mutation closure to the whole current under-lock ledger;
+          // the exact approved operation and its expected selected/live facts remain unchanged.
+          placeCtx.ledger = current.ledger;
+          return current.facts;
+        },
+        execute: seed.execute,
+      });
+    }
+    const plan = createOperationPlan({
+      ...initialPlanning.plan,
+      operations,
+    }) as OperationPlan<'install'>;
+    const planning = { plan, operationResults: initialPlanning.operationResults };
     const bindings = new Map<string, PreparedInstallBinding>();
-    for (const [operationId, previewResult] of planning.operationResults) {
-      const binding = candidateBindings.get(previewResult);
+    for (const operationId of planning.operationResults.keys()) {
+      const binding = preparedBindings.get(operationId);
       if (binding === undefined || bindings.has(operationId)) {
         throw new Error('prepared install operation binding is not one-to-one');
       }
@@ -1958,6 +2246,7 @@ const runInstallInternal = async (
     return {
       preview,
       bindings,
+      preconditions: Object.freeze(preconditions),
       cleanup: async (): Promise<void> => {
         for (const dir of cleanupDirs) await env.removeTree(dir).catch(() => {});
       },
@@ -1967,27 +2256,140 @@ const runInstallInternal = async (
   const executePrepared = async (prepared: PreparedInstallBatch): Promise<PlannedInstallReport> => {
     const actualByPreview = new Map<InstallResult, InstallResult>();
     const actualByOperation = new Map<string, InstallResult>();
-    let failFast = false;
-    for (const operation of prepared.preview.plan.operations) {
-      const binding = prepared.bindings.get(operation.operationId);
-      if (binding === undefined) throw new Error('prepared install operation binding is missing');
-      let actual: InstallResult;
-      if (opts.signal?.aborted) {
-        actual = { ...binding.preview, action: 'skipped', reason: 'interrupted', store: null };
-      } else if (failFast) {
-        actual = { ...binding.preview, action: 'skipped', reason: 'fail-fast', store: null };
-      } else {
-        actual = await binding.execute();
-        if (actual.error && !opts.continueOnError) failFast = true;
+    const schedulerBindings: PreparedExecutionBinding[] = prepared.preview.plan.operations.map(
+      (operation) => {
+        const binding = prepared.bindings.get(operation.operationId);
+        if (binding === undefined) throw new Error('prepared install operation binding is missing');
+        if (operation.pairId === null)
+          throw new Error('prepared install operation pair is missing');
+        return {
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: operation.pairId,
+          unstartedForce: createBoundedForceEffect({
+            supported: true,
+            requested: requested.force,
+            conflict: null,
+          }),
+          observeActualBefore: async (): Promise<OperationImage> => {
+            const facts = await binding.observe();
+            const resource =
+              operation.before.kind === 'absent' || operation.before.kind === 'placement'
+                ? operation.before.resource
+                : null;
+            if (resource === null || resource.kind !== 'live') {
+              throw new Error('prepared install actual-before resource is not live');
+            }
+            return acquireActualBefore(resource, facts.live, facts.selectedPair);
+          },
+          execute: async (
+            validatedBinding: ValidatedExecutionBinding,
+          ): Promise<OperationExecutionResult> => {
+            const actual = await binding.execute();
+            actualByPreview.set(binding.preview, actual);
+            actualByOperation.set(operation.operationId, actual);
+            return installExecutionResultFor(
+              operation,
+              actual,
+              requested,
+              validatedBinding.actualBefore,
+            );
+          },
+        };
+      },
+    );
+    const executionLockPort = {
+      withFileLock: async <T>(
+        path: string,
+        operation: () => Promise<T>,
+        options?: Readonly<{ signal?: AbortSignal }>,
+      ): Promise<T> => {
+        if (path !== ledgerPath) throw new Error('unexpected acquire execution lock path');
+        let callbackStarted = false;
+        try {
+          return await env.withFileLock(
+            ledgerPath,
+            async () => {
+              callbackStarted = true;
+              return operation();
+            },
+            options,
+          );
+        } catch (error) {
+          // The compatibility helper intentionally maps lock-acquisition failures, but it cannot
+          // distinguish them from a semantic precondition refusal thrown by the held callback.
+          // Preserve callback identity here so the adapter can project a truthful refusal.
+          if (callbackStarted) throw error;
+          const safe = safeError(error);
+          if (safe.code === 'cancelled') throw safe;
+          throw flipFailedError(`another skillsmith operation is running: ${msg(safe)}`);
+        }
+      },
+    };
+    let executionResults: readonly OperationExecutionResult[];
+    try {
+      executionResults = await executeOperationPlan({
+        plan: prepared.preview.plan as CurrentMutatorOperationPlan,
+        bindings: schedulerBindings,
+        preconditions: prepared.preconditions,
+        locks: [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }],
+        lockPort: executionLockPort,
+        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+      });
+    } catch (error) {
+      if (!preconditionStateChanged(error)) throw error;
+      const reason = 'prepared placement state changed before execution';
+      for (const operation of prepared.preview.plan.operations) {
+        const binding = prepared.bindings.get(operation.operationId);
+        if (binding === undefined) throw new Error('prepared install operation binding is missing');
+        const actual: InstallResult = {
+          ...binding.preview,
+          action: 'refused',
+          reason,
+          store: null,
+          error: flipRefusedError(reason),
+        };
+        actualByPreview.set(binding.preview, actual);
+        actualByOperation.set(operation.operationId, actual);
       }
-      actualByPreview.set(binding.preview, actual);
-      actualByOperation.set(operation.operationId, actual);
+      executionResults = prepared.preview.plan.operations.map((operation) =>
+        installExecutionResultFor(
+          operation,
+          actualByOperation.get(operation.operationId),
+          requested,
+        ),
+      );
+    }
+    for (const [index, operation] of prepared.preview.plan.operations.entries()) {
+      if (actualByOperation.has(operation.operationId)) continue;
+      const binding = prepared.bindings.get(operation.operationId);
+      const execution = executionResults[index];
+      if (binding === undefined || execution === undefined) {
+        throw new Error('prepared install result projection is missing');
+      }
+      if (execution.outcome === 'skipped-after-failure') {
+        const actual = {
+          ...binding.preview,
+          action: 'skipped' as const,
+          reason: 'fail-fast',
+          store: null,
+        };
+        actualByPreview.set(binding.preview, actual);
+        actualByOperation.set(operation.operationId, actual);
+      } else if (execution.outcome === 'cancelled') {
+        const actual = {
+          ...binding.preview,
+          action: 'skipped' as const,
+          reason: 'interrupted',
+          store: null,
+          error: cancelledError('interrupted'),
+        };
+        actualByPreview.set(binding.preview, actual);
+        actualByOperation.set(operation.operationId, actual);
+      }
     }
     const results = prepared.preview.results.map(
       (previewResult) => actualByPreview.get(previewResult) ?? previewResult,
-    );
-    const executionResults = prepared.preview.plan.operations.map((operation) =>
-      installExecutionResultFor(operation, actualByOperation.get(operation.operationId), requested),
     );
     return assembleInstallReport(
       false,
@@ -2007,8 +2409,8 @@ const runInstallInternal = async (
     return ok(prepared.preview);
   }
 
-  // ---- Phase 2: the locked batch (ONE lock across fetch + verify + placement) ----
-  const executeLocked = async (): Promise<Result<PlannedInstallReport, SkillSmithError>> => {
+  // ---- Phase 2: compatibility recovery/preparation, followed by final coordinator validation ----
+  const prepareLocked = async (): Promise<Result<PreparedInstallBatch, SkillSmithError>> => {
     await sweepStaging(env, storeRoot);
     await sweepFetchOrphans(env, dataDir);
     const ledgerRes = await readLedger(env, ledgerPath);
@@ -2035,26 +2437,31 @@ const runInstallInternal = async (
       );
     }
 
-    const prepared = await prepareAll(ledger);
-    try {
-      return ok(await executePrepared(prepared));
-    } finally {
-      await prepared.cleanup();
-    }
+    return ok(await prepareAll(ledger));
   };
-  const completed = Symbol('install-ledger-callback-completed');
-  let batchResult: Result<PlannedInstallReport, SkillSmithError> | undefined;
-  const locked = await withLedgerLock(env, ledgerPath, async (): Promise<typeof completed> => {
-    batchResult = await executeLocked();
-    return completed;
-  });
+  const completed = Symbol('install-prepare-lock-completed');
+  let preparedResult: Result<PreparedInstallBatch, SkillSmithError> | undefined;
+  const locked = await withLedgerLock(
+    env,
+    ledgerPath,
+    async (): Promise<typeof completed> => {
+      preparedResult = await prepareLocked();
+      return completed;
+    },
+    opts.signal === undefined ? undefined : { signal: opts.signal },
+  );
 
   if (!locked.ok) return err(safeError(locked.error));
-  const settled = batchResult;
+  const settled = preparedResult;
   if (locked.value !== completed || settled === undefined) {
     return err(genericError('operation failed'));
   }
-  return settled.ok ? settled : err(safeError(settled.error));
+  if (!settled.ok) return err(safeError(settled.error));
+  try {
+    return ok(await executePrepared(settled.value));
+  } finally {
+    await settled.value.cleanup();
+  }
 };
 
 export const runInstall = async (
@@ -2903,16 +3310,105 @@ const runUninstallInternal = async (
 
   interface PreparedUninstallBinding {
     readonly preview: UninstallResult;
+    readonly expected: UninstallPreconditionFacts;
+    readonly actualBefore: OperationImage;
+    observe(): Promise<UninstallPreconditionFacts>;
     execute(): Promise<UninstallResult>;
   }
   interface PreparedUninstallBatch {
     readonly preview: PlannedUninstallReport;
     readonly bindings: ReadonlyMap<string, PreparedUninstallBinding>;
+    readonly preconditions: readonly ExecutionPrecondition[];
   }
+  interface UninstallPreconditionFacts {
+    readonly projectRoot: string | null;
+    readonly selectedPair: PairRecord | null;
+    readonly live: AcquirePlacementFacts;
+    readonly store: AcquireContentFacts | null;
+    readonly selectionKind: 'live' | 'stale' | 'absent';
+    readonly selection: readonly Readonly<{
+      scope: InstallScope;
+      scopeKey: string | null;
+      tool: FlipTool;
+      kind: UMatch['kind'];
+      paths: readonly string[];
+      pair: PairRecord | null;
+    }>[];
+  }
+  interface UninstallBindingSeed {
+    readonly preview: UninstallResult;
+    readonly target: string;
+    readonly name: string;
+    readonly match: UMatch;
+    execute(): Promise<UninstallResult>;
+  }
+
+  const observeUninstallFacts = async (
+    seed: UninstallBindingSeed,
+  ): Promise<UninstallPreconditionFacts> => {
+    const expectedPath = seed.preview.placementPath;
+    if (expectedPath === null) throw new Error('prepared uninstall facts require a live path');
+    const ledgerResult = await readLedger(env, ledgerPath);
+    if (!ledgerResult.ok) throw ledgerResult.error;
+    const selectedPair = getPairAt(
+      ledgerResult.value,
+      seed.match.scopeKey,
+      seed.name,
+      seed.match.tool,
+    );
+    const live = await acquirePlacementFacts(env, dirname(expectedPath), seed.name, storeRoot);
+    const storePath = selectedPair?.pinned?.storePath ?? null;
+    const selectionMatches = isUninstallPathTarget(seed.target)
+      ? [
+          {
+            scope: seed.match.scope,
+            scopeKey: seed.match.scopeKey,
+            tool: seed.match.tool,
+            kind:
+              live.placement.class === 'absent'
+                ? selectedPair === null
+                  ? ('stale' as const)
+                  : ('stale' as const)
+                : ('live' as const),
+            placement: live.placement.class === 'absent' ? null : live.placement,
+            existing: selectedPair,
+            notice: seed.match.notice,
+          } satisfies UMatch,
+        ]
+      : await collectUninstallMatches(
+          env,
+          opts,
+          ledgerResult.value,
+          storeRoot,
+          seed.target,
+          scopesToSearch,
+          toolsToSearch,
+          scopeKeyFor,
+        );
+    return {
+      projectRoot,
+      selectedPair: structuredClone(selectedPair),
+      live,
+      store: storePath === null ? null : await acquireContentFacts(env, storePath),
+      selectionKind:
+        live.placement.class === 'absent' ? (selectedPair === null ? 'absent' : 'stale') : 'live',
+      selection: selectionMatches.map((match) => ({
+        scope: match.scope,
+        scopeKey: match.scopeKey,
+        tool: match.tool,
+        kind: match.kind,
+        paths:
+          match.kind === 'duplicate'
+            ? [...(match.duplicatePaths ?? [])]
+            : [matchPathOf(match)].filter((path): path is string => path !== null),
+        pair: structuredClone(match.existing),
+      })),
+    };
+  };
 
   const prepareAll = async (ledger: LedgerFile): Promise<PreparedUninstallBatch> => {
     const results: UninstallResult[] = [];
-    const candidateBindings = new Map<UninstallResult, PreparedUninstallBinding>();
+    const candidateBindings = new Map<UninstallResult, UninstallBindingSeed>();
     for (const target of opts.targets) {
       results.push(
         ...(await processUninstallTarget(
@@ -2932,6 +3428,9 @@ const runUninstallInternal = async (
           (preview, name, match) => {
             candidateBindings.set(preview, {
               preview,
+              target,
+              name,
+              match,
               execute: () =>
                 processUninstallMatch(env, ledger, ledgerPath, opts, deps, name, match, false),
             });
@@ -2939,10 +3438,73 @@ const runUninstallInternal = async (
         )),
       );
     }
-    const planning = createUninstallPlanning(requested, results);
+    const initialPlanning = createUninstallPlanning(requested, results);
+    const preparedBindings = new Map<string, PreparedUninstallBinding>();
+    const preconditions: ExecutionPrecondition[] = [];
+    const operations: ExecutableOperation[] = [];
+    for (const operation of initialPlanning.plan.operations) {
+      const previewResult = initialPlanning.operationResults.get(operation.operationId);
+      const seed = previewResult === undefined ? undefined : candidateBindings.get(previewResult);
+      if (seed === undefined) throw new Error('prepared uninstall operation binding is missing');
+      const expectedFacts = await observeUninstallFacts(seed);
+      const resource =
+        operation.before.kind === 'absent' || operation.before.kind === 'placement'
+          ? operation.before.resource
+          : null;
+      if (resource === null) throw new Error('prepared uninstall resource is not live');
+      if (resource.kind !== 'live') throw new Error('prepared uninstall resource is not live');
+      const actualBefore = acquireActualBefore(
+        resource,
+        expectedFacts.live,
+        expectedFacts.selectedPair,
+      );
+      const expected = {
+        command: 'uninstall',
+        operationId: operation.operationId,
+        groupId: operation.groupId,
+        pairId: operation.pairId,
+        skill: operation.skill,
+        tool: operation.tool,
+        scope: operation.scope,
+        ...expectedFacts,
+      } as const;
+      const precondition = createExecutionPrecondition({
+        operationIds: [operation.operationId],
+        resource,
+        expected,
+        observe: async () => ({
+          command: 'uninstall',
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: operation.pairId,
+          skill: operation.skill,
+          tool: operation.tool,
+          scope: operation.scope,
+          ...(await observeUninstallFacts(seed)),
+        }),
+      });
+      preconditions.push(precondition);
+      operations.push({
+        ...operation,
+        before: actualBefore,
+        preconditionIds: [precondition.preconditionId],
+      });
+      preparedBindings.set(operation.operationId, {
+        preview: seed.preview,
+        expected: expectedFacts,
+        actualBefore,
+        observe: () => observeUninstallFacts(seed),
+        execute: seed.execute,
+      });
+    }
+    const plan = createOperationPlan({
+      ...initialPlanning.plan,
+      operations,
+    }) as OperationPlan<'uninstall'>;
+    const planning = { plan, operationResults: initialPlanning.operationResults };
     const bindings = new Map<string, PreparedUninstallBinding>();
-    for (const [operationId, previewResult] of planning.operationResults) {
-      const binding = candidateBindings.get(previewResult);
+    for (const operationId of planning.operationResults.keys()) {
+      const binding = preparedBindings.get(operationId);
       if (binding === undefined || bindings.has(operationId)) {
         throw new Error('prepared uninstall operation binding is not one-to-one');
       }
@@ -2956,7 +3518,7 @@ const runUninstallInternal = async (
     }
     const preview = assembleUninstallReport(true, requested, results, planning.plan, []);
     deps.observePreparedPlan?.(planning.plan);
-    return { preview, bindings };
+    return { preview, bindings, preconditions: Object.freeze(preconditions) };
   };
 
   const executePrepared = async (
@@ -2964,17 +3526,35 @@ const runUninstallInternal = async (
   ): Promise<PlannedUninstallReport> => {
     const actualByPreview = new Map<UninstallResult, UninstallResult>();
     const actualByOperation = new Map<string, UninstallResult>();
+    let stateChanged = false;
+    try {
+      await validateExecutionPreconditions(
+        prepared.preview.plan as CurrentMutatorOperationPlan,
+        prepared.preconditions,
+        opts.signal === undefined ? {} : { signal: opts.signal },
+      );
+    } catch (error) {
+      if (!preconditionStateChanged(error)) throw error;
+      stateChanged = true;
+    }
     for (const operation of prepared.preview.plan.operations) {
       const binding = prepared.bindings.get(operation.operationId);
       if (binding === undefined) throw new Error('prepared uninstall operation binding is missing');
-      const actual = opts.signal?.aborted
+      const actual = stateChanged
         ? {
             ...binding.preview,
-            action: 'failed' as const,
-            reason: 'interrupted',
-            error: genericError('operation interrupted'),
+            action: 'refused' as const,
+            reason: 'prepared placement state changed before execution',
+            error: flipRefusedError('prepared placement state changed before execution'),
           }
-        : await binding.execute();
+        : opts.signal?.aborted
+          ? {
+              ...binding.preview,
+              action: 'failed' as const,
+              reason: 'interrupted',
+              error: genericError('operation interrupted'),
+            }
+          : await binding.execute();
       actualByPreview.set(binding.preview, actual);
       actualByOperation.set(operation.operationId, actual);
     }
@@ -3034,10 +3614,15 @@ const runUninstallInternal = async (
   };
   const completed = Symbol('uninstall-ledger-callback-completed');
   let batchResult: Result<PlannedUninstallReport, SkillSmithError> | undefined;
-  const locked = await withLedgerLock(env, ledgerPath, async (): Promise<typeof completed> => {
-    batchResult = await executeLocked();
-    return completed;
-  });
+  const locked = await withLedgerLock(
+    env,
+    ledgerPath,
+    async (): Promise<typeof completed> => {
+      batchResult = await executeLocked();
+      return completed;
+    },
+    opts.signal === undefined ? undefined : { signal: opts.signal },
+  );
 
   if (!locked.ok) return err(safeError(locked.error));
   const settled = batchResult;

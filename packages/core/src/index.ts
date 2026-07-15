@@ -41,6 +41,16 @@ export { resolveRuntimeConfiguration } from './config/runtime.ts';
 export { builtInChecks } from './doctor/registry.ts';
 export { runChecks } from './doctor/run.ts';
 export { defaultScanEnv } from './env/default.ts';
+export {
+  EXECUTION_LOCK_RANKS,
+  createExecutionPrecondition,
+  executeOperationPlan,
+  scheduleOperationPlan,
+  validateExecutionPreconditions,
+  withExecutionLockHierarchy,
+} from './execution/index.ts';
+export type * from './execution/index.ts';
+export type { LockRequest } from './env/types.ts';
 export { resolveProjectContext } from './context/project.ts';
 export { noopLogger } from './env/logger.ts';
 export {

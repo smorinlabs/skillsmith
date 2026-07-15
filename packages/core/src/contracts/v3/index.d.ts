@@ -20,7 +20,11 @@ export interface FlipV3Dto {
   operations: Array<NonNullable<FlipReport['plan']>['operations'][number]>;
   checks: Array<NonNullable<FlipReport['plan']>['checks'][number]>;
   diagnostics: Array<NonNullable<FlipReport['plan']>['diagnostics'][number]>;
-  results: Array<NonNullable<FlipReport['executionResults']>[number]>;
+  results: Array<
+    Omit<NonNullable<FlipReport['executionResults']>[number], 'outcome'> & {
+      outcome: 'succeeded' | 'failed' | 'cancelled' | 'rolled-back';
+    }
+  >;
 }
 
 export declare const flipV3Codec: WireCodec<'flip', 3, FlipV3Dto>;

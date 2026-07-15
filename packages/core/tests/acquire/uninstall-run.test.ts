@@ -635,6 +635,10 @@ describe('runUninstall — dry run', () => {
     expect(previewPlan).toBe(preview.value.plan);
     expect(Object.isFrozen(previewPlan)).toBeTrue();
     expect(preview.value.executionResults).toEqual([]);
+    for (const operation of preview.value.plan.operations) {
+      expect(operation.preconditionIds).toHaveLength(1);
+      expect(operation.preconditionIds[0]).toMatch(/^precondition:v1:[0-9a-f]{64}$/);
+    }
 
     let executionPlan: typeof previewPlan;
     const invokedOperationIds = new Set<string>();
@@ -741,6 +745,61 @@ describe('runUninstall — dry run', () => {
     expect(await f.env.pathKind(livePath)).toBe('dir');
     expect(await f.env.readText(sentinelPath)).toBe('foreign placement\n');
     expect(getPairAt(await led(), null, 'factor-scan', 'claude-code')).not.toBeNull();
+  });
+
+  test('G3B-02: changed copied bytes after preview refuse without runner writes', async () => {
+    await installUser({ direct: true });
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const ledgerPath = ledgerPathOf(f.data);
+    const ledgerBefore = await f.env.readText(ledgerPath);
+    const targetWrites: string[] = [];
+    let prepared = false;
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      writeTextFile: async (path, text) => {
+        if (prepared) targetWrites.push(`write:${path}`);
+        await f.env.writeTextFile(path, text);
+      },
+      makeSymlink: async (target, linkPath) => {
+        if (prepared) targetWrites.push(`symlink:${linkPath}`);
+        await f.env.makeSymlink(target, linkPath);
+      },
+      rename: async (from, to) => {
+        if (prepared) targetWrites.push(`rename:${from}->${to}`);
+        await f.env.rename(from, to);
+      },
+      copyTree: async (from, to) => {
+        if (prepared) targetWrites.push(`copy:${from}->${to}`);
+        await f.env.copyTree(from, to);
+      },
+      removeTree: async (path) => {
+        if (prepared && !path.includes('/.fetch/')) targetWrites.push(`remove:${path}`);
+        await f.env.removeTree(path);
+      },
+    };
+    const result = await runUninstall(
+      executionEnv,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      {
+        ...uninstallDeps(),
+        observePreparedPlan: () => {
+          writeFileSync(join(livePath, 'SKILL.md'), '# changed live copy\n');
+          prepared = true;
+        },
+      },
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.results[0]?.action).toBe('refused');
+    expect(result.value.executionResults[0]?.outcome).toBe('failed');
+    expect(targetWrites).toEqual([]);
+    expect(await f.env.pathKind(livePath)).toBe('dir');
+    expect(await f.env.readText(ledgerPath)).toBe(ledgerBefore);
   });
 
   test('writes nothing; ledger byte-identical afterward', async () => {

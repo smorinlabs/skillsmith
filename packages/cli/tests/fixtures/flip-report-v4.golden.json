@@ -17,11 +17,19 @@
   "selection": {
     "source": "explicit-targets",
     "outcome": "selected",
-    "targets": ["factor-scan"],
+    "targets": [
+      "factor-scan"
+    ],
     "all": false,
-    "tools": ["claude-code"],
-    "scopes": ["user"],
-    "groupIds": ["group:v1:18f3dc0929b74178923d1a1b8657ac9446db5bd74b626a733dcf749ff3dbbb68"],
+    "tools": [
+      "claude-code"
+    ],
+    "scopes": [
+      "user"
+    ],
+    "groupIds": [
+      "group:v1:18f3dc0929b74178923d1a1b8657ac9446db5bd74b626a733dcf749ff3dbbb68"
+    ],
     "batchPolicy": "fail-fast"
   },
   "operations": [

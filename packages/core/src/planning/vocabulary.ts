@@ -30,6 +30,7 @@ export const OPERATION_EXECUTION_OUTCOMES = Object.freeze([
   'failed',
   'cancelled',
   'rolled-back',
+  'skipped-after-failure',
 ] as const);
 
 export type OperationExecutionOutcome = (typeof OPERATION_EXECUTION_OUTCOMES)[number];

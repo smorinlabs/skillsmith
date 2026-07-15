@@ -179,6 +179,57 @@ describe('G3B-02 execution preconditions', () => {
     expect((first.expected as UnknownRecord).live).toMatchObject({ pathKind: 'absent' });
   });
 
+  test('preserves own __proto__ data safely and rejects unredacted sensitive snapshots', () => {
+    const createExecutionPrecondition = requireFactory<CreateExecutionPrecondition>(
+      'createExecutionPrecondition',
+    );
+    const operation = operationFor([]);
+    const expected: UnknownRecord = { marker: 'ordinary' };
+    Object.defineProperty(expected, '__proto__', {
+      value: { fixtureOwnData: true },
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    const precondition = createExecutionPrecondition({
+      operationIds: [operation.operationId],
+      resource: RESOURCE,
+      expected,
+      observe: async () => expected,
+    });
+    const copied = precondition.expected as UnknownRecord;
+    expect(Object.getPrototypeOf(copied)).toBeNull();
+    expect(Object.hasOwn(copied, '__proto__')).toBeTrue();
+    expect(copied.__proto__).toEqual({ fixtureOwnData: true });
+    expect(Reflect.get(Object.prototype, 'fixtureOwnData')).toBeUndefined();
+
+    expect(() =>
+      createExecutionPrecondition({
+        operationIds: [operation.operationId],
+        resource: RESOURCE,
+        expected: { message: 'authorization: Bearer fixture-secret-value' },
+        observe: async () => ({}),
+      }),
+    ).toThrow(/sensitive material/i);
+    expect(() =>
+      createExecutionPrecondition({
+        operationIds: [operation.operationId],
+        resource: RESOURCE,
+        expected: { authorization: 'opaque-secret-value' },
+        observe: async () => ({}),
+      }),
+    ).toThrow(/sensitive material/i);
+    expect(() =>
+      createExecutionPrecondition({
+        operationIds: [operation.operationId],
+        resource: RESOURCE,
+        expected: { message: '[REDACTED]' },
+        observe: async () => ({ message: '[REDACTED]' }),
+      }),
+    ).not.toThrow();
+  });
+
   test('validates exact registry coverage in canonical ID order', async () => {
     const createExecutionPrecondition = requireFactory<CreateExecutionPrecondition>(
       'createExecutionPrecondition',

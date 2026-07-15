@@ -1,5 +1,12 @@
 import type { Config } from '../config/types.ts';
-import type { ExecOptions, ExecResult, PathKind, Platform, XdgDirs } from '../env/types.ts';
+import type {
+  ExecOptions,
+  ExecResult,
+  LockRequest,
+  PathKind,
+  Platform,
+  XdgDirs,
+} from '../env/types.ts';
 import type { JournalPhase } from '../place/types.ts';
 
 export interface PlatformPaths {
@@ -54,7 +61,7 @@ export interface FileWritePort {
 }
 
 export interface LockPort {
-  withFileLock<T>(path: string, operation: () => Promise<T>): Promise<T>;
+  withFileLock<T>(path: string, operation: () => Promise<T>, options?: LockRequest): Promise<T>;
 }
 
 export interface PathAccessPort {

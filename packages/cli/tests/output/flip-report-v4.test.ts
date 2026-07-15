@@ -141,9 +141,9 @@ const createSkippedRuntimeReport = (): FlipReport | null => {
 describe('flip report contract v4', () => {
   test('pins the exact two-space, no-terminal-LF flip@4 golden bytes', () => {
     const bytes = readFileSync(V4_GOLDEN_PATH);
-    expect(bytes.byteLength).toBe(6235);
+    expect(bytes.byteLength).toBe(6283);
     expect(new Bun.CryptoHasher('sha256').update(bytes).digest('hex')).toBe(
-      '77415a6f6053deb21a6a3bcb8ffa124726cdae32f014b32b4ce11a28daa26e44',
+      '21f39b7833507db012e1ac5e09da72b2b53a70e83bb365d75fa74fce2223bec3',
     );
     expect(V4_GOLDEN_TEXT.endsWith('\n')).toBeFalse();
     expect(JSON.parse(V4_GOLDEN_TEXT)).toMatchObject({

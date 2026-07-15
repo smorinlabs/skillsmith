@@ -237,6 +237,7 @@ export interface FlipOptions {
   strict?: boolean; // promote / dev --source only
   noVerify?: boolean; // promote / dev --source only
   allowDirty?: boolean; // promote only
+  continueOnError?: boolean;
   rollback?: boolean;
   dryRun?: boolean;
   cwd: string;

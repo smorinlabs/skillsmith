@@ -24,6 +24,10 @@ export interface ExecResult {
   timedOut: boolean;
 }
 
+export interface LockRequest {
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface ScanEnv {
   homeDir: string;
   path: readonly string[];
@@ -51,6 +55,6 @@ export interface ScanEnv {
   writeTextFile(p: string, text: string): Promise<void>;
   fsyncFile(p: string): Promise<void>;
   fsyncDir(p: string): Promise<void>;
-  withFileLock<T>(p: string, fn: () => Promise<T>): Promise<T>;
+  withFileLock<T>(p: string, fn: () => Promise<T>, options?: LockRequest): Promise<T>;
   modifiedAt(p: string): Promise<number | null>; // lstat mtimeMs; null when absent (ENOENT)
 }

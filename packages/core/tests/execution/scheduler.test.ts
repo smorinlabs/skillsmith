@@ -243,4 +243,29 @@ describe('G3B-02 operation scheduler', () => {
     ).rejects.toThrow(/dependency.*empty|dependency-bearing|unsupported dependenc/i);
     expect(dependencyCalls).toEqual([]);
   });
+
+  test('does not treat a truthful rolled-back result as a fail-fast group failure', async () => {
+    const plan = planFor([operationFor({ skill: 'beta' }), operationFor({ skill: 'alpha' })]);
+    const scheduleOperationPlan = requireScheduler();
+    const calls: string[] = [];
+    const bindings = plan.operations.map((operation, index) => ({
+      ...bindingFor(operation, []),
+      execute: async () => {
+        calls.push(operation.operationId);
+        return createOperationExecutionResult({
+          operationId: operation.operationId,
+          outcome: index === 0 ? 'rolled-back' : 'succeeded',
+          actualBefore: operation.before,
+          actualAfter: index === 0 ? operation.before : operation.after,
+          force: null,
+          error: null,
+        });
+      },
+    }));
+
+    const results = await scheduleOperationPlan(plan, bindings);
+
+    expect(calls).toEqual(plan.operations.map(({ operationId }) => operationId));
+    expect(results.map(({ outcome }) => outcome)).toEqual(['rolled-back', 'succeeded']);
+  });
 });

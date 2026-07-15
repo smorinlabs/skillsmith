@@ -22,6 +22,7 @@ import {
   listV2Codec,
 } from '@skillsmith/core/contracts/v2';
 import { flipV3Codec, listV3Codec } from '@skillsmith/core/contracts/v3';
+import { flipV4Codec } from '@skillsmith/core/contracts/v4';
 import { CURRENT_COMMAND_SPECS } from '../spec/registry.ts';
 
 const mapping = (commandPath: string, contractId: string, version: number): WireContractMapping =>
@@ -35,11 +36,11 @@ export const currentWireCommandMappings = Object.freeze([
   mapping('skillsmith config list', 'config-list', 1),
   mapping('skillsmith config set', 'config-set', 1),
   mapping('skillsmith config unset', 'config-unset', 1),
-  mapping('skillsmith dev', 'flip', 3),
+  mapping('skillsmith dev', 'flip', 4),
   mapping('skillsmith doctor', 'health', 1),
   mapping('skillsmith install', 'install', 1),
   mapping('skillsmith list', 'list', 3),
-  mapping('skillsmith promote', 'flip', 3),
+  mapping('skillsmith promote', 'flip', 4),
   mapping('skillsmith status', 'status', 1),
   mapping('skillsmith uninstall', 'uninstall', 1),
   mapping('skillsmith verify', 'verify', 1),
@@ -83,6 +84,7 @@ export const currentWireContractRegistry = createWireContractRegistry(
     configUnsetV1Codec,
     flipV2Codec,
     flipV3Codec,
+    flipV4Codec,
     installV1Codec,
     listV2Codec,
     listV3Codec,
@@ -121,11 +123,11 @@ export const currentWireCodecs = Object.freeze({
   configList: boundCodec('skillsmith config list', configListV1Codec),
   configSet: boundCodec('skillsmith config set', configSetV1Codec),
   configUnset: boundCodec('skillsmith config unset', configUnsetV1Codec),
-  dev: boundCodec('skillsmith dev', flipV3Codec),
+  dev: boundCodec('skillsmith dev', flipV4Codec),
   doctor: boundCodec('skillsmith doctor', healthV1Codec),
   install: boundCodec('skillsmith install', installV1Codec),
   list: boundCodec('skillsmith list', listV3Codec),
-  promote: boundCodec('skillsmith promote', flipV3Codec),
+  promote: boundCodec('skillsmith promote', flipV4Codec),
   status: boundCodec('skillsmith status', statusV1Codec),
   uninstall: boundCodec('skillsmith uninstall', uninstallV1Codec),
   verify: boundCodec('skillsmith verify', verifyV1Codec),

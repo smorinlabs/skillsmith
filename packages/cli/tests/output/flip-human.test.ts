@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { FlipReport } from '@skillsmith/core';
 import { renderFlipHuman } from '../../src/output/flip-human.ts';
+import { renderFlipLifecycleStderr } from '../../src/runtime/current-renderers.ts';
 
 const STORE_PATH =
   '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan';
@@ -273,5 +274,48 @@ describe('renderFlipHuman', () => {
     const out = renderFlipHuman(report, 2);
     expect(out).toContain('the source tree is dirty');
     expect(out).toContain('1 refused.  Exit code: 2');
+  });
+
+  test('lifecycle stderr suppresses scheduling skips but retains historical skip warnings', () => {
+    const base: FlipReport = {
+      op: 'dev',
+      dryRun: false,
+      requested: { targets: ['x'], all: false, tools: ['claude-code'], explicitTools: false },
+      ...planningFields('dev'),
+      results: [],
+      summary: {
+        flipped: 0,
+        updated: 0,
+        noop: 0,
+        skipped: 1,
+        refused: 0,
+        failed: 0,
+        rolledBack: 0,
+        created: 0,
+        adopted: 0,
+      },
+    };
+    const skipped = (reason: string): FlipReport => ({
+      ...base,
+      results: [
+        {
+          skill: 'x',
+          tool: 'claude-code',
+          placementPath: '/Users/alice/.claude/skills/x',
+          action: 'skipped',
+          reason,
+          before: null,
+          after: null,
+          store: null,
+          verify: null,
+        },
+      ],
+    });
+
+    expect(renderFlipLifecycleStderr(skipped('fail-fast'))).toBe('');
+    expect(renderFlipLifecycleStderr(skipped('interrupted'))).toBe('');
+    expect(renderFlipLifecycleStderr(skipped('no recorded dev source'))).toBe(
+      'warning: x (claude-code): no recorded dev source\n',
+    );
   });
 });

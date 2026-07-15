@@ -38,6 +38,7 @@ import type {
 } from './types.ts';
 
 const DEFAULT_VERSION_TIMEOUT_MS = 2_000;
+const LOCK_RETRY_DELAYS_MS = Object.freeze([100, 200, 400, 800, 1_600] as const);
 
 /** Focused real clock authority for zero-discovery command observation. */
 export const defaultClockPort: ClockPort = Object.freeze({
@@ -217,24 +218,76 @@ const createFileWritePort = (): FileWritePort & FileModeWritePort => ({
     }),
 });
 
+const cancelledLockError = (path: string) =>
+  toPortError(
+    { code: 'ABORT_ERR' },
+    {
+      capability: 'lock',
+      operation: 'withFileLock',
+      code: 'cancelled',
+      message: 'lock acquisition was cancelled',
+      context: { path },
+    },
+  );
+
+const waitForLockRetry = (
+  milliseconds: number,
+  path: string,
+  signal: AbortSignal | undefined,
+): Promise<void> => {
+  if (signal?.aborted) return Promise.reject(cancelledLockError(path));
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(cancelledLockError(path));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+};
+
 const createLockPort = (): LockPort => ({
-  withFileLock: async (path, operation) => {
-    let release: () => Promise<void>;
-    try {
-      release = await lockfile.lock(path, {
-        realpath: false,
-        stale: 30_000,
-        update: 5_000,
-        retries: { retries: 5, factor: 2, minTimeout: 100, maxTimeout: 2_000 },
-      });
-    } catch (error) {
-      throw toPortError(error, {
+  withFileLock: async (path, operation, options = {}) => {
+    const { signal } = options;
+    if (signal?.aborted) throw cancelledLockError(path);
+
+    let release: (() => Promise<void>) | undefined;
+    for (let attempt = 0; attempt <= LOCK_RETRY_DELAYS_MS.length; attempt += 1) {
+      if (signal?.aborted) throw cancelledLockError(path);
+      try {
+        release = await lockfile.lock(path, {
+          realpath: false,
+          stale: 30_000,
+          update: 5_000,
+          retries: 0,
+        });
+        break;
+      } catch (error) {
+        if (signal?.aborted) throw cancelledLockError(path);
+        const delay = LOCK_RETRY_DELAYS_MS[attempt];
+        if (delay === undefined) {
+          throw toPortError(error, {
+            capability: 'lock',
+            operation: 'withFileLock',
+            context: { path },
+          });
+        }
+        await waitForLockRetry(delay, path, signal);
+      }
+    }
+    if (release === undefined) {
+      throw toPortError(new Error('lock acquisition exhausted'), {
         capability: 'lock',
         operation: 'withFileLock',
         context: { path },
       });
     }
     try {
+      if (signal?.aborted) throw cancelledLockError(path);
       return await operation();
     } finally {
       await release().catch(() => {});

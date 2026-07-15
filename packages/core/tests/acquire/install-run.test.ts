@@ -8,6 +8,7 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
+import { writeFileSync } from 'node:fs';
 import { lstat, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInstall } from '../../src/acquire/run.ts';
@@ -16,7 +17,7 @@ import type { CandidateSkill, InstallDeps, InstallOptions } from '../../src/acqu
 import type { InstallRecord } from '../../src/agents/types.ts';
 import type { ExecResult } from '../../src/env/types.ts';
 import { type SkillSmithError, sourceUnresolvableError } from '../../src/errors.ts';
-import { getPairAt, readLedger, writeLedger } from '../../src/place/ledger.ts';
+import { getPairAt, readLedger, setPairAt, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import type { Journal } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
@@ -1096,6 +1097,10 @@ describe('runInstall — dry run', () => {
     expect(previewPlan).toBe(preview.value.plan);
     expect(Object.isFrozen(previewPlan)).toBeTrue();
     expect(preview.value.executionResults).toEqual([]);
+    for (const operation of preview.value.plan.operations) {
+      expect(operation.preconditionIds).toHaveLength(1);
+      expect(operation.preconditionIds[0]).toMatch(/^precondition:v1:[0-9a-f]{64}$/);
+    }
 
     let executionPlan: typeof previewPlan;
     const invokedOperationIds = new Set<string>();
@@ -1151,6 +1156,225 @@ describe('runInstall — dry run', () => {
     expect(executed.value.executionResults.map(({ operationId }) => operationId)).toEqual(
       executed.value.plan.operations.map(({ operationId }) => operationId),
     );
+  });
+
+  test('G3B-02: changed materialized source after preview refuses with zero target writes', async () => {
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const ledgerPath = ledgerPathOf(f.data);
+    const targetWrites: string[] = [];
+    let prepared = false;
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      readBytes: async (path) => {
+        const bytes = await f.env.readBytes(path);
+        if (prepared && path.includes(`${join(f.data, '.fetch')}/`) && path.endsWith('SKILL.md')) {
+          return new TextEncoder().encode(`${new TextDecoder().decode(bytes)}\nsource drift\n`);
+        }
+        return bytes;
+      },
+      writeTextFile: async (path, text) => {
+        if (prepared && path.startsWith(f.data) && !path.includes('/.fetch/')) {
+          targetWrites.push(`write:${path}`);
+        }
+        await f.env.writeTextFile(path, text);
+      },
+      makeSymlink: async (target, linkPath) => {
+        if (prepared) targetWrites.push(`symlink:${linkPath}`);
+        await f.env.makeSymlink(target, linkPath);
+      },
+      rename: async (from, to) => {
+        if (prepared && (to === livePath || to === ledgerPath)) {
+          targetWrites.push(`rename:${from}->${to}`);
+        }
+        await f.env.rename(from, to);
+      },
+      copyTree: async (from, to) => {
+        if (prepared && to === livePath) targetWrites.push(`copy:${from}->${to}`);
+        await f.env.copyTree(from, to);
+      },
+    };
+    const result = await runInstall(
+      executionEnv,
+      { ...userOpts, tools: ['claude-code'] },
+      makeDeps({
+        observePreparedPlan: () => {
+          prepared = true;
+        },
+      }),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.results[0]?.action).toBe('refused');
+    expect(result.value.executionResults[0]?.outcome).toBe('failed');
+    expect(targetWrites).toEqual([]);
+    expect(await f.env.pathKind(livePath)).toBe('absent');
+    expect(await f.env.pathKind(ledgerPath)).toBe('absent');
+  });
+
+  test('G3B-02: changed selected store after preview refuses without rewriting live or ledger', async () => {
+    const seeded = await runInstall(f.env, { ...userOpts, tools: ['claude-code'] }, makeDeps());
+    if (!seeded.ok) throw new Error(msg(seeded.error));
+    const pair = getPairAt(await led(), null, 'factor-scan', 'claude-code');
+    if (!pair?.pinned) throw new Error('expected seeded pinned pair');
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const ledgerPath = ledgerPathOf(f.data);
+    const ledgerBefore = await f.env.readText(ledgerPath);
+    const targetWrites: string[] = [];
+    let prepared = false;
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      writeTextFile: async (path, text) => {
+        if (prepared) targetWrites.push(`write:${path}`);
+        await f.env.writeTextFile(path, text);
+      },
+      makeSymlink: async (target, linkPath) => {
+        if (prepared) targetWrites.push(`symlink:${linkPath}`);
+        await f.env.makeSymlink(target, linkPath);
+      },
+      rename: async (from, to) => {
+        if (prepared) targetWrites.push(`rename:${from}->${to}`);
+        await f.env.rename(from, to);
+      },
+      copyTree: async (from, to) => {
+        if (prepared) targetWrites.push(`copy:${from}->${to}`);
+        await f.env.copyTree(from, to);
+      },
+    };
+    const result = await runInstall(
+      executionEnv,
+      { ...userOpts, tools: ['claude-code'], force: true },
+      makeDeps({
+        observePreparedPlan: () => {
+          writeFileSync(join(pair.pinned?.storePath as string, 'SKILL.md'), '# changed store\n');
+          prepared = true;
+        },
+      }),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.results[0]?.action).toBe('refused');
+    expect(targetWrites).toEqual([]);
+    expect(await readlink(livePath)).toBe(pair.pinned.storePath);
+    expect(await f.env.readText(ledgerPath)).toBe(ledgerBefore);
+  });
+
+  test('G3B-02: final under-lock ledger rebind preserves an unrelated concurrent pair', async () => {
+    const ledgerPath = ledgerPathOf(f.data);
+    let lockCount = 0;
+    const concurrentPair = {
+      placementPath: join(agentsRoot(), 'concurrent-skill'),
+      mode: 'dev' as const,
+      dev: {
+        sourcePath: '/concurrent/source',
+        resolvedPath: '/concurrent/source',
+        repoRoot: '/concurrent',
+        sourceRelPath: 'source',
+        remote: null,
+        recordedAt: NOW,
+      },
+    };
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      withFileLock: (path, operation, options) =>
+        f.env.withFileLock(
+          path,
+          async () => {
+            lockCount += 1;
+            if (lockCount === 2) {
+              const concurrent = await readLedger(f.env, ledgerPath);
+              if (!concurrent.ok) throw new Error(msg(concurrent.error));
+              setPairAt(concurrent.value, null, 'concurrent-skill', 'codex', concurrentPair);
+              const persisted = await writeLedger(f.env, ledgerPath, concurrent.value);
+              if (!persisted.ok) throw new Error(msg(persisted.error));
+            }
+            return operation();
+          },
+          options,
+        ),
+    };
+
+    const result = await runInstall(
+      executionEnv,
+      { ...userOpts, tools: ['claude-code'] },
+      makeDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(lockCount).toBe(2);
+    expect(result.value.results[0]?.action).toBe('installed');
+    const finalLedger = await led();
+    expect(getPairAt(finalLedger, null, 'concurrent-skill', 'codex')).toEqual(concurrentPair);
+    expect(getPairAt(finalLedger, null, 'factor-scan', 'claude-code')).not.toBeNull();
+  });
+
+  test('G3B-02: started swap and recovery cancellation stay cancelled and recoverable', async () => {
+    const ledgerPath = ledgerPathOf(f.data);
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const runCancelledAt = async (phase: 'prepared' | 'staged') => {
+      const controller = new AbortController();
+      const executionEnv: RuntimePorts = {
+        ...f.env,
+        rename: async (from, to) => {
+          await f.env.rename(from, to);
+          if (to !== ledgerPath || controller.signal.aborted) return;
+          const current = await readLedger(f.env, ledgerPath);
+          if (!current.ok) throw new Error(msg(current.error));
+          const journal = getPairAt(current.value, null, 'factor-scan', 'claude-code')?.journal;
+          if (journal?.phase === phase) controller.abort();
+        },
+      };
+      return runInstall(
+        executionEnv,
+        {
+          ...userOpts,
+          tools: ['claude-code'],
+          signal: controller.signal,
+        },
+        makeDeps(),
+      );
+    };
+
+    const started = await runCancelledAt('prepared');
+    if (!started.ok) throw new Error(msg(started.error));
+    expect(started.value.results[0]).toMatchObject({
+      action: 'skipped',
+      reason: 'interrupted',
+      error: { code: 'cancelled' },
+    });
+    expect(started.value.executionResults[0]).toMatchObject({ outcome: 'cancelled' });
+    expect(started.value.executionResults[0]?.actualAfter).toEqual(
+      started.value.executionResults[0]?.actualBefore,
+    );
+    expect(await f.env.pathKind(livePath)).toBe('absent');
+    expect(getPairAt(await led(), null, 'factor-scan', 'claude-code')?.journal?.phase).toBe(
+      'prepared',
+    );
+
+    const recovery = await runCancelledAt('staged');
+    if (!recovery.ok) throw new Error(msg(recovery.error));
+    expect(recovery.value.results[0]).toMatchObject({
+      action: 'skipped',
+      reason: 'interrupted',
+      error: { code: 'cancelled' },
+    });
+    expect(recovery.value.executionResults[0]).toMatchObject({ outcome: 'cancelled' });
+    expect(recovery.value.executionResults[0]?.actualAfter).toEqual(
+      recovery.value.executionResults[0]?.actualBefore,
+    );
+    expect(await f.env.pathKind(livePath)).toBe('absent');
+    expect(getPairAt(await led(), null, 'factor-scan', 'claude-code')?.journal?.phase).toBe(
+      'staged',
+    );
+
+    const completed = await runInstall(f.env, { ...userOpts, tools: ['claude-code'] }, makeDeps());
+    if (!completed.ok) throw new Error(msg(completed.error));
+    expect(completed.value.results[0]?.action).toBe('installed');
+    expect(completed.value.executionResults[0]?.outcome).toBe('succeeded');
+    expect(completed.value.executionResults[0]?.actualAfter).toEqual(
+      completed.value.plan.operations[0]?.after,
+    );
+    expect(await f.env.pathKind(livePath)).toBe('symlink');
+    expect(getPairAt(await led(), null, 'factor-scan', 'claude-code')?.journal).toBeNull();
   });
 
   test('no lock, no ledger write, fetch cleaned, actions predicted', async () => {

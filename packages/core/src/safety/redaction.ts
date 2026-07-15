@@ -123,6 +123,10 @@ export const redactSensitiveString = (input: string): string => {
 export const containsSensitiveMaterial = (input: string): boolean =>
   input.includes(REDACTED) || redactSensitiveString(input) !== input;
 
+/** Return whether an ordinary-data property name denotes credential-bearing material. */
+export const isSensitivePropertyName = (input: string): boolean =>
+  SENSITIVE_KEY_ANYWHERE.test(input);
+
 const safeErrorDescriptors = (
   descriptors: PropertyDescriptorMap,
 ): Readonly<Record<string, PropertyDescriptor | undefined>> => ({

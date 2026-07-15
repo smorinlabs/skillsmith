@@ -22,8 +22,15 @@ export interface FlipV3Dto {
   operations: Array<NonNullable<FlipReport['plan']>['operations'][number]>;
   checks: Array<NonNullable<FlipReport['plan']>['checks'][number]>;
   diagnostics: Array<NonNullable<FlipReport['plan']>['diagnostics'][number]>;
-  results: Array<NonNullable<FlipReport['executionResults']>[number]>;
+  results: FlipV3ExecutionResult[];
 }
+
+export type FlipV3ExecutionResult = Omit<
+  NonNullable<FlipReport['executionResults']>[number],
+  'outcome'
+> & {
+  outcome: 'succeeded' | 'failed' | 'cancelled' | 'rolled-back';
+};
 
 const ToolSchema = z.enum(SUPPORTED_TOOLS);
 const ScopeSchema = z.enum(['user', 'project']);
@@ -276,26 +283,6 @@ const ForceSchema = z
 const ExecutionErrorSchema = z
   .object({ code: z.string(), message: z.string(), remediation: z.string() })
   .strict();
-const ExecutionResultSchema = z
-  .object({
-    operationId: z.string(),
-    outcome: z.enum(['succeeded', 'failed', 'cancelled', 'rolled-back']),
-    actualBefore: OperationImageSchema,
-    actualAfter: OperationImageSchema,
-    force: ForceSchema.nullable(),
-    error: ExecutionErrorSchema.nullable(),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if ((value.outcome === 'failed') !== (value.error !== null)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['error'],
-        message: 'error must be present exactly for failed outcomes',
-      });
-    }
-  });
-
 const SummarySchema = z
   .object({
     flipped: z.number().int().nonnegative(),
@@ -310,60 +297,111 @@ const SummarySchema = z
   })
   .strict();
 
-const FlipV3Schema = z
-  .object({
-    schemaVersion: z.literal(3),
-    kind: z.literal('skillsmith.flip'),
-    op: z.enum(['promote', 'dev', 'rollback']),
-    dryRun: z.boolean(),
-    summary: SummarySchema,
-    selection: SelectionSchema,
-    operations: z.array(OperationSchema),
-    checks: z.array(CheckSchema),
-    diagnostics: z.array(DiagnosticSchema),
-    results: z.array(ExecutionResultSchema),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    const operationIds = new Set(value.operations.map((operation) => operation.operationId));
-    const resultIds = new Set<string>();
-    for (const [index, result] of value.results.entries()) {
-      if (resultIds.has(result.operationId)) {
+type ExecutionOutcomeTuple = readonly [string, ...string[]];
+
+/** Internal schema factory shared only by the adjacent flip@4 implementation. */
+export const createFlipWireSchema = (
+  schemaVersion: 3 | 4,
+  outcomes: ExecutionOutcomeTuple,
+  enforceSkippedInvariant: boolean,
+) => {
+  const ExecutionResultSchema = z
+    .object({
+      operationId: z.string(),
+      outcome: z.enum(outcomes),
+      actualBefore: OperationImageSchema,
+      actualAfter: OperationImageSchema,
+      force: ForceSchema.nullable(),
+      error: ExecutionErrorSchema.nullable(),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if ((value.outcome === 'failed') !== (value.error !== null)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['results', index, 'operationId'],
-          message: 'execution result operation ID is duplicated',
+          path: ['error'],
+          message: 'error must be present exactly for failed outcomes',
         });
       }
-      resultIds.add(result.operationId);
-      if (!operationIds.has(result.operationId)) {
+      if (enforceSkippedInvariant && value.outcome === 'skipped-after-failure') {
+        if (JSON.stringify(value.actualBefore) !== JSON.stringify(value.actualAfter)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['actualAfter'],
+            message: 'skipped execution results must preserve the observed image',
+          });
+        }
+        if (value.force?.applied) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['force', 'applied'],
+            message: 'skipped execution results cannot apply force',
+          });
+        }
+      }
+    });
+
+  return z
+    .object({
+      schemaVersion: z.literal(schemaVersion),
+      kind: z.literal('skillsmith.flip'),
+      op: z.enum(['promote', 'dev', 'rollback']),
+      dryRun: z.boolean(),
+      summary: SummarySchema,
+      selection: SelectionSchema,
+      operations: z.array(OperationSchema),
+      checks: z.array(CheckSchema),
+      diagnostics: z.array(DiagnosticSchema),
+      results: z.array(ExecutionResultSchema),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      const operationIds = new Set(value.operations.map((operation) => operation.operationId));
+      const resultIds = new Set<string>();
+      for (const [index, result] of value.results.entries()) {
+        if (resultIds.has(result.operationId)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['results', index, 'operationId'],
+            message: 'execution result operation ID is duplicated',
+          });
+        }
+        resultIds.add(result.operationId);
+        if (!operationIds.has(result.operationId)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['results', index, 'operationId'],
+            message: 'execution result does not correlate to a planned operation',
+          });
+        }
+      }
+      if (value.dryRun && value.results.length > 0) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['results', index, 'operationId'],
-          message: 'execution result does not correlate to a planned operation',
+          path: ['results'],
+          message: 'dry-run reports cannot contain execution results',
+        });
+      } else if (
+        !value.dryRun &&
+        (value.results.length !== value.operations.length ||
+          value.results.some(
+            (result, index) => result.operationId !== value.operations[index]?.operationId,
+          ))
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['results'],
+          message: 'execution results must exactly follow planned operation identity order',
         });
       }
-    }
-    if (value.dryRun && value.results.length > 0) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['results'],
-        message: 'dry-run reports cannot contain execution results',
-      });
-    } else if (
-      !value.dryRun &&
-      (value.results.length !== value.operations.length ||
-        value.results.some(
-          (result, index) => result.operationId !== value.operations[index]?.operationId,
-        ))
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['results'],
-        message: 'execution results must exactly follow planned operation identity order',
-      });
-    }
-  }) as unknown as z.ZodType<FlipV3Dto>;
+    });
+};
+
+const FlipV3Schema = createFlipWireSchema(
+  3,
+  ['succeeded', 'failed', 'cancelled', 'rolled-back'],
+  false,
+) as unknown as z.ZodType<FlipV3Dto>;
 
 const uniqueGroupIds = (plan: NonNullable<FlipReport['plan']>): readonly string[] => {
   const selected = plan.selection.groupIds;
@@ -371,16 +409,18 @@ const uniqueGroupIds = (plan: NonNullable<FlipReport['plan']>): readonly string[
   return [...new Set(plan.operations.map((operation) => operation.groupId))];
 };
 
-/** Project the immutable runtime plan and its separate result sidecar into the strict flip@3 wire. */
-export const toFlipV3Dto = (report: FlipReport): FlipV3Dto => {
+/** Internal immutable-plan projection shared by flip@3 and flip@4. */
+export const toFlipWireDto = (report: FlipReport, schemaVersion: 3 | 4) => {
   const plan = report.plan;
   const executionResults = report.executionResults;
   if (plan === undefined || executionResults === undefined) {
-    throw new TypeError('flip@3 requires an immutable operation plan and execution-result sidecar');
+    throw new TypeError(
+      `flip@${schemaVersion} requires an immutable operation plan and execution-result sidecar`,
+    );
   }
   return {
-    schemaVersion: 3,
-    kind: 'skillsmith.flip',
+    schemaVersion,
+    kind: 'skillsmith.flip' as const,
     op: report.op,
     dryRun: report.dryRun,
     summary: { ...report.summary },
@@ -400,7 +440,17 @@ export const toFlipV3Dto = (report: FlipReport): FlipV3Dto => {
     checks: plan.checks.map((check) => check),
     diagnostics: plan.diagnostics.map((diagnostic) => diagnostic),
     results: executionResults.map((result) => result),
-  } as unknown as FlipV3Dto;
+  };
+};
+
+/** Project the immutable runtime plan and its separate result sidecar into the strict flip@3 wire. */
+export const toFlipV3Dto = (report: FlipReport): FlipV3Dto => {
+  for (const result of report.executionResults) {
+    if (result.outcome === 'skipped-after-failure') {
+      throw new TypeError('flip@3 cannot encode skipped-after-failure; use flip@4');
+    }
+  }
+  return toFlipWireDto(report, 3) as unknown as FlipV3Dto;
 };
 
 export const flipV3Codec = createJsonWireCodec(

@@ -61,6 +61,10 @@ export const toCurrentCompatibilityAction = (
     if (operation === null) return fail('an execution result requires its operation');
     if (result.operationId !== operation.operationId)
       return fail('result/operation identity mismatch');
+    if (result.outcome === 'skipped-after-failure') {
+      if (family === 'uninstall') fail('uninstall has no skipped compatibility action');
+      return 'skipped';
+    }
     if (result.outcome === 'failed' || result.outcome === 'cancelled') return 'failed';
     if (result.outcome === 'rolled-back') {
       if (family !== 'flip') fail(`${family} has no rolled-back compatibility action`);

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { types as utilTypes } from 'node:util';
 import { SUPPORTED_TOOLS } from '../agents/registry.ts';
-import { containsSensitiveMaterial } from '../safety/redaction.ts';
+import { containsSensitiveMaterial, redactSensitiveString } from '../safety/redaction.ts';
 import {
   canonicalPlanningString,
   compareExecutableOperations,
@@ -165,7 +165,9 @@ const string = (value: unknown, path: string, nullable = false): string | null =
   if (typeof value !== 'string' || value.length === 0) {
     return fail(`${path} must be a non-empty string`);
   }
-  if (containsSensitiveMaterial(value)) fail(`${path} contains sensitive material`);
+  if (containsSensitiveMaterial(value) && redactSensitiveString(value) !== value) {
+    fail(`${path} contains sensitive material`);
+  }
   return value as string;
 };
 
@@ -1317,6 +1319,19 @@ export function createOperationExecutionResult(input: unknown): OperationExecuti
   }
   if (result.outcome === 'failed' ? result.error === null : result.error !== null) {
     fail('$result.error must be present exactly for failed outcomes');
+  }
+  if (
+    result.outcome === 'skipped-after-failure' &&
+    canonicalPlanningString(result.actualBefore) !== canonicalPlanningString(result.actualAfter)
+  ) {
+    fail('$result skipped-after-failure actual images must be structurally equal and unchanged');
+  }
+  if (
+    result.outcome === 'skipped-after-failure' &&
+    result.force !== null &&
+    (result.force as unknown as BoundedForceEffect).applied
+  ) {
+    fail('$result skipped-after-failure force must not be applied');
   }
   return deepFreeze(result as unknown as OperationExecutionResult);
 }

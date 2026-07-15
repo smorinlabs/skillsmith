@@ -186,9 +186,13 @@ describe('G3B-02 execution coordinator', () => {
       operationId: operation.operationId,
       groupId: operation.groupId,
       pairId: operation.pairId,
-      actualBefore: operation.before,
       unstartedForce: null,
-      execute: async () => {
+      observeActualBefore: async () => {
+        events.push('observe-actual-before');
+        return operation.before;
+      },
+      execute: async (validated: UnknownRecord) => {
+        expect(validated.actualBefore).toEqual(operation.before);
         events.push('execute');
         return createOperationExecutionResult({
           operationId: operation.operationId,
@@ -209,7 +213,7 @@ describe('G3B-02 execution coordinator', () => {
       lockPort,
     });
 
-    expect(events).toEqual(['acquire', 'observe', 'execute', 'release']);
+    expect(events).toEqual(['acquire', 'observe', 'observe-actual-before', 'execute', 'release']);
     expect(results.map((result) => result.operationId)).toEqual([operation.operationId]);
     expect(results.map((result) => result.outcome)).toEqual(['succeeded']);
   });
@@ -234,8 +238,8 @@ describe('G3B-02 execution coordinator', () => {
       operationId: operation.operationId,
       groupId: operation.groupId,
       pairId: operation.pairId,
-      actualBefore: operation.before,
       unstartedForce: null,
+      observeActualBefore: async () => operation.before,
       execute: async () => {
         bindingCalls += 1;
         throw new Error('binding must not run after a precondition mismatch');
@@ -282,8 +286,8 @@ describe('G3B-02 execution coordinator', () => {
             operationId: operation.operationId,
             groupId: operation.groupId,
             pairId: operation.pairId,
-            actualBefore: operation.before,
             unstartedForce: null,
+            observeActualBefore: async () => operation.before,
             execute: async () => {
               bindingCalls += 1;
             },
@@ -300,6 +304,63 @@ describe('G3B-02 execution coordinator', () => {
       }),
     ).rejects.toThrow(/mutating.*precondition|precondition.*required/i);
     expect(acquisitions).toBe(0);
+    expect(bindingCalls).toBe(0);
+  });
+
+  test('refuses an under-lock actual-before observation that differs from the accepted plan', async () => {
+    const createExecutionPrecondition = requireFactory<CreateExecutionPrecondition>(
+      'createExecutionPrecondition',
+    );
+    const executeOperationPlan = requireFactory<ExecuteOperationPlan>('executeOperationPlan');
+    const seed = operationFor([]);
+    const events: string[] = [];
+    const precondition = createExecutionPrecondition({
+      operationIds: [seed.operationId],
+      resource: RESOURCE,
+      expected: snapshot(),
+      observe: async () => {
+        events.push('observe-precondition');
+        return snapshot();
+      },
+    });
+    const operation = operationFor([String(precondition.preconditionId)]);
+    let bindingCalls = 0;
+
+    await expect(
+      executeOperationPlan({
+        plan: planFor(operation),
+        bindings: [
+          {
+            operationId: operation.operationId,
+            groupId: operation.groupId,
+            pairId: operation.pairId,
+            unstartedForce: null,
+            observeActualBefore: async () => {
+              events.push('observe-actual-before');
+              return operation.after;
+            },
+            execute: async () => {
+              bindingCalls += 1;
+              throw new Error('changed actual-before observation invoked execution');
+            },
+          },
+        ],
+        preconditions: [precondition],
+        locks: [{ rank: 'ledger', key: 'ledger', path: '/fixture/placements.json' }],
+        lockPort: {
+          withFileLock: async <T>(_path: string, callback: () => Promise<T>): Promise<T> => {
+            events.push('acquire');
+            try {
+              return await callback();
+            } finally {
+              events.push('release');
+            }
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'precondition-state-changed' });
+
+    expect(events).toEqual(['acquire', 'observe-precondition', 'observe-actual-before', 'release']);
     expect(bindingCalls).toBe(0);
   });
 });

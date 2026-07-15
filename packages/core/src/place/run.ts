@@ -1,4 +1,5 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { classifyPlacement } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
 import type { PathKind } from '../env/types.ts';
 import {
@@ -11,6 +12,13 @@ import {
   sourceUnresolvableError,
 } from '../errors.ts';
 import {
+  type ExecutionPrecondition,
+  type PreparedExecutionBinding,
+  type ValidatedExecutionBinding,
+  createExecutionPrecondition,
+  executeOperationPlan,
+} from '../execution/index.ts';
+import {
   createOperationExecutionResult,
   createOperationGroupId,
   createOperationId,
@@ -19,6 +27,7 @@ import {
   createPlanCheckId,
   createPlanningDiagnosticId,
 } from '../planning/create.ts';
+import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   ExecutableOperation,
   OperationExecutionResult,
@@ -34,8 +43,8 @@ import type { ToolVerdict } from '../verify/types.ts';
 import { getPairAt, readLedger, setPairAt, withLedgerLock, writeLedger } from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
 import { type FlipPlanOutcome, type PairPlan, planFlips } from './plan.ts';
-import { contentHashOf, resolveProvenance, snapshotToStore, sweepStaging } from './store.ts';
-import { resumeSwap, rollbackSwap, runSwap, sweepCommittedAcquireJournals } from './swap.ts';
+import { contentHashOf, resolveProvenance, snapshotToStore } from './store.ts';
+import { resumeSwap, rollbackSwap, runSwap } from './swap.ts';
 import {
   type DevRecord,
   FLIP_TOOLS,
@@ -46,6 +55,7 @@ import {
   type FlipReport,
   type FlipResult,
   type FlipTool,
+  type Journal,
   type LedgerFile,
   type PinnedRecord,
   type PlacementPorts,
@@ -155,6 +165,18 @@ const interruptedResult = (pair: PairPlan): FlipResult => ({
   placementPath: pair.placement.path,
   action: 'skipped',
   reason: 'interrupted',
+  before: null,
+  after: null,
+  store: null,
+  verify: null,
+});
+
+const skippedAfterFailureResult = (pair: PairPlan): FlipResult => ({
+  skill: pair.skill,
+  tool: pair.tool,
+  placementPath: pair.placement.path,
+  action: 'skipped',
+  reason: 'fail-fast',
   before: null,
   after: null,
   store: null,
@@ -1560,6 +1582,52 @@ const placementImageOf = (
   contentHash,
 });
 
+const currentRollbackImageOf = (
+  pair: PairPlan,
+  source: Extract<OperationSource, { kind: 'local-dev' }> | null,
+): OperationImage => {
+  if (pair.placement.class === 'absent') {
+    return { kind: 'absent', resource: liveResourceOf(pair) };
+  }
+  const symlink = pair.placement.class === 'dev' || pair.placement.class === 'store-linked';
+  return {
+    kind: 'placement',
+    resource: liveResourceOf(pair),
+    classification: pair.placement.class,
+    representation: symlink ? 'symlink' : 'copy',
+    linkTarget:
+      symlink && pair.placement.symlinkTarget !== null
+        ? { kind: 'machine-bound', path: pair.placement.symlinkTarget }
+        : null,
+    dangling: pair.placement.dangling,
+    source,
+    contentHash: source?.contentHash ?? null,
+  };
+};
+
+const journalBeforeImageOf = (pair: PairPlan, before: Journal['before']): OperationImage => {
+  if (before.mode === 'absent') {
+    return { kind: 'absent', resource: liveResourceOf(pair) };
+  }
+  const representation = before.liveKind === 'dir' ? 'copy' : 'symlink';
+  const linkTarget =
+    before.mode === 'dev'
+      ? before.symlinkTarget
+      : before.symlinkTarget === undefined
+        ? null
+        : before.symlinkTarget;
+  return {
+    kind: 'placement',
+    resource: liveResourceOf(pair),
+    classification: before.mode,
+    representation,
+    linkTarget: linkTarget === null ? null : { kind: 'machine-bound', path: linkTarget },
+    dangling: false,
+    source: null,
+    contentHash: null,
+  };
+};
+
 const beforeImageOf = (pair: PairPlan): OperationImage => {
   if (pair.placement.class === 'absent') {
     return { kind: 'absent', resource: liveResourceOf(pair) };
@@ -1637,9 +1705,176 @@ const devOperationSourceOf = async (
     : null;
 };
 
+const canonicalLeafPath = async (env: PlacementPorts, cwd: string, path: string): Promise<string> =>
+  join(await canonicalizePath(env, cwd, dirname(path)), basename(path));
+
+const pairRecordSnapshot = (record: ReturnType<typeof getPairAt>): unknown => {
+  if (record === null) return null;
+  return {
+    placementPath: record.placementPath,
+    mode: record.mode,
+    dev:
+      record.dev === null
+        ? null
+        : {
+            sourcePath: record.dev.sourcePath,
+            resolvedPath: record.dev.resolvedPath,
+            repoRoot: record.dev.repoRoot,
+            sourceRelPath: record.dev.sourceRelPath,
+            remote: record.dev.remote,
+            recordedAt: record.dev.recordedAt,
+          },
+    pinned:
+      record.pinned == null
+        ? null
+        : {
+            storePath: record.pinned.storePath,
+            rev: record.pinned.rev,
+            gitSha: record.pinned.gitSha,
+            dirty: record.pinned.dirty,
+            contentHash: record.pinned.contentHash,
+            snapshotAt: record.pinned.snapshotAt,
+            verify: record.pinned.verify,
+            placement: record.pinned.placement ?? null,
+          },
+    origin:
+      record.origin === undefined
+        ? null
+        : {
+            source: record.origin.source,
+            host: record.origin.host,
+            repo: record.origin.repo,
+            skillPath: record.origin.skillPath,
+            refRequested: record.origin.refRequested,
+            refResolved: record.origin.refResolved,
+            pin: record.origin.pin,
+            installedAt: record.origin.installedAt,
+          },
+    journal:
+      record.journal == null
+        ? null
+        : {
+            op: record.journal.op,
+            txId: record.journal.txId,
+            phase: record.journal.phase,
+            startedAt: record.journal.startedAt,
+            completedAt: record.journal.completedAt,
+            before: structuredClone(record.journal.before),
+            stagingPath: record.journal.stagingPath,
+            backupPath: record.journal.backupPath,
+          },
+  };
+};
+
+const capturePathIdentity = async (
+  env: PlacementPorts,
+  cwd: string,
+  path: string | null,
+): Promise<unknown> => {
+  if (path === null) return null;
+  const pathKind = await env.pathKind(path);
+  const symlinkTarget = pathKind === 'symlink' ? await env.readLink(path) : null;
+  const canonicalPath =
+    pathKind === 'absent' ? resolve(cwd, path) : await canonicalizePath(env, cwd, path);
+  let hashable = pathKind === 'dir';
+  if (pathKind === 'symlink') {
+    try {
+      hashable = (await env.pathKind(canonicalPath)) === 'dir';
+    } catch {
+      hashable = false;
+    }
+  }
+  let contentHash: string | null = null;
+  if (hashable) {
+    const hashed = await contentHashOf(env, path);
+    if (!hashed.ok) throw hashed.error;
+    contentHash = hashed.value;
+  }
+  return { path, canonicalPath, pathKind, symlinkTarget, contentHash };
+};
+
+const sourcePathForBinding = (
+  command: 'promote' | 'dev',
+  pair: PairPlan,
+  current: ReturnType<typeof getPairAt>,
+  opts: FlipOptions,
+): string | null => {
+  if (opts.source !== undefined) return resolve(opts.cwd, opts.source);
+  if (current?.dev?.resolvedPath) return current.dev.resolvedPath;
+  if (pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null) {
+    return resolveSymlinkAbsolute(pair.placement.path, pair.placement.symlinkTarget);
+  }
+  return command === 'dev' ? (current?.dev?.sourcePath ?? null) : null;
+};
+
+interface FlipFactIdentity {
+  readonly command: 'promote' | 'dev';
+  readonly reportOp: FlipOp;
+  readonly operationId: string;
+  readonly groupId: string;
+  readonly pairId: string;
+  readonly kind: ExecutableOperation['kind'];
+}
+
+const captureFlipFacts = async (
+  env: PlacementPorts,
+  identity: FlipFactIdentity,
+  pair: PairPlan,
+  opts: FlipOptions,
+  storeRoot: string,
+  ledger: LedgerFile,
+): Promise<unknown> => {
+  const current = getPairAt(ledger, pair.scopeKey, pair.skill, pair.tool);
+  const placement = await classifyPlacement(env, pair.placement.root, pair.skill, storeRoot);
+  const livePathKind = await env.pathKind(pair.placement.path);
+  const liveContent =
+    livePathKind === 'dir' ? await capturePathIdentity(env, opts.cwd, pair.placement.path) : null;
+  const sourcePath = sourcePathForBinding(identity.command, pair, current, opts);
+  const sourceIdentity = await capturePathIdentity(env, opts.cwd, sourcePath);
+  let sourceProvenance: Provenance | null = null;
+  if (sourcePath !== null && (await env.pathKind(sourcePath)) !== 'absent') {
+    const provenance = await resolveProvenance(env, sourcePath);
+    if (!provenance.ok) throw provenance.error;
+    sourceProvenance = provenance.value;
+  }
+  const storePath = current?.pinned?.storePath ?? null;
+  const journal = current?.journal ?? null;
+  return {
+    ...identity,
+    skill: pair.skill,
+    tool: pair.tool,
+    scope: pair.scope,
+    scopeKey: pair.scopeKey,
+    projectRoot:
+      opts.projectRoot == null
+        ? null
+        : {
+            path: opts.projectRoot,
+            canonicalPath: await canonicalizePath(env, opts.cwd, opts.projectRoot),
+          },
+    ledger: { pair: pairRecordSnapshot(current) },
+    live: {
+      path: pair.placement.path,
+      canonicalPath: await canonicalLeafPath(env, opts.cwd, pair.placement.path),
+      pathKind: livePathKind,
+      classification: placement.class,
+      symlinkTarget: placement.symlinkTarget,
+      dangling: placement.dangling,
+      content: liveContent,
+    },
+    source: { identity: sourceIdentity, provenance: sourceProvenance },
+    store: await capturePathIdentity(env, opts.cwd, storePath),
+    recovery: {
+      staging: await capturePathIdentity(env, opts.cwd, journal?.stagingPath ?? null),
+      backup: await capturePathIdentity(env, opts.cwd, journal?.backupPath ?? null),
+    },
+  };
+};
+
 interface PreparedFlipBinding {
   readonly operationId: string;
   readonly pair: PairPlan;
+  readonly expectedFacts: unknown;
 }
 
 const createFlipPlanning = async (
@@ -1648,6 +1883,7 @@ const createFlipPlanning = async (
   reportOp: FlipOp,
   dryRun: boolean,
   opts: FlipOptions,
+  storeRoot: string,
   outcome: FlipPlanOutcome,
   results: readonly FlipResult[],
   ledger: LedgerFile,
@@ -1656,12 +1892,15 @@ const createFlipPlanning = async (
     plan: OperationPlan<'dev' | 'promote'>;
     executionResults: readonly OperationExecutionResult[];
     bindings: readonly PreparedFlipBinding[];
+    preconditions: readonly ExecutionPrecondition[];
   }>
 > => {
+  const ledgerPath = ledgerPathOf(resolveDataDir(env, opts.configuration));
   const selectionSource = selectionSourceOf(opts);
   const operations: ExecutableOperation[] = [];
   const checks: PlanCheck[] = [];
   const bindings: PreparedFlipBinding[] = [];
+  const preconditions: ExecutionPrecondition[] = [];
   const usedResults = new Set<FlipResult>();
 
   for (const pair of outcome.pairs) {
@@ -1733,38 +1972,33 @@ const createFlipPlanning = async (
       (pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null
         ? resolveSymlinkAbsolute(pair.placement.path, pair.placement.symlinkTarget)
         : null);
+    const rollbackCurrentSource =
+      reportOp !== 'rollback'
+        ? null
+        : (operationSource ??
+          (promoteSource === null || digest === null
+            ? null
+            : { kind: 'local-dev', path: promoteSource, contentHash: digest }));
     const before =
       result.action === 'adopted'
         ? unmanagedBeforeImageOf(pair)
-        : reportOp === 'rollback' && pair.placement.class !== 'dev'
+        : reportOp === 'rollback'
+          ? currentRollbackImageOf(pair, rollbackCurrentSource)
+          : beforeImageOf(pair);
+    const after =
+      reportOp === 'rollback' && current?.journal != null
+        ? journalBeforeImageOf(pair, current.journal.before)
+        : kind === 'link-dev'
           ? placementImageOf(
               pair,
-              'pinned',
-              null,
-              promoteSource === null ? null : digest,
-              promoteSource,
+              'dev',
+              desiredDevTarget,
+              operationSource?.contentHash ?? null,
+              operationSource?.path ?? null,
             )
-          : reportOp === 'rollback' && pair.placement.class === 'dev'
-            ? placementImageOf(
-                pair,
-                'dev',
-                pair.placement.symlinkTarget,
-                operationSource?.contentHash ?? null,
-                operationSource?.path ?? null,
-              )
-            : beforeImageOf(pair);
-    const after =
-      kind === 'link-dev'
-        ? placementImageOf(
-            pair,
-            'dev',
-            desiredDevTarget,
-            operationSource?.contentHash ?? null,
-            operationSource?.path ?? null,
-          )
-        : reportOp === 'rollback'
-          ? placementImageOf(pair, 'pinned', null, null)
-          : placementImageOf(pair, 'pinned', null, digest, promoteSource);
+          : reportOp === 'rollback'
+            ? placementImageOf(pair, 'pinned', null, null)
+            : placementImageOf(pair, 'pinned', null, digest, promoteSource);
     const requiredCheckIds: string[] = [];
     if (reportOp !== 'rollback' && !opts.noVerify) {
       const verification = toolRegistry.get(pair.tool)?.verification;
@@ -1792,7 +2026,7 @@ const createFlipPlanning = async (
         expectedContentHash: digest ?? ZERO_DIGEST,
       });
     }
-    operations.push({
+    const operationWithoutPrecondition = {
       operationId,
       groupId,
       pairId,
@@ -1813,13 +2047,40 @@ const createFlipPlanning = async (
           ? { code: 'rollback-inverse', message: `rollback inverse for ${pair.skill}` }
           : { code: kind, message: `${command} ${pair.skill}` },
       selectionSource,
-      preconditionIds: [],
       requiredCheckIds,
       reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
       mutates: { live: true, manifest: false, lock: false, ledger: true },
       conflict: null,
+    } as const;
+    const factIdentity: FlipFactIdentity = {
+      command,
+      reportOp,
+      operationId,
+      groupId,
+      pairId,
+      kind,
+    };
+    const expectedFacts = await captureFlipFacts(env, factIdentity, pair, opts, storeRoot, ledger);
+    const precondition = createExecutionPrecondition({
+      operationIds: [operationId],
+      resource: liveResourceOf(pair),
+      expected: expectedFacts,
+      observe: async () => {
+        const currentLedger = await readLedger(env, ledgerPath);
+        if (!currentLedger.ok) throw currentLedger.error;
+        return captureFlipFacts(env, factIdentity, pair, opts, storeRoot, currentLedger.value);
+      },
     });
-    bindings.push({ operationId, pair });
+    operations.push({
+      ...operationWithoutPrecondition,
+      preconditionIds: [precondition.preconditionId],
+    });
+    preconditions.push(precondition);
+    bindings.push({
+      operationId,
+      pair,
+      expectedFacts,
+    });
   }
 
   const diagnostics: PlanningDiagnostic[] = [];
@@ -1939,7 +2200,7 @@ const createFlipPlanning = async (
       scopes,
       groupIds: [...new Set(operations.map((operation) => operation.groupId))],
     },
-    batchPolicy: 'fail-fast',
+    batchPolicy: opts.continueOnError ? 'continue-on-error' : 'fail-fast',
     operations,
     checks,
     diagnostics,
@@ -1983,7 +2244,7 @@ const createFlipPlanning = async (
           error: null,
         });
       });
-  return { plan, executionResults, bindings };
+  return { plan, executionResults, bindings, preconditions };
 };
 
 const buildPreparedPreview = async (
@@ -1995,15 +2256,22 @@ const buildPreparedPreview = async (
   opts: FlipOptions,
   outcome: FlipPlanOutcome,
   ledger: LedgerFile,
-): Promise<Readonly<{ report: FlipReport; bindings: readonly PreparedFlipBinding[] }>> => {
+): Promise<
+  Readonly<{
+    report: FlipReport;
+    bindings: readonly PreparedFlipBinding[];
+    preconditions: readonly ExecutionPrecondition[];
+  }>
+> => {
   const summary = emptySummary();
   for (const r of results) summary[ACTION_TO_SUMMARY_KEY[r.action]]++;
-  const { plan, executionResults, bindings } = await createFlipPlanning(
+  const { plan, executionResults, bindings, preconditions } = await createFlipPlanning(
     env,
     command,
     op,
     true,
     opts,
+    storeRootOf(resolveDataDir(env, opts.configuration)),
     outcome,
     results,
     ledger,
@@ -2011,6 +2279,7 @@ const buildPreparedPreview = async (
   return {
     report: { op, dryRun: true, requested, results, summary, plan, executionResults },
     bindings,
+    preconditions,
   };
 };
 
@@ -2060,48 +2329,11 @@ const normalizeFlipProjectContext = async (
 
 const executedFlipReport = (
   preview: FlipReport,
-  reportOp: FlipOp,
   results: FlipResult[],
-  bindings: ReadonlyMap<string, PairPlan>,
+  executionResults: readonly OperationExecutionResult[],
 ): FlipReport => {
   const summary = emptySummary();
   for (const result of results) summary[ACTION_TO_SUMMARY_KEY[result.action]]++;
-  const executionResults = preview.plan.operations.map((operation) => {
-    const pair = bindings.get(operation.operationId);
-    const result = pair === undefined ? undefined : resultForPair(results, pair);
-    const cancelled = result?.reason === 'interrupted';
-    const failed =
-      result === undefined || result.action === 'failed' || result.action === 'refused';
-    const common = {
-      operationId: operation.operationId,
-      actualBefore: operation.before,
-      actualAfter: failed || cancelled ? operation.before : operation.after,
-      force: null,
-    } as const;
-    if (cancelled) {
-      return createOperationExecutionResult({
-        ...common,
-        outcome: 'cancelled',
-        error: null,
-      });
-    }
-    if (failed) {
-      return createOperationExecutionResult({
-        ...common,
-        outcome: 'failed',
-        error: {
-          code: result?.error?.code ?? 'flip-failed',
-          message: result?.reason ?? 'prepared operation did not produce a result',
-          remediation: 'Resolve the reported condition and retry the same selection.',
-        },
-      });
-    }
-    return createOperationExecutionResult({
-      ...common,
-      outcome: reportOp === 'rollback' ? 'rolled-back' : 'succeeded',
-      error: null,
-    });
-  });
   return {
     ...preview,
     dryRun: false,
@@ -2110,6 +2342,53 @@ const executedFlipReport = (
     executionResults,
   };
 };
+
+const operationResultForFlip = (
+  operation: ExecutableOperation,
+  binding: ValidatedExecutionBinding,
+  result: FlipResult,
+  reportOp: FlipOp,
+): OperationExecutionResult => {
+  const cancelled = result.reason === 'interrupted' || result.error?.code === 'cancelled';
+  const failed = result.action === 'failed' || result.action === 'refused';
+  const unchanged = failed || cancelled || result.action === 'noop' || result.action === 'skipped';
+  const common = {
+    operationId: operation.operationId,
+    actualBefore: binding.actualBefore,
+    actualAfter: unchanged ? binding.actualBefore : operation.after,
+    force: null,
+  } as const;
+  if (cancelled) {
+    return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
+  }
+  if (failed) {
+    return createOperationExecutionResult({
+      ...common,
+      outcome: 'failed',
+      error: {
+        code: result.error?.code ?? 'flip-failed',
+        message: result.reason ?? 'operation failed',
+        remediation: 'Resolve the reported condition and retry the same selection.',
+      },
+    });
+  }
+  return createOperationExecutionResult({
+    ...common,
+    outcome: reportOp === 'rollback' ? 'rolled-back' : 'succeeded',
+    error: null,
+  });
+};
+
+const isExecutionStateError = (
+  error: unknown,
+): error is { readonly code: 'precondition-state-changed' | 'precondition-observation-failed' } =>
+  error !== null &&
+  typeof error === 'object' &&
+  'code' in error &&
+  (error.code === 'precondition-state-changed' || error.code === 'precondition-observation-failed');
+
+const isSkillSmithError = (error: unknown): error is SkillSmithError =>
+  error !== null && typeof error === 'object' && 'code' in error && typeof error.code === 'string';
 
 const prepareFlipBatch = async (
   env: PlacementPorts,
@@ -2154,13 +2433,13 @@ const prepareFlipBatch = async (
     planRes.value,
     ledgerRes.value,
   );
-  const bindingMap = new Map<string, PairPlan>();
+  const bindingMap = new Map<string, PreparedFlipBinding>();
   const boundPreviewResults = new Set<FlipResult>();
   for (const binding of preparedPreview.bindings) {
     if (bindingMap.has(binding.operationId)) {
       return err(genericError('prepared operation binding is not one-to-one'));
     }
-    bindingMap.set(binding.operationId, binding.pair);
+    bindingMap.set(binding.operationId, binding);
     const result = resultForPair(previewResults, binding.pair);
     if (result !== undefined) boundPreviewResults.add(result);
   }
@@ -2181,51 +2460,188 @@ const prepareFlipBatch = async (
       if (consumed) return err(genericError('prepared flip run has already been executed'));
       consumed = true;
       if (normalizedOpts.dryRun) return ok(preparedPreview.report);
-      const locked = await withLedgerLock(
-        env,
-        ledgerPath,
-        async (): Promise<Result<FlipReport, SkillSmithError>> => {
-          await sweepStaging(env, storeRoot);
-          const currentLedger = await readLedger(env, ledgerPath);
-          if (!currentLedger.ok) return currentLedger;
-          let ledger = currentLedger.value;
+      const operations = preparedPreview.report.plan.operations;
+      if (operations.length === 0) {
+        return ok(executedFlipReport(preparedPreview.report, [...staticResults], []));
+      }
 
-          const swept = await sweepCommittedAcquireJournals(
-            makeSwapCtx(env, ledgerPath, ledger, deps, normalizedOpts),
-          );
-          if (!swept.ok) return err(midSwapError(swept.error));
-
-          const results: FlipResult[] = [...staticResults];
-          const operations = preparedPreview.report.plan.operations;
-          for (let index = 0; index < operations.length; index++) {
-            if (normalizedOpts.signal?.aborted) {
-              for (
-                let remainingIndex = index;
-                remainingIndex < operations.length;
-                remainingIndex++
-              ) {
-                const remaining = operations[remainingIndex];
-                const pair = remaining && bindingMap.get(remaining.operationId);
-                if (pair) results.push(interruptedResult(pair));
-              }
-              break;
+      let executionLedger: LedgerFile | null = null;
+      const startedResults = new Map<string, FlipResult>();
+      const coordinatorBindings: PreparedExecutionBinding[] = operations.map((operation) => {
+        const preparedBinding = bindingMap.get(operation.operationId);
+        if (!preparedBinding) throw new Error('prepared operation binding is missing');
+        if (operation.pairId === null)
+          throw new Error('prepared operation pair identity is missing');
+        const factIdentity: FlipFactIdentity = {
+          command,
+          reportOp,
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: operation.pairId,
+          kind: operation.kind,
+        };
+        return {
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: operation.pairId,
+          unstartedForce: null,
+          observeActualBefore: async (): Promise<OperationImage> => {
+            const current = await readLedger(env, ledgerPath);
+            if (!current.ok) throw current.error;
+            const actualFacts = await captureFlipFacts(
+              env,
+              factIdentity,
+              preparedBinding.pair,
+              normalizedOpts,
+              storeRoot,
+              current.value,
+            );
+            if (
+              canonicalPlanningString(actualFacts) !==
+              canonicalPlanningString(preparedBinding.expectedFacts)
+            ) {
+              throw new Error('prepared placement facts changed');
             }
-            const operation = operations[index];
-            if (!operation) continue;
-            const pair = bindingMap.get(operation.operationId);
-            if (!pair) return err(genericError('prepared operation binding is missing'));
-            const result = await process(env, ledger, ledgerPath, pair, normalizedOpts, deps);
-            results.push(result);
+            executionLedger = current.value;
+            return operation.before;
+          },
+          execute: async (
+            validatedBinding: ValidatedExecutionBinding,
+          ): Promise<OperationExecutionResult> => {
+            const ledger = executionLedger;
+            if (ledger === null) throw new Error('validated execution ledger is missing');
+            const result = await process(
+              env,
+              ledger,
+              ledgerPath,
+              preparedBinding.pair,
+              normalizedOpts,
+              deps,
+            );
+            startedResults.set(operation.operationId, result);
             if (result.error) {
               const reread = await readLedger(env, ledgerPath);
-              if (reread.ok) ledger = reread.value;
+              if (reread.ok) executionLedger = reread.value;
             }
-          }
-          return ok(executedFlipReport(preparedPreview.report, reportOp, results, bindingMap));
+            return operationResultForFlip(operation, validatedBinding, result, reportOp);
+          },
+        };
+      });
+      const compatibilityLockPort = {
+        withFileLock: async <T>(
+          path: string,
+          callback: () => Promise<T>,
+          options?: Readonly<{ signal?: AbortSignal }>,
+        ): Promise<T> => {
+          let callbackThrew = false;
+          let callbackError: unknown;
+          const locked = await withLedgerLock(
+            env,
+            path,
+            async () => {
+              try {
+                return await callback();
+              } catch (error) {
+                callbackThrew = true;
+                callbackError = error;
+                throw error;
+              }
+            },
+            options,
+          );
+          if (callbackThrew) throw callbackError;
+          if (!locked.ok) throw locked.error;
+          return locked.value;
         },
-      );
-      if (!locked.ok) return locked;
-      return locked.value;
+      };
+
+      let executionResults: readonly OperationExecutionResult[];
+      try {
+        executionResults = await executeOperationPlan({
+          plan: preparedPreview.report.plan,
+          bindings: coordinatorBindings,
+          preconditions: preparedPreview.preconditions,
+          locks: [
+            {
+              rank: 'ledger',
+              key: `placements-ledger:${ledgerPath}`,
+              path: ledgerPath,
+            },
+          ],
+          lockPort: compatibilityLockPort,
+          ...(normalizedOpts.signal === undefined ? {} : { signal: normalizedOpts.signal }),
+        });
+      } catch (error) {
+        if (isExecutionStateError(error)) {
+          const message =
+            error.code === 'precondition-observation-failed'
+              ? 'prepared placement state could not be validated before execution'
+              : 'prepared placement state changed before execution';
+          const refusedByPreview = new Map<FlipResult, FlipResult>();
+          for (const operation of operations) {
+            const preparedBinding = bindingMap.get(operation.operationId);
+            if (!preparedBinding) {
+              return err(genericError('prepared operation binding is missing'));
+            }
+            const previewResult = resultForPair(
+              preparedPreview.report.results,
+              preparedBinding.pair,
+            );
+            if (previewResult === undefined) {
+              return err(genericError('prepared operation result projection is missing'));
+            }
+            refusedByPreview.set(previewResult, {
+              ...previewResult,
+              action: 'refused',
+              reason: message,
+              before: null,
+              after: null,
+              store: null,
+              verify: null,
+              error: flipRefusedError(message),
+            });
+          }
+          executionResults = operations.map((operation) =>
+            createOperationExecutionResult({
+              operationId: operation.operationId,
+              outcome: 'failed',
+              actualBefore: operation.before,
+              actualAfter: operation.before,
+              force: null,
+              error: {
+                code: 'flip-refused',
+                message,
+                remediation: 'Re-run the command to prepare and approve the current state.',
+              },
+            }),
+          );
+          const results = preparedPreview.report.results.map(
+            (previewResult) => refusedByPreview.get(previewResult) ?? previewResult,
+          );
+          return ok(executedFlipReport(preparedPreview.report, results, executionResults));
+        }
+        if (isSkillSmithError(error)) return err(error);
+        throw error;
+      }
+
+      const results: FlipResult[] = [...staticResults];
+      for (const [index, operationResult] of executionResults.entries()) {
+        const operation = operations[index];
+        if (!operation) return err(genericError('execution result has no planned operation'));
+        const preparedBinding = bindingMap.get(operation.operationId);
+        if (!preparedBinding) return err(genericError('prepared operation binding is missing'));
+        const started = startedResults.get(operation.operationId);
+        if (started !== undefined) {
+          results.push(started);
+        } else if (operationResult.outcome === 'skipped-after-failure') {
+          results.push(skippedAfterFailureResult(preparedBinding.pair));
+        } else if (operationResult.outcome === 'cancelled') {
+          results.push(interruptedResult(preparedBinding.pair));
+        } else {
+          return err(genericError('execution result has no exact started binding result'));
+        }
+      }
+      return ok(executedFlipReport(preparedPreview.report, results, executionResults));
     },
   };
   return ok(prepared);

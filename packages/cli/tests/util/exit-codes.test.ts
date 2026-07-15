@@ -60,4 +60,8 @@ describe('exitCodeForError', () => {
     const e: SkillSmithError = { code: 'permission-denied', message: 'x' };
     expect(exitCodeForError(e)).toBe(6);
   });
+  test("'cancelled' → 130", () => {
+    const e: SkillSmithError = { code: 'cancelled', message: 'interrupted' };
+    expect(exitCodeForError(e)).toBe(130);
+  });
 });

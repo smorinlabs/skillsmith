@@ -20,6 +20,10 @@
     "./contracts/v3": {
       "types": "./src/contracts/v3/index.d.ts",
       "default": "./src/contracts/v3/index.ts"
+    },
+    "./contracts/v4": {
+      "types": "./src/contracts/v4/index.d.ts",
+      "default": "./src/contracts/v4/index.ts"
     }
   },
   "files": [

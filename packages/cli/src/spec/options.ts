@@ -125,6 +125,7 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith dev:--dest': 'Destination root for a created placement; requires one --tool',
   'skillsmith dev:--strict': 'Treat verify warnings as blocking on create or adopt',
   'skillsmith dev:--no-verify': 'Skip the static verify gate on create or adopt',
+  'skillsmith dev:--continue-on-error': 'Continue with later independent groups after a failure',
   'skillsmith dev:--rollback': 'Undo the last dev flip or recover an interrupted one',
   'skillsmith dev:--yes': 'Approve one planned bulk demotion without prompting',
   'skillsmith promote:--all': 'Promote every dev-mode placement in the selected tools',
@@ -133,6 +134,8 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith promote:--strict': 'Make verify-gate warnings block promotion',
   'skillsmith promote:--no-verify': 'Skip the verify gate and record the result as unverified',
   'skillsmith promote:--allow-dirty': 'Allow snapshotting a dirty git tree',
+  'skillsmith promote:--continue-on-error':
+    'Continue with later independent groups after a failure',
   'skillsmith promote:--rollback': 'Undo the last promotion or recover an interrupted one',
   'skillsmith promote:--yes': 'Approve one planned bulk promotion without prompting',
 };

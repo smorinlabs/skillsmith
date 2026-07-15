@@ -229,6 +229,8 @@ export default [
                 './contracts/v2/index.d.ts',
                 './contracts/v3/index.ts',
                 './contracts/v3/index.d.ts',
+                './contracts/v4/index.ts',
+                './contracts/v4/index.d.ts',
               ],
             },
             { target: './packages/cli/src/output', from: './packages/cli/src/commands' },

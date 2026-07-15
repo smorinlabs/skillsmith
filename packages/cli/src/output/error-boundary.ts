@@ -38,6 +38,7 @@ const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
   'flip-refused',
   'flip-failed',
   'tool-unavailable',
+  'cancelled',
 ]);
 
 const DEFAULT_ERROR: NormalizedCliError = {
