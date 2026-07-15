@@ -7,6 +7,7 @@ import {
   validateManifestName,
   validateRequestedRef,
 } from '../artifacts/identity.ts';
+import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import {
   type SkillSmithError,
   cancelledError,
@@ -28,11 +29,13 @@ import type {
   ValidatedExecutionBinding,
 } from '../execution/types.ts';
 import {
-  deletePairAt,
-  getPairAt,
-  readLedger,
-  setPairAt,
+  getLedgerPairAt,
+  getPairAt as getLegacyPairAt,
+  ledgerModelForMutation,
+  readLedgerState,
   withLedgerLock,
+  withLedgerPairAt,
+  withoutLedgerPairAt,
   writeLedger,
 } from '../place/ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
@@ -127,8 +130,35 @@ export const defaultInstallSourceTransport: InstallSourceTransport = Object.free
   materializeSkill: sparseCheckoutSkill,
 });
 
+type AcquireLedger = LedgerFile | LedgerModel;
+
+const legacyLedgerView = (model: LedgerModel): LedgerFile => ({
+  schemaVersion: 1,
+  kind: 'skillsmith.placements',
+  updatedAt: model.updatedAt,
+  skills: structuredClone(model.skills) as LedgerFile['skills'],
+  ...(Object.keys(model.projects).length === 0
+    ? {}
+    : { projects: structuredClone(model.projects) as NonNullable<LedgerFile['projects']> }),
+});
+
+const getPairAt = (
+  ledger: AcquireLedger,
+  scopeKey: string | null,
+  skill: string,
+  tool: FlipTool,
+): PairRecord | null =>
+  'schemaVersion' in ledger
+    ? getLegacyPairAt(ledger, scopeKey, skill, tool)
+    : (getLedgerPairAt(ledger, scopeKey, skill, tool) as PairRecord | null);
+
 const nowOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string =>
   deps.now?.() ?? ports.wallNowIso();
+const journalNowOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string => {
+  const value = nowOf(ports, deps);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? value : parsed.toISOString();
+};
 const txIdOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string =>
   deps.newTxId?.() ?? ports.nextId('acquisition-transaction');
 
@@ -802,24 +832,32 @@ interface PlaceCtx {
   env: AcquisitionPorts;
   deps: InstallDeps;
   opts: InstallOptions;
-  ledger: LedgerFile;
+  ledger: LedgerModel;
   ledgerPath: string;
   storeRoot: string;
   scope: InstallScope;
   scopeKey: string | null;
   projectRoot: string | null;
+  logicalOperation: ExecutableOperation | null;
 }
 
-const makeSwapCtx = (p: PlaceCtx): SwapCtx => ({
-  env: p.env,
-  ledgerPath: p.ledgerPath,
-  ledger: p.ledger,
-  persist: () => writeLedger(p.env, p.ledgerPath, p.ledger),
-  now: () => nowOf(p.env, p.deps),
-  newTxId: () => txIdOf(p.env, p.deps),
-  pauseAt: p.opts.testPauseAt,
-  signal: p.opts.signal,
-});
+const makeSwapCtx = (p: PlaceCtx): SwapCtx => {
+  const ctx: SwapCtx = {
+    env: p.env,
+    ledgerPath: p.ledgerPath,
+    ledger: p.ledger,
+    persist: async () => {
+      p.ledger = ctx.ledger as LedgerModel;
+      return writeLedger(p.env, p.ledgerPath, p.ledger);
+    },
+    now: () => journalNowOf(p.env, p.deps),
+    newTxId: () => txIdOf(p.env, p.deps),
+    pauseAt: p.opts.testPauseAt,
+    signal: p.opts.signal,
+    ...(p.logicalOperation === null ? {} : { logicalOperation: p.logicalOperation }),
+  };
+  return ctx;
+};
 
 // dir→dir routing: the swap engine rejects a same-kind copy-over-copy replace, so a copy re-install
 // over a real dir is routed as two kind changes (dir→store-symlink, then store-symlink→dir). Every
@@ -1037,7 +1075,7 @@ const placePair = async (
     // rewrite the pair record only (no filesystem change).
     const pinned = buildPinned(snap, sha, liveKind, gate, nowOf(p.env, p.deps));
     const origin = buildOrigin(spec, sha, resolved.skillPath, opts, nowOf(p.env, p.deps));
-    setPairAt(p.ledger, p.scopeKey, skill, tool, {
+    const repaired = withLedgerPairAt(p.ledger, p.scopeKey, skill, tool, {
       placementPath,
       mode: 'pinned',
       dev: existing?.dev ?? null,
@@ -1045,6 +1083,8 @@ const placePair = async (
       origin,
       journal: null,
     });
+    if (!repaired.ok) return fail(repaired.error);
+    p.ledger = repaired.value;
     const persisted = await writeLedger(env, p.ledgerPath, p.ledger);
     if (!persisted.ok) return fail(persisted.error);
     return { ...finalize('repaired'), placement: liveKind };
@@ -1084,7 +1124,9 @@ const placePair = async (
   // Fresh install: the slot is empty. Clear any stale records so the engine lands on an empty slot.
   if (live.class === 'absent') {
     if (existing && (existing.pinned || existing.dev)) {
-      deletePairAt(p.ledger, p.scopeKey, skill, tool);
+      const cleared = withoutLedgerPairAt(p.ledger, p.scopeKey, skill, tool);
+      if (!cleared.ok) return fail(cleared.error);
+      p.ledger = cleared.value;
     }
     const ctx = makeSwapCtx(p);
     const r = await runSwap(ctx, plan);
@@ -1252,12 +1294,21 @@ const gitToplevel = async (env: AcquisitionPorts, cwd: string): Promise<string |
 // report assembly
 // ---------------------------------------------------------------------------------------------
 
-const acquireLiveResource = (skill: string, tool: FlipTool, scope: InstallScope, path: string) => ({
+const acquireLiveResource = (
+  skill: string,
+  tool: FlipTool,
+  scope: InstallScope,
+  path: string,
+  projectRoot: string | null = null,
+) => ({
   kind: 'live' as const,
   skill,
   tool,
   scope,
-  projectRoot: null,
+  projectRoot:
+    scope === 'project' && projectRoot !== null
+      ? ({ kind: 'machine-bound' as const, path: projectRoot } as const)
+      : null,
   location: { kind: 'machine-bound' as const, path },
 });
 
@@ -1346,7 +1397,11 @@ const acquireAbsentImage = (
   tool: FlipTool,
   scope: InstallScope,
   path: string,
-): OperationImage => ({ kind: 'absent', resource: acquireLiveResource(skill, tool, scope, path) });
+  projectRoot: string | null = null,
+): OperationImage => ({
+  kind: 'absent',
+  resource: acquireLiveResource(skill, tool, scope, path, projectRoot),
+});
 
 const acquirePlacementImage = (
   skill: string,
@@ -1356,9 +1411,10 @@ const acquirePlacementImage = (
   mode: 'dev' | 'pinned',
   representation: 'symlink' | 'copy' | 'other',
   linkTarget: string | null = null,
+  projectRoot: string | null = null,
 ): OperationImage => ({
   kind: 'placement',
-  resource: acquireLiveResource(skill, tool, scope, path),
+  resource: acquireLiveResource(skill, tool, scope, path, projectRoot),
   classification: mode,
   representation,
   linkTarget: linkTarget === null ? null : { kind: 'machine-bound', path: linkTarget },
@@ -1422,6 +1478,7 @@ const createInstallPlanning = (
   requested: InstallReport['requested'],
   results: readonly InstallResult[],
   continueOnError: boolean,
+  projectRoot: string | null = null,
 ): Readonly<{
   plan: OperationPlan<'install'>;
   operationResults: ReadonlyMap<string, InstallResult>;
@@ -1456,6 +1513,7 @@ const createInstallPlanning = (
       result.tool,
       result.scope,
       result.placementPath,
+      projectRoot,
     );
     const groupId = createOperationGroupId({
       domain: 'skillsmith.operation-group-identity',
@@ -1487,7 +1545,13 @@ const createInstallPlanning = (
     if (operationResults.has(operationId)) continue;
     const before =
       result.action === 'installed'
-        ? acquireAbsentImage(result.skill, result.tool, result.scope, result.placementPath)
+        ? acquireAbsentImage(
+            result.skill,
+            result.tool,
+            result.scope,
+            result.placementPath,
+            projectRoot,
+          )
         : acquirePlacementImage(
             result.skill,
             result.tool,
@@ -1495,6 +1559,8 @@ const createInstallPlanning = (
             result.placementPath,
             'pinned',
             result.placement ?? 'other',
+            null,
+            projectRoot,
           );
     const after = acquirePlacementImage(
       result.skill,
@@ -1503,6 +1569,8 @@ const createInstallPlanning = (
       result.placementPath,
       'pinned',
       result.placement ?? 'copy',
+      null,
+      projectRoot,
     );
     operations.push({
       operationId,
@@ -1568,17 +1636,7 @@ const installExecutionResultFor = (
   const skippedAfterFailure = result?.action === 'skipped' && result.reason === 'fail-fast';
   const succeeded =
     result?.action === 'installed' || result?.action === 'updated' || result?.action === 'repaired';
-  const actualAfter =
-    succeeded && result.skill !== null && result.tool !== null && result.placementPath !== null
-      ? acquirePlacementImage(
-          result.skill,
-          result.tool,
-          result.scope,
-          result.placementPath,
-          'pinned',
-          result.placement ?? 'copy',
-        )
-      : actualBefore;
+  const actualAfter = succeeded ? operation.after : actualBefore;
   const common = {
     operationId: operation.operationId,
     actualBefore,
@@ -1831,7 +1889,7 @@ const runInstallInternal = async (
     readonly expected: InstallPreconditionFacts;
     readonly actualBefore: OperationImage;
     observe(): Promise<InstallPreconditionFacts>;
-    execute(): Promise<InstallResult>;
+    execute(operation: ExecutableOperation): Promise<InstallResult>;
   }
   interface PreparedInstallBatch {
     readonly preview: PlannedInstallReport;
@@ -1872,7 +1930,7 @@ const runInstallInternal = async (
 
   const observeInstallState = async (
     seed: InstallBindingSeed,
-  ): Promise<Readonly<{ ledger: LedgerFile; facts: InstallPreconditionFacts }>> => {
+  ): Promise<Readonly<{ ledger: LedgerModel; facts: InstallPreconditionFacts }>> => {
     const { preview, spec, resolved: resolvedSource, tool } = seed;
     if (preview.skill === null || preview.placementPath === null || preview.store === null) {
       throw new Error('prepared install facts require an executable result');
@@ -1882,9 +1940,10 @@ const runInstallInternal = async (
       configuration: opts.configuration,
     };
     const installRoot = primarySkillRootFor(tool, env, scope, rootsCtx);
-    const ledgerResult = await readLedger(env, ledgerPath);
+    const ledgerResult = await readLedgerState(env, ledgerPath);
     if (!ledgerResult.ok) throw ledgerResult.error;
-    const selectedPair = getPairAt(ledgerResult.value, scopeKey, preview.skill, tool);
+    const ledger = ledgerModelForMutation(ledgerResult.value, nowOf(env, deps));
+    const selectedPair = getPairAt(ledger, scopeKey, preview.skill, tool);
     const live = await acquirePlacementFacts(env, installRoot, preview.skill, storeRoot);
     const legacy =
       scope === 'user'
@@ -1904,13 +1963,13 @@ const runInstallInternal = async (
       };
       const otherRoot = primarySkillRootFor(tool, env, otherScope, otherCtx);
       shadow = {
-        pair: structuredClone(getPairAt(ledgerResult.value, otherKey, preview.skill, tool)),
+        pair: structuredClone(getPairAt(ledger, otherKey, preview.skill, tool)),
         live: await acquirePlacementFacts(env, otherRoot, preview.skill, storeRoot),
       };
     }
     const sourceContent = await acquireContentFacts(env, resolvedSource.materializedDir);
     return {
-      ledger: ledgerResult.value,
+      ledger,
       facts: {
         projectRoot,
         selectedPair: structuredClone(selectedPair),
@@ -1934,7 +1993,8 @@ const runInstallInternal = async (
 
   // Resolve and verify the whole selection into immutable work before any store/placement binding
   // can run. Fetch materialization remains inside the existing outer lock for normal execution.
-  const prepareAll = async (ledger: LedgerFile): Promise<PreparedInstallBatch> => {
+  const prepareAll = async (ledger: LedgerModel): Promise<PreparedInstallBatch> => {
+    const legacyLedger = legacyLedgerView(ledger);
     const results: InstallResult[] = [...planningRefusals];
     const candidateBindings = new Map<InstallResult, InstallBindingSeed>();
     const cleanupDirs = new Set<string>();
@@ -1948,6 +2008,7 @@ const runInstallInternal = async (
       scope,
       scopeKey,
       projectRoot,
+      logicalOperation: null,
     };
     let planningFailFast = false;
 
@@ -1975,7 +2036,7 @@ const runInstallInternal = async (
         scopeKey,
         storeRoot,
         dataDir,
-        ledger,
+        legacyLedger,
         opts,
       );
       if (resolved.kind === 'result') {
@@ -2156,6 +2217,7 @@ const runInstallInternal = async (
       requested,
       results,
       Boolean(opts.continueOnError),
+      scopeKey,
     );
     const preparedBindings = new Map<string, PreparedInstallBinding>();
     const preconditions: ExecutionPrecondition[] = [];
@@ -2219,7 +2281,10 @@ const runInstallInternal = async (
           placeCtx.ledger = current.ledger;
           return current.facts;
         },
-        execute: seed.execute,
+        execute: async (logicalOperation) => {
+          placeCtx.logicalOperation = logicalOperation;
+          return seed.execute();
+        },
       });
     }
     const plan = createOperationPlan({
@@ -2285,7 +2350,7 @@ const runInstallInternal = async (
           execute: async (
             validatedBinding: ValidatedExecutionBinding,
           ): Promise<OperationExecutionResult> => {
-            const actual = await binding.execute();
+            const actual = await binding.execute(operation);
             actualByPreview.set(binding.preview, actual);
             actualByOperation.set(operation.operationId, actual);
             return installExecutionResultFor(
@@ -2402,9 +2467,9 @@ const runInstallInternal = async (
 
   // ---- dry-run: no lock, no writes ----
   if (opts.dryRun) {
-    const ledgerRes = await readLedger(env, ledgerPath);
+    const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
-    const prepared = await prepareAll(ledgerRes.value);
+    const prepared = await prepareAll(ledgerModelForMutation(ledgerRes.value, nowOf(env, deps)));
     await prepared.cleanup();
     return ok(prepared.preview);
   }
@@ -2413,23 +2478,23 @@ const runInstallInternal = async (
   const prepareLocked = async (): Promise<Result<PreparedInstallBatch, SkillSmithError>> => {
     await sweepStaging(env, storeRoot);
     await sweepFetchOrphans(env, dataDir);
-    const ledgerRes = await readLedger(env, ledgerPath);
+    const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
-    const ledger = ledgerRes.value;
+    const ledger = ledgerModelForMutation(ledgerRes.value, nowOf(env, deps));
 
-    const swept = await sweepCommittedAcquireJournals(
-      makeSwapCtx({
-        env,
-        deps,
-        opts,
-        ledger,
-        ledgerPath,
-        storeRoot,
-        scope,
-        scopeKey,
-        projectRoot,
-      }),
-    );
+    const sweepPlaceCtx: PlaceCtx = {
+      env,
+      deps,
+      opts,
+      ledger,
+      ledgerPath,
+      storeRoot,
+      scope,
+      scopeKey,
+      projectRoot,
+      logicalOperation: null,
+    };
+    const swept = await sweepCommittedAcquireJournals(makeSwapCtx(sweepPlaceCtx));
     if (!swept.ok) {
       const sweepError = safeError(swept.error);
       return err(
@@ -2437,7 +2502,7 @@ const runInstallInternal = async (
       );
     }
 
-    return ok(await prepareAll(ledger));
+    return ok(await prepareAll(sweepPlaceCtx.ledger));
   };
   const completed = Symbol('install-prepare-lock-completed');
   let preparedResult: Result<PreparedInstallBatch, SkillSmithError> | undefined;
@@ -2717,25 +2782,31 @@ const resolveUninstallPathTarget = async (
 // pair deletion) applies uniformly — the engine never deletes a store entry either way.
 const processUninstallMatch = async (
   env: AcquisitionPorts,
-  ledger: LedgerFile,
+  ledgerCtx: { ledger: LedgerModel },
   ledgerPath: string,
   opts: UninstallOptions,
   deps: UninstallDeps,
   name: string,
   match: UMatch,
   dryRun: boolean,
+  logicalOperation: ExecutableOperation | null,
 ): Promise<UninstallResult> => {
   const { scope, scopeKey, tool, existing, notice } = match;
 
-  const swapCtx: SwapCtx = {
+  let swapCtx: SwapCtx;
+  swapCtx = {
     env,
     ledgerPath,
-    ledger,
-    persist: () => writeLedger(env, ledgerPath, ledger),
-    now: () => nowOf(env, deps),
+    ledger: ledgerCtx.ledger,
+    persist: async () => {
+      ledgerCtx.ledger = swapCtx.ledger as LedgerModel;
+      return writeLedger(env, ledgerPath, ledgerCtx.ledger);
+    },
+    now: () => journalNowOf(env, deps),
     newTxId: () => txIdOf(env, deps),
     pauseAt: opts.testPauseAt,
     signal: opts.signal,
+    ...(logicalOperation === null ? {} : { logicalOperation }),
   };
   const midSwap = (e: SkillSmithError): SkillSmithError =>
     e.code === 'ledger-error' ? flipFailedError(msg(e)) : e;
@@ -2839,8 +2910,10 @@ const processUninstallMatch = async (
         backupKept: null,
       };
     }
-    deletePairAt(ledger, scopeKey, name, tool);
-    const persisted = await writeLedger(env, ledgerPath, ledger);
+    const removed = withoutLedgerPairAt(ledgerCtx.ledger, scopeKey, name, tool);
+    if (!removed.ok) return failed(removed.error, placementPath);
+    ledgerCtx.ledger = removed.value;
+    const persisted = await writeLedger(env, ledgerPath, ledgerCtx.ledger);
     if (!persisted.ok) return failed(persisted.error, placementPath);
     return {
       skill: name,
@@ -2962,7 +3035,10 @@ const processUninstallMatch = async (
     pinned: null,
     journal: null,
   };
-  setPairAt(ledger, scopeKey, name, tool, synth);
+  const staged = withLedgerPairAt(ledgerCtx.ledger, scopeKey, name, tool, synth);
+  if (!staged.ok) return failed(staged.error, placementPath);
+  ledgerCtx.ledger = staged.value;
+  swapCtx.ledger = staged.value;
   const plan: SwapPlan = {
     op: 'uninstall',
     skill: name,
@@ -2995,6 +3071,7 @@ const isUninstallPathTarget = (target: string): boolean =>
 const processUninstallTarget = async (
   env: AcquisitionPorts,
   ledger: LedgerFile,
+  ledgerCtx: { ledger: LedgerModel },
   ledgerPath: string,
   storeRoot: string,
   opts: UninstallOptions,
@@ -3041,13 +3118,14 @@ const processUninstallTarget = async (
     }
     const preview = await processUninstallMatch(
       env,
-      ledger,
+      ledgerCtx,
       ledgerPath,
       opts,
       deps,
       name,
       match,
       dryRun,
+      null,
     );
     if (dryRun && preview.action === 'removed') bind?.(preview, name, match);
     return [preview];
@@ -3084,13 +3162,14 @@ const processUninstallTarget = async (
   for (const match of matches) {
     const preview = await processUninstallMatch(
       env,
-      ledger,
+      ledgerCtx,
       ledgerPath,
       opts,
       deps,
       target,
       match,
       dryRun,
+      null,
     );
     if (dryRun && preview.action === 'removed') bind?.(preview, target, match);
     results.push(preview);
@@ -3101,6 +3180,7 @@ const processUninstallTarget = async (
 const createUninstallPlanning = (
   requested: UninstallReport['requested'],
   results: readonly UninstallResult[],
+  projectRoot: string | null,
 ): Readonly<{
   plan: OperationPlan<'uninstall'>;
   operationResults: ReadonlyMap<string, UninstallResult>;
@@ -3129,6 +3209,7 @@ const createUninstallPlanning = (
       result.tool,
       result.scope,
       result.placementPath,
+      projectRoot,
     );
     const groupId = createOperationGroupId({
       domain: 'skillsmith.operation-group-identity',
@@ -3166,8 +3247,15 @@ const createUninstallPlanning = (
       result.before?.mode ?? 'pinned',
       result.before?.placement ?? (result.before?.mode === 'dev' ? 'symlink' : 'copy'),
       result.before?.symlinkTarget ?? null,
+      projectRoot,
     );
-    const after = acquireAbsentImage(result.skill, result.tool, result.scope, result.placementPath);
+    const after = acquireAbsentImage(
+      result.skill,
+      result.tool,
+      result.scope,
+      result.placementPath,
+      projectRoot,
+    );
     operations.push({
       operationId,
       groupId,
@@ -3340,7 +3428,7 @@ const runUninstallInternal = async (
     readonly target: string;
     readonly name: string;
     readonly match: UMatch;
-    execute(): Promise<UninstallResult>;
+    execute(operation: ExecutableOperation): Promise<UninstallResult>;
   }
 
   const observeUninstallFacts = async (
@@ -3348,14 +3436,10 @@ const runUninstallInternal = async (
   ): Promise<UninstallPreconditionFacts> => {
     const expectedPath = seed.preview.placementPath;
     if (expectedPath === null) throw new Error('prepared uninstall facts require a live path');
-    const ledgerResult = await readLedger(env, ledgerPath);
+    const ledgerResult = await readLedgerState(env, ledgerPath);
     if (!ledgerResult.ok) throw ledgerResult.error;
-    const selectedPair = getPairAt(
-      ledgerResult.value,
-      seed.match.scopeKey,
-      seed.name,
-      seed.match.tool,
-    );
+    const ledger = ledgerModelForMutation(ledgerResult.value, nowOf(env, deps));
+    const selectedPair = getPairAt(ledger, seed.match.scopeKey, seed.name, seed.match.tool);
     const live = await acquirePlacementFacts(env, dirname(expectedPath), seed.name, storeRoot);
     const storePath = selectedPair?.pinned?.storePath ?? null;
     const selectionMatches = isUninstallPathTarget(seed.target)
@@ -3378,7 +3462,7 @@ const runUninstallInternal = async (
       : await collectUninstallMatches(
           env,
           opts,
-          ledgerResult.value,
+          legacyLedgerView(ledger),
           storeRoot,
           seed.target,
           scopesToSearch,
@@ -3406,14 +3490,17 @@ const runUninstallInternal = async (
     };
   };
 
-  const prepareAll = async (ledger: LedgerFile): Promise<PreparedUninstallBatch> => {
+  const prepareAll = async (ledger: LedgerModel): Promise<PreparedUninstallBatch> => {
+    const legacyLedger = legacyLedgerView(ledger);
+    const ledgerCtx = { ledger };
     const results: UninstallResult[] = [];
     const candidateBindings = new Map<UninstallResult, UninstallBindingSeed>();
     for (const target of opts.targets) {
       results.push(
         ...(await processUninstallTarget(
           env,
-          ledger,
+          legacyLedger,
+          ledgerCtx,
           ledgerPath,
           storeRoot,
           opts,
@@ -3431,14 +3518,24 @@ const runUninstallInternal = async (
               target,
               name,
               match,
-              execute: () =>
-                processUninstallMatch(env, ledger, ledgerPath, opts, deps, name, match, false),
+              execute: (operation) =>
+                processUninstallMatch(
+                  env,
+                  ledgerCtx,
+                  ledgerPath,
+                  opts,
+                  deps,
+                  name,
+                  match,
+                  false,
+                  operation,
+                ),
             });
           },
         )),
       );
     }
-    const initialPlanning = createUninstallPlanning(requested, results);
+    const initialPlanning = createUninstallPlanning(requested, results, projectRoot);
     const preparedBindings = new Map<string, PreparedUninstallBinding>();
     const preconditions: ExecutionPrecondition[] = [];
     const operations: ExecutableOperation[] = [];
@@ -3494,7 +3591,7 @@ const runUninstallInternal = async (
         expected: expectedFacts,
         actualBefore,
         observe: () => observeUninstallFacts(seed),
-        execute: seed.execute,
+        execute: () => seed.execute(operation),
       });
     }
     const plan = createOperationPlan({
@@ -3579,29 +3676,30 @@ const runUninstallInternal = async (
 
   // Uninstall needs no binary detection and no fetch/verify — dry-run only needs a ledger read.
   if (opts.dryRun) {
-    const ledgerRes = await readLedger(env, ledgerPath);
+    const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
-    const prepared = await prepareAll(ledgerRes.value);
+    const prepared = await prepareAll(ledgerModelForMutation(ledgerRes.value, nowOf(env, deps)));
     return ok(prepared.preview);
   }
 
   const executeLocked = async (): Promise<Result<PlannedUninstallReport, SkillSmithError>> => {
     await sweepStaging(env, storeRoot);
     await sweepFetchOrphans(env, dataDir);
-    const ledgerRes = await readLedger(env, ledgerPath);
+    const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
-    const ledger = ledgerRes.value;
+    const ledger = ledgerModelForMutation(ledgerRes.value, nowOf(env, deps));
 
-    const swept = await sweepCommittedAcquireJournals({
+    const sweepCtx: SwapCtx = {
       env,
       ledgerPath,
       ledger,
-      persist: () => writeLedger(env, ledgerPath, ledger),
-      now: () => nowOf(env, deps),
+      persist: () => writeLedger(env, ledgerPath, sweepCtx.ledger as LedgerModel),
+      now: () => journalNowOf(env, deps),
       newTxId: () => txIdOf(env, deps),
       pauseAt: opts.testPauseAt,
       signal: opts.signal,
-    });
+    };
+    const swept = await sweepCommittedAcquireJournals(sweepCtx);
     if (!swept.ok) {
       const sweepError = safeError(swept.error);
       return err(
@@ -3609,7 +3707,7 @@ const runUninstallInternal = async (
       );
     }
 
-    const prepared = await prepareAll(ledger);
+    const prepared = await prepareAll(sweepCtx.ledger as LedgerModel);
     return ok(await executePrepared(prepared));
   };
   const completed = Symbol('uninstall-ledger-callback-completed');

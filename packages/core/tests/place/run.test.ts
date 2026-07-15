@@ -1,8 +1,17 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fromLedgerV1Dto } from '../../src/artifacts/registry.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { emptyLedger, getPair, readLedger, setPair, writeLedger } from '../../src/place/ledger.ts';
+import {
+  emptyLedger,
+  getLedgerPairAt,
+  getPair,
+  readLedger,
+  readLedgerState,
+  setPair,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import {
   prepareDev,
@@ -378,9 +387,26 @@ describe('runPromote — happy paths and convergence', () => {
     const ledgerRes = await readLedgerOf(f);
     if (!ledgerRes.ok) throw new Error(msg(ledgerRes.error));
     const pair = getPair(ledgerRes.value, 'alpha', 'claude-code');
+    if (!pair) throw new Error('promoted pair is missing');
     expect(pair?.mode).toBe('pinned');
     expect(pair?.dev).not.toBeNull();
     expect(pair?.pinned?.verify).toBe('passed');
+    const journal = pair.journal;
+    if (!journal) throw new Error('promoted pair compatibility journal is missing');
+    expect(journal).toMatchObject({ op: 'promote', phase: 'committed' });
+    expect(journal.stagingPath).toBe(
+      join(dirname(pair.placementPath), `.skillsmith-staging-alpha-${journal.txId}`),
+    );
+    expect(journal.backupPath).toBe(
+      join(dirname(pair.placementPath), `.skillsmith-backup-alpha-${journal.txId}`),
+    );
+    const canonical = await readLedgerState(f.env, ledgerPathOf(f.data));
+    if (!canonical.ok || canonical.value.state !== 'present') {
+      throw new Error('canonical promoted ledger is missing');
+    }
+    expect(
+      getLedgerPairAt(canonical.value.model, null, 'alpha', 'claude-code')?.journal ?? null,
+    ).toBeNull();
   });
 
   test('re-pin after source moves: action updated, new rev', async () => {
@@ -828,7 +854,9 @@ describe('runRollback — interrupted install-replace reconciliation warning (I2
     const ledgerPath = ledgerPathOf(f.data);
     const ledger = emptyLedger(NOW);
     setPair(ledger, skill, 'claude-code', { ...pair, journal });
-    const w = await writeLedger(f.env, ledgerPath, ledger);
+    const model = fromLedgerV1Dto(ledger);
+    if (!model.ok) throw new Error(JSON.stringify(model.error));
+    const w = await writeLedger(f.env, ledgerPath, model.value);
     if (!w.ok) throw new Error(msg(w.error));
     return ledgerPath;
   };

@@ -58,6 +58,7 @@ describe('@skillsmith/core public API', () => {
       'parseSource',
       'defaultClockPort',
       'defaultIdPort',
+      'defaultArtifactCoordinatorPorts',
       'OBSERVATION_EVENT_KINDS',
       'OPERATION_KINDS',
       'createOperationContext',

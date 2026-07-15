@@ -126,6 +126,7 @@ const context = (
 ): CurrentApplicationContext => ({
   observation,
   ports: runtimePorts(scanEnv),
+  artifactCoordinator: {} as CurrentApplicationContext['artifactCoordinator'],
   configuration: resolveRuntimeConfiguration({}),
   interaction,
   invocationCwd: project.invocationCwd,
@@ -587,6 +588,7 @@ describe('read and config outcomes', () => {
     const base = context(env(root), effectiveConfig(), project);
     const current: CurrentApplicationContext = {
       observation: base.observation,
+      artifactCoordinator: base.artifactCoordinator,
       configuration: base.configuration,
       interaction: base.interaction,
       invocationCwd: base.invocationCwd,

@@ -275,6 +275,16 @@ export interface ArtifactGroupLockLease {
 export type GeneratedLockAction =
   | { readonly kind: 'keep' }
   | { readonly kind: 'replace'; readonly lock: PortableLockV1 }
+  | {
+      readonly kind: 'replace-exact';
+      readonly lock: PortableLockV1;
+      readonly expectedByteRevision: ArtifactDigest | null;
+    }
+  | {
+      readonly kind: 'replace-invalid';
+      readonly lock: PortableLockV1;
+      readonly expectedByteRevision: ArtifactDigest;
+    }
   | { readonly kind: 'remove' };
 
 export type HumanManifestAction =

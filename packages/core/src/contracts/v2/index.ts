@@ -6,6 +6,8 @@ export { commandsV2Codec, toCommandsV2Dto } from './commands.ts';
 export type { CommandsV2Dto } from './commands.ts';
 export { listV2Codec, toListV2Dto } from './list.ts';
 export type { ListV2Dto } from './list.ts';
+export { healthV2Codec, toHealthV2Dto } from './health.ts';
+export type { HealthV2Dto } from './health.ts';
 export type { LedgerMigrationV1ToV2, LedgerV2Dto } from '../../artifacts/ledger-types.ts';
 export {
   fromLedgerV2Dto,

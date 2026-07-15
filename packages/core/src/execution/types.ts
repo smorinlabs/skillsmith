@@ -12,7 +12,7 @@ import type { LockPort } from '../ports/types.ts';
 export interface ValidatedExecutionBinding {
   readonly operationId: OperationId;
   readonly groupId: OperationId;
-  readonly pairId: OperationId;
+  readonly pairId: OperationId | null;
   readonly actualBefore: OperationImage;
   readonly unstartedForce: BoundedForceEffect | null;
   readonly execute: () => Promise<OperationExecutionResult>;
@@ -25,7 +25,7 @@ export interface ValidatedExecutionBinding {
 export interface PreparedExecutionBinding {
   readonly operationId: OperationId;
   readonly groupId: OperationId;
-  readonly pairId: OperationId;
+  readonly pairId: OperationId | null;
   readonly unstartedForce: BoundedForceEffect | null;
   readonly observeActualBefore: () => Promise<OperationImage>;
   readonly execute: (binding: ValidatedExecutionBinding) => Promise<OperationExecutionResult>;

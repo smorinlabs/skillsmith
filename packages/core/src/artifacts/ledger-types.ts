@@ -118,6 +118,44 @@ export interface LedgerSemanticProjectionV1 {
 
 export type LedgerModel = Readonly<LedgerSemanticProjectionV1>;
 
+/** Canonical identity used by immutable pair transforms and logical/physical shadow validation. */
+export interface LedgerPairIdentity {
+  readonly projectRoot: string | null;
+  readonly skill: string;
+  readonly tool: LedgerV2ToolId;
+}
+
+/** Read-only ledger observation. Absence deliberately carries no fabricated timestamp/model. */
+export type LedgerReadState =
+  | Readonly<{
+      readonly state: 'absent';
+      readonly sourceVersion: null;
+      readonly bytes: null;
+      readonly byteRevision: null;
+      readonly semanticRevision: null;
+      readonly model: null;
+    }>
+  | Readonly<{
+      readonly state: 'present';
+      readonly sourceVersion: 1 | 2;
+      readonly bytes: Uint8Array;
+      readonly byteRevision: ArtifactDigest;
+      readonly semanticRevision: ArtifactDigest;
+      readonly model: LedgerModel;
+    }>;
+
+/**
+ * The migration writer receives every journal image up front. Recovery therefore never allocates
+ * a new timestamp, operation ID, or transaction ID after a crash.
+ */
+export interface LedgerMigrationJournalSequence {
+  readonly prepared: LogicalJournalV1Dto;
+  readonly staged: LogicalJournalV1Dto;
+  readonly backedUp: LogicalJournalV1Dto;
+  readonly live: LogicalJournalV1Dto;
+  readonly committed: LogicalJournalV1Dto;
+}
+
 export interface PreservedLegacyJournalIdentityV1 {
   readonly scope:
     | Readonly<{ readonly kind: 'user' }>

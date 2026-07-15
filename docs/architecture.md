@@ -206,7 +206,7 @@ freezes supplied codecs and mappings without importing CLI command policy. Domai
 boundary through explicit named mappers; renderer code does not spread domain objects, strip fields,
 or define a second public schema.
 
-The current registry contains `agents@1`, `health@1`, `commands@1`, `config-get@1`,
+The current registry contains `agents@1`, `health@1`, `health@2`, `commands@1`, `config-get@1`,
 `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`, `install@1`, `list@2`, `uninstall@1`,
 `verify@1`, `status@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive unknown-field rejection, embedded kind and
@@ -243,12 +243,36 @@ migration description. Ledger v1 produces a pure v1-to-v2 description containing
 target revisions, canonical v2 source, and preserved pair-journal identities. Neither description
 is executable write authority.
 
-Compatibility remains explicit. Ledger v1 encoding is available for existing callers, while v2 is
-the current canonical generated form. The mutable legacy placement facade accepts and writes only
-closed v1 state and refuses v2 before clock, ID, temporary-file, lock, or write activity; it cannot
-silently downgrade the ledger. Canonical codecs reject noncanonical generated forms, and every
-artifact boundary rejects recursive unknown fields, hostile inputs, and sensitive content with
-fixed sanitized errors rather than persisting redaction placeholders or echoing raw values.
+Compatibility remains explicit. Ledger v1 encoding is available through its versioned artifact
+codec, while v2 is the only current generated mutation form. The placement facade reads both
+supported versions, represents mutation as an immutable `LedgerModel`, and makes v1 migration a
+visible revision-checked prerequisite rather than a parser side effect. Missing state is the only
+empty state; malformed, noncanonical, or future ledgers refuse without cleanup or reset. Canonical
+codecs reject noncanonical generated forms, and every artifact boundary rejects recursive unknown
+fields, hostile inputs, and sensitive content with fixed sanitized errors rather than persisting
+redaction placeholders or echoing raw values.
+
+The focused ledger writer owns canonical replacement and migration durability. A private,
+ledger-derived recovery pointer records the exact source, target, transaction identity, revisions,
+and cursor before a v1 migration crosses a filesystem boundary. Exclusive stage/backup creation,
+compare-and-replace pointer transitions, rename, and file/directory fsyncs provide deterministic
+resume after interruption without scanning for or trusting arbitrary recovery paths. Current
+callers share this writer; acquire, placement, and doctor do not implement weaker direct-write
+paths.
+
+Ledger-v2 mutations update pair state and derived project registrations atomically. Pending logical
+transactions advance with their physical pair shadow and move exactly once into committed history.
+History retention is deterministic and bounded: the newest state for every resource anchor,
+pending anchors, retained resources, and the new commit are protected; remaining capacity is
+selected breadth-first across anchors. Cleanup handles one verified victim at a time so a crash
+cannot expose an evicted history entry whose retained resource still exists.
+
+Doctor diagnostics remain read-capability-only. `doctor --fix` is a separate capability-scoped
+planner/executor with a closed safe-repair allowlist and explicit preview/approval semantics; it
+reuses the normal artifact coordinators and ledger writer instead of receiving arbitrary write
+authority. Doctor emits strict `health@2`, including finding identities, repair results, and a
+cross-validated mutation summary. The non-mutating `check` command remains on byte-compatible
+`health@1`.
 
 ## Portable artifact identity
 

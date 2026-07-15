@@ -80,6 +80,26 @@ const errorOutput = (outcome: RuntimeOutcome, format: 'human' | 'json') => {
   return format === 'human' ? { stderr: rendered } : { stdout: rendered };
 };
 
+const doctorHumanOutput = (value: HealthReport, outcome: RuntimeOutcome) => {
+  const diagnostic = outcome.diagnostics.find((item) => item.severity === 'error');
+  if (
+    value.result === null &&
+    outcome.exitClass === 'usage' &&
+    diagnostic?.message.includes('--yes') === true
+  ) {
+    return {
+      stdout: renderCliError(
+        { code: diagnostic.code, message: diagnostic.message, exitCode: 2 },
+        'human',
+      ),
+    };
+  }
+  return (
+    errorOutput(outcome, 'human') ??
+    withDiagnostics(outcome, value.result === null ? '' : renderDoctorHuman(value.result))
+  );
+};
+
 const withDiagnostics = (
   outcome: RuntimeOutcome,
   stdout: string,
@@ -326,14 +346,15 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
         ),
       (value) => renderCommandsJson(value),
     ),
-    doctor: guarded<HealthReport>(
-      (value, outcome) =>
-        withDiagnostics(outcome, value.result === null ? '' : renderDoctorHuman(value.result)),
-      (value, outcome) =>
-        value.result === null
+    doctor: {
+      human: (outcome) => doctorHumanOutput(report<HealthReport>(outcome), outcome),
+      json: (outcome) => {
+        const value = report<HealthReport>(outcome);
+        return value.result === null
           ? (errorOutput(outcome, 'json') ?? '')
-          : renderDoctorJson(value.result, outcome.deprecations, currentWireCodecs.doctor),
-    ),
+          : renderDoctorJson(value.result, outcome.deprecations, currentWireCodecs.doctor);
+      },
+    },
     check: guarded<HealthReport>(
       (value, outcome) =>
         withDiagnostics(outcome, value.result === null ? '' : renderDoctorHuman(value.result)),

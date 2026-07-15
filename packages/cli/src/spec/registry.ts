@@ -283,9 +283,11 @@ const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
   'skillsmith commands': STANDARD_READ_EXIT_CODES,
   'skillsmith doctor': exitCodes(
     [0, 'diagnostics completed without blocking findings'],
-    [1, 'error findings exist, or strict mode found warnings'],
-    [2, 'invalid tool, scope, or artifact selection'],
-    [3, 'configuration is unreadable'],
+    [1, 'unhandled findings or repair failures remain'],
+    [2, 'invalid selection, option policy, or repair approval'],
+    [3, 'artifact state is invalid, corrupt, newer, or stale'],
+    [5, 'source resolution required for repair failed'],
+    [6, 'a selected repair path is not writable'],
     [130, 'cancelled by SIGINT'],
   ),
   'skillsmith check': exitCodes(
@@ -498,6 +500,23 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   ...scopeRelations('skillsmith config list', ['user', 'project', 'system']),
   ...scopeRelations('skillsmith config unset', ['user', 'project', 'system']),
   conflicts('skillsmith doctor', '--all-tools', '--tool'),
+  conflicts('skillsmith doctor', '--yes', '--dry-run'),
+  {
+    id: 'skillsmith.doctor.dry-run.requires.fix',
+    command: 'skillsmith doctor',
+    kind: 'requires',
+    option: '--dry-run',
+    requiredOption: '--fix',
+    description: '--dry-run requires --fix',
+  },
+  {
+    id: 'skillsmith.doctor.yes.requires.fix',
+    command: 'skillsmith doctor',
+    kind: 'requires',
+    option: '--yes',
+    requiredOption: '--fix',
+    description: '--yes requires --fix',
+  },
   ...scopeRelations('skillsmith doctor', ['user', 'project', 'system']),
   {
     id: 'skillsmith.doctor.lockfile.requires.file',

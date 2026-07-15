@@ -3,7 +3,8 @@ import { join, resolve } from 'node:path';
 import { resolveRuntimeConfiguration } from '../../../../packages/core/src/config/runtime.ts';
 import { defaultRuntimePorts } from '../../../../packages/core/src/index.ts';
 import {
-  readLedger,
+  readLedgerState,
+  setPairAt,
   withLedgerLock,
   writeLedger,
 } from '../../../../packages/core/src/place/ledger.ts';
@@ -123,6 +124,8 @@ interface StartMessage {
 }
 
 class InjectedInterruption extends Error {
+  readonly code = 'cancelled';
+
   constructor(readonly barrier: Barrier) {
     super(`deterministic local interruption after ${barrier}`);
     this.name = 'InjectedInterruption';
@@ -449,6 +452,7 @@ const main = async (): Promise<void> => {
       transactionId: start.transactionId,
       sourceRevision: start.sourceRevision,
       startedAt: '2026-07-15T00:00:00.000Z',
+      attempt: start.role === 'recovery-writer' ? 2 : 1,
     },
     afterLedgerBarrier: async (value: unknown) => {
       const record = exactRecord(value, ['kind']);
@@ -469,53 +473,27 @@ const main = async (): Promise<void> => {
       const locked = await withLedgerLock(ports, target, async () => {
         const lockBarrierId = await reportBarrier('lock-acquired');
         if (start.holdAtLock) requireRelease(start, lockBarrierId, await nextMessage());
-        const read = await readLedger(ports, target);
-        if (!read.ok) return;
-        const model = read.value as unknown as Record<string, unknown>;
-        if (
-          model.transactions === null ||
-          typeof model.transactions !== 'object' ||
-          !Array.isArray(model.history) ||
-          model.projects === null ||
-          typeof model.projects !== 'object' ||
-          model.projectRegistrations === null ||
-          typeof model.projectRegistrations !== 'object'
-        ) {
-          return;
-        }
-        const written = await (
-          writeLedger as unknown as (
-            env: RuntimePorts,
-            path: string,
-            ledger: Readonly<Record<string, unknown>>,
-          ) => ReturnType<typeof writeLedger>
-        )(ports, target, {
-          ...model,
-          skills: {
-            ...(model.skills as Readonly<Record<string, unknown>>),
-            [start.skill]: {
-              tools: {
-                [start.tool]: {
-                  placementPath: join(start.root, 'live', start.skill),
-                  mode: 'dev',
-                  dev: {
-                    sourcePath: `fixture/${start.skill}`,
-                    resolvedPath: join(start.root, 'source', start.skill),
-                    repoRoot: null,
-                    sourceRelPath: null,
-                    remote: null,
-                    recordedAt: '2026-07-15T00:00:00.000Z',
-                  },
-                  pinned: null,
-                  journal: null,
-                },
-              },
-            },
+        const read = await readLedgerState(ports, target);
+        if (!read.ok || read.value.state !== 'present') return;
+        const next = setPairAt(read.value.model, null, start.skill, start.tool, {
+          placementPath: join(start.root, 'live', start.skill),
+          mode: 'dev',
+          dev: {
+            sourcePath: `fixture/${start.skill}`,
+            resolvedPath: join(start.root, 'source', start.skill),
+            repoRoot: null,
+            sourceRelPath: null,
+            remote: null,
+            recordedAt: '2026-07-15T00:00:00.000Z',
           },
+          pinned: null,
+          journal: null,
         });
+        if (!next.ok) return;
+        const written = await writeLedger(ports, target, next.value);
         if (written.ok) outcome = 'committed';
       });
-      if (!locked.ok) outcome = 'refused';
+      if (!locked.ok) outcome = locked.error.code === 'cancelled' ? 'interrupted' : 'refused';
     } else if (start.homeDir !== null && start.dataDir !== null && start.cwd !== null) {
       const result = await runPromote(
         ports,
@@ -534,7 +512,11 @@ const main = async (): Promise<void> => {
           },
         },
       );
-      outcome = result.ok ? 'committed' : 'refused';
+      outcome = result.ok
+        ? 'committed'
+        : result.error.code === 'cancelled'
+          ? 'interrupted'
+          : 'refused';
     }
   } catch (error) {
     if (error instanceof InjectedInterruption) outcome = 'interrupted';

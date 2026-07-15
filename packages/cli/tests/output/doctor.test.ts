@@ -40,4 +40,33 @@ describe('doctor output', () => {
 
     expect(parsed.findings[0]).toEqual(expect.objectContaining(finding));
   });
+
+  test('fallback finding identities ignore unrelated findings and count structural twins', () => {
+    const unrelated: Finding = {
+      checkId: 'unrelated',
+      severity: 'warning',
+      title: 'unrelated finding',
+      message: 'does not participate in the target identity',
+    };
+    const render = (findings: Finding[]) =>
+      DoctorJsonSchema.parse(
+        JSON.parse(
+          renderDoctorJson({
+            findings,
+            counts: { ok: 0, warning: 0, error: 0 },
+          }),
+        ),
+      ).findings;
+    const baseline = render([finding, finding]);
+    const insertedBetween = render([finding, unrelated, finding]);
+    const insertedBefore = render([unrelated, finding, finding]);
+    const targetIds = (findings: typeof baseline) =>
+      findings
+        .filter((candidate) => candidate.checkId === finding.checkId)
+        .map((candidate) => candidate.findingId);
+
+    expect(targetIds(insertedBefore)).toEqual(targetIds(baseline));
+    expect(targetIds(insertedBetween)).toEqual(targetIds(baseline));
+    expect(new Set(targetIds(baseline)).size).toBe(2);
+  });
 });

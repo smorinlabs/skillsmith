@@ -2,6 +2,8 @@ import type {
   AgentsReport,
   ArtifactDigest,
   CommandsReport,
+  Deprecation,
+  DoctorRunResult,
   FlipReport,
   LedgerModel,
   ListReport,
@@ -180,6 +182,71 @@ export interface CommandsV2Dto {
   }>;
 }
 
+export interface FindingV2Dto {
+  findingId: `finding:v1:${string}`;
+  checkId: string;
+  severity: 'error' | 'warning' | 'info';
+  title: string;
+  message: string;
+  remediation?: string | undefined;
+  tool?: string | undefined;
+  scope?: string | undefined;
+  path?: string | undefined;
+  operation?: string | undefined;
+  reason?: string | undefined;
+  scopeInUse?: boolean | undefined;
+}
+
+export type DoctorRepairArtifactSummaryV1Dto =
+  | {
+      state: 'absent';
+      schemaVersion: null;
+      byteRevision: null;
+      semanticRevision: null;
+    }
+  | {
+      state: 'present';
+      schemaVersion: number | null;
+      byteRevision: `sha256:${string}`;
+      semanticRevision: `sha256:${string}` | null;
+    };
+
+export interface DoctorRepairOperationV1Dto {
+  operationId: `operation:v1:${string}`;
+  kind: 'migrate-ledger' | 'migrate-project-config' | 'write-lock';
+  artifact: 'ledger' | 'manifest' | 'lock';
+  path: string;
+  before: DoctorRepairArtifactSummaryV1Dto;
+  after: DoctorRepairArtifactSummaryV1Dto;
+  findingIds: Array<`finding:v1:${string}`>;
+}
+
+export interface DoctorRepairResultV1Dto {
+  operationId: `operation:v1:${string}`;
+  outcome: 'changed' | 'unchanged' | 'failed';
+  error: null | { code: string; message: string; remediation: string };
+}
+
+export interface HealthV2Dto {
+  schemaVersion: 2;
+  experimental: true;
+  findings: FindingV2Dto[];
+  counts: { ok: number; warning: number; error: number };
+  repair: {
+    mode: 'not-requested' | 'preview' | 'execute';
+    operations: DoctorRepairOperationV1Dto[];
+    results: DoctorRepairResultV1Dto[];
+  };
+  mutation: {
+    kind: 'none' | 'preview' | 'applied';
+    planned: number;
+    changed: number;
+    unchanged: number;
+    failed: number;
+  };
+  deprecations?: Deprecation[] | undefined;
+}
+
 export type LedgerV2Dto = Readonly<{
   readonly schemaVersion: 2;
   readonly kind: 'skillsmith.placements';
@@ -213,6 +280,11 @@ export declare const commandsV2Codec: WireCodec<'commands', 2, CommandsV2Dto>;
 export declare const toCommandsV2Dto: (report: CommandsReport) => CommandsV2Dto;
 export declare const listV2Codec: WireCodec<'list', 2, ListV2Dto>;
 export declare const toListV2Dto: (report: ListReport) => ListV2Dto;
+export declare const healthV2Codec: WireCodec<'health', 2, HealthV2Dto>;
+export declare const toHealthV2Dto: (
+  report: DoctorRunResult,
+  deprecations?: readonly Deprecation[],
+) => HealthV2Dto;
 export declare const ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel>;
 export declare const toLedgerV2Dto: (model: LedgerModel) => Result<LedgerV2Dto, ArtifactCodecError>;
 export declare const fromLedgerV2Dto: (dto: LedgerV2Dto) => Result<LedgerModel, ArtifactCodecError>;

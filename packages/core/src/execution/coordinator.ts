@@ -26,7 +26,7 @@ interface PreparedBindingAdapter {
   readonly operation: ExecutableOperation;
   readonly operationId: string;
   readonly groupId: string;
-  readonly pairId: string;
+  readonly pairId: string | null;
   readonly unstartedForce: ValidatedExecutionBinding['unstartedForce'];
   readonly observeActualBefore: () => Promise<OperationImage>;
   readonly execute: (binding: ValidatedExecutionBinding) => Promise<OperationExecutionResult>;

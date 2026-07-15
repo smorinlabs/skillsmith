@@ -912,7 +912,7 @@ describe('EWP-OPT-TS04', () => {
       (count, spec) => count + spec.options.length,
       0,
     );
-    if (inventory !== 168) findings.push(`option inventory is ${inventory}, expected 168`);
+    if (inventory !== 171) findings.push(`option inventory is ${inventory}, expected 171`);
 
     const program = buildProgram();
     for (const commandName of ['dev', 'promote'] as const) {

@@ -54,6 +54,7 @@ const env = (existing: string[]): ScanEnv => ({
 const context = (scanEnv: ScanEnv): CurrentApplicationContext => ({
   observation,
   ports: runtimePorts(scanEnv),
+  artifactCoordinator: {} as CurrentApplicationContext['artifactCoordinator'],
   configuration: resolveRuntimeConfiguration({}),
   interaction: {
     mode: 'noninteractive',

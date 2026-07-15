@@ -1,4 +1,11 @@
 import { dirname, join } from 'node:path';
+import type { ArtifactDigest } from '../artifacts/hash.ts';
+import type {
+  JournalResourceActualV1Dto,
+  LogicalJournalV1Dto,
+} from '../artifacts/journal-types.ts';
+import type { LedgerModel, LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
+import { validateJournalV1DtoShape } from '../artifacts/registry.ts';
 import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
@@ -9,21 +16,377 @@ import {
   permissionDeniedError,
   safeErrorCode,
 } from '../errors.ts';
+import type { ExecutableOperation, OperationImage } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
-import { deletePairAt, getPairAt, setPairAt } from './ledger.ts';
+import {
+  deletePairAt,
+  getLedgerPairAt,
+  getPairAt,
+  setPairAt,
+  withLedgerPairAt,
+  withoutLedgerPairAt,
+} from './ledger.ts';
+import { advanceLogicalTransaction, commitLogicalTransaction } from './logical-transactions.ts';
 import { contentHashOf } from './store.ts';
 import type {
   FlipTool,
   Journal,
   JournalOp,
   JournalPhase,
-  LedgerFile,
   PairRecord,
   SwapCtx,
   SwapOutcome,
   SwapPlan,
   SwapPorts,
 } from './types.ts';
+
+const pairAt = (
+  ctx: SwapCtx,
+  scopeKey: string | null,
+  skill: string,
+  tool: string,
+): PairRecord | null => {
+  const pair =
+    'schemaVersion' in ctx.ledger
+      ? getPairAt(ctx.ledger, scopeKey, skill, tool as FlipTool)
+      : getLedgerPairAt(ctx.ledger, scopeKey, skill, tool);
+  return pair === null ? null : (structuredClone(pair) as PairRecord);
+};
+
+const ZERO_DIGEST = `sha256:${'0'.repeat(64)}` as ArtifactDigest;
+
+const liveActual = (
+  image: OperationImage,
+  pair: PairRecord,
+  fallbackState: 'absent' | 'present',
+): JournalResourceActualV1Dto => {
+  if (image.kind === 'absent') {
+    return {
+      resourceId: 'live:placement',
+      role: 'live',
+      state: 'absent',
+      repositoryRevision: null,
+      placementPath: pair.placementPath,
+      liveKind: null,
+      mode: null,
+      symlinkTarget: null,
+      contentHash: null,
+    };
+  }
+  if (image.kind === 'placement') {
+    const digest = (image.contentHash ??
+      image.source?.contentHash ??
+      ZERO_DIGEST) as ArtifactDigest;
+    return {
+      resourceId: 'live:placement',
+      role: 'live',
+      state: 'present',
+      repositoryRevision: { kind: 'resource', digest },
+      placementPath: pair.placementPath,
+      liveKind: image.representation === 'symlink' ? 'symlink' : 'directory',
+      mode: image.classification === 'dev' ? 'dev' : 'pinned',
+      symlinkTarget: image.linkTarget?.kind === 'machine-bound' ? image.linkTarget.path : null,
+      contentHash: image.contentHash as ArtifactDigest | null,
+    };
+  }
+  return fallbackState === 'absent'
+    ? {
+        resourceId: 'live:placement',
+        role: 'live',
+        state: 'absent',
+        repositoryRevision: null,
+        placementPath: pair.placementPath,
+        liveKind: null,
+        mode: null,
+        symlinkTarget: null,
+        contentHash: null,
+      }
+    : {
+        resourceId: 'live:placement',
+        role: 'live',
+        state: 'present',
+        repositoryRevision: { kind: 'resource', digest: ZERO_DIGEST },
+        placementPath: pair.placementPath,
+        liveKind: 'directory',
+        mode: pair.mode,
+        symlinkTarget: null,
+        contentHash: (pair.pinned?.contentHash ?? null) as ArtifactDigest | null,
+      };
+};
+
+const logicalJournalFor = (
+  operation: ExecutableOperation,
+  pair: PairRecord,
+  shadow: Journal,
+): LogicalJournalV1Dto => {
+  const visible = shadow.phase === 'live' || shadow.phase === 'committed';
+  const imageSource = operation.after.kind === 'placement' ? operation.after.source : null;
+  const source =
+    operation.source ??
+    (operation.kind === 'promote' && imageSource?.kind === 'local-dev'
+      ? {
+          kind: 'portable' as const,
+          identity: {
+            host: 'github.com',
+            repository: 'local/source',
+            path: operation.skill,
+          },
+          requestedRef: null,
+          resolvedSha: '0'.repeat(40),
+          sourcePath: operation.skill ?? '.',
+          contentHash: imageSource.contentHash as unknown as ArtifactDigest,
+        }
+      : (operation.kind === 'install' || operation.kind === 'update') &&
+          pair.origin !== undefined &&
+          pair.pinned != null
+        ? {
+            kind: 'portable' as const,
+            identity: {
+              host: pair.origin.host,
+              repository: pair.origin.repo,
+              path: pair.origin.skillPath,
+            },
+            requestedRef: pair.origin.refRequested,
+            resolvedSha: pair.origin.refResolved,
+            sourcePath: pair.origin.skillPath,
+            contentHash: pair.pinned.contentHash as ArtifactDigest,
+          }
+        : null);
+  const afterImage = operation.after;
+  const ledger = {
+    resourceId: 'ledger:placements',
+    role: 'ledger' as const,
+    state: 'present' as const,
+    repositoryRevision: { kind: 'resource' as const, digest: ZERO_DIGEST },
+    schemaVersion: 2 as const,
+    semanticHash: ZERO_DIGEST,
+  };
+  return {
+    schemaVersion: 1,
+    kind: 'skillsmith.transaction-journal',
+    transactionId: shadow.txId,
+    intent: {
+      operationId: operation.operationId,
+      groupId: operation.groupId,
+      pairId: operation.pairId,
+      kind: operation.kind,
+      skill: operation.skill,
+      source: source as unknown as LogicalJournalV1Dto['intent']['source'],
+      tool: operation.tool,
+      scope: operation.scope,
+      before: operation.before as unknown as LogicalJournalV1Dto['intent']['before'],
+      after: afterImage as unknown as LogicalJournalV1Dto['intent']['after'],
+      mutates: operation.mutates,
+      reversibility: { kind: 'none', retentionResourceIds: [] },
+      conflict: null,
+    },
+    context: {
+      parentOperationId: null,
+      command: 'skillsmith-place',
+      workflow: 'placement-swap',
+      attempt: 1,
+      startedAt: shadow.startedAt,
+    },
+    disposition: 'forward',
+    phase: shadow.phase,
+    actual: {
+      before: [liveActual(operation.before, pair, 'absent'), ledger],
+      after: visible ? [liveActual(afterImage as OperationImage, pair, 'present'), ledger] : [],
+      retained: [],
+    },
+    updatedAt: shadow.completedAt ?? shadow.startedAt,
+    completedAt: shadow.completedAt,
+  };
+};
+
+const hydrateLogicalPendingFromShadow = (
+  model: LedgerModel,
+  scopeKey: string | null,
+  skill: string,
+  tool: string,
+  journal: LogicalJournalV1Dto,
+): Result<LedgerModel, SkillSmithError> => {
+  if (model.transactions[journal.transactionId] !== undefined) return ok(model);
+  const pair = getLedgerPairAt(model, scopeKey, skill, tool);
+  const shadow = pair?.journal;
+  if (
+    pair === null ||
+    shadow === undefined ||
+    shadow === null ||
+    shadow.txId !== journal.transactionId ||
+    shadow.phase === 'committed'
+  ) {
+    return ok(model);
+  }
+
+  const phases = ['prepared', 'staged', 'backed-up', 'live'] as const;
+  const shadowIndex = phases.indexOf(shadow.phase);
+  if (shadowIndex < 0) return ok(model);
+  const preparedPair = withLedgerPairAt(model, scopeKey, skill, tool, {
+    ...pair,
+    journal: { ...shadow, phase: 'prepared', completedAt: null },
+  });
+  if (!preparedPair.ok) return preparedPair;
+
+  let hydrated = preparedPair.value;
+  for (const phase of phases.slice(0, shadowIndex + 1)) {
+    const pending = hydrated.transactions[journal.transactionId];
+    const replay: LogicalJournalV1Dto =
+      pending === undefined
+        ? {
+            ...journal,
+            phase: 'prepared',
+            actual: { ...journal.actual, after: [] },
+            updatedAt: journal.context.startedAt,
+            completedAt: null,
+          }
+        : {
+            ...pending,
+            phase,
+            actual: {
+              ...pending.actual,
+              after: phase === 'live' ? journal.actual.after : [],
+            },
+            updatedAt: journal.updatedAt,
+            completedAt: null,
+          };
+    const advanced = advanceLogicalTransaction(hydrated, replay);
+    if (!advanced.ok) return err(flipFailedError(advanced.error.message));
+    hydrated = advanced.value;
+  }
+  return ok(hydrated);
+};
+
+const persistPair = async (
+  ctx: SwapCtx,
+  scopeKey: string | null,
+  skill: string,
+  tool: string,
+  pair: PairRecord,
+): Promise<Result<void, SkillSmithError>> => {
+  if ('schemaVersion' in ctx.ledger) {
+    setPairAt(ctx.ledger, scopeKey, skill, tool as FlipTool, pair);
+    return ctx.persist();
+  }
+  const operation = ctx.logicalOperation;
+  if (operation !== undefined && pair.journal == null && operation.pairId !== null) {
+    const pending = Object.values(ctx.ledger.transactions).find(
+      (journal) => journal.intent.operationId === operation.operationId,
+    );
+    if (pending !== undefined) {
+      if (pending.phase !== 'live') {
+        return err(flipFailedError('logical placement terminal write requires live state'));
+      }
+      const completedAt = ctx.now();
+      const committed = commitLogicalTransaction(ctx.ledger, {
+        ...pending,
+        phase: 'committed',
+        updatedAt: completedAt,
+        completedAt,
+      });
+      if (!committed.ok) return err(flipFailedError(committed.error.message));
+      ctx.ledger = committed.value;
+      return ctx.persist();
+    }
+  }
+  if (operation !== undefined && pair.journal != null) {
+    const freshJournal = logicalJournalFor(operation, pair, pair.journal);
+    const persistedPending = ctx.ledger.transactions[freshJournal.transactionId];
+    // A crash can make the freshly observed live image differ from the operation's original
+    // before-image (for example, live has already moved to backup). Resume from the durable logical
+    // identity and use the fresh journal only for this phase's observed after-resources/timestamps.
+    const journal: LogicalJournalV1Dto =
+      persistedPending === undefined
+        ? freshJournal
+        : {
+            ...persistedPending,
+            phase: freshJournal.phase,
+            actual: { ...persistedPending.actual, after: freshJournal.actual.after },
+            updatedAt: freshJournal.updatedAt,
+            completedAt: freshJournal.completedAt,
+          };
+    const validation = validateJournalV1DtoShape(journal);
+    if (!validation.ok) {
+      return err(
+        flipFailedError(
+          `logical placement journal is invalid: ${JSON.stringify(validation.error)} ${JSON.stringify(journal.intent)}`,
+        ),
+      );
+    }
+    const hydrated = hydrateLogicalPendingFromShadow(ctx.ledger, scopeKey, skill, tool, journal);
+    if (!hydrated.ok) return hydrated;
+    ctx.ledger = hydrated.value;
+    if (journal.phase === 'committed') {
+      if (ctx.ledger.transactions[journal.transactionId] === undefined) {
+        return err(flipFailedError('logical placement transaction is missing at commit'));
+      }
+      const pendingPair = getLedgerPairAt(ctx.ledger, scopeKey, skill, tool);
+      const staged = withLedgerPairAt(ctx.ledger, scopeKey, skill, tool, {
+        ...(pair as LedgerPairV1Dto),
+        journal: pendingPair?.journal ?? null,
+      });
+      if (!staged.ok) return staged;
+      // Canonical pair replacement validates and normalizes the complete ledger model. Build the
+      // terminal record from that normalized pending record so identity comparison is exact even
+      // when the codec has canonicalized resource ordering.
+      const stagedPending = staged.value.transactions[journal.transactionId];
+      if (stagedPending === undefined) {
+        return err(flipFailedError('logical placement transaction is missing after pair staging'));
+      }
+      const terminalJournal: LogicalJournalV1Dto = {
+        ...stagedPending,
+        phase: 'committed',
+        actual: { ...stagedPending.actual, after: journal.actual.after },
+        updatedAt: journal.updatedAt,
+        completedAt: journal.completedAt,
+      };
+      const committed = commitLogicalTransaction(staged.value, terminalJournal);
+      if (!committed.ok) return err(flipFailedError(committed.error.message));
+      ctx.ledger = committed.value;
+    } else {
+      const pending = ctx.ledger.transactions[journal.transactionId];
+      const transitionJournal: LogicalJournalV1Dto =
+        pending === undefined
+          ? journal
+          : {
+              ...pending,
+              phase: journal.phase,
+              actual: { ...pending.actual, after: journal.actual.after },
+              updatedAt: journal.updatedAt,
+              completedAt: journal.completedAt,
+            };
+      const base =
+        pending === undefined
+          ? withLedgerPairAt(ctx.ledger, scopeKey, skill, tool, pair as LedgerPairV1Dto)
+          : ok(ctx.ledger);
+      if (!base.ok) return base;
+      const advanced = advanceLogicalTransaction(base.value, transitionJournal);
+      if (!advanced.ok) return err(flipFailedError(advanced.error.message));
+      ctx.ledger = advanced.value;
+    }
+  } else {
+    const next = withLedgerPairAt(ctx.ledger, scopeKey, skill, tool, pair as LedgerPairV1Dto);
+    if (!next.ok) return next;
+    ctx.ledger = next.value;
+  }
+  return ctx.persist();
+};
+
+const persistWithoutPair = async (
+  ctx: SwapCtx,
+  scopeKey: string | null,
+  skill: string,
+  tool: string,
+): Promise<Result<void, SkillSmithError>> => {
+  if ('schemaVersion' in ctx.ledger) {
+    deletePairAt(ctx.ledger, scopeKey, skill, tool as FlipTool);
+    return ctx.persist();
+  }
+  const next = withoutLedgerPairAt(ctx.ledger, scopeKey, skill, tool);
+  if (!next.ok) return next;
+  ctx.ledger = next.value;
+  return ctx.persist();
+};
 
 const PHASE_INDEX: Record<JournalPhase, number> = {
   prepared: 0,
@@ -90,11 +453,13 @@ const pause = (signal?: AbortSignal): Promise<void> =>
 // Persist a phase transition (write-ahead) then, if configured, hold in that crash window.
 const advance = async (
   ctx: SwapCtx,
+  plan: SwapPlan,
+  pair: PairRecord,
   j: Journal,
   phase: JournalPhase,
 ): Promise<Result<void, SkillSmithError>> => {
   j.phase = phase;
-  const p = await ctx.persist();
+  const p = await persistPair(ctx, plan.scopeKey ?? null, plan.skill, plan.tool, pair);
   if (!p.ok) return p;
   if (ctx.pauseAt === phase) await pause(ctx.signal);
   return ok(undefined);
@@ -218,7 +583,7 @@ const commit = async (
     }
     j.phase = 'committed';
     j.completedAt = ctx.now();
-    const persisted = await ctx.persist();
+    const persisted = await persistPair(ctx, scopeKey, plan.skill, plan.tool, pair);
     if (!persisted.ok) return persisted;
 
     // Backup reclamation is authorized by the now-durable committed journal.
@@ -259,13 +624,13 @@ const commit = async (
     // write to null the journal.
     if (j.before.mode === 'absent') {
       pair.journal = null;
-      const persisted = await ctx.persist();
+      const persisted = await persistPair(ctx, scopeKey, plan.skill, plan.tool, pair);
       if (!persisted.ok) return persisted;
       return ok({ committed: true, backupKept: null, warning: null });
     }
     j.phase = 'committed';
     j.completedAt = ctx.now();
-    const committed = await ctx.persist();
+    const committed = await persistPair(ctx, scopeKey, plan.skill, plan.tool, pair);
     if (!committed.ok) return committed;
 
     const oldHash = j.before.mode === 'pinned' ? j.before.contentHash : null;
@@ -279,7 +644,7 @@ const commit = async (
     if (!synced.ok) return synced;
 
     pair.journal = null;
-    const terminal = await ctx.persist();
+    const terminal = await persistPair(ctx, scopeKey, plan.skill, plan.tool, pair);
     if (!terminal.ok) return terminal;
     return ok({ committed: true, ...reclaimed.value });
   }
@@ -287,7 +652,7 @@ const commit = async (
   // op === 'uninstall'
   j.phase = 'committed';
   j.completedAt = ctx.now();
-  const committed = await ctx.persist();
+  const committed = await persistPair(ctx, scopeKey, plan.skill, plan.tool, pair);
   if (!committed.ok) return committed;
 
   const reclaimed = await reclaimBackup(
@@ -303,8 +668,7 @@ const commit = async (
   );
   if (!synced.ok) return synced;
 
-  deletePairAt(ctx.ledger, scopeKey, plan.skill, plan.tool);
-  const terminal = await ctx.persist();
+  const terminal = await persistWithoutPair(ctx, scopeKey, plan.skill, plan.tool);
   if (!terminal.ok) return terminal;
   return ok({ committed: true, ...reclaimed.value });
 };
@@ -333,14 +697,21 @@ const forward = async (
     }
     const built = await buildStaging(ctx, plan, j);
     if (!built.ok) return built;
-    const p = await advance(ctx, j, 'staged');
+    const p = await advance(ctx, plan, pair, j, 'staged');
+    if (!p.ok) return p;
+  }
+
+  // Uninstall has no physical staging artifact, but its logical transaction still traverses the
+  // complete adjacent phase protocol. Persist the staged state before backing up/removing live.
+  if (!hasStaging && idx() < PHASE_INDEX.staged) {
+    const p = await advance(ctx, plan, pair, j, 'staged');
     if (!p.ok) return p;
   }
 
   // P3 — persist backed-up, then rename(live → backup) if the live path is still the old entry.
   if (idx() < PHASE_INDEX['backed-up']) {
     if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
-    const p = await advance(ctx, j, 'backed-up');
+    const p = await advance(ctx, plan, pair, j, 'backed-up');
     if (!p.ok) return p;
   }
   if (idx() <= PHASE_INDEX['backed-up']) {
@@ -355,7 +726,7 @@ const forward = async (
   // uninstall (nothing is published).
   if (hasStaging) {
     if (idx() < PHASE_INDEX.live) {
-      const p = await advance(ctx, j, 'live');
+      const p = await advance(ctx, plan, pair, j, 'live');
       if (!p.ok) return p;
     }
     if (idx() <= PHASE_INDEX.live) {
@@ -365,6 +736,11 @@ const forward = async (
         if (!r.ok) return r;
       }
     }
+  } else if (idx() < PHASE_INDEX.live) {
+    // Removing the live entry is the uninstall operation's published state. Record that logical
+    // visibility before committing so forward transactions obey the same live-before-commit rule.
+    const p = await advance(ctx, plan, pair, j, 'live');
+    if (!p.ok) return p;
   }
 
   // P5 — commit.
@@ -541,7 +917,7 @@ export const runSwap = async (
   plan: SwapPlan,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
   const scopeKey = plan.scopeKey ?? null;
-  const existing = getPairAt(ctx.ledger, scopeKey, plan.skill, plan.tool);
+  const existing = pairAt(ctx, scopeKey, plan.skill, plan.tool);
   if (existing?.journal && existing.journal.phase !== 'committed') {
     return err(
       flipRefusedError(
@@ -576,9 +952,7 @@ export const runSwap = async (
   const pairRes = stagePair(plan, existing, before, journal);
   if (!pairRes.ok) return pairRes;
   const pair = pairRes.value;
-  setPairAt(ctx.ledger, scopeKey, plan.skill, plan.tool, pair);
-
-  const p1 = await ctx.persist();
+  const p1 = await persistPair(ctx, scopeKey, plan.skill, plan.tool, pair);
   if (!p1.ok) return p1;
   if (ctx.pauseAt === 'prepared') await pause(ctx.signal);
 
@@ -655,7 +1029,7 @@ export const resumeSwap = async (
   tool: FlipTool,
   scopeKey: string | null = null,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
-  const pair = getPairAt(ctx.ledger, scopeKey, skill, tool);
+  const pair = pairAt(ctx, scopeKey, skill, tool);
   const j = pair?.journal ?? null;
   if (!pair || !j) return err(flipRefusedError(`nothing to resume for ${skill}`));
   const plan = reconstructPlan(pair, j, skill, tool, scopeKey);
@@ -674,7 +1048,7 @@ export const rollbackSwap = async (
   tool: FlipTool,
   scopeKey: string | null = null,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
-  const pair = getPairAt(ctx.ledger, scopeKey, skill, tool);
+  const pair = pairAt(ctx, scopeKey, skill, tool);
   const j = pair?.journal ?? null;
   if (!pair || !j) return err(flipRefusedError(`nothing to roll back for ${skill}`));
 
@@ -690,7 +1064,7 @@ export const rollbackSwap = async (
         return err(mapFsErr(e, `cannot roll back ${skill}`));
       }
       pair.journal = null;
-      const persisted = await ctx.persist();
+      const persisted = await persistPair(ctx, scopeKey, skill, tool, pair);
       if (!persisted.ok) return persisted;
       return ok({ committed: false, backupKept: null, warning: null });
     }
@@ -705,8 +1079,7 @@ export const rollbackSwap = async (
     } catch (e) {
       return err(mapFsErr(e, `cannot roll back ${skill}`));
     }
-    deletePairAt(ctx.ledger, scopeKey, skill, tool);
-    const persisted = await ctx.persist();
+    const persisted = await persistWithoutPair(ctx, scopeKey, skill, tool);
     if (!persisted.ok) return persisted;
     return ok({ committed: false, backupKept: null, warning: null });
   }
@@ -755,7 +1128,7 @@ export const rollbackSwap = async (
   // cannot restore them). The run layer (Task 7) MUST reconcile the ledger record after such a rollback.
   pair.mode = before.mode;
   pair.journal = null;
-  const persisted = await ctx.persist();
+  const persisted = await persistPair(ctx, scopeKey, skill, tool, pair);
   if (!persisted.ok) return persisted;
   return ok({ committed: false, backupKept: null, warning: null });
 };
@@ -769,7 +1142,7 @@ export const sweepCommittedAcquireJournals = async (
   type Target = { scopeKey: string | null; skill: string; tool: FlipTool };
   const targets: Target[] = [];
 
-  const collect = (tree: LedgerFile['skills'], scopeKey: string | null): void => {
+  const collect = (tree: LedgerModel['skills'], scopeKey: string | null): void => {
     for (const skill of Object.keys(tree)) {
       const entry = tree[skill];
       if (!entry) continue;
@@ -792,7 +1165,7 @@ export const sweepCommittedAcquireJournals = async (
 
   const notes: string[] = [];
   for (const t of targets) {
-    const pair = getPairAt(ctx.ledger, t.scopeKey, t.skill, t.tool);
+    const pair = pairAt(ctx, t.scopeKey, t.skill, t.tool);
     const j = pair?.journal ?? null;
     if (!pair || !j) continue;
     const plan = reconstructPlan(pair, j, t.skill, t.tool, t.scopeKey);

@@ -275,6 +275,7 @@ const nonGitProject = (): ProjectContext => ({
 const applicationContext = (ports: RuntimePorts): CurrentApplicationContext => ({
   observation,
   ports,
+  artifactCoordinator: {} as CurrentApplicationContext['artifactCoordinator'],
   configuration: resolveRuntimeConfiguration({}),
   interaction,
   invocationCwd: '/repo',

@@ -98,7 +98,8 @@ const ERROR_MESSAGES: Readonly<Record<ArtifactCodecErrorReason, string>> = Objec
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const MAX_DEPTH = 64;
-const MAX_NODES = 16_384;
+export const DEFAULT_ARTIFACT_MAX_NODES = 16_384 as const;
+export const LEDGER_ARTIFACT_MAX_NODES = 65_536 as const;
 const MAX_ERROR_PATH = 16;
 const ARTIFACT_SENSITIVE_CANARY = 'P17_SECRET_CANARY';
 const staticErrorPaths = (fields: string): ReadonlySet<string> => new Set(fields.split(' '));
@@ -295,13 +296,31 @@ export const decodeArtifactUtf8 = (
 
 type OwnFailure = Readonly<{ path: readonly (string | number)[] }>;
 
-const ownPlainData = (input: unknown): Result<unknown, OwnFailure> => {
+export interface ArtifactTraversalLimits {
+  readonly maxNodes?: number;
+}
+
+const boundedMaxNodes = (limits: ArtifactTraversalLimits | undefined): number => {
+  const requested = limits?.maxNodes;
+  return typeof requested === 'number' &&
+    Number.isSafeInteger(requested) &&
+    requested > 0 &&
+    requested <= LEDGER_ARTIFACT_MAX_NODES
+    ? requested
+    : DEFAULT_ARTIFACT_MAX_NODES;
+};
+
+const ownPlainData = (
+  input: unknown,
+  limits?: ArtifactTraversalLimits,
+): Result<unknown, OwnFailure> => {
   let nodes = 0;
+  const maxNodes = boundedMaxNodes(limits);
   const ancestors = new WeakSet<object>();
 
   const visit = (value: unknown, path: readonly (string | number)[], depth: number): unknown => {
     nodes += 1;
-    if (nodes > MAX_NODES || depth > MAX_DEPTH) throw Object.freeze({ path: boundedOwnPath(path) });
+    if (nodes > maxNodes || depth > MAX_DEPTH) throw Object.freeze({ path: boundedOwnPath(path) });
     if (
       value === null ||
       typeof value === 'string' ||
@@ -393,8 +412,9 @@ export const deepOwnFreeze = <T>(
   artifactId: ArtifactId,
   input: unknown,
   requestedVersion: number | null = null,
+  limits?: ArtifactTraversalLimits,
 ): Result<T, ArtifactCodecError> => {
-  const owned = ownPlainData(input);
+  const owned = ownPlainData(input, limits);
   return owned.ok
     ? ok(owned.value as T)
     : err(artifactCodecError(artifactId, requestedVersion, 'invalid-shape', owned.error.path));
@@ -403,8 +423,11 @@ export const deepOwnFreeze = <T>(
 export const validatePlainData = deepOwnFreeze;
 
 /** Fail-closed sensitive scan over already-safe or hostile unknown data. */
-export const hasSensitiveArtifactContent = (input: unknown): boolean => {
-  const owned = ownPlainData(input);
+export const hasSensitiveArtifactContent = (
+  input: unknown,
+  limits?: ArtifactTraversalLimits,
+): boolean => {
+  const owned = ownPlainData(input, limits);
   if (!owned.ok) return true;
   const pending: unknown[] = [owned.value];
   while (pending.length > 0) {
@@ -436,10 +459,11 @@ export const canonicalJsonBytes = (
   input: unknown,
   requestedVersion: number | null,
   terminalLf: boolean,
+  limits?: ArtifactTraversalLimits,
 ): Result<Uint8Array, ArtifactCodecError> => {
-  const owned = deepOwnFreeze<unknown>(artifactId, input, requestedVersion);
+  const owned = deepOwnFreeze<unknown>(artifactId, input, requestedVersion, limits);
   if (!owned.ok) return owned;
-  if (hasSensitiveArtifactContent(owned.value)) {
+  if (hasSensitiveArtifactContent(owned.value, limits)) {
     return err(artifactCodecError(artifactId, requestedVersion, 'sensitive-content'));
   }
   const source = JSON.stringify(owned.value, null, 2);

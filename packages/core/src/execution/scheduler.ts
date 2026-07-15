@@ -4,6 +4,7 @@ import type {
   CurrentMutatorOperationPlan,
   ExecutableOperation,
   OperationExecutionResult,
+  OperationImage,
 } from '../planning/types.ts';
 import type { ExecutionScheduleOptions, ValidatedExecutionBinding } from './types.ts';
 
@@ -20,17 +21,95 @@ const exactBindingKeys = Object.freeze([
   'unstartedForce',
 ]);
 
+const ARTIFACT_PREREQUISITE_KINDS = Object.freeze([
+  'migrate-ledger',
+  'migrate-project-config',
+  'write-lock',
+] as const);
+
+type ArtifactPrerequisiteKind = (typeof ARTIFACT_PREREQUISITE_KINDS)[number];
+
+const isArtifactPrerequisiteKind = (kind: string): kind is ArtifactPrerequisiteKind =>
+  ARTIFACT_PREREQUISITE_KINDS.some((candidate) => candidate === kind);
+
+const sameLocation = (left: unknown, right: unknown): boolean =>
+  canonicalPlanningString(left) === canonicalPlanningString(right);
+
+const validArtifactImages = (
+  kind: ArtifactPrerequisiteKind,
+  before: OperationImage,
+  after: OperationImage,
+): boolean => {
+  if (kind === 'migrate-ledger') {
+    return (
+      before.kind === 'ledger' &&
+      before.schemaVersion === 1 &&
+      after.kind === 'ledger' &&
+      after.schemaVersion === 2 &&
+      sameLocation(before.projectRoot, after.projectRoot)
+    );
+  }
+  if (kind === 'migrate-project-config') {
+    return (
+      before.kind === 'manifest' &&
+      before.shape === 'legacy' &&
+      after.kind === 'manifest' &&
+      after.shape === 'canonical' &&
+      sameLocation(before.location, after.location)
+    );
+  }
+  return (
+    after.kind === 'lock' &&
+    ((before.kind === 'absent' &&
+      before.resource.kind === 'lock' &&
+      sameLocation(before.resource.location, after.location)) ||
+      (before.kind === 'lock' && sameLocation(before.location, after.location)))
+  );
+};
+
+const validateArtifactPrerequisite = (operation: ExecutableOperation): void => {
+  const kind: ArtifactPrerequisiteKind = isArtifactPrerequisiteKind(operation.kind)
+    ? operation.kind
+    : fail(`null-pair operation ${operation.operationId} has an unsupported kind`);
+  if (
+    operation.skill !== null ||
+    operation.source !== null ||
+    operation.tool !== null ||
+    operation.scope !== null
+  ) {
+    fail(`artifact prerequisite ${operation.operationId} requires null pair identity fields`);
+  }
+  if (
+    operation.reversibility.kind !== 'none' ||
+    operation.reversibility.retentionResourceIds.length !== 0 ||
+    operation.conflict !== null
+  ) {
+    fail(`artifact prerequisite ${operation.operationId} must be non-reversible and conflict-free`);
+  }
+  const expectedMutations =
+    kind === 'migrate-ledger'
+      ? { live: false, manifest: false, lock: false, ledger: true }
+      : kind === 'migrate-project-config'
+        ? { live: false, manifest: true, lock: false, ledger: false }
+        : { live: false, manifest: false, lock: true, ledger: false };
+  if (
+    !sameLocation(operation.mutates, expectedMutations) ||
+    !validArtifactImages(kind, operation.before, operation.after)
+  ) {
+    fail(`artifact prerequisite ${operation.operationId} has an invalid artifact-only mutation`);
+  }
+};
+
 export const validateExecutionPlanShape = (plan: CurrentMutatorOperationPlan): void => {
   const pairs = new Map<string, number>();
   const closedGroups = new Set<string>();
+  const groupOperationCounts = new Map<string, number>();
+  const artifactGroups = new Set<string>();
   let currentGroup: string | null = null;
   for (const operation of plan.operations) {
-    if (operation.pairId === null) fail(`operation ${operation.operationId} requires a pair`);
-    const pairId = operation.pairId as string;
     if (operation.dependencyMetadata.operationIds.length > 0) {
       fail(`operation ${operation.operationId} dependency metadata must be empty in this slice`);
     }
-    pairs.set(pairId, (pairs.get(pairId) ?? 0) + 1);
     if (operation.groupId !== currentGroup) {
       if (closedGroups.has(operation.groupId)) {
         fail(`operation group ${operation.groupId} is not contiguous`);
@@ -38,9 +117,30 @@ export const validateExecutionPlanShape = (plan: CurrentMutatorOperationPlan): v
       if (currentGroup !== null) closedGroups.add(currentGroup);
       currentGroup = operation.groupId;
     }
+    const groupCount = groupOperationCounts.get(operation.groupId) ?? 0;
+    groupOperationCounts.set(operation.groupId, groupCount + 1);
+    if (operation.pairId === null) {
+      validateArtifactPrerequisite(operation);
+      if (artifactGroups.has(operation.groupId) || groupCount !== 0) {
+        fail(`artifact prerequisite ${operation.operationId} must be the unique group prefix`);
+      }
+      artifactGroups.add(operation.groupId);
+    } else {
+      pairs.set(operation.pairId, (pairs.get(operation.pairId) ?? 0) + 1);
+    }
   }
   for (const [pairId, count] of pairs) {
     if (count !== 1) fail(`pair ${pairId} must contain exactly one operation`);
+  }
+  if (String(plan.command) === 'doctor') {
+    if (plan.batchPolicy !== 'continue-on-error') {
+      fail('doctor artifact repairs require continue-on-error');
+    }
+    for (const operation of plan.operations) {
+      if (operation.pairId !== null || groupOperationCounts.get(operation.groupId) !== 1) {
+        fail(`doctor operation ${operation.operationId} must be a null-pair singleton group`);
+      }
+    }
   }
 };
 
@@ -174,7 +274,24 @@ export const scheduleValidatedOperationPlan = async (
       }
       const result = await executeBinding(bindings[index] as ValidatedExecutionBinding);
       results.push(result);
-      if (result.outcome === 'failed') groupFailed = true;
+      if (result.outcome === 'failed') {
+        groupFailed = true;
+        const operation = plan.operations[index] as ExecutableOperation;
+        if (operation.pairId === null) {
+          for (let remaining = index + 1; remaining < groupEnd; remaining += 1) {
+            results.push(
+              unstartedResult(
+                bindings[remaining] as ValidatedExecutionBinding,
+                'skipped-after-failure',
+              ),
+            );
+          }
+          if (operation.kind === 'migrate-ledger' && plan.command !== 'doctor') {
+            stopAfterFailure = true;
+          }
+          break;
+        }
+      }
       if (result.outcome === 'cancelled') {
         for (let remaining = index + 1; remaining < bindings.length; remaining += 1) {
           results.push(

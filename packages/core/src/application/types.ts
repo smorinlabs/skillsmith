@@ -1,3 +1,4 @@
+import type { ArtifactCoordinatorPorts } from '../artifacts/coordinator-types.ts';
 import type { EffectiveConfig } from '../config/types.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { ObservationBundle } from '../observation/index.ts';
@@ -96,6 +97,7 @@ export interface InteractionPort {
 export interface ApplicationContext {
   readonly observation: ObservationBundle;
   readonly ports: RuntimePorts;
+  readonly artifactCoordinator: ArtifactCoordinatorPorts;
   readonly configuration: ResolvedRuntimeConfiguration;
   readonly interaction: InteractionPort;
   readonly invocationCwd: string;

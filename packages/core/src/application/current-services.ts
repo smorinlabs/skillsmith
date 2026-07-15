@@ -1,3 +1,4 @@
+import { createNodeArtifactCoordinatorPorts } from '../artifacts/node-coordinator.ts';
 import { VERSION } from '../version.ts';
 import { LIFECYCLE_APPLICATION_SERVICES } from './lifecycle-services.ts';
 import { CURRENT_READ_APPLICATIONS } from './read-services.ts';
@@ -14,6 +15,9 @@ export type VersionApplicationRequest = Readonly<Record<string, never>>;
 export interface VersionReport {
   readonly version: string;
 }
+
+/** Production composition seam; applications receive the resulting focused capability. */
+export const defaultArtifactCoordinatorPorts = createNodeArtifactCoordinatorPorts;
 
 /**
  * Zero-discovery application canary. It intentionally does not inspect the transitional context,

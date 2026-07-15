@@ -1,6 +1,11 @@
 import type { FLIP_TOOLS } from '../agents/registry.ts';
+import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { SkillSmithError } from '../errors.ts';
-import type { OperationExecutionResult, OperationPlan } from '../planning/types.ts';
+import type {
+  ExecutableOperation,
+  OperationExecutionResult,
+  OperationPlan,
+} from '../planning/types.ts';
 import type {
   ClockPort,
   FileReadPort,
@@ -131,8 +136,9 @@ export interface Provenance {
 export interface SwapCtx {
   env: SwapPorts;
   ledgerPath: string;
-  ledger: LedgerFile; // mutated in place by the engine
-  persist: () => Promise<Result<void, SkillSmithError>>; // writeLedger(env, ledgerPath, ledger)
+  ledger: LedgerModel | LedgerFile;
+  persist: () => Promise<Result<void, SkillSmithError>>;
+  logicalOperation?: ExecutableOperation;
   now: () => string; // injectable clock (ISO string)
   newTxId: () => string; // injectable 8-hex generator
   pauseAt?: JournalPhase | undefined; // test seam, see swap.ts

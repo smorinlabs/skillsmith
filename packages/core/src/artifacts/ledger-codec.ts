@@ -4,6 +4,7 @@ import { type Result, err, ok } from '../result.ts';
 import {
   type ArtifactCodec,
   type ArtifactCodecError,
+  LEDGER_ARTIFACT_MAX_NODES,
   artifactCodecError,
   canonicalJsonBytes,
   decodeArtifactUtf8,
@@ -18,6 +19,7 @@ import type {
   LedgerConsumerV2Dto,
   LedgerMigrationV1ToV2,
   LedgerModel,
+  LedgerPairIdentity,
   LedgerPairV1Dto,
   LedgerSkillsV1Dto,
   LedgerSkillsV2Dto,
@@ -30,6 +32,7 @@ import { validateJournalV1DtoShape } from './registry.ts';
 
 type Path = readonly (string | number)[];
 type JsonRecord = Record<string, unknown>;
+const LEDGER_TRAVERSAL_LIMITS = Object.freeze({ maxNodes: LEDGER_ARTIFACT_MAX_NODES });
 
 const STATIC_PATHS = new Set(
   'schemaVersion kind updatedAt skills projects projectRegistrations transactions history tools placementPath mode dev sourcePath resolvedPath repoRoot sourceRelPath remote recordedAt pinned storePath rev gitSha dirty contentHash snapshotAt verify placement origin source host repo skillPath refRequested refResolved pin installedAt journal op txId phase startedAt completedAt before liveKind symlinkTarget stagingPath backupPath consumers skill tool store path transactionId'.split(
@@ -268,7 +271,7 @@ const canonicalConsumer = (value: LedgerConsumerV2Dto): LedgerConsumerV2Dto => (
   store:
     value.store === null ? null : { path: value.store.path, contentHash: value.store.contentHash },
 });
-const deriveRegistrations = (
+export const deriveLedgerProjectRegistrations = (
   projects: LedgerV2Dto['projects'],
 ): LedgerV2Dto['projectRegistrations'] =>
   sortedRecord(projects, (project) => {
@@ -300,7 +303,7 @@ const ownAndParse = <T>(
   schema: z.ZodType<T>,
   requestedVersion: 1 | 2,
 ): Result<T, ArtifactCodecError> => {
-  const owned = deepOwnFreeze<unknown>('ledger', input, requestedVersion);
+  const owned = deepOwnFreeze<unknown>('ledger', input, requestedVersion, LEDGER_TRAVERSAL_LIMITS);
   if (!owned.ok) return owned;
   const parsed = schema.safeParse(owned.value);
   return parsed.success
@@ -325,7 +328,7 @@ export const validateLedgerV1Dto = (input: unknown): Result<LedgerV1Dto, Artifac
           })),
         }),
   };
-  if (hasSensitiveArtifactContent(value)) {
+  if (hasSensitiveArtifactContent(value, LEDGER_TRAVERSAL_LIMITS)) {
     return err(codecError('sensitive-content', [], 1));
   }
   return ok(deepFreeze(canonical));
@@ -366,6 +369,183 @@ const validateLogicalJournals = (
   return ok({ transactions: Object.fromEntries(transactionEntries), history: canonicalHistory });
 };
 
+interface LedgerLegacyJournalEntry {
+  readonly identity: LedgerPairIdentity;
+  readonly pair: LedgerPairV1Dto;
+  readonly journal: NonNullable<LedgerPairV1Dto['journal']>;
+}
+
+const samePairIdentity = (left: LedgerPairIdentity, right: LedgerPairIdentity): boolean =>
+  left.projectRoot === right.projectRoot && left.skill === right.skill && left.tool === right.tool;
+
+/** Exact pair identity recorded by one logical placement journal, or null for artifact/multi-pair work. */
+export const logicalJournalPairIdentity = (
+  journal: LogicalJournalV1Dto,
+): LedgerPairIdentity | null => {
+  if (
+    journal.intent.skill === null ||
+    journal.intent.tool === null ||
+    journal.intent.scope === null
+  ) {
+    return null;
+  }
+  const roots = new Set<string | null>();
+  for (const image of [journal.intent.before, journal.intent.after]) {
+    if ((image.kind === 'placement' || image.kind === 'absent') && image.resource.kind === 'live') {
+      const root = image.resource.projectRoot;
+      if (root !== null && root.kind !== 'machine-bound') return null;
+      roots.add(root === null ? null : root.path);
+    }
+  }
+  if (roots.size !== 1) return null;
+  const projectRoot = [...roots][0] ?? null;
+  if (
+    (journal.intent.scope === 'user' && projectRoot !== null) ||
+    (journal.intent.scope === 'project' && projectRoot === null)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    projectRoot,
+    skill: journal.intent.skill,
+    tool: journal.intent.tool,
+  });
+};
+
+type LegacyJournalOperation = NonNullable<LedgerPairV1Dto['journal']>['op'];
+
+const ROLLBACK_SHADOW_OPERATIONS = Object.freeze(['rollback'] as const);
+const INSTALL_SHADOW_OPERATIONS = Object.freeze(['install'] as const);
+const UPDATE_SHADOW_OPERATIONS = Object.freeze(['install', 'promote'] as const);
+const UNINSTALL_SHADOW_OPERATIONS = Object.freeze(['uninstall'] as const);
+const DEV_SHADOW_OPERATIONS = Object.freeze(['dev'] as const);
+const PROMOTE_SHADOW_OPERATIONS = Object.freeze(['promote'] as const);
+
+const shadowOperations = (
+  journal: LogicalJournalV1Dto,
+): readonly LegacyJournalOperation[] | null => {
+  if (journal.disposition === 'rollback') return ROLLBACK_SHADOW_OPERATIONS;
+  switch (journal.intent.kind) {
+    case 'install':
+      return INSTALL_SHADOW_OPERATIONS;
+    case 'update':
+      return UPDATE_SHADOW_OPERATIONS;
+    case 'remove':
+      return UNINSTALL_SHADOW_OPERATIONS;
+    case 'link-dev':
+      return DEV_SHADOW_OPERATIONS;
+    case 'promote':
+      return PROMOTE_SHADOW_OPERATIONS;
+    default:
+      return null;
+  }
+};
+
+/** Closed logical/legacy compatibility-shadow predicate shared by codec and status projection. */
+export const legacyJournalMatchesLogicalShadow = (
+  logical: LogicalJournalV1Dto,
+  identity: LedgerPairIdentity,
+  pair: LedgerPairV1Dto,
+): boolean => {
+  const physical = pair.journal;
+  const logicalIdentity = logicalJournalPairIdentity(logical);
+  const operations = shadowOperations(logical);
+  if (
+    physical === undefined ||
+    physical === null ||
+    logicalIdentity === null ||
+    operations === null ||
+    !samePairIdentity(logicalIdentity, identity)
+  ) {
+    return false;
+  }
+  const paths = new Set(
+    [...logical.actual.before, ...logical.actual.after]
+      .filter((resource) => resource.role === 'live')
+      .map((resource) => resource.placementPath),
+  );
+  return (
+    paths.size === 1 &&
+    paths.has(pair.placementPath) &&
+    physical.txId === logical.transactionId &&
+    operations.includes(physical.op) &&
+    physical.phase === logical.phase &&
+    physical.startedAt === logical.context.startedAt &&
+    physical.completedAt === logical.completedAt
+  );
+};
+
+const collectLegacyJournals = (
+  skills: LedgerSkillsV2Dto,
+  projects: LedgerV2Dto['projects'],
+): readonly LedgerLegacyJournalEntry[] => {
+  const values: LedgerLegacyJournalEntry[] = [];
+  const visit = (tree: LedgerSkillsV2Dto, projectRoot: string | null): void => {
+    for (const [skill, entry] of sortedEntries(tree)) {
+      for (const [tool, pair] of sortedEntries(entry.tools)) {
+        if (pair.journal !== undefined && pair.journal !== null) {
+          values.push({ identity: { projectRoot, skill, tool }, pair, journal: pair.journal });
+        }
+      }
+    }
+  };
+  visit(skills, null);
+  for (const [root, project] of sortedEntries(projects)) visit(project.skills, root);
+  return values;
+};
+
+const validateLedgerCrossReferences = (
+  skills: LedgerSkillsV2Dto,
+  projects: LedgerV2Dto['projects'],
+  transactions: Readonly<Record<string, LogicalJournalV1Dto>>,
+  history: readonly LogicalJournalV1Dto[],
+): Result<void, ArtifactCodecError> => {
+  const logicalById = new Map<string, LogicalJournalV1Dto>();
+  for (const logical of [...Object.values(transactions), ...history]) {
+    if (logicalById.has(logical.transactionId)) {
+      return err(codecError('invalid-shape', ['history'], 2));
+    }
+    logicalById.set(logical.transactionId, logical);
+  }
+
+  const legacyById = new Map<string, LedgerLegacyJournalEntry>();
+  for (const legacy of collectLegacyJournals(skills, projects)) {
+    if (legacyById.has(legacy.journal.txId)) {
+      return err(codecError('invalid-shape', ['skills'], 2));
+    }
+    legacyById.set(legacy.journal.txId, legacy);
+    const logical = logicalById.get(legacy.journal.txId);
+    if (
+      logical !== undefined &&
+      !legacyJournalMatchesLogicalShadow(logical, legacy.identity, legacy.pair)
+    ) {
+      return err(codecError('invalid-shape', ['skills'], 2));
+    }
+    if (
+      logical !== undefined &&
+      logical.phase === 'committed' &&
+      logical.disposition === 'forward' &&
+      (logical.intent.kind === 'install' || logical.intent.kind === 'remove')
+    ) {
+      return err(codecError('invalid-shape', ['skills'], 2));
+    }
+  }
+
+  for (const logical of Object.values(transactions)) {
+    const operations = shadowOperations(logical);
+    const identity = logicalJournalPairIdentity(logical);
+    if (operations === null || identity === null) continue;
+    const legacy = legacyById.get(logical.transactionId);
+    if (
+      legacy === undefined ||
+      !legacyJournalMatchesLogicalShadow(logical, identity, legacy.pair)
+    ) {
+      return err(codecError('invalid-shape', ['transactions', logical.transactionId], 2));
+    }
+  }
+  return ok(undefined);
+};
+
 const validateLedgerV2DtoShape = (input: unknown): Result<LedgerV2Dto, ArtifactCodecError> => {
   const parsed = ownAndParse(input, LedgerV2Schema, 2);
   if (!parsed.ok) return parsed;
@@ -375,12 +555,19 @@ const validateLedgerV2DtoShape = (input: unknown): Result<LedgerV2Dto, ArtifactC
   if (JSON.stringify(Object.keys(projects)) !== JSON.stringify(Object.keys(registrations))) {
     return err(codecError('invalid-shape', ['projectRegistrations'], 2));
   }
-  const expected = deriveRegistrations(projects);
+  const expected = deriveLedgerProjectRegistrations(projects);
   if (JSON.stringify(registrations) !== JSON.stringify(expected)) {
     return err(codecError('invalid-shape', ['projectRegistrations'], 2));
   }
   const journals = validateLogicalJournals(value.transactions, value.history);
   if (!journals.ok) return journals;
+  const crossReferences = validateLedgerCrossReferences(
+    value.skills,
+    projects,
+    journals.value.transactions,
+    journals.value.history,
+  );
+  if (!crossReferences.ok) return crossReferences;
   return ok(
     deepFreeze({
       schemaVersion: 2 as const,
@@ -398,7 +585,7 @@ const validateLedgerV2DtoShape = (input: unknown): Result<LedgerV2Dto, ArtifactC
 export const validateLedgerV2Dto = (input: unknown): Result<LedgerV2Dto, ArtifactCodecError> => {
   const shaped = validateLedgerV2DtoShape(input);
   if (!shaped.ok) return shaped;
-  return hasSensitiveArtifactContent(shaped.value)
+  return hasSensitiveArtifactContent(shaped.value, LEDGER_TRAVERSAL_LIMITS)
     ? err(codecError('sensitive-content', [], 2))
     : shaped;
 };
@@ -415,7 +602,7 @@ export const migrateLedgerV1DtoToV2Dto = (
     updatedAt: source.value.updatedAt,
     skills: source.value.skills,
     projects,
-    projectRegistrations: deriveRegistrations(projects),
+    projectRegistrations: deriveLedgerProjectRegistrations(projects),
     transactions: {},
     history: [],
   });
@@ -468,7 +655,7 @@ export const toLedgerV1Dto = (model: LedgerModel): Result<LedgerV1Dto, ArtifactC
     !v1ToolsOnly(v2.value.skills) ||
     !Object.values(v2.value.projects).every((project) => v1ToolsOnly(project.skills)) ||
     JSON.stringify(v2.value.projectRegistrations) !==
-      JSON.stringify(deriveRegistrations(v2.value.projects))
+      JSON.stringify(deriveLedgerProjectRegistrations(v2.value.projects))
   ) {
     return err(codecError('invalid-shape', [], 1));
   }
@@ -656,7 +843,9 @@ export const ledgerV1Codec: ArtifactCodec<'ledger', 1, LedgerV1Dto, LedgerModel>
   },
   encode(model: LedgerModel) {
     const dto = toLedgerV1Dto(model);
-    return dto.ok ? canonicalJsonBytes('ledger', dto.value, 1, false) : dto;
+    return dto.ok
+      ? canonicalJsonBytes('ledger', dto.value, 1, false, LEDGER_TRAVERSAL_LIMITS)
+      : dto;
   },
 });
 
@@ -692,7 +881,7 @@ export const ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel>
     if (!bytesEqual(parsed.value.bytes, canonical)) {
       return err(codecError('noncanonical', [], 2));
     }
-    if (hasSensitiveArtifactContent(dto.value)) {
+    if (hasSensitiveArtifactContent(dto.value, LEDGER_TRAVERSAL_LIMITS)) {
       return err(codecError('sensitive-content', [], 2));
     }
     const model = modelFromV2(dto.value);
@@ -707,7 +896,7 @@ export const ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel>
   },
   encode(model: LedgerModel) {
     const dto = toLedgerV2Dto(model);
-    return dto.ok ? canonicalJsonBytes('ledger', dto.value, 2, true) : dto;
+    return dto.ok ? canonicalJsonBytes('ledger', dto.value, 2, true, LEDGER_TRAVERSAL_LIMITS) : dto;
   },
 });
 
@@ -733,7 +922,7 @@ export const ledgerSemanticRevision = (
     transactions: dto.value.transactions,
     history: dto.value.history,
   };
-  if (hasSensitiveArtifactContent(projection)) {
+  if (hasSensitiveArtifactContent(projection, LEDGER_TRAVERSAL_LIMITS)) {
     return err(codecError('sensitive-content', [], 2));
   }
   return ok(hashResource(`ledger-semantic-v1\0${JSON.stringify(projection, null, 2)}`));

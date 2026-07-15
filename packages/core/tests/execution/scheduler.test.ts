@@ -23,6 +23,7 @@ type ScheduleOperationPlan = (
 
 const core = publicCore as unknown as UnknownRecord;
 const CONTENT_HASH = `sha256:${'a'.repeat(64)}` as OperationDigest;
+const OTHER_HASH = `sha256:${'b'.repeat(64)}` as OperationDigest;
 const SOURCE: OperationSource = {
   kind: 'portable',
   identity: { host: 'example.test', repository: 'fixture/repo', path: 'skills/alpha' },
@@ -126,6 +127,122 @@ const operationFor = (input: {
   };
 };
 
+const artifactOperationFor = (input: {
+  readonly kind: 'migrate-ledger' | 'migrate-project-config' | 'write-lock';
+  readonly groupId?: string;
+}): ExecutableOperation => {
+  const groupId =
+    input.groupId ??
+    createOperationGroupId({
+      domain: 'skillsmith.operation-group-identity',
+      schemaVersion: 1,
+      command: 'install',
+      skill: null,
+      source: null,
+      scope: null,
+      target: `artifacts/${input.kind}`,
+    });
+  const operationId = createOperationId({
+    domain: 'skillsmith.operation-identity',
+    schemaVersion: 1,
+    groupId,
+    pairId: null,
+    kind: input.kind,
+    skill: null,
+    source: null,
+    tool: null,
+    scope: null,
+  });
+  const location = { kind: 'portable' as const, token: 'artifacts/skills-lock.json' };
+  const manifest = {
+    version: 1 as const,
+    defaults: null,
+    registry: null,
+    skills: [],
+  };
+  const manifestLocation = { kind: 'portable' as const, token: 'artifacts/skills.json' };
+  const before: OperationImage =
+    input.kind === 'migrate-ledger'
+      ? {
+          kind: 'ledger',
+          projectRoot: null,
+          schemaVersion: 1,
+          byteHash: CONTENT_HASH,
+          semanticHash: CONTENT_HASH,
+        }
+      : input.kind === 'migrate-project-config'
+        ? {
+            kind: 'manifest',
+            location: manifestLocation,
+            shape: 'legacy',
+            version: 1,
+            byteHash: CONTENT_HASH,
+            semanticHash: CONTENT_HASH,
+            value: manifest,
+          }
+        : { kind: 'absent', resource: { kind: 'lock', location } };
+  const after: OperationImage =
+    input.kind === 'migrate-ledger'
+      ? {
+          kind: 'ledger',
+          projectRoot: null,
+          schemaVersion: 2,
+          byteHash: OTHER_HASH,
+          semanticHash: OTHER_HASH,
+        }
+      : input.kind === 'migrate-project-config'
+        ? {
+            kind: 'manifest',
+            location: manifestLocation,
+            shape: 'canonical',
+            version: 1,
+            byteHash: OTHER_HASH,
+            semanticHash: CONTENT_HASH,
+            value: manifest,
+          }
+        : {
+            kind: 'lock',
+            location,
+            version: 1,
+            canonicalHash: OTHER_HASH,
+            value: {
+              version: 1,
+              hashSchemaVersion: 1,
+              manifestHash: CONTENT_HASH,
+              skills: [],
+            },
+          };
+  return {
+    operationId,
+    groupId,
+    pairId: null,
+    kind: input.kind,
+    dependencyMetadata: {
+      domain: 'skillsmith.operation-dependency',
+      schemaVersion: 1,
+      operationIds: [],
+    },
+    skill: null,
+    source: null,
+    tool: null,
+    scope: null,
+    before,
+    after,
+    reason: { code: `${input.kind}-required`, message: `${input.kind} required by fixture.` },
+    selectionSource: 'explicit-targets',
+    preconditionIds: ['precondition:v1:fixture'],
+    requiredCheckIds: [],
+    reversibility: { kind: 'none', retentionResourceIds: [] },
+    mutates:
+      input.kind === 'migrate-ledger'
+        ? { live: false, manifest: false, lock: false, ledger: true }
+        : input.kind === 'migrate-project-config'
+          ? { live: false, manifest: true, lock: false, ledger: false }
+          : { live: false, manifest: false, lock: true, ledger: false },
+    conflict: null,
+  };
+};
+
 const planFor = (operations: readonly ExecutableOperation[]): CurrentMutatorOperationPlan =>
   createOperationPlan({
     domain: 'skillsmith.operation-plan',
@@ -142,6 +259,19 @@ const planFor = (operations: readonly ExecutableOperation[]): CurrentMutatorOper
     checks: [],
     diagnostics: [],
   });
+
+const structuralPlanFor = (
+  operations: readonly ExecutableOperation[],
+  batchPolicy: CurrentMutatorOperationPlan['batchPolicy'],
+): CurrentMutatorOperationPlan => {
+  const live = operations.find((operation) => operation.pairId !== null);
+  if (live === undefined) throw new Error('scheduler fixture requires one pair-bound operation');
+  return Object.freeze({
+    ...planFor([live]),
+    batchPolicy,
+    operations: Object.freeze([...operations]),
+  });
+};
 
 const bindingFor = (operation: ExecutableOperation, calls: string[]): UnknownRecord => ({
   operationId: operation.operationId,
@@ -267,5 +397,138 @@ describe('G3B-02 operation scheduler', () => {
 
     expect(calls).toEqual(plan.operations.map(({ operationId }) => operationId));
     expect(results.map(({ outcome }) => outcome)).toEqual(['rolled-back', 'succeeded']);
+  });
+
+  test('admits only exact null-pair artifact prerequisite shapes', async () => {
+    const live = operationFor({ skill: 'alpha' });
+    const prerequisite = artifactOperationFor({ kind: 'migrate-ledger' });
+    const plan = structuralPlanFor([prerequisite, live], 'fail-fast');
+    const scheduleOperationPlan = requireScheduler();
+    const calls: string[] = [];
+
+    const results = await scheduleOperationPlan(
+      plan,
+      plan.operations.map((operation) => bindingFor(operation, calls)),
+    );
+    expect(calls).toEqual([prerequisite.operationId, live.operationId]);
+    expect(results.map(({ outcome }) => outcome)).toEqual(['succeeded', 'succeeded']);
+
+    const malformed = {
+      ...prerequisite,
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+    } as ExecutableOperation;
+    const malformedPlan = structuralPlanFor([malformed, live], 'fail-fast');
+    const malformedCalls: string[] = [];
+    await expect(
+      scheduleOperationPlan(
+        malformedPlan,
+        malformedPlan.operations.map((operation) => bindingFor(operation, malformedCalls)),
+      ),
+    ).rejects.toThrow(/artifact.*mutation|null-pair.*shape/i);
+    expect(malformedCalls).toEqual([]);
+  });
+
+  test('gates global ledger migration and same-group artifact failures', async () => {
+    const scheduleOperationPlan = requireScheduler();
+    const alpha = operationFor({ skill: 'alpha' });
+    const beta = operationFor({ skill: 'beta' });
+    const migration = artifactOperationFor({ kind: 'migrate-ledger' });
+    const globalPlan = structuralPlanFor([migration, alpha, beta], 'continue-on-error');
+    const globalCalls: string[] = [];
+    const globalResults = await scheduleOperationPlan(
+      globalPlan,
+      globalPlan.operations.map((operation, index) => ({
+        ...bindingFor(operation, []),
+        execute: async () => {
+          globalCalls.push(operation.operationId);
+          return createOperationExecutionResult({
+            operationId: operation.operationId,
+            outcome: index === 0 ? 'failed' : 'succeeded',
+            actualBefore: operation.before,
+            actualAfter: index === 0 ? operation.before : operation.after,
+            force: null,
+            error:
+              index === 0
+                ? { code: 'fixture-failed', message: 'Fixture failed.', remediation: 'Retry.' }
+                : null,
+          });
+        },
+      })),
+    );
+    expect(globalCalls).toEqual([migration.operationId]);
+    expect(globalResults.map(({ outcome }) => outcome)).toEqual([
+      'failed',
+      'skipped-after-failure',
+      'skipped-after-failure',
+    ]);
+
+    const sameGroupAlpha = operationFor({ skill: 'alpha' });
+    const lock = artifactOperationFor({ kind: 'write-lock', groupId: sameGroupAlpha.groupId });
+    const independent = operationFor({ skill: 'beta' });
+    const groupPlan = structuralPlanFor([lock, sameGroupAlpha, independent], 'continue-on-error');
+    const groupCalls: string[] = [];
+    const groupResults = await scheduleOperationPlan(
+      groupPlan,
+      groupPlan.operations.map((operation, index) => ({
+        ...bindingFor(operation, []),
+        execute: async () => {
+          groupCalls.push(operation.operationId);
+          return createOperationExecutionResult({
+            operationId: operation.operationId,
+            outcome: index === 0 ? 'failed' : 'succeeded',
+            actualBefore: operation.before,
+            actualAfter: index === 0 ? operation.before : operation.after,
+            force: null,
+            error:
+              index === 0
+                ? { code: 'fixture-failed', message: 'Fixture failed.', remediation: 'Retry.' }
+                : null,
+          });
+        },
+      })),
+    );
+    expect(groupCalls).toEqual([lock.operationId, independent.operationId]);
+    expect(groupResults.map(({ outcome }) => outcome)).toEqual([
+      'failed',
+      'skipped-after-failure',
+      'succeeded',
+    ]);
+  });
+
+  test('continues independent doctor artifact repairs after ledger migration failure', async () => {
+    const scheduleOperationPlan = requireScheduler();
+    const migration = artifactOperationFor({ kind: 'migrate-ledger' });
+    const manifest = artifactOperationFor({ kind: 'migrate-project-config' });
+    const doctorPlan = {
+      ...planFor([operationFor({ skill: 'doctor-shape' })]),
+      command: 'doctor',
+      batchPolicy: 'continue-on-error',
+      operations: [migration, manifest],
+    } as CurrentMutatorOperationPlan;
+    const calls: string[] = [];
+
+    const results = await scheduleOperationPlan(
+      doctorPlan,
+      doctorPlan.operations.map((operation, index) => ({
+        ...bindingFor(operation, []),
+        execute: async () => {
+          calls.push(operation.operationId);
+          return createOperationExecutionResult({
+            operationId: operation.operationId,
+            outcome: index === 0 ? 'failed' : 'succeeded',
+            actualBefore: operation.before,
+            actualAfter: index === 0 ? operation.before : operation.after,
+            force: null,
+            error:
+              index === 0
+                ? { code: 'fixture-failed', message: 'Fixture failed.', remediation: 'Retry.' }
+                : null,
+          });
+        },
+      })),
+    );
+
+    expect(calls).toEqual([migration.operationId, manifest.operationId]);
+    expect(results.map(({ outcome }) => outcome)).toEqual(['failed', 'succeeded']);
   });
 });

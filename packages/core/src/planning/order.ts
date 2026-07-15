@@ -18,6 +18,11 @@ const scopeOrder = new Map<OperationScope, number>([
 const operationKindOrder = new Map<string, number>(
   EXECUTABLE_OPERATION_KINDS.map((kind, index) => [kind, index]),
 );
+const artifactPrerequisiteOrder = new Map<string, number>([
+  ['migrate-ledger', 0],
+  ['migrate-project-config', 1],
+  ['write-lock', 2],
+]);
 
 const rank = (value: string | null, order: ReadonlyMap<string, number>): number =>
   value === null ? Number.MAX_SAFE_INTEGER : (order.get(value) ?? Number.MAX_SAFE_INTEGER - 1);
@@ -39,6 +44,10 @@ export const compareExecutableOperations = (
   left: ExecutableOperation,
   right: ExecutableOperation,
 ): number =>
+  Number(left.pairId !== null) - Number(right.pairId !== null) ||
+  (left.pairId === null && right.pairId === null
+    ? rank(left.kind, artifactPrerequisiteOrder) - rank(right.kind, artifactPrerequisiteOrder)
+    : 0) ||
   rank(left.scope, scopeOrder) - rank(right.scope, scopeOrder) ||
   comparePlanningText(left.skill ?? '', right.skill ?? '') ||
   comparePlanningText(

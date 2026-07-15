@@ -13,7 +13,12 @@ import { join } from 'node:path';
 import { runInstall, runUninstall } from '../../src/acquire/run.ts';
 import type { InstallDeps, InstallOptions, UninstallDeps } from '../../src/acquire/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { getPairAt, readLedger, writeLedger } from '../../src/place/ledger.ts';
+import {
+  getLedgerPairAt as getPairAt,
+  readLedgerState,
+  withLedgerPairAt,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { LEGACY_ROOT_NOTICE } from '../../src/place/plan.ts';
 import { runDev } from '../../src/place/run.ts';
@@ -34,7 +39,7 @@ import {
 
 setDefaultTimeout(60_000);
 
-const NOW = '2026-07-08T00:00:00Z';
+const NOW = '2026-07-08T00:00:00.000Z';
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
 
 const detectBoth: InstallDeps['detect'] = async (_env, tool) =>
@@ -133,9 +138,10 @@ const claudeRoot = (): string => join(f.home, '.claude', 'skills');
 const legacyRoot = (): string => join(f.home, '.codex', 'skills');
 const projClaudeRoot = (): string => join(f.project, '.claude', 'skills');
 const led = async () => {
-  const r = await readLedger(f.env, ledgerPathOf(f.data));
+  const r = await readLedgerState(f.env, ledgerPathOf(f.data));
   if (!r.ok) throw new Error(msg(r.error));
-  return r.value;
+  if (r.value.state !== 'present') throw new Error('expected persisted ledger');
+  return r.value.model;
 };
 
 const installUser = async (opts: Partial<InstallOptions> = {}) => {
@@ -540,8 +546,12 @@ describe('runUninstall — uncommitted journal (Global Constraint #6)', () => {
       stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
       backupPath: join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef'),
     };
-    pair.journal = journal;
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const next = withLedgerPairAt(ledger, null, 'factor-scan', 'claude-code', {
+      ...pair,
+      journal,
+    });
+    if (!next.ok) throw new Error(msg(next.error));
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
     if (!w.ok) throw new Error(msg(w.error));
 
     const r = await runUninstall(
@@ -587,8 +597,12 @@ describe('runUninstall — uncommitted journal (Global Constraint #6)', () => {
       stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
       backupPath: join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef'),
     };
-    pair.journal = journal;
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const next = withLedgerPairAt(ledger, null, 'factor-scan', 'claude-code', {
+      ...pair,
+      journal,
+    });
+    if (!next.ok) throw new Error(msg(next.error));
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
     if (!w.ok) throw new Error(msg(w.error));
 
     const r = await runUninstall(
@@ -942,7 +956,7 @@ describe('runUninstall — public error boundary', () => {
     const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
     if (!pair?.pinned) throw new Error('expected seeded pinned pair');
     const backupPath = join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef');
-    pair.journal = {
+    const journal: Journal = {
       op: 'uninstall',
       txId: 'deadbeef',
       phase: 'committed',
@@ -957,7 +971,12 @@ describe('runUninstall — public error boundary', () => {
       stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
       backupPath,
     };
-    const persisted = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const next = withLedgerPairAt(ledger, null, 'factor-scan', 'claude-code', {
+      ...pair,
+      journal,
+    });
+    if (!next.ok) throw new Error(msg(next.error));
+    const persisted = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
     if (!persisted.ok) throw new Error(msg(persisted.error));
     const sweepFailure: RuntimePorts = {
       ...f.env,

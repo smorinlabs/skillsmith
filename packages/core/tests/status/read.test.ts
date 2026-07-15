@@ -508,6 +508,7 @@ interface LogicalJournalOptions {
   readonly updatedAt?: string;
   readonly retained?: LogicalJournalV1Dto['actual']['retained'];
   readonly reversibility?: LogicalJournalV1Dto['intent']['reversibility'];
+  readonly kind?: 'repair' | 'remove';
 }
 
 const logicalJournal = (options: LogicalJournalOptions): LogicalJournalV1Dto => {
@@ -551,7 +552,7 @@ const logicalJournal = (options: LogicalJournalOptions): LogicalJournalV1Dto => 
       operationId: `operation:${options.transactionId}`,
       groupId: `group:${options.transactionId}`,
       pairId: `pair:${options.name}:${options.tool ?? 'codex'}`,
-      kind: 'repair',
+      kind: options.kind ?? 'repair',
       skill: options.name,
       source: {
         kind: 'portable',
@@ -573,16 +574,19 @@ const logicalJournal = (options: LogicalJournalOptions): LogicalJournalV1Dto => 
         source: null,
         contentHash: CONTENT_HASH,
       },
-      after: {
-        kind: 'placement',
-        resource,
-        classification: 'pinned',
-        representation: 'copy',
-        linkTarget: null,
-        dangling: false,
-        source: null,
-        contentHash: CONTENT_HASH,
-      },
+      after:
+        options.kind === 'remove'
+          ? { kind: 'absent', resource }
+          : {
+              kind: 'placement',
+              resource,
+              classification: 'pinned',
+              representation: 'copy',
+              linkTarget: null,
+              dangling: false,
+              source: null,
+              contentHash: CONTENT_HASH,
+            },
       mutates: { live: true, manifest: false, lock: false, ledger: true },
       reversibility: options.reversibility ?? {
         kind: 'none',
@@ -2910,6 +2914,7 @@ describe('G3A-01 focused status reader', () => {
       name: 'format-tie',
       path: tiePath,
       transactionId: 'tx:format-tie',
+      kind: 'remove',
       updatedAt: '2026-07-14T00:00:02.000Z',
       retained: [logicalRetained],
       reversibility: reversibilityFor([logicalRetained]),
@@ -2922,7 +2927,7 @@ describe('G3A-01 focused status reader', () => {
         op: 'uninstall',
         txId: logical.transactionId,
         phase: 'live',
-        startedAt: logical.updatedAt,
+        startedAt: logical.context.startedAt,
         completedAt: null,
         before: { mode: 'absent' },
         stagingPath: `${tiePath}.stage`,
@@ -2939,7 +2944,6 @@ describe('G3A-01 focused status reader', () => {
       ),
     ).toEqual([logicalRetained.path]);
 
-    const sharedLegacyId = 'tx:shared-legacy';
     const legacyFor = (name: string): LedgerPairV1Dto => {
       const path = join(CODEX_ROOT, name);
       return {
@@ -2947,7 +2951,7 @@ describe('G3A-01 focused status reader', () => {
         placementPath: path,
         journal: {
           op: 'uninstall',
-          txId: sharedLegacyId,
+          txId: `tx:shared-legacy:${name}`,
           phase: 'live',
           startedAt: '2026-07-14T00:00:01.000Z',
           completedAt: null,
@@ -3062,11 +3066,10 @@ describe('G3A-01 focused status reader', () => {
 
     const sameIdAlpha = retained('same-id-alpha');
     const sameIdBeta = retained('same-id-beta');
-    const sharedId = 'tx:repeated-history-id';
     const sameIdBetaJournal = logicalJournal({
       name: 'same-id-beta',
       path: join(CODEX_ROOT, 'same-id-beta'),
-      transactionId: sharedId,
+      transactionId: 'tx:repeated-history-id:beta',
       phase: 'committed',
       retained: [sameIdBeta],
       reversibility: reversibilityFor([sameIdBeta]),
@@ -3074,7 +3077,7 @@ describe('G3A-01 focused status reader', () => {
     const sameIdAlphaJournal = logicalJournal({
       name: 'same-id-alpha',
       path: join(CODEX_ROOT, 'same-id-alpha'),
-      transactionId: sharedId,
+      transactionId: 'tx:repeated-history-id:alpha',
       phase: 'committed',
       retained: [sameIdAlpha],
       reversibility: reversibilityFor([sameIdAlpha]),
@@ -3139,11 +3142,10 @@ describe('G3A-01 focused status reader', () => {
       ...alphaRetained,
       sourceRole: 'live',
     };
-    const sharedTransactionId = 'tx:repeated-probe-correlation';
     const alpha = logicalJournal({
       name: 'alpha-probe-correlation',
       path: join(CODEX_ROOT, 'alpha-probe-correlation'),
-      transactionId: sharedTransactionId,
+      transactionId: 'tx:repeated-probe-correlation:alpha',
       phase: 'committed',
       retained: [alphaRetained],
       reversibility: { kind: 'conditional', retentionResourceIds: [resourceId] },
@@ -3151,7 +3153,7 @@ describe('G3A-01 focused status reader', () => {
     const beta = logicalJournal({
       name: 'beta-probe-correlation',
       path: join(CODEX_ROOT, 'beta-probe-correlation'),
-      transactionId: sharedTransactionId,
+      transactionId: 'tx:repeated-probe-correlation:beta',
       phase: 'committed',
       retained: [betaRetained],
       reversibility: { kind: 'conditional', retentionResourceIds: [resourceId] },
@@ -3190,7 +3192,6 @@ describe('G3A-01 focused status reader', () => {
 
   test('keeps repeated legacy retention probe identities separate across changing observations', async () => {
     const readStatus = await loadReader();
-    const sharedTransactionId = 'tx:repeated-legacy-correlation';
     const sharedBackupPath = '/retained/shared-legacy-correlation';
     const legacyPair = (name: string): LedgerPairV1Dto => {
       const pair = pairFor(name);
@@ -3198,7 +3199,7 @@ describe('G3A-01 focused status reader', () => {
         ...pair,
         journal: {
           op: 'uninstall',
-          txId: sharedTransactionId,
+          txId: `tx:repeated-legacy-correlation:${name}`,
           phase: 'committed',
           startedAt: '2026-07-14T00:00:01.000Z',
           completedAt: '2026-07-14T00:00:02.000Z',

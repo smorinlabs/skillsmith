@@ -1,5 +1,6 @@
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Glob } from 'bun';
+import { resolveRefViaLsRemote } from '../acquire/fetch.ts';
 import { listSupportedTools, toolRegistry } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS, type SupportedTool } from '../agents/types.ts';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
@@ -28,8 +29,21 @@ import {
 import { type StatusV1Dto, statusV1Codec, toStatusV1Dto } from '../contracts/v1/status.ts';
 import type { InstallRecord } from '../detect/types.ts';
 import { builtInChecks } from '../doctor/registry.ts';
-import { focusDoctorPorts, runChecks } from '../doctor/run.ts';
-import type { CheckRunMode, CheckRunResult } from '../doctor/types.ts';
+import {
+  createDoctorRepairPlan,
+  doctorMutationSummary,
+  executeDoctorRepairPlan,
+  executeDoctorRepairs,
+  identifyDoctorFindings,
+} from '../doctor/repair.ts';
+import { detectionPortsWithoutVersionProbe, focusDoctorPorts, runChecks } from '../doctor/run.ts';
+import type {
+  CheckRunContext,
+  CheckRunMode,
+  CheckRunResult,
+  DoctorRunResult,
+  DoctorSourceResolution,
+} from '../doctor/types.ts';
 import { type SkillSmithError, errorMessage, safeErrorCode } from '../errors.ts';
 import { readCommandInventory, readSkillInventory } from '../inventory/read.ts';
 import { redactSensitiveValue } from '../safety/redaction.ts';
@@ -170,7 +184,7 @@ export interface CommandsReport {
 
 export interface HealthReport {
   readonly mode: CheckRunMode;
-  readonly result: CheckRunResult | null;
+  readonly result: CheckRunResult | DoctorRunResult | null;
 }
 
 export interface VerifyApplicationReport {
@@ -1260,6 +1274,14 @@ const runHealthApplication = async (
   context: CurrentApplicationContext,
 ): Promise<CommandOutcome<HealthReport>> => {
   const empty: HealthReport = { mode, result: null };
+  if (mode === 'doctor') {
+    const fix = enabled(request, 'fix');
+    const dryRun = enabled(request, 'dryRun');
+    const yes = enabled(request, 'yes');
+    if (yes && dryRun) return failed(empty, usage('--yes cannot be combined with --dry-run'));
+    if (dryRun && !fix) return failed(empty, usage('--dry-run requires --fix'));
+    if (yes && !fix) return failed(empty, usage('--yes requires --fix'));
+  }
   if (enabled(request, 'allTools') && strings(request, 'tool').length > 0) {
     return failed(empty, usage('--all-tools cannot be combined with --tool'));
   }
@@ -1280,23 +1302,31 @@ const runHealthApplication = async (
   if (artifacts && 'code' in artifacts) return failed(empty, artifacts);
   const config = await healthConfigFor(mode, request, context, project.value);
   if (!config.ok) return failed(empty, config.error);
-  const tools =
-    mode === 'doctor' || enabled(request, 'allTools')
-      ? selection.value.tools.length > 0
-        ? selection.value.tools
-        : SUPPORTED_TOOLS
-      : selection.value.tools.length > 0
-        ? selection.value.tools
-        : effectiveTools(config.value).length > 0
-          ? effectiveTools(config.value)
-          : SUPPORTED_TOOLS;
+  let tools: readonly SupportedTool[];
+  if (selection.value.tools.length > 0) {
+    tools = selection.value.tools;
+  } else if (enabled(request, 'allTools')) {
+    tools = SUPPORTED_TOOLS;
+  } else if (mode === 'doctor') {
+    const detectionPorts = detectionPortsWithoutVersionProbe(context.ports);
+    const detected = await Promise.all(
+      toolRegistry.adapters.map(async (adapter) => {
+        const result = await adapter.inventory.detect(detectionPorts, context.signal);
+        return result.ok && result.value.length > 0 ? adapter.descriptor.id : null;
+      }),
+    );
+    tools = detected.filter((tool): tool is SupportedTool => tool !== null);
+  } else {
+    tools =
+      effectiveTools(config.value).length > 0 ? effectiveTools(config.value) : SUPPORTED_TOOLS;
+  }
   const scopes =
     scope.value !== null
       ? [scope.value]
       : mode === 'check' && config.value.value.scope
         ? [config.value.value.scope]
         : SCOPES;
-  const checked = await runChecks(builtInChecks, {
+  const checkContext = {
     env: focusDoctorPorts(context.ports),
     mode,
     tools,
@@ -1308,7 +1338,8 @@ const runHealthApplication = async (
     offline: mode === 'doctor' && enabled(request, 'offline'),
     observation: context.observation,
     ...(context.signal === undefined ? {} : { signal: context.signal }),
-  });
+  } satisfies CheckRunContext;
+  let checked = await runChecks(builtInChecks, checkContext);
   if (!checked.ok) {
     if (context.signal?.aborted) {
       return failed(empty, {
@@ -1319,15 +1350,138 @@ const runHealthApplication = async (
     }
     return failed(empty, checked.error);
   }
+  if (mode === 'doctor') {
+    const fix = enabled(request, 'fix');
+    if (fix && !enabled(request, 'offline')) {
+      const resolutions: DoctorSourceResolution[] = [];
+      let complete = true;
+      for (const finding of checked.value.findings) {
+        if (finding.sourceResolution === undefined) continue;
+        const resolved = await resolveRefViaLsRemote(
+          context.ports,
+          finding.sourceResolution.remoteUrl,
+          finding.sourceResolution.ref,
+          context.signal,
+        );
+        if (context.signal?.aborted) {
+          return failed(empty, cancelled('doctor source resolution was cancelled'));
+        }
+        if (!resolved.ok || resolved.value === null) {
+          complete = false;
+          continue;
+        }
+        resolutions.push({ ...finding.sourceResolution, resolvedSha: resolved.value });
+      }
+      if (complete && resolutions.length > 0) {
+        checked = await runChecks(builtInChecks, {
+          ...checkContext,
+          sourceResolutions: resolutions,
+        });
+        if (!checked.ok) {
+          if (context.signal?.aborted) {
+            return failed(empty, cancelled('doctor source-resolution replanning was cancelled'));
+          }
+          return failed(empty, checked.error);
+        }
+      }
+    }
+    const findings = identifyDoctorFindings(checked.value.findings);
+    const repairMode = !fix
+      ? ('not-requested' as const)
+      : enabled(request, 'dryRun')
+        ? ('preview' as const)
+        : ('execute' as const);
+    const repairPlan = fix ? createDoctorRepairPlan(findings) : null;
+    const operations = repairPlan?.operations ?? [];
+    let results = [] as DoctorRunResult['repair']['results'];
+    if (repairMode === 'execute' && repairPlan !== null && operations.length > 0) {
+      if (!enabled(request, 'yes')) {
+        const approval = await context.interaction.confirm({
+          id: 'doctor.repair-plan',
+          message: `Apply ${operations.length} automatic repair${operations.length === 1 ? '' : 's'}?`,
+        });
+        if (approval.status === 'cancelled') {
+          return failed(empty, cancelled('doctor repair approval was cancelled'));
+        }
+        if (approval.status === 'refused' || !approval.value) {
+          return failed(
+            empty,
+            usage('doctor repair execution requires --yes when approval is unavailable or refused'),
+          );
+        }
+      }
+      try {
+        results = await executeDoctorRepairPlan(repairPlan, executeDoctorRepairs, {
+          ports: context.ports,
+          artifactCoordinator: context.artifactCoordinator,
+          ...(context.signal === undefined ? {} : { signal: context.signal }),
+        });
+      } catch (error) {
+        if (
+          context.signal?.aborted ||
+          (typeof error === 'object' &&
+            error !== null &&
+            (error as { code?: unknown }).code === 'cancelled')
+        ) {
+          return failed(empty, cancelled('doctor repair was cancelled'));
+        }
+        throw error;
+      }
+    }
+    const mutation = doctorMutationSummary(repairMode, operations, results);
+    const result: DoctorRunResult = {
+      findings,
+      counts: checked.value.counts,
+      repair: { mode: repairMode, operations, results },
+      mutation,
+    };
+    const artifactFailure = findings.find((finding) => finding.failureClass !== undefined);
+    const handled = new Set(
+      operations.flatMap((operation) => {
+        if (repairMode === 'preview') return operation.findingIds;
+        if (repairMode !== 'execute') return [];
+        const repairResult = results.find(
+          (candidate) => candidate.operationId === operation.operationId,
+        );
+        return repairResult !== undefined && repairResult.outcome !== 'failed'
+          ? operation.findingIds
+          : [];
+      }),
+    );
+    const unhandled = findings.filter((finding) => !handled.has(finding.findingId));
+    const strictWarning =
+      enabled(request, 'strict') && unhandled.some((finding) => finding.severity === 'warning');
+    const hasUnhandledError = unhandled.some((finding) => finding.severity === 'error');
+    const failedRepair = results.find((repairResult) => repairResult.outcome === 'failed');
+    const repairFailureClass: CommandExitClass | null =
+      failedRepair?.error?.code === 'permission-denied'
+        ? 'permission'
+        : failedRepair?.error?.code === 'source-resolution'
+          ? 'source'
+          : failedRepair?.error?.code === 'stale-state'
+            ? 'state'
+            : failedRepair === undefined
+              ? null
+              : 'failure';
+    return success(
+      { mode, result },
+      {
+        diagnostics: configNoticeDiagnostics(config.value),
+        mutation,
+        exitClass:
+          artifactFailure?.failureClass ??
+          repairFailureClass ??
+          (strictWarning || hasUnhandledError ? 'failure' : 'success'),
+      },
+    );
+  }
   const hasError = checked.value.counts.error > 0;
-  const strictWarning =
-    mode === 'doctor' && enabled(request, 'strict') && checked.value.counts.warning > 0;
   const reportOnly = mode === 'check' && enabled(request, 'reportOnly');
   return success(
     { mode, result: checked.value },
     {
       diagnostics: configNoticeDiagnostics(config.value),
-      exitClass: !reportOnly && (hasError || strictWarning) ? 'failure' : 'success',
+      exitClass: !reportOnly && hasError ? 'failure' : 'success',
       deprecations:
         mode === 'check' && enabled(request, 'exitCode') ? [CHECK_EXIT_CODE_DEPRECATION] : [],
     },

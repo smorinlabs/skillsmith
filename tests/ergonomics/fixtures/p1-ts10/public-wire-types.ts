@@ -52,14 +52,17 @@ import {
   type AgentsV2Dto,
   type CommandsV2Dto,
   type FlipV2Dto,
+  type HealthV2Dto,
   type ListV2Dto,
   agentsV2Codec,
   commandsV2Codec,
   flipV2Codec,
+  healthV2Codec,
   listV2Codec,
   toAgentsV2Dto,
   toCommandsV2Dto,
   toFlipV2Dto,
+  toHealthV2Dto,
   toListV2Dto,
 } from '@skillsmith/core/contracts/v2';
 import {
@@ -181,6 +184,8 @@ type _V2RuntimeClosure = Assert<
     | 'toCommandsV2Dto'
     | 'flipV2Codec'
     | 'toFlipV2Dto'
+    | 'healthV2Codec'
+    | 'toHealthV2Dto'
     | 'listV2Codec'
     | 'toListV2Dto'
     | 'ledgerV2Codec'
@@ -346,6 +351,7 @@ const errorCodec: WireCodec<'error', 1, ErrorV1Dto> = errorV1Codec;
 const capabilityCodec: WireCodec<'capability-snapshot', 1, CapabilitySnapshotV1Dto> =
   capabilitySnapshotV1Codec;
 const flipCodec: WireCodec<'flip', 2, FlipV2Dto> = flipV2Codec;
+const healthV2Binding: WireCodec<'health', 2, HealthV2Dto> = healthV2Codec;
 const listCodec: WireCodec<'list', 2, ListV2Dto> = listV2Codec;
 const agentsV2Binding: WireCodec<'agents', 2, AgentsV2Dto> = agentsV2Codec;
 const commandsV2Binding: WireCodec<'commands', 2, CommandsV2Dto> = commandsV2Codec;
@@ -370,6 +376,7 @@ type _CapabilityMapperReturn = Assert<
   Equal<ReturnType<typeof toCapabilitySnapshotV1Dto>, CapabilitySnapshotV1Dto>
 >;
 type _FlipMapperReturn = Assert<Equal<ReturnType<typeof toFlipV2Dto>, FlipV2Dto>>;
+type _HealthV2MapperReturn = Assert<Equal<ReturnType<typeof toHealthV2Dto>, HealthV2Dto>>;
 type _ListMapperReturn = Assert<Equal<ReturnType<typeof toListV2Dto>, ListV2Dto>>;
 type _AgentsV2MapperReturn = Assert<Equal<ReturnType<typeof toAgentsV2Dto>, AgentsV2Dto>>;
 type _CommandsV2MapperReturn = Assert<Equal<ReturnType<typeof toCommandsV2Dto>, CommandsV2Dto>>;
@@ -427,6 +434,7 @@ void [
   uninstallCodec,
   verifyCodec,
   capabilityCodec,
+  healthV2Binding,
   listCodec,
   agentsV2Binding,
   commandsV2Binding,
@@ -446,6 +454,7 @@ void [
   toErrorV1Dto,
   toCapabilitySnapshotV1Dto,
   toFlipV2Dto,
+  toHealthV2Dto,
   toListV2Dto,
   toAgentsV2Dto,
   toCommandsV2Dto,

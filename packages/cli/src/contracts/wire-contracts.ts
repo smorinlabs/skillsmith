@@ -19,6 +19,7 @@ import {
   agentsV2Codec,
   commandsV2Codec,
   flipV2Codec,
+  healthV2Codec,
   listV2Codec,
 } from '@skillsmith/core/contracts/v2';
 import { flipV3Codec, listV3Codec } from '@skillsmith/core/contracts/v3';
@@ -37,7 +38,7 @@ export const currentWireCommandMappings = Object.freeze([
   mapping('skillsmith config set', 'config-set', 1),
   mapping('skillsmith config unset', 'config-unset', 1),
   mapping('skillsmith dev', 'flip', 4),
-  mapping('skillsmith doctor', 'health', 1),
+  mapping('skillsmith doctor', 'health', 2),
   mapping('skillsmith install', 'install', 1),
   mapping('skillsmith list', 'list', 3),
   mapping('skillsmith promote', 'flip', 4),
@@ -76,6 +77,7 @@ export const currentWireContractRegistry = createWireContractRegistry(
     agentsV1Codec,
     agentsV2Codec,
     healthV1Codec,
+    healthV2Codec,
     commandsV1Codec,
     commandsV2Codec,
     configGetV1Codec,
@@ -124,7 +126,7 @@ export const currentWireCodecs = Object.freeze({
   configSet: boundCodec('skillsmith config set', configSetV1Codec),
   configUnset: boundCodec('skillsmith config unset', configUnsetV1Codec),
   dev: boundCodec('skillsmith dev', flipV4Codec),
-  doctor: boundCodec('skillsmith doctor', healthV1Codec),
+  doctor: boundCodec('skillsmith doctor', healthV2Codec),
   install: boundCodec('skillsmith install', installV1Codec),
   list: boundCodec('skillsmith list', listV3Codec),
   promote: boundCodec('skillsmith promote', flipV4Codec),

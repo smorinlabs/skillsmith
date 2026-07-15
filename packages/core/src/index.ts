@@ -7,6 +7,7 @@ export {
 export { parseSource } from './acquire/source.ts';
 export {
   CURRENT_APPLICATION_SERVICES,
+  defaultArtifactCoordinatorPorts,
   runCompletionApplication,
   runConfigHelpApplication,
   runHelpApplication,
@@ -26,6 +27,7 @@ export {
 export { TOOL_OPERATIONS } from './agents/adapter-types.ts';
 export { SUPPORTED_TOOLS } from './agents/types.ts';
 export * from './artifacts/index.ts';
+export { recoverLedgerMigrationState } from './artifacts/ledger-writer.ts';
 export { getConfigValue } from './config/accessors.ts';
 export { resolveEffectiveConfig } from './config/effective.ts';
 export { loadConfig } from './config/load.ts';
@@ -85,6 +87,7 @@ export type {
   CheckRunMode,
   CheckRunResult,
   DoctorPorts,
+  DoctorRunResult,
   CliMetadataReport,
   CommandEntry,
   CommandExitClass,
@@ -254,6 +257,13 @@ export type {
   ResolveProjectContextOptions,
 } from './public-types.ts';
 export { defaultFlipDeps, runDev, runPromote, runRollback } from './place/run.ts';
+export {
+  abortPendingLogicalTransaction,
+  advanceLogicalTransaction,
+  collapseLogicalTransactionShadows,
+  commitLogicalTransaction,
+} from './place/logical-transactions.ts';
+export { cleanupHistoryVictim, selectBoundedHistory } from './place/history.ts';
 export { FLIP_TOOLS } from './place/types.ts';
 export { err, isErr, isOk, map, mapErr, ok } from './result.ts';
 export {

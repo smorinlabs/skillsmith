@@ -51,6 +51,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Added
+- Durable ledger-v2 mutation with visible, revision-checked v1 migration, crash recovery, immutable
+  pair/project-registration updates, logical transaction history, and deterministic bounded-history
+  cleanup. Existing v1 ledgers remain readable; current mutations never downgrade v2 state.
+- `doctor --fix` and `doctor --dry-run` with a closed safe-repair allowlist, explicit approval,
+  deterministic repair plans, strict refusal/cancellation behavior, and `health@2` output. The
+  read-only `check` command remains byte-compatible on `health@1`.
 - Persisted artifact contracts: a byte-oriented `ArtifactCodec` API and the single ordered `artifactContractRegistry` for `manifest@1`, `lock@1`, `plan@1`, `ledger@1`, `ledger@2`, and `journal@1`, distinct from the existing command-output `WireCodec` registry.
 - Versioned persisted-artifact codec, DTO, and mapper exports on `@skillsmith/core/contracts/v1` and `@skillsmith/core/contracts/v2`, backed by the same codec objects as `artifactContractRegistry`.
 - A read-only, capability-injected repository for manifest, lock, saved-plan, ledger, and journal artifacts. Legacy project configuration to manifest v1 and ledger v1 to v2 reads return descriptive migration metadata; the root API exposes no migration executor.
@@ -74,6 +80,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Tests: bun-global classification; markdown cell escaping.
 
 ### Changed
+- Install, uninstall, dev, and promote now use the canonical ledger-v2 writer and preserve projects,
+  registrations, pending transactions, committed history, and supported tool identifiers across
+  every mutation.
 - Core layering: `exec.ts` moved to `env/`; `InstallMethod`/`InstallRecord` split into `detect/types.ts`; orchestrator moved to `scan/`.
 - `detectTool`/`detectAll` now forward an `AbortSignal` to each agent.
 - `--color` flag goes through `resolveColorMode`, which sets `NO_COLOR`/`FORCE_COLOR`.

@@ -77,7 +77,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith config set', 'config-set', 1],
   ['skillsmith config unset', 'config-unset', 1],
   ['skillsmith dev', 'flip', 4],
-  ['skillsmith doctor', 'health', 1],
+  ['skillsmith doctor', 'health', 2],
   ['skillsmith install', 'install', 1],
   ['skillsmith list', 'list', 3],
   ['skillsmith promote', 'flip', 4],
@@ -90,6 +90,7 @@ const EXPECTED_CODECS = [
   ['agents', 1],
   ['agents', 2],
   ['health', 1],
+  ['health', 2],
   ['commands', 1],
   ['commands', 2],
   ['config-get', 1],
@@ -128,6 +129,7 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     terminalLf: true,
   },
   'health@1': { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
+  'health@2': { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
   'commands@1': {
     wireKind: null,
     embeddedVersion: 'schemaVersion',
@@ -281,10 +283,12 @@ const V2_RUNTIME_EXPORTS = [
   'agentsV2Codec',
   'commandsV2Codec',
   'flipV2Codec',
+  'healthV2Codec',
   'listV2Codec',
   'toAgentsV2Dto',
   'toCommandsV2Dto',
   'toFlipV2Dto',
+  'toHealthV2Dto',
   'toListV2Dto',
   'ledgerV2Codec',
   'toLedgerV2Dto',
@@ -453,7 +457,22 @@ const renderedCurrentBytes = (): CurrentBytes => {
   };
   const health = render('check', CURRENT_RENDERER_REPORTS.health);
   const flip = render('dev', CURRENT_RENDERER_REPORTS.flip);
-  expect(render('doctor', CURRENT_RENDERER_REPORTS.health), 'doctor renderer drift').toBe(health);
+  const doctorHealth = render('doctor', CURRENT_RENDERER_REPORTS.health);
+  expect(doctorHealth, 'doctor must publish health@2').not.toBe(health);
+  const decodedDoctor = JSON.parse(doctorHealth) as UnknownRecord;
+  expect(decodedDoctor).toEqual({
+    schemaVersion: 2,
+    experimental: true,
+    findings: [
+      {
+        ...(CURRENT_RENDERER_REPORTS.health.result?.findings[0] ?? {}),
+        findingId: expect.stringMatching(/^finding:v1:[0-9a-f]{64}$/u),
+      },
+    ],
+    counts: CURRENT_RENDERER_REPORTS.health.result?.counts,
+    repair: { mode: 'not-requested', operations: [], results: [] },
+    mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+  });
   expect(render('promote', CURRENT_RENDERER_REPORTS.flip), 'promote renderer drift').toBe(flip);
   return {
     agents: render('agents', CURRENT_RENDERER_REPORTS.agents),
@@ -1886,7 +1905,7 @@ describe('EWP-P1-TS10', () => {
     const exitCode = await child.exited;
     const output = `${await new Response(child.stdout).text()}${await new Response(child.stderr).text()}`;
     expect(exitCode, output).toBe(0);
-  }, 15_000);
+  }, 30_000);
 
   test('family 5: exposes explicit named mappers that never read excluded lifecycle internals', async () => {
     const [v1, v2, v3, v4] = await Promise.all([

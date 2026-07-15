@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  DEFAULT_ARTIFACT_MAX_NODES,
+  LEDGER_ARTIFACT_MAX_NODES,
   artifactCodecError,
   canonicalJsonBytes,
   decodeArtifactUtf8,
@@ -9,6 +11,9 @@ import {
   ownArtifactReadBytes,
   unsignedUtf16Compare,
 } from '../../src/artifacts/codec.ts';
+import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
+import { legacyJournalMatchesLogicalShadow } from '../../src/artifacts/ledger-codec.ts';
+import type { LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
 
 const decoder = new TextDecoder();
 
@@ -159,6 +164,19 @@ describe('artifact codec foundation', () => {
     expect(hasSensitiveArtifactContent(new Proxy({}, {}))).toBe(true);
   });
 
+  test('keeps the default ownership cap while permitting the bounded ledger history budget', () => {
+    const aboveDefault = Array.from({ length: DEFAULT_ARTIFACT_MAX_NODES }, () => null);
+    const ledgerLimits = { maxNodes: LEDGER_ARTIFACT_MAX_NODES } as const;
+    expect(deepOwnFreeze('manifest', aboveDefault, 1).ok).toBeFalse();
+    expect(hasSensitiveArtifactContent(aboveDefault)).toBeTrue();
+    expect(deepOwnFreeze('ledger', aboveDefault, 2, ledgerLimits).ok).toBeTrue();
+    expect(hasSensitiveArtifactContent(aboveDefault, ledgerLimits)).toBeFalse();
+
+    const aboveLedger = Array.from({ length: LEDGER_ARTIFACT_MAX_NODES }, () => null);
+    expect(deepOwnFreeze('ledger', aboveLedger, 2, ledgerLimits).ok).toBeFalse();
+    expect(hasSensitiveArtifactContent(aboveLedger, ledgerLimits)).toBeTrue();
+  });
+
   test('emits deterministic JSON bytes with the requested framing', () => {
     const dto = { schemaVersion: 1, kind: 'skillsmith.plan', values: ['b', 'a'] };
     const framed = canonicalJsonBytes('plan', dto, 1, true);
@@ -172,5 +190,57 @@ describe('artifact codec foundation', () => {
 
   test('compares unsigned UTF-16 strings without locale state', () => {
     expect(['z', 'a', 'ä'].sort(unsignedUtf16Compare)).toEqual(['a', 'z', 'ä']);
+  });
+
+  test('accepts only install and promote physical shadows for a logical update journal', () => {
+    const placementPath = '/home/fixture/.agents/skills/alpha';
+    const transactionId = 'transaction:update-alpha';
+    const startedAt = '2026-07-15T00:00:00.000Z';
+    const liveResource = {
+      kind: 'live' as const,
+      skill: 'alpha',
+      tool: 'fixture-tool',
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path: placementPath },
+    };
+    const logical = {
+      transactionId,
+      disposition: 'forward',
+      phase: 'prepared',
+      completedAt: null,
+      context: { startedAt },
+      intent: {
+        kind: 'update',
+        pairId: 'pair:alpha:fixture-tool',
+        skill: 'alpha',
+        tool: 'fixture-tool',
+        scope: 'user',
+        before: { kind: 'absent', resource: liveResource },
+        after: { kind: 'absent', resource: liveResource },
+      },
+      actual: {
+        before: [],
+        after: [{ role: 'live', placementPath }],
+      },
+    } as unknown as LogicalJournalV1Dto;
+    const matches = (op: NonNullable<LedgerPairV1Dto['journal']>['op']): boolean =>
+      legacyJournalMatchesLogicalShadow(
+        logical,
+        { projectRoot: null, skill: 'alpha', tool: 'fixture-tool' },
+        {
+          placementPath,
+          journal: {
+            op,
+            txId: transactionId,
+            phase: 'prepared',
+            startedAt,
+            completedAt: null,
+          },
+        } as LedgerPairV1Dto,
+      );
+
+    expect((['install', 'promote'] as const).map(matches)).toEqual([true, true]);
+    expect((['uninstall', 'dev', 'rollback'] as const).map(matches)).toEqual([false, false, false]);
   });
 });

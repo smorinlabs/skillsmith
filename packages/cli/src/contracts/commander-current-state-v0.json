@@ -1929,6 +1929,28 @@
     }
   },
   {
+    "key": "option:skillsmith doctor:--dry-run",
+    "disposition": "N",
+    "phase": "P17-G3B-03",
+    "validationOwner": "EWP-CMD-DOCTOR-TS02",
+    "option": {
+      "flags": "--dry-run",
+      "short": null,
+      "long": "--dry-run",
+      "attributeName": "dryRun",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
     "key": "option:skillsmith doctor:--file <path>",
     "disposition": "N",
     "phase": "P17-G3B-03",
@@ -1945,6 +1967,28 @@
       "choices": [],
       "defaultValue": "null",
       "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith doctor:--fix",
+    "disposition": "N",
+    "phase": "P17-G3B-03",
+    "validationOwner": "EWP-CMD-DOCTOR-TS02",
+    "option": {
+      "flags": "--fix",
+      "short": null,
+      "long": "--fix",
+      "attributeName": "fix",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
       "repeatable": false,
       "negated": false,
       "hidden": false
@@ -2092,6 +2136,28 @@
       "short": null,
       "long": "--user",
       "attributeName": "user",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith doctor:-y, --yes",
+    "disposition": "N",
+    "phase": "P17-G3B-03",
+    "validationOwner": "EWP-CMD-DOCTOR-TS02",
+    "option": {
+      "flags": "-y, --yes",
+      "short": "-y",
+      "long": "--yes",
+      "attributeName": "yes",
       "requiredValue": false,
       "optionalValue": false,
       "variadic": false,

@@ -6,6 +6,7 @@ import type {
   CurrentApplicationContext,
   InteractionPort,
 } from '../../../core/src/application/types.ts';
+import { fromLedgerV1Dto } from '../../../core/src/artifacts/registry.ts';
 import {
   emptyLedger,
   getPair,
@@ -199,7 +200,10 @@ const pinnedPair = (placementPath: string, sourcePath: string, storePath: string
 });
 
 const writeFixtureLedger = async (fleet: FixtureFleet, ledger: ReturnType<typeof emptyLedger>) => {
-  const written = await writeLedger(fleet.env, ledgerPathOf(fleet.data), ledger);
+  const model = fromLedgerV1Dto(ledger);
+  expect(model.ok, model.ok ? undefined : errorText(model.error)).toBeTrue();
+  if (!model.ok) throw new Error(errorText(model.error));
+  const written = await writeLedger(fleet.env, ledgerPathOf(fleet.data), model.value);
   expect(written.ok, written.ok ? undefined : errorText(written.error)).toBeTrue();
   if (!written.ok) throw new Error(errorText(written.error));
 };
@@ -278,6 +282,7 @@ const applicationContext = (
 ): CurrentApplicationContext => ({
   observation: {} as CurrentApplicationContext['observation'],
   ports,
+  artifactCoordinator: {} as CurrentApplicationContext['artifactCoordinator'],
   configuration: fleet.configuration,
   interaction,
   invocationCwd: fleet.project,

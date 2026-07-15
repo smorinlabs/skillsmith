@@ -124,6 +124,65 @@ const operationFor = (preconditionIds: readonly string[]): ExecutableOperation =
   };
 };
 
+const ledgerMigrationFor = (preconditionIds: readonly string[]): ExecutableOperation => {
+  const groupId = createOperationGroupId({
+    domain: 'skillsmith.operation-group-identity',
+    schemaVersion: 1,
+    command: 'install',
+    skill: null,
+    source: null,
+    scope: null,
+    target: 'artifacts/placements.json',
+  });
+  const operationId = createOperationId({
+    domain: 'skillsmith.operation-identity',
+    schemaVersion: 1,
+    groupId,
+    pairId: null,
+    kind: 'migrate-ledger',
+    skill: null,
+    source: null,
+    tool: null,
+    scope: null,
+  });
+  return {
+    operationId,
+    groupId,
+    pairId: null,
+    kind: 'migrate-ledger',
+    dependencyMetadata: {
+      domain: 'skillsmith.operation-dependency',
+      schemaVersion: 1,
+      operationIds: [],
+    },
+    skill: null,
+    source: null,
+    tool: null,
+    scope: null,
+    before: {
+      kind: 'ledger',
+      projectRoot: null,
+      schemaVersion: 1,
+      byteHash: CONTENT_HASH,
+      semanticHash: CONTENT_HASH,
+    },
+    after: {
+      kind: 'ledger',
+      projectRoot: null,
+      schemaVersion: 2,
+      byteHash: `sha256:${'c'.repeat(64)}`,
+      semanticHash: `sha256:${'c'.repeat(64)}`,
+    },
+    reason: { code: 'ledger-migration-required', message: 'Ledger migration required.' },
+    selectionSource: 'explicit-targets',
+    preconditionIds,
+    requiredCheckIds: [],
+    reversibility: { kind: 'none', retentionResourceIds: [] },
+    mutates: { live: false, manifest: false, lock: false, ledger: true },
+    conflict: null,
+  };
+};
+
 const planFor = (operation: ExecutableOperation): UnknownRecord =>
   createOperationPlan({
     domain: 'skillsmith.operation-plan',
@@ -140,6 +199,11 @@ const planFor = (operation: ExecutableOperation): UnknownRecord =>
     checks: [],
     diagnostics: [],
   }) as unknown as UnknownRecord;
+
+const artifactPlanFor = (operation: ExecutableOperation): UnknownRecord => ({
+  ...planFor(operationFor([])),
+  operations: [operation],
+});
 
 const snapshot = (pathKind: 'absent' | 'file' = 'absent'): UnknownRecord => ({
   command: 'install',
@@ -362,5 +426,55 @@ describe('G3B-02 execution coordinator', () => {
 
     expect(events).toEqual(['acquire', 'observe-precondition', 'observe-actual-before', 'release']);
     expect(bindingCalls).toBe(0);
+  });
+
+  test('binds and executes an exact null-pair ledger prerequisite under lock', async () => {
+    const createExecutionPrecondition = requireFactory<CreateExecutionPrecondition>(
+      'createExecutionPrecondition',
+    );
+    const executeOperationPlan = requireFactory<ExecuteOperationPlan>('executeOperationPlan');
+    const seed = ledgerMigrationFor([]);
+    const expected = { schemaVersion: 1, byteHash: CONTENT_HASH };
+    const precondition = createExecutionPrecondition({
+      operationIds: [seed.operationId],
+      resource: { kind: 'ledger', projectRoot: null },
+      expected,
+      observe: async () => expected,
+    });
+    const operation = ledgerMigrationFor([String(precondition.preconditionId)]);
+    const events: string[] = [];
+
+    const results = await executeOperationPlan({
+      plan: artifactPlanFor(operation),
+      bindings: [
+        {
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: null,
+          unstartedForce: null,
+          observeActualBefore: async () => operation.before,
+          execute: async () => {
+            events.push('execute');
+            return createOperationExecutionResult({
+              operationId: operation.operationId,
+              outcome: 'succeeded',
+              actualBefore: operation.before,
+              actualAfter: operation.after,
+              force: null,
+              error: null,
+            });
+          },
+        },
+      ],
+      preconditions: [precondition],
+      locks: [{ rank: 'ledger', key: 'ledger', path: '/fixture/placements.json' }],
+      lockPort: {
+        withFileLock: async <T>(_path: string, callback: () => Promise<T>): Promise<T> =>
+          callback(),
+      },
+    });
+
+    expect(events).toEqual(['execute']);
+    expect(results.map((result) => result.outcome)).toEqual(['succeeded']);
   });
 });

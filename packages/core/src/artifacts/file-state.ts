@@ -197,14 +197,29 @@ export const observeArtifactFile = async (
   }
 };
 
+/** Stable regular-file observation for an explicitly authorized invalid lock replacement. */
+export const observeOpaqueLockFile = async (
+  ports: Pick<ArtifactCoordinatorPorts, 'observe' | 'readBytes'>,
+  path: string,
+): Promise<ArtifactFileRevision | ArtifactMutationError> => {
+  const revision = await observeArtifactFile(ports, path, 'resource');
+  if ('code' in revision || revision.state !== 'file') return revision;
+  const digest = hashCanonicalInput('lock-canonical', HASH_SCHEMA_VERSION, revision.bytes);
+  if (!digest.ok) return artifactMutationError('invalid-lock', { role: 'lock' });
+  return Object.freeze({ ...revision, digest: digest.value });
+};
+
 export const observeArtifactPair = async (
   ports: Pick<ArtifactCoordinatorPorts, 'observe' | 'readBytes'>,
   manifestPath: string,
   lockPath: string,
+  options: Readonly<{ allowOpaqueLock?: boolean }> = {},
 ): Promise<ArtifactPairSnapshot | ArtifactMutationError> => {
   const manifest = await observeArtifactFile(ports, manifestPath, 'manifest');
   if ('code' in manifest) return manifest;
-  const lock = await observeArtifactFile(ports, lockPath, 'lock');
+  const lock = options.allowOpaqueLock
+    ? await observeOpaqueLockFile(ports, lockPath)
+    : await observeArtifactFile(ports, lockPath, 'lock');
   if ('code' in lock) return lock;
   if (manifest.state === 'file' && lock.state === 'file' && manifest.identity === lock.identity) {
     return artifactMutationError('artifact-alias');

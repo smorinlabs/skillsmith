@@ -2,6 +2,7 @@ import {
   type CurrentApplicationContext,
   type InteractionPort,
   type ObservationBundle,
+  defaultArtifactCoordinatorPorts,
   defaultRuntimePorts,
   resolveRuntimeConfiguration,
 } from '@skillsmith/core';
@@ -38,9 +39,14 @@ export const createCurrentApplicationContext = async (
     stderrIsTTY: Boolean(process.stderr.isTTY),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
+  const [ports, artifactCoordinator] = await Promise.all([
+    defaultRuntimePorts(),
+    defaultArtifactCoordinatorPorts(),
+  ]);
   return {
     observation: options.observation,
-    ports: await defaultRuntimePorts(),
+    ports,
+    artifactCoordinator,
     configuration: resolveRuntimeConfiguration(process.env),
     interaction: createPolicyInteraction(policy, options.interaction ?? promptInteraction()),
     invocationCwd: process.cwd(),

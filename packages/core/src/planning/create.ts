@@ -51,6 +51,13 @@ const operationKinds = new Set<string>(EXECUTABLE_OPERATION_KINDS);
 const selectionSources = new Set<string>(OPERATION_SELECTION_SOURCES);
 const diagnosticKinds = new Set<string>(PLANNING_DIAGNOSTIC_KINDS);
 const executionOutcomes = new Set<string>(OPERATION_EXECUTION_OUTCOMES);
+const currentMutatorCommands = new Set<string>([
+  'install',
+  'uninstall',
+  'dev',
+  'promote',
+  'doctor',
+]);
 
 const fail = (message: string): never => {
   throw new TypeError(`operation planning: ${message}`);
@@ -587,7 +594,7 @@ const validateGroupIdentity = (value: unknown, path: string): OperationGroupIden
   if (identity.domain !== 'skillsmith.operation-group-identity' || identity.schemaVersion !== 1) {
     fail(`${path} has an unsupported group identity domain or schema`);
   }
-  literal(identity.command, new Set(['install', 'uninstall', 'dev', 'promote']), `${path}.command`);
+  literal(identity.command, currentMutatorCommands, `${path}.command`);
   string(identity.skill, `${path}.skill`, true);
   if (identity.source !== null) validateSource(identity.source, `${path}.source`);
   if (identity.scope !== null) {
@@ -1079,7 +1086,7 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
   if (plan.domain !== 'skillsmith.operation-plan' || plan.schemaVersion !== 1) {
     fail('$plan has an unsupported domain or schema version');
   }
-  literal(plan.command, new Set(['install', 'uninstall', 'dev', 'promote']), '$plan.command');
+  literal(plan.command, currentMutatorCommands, '$plan.command');
   literal(plan.batchPolicy, new Set(['fail-fast', 'continue-on-error']), '$plan.batchPolicy');
   plan.selection = canonicalSelection(plan.selection);
   if (
@@ -1094,6 +1101,46 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
   );
   const operationIds = operations.map((operation) => operation.operationId);
   rejectDuplicates(operationIds, '$plan.operations.operationId');
+  if (plan.command === 'doctor') {
+    const artifactKinds = new Set(['migrate-ledger', 'migrate-project-config', 'write-lock']);
+    const groupIds = new Set<string>();
+    for (const operation of operations) {
+      if (
+        operation.pairId !== null ||
+        operation.skill !== null ||
+        operation.source !== null ||
+        operation.tool !== null ||
+        operation.scope !== null ||
+        !artifactKinds.has(operation.kind) ||
+        operation.dependencyMetadata.operationIds.length !== 0 ||
+        operation.preconditionIds.length !== 0 ||
+        operation.requiredCheckIds.length !== 0 ||
+        groupIds.has(operation.groupId)
+      ) {
+        fail('$plan doctor repairs must be independent artifact-only singleton operations');
+      }
+      groupIds.add(operation.groupId);
+      const expected =
+        operation.kind === 'migrate-ledger'
+          ? [false, false, false, true]
+          : operation.kind === 'migrate-project-config'
+            ? [false, true, false, false]
+            : [false, false, true, false];
+      if (
+        [
+          operation.mutates.live,
+          operation.mutates.manifest,
+          operation.mutates.lock,
+          operation.mutates.ledger,
+        ].some((value, index) => value !== expected[index])
+      ) {
+        fail('$plan doctor repair mutation flags do not match its artifact kind');
+      }
+    }
+    if (plan.batchPolicy !== 'continue-on-error') {
+      fail('$plan doctor repairs must continue across independent artifact failures');
+    }
+  }
   operations.sort(compareExecutableOperations);
   const operationIndex = new Map(
     operations.map((operation, index) => [operation.operationId, index]),

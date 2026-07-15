@@ -1,3 +1,4 @@
+import { artifactState } from './checks/artifact-state.ts';
 import { configParse } from './checks/config-parse.ts';
 import { crossScopeDuplicate } from './checks/cross-scope-duplicate.ts';
 import { legacyInstall } from './checks/legacy-install.ts';
@@ -9,6 +10,7 @@ import { xdgPaths } from './checks/xdg-paths.ts';
 import type { Check } from './types.ts';
 
 export const builtInChecks: readonly Check[] = [
+  artifactState,
   xdgPaths,
   configParse,
   toolDetected,

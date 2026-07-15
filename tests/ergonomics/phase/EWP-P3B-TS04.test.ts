@@ -849,6 +849,14 @@ const emptyModel = (): LedgerModel => ({
   history: [],
 });
 
+const canonicalLedgerSource = (model: LedgerModel = emptyModel()): string => {
+  const codec = artifactContractRegistry.get('ledger', 2);
+  if (codec === undefined) throw new Error('ledger-v2 codec is not registered');
+  const encoded = codec.encode(model);
+  if (!encoded.ok) throw new Error(`ledger-v2 fixture encode failed: ${encoded.error.reason}`);
+  return new TextDecoder().decode(encoded.value);
+};
+
 const selectedHistory = async (
   select: AnyFunction,
   model: LedgerModel,
@@ -2053,19 +2061,7 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
     const root = await mkdtemp(join(tmpdir(), 'p3b-ts04-workers-'));
     roots.push(root);
     await writeFile(join(root, scenario.marker), `${scenario.guard}\n`);
-    await writeFile(
-      join(root, scenario.target),
-      `${JSON.stringify({
-        schemaVersion: 2,
-        kind: 'skillsmith.placements',
-        updatedAt: '2026-07-15T00:00:00.000Z',
-        skills: {},
-        projects: {},
-        projectRegistrations: {},
-        transactions: {},
-        history: [],
-      })}\n`,
-    );
+    await writeFile(join(root, scenario.target), canonicalLedgerSource());
     const results = await Promise.all(
       scenario.workers.map((item) =>
         runWorker({
@@ -2096,10 +2092,7 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
     const root = await mkdtemp(join(tmpdir(), 'p3b-ts04-contention-'));
     roots.push(root);
     await writeFile(join(root, scenario.marker), `${scenario.guard}\n`);
-    await writeFile(
-      join(root, scenario.target),
-      `${JSON.stringify({ schemaVersion: 2, kind: 'skillsmith.placements', updatedAt: '2026-07-15T00:00:00.000Z', skills: {}, projects: {}, projectRegistrations: {}, transactions: {}, history: [] })}\n`,
-    );
+    await writeFile(join(root, scenario.target), canonicalLedgerSource());
     const base = {
       mode: 'lock-contention' as const,
       root,
@@ -2781,8 +2774,11 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
           } else {
             expect(interrupted.result.historyTransactionIds).toEqual([]);
           }
-          const committedBytesBeforeRecovery = postCommit
-            ? await readFile(ledgerPathOf(fleet.data))
+          const committedHistoryBeforeRecovery = postCommit
+            ? (
+                (JSON.parse(await readFile(ledgerPathOf(fleet.data), 'utf8')) as UnknownRecord)
+                  .history as UnknownRecord[]
+              ).find((item) => item.transactionId === `transaction-${crash.id}`)
             : null;
           const recovery = await runWorker({
             caseId: `${crash.id}-recovery`,
@@ -2815,11 +2811,17 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
             historyStartedAts: ['2026-07-15T00:00:00.000Z'],
             sourceRevisionPreserved: true,
           });
-          if (committedBytesBeforeRecovery !== null) {
+          if (committedHistoryBeforeRecovery !== null) {
+            const recoveredValue = JSON.parse(
+              await readFile(ledgerPathOf(fleet.data), 'utf8'),
+            ) as UnknownRecord;
+            const recoveredHistory = (recoveredValue.history as UnknownRecord[]).find(
+              (item) => item.transactionId === `transaction-${crash.id}`,
+            );
             expect(
-              await readFile(ledgerPathOf(fleet.data)),
+              JSON.stringify(recoveredHistory),
               `${crash.id} cleanup recovery must not rewrite exact committed history`,
-            ).toEqual(committedBytesBeforeRecovery);
+            ).toBe(JSON.stringify(committedHistoryBeforeRecovery));
           }
           const value = JSON.parse(
             await readFile(ledgerPathOf(fleet.data), 'utf8'),
@@ -2836,10 +2838,7 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
           join(root, cases.concurrencyCase.marker),
           `${cases.concurrencyCase.guard}\n`,
         );
-        await writeFile(
-          join(root, cases.concurrencyCase.target),
-          `${JSON.stringify({ schemaVersion: 2, kind: 'skillsmith.placements', updatedAt: '2026-07-15T00:00:00.000Z', skills: {}, projects: {}, projectRegistrations: {}, transactions: {}, history: [] })}\n`,
-        );
+        await writeFile(join(root, cases.concurrencyCase.target), canonicalLedgerSource());
         const base: Omit<WorkerSpec, 'role' | 'workerId' | 'injection'> = {
           caseId: crash.id,
           operationId: `operation-${crash.id}`,

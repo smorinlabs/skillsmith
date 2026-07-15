@@ -48,6 +48,7 @@ const context = (
 ): CurrentApplicationContext => ({
   observation,
   ports,
+  artifactCoordinator: {} as CurrentApplicationContext['artifactCoordinator'],
   configuration: resolveRuntimeConfiguration({ HOME: '/home/test' }),
   interaction: noninteractive,
   invocationCwd: '/invocation',

@@ -110,6 +110,7 @@ const EXPECTED_WIRE_IDENTITIES = [
   'agents@1',
   'agents@2',
   'health@1',
+  'health@2',
   'commands@1',
   'commands@2',
   'config-get@1',
@@ -250,8 +251,10 @@ const V2_RUNTIME_EXPORTS = [
   'agentsV2Codec',
   'commandsV2Codec',
   'flipV2Codec',
+  'healthV2Codec',
   'listV2Codec',
   'toFlipV2Dto',
+  'toHealthV2Dto',
   'toListV2Dto',
   'ledgerV2Codec',
   'toLedgerV2Dto',
@@ -393,6 +396,8 @@ const ledgerRecordOrderVariants = (dto: unknown): readonly [UnknownRecord, Unkno
   const alphaTools = alpha.tools as UnknownRecord;
   for (const pair of Object.values(alphaTools) as UnknownRecord[]) {
     pair.placementPath = `${pair.placementPath as string}-alpha`;
+    const journal = pair.journal as UnknownRecord | null | undefined;
+    if (journal !== null && journal !== undefined) journal.txId = `${journal.txId as string}:alpha`;
   }
   left.skills = { review, alpha };
   right.skills = {

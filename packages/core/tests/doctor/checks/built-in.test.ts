@@ -50,9 +50,10 @@ const baseCtx: CheckRunContext = {
 };
 
 describe('builtInChecks registry', () => {
-  test('contains all 8 checks', () => {
+  test('contains all 9 checks', () => {
     const ids = builtInChecks.map((c) => c.id).sort();
     expect(ids).toEqual([
+      'artifact-state',
       'config-parse',
       'cross-scope-duplicate',
       'legacy-install',

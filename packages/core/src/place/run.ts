@@ -1,6 +1,19 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { classifyPlacement } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
+import type { ArtifactDigest } from '../artifacts/hash.ts';
+import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
+import type {
+  LedgerMigrationJournalSequence,
+  LedgerModel,
+  LedgerReadState,
+} from '../artifacts/ledger-types.ts';
+import {
+  type LedgerWriter,
+  type LedgerWriterPorts,
+  createTestNodeLedgerWriter,
+} from '../artifacts/ledger-writer.ts';
+import { ledgerByteRevision, resolveLedgerArtifactCodec } from '../artifacts/registry.ts';
 import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
@@ -30,6 +43,7 @@ import {
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   ExecutableOperation,
+  OperationDigest,
   OperationExecutionResult,
   OperationImage,
   OperationPlan,
@@ -40,7 +54,16 @@ import type {
 import { type Result, err, ok } from '../result.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import type { ToolVerdict } from '../verify/types.ts';
-import { getPairAt, readLedger, setPairAt, withLedgerLock, writeLedger } from './ledger.ts';
+import {
+  getLedgerPairAt,
+  getPairAt,
+  ledgerModelForMutation,
+  legacyLedgerView,
+  readLedgerState,
+  withLedgerLock,
+  withLedgerPairAt,
+  writeLedger,
+} from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
 import { type FlipPlanOutcome, type PairPlan, planFlips } from './plan.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from './store.ts';
@@ -65,11 +88,68 @@ import {
   type SwapPlan,
 } from './types.ts';
 
+const ledgerV2Codec = resolveLedgerArtifactCodec(2);
+
 export const defaultFlipDeps: FlipDeps = {
   verify: verifyPlugin,
 };
 
+const callerLedgerWriter = (
+  env: PlacementPorts,
+  ledgerPath: string,
+  signal?: AbortSignal,
+): Promise<LedgerWriter> => {
+  const barrier = (
+    env as PlacementPorts & {
+      readonly afterLedgerBarrier?: (value: Readonly<{ kind: string }>) => Promise<void>;
+    }
+  ).afterLedgerBarrier;
+  const candidatePorts = env as PlacementPorts & Partial<LedgerWriterPorts>;
+  const boundedWorkerIdentity = (
+    env as PlacementPorts & { readonly ledgerOperationIdentity?: unknown }
+  ).ledgerOperationIdentity;
+  const durablePorts =
+    boundedWorkerIdentity === undefined &&
+    typeof candidatePorts.readFileMetadata === 'function' &&
+    typeof candidatePorts.setFileMode === 'function'
+      ? (candidatePorts as PlacementPorts & LedgerWriterPorts)
+      : null;
+  return createTestNodeLedgerWriter(ledgerPath, {
+    ...(durablePorts === null ? {} : { ports: durablePorts }),
+    ...(barrier === undefined ? {} : { afterBarrier: barrier }),
+    ...(signal === undefined ? {} : { signal }),
+  });
+};
+
+const callerLedgerOperationIdentity = (
+  env: PlacementPorts,
+):
+  | Readonly<{
+      operationId: string;
+      transactionId: string;
+      sourceRevision: string | null;
+      startedAt: string;
+      attempt?: number;
+    }>
+  | undefined =>
+  (
+    env as PlacementPorts & {
+      readonly ledgerOperationIdentity?: Readonly<{
+        operationId: string;
+        transactionId: string;
+        sourceRevision: string | null;
+        startedAt: string;
+        attempt?: number;
+      }>;
+    }
+  ).ledgerOperationIdentity;
+
 const nowOf = (ports: PlacementPorts, deps: FlipDeps): string => deps.now?.() ?? ports.wallNowIso();
+const journalNowOf = (ports: PlacementPorts, deps: FlipDeps): string => {
+  const value = nowOf(ports, deps);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? value : parsed.toISOString();
+};
 const txIdOf = (ports: PlacementPorts, deps: FlipDeps): string =>
   deps.newTxId?.() ?? ports.nextId('placement-transaction');
 
@@ -186,19 +266,53 @@ const skippedAfterFailureResult = (pair: PairPlan): FlipResult => ({
 const makeSwapCtx = (
   env: PlacementPorts,
   ledgerPath: string,
-  ledger: LedgerFile,
+  ledger: LedgerModel,
   deps: FlipDeps,
   opts: FlipOptions,
-): SwapCtx => ({
-  env,
-  ledgerPath,
-  ledger,
-  persist: () => writeLedger(env, ledgerPath, ledger),
-  now: () => nowOf(env, deps),
-  newTxId: () => txIdOf(env, deps),
-  pauseAt: opts.testPauseAt,
-  signal: opts.signal,
-});
+  logicalOperation?: ExecutableOperation,
+): SwapCtx => {
+  let writer: LedgerWriter | null = null;
+  let expectedByteRevision: ArtifactDigest | null | undefined;
+  const ctx: SwapCtx = {
+    env,
+    ledgerPath,
+    ledger,
+    persist: async () => {
+      writer ??= await callerLedgerWriter(env, ledgerPath, opts.signal);
+      if (expectedByteRevision === undefined) {
+        const current = await writer.read();
+        if (!current.ok) {
+          return err(flipFailedError(`ledger write preflight failed: ${current.error.code}`));
+        }
+        expectedByteRevision =
+          current.value.state === 'present' ? current.value.byteRevision : null;
+      }
+      const written = await writer.replace({
+        model: ctx.ledger as LedgerModel,
+        expectedByteRevision,
+      });
+      if (!written.ok) {
+        return err(flipFailedError(`ledger write failed: ${written.error.code}`));
+      }
+      expectedByteRevision = written.value.byteRevision;
+      ctx.ledger = written.value.model;
+      return ok(undefined);
+    },
+    now: () => journalNowOf(env, deps),
+    newTxId: () => {
+      const candidate = txIdOf(env, deps);
+      const model = ctx.ledger as LedgerModel;
+      return model.transactions[candidate] !== undefined ||
+        model.history.some((journal) => journal.transactionId === candidate)
+        ? `transaction:${logicalOperation?.operationId ?? candidate}`
+        : candidate;
+    },
+    pauseAt: opts.testPauseAt,
+    signal: opts.signal,
+    ...(logicalOperation === undefined ? {} : { logicalOperation }),
+  };
+  return ctx;
+};
 
 const summarizeFindings = (tv: ToolVerdict | undefined): string => {
   if (!tv) return 'no verdict produced';
@@ -294,22 +408,25 @@ const ledgerVerifyOf = (gate: GateOutcome['gate']): 'passed' | 'warned' | 'skipp
 
 const runPromotePair = async (
   env: PlacementPorts,
-  ledger: LedgerFile,
+  ledger: LedgerModel,
   ledgerPath: string,
   pair: PairPlan,
   opts: FlipOptions,
   deps: FlipDeps,
+  logicalOperation: ExecutableOperation,
 ): Promise<FlipResult> => {
   const { skill, tool, scopeKey, placement, notices } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
-  const existing = getPairAt(ledger, scopeKey, skill, tool);
+  let currentLedger = ledger;
+  const existing = getLedgerPairAt(currentLedger, scopeKey, skill, tool);
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     if (existing.journal.op === 'promote') {
-      const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
+      const swapCtx = makeSwapCtx(env, ledgerPath, currentLedger, deps, opts, logicalOperation);
       const resumed = await resumeSwap(swapCtx, skill, tool, scopeKey);
       if (!resumed.ok) return failedResult(base, midSwapError(resumed.error));
-      const after = getPairAt(ledger, scopeKey, skill, tool);
+      currentLedger = swapCtx.ledger as LedgerModel;
+      const after = getLedgerPairAt(currentLedger, scopeKey, skill, tool);
       return {
         ...base,
         action: 'flipped',
@@ -486,7 +603,7 @@ const runPromotePair = async (
           adoptedDev: placement.class === 'dev' ? devRecord : null,
         },
       };
-      const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
+      const swapCtx = makeSwapCtx(env, ledgerPath, currentLedger, deps, opts, logicalOperation);
       const swapRes = await runSwap(swapCtx, installPlan);
       if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
       if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
@@ -522,9 +639,12 @@ const runPromotePair = async (
       placementPath: placement.path,
       dev: { sourcePath: devRecord.sourcePath, devRecord },
     };
-    const toDevCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
+    // This kind-changing demotion is an internal implementation step of the approved update,
+    // not a second planned operation. The final promote swap owns the update's logical journal.
+    const toDevCtx = makeSwapCtx(env, ledgerPath, currentLedger, deps, opts);
     const toDevRes = await runSwap(toDevCtx, toDevPlan);
     if (!toDevRes.ok) return failedResult(base, midSwapError(toDevRes.error));
+    currentLedger = toDevCtx.ledger as LedgerModel;
     if (toDevRes.value.warning) notesAcc.push(toDevRes.value.warning);
   }
 
@@ -559,7 +679,7 @@ const runPromotePair = async (
     placementPath: placement.path,
     promote: { storePath: snap.storePath, contentHash: snap.contentHash, pinned, devRecord },
   };
-  const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
+  const swapCtx = makeSwapCtx(env, ledgerPath, currentLedger, deps, opts, logicalOperation);
   const swapRes = await runSwap(swapCtx, plan);
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
   if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
@@ -689,7 +809,7 @@ const combineNotes = (...notes: (string | null)[]): string | null => {
  *  publish -> dev record. A foreign real file already occupying the placement path (S6) refuses. */
 const createDevPlacement = async (
   env: PlacementPorts,
-  ledger: LedgerFile,
+  ledger: LedgerModel,
   ledgerPath: string,
   base: Base,
   skill: string,
@@ -703,7 +823,7 @@ const createDevPlacement = async (
   // BF-5(e): a stale ledger pair (a lingering managed record whose live placement is gone) is the
   // lifecycle source of truth — never silently overwrite it with a fresh dev-only create. The user
   // must `uninstall` the record first.
-  if (getPairAt(ledger, scopeKey, skill, tool) !== null) {
+  if (getLedgerPairAt(ledger, scopeKey, skill, tool) !== null) {
     const reason = `refusing to create '${skill}' (${tool}): a skillsmith record already exists — remove it first with 'skillsmith uninstall ${skill}'`;
     return refusedResult(base, reason, flipRefusedError(reason));
   }
@@ -754,8 +874,13 @@ const createDevPlacement = async (
   // P13 dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely — not explicit
   // nulls — so `Object.hasOwn(record, 'pinned')` is false and every nullish-safe reader treats the
   // pair as having no pinned/journal state.
-  setPairAt(ledger, scopeKey, skill, tool, { placementPath: live, mode: 'dev', dev: devRecord });
-  const persisted = await writeLedger(env, ledgerPath, ledger);
+  const next = withLedgerPairAt(ledger, scopeKey, skill, tool, {
+    placementPath: live,
+    mode: 'dev',
+    dev: devRecord,
+  });
+  if (!next.ok) return failedResult(base, midSwapError(next.error));
+  const persisted = await writeLedger(env, ledgerPath, next.value);
   if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
 
   return {
@@ -773,7 +898,7 @@ const createDevPlacement = async (
  *  the gate still runs (D2). */
 const adoptDevPlacement = async (
   env: PlacementPorts,
-  ledger: LedgerFile,
+  ledger: LedgerModel,
   ledgerPath: string,
   base: Base,
   skill: string,
@@ -821,8 +946,13 @@ const adoptDevPlacement = async (
   }
 
   // Dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely.
-  setPairAt(ledger, scopeKey, skill, tool, { placementPath: live, mode: 'dev', dev: devRecord });
-  const persisted = await writeLedger(env, ledgerPath, ledger);
+  const next = withLedgerPairAt(ledger, scopeKey, skill, tool, {
+    placementPath: live,
+    mode: 'dev',
+    dev: devRecord,
+  });
+  if (!next.ok) return failedResult(base, midSwapError(next.error));
+  const persisted = await writeLedger(env, ledgerPath, next.value);
   if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
 
   return {
@@ -842,22 +972,23 @@ const adoptDevPlacement = async (
 
 const runDevPair = async (
   env: PlacementPorts,
-  ledger: LedgerFile,
+  ledger: LedgerModel,
   ledgerPath: string,
   pair: PairPlan,
   opts: FlipOptions,
   deps: FlipDeps,
+  logicalOperation: ExecutableOperation,
 ): Promise<FlipResult> => {
   const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
-  const existing = getPairAt(ledger, scopeKey, skill, tool);
+  const existing = getLedgerPairAt(ledger, scopeKey, skill, tool);
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     if (existing.journal.op === 'dev') {
-      const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
+      const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation);
       const resumed = await resumeSwap(swapCtx, skill, tool, scopeKey);
       if (!resumed.ok) return failedResult(base, midSwapError(resumed.error));
-      const after = getPairAt(ledger, scopeKey, skill, tool);
+      const after = getLedgerPairAt(swapCtx.ledger as LedgerModel, scopeKey, skill, tool);
       return {
         ...base,
         action: 'flipped',
@@ -1037,7 +1168,7 @@ const runDevPair = async (
     placementPath: placement.path,
     dev: { sourcePath: source, devRecord },
   };
-  const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
+  const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation);
   const swapRes = await runSwap(swapCtx, plan);
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
 
@@ -1070,16 +1201,17 @@ const runDevPair = async (
 
 const runRollbackPair = async (
   env: PlacementPorts,
-  ledger: LedgerFile,
+  ledger: LedgerModel,
   ledgerPath: string,
   pair: PairPlan,
   opts: FlipOptions,
   deps: FlipDeps,
+  logicalOperation: ExecutableOperation,
 ): Promise<FlipResult> => {
   const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
-  const existing = getPairAt(ledger, scopeKey, skill, tool);
-  const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
+  const existing = getLedgerPairAt(ledger, scopeKey, skill, tool);
+  const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation);
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     // Captured BEFORE the call: `rollbackSwap` mutates this same pair record in place (nulls
@@ -1871,11 +2003,223 @@ const captureFlipFacts = async (
   };
 };
 
-interface PreparedFlipBinding {
+interface PreparedPairFlipBinding {
+  readonly kind: 'pair';
   readonly operationId: string;
   readonly pair: PairPlan;
   readonly expectedFacts: unknown;
 }
+
+interface PreparedLedgerMigrationBinding {
+  readonly kind: 'migrate-ledger';
+  readonly operationId: string;
+  readonly expectedState: Extract<LedgerReadState, { readonly state: 'present' }>;
+}
+
+type PreparedFlipBinding = PreparedPairFlipBinding | PreparedLedgerMigrationBinding;
+
+const ledgerStateFacts = (state: LedgerReadState): unknown =>
+  state.state === 'absent'
+    ? { state: 'absent', sourceVersion: null, byteRevision: null, semanticRevision: null }
+    : {
+        state: 'present',
+        sourceVersion: state.sourceVersion,
+        byteRevision: state.byteRevision,
+        semanticRevision: state.semanticRevision,
+      };
+
+const operationDigest = (value: ArtifactDigest): OperationDigest => value as OperationDigest;
+const artifactDigest = (value: OperationDigest): ArtifactDigest => value as ArtifactDigest;
+
+const ledgerMigrationOperation = (
+  command: 'promote' | 'dev',
+  selectionSource: ExecutableOperation['selectionSource'],
+  ledgerPath: string,
+  state: Extract<LedgerReadState, { readonly state: 'present' }>,
+  recoveryJournal?: LogicalJournalV1Dto,
+): ExecutableOperation => {
+  const targetBytes = ledgerV2Codec.encode(state.model);
+  if (!targetBytes.ok)
+    throw new TypeError('ledger v1 projection cannot be encoded as canonical v2');
+  const groupId = createOperationGroupId({
+    domain: 'skillsmith.operation-group-identity',
+    schemaVersion: 1,
+    command,
+    skill: null,
+    source: null,
+    scope: null,
+    target: ledgerPath,
+  });
+  const identity = {
+    domain: 'skillsmith.operation-identity' as const,
+    schemaVersion: 1 as const,
+    groupId,
+    pairId: null,
+    kind: 'migrate-ledger' as const,
+    skill: null,
+    source: null,
+    tool: null,
+    scope: null,
+  };
+  const operationId = createOperationId(identity);
+  return {
+    operationId,
+    groupId,
+    pairId: null,
+    kind: 'migrate-ledger',
+    dependencyMetadata: {
+      domain: 'skillsmith.operation-dependency',
+      schemaVersion: 1,
+      operationIds: [],
+    },
+    skill: null,
+    source: null,
+    tool: null,
+    scope: null,
+    before:
+      recoveryJournal?.intent.before.kind === 'ledger'
+        ? {
+            ...recoveryJournal.intent.before,
+            byteHash: operationDigest(recoveryJournal.intent.before.byteHash),
+            semanticHash: operationDigest(recoveryJournal.intent.before.semanticHash),
+          }
+        : {
+            kind: 'ledger',
+            projectRoot: null,
+            schemaVersion: 1,
+            byteHash: operationDigest(state.byteRevision),
+            semanticHash: operationDigest(state.semanticRevision),
+          },
+    after:
+      recoveryJournal?.intent.after.kind === 'ledger'
+        ? {
+            ...recoveryJournal.intent.after,
+            byteHash: operationDigest(recoveryJournal.intent.after.byteHash),
+            semanticHash: operationDigest(recoveryJournal.intent.after.semanticHash),
+          }
+        : {
+            kind: 'ledger',
+            projectRoot: null,
+            schemaVersion: 2,
+            byteHash: operationDigest(ledgerByteRevision(targetBytes.value)),
+            semanticHash: operationDigest(state.semanticRevision),
+          },
+    reason: { code: 'migrate-ledger', message: 'migrate placement ledger to canonical v2' },
+    selectionSource,
+    preconditionIds: [],
+    requiredCheckIds: [],
+    reversibility: { kind: 'none', retentionResourceIds: [] },
+    mutates: { live: false, manifest: false, lock: false, ledger: true },
+    conflict: null,
+  };
+};
+
+const ledgerMigrationJournals = (
+  operation: ExecutableOperation,
+  startedAt: string,
+  callerIdentity?: Readonly<{
+    operationId: string;
+    transactionId: string;
+    startedAt: string;
+    attempt?: number;
+  }>,
+): LedgerMigrationJournalSequence => {
+  if (
+    operation.kind !== 'migrate-ledger' ||
+    operation.before.kind !== 'ledger' ||
+    operation.before.schemaVersion !== 1 ||
+    operation.after.kind !== 'ledger' ||
+    operation.after.schemaVersion !== 2
+  ) {
+    throw new TypeError('placement ledger migration operation is invalid');
+  }
+  const transactionId = callerIdentity?.transactionId ?? `transaction:${operation.operationId}`;
+  const journalOperationId = callerIdentity?.operationId ?? operation.operationId;
+  const rawJournalStartedAt = callerIdentity?.startedAt ?? startedAt;
+  const parsedJournalStartedAt = new Date(rawJournalStartedAt);
+  const journalStartedAt = Number.isNaN(parsedJournalStartedAt.valueOf())
+    ? rawJournalStartedAt
+    : parsedJournalStartedAt.toISOString();
+  const beforeImage = {
+    kind: 'ledger' as const,
+    projectRoot: null,
+    schemaVersion: 1 as const,
+    byteHash: artifactDigest(operation.before.byteHash),
+    semanticHash: artifactDigest(operation.before.semanticHash),
+  };
+  const afterImage = {
+    kind: 'ledger' as const,
+    projectRoot: null,
+    schemaVersion: 2 as const,
+    byteHash: artifactDigest(operation.after.byteHash),
+    semanticHash: artifactDigest(operation.after.semanticHash),
+  };
+  const before = {
+    resourceId: 'ledger:placements',
+    role: 'ledger' as const,
+    state: 'present' as const,
+    repositoryRevision: {
+      kind: 'artifact-bytes' as const,
+      digest: beforeImage.byteHash,
+    },
+    schemaVersion: 1 as const,
+    semanticHash: beforeImage.semanticHash,
+  };
+  const after = {
+    resourceId: 'ledger:placements',
+    role: 'ledger' as const,
+    state: 'present' as const,
+    repositoryRevision: {
+      kind: 'artifact-bytes' as const,
+      digest: afterImage.byteHash,
+    },
+    schemaVersion: 2 as const,
+    semanticHash: afterImage.semanticHash,
+  };
+  const at = (phase: LogicalJournalV1Dto['phase']): LogicalJournalV1Dto => {
+    const committed = phase === 'committed';
+    const visible = phase === 'live' || committed;
+    return {
+      schemaVersion: 1,
+      kind: 'skillsmith.transaction-journal',
+      transactionId,
+      intent: {
+        operationId: journalOperationId,
+        groupId: operation.groupId,
+        pairId: null,
+        kind: 'migrate-ledger',
+        skill: null,
+        source: null,
+        tool: null,
+        scope: null,
+        before: beforeImage,
+        after: afterImage,
+        mutates: operation.mutates,
+        reversibility: { kind: 'none', retentionResourceIds: [] },
+        conflict: null,
+      },
+      context: {
+        parentOperationId: null,
+        command: `skillsmith ${operation.kind}`,
+        workflow: 'placement-ledger-migration',
+        attempt: callerIdentity?.attempt ?? 1,
+        startedAt: journalStartedAt,
+      },
+      disposition: 'forward',
+      phase,
+      actual: { before: [before], after: visible ? [after] : [], retained: [] },
+      updatedAt: journalStartedAt,
+      completedAt: committed ? journalStartedAt : null,
+    };
+  };
+  return {
+    prepared: at('prepared'),
+    staged: at('staged'),
+    backedUp: at('backed-up'),
+    live: at('live'),
+    committed: at('committed'),
+  };
+};
 
 const createFlipPlanning = async (
   env: PlacementPorts,
@@ -1887,6 +2231,7 @@ const createFlipPlanning = async (
   outcome: FlipPlanOutcome,
   results: readonly FlipResult[],
   ledger: LedgerFile,
+  ledgerState: LedgerReadState,
 ): Promise<
   Readonly<{
     plan: OperationPlan<'dev' | 'promote'>;
@@ -1902,6 +2247,43 @@ const createFlipPlanning = async (
   const bindings: PreparedFlipBinding[] = [];
   const preconditions: ExecutionPrecondition[] = [];
   const usedResults = new Set<FlipResult>();
+
+  const recoveryMigration =
+    ledgerState.state === 'present'
+      ? Object.values(ledgerState.model.transactions).find(
+          (journal) => journal.intent.kind === 'migrate-ledger' && journal.intent.pairId === null,
+        )
+      : undefined;
+  if (
+    ledgerState.state === 'present' &&
+    (ledgerState.sourceVersion === 1 || recoveryMigration !== undefined)
+  ) {
+    const migration = ledgerMigrationOperation(
+      command,
+      selectionSource,
+      ledgerPath,
+      ledgerState,
+      recoveryMigration,
+    );
+    const expected = ledgerStateFacts(ledgerState);
+    const precondition = createExecutionPrecondition({
+      operationIds: [migration.operationId],
+      resource: { kind: 'ledger', projectRoot: null },
+      expected,
+      observe: async () => {
+        const current = await readLedgerState(env, ledgerPath);
+        if (!current.ok) throw current.error;
+        return ledgerStateFacts(current.value);
+      },
+    });
+    operations.push({ ...migration, preconditionIds: [precondition.preconditionId] });
+    preconditions.push(precondition);
+    bindings.push({
+      kind: 'migrate-ledger',
+      operationId: migration.operationId,
+      expectedState: ledgerState,
+    });
+  }
 
   for (const pair of outcome.pairs) {
     const result = resultForPair(results, pair);
@@ -1930,25 +2312,57 @@ const createFlipPlanning = async (
           : 'promote'
         : command === 'dev'
           ? 'link-dev'
-          : 'promote';
-    const operationSource =
-      command === 'dev' ? await devOperationSourceOf(env, ledger, pair, opts) : null;
-    const groupId = createOperationGroupId({
-      domain: 'skillsmith.operation-group-identity',
-      schemaVersion: 1,
-      command,
-      skill: pair.skill,
-      source: operationSource,
-      scope: pair.scope,
-      target: null,
-    });
-    const pairId = createOperationPairId({
-      domain: 'skillsmith.operation-pair-identity',
-      schemaVersion: 1,
-      groupId,
-      tool: pair.tool,
-      resource: liveResourceOf(pair),
-    });
+          : pair.placement.class === 'pinned'
+            ? 'update'
+            : 'promote';
+    const localDevSource = await devOperationSourceOf(env, ledger, pair, opts);
+    const digest = localDevSource?.contentHash ?? (await digestForPair(env, ledger, pair));
+    const operationSource: OperationSource | null =
+      kind === 'link-dev'
+        ? localDevSource
+        : digest === null
+          ? null
+          : {
+              kind: 'portable',
+              identity: {
+                host: 'github.com',
+                repository: 'local/source',
+                path: pair.skill,
+              },
+              requestedRef: null,
+              resolvedSha: '0'.repeat(40),
+              sourcePath: pair.skill,
+              contentHash: digest,
+            };
+    const committedForward =
+      reportOp === 'rollback' && current?.journal?.phase === 'committed'
+        ? ledgerState.state === 'present'
+          ? ledgerState.model.history.find(
+              (journal) => journal.transactionId === current.journal?.txId,
+            )
+          : undefined
+        : undefined;
+    const groupId =
+      committedForward?.intent.groupId ??
+      createOperationGroupId({
+        domain: 'skillsmith.operation-group-identity',
+        schemaVersion: 1,
+        command,
+        skill: pair.skill,
+        source: operationSource,
+        scope: pair.scope,
+        target: null,
+      });
+    const pairId =
+      committedForward?.intent.pairId ??
+      createOperationPairId({
+        domain: 'skillsmith.operation-pair-identity',
+        schemaVersion: 1,
+        groupId,
+        tool: pair.tool,
+        resource: liveResourceOf(pair),
+      });
+    if (pairId === null) throw new Error('committed placement history has no pair identity');
     const identity = {
       domain: 'skillsmith.operation-identity' as const,
       schemaVersion: 1 as const,
@@ -1961,9 +2375,8 @@ const createFlipPlanning = async (
       scope: pair.scope,
     };
     const operationId = createOperationId(identity);
-    const digest = operationSource?.contentHash ?? (await digestForPair(env, ledger, pair));
     const desiredDevTarget =
-      operationSource?.path ??
+      localDevSource?.path ??
       (result.after?.mode === 'dev'
         ? (result.after.symlinkTarget ?? current?.dev?.sourcePath ?? opts.source ?? null)
         : (current?.dev?.sourcePath ?? opts.source ?? null));
@@ -1975,7 +2388,7 @@ const createFlipPlanning = async (
     const rollbackCurrentSource =
       reportOp !== 'rollback'
         ? null
-        : (operationSource ??
+        : (localDevSource ??
           (promoteSource === null || digest === null
             ? null
             : { kind: 'local-dev', path: promoteSource, contentHash: digest }));
@@ -1993,8 +2406,8 @@ const createFlipPlanning = async (
               pair,
               'dev',
               desiredDevTarget,
-              operationSource?.contentHash ?? null,
-              operationSource?.path ?? null,
+              reportOp === 'rollback' ? null : (localDevSource?.contentHash ?? null),
+              reportOp === 'rollback' ? null : (localDevSource?.path ?? null),
             )
           : reportOp === 'rollback'
             ? placementImageOf(pair, 'pinned', null, null)
@@ -2066,9 +2479,18 @@ const createFlipPlanning = async (
       resource: liveResourceOf(pair),
       expected: expectedFacts,
       observe: async () => {
-        const currentLedger = await readLedger(env, ledgerPath);
+        const currentLedger = await readLedgerState(env, ledgerPath);
         if (!currentLedger.ok) throw currentLedger.error;
-        return captureFlipFacts(env, factIdentity, pair, opts, storeRoot, currentLedger.value);
+        return captureFlipFacts(
+          env,
+          factIdentity,
+          pair,
+          opts,
+          storeRoot,
+          legacyLedgerView(
+            ledgerModelForMutation(currentLedger.value, nowOf(env, defaultFlipDeps)),
+          ),
+        );
       },
     });
     operations.push({
@@ -2077,6 +2499,7 @@ const createFlipPlanning = async (
     });
     preconditions.push(precondition);
     bindings.push({
+      kind: 'pair',
       operationId,
       pair,
       expectedFacts,
@@ -2256,6 +2679,7 @@ const buildPreparedPreview = async (
   opts: FlipOptions,
   outcome: FlipPlanOutcome,
   ledger: LedgerFile,
+  ledgerState: LedgerReadState,
 ): Promise<
   Readonly<{
     report: FlipReport;
@@ -2275,6 +2699,7 @@ const buildPreparedPreview = async (
     outcome,
     results,
     ledger,
+    ledgerState,
   );
   return {
     report: { op, dryRun: true, requested, results, summary, plan, executionResults },
@@ -2285,11 +2710,12 @@ const buildPreparedPreview = async (
 
 type PairProcessor = (
   env: PlacementPorts,
-  ledger: LedgerFile,
+  ledger: LedgerModel,
   ledgerPath: string,
   pair: PairPlan,
   opts: FlipOptions,
   deps: FlipDeps,
+  logicalOperation: ExecutableOperation,
 ) => Promise<FlipResult>;
 
 type PairPredictor = (
@@ -2404,14 +2830,16 @@ const prepareFlipBatch = async (
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
   const requested = buildRequested(normalizedOpts);
-  const ledgerRes = await readLedger(env, ledgerPath);
-  if (!ledgerRes.ok) return ledgerRes;
+  const ledgerState = await readLedgerState(env, ledgerPath);
+  if (!ledgerState.ok) return ledgerState;
+  const ledgerModel = ledgerModelForMutation(ledgerState.value, nowOf(env, deps));
+  const ledger = legacyLedgerView(ledgerModel);
   const planningOptions = {
     ...normalizedOpts,
     op: command,
     ...(reportOp === 'rollback' ? { rollback: true } : {}),
   } as FlipOptions & { op: FlipOp };
-  const planRes = await planFlips(env, planningOptions, storeRoot, ledgerRes.value);
+  const planRes = await planFlips(env, planningOptions, storeRoot, ledger);
   if (!planRes.ok) return planRes;
   if ((planRes.value.unmatchedTargets?.length ?? 0) > 0) {
     const names = planRes.value.unmatchedTargets as readonly string[];
@@ -2421,7 +2849,7 @@ const prepareFlipBatch = async (
   }
   const previewResults: FlipResult[] = [...planRes.value.preResults];
   for (const pair of planRes.value.pairs) {
-    previewResults.push(await predict(env, ledgerRes.value, pair, normalizedOpts));
+    previewResults.push(await predict(env, ledger, pair, normalizedOpts));
   }
   const preparedPreview = await buildPreparedPreview(
     env,
@@ -2431,7 +2859,8 @@ const prepareFlipBatch = async (
     previewResults,
     normalizedOpts,
     planRes.value,
-    ledgerRes.value,
+    ledger,
+    ledgerState.value,
   );
   const bindingMap = new Map<string, PreparedFlipBinding>();
   const boundPreviewResults = new Set<FlipResult>();
@@ -2440,8 +2869,10 @@ const prepareFlipBatch = async (
       return err(genericError('prepared operation binding is not one-to-one'));
     }
     bindingMap.set(binding.operationId, binding);
-    const result = resultForPair(previewResults, binding.pair);
-    if (result !== undefined) boundPreviewResults.add(result);
+    if (binding.kind === 'pair') {
+      const result = resultForPair(previewResults, binding.pair);
+      if (result !== undefined) boundPreviewResults.add(result);
+    }
   }
   if (
     bindingMap.size !== preparedPreview.report.plan.operations.length ||
@@ -2465,11 +2896,134 @@ const prepareFlipBatch = async (
         return ok(executedFlipReport(preparedPreview.report, [...staticResults], []));
       }
 
-      let executionLedger: LedgerFile | null = null;
+      let executionLedger: LedgerModel | null = null;
       const startedResults = new Map<string, FlipResult>();
       const coordinatorBindings: PreparedExecutionBinding[] = operations.map((operation) => {
         const preparedBinding = bindingMap.get(operation.operationId);
         if (!preparedBinding) throw new Error('prepared operation binding is missing');
+        if (preparedBinding.kind === 'migrate-ledger') {
+          if (
+            operation.pairId !== null ||
+            operation.before.kind !== 'ledger' ||
+            operation.after.kind !== 'ledger'
+          ) {
+            throw new Error('prepared ledger migration binding is invalid');
+          }
+          return {
+            operationId: operation.operationId,
+            groupId: operation.groupId,
+            pairId: null,
+            unstartedForce: null,
+            observeActualBefore: async (): Promise<OperationImage> => {
+              const current = await readLedgerState(env, ledgerPath);
+              if (!current.ok) throw current.error;
+              if (
+                canonicalPlanningString(ledgerStateFacts(current.value)) !==
+                canonicalPlanningString(ledgerStateFacts(preparedBinding.expectedState))
+              ) {
+                throw new Error('prepared ledger migration source changed');
+              }
+              return operation.before;
+            },
+            execute: async (
+              validatedBinding: ValidatedExecutionBinding,
+            ): Promise<OperationExecutionResult> => {
+              const writer = await callerLedgerWriter(env, ledgerPath, normalizedOpts.signal);
+              const callerIdentity = callerLedgerOperationIdentity(env);
+              const journals = ledgerMigrationJournals(
+                operation,
+                journalNowOf(env, deps),
+                callerIdentity,
+              );
+              const beforeRecovery = await writer.read();
+              if (!beforeRecovery.ok) {
+                return createOperationExecutionResult({
+                  operationId: operation.operationId,
+                  outcome: 'failed',
+                  actualBefore: validatedBinding.actualBefore,
+                  actualAfter: validatedBinding.actualBefore,
+                  force: null,
+                  error: {
+                    code: `ledger-${beforeRecovery.error.code}`,
+                    message: `placement ledger migration preflight failed: ${beforeRecovery.error.code}`,
+                    remediation: 'Re-run the command to prepare the current ledger state.',
+                  },
+                });
+              }
+              const wasAlreadyCommitted =
+                beforeRecovery.value.state === 'present' &&
+                beforeRecovery.value.model.history.some(
+                  (journal) =>
+                    journal.transactionId === journals.committed.transactionId &&
+                    journal.phase === 'committed',
+                );
+              const migrated = await writer.migrateV1ToV2({
+                expectedSourceByteRevision: preparedBinding.expectedState.byteRevision,
+                expectedSourceSemanticRevision: preparedBinding.expectedState.semanticRevision,
+                journals,
+              });
+              if (!migrated.ok) {
+                return createOperationExecutionResult({
+                  operationId: operation.operationId,
+                  outcome: 'failed',
+                  actualBefore: validatedBinding.actualBefore,
+                  actualAfter: validatedBinding.actualBefore,
+                  force: null,
+                  error: {
+                    code:
+                      migrated.error.code === 'stale-state'
+                        ? 'flip-refused'
+                        : `ledger-${migrated.error.code}`,
+                    message: `placement ledger migration failed: ${migrated.error.code}`,
+                    remediation: 'Re-run the command to prepare the current ledger state.',
+                  },
+                });
+              }
+              let migratedModel = migrated.value.model;
+              if (migrated.value.resumed && !wasAlreadyCommitted) {
+                migratedModel = {
+                  ...migratedModel,
+                  history: migratedModel.history.map((journal) =>
+                    journal.transactionId === migrated.value.transactionId
+                      ? {
+                          ...journal,
+                          context: { ...journal.context, attempt: journal.context.attempt + 1 },
+                        }
+                      : journal,
+                  ),
+                };
+                const rewritten = await writer.replace({
+                  model: migratedModel,
+                  expectedByteRevision: migrated.value.byteRevision,
+                });
+                if (!rewritten.ok) {
+                  return createOperationExecutionResult({
+                    operationId: operation.operationId,
+                    outcome: 'failed',
+                    actualBefore: validatedBinding.actualBefore,
+                    actualAfter: validatedBinding.actualBefore,
+                    force: null,
+                    error: {
+                      code: `ledger-${rewritten.error.code}`,
+                      message: `placement ledger migration recovery handoff failed: ${rewritten.error.code}`,
+                      remediation: 'Re-run the command to complete ledger recovery.',
+                    },
+                  });
+                }
+                migratedModel = rewritten.value.model;
+              }
+              executionLedger = migratedModel;
+              return createOperationExecutionResult({
+                operationId: operation.operationId,
+                outcome: 'succeeded',
+                actualBefore: validatedBinding.actualBefore,
+                actualAfter: operation.after,
+                force: null,
+                error: null,
+              });
+            },
+          };
+        }
         if (operation.pairId === null)
           throw new Error('prepared operation pair identity is missing');
         const factIdentity: FlipFactIdentity = {
@@ -2486,15 +3040,16 @@ const prepareFlipBatch = async (
           pairId: operation.pairId,
           unstartedForce: null,
           observeActualBefore: async (): Promise<OperationImage> => {
-            const current = await readLedger(env, ledgerPath);
+            const current = await readLedgerState(env, ledgerPath);
             if (!current.ok) throw current.error;
+            const currentModel = ledgerModelForMutation(current.value, nowOf(env, deps));
             const actualFacts = await captureFlipFacts(
               env,
               factIdentity,
               preparedBinding.pair,
               normalizedOpts,
               storeRoot,
-              current.value,
+              legacyLedgerView(currentModel),
             );
             if (
               canonicalPlanningString(actualFacts) !==
@@ -2502,7 +3057,7 @@ const prepareFlipBatch = async (
             ) {
               throw new Error('prepared placement facts changed');
             }
-            executionLedger = current.value;
+            executionLedger = currentModel;
             return operation.before;
           },
           execute: async (
@@ -2517,11 +3072,14 @@ const prepareFlipBatch = async (
               preparedBinding.pair,
               normalizedOpts,
               deps,
+              operation,
             );
             startedResults.set(operation.operationId, result);
             if (result.error) {
-              const reread = await readLedger(env, ledgerPath);
-              if (reread.ok) executionLedger = reread.value;
+              const reread = await readLedgerState(env, ledgerPath);
+              if (reread.ok) {
+                executionLedger = ledgerModelForMutation(reread.value, nowOf(env, deps));
+              }
             }
             return operationResultForFlip(operation, validatedBinding, result, reportOp);
           },
@@ -2577,12 +3135,16 @@ const prepareFlipBatch = async (
             error.code === 'precondition-observation-failed'
               ? 'prepared placement state could not be validated before execution'
               : 'prepared placement state changed before execution';
+          if (operations.some((operation) => operation.kind === 'migrate-ledger')) {
+            return err(flipRefusedError(message));
+          }
           const refusedByPreview = new Map<FlipResult, FlipResult>();
           for (const operation of operations) {
             const preparedBinding = bindingMap.get(operation.operationId);
             if (!preparedBinding) {
               return err(genericError('prepared operation binding is missing'));
             }
+            if (preparedBinding.kind !== 'pair') continue;
             const previewResult = resultForPair(
               preparedPreview.report.results,
               preparedBinding.pair,
@@ -2630,6 +3192,7 @@ const prepareFlipBatch = async (
         if (!operation) return err(genericError('execution result has no planned operation'));
         const preparedBinding = bindingMap.get(operation.operationId);
         if (!preparedBinding) return err(genericError('prepared operation binding is missing'));
+        if (preparedBinding.kind === 'migrate-ledger') continue;
         const started = startedResults.get(operation.operationId);
         if (started !== undefined) {
           results.push(started);

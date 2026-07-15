@@ -16,6 +16,7 @@ export type NonMutatingCommand =
   | 'gc';
 
 export interface NonMutatingModeOptions {
+  fix?: boolean;
   dryRun?: boolean;
   check?: boolean;
   yes?: boolean;
@@ -62,7 +63,7 @@ export const NON_MUTATING_MODE_POLICIES = {
 } as const satisfies Record<NonMutatingCommand, NonMutatingModePolicy>;
 
 export type NonMutatingModeResult =
-  | { readonly ok: true }
+  | { readonly ok: true; readonly mutating?: true }
   | { readonly ok: false; readonly exitCode: 2; readonly message: string };
 
 const conflict = (left: string, right: string): NonMutatingModeResult => ({
@@ -80,6 +81,20 @@ export const validateNonMutatingMode = (
 
   if (options.dryRun && options.check) return conflict('--dry-run', '--check');
   if (options.yes && options.dryRun) return conflict('--yes', '--dry-run');
+  if (command === 'doctor' && options.dryRun && !options.fix) {
+    return {
+      ok: false,
+      exitCode: 2,
+      message: '--dry-run requires --fix',
+    };
+  }
+  if (command === 'doctor' && options.yes && !options.fix) {
+    return {
+      ok: false,
+      exitCode: 2,
+      message: '--yes requires --fix',
+    };
+  }
   if (options.yes && options.check) return conflict('--yes', '--check');
   if (policy.reportOnly && options.reportOnly && options.exitCode)
     return conflict('--report-only', '--exit-code');
@@ -90,5 +105,5 @@ export const validateNonMutatingMode = (
     return conflict('--check', '--force');
   }
 
-  return { ok: true };
+  return command === 'doctor' && options.fix ? { ok: true, mutating: true } : { ok: true };
 };

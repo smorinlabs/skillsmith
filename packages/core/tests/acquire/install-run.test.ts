@@ -17,7 +17,14 @@ import type { CandidateSkill, InstallDeps, InstallOptions } from '../../src/acqu
 import type { InstallRecord } from '../../src/agents/types.ts';
 import type { ExecResult } from '../../src/env/types.ts';
 import { type SkillSmithError, sourceUnresolvableError } from '../../src/errors.ts';
-import { getPairAt, readLedger, setPairAt, writeLedger } from '../../src/place/ledger.ts';
+import {
+  getLedgerPairAt as getPairAt,
+  ledgerModelForMutation,
+  readLedgerState,
+  withLedgerPairAt,
+  withoutLedgerPairAt,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import type { Journal } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
@@ -36,7 +43,7 @@ import {
 
 setDefaultTimeout(60_000);
 
-const NOW = '2026-07-08T00:00:00Z';
+const NOW = '2026-07-08T00:00:00.000Z';
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
 
 const detectBoth: InstallDeps['detect'] = async (_env, tool) =>
@@ -79,14 +86,16 @@ const passVerify: InstallDeps['verify'] = async (_env, opts) => {
   return ok(report);
 };
 
+let installCounter = 0;
 const makeDeps = (over: Partial<InstallDeps> = {}): InstallDeps => {
+  const start = installCounter++;
   let n = 0;
   return {
     verify: passVerify,
     detect: detectBoth,
     transport: fixture.transport,
     now: () => NOW,
-    newTxId: () => (0x10000000 + n++).toString(16).slice(-8),
+    newTxId: () => (0x10000000 + start * 1000 + n++).toString(16).slice(-8),
     ...over,
   };
 };
@@ -119,9 +128,10 @@ const claudeRoot = (): string => join(f.home, '.claude', 'skills');
 const agentsRoot = (): string => join(f.home, '.agents', 'skills');
 const legacyRoot = (): string => join(f.home, '.codex', 'skills');
 const led = async () => {
-  const r = await readLedger(f.env, ledgerPathOf(f.data));
+  const r = await readLedgerState(f.env, ledgerPathOf(f.data));
   if (!r.ok) throw new Error(msg(r.error));
-  return r.value;
+  if (r.value.state !== 'present') throw new Error('expected persisted ledger');
+  return r.value.model;
 };
 const fetchDirs = async (): Promise<readonly string[]> => {
   const dir = join(f.data, '.fetch');
@@ -259,8 +269,11 @@ describe('runInstall — idempotence / update / repair', () => {
 
     // delete the ledger pairs, leave placements intact on disk
     const ledger = await led();
-    Reflect.deleteProperty(ledger.skills, 'factor-scan');
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const withoutClaude = withoutLedgerPairAt(ledger, null, 'factor-scan', 'claude-code');
+    if (!withoutClaude.ok) throw new Error(msg(withoutClaude.error));
+    const withoutCodex = withoutLedgerPairAt(withoutClaude.value, null, 'factor-scan', 'codex');
+    if (!withoutCodex.ok) throw new Error(msg(withoutCodex.error));
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), withoutCodex.value);
     if (!w.ok) throw new Error(msg(w.error));
 
     const r2 = await runInstall(f.env, userOpts, makeDeps());
@@ -819,7 +832,7 @@ describe('runInstall — post-transport safety boundary', () => {
     const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
     if (!pair?.pinned) throw new Error('expected seeded pinned pair');
     const backupPath = join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef');
-    pair.journal = {
+    const journal: Journal = {
       op: 'install',
       txId: 'deadbeef',
       phase: 'committed',
@@ -834,7 +847,12 @@ describe('runInstall — post-transport safety boundary', () => {
       stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
       backupPath,
     };
-    const persisted = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const next = withLedgerPairAt(ledger, null, 'factor-scan', 'claude-code', {
+      ...pair,
+      journal,
+    });
+    if (!next.ok) throw new Error(msg(next.error));
+    const persisted = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
     if (!persisted.ok) throw new Error(msg(persisted.error));
     const sweepFailure: RuntimePorts = {
       ...f.env,
@@ -1021,8 +1039,12 @@ describe('runInstall — unresolved journal (Global Constraint #6)', () => {
       stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
       backupPath: join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef'),
     };
-    pair.journal = journal;
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const next = withLedgerPairAt(ledger, null, 'factor-scan', 'claude-code', {
+      ...pair,
+      journal,
+    });
+    if (!next.ok) throw new Error(msg(next.error));
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
     if (!w.ok) throw new Error(msg(w.error));
 
     const r2 = await runInstall(
@@ -1061,8 +1083,12 @@ describe('runInstall — unresolved journal (Global Constraint #6)', () => {
       stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
       backupPath: join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef'),
     };
-    pair.journal = journal;
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const next = withLedgerPairAt(ledger, null, 'factor-scan', 'claude-code', {
+      ...pair,
+      journal,
+    });
+    if (!next.ok) throw new Error(msg(next.error));
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
     if (!w.ok) throw new Error(msg(w.error));
 
     const r2 = await runInstall(
@@ -1281,10 +1307,17 @@ describe('runInstall — dry run', () => {
           async () => {
             lockCount += 1;
             if (lockCount === 2) {
-              const concurrent = await readLedger(f.env, ledgerPath);
+              const concurrent = await readLedgerState(f.env, ledgerPath);
               if (!concurrent.ok) throw new Error(msg(concurrent.error));
-              setPairAt(concurrent.value, null, 'concurrent-skill', 'codex', concurrentPair);
-              const persisted = await writeLedger(f.env, ledgerPath, concurrent.value);
+              const next = withLedgerPairAt(
+                ledgerModelForMutation(concurrent.value, NOW),
+                null,
+                'concurrent-skill',
+                'codex',
+                concurrentPair,
+              );
+              if (!next.ok) throw new Error(msg(next.error));
+              const persisted = await writeLedger(f.env, ledgerPath, next.value);
               if (!persisted.ok) throw new Error(msg(persisted.error));
             }
             return operation();
@@ -1317,9 +1350,15 @@ describe('runInstall — dry run', () => {
         rename: async (from, to) => {
           await f.env.rename(from, to);
           if (to !== ledgerPath || controller.signal.aborted) return;
-          const current = await readLedger(f.env, ledgerPath);
+          const current = await readLedgerState(f.env, ledgerPath);
           if (!current.ok) throw new Error(msg(current.error));
-          const journal = getPairAt(current.value, null, 'factor-scan', 'claude-code')?.journal;
+          if (current.value.state !== 'present') return;
+          const journal = getPairAt(
+            current.value.model,
+            null,
+            'factor-scan',
+            'claude-code',
+          )?.journal;
           if (journal?.phase === phase) controller.abort();
         },
       };

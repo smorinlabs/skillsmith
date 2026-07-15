@@ -8,7 +8,7 @@ import type {
 
 export type OperationId = string;
 export type OperationDigest = `sha256:${string}`;
-export type CurrentMutatorCommand = 'install' | 'uninstall' | 'dev' | 'promote';
+export type CurrentMutatorCommand = 'install' | 'uninstall' | 'dev' | 'promote' | 'doctor';
 export type OperationScope = 'user' | 'project';
 
 export type OperationLocation =

@@ -74,4 +74,47 @@ describe('planning canonical order', () => {
     );
     expect(diagnostics.map(({ diagnosticId }) => diagnosticId)).toEqual(['user', 'project']);
   });
+
+  test('orders null-pair artifact prerequisites before pair-bound live operations', () => {
+    const live = operation('live', 'user', 'alpha', 'codex', 'install');
+    const prerequisite = {
+      ...operation('migrate', 'project', 'zeta', 'opencode', 'repair'),
+      pairId: null,
+      scope: null,
+      skill: null,
+      source: null,
+      tool: null,
+      kind: 'migrate-ledger',
+    } as unknown as ExecutableOperation;
+
+    expect(
+      [live, prerequisite].sort(compareExecutableOperations).map(({ operationId }) => operationId),
+    ).toEqual(['migrate', 'live']);
+  });
+
+  test('orders null-pair artifact prerequisites in dependency order', () => {
+    const artifact = (
+      operationId: string,
+      kind: 'migrate-ledger' | 'migrate-project-config' | 'write-lock',
+    ): ExecutableOperation =>
+      ({
+        ...operation(operationId, 'user', 'artifact', 'codex', 'repair'),
+        pairId: null,
+        scope: null,
+        skill: null,
+        source: null,
+        tool: null,
+        kind,
+      }) as unknown as ExecutableOperation;
+
+    expect(
+      [
+        artifact('lock', 'write-lock'),
+        artifact('project', 'migrate-project-config'),
+        artifact('ledger', 'migrate-ledger'),
+      ]
+        .sort(compareExecutableOperations)
+        .map(({ operationId }) => operationId),
+    ).toEqual(['ledger', 'project', 'lock']);
+  });
 });

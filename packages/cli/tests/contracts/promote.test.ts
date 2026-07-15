@@ -212,6 +212,7 @@ const applicationContext = (
 ): CurrentApplicationContext => ({
   observation,
   ports: fleet.env,
+  artifactCoordinator: {} as CurrentApplicationContext['artifactCoordinator'],
   configuration: resolveRuntimeConfiguration({ HOME: fleet.home, SKILLSMITH_HOME: fleet.data }),
   interaction,
   invocationCwd: fleet.project,

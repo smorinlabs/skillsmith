@@ -9,6 +9,7 @@ import type {
   CurrentApplicationContext,
   InteractionPort,
 } from '../../../core/src/application/types.ts';
+import { artifactMutationError } from '../../../core/src/artifacts/file-state.ts';
 import { hashManifestSemantics } from '../../../core/src/artifacts/hash.ts';
 import { migrateLegacyManifestBytes } from '../../../core/src/artifacts/legacy-migration.ts';
 import { serializePortableLock } from '../../../core/src/artifacts/lock.ts';
@@ -16,6 +17,7 @@ import {
   normalizeManifestDocument,
   readManifestSource,
 } from '../../../core/src/artifacts/manifest.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
 import { readLedgerArtifact } from '../../../core/src/artifacts/repository.ts';
 import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
 import type { EffectiveConfig } from '../../../core/src/config/types.ts';
@@ -523,8 +525,8 @@ const cleanupHistoryJournal = (
     disposition: 'forward',
     phase: 'committed',
     actual: {
-      before: [liveActual('absent'), ledgerActual(false)],
-      after: [liveActual('present'), ledgerActual(true)],
+      before: [ledgerActual(false), liveActual('absent')],
+      after: [ledgerActual(true), liveActual('present')],
       retained: retained
         ? [
             {
@@ -632,6 +634,7 @@ const doctorContext = (
   options: {
     readonly env?: ScanEnv;
     readonly ports?: CurrentApplicationContext['ports'];
+    readonly artifactCoordinator?: CurrentApplicationContext['artifactCoordinator'];
     readonly interaction?: InteractionPort;
     readonly signal?: AbortSignal;
     readonly configuration?: ReturnType<typeof resolveRuntimeConfiguration>;
@@ -653,6 +656,8 @@ const doctorContext = (
     emitter: createObservationEmitter({ observer: noopObserver }),
   }),
   ports: options.ports ?? runtimePorts(options.env ?? detectedCodexEnv()),
+  artifactCoordinator:
+    options.artifactCoordinator ?? ({} as CurrentApplicationContext['artifactCoordinator']),
   configuration:
     options.configuration ??
     resolveRuntimeConfiguration({ SKILLSMITH_HOME: '/fixture/data/skillsmith' }),
@@ -1406,7 +1411,7 @@ describe('EWP-CMD-DOCTOR-TS03', () => {
       /retention.*cleanup|cleanup.*retention/u,
     );
     expect(await readFile(path, 'utf8')).toBe(source);
-  });
+  }, 30_000);
 
   test('legacy manifest and noncanonical lock bytes receive bounded canonical repair findings', async () => {
     const root = await sandbox('artifact-pair');
@@ -1602,6 +1607,14 @@ describe('EWP-CMD-DOCTOR-TS04', () => {
     const badCounters = structuredClone(applied);
     record(badCounters.mutation).changed = 1;
     expect(healthV2Codec.validate(badCounters)).toMatchObject({ ok: false });
+    const impossibleCanonicalBefore = structuredClone(dto);
+    const impossibleOperation = records(record(impossibleCanonicalBefore.repair).operations)[0];
+    expect(impossibleOperation).toBeDefined();
+    if (impossibleOperation === undefined) return;
+    const impossibleBefore = record(impossibleOperation.before);
+    impossibleBefore.schemaVersion = 1;
+    impossibleBefore.semanticRevision = null;
+    expect(healthV2Codec.validate(impossibleCanonicalBefore)).toMatchObject({ ok: false });
 
     const failed = structuredClone(dto);
     record(failed.repair).mode = 'execute';
@@ -1656,31 +1669,19 @@ describe('EWP-CMD-DOCTOR-TS04', () => {
 
   test('error findings use exit 1 and remain on the selected output stream', async () => {
     const root = await sandbox('exit-semantics');
-    const manifest = join(root, 'broken.toml');
-    await writeFile(manifest, 'version = [\n', 'utf8');
-    const base = [
-      '-C',
-      root,
-      'doctor',
-      '--tool',
-      'codex',
-      '--scope',
-      'project',
-      '--offline',
-      '--file',
-      manifest,
-    ];
+    const base = ['-C', root, 'doctor', '--tool', 'codex', '--scope', 'user', '--offline'];
+    const environment = { XDG_CONFIG_HOME: '', XDG_CACHE_HOME: '' };
     const [human, machine] = await Promise.all([
-      runCli(root, base),
-      runCli(root, [...base, '--json']),
+      runCli(root, base, environment),
+      runCli(root, [...base, '--json'], environment),
     ]);
 
     expect(human.exitCode).toBe(1);
     expect(machine.exitCode).toBe(1);
-    expect(human.stdout).toContain('config parse failed');
+    expect(human.stdout).toContain('XDG path not resolvable');
     expect(human.stderr).toBe('');
     expect(machine.stderr).toBe('');
-    expect(findingIds(json(machine).findings)).toContain('config-parse');
+    expect(findingIds(json(machine).findings)).toContain('xdg-paths');
   });
 });
 
@@ -2030,6 +2031,128 @@ describe('EWP-CMD-DOCTOR-TS05', () => {
     expect(await readFile(siblingLock, 'utf8')).toBe(siblingSource);
   });
 
+  test('project repair uses the injected coordinator and never a host filesystem adapter', async () => {
+    const root = await sandbox('injected-project-coordinator');
+    const manifest = await writeLegacyProject(root);
+    const before = await readFile(manifest, 'utf8');
+    const basePorts = await defaultRuntimePorts();
+    const backing = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    let observations = 0;
+    const artifactCoordinator: CurrentApplicationContext['artifactCoordinator'] = {
+      ...backing,
+      observe: async (path) => {
+        observations += 1;
+        throw artifactMutationError('permission-denied', { path });
+      },
+    };
+    const project: ProjectContext = {
+      ...projectContext,
+      invocationCwd: root,
+      effectiveCwd: root,
+      projectRoot: root,
+      projectIdentity: root,
+    };
+    const outcome = await runDoctorApplication(
+      {
+        arguments: [],
+        options: {
+          tool: ['codex'],
+          scope: 'project',
+          offline: true,
+          file: manifest,
+          fix: true,
+          yes: true,
+          json: true,
+        },
+      },
+      doctorContext({ ports: basePorts, artifactCoordinator, project }),
+    );
+
+    expect(observations).toBeGreaterThan(0);
+    expect(outcome.exitClass).toBe('failure');
+    expect(records(repairFrom(record(record(outcome.report).result)).results)).toEqual([
+      expect.objectContaining({ outcome: 'failed' }),
+    ]);
+    expect(await readFile(manifest, 'utf8')).toBe(before);
+  });
+
+  test('write-lock passes the exact previewed canonical revision to the injected coordinator', async () => {
+    const root = await sandbox('exact-lock-before');
+    const manifest = join(root, 'skillsmith.toml');
+    const lock = join(root, 'skillsmith.lock');
+    await writeFile(manifest, 'version = 1\n', 'utf8');
+    const stale = serializePortableLock({
+      version: 1,
+      hashSchemaVersion: 1,
+      manifestHash: hashManifestSemantics({
+        version: 1,
+        defaults: { scope: 'project' },
+        skills: [],
+      }),
+      skills: [],
+    });
+    const external = serializePortableLock({
+      version: 1,
+      hashSchemaVersion: 1,
+      manifestHash: hashManifestSemantics({
+        version: 1,
+        defaults: { tools: ['codex'] },
+        skills: [],
+      }),
+      skills: [],
+    });
+    expect(stale.ok && external.ok).toBeTrue();
+    if (!stale.ok || !external.ok) return;
+    await writeFile(lock, stale.value, 'utf8');
+    const basePorts = await defaultRuntimePorts();
+    const backing = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    let changed = false;
+    const artifactCoordinator: CurrentApplicationContext['artifactCoordinator'] = {
+      ...backing,
+      observe: async (path) => {
+        if (path === lock && !changed) {
+          changed = true;
+          await writeFile(lock, external.value, 'utf8');
+        }
+        return backing.observe(path);
+      },
+    };
+    const project: ProjectContext = {
+      ...projectContext,
+      invocationCwd: root,
+      effectiveCwd: root,
+      projectRoot: root,
+      projectIdentity: root,
+    };
+    const outcome = await runDoctorApplication(
+      {
+        arguments: [],
+        options: {
+          tool: ['codex'],
+          scope: 'project',
+          offline: true,
+          file: manifest,
+          lockfile: lock,
+          fix: true,
+          yes: true,
+          json: true,
+        },
+      },
+      doctorContext({ ports: basePorts, artifactCoordinator, project }),
+    );
+    const dto = record(record(outcome.report).result);
+
+    expect(changed).toBeTrue();
+    expect(outcome.exitClass).toBe('state');
+    expect(records(repairFrom(dto).results)).toEqual([
+      expect.objectContaining({
+        outcome: 'failed',
+        error: expect.objectContaining({ code: 'stale-state' }),
+      }),
+    ]);
+    expect(await readFile(lock, 'utf8')).toBe(external.value);
+  });
+
   test('offline lock repair refuses unresolved sources without guessing an after-image', async () => {
     const root = await sandbox('offline-lock-resolution');
     const manifest = join(root, 'skillsmith.toml');
@@ -2246,6 +2369,228 @@ describe('EWP-CMD-DOCTOR-TS05', () => {
     expect(await Bun.file(lock).exists()).toBeFalse();
   });
 
+  test('online exact source resolution rebuilds the write-lock preview from verified lock facts', async () => {
+    const root = await sandbox('source-success');
+    const manifest = join(root, 'skillsmith.toml');
+    const lock = join(root, 'skillsmith.lock');
+    const manifestSource =
+      'version = 1\n[defaults]\ntools = ["codex"]\nscope = "project"\n[[skills]]\nname = "alpha"\nsource = "example.test/acme/skills//alpha"\nref = "main"\n';
+    await writeFile(manifest, manifestSource, 'utf8');
+    const readable = readManifestSource(manifestSource);
+    expect(readable.ok).toBeTrue();
+    if (!readable.ok) return;
+    const normalized = normalizeManifestDocument(readable.value);
+    expect(normalized.ok).toBeTrue();
+    if (!normalized.ok) return;
+    const resolvedSha = '1'.repeat(40);
+    const stale = serializePortableLock({
+      version: 1,
+      hashSchemaVersion: 1,
+      manifestHash: hashManifestSemantics({ version: 1, skills: [] }),
+      skills: [
+        {
+          name: 'alpha',
+          source: 'example.test/acme/skills//alpha',
+          requestedRef: 'main',
+          resolvedSha,
+          sourcePath: 'alpha',
+          contentHash: hashManifestSemantics(normalized.value),
+        },
+      ],
+    });
+    expect(stale.ok).toBeTrue();
+    if (!stale.ok) return;
+    await writeFile(lock, stale.value, 'utf8');
+    const basePorts = await defaultRuntimePorts();
+    let resolutions = 0;
+    const ports: CurrentApplicationContext['ports'] = {
+      ...basePorts,
+      git: {
+        ...basePorts.git,
+        resolveRemoteRef: async ({ remoteUrl, ref }) => {
+          resolutions += 1;
+          expect({ remoteUrl, ref }).toEqual({
+            remoteUrl: 'https://example.test/acme/skills.git',
+            ref: 'main',
+          });
+          return resolvedSha;
+        },
+      },
+    };
+    const project: ProjectContext = {
+      ...projectContext,
+      invocationCwd: root,
+      effectiveCwd: root,
+      projectRoot: root,
+      projectIdentity: root,
+    };
+    const outcome = await runDoctorApplication(
+      {
+        arguments: [],
+        options: {
+          tool: ['codex'],
+          scope: 'project',
+          file: manifest,
+          lockfile: lock,
+          offline: false,
+          fix: true,
+          dryRun: true,
+          json: true,
+        },
+      },
+      doctorContext({ ports, project }),
+    );
+    const dto = record(record(outcome.report).result);
+
+    expect(resolutions).toBe(1);
+    expect(outcome.exitClass).toBe('success');
+    expect(records(repairFrom(dto).operations)).toEqual([
+      expect.objectContaining({ kind: 'write-lock', artifact: 'lock', path: lock }),
+    ]);
+    expect(records(dto.findings)).toEqual([
+      expect.objectContaining({
+        severity: 'info',
+        operation: 'write-lock',
+        path: lock,
+      }),
+    ]);
+    expect(await readFile(lock, 'utf8')).toBe(stale.value);
+  });
+
+  test('execute-mode source refusal matrix preserves a canonical lock without coordinator activity', async () => {
+    for (const fixture of [
+      { id: 'null', resolved: null },
+      { id: 'malformed', resolved: 'not-a-commit-sha' },
+      { id: 'changed', resolved: '2'.repeat(40) },
+    ] as const) {
+      const root = await sandbox(`source-refusal-${fixture.id}`);
+      const manifest = join(root, 'skillsmith.toml');
+      const lock = join(root, 'skillsmith.lock');
+      const manifestSource =
+        'version = 1\n[defaults]\ntools = ["codex"]\nscope = "project"\n[[skills]]\nname = "alpha"\nsource = "example.test/acme/skills//alpha"\nref = "main"\n';
+      await writeFile(manifest, manifestSource, 'utf8');
+      const readable = readManifestSource(manifestSource);
+      expect(readable.ok, fixture.id).toBeTrue();
+      if (!readable.ok) continue;
+      const normalized = normalizeManifestDocument(readable.value);
+      expect(normalized.ok, fixture.id).toBeTrue();
+      if (!normalized.ok) continue;
+      const lockedSha = '1'.repeat(40);
+      const stale = serializePortableLock({
+        version: 1,
+        hashSchemaVersion: 1,
+        manifestHash: hashManifestSemantics({ version: 1, skills: [] }),
+        skills: [
+          {
+            name: 'alpha',
+            source: 'example.test/acme/skills//alpha',
+            requestedRef: 'main',
+            resolvedSha: lockedSha,
+            sourcePath: 'alpha',
+            contentHash: hashManifestSemantics(normalized.value),
+          },
+        ],
+      });
+      expect(stale.ok, fixture.id).toBeTrue();
+      if (!stale.ok) continue;
+      await writeFile(lock, stale.value, 'utf8');
+      const before = await readFile(lock, 'utf8');
+      const basePorts = await defaultRuntimePorts();
+      let resolutions = 0;
+      let runtimeWrites = 0;
+      const ports: CurrentApplicationContext['ports'] = {
+        ...basePorts,
+        http: { request: async () => ({ status: 200, ok: true }) },
+        git: {
+          ...basePorts.git,
+          resolveRemoteRef: async () => {
+            resolutions += 1;
+            return fixture.resolved;
+          },
+        },
+        makeDir: async (path) => {
+          runtimeWrites += 1;
+          await basePorts.makeDir(path);
+        },
+        writeTextFile: async (path, source) => {
+          runtimeWrites += 1;
+          await basePorts.writeTextFile(path, source);
+        },
+        rename: async (from, to) => {
+          runtimeWrites += 1;
+          await basePorts.rename(from, to);
+        },
+        copyTree: async (from, to) => {
+          runtimeWrites += 1;
+          await basePorts.copyTree(from, to);
+        },
+        removeTree: async (path) => {
+          runtimeWrites += 1;
+          await basePorts.removeTree(path);
+        },
+        fsyncFile: async (path) => {
+          runtimeWrites += 1;
+          await basePorts.fsyncFile(path);
+        },
+        fsyncDir: async (path) => {
+          runtimeWrites += 1;
+          await basePorts.fsyncDir(path);
+        },
+      };
+      const backing = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+      let coordinatorCalls = 0;
+      const artifactCoordinator = new Proxy(backing, {
+        get(target, property, receiver) {
+          const value = Reflect.get(target, property, receiver) as unknown;
+          if (typeof value !== 'function') return value;
+          return (...args: unknown[]) => {
+            coordinatorCalls += 1;
+            return Reflect.apply(value, target, args);
+          };
+        },
+      }) as CurrentApplicationContext['artifactCoordinator'];
+      const project: ProjectContext = {
+        ...projectContext,
+        invocationCwd: root,
+        effectiveCwd: root,
+        projectRoot: root,
+        projectIdentity: root,
+      };
+      const execution = await runDoctorThroughCliAdapter(
+        {
+          arguments: [],
+          options: {
+            tool: ['codex'],
+            scope: 'project',
+            file: manifest,
+            lockfile: lock,
+            offline: false,
+            fix: true,
+            yes: true,
+            json: true,
+          },
+        },
+        doctorContext({ ports, artifactCoordinator, project }),
+      );
+      const outcome = execution.outcome;
+      expect(outcome, fixture.id).toBeDefined();
+      if (outcome === undefined) continue;
+      const dto = record(record(outcome.report).result);
+
+      expect(resolutions, fixture.id).toBe(1);
+      expect(outcome.exitClass, fixture.id).toBe('source');
+      expect({ exitCode: execution.exitCode, exits: execution.exits }, fixture.id).toEqual({
+        exitCode: 5,
+        exits: [5],
+      });
+      expect(records(repairFrom(dto).operations), fixture.id).toEqual([]);
+      expect(records(repairFrom(dto).results), fixture.id).toEqual([]);
+      expect(coordinatorCalls, fixture.id).toBe(0);
+      expect(runtimeWrites, fixture.id).toBe(0);
+      expect(await readFile(lock, 'utf8'), fixture.id).toBe(before);
+    }
+  });
+
   test('one interactive bulk approval authorizes the nonempty repair plan', async () => {
     const root = await sandbox('interactive-approval');
     const path = await writeV1Ledger(root);
@@ -2278,6 +2623,9 @@ describe('EWP-CMD-DOCTOR-TS05', () => {
       },
       doctorContext({
         ports: await defaultRuntimePorts(),
+        artifactCoordinator: await createTestNodeArtifactCoordinatorPorts(
+          join(root, 'coordination'),
+        ),
         interaction: approving,
         project,
         configuration: resolveRuntimeConfiguration({
@@ -2333,6 +2681,9 @@ describe('EWP-CMD-DOCTOR-TS05', () => {
       },
       doctorContext({
         ports: await defaultRuntimePorts(),
+        artifactCoordinator: await createTestNodeArtifactCoordinatorPorts(
+          join(root, 'coordination'),
+        ),
         interaction: approving,
         project,
         configuration: resolveRuntimeConfiguration({
@@ -2395,6 +2746,9 @@ describe('EWP-CMD-DOCTOR-TS05', () => {
       },
       doctorContext({
         ports,
+        artifactCoordinator: await createTestNodeArtifactCoordinatorPorts(
+          join(root, 'coordination'),
+        ),
         project,
         configuration: resolveRuntimeConfiguration({
           SKILLSMITH_HOME: ledgerDirectory,

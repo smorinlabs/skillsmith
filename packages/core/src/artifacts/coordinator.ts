@@ -28,6 +28,7 @@ import {
   nodeErrorToArtifactMutationError,
   observeArtifactFile,
   observeArtifactPair,
+  observeOpaqueLockFile,
   ownDataErrorCode,
   sameArtifactRevision,
 } from './file-state.ts';
@@ -63,6 +64,7 @@ type DesiredRole = {
   readonly afterBytes: Uint8Array | null;
   readonly afterMode: number | null;
   readonly changed: boolean;
+  readonly opaqueBefore: boolean;
 };
 
 const compareUtf8 = (left: string, right: string): number =>
@@ -564,6 +566,7 @@ const makeDesiredRoles = (
       changed:
         !equalBytes(currentLock, lockBytes) ||
         (lockMode !== null && snapshot.lock.state === 'file' && snapshot.lock.mode !== lockMode),
+      opaqueBefore: request.lock.kind === 'replace-invalid',
     }),
     Object.freeze({
       role: 'manifest' as const,
@@ -577,8 +580,56 @@ const makeDesiredRoles = (
         (manifest.mode !== null &&
           snapshot.manifest.state === 'file' &&
           snapshot.manifest.mode !== manifest.mode),
+      opaqueBefore: false,
     }),
   ]);
+};
+
+const validateLockPrecondition = (
+  snapshot: ArtifactPairSnapshot,
+  request: ArtifactPairMutationRequest,
+  phase: 'provisional' | 'fresh',
+): void => {
+  if (request.lock.kind === 'replace-exact') {
+    const expected = request.lock.expectedByteRevision;
+    if (expected === null) {
+      if (snapshot.lock.state !== 'absent') {
+        throw artifactMutationError('external-writer-conflict', { role: 'lock' });
+      }
+      return;
+    }
+    if (snapshot.lock.state !== 'file') {
+      throw artifactMutationError('external-writer-conflict', { role: 'lock' });
+    }
+    const revision = hashCanonicalInput('resource', HASH_SCHEMA_VERSION, snapshot.lock.bytes);
+    if (!revision.ok || revision.value !== expected) {
+      throw artifactMutationError('external-writer-conflict', { role: 'lock' });
+    }
+    if (!readPortableLockSource(snapshot.lock.bytes).ok) {
+      throw artifactMutationError(
+        phase === 'provisional' ? 'invalid-request' : 'external-writer-conflict',
+        { role: 'lock' },
+      );
+    }
+    return;
+  }
+  if (request.lock.kind !== 'replace-invalid') return;
+  if (snapshot.lock.state !== 'file') {
+    throw artifactMutationError(
+      phase === 'provisional' ? 'invalid-request' : 'external-writer-conflict',
+      { role: 'lock' },
+    );
+  }
+  if (readPortableLockSource(snapshot.lock.bytes).ok) {
+    throw artifactMutationError(
+      phase === 'provisional' ? 'invalid-request' : 'external-writer-conflict',
+      { role: 'lock' },
+    );
+  }
+  const revision = hashCanonicalInput('resource', HASH_SCHEMA_VERSION, snapshot.lock.bytes);
+  if (!revision.ok || revision.value !== request.lock.expectedByteRevision) {
+    throw artifactMutationError('external-writer-conflict', { role: 'lock' });
+  }
 };
 
 const provisionParent = async (
@@ -1054,10 +1105,14 @@ const stageRoles = async (
 const reobserveRoles = async (
   ports: ArtifactCoordinatorPorts,
   roles: readonly DesiredRole[],
+  phase: 'before' | 'after',
 ): Promise<readonly ArtifactFileRevision[]> => {
   const revisions: ArtifactFileRevision[] = [];
   for (const role of roles) {
-    const revision = await observeArtifactFile(ports, role.path, role.digestKind);
+    const revision =
+      phase === 'before' && role.opaqueBefore
+        ? await observeOpaqueLockFile(ports, role.path)
+        : await observeArtifactFile(ports, role.path, role.digestKind);
     if ('code' in revision) throw revision;
     revisions.push(revision);
   }
@@ -1327,7 +1382,7 @@ const cleanupRecord = async (
           : object.role === 'manifest'
             ? 'manifest'
             : 'lock',
-        current.record.disposition === 'rollback' && object.role === 'lock',
+        object.role === 'lock',
       );
       await ports.removeFile(object.path);
       await barrier.emit({
@@ -2322,7 +2377,7 @@ const commitRoles = async (
     if (signal?.aborted) throw cancellation('before', beforeRevisions);
     envelope = await stageRoles(ports, envelope, roles, barrier);
     if (signal?.aborted) throw cancellation('before', beforeRevisions);
-    const guard = await reobserveRoles(ports, roles);
+    const guard = await reobserveRoles(ports, roles, 'before');
     if (
       guard.some(
         (revision, index) =>
@@ -2343,7 +2398,7 @@ const commitRoles = async (
       barrier,
     );
     if (signal?.aborted) throw cancellation('before', beforeRevisions);
-    const final = await reobserveRoles(ports, roles);
+    const final = await reobserveRoles(ports, roles, 'after');
     for (let index = 0; index < roles.length; index += 1) {
       const role = roles[index] as DesiredRole;
       if (
@@ -2443,6 +2498,8 @@ export const commitArtifactPair = async (
   request: ArtifactPairMutationRequest,
 ): Promise<Result<ArtifactPairMutationResult, ArtifactMutationError>> => {
   try {
+    const allowOpaqueLock =
+      request.lock.kind === 'replace-invalid' || request.lock.kind === 'replace-exact';
     const paths = canonicalMembers([request.pair.file.path, request.pair.lockfile.path]);
     paths.forEach(validatePath);
     const usedIds = new Set<string>();
@@ -2452,8 +2509,10 @@ export const commitArtifactPair = async (
         ports,
         request.pair.file.path,
         request.pair.lockfile.path,
+        { allowOpaqueLock },
       );
       if ('code' in provisional) throw provisional;
+      validateLockPrecondition(provisional, request, 'provisional');
       const provisionalRoles = makeDesiredRoles(request, provisional);
       if (provisionalRoles.every((role) => !role.changed)) {
         return ok(
@@ -2474,6 +2533,7 @@ export const commitArtifactPair = async (
           ports,
           request.pair.file.path,
           request.pair.lockfile.path,
+          { allowOpaqueLock },
         );
         if ('code' in fresh) {
           if (
@@ -2485,6 +2545,7 @@ export const commitArtifactPair = async (
           }
           throw fresh;
         }
+        validateLockPrecondition(fresh, request, 'fresh');
         const replay = classifyFreshSnapshot(provisional, fresh, provisionalRoles);
         if (replay.convergedToDesired) {
           return ok(
@@ -2649,6 +2710,7 @@ export const updateCoordinatedHumanFile = async (
             afterBytes: bytes,
             afterMode: finalEdit.mode,
             changed: true,
+            opaqueBefore: false,
           });
           const final = await commitRoles(
             ports,

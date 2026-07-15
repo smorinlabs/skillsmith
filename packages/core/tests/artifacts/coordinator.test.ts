@@ -23,7 +23,7 @@ import {
   recoverArtifactPair,
   updateCoordinatedHumanFile,
 } from '../../src/artifacts/coordinator.ts';
-import { hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import { hashCanonicalInput, hashManifestSemantics } from '../../src/artifacts/hash.ts';
 import { serializePortableLock } from '../../src/artifacts/lock.ts';
 import { normalizeManifestDocument, readManifestSource } from '../../src/artifacts/manifest.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
@@ -50,6 +50,46 @@ const pairFor = (manifestPath: string, lockPath: string) =>
     }),
     lockfileSource: 'sibling' as const,
   });
+
+const invalidLockFixture = async (label: string) => {
+  const root = await mkdtemp(join(tmpdir(), `skillsmith-coordinator-${label}-`));
+  roots.push(root);
+  const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+  const manifestPath = join(root, 'skillsmith.toml');
+  const lockPath = join(root, 'skillsmith.lock');
+  const manifestSource = 'version = 1\nskills = []\n';
+  const invalidLockSource = 'not a portable lock\n';
+  const document = readManifestSource(manifestSource);
+  if (!document.ok) throw new Error('fixture manifest invalid');
+  const manifest = normalizeManifestDocument(document.value);
+  if (!manifest.ok) throw new Error('fixture manifest invalid');
+  const targetLock = Object.freeze({
+    version: 1 as const,
+    hashSchemaVersion: 1 as const,
+    manifestHash: hashManifestSemantics(manifest.value),
+    skills: Object.freeze([]),
+  });
+  const serialized = serializePortableLock(targetLock);
+  if (!serialized.ok) throw new Error('fixture lock invalid');
+  await Promise.all([
+    writeFile(manifestPath, manifestSource, { mode: 0o600 }),
+    writeFile(lockPath, invalidLockSource, { mode: 0o600 }),
+  ]);
+  const expectedByteRevision = hashCanonicalInput('resource', 1, invalidLockSource);
+  if (!expectedByteRevision.ok) throw new Error('fixture revision invalid');
+  return Object.freeze({
+    root,
+    base,
+    pair: pairFor(manifestPath, lockPath),
+    manifestPath,
+    lockPath,
+    manifestSource,
+    invalidLockSource,
+    targetLock,
+    targetLockSource: serialized.value,
+    expectedByteRevision: expectedByteRevision.value,
+  });
+};
 
 const interruptedHumanRecovery = async (cursor: 'prepared' | 'staging') => {
   const root = await mkdtemp(join(tmpdir(), `skillsmith-coordinator-${cursor}-recovery-`));
@@ -153,6 +193,296 @@ describe('artifact coordinator', () => {
       expect(read.value.lock.state).toBe('file');
     }
     expect(await ports.recovery.discover()).toEqual([]);
+  });
+
+  test('replaces one exact invalid lock under normal pair coordination', async () => {
+    const fixture = await invalidLockFixture('replace-invalid');
+
+    const result = await commitArtifactPair(fixture.base, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-invalid',
+        lock: fixture.targetLock,
+        expectedByteRevision: fixture.expectedByteRevision,
+      },
+    });
+
+    expect(result).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+    expect(await readFile(fixture.manifestPath, 'utf8')).toBe(fixture.manifestSource);
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(fixture.targetLockSource);
+    expect(await fixture.base.recovery.discover()).toEqual([]);
+  });
+
+  test('refuses invalid-lock replacement when the exact byte revision is stale', async () => {
+    const fixture = await invalidLockFixture('replace-invalid-stale');
+    const stale = hashCanonicalInput('resource', 1, 'different invalid lock\n');
+    if (!stale.ok) throw new Error('fixture revision invalid');
+
+    const result = await commitArtifactPair(fixture.base, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-invalid',
+        lock: fixture.targetLock,
+        expectedByteRevision: stale.value,
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { reason: 'external-writer-conflict', role: 'lock' },
+    });
+    expect(await readFile(fixture.manifestPath, 'utf8')).toBe(fixture.manifestSource);
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(fixture.invalidLockSource);
+    expect(await fixture.base.recovery.discover()).toEqual([]);
+  });
+
+  test('refuses replace-invalid for an already canonical lock', async () => {
+    const fixture = await invalidLockFixture('replace-invalid-canonical');
+    await writeFile(fixture.lockPath, fixture.targetLockSource, { mode: 0o600 });
+    const canonicalRevision = hashCanonicalInput('resource', 1, fixture.targetLockSource);
+    if (!canonicalRevision.ok) throw new Error('fixture revision invalid');
+
+    const result = await commitArtifactPair(fixture.base, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-invalid',
+        lock: fixture.targetLock,
+        expectedByteRevision: canonicalRevision.value,
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-request', role: 'lock' },
+    });
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(fixture.targetLockSource);
+    expect(await fixture.base.recovery.discover()).toEqual([]);
+  });
+
+  test('refuses invalid-lock replacement when bytes change before the fresh locked read', async () => {
+    const fixture = await invalidLockFixture('replace-invalid-fresh');
+    const changed = 'changed invalid lock\n';
+    let injected = false;
+    const withFileLock: ArtifactCoordinatorPorts['withFileLock'] = async (
+      target,
+      options,
+      operation,
+    ) =>
+      fixture.base.withFileLock(target, options, async () => {
+        if (!injected && options.policy === 'compatibility') {
+          injected = true;
+          await writeFile(fixture.lockPath, changed, { mode: 0o600 });
+        }
+        return operation();
+      });
+    const ports: ArtifactCoordinatorPorts = Object.freeze({ ...fixture.base, withFileLock });
+
+    const result = await commitArtifactPair(ports, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-invalid',
+        lock: fixture.targetLock,
+        expectedByteRevision: fixture.expectedByteRevision,
+      },
+    });
+
+    expect(injected).toBeTrue();
+    expect(result).toMatchObject({
+      ok: false,
+      error: { reason: 'external-writer-conflict', role: 'lock' },
+    });
+    expect(await readFile(fixture.manifestPath, 'utf8')).toBe(fixture.manifestSource);
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(changed);
+    expect(await fixture.base.recovery.discover()).toEqual([]);
+  });
+
+  test('resumes invalid-lock replacement after the durable lock install gap', async () => {
+    const fixture = await invalidLockFixture('replace-invalid-recovery');
+    let crashed = false;
+    let blockCatchRecovery = false;
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...fixture.base,
+      recovery: Object.freeze({
+        ...fixture.base.recovery,
+        discover: async () => {
+          if (blockCatchRecovery) throw new Error('simulated process death');
+          return fixture.base.recovery.discover();
+        },
+      }),
+      afterBarrier: async (barrier: ArtifactPairBarrier) => {
+        if (
+          !crashed &&
+          barrier.kind === 'mutation-returned' &&
+          barrier.operation === 'link-file-no-replace' &&
+          barrier.role === 'lock'
+        ) {
+          crashed = true;
+          blockCatchRecovery = true;
+          throw new Error('hard crash after invalid-lock replacement link');
+        }
+      },
+    });
+    const interrupted = await commitArtifactPair(ports, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-invalid',
+        lock: fixture.targetLock,
+        expectedByteRevision: fixture.expectedByteRevision,
+      },
+    });
+    expect(interrupted.ok).toBeFalse();
+    expect(crashed).toBeTrue();
+    blockCatchRecovery = false;
+
+    const resumed = await recoverArtifactPair(fixture.base, fixture.pair, 'resume');
+
+    expect(resumed).toEqual({ ok: true, value: 'finalized' });
+    expect(await readFile(fixture.manifestPath, 'utf8')).toBe(fixture.manifestSource);
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(fixture.targetLockSource);
+    expect(await fixture.base.recovery.discover()).toEqual([]);
+  });
+
+  test('replaces an exactly approved absent lock and rejects a lock created after approval', async () => {
+    const fixture = await invalidLockFixture('replace-exact-absent');
+    await rm(fixture.lockPath);
+
+    const committed = await commitArtifactPair(fixture.base, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-exact',
+        lock: fixture.targetLock,
+        expectedByteRevision: null,
+      },
+    });
+    expect(committed).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(fixture.targetLockSource);
+
+    await rm(fixture.lockPath);
+    await writeFile(fixture.lockPath, fixture.targetLockSource, { mode: 0o600 });
+    const stale = await commitArtifactPair(fixture.base, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-exact',
+        lock: fixture.targetLock,
+        expectedByteRevision: null,
+      },
+    });
+    expect(stale).toMatchObject({
+      ok: false,
+      error: { reason: 'external-writer-conflict', role: 'lock' },
+    });
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(fixture.targetLockSource);
+    expect(await fixture.base.recovery.discover()).toEqual([]);
+  });
+
+  test('refuses canonical lock replacement when approved before bytes are stale', async () => {
+    const fixture = await invalidLockFixture('replace-exact-canonical-stale');
+    await writeFile(fixture.lockPath, fixture.targetLockSource, { mode: 0o600 });
+    const approved = hashCanonicalInput('resource', 1, fixture.targetLockSource);
+    const changedManifestHash = hashCanonicalInput('resource', 1, 'changed manifest');
+    if (!approved.ok || !changedManifestHash.ok) throw new Error('fixture revision invalid');
+    const changedLock = Object.freeze({
+      ...fixture.targetLock,
+      manifestHash: changedManifestHash.value,
+    });
+    const changed = serializePortableLock(changedLock);
+    if (!changed.ok) throw new Error('changed lock fixture invalid');
+    await writeFile(fixture.lockPath, changed.value, { mode: 0o600 });
+
+    const result = await commitArtifactPair(fixture.base, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-exact',
+        lock: fixture.targetLock,
+        expectedByteRevision: approved.value,
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { reason: 'external-writer-conflict', role: 'lock' },
+    });
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(changed.value);
+    expect(await fixture.base.recovery.discover()).toEqual([]);
+  });
+
+  test('maps an opaque lock introduced after canonical approval to writer conflict', async () => {
+    const fixture = await invalidLockFixture('replace-exact-canonical-to-opaque');
+    await writeFile(fixture.lockPath, fixture.targetLockSource, { mode: 0o600 });
+    const approved = hashCanonicalInput('resource', 1, fixture.targetLockSource);
+    if (!approved.ok) throw new Error('fixture revision invalid');
+    await writeFile(fixture.lockPath, fixture.invalidLockSource, { mode: 0o600 });
+
+    const result = await commitArtifactPair(fixture.base, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-exact',
+        lock: fixture.targetLock,
+        expectedByteRevision: approved.value,
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { reason: 'external-writer-conflict', role: 'lock' },
+    });
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(fixture.invalidLockSource);
+    expect(await fixture.base.recovery.discover()).toEqual([]);
+  });
+
+  test('refuses desired lock bytes installed after the approved provisional read', async () => {
+    const fixture = await invalidLockFixture('replace-exact-fresh-desired');
+    const priorManifestHash = hashCanonicalInput('resource', 1, 'approved prior manifest');
+    if (!priorManifestHash.ok) throw new Error('fixture revision invalid');
+    const prior = serializePortableLock({
+      ...fixture.targetLock,
+      manifestHash: priorManifestHash.value,
+    });
+    if (!prior.ok) throw new Error('prior lock fixture invalid');
+    await writeFile(fixture.lockPath, prior.value, { mode: 0o600 });
+    const approved = hashCanonicalInput('resource', 1, prior.value);
+    if (!approved.ok) throw new Error('fixture revision invalid');
+    let injected = false;
+    const withFileLock: ArtifactCoordinatorPorts['withFileLock'] = async (
+      target,
+      options,
+      operation,
+    ) =>
+      fixture.base.withFileLock(target, options, async () => {
+        if (!injected && options.policy === 'compatibility') {
+          injected = true;
+          await writeFile(fixture.lockPath, fixture.targetLockSource, { mode: 0o600 });
+        }
+        return operation();
+      });
+    const ports: ArtifactCoordinatorPorts = Object.freeze({ ...fixture.base, withFileLock });
+
+    const result = await commitArtifactPair(ports, {
+      pair: fixture.pair,
+      manifest: { kind: 'keep' },
+      lock: {
+        kind: 'replace-exact',
+        lock: fixture.targetLock,
+        expectedByteRevision: approved.value,
+      },
+    });
+
+    expect(injected).toBeTrue();
+    expect(result).toMatchObject({
+      ok: false,
+      error: { reason: 'external-writer-conflict', role: 'lock' },
+    });
+    expect(await readFile(fixture.lockPath, 'utf8')).toBe(fixture.targetLockSource);
+    expect(await fixture.base.recovery.discover()).toEqual([]);
   });
 
   test('converges when an external writer installs the exact desired pair before fresh read', async () => {
