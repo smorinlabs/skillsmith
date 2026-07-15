@@ -21,6 +21,7 @@ type DtoDeclarationClosure = [
   Assert<Equal<publicV1.ConfigSetV1Dto, implementationV1.ConfigSetV1Dto>>,
   Assert<Equal<publicV1.ConfigUnsetV1Dto, implementationV1.ConfigUnsetV1Dto>>,
   Assert<Equal<publicV1.InstallV1Dto, implementationV1.InstallV1Dto>>,
+  Assert<Equal<publicV1.StatusV1Dto, implementationV1.StatusV1Dto>>,
   Assert<Equal<publicV1.UninstallV1Dto, implementationV1.UninstallV1Dto>>,
   Assert<Equal<publicV1.VerifyV1Dto, implementationV1.VerifyV1Dto>>,
   Assert<Equal<publicV1.ErrorV1Dto, implementationV1.ErrorV1Dto>>,
@@ -36,6 +37,7 @@ const v1Bindings: typeof publicV1 = implementationV1;
 const v2Bindings: typeof publicV2 = implementationV2;
 
 const dtoDeclarationClosure: DtoDeclarationClosure = [
+  true,
   true,
   true,
   true,

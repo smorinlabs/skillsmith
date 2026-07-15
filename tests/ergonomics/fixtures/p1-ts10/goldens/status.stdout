@@ -1,0 +1,1392 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.status",
+  "selection": {
+    "source": "bounded-default",
+    "targets": [],
+    "tools": [
+      "claude-code",
+      "codex",
+      "kilo-code",
+      "opencode"
+    ],
+    "toolSource": "unbounded-default",
+    "scopes": [
+      "system",
+      "user",
+      "project",
+      "managed"
+    ],
+    "scopeSource": "unbounded-default",
+    "outcome": "selected",
+    "reason": null
+  },
+  "context": {
+    "effectiveCwd": "/repo",
+    "projectRoot": "/repo",
+    "projectIdentity": "/repo",
+    "projectSource": "shared-project"
+  },
+  "artifacts": {
+    "state": "selected",
+    "source": "project-default",
+    "manifestPath": "/repo/skillsmith.toml",
+    "lockPath": "/repo/skillsmith.lock",
+    "lockSource": "sibling",
+    "manifest": {
+      "state": "present",
+      "sourceVersion": 1,
+      "currentVersion": 1,
+      "byteRevision": "sha256:manifest-bytes",
+      "semanticRevision": "sha256:manifest-semantic",
+      "canonical": true,
+      "migrationPending": false
+    },
+    "lock": {
+      "state": "present",
+      "sourceVersion": 1,
+      "currentVersion": 1,
+      "byteRevision": "sha256:lock-bytes",
+      "semanticRevision": "sha256:lock-semantic",
+      "canonical": true,
+      "migrationPending": false
+    },
+    "relationship": {
+      "state": "current"
+    }
+  },
+  "ledger": {
+    "state": "present",
+    "path": "/home/test/.local/share/skillsmith/placements.json",
+    "sourceVersion": 2,
+    "currentVersion": 2,
+    "byteRevision": "sha256:ledger-bytes",
+    "semanticRevision": "sha256:ledger-semantic",
+    "migrationPending": false
+  },
+  "journals": [],
+  "facts": [],
+  "entries": [
+    {
+      "name": "clean-dev",
+      "desired": {
+        "state": "present",
+        "value": {
+          "name": "clean-dev",
+          "source": {
+            "host": "github.com",
+            "repository": "skillsmith/status-fixtures",
+            "path": "clean-dev"
+          },
+          "ref": "main",
+          "tools": [
+            "kilo-code"
+          ],
+          "scope": "project",
+          "placement": "symlink",
+          "path": "/repo/.kilo/skills/clean-dev"
+        }
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "clean-dev",
+          "source": "github.com/skillsmith/status-fixtures/clean-dev",
+          "requestedRef": "main",
+          "resolvedSha": "revision-clean-dev",
+          "sourcePath": "clean-dev",
+          "contentHash": "sha256:content-clean-dev"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "kilo-code",
+            "scope": "project",
+            "projectIdentity": "/repo",
+            "path": "/repo/.kilo/skills/clean-dev"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/repo/.kilo/skills/clean-dev",
+              "mode": "dev",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "clean-dev"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-clean-dev",
+              "contentHash": "sha256:content-clean-dev",
+              "verification": "skipped",
+              "placement": "symlink"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/repo/.kilo/skills/clean-dev",
+              "realpath": "/targets/clean-dev",
+              "nodeKind": "symlink",
+              "linkTarget": "../../targets/clean-dev",
+              "skillFile": "valid"
+            }
+          },
+          "classification": "dev",
+          "brokenReason": null,
+          "verification": "skipped",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "verify-skipped",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "skipped"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "converged"
+    },
+    {
+      "name": "clean-pinned-copy",
+      "desired": {
+        "state": "present",
+        "value": {
+          "name": "clean-pinned-copy",
+          "source": {
+            "host": "github.com",
+            "repository": "skillsmith/status-fixtures",
+            "path": "clean-pinned-copy"
+          },
+          "ref": "main",
+          "tools": [
+            "claude-code"
+          ],
+          "scope": "user",
+          "placement": "copy",
+          "path": "/home/test/.claude/skills/clean-pinned-copy"
+        }
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "clean-pinned-copy",
+          "source": "github.com/skillsmith/status-fixtures/clean-pinned-copy",
+          "requestedRef": "main",
+          "resolvedSha": "revision-clean-pinned-copy",
+          "sourcePath": "clean-pinned-copy",
+          "contentHash": "sha256:content-clean-pinned-copy"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "claude-code",
+            "scope": "user",
+            "projectIdentity": null,
+            "path": "/home/test/.claude/skills/clean-pinned-copy"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/home/test/.claude/skills/clean-pinned-copy",
+              "mode": "pinned",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "clean-pinned-copy"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-clean-pinned-copy",
+              "contentHash": "sha256:content-clean-pinned-copy",
+              "verification": "passed",
+              "placement": "copy"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/home/test/.claude/skills/clean-pinned-copy",
+              "realpath": "/home/test/.claude/skills/clean-pinned-copy",
+              "nodeKind": "directory",
+              "linkTarget": null,
+              "skillFile": "valid"
+            }
+          },
+          "classification": "pinned",
+          "brokenReason": null,
+          "verification": "passed",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "verify-passed",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "passed"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "converged"
+    },
+    {
+      "name": "clean-store-link",
+      "desired": {
+        "state": "absent"
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "clean-store-link",
+          "source": "github.com/skillsmith/status-fixtures/clean-store-link",
+          "requestedRef": "main",
+          "resolvedSha": "revision-clean-store-link",
+          "sourcePath": "clean-store-link",
+          "contentHash": "sha256:content-clean-store-link"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "codex",
+            "scope": "system",
+            "projectIdentity": null,
+            "path": "/etc/codex/skills/clean-store-link"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/etc/codex/skills/clean-store-link",
+              "mode": "pinned",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "clean-store-link"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-clean-store-link",
+              "contentHash": "sha256:content-clean-store-link",
+              "verification": "warned",
+              "placement": "copy"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/etc/codex/skills/clean-store-link",
+              "realpath": "/targets/clean-store-link",
+              "nodeKind": "symlink",
+              "linkTarget": "../../targets/clean-store-link",
+              "skillFile": "valid"
+            }
+          },
+          "classification": "store-linked",
+          "brokenReason": null,
+          "verification": "warned",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "live-undeclared",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "declared",
+              "actual": "undeclared"
+            },
+            {
+              "code": "verify-warned",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "warned"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    },
+    {
+      "name": "content-drift",
+      "desired": {
+        "state": "absent"
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "content-drift",
+          "source": "github.com/skillsmith/status-fixtures/content-drift",
+          "requestedRef": "main",
+          "resolvedSha": "revision-content-drift",
+          "sourcePath": "content-drift",
+          "contentHash": "sha256:content-content-drift"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "opencode",
+            "scope": "managed",
+            "projectIdentity": null,
+            "path": "/managed/opencode/skills/content-drift"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/managed/opencode/skills/content-drift",
+              "mode": "pinned",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "content-drift"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-content-drift",
+              "contentHash": "sha256:content-content-drift",
+              "verification": "unrecorded",
+              "placement": "copy"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/managed/opencode/skills/content-drift",
+              "realpath": "/managed/opencode/skills/content-drift",
+              "nodeKind": "directory",
+              "linkTarget": null,
+              "skillFile": "valid"
+            }
+          },
+          "classification": "pinned",
+          "brokenReason": null,
+          "verification": "unrecorded",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "live-undeclared",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "declared",
+              "actual": "undeclared"
+            },
+            {
+              "code": "content-drift",
+              "impact": "drift",
+              "subject": "ledger",
+              "expected": "sha256:content-content-drift",
+              "actual": "sha256:observed-content"
+            },
+            {
+              "code": "verify-unrecorded",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "unrecorded"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    },
+    {
+      "name": "declared-locked-absent",
+      "desired": {
+        "state": "present",
+        "value": {
+          "name": "declared-locked-absent",
+          "source": {
+            "host": "github.com",
+            "repository": "skillsmith/status-fixtures",
+            "path": "declared-locked-absent"
+          },
+          "ref": "main",
+          "tools": [
+            "claude-code"
+          ],
+          "scope": "project",
+          "placement": "copy",
+          "path": null
+        }
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "declared-locked-absent",
+          "source": "github.com/skillsmith/status-fixtures/declared-locked-absent",
+          "requestedRef": "main",
+          "resolvedSha": "revision-declared-locked-absent",
+          "sourcePath": "declared-locked-absent",
+          "contentHash": "sha256:content-declared-locked-absent"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "claude-code",
+            "scope": "project",
+            "projectIdentity": "/repo",
+            "path": null
+          },
+          "ledger": {
+            "state": "absent"
+          },
+          "live": {
+            "state": "absent"
+          },
+          "classification": "absent",
+          "brokenReason": null,
+          "verification": "unrecorded",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "live-missing",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "present",
+              "actual": "absent"
+            },
+            {
+              "code": "ledger-missing",
+              "impact": "drift",
+              "subject": "ledger",
+              "expected": "present",
+              "actual": "absent"
+            },
+            {
+              "code": "verify-unrecorded",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "unrecorded"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    },
+    {
+      "name": "ledger-only",
+      "desired": {
+        "state": "absent"
+      },
+      "locked": {
+        "state": "absent"
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "kilo-code",
+            "scope": "user",
+            "projectIdentity": null,
+            "path": "/home/test/.kilo/skills/ledger-only"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/home/test/.kilo/skills/ledger-only",
+              "mode": "pinned",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "ledger-only"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-ledger-only",
+              "contentHash": "sha256:content-ledger-only",
+              "verification": "warned",
+              "placement": "copy"
+            }
+          },
+          "live": {
+            "state": "absent"
+          },
+          "classification": "broken",
+          "brokenReason": "ledger-recorded-absence",
+          "verification": "warned",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "ledger-only",
+              "impact": "drift",
+              "subject": "ledger",
+              "expected": "absent",
+              "actual": "present"
+            },
+            {
+              "code": "broken-live",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "valid",
+              "actual": "ledger-recorded-absence"
+            },
+            {
+              "code": "verify-warned",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "warned"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    },
+    {
+      "name": "ledger-recorded-broken-link",
+      "desired": {
+        "state": "present",
+        "value": {
+          "name": "ledger-recorded-broken-link",
+          "source": {
+            "host": "github.com",
+            "repository": "skillsmith/status-fixtures",
+            "path": "ledger-recorded-broken-link"
+          },
+          "ref": "main",
+          "tools": [
+            "codex"
+          ],
+          "scope": "user",
+          "placement": "symlink",
+          "path": "/home/test/.agents/skills/ledger-recorded-broken-link"
+        }
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "ledger-recorded-broken-link",
+          "source": "github.com/skillsmith/status-fixtures/ledger-recorded-broken-link",
+          "requestedRef": "main",
+          "resolvedSha": "revision-ledger-recorded-broken-link",
+          "sourcePath": "ledger-recorded-broken-link",
+          "contentHash": "sha256:content-ledger-recorded-broken-link"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "codex",
+            "scope": "user",
+            "projectIdentity": null,
+            "path": "/home/test/.agents/skills/ledger-recorded-broken-link"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/home/test/.agents/skills/ledger-recorded-broken-link",
+              "mode": "dev",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "ledger-recorded-broken-link"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-ledger-recorded-broken-link",
+              "contentHash": "sha256:content-ledger-recorded-broken-link",
+              "verification": "skipped",
+              "placement": "symlink"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/home/test/.agents/skills/ledger-recorded-broken-link",
+              "realpath": "/targets/ledger-recorded-broken-link",
+              "nodeKind": "symlink",
+              "linkTarget": "../../targets/ledger-recorded-broken-link",
+              "skillFile": "invalid"
+            }
+          },
+          "classification": "broken",
+          "brokenReason": "dangling-link",
+          "verification": "skipped",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "broken-live",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "valid",
+              "actual": "dangling-link"
+            },
+            {
+              "code": "verify-skipped",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "skipped"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    },
+    {
+      "name": "live-only-unmanaged",
+      "desired": {
+        "state": "absent"
+      },
+      "locked": {
+        "state": "absent"
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "opencode",
+            "scope": "project",
+            "projectIdentity": "/repo",
+            "path": "/repo/.opencode/skills/live-only-unmanaged"
+          },
+          "ledger": {
+            "state": "absent"
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/repo/.opencode/skills/live-only-unmanaged",
+              "realpath": "/repo/.opencode/skills/live-only-unmanaged",
+              "nodeKind": "directory",
+              "linkTarget": null,
+              "skillFile": "valid"
+            }
+          },
+          "classification": "unmanaged",
+          "brokenReason": null,
+          "verification": "unrecorded",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "live-only",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "absent",
+              "actual": "present"
+            },
+            {
+              "code": "verify-unrecorded",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "unrecorded"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    },
+    {
+      "name": "lock-only",
+      "desired": {
+        "state": "absent"
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "lock-only",
+          "source": "github.com/skillsmith/status-fixtures/lock-only",
+          "requestedRef": "main",
+          "resolvedSha": "revision-lock-only",
+          "sourcePath": "lock-only",
+          "contentHash": "sha256:content-lock-only"
+        }
+      },
+      "placements": [],
+      "facts": [
+        {
+          "code": "lock-only",
+          "impact": "drift",
+          "subject": "lock",
+          "expected": "absent",
+          "actual": "present"
+        }
+      ],
+      "convergence": "drift"
+    },
+    {
+      "name": "manifest-only",
+      "desired": {
+        "state": "present",
+        "value": {
+          "name": "manifest-only",
+          "source": {
+            "host": "github.com",
+            "repository": "skillsmith/status-fixtures",
+            "path": "manifest-only"
+          },
+          "ref": "main",
+          "tools": [
+            "codex"
+          ],
+          "scope": "project",
+          "placement": "copy",
+          "path": null
+        }
+      },
+      "locked": {
+        "state": "absent"
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "codex",
+            "scope": "project",
+            "projectIdentity": "/repo",
+            "path": null
+          },
+          "ledger": {
+            "state": "absent"
+          },
+          "live": {
+            "state": "absent"
+          },
+          "classification": "absent",
+          "brokenReason": null,
+          "verification": "unrecorded",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "live-missing",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "present",
+              "actual": "absent"
+            },
+            {
+              "code": "ledger-missing",
+              "impact": "drift",
+              "subject": "ledger",
+              "expected": "present",
+              "actual": "absent"
+            },
+            {
+              "code": "verify-unrecorded",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "unrecorded"
+            }
+          ]
+        }
+      ],
+      "facts": [
+        {
+          "code": "manifest-only",
+          "impact": "drift",
+          "subject": "manifest",
+          "expected": "absent",
+          "actual": "present"
+        }
+      ],
+      "convergence": "drift"
+    },
+    {
+      "name": "placement-drift",
+      "desired": {
+        "state": "present",
+        "value": {
+          "name": "placement-drift",
+          "source": {
+            "host": "github.com",
+            "repository": "skillsmith/status-fixtures",
+            "path": "placement-drift"
+          },
+          "ref": "main",
+          "tools": [
+            "kilo-code"
+          ],
+          "scope": "project",
+          "placement": "copy",
+          "path": "/repo/.kilo/skills/placement-drift"
+        }
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "placement-drift",
+          "source": "github.com/skillsmith/status-fixtures/placement-drift",
+          "requestedRef": "main",
+          "resolvedSha": "revision-placement-drift",
+          "sourcePath": "placement-drift",
+          "contentHash": "sha256:content-placement-drift"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "kilo-code",
+            "scope": "project",
+            "projectIdentity": "/repo",
+            "path": "/repo/.kilo/skills/placement-drift"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/repo/.kilo/skills/placement-drift",
+              "mode": "pinned",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "placement-drift"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-placement-drift",
+              "contentHash": "sha256:content-placement-drift",
+              "verification": "passed",
+              "placement": "copy"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/repo/.kilo/skills/placement-drift",
+              "realpath": "/targets/placement-drift",
+              "nodeKind": "symlink",
+              "linkTarget": "../../targets/placement-drift",
+              "skillFile": "valid"
+            }
+          },
+          "classification": "dev",
+          "brokenReason": null,
+          "verification": "passed",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "placement-drift",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "[\"copy\",\"pinned\",\"/repo/.kilo/skills/placement-drift\"]",
+              "actual": "[\"symlink\",\"dev\",\"/repo/.kilo/skills/placement-drift\"]"
+            },
+            {
+              "code": "verify-passed",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "passed"
+            }
+          ]
+        },
+        {
+          "identity": {
+            "tool": "kilo-code",
+            "scope": "project",
+            "projectIdentity": "/repo",
+            "path": "/repo/.agents/skills/placement-drift"
+          },
+          "ledger": {
+            "state": "absent"
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/repo/.agents/skills/placement-drift",
+              "realpath": "/repo/.agents/skills/placement-drift",
+              "nodeKind": "directory",
+              "linkTarget": null,
+              "skillFile": "valid"
+            }
+          },
+          "classification": "unmanaged",
+          "brokenReason": null,
+          "verification": "unrecorded",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "live-only",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "absent",
+              "actual": "present"
+            },
+            {
+              "code": "verify-unrecorded",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "unrecorded"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    },
+    {
+      "name": "revision-drift",
+      "desired": {
+        "state": "present",
+        "value": {
+          "name": "revision-drift",
+          "source": {
+            "host": "github.com",
+            "repository": "skillsmith/status-fixtures",
+            "path": "revision-drift"
+          },
+          "ref": "main",
+          "tools": [
+            "opencode"
+          ],
+          "scope": "user",
+          "placement": "copy",
+          "path": "/home/test/.config/opencode/skills/revision-drift"
+        }
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "revision-drift",
+          "source": "github.com/skillsmith/status-fixtures/revision-drift",
+          "requestedRef": "main",
+          "resolvedSha": "revision-revision-drift",
+          "sourcePath": "revision-drift",
+          "contentHash": "sha256:content-revision-drift"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "opencode",
+            "scope": "user",
+            "projectIdentity": null,
+            "path": "/home/test/.config/opencode/skills/revision-drift"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/home/test/.config/opencode/skills/revision-drift",
+              "mode": "pinned",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "revision-drift"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-revision-drift",
+              "contentHash": "sha256:content-revision-drift",
+              "verification": "warned",
+              "placement": "copy"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/home/test/.config/opencode/skills/revision-drift",
+              "realpath": "/home/test/.config/opencode/skills/revision-drift",
+              "nodeKind": "directory",
+              "linkTarget": null,
+              "skillFile": "valid"
+            }
+          },
+          "classification": "pinned",
+          "brokenReason": null,
+          "verification": "warned",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "revision-drift",
+              "impact": "drift",
+              "subject": "ledger",
+              "expected": "revision-revision-drift",
+              "actual": "revision-observed"
+            },
+            {
+              "code": "verify-warned",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "warned"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    },
+    {
+      "name": "shadowed-fleet",
+      "desired": {
+        "state": "present",
+        "value": {
+          "name": "shadowed-fleet",
+          "source": {
+            "host": "github.com",
+            "repository": "skillsmith/status-fixtures",
+            "path": "shadowed-fleet"
+          },
+          "ref": "main",
+          "tools": [
+            "codex"
+          ],
+          "scope": "project",
+          "placement": "copy",
+          "path": "/repo/.agents/skills/shadowed-fleet"
+        }
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "shadowed-fleet",
+          "source": "github.com/skillsmith/status-fixtures/shadowed-fleet",
+          "requestedRef": "main",
+          "resolvedSha": "revision-shadowed-fleet",
+          "sourcePath": "shadowed-fleet",
+          "contentHash": "sha256:content-shadowed-fleet"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "codex",
+            "scope": "user",
+            "projectIdentity": null,
+            "path": "/home/test/.agents/skills/shadowed-fleet"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/home/test/.agents/skills/shadowed-fleet",
+              "mode": "pinned",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "shadowed-fleet"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-shadowed-fleet",
+              "contentHash": "sha256:content-shadowed-fleet",
+              "verification": "passed",
+              "placement": "copy"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/home/test/.agents/skills/shadowed-fleet",
+              "realpath": "/home/test/.agents/skills/shadowed-fleet",
+              "nodeKind": "directory",
+              "linkTarget": null,
+              "skillFile": "valid"
+            }
+          },
+          "classification": "pinned",
+          "brokenReason": null,
+          "verification": "passed",
+          "shadow": {
+            "state": "shadowed",
+            "winner": "/repo/.agents/skills/shadowed-fleet"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "live-undeclared",
+              "impact": "drift",
+              "subject": "live",
+              "expected": "declared",
+              "actual": "undeclared"
+            },
+            {
+              "code": "shadowed",
+              "impact": "drift",
+              "subject": "shadow",
+              "expected": "/repo/.agents/skills/shadowed-fleet",
+              "actual": "/home/test/.agents/skills/shadowed-fleet"
+            },
+            {
+              "code": "verify-passed",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "passed"
+            }
+          ]
+        },
+        {
+          "identity": {
+            "tool": "codex",
+            "scope": "project",
+            "projectIdentity": "/repo",
+            "path": "/repo/.agents/skills/shadowed-fleet"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/repo/.agents/skills/shadowed-fleet",
+              "mode": "pinned",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "shadowed-fleet"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-shadowed-fleet",
+              "contentHash": "sha256:content-shadowed-fleet",
+              "verification": "passed",
+              "placement": "copy"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/repo/.agents/skills/shadowed-fleet",
+              "realpath": "/repo/.agents/skills/shadowed-fleet",
+              "nodeKind": "directory",
+              "linkTarget": null,
+              "skillFile": "valid"
+            }
+          },
+          "classification": "pinned",
+          "brokenReason": null,
+          "verification": "passed",
+          "shadow": {
+            "state": "winner",
+            "shadows": [
+              "/home/test/.agents/skills/shadowed-fleet"
+            ]
+          },
+          "journal": {
+            "state": "pending",
+            "transactionId": "tx-shadowed-fleet",
+            "phase": "backed-up",
+            "before": "pinned",
+            "retention": [
+              {
+                "format": "logical",
+                "resourceId": "retained-live",
+                "retainUntil": "2026-08-01T00:00:00.000Z",
+                "repositoryRevision": {
+                  "state": "satisfied",
+                  "expected": {
+                    "kind": "resource",
+                    "digest": "sha256:retained-revision"
+                  },
+                  "observed": {
+                    "kind": "resource",
+                    "digest": "sha256:retained-revision"
+                  }
+                },
+                "contentHash": {
+                  "state": "satisfied",
+                  "domain": "source-content",
+                  "expected": "sha256:retained-content",
+                  "observed": "sha256:retained-content"
+                },
+                "role": "backup",
+                "sourceRole": "live",
+                "path": "/data/skillsmith/backups/shadowed-fleet",
+                "pathState": "satisfied",
+                "state": "satisfied"
+              }
+            ],
+            "abortEligibility": "eligible",
+            "remediation": {
+              "resume": "rerun the same operation",
+              "abort": [
+                "skillsmith",
+                "undo",
+                "/repo/.agents/skills/shadowed-fleet",
+                "--tool",
+                "codex",
+                "--scope",
+                "project"
+              ]
+            },
+            "format": "logical",
+            "operation": "update"
+          },
+          "facts": [
+            {
+              "code": "journal-pending",
+              "impact": "drift",
+              "subject": "journal",
+              "expected": "committed",
+              "actual": "backed-up"
+            },
+            {
+              "code": "verify-passed",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "passed"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    },
+    {
+      "name": "source-drift",
+      "desired": {
+        "state": "present",
+        "value": {
+          "name": "source-drift",
+          "source": {
+            "host": "github.com",
+            "repository": "skillsmith/status-fixtures",
+            "path": "source-drift"
+          },
+          "ref": "main",
+          "tools": [
+            "claude-code"
+          ],
+          "scope": "user",
+          "placement": "symlink",
+          "path": "/home/test/.claude/skills/source-drift"
+        }
+      },
+      "locked": {
+        "state": "present",
+        "value": {
+          "name": "source-drift",
+          "source": "github.com/skillsmith/status-fixtures/source-drift",
+          "requestedRef": "main",
+          "resolvedSha": "revision-source-drift",
+          "sourcePath": "source-drift",
+          "contentHash": "sha256:content-source-drift"
+        }
+      },
+      "placements": [
+        {
+          "identity": {
+            "tool": "claude-code",
+            "scope": "user",
+            "projectIdentity": null,
+            "path": "/home/test/.claude/skills/source-drift"
+          },
+          "ledger": {
+            "state": "present",
+            "value": {
+              "placementPath": "/home/test/.claude/skills/source-drift",
+              "mode": "pinned",
+              "source": {
+                "host": "github.com",
+                "repository": "skillsmith/status-fixtures",
+                "path": "source-drift"
+              },
+              "requestedRef": "main",
+              "resolvedRevision": "revision-source-drift",
+              "contentHash": "sha256:content-source-drift",
+              "verification": "skipped",
+              "placement": "copy"
+            }
+          },
+          "live": {
+            "state": "present",
+            "value": {
+              "path": "/home/test/.claude/skills/source-drift",
+              "realpath": "/targets/source-drift",
+              "nodeKind": "symlink",
+              "linkTarget": "../../targets/source-drift",
+              "skillFile": "valid"
+            }
+          },
+          "classification": "store-linked",
+          "brokenReason": null,
+          "verification": "skipped",
+          "shadow": {
+            "state": "none"
+          },
+          "journal": {
+            "state": "none"
+          },
+          "facts": [
+            {
+              "code": "source-drift",
+              "impact": "drift",
+              "subject": "ledger",
+              "expected": "[\"github.com\",\"skillsmith/status-fixtures\",\"source-drift\"]",
+              "actual": "[\"git.example.test\",\"other/repository\",\"source-drift\"]"
+            },
+            {
+              "code": "verify-skipped",
+              "impact": "info",
+              "subject": "verification",
+              "expected": "recorded",
+              "actual": "skipped"
+            }
+          ]
+        }
+      ],
+      "facts": [],
+      "convergence": "drift"
+    }
+  ],
+  "summary": {
+    "entries": 14,
+    "converged": 2,
+    "drifting": 12,
+    "migrationPending": false
+  }
+}

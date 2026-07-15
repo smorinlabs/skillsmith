@@ -370,6 +370,16 @@ describe('EWP-OPT-TS02', () => {
       allowedValues: ['user', 'project'],
       repeatable: false,
     });
+    expect(option('skillsmith status', '--tool')).toMatchObject({
+      knownValues: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      repeatable: true,
+    });
+    expect(option('skillsmith status', '--scope')).toMatchObject({
+      knownValues: ['system', 'user', 'project', 'managed'],
+      allowedValues: ['system', 'user', 'project', 'managed'],
+      repeatable: false,
+    });
   });
 
   test('inherited negated globals are singular and parse in either command position', async () => {
@@ -425,6 +435,7 @@ describe('EWP-OPT-TS03', () => {
       'skillsmith commands',
       'skillsmith doctor',
       'skillsmith check',
+      'skillsmith status',
       'skillsmith verify',
       'skillsmith install',
       'skillsmith uninstall',
@@ -629,6 +640,7 @@ describe('EWP-OPT-TS03', () => {
       ['skillsmith commands', ['user', 'project']],
       ['skillsmith doctor', ['user', 'project', 'system']],
       ['skillsmith check', ['user', 'project', 'system']],
+      ['skillsmith status', ['system', 'user', 'project', 'managed']],
       ['skillsmith install', ['user', 'project']],
       ['skillsmith uninstall', ['user', 'project']],
     ] as const;
@@ -766,6 +778,8 @@ describe('EWP-OPT-TS03', () => {
       ['skillsmith doctor', ['--lockfile', 'custom.lock']],
       ['skillsmith check', ['--report-only', '--exit-code']],
       ['skillsmith check', ['--all-tools', '--tool', 'codex']],
+      ['skillsmith status', ['--lockfile', 'custom.lock']],
+      ['skillsmith status', ['--system', '--user']],
       ['skillsmith verify', ['--static', '--deep']],
       ['skillsmith install', ['source', '--deep', '--no-verify']],
       ['skillsmith install', ['one', 'two', '--ref', 'main']],

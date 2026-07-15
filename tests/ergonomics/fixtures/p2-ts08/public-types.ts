@@ -25,6 +25,7 @@ import type {
   ArtifactContractRegistry,
   ArtifactId,
   DecodedArtifact,
+  WireCodec,
 } from '@skillsmith/core/contracts';
 import {
   fromJournalV1Dto,
@@ -37,11 +38,13 @@ import {
   lockV1Codec,
   manifestV1Codec,
   savedPlanV1Codec,
+  statusV1Codec,
   toJournalV1Dto,
   toLedgerV1Dto,
   toLockV1Dto,
   toManifestV1Dto,
   toSavedPlanV1Dto,
+  type toStatusV1Dto,
 } from '@skillsmith/core/contracts/v1';
 import type {
   JournalV1Dto,
@@ -49,6 +52,7 @@ import type {
   LockV1Dto,
   ManifestV1Dto,
   SavedPlanV1Dto,
+  StatusV1Dto,
 } from '@skillsmith/core/contracts/v1';
 import {
   fromLedgerV2Dto,
@@ -86,6 +90,7 @@ type _V1RuntimeClosed = Assert<
     | 'errorV1Codec'
     | 'healthV1Codec'
     | 'installV1Codec'
+    | 'statusV1Codec'
     | 'toAgentsV1Dto'
     | 'toCapabilitySnapshotV1Dto'
     | 'toCommandsV1Dto'
@@ -96,6 +101,7 @@ type _V1RuntimeClosed = Assert<
     | 'toErrorV1Dto'
     | 'toHealthV1Dto'
     | 'toInstallV1Dto'
+    | 'toStatusV1Dto'
     | 'toUninstallV1Dto'
     | 'toVerifyV1Dto'
     | 'uninstallV1Codec'
@@ -231,6 +237,24 @@ type _JournalRoot = Assert<
     | 'updatedAt'
     | 'completedAt'
   >
+>;
+type _StatusTopLevelKeys = Assert<
+  Equal<
+    keyof StatusV1Dto,
+    | 'schemaVersion'
+    | 'kind'
+    | 'selection'
+    | 'context'
+    | 'artifacts'
+    | 'ledger'
+    | 'journals'
+    | 'facts'
+    | 'entries'
+    | 'summary'
+  >
+>;
+type _StatusExcludesRepositoryInternals = Assert<
+  Not<HasKey<StatusV1Dto['entries'][number], 'error' | 'journal' | 'updatedAt'>>
 >;
 type _JournalIntentKeys = Assert<
   Equal<
@@ -387,6 +411,7 @@ const _planCodec: ArtifactCodec<'plan', 1, SavedPlanV1Dto, SavedPlanV1> = savedP
 const _ledgerV1Codec: ArtifactCodec<'ledger', 1, LedgerV1Dto, LedgerModel> = ledgerV1Codec;
 const _ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel> = ledgerV2Codec;
 const _journalCodec: ArtifactCodec<'journal', 1, JournalV1Dto, LogicalJournalV1> = journalV1Codec;
+const _statusCodec: WireCodec<'status', 1, StatusV1Dto> = statusV1Codec;
 
 const _manifestMapper: (value: NormalizedManifestV1) => Result<ManifestV1Dto, ArtifactCodecError> =
   toManifestV1Dto;
@@ -411,6 +436,7 @@ const _journalMapper: (value: LogicalJournalV1) => Result<JournalV1Dto, Artifact
   toJournalV1Dto;
 const _journalReverse: (value: JournalV1Dto) => Result<LogicalJournalV1, ArtifactCodecError> =
   fromJournalV1Dto;
+type _StatusMapperReturn = Assert<Equal<ReturnType<typeof toStatusV1Dto>, StatusV1Dto>>;
 const _ledgerMigration: (value: LedgerV1Dto) => Result<LedgerV2Dto, ArtifactCodecError> =
   migrateLedgerV1DtoToV2Dto;
 
@@ -434,6 +460,7 @@ void [
   _ledgerV1Codec,
   _ledgerV2Codec,
   _journalCodec,
+  _statusCodec,
   _manifestMapper,
   _manifestReverse,
   _lockMapper,

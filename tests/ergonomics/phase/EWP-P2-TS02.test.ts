@@ -44,6 +44,14 @@ type ManifestDestination = Readonly<{
   names: readonly string[];
 }>;
 
+type ReadableArtifactContext =
+  | Readonly<{ state: 'unselected'; reason: 'live-only-scope' }>
+  | Readonly<{
+      state: 'selected';
+      source: 'explicit' | 'discovered-project' | 'project-default' | 'user-default';
+      file: string;
+    }>;
+
 type PairPath = Readonly<{
   token: string | null;
   path: string;
@@ -58,6 +66,14 @@ type ResolvedArtifactPair = Readonly<{
 }>;
 
 type ArtifactAuthority = Readonly<{
+  selectReadableArtifactContext: (
+    ports: Pick<FakeArtifactPorts, 'xdg'>,
+    context: ProjectContext,
+    request: Readonly<{
+      explicitFile?: string;
+      scope: 'system' | 'user' | 'project' | 'managed' | null;
+    }>,
+  ) => ReadableArtifactContext;
   discoverArtifactSnapshot: (
     ports: FakeArtifactPorts,
     context: ProjectContext,
@@ -224,12 +240,13 @@ const loadAuthority = () => {
     try {
       const loaded = (await import(modulePath)) as Partial<ArtifactAuthority>;
       const complete =
+        typeof loaded.selectReadableArtifactContext === 'function' &&
         typeof loaded.discoverArtifactSnapshot === 'function' &&
         typeof loaded.selectManifestDestination === 'function' &&
         typeof loaded.resolveArtifactPair === 'function';
       return complete
         ? { api: loaded as ArtifactAuthority, reason: null }
-        : { api: null, reason: 'artifact module does not export the three planned authorities' };
+        : { api: null, reason: 'artifact module does not export the four planned authorities' };
     } catch (error) {
       return {
         api: null,
@@ -397,6 +414,32 @@ describe('EWP-P2-TS02 — artifact discovery, ownership, and pair selection', ()
       [USER_CONFIG]: { kind: 'file', text: 'tool = "codex"\n' },
     });
     const context = await currentContext(ports, DEEP_CWD);
+    const beforeSelection = structuredClone(ports.calls);
+    const readable = [
+      api.selectReadableArtifactContext(ports, context, {
+        explicitFile: '../team.toml',
+        scope: 'system',
+      }),
+      api.selectReadableArtifactContext(ports, context, { scope: 'project' }),
+      api.selectReadableArtifactContext(ports, context, { scope: 'user' }),
+      api.selectReadableArtifactContext(ports, context, { scope: 'managed' }),
+      api.selectReadableArtifactContext(ports, frozenContext(DEEP_CWD, REPO, null), {
+        scope: null,
+      }),
+      api.selectReadableArtifactContext(ports, frozenContext('/scratch/loose', null, null), {
+        scope: null,
+      }),
+    ];
+    expect(readable).toEqual([
+      { state: 'selected', source: 'explicit', file: join(NESTED, 'team.toml') },
+      { state: 'selected', source: 'discovered-project', file: NESTED_MANIFEST },
+      { state: 'selected', source: 'user-default', file: USER_MANIFEST },
+      { state: 'unselected', reason: 'live-only-scope' },
+      { state: 'selected', source: 'project-default', file: ROOT_MANIFEST },
+      { state: 'selected', source: 'user-default', file: USER_MANIFEST },
+    ]);
+    expect(readable.every((selection) => Object.isFrozen(selection))).toBeTrue();
+    expect(ports.calls).toEqual(beforeSelection);
     ports.calls.readText.length = 0;
     const samePath = '../skillsmith.toml';
     const snapshot = expectOk(

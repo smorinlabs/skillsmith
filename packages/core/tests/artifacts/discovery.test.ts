@@ -6,8 +6,11 @@ import {
   type ArtifactDiscoverySnapshot,
   type ManifestCandidate,
   type ManifestDestination,
+  type ReadableArtifactContext,
+  type SelectReadableArtifactContextRequest,
   discoverArtifactSnapshot,
   selectManifestDestination,
+  selectReadableArtifactContext,
 } from '../../src/artifacts/discovery.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
 import type { Result } from '../../src/result.ts';
@@ -185,6 +188,92 @@ const hostileThrownValues = (): ReadonlyArray<
 };
 
 describe('artifact discovery and destination ownership', () => {
+  test('selects one immutable readable context without probing artifact contents', () => {
+    const ports = new FakeDiscoveryPorts();
+    const cases: readonly (readonly [
+      string,
+      ProjectContext,
+      Readonly<SelectReadableArtifactContextRequest>,
+      ReadableArtifactContext,
+    ])[] = [
+      [
+        'explicit wins over a live-only scope',
+        context(),
+        { explicitFile: './state/team.toml', scope: 'system' },
+        {
+          state: 'selected',
+          source: 'explicit',
+          file: '/work/repo/packages/api/src/state/team.toml',
+        },
+      ],
+      [
+        'project uses the nearest discovered manifest',
+        context(),
+        { scope: 'project' },
+        { state: 'selected', source: 'discovered-project', file: NESTED },
+      ],
+      [
+        'project defaults to the stable project root',
+        context(CWD, ROOT, null),
+        { scope: 'project' },
+        { state: 'selected', source: 'project-default', file: ROOT_MANIFEST },
+      ],
+      [
+        'explicit non-Git project defaults to the effective cwd',
+        context('/scratch/project', null, null),
+        { scope: 'project' },
+        {
+          state: 'selected',
+          source: 'project-default',
+          file: '/scratch/project/skillsmith.toml',
+        },
+      ],
+      [
+        'user uses the XDG manifest',
+        context(),
+        { scope: 'user' },
+        { state: 'selected', source: 'user-default', file: USER_MANIFEST },
+      ],
+      [
+        'system remains live-only',
+        context(),
+        { scope: 'system' },
+        { state: 'unselected', reason: 'live-only-scope' },
+      ],
+      [
+        'managed remains live-only',
+        context(),
+        { scope: 'managed' },
+        { state: 'unselected', reason: 'live-only-scope' },
+      ],
+      [
+        'unscoped uses the nearest discovered manifest',
+        context(),
+        { scope: null },
+        { state: 'selected', source: 'discovered-project', file: NESTED },
+      ],
+      [
+        'unscoped uses the stable project root without a discovered manifest',
+        context(CWD, ROOT, null),
+        { scope: null },
+        { state: 'selected', source: 'project-default', file: ROOT_MANIFEST },
+      ],
+      [
+        'unscoped outside a project uses the XDG manifest',
+        context('/scratch/loose', null, null),
+        { scope: null },
+        { state: 'selected', source: 'user-default', file: USER_MANIFEST },
+      ],
+    ];
+
+    for (const [label, project, request, expected] of cases) {
+      const selected = selectReadableArtifactContext(ports, project, request);
+      expect(selected, label).toEqual(expected);
+      expect(Object.isFrozen(selected), label).toBeTrue();
+    }
+    expect(ports.calls).toEqual({ pathKind: [], readText: [] });
+  });
+
   test('discovers selected, root, user, and explicit roles with one parse per path', async () => {
     const ports = new FakeDiscoveryPorts({
       [NESTED]: { kind: 'file', text: manifest(['nested']) },

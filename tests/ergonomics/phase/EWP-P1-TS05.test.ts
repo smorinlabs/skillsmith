@@ -64,7 +64,7 @@ describe('EWP-P1-TS05', () => {
 
     expect(markdownTokens(today).sort()).toEqual(all);
     expect(markdownTokens(target).sort()).toEqual(
-      ['apply', 'export', 'gc', 'init', 'plan', 'status', 'sync', 'undo', 'update'].sort(),
+      ['apply', 'export', 'gc', 'init', 'plan', 'sync', 'undo', 'update'].sort(),
     );
     for (const future of markdownTokens(target)) {
       expect(today).not.toContain(`\`${future}\``);
@@ -137,6 +137,7 @@ describe('EWP-P1-TS05', () => {
       'uninstall',
       'dev',
       'promote',
+      'status',
       'completion',
     ]) {
       expect(representative.has(command), `missing current example for ${command}`).toBeTrue();

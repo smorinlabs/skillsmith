@@ -26,6 +26,7 @@ packages/
       scan/          orchestrator: detectAll / detectTool
       selection/     shared tool/scope/target validation
       skills/        installed-skill parsing and domain types
+      status/        correlated desired/lock/ledger/live read model
       verify/        static/deep verification orchestration
       errors.ts      SkillSmithError tagged union
       result.ts      Result<T, E> helpers (ok/err/isOk/isErr/map/mapErr)
@@ -89,6 +90,13 @@ parser graph is reconstructed from `CommandSpec`; one action factory resolves ev
 through the public application registry and shared renderer/exit adapter. Legacy command-local
 runtime handlers have been removed.
 
+`runStatusApplication` is the current correlated-read service. It validates target/tool/scope
+selection before I/O, resolves shared project/configuration context, selects one readable artifact
+context, and invokes the shared portable-pair resolver exactly once. The domain reader receives only
+the projected immutable paths, selection provenance, and focused read capabilities. The application
+then maps the report field by field to `status@1`, recursively redacts it, and reparses it through the
+strict codec before either human or JSON presentation.
+
 ## Result-based error handling
 
 Every fallible function in core returns `Result<T, SkillSmithError>`:
@@ -121,6 +129,12 @@ raw environment, or arbitrary process authority. Raw environment input is decode
 `ResolvedRuntimeConfiguration`; domain and application requests do not carry `process.env` or an
 unfiltered record. Real adapter failures are scalar-only `PortError` values that public coordinators
 translate to the existing result error contract.
+
+Status uses `StatusReadPorts`, the intersection of inventory reads and file-metadata reads. It has
+no write, lock, process, Git, HTTP, clock, or ID authority. Live roots are observed only after
+tool/scope/project selection, and retained-resource checks remain secondary read evidence rather
+than recovery or mutation. This keeps `status` useful for partial manifest/lock/ledger/live products
+without exposing the artifact coordinator or journal recovery machinery.
 
 The focused read shape illustrates the authority boundary (the source of truth is
 `packages/core/src/ports/types.ts`):
@@ -195,7 +209,7 @@ or define a second public schema.
 
 The current registry contains `agents@1`, `health@1`, `commands@1`, `config-get@1`,
 `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`, `install@1`, `list@2`, `uninstall@1`,
-`verify@1`, `error@1`, and
+`verify@1`, `status@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive unknown-field rejection, embedded kind and
 version policy, JSON indentation, terminal framing, and conservative compatibility. Current codecs
 declare no migrations. The `verify` codec derives tool choices from the validated tool registry;

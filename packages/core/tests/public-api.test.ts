@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import * as core from '@skillsmith/core';
 import pkg from '../package.json' with { type: 'json' };
+import * as readApplications from '../src/application/read-services.ts';
 import * as artifacts from '../src/artifacts/index.ts';
+import * as status from '../src/status/index.ts';
 import { runtimePorts } from './fixtures/runtime-ports.ts';
 
 describe('@skillsmith/core public API', () => {
@@ -104,6 +106,9 @@ describe('@skillsmith/core public API', () => {
       'readLedgerArtifact',
       'readJournalArtifact',
       'planProjectConfigMigration',
+      'selectReadableArtifactContext',
+      'readStatus',
+      'runStatusApplication',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);
@@ -167,6 +172,13 @@ describe('@skillsmith/core public API', () => {
       expect(core[name], name).toBe(artifacts[name]);
     }
     expect(core).not.toHaveProperty('executeProjectConfigMigration');
+  });
+
+  test('re-exports the status read, selection, and application authorities by identity', () => {
+    expect(core.selectReadableArtifactContext).toBe(artifacts.selectReadableArtifactContext);
+    expect(core.readStatus).toBe(status.readStatus);
+    expect(core.runStatusApplication).toBe(readApplications.runStatusApplication);
+    expect(core.CURRENT_READ_APPLICATIONS.status).toBe(readApplications.runStatusApplication);
   });
 
   test('exports the validated registry without breaking the 1.x inventory projection', () => {

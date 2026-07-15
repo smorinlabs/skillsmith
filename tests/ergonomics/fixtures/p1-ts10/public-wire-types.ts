@@ -17,6 +17,7 @@ import {
   type ErrorV1Dto,
   type HealthV1Dto,
   type InstallV1Dto,
+  type StatusV1Dto,
   type UninstallV1Dto,
   type VerifyV1Dto,
   agentsV1Codec,
@@ -30,6 +31,7 @@ import {
   errorV1Codec,
   healthV1Codec,
   installV1Codec,
+  statusV1Codec,
   toAgentsV1Dto,
   toCapabilitySnapshotV1Dto,
   toCommandsV1Dto,
@@ -40,6 +42,7 @@ import {
   toErrorV1Dto,
   toHealthV1Dto,
   toInstallV1Dto,
+  toStatusV1Dto,
   toUninstallV1Dto,
   toVerifyV1Dto,
   uninstallV1Codec,
@@ -86,6 +89,8 @@ import type { InstallV1Dto as ForbiddenInstallDtoFromV2 } from '@skillsmith/core
 import type { UninstallV1Dto as ForbiddenUninstallDtoFromV2 } from '@skillsmith/core/contracts/v2';
 // @ts-expect-error v2 entry point must expose no v1 DTOs
 import type { VerifyV1Dto as ForbiddenVerifyDtoFromV2 } from '@skillsmith/core/contracts/v2';
+// @ts-expect-error v2 entry point must expose no v1 DTOs
+import type { StatusV1Dto as ForbiddenStatusDtoFromV2 } from '@skillsmith/core/contracts/v2';
 
 type Assert<T extends true> = T;
 type HasKey<T, K extends PropertyKey> = K extends keyof T ? true : false;
@@ -120,6 +125,8 @@ type _V1RuntimeClosure = Assert<
     | 'toConfigUnsetV1Dto'
     | 'installV1Codec'
     | 'toInstallV1Dto'
+    | 'statusV1Codec'
+    | 'toStatusV1Dto'
     | 'uninstallV1Codec'
     | 'toUninstallV1Dto'
     | 'verifyV1Codec'
@@ -246,6 +253,24 @@ type _RegistryKeys = Assert<
 
 type _AgentsExcludeDomainMap = Assert<Not<HasKey<AgentsV1Dto, 'detections'>>>;
 type _InstallExcludesCoreError = Assert<Not<HasKey<InstallV1Dto['results'][number], 'error'>>>;
+type _StatusTopLevelKeys = Assert<
+  Equal<
+    keyof StatusV1Dto,
+    | 'schemaVersion'
+    | 'kind'
+    | 'selection'
+    | 'context'
+    | 'artifacts'
+    | 'ledger'
+    | 'journals'
+    | 'facts'
+    | 'entries'
+    | 'summary'
+  >
+>;
+type _StatusExcludesRepositoryInternals = Assert<
+  Not<HasKey<StatusV1Dto['entries'][number], 'error' | 'journal' | 'updatedAt'>>
+>;
 type _UninstallExcludesCoreError = Assert<Not<HasKey<UninstallV1Dto['results'][number], 'error'>>>;
 type _FlipExcludesCoreError = Assert<Not<HasKey<FlipV2Dto['results'][number], 'error'>>>;
 type _CapabilityTopLevelKeys = Assert<
@@ -288,6 +313,7 @@ const configListCodec: WireCodec<'config-list', 1, ConfigListV1Dto> = configList
 const configSetCodec: WireCodec<'config-set', 1, ConfigSetV1Dto> = configSetV1Codec;
 const configUnsetCodec: WireCodec<'config-unset', 1, ConfigUnsetV1Dto> = configUnsetV1Codec;
 const installCodec: WireCodec<'install', 1, InstallV1Dto> = installV1Codec;
+const statusCodec: WireCodec<'status', 1, StatusV1Dto> = statusV1Codec;
 const uninstallCodec: WireCodec<'uninstall', 1, UninstallV1Dto> = uninstallV1Codec;
 const verifyCodec: WireCodec<'verify', 1, VerifyV1Dto> = verifyV1Codec;
 const errorCodec: WireCodec<'error', 1, ErrorV1Dto> = errorV1Codec;
@@ -306,6 +332,7 @@ type _ConfigUnsetMapperReturn = Assert<
   Equal<ReturnType<typeof toConfigUnsetV1Dto>, ConfigUnsetV1Dto>
 >;
 type _InstallMapperReturn = Assert<Equal<ReturnType<typeof toInstallV1Dto>, InstallV1Dto>>;
+type _StatusMapperReturn = Assert<Equal<ReturnType<typeof toStatusV1Dto>, StatusV1Dto>>;
 type _UninstallMapperReturn = Assert<Equal<ReturnType<typeof toUninstallV1Dto>, UninstallV1Dto>>;
 type _VerifyMapperReturn = Assert<Equal<ReturnType<typeof toVerifyV1Dto>, VerifyV1Dto>>;
 type _ErrorMapperReturn = Assert<Equal<ReturnType<typeof toErrorV1Dto>, ErrorV1Dto>>;
@@ -347,6 +374,7 @@ export type VersionClosureCanaries = [
   ForbiddenErrorDtoFromV2,
   ForbiddenHealthDtoFromV2,
   ForbiddenInstallDtoFromV2,
+  ForbiddenStatusDtoFromV2,
   ForbiddenUninstallDtoFromV2,
   ForbiddenVerifyDtoFromV2,
 ];
@@ -359,6 +387,7 @@ void [
   configSetCodec,
   configUnsetCodec,
   installCodec,
+  statusCodec,
   uninstallCodec,
   verifyCodec,
   capabilityCodec,
@@ -371,6 +400,7 @@ void [
   toConfigSetV1Dto,
   toConfigUnsetV1Dto,
   toInstallV1Dto,
+  toStatusV1Dto,
   toUninstallV1Dto,
   toVerifyV1Dto,
   toErrorV1Dto,
@@ -391,6 +421,7 @@ export type PublicWireCompileContract = {
   readonly configSet: ConfigSetV1Dto;
   readonly configUnset: ConfigUnsetV1Dto;
   readonly install: InstallV1Dto;
+  readonly status: StatusV1Dto;
   readonly uninstall: UninstallV1Dto;
   readonly verify: VerifyV1Dto;
   readonly error: ErrorV1Dto;

@@ -1,3 +1,4 @@
+import type { StatusV1Dto } from '../../../../packages/core/src/contracts/v1/index.ts';
 import type {
   AgentsReport,
   CommandsReport,
@@ -12,10 +13,12 @@ import type {
   ListReport,
   NormalizedSeverity,
   SkillSmithError,
+  StatusReport,
   SupportedTool,
   UninstallReport,
   VerifyReport,
 } from '../../../../packages/core/src/index.ts';
+import statusV1Golden from '../p3a-ts04/status-v1.golden.json' with { type: 'json' };
 
 /** Stable characterization values shared by the G1-06 mapper, codec, and renderer tests. */
 const CORE_ONLY_ERROR = {
@@ -372,6 +375,19 @@ export const ERROR_FIXTURE = {
   exitCode: 7,
 } as const;
 
+export const STATUS_V1_DTO_FIXTURE = statusV1Golden as unknown as StatusV1Dto;
+
+export const STATUS_REPORT_FIXTURE = {
+  selection: STATUS_V1_DTO_FIXTURE.selection,
+  context: STATUS_V1_DTO_FIXTURE.context,
+  artifacts: STATUS_V1_DTO_FIXTURE.artifacts,
+  ledger: STATUS_V1_DTO_FIXTURE.ledger,
+  journals: STATUS_V1_DTO_FIXTURE.journals,
+  facts: STATUS_V1_DTO_FIXTURE.facts,
+  entries: STATUS_V1_DTO_FIXTURE.entries,
+  summary: STATUS_V1_DTO_FIXTURE.summary,
+} satisfies StatusReport;
+
 export const REPORT_FIXTURES = {
   agents: AGENTS_REPORT_FIXTURE,
   health: HEALTH_REPORT_FIXTURE,
@@ -385,6 +401,7 @@ export const REPORT_FIXTURES = {
   flip: FLIP_REPORT_FIXTURE,
   install: INSTALL_REPORT_FIXTURE,
   list: LIST_REPORT_FIXTURE,
+  status: STATUS_REPORT_FIXTURE,
   uninstall: UNINSTALL_REPORT_FIXTURE,
   verify: VERIFY_REPORT_FIXTURE,
   error: ERROR_FIXTURE,
@@ -404,6 +421,7 @@ export const CURRENT_RENDERER_REPORTS = {
   flip: { value: REPORT_FIXTURES.flip },
   install: { value: REPORT_FIXTURES.install },
   list: REPORT_FIXTURES.list,
+  status: { result: STATUS_V1_DTO_FIXTURE },
   uninstall: { value: REPORT_FIXTURES.uninstall },
   verify: { result: REPORT_FIXTURES.verify },
 } as const;
@@ -431,6 +449,7 @@ export const CURRENT_JSON_GOLDENS = {
   install:
     '{\n  "schemaVersion": 1,\n  "kind": "skillsmith.install",\n  "dryRun": false,\n  "requested": {\n    "sources": [\n      "fixture/repository//skills/fixture-skill"\n    ],\n    "tools": [\n      "codex"\n    ],\n    "explicitTools": true,\n    "scope": "project",\n    "explicitScope": true,\n    "ref": "main",\n    "pin": true,\n    "direct": false,\n    "force": false,\n    "verify": "static",\n    "deep": false\n  },\n  "results": [\n    {\n      "source": "fixture/repository//skills/fixture-skill",\n      "skill": "fixture-skill",\n      "tool": "codex",\n      "scope": "project",\n      "placementPath": "/fixture/project/skills/fixture-skill",\n      "action": "installed",\n      "reason": null,\n      "placement": "symlink",\n      "store": {\n        "path": "/fixture/store/fixture-skill",\n        "rev": "main",\n        "gitSha": "1111111111111111111111111111111111111111",\n        "reused": false\n      },\n      "origin": {\n        "host": "github.com",\n        "repo": "fixture/repository",\n        "skillPath": "skills/fixture-skill",\n        "refRequested": "main",\n        "refResolved": "1111111111111111111111111111111111111111",\n        "pin": true\n      },\n      "verify": {\n        "gate": "passed",\n        "verdict": "pass",\n        "mode": "static"\n      },\n      "candidates": null\n    }\n  ],\n  "summary": {\n    "installed": 1,\n    "updated": 0,\n    "repaired": 0,\n    "noop": 0,\n    "skipped": 0,\n    "refused": 0,\n    "failed": 0\n  }\n}',
   list: '{\n  "schemaVersion": 2,\n  "experimental": true,\n  "skills": [\n    {\n      "name": "fixture-skill",\n      "path": "/fixture/project/skills/fixture-skill",\n      "realpath": "/fixture/store/fixture-skill",\n      "tool": "codex",\n      "scope": "project",\n      "root": "/fixture/project/skills",\n      "frontmatter": {\n        "name": "fixture-skill",\n        "description": "A deterministic skill fixture",\n        "version": "1.0.0"\n      },\n      "origin": {\n        "kind": "standalone"\n      },\n      "enabled": "on"\n    }\n  ]\n}',
+  status: `${JSON.stringify(STATUS_V1_DTO_FIXTURE, null, 2)}\n`,
   uninstall:
     '{\n  "schemaVersion": 1,\n  "kind": "skillsmith.uninstall",\n  "dryRun": false,\n  "requested": {\n    "targets": [\n      "fixture-skill"\n    ],\n    "tools": [\n      "codex"\n    ],\n    "explicitTools": true,\n    "scope": "project",\n    "allScopes": false,\n    "force": false\n  },\n  "results": [\n    {\n      "skill": "fixture-skill",\n      "tool": "codex",\n      "scope": "project",\n      "placementPath": "/fixture/project/skills/fixture-skill",\n      "action": "removed",\n      "reason": null,\n      "before": {\n        "mode": "pinned",\n        "placement": "symlink",\n        "storePath": "/fixture/store/fixture-skill",\n        "symlinkTarget": "/fixture/store/fixture-skill"\n      },\n      "storeRetained": "/fixture/store/fixture-skill",\n      "backupKept": null\n    }\n  ],\n  "summary": {\n    "removed": 1,\n    "noop": 0,\n    "refused": 0,\n    "failed": 0\n  }\n}',
   verify:
@@ -452,6 +471,7 @@ export const GOLDEN_TERMINAL_LF = {
   flip: false,
   install: false,
   list: false,
+  status: true,
   uninstall: false,
   verify: false,
   error: true,

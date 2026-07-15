@@ -15,6 +15,7 @@ import {
   runConfigUnsetApplication,
   runDoctorApplication,
   runListApplication,
+  runStatusApplication,
   runVerifyApplication,
 } from '../../src/application/read-services.ts';
 import type {
@@ -159,6 +160,7 @@ describe('current read application registry', () => {
       'doctor',
       'check',
       'verify',
+      'status',
     ]);
     expect(Object.isFrozen(registry)).toBeTrue();
     expect(registry.agents).toBe(runAgentsApplication);
@@ -170,6 +172,7 @@ describe('current read application registry', () => {
     expect(registry.commands).toBe(runCommandsApplication);
     expect(registry.check).toBe(runCheckApplication);
     expect(registry.verify).toBe(runVerifyApplication);
+    expect(registry.status).toBe(runStatusApplication);
   });
 
   test('source has no CLI runtime or environment construction dependency', async () => {
@@ -242,12 +245,18 @@ describe('validation happens before discovery or effects', () => {
       poisonedContext(),
     );
     const doctor = await runDoctorApplication(request([], { scope: 'managed' }), poisonedContext());
-    expect([list.exitClass, check.exitClass, verify.exitClass, doctor.exitClass]).toEqual([
-      'usage',
-      'usage',
-      'usage',
-      'capability',
-    ]);
+    const status = await runStatusApplication(
+      request([], { lockfile: 'skillsmith.lock' }),
+      poisonedContext(),
+    );
+    expect([
+      list.exitClass,
+      check.exitClass,
+      verify.exitClass,
+      doctor.exitClass,
+      status.exitClass,
+    ]).toEqual(['usage', 'usage', 'usage', 'capability', 'usage']);
+    expect(status.diagnostics[0]?.message).toBe('--lockfile requires --file');
   });
 });
 

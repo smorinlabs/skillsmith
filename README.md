@@ -5,8 +5,8 @@
 Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill discovery
 and management across Claude Code, Codex, Kilo Code, and opencode.
 
-**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `version`, `completion`, and `help` are implemented.
-**P17 target:** desired-state `init`, `export`, `plan`, `apply`, narrow `sync`, `status`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
+**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `version`, `completion`, and `help` are implemented.
+**P17 target:** desired-state `init`, `export`, `plan`, `apply`, narrow `sync`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
 
 ## Example output
 
@@ -79,6 +79,7 @@ skillsmith list                         # inspect installed skills
 skillsmith config list                  # show effective configuration and source layers
 skillsmith check --report-only          # report CI checks without failing on findings
 skillsmith verify . --static            # statically verify a plugin or bare skill directory
+skillsmith status --tool codex --user   # correlate desired, locked, ledger, and live state
 skillsmith install owner/repo           # acquire a skill from a git host
 skillsmith uninstall my-skill --tool claude-code --user --dry-run
 skillsmith dev my-skill --tool claude-code --dry-run
@@ -89,6 +90,12 @@ skillsmith completion bash              # emit a Bash completion script
 `check` fails on error findings by default; use `--report-only` when only the report should be
 produced. The inherited `-C <dir>` flag changes the effective working directory, and
 `--config <file>` selects an explicit configuration file.
+
+`status` is read-only: it correlates the selected manifest/lock pair, placement ledger, journals,
+and live skill roots without running verification or writing recovery state. Use repeatable
+`--tool`, one scope flag, or skill/path targets to narrow the report; `--file` and optional
+`--lockfile` select an explicit portable pair. Human output is the default, `--json` emits strict
+`status@1`, and `--check` exits nonzero when the selected state contains drift.
 
 ## Supported tools
 

@@ -61,6 +61,7 @@ const EXPECTED_PATHS = [
   'skillsmith install',
   'skillsmith list',
   'skillsmith promote',
+  'skillsmith status',
   'skillsmith uninstall',
   'skillsmith verify',
 ] as const;
@@ -78,6 +79,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith install', 'install', 1],
   ['skillsmith list', 'list', 2],
   ['skillsmith promote', 'flip', 2],
+  ['skillsmith status', 'status', 1],
   ['skillsmith uninstall', 'uninstall', 1],
   ['skillsmith verify', 'verify', 1],
 ] as const;
@@ -93,6 +95,7 @@ const EXPECTED_CODECS = [
   ['flip', 2],
   ['install', 1],
   ['list', 2],
+  ['status', 1],
   ['uninstall', 1],
   ['verify', 1],
   ['error', 1],
@@ -130,6 +133,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     terminalLf: false,
   },
   list: { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
+  status: {
+    wireKind: 'skillsmith.status',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
   uninstall: {
     wireKind: 'skillsmith.uninstall',
     embeddedVersion: 'schemaVersion',
@@ -164,6 +173,7 @@ const GOLDEN_FILES = {
   flip: 'flip.stdout',
   install: 'install.stdout',
   list: 'list.stdout',
+  status: 'status.stdout',
   uninstall: 'uninstall.stdout',
   verify: 'verify.stdout',
   error: 'error.stdout',
@@ -203,6 +213,8 @@ const V1_RUNTIME_EXPORTS = [
   'toErrorV1Dto',
   'toHealthV1Dto',
   'toInstallV1Dto',
+  'statusV1Codec',
+  'toStatusV1Dto',
   'toUninstallV1Dto',
   'toVerifyV1Dto',
   'uninstallV1Codec',
@@ -408,6 +420,7 @@ const renderedCurrentBytes = (): CurrentBytes => {
     flip,
     install: render('install', CURRENT_RENDERER_REPORTS.install),
     list: render('list', CURRENT_RENDERER_REPORTS.list),
+    status: render('status', CURRENT_RENDERER_REPORTS.status),
     uninstall: render('uninstall', CURRENT_RENDERER_REPORTS.uninstall),
     verify: render('verify', CURRENT_RENDERER_REPORTS.verify),
     error: renderCliError(REPORT_FIXTURES.error, 'json'),
@@ -470,7 +483,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the fourteen live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the fifteen live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -479,7 +492,7 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(14);
+    expect(new Set(paths).size).toBe(15);
     for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
@@ -514,6 +527,7 @@ describe('EWP-P1-TS10', () => {
       ['install', 'skillsmith install'],
       ['list', 'skillsmith list'],
       ['promote', 'skillsmith promote'],
+      ['status', 'skillsmith status'],
       ['uninstall', 'skillsmith uninstall'],
       ['verify', 'skillsmith verify'],
     ] as const;
@@ -1837,6 +1851,7 @@ describe('EWP-P1-TS10', () => {
     expect(v2, 'missing v2 codecs and mappers').not.toBeNull();
     if (v1 === null || v2 === null) return;
     const hostileInstall = hostileLifecycleReport(REPORT_FIXTURES.install);
+    const hostileStatus = addHostileFields(REPORT_FIXTURES.status);
     const hostileUninstall = hostileLifecycleReport(REPORT_FIXTURES.uninstall);
     const hostileFlip = hostileLifecycleReport(REPORT_FIXTURES.flip);
     const capabilityBytes = JSON.stringify(expectedCapabilitySnapshot(), null, 2);
@@ -1916,6 +1931,13 @@ describe('EWP-P1-TS10', () => {
         codec: v1.installV1Codec,
         args: [hostileInstall],
         bytes: CURRENT_JSON_GOLDENS.install,
+      },
+      {
+        name: 'status@1',
+        mapper: v1.toStatusV1Dto,
+        codec: v1.statusV1Codec,
+        args: [hostileStatus],
+        bytes: CURRENT_JSON_GOLDENS.status,
       },
       {
         name: 'uninstall@1',
@@ -2038,6 +2060,7 @@ describe('EWP-P1-TS10', () => {
       ['flip', 2, CURRENT_JSON_GOLDENS.flip],
       ['install', 1, CURRENT_JSON_GOLDENS.install],
       ['list', 2, CURRENT_JSON_GOLDENS.list],
+      ['status', 1, CURRENT_JSON_GOLDENS.status],
       ['uninstall', 1, CURRENT_JSON_GOLDENS.uninstall],
       ['verify', 1, CURRENT_JSON_GOLDENS.verify],
       ['error', 1, CURRENT_JSON_GOLDENS.error],

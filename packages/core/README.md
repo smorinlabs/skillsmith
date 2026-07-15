@@ -44,6 +44,9 @@ import {
   planInitManifest,
   projectSourceContent,
   readPortableLockSource,
+  readStatus,
+  runStatusApplication,
+  selectReadableArtifactContext,
   serializePortableLock,
 
   // Version
@@ -62,7 +65,11 @@ import type {
   PortableLockRelationship,
   PortableLockV1,
   Platform,
+  ReadableArtifactContext,
   Result,
+  StatusReadPorts,
+  StatusReadRequest,
+  StatusReport,
   ScanEnv,
   SkillSmithError,
   SourceContentProjectionV1,
@@ -82,6 +89,12 @@ and excludes exactly `.git`; it performs no write or acquisition.
 The older placement-store `contentHashOf` digest remains an internal compatibility algorithm for
 existing ledger/store records. It is intentionally independent from the public versioned
 `source-content` hash until a version-aware migration owns that transition.
+
+Correlated status reads remain non-mutating at every layer. `selectReadableArtifactContext` chooses
+one explicit, project, or user portable-artifact context—or a live-only system/managed context—
+without reading artifact contents. `readStatus` consumes injected read capabilities and returns the
+immutable desired/locked/ledger/live product. `runStatusApplication` validates command selection,
+resolves the shared project context, and returns the redacted `status@1` report with `NO_MUTATION`.
 
 Human artifact writes preserve that pure identity boundary. A bounded lossless TOML editor verifies
 its semantic delta through the strict manifest reader; an injected, focused artifact coordinator
@@ -116,16 +129,21 @@ Versioned wire contracts use dedicated entry points so DTO authority does not mi
 
 ```ts
 import { createWireContractRegistry } from '@skillsmith/core/contracts';
-import { agentsV1Codec, toAgentsV1Dto } from '@skillsmith/core/contracts/v1';
+import {
+  agentsV1Codec,
+  statusV1Codec,
+  type StatusV1Dto,
+  toAgentsV1Dto,
+  toStatusV1Dto,
+} from '@skillsmith/core/contracts/v1';
 import { flipV2Codec, toFlipV2Dto } from '@skillsmith/core/contracts/v2';
 ```
 
 The current codec IDs are `agents`, `health`, `commands`, `config-get`, `config-list`, `config-set`,
-`config-unset`, `flip`,
-`install`, `list`, `uninstall`, `verify`, `error`, and `capability-snapshot`. Codecs recursively
-reject unknown object fields, validate before encoding, preserve their declared JSON framing, and
-return sanitized `Result` errors rather than throwing for untrusted input. Explicit `to*Dto`
-mappers keep domain-only fields out of public wire shapes. See
+`config-unset`, `flip`, `install`, `list`, `status`, `uninstall`, `verify`, `error`, and
+`capability-snapshot`. Codecs recursively reject unknown object fields, validate before encoding,
+preserve their declared JSON framing, and return sanitized `Result` errors rather than throwing for
+untrusted input. Explicit `to*Dto` mappers keep domain-only fields out of public wire shapes. See
 [ADR 0008](../../docs/adr/0008-wire-contract-registry.md).
 
 ## Persisted artifact contracts

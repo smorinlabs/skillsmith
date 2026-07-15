@@ -19,7 +19,11 @@ src/
 ```
 
 Current registered commands include `agents`, `list`, `config`, `check`, `commands`, `doctor`,
-`verify`, `install`, `uninstall`, `dev`, `promote`, `completion`, `version`, and `help`.
+`verify`, `status`, `install`, `uninstall`, `dev`, `promote`, `completion`, `version`, and `help`.
+
+`status [skill...]` is a read-only correlation view over desired manifest state, the lockfile,
+placement ledger records, and live tool installations. Use `--json` for the versioned `status@1`
+wire report or `--check` to return exit code 7 when the selected state contains drift.
 
 `cli → core` is the only allowed import direction, and the CLI only imports `@skillsmith/core` via its public entry (no deep paths). See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the enforced boundary rules.
 
