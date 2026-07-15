@@ -3917,7 +3917,7 @@
       "phase": "3B",
       "title": "Immutable operations/results and migration of current mutator planning/dry-run paths",
       "dependsOn": ["P17-G3A-02"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "eslint.config.js",
@@ -4069,7 +4069,7 @@
         "/root/g3b01_mutator_migration",
         "/root/g3b01_command_contract"
       ],
-      "reviewer": null,
+      "reviewer": "/root/g3b01_independent_architecture_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -4084,24 +4084,24 @@
           "evidence": ["projects/p17/evidence/P17-G3B-01.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-01.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-01.md#refactor-review"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-01.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -4119,7 +4119,11 @@
         "projects/p17/evidence/P17-G3B-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G3B-01.md#implementation-ownership-amendment",
         "projects/p17/evidence/P17-G3B-01.md#recovery-race-ownership-amendment",
-        "projects/p17/evidence/P17-G3B-01.md#dev-source-compatibility-ownership-amendment"
+        "projects/p17/evidence/P17-G3B-01.md#dev-source-compatibility-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-01.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-01.md#refactor-review",
+        "projects/p17/evidence/P17-G3B-01.md#adversarial-review"
       ]
     },
     {
@@ -6356,11 +6360,11 @@
       "title": "Develop — How do I use a local checkout as the live development source?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "surface:dev",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
       "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
@@ -6773,11 +6777,11 @@
       "title": "Develop — How do I snapshot a development placement into managed state?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "surface:promote",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
       "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
@@ -7473,11 +7477,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
       "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
@@ -7851,11 +7855,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
       "secondaryGroups": ["P17-G4B-01", "P17-G4B-02"],
       "implements": [],
       "validatedBy": [
@@ -8779,11 +8783,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
       "secondaryGroups": [
         "P17-G4A-02",
         "P17-G4A-03",
@@ -11888,7 +11892,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS01",
       "target": {
@@ -11897,7 +11901,9 @@
         "selector": "EWP-CMD-DEV-TS01",
         "command": "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-dev-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-dev-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DEV-TS01"],
@@ -11929,7 +11935,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS02",
       "target": {
@@ -11938,7 +11944,9 @@
         "selector": "EWP-CMD-DEV-TS02",
         "command": "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-dev-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-dev-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DEV-TS02"],
@@ -11970,7 +11978,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS03",
       "target": {
@@ -11979,7 +11987,9 @@
         "selector": "EWP-CMD-DEV-TS03",
         "command": "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-dev-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-dev-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DEV-TS03"],
@@ -12011,7 +12021,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS04",
       "target": {
@@ -12020,7 +12030,9 @@
         "selector": "EWP-CMD-DEV-TS04",
         "command": "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS04"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-dev-ts04"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-dev-ts04"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DEV-TS04"],
@@ -12052,7 +12064,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS05",
       "target": {
@@ -12061,7 +12073,9 @@
         "selector": "EWP-CMD-DEV-TS05",
         "command": "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-dev-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-dev-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DEV-TS05"],
@@ -12093,7 +12107,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS06",
       "target": {
@@ -12102,7 +12116,9 @@
         "selector": "EWP-CMD-DEV-TS06",
         "command": "bun test packages/cli/tests/contracts/dev.test.ts --test-name-pattern EWP-CMD-DEV-TS06"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-dev-ts06"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-dev-ts06"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DEV-TS06"],
@@ -14285,7 +14301,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS01",
       "target": {
@@ -14295,7 +14311,7 @@
         "command": "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS01"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-promote-ts01"
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-promote-ts01"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -14328,7 +14344,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS02",
       "target": {
@@ -14338,7 +14354,7 @@
         "command": "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS02"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-promote-ts02"
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-promote-ts02"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -14371,7 +14387,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS03",
       "target": {
@@ -14381,7 +14397,7 @@
         "command": "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS03"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-promote-ts03"
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-promote-ts03"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -14414,7 +14430,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS04",
       "target": {
@@ -14424,7 +14440,7 @@
         "command": "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS04"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-promote-ts04"
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-promote-ts04"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -14457,7 +14473,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS05",
       "target": {
@@ -14467,7 +14483,7 @@
         "command": "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS05"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-promote-ts05"
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-promote-ts05"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -14500,7 +14516,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS06",
       "target": {
@@ -14510,7 +14526,7 @@
         "command": "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS06"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-cmd-promote-ts06"
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-cmd-promote-ts06"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -18687,14 +18703,16 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-01",
-      "status": "red",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3B-01.md#ready-plan",
         "projects/p17/evidence/P17-G3B-01.md#test-first-evidence",
-        "projects/p17/evidence/P17-G3B-01.md#implementation-ownership-amendment"
+        "projects/p17/evidence/P17-G3B-01.md#implementation-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-01.md#adversarial-review"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
@@ -18805,7 +18823,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-01",
-      "status": "red",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01",
       "target": null,
@@ -18813,7 +18831,9 @@
         "projects/p17/evidence/P17-G3B-01.md#ready-plan",
         "projects/p17/evidence/P17-G3B-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G3B-01.md#recovery-race-ownership-amendment",
-        "projects/p17/evidence/P17-G3B-01.md#dev-source-compatibility-ownership-amendment"
+        "projects/p17/evidence/P17-G3B-01.md#dev-source-compatibility-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-01.md#adversarial-review"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
@@ -18995,7 +19015,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:tests/ergonomics/phase/EWP-P3B-TS01.test.ts#EWP-P3B-TS01",
       "target": {
@@ -19004,7 +19024,9 @@
         "selector": "EWP-P3B-TS01",
         "command": "bun test tests/ergonomics/phase/EWP-P3B-TS01.test.ts --test-name-pattern EWP-P3B-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-p3b-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-p3b-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS01"],
@@ -19036,7 +19058,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:tests/ergonomics/phase/EWP-P3B-TS02.test.ts#EWP-P3B-TS02",
       "target": {
@@ -19045,7 +19067,9 @@
         "selector": "EWP-P3B-TS02",
         "command": "bun test tests/ergonomics/phase/EWP-P3B-TS02.test.ts --test-name-pattern EWP-P3B-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#red-execution-receipt-ewp-p3b-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-01.md#final-green-execution-receipt-ewp-p3b-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS02"],
