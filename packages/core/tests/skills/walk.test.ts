@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { INVENTORY_CANCELLED } from '../../src/inventory/cancellation.ts';
+import { inventoryRootOrdinalOf } from '../../src/inventory/types.ts';
 import type { InventoryReadPorts } from '../../src/ports/types.ts';
 import { walkSkillDir } from '../../src/skills/walk.ts';
 
@@ -112,5 +114,64 @@ describe('walkSkillDir', () => {
       enabled: 'on',
     });
     expect(r[0]?.realpath).toBe('/elsewhere/real');
+  });
+
+  test('stops after an abort during the first entry read', async () => {
+    const controller = new AbortController();
+    let reads = 0;
+    let realpaths = 0;
+    const base = fakeEnv({
+      dirs: { '/r': ['one', 'two'] },
+      files: {
+        '/r/one/SKILL.md': '---\n---\n',
+        '/r/two/SKILL.md': '---\n---\n',
+      },
+      realpaths: {},
+    });
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads += 1;
+        controller.abort(new Error('private reason'));
+        return base.readText(path);
+      },
+      realpath: async (path) => {
+        realpaths += 1;
+        return base.realpath(path);
+      },
+    };
+
+    await expect(
+      walkSkillDir(env, {
+        tool: 'claude-code',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+        signal: controller.signal,
+      }),
+    ).rejects.toEqual(INVENTORY_CANCELLED);
+    expect({ reads, realpaths }).toEqual({ reads: 1, realpaths: 0 });
+  });
+
+  test('retains a non-enumerable internal root ordinal', async () => {
+    const r = await walkSkillDir(
+      fakeEnv({
+        dirs: { '/r': ['one'] },
+        files: { '/r/one/SKILL.md': '---\n---\n' },
+        realpaths: {},
+      }),
+      {
+        tool: 'codex',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+        rootOrdinal: 7,
+      },
+    );
+
+    expect(inventoryRootOrdinalOf(r[0] ?? {})).toBe(7);
+    expect(Object.keys(r[0] ?? {})).not.toContain('rootOrdinal');
   });
 });

@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
+import { INVENTORY_CANCELLED } from '../../src/inventory/cancellation.ts';
 import { projectSkillInventory, readSkillInventory } from '../../src/inventory/read.ts';
+import { tagInventoryRootOrdinal } from '../../src/inventory/types.ts';
 import type { SkillEntry } from '../../src/skills/types.ts';
 
 const fixturePath = join(
@@ -81,6 +83,16 @@ describe('skill inventory projection', () => {
     const result = projectSkillInventory([first, conflict]);
     expect(result.ok).toBeFalse();
     if (!result.ok) expect(result.error.code).toBe('config-error');
+  });
+
+  test('excludes internal root ordinal from exact-alias facts', () => {
+    const source = fixture.rows[0] as FixtureRow;
+    const first = tagInventoryRootOrdinal(structuredClone(source) as SkillEntry, 0);
+    const second = tagInventoryRootOrdinal(structuredClone(source) as SkillEntry, 4);
+    const result = projectSkillInventory([first, second]);
+
+    expect(result.ok).toBeTrue();
+    if (result.ok) expect(result.value.entries).toHaveLength(1);
   });
 
   test('preserves validated preprojected mode, placement, provenance metadata, and verification', () => {
@@ -206,5 +218,42 @@ describe('skill inventory projection', () => {
         verification: 'passed',
       }),
     );
+  });
+
+  test('cancellation during the final placement observation wins over success', async () => {
+    const home = '/h';
+    const root = `${home}/.claude/skills`;
+    const path = `${root}/one`;
+    const skillMd = `${path}/SKILL.md`;
+    const controller = new AbortController();
+    const reading = readSkillInventory(
+      {
+        homeDir: home,
+        executableSearchPath: [],
+        platform: 'linux',
+        xdg: { config: `${home}/.config`, data: `${home}/.local/share`, cache: `${home}/.cache` },
+        fileExists: async (candidate) => candidate === root || candidate === skillMd,
+        pathKind: async (candidate) => {
+          if (candidate === path) controller.abort(new Error('private reason'));
+          return candidate === root || candidate === path ? 'dir' : 'absent';
+        },
+        realpath: async (candidate) => candidate,
+        listDir: async (candidate) => (candidate === root ? ['one'] : []),
+        readText: async () => '---\n---\n',
+        readBytes: async () => new Uint8Array(),
+        readLink: async () => '',
+        isExecutable: async () => false,
+        modifiedAt: async () => null,
+      },
+      {
+        tools: ['claude-code'],
+        scopes: ['user'],
+        cwd: '/repo',
+        configuration: resolveRuntimeConfiguration({}),
+        signal: controller.signal,
+      },
+    );
+
+    await expect(reading).rejects.toEqual(INVENTORY_CANCELLED);
   });
 });

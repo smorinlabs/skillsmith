@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
+import { INVENTORY_CANCELLED } from '../../src/inventory/cancellation.ts';
 import type { InventoryReadPorts } from '../../src/ports/types.ts';
 import { listCommands, observeCommandPlacements } from '../../src/scan/list-commands.ts';
 
@@ -139,5 +140,34 @@ describe('inventory command observation seam', () => {
     }
     expect(listDirs).toEqual([]);
     expect(failure).toEqual({ code: 'cancelled', message: 'inventory read cancelled' });
+  });
+
+  test('mid-root cancellation stops the command walker promptly', async () => {
+    const root = '/h/.claude/commands';
+    const controller = new AbortController();
+    let reads = 0;
+    const base = env(
+      { [root]: ['one.md', 'two.md'] },
+      { [`${root}/one.md`]: '---\n---\n', [`${root}/two.md`]: '---\n---\n' },
+    );
+    const ports: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads += 1;
+        controller.abort(new Error('private reason'));
+        return base.readText(path);
+      },
+    };
+
+    await expect(
+      observeCommandPlacements(ports, {
+        tools: ['claude-code'],
+        scopes: ['user'],
+        cwd: '/repo',
+        configuration,
+        signal: controller.signal,
+      }),
+    ).rejects.toEqual(INVENTORY_CANCELLED);
+    expect(reads).toBe(1);
   });
 });

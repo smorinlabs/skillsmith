@@ -65,7 +65,7 @@ const scanStandalone = async (
       throwIfInventoryCancelled(signal);
       const agent = registry[tool];
       const roots = agent.getCommandRoots(env, scope, ctx);
-      for (const root of roots) {
+      for (const [rootOrdinal, root] of roots.entries()) {
         throwIfInventoryCancelled(signal);
         try {
           const entries = await walkCommandDir(env, {
@@ -74,6 +74,8 @@ const scanStandalone = async (
             root,
             origin,
             enabled: 'on',
+            rootOrdinal,
+            ...(signal === undefined ? {} : { signal }),
           });
           out.push(...entries);
         } catch (failure) {
@@ -104,7 +106,7 @@ const scanPluginBundled = async (
   for (const tool of tools) {
     throwIfInventoryCancelled(signal);
     const agent = registry[tool];
-    for (const p of discovered) {
+    for (const [rootOrdinal, p] of discovered.entries()) {
       throwIfInventoryCancelled(signal);
       const root = agent.getPluginCommandDir(p.installation.installPath);
       if (!root) continue;
@@ -121,6 +123,8 @@ const scanPluginBundled = async (
           root,
           origin,
           enabled: p.enablement.enabled,
+          rootOrdinal,
+          ...(signal === undefined ? {} : { signal }),
         });
         out.push(...entries);
       } catch (failure) {
@@ -172,6 +176,7 @@ const scanCommandPlacements = async (
     );
     throwIfInventoryCancelled(opts.signal);
     const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
+    throwIfInventoryCancelled(opts.signal);
     if (!discoveredR.ok) {
       observation.emitter.complete(span, {
         outcome: 'failure',

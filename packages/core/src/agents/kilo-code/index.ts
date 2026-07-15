@@ -10,7 +10,7 @@ const resolveInventoryCollision = (
   candidates: readonly InventoryIdentitySurface[],
 ): string | null => {
   const isNative = (candidate: InventoryIdentitySurface): boolean =>
-    candidate.root.includes('/.kilo/skills');
+    /(?:^|\/)\.kilo\/skills\/?$/.test(candidate.root.replaceAll('\\', '/'));
   if (candidates.some((candidate) => !isNative(candidate))) return null;
   const project = candidates.filter((candidate) => candidate.scope === 'project');
   if (project.length !== 1) return null;

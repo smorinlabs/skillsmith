@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
+import { INVENTORY_CANCELLED } from '../../src/inventory/cancellation.ts';
+import { inventoryRootOrdinalOf } from '../../src/inventory/types.ts';
 import type { InventoryReadPorts } from '../../src/ports/types.ts';
-import { listSkills } from '../../src/scan/list-skills.ts';
+import { listSkills, observeSkillPlacements } from '../../src/scan/list-skills.ts';
 
 const configuration = resolveRuntimeConfiguration({});
 
@@ -98,5 +100,63 @@ describe('listSkills', () => {
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.map((e) => e.name)).toEqual(['grep']);
+  });
+
+  test('internal observations retain each adapter root ordinal', async () => {
+    const currentRoot = '/h/.agents/skills';
+    const legacyRoot = '/h/.codex/skills';
+    const observed = await observeSkillPlacements(
+      fakeEnv(
+        {
+          [currentRoot]: ['current'],
+          [legacyRoot]: ['legacy'],
+        },
+        {
+          [`${currentRoot}/current/SKILL.md`]: '---\n---\n',
+          [`${legacyRoot}/legacy/SKILL.md`]: '---\n---\n',
+        },
+      ),
+      { tools: ['codex'], scopes: ['user'], cwd: '/proj', configuration },
+    );
+
+    expect(observed.ok).toBeTrue();
+    if (observed.ok) {
+      expect(observed.value.map((entry) => [entry.root, inventoryRootOrdinalOf(entry)])).toEqual([
+        [currentRoot, 0],
+        [legacyRoot, 1],
+      ]);
+    }
+  });
+
+  test('mid-root cancellation stops the skill walker promptly', async () => {
+    const root = '/h/.claude/skills';
+    const controller = new AbortController();
+    let reads = 0;
+    const base = fakeEnv(
+      { [root]: ['one', 'two'] },
+      {
+        [`${root}/one/SKILL.md`]: '---\n---\n',
+        [`${root}/two/SKILL.md`]: '---\n---\n',
+      },
+    );
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads += 1;
+        controller.abort(new Error('private reason'));
+        return base.readText(path);
+      },
+    };
+
+    await expect(
+      observeSkillPlacements(env, {
+        tools: ['claude-code'],
+        scopes: ['user'],
+        cwd: '/proj',
+        configuration,
+        signal: controller.signal,
+      }),
+    ).rejects.toEqual(INVENTORY_CANCELLED);
+    expect(reads).toBe(1);
   });
 });

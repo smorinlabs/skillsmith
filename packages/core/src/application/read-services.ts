@@ -26,6 +26,7 @@ import {
   toCapabilitySnapshotV1Dto,
 } from '../contracts/v1/capability-snapshot.ts';
 import { type StatusV1Dto, statusV1Codec, toStatusV1Dto } from '../contracts/v1/status.ts';
+import type { InstallRecord } from '../detect/types.ts';
 import { builtInChecks } from '../doctor/registry.ts';
 import { focusDoctorPorts, runChecks } from '../doctor/run.ts';
 import type { CheckRunMode, CheckRunResult } from '../doctor/types.ts';
@@ -75,10 +76,7 @@ interface ReadServiceError {
 }
 
 export interface AgentsReport {
-  readonly detections: ReadonlyMap<
-    SupportedTool,
-    readonly import('../detect/types.ts').InstallRecord[]
-  >;
+  readonly detections: ReadonlyMap<SupportedTool, readonly InstallRecord[]>;
   readonly format: 'markdown' | 'json';
   readonly detectedOnly: boolean;
   readonly showCapabilities?: boolean;
@@ -759,6 +757,50 @@ const artifactPair = async (
   return { file: resolved.value.file.path, lockfile: resolved.value.lockfile.path };
 };
 
+const deepFreezeReadProduct = <T>(value: T, seen = new Set<object>()): T => {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const nested of Object.values(value)) deepFreezeReadProduct(nested, seen);
+  return Object.freeze(value);
+};
+
+const immutableDetectionMap = (
+  entries: Iterable<readonly [SupportedTool, readonly InstallRecord[]]>,
+): ReadonlyMap<SupportedTool, readonly InstallRecord[]> => {
+  const backing = new Map(entries);
+  const rejectMutation = (): never => {
+    throw new TypeError('agents detection inventory is immutable');
+  };
+  const proxy = new Proxy(backing, {
+    get(target, property) {
+      if (property === 'set' || property === 'delete' || property === 'clear')
+        return rejectMutation;
+      if (property === 'size') return target.size;
+      if (property === 'forEach') {
+        return (
+          callback: (
+            value: readonly InstallRecord[],
+            key: SupportedTool,
+            map: ReadonlyMap<SupportedTool, readonly InstallRecord[]>,
+          ) => void,
+          thisArg?: unknown,
+        ): void => {
+          for (const [key, value] of target) callback.call(thisArg, value, key, proxy);
+        };
+      }
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set: () => false,
+    defineProperty: () => false,
+    deleteProperty: () => false,
+  });
+  return Object.freeze(proxy);
+};
+
+const frozenInstallRecords = (records: readonly InstallRecord[]): readonly InstallRecord[] =>
+  Object.freeze(records.map((record) => Object.freeze({ ...record })));
+
 export const runAgentsApplication: ApplicationService<CurrentCommandRequest, AgentsReport> = async (
   request,
   context,
@@ -768,13 +810,16 @@ export const runAgentsApplication: ApplicationService<CurrentCommandRequest, Age
   const format: AgentsReport['format'] = jsonAlias || rawFormat === 'json' ? 'json' : 'markdown';
   const selectedAdapters = (tools: readonly SupportedTool[]) =>
     toolRegistry.adapters.filter((adapter) => tools.includes(adapter.descriptor.id));
-  const report = (tools: readonly SupportedTool[] = SUPPORTED_TOOLS): AgentsReport => ({
-    detections: new Map(),
-    format,
-    detectedOnly: enabled(request, 'detectedOnly'),
-    showCapabilities: enabled(request, 'capabilities'),
-    capabilities: toCapabilitySnapshotV1Dto({ adapters: selectedAdapters(tools) }),
-  });
+  const report = (tools: readonly SupportedTool[] = SUPPORTED_TOOLS): AgentsReport =>
+    Object.freeze({
+      detections: immutableDetectionMap([]),
+      format,
+      detectedOnly: enabled(request, 'detectedOnly'),
+      showCapabilities: enabled(request, 'capabilities'),
+      capabilities: deepFreezeReadProduct(
+        toCapabilitySnapshotV1Dto({ adapters: selectedAdapters(tools) }),
+      ),
+    });
   if (rawFormat !== undefined && rawFormat !== 'markdown' && rawFormat !== 'json') {
     return failed(report(), usage(`unknown agents format '${rawFormat}'`));
   }
@@ -842,12 +887,12 @@ export const runAgentsApplication: ApplicationService<CurrentCommandRequest, Age
   }
   const compareText = (left: string, right: string): number =>
     left < right ? -1 : left > right ? 1 : 0;
-  const ordered = new Map(
+  const ordered = immutableDetectionMap(
     attempts.map(
       (attempt) =>
         [
           attempt.tool,
-          Object.freeze(
+          frozenInstallRecords(
             [...(attempt.records ?? [])].sort(
               (left, right) =>
                 compareText(left.path, right.path) ||
@@ -858,7 +903,7 @@ export const runAgentsApplication: ApplicationService<CurrentCommandRequest, Age
         ] as const,
     ),
   );
-  return success({ ...report(tools), detections: ordered });
+  return success(Object.freeze({ ...report(tools), detections: ordered }));
 };
 
 export const runConfigGetApplication: ApplicationService<

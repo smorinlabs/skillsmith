@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { walkCommandDir } from '../../src/commands/walk.ts';
+import { INVENTORY_CANCELLED } from '../../src/inventory/cancellation.ts';
+import { inventoryRootOrdinalOf } from '../../src/inventory/types.ts';
 import type { InventoryReadPorts } from '../../src/ports/types.ts';
 
 const fakeEnv = (
@@ -64,5 +66,53 @@ describe('walkCommandDir', () => {
       enabled: 'on',
     });
     expect(r.map((e) => e.name)).toEqual(['good']);
+  });
+
+  test('stops after an abort during the first command read', async () => {
+    const controller = new AbortController();
+    let reads = 0;
+    let realpaths = 0;
+    const base = fakeEnv(
+      { '/r': ['one.md', 'two.md'] },
+      { '/r/one.md': '---\n---\n', '/r/two.md': '---\n---\n' },
+    );
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads += 1;
+        controller.abort(new Error('private reason'));
+        return base.readText(path);
+      },
+      realpath: async (path) => {
+        realpaths += 1;
+        return base.realpath(path);
+      },
+    };
+
+    await expect(
+      walkCommandDir(env, {
+        tool: 'claude-code',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+        signal: controller.signal,
+      }),
+    ).rejects.toEqual(INVENTORY_CANCELLED);
+    expect({ reads, realpaths }).toEqual({ reads: 1, realpaths: 0 });
+  });
+
+  test('retains a non-enumerable internal root ordinal', async () => {
+    const r = await walkCommandDir(fakeEnv({ '/r': ['one.md'] }, { '/r/one.md': '---\n---\n' }), {
+      tool: 'claude-code',
+      scope: 'user',
+      root: '/r',
+      origin: { kind: 'standalone' },
+      enabled: 'on',
+      rootOrdinal: 3,
+    });
+
+    expect(inventoryRootOrdinalOf(r[0] ?? {})).toBe(3);
+    expect(Object.keys(r[0] ?? {})).not.toContain('rootOrdinal');
   });
 });

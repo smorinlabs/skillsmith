@@ -31,19 +31,21 @@ import {
   compareInventoryText,
   compareSkillInventoryEntries,
 } from './order.ts';
-import type {
-  CommandInventory,
-  CommandInventoryEntry,
-  InventoryCollisionGroup,
-  InventoryFilterValue,
-  InventoryMember,
-  InventoryMode,
-  InventoryPlacement,
-  InventorySelection,
-  InventoryVerification,
-  InventoryVisibility,
-  SkillInventory,
-  SkillInventoryEntry,
+import {
+  type CommandInventory,
+  type CommandInventoryEntry,
+  type InventoryCollisionGroup,
+  type InventoryFilterValue,
+  type InventoryMember,
+  type InventoryMode,
+  type InventoryPlacement,
+  type InventorySelection,
+  type InventoryVerification,
+  type InventoryVisibility,
+  type SkillInventory,
+  type SkillInventoryEntry,
+  inventoryRootOrdinalOf,
+  tagInventoryRootOrdinal,
 } from './types.ts';
 
 export interface ReadSkillInventoryOptions extends ListSkillsOpts {
@@ -245,7 +247,7 @@ const projectIdentity = (entry: SkillEntry): ProjectedSkill => {
     name: entry.name,
     scope: entry.scope,
     origin: cloneOrigin(entry.origin),
-    rootOrdinal: 0,
+    rootOrdinal: inventoryRootOrdinalOf(entry),
     root: entry.root,
     path: entry.path,
     realpath: entry.realpath,
@@ -479,8 +481,11 @@ export const projectSkillInventory = (
 const placementOf = async (
   ports: InventoryReadPorts,
   path: string,
+  signal?: AbortSignal,
 ): Promise<InventoryPlacement> => {
+  throwIfInventoryCancelled(signal);
   const kind = await ports.pathKind(path);
+  throwIfInventoryCancelled(signal);
   if (kind === 'symlink') return 'symlink';
   if (kind === 'dir') return 'copy';
   return 'unknown';
@@ -516,43 +521,53 @@ const enrichObservedSkill = async (
   projected: ProjectedSkill,
   ledger: LedgerModel | null,
   projectRoot: string,
+  signal?: AbortSignal,
 ): Promise<SkillEntry & Partial<SkillInventoryEntry>> => {
   const pair = ledgerPairFor(ledger, projected.entry, projected.name, projectRoot);
-  const placement = await placementOf(env, projected.entry.path);
+  const placement = await placementOf(env, projected.entry.path, signal);
   if (pair === null) {
-    return {
-      ...projected.entry,
-      mode: 'unmanaged',
-      placement,
-      source: null,
-      revision: null,
-      store: null,
-      verification: 'unrecorded',
-      description: projected.entry.frontmatter?.description ?? null,
-    };
+    return tagInventoryRootOrdinal(
+      {
+        ...projected.entry,
+        mode: 'unmanaged',
+        placement,
+        source: null,
+        revision: null,
+        store: null,
+        verification: 'unrecorded',
+        description: projected.entry.frontmatter?.description ?? null,
+      },
+      projected.surface.rootOrdinal,
+    );
   }
   if (pair.mode === 'dev') {
-    return {
+    return tagInventoryRootOrdinal(
+      {
+        ...projected.entry,
+        mode: 'dev',
+        placement,
+        source: sourceForPair(pair),
+        revision: null,
+        store: null,
+        verification: 'unrecorded',
+        description: projected.entry.frontmatter?.description ?? null,
+      },
+      projected.surface.rootOrdinal,
+    );
+  }
+  return tagInventoryRootOrdinal(
+    {
       ...projected.entry,
-      mode: 'dev',
+      mode: 'pinned',
       placement,
       source: sourceForPair(pair),
-      revision: null,
-      store: null,
-      verification: 'unrecorded',
+      revision: pair.origin?.refResolved ?? pair.pinned?.gitSha ?? pair.pinned?.rev ?? null,
+      store: pair.pinned?.storePath ?? null,
+      verification: pair.pinned?.verify ?? 'unrecorded',
       description: projected.entry.frontmatter?.description ?? null,
-    };
-  }
-  return {
-    ...projected.entry,
-    mode: 'pinned',
-    placement,
-    source: sourceForPair(pair),
-    revision: pair.origin?.refResolved ?? pair.pinned?.gitSha ?? pair.pinned?.rev ?? null,
-    store: pair.pinned?.storePath ?? null,
-    verification: pair.pinned?.verify ?? 'unrecorded',
-    description: projected.entry.frontmatter?.description ?? null,
-  };
+    },
+    projected.surface.rootOrdinal,
+  );
 };
 
 export const readSkillInventory = async (
@@ -576,8 +591,17 @@ export const readSkillInventory = async (
   const enriched: Array<SkillEntry & Partial<SkillInventoryEntry>> = [];
   for (const observation of normalized.value) {
     throwIfInventoryCancelled(options.signal);
-    enriched.push(await enrichObservedSkill(env, observation, ledger, options.cwd));
+    const enrichedObservation = await enrichObservedSkill(
+      env,
+      observation,
+      ledger,
+      options.cwd,
+      options.signal,
+    );
+    throwIfInventoryCancelled(options.signal);
+    enriched.push(enrichedObservation);
   }
+  throwIfInventoryCancelled(options.signal);
   return projectSkillInventory(enriched, options);
 };
 
@@ -594,7 +618,7 @@ const projectCommandIdentity = (entry: CommandEntry): ProjectedCommand => {
     name: entry.name,
     scope: entry.scope,
     origin: cloneOrigin(entry.origin),
-    rootOrdinal: 0,
+    rootOrdinal: inventoryRootOrdinalOf(entry),
     root: entry.root,
     path: entry.path,
     realpath: entry.realpath,
@@ -618,6 +642,7 @@ export const readCommandInventory = async (
 ): Promise<Result<CommandInventory, SkillSmithError>> => {
   throwIfInventoryCancelled(options.signal);
   const observed = await observeCommandPlacements(env, options);
+  throwIfInventoryCancelled(options.signal);
   if (!observed.ok) return observed;
   const tools = canonicalInventoryTools(options.tools);
   const toolSet = new Set(tools);

@@ -495,6 +495,35 @@ describe('read and config outcomes', () => {
     ]);
   });
 
+  test('agents returns a deeply immutable detection product without changing ReadonlyMap shape', async () => {
+    const outcome = await runAgentsApplication(
+      request([], { tool: ['codex'] }),
+      context(
+        env('/h', {
+          path: ['/tools'],
+          fileExists: async (path) => path === '/tools/codex',
+          runVersion: async () => '1.2.3',
+        }),
+      ),
+    );
+    const records = outcome.report.detections.get('codex') ?? [];
+
+    expect(outcome.exitClass).toBe('success');
+    expect(outcome.report.detections).toBeInstanceOf(Map);
+    expect([...outcome.report.detections.keys()]).toEqual(['codex']);
+    expect(records).toEqual([{ path: '/tools/codex', version: '1.2.3', installMethod: 'unknown' }]);
+    expect(Object.isFrozen(outcome.report)).toBeTrue();
+    expect(Object.isFrozen(outcome.report.detections)).toBeTrue();
+    expect(Object.isFrozen(records)).toBeTrue();
+    expect(Object.isFrozen(records[0])).toBeTrue();
+    expect(Object.isFrozen(outcome.report.capabilities)).toBeTrue();
+    expect(Object.isFrozen(outcome.report.capabilities?.tools)).toBeTrue();
+    expect(() =>
+      (outcome.report.detections as unknown as Map<string, readonly unknown[]>).set('codex', []),
+    ).toThrow('agents detection inventory is immutable');
+    expect(() => Map.prototype.set.call(outcome.report.detections, 'codex', [])).toThrow();
+  });
+
   test('config get/list preserve effective values, sources, and notices', async () => {
     const config: EffectiveConfig = {
       ...effectiveConfig({ tool: 'codex' }),
