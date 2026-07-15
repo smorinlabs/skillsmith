@@ -3668,6 +3668,7 @@
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
+        "biome.json",
         "docs/adr/0008-wire-contract-registry.md",
         "docs/architecture.md",
         "eslint.config.js",
@@ -3833,7 +3834,10 @@
         },
         "ready": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3A-02.md#ready-plan"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3A-02.md#ready-plan",
+            "projects/p17/evidence/P17-G3A-02.md#ready-ownership-amendment"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -3871,7 +3875,8 @@
       "evidence": [
         "projects/p17/plans/P17-G3A-02.md",
         "projects/p17/evidence/P17-G3A-02.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G3A-02.md#ready-plan"
+        "projects/p17/evidence/P17-G3A-02.md#ready-plan",
+        "projects/p17/evidence/P17-G3A-02.md#ready-ownership-amendment"
       ]
     },
     {
