@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SUPPORTED_TOOLS } from '../../agents/types.ts';
 import {
   STATUS_FACT_AUTHORITY,
   STATUS_FACT_CODES,
@@ -32,7 +33,7 @@ import type {
 import { createJsonWireCodec } from '../codec.ts';
 
 const ScopeSchema = z.enum(['system', 'user', 'project', 'managed']);
-const SupportedToolSchema = z.enum(['claude-code', 'codex', 'kilo-code', 'opencode']);
+const SupportedToolSchema = z.enum(SUPPORTED_TOOLS);
 const VerificationSchema = z.enum(['passed', 'warned', 'skipped', 'unrecorded']);
 const SourceIdentitySchema = z
   .object({ host: z.string(), repository: z.string(), path: z.string().nullable() })

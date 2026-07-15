@@ -43,7 +43,6 @@ packages/
       program.ts     Commander registration and global policy
       index.ts       process entry, signal handling, and final exit mapping
 ```
-
 The historical “no I/O side effects” shorthand is corrected by the boundary below.
 
 ## Core / CLI split
