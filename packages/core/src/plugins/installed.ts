@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { z } from 'zod';
 import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
+import { rethrowInventoryReadFailure, throwIfInventoryCancelled } from '../inventory-control.ts';
 import type { InventoryReadPorts, PlatformPaths } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import type { PluginInstallation } from './types.ts';
@@ -22,16 +23,22 @@ export const getInstalledPluginsPath = (env: Pick<PlatformPaths, 'homeDir'>): st
 
 export const readInstalledPlugins = async (
   env: InventoryReadPorts,
+  signal?: AbortSignal,
 ): Promise<Result<PluginInstallation[], SkillSmithError>> => {
   const path = getInstalledPluginsPath(env);
-  if (!(await env.fileExists(path))) return ok([]);
+  throwIfInventoryCancelled(signal);
+  const exists = await env
+    .fileExists(path)
+    .catch((failure: unknown) => rethrowInventoryReadFailure(failure, path));
+  throwIfInventoryCancelled(signal);
+  if (!exists) return ok([]);
 
-  let text: string;
-  try {
-    text = await env.readText(path);
-  } catch (e) {
-    return err(configError(`failed to read ${path}: ${errorMessage(e)}`, { file: path }));
-  }
+  throwIfInventoryCancelled(signal);
+  const text = await env.readText(path).catch((failure: unknown) => {
+    throwIfInventoryCancelled(signal);
+    return rethrowInventoryReadFailure(failure, path);
+  });
+  throwIfInventoryCancelled(signal);
 
   let parsed: unknown;
   try {
@@ -54,7 +61,9 @@ export const readInstalledPlugins = async (
 
   const out: PluginInstallation[] = [];
   for (const [id, entries] of Object.entries(validated.data.plugins)) {
+    throwIfInventoryCancelled(signal);
     for (const e of entries) {
+      throwIfInventoryCancelled(signal);
       out.push({
         id,
         scope: e.scope,
@@ -64,5 +73,6 @@ export const readInstalledPlugins = async (
       });
     }
   }
+  throwIfInventoryCancelled(signal);
   return ok(out);
 };

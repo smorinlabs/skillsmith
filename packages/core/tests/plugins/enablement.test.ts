@@ -120,4 +120,28 @@ describe('resolveEnablement', () => {
     });
     expect(r).toEqual({ enabled: 'unset', source: 'none' });
   });
+
+  test('classifies a selected settings read EACCES as permission denied', async () => {
+    const path = '/h/.claude/settings.json';
+    const base = env({ [path]: '{}' });
+
+    await expect(
+      resolveEnablement(
+        {
+          ...base,
+          readText: async (candidate) => {
+            if (candidate === path) {
+              throw Object.assign(new Error('settings denied'), { code: 'EACCES' });
+            }
+            return base.readText(candidate);
+          },
+        },
+        { id: 'foo@bar', scope: 'user', installPath: '/x', version: '1' },
+      ),
+    ).rejects.toEqual({
+      code: 'permission-denied',
+      message: 'settings denied',
+      path,
+    });
+  });
 });

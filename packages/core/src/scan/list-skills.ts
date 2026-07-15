@@ -5,8 +5,7 @@ import { SCOPES, type Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
 import { noopLogger } from '../env/logger.ts';
 import type { SkillSmithError } from '../errors.ts';
-import { throwIfInventoryCancelled } from '../inventory/cancellation.ts';
-import type { InventoryMode } from '../inventory/types.ts';
+import { type InventoryMode, throwIfInventoryCancelled } from '../inventory-control.ts';
 import { type ObservationBundle, observationFromLegacyLogger } from '../observation/index.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
@@ -35,6 +34,13 @@ export interface ListSkillsOpts {
 }
 
 const pluginScopeToScope = (ps: PluginProvenanceScope): Scope => (ps === 'local' ? 'project' : ps);
+
+const hasSelectedPluginSkillRoot = (
+  tools: readonly SupportedTool[],
+  scopes: readonly Scope[],
+): boolean =>
+  scopes.some((scope) => scope === 'user' || scope === 'project' || scope === 'managed') &&
+  tools.some((tool) => registry[tool].getPluginSkillDir('') !== null);
 
 // Origin per scope: managed-scope claude-code skills are policy-pushed (not bundled in a plugin).
 const standaloneOriginFor = (scope: Scope): Origin =>
@@ -186,20 +192,26 @@ const scanSkillPlacements = async (
     throwIfInventoryCancelled(opts.signal);
     standalone = await scanStandalone(env, tools, scopes, ctx, opts.signal);
     throwIfInventoryCancelled(opts.signal);
-    const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
-    throwIfInventoryCancelled(opts.signal);
-    if (!discoveredR.ok) {
-      observation.emitter.complete(span, {
-        outcome: 'failure',
-        errorCode: discoveredR.error.code,
-        standaloneCount: standalone.length,
-        bundledCount: 0,
-        resultCount: 0,
+    if (hasSelectedPluginSkillRoot(tools, scopes)) {
+      const discoveredR = await discoverPlugins(env, {
+        cwd: opts.cwd,
+        scopes,
+        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
       });
-      return discoveredR;
+      throwIfInventoryCancelled(opts.signal);
+      if (!discoveredR.ok) {
+        observation.emitter.complete(span, {
+          outcome: 'failure',
+          errorCode: discoveredR.error.code,
+          standaloneCount: standalone.length,
+          bundledCount: 0,
+          resultCount: 0,
+        });
+        return discoveredR;
+      }
+      pluginBundled = await scanPluginBundled(env, tools, discoveredR.value, opts.signal);
+      throwIfInventoryCancelled(opts.signal);
     }
-    pluginBundled = await scanPluginBundled(env, tools, discoveredR.value, opts.signal);
-    throwIfInventoryCancelled(opts.signal);
   } catch (error) {
     observation.emitter.complete(span, {
       outcome: 'failure',

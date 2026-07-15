@@ -28,12 +28,21 @@ const escapeCell = (s: string): string =>
     .replace(/\|/g, '\\|')
     .replace(/[\r\n]+/g, ' ');
 
+const compareText = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+const compareInstallRecords = (left: InstallRecord, right: InstallRecord): number =>
+  compareText(left.path, right.path) ||
+  compareText(left.version, right.version) ||
+  compareText(left.installMethod, right.installMethod);
+
 export const renderAgentsMarkdown = (
   results: ReadonlyMap<SupportedTool, readonly InstallRecord[]>,
   opts: RenderOptions,
 ): string => {
   const lines: string[] = ['# Tools detected', ''];
-  for (const tool of SUPPORTED_TOOLS) {
+  const selectedTools = SUPPORTED_TOOLS.filter((tool) => results.has(tool));
+  for (const tool of selectedTools) {
     const records = results.get(tool) ?? [];
     if (records.length === 0) {
       if (!opts.detectedOnly) lines.push(`## ${tool} — not detected`, '');
@@ -48,7 +57,7 @@ export const renderAgentsMarkdown = (
       '| Path | Version | Install method |',
       '|---|---|---|',
     );
-    for (const record of [...records].sort((left, right) => left.path.localeCompare(right.path))) {
+    for (const record of [...records].sort(compareInstallRecords)) {
       lines.push(
         `| ${escapeCell(record.path)} | ${escapeCell(record.version)} | ${escapeCell(record.installMethod)} |`,
       );

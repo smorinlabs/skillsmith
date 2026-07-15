@@ -1,8 +1,11 @@
 import { join } from 'node:path';
 import type { SupportedTool } from '../agents/types.ts';
 import type { Scope } from '../config/types.ts';
-import { throwIfInventoryCancelled } from '../inventory/cancellation.ts';
-import { tagInventoryRootOrdinal } from '../inventory/types.ts';
+import {
+  rethrowInventoryReadFailure,
+  tagInventoryRootOrdinal,
+  throwIfInventoryCancelled,
+} from '../inventory-control.ts';
 import type { FileReadPort } from '../ports/types.ts';
 import { parseSkillFrontmatter } from './frontmatter.ts';
 import type { EnabledState, Origin, SkillEntry } from './types.ts';
@@ -41,28 +44,21 @@ export const walkSkillDir = async (
     throwIfInventoryCancelled(opts.signal);
     if (!skillExists) continue;
 
+    throwIfInventoryCancelled(opts.signal);
+    const text = await env.readText(skillMd).catch((failure: unknown) => {
+      throwIfInventoryCancelled(opts.signal);
+      return rethrowInventoryReadFailure(failure, skillMd);
+    });
+    throwIfInventoryCancelled(opts.signal);
     let frontmatter: SkillEntry['frontmatter'] = null;
-    try {
-      throwIfInventoryCancelled(opts.signal);
-      const text = await env.readText(skillMd);
-      throwIfInventoryCancelled(opts.signal);
-      const parsed = parseSkillFrontmatter(text, skillMd);
-      if (parsed.ok) frontmatter = parsed.value;
-    } catch {
-      throwIfInventoryCancelled(opts.signal);
-      frontmatter = null;
-    }
+    const parsed = parseSkillFrontmatter(text, skillMd);
+    if (parsed.ok) frontmatter = parsed.value;
 
-    let realpath = path;
-    try {
+    throwIfInventoryCancelled(opts.signal);
+    const realpath = await env.realpath(path).catch((failure: unknown) => {
       throwIfInventoryCancelled(opts.signal);
-      realpath = await env.realpath(path);
-      throwIfInventoryCancelled(opts.signal);
-    } catch {
-      throwIfInventoryCancelled(opts.signal);
-      // keep logical path
-    }
-
+      return rethrowInventoryReadFailure(failure, path);
+    });
     throwIfInventoryCancelled(opts.signal);
     results.push(
       tagInventoryRootOrdinal(

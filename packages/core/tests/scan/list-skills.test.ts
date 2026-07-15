@@ -128,6 +128,80 @@ describe('listSkills', () => {
     }
   });
 
+  test('does not read Claude plugin state when selected tools have no plugin skill root', async () => {
+    const pluginState = '/h/.claude/plugins/installed_plugins.json';
+    const base = fakeEnv({});
+    const touched: string[] = [];
+    const env: InventoryReadPorts = {
+      ...base,
+      fileExists: async (path) => {
+        touched.push(path);
+        if (path === pluginState) throw new Error('Claude plugin state must stay untouched');
+        return base.fileExists(path);
+      },
+    };
+
+    const r = await listSkills(env, {
+      tools: ['codex'],
+      scopes: ['user'],
+      cwd: '/proj',
+      configuration,
+    });
+
+    expect(r).toMatchObject({ ok: true, value: [] });
+    expect(touched).not.toContain(pluginState);
+  });
+
+  test('filters plugin scopes before settings and plugin-root I/O', async () => {
+    const installedPath = '/h/.claude/plugins/installed_plugins.json';
+    const projectSettings = '/proj/.claude/settings.json';
+    const pluginRoot = '/pkg/skills';
+    const base = fakeEnv(
+      {},
+      {
+        [installedPath]: JSON.stringify({
+          version: 2,
+          plugins: {
+            'project@market': [
+              {
+                scope: 'project',
+                installPath: '/pkg',
+                version: '1.0',
+                projectPath: '/proj',
+              },
+            ],
+          },
+        }),
+        [projectSettings]: JSON.stringify({ enabledPlugins: { 'project@market': true } }),
+      },
+    );
+    const reads: string[] = [];
+    const listed: string[] = [];
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads.push(path);
+        return base.readText(path);
+      },
+      listDir: async (path) => {
+        listed.push(path);
+        return base.listDir(path);
+      },
+    };
+
+    const r = await listSkills(env, {
+      tools: ['claude-code'],
+      scopes: ['user'],
+      cwd: '/proj',
+      configuration,
+    });
+
+    expect(r).toMatchObject({ ok: true, value: [] });
+    expect(reads).toEqual([installedPath]);
+    expect(reads).not.toContain(projectSettings);
+    expect(listed).not.toContain(pluginRoot);
+  });
+
   test('mid-root cancellation stops the skill walker promptly', async () => {
     const root = '/h/.claude/skills';
     const controller = new AbortController();

@@ -74,6 +74,80 @@ describe('listCommands', () => {
       expect(cmd?.enabled).toBe('on');
     }
   });
+
+  test('does not read Claude plugin state when selected tools have no plugin command root', async () => {
+    const pluginState = '/h/.claude/plugins/installed_plugins.json';
+    const base = env({}, {});
+    const touched: string[] = [];
+    const ports: InventoryReadPorts = {
+      ...base,
+      fileExists: async (path) => {
+        touched.push(path);
+        if (path === pluginState) throw new Error('Claude plugin state must stay untouched');
+        return base.fileExists(path);
+      },
+    };
+
+    const r = await listCommands(ports, {
+      tools: ['codex'],
+      scopes: ['user'],
+      cwd: '/proj',
+      configuration,
+    });
+
+    expect(r).toMatchObject({ ok: true, value: [] });
+    expect(touched).not.toContain(pluginState);
+  });
+
+  test('filters plugin scopes before settings and plugin-root I/O', async () => {
+    const installedPath = '/h/.claude/plugins/installed_plugins.json';
+    const projectSettings = '/proj/.claude/settings.json';
+    const pluginRoot = '/pkg/commands';
+    const base = env(
+      {},
+      {
+        [installedPath]: JSON.stringify({
+          version: 2,
+          plugins: {
+            'project@market': [
+              {
+                scope: 'project',
+                installPath: '/pkg',
+                version: '1.0',
+                projectPath: '/proj',
+              },
+            ],
+          },
+        }),
+        [projectSettings]: JSON.stringify({ enabledPlugins: { 'project@market': true } }),
+      },
+    );
+    const reads: string[] = [];
+    const listed: string[] = [];
+    const ports: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads.push(path);
+        return base.readText(path);
+      },
+      listDir: async (path) => {
+        listed.push(path);
+        return base.listDir(path);
+      },
+    };
+
+    const r = await listCommands(ports, {
+      tools: ['claude-code'],
+      scopes: ['user'],
+      cwd: '/proj',
+      configuration,
+    });
+
+    expect(r).toMatchObject({ ok: true, value: [] });
+    expect(reads).toEqual([installedPath]);
+    expect(reads).not.toContain(projectSettings);
+    expect(listed).not.toContain(pluginRoot);
+  });
 });
 
 const failingPorts = (listDirs: string[]): InventoryReadPorts => ({

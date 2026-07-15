@@ -63,4 +63,35 @@ describe('renderAgentsMarkdown', () => {
     expect(md).not.toMatch(/\nINJECTED/);
     expect(md).toContain('v1.0 INJECTED \\| row');
   });
+
+  test('renders only selected tools in canonical unsigned record order', () => {
+    const records: InstallRecord[] = [
+      { path: '/😀', version: '2', installMethod: 'npm-global' },
+      { path: '/a', version: '1', installMethod: 'brew' },
+      { path: '/Z', version: '1', installMethod: 'brew' },
+      { path: '/a', version: '1', installMethod: 'npm-global' },
+      { path: '/a', version: '2', installMethod: 'brew' },
+    ];
+    const selected = new Map<SupportedTool, InstallRecord[]>([['codex', records]]);
+
+    const first = renderAgentsMarkdown(selected, { detectedOnly: false });
+    const second = renderAgentsMarkdown(
+      new Map<SupportedTool, InstallRecord[]>([['codex', [...records].reverse()]]),
+      { detectedOnly: false },
+    );
+
+    expect(first).toBe(second);
+    expect(first).toContain('## codex — multiple installations (5)');
+    expect(first).not.toContain('## claude-code');
+    expect(first).not.toContain('## kilo-code');
+    expect(first).not.toContain('## opencode');
+    const rows = first.split('\n').filter((line) => line.startsWith('| /'));
+    expect(rows).toEqual([
+      '| /Z | 1 | brew |',
+      '| /a | 1 | brew |',
+      '| /a | 1 | npm-global |',
+      '| /a | 2 | brew |',
+      '| /😀 | 2 | npm-global |',
+    ]);
+  });
 });

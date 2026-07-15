@@ -116,6 +116,63 @@ describe('walkSkillDir', () => {
     expect(r[0]?.realpath).toBe('/elsewhere/real');
   });
 
+  test('propagates a selected SKILL.md read failure without partial output', async () => {
+    const failure = new Error('selected skill read failed');
+    const base = fakeEnv({
+      dirs: { '/r': ['one', 'two'] },
+      files: {
+        '/r/one/SKILL.md': '---\n---\n',
+        '/r/two/SKILL.md': '---\n---\n',
+      },
+      realpaths: {},
+    });
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        if (path === '/r/two/SKILL.md') throw failure;
+        return base.readText(path);
+      },
+    };
+
+    await expect(
+      walkSkillDir(env, {
+        tool: 'claude-code',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  test('classifies a selected skill realpath EPERM as permission denied', async () => {
+    const base = fakeEnv({
+      dirs: { '/r': ['one'] },
+      files: { '/r/one/SKILL.md': '---\n---\n' },
+      realpaths: {},
+    });
+    const env: InventoryReadPorts = {
+      ...base,
+      realpath: async () => {
+        throw Object.assign(new Error('denied'), { code: 'EPERM' });
+      },
+    };
+
+    await expect(
+      walkSkillDir(env, {
+        tool: 'claude-code',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+      }),
+    ).rejects.toEqual({
+      code: 'permission-denied',
+      message: 'denied',
+      path: '/r/one',
+    });
+  });
+
   test('stops after an abort during the first entry read', async () => {
     const controller = new AbortController();
     let reads = 0;

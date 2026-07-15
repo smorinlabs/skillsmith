@@ -1,7 +1,16 @@
-import { type Origin, SUPPORTED_TOOLS, type SkillEntry } from '@skillsmith/core';
+import {
+  type InventoryCollisionGroupReport,
+  type Origin,
+  SUPPORTED_TOOLS,
+  type SkillEntry,
+  redactSensitiveString,
+} from '@skillsmith/core';
 
 export interface ListHumanOpts {
   long: boolean;
+  outcome?: 'selected' | 'filter-noop';
+  duplicates?: boolean;
+  collisionGroups?: readonly InventoryCollisionGroupReport[];
 }
 
 type Visibility = Readonly<{
@@ -44,7 +53,14 @@ const escapeCell = (value: string): string =>
     .replace(/[\r\n]+/g, ' ');
 
 const valueCell = (value: string | null | undefined, empty = ''): string =>
-  escapeCell(value ?? empty);
+  escapeCell(redactSensitiveString(value ?? empty));
+
+const safeLine = (value: string): string => redactSensitiveString(value).replace(/[\r\n]+/g, ' ');
+
+const emptyOutput = (outcome: ListHumanOpts['outcome']): string =>
+  outcome === 'filter-noop'
+    ? 'No skills installed.\nActive filters reduced the selected inventory to zero.\n'
+    : 'No skills installed.\n';
 
 const formatOrigin = (origin: Origin): string => {
   if (origin.kind === 'standalone') return 'standalone';
@@ -69,7 +85,7 @@ export const renderListHuman = (
   entries: readonly PresentedSkillEntry[],
   opts: ListHumanOpts,
 ): string => {
-  if (entries.length === 0) return 'No skills installed.\n';
+  if (entries.length === 0) return emptyOutput(opts.outcome);
 
   const columns = opts.long
     ? [
@@ -131,6 +147,13 @@ export const renderListHuman = (
     lines.push(
       `... ${ordered.length - COMPACT_ROW_LIMIT} more entries; narrow with filters or use --long or --json.`,
     );
+  }
+  if (opts.duplicates) {
+    for (const group of opts.collisionGroups ?? []) {
+      const members = group.members.map((member) => `${member.scope}:${member.path}`).join(', ');
+      const resolution = group.winner === null ? 'ambiguous' : `winner ${group.winner}`;
+      lines.push(safeLine(`Duplicate ${group.tool}/${group.name}: ${members}; ${resolution}.`));
+    }
   }
   return `${lines.join('\n')}\n`;
 };

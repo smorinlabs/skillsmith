@@ -1,8 +1,11 @@
 import { join } from 'node:path';
 import type { SupportedTool } from '../agents/types.ts';
 import type { Scope } from '../config/types.ts';
-import { throwIfInventoryCancelled } from '../inventory/cancellation.ts';
-import { tagInventoryRootOrdinal } from '../inventory/types.ts';
+import {
+  rethrowInventoryReadFailure,
+  tagInventoryRootOrdinal,
+  throwIfInventoryCancelled,
+} from '../inventory-control.ts';
 import type { FileReadPort } from '../ports/types.ts';
 import { parseSkillFrontmatter } from '../skills/frontmatter.ts';
 import type { EnabledState, Origin } from '../skills/types.ts';
@@ -42,30 +45,23 @@ export const walkCommandDir = async (
     throwIfInventoryCancelled(opts.signal);
     if (!commandExists) continue;
 
-    let frontmatter: CommandEntry['frontmatter'] = null;
-    try {
-      throwIfInventoryCancelled(opts.signal);
-      const text = await env.readText(path);
-      throwIfInventoryCancelled(opts.signal);
-      const parsed = parseSkillFrontmatter(text, path);
-      if (parsed.ok) frontmatter = parsed.value;
-    } catch {
-      throwIfInventoryCancelled(opts.signal);
-      frontmatter = null;
-    }
-
-    let realpath = path;
-    try {
-      throwIfInventoryCancelled(opts.signal);
-      realpath = await env.realpath(path);
-      throwIfInventoryCancelled(opts.signal);
-    } catch {
-      throwIfInventoryCancelled(opts.signal);
-      // keep logical path
-    }
-
-    const name = filename.slice(0, -'.md'.length);
     throwIfInventoryCancelled(opts.signal);
+    const text = await env.readText(path).catch((failure: unknown) => {
+      throwIfInventoryCancelled(opts.signal);
+      return rethrowInventoryReadFailure(failure, path);
+    });
+    throwIfInventoryCancelled(opts.signal);
+    let frontmatter: CommandEntry['frontmatter'] = null;
+    const parsed = parseSkillFrontmatter(text, path);
+    if (parsed.ok) frontmatter = parsed.value;
+
+    throwIfInventoryCancelled(opts.signal);
+    const realpath = await env.realpath(path).catch((failure: unknown) => {
+      throwIfInventoryCancelled(opts.signal);
+      return rethrowInventoryReadFailure(failure, path);
+    });
+    throwIfInventoryCancelled(opts.signal);
+    const name = filename.slice(0, -'.md'.length);
     out.push(
       tagInventoryRootOrdinal(
         {

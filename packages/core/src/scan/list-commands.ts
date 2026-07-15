@@ -7,7 +7,7 @@ import type { Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
 import { noopLogger } from '../env/logger.ts';
 import type { SkillSmithError } from '../errors.ts';
-import { throwIfInventoryCancelled } from '../inventory/cancellation.ts';
+import { throwIfInventoryCancelled } from '../inventory-control.ts';
 import { type ObservationBundle, observationFromLegacyLogger } from '../observation/index.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
@@ -31,6 +31,13 @@ export interface ListCommandsOpts {
 const COMMAND_SCOPES: readonly Scope[] = ['user', 'project'];
 
 const pluginScopeToScope = (ps: PluginProvenanceScope): Scope => (ps === 'local' ? 'project' : ps);
+
+const hasSelectedPluginCommandRoot = (
+  tools: readonly SupportedTool[],
+  scopes: readonly Scope[],
+): boolean =>
+  scopes.some((scope) => scope === 'user' || scope === 'project') &&
+  tools.some((tool) => registry[tool].getPluginCommandDir('') !== null);
 
 const applyGlobs = (entries: CommandEntry[], globs: readonly string[]): CommandEntry[] => {
   const compiled = globs.map((g) => new Glob(g));
@@ -175,20 +182,26 @@ const scanCommandPlacements = async (
       opts.signal,
     );
     throwIfInventoryCancelled(opts.signal);
-    const discoveredR = await discoverPlugins(env, { cwd: opts.cwd });
-    throwIfInventoryCancelled(opts.signal);
-    if (!discoveredR.ok) {
-      observation.emitter.complete(span, {
-        outcome: 'failure',
-        errorCode: discoveredR.error.code,
-        standaloneCount: standalone.length,
-        bundledCount: 0,
-        resultCount: 0,
+    if (hasSelectedPluginCommandRoot(tools, scopes)) {
+      const discoveredR = await discoverPlugins(env, {
+        cwd: opts.cwd,
+        scopes,
+        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
       });
-      return discoveredR;
+      throwIfInventoryCancelled(opts.signal);
+      if (!discoveredR.ok) {
+        observation.emitter.complete(span, {
+          outcome: 'failure',
+          errorCode: discoveredR.error.code,
+          standaloneCount: standalone.length,
+          bundledCount: 0,
+          resultCount: 0,
+        });
+        return discoveredR;
+      }
+      pluginBundled = await scanPluginBundled(env, tools, discoveredR.value, opts.signal);
+      throwIfInventoryCancelled(opts.signal);
     }
-    pluginBundled = await scanPluginBundled(env, tools, discoveredR.value, opts.signal);
-    throwIfInventoryCancelled(opts.signal);
   } catch (error) {
     observation.emitter.complete(span, {
       outcome: 'failure',

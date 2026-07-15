@@ -106,7 +106,10 @@ const snapshotReadonlyMap = (
   seen.set(source, facade);
 
   const ownedEntries: Array<readonly [unknown, unknown]> = [];
-  const iterator = Map.prototype.entries.call(source) as MapIterator<[unknown, unknown]>;
+  // Read through the public ReadonlyMap contract. Application products may expose
+  // a Map-backed immutable proxy whose methods are bound to the backing Map; such
+  // a proxy intentionally has no Map internal slots of its own.
+  const iterator = source.entries();
   for (const [key, value] of iterator) {
     ownedEntries.push(
       Object.freeze([snapshotOwnedValue(key, seen), snapshotOwnedValue(value, seen)] as const),

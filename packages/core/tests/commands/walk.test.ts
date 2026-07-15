@@ -68,6 +68,55 @@ describe('walkCommandDir', () => {
     expect(r.map((e) => e.name)).toEqual(['good']);
   });
 
+  test('propagates a selected command read failure without partial output', async () => {
+    const failure = new Error('selected command read failed');
+    const base = fakeEnv(
+      { '/r': ['one.md', 'two.md'] },
+      { '/r/one.md': '---\n---\n', '/r/two.md': '---\n---\n' },
+    );
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        if (path === '/r/two.md') throw failure;
+        return base.readText(path);
+      },
+    };
+
+    await expect(
+      walkCommandDir(env, {
+        tool: 'claude-code',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  test('classifies a selected command realpath EACCES as permission denied', async () => {
+    const base = fakeEnv({ '/r': ['one.md'] }, { '/r/one.md': '---\n---\n' });
+    const env: InventoryReadPorts = {
+      ...base,
+      realpath: async () => {
+        throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      },
+    };
+
+    await expect(
+      walkCommandDir(env, {
+        tool: 'claude-code',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+      }),
+    ).rejects.toEqual({
+      code: 'permission-denied',
+      message: 'denied',
+      path: '/r/one.md',
+    });
+  });
+
   test('stops after an abort during the first command read', async () => {
     const controller = new AbortController();
     let reads = 0;

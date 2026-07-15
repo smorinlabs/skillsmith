@@ -71,6 +71,30 @@ describe('readInstalledPlugins', () => {
     const r = await readInstalledPlugins(
       env({ '/h/.claude/plugins/installed_plugins.json': 'not json' }),
     );
-    expect(r.ok).toBe(false);
+    expect(r).toMatchObject({
+      ok: false,
+      error: { code: 'config-error', file: '/h/.claude/plugins/installed_plugins.json' },
+    });
+  });
+
+  test('classifies an installed-plugin manifest EACCES as permission denied', async () => {
+    const path = '/h/.claude/plugins/installed_plugins.json';
+    const base = env({ [path]: '{}' });
+
+    await expect(
+      readInstalledPlugins({
+        ...base,
+        readText: async (candidate) => {
+          if (candidate === path) {
+            throw Object.assign(new Error('manifest denied'), { code: 'EACCES' });
+          }
+          return base.readText(candidate);
+        },
+      }),
+    ).rejects.toEqual({
+      code: 'permission-denied',
+      message: 'manifest denied',
+      path,
+    });
   });
 });

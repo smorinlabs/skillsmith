@@ -607,6 +607,58 @@ describe('shared CLI runtime adapter', () => {
     expect(memory.exits).toEqual([0]);
   });
 
+  test('snapshots Map-backed immutable proxies through the ReadonlyMap contract', async () => {
+    const backing = new Map([['codex', [{ path: '/usr/bin/codex' }]]]);
+    const immutable = new Proxy(backing, {
+      get(target, key) {
+        if (key === 'set' || key === 'delete' || key === 'clear') {
+          return () => {
+            throw new TypeError('immutable map');
+          };
+        }
+        const value = Reflect.get(target, key, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const memory = memoryIo();
+    const runtime = createCliRuntimeAdapter({
+      applications: { fixture: async () => successOutcome({ detections: immutable }) },
+      renderers: {
+        fixture: {
+          human: (outcome) => {
+            const detections = (outcome.report as { detections: ReadonlyMap<string, unknown> })
+              .detections;
+            return `${detections.get('codex') === undefined ? 'missing' : 'detected'}\n`;
+          },
+          json: () => '',
+        },
+      },
+      io: memory.io,
+    });
+
+    const result = await runtime.execute({
+      application: 'fixture',
+      reportKind: 'fixture',
+      request: {},
+      context: {},
+      observation: silentObservation(),
+      format: 'human',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(memory.stdout).toEqual(['detected\n']);
+    expect(memory.stderr).toEqual([]);
+    expect(memory.exits).toEqual([0]);
+    expect(
+      (result.outcome?.report as { detections: ReadonlyMap<string, unknown> }).detections,
+    ).not.toBe(immutable);
+    expect(
+      Object.isFrozen(
+        (result.outcome?.report as { detections: ReadonlyMap<string, unknown> }).detections,
+      ),
+    ).toBeTrue();
+  });
+
   test('contains hostile nested snapshot reads through the failure boundary', async () => {
     const nested = Object.defineProperty({}, 'value', {
       enumerable: true,

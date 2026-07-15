@@ -1,31 +1,18 @@
 import type { SupportedTool } from '../agents/types.ts';
 import type { Scope } from '../config/types.ts';
+import type { InventoryMode } from '../inventory-control.ts';
 import type { EnabledState, Frontmatter, Origin, SkillEntry } from '../skills/types.ts';
 
-/** Internal scanner metadata. It is deliberately non-enumerable and never enters wire DTOs. */
-export const INVENTORY_ROOT_ORDINAL: unique symbol = Symbol('skillsmith.inventory-root-ordinal');
+export {
+  INVENTORY_ROOT_ORDINAL,
+  inventoryRootOrdinalOf,
+  tagInventoryRootOrdinal,
+} from '../inventory-control.ts';
+export type {
+  InventoryMode,
+  InventoryRootOrdinalCarrier,
+} from '../inventory-control.ts';
 
-export type InventoryRootOrdinalCarrier = Readonly<{
-  [INVENTORY_ROOT_ORDINAL]?: number;
-}>;
-
-export const inventoryRootOrdinalOf = (value: object): number =>
-  (value as InventoryRootOrdinalCarrier)[INVENTORY_ROOT_ORDINAL] ?? 0;
-
-export const tagInventoryRootOrdinal = <T extends object>(value: T, rootOrdinal: number): T => {
-  if (!Number.isSafeInteger(rootOrdinal) || rootOrdinal < 0) {
-    throw new TypeError('inventory root ordinal must be a non-negative safe integer');
-  }
-  Object.defineProperty(value, INVENTORY_ROOT_ORDINAL, {
-    value: rootOrdinal,
-    enumerable: false,
-    writable: false,
-    configurable: false,
-  });
-  return value;
-};
-
-export type InventoryMode = 'dev' | 'pinned' | 'unmanaged';
 export type InventoryPlacement = 'symlink' | 'copy' | 'unknown';
 export type InventoryVerification = 'passed' | 'warned' | 'skipped' | 'unrecorded';
 

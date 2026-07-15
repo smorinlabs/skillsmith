@@ -1,7 +1,13 @@
-import { type CommandEntry, type Origin, SUPPORTED_TOOLS } from '@skillsmith/core';
+import {
+  type CommandEntry,
+  type Origin,
+  SUPPORTED_TOOLS,
+  redactSensitiveString,
+} from '@skillsmith/core';
 
 export interface CommandsHumanOpts {
   long: boolean;
+  outcome?: 'selected' | 'filter-noop';
 }
 
 type PresentedCommandEntry = CommandEntry & {
@@ -30,7 +36,13 @@ const escapeCell = (value: string): string =>
     .replace(/\|/g, '\\|')
     .replace(/[\r\n]+/g, ' ');
 
-const valueCell = (value: string | null | undefined): string => escapeCell(value ?? '');
+const valueCell = (value: string | null | undefined): string =>
+  escapeCell(redactSensitiveString(value ?? ''));
+
+const emptyOutput = (outcome: CommandsHumanOpts['outcome']): string =>
+  outcome === 'filter-noop'
+    ? 'No slash commands installed.\nActive filters reduced the selected inventory to zero.\n'
+    : 'No slash commands installed.\n';
 
 const formatOrigin = (origin: Origin): string => {
   if (origin.kind === 'standalone') return 'standalone';
@@ -58,7 +70,7 @@ export const renderCommandsHuman = (
   entries: readonly PresentedCommandEntry[],
   opts: CommandsHumanOpts,
 ): string => {
-  if (entries.length === 0) return 'No slash commands installed.\n';
+  if (entries.length === 0) return emptyOutput(opts.outcome);
 
   const columns = opts.long
     ? [

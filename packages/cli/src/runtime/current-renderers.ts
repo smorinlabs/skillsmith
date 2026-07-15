@@ -296,12 +296,28 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     ),
     list: guarded<ListReport>(
       (value, outcome) =>
-        withDiagnostics(outcome, renderListHuman(value.entries, { long: value.long })),
+        withDiagnostics(
+          outcome,
+          renderListHuman(value.entries, {
+            long: value.long,
+            ...(value.selection === undefined ? {} : { outcome: value.selection.outcome }),
+            ...(value.selection?.filters.duplicates === true ? { duplicates: true } : {}),
+            ...(value.collisionGroups === undefined
+              ? {}
+              : { collisionGroups: value.collisionGroups }),
+          }),
+        ),
       (value) => renderListJson(value),
     ),
     commands: guarded<CommandsReport>(
       (value, outcome) =>
-        withDiagnostics(outcome, renderCommandsHuman(value.entries, { long: value.long })),
+        withDiagnostics(
+          outcome,
+          renderCommandsHuman(value.entries, {
+            long: value.long,
+            ...(value.selection === undefined ? {} : { outcome: value.selection.outcome }),
+          }),
+        ),
       (value) => renderCommandsJson(value),
     ),
     doctor: guarded<HealthReport>(
