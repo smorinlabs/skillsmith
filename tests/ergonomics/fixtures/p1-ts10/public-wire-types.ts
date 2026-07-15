@@ -62,7 +62,14 @@ import {
   toFlipV2Dto,
   toListV2Dto,
 } from '@skillsmith/core/contracts/v2';
-import { type ListV3Dto, listV3Codec, toListV3Dto } from '@skillsmith/core/contracts/v3';
+import {
+  type FlipV3Dto,
+  type ListV3Dto,
+  flipV3Codec,
+  listV3Codec,
+  toFlipV3Dto,
+  toListV3Dto,
+} from '@skillsmith/core/contracts/v3';
 
 // @ts-expect-error contracts root owns shared types only, never versioned DTOs or codecs
 import type { AgentsV1Dto as ForbiddenV1FromRoot } from '@skillsmith/core/contracts';
@@ -182,7 +189,9 @@ type _V2RuntimeClosure = Assert<
     | 'migrateLedgerV1DtoToV2Dto'
   >
 >;
-type _V3RuntimeClosure = Assert<Equal<keyof V3Runtime, 'listV3Codec' | 'toListV3Dto'>>;
+type _V3RuntimeClosure = Assert<
+  Equal<keyof V3Runtime, 'flipV3Codec' | 'toFlipV3Dto' | 'listV3Codec' | 'toListV3Dto'>
+>;
 
 interface FixtureDto {
   readonly value: string;
@@ -340,6 +349,7 @@ const flipCodec: WireCodec<'flip', 2, FlipV2Dto> = flipV2Codec;
 const listCodec: WireCodec<'list', 2, ListV2Dto> = listV2Codec;
 const agentsV2Binding: WireCodec<'agents', 2, AgentsV2Dto> = agentsV2Codec;
 const commandsV2Binding: WireCodec<'commands', 2, CommandsV2Dto> = commandsV2Codec;
+const flipV3Binding: WireCodec<'flip', 3, FlipV3Dto> = flipV3Codec;
 const listV3Binding: WireCodec<'list', 3, ListV3Dto> = listV3Codec;
 
 type _AgentsMapperReturn = Assert<Equal<ReturnType<typeof toAgentsV1Dto>, AgentsV1Dto>>;
@@ -363,6 +373,7 @@ type _FlipMapperReturn = Assert<Equal<ReturnType<typeof toFlipV2Dto>, FlipV2Dto>
 type _ListMapperReturn = Assert<Equal<ReturnType<typeof toListV2Dto>, ListV2Dto>>;
 type _AgentsV2MapperReturn = Assert<Equal<ReturnType<typeof toAgentsV2Dto>, AgentsV2Dto>>;
 type _CommandsV2MapperReturn = Assert<Equal<ReturnType<typeof toCommandsV2Dto>, CommandsV2Dto>>;
+type _FlipV3MapperReturn = Assert<Equal<ReturnType<typeof toFlipV3Dto>, FlipV3Dto>>;
 type _ListV3MapperReturn = Assert<Equal<ReturnType<typeof toListV3Dto>, ListV3Dto>>;
 type _VerifyFactoryReturn = Assert<
   ReturnType<typeof createVerifyV1Codec> extends WireCodec<'verify', 1, VerifyV1Dto> ? true : false
@@ -419,6 +430,7 @@ void [
   listCodec,
   agentsV2Binding,
   commandsV2Binding,
+  flipV3Binding,
   listV3Binding,
   toAgentsV1Dto,
   toHealthV1Dto,
@@ -437,6 +449,7 @@ void [
   toListV2Dto,
   toAgentsV2Dto,
   toCommandsV2Dto,
+  toFlipV3Dto,
   toListV3Dto,
   createVerifyV1Codec,
   registry,

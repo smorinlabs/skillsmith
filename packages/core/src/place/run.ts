@@ -1767,8 +1767,11 @@ const createFlipPlanning = async (
           : placementImageOf(pair, 'pinned', null, digest, promoteSource);
     const requiredCheckIds: string[] = [];
     if (reportOp !== 'rollback' && !opts.noVerify) {
-      const verificationMode =
-        command === 'promote' && pair.tool === 'codex' ? 'static+deep' : 'static';
+      const verification = toolRegistry.get(pair.tool)?.verification;
+      if (verification === undefined) {
+        throw new Error(`tool registry invariant: ${pair.tool} has no verifier`);
+      }
+      const verificationMode = command === 'promote' ? verification.gatePolicy.promote : 'static';
       const checkId = createPlanCheckId({
         domain: 'skillsmith.plan-check-identity',
         schemaVersion: 1,

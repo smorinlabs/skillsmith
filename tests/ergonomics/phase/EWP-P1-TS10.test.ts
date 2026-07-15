@@ -75,11 +75,11 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith config list', 'config-list', 1],
   ['skillsmith config set', 'config-set', 1],
   ['skillsmith config unset', 'config-unset', 1],
-  ['skillsmith dev', 'flip', 2],
+  ['skillsmith dev', 'flip', 3],
   ['skillsmith doctor', 'health', 1],
   ['skillsmith install', 'install', 1],
   ['skillsmith list', 'list', 3],
-  ['skillsmith promote', 'flip', 2],
+  ['skillsmith promote', 'flip', 3],
   ['skillsmith status', 'status', 1],
   ['skillsmith uninstall', 'uninstall', 1],
   ['skillsmith verify', 'verify', 1],
@@ -96,6 +96,7 @@ const EXPECTED_CODECS = [
   ['config-set', 1],
   ['config-unset', 1],
   ['flip', 2],
+  ['flip', 3],
   ['install', 1],
   ['list', 2],
   ['list', 3],
@@ -142,6 +143,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
   'config-set@1': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
   'config-unset@1': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
   'flip@2': {
+    wireKind: 'skillsmith.flip',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: false,
+  },
+  'flip@3': {
     wireKind: 'skillsmith.flip',
     embeddedVersion: 'schemaVersion',
     indent: 2,
@@ -276,7 +283,7 @@ const V2_RUNTIME_EXPORTS = [
   'fromLedgerV2Dto',
   'migrateLedgerV1DtoToV2Dto',
 ] as const;
-const V3_RUNTIME_EXPORTS = ['listV3Codec', 'toListV3Dto'] as const;
+const V3_RUNTIME_EXPORTS = ['flipV3Codec', 'toFlipV3Dto', 'listV3Codec', 'toListV3Dto'] as const;
 
 type UnknownRecord = Record<PropertyKey, unknown>;
 type WireResult = { readonly ok: boolean; readonly value?: unknown; readonly error?: unknown };
@@ -1536,7 +1543,7 @@ describe('EWP-P1-TS10', () => {
         ['schemaVersion'],
       );
     }
-    const wrongFlipVersion = JSON.parse(CURRENT_JSON_GOLDENS.flip) as UnknownRecord;
+    const wrongFlipVersion = JSON.parse(HISTORICAL_JSON_GOLDENS.flip) as UnknownRecord;
     for (const version of [1, 99]) {
       wrongFlipVersion.schemaVersion = version;
       expectWireFailure(
@@ -1623,7 +1630,7 @@ describe('EWP-P1-TS10', () => {
     const lifecycleCases = [
       [install, CURRENT_JSON_GOLDENS.install],
       [uninstall, CURRENT_JSON_GOLDENS.uninstall],
-      [flip, CURRENT_JSON_GOLDENS.flip],
+      [flip, HISTORICAL_JSON_GOLDENS.flip],
     ] as const;
     for (const [codec, bytes] of lifecycleCases) {
       const baseDto = JSON.parse(bytes) as UnknownRecord;
@@ -2018,6 +2025,13 @@ describe('EWP-P1-TS10', () => {
         mapper: v2.toFlipV2Dto,
         codec: v2.flipV2Codec,
         args: [hostileFlip],
+        bytes: HISTORICAL_JSON_GOLDENS.flip,
+      },
+      {
+        name: 'flip@3',
+        mapper: v3.toFlipV3Dto,
+        codec: v3.flipV3Codec,
+        args: [hostileFlip],
         bytes: CURRENT_JSON_GOLDENS.flip,
       },
       {
@@ -2057,6 +2071,11 @@ describe('EWP-P1-TS10', () => {
         fixture.name === 'flip@2'
       ) {
         expect(serializedDto, `${fixture.name} leaked lifecycle error`).not.toMatch(/"error"\s*:/);
+      }
+      if (fixture.name === 'flip@3') {
+        expect(
+          (dto as { readonly results: readonly [{ readonly error: unknown }] }).results[0].error,
+        ).toBeNull();
       }
     }
 
@@ -2112,7 +2131,8 @@ describe('EWP-P1-TS10', () => {
       ['config-get', 1, CURRENT_JSON_GOLDENS.configGetScoped],
       ['config-list', 1, CURRENT_JSON_GOLDENS.configListUnscoped],
       ['config-list', 1, CURRENT_JSON_GOLDENS.configListScoped],
-      ['flip', 2, CURRENT_JSON_GOLDENS.flip],
+      ['flip', 2, HISTORICAL_JSON_GOLDENS.flip],
+      ['flip', 3, CURRENT_JSON_GOLDENS.flip],
       ['install', 1, CURRENT_JSON_GOLDENS.install],
       ['list', 2, HISTORICAL_JSON_GOLDENS.list],
       ['list', 3, CURRENT_JSON_GOLDENS.list],

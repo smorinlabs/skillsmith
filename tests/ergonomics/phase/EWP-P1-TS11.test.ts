@@ -2377,7 +2377,7 @@ describe('EWP-P1-TS11', () => {
       JSON.stringify(expectedPaths)
     )
       findings.push('command registry: command inventory changed');
-    if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 160)
+    if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 166)
       findings.push('command registry: option inventory changed');
     const optionInventory = CURRENT_COMMAND_SPECS.flatMap((spec) =>
       spec.options.map((option) => [spec.path, option.flags]),
@@ -2385,7 +2385,7 @@ describe('EWP-P1-TS11', () => {
     const optionHash = new Bun.CryptoHasher('sha256')
       .update(JSON.stringify(optionInventory))
       .digest('hex');
-    if (optionHash !== '701e6d7f02bd45fa995b62bb933d0098a442f6ed816fa30d382fdf2712acae2a')
+    if (optionHash !== '158674c55207c8384e875bea9978467369862864e1f89a94e6a0ec9f586b8152')
       findings.push('command registry: option rows changed');
     const adr = await readFile(
       join(ROOT, 'docs/adr/0009-operation-scoped-observation.md'),

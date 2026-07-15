@@ -13,6 +13,7 @@ import type {
   ArtifactReadEnvelope,
   ArtifactRepositoryError,
   CommandsReport,
+  FlipReport,
   LedgerModel,
   ListReport,
   LogicalJournalV1,
@@ -73,8 +74,8 @@ import type {
   LedgerMigrationV1ToV2,
   LedgerV2Dto,
 } from '@skillsmith/core/contracts/v2';
-import { listV3Codec, toListV3Dto } from '@skillsmith/core/contracts/v3';
-import type { ListV3Dto } from '@skillsmith/core/contracts/v3';
+import { flipV3Codec, listV3Codec, toFlipV3Dto, toListV3Dto } from '@skillsmith/core/contracts/v3';
+import type { FlipV3Dto, ListV3Dto } from '@skillsmith/core/contracts/v3';
 
 type Assert<T extends true> = T;
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
@@ -155,7 +156,9 @@ type _V2RuntimeClosed = Assert<
     | 'toCommandsV2Dto'
   >
 >;
-type _V3RuntimeClosed = Assert<Equal<keyof V3Runtime, 'listV3Codec' | 'toListV3Dto'>>;
+type _V3RuntimeClosed = Assert<
+  Equal<keyof V3Runtime, 'flipV3Codec' | 'listV3Codec' | 'toFlipV3Dto' | 'toListV3Dto'>
+>;
 
 type Descriptor = ArtifactCodecDescriptor<'manifest', 1>;
 type _ArtifactIds = Assert<Equal<ArtifactId, 'manifest' | 'lock' | 'plan' | 'ledger' | 'journal'>>;
@@ -434,6 +437,7 @@ const _journalCodec: ArtifactCodec<'journal', 1, JournalV1Dto, LogicalJournalV1>
 const _statusCodec: WireCodec<'status', 1, StatusV1Dto> = statusV1Codec;
 const _agentsV2Codec: WireCodec<'agents', 2, AgentsV2Dto> = agentsV2Codec;
 const _commandsV2Codec: WireCodec<'commands', 2, CommandsV2Dto> = commandsV2Codec;
+const _flipV3Codec: WireCodec<'flip', 3, FlipV3Dto> = flipV3Codec;
 const _listV3Codec: WireCodec<'list', 3, ListV3Dto> = listV3Codec;
 
 const _manifestMapper: (value: NormalizedManifestV1) => Result<ManifestV1Dto, ArtifactCodecError> =
@@ -462,6 +466,7 @@ const _journalReverse: (value: JournalV1Dto) => Result<LogicalJournalV1, Artifac
 type _StatusMapperReturn = Assert<Equal<ReturnType<typeof toStatusV1Dto>, StatusV1Dto>>;
 const _agentsV2Mapper: (value: AgentsReport) => AgentsV2Dto = toAgentsV2Dto;
 const _commandsV2Mapper: (value: CommandsReport) => CommandsV2Dto = toCommandsV2Dto;
+const _flipV3Mapper: (value: FlipReport) => FlipV3Dto = toFlipV3Dto;
 const _listV3Mapper: (value: ListReport) => ListV3Dto = toListV3Dto;
 const _ledgerMigration: (value: LedgerV1Dto) => Result<LedgerV2Dto, ArtifactCodecError> =
   migrateLedgerV1DtoToV2Dto;
@@ -489,6 +494,7 @@ void [
   _statusCodec,
   _agentsV2Codec,
   _commandsV2Codec,
+  _flipV3Codec,
   _listV3Codec,
   _manifestMapper,
   _manifestReverse,
@@ -504,6 +510,7 @@ void [
   _journalReverse,
   _agentsV2Mapper,
   _commandsV2Mapper,
+  _flipV3Mapper,
   _listV3Mapper,
   _ledgerMigration,
   _readManifest,

@@ -1849,7 +1849,31 @@ const runInstallInternal = async (
           continue;
         }
 
-        const preview = { ...(await predictPair(placeCtx, spec, r, tool)), requestIndex };
+        let preview = { ...(await predictPair(placeCtx, spec, r, tool)), requestIndex };
+        if (preview.action === 'noop' && preview.store !== null) {
+          const [fetchedHash, storedHash] = await Promise.all([
+            contentHashOf(env, r.materializedDir),
+            contentHashOf(env, preview.store.path),
+          ]);
+          const integrityError = !fetchedHash.ok
+            ? fetchedHash.error
+            : !storedHash.ok
+              ? storedHash.error
+              : fetchedHash.value !== storedHash.value
+                ? flipFailedError(
+                    `store integrity violation: ${preview.store.path} exists with different content`,
+                  )
+                : null;
+          if (integrityError !== null) {
+            preview = {
+              ...preview,
+              action: 'failed',
+              reason: msg(integrityError),
+              store: null,
+              error: safeError(integrityError),
+            };
+          }
+        }
         sourceResults.push(preview);
         if (
           preview.action !== 'installed' &&

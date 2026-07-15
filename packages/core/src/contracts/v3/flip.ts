@@ -3,6 +3,28 @@ import { SUPPORTED_TOOLS } from '../../agents/registry.ts';
 import type { FlipReport } from '../../place/types.ts';
 import { createJsonWireCodec } from '../codec.ts';
 
+export interface FlipV3Dto {
+  schemaVersion: 3;
+  kind: 'skillsmith.flip';
+  op: 'promote' | 'dev' | 'rollback';
+  dryRun: boolean;
+  summary: FlipReport['summary'];
+  selection: {
+    source: 'explicit-targets' | 'explicit-all' | 'bounded-default';
+    outcome: 'selected' | 'filter-noop';
+    targets: string[];
+    all: boolean;
+    tools: string[];
+    scopes: Array<'user' | 'project'>;
+    groupIds: string[];
+    batchPolicy: 'fail-fast' | 'continue-on-error';
+  };
+  operations: Array<NonNullable<FlipReport['plan']>['operations'][number]>;
+  checks: Array<NonNullable<FlipReport['plan']>['checks'][number]>;
+  diagnostics: Array<NonNullable<FlipReport['plan']>['diagnostics'][number]>;
+  results: Array<NonNullable<FlipReport['executionResults']>[number]>;
+}
+
 const ToolSchema = z.enum(SUPPORTED_TOOLS);
 const ScopeSchema = z.enum(['user', 'project']);
 const SelectionSourceSchema = z.enum(['explicit-targets', 'explicit-all', 'bounded-default']);
@@ -341,9 +363,7 @@ const FlipV3Schema = z
         message: 'execution results must exactly follow planned operation identity order',
       });
     }
-  });
-
-export type FlipV3Dto = z.infer<typeof FlipV3Schema>;
+  }) as unknown as z.ZodType<FlipV3Dto>;
 
 const uniqueGroupIds = (plan: NonNullable<FlipReport['plan']>): readonly string[] => {
   const selected = plan.selection.groupIds;

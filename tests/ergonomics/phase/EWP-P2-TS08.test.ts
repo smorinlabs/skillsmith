@@ -116,6 +116,7 @@ const EXPECTED_WIRE_IDENTITIES = [
   'config-set@1',
   'config-unset@1',
   'flip@2',
+  'flip@3',
   'install@1',
   'list@2',
   'list@3',
@@ -257,7 +258,7 @@ const V2_RUNTIME_EXPORTS = [
   'toAgentsV2Dto',
   'toCommandsV2Dto',
 ] as const;
-const V3_RUNTIME_EXPORTS = ['listV3Codec', 'toListV3Dto'] as const;
+const V3_RUNTIME_EXPORTS = ['flipV3Codec', 'listV3Codec', 'toFlipV3Dto', 'toListV3Dto'] as const;
 
 const rawSha256 = (bytes: Uint8Array): string =>
   `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
@@ -1979,6 +1980,7 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
         [v2.agentsV2Codec, wireRegistry.get('agents', 2)],
         [v1.commandsV1Codec, wireRegistry.get('commands', 1)],
         [v2.commandsV2Codec, wireRegistry.get('commands', 2)],
+        [v3.flipV3Codec, wireRegistry.get('flip', 3)],
         [v2.listV2Codec, wireRegistry.get('list', 2)],
         [v3.listV3Codec, wireRegistry.get('list', 3)],
         [v1.statusV1Codec, wireRegistry.get('status', 1)],

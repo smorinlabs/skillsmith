@@ -170,6 +170,80 @@ export const CONFIG_UNSET_REPORT_FIXTURE = {
   file: '/fixture/config.toml',
 } satisfies ConfigUnsetReport;
 
+const FLIP_CONTENT_HASH =
+  'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as const;
+const FLIP_OPERATION_ID = 'operation:v1:fixture-skill-promote' as const;
+const FLIP_GROUP_ID = 'group:v1:fixture-skill-promote' as const;
+const FLIP_PAIR_ID = 'pair:v1:fixture-skill-codex-project' as const;
+const FLIP_SOURCE = {
+  kind: 'local-dev',
+  path: '/fixture/source/fixture-skill',
+  contentHash: FLIP_CONTENT_HASH,
+} as const;
+const FLIP_LIVE_RESOURCE = {
+  kind: 'live',
+  skill: 'fixture-skill',
+  tool: 'codex',
+  scope: 'project',
+  projectRoot: { kind: 'machine-bound', path: '/fixture/project' },
+  location: {
+    kind: 'machine-bound',
+    path: '/fixture/project/skills/fixture-skill',
+  },
+} as const;
+const FLIP_BEFORE = {
+  kind: 'placement',
+  resource: FLIP_LIVE_RESOURCE,
+  classification: 'dev',
+  representation: 'symlink',
+  linkTarget: { kind: 'machine-bound', path: '/fixture/source/fixture-skill' },
+  dangling: false,
+  source: FLIP_SOURCE,
+  contentHash: FLIP_CONTENT_HASH,
+} as const;
+const FLIP_AFTER = {
+  kind: 'placement',
+  resource: FLIP_LIVE_RESOURCE,
+  classification: 'pinned',
+  representation: 'copy',
+  linkTarget: null,
+  dangling: false,
+  source: FLIP_SOURCE,
+  contentHash: FLIP_CONTENT_HASH,
+} as const;
+const FLIP_OPERATION = {
+  operationId: FLIP_OPERATION_ID,
+  groupId: FLIP_GROUP_ID,
+  pairId: FLIP_PAIR_ID,
+  kind: 'promote',
+  dependencyMetadata: {
+    domain: 'skillsmith.operation-dependency',
+    schemaVersion: 1,
+    operationIds: [],
+  },
+  skill: 'fixture-skill',
+  source: FLIP_SOURCE,
+  tool: 'codex',
+  scope: 'project',
+  before: FLIP_BEFORE,
+  after: FLIP_AFTER,
+  reason: { code: 'promote', message: 'promote fixture-skill' },
+  selectionSource: 'explicit-targets',
+  preconditionIds: [],
+  requiredCheckIds: [],
+  reversibility: { kind: 'none', retentionResourceIds: [] as const },
+  mutates: { live: true, manifest: false, lock: false, ledger: true },
+  conflict: null,
+} as const;
+const FLIP_EXECUTION_RESULT = {
+  operationId: FLIP_OPERATION_ID,
+  outcome: 'succeeded',
+  actualBefore: FLIP_BEFORE,
+  actualAfter: FLIP_AFTER,
+  force: null,
+  error: null,
+} as const;
+
 export const FLIP_REPORT_FIXTURE = {
   op: 'promote',
   dryRun: false,
@@ -179,6 +253,25 @@ export const FLIP_REPORT_FIXTURE = {
     tools: ['codex'],
     explicitTools: true,
   },
+  plan: {
+    domain: 'skillsmith.operation-plan',
+    schemaVersion: 1,
+    command: 'promote',
+    selection: {
+      source: 'explicit-targets',
+      outcome: 'selected',
+      targets: ['fixture-skill'],
+      all: false,
+      tools: ['codex'],
+      scopes: ['project'],
+      groupIds: [FLIP_GROUP_ID],
+    },
+    batchPolicy: 'fail-fast',
+    operations: [FLIP_OPERATION],
+    checks: [],
+    diagnostics: [],
+  },
+  executionResults: [FLIP_EXECUTION_RESULT],
   results: [
     {
       skill: 'fixture-skill',
@@ -592,10 +685,33 @@ const LIST_V3_DTO = {
   collisionGroups: LIST_REPORT_FIXTURE.collisionGroups,
 } as const;
 
+const FLIP_V3_DTO = {
+  schemaVersion: 3,
+  kind: 'skillsmith.flip',
+  op: 'promote',
+  dryRun: false,
+  summary: FLIP_REPORT_FIXTURE.summary,
+  selection: {
+    source: 'explicit-targets',
+    outcome: 'selected',
+    targets: ['fixture-skill'],
+    all: false,
+    tools: ['codex'],
+    scopes: ['project'],
+    groupIds: [FLIP_GROUP_ID],
+    batchPolicy: 'fail-fast',
+  },
+  operations: [FLIP_OPERATION],
+  checks: [],
+  diagnostics: [],
+  results: [FLIP_EXECUTION_RESULT],
+} as const;
+
 export const CURRENT_JSON_GOLDENS = {
   ...HISTORICAL_JSON_GOLDENS,
   agents: `${JSON.stringify(AGENTS_V2_DTO, null, 2)}\n`,
   commands: `${JSON.stringify(COMMANDS_V2_DTO, null, 2)}\n`,
+  flip: JSON.stringify(FLIP_V3_DTO, null, 2),
   list: `${JSON.stringify(LIST_V3_DTO, null, 2)}\n`,
 } as const;
 

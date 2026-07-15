@@ -997,6 +997,25 @@ describe('EWP-P1-TS07', () => {
           op: 'dev',
           dryRun: false,
           requested: { targets: ['example'], all: false, tools: ['codex'], explicitTools: true },
+          plan: {
+            domain: 'skillsmith.operation-plan',
+            schemaVersion: 1,
+            command: 'dev',
+            selection: {
+              source: 'explicit-targets',
+              outcome: 'selected',
+              targets: ['example'],
+              all: false,
+              tools: ['codex'],
+              scopes: ['user'],
+              groupIds: [],
+            },
+            batchPolicy: 'fail-fast',
+            operations: [],
+            checks: [],
+            diagnostics: [],
+          },
+          executionResults: [],
           results: [
             {
               skill: 'example',
