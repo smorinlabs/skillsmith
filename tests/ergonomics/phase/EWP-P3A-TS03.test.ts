@@ -131,6 +131,7 @@ const normalizedFixtureRows = (): readonly DuplicateRow[] => {
   return [...byPlacement.values()];
 };
 
+// Reader effects, cancellation, and 8N+128 bounds are asserted by EWP-CMD-LIST-TS07 family 54.
 const scanFixture = async (reverse = false, duplicatesOnly = false): Promise<ScanExecution> => {
   const observations = reverse ? [...fixture.rows].reverse() : fixture.rows;
   const result = await projectInventory(observations, {
