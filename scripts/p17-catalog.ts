@@ -595,6 +595,9 @@ function stateModelFor(kind: Kind): Entity['stateModel'] {
 const validationPrefix = '(?:EWP-(?:P(?:0A|1|2|3A|3B|4A|4B|5|6)-TS|CMD-[A-Z]+-TS|OPT-TS)|EWP-WF)';
 
 const explicitValidationOwnership: Record<string, string[]> = {
+  // G3B-02 adds a fifth execution outcome and must replay the signed exhaustive current-action
+  // matrix as well as its new scheduler selector.
+  'EWP-P3B-T02': ['EWP-P3B-TS01', 'EWP-P3B-TS03'],
   'COMMAND:dev': [
     'EWP-CMD-DEV-TS01',
     'EWP-CMD-DEV-TS02',
