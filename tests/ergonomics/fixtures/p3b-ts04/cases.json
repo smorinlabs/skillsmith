@@ -1,0 +1,394 @@
+{
+  "schemaVersion": 1,
+  "fixtureCanary": "p3b-ts04-local-ledger-reliability",
+  "timeoutMs": 30000,
+  "terminationGraceMs": 1000,
+  "limits": {
+    "maxMessageBytes": 4096,
+    "maxOutputBytes": 8192,
+    "maxReasonLength": 512,
+    "maxWorkers": 2,
+    "maxCrashCases": 22,
+    "maxRecoveryCases": 38,
+    "maxProtocolMessages": 96
+  },
+  "protocol": {
+    "accepts": ["start", "release"],
+    "emits": ["fixture-ready", "barrier", "result", "fixture-error"],
+    "roles": [
+      "first-writer",
+      "second-writer",
+      "migration-writer",
+      "recovery-writer",
+      "lock-holder",
+      "lock-contender"
+    ],
+    "modes": ["write-model", "migrate-v1", "lock-contention"],
+    "outcomes": ["committed", "interrupted", "missing-behavior", "refused"],
+    "journalPhases": ["prepared", "staged", "backed-up", "live", "committed"],
+    "barriers": [
+      "attempting-lock",
+      "lock-acquired",
+      "make-dir",
+      "write-text-file",
+      "copy-file",
+      "fsync-file",
+      "rename",
+      "fsync-dir",
+      "remove-file",
+      "remove-tree",
+      "recovery-pointer-prepared-write",
+      "recovery-pointer-prepared-fsync",
+      "migration-stage-write",
+      "migration-stage-fsync",
+      "migration-backup-copy",
+      "migration-backup-fsync",
+      "migration-backed-up-replace",
+      "migration-backed-up-fsync",
+      "migration-live-replace",
+      "migration-live-parent-fsync",
+      "migration-handoff-write",
+      "migration-handoff-fsync",
+      "migration-commit-write",
+      "migration-commit-fsync",
+      "migration-backup-cleanup",
+      "migration-stage-cleanup",
+      "migration-directory-cleanup",
+      "migration-pointer-cleanup",
+      "writer-stage-write",
+      "writer-stage-fsync",
+      "writer-live-replace",
+      "writer-live-parent-fsync"
+    ]
+  },
+  "ledgerShapeCases": [
+    { "id": "absent", "source": null, "expected": "absent" },
+    { "id": "zero-byte", "source": "", "expected": "invalid" },
+    { "id": "whitespace", "source": "  \n", "expected": "invalid" },
+    { "id": "truncated", "source": "{\"schemaVersion\":1", "expected": "invalid" },
+    { "id": "malformed", "source": "{not-json}", "expected": "invalid" },
+    {
+      "id": "wrong-kind",
+      "source": "{\"schemaVersion\":1,\"kind\":\"not-skillsmith\",\"updatedAt\":\"2026-07-15T00:00:00.000Z\",\"skills\":{}}\n",
+      "expected": "invalid"
+    },
+    {
+      "id": "newer-version",
+      "source": "{\"schemaVersion\":3,\"kind\":\"skillsmith.placements\",\"updatedAt\":\"2026-07-15T00:00:00.000Z\",\"skills\":{}}\n",
+      "expected": "upgrade"
+    }
+  ],
+  "migrationCase": {
+    "id": "v1-visible-migration",
+    "source": "{\"schemaVersion\":1,\"kind\":\"skillsmith.placements\",\"updatedAt\":\"2026-07-15T00:00:00.000Z\",\"skills\":{\"legacy\":{\"tools\":{\"codex\":{\"placementPath\":\"/fixture/live/legacy\",\"mode\":\"dev\",\"dev\":{\"sourcePath\":\"./skills/legacy\",\"resolvedPath\":\"/fixture/source/legacy\",\"repoRoot\":null,\"sourceRelPath\":null,\"remote\":null,\"recordedAt\":\"2026-07-15T00:00:00.000Z\"},\"pinned\":{\"storePath\":\"/fixture/store/legacy\",\"rev\":\"legacy-revision\",\"gitSha\":null,\"dirty\":false,\"contentHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"snapshotAt\":\"2026-07-15T00:00:00.000Z\",\"verify\":\"passed\"},\"journal\":{\"op\":\"dev\",\"txId\":\"legacy-unmatched-tx\",\"phase\":\"committed\",\"startedAt\":\"2026-07-14T00:00:00.000Z\",\"completedAt\":\"2026-07-14T00:00:01.000Z\",\"before\":{\"mode\":\"absent\"},\"stagingPath\":\"/fixture/stage/legacy\",\"backupPath\":\"/fixture/backup/legacy\"}}}}},\"projects\":{\"/fixture/project-a\":{\"skills\":{\"project-legacy\":{\"tools\":{\"claude-code\":{\"placementPath\":\"/fixture/project-a/.claude/skills/project-legacy\",\"mode\":\"dev\",\"dev\":{\"sourcePath\":\"./skills/project-legacy\",\"resolvedPath\":\"/fixture/source/project-legacy\",\"repoRoot\":\"/fixture/project-a\",\"sourceRelPath\":\"skills/project-legacy\",\"remote\":null,\"recordedAt\":\"2026-07-15T00:00:00.000Z\"},\"pinned\":null,\"journal\":null}}}}}}}\n",
+    "sourceSchemaVersion": 1,
+    "targetSchemaVersion": 2,
+    "operationKind": "migrate-ledger"
+  },
+  "registrationCases": [
+    {
+      "id": "user-dev",
+      "scope": "user",
+      "tool": "codex",
+      "pinned": false,
+      "pathChange": false,
+      "expectedProjectConsumers": 0
+    },
+    {
+      "id": "project-dev",
+      "scope": "project",
+      "tool": "codex",
+      "pinned": false,
+      "pathChange": false,
+      "expectedProjectConsumers": 1
+    },
+    {
+      "id": "project-dev-retains-pinned",
+      "scope": "project",
+      "tool": "codex",
+      "pinned": true,
+      "pathChange": false,
+      "expectedProjectConsumers": 1
+    },
+    {
+      "id": "project-path-change",
+      "scope": "project",
+      "tool": "codex",
+      "pinned": true,
+      "pathChange": true,
+      "expectedProjectConsumers": 1
+    },
+    {
+      "id": "project-unknown-supported-tool",
+      "scope": "project",
+      "tool": "fixture-tool",
+      "pinned": true,
+      "pathChange": false,
+      "expectedProjectConsumers": 1
+    }
+  ],
+  "logicalPhases": ["prepared", "staged", "backed-up", "live", "committed"],
+  "logicalRefusalCases": [
+    "phase-skip",
+    "duplicate-pending-id",
+    "pending-history-id-collision",
+    "transaction-key-mismatch",
+    "cross-pair-id-reuse",
+    "forward-after-abort",
+    "abort-unrelated-pair"
+  ],
+  "history": {
+    "ordinaryCapacity": 256,
+    "seedCount": 260,
+    "protectedOverCapacityCount": 257,
+    "protectedRetainUntil": "2027-07-15T00:00:00.000Z",
+    "cleanupVictimsPerPass": 1
+  },
+  "recoveryCursorCases": [
+    {
+      "id": "R01",
+      "cursor": "prepared",
+      "live": "v1-source",
+      "stage": "absent",
+      "backup": "absent",
+      "permittedResidue": [],
+      "expected": "resume-stage"
+    },
+    {
+      "id": "R02",
+      "cursor": "prepared",
+      "live": "v1-source",
+      "stage": "staged-v2",
+      "backup": "absent",
+      "permittedResidue": ["transaction-directory", "stage"],
+      "expected": "promote-staged"
+    },
+    {
+      "id": "R03",
+      "cursor": "staged",
+      "live": "v1-source",
+      "stage": "staged-v2",
+      "backup": "absent",
+      "permittedResidue": ["transaction-directory", "stage"],
+      "expected": "resume-backup"
+    },
+    {
+      "id": "R04",
+      "cursor": "staged",
+      "live": "v1-source",
+      "stage": "staged-v2",
+      "backup": "v1-source",
+      "permittedResidue": ["transaction-directory", "stage", "backup"],
+      "expected": "promote-backed-up"
+    },
+    {
+      "id": "R05",
+      "cursor": "staged",
+      "live": "v1-source",
+      "stage": "backed-up-v2",
+      "backup": "v1-source",
+      "permittedResidue": ["transaction-directory", "stage", "backup"],
+      "expected": "promote-backed-up"
+    },
+    {
+      "id": "R06",
+      "cursor": "backed-up",
+      "live": "v1-source",
+      "stage": "backed-up-v2",
+      "backup": "v1-source",
+      "permittedResidue": ["transaction-directory", "stage", "backup"],
+      "expected": "resume-replace"
+    },
+    {
+      "id": "R07",
+      "cursor": "backed-up",
+      "live": "backed-up-v2",
+      "stage": "absent",
+      "backup": "v1-source",
+      "permittedResidue": ["transaction-directory", "backup"],
+      "expected": "promote-replaced"
+    },
+    {
+      "id": "R08",
+      "cursor": "replaced",
+      "live": "backed-up-v2",
+      "stage": "absent",
+      "backup": "v1-source",
+      "permittedResidue": ["transaction-directory", "backup"],
+      "expected": "resume-handoff"
+    },
+    {
+      "id": "R09",
+      "cursor": "replaced",
+      "live": "live-v2",
+      "stage": "absent",
+      "backup": "v1-source",
+      "permittedResidue": ["transaction-directory", "backup"],
+      "expected": "promote-handoff"
+    },
+    {
+      "id": "R10",
+      "cursor": "handed-off",
+      "live": "live-v2",
+      "stage": "absent",
+      "backup": "v1-source",
+      "permittedResidue": ["transaction-directory", "backup"],
+      "expected": "resume-commit"
+    },
+    {
+      "id": "R11",
+      "cursor": "handed-off",
+      "live": "committed-v2",
+      "stage": "absent",
+      "backup": "v1-source",
+      "permittedResidue": ["transaction-directory", "backup"],
+      "expected": "promote-committed"
+    },
+    {
+      "id": "R12",
+      "cursor": "committed",
+      "live": "committed-v2",
+      "stage": "absent",
+      "backup": "v1-source",
+      "permittedResidue": ["transaction-directory", "backup"],
+      "expected": "resume-cleanup"
+    },
+    {
+      "id": "R13",
+      "cursor": "cleanup",
+      "live": "committed-v2",
+      "stage": "absent",
+      "backup": "absent",
+      "permittedResidue": [],
+      "expected": "finish-cleanup"
+    }
+  ],
+  "recoveryRefusalCases": [
+    { "id": "X01", "kind": "malformed-pointer" },
+    { "id": "X02", "kind": "unrelated-pointer" },
+    { "id": "X03", "kind": "owner-mismatch" },
+    { "id": "X04", "kind": "pointer-symlink" },
+    { "id": "X05", "kind": "shared-pointer" },
+    { "id": "X06", "kind": "stale-source-revision" },
+    { "id": "X07", "kind": "pointer-revision-mismatch" },
+    { "id": "X08", "kind": "stage-revision-mismatch" },
+    { "id": "X09", "kind": "backup-revision-mismatch" },
+    { "id": "X10", "kind": "live-revision-mismatch" },
+    { "id": "X11", "kind": "stage-symlink" },
+    { "id": "X12", "kind": "backup-shared" },
+    { "id": "X13", "kind": "unrecognized-residue" },
+    { "id": "X14", "kind": "swapped-phase-image" },
+    { "id": "X15", "kind": "transaction-directory-basename-mismatch" },
+    { "id": "X16", "kind": "transaction-directory-identity-mismatch" },
+    { "id": "X17", "kind": "private-directory-owner-mismatch" },
+    { "id": "X18", "kind": "private-directory-mode-mismatch" },
+    { "id": "X19", "kind": "stage-basename-mismatch" },
+    { "id": "X20", "kind": "backup-basename-mismatch" },
+    { "id": "X21", "kind": "stage-file-identity-mismatch" },
+    { "id": "X22", "kind": "backup-file-identity-mismatch" },
+    { "id": "X23", "kind": "stage-semantic-revision-mismatch" },
+    { "id": "X24", "kind": "backup-semantic-revision-mismatch" },
+    { "id": "X25", "kind": "live-semantic-revision-mismatch" }
+  ],
+  "shadowCases": [
+    "exact-nonterminal-phases",
+    "terminal-install-shadow-deleted",
+    "missing-required-shadow",
+    "transaction-mismatch",
+    "pair-mismatch",
+    "started-at-mismatch",
+    "completed-at-mismatch",
+    "phase-mismatch",
+    "operation-family-mismatch",
+    "legacy-attach",
+    "committed-collapse",
+    "install-delete",
+    "remove-delete"
+  ],
+  "abortCases": [
+    "valid-retained-resource",
+    "missing-retained-resource",
+    "stale-retained-revision",
+    "shared-retained-resource",
+    "unowned-retained-resource",
+    "retained-hash-mismatch",
+    "cancel-before-boundary",
+    "cancel-after-boundary",
+    "rollback-resume",
+    "forward-after-abort"
+  ],
+  "anchorCases": [
+    "discriminating-pending-artifact-anchor",
+    "absent-after-anchor",
+    "manifest-anchor",
+    "lock-anchor",
+    "ledger-anchor",
+    "anchorless-refusal",
+    "utf16-depth-tie",
+    "timestamp-independent",
+    "multi-anchor-competition"
+  ],
+  "cleanupCases": [
+    "valid-owned-backup",
+    "missing-recognized-backup",
+    "owner-mismatch",
+    "shared-backup",
+    "path-escape",
+    "revision-mismatch",
+    "hash-mismatch",
+    "pending-reference-blocker",
+    "kept-history-reference-blocker",
+    "legacy-reference-blocker",
+    "live-reference-blocker",
+    "store-preserved",
+    "tombstone-blocks-new-mutation"
+  ],
+  "crashCases": [
+    { "id": "C01", "mode": "migrate-v1", "barrier": "recovery-pointer-prepared-write" },
+    { "id": "C02", "mode": "migrate-v1", "barrier": "recovery-pointer-prepared-fsync" },
+    { "id": "C03", "mode": "migrate-v1", "barrier": "migration-stage-write" },
+    { "id": "C04", "mode": "migrate-v1", "barrier": "migration-stage-fsync" },
+    { "id": "C05", "mode": "migrate-v1", "barrier": "migration-backup-copy" },
+    { "id": "C06", "mode": "migrate-v1", "barrier": "migration-backup-fsync" },
+    { "id": "C07", "mode": "migrate-v1", "barrier": "migration-backed-up-replace" },
+    { "id": "C08", "mode": "migrate-v1", "barrier": "migration-backed-up-fsync" },
+    { "id": "C09", "mode": "migrate-v1", "barrier": "migration-live-replace" },
+    { "id": "C10", "mode": "migrate-v1", "barrier": "migration-live-parent-fsync" },
+    { "id": "C11", "mode": "migrate-v1", "barrier": "migration-handoff-write" },
+    { "id": "C12", "mode": "migrate-v1", "barrier": "migration-handoff-fsync" },
+    { "id": "C13", "mode": "migrate-v1", "barrier": "migration-commit-write" },
+    { "id": "C14", "mode": "migrate-v1", "barrier": "migration-commit-fsync" },
+    { "id": "C15", "mode": "migrate-v1", "barrier": "migration-backup-cleanup" },
+    { "id": "C16", "mode": "migrate-v1", "barrier": "migration-stage-cleanup" },
+    { "id": "C17", "mode": "migrate-v1", "barrier": "migration-directory-cleanup" },
+    { "id": "C18", "mode": "migrate-v1", "barrier": "migration-pointer-cleanup" },
+    { "id": "C19", "mode": "write-model", "barrier": "writer-stage-write" },
+    { "id": "C20", "mode": "write-model", "barrier": "writer-stage-fsync" },
+    { "id": "C21", "mode": "write-model", "barrier": "writer-live-replace" },
+    { "id": "C22", "mode": "write-model", "barrier": "writer-live-parent-fsync" }
+  ],
+  "concurrencyCase": {
+    "id": "two-real-ledger-lock-writers",
+    "target": "placements.json",
+    "marker": ".p3b-ts04-worker",
+    "guard": "p3b-ts04-parent-owned-root",
+    "workers": [
+      {
+        "workerId": "worker-first",
+        "role": "first-writer",
+        "operationId": "operation-first",
+        "transactionId": "transaction-first",
+        "skill": "fixture-first",
+        "tool": "fixture-tool-one"
+      },
+      {
+        "workerId": "worker-second",
+        "role": "second-writer",
+        "operationId": "operation-second",
+        "transactionId": "transaction-second",
+        "skill": "fixture-second",
+        "tool": "fixture-tool-two"
+      }
+    ]
+  }
+}

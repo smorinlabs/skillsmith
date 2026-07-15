@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
+import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   emptyLedger,
@@ -22,6 +24,18 @@ import {
 } from '../fixtures/place/fleet.ts';
 
 const GOLDEN = join(import.meta.dir, '..', 'fixtures', 'place', 'ledger.golden.json');
+const V2_GOLDEN = join(
+  import.meta.dir,
+  '..',
+  '..',
+  '..',
+  '..',
+  'tests',
+  'ergonomics',
+  'fixtures',
+  'p2-ts08',
+  'ledger-v2.golden.json',
+);
 
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
 
@@ -224,6 +238,31 @@ describe('writeLedger', () => {
   });
   afterEach(async () => {
     await rm(base, { recursive: true, force: true });
+  });
+
+  test('G3B-03: writes the complete canonical v2 model without a lossy v1 projection', async () => {
+    const decodedFixture = ledgerV2Codec.decode(new Uint8Array(await readFile(V2_GOLDEN)));
+    if (!decodedFixture.ok) throw new Error('invalid v2 ledger fixture');
+    const model = decodedFixture.value.model;
+    const snapshot = structuredClone(model);
+    const writtenAt = '2026-07-15T12:00:00.000Z';
+    const p = join(base, 'placements.json');
+    const writer = writeLedger as unknown as (
+      ports: RuntimePorts,
+      path: string,
+      ledger: LedgerModel,
+    ) => ReturnType<typeof writeLedger>;
+
+    const result = await writer({ ...env, wallNowIso: () => writtenAt }, p, model);
+
+    expect(result.ok).toBe(true);
+    expect(model).toEqual(snapshot);
+    const writtenBytes = new Uint8Array(await readFile(p));
+    expect(writtenBytes.at(-1)).toBe(0x0a);
+    const decodedWritten = ledgerV2Codec.decode(writtenBytes);
+    if (!decodedWritten.ok) throw new Error('writer did not emit canonical ledger v2');
+    expect(decodedWritten.value.source).toEqual({ kind: 'version', version: 2 });
+    expect(decodedWritten.value.model).toEqual({ ...snapshot, updatedAt: writtenAt });
   });
 
   test('is atomic: no *.tmp-* sibling remains and content parses', async () => {

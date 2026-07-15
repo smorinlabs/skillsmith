@@ -4492,7 +4492,7 @@
       "phase": "3B",
       "title": "Ledger writer, journals, recovery/resume/abort, history, and deterministic repair",
       "dependsOn": ["P17-G3B-02"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "CHANGELOG.md",
@@ -4656,8 +4656,8 @@
           "evidence": ["projects/p17/evidence/P17-G3B-03.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -4691,7 +4691,8 @@
       "evidence": [
         "projects/p17/plans/P17-G3B-03.md",
         "projects/p17/evidence/P17-G3B-03.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G3B-03.md#ready-plan"
+        "projects/p17/evidence/P17-G3B-03.md#ready-plan",
+        "projects/p17/evidence/P17-G3B-03.md#test-first-evidence"
       ]
     },
     {
@@ -12415,11 +12416,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-03:packages/cli/tests/contracts/doctor.test.ts#EWP-CMD-DOCTOR-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/doctor.test.ts",
+        "selector": "EWP-CMD-DOCTOR-TS01",
+        "command": "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3B-03.md#red-execution-receipt-ewp-cmd-doctor-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DOCTOR-TS01"],
@@ -12433,8 +12439,10 @@
         "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS01"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/doctor.test.ts"]
     },
     {
       "id": "EWP-CMD-DOCTOR-TS02",
@@ -12442,11 +12450,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-03:packages/cli/tests/contracts/doctor.test.ts#EWP-CMD-DOCTOR-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/doctor.test.ts",
+        "selector": "EWP-CMD-DOCTOR-TS02",
+        "command": "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3B-03.md#red-execution-receipt-ewp-cmd-doctor-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DOCTOR-TS02"],
@@ -12460,8 +12473,10 @@
         "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/doctor.test.ts"]
     },
     {
       "id": "EWP-CMD-DOCTOR-TS03",
@@ -12469,11 +12484,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-03:packages/cli/tests/contracts/doctor.test.ts#EWP-CMD-DOCTOR-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/doctor.test.ts",
+        "selector": "EWP-CMD-DOCTOR-TS03",
+        "command": "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3B-03.md#red-execution-receipt-ewp-cmd-doctor-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DOCTOR-TS03"],
@@ -12487,8 +12507,10 @@
         "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/doctor.test.ts"]
     },
     {
       "id": "EWP-CMD-DOCTOR-TS04",
@@ -12496,11 +12518,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-03:packages/cli/tests/contracts/doctor.test.ts#EWP-CMD-DOCTOR-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/doctor.test.ts",
+        "selector": "EWP-CMD-DOCTOR-TS04",
+        "command": "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3B-03.md#red-execution-receipt-ewp-cmd-doctor-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DOCTOR-TS04"],
@@ -12514,8 +12541,10 @@
         "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS04"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/doctor.test.ts"]
     },
     {
       "id": "EWP-CMD-DOCTOR-TS05",
@@ -12523,11 +12552,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-03:packages/cli/tests/contracts/doctor.test.ts#EWP-CMD-DOCTOR-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/doctor.test.ts",
+        "selector": "EWP-CMD-DOCTOR-TS05",
+        "command": "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3B-03.md#red-execution-receipt-ewp-cmd-doctor-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DOCTOR-TS05"],
@@ -12541,8 +12575,10 @@
         "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS05"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/doctor.test.ts"]
     },
     {
       "id": "EWP-CMD-DOCTOR-TS06",
@@ -12550,11 +12586,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-03:packages/cli/tests/contracts/doctor.test.ts#EWP-CMD-DOCTOR-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/doctor.test.ts",
+        "selector": "EWP-CMD-DOCTOR-TS06",
+        "command": "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3B-03.md#red-execution-receipt-ewp-cmd-doctor-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-DOCTOR-TS06"],
@@ -12568,8 +12609,10 @@
         "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern EWP-CMD-DOCTOR-TS06"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/doctor.test.ts"]
     },
     {
       "id": "EWP-CMD-EXPORT-TS01",
@@ -19312,11 +19355,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-03",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-03",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3B-03.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-03.md#ready-plan",
+        "projects/p17/evidence/P17-G3B-03.md#test-first-evidence"
+      ],
       "secondaryGroups": ["P17-G5-03"],
       "implements": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "validatedBy": [
@@ -19612,11 +19658,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-03:tests/ergonomics/phase/EWP-P3B-TS04.test.ts#EWP-P3B-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P3B-TS04.test.ts",
+        "selector": "EWP-P3B-TS04",
+        "command": "bun test tests/ergonomics/phase/EWP-P3B-TS04.test.ts --test-name-pattern EWP-P3B-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3B-03.md#red-execution-receipt-ewp-p3b-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS04"],
@@ -19630,8 +19681,14 @@
         "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P3B-TS04.test.ts --test-name-pattern EWP-P3B-TS04"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/fixtures/p3b-ts04/cases.json",
+        "tests/ergonomics/fixtures/p3b-ts04/worker.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS04.test.ts"
+      ]
     },
     {
       "id": "EWP-P3B-TS05",
