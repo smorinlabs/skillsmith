@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "signedGoldens": {
+    "v1": {
+      "file": "../p2-ts08/ledger-v1.golden.json",
+      "bytes": 3456,
+      "sha256": "sha256:269ea3a4e9bdfb47c7ba475314a64bf26b8d670c34058db23e4a20da2b1252cd"
+    },
+    "v2": {
+      "file": "../p2-ts08/ledger-v2.golden.json",
+      "bytes": 9349,
+      "sha256": "sha256:0fe449f42c99dd160e49d731a1ba4374ed173652288094d95320cf5a77b6dbd2"
+    }
+  },
+  "rows": [
+    {
+      "id": "missing",
+      "source": { "kind": "missing" },
+      "expected": {
+        "outcome": "ok",
+        "state": "absent",
+        "sourceVersion": null,
+        "currentVersion": 2,
+        "migrationPending": false,
+        "exitClass": "success"
+      }
+    },
+    {
+      "id": "canonical-v1",
+      "source": { "kind": "golden", "golden": "v1" },
+      "expected": {
+        "outcome": "ok",
+        "state": "present",
+        "sourceVersion": 1,
+        "currentVersion": 2,
+        "migrationPending": true,
+        "exitClass": "success"
+      }
+    },
+    {
+      "id": "canonical-v2",
+      "source": { "kind": "golden", "golden": "v2" },
+      "expected": {
+        "outcome": "ok",
+        "state": "present",
+        "sourceVersion": 2,
+        "currentVersion": 2,
+        "migrationPending": false,
+        "exitClass": "success"
+      }
+    },
+    {
+      "id": "zero-byte",
+      "source": { "kind": "literal-utf8", "value": "" },
+      "expected": {
+        "outcome": "error",
+        "reason": "invalid-artifact",
+        "exitClass": "state",
+        "message": "status ledger is invalid"
+      }
+    },
+    {
+      "id": "whitespace-only",
+      "source": { "kind": "literal-utf8", "value": " \n\t\n" },
+      "expected": {
+        "outcome": "error",
+        "reason": "invalid-artifact",
+        "exitClass": "state",
+        "message": "status ledger is invalid"
+      }
+    },
+    {
+      "id": "truncated-json",
+      "source": { "kind": "literal-utf8", "value": "{\"version\":2,\"users\":{" },
+      "expected": {
+        "outcome": "error",
+        "reason": "invalid-artifact",
+        "exitClass": "state",
+        "message": "status ledger is invalid"
+      }
+    },
+    {
+      "id": "schema-invalid",
+      "source": {
+        "kind": "literal-utf8",
+        "value": "{\n  \"version\": 2,\n  \"users\": [],\n  \"projects\": {}\n}\n"
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "invalid-artifact",
+        "exitClass": "state",
+        "message": "status ledger is invalid"
+      }
+    },
+    {
+      "id": "newer-schema",
+      "source": {
+        "kind": "literal-utf8",
+        "value": "{\n  \"version\": 3,\n  \"users\": {},\n  \"projects\": {}\n}\n"
+      },
+      "expected": {
+        "outcome": "error",
+        "reason": "invalid-artifact",
+        "exitClass": "state",
+        "message": "status ledger is invalid"
+      }
+    }
+  ],
+  "hostileThrowables": [
+    "error",
+    "string",
+    "number",
+    "null",
+    "accessor-object",
+    "coercion-object",
+    "proxy"
+  ],
+  "requiredPublicTypeNames": [
+    "StatusReadPorts",
+    "StatusReadRequest",
+    "StatusReadError",
+    "StatusReport",
+    "StatusEntry",
+    "StatusPlacement",
+    "StatusFact",
+    "StatusJournalState",
+    "StatusRetentionRequirement"
+  ]
+}
