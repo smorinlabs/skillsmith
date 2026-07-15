@@ -1980,9 +1980,7 @@ shape has one tested migration; no status or mutation command needs to invent an
 
 - **EWP-P3B-T01:** Immutable executable-operation, diagnostic, and execution-result types with
   canonical ordering and versioned domain-tagged dependency metadata.
-- **EWP-P3B-T02:** Shared mutation-lock hierarchy, operation preconditions, and transaction
-  coordinator with deterministic group/pair scheduling for live placement, manifest, lock, and
-  ledger commit points.
+- **EWP-P3B-T02:** Shared mutation-lock hierarchy, operation preconditions, and transaction coordinator with deterministic group/pair scheduling for live placement, manifest, lock, and ledger commit points.
 - **EWP-P3B-T03:** Adapt existing install/uninstall/promote/dev planning and dry-run paths to the
   shared types, preserving current behavior except accepted scope-aware target-selection changes.
 - **EWP-P3B-T04:** Extend the Phase-3A reader with the canonical version-2 writer, visible
@@ -2001,9 +1999,7 @@ shape has one tested migration; no status or mutation command needs to invent an
   durable recovery authority and distinguishing retry/resume attempts.
 - **EWP-P3B-TS01:** Operation and diagnostic snapshot matrix for every existing action/outcome.
 - **EWP-P3B-TS02:** Determinism/property tests and dry-run/execution operation equality.
-- **EWP-P3B-TS03:** Lock ordering, concurrent-process exclusion, per-pair partial failure, and
-  crash/resume tests at the existing ledger/live boundaries, including identical user/project names
-  and fail-fast/continue/cancellation scheduling.
+- **EWP-P3B-TS03:** Lock ordering, concurrent-process exclusion, per-pair partial failure, and crash/resume tests at the existing ledger/live boundaries, including identical user/project names and fail-fast/continue/cancellation scheduling.
 - **EWP-P3B-TS04:** Missing versus empty/truncated/malformed ledger; version-1 read-only and dry-run
   byte identity; visible automatic and doctor migration; canonical version-2 equivalence; newer
   version refusal; legacy pending-journal preservation; saved-plan migration staleness; and crash at
@@ -3840,7 +3836,8 @@ later findings; a traceability-table summary alone is not sufficient.
 - **Affected contracts:** Sections 8.6, 8.7, 8.8, 8.14, 8.15, 8.16, 8.17, 8.20.1, 8.20.3,
   8.20.4, 9, 13.1, and 13.2; EWP-P3B-T02, Phase 4/5 schedulers; human/JSON result schemas; and every
   multi-target mutation command.
-- **Validation:** EWP-OPT-TS04, EWP-P3B-TS03, EWP-P5-TS05, EWP-WF13, and affected EWP-CMD ranges
+- **Validation:** EWP-OPT-TS04, EWP-P3B-TS03, EWP-P5-TS05, EWP-WF05, EWP-WF09, EWP-WF10,
+  EWP-WF13, EWP-WF15, and affected EWP-CMD ranges
   cover invocation-level abort, deterministic ordering, within-group pair reporting, default
   skipped markers, explicit continuation, nonzero error preservation, cancellation, dry-run parity,
   rerun convergence, and saved-plan rejection.

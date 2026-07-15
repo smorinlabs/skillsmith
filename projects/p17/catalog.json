@@ -4145,7 +4145,7 @@
       "phase": "3B",
       "title": "Lock hierarchy, deterministic scheduler, coordinator, and partial-pair semantics",
       "dependsOn": ["P17-G3B-01"],
-      "status": "planned",
+      "status": "mapped",
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
@@ -4224,7 +4224,11 @@
         "EWP-P3B-TS03",
         "EWP-P4A-TS02",
         "EWP-P5-TS05",
-        "EWP-WF13"
+        "EWP-WF05",
+        "EWP-WF09",
+        "EWP-WF10",
+        "EWP-WF13",
+        "EWP-WF15"
       ],
       "requiredNowValidations": [
         "EWP-CMD-DEV-TS01",
@@ -4240,7 +4244,8 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-PROMOTE-TS06",
         "EWP-OPT-TS04",
-        "EWP-P3B-TS03"
+        "EWP-P3B-TS03",
+        "EWP-WF15"
       ],
       "downstreamCoverage": [
         "EWP-CMD-APPLY-TS01",
@@ -4303,6 +4308,9 @@
         "EWP-CMD-UPDATE-TS10",
         "EWP-P4A-TS02",
         "EWP-P5-TS05",
+        "EWP-WF05",
+        "EWP-WF09",
+        "EWP-WF10",
         "EWP-WF13"
       ],
       "testCommands": [],
@@ -4310,8 +4318,8 @@
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-02.md#mapping-and-prerequisites"]
         },
         "ready": {
           "status": "pending",
@@ -4350,7 +4358,7 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": ["projects/p17/evidence/P17-G3B-02.md"]
     },
     {
       "id": "P17-G3B-03",
@@ -8948,7 +8956,11 @@
         "EWP-OPT-TS04",
         "EWP-P3B-TS03",
         "EWP-P5-TS05",
-        "EWP-WF13"
+        "EWP-WF05",
+        "EWP-WF09",
+        "EWP-WF10",
+        "EWP-WF13",
+        "EWP-WF15"
       ],
       "impactedValidations": [
         "EWP-CMD-APPLY-TS01",
@@ -9024,7 +9036,11 @@
         "EWP-OPT-TS04",
         "EWP-P3B-TS03",
         "EWP-P5-TS05",
-        "EWP-WF13"
+        "EWP-WF05",
+        "EWP-WF09",
+        "EWP-WF10",
+        "EWP-WF13",
+        "EWP-WF15"
       ],
       "affectedContracts": [
         "COMMAND:apply",
@@ -18822,7 +18838,7 @@
     },
     {
       "id": "EWP-P3B-T02",
-      "title": "Shared mutation-lock hierarchy, operation preconditions, and transaction",
+      "title": "Shared mutation-lock hierarchy, operation preconditions, and transaction coordinator with deterministic group/pair scheduling for live placement, manifest, lock, and ledger commit points.",
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-02",
@@ -19123,7 +19139,7 @@
     },
     {
       "id": "EWP-P3B-TS03",
-      "title": "Lock ordering, concurrent-process exclusion, per-pair partial failure, and",
+      "title": "Lock ordering, concurrent-process exclusion, per-pair partial failure, and crash/resume tests at the existing ledger/live boundaries, including identical user/project names and fail-fast/continue/cancellation scheduling.",
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-02",
@@ -20890,7 +20906,7 @@
       "plannedTarget": "planned:P17-G5-03:tests/ergonomics/workflows/EWP-WF05.test.ts#EWP-WF05",
       "target": null,
       "evidence": [],
-      "secondaryGroups": ["P17-G3B-01"],
+      "secondaryGroups": ["P17-G3B-01", "P17-G3B-02"],
       "implements": [],
       "validatedBy": ["EWP-WF05"],
       "impactedValidations": [
@@ -20913,6 +20929,7 @@
         "D-009",
         "EWP-CF-002",
         "EWP-CF-025",
+        "EWP-CF-026",
         "P1-11"
       ],
       "testCommands": [],
@@ -21049,7 +21066,7 @@
       "plannedTarget": "planned:P17-G5-02:tests/ergonomics/workflows/EWP-WF09.test.ts#EWP-WF09",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G3B-02"],
       "implements": [],
       "validatedBy": ["EWP-WF09"],
       "impactedValidations": [
@@ -21066,7 +21083,7 @@
         "EWP-P5-TS02",
         "EWP-WF09"
       ],
-      "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
+      "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "EWP-CF-026", "P2-02"],
       "testCommands": [],
       "ownedFiles": []
     },
@@ -21081,7 +21098,7 @@
       "plannedTarget": "planned:P17-G5-01:tests/ergonomics/workflows/EWP-WF10.test.ts#EWP-WF10",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G3B-02"],
       "implements": [],
       "validatedBy": ["EWP-WF10"],
       "impactedValidations": [
@@ -21098,7 +21115,7 @@
         "EWP-P5-TS01",
         "EWP-WF10"
       ],
-      "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
+      "affectedContracts": ["COMMAND:sync", "D-007", "EWP-CF-026", "P1-10"],
       "testCommands": [],
       "ownedFiles": []
     },
@@ -21227,11 +21244,11 @@
         "command": "bun test tests/ergonomics/workflows/EWP-WF15.test.ts --test-name-pattern EWP-WF15"
       },
       "evidence": ["projects/p17/evidence/P17-G1-02A.md#execution-receipt-ewp-wf15"],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G3B-02"],
       "implements": [],
       "validatedBy": ["EWP-WF15"],
       "impactedValidations": ["EWP-OPT-TS04", "EWP-OPT-TS10", "EWP-P1-TS06", "EWP-WF15"],
-      "affectedContracts": ["EWP-CF-004", "EWP-CF-043", "P0-06", "P2-01"],
+      "affectedContracts": ["EWP-CF-004", "EWP-CF-026", "EWP-CF-043", "P0-06", "P2-01"],
       "testCommands": [
         "bun test tests/ergonomics/workflows/EWP-WF15.test.ts --test-name-pattern EWP-WF15"
       ],
