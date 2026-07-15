@@ -461,7 +461,7 @@ const workflowGroups = [
   'G4B-01',
   'G5-02',
   'G5-01',
-  'G3B-03',
+  'G5-03',
   'G5-04',
   'G4A-04',
   'G1-01',
@@ -594,10 +594,27 @@ function stateModelFor(kind: Kind): Entity['stateModel'] {
 
 const validationPrefix = '(?:EWP-(?:P(?:0A|1|2|3A|3B|4A|4B|5|6)-TS|CMD-[A-Z]+-TS|OPT-TS)|EWP-WF)';
 
+const G3B03_VALIDATIONS = [
+  'EWP-CMD-DOCTOR-TS01',
+  'EWP-CMD-DOCTOR-TS02',
+  'EWP-CMD-DOCTOR-TS03',
+  'EWP-CMD-DOCTOR-TS04',
+  'EWP-CMD-DOCTOR-TS05',
+  'EWP-CMD-DOCTOR-TS06',
+  'EWP-P3B-TS04',
+  'EWP-WF11',
+] as const;
+
 const explicitValidationOwnership: Record<string, string[]> = {
   // G3B-02 adds a fifth execution outcome and must replay the signed exhaustive current-action
   // matrix as well as its new scheduler selector.
   'EWP-P3B-T02': ['EWP-P3B-TS01', 'EWP-P3B-TS03'],
+  // G3B-03 owns the ledger/doctor foundation while the complete crash-recovery/undo workflow
+  // closes with the public undo surface in G5-03. Keep the end-to-end obligation explicit.
+  'COMMAND:doctor': [...G3B03_VALIDATIONS],
+  'D-010': [...G3B03_VALIDATIONS],
+  'EWP-P3B-T04': [...G3B03_VALIDATIONS],
+  'P2-07': [...G3B03_VALIDATIONS],
   'COMMAND:dev': [
     'EWP-CMD-DEV-TS01',
     'EWP-CMD-DEV-TS02',
@@ -751,6 +768,19 @@ const explicitContractOwnership: Record<string, string[]> = {
   ],
   'EWP-WF09': ['COMMAND:update', 'D-011', 'EWP-CF-008', 'EWP-CF-026', 'P2-02'],
   'EWP-WF10': ['COMMAND:sync', 'D-007', 'EWP-CF-026', 'P1-10'],
+  'EWP-WF11': [
+    'COMMAND:doctor',
+    'COMMAND:status',
+    'COMMAND:undo',
+    'D-010',
+    'EWP-CF-006',
+    'EWP-CF-028',
+    'EWP-CF-031',
+    'EWP-CF-034',
+    'EWP-CF-035',
+    'P1-11',
+    'P2-07',
+  ],
   'EWP-WF15': ['EWP-CF-004', 'EWP-CF-026', 'EWP-CF-043', 'P0-06', 'P2-01'],
   'EWP-CMD-CONFIG-TS01': ['COMMAND:config', 'D-003', 'EWP-CF-012'],
   'EWP-CMD-CONFIG-TS02': ['COMMAND:config', 'D-003', 'P0-02'],

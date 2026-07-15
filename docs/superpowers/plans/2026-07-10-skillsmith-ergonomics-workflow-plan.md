@@ -2003,7 +2003,11 @@ shape has one tested migration; no status or mutation command needs to invent an
 - **EWP-P3B-TS04:** Missing versus empty/truncated/malformed ledger; version-1 read-only and dry-run
   byte identity; visible automatic and doctor migration; canonical version-2 equivalence; newer
   version refusal; legacy pending-journal preservation; saved-plan migration staleness; and crash at
-  every stage/flush/backup/replace/first-commit cleanup point.
+  every stage/flush/backup/replace/first-commit cleanup point. Also cover project-registration
+  derivation, logical coordinator transaction phase changes, atomic pending-to-committed-history
+  movement, deterministic bounded-history behavior, pending-before-history precedence, internal
+  same-operation resume and pending-abort primitives, and pair isolation across interruption and
+  recovery.
 - **EWP-P3B-TS05:** Deep-freeze mutation traps, pure planner determinism/property tests,
   dry-run/execution operation identity, expected-revision/concurrent-writer refusal, repository
   import isolation, read-only status capability, failure injection at every
@@ -2411,6 +2415,11 @@ probe write/lock/process capability.
 Repository failures are injected at every stage/commit/rollback/cleanup boundary; coordinator-only
 composition restores or resumes state without repositories calling one another or mutating a shared
 snapshot.
+
+**Execution ownership:** Phase 3B proves the ledger, journal, history, migration, doctor, and
+internal recovery foundation through EWP-P3B-TS04. The complete EWP-WF11 command workflow closes in
+Phase 5 with public `undo`, after the Phase-3B repository-composition foundation is also available;
+no foundation-only partial workflow may be marked passing.
 
 ### EWP-WF12 Removal and GC
 

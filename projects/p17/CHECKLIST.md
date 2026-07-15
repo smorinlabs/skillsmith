@@ -28,9 +28,9 @@ Tracked entities: **425** across **45** change groups.
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
-| 3 | 8 | 83 | 62 | 0 |
+| 3 | 8 | 82 | 62 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
-| 5 | 5 | 67 | 0 | 0 |
+| 5 | 5 | 68 | 0 | 0 |
 | 6 | 5 | 39 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
@@ -265,7 +265,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF08 | P17-G4B-01 | planned | required-pr |
 | EWP-WF09 | P17-G5-02 | planned | required-pr |
 | EWP-WF10 | P17-G5-01 | planned | required-pr |
-| EWP-WF11 | P17-G3B-03 | planned | required-pr |
+| EWP-WF11 | P17-G5-03 | planned | required-pr |
 | EWP-WF12 | P17-G5-04 | planned | required-pr |
 | EWP-WF13 | P17-G4A-04 | planned | required-pr |
 | EWP-WF14 | P17-G1-01 | signed-off | required-pr |
@@ -965,8 +965,8 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 ## P17-G3B-03 — Ledger writer, journals, recovery/resume/abort, history, and deterministic repair
 
 Phase: 3B; status: **mapped**; dependencies: P17-G3B-02.
-Required-now validations: EWP-CMD-DOCTOR-TS01, EWP-CMD-DOCTOR-TS02, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS04, EWP-CMD-DOCTOR-TS05, EWP-CMD-DOCTOR-TS06, EWP-CMD-STATUS-TS04, EWP-P3B-TS03, EWP-P3B-TS04, EWP-WF11.
-Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD-GC-TS02, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-WF12.
+Required-now validations: EWP-CMD-DOCTOR-TS01, EWP-CMD-DOCTOR-TS02, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS04, EWP-CMD-DOCTOR-TS05, EWP-CMD-DOCTOR-TS06, EWP-CMD-STATUS-TS04, EWP-P3B-TS03, EWP-P3B-TS04.
+Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD-GC-TS02, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-WF11, EWP-WF12.
 
 ### Group gates
 
@@ -995,7 +995,6 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD
 - [ ] **EWP-CMD-DOCTOR-TS06** — remediation commands parse and target the finding; no standalone ledger _(command-test; planned)_
 - [ ] **EWP-P3B-T04** — Extend the Phase-3A reader with the canonical version-2 writer, visible _(phase-task; planned)_
 - [ ] **EWP-P3B-TS04** — Missing versus empty/truncated/malformed ledger; version-1 read-only and dry-run _(phase-test; planned)_
-- [ ] **EWP-WF11** — Crash recovery and undo _(workflow; planned)_
 - [ ] **P2-07** — Safe `doctor --fix` _(recommendation; planned)_
 
 ## P17-G3B-04 — Immutable snapshots, pure planners, repositories, expected revisions, and extraction
@@ -1414,7 +1413,7 @@ Downstream coverage obligations: none.
 ## P17-G5-03 — Scope-aware pending abort and committed undo with compatibility routing
 
 Phase: 5; status: **planned**; dependencies: P17-G4B-03.
-Required-now validations: EWP-CMD-DEV-TS05, EWP-CMD-PROMOTE-TS05, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-P5-TS03, EWP-WF05.
+Required-now validations: EWP-CMD-DEV-TS05, EWP-CMD-PROMOTE-TS05, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-P5-TS03, EWP-WF05, EWP-WF11.
 Downstream coverage obligations: none.
 
 ### Group gates
@@ -1445,6 +1444,7 @@ Downstream coverage obligations: none.
 - [ ] **EWP-P5-T05** — Unified scope-aware undo selection and compatibility aliases. _(phase-task; planned)_
 - [ ] **EWP-P5-TS03** — Undo operation-family and user/project ambiguity/inference matrix. _(phase-test; planned)_
 - [ ] **EWP-WF05** — Local development lifecycle _(workflow; planned)_
+- [ ] **EWP-WF11** — Crash recovery and undo _(workflow; planned)_
 - [ ] **P1-11** — `undo` _(recommendation; planned)_
 
 ## P17-G5-04 — Ledger-authoritative reachability, retention, explicit forget, and safe GC

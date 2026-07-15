@@ -4532,8 +4532,7 @@
         "EWP-CMD-DOCTOR-TS06",
         "EWP-CMD-STATUS-TS04",
         "EWP-P3B-TS03",
-        "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-P3B-TS04"
       ],
       "downstreamCoverage": [
         "EWP-CMD-APPLY-TS07",
@@ -4550,6 +4549,7 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
+        "EWP-WF11",
         "EWP-WF12"
       ],
       "testCommands": [],
@@ -5562,7 +5562,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "requiredNowValidations": [
         "EWP-CMD-DEV-TS05",
@@ -5577,7 +5578,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "downstreamCoverage": [],
       "testCommands": [],
@@ -6565,7 +6567,7 @@
       "plannedTarget": "surface:doctor",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-DOCTOR-TS01",
@@ -7077,7 +7079,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
@@ -7090,7 +7093,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -7683,7 +7687,7 @@
       "plannedTarget": "coverage:P17-G3B-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-DOCTOR-TS01",
@@ -9685,7 +9689,6 @@
         "P17-G5-01",
         "P17-G5-03",
         "P17-G5-02",
-        "P17-G3B-03",
         "P17-G1-02A"
       ],
       "implements": [],
@@ -9965,7 +9968,7 @@
       "plannedTarget": "coverage:P17-G1-04",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G1-04.md#traceability-and-sign-off"],
-      "secondaryGroups": ["P17-G3B-03", "P17-G1-02A", "P17-G6-02A"],
+      "secondaryGroups": ["P17-G5-03", "P17-G1-02A", "P17-G6-02A"],
       "implements": [],
       "validatedBy": ["EWP-P1-TS08", "EWP-WF11", "EWP-WF15", "EWP-WF16"],
       "impactedValidations": ["EWP-P1-TS08", "EWP-WF11", "EWP-WF15", "EWP-WF16"],
@@ -9985,7 +9988,7 @@
       "plannedTarget": "coverage:P17-G3B-04",
       "target": null,
       "evidence": [],
-      "secondaryGroups": ["P17-G4B-01", "P17-G3B-03", "P17-G4A-04"],
+      "secondaryGroups": ["P17-G4B-01", "P17-G5-03", "P17-G4A-04"],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS05", "EWP-WF06", "EWP-WF11", "EWP-WF13"],
       "impactedValidations": ["EWP-P3B-TS05", "EWP-WF06", "EWP-WF11", "EWP-WF13"],
@@ -12332,8 +12335,7 @@
         "EWP-CMD-DOCTOR-TS04",
         "EWP-CMD-DOCTOR-TS05",
         "EWP-CMD-DOCTOR-TS06",
-        "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "testCommands": [],
@@ -12360,8 +12362,7 @@
         "EWP-CMD-DOCTOR-TS04",
         "EWP-CMD-DOCTOR-TS05",
         "EWP-CMD-DOCTOR-TS06",
-        "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "testCommands": [],
@@ -12388,8 +12389,7 @@
         "EWP-CMD-DOCTOR-TS04",
         "EWP-CMD-DOCTOR-TS05",
         "EWP-CMD-DOCTOR-TS06",
-        "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "testCommands": [],
@@ -12416,8 +12416,7 @@
         "EWP-CMD-DOCTOR-TS04",
         "EWP-CMD-DOCTOR-TS05",
         "EWP-CMD-DOCTOR-TS06",
-        "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "testCommands": [],
@@ -12444,8 +12443,7 @@
         "EWP-CMD-DOCTOR-TS04",
         "EWP-CMD-DOCTOR-TS05",
         "EWP-CMD-DOCTOR-TS06",
-        "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "testCommands": [],
@@ -12472,8 +12470,7 @@
         "EWP-CMD-DOCTOR-TS04",
         "EWP-CMD-DOCTOR-TS05",
         "EWP-CMD-DOCTOR-TS06",
-        "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "testCommands": [],
@@ -15287,7 +15284,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15318,7 +15316,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15349,7 +15348,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15380,7 +15380,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15411,7 +15412,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15442,7 +15444,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15473,7 +15476,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15504,7 +15508,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -15535,7 +15540,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -19216,7 +19222,7 @@
       "plannedTarget": "planned:P17-G3B-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-03"],
       "implements": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "validatedBy": [
         "EWP-CMD-DOCTOR-TS01",
@@ -19440,8 +19446,7 @@
         "EWP-CMD-DOCTOR-TS04",
         "EWP-CMD-DOCTOR-TS05",
         "EWP-CMD-DOCTOR-TS06",
-        "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-P3B-TS04"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "testCommands": [],
@@ -20646,7 +20651,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -21183,7 +21189,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": [
         "COMMAND:dev",
@@ -21387,26 +21394,42 @@
       "title": "Crash recovery and undo",
       "kind": "workflow",
       "stateModel": "validation",
-      "primaryGroup": "P17-G3B-03",
+      "primaryGroup": "P17-G5-03",
       "status": "planned",
       "tier": "required-pr",
-      "plannedTarget": "planned:P17-G3B-03:tests/ergonomics/workflows/EWP-WF11.test.ts#EWP-WF11",
+      "plannedTarget": "planned:P17-G5-03:tests/ergonomics/workflows/EWP-WF11.test.ts#EWP-WF11",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G3B-03", "P17-G3A-01", "P17-G1-01", "P17-G1-04", "P17-G3B-04"],
       "implements": [],
       "validatedBy": ["EWP-WF11"],
       "impactedValidations": [
-        "EWP-CMD-DOCTOR-TS01",
-        "EWP-CMD-DOCTOR-TS02",
-        "EWP-CMD-DOCTOR-TS03",
-        "EWP-CMD-DOCTOR-TS04",
-        "EWP-CMD-DOCTOR-TS05",
-        "EWP-CMD-DOCTOR-TS06",
-        "EWP-P3B-TS04",
+        "EWP-CMD-UNDO-TS01",
+        "EWP-CMD-UNDO-TS02",
+        "EWP-CMD-UNDO-TS03",
+        "EWP-CMD-UNDO-TS04",
+        "EWP-CMD-UNDO-TS05",
+        "EWP-CMD-UNDO-TS06",
+        "EWP-CMD-UNDO-TS07",
+        "EWP-CMD-UNDO-TS08",
+        "EWP-CMD-UNDO-TS09",
+        "EWP-P5-TS03",
+        "EWP-WF05",
         "EWP-WF11"
       ],
-      "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
+      "affectedContracts": [
+        "COMMAND:doctor",
+        "COMMAND:status",
+        "COMMAND:undo",
+        "D-010",
+        "EWP-CF-006",
+        "EWP-CF-028",
+        "EWP-CF-031",
+        "EWP-CF-034",
+        "EWP-CF-035",
+        "P1-11",
+        "P2-07"
+      ],
       "testCommands": [],
       "ownedFiles": []
     },
@@ -22287,7 +22310,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
@@ -22300,7 +22324,8 @@
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
-        "EWP-WF05"
+        "EWP-WF05",
+        "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -22560,7 +22585,7 @@
       "plannedTarget": "coverage:P17-G3B-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-DOCTOR-TS01",
