@@ -3690,6 +3690,7 @@
         "packages/cli/tests/commands/agents.test.ts",
         "packages/cli/tests/contracts/agents.test.ts",
         "packages/cli/tests/contracts/commands.test.ts",
+        "packages/cli/tests/contracts/config.test.ts",
         "packages/cli/tests/contracts/list.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
         "packages/cli/tests/help.test.ts",
@@ -3775,6 +3776,8 @@
         "tests/ergonomics/fixtures/p3a-ts01/list-long.golden.txt",
         "tests/ergonomics/fixtures/p3a-ts01/list-v3.golden.json",
         "tests/ergonomics/fixtures/p3a-ts03/duplicate-cases.json",
+        "tests/ergonomics/phase/EWP-P1-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS02.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS09.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
@@ -3855,7 +3858,8 @@
           "status": "passed",
           "evidence": [
             "projects/p17/evidence/P17-G3A-02.md#ready-plan",
-            "projects/p17/evidence/P17-G3A-02.md#ready-ownership-amendment"
+            "projects/p17/evidence/P17-G3A-02.md#ready-ownership-amendment",
+            "projects/p17/evidence/P17-G3A-02.md#terminal-full-gate-remediation-ownership-amendment"
           ]
         },
         "test-first": {
@@ -3902,7 +3906,8 @@
         "projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3A-02.md#refactor-review",
         "projects/p17/evidence/P17-G3A-02.md#adversarial-review",
-        "projects/p17/evidence/P17-G3A-02.md#final-targeted-and-static-replay"
+        "projects/p17/evidence/P17-G3A-02.md#final-targeted-and-static-replay",
+        "projects/p17/evidence/P17-G3A-02.md#terminal-full-gate-remediation-ownership-amendment"
       ]
     },
     {
