@@ -129,6 +129,40 @@ describe('defaultRuntimePorts', () => {
     expect(isPortError(received)).toBeFalse();
   });
 
+  test('rejects a pre-aborted lock request without invoking the callback', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-lock-cancelled-'));
+    const target = join(root, 'placements.json');
+    const controller = new AbortController();
+    controller.abort();
+    let invoked = false;
+    const withFileLock = ports.withFileLock as unknown as <T>(
+      path: string,
+      operation: () => Promise<T>,
+      options?: Readonly<{ signal?: AbortSignal }>,
+    ) => Promise<T>;
+    try {
+      await expect(
+        withFileLock(
+          target,
+          async () => {
+            invoked = true;
+          },
+          { signal: controller.signal },
+        ),
+      ).rejects.toMatchObject({
+        capability: 'lock',
+        operation: 'withFileLock',
+        code: 'cancelled',
+      });
+      expect(invoked).toBeFalse();
+      expect(await ports.pathKind(target)).toBe('absent');
+      expect(await ports.pathKind(`${target}.lock`)).toBe('absent');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('reads stable regular-file metadata and applies focused permission bits', async () => {
     const ports = await defaultRuntimePorts();
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-config-metadata-'));

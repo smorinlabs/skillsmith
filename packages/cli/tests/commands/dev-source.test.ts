@@ -80,7 +80,7 @@ describe('skillsmith dev --source — usage errors (P13)', () => {
 });
 
 describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
-  test('create with one --tool and --dest: exit 0, JSON v3 correlates created placement work', async () => {
+  test('create with one --tool and --dest: exit 0, JSON v4 correlates created placement work', async () => {
     const f = await buildFixtureFleet();
     try {
       const source = await makeSkillSource(f.base, 'newskill');
@@ -125,7 +125,7 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
         }>;
         summary: Record<string, number>;
       };
-      expect(report.schemaVersion).toBe(3);
+      expect(report.schemaVersion).toBe(4);
       expect(report.operations[0]).toMatchObject({
         kind: 'link-dev',
         after: { resource: { location: { path: join(dest, 'newskill') } } },
@@ -149,7 +149,7 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
     }
   });
 
-  test('re-run over a hand-made ln -s: exit 0, JSON v3 correlates adopted record-only work', async () => {
+  test('re-run over a hand-made ln -s: exit 0, JSON v4 correlates adopted record-only work', async () => {
     const f = await buildFixtureFleet();
     try {
       const source = await makeSkillSource(f.base, 'handmade');
@@ -176,7 +176,7 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
         results: Array<{ operationId: string; outcome: string }>;
         summary: Record<string, number>;
       };
-      expect(report.schemaVersion).toBe(3);
+      expect(report.schemaVersion).toBe(4);
       expect(report.operations[0]).toMatchObject({
         kind: 'link-dev',
         before: { classification: 'unmanaged' },
@@ -237,7 +237,7 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
         operations: Array<{ operationId: string; kind: string }>;
         results: Array<{ operationId: string; outcome: string }>;
       };
-      expect(report.schemaVersion).toBe(3);
+      expect(report.schemaVersion).toBe(4);
       expect(report.operations[0]?.kind).toBe('link-dev');
       expect(report.results[0]).toMatchObject({
         operationId: report.operations[0]?.operationId,

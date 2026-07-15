@@ -27,7 +27,7 @@ const diagnostic = (kind: 'noop' | 'skip' | 'refuse' | 'conflict' | 'warning') =
 
 const result = (
   operationId: string,
-  outcome: 'succeeded' | 'failed' | 'cancelled' | 'rolled-back',
+  outcome: 'succeeded' | 'failed' | 'cancelled' | 'rolled-back' | 'skipped-after-failure',
 ) => ({ operationId, outcome }) as OperationExecutionResult;
 
 const project = (input: CurrentCompatibilityProjection) => toCurrentCompatibilityAction(input);
@@ -66,6 +66,14 @@ describe('current planning compatibility projection', () => {
         result: result('install-id', 'cancelled'),
       }),
     ).toBe('failed');
+    expect(
+      project({
+        family: 'install',
+        operation: install,
+        diagnostic: null,
+        result: result('install-id', 'skipped-after-failure'),
+      }),
+    ).toBe('skipped');
 
     expect(
       project({
@@ -119,5 +127,13 @@ describe('current planning compatibility projection', () => {
         result: result('remove-id', 'rolled-back'),
       }),
     ).toThrow(/rolled-back/i);
+    expect(() =>
+      project({
+        family: 'uninstall',
+        operation: remove,
+        diagnostic: null,
+        result: result('remove-id', 'skipped-after-failure'),
+      }),
+    ).toThrow(/skipped-after-failure|skipped compatibility/i);
   });
 });

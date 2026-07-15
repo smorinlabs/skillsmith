@@ -894,9 +894,68 @@ describe('EWP-OPT-TS04', () => {
       const command = program.commands.find((candidate) => candidate.name() === commandName);
       expect(
         command?.options.some((option) => option.long === '--continue-on-error'),
-        `${commandName} scheduler policy remains G3B-02-owned`,
-      ).toBeFalse();
+        `${commandName} must expose its G3B-02 scheduler policy`,
+      ).toBeTrue();
     }
+    expect(
+      program.commands
+        .find((candidate) => candidate.name() === 'uninstall')
+        ?.options.some((option) => option.long === '--continue-on-error'),
+      'uninstall retains its G4A-01-owned public scheduler option',
+    ).toBeFalse();
+  });
+
+  test('G3B-02 adds exactly two long-only boolean scheduler options with false defaults', async () => {
+    const api = await requireOptionContractApi();
+    const findings: string[] = [];
+    const inventory = api.CURRENT_COMMAND_SPECS.reduce(
+      (count, spec) => count + spec.options.length,
+      0,
+    );
+    if (inventory !== 168) findings.push(`option inventory is ${inventory}, expected 168`);
+
+    const program = buildProgram();
+    for (const commandName of ['dev', 'promote'] as const) {
+      const path = `skillsmith ${commandName}`;
+      const spec = api.CURRENT_COMMAND_SPECS.find((candidate) => candidate.path === path);
+      const options = spec?.options.filter((option) => option.long === '--continue-on-error') ?? [];
+      if (options.length !== 1) {
+        findings.push(`${path} exposes ${options.length} --continue-on-error options, expected 1`);
+        continue;
+      }
+      const [option] = options;
+      if (
+        option?.attributeName !== 'continueOnError' ||
+        option.valueShape !== 'boolean' ||
+        option.repeatable ||
+        option.negated ||
+        option.flagDefault !== false ||
+        option.parsedDefault !== false
+      ) {
+        findings.push(`${path} --continue-on-error does not have the closed boolean/false shape`);
+      }
+      const live = program.commands
+        .find((candidate) => candidate.name() === commandName)
+        ?.options.filter((candidate) => candidate.long === '--continue-on-error');
+      if (live?.length !== 1 || live[0]?.short !== undefined) {
+        findings.push(`${path} --continue-on-error is not exactly one long-only live option`);
+      }
+    }
+
+    const install = api.CURRENT_COMMAND_SPECS.find(
+      (candidate) => candidate.path === 'skillsmith install',
+    );
+    if (install?.options.filter((option) => option.long === '--continue-on-error').length !== 1) {
+      findings.push('skillsmith install lost its existing --continue-on-error option');
+    }
+    const uninstall = api.CURRENT_COMMAND_SPECS.find(
+      (candidate) => candidate.path === 'skillsmith uninstall',
+    );
+    if (uninstall?.options.some((option) => option.long === '--continue-on-error')) {
+      findings.push('skillsmith uninstall exposed its G4A-01-owned option early');
+    }
+
+    expect(findings).toEqual([]);
   });
 
   test('approval is rejected for preview while output and noninteractive assertions remain valid', () => {

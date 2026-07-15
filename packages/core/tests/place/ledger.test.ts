@@ -345,6 +345,52 @@ describe('withLedgerLock', () => {
     if (!r.ok) throw new Error(msg(r.error));
     expect(r.value).toBe(true);
   });
+
+  test('G3B-02: forwards cancellation to the historical ledger target lock', async () => {
+    const p = ledgerPathOf(f.data);
+    const controller = new AbortController();
+    const request = Object.freeze({ signal: controller.signal });
+    let acquiredPath: string | undefined;
+    let acquiredRequest: unknown;
+    const withFileLock = async <T>(
+      path: string,
+      operation: () => Promise<T>,
+      options?: unknown,
+    ): Promise<T> => {
+      acquiredPath = path;
+      acquiredRequest = options;
+      return operation();
+    };
+    const env: RuntimePorts = { ...f.env, withFileLock };
+    const signalAwareWithLedgerLock = withLedgerLock as <T>(
+      ports: RuntimePorts,
+      path: string,
+      operation: () => Promise<T>,
+      options?: Readonly<{ signal?: AbortSignal }>,
+    ) => ReturnType<typeof withLedgerLock<T>>;
+
+    const r = await signalAwareWithLedgerLock(env, p, async () => 'done', request);
+    if (!r.ok) throw new Error(msg(r.error));
+    expect(r.value).toBe('done');
+    expect(acquiredPath).toBe(p);
+    expect(acquiredRequest).toBe(request);
+  });
+
+  test('G3B-02: preserves lock-port cancellation instead of relabelling it as contention', async () => {
+    const p = ledgerPathOf(f.data);
+    const cancellation = Object.assign(new Error('ledger lock wait cancelled'), {
+      code: 'ABORT_ERR',
+    });
+    const env: RuntimePorts = {
+      ...f.env,
+      withFileLock: async () => {
+        throw cancellation;
+      },
+    };
+    const r = await withLedgerLock(env, p, async () => 'unreachable');
+
+    expect(r).toMatchObject({ ok: false, error: { code: 'cancelled' } });
+  });
 });
 
 describe('losslessness (D5) at the record level', () => {

@@ -480,6 +480,53 @@ describe('runInstall — batch semantics', () => {
     expect(r.value.summary.installed).toBe(2);
   });
 
+  test('G3B-02: a started source group attempts every tool pair before fail-fast skips later groups', async () => {
+    const attemptedStagingRoots: string[] = [];
+    const failingFirstPairEnv: RuntimePorts = {
+      ...f.env,
+      makeSymlink: async (target, linkPath) => {
+        if (linkPath.includes('.skillsmith-staging-factor-scan-')) {
+          const root = linkPath.startsWith(claudeRoot()) ? 'claude-code' : 'codex';
+          attemptedStagingRoots.push(root);
+          if (root === 'claude-code') throw new Error('synthetic first-pair staging failure');
+        }
+        await f.env.makeSymlink(target, linkPath);
+      },
+    };
+    const first = await runInstall(
+      failingFirstPairEnv,
+      { ...userOpts, tools: ['claude-code', 'codex'] },
+      makeDeps(),
+    );
+    if (!first.ok) throw new Error(msg(first.error));
+
+    const operations = first.value.plan.operations;
+    expect(new Set(operations.map(({ groupId }) => groupId))).toHaveLength(1);
+    expect(attemptedStagingRoots).toEqual(['claude-code', 'codex']);
+    expect(first.value.results.find(({ tool }) => tool === 'claude-code')?.action).toBe('failed');
+    expect(first.value.results.find(({ tool }) => tool === 'codex')?.action).toBe('installed');
+    expect(first.value.executionResults.map(({ outcome }) => outcome)).toEqual([
+      'failed',
+      'succeeded',
+    ]);
+
+    const partialLedger = await led();
+    expect(getPairAt(partialLedger, null, 'factor-scan', 'claude-code')?.journal?.phase).toBe(
+      'prepared',
+    );
+    expect(getPairAt(partialLedger, null, 'factor-scan', 'codex')?.journal).toBeNull();
+
+    const converged = await runInstall(
+      f.env,
+      { ...userOpts, tools: ['claude-code', 'codex'] },
+      makeDeps(),
+    );
+    if (!converged.ok) throw new Error(msg(converged.error));
+    const settledLedger = await led();
+    expect(getPairAt(settledLedger, null, 'factor-scan', 'claude-code')?.journal).toBeNull();
+    expect(getPairAt(settledLedger, null, 'factor-scan', 'codex')?.journal).toBeNull();
+  });
+
   test('an unsafe override ref never enters requested.ref and does not relabel a valid source', async () => {
     const canary = 'P17_SECRET_CANARY_123456789';
     const r = await runInstall(f.env, { ...userOpts, ref: `token=${canary}` }, makeDeps());

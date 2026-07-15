@@ -127,6 +127,11 @@ describe('@skillsmith/core public API', () => {
       'createPlanCheckId',
       'createPlanningDiagnosticId',
       'toCurrentCompatibilityAction',
+      'scheduleOperationPlan',
+      'createExecutionPrecondition',
+      'validateExecutionPreconditions',
+      'withExecutionLockHierarchy',
+      'executeOperationPlan',
     ]);
     const actual = new Set(Object.keys(core));
     for (const k of expected) expect(actual.has(k)).toBe(true);

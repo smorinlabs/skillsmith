@@ -375,6 +375,14 @@ describe('EWP-P3B-TS01', () => {
         force: null,
         error: null,
       },
+      {
+        operationId,
+        outcome: 'skipped-after-failure',
+        actualBefore: structuredClone(absentImage),
+        actualAfter: structuredClone(absentImage),
+        force: null,
+        error: null,
+      },
     ];
     const results = resultInputs.map(createOperationExecutionResult);
 
@@ -383,6 +391,7 @@ describe('EWP-P3B-TS01', () => {
       'failed',
       'cancelled',
       'rolled-back',
+      'skipped-after-failure',
     ]);
     for (const result of results) {
       expect(Object.keys(result).sort()).toEqual(

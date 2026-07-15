@@ -10,6 +10,7 @@ const CONTRACTS_MODULE = '../../../packages/core/src/contracts/index.ts';
 const V1_MODULE = '../../../packages/core/src/contracts/v1/index.ts';
 const V2_MODULE = '../../../packages/core/src/contracts/v2/index.ts';
 const V3_MODULE = '../../../packages/core/src/contracts/v3/index.ts';
+const V4_MODULE = '../../../packages/core/src/contracts/v4/index.ts';
 const WIRE_AUTHORITY_MODULE = '../../../packages/cli/src/contracts/wire-contracts.ts';
 const SECRET_CANARY = 'P17_SECRET_CANARY';
 const encoder = new TextEncoder();
@@ -117,6 +118,7 @@ const EXPECTED_WIRE_IDENTITIES = [
   'config-unset@1',
   'flip@2',
   'flip@3',
+  'flip@4',
   'install@1',
   'list@2',
   'list@3',
@@ -259,6 +261,7 @@ const V2_RUNTIME_EXPORTS = [
   'toCommandsV2Dto',
 ] as const;
 const V3_RUNTIME_EXPORTS = ['flipV3Codec', 'listV3Codec', 'toFlipV3Dto', 'toListV3Dto'] as const;
+const V4_RUNTIME_EXPORTS = ['flipV4Codec', 'toFlipV4Dto'] as const;
 
 const rawSha256 = (bytes: Uint8Array): string =>
   `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
@@ -1958,10 +1961,14 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
       loadModule(V3_MODULE),
       loadModule(WIRE_AUTHORITY_MODULE),
     ]);
+    const v4Path = join(ROOT, 'packages/core/src/contracts/v4/index.ts');
+    const v4 = existsSync(v4Path) ? await loadModule(V4_MODULE) : null;
     expect(Object.keys(contracts).sort()).toEqual([...CONTRACT_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v1).sort()).toEqual([...V1_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v2).sort()).toEqual([...V2_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v3).sort()).toEqual([...V3_RUNTIME_EXPORTS].sort());
+    expect(v4, 'public contracts/v4 runtime facade is absent').not.toBeNull();
+    expect(Object.keys(v4 ?? {}).sort()).toEqual([...V4_RUNTIME_EXPORTS].sort());
     expect(typeof contracts.createWireContractRegistry).toBe('function');
     expect(core.artifactContractRegistry).toBe(registry);
 
@@ -1981,11 +1988,14 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
         [v1.commandsV1Codec, wireRegistry.get('commands', 1)],
         [v2.commandsV2Codec, wireRegistry.get('commands', 2)],
         [v3.flipV3Codec, wireRegistry.get('flip', 3)],
+        [v4?.flipV4Codec, wireRegistry.get('flip', 4)],
         [v2.listV2Codec, wireRegistry.get('list', 2)],
         [v3.listV3Codec, wireRegistry.get('list', 3)],
         [v1.statusV1Codec, wireRegistry.get('status', 1)],
       ] as const;
       for (const [versioned, registered] of wireIdentities) {
+        expect(versioned, 'versioned wire facade export is absent').toBeDefined();
+        if (versioned === undefined) continue;
         expect(
           registered,
           `${versioned.descriptor.id}@${versioned.descriptor.version}`,

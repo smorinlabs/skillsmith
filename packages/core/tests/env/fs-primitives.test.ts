@@ -150,6 +150,32 @@ describe('defaultScanEnv fs primitives', () => {
   });
 
   describe('withFileLock', () => {
+    test('pre-aborted signal cancels without acquiring, invoking, or leaving lock residue', async () => {
+      await setup();
+      const target = join(dir, 'lock-target-cancelled');
+      const controller = new AbortController();
+      controller.abort();
+      let invoked = false;
+      const withFileLock = env.withFileLock as unknown as <T>(
+        path: string,
+        operation: () => Promise<T>,
+        options?: Readonly<{ signal?: AbortSignal }>,
+      ) => Promise<T>;
+
+      await expect(
+        withFileLock(
+          target,
+          async () => {
+            invoked = true;
+          },
+          { signal: controller.signal },
+        ),
+      ).rejects.toMatchObject({ capability: 'lock', code: 'cancelled' });
+      expect(invoked).toBeFalse();
+      expect(await env.pathKind(target)).toBe('absent');
+      expect(await env.pathKind(`${target}.lock`)).toBe('absent');
+    });
+
     test('runs fn and releases; a second sequential call on the same path succeeds', async () => {
       await setup();
       const target = join(dir, 'lock-target');

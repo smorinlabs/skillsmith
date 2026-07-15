@@ -8,6 +8,7 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInstall, runUninstall } from '../../src/acquire/run.ts';
 import type { InstallDeps, InstallOptions, UninstallDeps } from '../../src/acquire/types.ts';
@@ -679,6 +680,67 @@ describe('runUninstall — dry run', () => {
     expect(executed.value.executionResults.map(({ operationId }) => operationId)).toEqual(
       executed.value.plan.operations.map(({ operationId }) => operationId),
     );
+  });
+
+  test('G3B-02: changed live facts after preview refuse without writes or replanning', async () => {
+    await installUser();
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const sentinelPath = join(livePath, 'FOREIGN.txt');
+    const targetWrites: string[] = [];
+    let prepared = false;
+    let observedPlans = 0;
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      writeTextFile: async (path, text) => {
+        if (prepared) targetWrites.push(`write:${path}`);
+        await f.env.writeTextFile(path, text);
+      },
+      makeSymlink: async (target, linkPath) => {
+        if (prepared) targetWrites.push(`symlink:${linkPath}`);
+        await f.env.makeSymlink(target, linkPath);
+      },
+      rename: async (from, to) => {
+        if (prepared) targetWrites.push(`rename:${from}->${to}`);
+        await f.env.rename(from, to);
+      },
+      copyTree: async (from, to) => {
+        if (prepared) targetWrites.push(`copy:${from}->${to}`);
+        await f.env.copyTree(from, to);
+      },
+      removeTree: async (path) => {
+        if (prepared) targetWrites.push(`remove:${path}`);
+        await f.env.removeTree(path);
+      },
+    };
+    const r = await runUninstall(
+      executionEnv,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      {
+        ...uninstallDeps(),
+        observePreparedPlan: () => {
+          observedPlans++;
+          rmSync(livePath, { recursive: true, force: true });
+          mkdirSync(livePath, { recursive: true });
+          writeFileSync(sentinelPath, 'foreign placement\n');
+          prepared = true;
+        },
+      },
+    );
+    if (!r.ok) throw new Error(msg(r.error));
+
+    expect(observedPlans).toBe(1);
+    expect(r.value.results).toHaveLength(1);
+    expect(r.value.results[0]?.action).toBe('refused');
+    expect(r.value.executionResults[0]?.outcome).toBe('failed');
+    expect(targetWrites).toEqual([]);
+    expect(await f.env.pathKind(livePath)).toBe('dir');
+    expect(await f.env.readText(sentinelPath)).toBe('foreign placement\n');
+    expect(getPairAt(await led(), null, 'factor-scan', 'claude-code')).not.toBeNull();
   });
 
   test('writes nothing; ledger byte-identical afterward', async () => {

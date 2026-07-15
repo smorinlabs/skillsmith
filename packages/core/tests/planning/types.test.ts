@@ -32,11 +32,12 @@ describe('planning domain types', () => {
       'migrate-ledger',
     ]);
     expect(PLANNING_DIAGNOSTIC_KINDS).toEqual(['noop', 'skip', 'refuse', 'conflict', 'warning']);
-    expect(OPERATION_EXECUTION_OUTCOMES).toEqual([
+    expect(OPERATION_EXECUTION_OUTCOMES as readonly string[]).toEqual([
       'succeeded',
       'failed',
       'cancelled',
       'rolled-back',
+      'skipped-after-failure',
     ]);
     expect(OPERATION_SELECTION_SOURCES).toEqual([
       'explicit-targets',

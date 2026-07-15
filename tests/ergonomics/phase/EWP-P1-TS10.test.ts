@@ -41,6 +41,7 @@ import {
   CURRENT_JSON_GOLDENS,
   CURRENT_RENDERER_REPORTS,
   GOLDEN_TERMINAL_LF,
+  HISTORICAL_FLIP_V3_GOLDEN,
   HISTORICAL_JSON_GOLDENS,
   REPORT_FIXTURES,
 } from '../fixtures/p1-ts10/reports.ts';
@@ -75,11 +76,11 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith config list', 'config-list', 1],
   ['skillsmith config set', 'config-set', 1],
   ['skillsmith config unset', 'config-unset', 1],
-  ['skillsmith dev', 'flip', 3],
+  ['skillsmith dev', 'flip', 4],
   ['skillsmith doctor', 'health', 1],
   ['skillsmith install', 'install', 1],
   ['skillsmith list', 'list', 3],
-  ['skillsmith promote', 'flip', 3],
+  ['skillsmith promote', 'flip', 4],
   ['skillsmith status', 'status', 1],
   ['skillsmith uninstall', 'uninstall', 1],
   ['skillsmith verify', 'verify', 1],
@@ -97,6 +98,7 @@ const EXPECTED_CODECS = [
   ['config-unset', 1],
   ['flip', 2],
   ['flip', 3],
+  ['flip', 4],
   ['install', 1],
   ['list', 2],
   ['list', 3],
@@ -149,6 +151,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     terminalLf: false,
   },
   'flip@3': {
+    wireKind: 'skillsmith.flip',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: false,
+  },
+  'flip@4': {
     wireKind: 'skillsmith.flip',
     embeddedVersion: 'schemaVersion',
     indent: 2,
@@ -284,6 +292,7 @@ const V2_RUNTIME_EXPORTS = [
   'migrateLedgerV1DtoToV2Dto',
 ] as const;
 const V3_RUNTIME_EXPORTS = ['flipV3Codec', 'toFlipV3Dto', 'listV3Codec', 'toListV3Dto'] as const;
+const V4_RUNTIME_EXPORTS = ['flipV4Codec', 'toFlipV4Dto'] as const;
 
 type UnknownRecord = Record<PropertyKey, unknown>;
 type WireResult = { readonly ok: boolean; readonly value?: unknown; readonly error?: unknown };
@@ -1880,15 +1889,17 @@ describe('EWP-P1-TS10', () => {
   }, 15_000);
 
   test('family 5: exposes explicit named mappers that never read excluded lifecycle internals', async () => {
-    const [v1, v2, v3] = await Promise.all([
+    const [v1, v2, v3, v4] = await Promise.all([
       importMaybe(join(CONTRACTS_ROOT, 'v1/index.ts')),
       importMaybe(join(CONTRACTS_ROOT, 'v2/index.ts')),
       importMaybe(join(CONTRACTS_ROOT, 'v3/index.ts')),
+      importMaybe(join(CONTRACTS_ROOT, 'v4/index.ts')),
     ]);
     expect(v1, 'missing v1 codecs and mappers').not.toBeNull();
     expect(v2, 'missing v2 codecs and mappers').not.toBeNull();
     expect(v3, 'missing v3 codecs and mappers').not.toBeNull();
-    if (v1 === null || v2 === null || v3 === null) return;
+    expect(v4, 'missing v4 codecs and mappers').not.toBeNull();
+    if (v1 === null || v2 === null || v3 === null || v4 === null) return;
     const hostileInstall = hostileLifecycleReport(REPORT_FIXTURES.install);
     const hostileStatus = addHostileFields(REPORT_FIXTURES.status);
     const hostileUninstall = hostileLifecycleReport(REPORT_FIXTURES.uninstall);
@@ -2032,6 +2043,13 @@ describe('EWP-P1-TS10', () => {
         mapper: v3.toFlipV3Dto,
         codec: v3.flipV3Codec,
         args: [hostileFlip],
+        bytes: HISTORICAL_FLIP_V3_GOLDEN,
+      },
+      {
+        name: 'flip@4',
+        mapper: v4.toFlipV4Dto,
+        codec: v4.flipV4Codec,
+        args: [hostileFlip],
         bytes: CURRENT_JSON_GOLDENS.flip,
       },
       {
@@ -2072,7 +2090,7 @@ describe('EWP-P1-TS10', () => {
       ) {
         expect(serializedDto, `${fixture.name} leaked lifecycle error`).not.toMatch(/"error"\s*:/);
       }
-      if (fixture.name === 'flip@3') {
+      if (fixture.name === 'flip@3' || fixture.name === 'flip@4') {
         expect(
           (dto as { readonly results: readonly [{ readonly error: unknown }] }).results[0].error,
         ).toBeNull();
@@ -2132,7 +2150,8 @@ describe('EWP-P1-TS10', () => {
       ['config-list', 1, CURRENT_JSON_GOLDENS.configListUnscoped],
       ['config-list', 1, CURRENT_JSON_GOLDENS.configListScoped],
       ['flip', 2, HISTORICAL_JSON_GOLDENS.flip],
-      ['flip', 3, CURRENT_JSON_GOLDENS.flip],
+      ['flip', 3, HISTORICAL_FLIP_V3_GOLDEN],
+      ['flip', 4, CURRENT_JSON_GOLDENS.flip],
       ['install', 1, CURRENT_JSON_GOLDENS.install],
       ['list', 2, HISTORICAL_JSON_GOLDENS.list],
       ['list', 3, CURRENT_JSON_GOLDENS.list],
@@ -2235,46 +2254,73 @@ describe('EWP-P1-TS10', () => {
     expect(capabilityCodec.validate(decoded).ok).toBeTrue();
   });
 
-  test('family 8: publishes closed contracts and v1/v2/v3 package subpaths without Zod', async () => {
+  test('family 8: publishes closed contracts and v1/v2/v3/v4 package subpaths without Zod', async () => {
     const packageJson = JSON.parse(
       await readFile(join(ROOT, 'packages/core/package.json'), 'utf8'),
     ) as { exports?: UnknownRecord };
-    for (const subpath of ['./contracts', './contracts/v1', './contracts/v2', './contracts/v3'])
+    for (const subpath of [
+      './contracts',
+      './contracts/v1',
+      './contracts/v2',
+      './contracts/v3',
+      './contracts/v4',
+    ])
       expect(packageJson.exports?.[subpath], `missing package export ${subpath}`).toBeDefined();
+    expect(packageJson.exports?.['./contracts/v4']).toEqual({
+      types: './src/contracts/v4/index.d.ts',
+      default: './src/contracts/v4/index.ts',
+    });
     const publicSubpaths = [
       '@skillsmith/core/contracts',
       '@skillsmith/core/contracts/v1',
       '@skillsmith/core/contracts/v2',
       '@skillsmith/core/contracts/v3',
+      '@skillsmith/core/contracts/v4',
     ] as const;
-    const [contracts, v1, v2, v3] = await Promise.all(
+    const [contracts, v1, v2, v3, v4] = await Promise.all(
       publicSubpaths.map((subpath) => import(subpath).catch(() => null)),
     );
     expect(contracts, 'public contracts subpath does not load').not.toBeNull();
     expect(v1, 'public contracts/v1 subpath does not load').not.toBeNull();
     expect(v2, 'public contracts/v2 subpath does not load').not.toBeNull();
     expect(v3, 'public contracts/v3 subpath does not load').not.toBeNull();
+    expect(v4, 'public contracts/v4 subpath does not load').not.toBeNull();
     expect(Object.keys(contracts ?? {}).sort()).toEqual([...CONTRACT_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v1 ?? {}).sort()).toEqual([...V1_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v2 ?? {}).sort()).toEqual([...V2_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v3 ?? {}).sort()).toEqual([...V3_RUNTIME_EXPORTS].sort());
+    expect(Object.keys(v4 ?? {}).sort()).toEqual([...V4_RUNTIME_EXPORTS].sort());
     expect(typeof contracts?.createWireContractRegistry).toBe('function');
     for (const name of Object.keys(v1 ?? {})) expect(name).not.toMatch(/V2|zod|schema/);
     for (const name of Object.keys(v2 ?? {})) {
       if (name !== 'migrateLedgerV1DtoToV2Dto') expect(name).not.toMatch(/V1|zod|schema/);
     }
     for (const name of Object.keys(v3 ?? {})) expect(name).not.toMatch(/V[12]|zod|schema/);
+    for (const name of Object.keys(v4 ?? {})) expect(name).not.toMatch(/V[123]|zod|schema/);
     for (const declaration of [
       'packages/core/src/contracts/index.d.ts',
       'packages/core/src/contracts/v1/index.d.ts',
       'packages/core/src/contracts/v2/index.d.ts',
       'packages/core/src/contracts/v3/index.d.ts',
+      'packages/core/src/contracts/v4/index.d.ts',
     ]) {
-      const source = await readFile(join(ROOT, declaration), 'utf8');
+      const source = await readFile(join(ROOT, declaration), 'utf8').catch(() => null);
+      expect(source, `missing declaration facade ${declaration}`).not.toBeNull();
+      if (source === null) continue;
       expect(source, `${declaration} leaks Zod`).not.toMatch(/\b(?:zod|Zod\w*|z\.infer)\b/);
       expect(source, `${declaration} leaks a deep source import`).not.toMatch(
         /from\s+['"](?:\.\.\/|packages\/core\/src)/,
       );
+      if (declaration.endsWith('/v4/index.d.ts')) {
+        const declaredRuntime = [...source.matchAll(/export\s+declare\s+const\s+(\w+)/gu)]
+          .map((match) => match[1])
+          .sort();
+        expect(declaredRuntime).toEqual([...V4_RUNTIME_EXPORTS].sort());
+        expect(Object.keys(v4 ?? {}).sort()).toEqual(declaredRuntime);
+        expect(source).toMatch(/export\s+interface\s+FlipV4Dto\b/u);
+        expect(source).toMatch(/WireCodec\s*<\s*['"]flip['"]\s*,\s*4\s*,\s*FlipV4Dto\s*>/u);
+        expect(source).toMatch(/toFlipV4Dto\s*:\s*\(report:\s*FlipReport\)\s*=>\s*FlipV4Dto/u);
+      }
     }
   });
 

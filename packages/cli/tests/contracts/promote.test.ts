@@ -42,7 +42,7 @@ type CompatibilityActionMapper = (input: {
   readonly result: UnknownRecord | null;
 }) => string;
 
-const FLIP_V3_TOP_LEVEL_KEYS = [
+const FLIP_V4_TOP_LEVEL_KEYS = [
   'schemaVersion',
   'kind',
   'op',
@@ -55,7 +55,7 @@ const FLIP_V3_TOP_LEVEL_KEYS = [
   'results',
 ] as const;
 
-const FLIP_V3_SELECTION_KEYS = [
+const FLIP_V4_SELECTION_KEYS = [
   'source',
   'outcome',
   'targets',
@@ -140,7 +140,7 @@ const baseOptions = (
   ...overrides,
 });
 
-const renderV3 = (report: FlipReport): UnknownRecord =>
+const renderV4 = (report: FlipReport): UnknownRecord =>
   JSON.parse(renderFlipJson(report)) as UnknownRecord;
 
 const requireCompatibilityMapper = async (): Promise<CompatibilityActionMapper> => {
@@ -227,6 +227,82 @@ const applicationContext = (
   },
   ...overrides,
 });
+
+const runPromoteSchedulingScenario = async (
+  continueOnError: boolean,
+): Promise<
+  Readonly<{
+    forwarded: unknown;
+    batchPolicy: unknown;
+    exitClass: string;
+    actions: readonly unknown[];
+    outcomes: readonly unknown[];
+  }>
+> => {
+  const fleet = await buildFixtureFleet();
+  try {
+    await rm(join(fleet.home, '.claude', 'skills', 'dangler'));
+    const projectRoot = join(fleet.project, '.claude', 'skills');
+    await mkdir(projectRoot, { recursive: true });
+    await symlink(resolve(fleet.betaSrc), join(projectRoot, 'project-beta'));
+
+    let interruptedFirstGroup = false;
+    const ports: RuntimePorts = {
+      ...fleet.env,
+      rename: async (from, to) => {
+        if (!interruptedFirstGroup && to.includes('.skillsmith-backup-alpha-')) {
+          interruptedFirstGroup = true;
+          throw new SimulatedCrash(1, 'promote-scheduler-first-group');
+        }
+        return fleet.env.rename(from, to);
+      },
+    };
+    let forwarded: unknown;
+    const services = createLifecycleApplicationServices({
+      preparePromote: (async (env, options, deps) => {
+        forwarded = Reflect.get(options, 'continueOnError');
+        return deps === undefined
+          ? preparePromote(env, options)
+          : preparePromote(env, options, deps);
+      }) as typeof preparePromote,
+    });
+    const interaction: InteractionPort = {
+      mode: 'interactive',
+      choose: async <TValue>(request: {
+        readonly choices: readonly { readonly value: TValue }[];
+      }) => ({ status: 'resolved', value: request.choices[0]?.value as TValue }),
+      confirm: async () => ({ status: 'resolved', value: true }),
+    };
+    const outcome = await services.promote(
+      {
+        arguments: [[]],
+        options: {
+          all: true,
+          tool: ['claude-code'],
+          yes: true,
+          verify: false,
+          continueOnError,
+        },
+      },
+      applicationContext(fleet, interaction, { ports }),
+    );
+    expect(interruptedFirstGroup).toBeTrue();
+    expect(outcome.report.value).not.toBeNull();
+    if (outcome.report.value === null) throw new Error('promote scheduler report is unavailable');
+    const plan = requirePlan(outcome.report.value, 'promote scheduler execution');
+    return {
+      forwarded,
+      batchPolicy: plan.batchPolicy,
+      exitClass: outcome.exitClass,
+      actions: outcome.report.value.results.map((result) => result.action),
+      outcomes: executionResults(outcome.report.value, 'promote scheduler execution').map(
+        (result) => result.outcome,
+      ),
+    };
+  } finally {
+    await destroyFixtureFleet(fleet);
+  }
+};
 
 describe('EWP-CMD-PROMOTE-TS01', () => {
   test('scoped dev placement promotes once and converges to a non-executable noop', async () => {
@@ -457,6 +533,28 @@ describe('EWP-CMD-PROMOTE-TS03', () => {
 });
 
 describe('EWP-CMD-PROMOTE-TS04', () => {
+  test('default policy skips later groups while continuation preserves failure and executes them', async () => {
+    const failFast = await runPromoteSchedulingScenario(false);
+    const continued = await runPromoteSchedulingScenario(true);
+
+    expect([failFast, continued]).toEqual([
+      {
+        forwarded: false,
+        batchPolicy: 'fail-fast',
+        exitClass: 'failure',
+        actions: ['failed', 'skipped'],
+        outcomes: ['failed', 'skipped-after-failure'],
+      },
+      {
+        forwarded: true,
+        batchPolicy: 'continue-on-error',
+        exitClass: 'failure',
+        actions: ['failed', 'flipped'],
+        outcomes: ['failed', 'succeeded'],
+      },
+    ]);
+  });
+
   test('the canonical scoped bulk plan exists before one approval and is identical at execution', async () => {
     const fleet = await buildFixtureFleet();
     try {
@@ -649,9 +747,9 @@ describe('EWP-CMD-PROMOTE-TS05', () => {
       const previewPlan = requirePlan(preview, 'promote preview');
       expect(executionResults(preview, 'promote preview')).toEqual([]);
 
-      const previewWire = renderV3(preview);
+      const previewWire = renderV4(preview);
       expect(previewWire).toMatchObject({
-        schemaVersion: 3,
+        schemaVersion: 4,
         kind: 'skillsmith.flip',
         op: 'promote',
         dryRun: true,
@@ -661,7 +759,7 @@ describe('EWP-CMD-PROMOTE-TS05', () => {
         diagnostics: previewPlan.diagnostics,
         results: [],
       });
-      expect(Object.keys(previewWire).sort()).toEqual([...FLIP_V3_TOP_LEVEL_KEYS].sort());
+      expect(Object.keys(previewWire).sort()).toEqual([...FLIP_V4_TOP_LEVEL_KEYS].sort());
       expect(previewWire.selection).toEqual(wireSelectionForPlan(previewPlan, 'promote preview'));
       expect(previewWire.plan).toBeUndefined();
       expect(previewWire.executionResults).toBeUndefined();
@@ -677,9 +775,9 @@ describe('EWP-CMD-PROMOTE-TS05', () => {
         ...operationIds(executionPlan),
       ]);
 
-      const executionWire = renderV3(execution);
+      const executionWire = renderV4(execution);
       expect(executionWire).toMatchObject({
-        schemaVersion: 3,
+        schemaVersion: 4,
         kind: 'skillsmith.flip',
         op: 'promote',
         dryRun: false,
@@ -689,14 +787,14 @@ describe('EWP-CMD-PROMOTE-TS05', () => {
         diagnostics: executionPlan.diagnostics,
         results: runtimeExecutionResults,
       });
-      expect(Object.keys(executionWire).sort()).toEqual([...FLIP_V3_TOP_LEVEL_KEYS].sort());
+      expect(Object.keys(executionWire).sort()).toEqual([...FLIP_V4_TOP_LEVEL_KEYS].sort());
       expect(executionWire.selection).toEqual(
         wireSelectionForPlan(executionPlan, 'promote execution'),
       );
       expect(isRecord(executionWire.selection)).toBeTrue();
-      if (!isRecord(executionWire.selection)) throw new Error('flip@3 promote selection is absent');
+      if (!isRecord(executionWire.selection)) throw new Error('flip@4 promote selection is absent');
       expect(Object.keys(executionWire.selection).sort()).toEqual(
-        [...FLIP_V3_SELECTION_KEYS].sort(),
+        [...FLIP_V4_SELECTION_KEYS].sort(),
       );
       expect(executionWire.plan).toBeUndefined();
       expect(executionWire.executionResults).toBeUndefined();
@@ -741,7 +839,7 @@ describe('EWP-CMD-PROMOTE-TS05', () => {
         expect(inverse?.after).toEqual(forward.before);
       }
       expect(executionResults(rollback, 'rollback preview')).toEqual([]);
-      const rollbackWire = renderV3(rollback);
+      const rollbackWire = renderV4(rollback);
       expect(records(rollbackWire.operations).map((operation) => operation.operationId)).toEqual([
         ...operationIds(rollbackPlan),
       ]);
@@ -750,7 +848,7 @@ describe('EWP-CMD-PROMOTE-TS05', () => {
       expect(rollbackWire.executionResults).toBeUndefined();
       expect(
         currentWireContractRegistry.forCommand('skillsmith promote')?.descriptor,
-      ).toMatchObject({ id: 'flip', version: 3 });
+      ).toMatchObject({ id: 'flip', version: 4 });
     } finally {
       await destroyFixtureFleet(fleet);
     }

@@ -311,6 +311,61 @@ describe('planning constructors', () => {
     const result = createOperationExecutionResult(resultInput);
     expect(result).toEqual(resultInput);
     expect(Object.isFrozen(result.actualAfter)).toBeTrue();
+    const constructExecutionResult = createOperationExecutionResult as unknown as (
+      input: unknown,
+    ) => Record<string, unknown>;
+
+    const skippedInput = {
+      ...resultInput,
+      outcome: 'skipped-after-failure',
+      actualAfter: structuredClone(ABSENT),
+    } as const;
+    const skipped = constructExecutionResult(skippedInput);
+    expect(skipped).toEqual(skippedInput);
+    expect(Object.keys(skipped).sort()).toEqual(
+      ['operationId', 'outcome', 'actualBefore', 'actualAfter', 'force', 'error'].sort(),
+    );
+    expect(Object.isFrozen(skipped.actualBefore)).toBeTrue();
+    expect(Object.isFrozen(skipped.actualAfter)).toBeTrue();
+    expect(() =>
+      constructExecutionResult({
+        ...skippedInput,
+        actualAfter: structuredClone(PINNED),
+      }),
+    ).toThrow(/skipped-after-failure.*actual|actual.*equal|unchanged/i);
+
+    const unappliedForce = createBoundedForceEffect({
+      supported: true,
+      requested: true,
+      applied: false,
+      conflict: {
+        class: 'source-changed',
+        normal: 'refuse',
+        forced: 'replace',
+        target: RESOURCE,
+        backup: 'none',
+      },
+    });
+    expect(constructExecutionResult({ ...skippedInput, force: unappliedForce }).force).toEqual(
+      unappliedForce,
+    );
+    expect(() =>
+      constructExecutionResult({
+        ...skippedInput,
+        force: createBoundedForceEffect({
+          supported: true,
+          requested: true,
+          applied: true,
+          conflict: {
+            class: 'source-changed',
+            normal: 'refuse',
+            forced: 'replace',
+            target: RESOURCE,
+            backup: 'none',
+          },
+        }),
+      }),
+    ).toThrow(/skipped-after-failure.*force|force.*not.*applied|applied.*false/i);
 
     expect(() =>
       createOperationExecutionResult({ ...resultInput, outcome: 'failed', error: null }),

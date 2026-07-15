@@ -1,18 +1,242 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { currentWireContractRegistry } from '../../../packages/cli/src/contracts/wire-contracts.ts';
 import {
   normalizeCliError,
   renderCliError,
 } from '../../../packages/cli/src/output/error-boundary.ts';
 import { buildProgram } from '../../../packages/cli/src/program.ts';
+import { createCliRuntimeAdapter } from '../../../packages/cli/src/runtime/adapter.ts';
+import { createCurrentRendererRegistry } from '../../../packages/cli/src/runtime/current-renderers.ts';
 import {
   NON_MUTATING_MODE_POLICIES,
   validateNonMutatingMode,
 } from '../../../packages/cli/src/util/non-mutating-mode.ts';
 import { installSignalHandler } from '../../../packages/cli/src/util/signals.ts';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
+import { createLifecycleApplicationServices } from '../../../packages/core/src/application/lifecycle-services.ts';
+import type {
+  CurrentApplicationContext,
+  InteractionPort,
+} from '../../../packages/core/src/application/types.ts';
+import {
+  createObservationEmitter,
+  createOperationContext,
+  noopObserver,
+} from '../../../packages/core/src/observation/index.ts';
+import type { RuntimePorts } from '../../../packages/core/src/ports/types.ts';
+import {
+  type FixtureFleet,
+  buildFixtureFleet,
+  destroyFixtureFleet,
+} from '../../../packages/core/tests/fixtures/place/fleet.ts';
+import { SimulatedCrash } from '../../../packages/core/tests/place/crash-env.ts';
+
+type UnknownRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is UnknownRecord =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const records = (value: unknown): readonly UnknownRecord[] =>
+  Array.isArray(value) ? value.filter(isRecord) : [];
+
+const wf15Secret = (): string => `ghp_${['P17', 'WF15', 'SECRET', 'CANARY'].join('_')}_123456789`;
+const MUTATION_PORTS = new Set<PropertyKey>([
+  'makeDir',
+  'writeTextFile',
+  'makeSymlink',
+  'rename',
+  'copyTree',
+  'removeTree',
+  'fsyncFile',
+  'fsyncDir',
+  'withFileLock',
+]);
+
+interface SchedulingProduct {
+  readonly exitCode: number;
+  readonly exits: readonly number[];
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly report: UnknownRecord | null;
+  readonly mutationEvents: readonly string[];
+}
+
+const wf15Observation = () => ({
+  context: createOperationContext({
+    command: 'skillsmith promote',
+    workflow: 'EWP-WF15',
+    clock: {
+      wallNowIso: () => '2026-07-15T00:00:00.000Z',
+      monotonicMilliseconds: () => 0,
+    },
+    id: { nextId: () => 'ewp-wf15-scheduling' },
+  }),
+  emitter: createObservationEmitter({ observer: noopObserver }),
+});
+
+const interactiveApproval: InteractionPort = {
+  mode: 'interactive',
+  choose: async <TValue>(request: {
+    readonly choices: readonly { readonly value: TValue }[];
+  }) => ({ status: 'resolved', value: request.choices[0]?.value as TValue }),
+  confirm: async () => ({ status: 'resolved', value: true }),
+};
+
+const noninteractiveRefusal: InteractionPort = {
+  mode: 'noninteractive',
+  choose: async () => ({ status: 'refused', reason: 'noninteractive fixture' }),
+  confirm: async () => ({ status: 'refused', reason: 'noninteractive fixture' }),
+};
+
+const prepareSchedulingFleet = async (fleet: FixtureFleet): Promise<void> => {
+  await rm(join(fleet.home, '.claude', 'skills', 'dangler'));
+  const projectSkills = join(fleet.project, '.claude', 'skills');
+  await mkdir(projectSkills, { recursive: true });
+  await symlink(resolve(fleet.betaSrc), join(projectSkills, 'project-beta'));
+};
+
+const schedulingContext = (
+  fleet: FixtureFleet,
+  ports: RuntimePorts,
+  interaction: InteractionPort,
+  signal?: AbortSignal,
+): CurrentApplicationContext => ({
+  observation: wf15Observation(),
+  ports,
+  configuration: fleet.configuration,
+  interaction,
+  invocationCwd: fleet.project,
+  globalOptions: {},
+  projectContext: {
+    invocationCwd: fleet.project,
+    effectiveCwd: fleet.project,
+    projectRoot: fleet.projectReal,
+    projectIdentity: fleet.projectReal,
+    projectKind: 'git',
+    discoveredConfigPath: null,
+    explicitConfigPath: null,
+  },
+  ...(signal === undefined ? {} : { signal }),
+});
+
+const runSchedulingProduct = async (options: {
+  readonly format: 'human' | 'json';
+  readonly continueOnError?: boolean;
+  readonly cancelOnFailure?: boolean;
+  readonly refuseApproval?: boolean;
+}): Promise<SchedulingProduct> => {
+  const fleet = await buildFixtureFleet();
+  try {
+    await prepareSchedulingFleet(fleet);
+    const mutationEvents: string[] = [];
+    const controller = new AbortController();
+    let interruptedFirstGroup = false;
+    const ports = new Proxy(fleet.env, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown;
+        if (typeof value !== 'function' || !MUTATION_PORTS.has(property)) return value;
+        return (...args: unknown[]) => {
+          mutationEvents.push(`write:${String(property)}`);
+          if (
+            !options.refuseApproval &&
+            property === 'rename' &&
+            typeof args[1] === 'string' &&
+            args[1].includes('.skillsmith-backup-alpha-') &&
+            !interruptedFirstGroup
+          ) {
+            interruptedFirstGroup = true;
+            if (options.cancelOnFailure) controller.abort();
+            throw new SimulatedCrash(1, wf15Secret());
+          }
+          return Reflect.apply(value, target, args);
+        };
+      },
+    }) as RuntimePorts;
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exits: number[] = [];
+    const services = createLifecycleApplicationServices();
+    const adapter = createCliRuntimeAdapter({
+      applications: { promote: services.promote },
+      renderers: createCurrentRendererRegistry(
+        {} as Parameters<typeof createCurrentRendererRegistry>[0],
+      ),
+      io: {
+        stdout: { write: (value) => stdout.push(value) },
+        stderr: { write: (value) => stderr.push(value) },
+        exit: (code) => exits.push(code),
+      },
+    });
+    const execution = await adapter.execute({
+      application: 'promote',
+      reportKind: 'promote',
+      request: {
+        arguments: [[]],
+        options: {
+          all: true,
+          tool: ['claude-code'],
+          yes: !options.refuseApproval,
+          verify: false,
+          continueOnError: options.continueOnError ?? false,
+        },
+      },
+      context: schedulingContext(
+        fleet,
+        ports,
+        options.refuseApproval ? noninteractiveRefusal : interactiveApproval,
+        controller.signal,
+      ),
+      observation: wf15Observation(),
+      format: options.format,
+    });
+    const lifecycleReport = isRecord(execution.outcome?.report) ? execution.outcome.report : null;
+    const report =
+      lifecycleReport !== null && isRecord(lifecycleReport.value) ? lifecycleReport.value : null;
+    if (!options.refuseApproval) expect(interruptedFirstGroup).toBeTrue();
+    return {
+      exitCode: execution.exitCode,
+      exits,
+      stdout: stdout.join(''),
+      stderr: stderr.join(''),
+      report,
+      mutationEvents,
+    };
+  } finally {
+    await destroyFixtureFleet(fleet);
+  }
+};
+
+const requireSchedulingReport = (product: SchedulingProduct, label: string): UnknownRecord => {
+  expect(
+    product.report,
+    `${label} must retain its scheduling report: ${JSON.stringify({
+      exitCode: product.exitCode,
+      stdout: product.stdout,
+      stderr: product.stderr,
+      writes: product.mutationEvents,
+    })}`,
+  ).not.toBeNull();
+  if (product.report === null) throw new Error(`${label} scheduling report is unavailable`);
+  const plan = product.report.plan;
+  expect(isRecord(plan), `${label} must retain its canonical operation plan`).toBeTrue();
+  if (!isRecord(plan)) throw new Error(`${label} scheduling plan is unavailable`);
+  const operations = records(plan.operations);
+  expect(operations, `${label} operation count`).toHaveLength(2);
+  expect(new Set(operations.map((operation) => operation.groupId)).size).toBe(2);
+  expect(new Set(operations.map((operation) => operation.pairId)).size).toBe(2);
+  for (const operation of operations) {
+    expect(operation.groupId).toBeString();
+    expect(operation.pairId).toBeString();
+  }
+  const results = records(product.report.executionResults);
+  expect(results.map((result) => result.operationId)).toEqual(
+    operations.map((operation) => operation.operationId),
+  );
+  return plan;
+};
 
 const runCli = async (
   args: readonly string[],
@@ -184,5 +408,147 @@ describe('EWP-WF15', () => {
     } finally {
       handle.uninstall();
     }
+  });
+
+  test('real CLI scheduling products preserve group boundaries, policy, cancellation, streams, and redaction', async () => {
+    const failFastHuman = await runSchedulingProduct({ format: 'human' });
+    const failFastJson = await runSchedulingProduct({ format: 'json' });
+    const continuedJson = await runSchedulingProduct({
+      format: 'json',
+      continueOnError: true,
+    });
+    const cancelledJson = await runSchedulingProduct({
+      format: 'json',
+      cancelOnFailure: true,
+    });
+    const refusedHuman = await runSchedulingProduct({
+      format: 'human',
+      refuseApproval: true,
+    });
+
+    for (const [label, product] of [
+      ['fail-fast human', failFastHuman],
+      ['fail-fast JSON', failFastJson],
+    ] as const) {
+      const plan = requireSchedulingReport(product, label);
+      expect(plan.batchPolicy).toBe('fail-fast');
+      expect(records(product.report?.executionResults).map((result) => result.outcome)).toEqual([
+        'failed',
+        'skipped-after-failure',
+      ]);
+      expect(records(product.report?.results).map((result) => result.action)).toEqual([
+        'failed',
+        'skipped',
+      ]);
+      expect(product.exitCode).toBe(1);
+      expect(product.exits).toEqual([1]);
+    }
+
+    expect(failFastHuman.stdout).toContain('1 failed');
+    expect(failFastHuman.stdout).toContain('1 skipped');
+    expect(failFastHuman.stdout).toContain('Exit code: 1');
+    expect(failFastHuman.stdout).not.toContain('"schemaVersion"');
+    expect(failFastHuman.stderr.trimEnd().split('\n')).toHaveLength(1);
+    expect(failFastHuman.stderr).toStartWith('error:');
+
+    const failFastJsonValue = JSON.parse(failFastJson.stdout) as UnknownRecord;
+    expect(failFastJsonValue).toMatchObject({
+      schemaVersion: 4,
+      kind: 'skillsmith.flip',
+    });
+    const failFastJsonPlan = isRecord(failFastJson.report?.plan) ? failFastJson.report.plan : null;
+    const failFastJsonOperations = records(failFastJsonValue.operations);
+    const failFastJsonResults = records(failFastJsonValue.results);
+    expect(
+      failFastJsonOperations.map((operation) => [operation.groupId, operation.pairId]),
+    ).toEqual(
+      records(failFastJsonPlan?.operations).map((operation) => [
+        operation.groupId,
+        operation.pairId,
+      ]),
+    );
+    expect(failFastJsonResults.map((result) => result.outcome)).toEqual([
+      'failed',
+      'skipped-after-failure',
+    ]);
+    expect(failFastJsonResults.map((result) => result.operationId)).toEqual(
+      failFastJsonOperations.map((operation) => operation.operationId),
+    );
+    expect(failFastJson.stderr.trimEnd().split('\n')).toHaveLength(1);
+    expect(failFastJson.stderr).toStartWith('error:');
+
+    const continuedPlan = requireSchedulingReport(continuedJson, 'continued JSON');
+    expect(continuedPlan.batchPolicy).toBe('continue-on-error');
+    expect(records(continuedJson.report?.executionResults).map((result) => result.outcome)).toEqual(
+      ['failed', 'succeeded'],
+    );
+    expect(records(continuedJson.report?.results).map((result) => result.action)).toEqual([
+      'failed',
+      'flipped',
+    ]);
+    expect(continuedJson.exitCode).toBe(1);
+    expect(continuedJson.exits).toEqual([1]);
+    const continuedJsonValue = JSON.parse(continuedJson.stdout) as UnknownRecord;
+    expect(continuedJsonValue).toMatchObject({ schemaVersion: 4 });
+    expect(records(continuedJsonValue.results).map((result) => result.outcome)).toEqual([
+      'failed',
+      'succeeded',
+    ]);
+    expect(records(continuedJsonValue.results).map((result) => result.operationId)).toEqual(
+      records(continuedJsonValue.operations).map((operation) => operation.operationId),
+    );
+    expect(continuedJson.stderr.trimEnd().split('\n')).toHaveLength(1);
+
+    requireSchedulingReport(cancelledJson, 'cancelled JSON');
+    expect(records(cancelledJson.report?.executionResults).map((result) => result.outcome)).toEqual(
+      ['failed', 'cancelled'],
+    );
+    expect(cancelledJson.exitCode).toBe(130);
+    expect(cancelledJson.exits).toEqual([130]);
+    const cancelledJsonValue = JSON.parse(cancelledJson.stdout) as UnknownRecord;
+    expect(cancelledJsonValue).toMatchObject({ schemaVersion: 4 });
+    expect(records(cancelledJsonValue.results).map((result) => result.outcome)).toEqual([
+      'failed',
+      'cancelled',
+    ]);
+    expect(records(cancelledJsonValue.results).map((result) => result.operationId)).toEqual(
+      records(cancelledJsonValue.operations).map((operation) => operation.operationId),
+    );
+    expect(cancelledJson.stderr.trimEnd().split('\n')).toHaveLength(1);
+
+    expect(refusedHuman.exitCode).toBe(2);
+    expect(refusedHuman.exits).toEqual([2]);
+    expect(refusedHuman.report).toBeNull();
+    expect(refusedHuman.stdout).toBe('');
+    expect(refusedHuman.stderr).toBe(
+      'error: promote bulk work requires approval or confirmation: noninteractive fixture\n',
+    );
+    expect(refusedHuman.mutationEvents).toEqual([]);
+
+    for (const product of [failFastHuman, failFastJson, continuedJson, cancelledJson]) {
+      const serialized = `${product.stdout}\n${product.stderr}\n${JSON.stringify(product.report)}`;
+      expect(serialized).not.toContain(wf15Secret());
+      expect(serialized).not.toContain('P17_WF15_SECRET');
+      expect(serialized).toContain('[REDACTED]');
+    }
+  });
+
+  test('G3B-02 keeps flip@3 addressable while current scheduling output advances to flip@4', () => {
+    expect(currentWireContractRegistry.get('flip', 3)?.descriptor).toMatchObject({
+      id: 'flip',
+      version: 3,
+    });
+    expect(currentWireContractRegistry.forCommand('skillsmith dev')?.descriptor).toMatchObject({
+      id: 'flip',
+      version: 4,
+    });
+    expect(currentWireContractRegistry.forCommand('skillsmith promote')?.descriptor).toMatchObject({
+      id: 'flip',
+      version: 4,
+    });
+    expect(currentWireContractRegistry.latest('flip')?.descriptor).toMatchObject({
+      id: 'flip',
+      version: 4,
+    });
   });
 });

@@ -54,7 +54,7 @@ const isRecord = (value: unknown): value is UnknownRecord =>
 const records = (value: unknown): readonly UnknownRecord[] =>
   Array.isArray(value) ? value.filter(isRecord) : [];
 
-const FLIP_V3_TOP_LEVEL_KEYS = [
+const FLIP_V4_TOP_LEVEL_KEYS = [
   'checks',
   'diagnostics',
   'dryRun',
@@ -67,14 +67,14 @@ const FLIP_V3_TOP_LEVEL_KEYS = [
   'summary',
 ].sort();
 
-const requireFlipV3Envelope = (
+const requireFlipV4Envelope = (
   value: UnknownRecord,
   label: string,
   expected: Readonly<{ readonly op: 'dev' | 'rollback'; readonly dryRun: boolean }>,
 ): UnknownRecord => {
-  expect(Object.keys(value).sort(), `${label} top-level contract`).toEqual(FLIP_V3_TOP_LEVEL_KEYS);
+  expect(Object.keys(value).sort(), `${label} top-level contract`).toEqual(FLIP_V4_TOP_LEVEL_KEYS);
   expect(value).toMatchObject({
-    schemaVersion: 3,
+    schemaVersion: 4,
     kind: 'skillsmith.flip',
     op: expected.op,
     dryRun: expected.dryRun,
@@ -292,6 +292,95 @@ const applicationContext = (
     explicitConfigPath: null,
   },
 });
+
+const runDevSchedulingScenario = async (
+  continueOnError: boolean,
+): Promise<
+  Readonly<{
+    forwarded: unknown;
+    batchPolicy: unknown;
+    exitClass: string;
+    actions: readonly unknown[];
+    outcomes: readonly unknown[];
+  }>
+> => {
+  const fleet = await buildFixtureFleet();
+  try {
+    const userPath = join(fleet.home, '.claude', 'skills', 'copied');
+    const projectPath = join(fleet.project, '.claude', 'skills', 'project-pinned');
+    await mkdir(projectPath, { recursive: true });
+    await writeFile(join(projectPath, 'SKILL.md'), '---\nname: project-pinned\n---\n');
+
+    const ledger = emptyLedger('2026-07-15T00:00:00.000Z');
+    setPairAt(
+      ledger,
+      null,
+      'copied',
+      'claude-code',
+      pinnedPair(userPath, resolve(fleet.alphaSrc), join(fleet.data, 'store', 'user-copy')),
+    );
+    setPairAt(
+      ledger,
+      fleet.projectReal,
+      'project-pinned',
+      'claude-code',
+      pinnedPair(projectPath, resolve(fleet.betaSrc), join(fleet.data, 'store', 'project-copy')),
+    );
+    await writeFixtureLedger(fleet, ledger);
+
+    let interruptedFirstGroup = false;
+    const ports: RuntimePorts = {
+      ...fleet.env,
+      rename: async (from, to) => {
+        if (!interruptedFirstGroup && to.includes('.skillsmith-backup-copied-')) {
+          interruptedFirstGroup = true;
+          throw new SimulatedCrash(1, 'dev-scheduler-first-group');
+        }
+        return fleet.env.rename(from, to);
+      },
+    };
+    let forwarded: unknown;
+    const services = createLifecycleApplicationServices({
+      prepareDev: (async (env, options, deps) => {
+        forwarded = Reflect.get(options, 'continueOnError');
+        return deps === undefined ? prepareDev(env, options) : prepareDev(env, options, deps);
+      }) as typeof prepareDev,
+    });
+    const interaction: InteractionPort = {
+      mode: 'interactive',
+      choose: async () => ({ status: 'refused', reason: 'no choice expected' }),
+      confirm: async () => ({ status: 'resolved', value: true }),
+    };
+    const outcome = await services.dev(
+      {
+        arguments: [[]],
+        options: {
+          all: true,
+          tool: ['claude-code'],
+          yes: true,
+          verify: false,
+          continueOnError,
+        },
+      },
+      applicationContext(fleet, ports, interaction),
+    );
+    expect(interruptedFirstGroup).toBeTrue();
+    expect(outcome.report.value).not.toBeNull();
+    if (outcome.report.value === null) throw new Error('dev scheduler report is unavailable');
+    const plan = requirePlan(outcome.report.value, 'dev scheduler execution');
+    return {
+      forwarded,
+      batchPolicy: plan.batchPolicy,
+      exitClass: outcome.exitClass,
+      actions: outcome.report.value.results.map((result) => result.action),
+      outcomes: executionResultsOf(outcome.report.value, 'dev scheduler execution').map(
+        (result) => result.outcome,
+      ),
+    };
+  } finally {
+    await destroyFixtureFleet(fleet);
+  }
+};
 
 describe('EWP-CMD-DEV-TS01', () => {
   test('create/adopt/noop/mismatch/foreign/absent states project to operations or diagnostics', async () => {
@@ -714,6 +803,28 @@ describe('EWP-CMD-DEV-TS03', () => {
 });
 
 describe('EWP-CMD-DEV-TS04', () => {
+  test('default policy skips later groups while continuation preserves failure and executes them', async () => {
+    const failFast = await runDevSchedulingScenario(false);
+    const continued = await runDevSchedulingScenario(true);
+
+    expect([failFast, continued]).toEqual([
+      {
+        forwarded: false,
+        batchPolicy: 'fail-fast',
+        exitClass: 'failure',
+        actions: ['failed', 'skipped'],
+        outcomes: ['failed', 'skipped-after-failure'],
+      },
+      {
+        forwarded: true,
+        batchPolicy: 'continue-on-error',
+        exitClass: 'failure',
+        actions: ['failed', 'flipped'],
+        outcomes: ['failed', 'succeeded'],
+      },
+    ]);
+  });
+
   test('scoped bulk selection is canonical, carries planned policy, and requires one approval', async () => {
     const fleet = await buildFixtureFleet();
     try {
@@ -997,7 +1108,7 @@ describe('EWP-CMD-DEV-TS05', () => {
       expect(executionPlan.operations).toEqual(previewPlan.operations);
       expect(executionIds(execution, 'dev execution')).toEqual(operationIds(executionPlan));
       const renderedExecution = JSON.parse(renderFlipJson(execution)) as UnknownRecord;
-      requireFlipV3Envelope(renderedExecution, 'rendered dev execution', {
+      requireFlipV4Envelope(renderedExecution, 'rendered dev execution', {
         op: 'dev',
         dryRun: false,
       });
@@ -1087,11 +1198,11 @@ describe('EWP-CMD-DEV-TS05', () => {
       expect(renderedRepeatedRollbackText).toBe(renderedRollbackText);
       const renderedRollback = JSON.parse(renderedRollbackText) as UnknownRecord;
       const renderedRepeatedRollback = JSON.parse(renderedRepeatedRollbackText) as UnknownRecord;
-      requireFlipV3Envelope(renderedRollback, 'rendered dev rollback', {
+      requireFlipV4Envelope(renderedRollback, 'rendered dev rollback', {
         op: 'rollback',
         dryRun: true,
       });
-      requireFlipV3Envelope(renderedRepeatedRollback, 'rendered repeated dev rollback', {
+      requireFlipV4Envelope(renderedRepeatedRollback, 'rendered repeated dev rollback', {
         op: 'rollback',
         dryRun: true,
       });
@@ -1109,7 +1220,7 @@ describe('EWP-CMD-DEV-TS05', () => {
       expect(records(renderedRollback.results)).toEqual([]);
 
       const wire = currentWireContractRegistry.forCommand('skillsmith dev');
-      expect(wire?.descriptor).toMatchObject({ id: 'flip', version: 3 });
+      expect(wire?.descriptor).toMatchObject({ id: 'flip', version: 4 });
     } finally {
       await destroyFixtureFleet(fleet);
     }
@@ -1230,7 +1341,7 @@ describe('EWP-CMD-DEV-TS06', () => {
       ).toEqual([]);
 
       const renderedRecovery = JSON.parse(renderFlipJson(recovery)) as UnknownRecord;
-      requireFlipV3Envelope(renderedRecovery, 'rendered dev recovery', {
+      requireFlipV4Envelope(renderedRecovery, 'rendered dev recovery', {
         op: 'dev',
         dryRun: false,
       });

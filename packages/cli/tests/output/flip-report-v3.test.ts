@@ -11,7 +11,9 @@ import {
   createOperationPlan,
   createPlanCheckId,
 } from '@skillsmith/core';
-import { FlipJsonSchema, renderFlipJson } from '../../src/output/flip-json.ts';
+import { flipV3Codec, toFlipV3Dto } from '@skillsmith/core/contracts/v3';
+import { renderFlipJson } from '../../src/output/flip-json.ts';
+import { wireSchema } from '../../src/output/wire-codec.ts';
 
 const HASH = `sha256:${'a'.repeat(64)}` as const;
 const liveResource = {
@@ -193,16 +195,40 @@ const report = {
 } as const satisfies FlipReport;
 
 const GOLDEN_PATH = join(import.meta.dir, '..', 'fixtures', 'flip-report-v3.golden.json');
+const FlipV3JsonSchema = wireSchema(flipV3Codec);
+const renderFlipV3Json = (value: FlipReport): string => renderFlipJson(value, flipV3Codec);
 
 describe('flip report contract v3', () => {
+  test('keeps the historical golden bytes frozen', () => {
+    const bytes = readFileSync(GOLDEN_PATH);
+    expect(new Bun.CryptoHasher('sha256').update(bytes).digest('hex')).toBe(
+      '38a5d72a99e370ee4ea35925db5383c327fd3d5757c073212570e626f83f10f3',
+    );
+  });
+
+  test('refuses the G3B-02 scheduling-only skipped outcome instead of widening flip@3', () => {
+    const skippedReport = {
+      ...report,
+      executionResults: [
+        {
+          ...executionResult,
+          outcome: 'skipped-after-failure',
+          actualAfter: before,
+          error: null,
+        },
+      ],
+    } as unknown as FlipReport;
+    expect(() => toFlipV3Dto(skippedReport)).toThrow(/flip@3|skipped-after-failure/i);
+  });
+
   test('matches the committed strict plan/result golden', () => {
-    expect(JSON.parse(renderFlipJson(report))).toEqual(
+    expect(JSON.parse(renderFlipV3Json(report))).toEqual(
       JSON.parse(readFileSync(GOLDEN_PATH, 'utf8')),
     );
   });
 
   test('exposes exact root, selection, and execution-result fields without legacy rows', () => {
-    const rendered = JSON.parse(renderFlipJson(report)) as Record<string, unknown>;
+    const rendered = JSON.parse(renderFlipV3Json(report)) as Record<string, unknown>;
     expect(Object.keys(rendered).sort()).toEqual(
       [
         'schemaVersion',
@@ -234,16 +260,16 @@ describe('flip report contract v3', () => {
   });
 
   test('rejects unknown recursive fields and uncorrelated or partial execution results', () => {
-    const rendered = JSON.parse(renderFlipJson(report)) as Record<string, unknown>;
-    expect(FlipJsonSchema.safeParse({ ...rendered, legacy: true }).success).toBeFalse();
+    const rendered = JSON.parse(renderFlipV3Json(report)) as Record<string, unknown>;
+    expect(FlipV3JsonSchema.safeParse({ ...rendered, legacy: true }).success).toBeFalse();
     expect(
-      FlipJsonSchema.safeParse({
+      FlipV3JsonSchema.safeParse({
         ...rendered,
         selection: { ...(rendered.selection as Record<string, unknown>), skills: ['factor-scan'] },
       }).success,
     ).toBeFalse();
     expect(
-      FlipJsonSchema.safeParse({
+      FlipV3JsonSchema.safeParse({
         ...rendered,
         results: [
           {
@@ -253,6 +279,6 @@ describe('flip report contract v3', () => {
         ],
       }).success,
     ).toBeFalse();
-    expect(FlipJsonSchema.safeParse({ ...rendered, results: [] }).success).toBeFalse();
+    expect(FlipV3JsonSchema.safeParse({ ...rendered, results: [] }).success).toBeFalse();
   });
 });

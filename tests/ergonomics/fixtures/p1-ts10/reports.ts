@@ -707,11 +707,18 @@ const FLIP_V3_DTO = {
   results: [FLIP_EXECUTION_RESULT],
 } as const;
 
+const FLIP_V4_DTO = {
+  ...FLIP_V3_DTO,
+  schemaVersion: 4,
+} as const;
+
+export const HISTORICAL_FLIP_V3_GOLDEN = JSON.stringify(FLIP_V3_DTO, null, 2);
+
 export const CURRENT_JSON_GOLDENS = {
   ...HISTORICAL_JSON_GOLDENS,
   agents: `${JSON.stringify(AGENTS_V2_DTO, null, 2)}\n`,
   commands: `${JSON.stringify(COMMANDS_V2_DTO, null, 2)}\n`,
-  flip: JSON.stringify(FLIP_V3_DTO, null, 2),
+  flip: JSON.stringify(FLIP_V4_DTO, null, 2),
   list: `${JSON.stringify(LIST_V3_DTO, null, 2)}\n`,
 } as const;
 

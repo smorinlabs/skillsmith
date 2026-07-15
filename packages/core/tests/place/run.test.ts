@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { emptyLedger, getPair, readLedger, setPair, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
-import { runDev, runPromote, runRollback } from '../../src/place/run.ts';
+import { preparePromote, runDev, runPromote, runRollback } from '../../src/place/run.ts';
 import type {
   DevRecord,
   FlipDeps,
@@ -326,6 +326,57 @@ describe('runPromote — happy paths and convergence', () => {
     expect(result?.action).toBe('flipped');
     expect(result?.store?.rev).toMatch(/^content-[0-9a-f]{12}$/);
     expect(result?.store?.path).toContain(join('local', `gamma@${result?.store?.rev}`));
+  });
+
+  test('G3B-02: a changed dev target after preview refuses with zero execution writes', async () => {
+    const executionWrites: string[] = [];
+    let executing = false;
+    const executionEnv: typeof f.env = {
+      ...f.env,
+      writeTextFile: async (path, text) => {
+        if (executing) executionWrites.push(`write:${path}`);
+        await f.env.writeTextFile(path, text);
+      },
+      makeSymlink: async (target, linkPath) => {
+        if (executing) executionWrites.push(`symlink:${linkPath}`);
+        await f.env.makeSymlink(target, linkPath);
+      },
+      rename: async (from, to) => {
+        if (executing) executionWrites.push(`rename:${from}->${to}`);
+        await f.env.rename(from, to);
+      },
+      copyTree: async (from, to) => {
+        if (executing) executionWrites.push(`copy:${from}->${to}`);
+        await f.env.copyTree(from, to);
+      },
+      removeTree: async (path) => {
+        if (executing) executionWrites.push(`remove:${path}`);
+        await f.env.removeTree(path);
+      },
+    };
+    const prepared = await preparePromote(
+      executionEnv,
+      opts(f, { targets: ['alpha'] }),
+      passDeps(),
+    );
+    if (!prepared.ok) throw new Error(msg(prepared.error));
+    const livePath = join(f.home, '.claude', 'skills', 'alpha');
+    await f.env.removeTree(livePath);
+    await f.env.makeSymlink(resolve(f.betaSrc), livePath);
+    executing = true;
+
+    const executed = await prepared.value.execute();
+    if (!executed.ok) throw new Error(msg(executed.error));
+    expect(executed.value.plan).toBe(prepared.value.plan);
+    expect(executed.value.results).toHaveLength(1);
+    expect(executed.value.results[0]?.action).toBe('refused');
+    expect(executed.value.executionResults[0]?.outcome).toBe('failed');
+    expect(executionWrites).toEqual([]);
+    expect(await f.env.pathKind(livePath)).toBe('symlink');
+    expect(await f.env.readLink(livePath)).toBe(resolve(f.betaSrc));
+    const ledger = await readLedgerOf(f);
+    if (!ledger.ok) throw new Error(msg(ledger.error));
+    expect(getPair(ledger.value, 'alpha', 'claude-code')?.mode).toBe('dev');
   });
 });
 
