@@ -849,7 +849,7 @@ Downstream coverage obligations: none.
 
 ## P17-G3A-02 — Deterministic agents/list/commands inventory, duplicates, and capability presentation
 
-Phase: 3A; status: **active**; dependencies: P17-G3A-01.
+Phase: 3A; status: **reviewed**; dependencies: P17-G3A-01.
 Required-now validations: EWP-CMD-AGENTS-TS01, EWP-CMD-AGENTS-TS02, EWP-CMD-AGENTS-TS03, EWP-CMD-COMMANDS-TS01, EWP-CMD-COMMANDS-TS02, EWP-CMD-COMMANDS-TS03, EWP-CMD-COMMANDS-TS04, EWP-CMD-LIST-TS01, EWP-CMD-LIST-TS02, EWP-CMD-LIST-TS03, EWP-CMD-LIST-TS04, EWP-CMD-LIST-TS05, EWP-CMD-LIST-TS06, EWP-CMD-LIST-TS07, EWP-P3A-TS01, EWP-P3A-TS03.
 Downstream coverage obligations: none.
 
@@ -861,8 +861,8 @@ Downstream coverage obligations: none.
 - [x] P17-G3A-02:minimal-implementation _(passed)_
 - [x] P17-G3A-02:targeted-green _(passed)_
 - [x] P17-G3A-02:impacted-green _(passed)_
-- [ ] P17-G3A-02:refactor _(pending)_
-- [ ] P17-G3A-02:adversarial-review _(pending)_
+- [x] P17-G3A-02:refactor _(passed)_
+- [x] P17-G3A-02:adversarial-review _(passed)_
 - [ ] P17-G3A-02:traceability-closure _(pending)_
 - [ ] P17-G3A-02:signed-off _(pending)_
 

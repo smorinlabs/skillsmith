@@ -3664,7 +3664,7 @@
       "phase": "3A",
       "title": "Deterministic agents/list/commands inventory, duplicates, and capability presentation",
       "dependsOn": ["P17-G3A-01"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -3845,7 +3845,7 @@
         "/root/g3a02_core_implementation",
         "/root/g3a02_cli_implementation"
       ],
-      "reviewer": null,
+      "reviewer": "/root/g3a01_final_trace_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -3875,12 +3875,12 @@
           "evidence": ["projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-02.md#refactor-review"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-02.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -3899,7 +3899,10 @@
         "projects/p17/evidence/P17-G3A-02.md#test-first-evidence",
         "projects/p17/evidence/P17-G3A-02.md#implementation-ownership-amendment",
         "projects/p17/evidence/P17-G3A-02.md#minimal-implementation",
-        "projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3A-02.md#refactor-review",
+        "projects/p17/evidence/P17-G3A-02.md#adversarial-review",
+        "projects/p17/evidence/P17-G3A-02.md#final-targeted-and-static-replay"
       ]
     },
     {
