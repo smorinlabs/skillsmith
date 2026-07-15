@@ -4145,7 +4145,7 @@
       "phase": "3B",
       "title": "Lock hierarchy, deterministic scheduler, coordinator, and partial-pair semantics",
       "dependsOn": ["P17-G3B-01"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "CHANGELOG.md",
@@ -4430,7 +4430,7 @@
         "/root/g3b02_final_acquire_remediation",
         "/root/g3b02_final_place_remediation"
       ],
-      "reviewer": null,
+      "reviewer": "/root/g3b02_remediation_rereview",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -4445,24 +4445,24 @@
           "evidence": ["projects/p17/evidence/P17-G3B-02.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-02.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-02.md#refactor-review"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-02.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -4477,7 +4477,12 @@
         "projects/p17/plans/P17-G3B-02.md",
         "projects/p17/evidence/P17-G3B-02.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G3B-02.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-02.md#implementation-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-02.md#refactor-review",
+        "projects/p17/evidence/P17-G3B-02.md#adversarial-review"
       ]
     },
     {
@@ -8119,11 +8124,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-02.md#adversarial-review"
+      ],
       "secondaryGroups": ["P17-G4A-01", "P17-G4A-04"],
       "implements": [],
       "validatedBy": [
@@ -8985,11 +8994,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-02.md#adversarial-review"
+      ],
       "secondaryGroups": [
         "P17-G4B-02",
         "P17-G3B-01",
@@ -18962,13 +18975,16 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-02",
-      "status": "red",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-02",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3B-02.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-02.md#adversarial-review"
       ],
       "secondaryGroups": ["P17-G3B-01"],
       "implements": ["EWP-CF-005", "EWP-CF-026"],
@@ -19370,7 +19386,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-02:tests/ergonomics/phase/EWP-P3B-TS03.test.ts#EWP-P3B-TS03",
       "target": {
@@ -19379,7 +19395,10 @@
         "selector": "EWP-P3B-TS03",
         "command": "bun test tests/ergonomics/phase/EWP-P3B-TS03.test.ts --test-name-pattern EWP-P3B-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-02.md#red-execution-receipt-ewp-p3b-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-02.md#final-green-execution-receipt-ewp-p3b-ts03",
+        "projects/p17/evidence/P17-G3B-02.md#red-execution-receipt-ewp-p3b-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS03"],
