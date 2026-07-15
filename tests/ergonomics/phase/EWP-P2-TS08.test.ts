@@ -9,6 +9,7 @@ const CORE_MODULE = '../../../packages/core/src/index.ts';
 const CONTRACTS_MODULE = '../../../packages/core/src/contracts/index.ts';
 const V1_MODULE = '../../../packages/core/src/contracts/v1/index.ts';
 const V2_MODULE = '../../../packages/core/src/contracts/v2/index.ts';
+const V3_MODULE = '../../../packages/core/src/contracts/v3/index.ts';
 const WIRE_AUTHORITY_MODULE = '../../../packages/cli/src/contracts/wire-contracts.ts';
 const SECRET_CANARY = 'P17_SECRET_CANARY';
 const encoder = new TextEncoder();
@@ -106,8 +107,10 @@ const EXPECTED_IDENTITIES = [
 ] as const;
 const EXPECTED_WIRE_IDENTITIES = [
   'agents@1',
+  'agents@2',
   'health@1',
   'commands@1',
+  'commands@2',
   'config-get@1',
   'config-list@1',
   'config-set@1',
@@ -115,6 +118,7 @@ const EXPECTED_WIRE_IDENTITIES = [
   'flip@2',
   'install@1',
   'list@2',
+  'list@3',
   'status@1',
   'uninstall@1',
   'verify@1',
@@ -240,6 +244,8 @@ const V1_RUNTIME_EXPORTS = [
   'fromJournalV1Dto',
 ] as const;
 const V2_RUNTIME_EXPORTS = [
+  'agentsV2Codec',
+  'commandsV2Codec',
   'flipV2Codec',
   'listV2Codec',
   'toFlipV2Dto',
@@ -248,7 +254,10 @@ const V2_RUNTIME_EXPORTS = [
   'toLedgerV2Dto',
   'fromLedgerV2Dto',
   'migrateLedgerV1DtoToV2Dto',
+  'toAgentsV2Dto',
+  'toCommandsV2Dto',
 ] as const;
+const V3_RUNTIME_EXPORTS = ['listV3Codec', 'toListV3Dto'] as const;
 
 const rawSha256 = (bytes: Uint8Array): string =>
   `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
@@ -1823,6 +1832,8 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
       'packages/core/src/contracts/v1/index.ts',
       'packages/core/src/contracts/v2/index.d.ts',
       'packages/core/src/contracts/v2/index.ts',
+      'packages/core/src/contracts/v3/index.d.ts',
+      'packages/core/src/contracts/v3/index.ts',
       'packages/core/src/place/ledger.ts',
       'packages/core/src/place/types.ts',
       'packages/core/src/public-types.ts',
@@ -1939,16 +1950,47 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
 
   test('EWP-P2-TS08 family 6: public identities, compile negatives, and both registries coexist', async () => {
     const { core, registry } = await requireRegistry();
-    const [contracts, v1, v2] = await Promise.all([
+    const [contracts, v1, v2, v3, wireAuthority] = await Promise.all([
       loadModule(CONTRACTS_MODULE),
       loadModule(V1_MODULE),
       loadModule(V2_MODULE),
+      loadModule(V3_MODULE),
+      loadModule(WIRE_AUTHORITY_MODULE),
     ]);
     expect(Object.keys(contracts).sort()).toEqual([...CONTRACT_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v1).sort()).toEqual([...V1_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v2).sort()).toEqual([...V2_RUNTIME_EXPORTS].sort());
+    expect(Object.keys(v3).sort()).toEqual([...V3_RUNTIME_EXPORTS].sort());
     expect(typeof contracts.createWireContractRegistry).toBe('function');
     expect(core.artifactContractRegistry).toBe(registry);
+
+    const wireRegistry = wireAuthority.currentWireContractRegistry as
+      | (DescriptorRegistry & {
+          get(
+            id: string,
+            version: number,
+          ): { readonly descriptor: Readonly<Record<string, unknown>> } | undefined;
+        })
+      | undefined;
+    expect(wireRegistry, 'signed WireCodec registry is absent').toBeDefined();
+    if (wireRegistry !== undefined) {
+      const wireIdentities = [
+        [v1.agentsV1Codec, wireRegistry.get('agents', 1)],
+        [v2.agentsV2Codec, wireRegistry.get('agents', 2)],
+        [v1.commandsV1Codec, wireRegistry.get('commands', 1)],
+        [v2.commandsV2Codec, wireRegistry.get('commands', 2)],
+        [v2.listV2Codec, wireRegistry.get('list', 2)],
+        [v3.listV3Codec, wireRegistry.get('list', 3)],
+        [v1.statusV1Codec, wireRegistry.get('status', 1)],
+      ] as const;
+      for (const [versioned, registered] of wireIdentities) {
+        expect(
+          registered,
+          `${versioned.descriptor.id}@${versioned.descriptor.version}`,
+        ).toBeDefined();
+        expect(registered?.descriptor).toEqual(versioned.descriptor);
+      }
+    }
 
     const identities = [
       [v1.manifestV1Codec, registry.get('manifest', 1)],
