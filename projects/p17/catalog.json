@@ -3664,7 +3664,7 @@
       "phase": "3A",
       "title": "Deterministic agents/list/commands inventory, duplicates, and capability presentation",
       "dependsOn": ["P17-G3A-01"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -3840,8 +3840,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-02.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -3876,7 +3876,8 @@
         "projects/p17/plans/P17-G3A-02.md",
         "projects/p17/evidence/P17-G3A-02.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G3A-02.md#ready-plan",
-        "projects/p17/evidence/P17-G3A-02.md#ready-ownership-amendment"
+        "projects/p17/evidence/P17-G3A-02.md#ready-ownership-amendment",
+        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence"
       ]
     },
     {
@@ -10249,11 +10250,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/agents.test.ts#EWP-CMD-AGENTS-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/agents.test.ts",
+        "selector": "EWP-CMD-AGENTS-TS01",
+        "command": "bun test packages/cli/tests/contracts/agents.test.ts --test-name-pattern EWP-CMD-AGENTS-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-agents-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-AGENTS-TS01"],
@@ -10276,8 +10282,18 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/agents.test.ts --test-name-pattern EWP-CMD-AGENTS-TS01"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/agents.test.ts",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-base-v2.golden.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-capabilities-v2.golden.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-capabilities.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-default.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-detected-only.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-fleet.json"
+      ]
     },
     {
       "id": "EWP-CMD-AGENTS-TS02",
@@ -10285,11 +10301,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/agents.test.ts#EWP-CMD-AGENTS-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/agents.test.ts",
+        "selector": "EWP-CMD-AGENTS-TS02",
+        "command": "bun test packages/cli/tests/contracts/agents.test.ts --test-name-pattern EWP-CMD-AGENTS-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-agents-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-AGENTS-TS02"],
@@ -10312,8 +10333,18 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/agents.test.ts --test-name-pattern EWP-CMD-AGENTS-TS02"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/agents.test.ts",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-base-v2.golden.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-capabilities-v2.golden.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-capabilities.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-default.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-detected-only.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-fleet.json"
+      ]
     },
     {
       "id": "EWP-CMD-AGENTS-TS03",
@@ -10321,11 +10352,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/agents.test.ts#EWP-CMD-AGENTS-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/agents.test.ts",
+        "selector": "EWP-CMD-AGENTS-TS03",
+        "command": "bun test packages/cli/tests/contracts/agents.test.ts --test-name-pattern EWP-CMD-AGENTS-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-agents-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-AGENTS-TS03"],
@@ -10348,8 +10384,18 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/agents.test.ts --test-name-pattern EWP-CMD-AGENTS-TS03"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/agents.test.ts",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-base-v2.golden.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-capabilities-v2.golden.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-capabilities.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-default.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-detected-only.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/agents-fleet.json"
+      ]
     },
     {
       "id": "EWP-CMD-APPLY-TS01",
@@ -11166,11 +11212,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/commands.test.ts#EWP-CMD-COMMANDS-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/commands.test.ts",
+        "selector": "EWP-CMD-COMMANDS-TS01",
+        "command": "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS01"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-commands-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMMANDS-TS01"],
@@ -11193,8 +11246,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS01"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/commands.test.ts",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-compact.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-fleet.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-long.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-v2.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-COMMANDS-TS02",
@@ -11202,11 +11263,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/commands.test.ts#EWP-CMD-COMMANDS-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/commands.test.ts",
+        "selector": "EWP-CMD-COMMANDS-TS02",
+        "command": "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS02"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-commands-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMMANDS-TS02"],
@@ -11229,8 +11297,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS02"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/commands.test.ts",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-compact.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-fleet.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-long.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-v2.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-COMMANDS-TS03",
@@ -11238,11 +11314,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/commands.test.ts#EWP-CMD-COMMANDS-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/commands.test.ts",
+        "selector": "EWP-CMD-COMMANDS-TS03",
+        "command": "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS03"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-commands-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMMANDS-TS03"],
@@ -11265,8 +11348,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS03"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/commands.test.ts",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-compact.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-fleet.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-long.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-v2.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-COMMANDS-TS04",
@@ -11274,11 +11365,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/commands.test.ts#EWP-CMD-COMMANDS-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/commands.test.ts",
+        "selector": "EWP-CMD-COMMANDS-TS04",
+        "command": "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS04"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-commands-ts04"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMMANDS-TS04"],
@@ -11301,8 +11399,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS04"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/commands.test.ts",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-compact.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-fleet.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-long.golden.txt",
+        "tests/ergonomics/fixtures/g3a02-contracts/commands-v2.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-COMPLETION-TS01",
@@ -13212,11 +13318,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/list.test.ts",
+        "selector": "EWP-CMD-LIST-TS01",
+        "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS01"],
@@ -13239,8 +13350,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS01"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/list.test.ts",
+        "tests/ergonomics/fixtures/p3a-ts01/inventory-cases.json",
+        "tests/ergonomics/fixtures/p3a-ts01/list-compact.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-long.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-v3.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-LIST-TS02",
@@ -13248,11 +13367,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/list.test.ts",
+        "selector": "EWP-CMD-LIST-TS02",
+        "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS02"],
@@ -13275,8 +13399,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS02"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/list.test.ts",
+        "tests/ergonomics/fixtures/p3a-ts01/inventory-cases.json",
+        "tests/ergonomics/fixtures/p3a-ts01/list-compact.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-long.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-v3.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-LIST-TS03",
@@ -13284,11 +13416,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/list.test.ts",
+        "selector": "EWP-CMD-LIST-TS03",
+        "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS03"],
@@ -13311,8 +13448,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS03"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/list.test.ts",
+        "tests/ergonomics/fixtures/p3a-ts01/inventory-cases.json",
+        "tests/ergonomics/fixtures/p3a-ts01/list-compact.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-long.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-v3.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-LIST-TS04",
@@ -13320,11 +13465,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/list.test.ts",
+        "selector": "EWP-CMD-LIST-TS04",
+        "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS04"],
@@ -13347,8 +13497,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS04"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/list.test.ts",
+        "tests/ergonomics/fixtures/p3a-ts01/inventory-cases.json",
+        "tests/ergonomics/fixtures/p3a-ts01/list-compact.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-long.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-v3.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-LIST-TS05",
@@ -13356,11 +13514,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/list.test.ts",
+        "selector": "EWP-CMD-LIST-TS05",
+        "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS05"],
@@ -13383,8 +13546,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS05"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/list.test.ts",
+        "tests/ergonomics/fixtures/p3a-ts01/inventory-cases.json",
+        "tests/ergonomics/fixtures/p3a-ts01/list-compact.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-long.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-v3.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-LIST-TS06",
@@ -13392,11 +13563,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/list.test.ts",
+        "selector": "EWP-CMD-LIST-TS06",
+        "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS06"],
@@ -13419,8 +13595,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS06"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/list.test.ts",
+        "tests/ergonomics/fixtures/p3a-ts01/inventory-cases.json",
+        "tests/ergonomics/fixtures/p3a-ts01/list-compact.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-long.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-v3.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-LIST-TS07",
@@ -13428,11 +13612,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/list.test.ts",
+        "selector": "EWP-CMD-LIST-TS07",
+        "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS07"],
@@ -13455,8 +13644,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS07"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/list.test.ts",
+        "tests/ergonomics/fixtures/p3a-ts01/inventory-cases.json",
+        "tests/ergonomics/fixtures/p3a-ts01/list-compact.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-long.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-v3.golden.json"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS01",
@@ -17719,11 +17916,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3A-02",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#ready-plan",
+        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence"
+      ],
       "secondaryGroups": [],
       "implements": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
       "validatedBy": [
@@ -17917,11 +18117,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3A-02",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#ready-plan",
+        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence"
+      ],
       "secondaryGroups": [],
       "implements": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
       "validatedBy": [
@@ -17995,11 +18198,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3A-02",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#ready-plan",
+        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence"
+      ],
       "secondaryGroups": [],
       "implements": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
       "validatedBy": [
@@ -18070,11 +18276,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:tests/ergonomics/phase/EWP-P3A-TS01.test.ts#EWP-P3A-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P3A-TS01.test.ts",
+        "selector": "EWP-P3A-TS01",
+        "command": "bun test tests/ergonomics/phase/EWP-P3A-TS01.test.ts --test-name-pattern EWP-P3A-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-p3a-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3A-TS01"],
@@ -18097,8 +18308,16 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P3A-TS01.test.ts --test-name-pattern EWP-P3A-TS01"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P3A-TS01.test.ts",
+        "tests/ergonomics/fixtures/p3a-ts01/inventory-cases.json",
+        "tests/ergonomics/fixtures/p3a-ts01/list-compact.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-long.golden.txt",
+        "tests/ergonomics/fixtures/p3a-ts01/list-v3.golden.json"
+      ]
     },
     {
       "id": "EWP-P3A-TS02",
@@ -18148,11 +18367,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:tests/ergonomics/phase/EWP-P3A-TS03.test.ts#EWP-P3A-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P3A-TS03.test.ts",
+        "selector": "EWP-P3A-TS03",
+        "command": "bun test tests/ergonomics/phase/EWP-P3A-TS03.test.ts --test-name-pattern EWP-P3A-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-p3a-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3A-TS03"],
@@ -18175,8 +18399,13 @@
         "EWP-P3A-TS03"
       ],
       "affectedContracts": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P3A-TS03.test.ts --test-name-pattern EWP-P3A-TS03"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P3A-TS03.test.ts",
+        "tests/ergonomics/fixtures/p3a-ts03/duplicate-cases.json"
+      ]
     },
     {
       "id": "EWP-P3A-TS04",
