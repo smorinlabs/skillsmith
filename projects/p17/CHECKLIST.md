@@ -12,13 +12,13 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 13 | 15 | 6 |
-| phase-task | 65 | 38 | 27 | 0 |
-| phase-test | 61 | 34 | 27 | 0 |
+| phase-task | 65 | 39 | 26 | 0 |
+| phase-test | 61 | 35 | 26 | 0 |
 | command-test | 157 | 46 | 111 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
 | command | 23 | 10 | 13 | 0 |
-| finding | 43 | 27 | 16 | 0 |
+| finding | 43 | 29 | 14 | 0 |
 | decision | 16 | 4 | 11 | 1 |
 
 ### Phases
@@ -28,7 +28,7 @@ Tracked entities: **425** across **45** change groups.
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
-| 3 | 8 | 83 | 58 | 0 |
+| 3 | 8 | 83 | 62 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 67 | 0 | 0 |
 | 6 | 5 | 39 | 0 | 0 |
@@ -175,7 +175,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-002 | P17-G3B-01 | signed-off | required-pr |
 | EWP-CF-003 | P17-G2-01 | signed-off | required-pr |
 | EWP-CF-004 | P17-G1-02A | signed-off | required-pr |
-| EWP-CF-005 | P17-G3B-02 | validated | required-pr |
+| EWP-CF-005 | P17-G3B-02 | signed-off | required-pr |
 | EWP-CF-006 | P17-G3B-03 | planned | required-pr |
 | EWP-CF-007 | P17-G1-05 | signed-off | required-pr |
 | EWP-CF-008 | P17-G5-02 | planned | required-pr |
@@ -196,7 +196,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-023 | P17-G0-02 | signed-off | required-pr |
 | EWP-CF-024 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-025 | P17-G3B-01 | signed-off | required-pr |
-| EWP-CF-026 | P17-G3B-02 | validated | required-pr |
+| EWP-CF-026 | P17-G3B-02 | signed-off | required-pr |
 | EWP-CF-027 | P17-G2-02 | signed-off | required-pr |
 | EWP-CF-028 | P17-G3B-03 | planned | required-pr |
 | EWP-CF-029 | P17-G2-05 | signed-off | required-pr |
@@ -938,7 +938,7 @@ Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD
 
 ## P17-G3B-02 — Lock hierarchy, deterministic scheduler, coordinator, and partial-pair semantics
 
-Phase: 3B; status: **reviewed**; dependencies: P17-G3B-01.
+Phase: 3B; status: **signed-off**; dependencies: P17-G3B-01.
 Required-now validations: EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-OPT-TS04, EWP-P3B-TS01, EWP-P3B-TS03, EWP-WF15.
 Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-SYNC-TS01, EWP-CMD-SYNC-TS02, EWP-CMD-SYNC-TS03, EWP-CMD-SYNC-TS04, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-SYNC-TS09, EWP-CMD-SYNC-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-CMD-UNINSTALL-TS01, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS05, EWP-CMD-UNINSTALL-TS06, EWP-CMD-UNINSTALL-TS07, EWP-CMD-UPDATE-TS01, EWP-CMD-UPDATE-TS02, EWP-CMD-UPDATE-TS03, EWP-CMD-UPDATE-TS04, EWP-CMD-UPDATE-TS05, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-CMD-UPDATE-TS10, EWP-P4A-TS02, EWP-P5-TS05, EWP-WF05, EWP-WF09, EWP-WF10, EWP-WF13.
 
@@ -952,15 +952,15 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 - [x] P17-G3B-02:impacted-green _(passed)_
 - [x] P17-G3B-02:refactor _(passed)_
 - [x] P17-G3B-02:adversarial-review _(passed)_
-- [ ] P17-G3B-02:traceability-closure _(pending)_
-- [ ] P17-G3B-02:signed-off _(pending)_
+- [x] P17-G3B-02:traceability-closure _(passed)_
+- [x] P17-G3B-02:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-005** — Define declaration-group and placement transaction boundaries _(finding; validated)_
-- [ ] **EWP-CF-026** — Use one deterministic batch scheduler for every multi-target mutator _(finding; validated)_
-- [ ] **EWP-P3B-T02** — Shared mutation-lock hierarchy, operation preconditions, and transaction coordinator with deterministic group/pair scheduling for live placement, manifest, lock, and ledger commit points. _(phase-task; reviewed)_
-- [ ] **EWP-P3B-TS03** — Lock ordering, concurrent-process exclusion, per-pair partial failure, and crash/resume tests at the existing ledger/live boundaries, including identical user/project names and fail-fast/continue/cancellation scheduling. _(phase-test; passing)_
+- [x] **EWP-CF-005** — Define declaration-group and placement transaction boundaries _(finding; signed-off)_
+- [x] **EWP-CF-026** — Use one deterministic batch scheduler for every multi-target mutator _(finding; signed-off)_
+- [x] **EWP-P3B-T02** — Shared mutation-lock hierarchy, operation preconditions, and transaction coordinator with deterministic group/pair scheduling for live placement, manifest, lock, and ledger commit points. _(phase-task; signed-off)_
+- [x] **EWP-P3B-TS03** — Lock ordering, concurrent-process exclusion, per-pair partial failure, and crash/resume tests at the existing ledger/live boundaries, including identical user/project names and fail-fast/continue/cancellation scheduling. _(phase-test; signed-off)_
 
 ## P17-G3B-03 — Ledger writer, journals, recovery/resume/abort, history, and deterministic repair
 

@@ -4145,7 +4145,7 @@
       "phase": "3B",
       "title": "Lock hierarchy, deterministic scheduler, coordinator, and partial-pair semantics",
       "dependsOn": ["P17-G3B-01"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "CHANGELOG.md",
@@ -4465,12 +4465,12 @@
           "evidence": ["projects/p17/evidence/P17-G3B-02.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-02.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-02.md#traceability-and-sign-off"]
         }
       },
       "evidence": [
@@ -4482,7 +4482,9 @@
         "projects/p17/evidence/P17-G3B-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-02.md#refactor-review",
-        "projects/p17/evidence/P17-G3B-02.md#adversarial-review"
+        "projects/p17/evidence/P17-G3B-02.md#adversarial-review",
+        "projects/p17/evidence/P17-G3B-02.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G3B-02.md#traceability-and-sign-off"
       ]
     },
     {
@@ -8124,14 +8126,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-02",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-02",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3B-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G3B-02.md#adversarial-review"
+        "projects/p17/evidence/P17-G3B-02.md#adversarial-review",
+        "projects/p17/evidence/P17-G3B-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": ["P17-G4A-01", "P17-G4A-04"],
       "implements": [],
@@ -8994,14 +8997,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-02",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-02",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3B-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G3B-02.md#adversarial-review"
+        "projects/p17/evidence/P17-G3B-02.md#adversarial-review",
+        "projects/p17/evidence/P17-G3B-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [
         "P17-G4B-02",
@@ -18975,7 +18979,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-02",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-02",
       "target": null,
@@ -18984,7 +18988,8 @@
         "projects/p17/evidence/P17-G3B-02.md#test-first-evidence",
         "projects/p17/evidence/P17-G3B-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G3B-02.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G3B-02.md#adversarial-review"
+        "projects/p17/evidence/P17-G3B-02.md#adversarial-review",
+        "projects/p17/evidence/P17-G3B-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": ["P17-G3B-01"],
       "implements": ["EWP-CF-005", "EWP-CF-026"],
@@ -19386,7 +19391,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-02:tests/ergonomics/phase/EWP-P3B-TS03.test.ts#EWP-P3B-TS03",
       "target": {
@@ -19397,7 +19402,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G3B-02.md#final-green-execution-receipt-ewp-p3b-ts03",
-        "projects/p17/evidence/P17-G3B-02.md#red-execution-receipt-ewp-p3b-ts03"
+        "projects/p17/evidence/P17-G3B-02.md#red-execution-receipt-ewp-p3b-ts03",
+        "projects/p17/evidence/P17-G3B-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
