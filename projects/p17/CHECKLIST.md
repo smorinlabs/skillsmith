@@ -964,14 +964,14 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G3B-03 — Ledger writer, journals, recovery/resume/abort, history, and deterministic repair
 
-Phase: 3B; status: **mapped**; dependencies: P17-G3B-02.
+Phase: 3B; status: **ready**; dependencies: P17-G3B-02.
 Required-now validations: EWP-CMD-DOCTOR-TS01, EWP-CMD-DOCTOR-TS02, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS04, EWP-CMD-DOCTOR-TS05, EWP-CMD-DOCTOR-TS06, EWP-CMD-STATUS-TS04, EWP-P3B-TS03, EWP-P3B-TS04.
 Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD-GC-TS02, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-WF11, EWP-WF12.
 
 ### Group gates
 
 - [x] P17-G3B-03:mapped _(passed)_
-- [ ] P17-G3B-03:ready _(pending)_
+- [x] P17-G3B-03:ready _(passed)_
 - [ ] P17-G3B-03:test-first _(pending)_
 - [ ] P17-G3B-03:minimal-implementation _(pending)_
 - [ ] P17-G3B-03:targeted-green _(pending)_
@@ -993,7 +993,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD
 - [ ] **EWP-CMD-DOCTOR-TS04** — strict and human/JSON exit semantics. _(command-test; planned)_
 - [ ] **EWP-CMD-DOCTOR-TS05** — fix dry-run, deterministic ledger and exact-project-config migration, _(command-test; planned)_
 - [ ] **EWP-CMD-DOCTOR-TS06** — remediation commands parse and target the finding; no standalone ledger _(command-test; planned)_
-- [ ] **EWP-P3B-T04** — Extend the Phase-3A reader with the canonical version-2 writer, visible _(phase-task; planned)_
+- [ ] **EWP-P3B-T04** — Extend the Phase-3A reader with the canonical version-2 writer, visible _(phase-task; ready)_
 - [ ] **EWP-P3B-TS04** — Missing versus empty/truncated/malformed ledger; version-1 read-only and dry-run _(phase-test; planned)_
 - [ ] **P2-07** — Safe `doctor --fix` _(recommendation; planned)_
 
