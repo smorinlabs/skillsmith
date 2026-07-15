@@ -60,13 +60,21 @@ export interface ProjectSkillInventoryOptions {
   readonly tools?: readonly SupportedTool[];
   readonly scopes?: readonly Scope[];
   readonly globs?: readonly string[];
+  readonly names?: readonly string[];
   readonly duplicatesOnly?: boolean;
+  readonly duplicates?: boolean;
   readonly enabledFilter?: 'enabled-only' | 'disabled-only' | 'unconfigured-only';
+  readonly enabled?: 'on' | 'off' | 'unset';
   readonly modeFilter?: InventoryMode;
+  readonly mode?: InventoryMode;
   readonly sourceGlob?: string;
+  readonly source?: string;
   readonly revisionGlob?: string;
+  readonly revision?: string;
   readonly descriptionGlob?: string;
+  readonly description?: string;
   readonly verificationFilter?: 'verified' | 'unverified';
+  readonly verification?: 'verified' | 'unverified';
   readonly filters?: Readonly<Record<string, InventoryFilterValue>>;
 }
 
@@ -118,7 +126,43 @@ const renderedSkillFacts = (entry: SkillEntry, runtimeName: string): string =>
     }),
   );
 
-const filterRecord = (options: ProjectSkillInventoryOptions): InventorySelection['filters'] => {
+interface NormalizedSkillFilters {
+  readonly names: readonly string[];
+  readonly duplicates: boolean;
+  readonly enabled: 'enabled-only' | 'disabled-only' | 'unconfigured-only' | undefined;
+  readonly mode: InventoryMode | undefined;
+  readonly source: string | undefined;
+  readonly revision: string | undefined;
+  readonly description: string | undefined;
+  readonly verification: 'verified' | 'unverified' | undefined;
+}
+
+const normalizedSkillFilters = (options: ProjectSkillInventoryOptions): NormalizedSkillFilters => {
+  const enabled =
+    options.enabledFilter ??
+    (options.enabled === 'on'
+      ? 'enabled-only'
+      : options.enabled === 'off'
+        ? 'disabled-only'
+        : options.enabled === 'unset'
+          ? 'unconfigured-only'
+          : undefined);
+  return {
+    names: options.globs ?? options.names ?? [],
+    duplicates: options.duplicatesOnly ?? options.duplicates ?? false,
+    enabled,
+    mode: options.modeFilter ?? options.mode,
+    source: options.sourceGlob ?? options.source,
+    revision: options.revisionGlob ?? options.revision,
+    description: options.descriptionGlob ?? options.description,
+    verification: options.verificationFilter ?? options.verification,
+  };
+};
+
+const filterRecord = (
+  options: ProjectSkillInventoryOptions,
+  normalized: NormalizedSkillFilters,
+): InventorySelection['filters'] => {
   if (options.filters !== undefined) {
     return deepFreeze(
       Object.fromEntries(
@@ -130,14 +174,14 @@ const filterRecord = (options: ProjectSkillInventoryOptions): InventorySelection
     );
   }
   return deepFreeze({
-    globs: options.globs === undefined ? null : [...options.globs],
-    duplicatesOnly: options.duplicatesOnly ?? false,
-    enabledFilter: options.enabledFilter ?? null,
-    modeFilter: options.modeFilter ?? null,
-    sourceGlob: options.sourceGlob ?? null,
-    revisionGlob: options.revisionGlob ?? null,
-    descriptionGlob: options.descriptionGlob ?? null,
-    verificationFilter: options.verificationFilter ?? null,
+    names: [...normalized.names],
+    mode: normalized.mode ?? null,
+    source: normalized.source ?? null,
+    revision: normalized.revision ?? null,
+    description: normalized.description ?? null,
+    verification: normalized.verification ?? null,
+    enabled: normalized.enabled ?? null,
+    duplicates: normalized.duplicates,
   });
 };
 
@@ -152,6 +196,49 @@ interface ProjectedSkill {
   readonly surface: InventoryIdentitySurface;
 }
 
+const isInventoryMember = (value: unknown): value is InventoryMember =>
+  value !== null &&
+  typeof value === 'object' &&
+  typeof (value as Partial<InventoryMember>).scope === 'string' &&
+  typeof (value as Partial<InventoryMember>).path === 'string';
+
+const isInventoryVisibility = (value: unknown): value is InventoryVisibility => {
+  if (value === null || typeof value !== 'object') return false;
+  const candidate = value as Partial<InventoryVisibility>;
+  if (
+    candidate.state !== 'unique' &&
+    candidate.state !== 'winner' &&
+    candidate.state !== 'shadowed' &&
+    candidate.state !== 'duplicate'
+  ) {
+    return false;
+  }
+  if (!Array.isArray(candidate.members) || !candidate.members.every(isInventoryMember))
+    return false;
+  return candidate.state === 'winner' || candidate.state === 'shadowed'
+    ? typeof candidate.winner === 'string'
+    : candidate.winner === null;
+};
+
+const isPreprojectedSkillEntry = (entry: SkillEntry): entry is SkillInventoryEntry => {
+  const candidate = entry as Partial<SkillInventoryEntry>;
+  return (
+    (candidate.mode === 'dev' || candidate.mode === 'pinned' || candidate.mode === 'unmanaged') &&
+    (candidate.placement === 'symlink' ||
+      candidate.placement === 'copy' ||
+      candidate.placement === 'unknown') &&
+    (candidate.source === null || typeof candidate.source === 'string') &&
+    (candidate.revision === null || typeof candidate.revision === 'string') &&
+    (candidate.store === null || typeof candidate.store === 'string') &&
+    (candidate.verification === 'passed' ||
+      candidate.verification === 'warned' ||
+      candidate.verification === 'skipped' ||
+      candidate.verification === 'unrecorded') &&
+    (candidate.description === null || typeof candidate.description === 'string') &&
+    isInventoryVisibility(candidate.visibility)
+  );
+};
+
 const projectIdentity = (entry: SkillEntry): ProjectedSkill => {
   const adapter = toolRegistry.get(entry.tool);
   const surface = deepFreeze({
@@ -163,7 +250,9 @@ const projectIdentity = (entry: SkillEntry): ProjectedSkill => {
     path: entry.path,
     realpath: entry.realpath,
   });
-  const name = adapter?.inventory.inventoryIdentity?.(surface) ?? entry.name;
+  const name = isPreprojectedSkillEntry(entry)
+    ? entry.name
+    : (adapter?.inventory.inventoryIdentity?.(surface) ?? entry.name);
   if (name.length === 0 || name.includes('\u0000')) {
     throw new Error(`invalid inventory identity for ${entry.tool}`);
   }
@@ -308,22 +397,22 @@ const matchesOptionalGlob = (value: string | null, pattern: string | undefined):
 
 const applySkillFilters = (
   entries: readonly SkillInventoryEntry[],
-  options: ProjectSkillInventoryOptions,
+  filters: NormalizedSkillFilters,
 ): readonly SkillInventoryEntry[] => {
-  const nameGlobs = options.globs?.map((pattern) => new Glob(pattern));
+  const nameGlobs = filters.names.map((pattern) => new Glob(pattern));
   return entries.filter((entry) => {
-    if (nameGlobs !== undefined && !nameGlobs.some((glob) => glob.match(entry.name))) return false;
-    if (options.duplicatesOnly && entry.visibility.state === 'unique') return false;
-    if (options.enabledFilter === 'enabled-only' && entry.enabled !== 'on') return false;
-    if (options.enabledFilter === 'disabled-only' && entry.enabled !== 'off') return false;
-    if (options.enabledFilter === 'unconfigured-only' && entry.enabled !== 'unset') return false;
-    if (options.modeFilter !== undefined && entry.mode !== options.modeFilter) return false;
-    if (!matchesOptionalGlob(entry.source, options.sourceGlob)) return false;
-    if (!matchesOptionalGlob(entry.revision, options.revisionGlob)) return false;
-    if (!matchesOptionalGlob(entry.description, options.descriptionGlob)) return false;
-    if (options.verificationFilter === 'verified' && entry.verification !== 'passed') return false;
+    if (nameGlobs.length > 0 && !nameGlobs.some((glob) => glob.match(entry.name))) return false;
+    if (filters.duplicates && entry.visibility.state === 'unique') return false;
+    if (filters.enabled === 'enabled-only' && entry.enabled !== 'on') return false;
+    if (filters.enabled === 'disabled-only' && entry.enabled !== 'off') return false;
+    if (filters.enabled === 'unconfigured-only' && entry.enabled !== 'unset') return false;
+    if (filters.mode !== undefined && entry.mode !== filters.mode) return false;
+    if (!matchesOptionalGlob(entry.source, filters.source)) return false;
+    if (!matchesOptionalGlob(entry.revision, filters.revision)) return false;
+    if (!matchesOptionalGlob(entry.description, filters.description)) return false;
+    if (filters.verification === 'verified' && entry.verification !== 'passed') return false;
     if (
-      options.verificationFilter === 'unverified' &&
+      filters.verification === 'unverified' &&
       !(['warned', 'skipped', 'unrecorded'] as const).includes(entry.verification as never)
     ) {
       return false;
@@ -363,10 +452,11 @@ export const projectSkillInventory = (
     if (projected.value.collision !== null) collisionGroups.push(projected.value.collision);
   }
   entries.sort(compareSkillInventoryEntries);
-  const filters = filterRecord(options);
+  const normalizedFilters = normalizedSkillFilters(options);
+  const filters = filterRecord(options, normalizedFilters);
   let filtered: readonly SkillInventoryEntry[];
   try {
-    filtered = applySkillFilters(entries, options);
+    filtered = applySkillFilters(entries, normalizedFilters);
   } catch {
     return err(configError('inventory filter pattern is invalid'));
   }
@@ -491,7 +581,30 @@ export const readSkillInventory = async (
   return projectSkillInventory(enriched, options);
 };
 
-const commandFacts = (entry: CommandEntry): string => JSON.stringify(stableValue(entry));
+const commandFacts = (entry: CommandEntry, runtimeName: string): string =>
+  JSON.stringify(stableValue({ ...entry, name: runtimeName }));
+
+interface ProjectedCommand {
+  readonly entry: CommandEntry;
+  readonly name: string;
+}
+
+const projectCommandIdentity = (entry: CommandEntry): ProjectedCommand => {
+  const surface: InventoryIdentitySurface = deepFreeze({
+    name: entry.name,
+    scope: entry.scope,
+    origin: cloneOrigin(entry.origin),
+    rootOrdinal: 0,
+    root: entry.root,
+    path: entry.path,
+    realpath: entry.realpath,
+  });
+  const name = toolRegistry.get(entry.tool)?.inventory.inventoryIdentity?.(surface) ?? entry.name;
+  if (name.length === 0 || name.includes('\u0000')) {
+    throw new Error(`invalid command inventory identity for ${entry.tool}`);
+  }
+  return { entry, name };
+};
 
 const commandFilters = (options: ReadCommandInventoryOptions): InventorySelection['filters'] =>
   deepFreeze({
@@ -512,15 +625,22 @@ export const readCommandInventory = async (
     (scope): scope is 'user' | 'project' => scope === 'user' || scope === 'project',
   );
   const scopeSet = new Set<Scope>(scopes);
-  const byPlacement = new Map<string, { entry: CommandEntry; facts: string }>();
-  for (const entry of observed.value) {
-    const key = [entry.tool, entry.scope, entry.name, entry.path].join('\u0000');
-    const facts = commandFacts(entry);
-    const retained = byPlacement.get(key);
-    if (retained === undefined) byPlacement.set(key, { entry, facts });
-    else if (retained.facts !== facts) {
-      return err(configError(`conflicting command inventory observations at ${entry.path}`));
+  const byPlacement = new Map<string, { projected: ProjectedCommand; facts: string }>();
+  try {
+    for (const entry of observed.value) {
+      const projected = projectCommandIdentity(entry);
+      const key = [entry.tool, entry.scope, projected.name, entry.path].join('\u0000');
+      const facts = commandFacts(entry, projected.name);
+      const retained = byPlacement.get(key);
+      if (retained === undefined) byPlacement.set(key, { projected, facts });
+      else if (retained.facts !== facts) {
+        return err(configError(`conflicting command inventory observations at ${entry.path}`));
+      }
     }
+  } catch (cause) {
+    return err(
+      configError(cause instanceof Error ? cause.message : 'invalid command inventory identity'),
+    );
   }
   let globs: readonly Glob[] | undefined;
   try {
@@ -530,9 +650,9 @@ export const readCommandInventory = async (
   }
   const entries = [...byPlacement.values()]
     .map(
-      ({ entry }): CommandInventoryEntry =>
+      ({ projected: { entry, name } }): CommandInventoryEntry =>
         deepFreeze({
-          name: entry.name,
+          name,
           tool: entry.tool,
           scope: entry.scope as 'user' | 'project',
           path: entry.path,

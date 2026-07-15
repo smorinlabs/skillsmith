@@ -92,6 +92,7 @@ describe('skill inventory projection', () => {
     if (!result.ok) return;
     expect(result.value.entries[0]).toEqual(
       expect.objectContaining({
+        name: 'c04',
         mode: 'pinned',
         placement: 'symlink',
         source: 'github.com/acme/quality',
@@ -101,6 +102,43 @@ describe('skill inventory projection', () => {
         description: 'Claude plugin skill',
       }),
     );
+
+    const raw = Object.fromEntries(
+      Object.entries(source).filter(([key]) => key !== 'visibility'),
+    ) as unknown as SkillEntry;
+    const rawResult = projectSkillInventory([raw]);
+    expect(rawResult.ok).toBeTrue();
+    if (rawResult.ok) expect(rawResult.value.entries[0]?.name).toBe('quality:c04');
+  });
+
+  test('accepts planned filter aliases with OR-within and AND-across semantics', () => {
+    const filtered = projectSkillInventory(enrichedFixture.rows, {
+      names: ['c02', 'x04', 'o01'],
+      mode: 'dev',
+      enabled: 'on',
+    });
+    expect(filtered.ok).toBeTrue();
+    if (filtered.ok) expect(filtered.value.entries.map((entry) => entry.name)).toEqual(['c02']);
+
+    const sourced = projectSkillInventory(enrichedFixture.rows, {
+      source: 'github.com/acme/*',
+      revision: 'rev-*',
+      description: '*project*',
+      verification: 'unverified',
+    });
+    expect(sourced.ok).toBeTrue();
+    if (sourced.ok) {
+      expect(sourced.value.entries.map((entry) => entry.name)).toEqual(['x05', 'k04', 'o04']);
+    }
+
+    const duplicates = projectSkillInventory(fixture.rows, { duplicates: true });
+    expect(duplicates.ok).toBeTrue();
+    if (duplicates.ok) {
+      expect(
+        duplicates.value.entries.every((entry) => entry.visibility.state !== 'unique'),
+      ).toBeTrue();
+      expect(duplicates.value.entries).toHaveLength(12);
+    }
   });
 
   test('reads and correlates the ledger once by exact logical placement', async () => {
