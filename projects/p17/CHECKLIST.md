@@ -895,7 +895,7 @@ Downstream coverage obligations: none.
 
 ## P17-G3B-01 — Immutable operations/results and migration of current mutator planning/dry-run paths
 
-Phase: 3B; status: **ready**; dependencies: P17-G3A-02.
+Phase: 3B; status: **active**; dependencies: P17-G3A-02.
 Required-now validations: EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-OPT-TS04, EWP-P3B-TS01, EWP-P3B-TS02.
 Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS09, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS05, EWP-P4B-TS01, EWP-P4B-TS02, EWP-P4B-TS03, EWP-WF05.
 
@@ -903,7 +903,7 @@ Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD
 
 - [x] P17-G3B-01:mapped _(passed)_
 - [x] P17-G3B-01:ready _(passed)_
-- [ ] P17-G3B-01:test-first _(pending)_
+- [x] P17-G3B-01:test-first _(passed)_
 - [ ] P17-G3B-01:minimal-implementation _(pending)_
 - [ ] P17-G3B-01:targeted-green _(pending)_
 - [ ] P17-G3B-01:impacted-green _(pending)_
@@ -919,22 +919,22 @@ Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD
 - [ ] **D-009** — One local development lifecycle _(decision; planned)_
 - [ ] **EWP-CF-002** — Separate executable work from dispositions and outcomes _(finding; planned)_
 - [ ] **EWP-CF-025** — Bound force to one selected conflict without bypassing safety _(finding; planned)_
-- [ ] **EWP-CMD-DEV-TS01** — create/adopt/noop/mismatch/foreign/absent state machine. _(command-test; planned)_
-- [ ] **EWP-CMD-DEV-TS02** — source/dest/name/path/tool/scope validation, unique unscoped inference, _(command-test; planned)_
-- [ ] **EWP-CMD-DEV-TS03** — static verify/strict/no-verify behavior. _(command-test; planned)_
-- [ ] **EWP-CMD-DEV-TS04** — Pinned-to-dev and scoped bulk selection with canonical planned group policy. _(command-test; planned)_
-- [ ] **EWP-CMD-DEV-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; planned)_
-- [ ] **EWP-CMD-DEV-TS06** — crash recovery and source/store retention. _(command-test; planned)_
-- [ ] **EWP-CMD-PROMOTE-TS01** — dev/pinned/store-linked/unmanaged selection and convergence across _(command-test; planned)_
-- [ ] **EWP-CMD-PROMOTE-TS02** — clean/dirty/non-Git provenance and allow-dirty. _(command-test; planned)_
-- [ ] **EWP-CMD-PROMOTE-TS03** — per-tool verify mode, strict, inconclusive, no-verify. _(command-test; planned)_
-- [ ] **EWP-CMD-PROMOTE-TS04** — Scoped bulk and partial multi-tool planning with canonical group policy. _(command-test; planned)_
-- [ ] **EWP-CMD-PROMOTE-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; planned)_
-- [ ] **EWP-CMD-PROMOTE-TS06** — content hash, store reuse, crash recovery, residue cleanup. _(command-test; planned)_
-- [ ] **EWP-P3B-T01** — Immutable executable-operation, diagnostic, and execution-result types with _(phase-task; ready)_
-- [ ] **EWP-P3B-T03** — Adapt existing install/uninstall/promote/dev planning and dry-run paths to the _(phase-task; ready)_
-- [ ] **EWP-P3B-TS01** — Operation and diagnostic snapshot matrix for every existing action/outcome. _(phase-test; planned)_
-- [ ] **EWP-P3B-TS02** — Determinism/property tests and dry-run/execution operation equality. _(phase-test; planned)_
+- [ ] **EWP-CMD-DEV-TS01** — create/adopt/noop/mismatch/foreign/absent state machine. _(command-test; failing)_
+- [ ] **EWP-CMD-DEV-TS02** — source/dest/name/path/tool/scope validation, unique unscoped inference, _(command-test; failing)_
+- [ ] **EWP-CMD-DEV-TS03** — static verify/strict/no-verify behavior. _(command-test; failing)_
+- [ ] **EWP-CMD-DEV-TS04** — Pinned-to-dev and scoped bulk selection with canonical planned group policy. _(command-test; failing)_
+- [ ] **EWP-CMD-DEV-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; failing)_
+- [ ] **EWP-CMD-DEV-TS06** — crash recovery and source/store retention. _(command-test; failing)_
+- [ ] **EWP-CMD-PROMOTE-TS01** — dev/pinned/store-linked/unmanaged selection and convergence across _(command-test; failing)_
+- [ ] **EWP-CMD-PROMOTE-TS02** — clean/dirty/non-Git provenance and allow-dirty. _(command-test; failing)_
+- [ ] **EWP-CMD-PROMOTE-TS03** — per-tool verify mode, strict, inconclusive, no-verify. _(command-test; failing)_
+- [ ] **EWP-CMD-PROMOTE-TS04** — Scoped bulk and partial multi-tool planning with canonical group policy. _(command-test; failing)_
+- [ ] **EWP-CMD-PROMOTE-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; failing)_
+- [ ] **EWP-CMD-PROMOTE-TS06** — content hash, store reuse, crash recovery, residue cleanup. _(command-test; failing)_
+- [ ] **EWP-P3B-T01** — Immutable executable-operation, diagnostic, and execution-result types with _(phase-task; red)_
+- [ ] **EWP-P3B-T03** — Adapt existing install/uninstall/promote/dev planning and dry-run paths to the _(phase-task; red)_
+- [ ] **EWP-P3B-TS01** — Operation and diagnostic snapshot matrix for every existing action/outcome. _(phase-test; failing)_
+- [ ] **EWP-P3B-TS02** — Determinism/property tests and dry-run/execution operation equality. _(phase-test; failing)_
 
 ## P17-G3B-02 — Lock hierarchy, deterministic scheduler, coordinator, and partial-pair semantics
 

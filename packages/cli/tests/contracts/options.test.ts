@@ -927,6 +927,92 @@ describe('EWP-OPT-TS04', () => {
       expect(execution).toEqual({ ok: true });
     }
   });
+
+  test('bounded force results distinguish a supplied but unused flag from applied override work', async () => {
+    const core = (await import('../../../core/src/index.ts')) as Record<string, unknown>;
+    const createBoundedForceEffect = Reflect.get(core, 'createBoundedForceEffect');
+    expect(
+      typeof createBoundedForceEffect,
+      'G3B-01 must export the closed bounded-force result constructor',
+    ).toBe('function');
+    if (typeof createBoundedForceEffect !== 'function') return;
+
+    const notRequested = Reflect.apply(createBoundedForceEffect, undefined, [
+      { supported: true, requested: false, conflict: null },
+    ]) as unknown;
+    expect(notRequested).toEqual({
+      requested: false,
+      applied: false,
+      conflictType: null,
+      target: null,
+      normalBehavior: null,
+      forcedBehavior: null,
+      backup: null,
+    });
+    expect(Object.isFrozen(notRequested)).toBeTrue();
+
+    const unused = Reflect.apply(createBoundedForceEffect, undefined, [
+      { supported: true, requested: true, conflict: null },
+    ]) as unknown;
+    expect(unused).toEqual({
+      requested: true,
+      applied: false,
+      conflictType: null,
+      target: null,
+      normalBehavior: null,
+      forcedBehavior: null,
+      backup: null,
+    });
+    expect(Object.isFrozen(unused)).toBeTrue();
+
+    const target = {
+      kind: 'live',
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectRoot: null,
+      location: { kind: 'portable', token: 'skills/user/codex/alpha' },
+    } as const;
+    const conflict = {
+      class: 'unmanaged-target',
+      normal: 'refuse',
+      forced: 'backup-and-replace',
+      target,
+      backup: 'required',
+    } as const;
+
+    const applicable = Reflect.apply(createBoundedForceEffect, undefined, [
+      { supported: true, requested: true, applied: false, conflict },
+    ]) as unknown;
+    expect(applicable).toEqual({
+      requested: true,
+      applied: false,
+      conflictType: 'unmanaged-target',
+      target,
+      normalBehavior: 'refuse',
+      forcedBehavior: 'backup-and-replace',
+      backup: 'required',
+    });
+    expect(Object.isFrozen(applicable)).toBeTrue();
+    expect(Object.isFrozen((applicable as { target: unknown }).target)).toBeTrue();
+
+    const applied = Reflect.apply(createBoundedForceEffect, undefined, [
+      { supported: true, requested: true, applied: true, conflict },
+    ]) as unknown;
+    expect(applied).toEqual({
+      requested: true,
+      applied: true,
+      conflictType: 'unmanaged-target',
+      target,
+      normalBehavior: 'refuse',
+      forcedBehavior: 'backup-and-replace',
+      backup: 'required',
+    });
+    expect(Object.isFrozen(applied)).toBeTrue();
+
+    expect(applicable).not.toBe(applied);
+    expect((applicable as { target: unknown }).target).not.toBe(target);
+  });
 });
 
 describe('EWP-OPT-TS06', () => {
