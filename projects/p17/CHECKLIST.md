@@ -964,13 +964,13 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G3B-03 — Ledger writer, journals, recovery/resume/abort, history, and deterministic repair
 
-Phase: 3B; status: **planned**; dependencies: P17-G3B-02.
+Phase: 3B; status: **mapped**; dependencies: P17-G3B-02.
 Required-now validations: EWP-CMD-DOCTOR-TS01, EWP-CMD-DOCTOR-TS02, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS04, EWP-CMD-DOCTOR-TS05, EWP-CMD-DOCTOR-TS06, EWP-CMD-STATUS-TS04, EWP-P3B-TS03, EWP-P3B-TS04, EWP-WF11.
 Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD-GC-TS02, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-WF12.
 
 ### Group gates
 
-- [ ] P17-G3B-03:mapped _(pending)_
+- [x] P17-G3B-03:mapped _(passed)_
 - [ ] P17-G3B-03:ready _(pending)_
 - [ ] P17-G3B-03:test-first _(pending)_
 - [ ] P17-G3B-03:minimal-implementation _(pending)_
