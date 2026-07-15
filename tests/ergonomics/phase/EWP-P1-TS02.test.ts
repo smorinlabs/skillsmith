@@ -272,7 +272,7 @@ describe('EWP-P1-TS02', () => {
       expect(list.exitCode).toBe(0);
       expect(list.stderr).toBe('');
       expect(JSON.parse(list.stdout)).toMatchObject({
-        skills: [
+        entries: [
           {
             name: 'context-skill',
             tool: 'claude-code',

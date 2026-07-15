@@ -609,10 +609,10 @@ describe('EWP-CMD-CONFIG-TS02', () => {
     const result = await runCli(['list', '--project', '--json'], root, cliEnv(root));
     expect(result.exitCode, result.stderr).toBe(0);
     const parsed = JSON.parse(result.stdout) as {
-      readonly skills?: readonly { readonly name: string; readonly tool: string }[];
+      readonly entries?: readonly { readonly name: string; readonly tool: string }[];
     };
     expect(
-      (parsed.skills ?? [])
+      (parsed.entries ?? [])
         .filter((item) => item.name.startsWith('plural-'))
         .map((item) => item.tool)
         .sort(),

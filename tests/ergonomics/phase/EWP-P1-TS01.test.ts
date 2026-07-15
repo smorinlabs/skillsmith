@@ -241,7 +241,7 @@ describe('EWP-P1-TS01', () => {
 
         if (matrixCase.kind === 'list') {
           expect(output).toMatchObject({
-            skills: [
+            entries: [
               {
                 name: 'root-skill',
                 tool: 'claude-code',
@@ -252,7 +252,7 @@ describe('EWP-P1-TS01', () => {
           });
         } else if (matrixCase.kind === 'commands') {
           expect(output).toMatchObject({
-            commands: [
+            entries: [
               {
                 name: 'root-command',
                 tool: 'claude-code',
