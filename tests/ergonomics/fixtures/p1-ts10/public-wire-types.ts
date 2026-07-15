@@ -49,13 +49,20 @@ import {
   verifyV1Codec,
 } from '@skillsmith/core/contracts/v1';
 import {
+  type AgentsV2Dto,
+  type CommandsV2Dto,
   type FlipV2Dto,
   type ListV2Dto,
+  agentsV2Codec,
+  commandsV2Codec,
   flipV2Codec,
   listV2Codec,
+  toAgentsV2Dto,
+  toCommandsV2Dto,
   toFlipV2Dto,
   toListV2Dto,
 } from '@skillsmith/core/contracts/v2';
+import { type ListV3Dto, listV3Codec, toListV3Dto } from '@skillsmith/core/contracts/v3';
 
 // @ts-expect-error contracts root owns shared types only, never versioned DTOs or codecs
 import type { AgentsV1Dto as ForbiddenV1FromRoot } from '@skillsmith/core/contracts';
@@ -91,6 +98,10 @@ import type { UninstallV1Dto as ForbiddenUninstallDtoFromV2 } from '@skillsmith/
 import type { VerifyV1Dto as ForbiddenVerifyDtoFromV2 } from '@skillsmith/core/contracts/v2';
 // @ts-expect-error v2 entry point must expose no v1 DTOs
 import type { StatusV1Dto as ForbiddenStatusDtoFromV2 } from '@skillsmith/core/contracts/v2';
+// @ts-expect-error v2 entry point must expose no v3 DTOs
+import type { ListV3Dto as ForbiddenListDtoFromV2 } from '@skillsmith/core/contracts/v2';
+// @ts-expect-error v3 entry point must expose no v2 DTOs
+import type { AgentsV2Dto as ForbiddenAgentsDtoFromV3 } from '@skillsmith/core/contracts/v3';
 
 type Assert<T extends true> = T;
 type HasKey<T, K extends PropertyKey> = K extends keyof T ? true : false;
@@ -102,6 +113,7 @@ type ExpectedWireResult<T> = { ok: true; value: T } | { ok: false; error: WireCo
 type ContractsRootRuntime = typeof import('@skillsmith/core/contracts');
 type V1Runtime = typeof import('@skillsmith/core/contracts/v1');
 type V2Runtime = typeof import('@skillsmith/core/contracts/v2');
+type V3Runtime = typeof import('@skillsmith/core/contracts/v3');
 
 type _ContractsRootRuntimeClosure = Assert<
   Equal<keyof ContractsRootRuntime, 'createWireContractRegistry'>
@@ -156,6 +168,10 @@ type _V1RuntimeClosure = Assert<
 type _V2RuntimeClosure = Assert<
   Equal<
     keyof V2Runtime,
+    | 'agentsV2Codec'
+    | 'toAgentsV2Dto'
+    | 'commandsV2Codec'
+    | 'toCommandsV2Dto'
     | 'flipV2Codec'
     | 'toFlipV2Dto'
     | 'listV2Codec'
@@ -166,6 +182,7 @@ type _V2RuntimeClosure = Assert<
     | 'migrateLedgerV1DtoToV2Dto'
   >
 >;
+type _V3RuntimeClosure = Assert<Equal<keyof V3Runtime, 'listV3Codec' | 'toListV3Dto'>>;
 
 interface FixtureDto {
   readonly value: string;
@@ -321,6 +338,9 @@ const capabilityCodec: WireCodec<'capability-snapshot', 1, CapabilitySnapshotV1D
   capabilitySnapshotV1Codec;
 const flipCodec: WireCodec<'flip', 2, FlipV2Dto> = flipV2Codec;
 const listCodec: WireCodec<'list', 2, ListV2Dto> = listV2Codec;
+const agentsV2Binding: WireCodec<'agents', 2, AgentsV2Dto> = agentsV2Codec;
+const commandsV2Binding: WireCodec<'commands', 2, CommandsV2Dto> = commandsV2Codec;
+const listV3Binding: WireCodec<'list', 3, ListV3Dto> = listV3Codec;
 
 type _AgentsMapperReturn = Assert<Equal<ReturnType<typeof toAgentsV1Dto>, AgentsV1Dto>>;
 type _HealthMapperReturn = Assert<Equal<ReturnType<typeof toHealthV1Dto>, HealthV1Dto>>;
@@ -341,6 +361,9 @@ type _CapabilityMapperReturn = Assert<
 >;
 type _FlipMapperReturn = Assert<Equal<ReturnType<typeof toFlipV2Dto>, FlipV2Dto>>;
 type _ListMapperReturn = Assert<Equal<ReturnType<typeof toListV2Dto>, ListV2Dto>>;
+type _AgentsV2MapperReturn = Assert<Equal<ReturnType<typeof toAgentsV2Dto>, AgentsV2Dto>>;
+type _CommandsV2MapperReturn = Assert<Equal<ReturnType<typeof toCommandsV2Dto>, CommandsV2Dto>>;
+type _ListV3MapperReturn = Assert<Equal<ReturnType<typeof toListV3Dto>, ListV3Dto>>;
 type _VerifyFactoryReturn = Assert<
   ReturnType<typeof createVerifyV1Codec> extends WireCodec<'verify', 1, VerifyV1Dto> ? true : false
 >;
@@ -377,6 +400,8 @@ export type VersionClosureCanaries = [
   ForbiddenStatusDtoFromV2,
   ForbiddenUninstallDtoFromV2,
   ForbiddenVerifyDtoFromV2,
+  ForbiddenAgentsDtoFromV3,
+  ForbiddenListDtoFromV2,
 ];
 
 void [
@@ -392,6 +417,9 @@ void [
   verifyCodec,
   capabilityCodec,
   listCodec,
+  agentsV2Binding,
+  commandsV2Binding,
+  listV3Binding,
   toAgentsV1Dto,
   toHealthV1Dto,
   toCommandsV1Dto,
@@ -407,6 +435,9 @@ void [
   toCapabilitySnapshotV1Dto,
   toFlipV2Dto,
   toListV2Dto,
+  toAgentsV2Dto,
+  toCommandsV2Dto,
+  toListV3Dto,
   createVerifyV1Codec,
   registry,
 ];

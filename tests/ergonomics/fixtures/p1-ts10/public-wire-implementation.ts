@@ -1,9 +1,11 @@
 import type * as publicContracts from '@skillsmith/core/contracts';
 import type * as publicV1 from '@skillsmith/core/contracts/v1';
 import type * as publicV2 from '@skillsmith/core/contracts/v2';
+import type * as publicV3 from '@skillsmith/core/contracts/v3';
 import * as implementationContracts from '../../../../packages/core/src/contracts/index.ts';
 import * as implementationV1 from '../../../../packages/core/src/contracts/v1/index.ts';
 import * as implementationV2 from '../../../../packages/core/src/contracts/v2/index.ts';
+import * as implementationV3 from '../../../../packages/core/src/contracts/v3/index.ts';
 
 type Assert<T extends true> = T;
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
@@ -28,6 +30,9 @@ type DtoDeclarationClosure = [
   Assert<Equal<publicV1.CapabilitySnapshotV1Dto, implementationV1.CapabilitySnapshotV1Dto>>,
   Assert<Equal<publicV2.FlipV2Dto, implementationV2.FlipV2Dto>>,
   Assert<Equal<publicV2.ListV2Dto, implementationV2.ListV2Dto>>,
+  Assert<Equal<publicV2.AgentsV2Dto, implementationV2.AgentsV2Dto>>,
+  Assert<Equal<publicV2.CommandsV2Dto, implementationV2.CommandsV2Dto>>,
+  Assert<Equal<publicV3.ListV3Dto, implementationV3.ListV3Dto>>,
 ];
 
 const builder: typeof publicContracts.createWireContractRegistry =
@@ -35,6 +40,7 @@ const builder: typeof publicContracts.createWireContractRegistry =
 
 const v1Bindings: typeof publicV1 = implementationV1;
 const v2Bindings: typeof publicV2 = implementationV2;
+const v3Bindings: typeof publicV3 = implementationV3;
 
 const dtoDeclarationClosure: DtoDeclarationClosure = [
   true,
@@ -52,6 +58,9 @@ const dtoDeclarationClosure: DtoDeclarationClosure = [
   true,
   true,
   true,
+  true,
+  true,
+  true,
 ];
 
-void [builder, v1Bindings, v2Bindings, dtoDeclarationClosure];
+void [builder, v1Bindings, v2Bindings, v3Bindings, dtoDeclarationClosure];

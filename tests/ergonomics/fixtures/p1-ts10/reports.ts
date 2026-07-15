@@ -18,6 +18,7 @@ import type {
   UninstallReport,
   VerifyReport,
 } from '../../../../packages/core/src/index.ts';
+import agentsV2Golden from '../g3a02-contracts/agents-base-v2.golden.json' with { type: 'json' };
 import statusV1Golden from '../p3a-ts04/status-v1.golden.json' with { type: 'json' };
 
 /** Stable characterization values shared by the G1-06 mapper, codec, and renderer tests. */
@@ -52,6 +53,7 @@ export const AGENTS_REPORT_FIXTURE = {
   ]),
   format: 'json',
   detectedOnly: false,
+  capabilities: agentsV2Golden.capabilities as NonNullable<AgentsReport['capabilities']>,
 } satisfies AgentsReport;
 
 export const HEALTH_REPORT_FIXTURE = {
@@ -78,6 +80,13 @@ export const HEALTH_REPORT_FIXTURE = {
 
 export const COMMANDS_REPORT_FIXTURE = {
   long: true,
+  selection: {
+    source: 'bounded-default',
+    tools: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+    scopes: ['user', 'project'],
+    filters: { names: [], enabled: null },
+    outcome: 'selected',
+  },
   entries: [
     {
       name: 'fixture-command',
@@ -98,6 +107,7 @@ export const COMMANDS_REPORT_FIXTURE = {
         pluginScope: 'project',
       },
       enabled: 'on',
+      description: 'A deterministic command fixture',
     },
   ],
 } satisfies CommandsReport;
@@ -259,6 +269,22 @@ export const INSTALL_REPORT_FIXTURE = {
 
 export const LIST_REPORT_FIXTURE = {
   long: true,
+  selection: {
+    source: 'bounded-default',
+    tools: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+    scopes: ['system', 'user', 'project', 'managed'],
+    filters: {
+      names: [],
+      mode: null,
+      source: null,
+      revision: null,
+      description: null,
+      verification: null,
+      enabled: null,
+      duplicates: false,
+    },
+    outcome: 'selected',
+  },
   entries: [
     {
       name: 'fixture-skill',
@@ -274,8 +300,21 @@ export const LIST_REPORT_FIXTURE = {
       },
       origin: { kind: 'standalone' },
       enabled: 'on',
+      mode: 'unmanaged',
+      placement: 'unknown',
+      source: null,
+      revision: null,
+      store: null,
+      verification: 'unrecorded',
+      description: 'A deterministic skill fixture',
+      visibility: {
+        state: 'unique',
+        winner: null,
+        members: [{ scope: 'project', path: '/fixture/project/skills/fixture-skill' }],
+      },
     },
   ],
+  collisionGroups: [],
 } satisfies ListReport;
 
 export const UNINSTALL_REPORT_FIXTURE = {
@@ -430,7 +469,7 @@ export const CURRENT_RENDERER_REPORTS = {
  * These are populated from the live current renderer registry and deliberately retain its mixed
  * terminal-LF policy. A later codec must reproduce the strings byte-for-byte.
  */
-export const CURRENT_JSON_GOLDENS = {
+export const HISTORICAL_JSON_GOLDENS = {
   agents:
     '{\n  "schemaVersion": 1,\n  "experimental": true,\n  "tools": {\n    "claude-code": [\n      {\n        "path": "/fixture/bin/claude",\n        "version": "1.2.3",\n        "installMethod": "native-installer"\n      }\n    ],\n    "codex": [\n      {\n        "path": "/fixture/bin/codex",\n        "version": "4.5.6",\n        "installMethod": "npm-global"\n      }\n    ]\n  }\n}\n',
   health:
@@ -458,10 +497,112 @@ export const CURRENT_JSON_GOLDENS = {
     '{"schemaVersion":1,"kind":"error","code":"fixture-error","message":"Deterministic fixture failure","exitCode":7}\n',
 } as const;
 
+const AGENTS_V2_DTO = {
+  schemaVersion: 2,
+  kind: 'skillsmith.agents',
+  detections: [
+    {
+      tool: 'claude-code',
+      installations: [
+        {
+          path: '/fixture/bin/claude',
+          version: '1.2.3',
+          installMethod: 'native-installer',
+        },
+      ],
+    },
+    {
+      tool: 'codex',
+      installations: [
+        {
+          path: '/fixture/bin/codex',
+          version: '4.5.6',
+          installMethod: 'npm-global',
+        },
+      ],
+    },
+  ],
+  capabilities: agentsV2Golden.capabilities,
+} as const;
+
+const COMMANDS_V2_DTO = {
+  schemaVersion: 2,
+  kind: 'skillsmith.commands',
+  selection: COMMANDS_REPORT_FIXTURE.selection,
+  summary: { total: 1 },
+  entries: [
+    {
+      name: 'fixture-command',
+      tool: 'codex',
+      scope: 'project',
+      path: '/fixture/project/commands/fixture-command.md',
+      realpath: '/fixture/project/commands/fixture-command.md',
+      root: '/fixture/project/commands',
+      frontmatter: {
+        name: 'fixture-command',
+        description: 'A deterministic command fixture',
+        version: '1.0.0',
+      },
+      origin: {
+        kind: 'plugin',
+        pluginId: 'fixture.plugin',
+        pluginVersion: '1.0.0',
+        pluginScope: 'project',
+      },
+      enabled: 'on',
+      description: 'A deterministic command fixture',
+    },
+  ],
+} as const;
+
+const LIST_V3_DTO = {
+  schemaVersion: 3,
+  kind: 'skillsmith.list',
+  selection: LIST_REPORT_FIXTURE.selection,
+  summary: { total: 1, collisionGroups: 0 },
+  entries: [
+    {
+      name: 'fixture-skill',
+      tool: 'codex',
+      scope: 'project',
+      mode: 'unmanaged',
+      placement: 'unknown',
+      path: '/fixture/project/skills/fixture-skill',
+      realpath: '/fixture/store/fixture-skill',
+      root: '/fixture/project/skills',
+      frontmatter: {
+        name: 'fixture-skill',
+        description: 'A deterministic skill fixture',
+        version: '1.0.0',
+      },
+      origin: { kind: 'standalone' },
+      enabled: 'on',
+      source: null,
+      revision: null,
+      store: null,
+      verification: 'unrecorded',
+      description: 'A deterministic skill fixture',
+      visibility: {
+        state: 'unique',
+        winner: null,
+        members: [{ scope: 'project', path: '/fixture/project/skills/fixture-skill' }],
+      },
+    },
+  ],
+  collisionGroups: LIST_REPORT_FIXTURE.collisionGroups,
+} as const;
+
+export const CURRENT_JSON_GOLDENS = {
+  ...HISTORICAL_JSON_GOLDENS,
+  agents: `${JSON.stringify(AGENTS_V2_DTO, null, 2)}\n`,
+  commands: `${JSON.stringify(COMMANDS_V2_DTO, null, 2)}\n`,
+  list: `${JSON.stringify(LIST_V3_DTO, null, 2)}\n`,
+} as const;
+
 export const GOLDEN_TERMINAL_LF = {
   agents: true,
   health: false,
-  commands: false,
+  commands: true,
   configGetUnscoped: true,
   configGetScoped: true,
   configListUnscoped: false,
@@ -470,7 +611,7 @@ export const GOLDEN_TERMINAL_LF = {
   configUnset: true,
   flip: false,
   install: false,
-  list: false,
+  list: true,
   status: true,
   uninstall: false,
   verify: false,

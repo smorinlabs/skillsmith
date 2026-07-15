@@ -1,19 +1,519 @@
 {
-  "schemaVersion": 1,
-  "experimental": true,
-  "tools": {
-    "claude-code": [
+  "schemaVersion": 2,
+  "kind": "skillsmith.agents",
+  "detections": [
+    {
+      "tool": "claude-code",
+      "installations": [
+        {
+          "path": "/fixture/bin/claude",
+          "version": "1.2.3",
+          "installMethod": "native-installer"
+        }
+      ]
+    },
+    {
+      "tool": "codex",
+      "installations": [
+        {
+          "path": "/fixture/bin/codex",
+          "version": "4.5.6",
+          "installMethod": "npm-global"
+        }
+      ]
+    }
+  ],
+  "capabilities": {
+    "schemaVersion": 1,
+    "kind": "skillsmith.capabilities",
+    "tools": [
       {
-        "path": "/fixture/bin/claude",
-        "version": "1.2.3",
-        "installMethod": "native-installer"
-      }
-    ],
-    "codex": [
+        "id": "claude-code",
+        "order": 10,
+        "capabilityVersion": 1,
+        "operations": {
+          "detect": {
+            "supported": true,
+            "scopes": [],
+            "remediation": null
+          },
+          "inventory-skills": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "inventory-commands": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "diagnostics": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "install": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "uninstall": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "dev": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "promote": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "undo": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "verify-static": {
+            "supported": true,
+            "scopes": [
+              "artifact"
+            ],
+            "remediation": null
+          },
+          "verify-deep": {
+            "supported": true,
+            "scopes": [
+              "artifact"
+            ],
+            "remediation": null
+          },
+          "plan": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "apply": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "sync": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "update": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "adapt": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "claude-code adaptation is not available"
+          }
+        }
+      },
       {
-        "path": "/fixture/bin/codex",
-        "version": "4.5.6",
-        "installMethod": "npm-global"
+        "id": "codex",
+        "order": 20,
+        "capabilityVersion": 1,
+        "operations": {
+          "detect": {
+            "supported": true,
+            "scopes": [],
+            "remediation": null
+          },
+          "inventory-skills": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "inventory-commands": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "diagnostics": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "install": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "uninstall": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "dev": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "promote": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "undo": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "verify-static": {
+            "supported": true,
+            "scopes": [
+              "artifact"
+            ],
+            "remediation": null
+          },
+          "verify-deep": {
+            "supported": true,
+            "scopes": [
+              "artifact"
+            ],
+            "remediation": null
+          },
+          "plan": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "apply": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "sync": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "update": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "adapt": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "codex adaptation is not available"
+          }
+        }
+      },
+      {
+        "id": "kilo-code",
+        "order": 30,
+        "capabilityVersion": 1,
+        "operations": {
+          "detect": {
+            "supported": true,
+            "scopes": [],
+            "remediation": null
+          },
+          "inventory-skills": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "inventory-commands": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "diagnostics": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "install": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code is read-only; choose claude-code or codex"
+          },
+          "uninstall": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code is read-only; choose claude-code or codex"
+          },
+          "dev": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code is read-only; choose claude-code or codex"
+          },
+          "promote": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code is read-only; choose claude-code or codex"
+          },
+          "undo": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code is read-only; choose claude-code or codex"
+          },
+          "verify-static": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code has no registered static verifier"
+          },
+          "verify-deep": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code has no registered deep verifier"
+          },
+          "plan": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code cannot participate in desired-state mutations"
+          },
+          "apply": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code cannot participate in desired-state mutations"
+          },
+          "sync": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code cannot participate in desired-state mutations"
+          },
+          "update": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code cannot participate in desired-state mutations"
+          },
+          "adapt": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "kilo-code adaptation is not available"
+          }
+        }
+      },
+      {
+        "id": "opencode",
+        "order": 40,
+        "capabilityVersion": 1,
+        "operations": {
+          "detect": {
+            "supported": true,
+            "scopes": [],
+            "remediation": null
+          },
+          "inventory-skills": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "inventory-commands": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "diagnostics": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "install": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode is read-only; choose claude-code or codex"
+          },
+          "uninstall": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode is read-only; choose claude-code or codex"
+          },
+          "dev": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode is read-only; choose claude-code or codex"
+          },
+          "promote": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode is read-only; choose claude-code or codex"
+          },
+          "undo": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode is read-only; choose claude-code or codex"
+          },
+          "verify-static": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode has no registered static verifier"
+          },
+          "verify-deep": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode has no registered deep verifier"
+          },
+          "plan": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode cannot participate in desired-state mutations"
+          },
+          "apply": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode cannot participate in desired-state mutations"
+          },
+          "sync": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode cannot participate in desired-state mutations"
+          },
+          "update": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode cannot participate in desired-state mutations"
+          },
+          "adapt": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "opencode adaptation is not available"
+          }
+        }
       }
     ]
   }

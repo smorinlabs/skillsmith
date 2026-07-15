@@ -41,6 +41,7 @@ import {
   CURRENT_JSON_GOLDENS,
   CURRENT_RENDERER_REPORTS,
   GOLDEN_TERMINAL_LF,
+  HISTORICAL_JSON_GOLDENS,
   REPORT_FIXTURES,
 } from '../fixtures/p1-ts10/reports.ts';
 
@@ -67,9 +68,9 @@ const EXPECTED_PATHS = [
 ] as const;
 
 const EXPECTED_MAPPINGS = [
-  ['skillsmith agents', 'agents', 1],
+  ['skillsmith agents', 'agents', 2],
   ['skillsmith check', 'health', 1],
-  ['skillsmith commands', 'commands', 1],
+  ['skillsmith commands', 'commands', 2],
   ['skillsmith config get', 'config-get', 1],
   ['skillsmith config list', 'config-list', 1],
   ['skillsmith config set', 'config-set', 1],
@@ -77,7 +78,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith dev', 'flip', 2],
   ['skillsmith doctor', 'health', 1],
   ['skillsmith install', 'install', 1],
-  ['skillsmith list', 'list', 2],
+  ['skillsmith list', 'list', 3],
   ['skillsmith promote', 'flip', 2],
   ['skillsmith status', 'status', 1],
   ['skillsmith uninstall', 'uninstall', 1],
@@ -86,8 +87,10 @@ const EXPECTED_MAPPINGS = [
 
 const EXPECTED_CODECS = [
   ['agents', 1],
+  ['agents', 2],
   ['health', 1],
   ['commands', 1],
+  ['commands', 2],
   ['config-get', 1],
   ['config-list', 1],
   ['config-set', 1],
@@ -95,6 +98,7 @@ const EXPECTED_CODECS = [
   ['flip', 2],
   ['install', 1],
   ['list', 2],
+  ['list', 3],
   ['status', 1],
   ['uninstall', 1],
   ['verify', 1],
@@ -113,46 +117,69 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     }
   >
 > = {
-  agents: { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: true },
-  health: { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
-  commands: { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
-  'config-get': { wireKind: null, embeddedVersion: null, indent: 2, terminalLf: true },
-  'config-list': { wireKind: null, embeddedVersion: null, indent: 2, terminalLf: false },
-  'config-set': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
-  'config-unset': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
-  flip: {
+  'agents@1': { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: true },
+  'agents@2': {
+    wireKind: 'skillsmith.agents',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
+  'health@1': { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
+  'commands@1': {
+    wireKind: null,
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: false,
+  },
+  'commands@2': {
+    wireKind: 'skillsmith.commands',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
+  'config-get@1': { wireKind: null, embeddedVersion: null, indent: 2, terminalLf: true },
+  'config-list@1': { wireKind: null, embeddedVersion: null, indent: 2, terminalLf: false },
+  'config-set@1': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
+  'config-unset@1': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
+  'flip@2': {
     wireKind: 'skillsmith.flip',
     embeddedVersion: 'schemaVersion',
     indent: 2,
     terminalLf: false,
   },
-  install: {
+  'install@1': {
     wireKind: 'skillsmith.install',
     embeddedVersion: 'schemaVersion',
     indent: 2,
     terminalLf: false,
   },
-  list: { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
-  status: {
+  'list@2': { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
+  'list@3': {
+    wireKind: 'skillsmith.list',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
+  'status@1': {
     wireKind: 'skillsmith.status',
     embeddedVersion: 'schemaVersion',
     indent: 2,
     terminalLf: true,
   },
-  uninstall: {
+  'uninstall@1': {
     wireKind: 'skillsmith.uninstall',
     embeddedVersion: 'schemaVersion',
     indent: 2,
     terminalLf: false,
   },
-  verify: {
+  'verify@1': {
     wireKind: 'skillsmith.verify',
     embeddedVersion: 'schemaVersion',
     indent: 2,
     terminalLf: false,
   },
-  error: { wireKind: 'error', embeddedVersion: 'schemaVersion', indent: 0, terminalLf: true },
-  'capability-snapshot': {
+  'error@1': { wireKind: 'error', embeddedVersion: 'schemaVersion', indent: 0, terminalLf: true },
+  'capability-snapshot@1': {
     wireKind: 'skillsmith.capabilities',
     embeddedVersion: 'schemaVersion',
     indent: 2,
@@ -236,8 +263,12 @@ const V1_RUNTIME_EXPORTS = [
   'fromJournalV1Dto',
 ] as const;
 const V2_RUNTIME_EXPORTS = [
+  'agentsV2Codec',
+  'commandsV2Codec',
   'flipV2Codec',
   'listV2Codec',
+  'toAgentsV2Dto',
+  'toCommandsV2Dto',
   'toFlipV2Dto',
   'toListV2Dto',
   'ledgerV2Codec',
@@ -245,6 +276,7 @@ const V2_RUNTIME_EXPORTS = [
   'fromLedgerV2Dto',
   'migrateLedgerV1DtoToV2Dto',
 ] as const;
+const V3_RUNTIME_EXPORTS = ['listV3Codec', 'toListV3Dto'] as const;
 
 type UnknownRecord = Record<PropertyKey, unknown>;
 type WireResult = { readonly ok: boolean; readonly value?: unknown; readonly error?: unknown };
@@ -550,11 +582,9 @@ describe('EWP-P1-TS10', () => {
       expect(Object.keys(codec.descriptor)).toEqual([...DESCRIPTOR_KEYS]);
       expect(Object.isFrozen(codec.descriptor.formatting)).toBeTrue();
       expect(Object.isFrozen(codec.descriptor.migrations)).toBeTrue();
-      const policy = EXPECTED_DESCRIPTOR_POLICY[String(codec.descriptor.id)];
-      expect(
-        policy,
-        `missing expected descriptor policy for ${String(codec.descriptor.id)}`,
-      ).toBeDefined();
+      const identity = `${String(codec.descriptor.id)}@${String(codec.descriptor.version)}`;
+      const policy = EXPECTED_DESCRIPTOR_POLICY[identity];
+      expect(policy, `missing expected descriptor policy for ${identity}`).toBeDefined();
       expect(codec.descriptor).toMatchObject({
         wireKind: policy?.wireKind,
         embeddedVersion: policy?.embeddedVersion,
@@ -1651,7 +1681,7 @@ describe('EWP-P1-TS10', () => {
       }
     }
 
-    const dynamicAgents = JSON.parse(CURRENT_JSON_GOLDENS.agents) as UnknownRecord;
+    const dynamicAgents = JSON.parse(HISTORICAL_JSON_GOLDENS.agents) as UnknownRecord;
     const tools = dynamicAgents.tools as UnknownRecord;
     tools['fixture-dynamic-tool'] = [
       { path: '/fixture/bin/dynamic', version: '1.0.0', installMethod: 'unknown' },
@@ -1843,13 +1873,15 @@ describe('EWP-P1-TS10', () => {
   }, 15_000);
 
   test('family 5: exposes explicit named mappers that never read excluded lifecycle internals', async () => {
-    const [v1, v2] = await Promise.all([
+    const [v1, v2, v3] = await Promise.all([
       importMaybe(join(CONTRACTS_ROOT, 'v1/index.ts')),
       importMaybe(join(CONTRACTS_ROOT, 'v2/index.ts')),
+      importMaybe(join(CONTRACTS_ROOT, 'v3/index.ts')),
     ]);
     expect(v1, 'missing v1 codecs and mappers').not.toBeNull();
     expect(v2, 'missing v2 codecs and mappers').not.toBeNull();
-    if (v1 === null || v2 === null) return;
+    expect(v3, 'missing v3 codecs and mappers').not.toBeNull();
+    if (v1 === null || v2 === null || v3 === null) return;
     const hostileInstall = hostileLifecycleReport(REPORT_FIXTURES.install);
     const hostileStatus = addHostileFields(REPORT_FIXTURES.status);
     const hostileUninstall = hostileLifecycleReport(REPORT_FIXTURES.uninstall);
@@ -1867,7 +1899,7 @@ describe('EWP-P1-TS10', () => {
         mapper: v1.toAgentsV1Dto,
         codec: v1.agentsV1Codec,
         args: [REPORT_FIXTURES.agents],
-        bytes: CURRENT_JSON_GOLDENS.agents,
+        bytes: HISTORICAL_JSON_GOLDENS.agents,
       },
       {
         name: 'health@1',
@@ -1881,7 +1913,7 @@ describe('EWP-P1-TS10', () => {
         mapper: v1.toCommandsV1Dto,
         codec: v1.commandsV1Codec,
         args: [REPORT_FIXTURES.commands],
-        bytes: CURRENT_JSON_GOLDENS.commands,
+        bytes: HISTORICAL_JSON_GOLDENS.commands,
       },
       {
         name: 'config-get@1 unscoped',
@@ -1968,6 +2000,20 @@ describe('EWP-P1-TS10', () => {
         bytes: capabilityBytes,
       },
       {
+        name: 'agents@2',
+        mapper: v2.toAgentsV2Dto,
+        codec: v2.agentsV2Codec,
+        args: [REPORT_FIXTURES.agents],
+        bytes: CURRENT_JSON_GOLDENS.agents,
+      },
+      {
+        name: 'commands@2',
+        mapper: v2.toCommandsV2Dto,
+        codec: v2.commandsV2Codec,
+        args: [REPORT_FIXTURES.commands],
+        bytes: CURRENT_JSON_GOLDENS.commands,
+      },
+      {
         name: 'flip@2',
         mapper: v2.toFlipV2Dto,
         codec: v2.flipV2Codec,
@@ -1978,6 +2024,13 @@ describe('EWP-P1-TS10', () => {
         name: 'list@2',
         mapper: v2.toListV2Dto,
         codec: v2.listV2Codec,
+        args: [REPORT_FIXTURES.list],
+        bytes: HISTORICAL_JSON_GOLDENS.list,
+      },
+      {
+        name: 'list@3',
+        mapper: v3.toListV3Dto,
+        codec: v3.listV3Codec,
         args: [REPORT_FIXTURES.list],
         bytes: CURRENT_JSON_GOLDENS.list,
       },
@@ -2050,16 +2103,19 @@ describe('EWP-P1-TS10', () => {
     expect(v1, 'missing v1 contract exports').not.toBeNull();
     if (registry === undefined || v1 === null) return;
     const fixtures = [
-      ['agents', 1, CURRENT_JSON_GOLDENS.agents],
+      ['agents', 1, HISTORICAL_JSON_GOLDENS.agents],
+      ['agents', 2, CURRENT_JSON_GOLDENS.agents],
       ['health', 1, CURRENT_JSON_GOLDENS.health],
-      ['commands', 1, CURRENT_JSON_GOLDENS.commands],
+      ['commands', 1, HISTORICAL_JSON_GOLDENS.commands],
+      ['commands', 2, CURRENT_JSON_GOLDENS.commands],
       ['config-get', 1, CURRENT_JSON_GOLDENS.configGetUnscoped],
       ['config-get', 1, CURRENT_JSON_GOLDENS.configGetScoped],
       ['config-list', 1, CURRENT_JSON_GOLDENS.configListUnscoped],
       ['config-list', 1, CURRENT_JSON_GOLDENS.configListScoped],
       ['flip', 2, CURRENT_JSON_GOLDENS.flip],
       ['install', 1, CURRENT_JSON_GOLDENS.install],
-      ['list', 2, CURRENT_JSON_GOLDENS.list],
+      ['list', 2, HISTORICAL_JSON_GOLDENS.list],
+      ['list', 3, CURRENT_JSON_GOLDENS.list],
       ['status', 1, CURRENT_JSON_GOLDENS.status],
       ['uninstall', 1, CURRENT_JSON_GOLDENS.uninstall],
       ['verify', 1, CURRENT_JSON_GOLDENS.verify],
@@ -2159,35 +2215,40 @@ describe('EWP-P1-TS10', () => {
     expect(capabilityCodec.validate(decoded).ok).toBeTrue();
   });
 
-  test('family 8: publishes closed contracts, v1, and v2 package subpaths without Zod', async () => {
+  test('family 8: publishes closed contracts and v1/v2/v3 package subpaths without Zod', async () => {
     const packageJson = JSON.parse(
       await readFile(join(ROOT, 'packages/core/package.json'), 'utf8'),
     ) as { exports?: UnknownRecord };
-    for (const subpath of ['./contracts', './contracts/v1', './contracts/v2'])
+    for (const subpath of ['./contracts', './contracts/v1', './contracts/v2', './contracts/v3'])
       expect(packageJson.exports?.[subpath], `missing package export ${subpath}`).toBeDefined();
     const publicSubpaths = [
       '@skillsmith/core/contracts',
       '@skillsmith/core/contracts/v1',
       '@skillsmith/core/contracts/v2',
+      '@skillsmith/core/contracts/v3',
     ] as const;
-    const [contracts, v1, v2] = await Promise.all(
+    const [contracts, v1, v2, v3] = await Promise.all(
       publicSubpaths.map((subpath) => import(subpath).catch(() => null)),
     );
     expect(contracts, 'public contracts subpath does not load').not.toBeNull();
     expect(v1, 'public contracts/v1 subpath does not load').not.toBeNull();
     expect(v2, 'public contracts/v2 subpath does not load').not.toBeNull();
+    expect(v3, 'public contracts/v3 subpath does not load').not.toBeNull();
     expect(Object.keys(contracts ?? {}).sort()).toEqual([...CONTRACT_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v1 ?? {}).sort()).toEqual([...V1_RUNTIME_EXPORTS].sort());
     expect(Object.keys(v2 ?? {}).sort()).toEqual([...V2_RUNTIME_EXPORTS].sort());
+    expect(Object.keys(v3 ?? {}).sort()).toEqual([...V3_RUNTIME_EXPORTS].sort());
     expect(typeof contracts?.createWireContractRegistry).toBe('function');
     for (const name of Object.keys(v1 ?? {})) expect(name).not.toMatch(/V2|zod|schema/);
     for (const name of Object.keys(v2 ?? {})) {
       if (name !== 'migrateLedgerV1DtoToV2Dto') expect(name).not.toMatch(/V1|zod|schema/);
     }
+    for (const name of Object.keys(v3 ?? {})) expect(name).not.toMatch(/V[12]|zod|schema/);
     for (const declaration of [
       'packages/core/src/contracts/index.d.ts',
       'packages/core/src/contracts/v1/index.d.ts',
       'packages/core/src/contracts/v2/index.d.ts',
+      'packages/core/src/contracts/v3/index.d.ts',
     ]) {
       const source = await readFile(join(ROOT, declaration), 'utf8');
       expect(source, `${declaration} leaks Zod`).not.toMatch(/\b(?:zod|Zod\w*|z\.infer)\b/);

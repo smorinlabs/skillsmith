@@ -72,9 +72,15 @@ describe('EWP-WF14', () => {
       ]);
 
       const listOutput = JSON.parse(list.stdout) as {
-        skills: readonly { name: string; root: string; tool: string; scope: string }[];
+        schemaVersion: number;
+        kind: string;
+        entries: readonly { name: string; root: string; tool: string; scope: string }[];
       };
-      expect(listOutput.skills).toEqual([
+      expect({ schemaVersion: listOutput.schemaVersion, kind: listOutput.kind }).toEqual({
+        schemaVersion: 3,
+        kind: 'skillsmith.list',
+      });
+      expect(listOutput.entries).toEqual([
         expect.objectContaining({
           name: 'context-skill',
           root: join(repository, '.claude', 'skills'),
@@ -84,9 +90,15 @@ describe('EWP-WF14', () => {
       ]);
 
       const commandOutput = JSON.parse(commands.stdout) as {
-        commands: readonly { name: string; root: string; tool: string; scope: string }[];
+        schemaVersion: number;
+        kind: string;
+        entries: readonly { name: string; root: string; tool: string; scope: string }[];
       };
-      expect(commandOutput.commands).toEqual([
+      expect({ schemaVersion: commandOutput.schemaVersion, kind: commandOutput.kind }).toEqual({
+        schemaVersion: 2,
+        kind: 'skillsmith.commands',
+      });
+      expect(commandOutput.entries).toEqual([
         expect.objectContaining({
           name: 'context-command',
           root: projectCommand,

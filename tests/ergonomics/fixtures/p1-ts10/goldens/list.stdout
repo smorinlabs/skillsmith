@@ -1,13 +1,45 @@
 {
-  "schemaVersion": 2,
-  "experimental": true,
-  "skills": [
+  "schemaVersion": 3,
+  "kind": "skillsmith.list",
+  "selection": {
+    "source": "bounded-default",
+    "tools": [
+      "claude-code",
+      "codex",
+      "kilo-code",
+      "opencode"
+    ],
+    "scopes": [
+      "system",
+      "user",
+      "project",
+      "managed"
+    ],
+    "filters": {
+      "names": [],
+      "mode": null,
+      "source": null,
+      "revision": null,
+      "description": null,
+      "verification": null,
+      "enabled": null,
+      "duplicates": false
+    },
+    "outcome": "selected"
+  },
+  "summary": {
+    "total": 1,
+    "collisionGroups": 0
+  },
+  "entries": [
     {
       "name": "fixture-skill",
-      "path": "/fixture/project/skills/fixture-skill",
-      "realpath": "/fixture/store/fixture-skill",
       "tool": "codex",
       "scope": "project",
+      "mode": "unmanaged",
+      "placement": "unknown",
+      "path": "/fixture/project/skills/fixture-skill",
+      "realpath": "/fixture/store/fixture-skill",
       "root": "/fixture/project/skills",
       "frontmatter": {
         "name": "fixture-skill",
@@ -17,7 +49,23 @@
       "origin": {
         "kind": "standalone"
       },
-      "enabled": "on"
+      "enabled": "on",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "A deterministic skill fixture",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/fixture/project/skills/fixture-skill"
+          }
+        ]
+      }
     }
-  ]
+  ],
+  "collisionGroups": []
 }
