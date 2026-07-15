@@ -3673,6 +3673,7 @@
         "docs/architecture.md",
         "eslint.config.js",
         "packages/cli/README.md",
+        "packages/cli/src/contracts/cli-migration-ledger.ts",
         "packages/cli/src/contracts/commander-current-state-v0.json",
         "packages/cli/src/contracts/wire-contracts.ts",
         "packages/cli/src/output/agents-json.ts",
@@ -3844,16 +3845,16 @@
           "evidence": ["projects/p17/evidence/P17-G3A-02.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-02.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"]
         },
         "refactor": {
           "status": "pending",
@@ -3877,7 +3878,10 @@
         "projects/p17/evidence/P17-G3A-02.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G3A-02.md#ready-plan",
         "projects/p17/evidence/P17-G3A-02.md#ready-ownership-amendment",
-        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3A-02.md#implementation-ownership-amendment",
+        "projects/p17/evidence/P17-G3A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"
       ]
     },
     {
@@ -5913,11 +5917,11 @@
       "title": "Discover — Which coding tools are detected and what can Skillsmith do with them?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "surface:agents",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -6064,11 +6068,11 @@
       "title": "Discover — Which slash commands are installed?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "surface:commands",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -6543,11 +6547,11 @@
       "title": "Discover — Which skills are installed?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "surface:list",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -10250,7 +10254,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/agents.test.ts#EWP-CMD-AGENTS-TS01",
       "target": {
@@ -10259,7 +10263,9 @@
         "selector": "EWP-CMD-AGENTS-TS01",
         "command": "bun test packages/cli/tests/contracts/agents.test.ts --test-name-pattern EWP-CMD-AGENTS-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-agents-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-agents-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-AGENTS-TS01"],
@@ -10301,7 +10307,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/agents.test.ts#EWP-CMD-AGENTS-TS02",
       "target": {
@@ -10310,7 +10316,9 @@
         "selector": "EWP-CMD-AGENTS-TS02",
         "command": "bun test packages/cli/tests/contracts/agents.test.ts --test-name-pattern EWP-CMD-AGENTS-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-agents-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-agents-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-AGENTS-TS02"],
@@ -10352,7 +10360,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/agents.test.ts#EWP-CMD-AGENTS-TS03",
       "target": {
@@ -10361,7 +10369,9 @@
         "selector": "EWP-CMD-AGENTS-TS03",
         "command": "bun test packages/cli/tests/contracts/agents.test.ts --test-name-pattern EWP-CMD-AGENTS-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-agents-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-agents-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-AGENTS-TS03"],
@@ -11212,7 +11222,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/commands.test.ts#EWP-CMD-COMMANDS-TS01",
       "target": {
@@ -11222,7 +11232,7 @@
         "command": "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS01"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-commands-ts01"
+        "projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-commands-ts01"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -11263,7 +11273,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/commands.test.ts#EWP-CMD-COMMANDS-TS02",
       "target": {
@@ -11273,7 +11283,7 @@
         "command": "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS02"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-commands-ts02"
+        "projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-commands-ts02"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -11314,7 +11324,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/commands.test.ts#EWP-CMD-COMMANDS-TS03",
       "target": {
@@ -11324,7 +11334,7 @@
         "command": "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS03"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-commands-ts03"
+        "projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-commands-ts03"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -11365,7 +11375,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/commands.test.ts#EWP-CMD-COMMANDS-TS04",
       "target": {
@@ -11375,7 +11385,7 @@
         "command": "bun test packages/cli/tests/contracts/commands.test.ts --test-name-pattern EWP-CMD-COMMANDS-TS04"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-commands-ts04"
+        "projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-commands-ts04"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -13318,7 +13328,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS01",
       "target": {
@@ -13327,7 +13337,7 @@
         "selector": "EWP-CMD-LIST-TS01",
         "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts01"],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-list-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS01"],
@@ -13367,7 +13377,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS02",
       "target": {
@@ -13376,7 +13386,7 @@
         "selector": "EWP-CMD-LIST-TS02",
         "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts02"],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-list-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS02"],
@@ -13416,7 +13426,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS03",
       "target": {
@@ -13425,7 +13435,7 @@
         "selector": "EWP-CMD-LIST-TS03",
         "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts03"],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-list-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS03"],
@@ -13465,7 +13475,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS04",
       "target": {
@@ -13474,7 +13484,7 @@
         "selector": "EWP-CMD-LIST-TS04",
         "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS04"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts04"],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-list-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS04"],
@@ -13514,7 +13524,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS05",
       "target": {
@@ -13523,7 +13533,7 @@
         "selector": "EWP-CMD-LIST-TS05",
         "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts05"],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-list-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS05"],
@@ -13563,7 +13573,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS06",
       "target": {
@@ -13572,7 +13582,7 @@
         "selector": "EWP-CMD-LIST-TS06",
         "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS06"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts06"],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-list-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS06"],
@@ -13612,7 +13622,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:packages/cli/tests/contracts/list.test.ts#EWP-CMD-LIST-TS07",
       "target": {
@@ -13621,7 +13631,7 @@
         "selector": "EWP-CMD-LIST-TS07",
         "command": "bun test packages/cli/tests/contracts/list.test.ts --test-name-pattern EWP-CMD-LIST-TS07"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-cmd-list-ts07"],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-cmd-list-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-LIST-TS07"],
@@ -17916,13 +17926,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3A-02",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3A-02.md#ready-plan",
-        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
@@ -18117,13 +18129,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3A-02",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3A-02.md#ready-plan",
-        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
@@ -18198,13 +18212,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3A-02",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3A-02.md#ready-plan",
-        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3A-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
@@ -18276,7 +18292,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:tests/ergonomics/phase/EWP-P3A-TS01.test.ts#EWP-P3A-TS01",
       "target": {
@@ -18285,7 +18301,7 @@
         "selector": "EWP-P3A-TS01",
         "command": "bun test tests/ergonomics/phase/EWP-P3A-TS01.test.ts --test-name-pattern EWP-P3A-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-p3a-ts01"],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-p3a-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3A-TS01"],
@@ -18367,7 +18383,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02:tests/ergonomics/phase/EWP-P3A-TS03.test.ts#EWP-P3A-TS03",
       "target": {
@@ -18376,7 +18392,7 @@
         "selector": "EWP-P3A-TS03",
         "command": "bun test tests/ergonomics/phase/EWP-P3A-TS03.test.ts --test-name-pattern EWP-P3A-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#red-execution-receipt-ewp-p3a-ts03"],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#green-execution-receipt-ewp-p3a-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3A-TS03"],
@@ -21119,11 +21135,11 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3A-02",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -21211,11 +21227,11 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3A-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3A-02",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3A-02.md#targeted-and-impacted-green"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [

@@ -104,10 +104,10 @@ Tracked entities: **425** across **45** change groups.
 
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
-| COMMAND:agents | P17-G3A-02 | planned | required-pr |
+| COMMAND:agents | P17-G3A-02 | validated | required-pr |
 | COMMAND:apply | P17-G4B-02 | planned | required-pr |
 | COMMAND:check | P17-G1-02B | signed-off | required-pr |
-| COMMAND:commands | P17-G3A-02 | planned | required-pr |
+| COMMAND:commands | P17-G3A-02 | validated | required-pr |
 | COMMAND:completion | P17-G6-02B | planned | supported-platform |
 | COMMAND:config | P17-G2-01 | signed-off | required-pr |
 | COMMAND:dev | P17-G3B-01 | planned | required-pr |
@@ -117,7 +117,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:help | P17-G6-02A | planned | required-pr |
 | COMMAND:init | P17-G4A-03 | planned | required-pr |
 | COMMAND:install | P17-G4A-01 | planned | required-pr |
-| COMMAND:list | P17-G3A-02 | planned | required-pr |
+| COMMAND:list | P17-G3A-02 | validated | required-pr |
 | COMMAND:plan | P17-G4B-01 | planned | required-pr |
 | COMMAND:promote | P17-G3B-01 | planned | required-pr |
 | COMMAND:status | P17-G3A-01 | signed-off | required-pr |
@@ -140,9 +140,9 @@ Tracked entities: **425** across **45** change groups.
 | P0-06 | P17-G1-02A | signed-off | required-pr |
 | P0-07 | P17-G2-05 | signed-off | required-pr |
 | P0-08 | P17-G2-05 | signed-off | required-pr |
-| P1-01 | P17-G3A-02 | planned | required-pr |
+| P1-01 | P17-G3A-02 | validated | required-pr |
 | P1-02 | P17-G3A-01 | signed-off | required-pr |
-| P1-03 | P17-G3A-02 | planned | required-pr |
+| P1-03 | P17-G3A-02 | validated | required-pr |
 | P1-04 | P17-G5-05 | planned | required-pr |
 | P1-05 | P17-G4A-03 | planned | required-pr |
 | P1-06 | P17-G4A-02 | planned | required-pr |
@@ -858,9 +858,9 @@ Downstream coverage obligations: none.
 - [x] P17-G3A-02:mapped _(passed)_
 - [x] P17-G3A-02:ready _(passed)_
 - [x] P17-G3A-02:test-first _(passed)_
-- [ ] P17-G3A-02:minimal-implementation _(pending)_
-- [ ] P17-G3A-02:targeted-green _(pending)_
-- [ ] P17-G3A-02:impacted-green _(pending)_
+- [x] P17-G3A-02:minimal-implementation _(passed)_
+- [x] P17-G3A-02:targeted-green _(passed)_
+- [x] P17-G3A-02:impacted-green _(passed)_
 - [ ] P17-G3A-02:refactor _(pending)_
 - [ ] P17-G3A-02:adversarial-review _(pending)_
 - [ ] P17-G3A-02:traceability-closure _(pending)_
@@ -868,30 +868,30 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
-- [ ] **COMMAND:agents** — Discover — Which coding tools are detected and what can Skillsmith do with them? _(command; planned)_
-- [ ] **COMMAND:commands** — Discover — Which slash commands are installed? _(command; planned)_
-- [ ] **COMMAND:list** — Discover — Which skills are installed? _(command; planned)_
-- [ ] **EWP-CMD-AGENTS-TS01** — supported/unknown/repeated tool selection and exit semantics. _(command-test; failing)_
-- [ ] **EWP-CMD-AGENTS-TS02** — detected-only and multiple-install classification in human output. _(command-test; failing)_
-- [ ] **EWP-CMD-AGENTS-TS03** — JSON alias/schema plus the exact four-tool, per-operation capability _(command-test; failing)_
-- [ ] **EWP-CMD-COMMANDS-TS01** — compact/long/JSON rendering and ordering. _(command-test; failing)_
-- [ ] **EWP-CMD-COMMANDS-TS02** — tool/scope/glob/enabled-state filters plus shared project-root _(command-test; failing)_
-- [ ] **EWP-CMD-COMMANDS-TS03** — invalid capability/input exits. _(command-test; failing)_
-- [ ] **EWP-CMD-COMMANDS-TS04** — plugin/standalone provenance and large-fleet behavior. _(command-test; failing)_
-- [ ] **EWP-CMD-LIST-TS01** — compact default columns, grouping, stable ordering, empty state. _(command-test; failing)_
-- [ ] **EWP-CMD-LIST-TS02** — long output includes path/origin/source/revision/store/verify/description. _(command-test; failing)_
-- [ ] **EWP-CMD-LIST-TS03** — tool/scope/glob/mode/source/revision filters and combinations plus stable _(command-test; failing)_
-- [ ] **EWP-CMD-LIST-TS04** — duplicate identity, shadowing, and cross-tool non-duplicate regression. _(command-test; failing)_
-- [ ] **EWP-CMD-LIST-TS05** — enabled/disabled/unconfigured exclusivity and display. _(command-test; failing)_
-- [ ] **EWP-CMD-LIST-TS06** — versioned complete JSON independent of human verbosity. _(command-test; failing)_
-- [ ] **EWP-CMD-LIST-TS07** — large-fleet performance and bounded default output. _(command-test; failing)_
-- [ ] **EWP-P3A-T01** — Deterministic compact list model/renderers. _(phase-task; red)_
-- [ ] **EWP-P3A-T04** — Tool-qualified duplicate/shadow analysis. _(phase-task; red)_
-- [ ] **EWP-P3A-T05** — Per-operation tool/scope capability reporting. _(phase-task; red)_
-- [ ] **EWP-P3A-TS01** — List compact/long/JSON goldens. _(phase-test; failing)_
-- [ ] **EWP-P3A-TS03** — Duplicate cross-tool/cross-scope regressions. _(phase-test; failing)_
-- [ ] **P1-01** — Compact deterministic `list` _(recommendation; planned)_
-- [ ] **P1-03** — Correct duplicates _(recommendation; planned)_
+- [ ] **COMMAND:agents** — Discover — Which coding tools are detected and what can Skillsmith do with them? _(command; validated)_
+- [ ] **COMMAND:commands** — Discover — Which slash commands are installed? _(command; validated)_
+- [ ] **COMMAND:list** — Discover — Which skills are installed? _(command; validated)_
+- [ ] **EWP-CMD-AGENTS-TS01** — supported/unknown/repeated tool selection and exit semantics. _(command-test; passing)_
+- [ ] **EWP-CMD-AGENTS-TS02** — detected-only and multiple-install classification in human output. _(command-test; passing)_
+- [ ] **EWP-CMD-AGENTS-TS03** — JSON alias/schema plus the exact four-tool, per-operation capability _(command-test; passing)_
+- [ ] **EWP-CMD-COMMANDS-TS01** — compact/long/JSON rendering and ordering. _(command-test; passing)_
+- [ ] **EWP-CMD-COMMANDS-TS02** — tool/scope/glob/enabled-state filters plus shared project-root _(command-test; passing)_
+- [ ] **EWP-CMD-COMMANDS-TS03** — invalid capability/input exits. _(command-test; passing)_
+- [ ] **EWP-CMD-COMMANDS-TS04** — plugin/standalone provenance and large-fleet behavior. _(command-test; passing)_
+- [ ] **EWP-CMD-LIST-TS01** — compact default columns, grouping, stable ordering, empty state. _(command-test; passing)_
+- [ ] **EWP-CMD-LIST-TS02** — long output includes path/origin/source/revision/store/verify/description. _(command-test; passing)_
+- [ ] **EWP-CMD-LIST-TS03** — tool/scope/glob/mode/source/revision filters and combinations plus stable _(command-test; passing)_
+- [ ] **EWP-CMD-LIST-TS04** — duplicate identity, shadowing, and cross-tool non-duplicate regression. _(command-test; passing)_
+- [ ] **EWP-CMD-LIST-TS05** — enabled/disabled/unconfigured exclusivity and display. _(command-test; passing)_
+- [ ] **EWP-CMD-LIST-TS06** — versioned complete JSON independent of human verbosity. _(command-test; passing)_
+- [ ] **EWP-CMD-LIST-TS07** — large-fleet performance and bounded default output. _(command-test; passing)_
+- [ ] **EWP-P3A-T01** — Deterministic compact list model/renderers. _(phase-task; green)_
+- [ ] **EWP-P3A-T04** — Tool-qualified duplicate/shadow analysis. _(phase-task; green)_
+- [ ] **EWP-P3A-T05** — Per-operation tool/scope capability reporting. _(phase-task; green)_
+- [ ] **EWP-P3A-TS01** — List compact/long/JSON goldens. _(phase-test; passing)_
+- [ ] **EWP-P3A-TS03** — Duplicate cross-tool/cross-scope regressions. _(phase-test; passing)_
+- [ ] **P1-01** — Compact deterministic `list` _(recommendation; validated)_
+- [ ] **P1-03** — Correct duplicates _(recommendation; validated)_
 
 ## P17-G3B-01 — Immutable operations/results and migration of current mutator planning/dry-run paths
 
