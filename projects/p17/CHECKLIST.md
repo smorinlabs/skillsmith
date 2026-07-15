@@ -895,13 +895,13 @@ Downstream coverage obligations: none.
 
 ## P17-G3B-01 — Immutable operations/results and migration of current mutator planning/dry-run paths
 
-Phase: 3B; status: **planned**; dependencies: P17-G3A-02.
+Phase: 3B; status: **mapped**; dependencies: P17-G3A-02.
 Required-now validations: EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-OPT-TS04, EWP-P3B-TS01, EWP-P3B-TS02, EWP-WF05.
 Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS09, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS05, EWP-P4B-TS01, EWP-P4B-TS02, EWP-P4B-TS03.
 
 ### Group gates
 
-- [ ] P17-G3B-01:mapped _(pending)_
+- [x] P17-G3B-01:mapped _(passed)_
 - [ ] P17-G3B-01:ready _(pending)_
 - [ ] P17-G3B-01:test-first _(pending)_
 - [ ] P17-G3B-01:minimal-implementation _(pending)_
