@@ -12,14 +12,14 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 13 | 15 | 6 |
-| phase-task | 65 | 36 | 29 | 0 |
-| phase-test | 61 | 32 | 29 | 0 |
-| command-test | 157 | 34 | 123 | 0 |
+| phase-task | 65 | 38 | 27 | 0 |
+| phase-test | 61 | 34 | 27 | 0 |
+| command-test | 157 | 46 | 111 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
-| command | 23 | 8 | 15 | 0 |
-| finding | 43 | 25 | 18 | 0 |
-| decision | 16 | 3 | 12 | 1 |
+| command | 23 | 10 | 13 | 0 |
+| finding | 43 | 27 | 16 | 0 |
+| decision | 16 | 4 | 11 | 1 |
 
 ### Phases
 
@@ -28,7 +28,7 @@ Tracked entities: **425** across **45** change groups.
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
-| 3 | 8 | 83 | 37 | 0 |
+| 3 | 8 | 83 | 58 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 67 | 0 | 0 |
 | 6 | 5 | 39 | 0 | 0 |
@@ -110,7 +110,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:commands | P17-G3A-02 | signed-off | required-pr |
 | COMMAND:completion | P17-G6-02B | planned | supported-platform |
 | COMMAND:config | P17-G2-01 | signed-off | required-pr |
-| COMMAND:dev | P17-G3B-01 | validated | required-pr |
+| COMMAND:dev | P17-G3B-01 | signed-off | required-pr |
 | COMMAND:doctor | P17-G3B-03 | planned | required-pr |
 | COMMAND:export | P17-G4A-02 | planned | required-pr |
 | COMMAND:gc | P17-G5-04 | planned | required-pr |
@@ -119,7 +119,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:install | P17-G4A-01 | planned | required-pr |
 | COMMAND:list | P17-G3A-02 | signed-off | required-pr |
 | COMMAND:plan | P17-G4B-01 | planned | required-pr |
-| COMMAND:promote | P17-G3B-01 | validated | required-pr |
+| COMMAND:promote | P17-G3B-01 | signed-off | required-pr |
 | COMMAND:status | P17-G3A-01 | signed-off | required-pr |
 | COMMAND:sync | P17-G5-01 | planned | required-pr |
 | COMMAND:undo | P17-G5-03 | planned | required-pr |
@@ -172,7 +172,7 @@ Tracked entities: **425** across **45** change groups.
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
 | EWP-CF-001 | P17-G0-03 | signed-off | required-pr |
-| EWP-CF-002 | P17-G3B-01 | validated | required-pr |
+| EWP-CF-002 | P17-G3B-01 | signed-off | required-pr |
 | EWP-CF-003 | P17-G2-01 | signed-off | required-pr |
 | EWP-CF-004 | P17-G1-02A | signed-off | required-pr |
 | EWP-CF-005 | P17-G3B-02 | planned | required-pr |
@@ -195,7 +195,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-022 | P17-G1-01 | signed-off | required-pr |
 | EWP-CF-023 | P17-G0-02 | signed-off | required-pr |
 | EWP-CF-024 | P17-G1-01 | signed-off | required-pr |
-| EWP-CF-025 | P17-G3B-01 | validated | required-pr |
+| EWP-CF-025 | P17-G3B-01 | signed-off | required-pr |
 | EWP-CF-026 | P17-G3B-02 | planned | required-pr |
 | EWP-CF-027 | P17-G2-02 | signed-off | required-pr |
 | EWP-CF-028 | P17-G3B-03 | planned | required-pr |
@@ -227,7 +227,7 @@ Tracked entities: **425** across **45** change groups.
 | D-006 | P17-G4A-01 | planned | required-pr |
 | D-007 | P17-G5-01 | planned | required-pr |
 | D-008 | P17-G3A-01 | signed-off | required-pr |
-| D-009 | P17-G3B-01 | validated | required-pr |
+| D-009 | P17-G3B-01 | signed-off | required-pr |
 | D-010 | P17-G3B-03 | planned | required-pr |
 | D-011 | P17-G5-02 | planned | required-pr |
 | D-012 | P17-G5-04 | planned | required-pr |
@@ -895,7 +895,7 @@ Downstream coverage obligations: none.
 
 ## P17-G3B-01 — Immutable operations/results and migration of current mutator planning/dry-run paths
 
-Phase: 3B; status: **reviewed**; dependencies: P17-G3A-02.
+Phase: 3B; status: **signed-off**; dependencies: P17-G3A-02.
 Required-now validations: EWP-CMD-DEV-TS01, EWP-CMD-DEV-TS02, EWP-CMD-DEV-TS03, EWP-CMD-DEV-TS04, EWP-CMD-DEV-TS05, EWP-CMD-DEV-TS06, EWP-CMD-PROMOTE-TS01, EWP-CMD-PROMOTE-TS02, EWP-CMD-PROMOTE-TS03, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS05, EWP-CMD-PROMOTE-TS06, EWP-OPT-TS04, EWP-P3B-TS01, EWP-P3B-TS02.
 Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS09, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS05, EWP-P4B-TS01, EWP-P4B-TS02, EWP-P4B-TS03, EWP-WF05.
 
@@ -909,32 +909,32 @@ Downstream coverage obligations: EWP-CMD-EXPORT-TS05, EWP-CMD-INIT-TS03, EWP-CMD
 - [x] P17-G3B-01:impacted-green _(passed)_
 - [x] P17-G3B-01:refactor _(passed)_
 - [x] P17-G3B-01:adversarial-review _(passed)_
-- [ ] P17-G3B-01:traceability-closure _(pending)_
-- [ ] P17-G3B-01:signed-off _(pending)_
+- [x] P17-G3B-01:traceability-closure _(passed)_
+- [x] P17-G3B-01:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:dev** — Develop — How do I use a local checkout as the live development source? _(command; validated)_
-- [ ] **COMMAND:promote** — Develop — How do I snapshot a development placement into managed state? _(command; validated)_
-- [ ] **D-009** — One local development lifecycle _(decision; validated)_
-- [ ] **EWP-CF-002** — Separate executable work from dispositions and outcomes _(finding; validated)_
-- [ ] **EWP-CF-025** — Bound force to one selected conflict without bypassing safety _(finding; validated)_
-- [ ] **EWP-CMD-DEV-TS01** — create/adopt/noop/mismatch/foreign/absent state machine. _(command-test; passing)_
-- [ ] **EWP-CMD-DEV-TS02** — source/dest/name/path/tool/scope validation, unique unscoped inference, _(command-test; passing)_
-- [ ] **EWP-CMD-DEV-TS03** — static verify/strict/no-verify behavior. _(command-test; passing)_
-- [ ] **EWP-CMD-DEV-TS04** — Pinned-to-dev and scoped bulk selection with canonical planned group policy. _(command-test; passing)_
-- [ ] **EWP-CMD-DEV-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; passing)_
-- [ ] **EWP-CMD-DEV-TS06** — crash recovery and source/store retention. _(command-test; passing)_
-- [ ] **EWP-CMD-PROMOTE-TS01** — dev/pinned/store-linked/unmanaged selection and convergence across _(command-test; passing)_
-- [ ] **EWP-CMD-PROMOTE-TS02** — clean/dirty/non-Git provenance and allow-dirty. _(command-test; passing)_
-- [ ] **EWP-CMD-PROMOTE-TS03** — per-tool verify mode, strict, inconclusive, no-verify. _(command-test; passing)_
-- [ ] **EWP-CMD-PROMOTE-TS04** — Scoped bulk and partial multi-tool planning with canonical group policy. _(command-test; passing)_
-- [ ] **EWP-CMD-PROMOTE-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; passing)_
-- [ ] **EWP-CMD-PROMOTE-TS06** — content hash, store reuse, crash recovery, residue cleanup. _(command-test; passing)_
-- [ ] **EWP-P3B-T01** — Immutable executable-operation, diagnostic, and execution-result types with _(phase-task; reviewed)_
-- [ ] **EWP-P3B-T03** — Adapt existing install/uninstall/promote/dev planning and dry-run paths to the _(phase-task; reviewed)_
-- [ ] **EWP-P3B-TS01** — Operation and diagnostic snapshot matrix for every existing action/outcome. _(phase-test; passing)_
-- [ ] **EWP-P3B-TS02** — Determinism/property tests and dry-run/execution operation equality. _(phase-test; passing)_
+- [x] **COMMAND:dev** — Develop — How do I use a local checkout as the live development source? _(command; signed-off)_
+- [x] **COMMAND:promote** — Develop — How do I snapshot a development placement into managed state? _(command; signed-off)_
+- [x] **D-009** — One local development lifecycle _(decision; signed-off)_
+- [x] **EWP-CF-002** — Separate executable work from dispositions and outcomes _(finding; signed-off)_
+- [x] **EWP-CF-025** — Bound force to one selected conflict without bypassing safety _(finding; signed-off)_
+- [x] **EWP-CMD-DEV-TS01** — create/adopt/noop/mismatch/foreign/absent state machine. _(command-test; signed-off)_
+- [x] **EWP-CMD-DEV-TS02** — source/dest/name/path/tool/scope validation, unique unscoped inference, _(command-test; signed-off)_
+- [x] **EWP-CMD-DEV-TS03** — static verify/strict/no-verify behavior. _(command-test; signed-off)_
+- [x] **EWP-CMD-DEV-TS04** — Pinned-to-dev and scoped bulk selection with canonical planned group policy. _(command-test; signed-off)_
+- [x] **EWP-CMD-DEV-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; signed-off)_
+- [x] **EWP-CMD-DEV-TS06** — crash recovery and source/store retention. _(command-test; signed-off)_
+- [x] **EWP-CMD-PROMOTE-TS01** — dev/pinned/store-linked/unmanaged selection and convergence across _(command-test; signed-off)_
+- [x] **EWP-CMD-PROMOTE-TS02** — clean/dirty/non-Git provenance and allow-dirty. _(command-test; signed-off)_
+- [x] **EWP-CMD-PROMOTE-TS03** — per-tool verify mode, strict, inconclusive, no-verify. _(command-test; signed-off)_
+- [x] **EWP-CMD-PROMOTE-TS04** — Scoped bulk and partial multi-tool planning with canonical group policy. _(command-test; signed-off)_
+- [x] **EWP-CMD-PROMOTE-TS05** — Dry-run/JSON/rollback inverse-operation identity and pre-I/O approval conflicts. _(command-test; signed-off)_
+- [x] **EWP-CMD-PROMOTE-TS06** — content hash, store reuse, crash recovery, residue cleanup. _(command-test; signed-off)_
+- [x] **EWP-P3B-T01** — Immutable executable-operation, diagnostic, and execution-result types with _(phase-task; signed-off)_
+- [x] **EWP-P3B-T03** — Adapt existing install/uninstall/promote/dev planning and dry-run paths to the _(phase-task; signed-off)_
+- [x] **EWP-P3B-TS01** — Operation and diagnostic snapshot matrix for every existing action/outcome. _(phase-test; signed-off)_
+- [x] **EWP-P3B-TS02** — Determinism/property tests and dry-run/execution operation equality. _(phase-test; signed-off)_
 
 ## P17-G3B-02 — Lock hierarchy, deterministic scheduler, coordinator, and partial-pair semantics
 

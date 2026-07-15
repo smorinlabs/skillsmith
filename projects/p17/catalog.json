@@ -3917,7 +3917,7 @@
       "phase": "3B",
       "title": "Immutable operations/results and migration of current mutator planning/dry-run paths",
       "dependsOn": ["P17-G3A-02"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "eslint.config.js",
@@ -4115,12 +4115,12 @@
           "evidence": ["projects/p17/evidence/P17-G3B-01.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"]
         }
       },
       "evidence": [
@@ -4135,7 +4135,9 @@
         "projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-01.md#refactor-review",
         "projects/p17/evidence/P17-G3B-01.md#adversarial-review",
-        "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment"
+        "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-01.md#terminal-remediation-and-full-repository-gate",
+        "projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"
       ]
     },
     {
@@ -6372,11 +6374,11 @@
       "title": "Develop — How do I use a local checkout as the live development source?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:dev",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
@@ -6789,11 +6791,11 @@
       "title": "Develop — How do I snapshot a development placement into managed state?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:promote",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
@@ -7489,11 +7491,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-01",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G5-03"],
       "implements": [],
       "validatedBy": [
@@ -7867,11 +7869,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-01",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G4B-01", "P17-G4B-02"],
       "implements": [],
       "validatedBy": [
@@ -8795,11 +8797,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-01",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-01",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green"],
+      "evidence": ["projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"],
       "secondaryGroups": [
         "P17-G4A-02",
         "P17-G4A-03",
@@ -11904,7 +11906,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS01",
       "target": {
@@ -11947,7 +11949,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS02",
       "target": {
@@ -11990,7 +11992,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS03",
       "target": {
@@ -12033,7 +12035,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS04",
       "target": {
@@ -12076,7 +12078,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS05",
       "target": {
@@ -12119,7 +12121,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/dev.test.ts#EWP-CMD-DEV-TS06",
       "target": {
@@ -14313,7 +14315,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS01",
       "target": {
@@ -14356,7 +14358,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS02",
       "target": {
@@ -14399,7 +14401,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS03",
       "target": {
@@ -14442,7 +14444,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS04",
       "target": {
@@ -14485,7 +14487,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS05",
       "target": {
@@ -14528,7 +14530,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:packages/cli/tests/contracts/promote.test.ts#EWP-CMD-PROMOTE-TS06",
       "target": {
@@ -18715,7 +18717,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-01",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01",
       "target": null,
@@ -18725,7 +18727,8 @@
         "projects/p17/evidence/P17-G3B-01.md#implementation-ownership-amendment",
         "projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-01.md#adversarial-review",
-        "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment"
+        "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
@@ -18842,7 +18845,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-01",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01",
       "target": null,
@@ -18853,7 +18856,8 @@
         "projects/p17/evidence/P17-G3B-01.md#dev-source-compatibility-ownership-amendment",
         "projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-01.md#adversarial-review",
-        "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment"
+        "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-01.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
@@ -19037,7 +19041,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:tests/ergonomics/phase/EWP-P3B-TS01.test.ts#EWP-P3B-TS01",
       "target": {
@@ -19080,7 +19084,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-01:tests/ergonomics/phase/EWP-P3B-TS02.test.ts#EWP-P3B-TS02",
       "target": {
