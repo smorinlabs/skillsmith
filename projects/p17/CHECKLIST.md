@@ -814,7 +814,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G3A-01 — Canonical correlated read model and status state-product surface
 
-Phase: 3A; status: **ready**; dependencies: P17-G2-05.
+Phase: 3A; status: **active**; dependencies: P17-G2-05.
 Required-now validations: EWP-CMD-STATUS-TS01, EWP-CMD-STATUS-TS02, EWP-CMD-STATUS-TS03, EWP-CMD-STATUS-TS04, EWP-CMD-STATUS-TS05, EWP-CMD-STATUS-TS06, EWP-P3A-TS02, EWP-P3A-TS04.
 Downstream coverage obligations: none.
 
@@ -822,7 +822,7 @@ Downstream coverage obligations: none.
 
 - [x] P17-G3A-01:mapped _(passed)_
 - [x] P17-G3A-01:ready _(passed)_
-- [ ] P17-G3A-01:test-first _(pending)_
+- [x] P17-G3A-01:test-first _(passed)_
 - [ ] P17-G3A-01:minimal-implementation _(pending)_
 - [ ] P17-G3A-01:targeted-green _(pending)_
 - [ ] P17-G3A-01:impacted-green _(pending)_
@@ -835,16 +835,16 @@ Downstream coverage obligations: none.
 
 - [ ] **COMMAND:status** — Discover — How do desired, locked, ledger, and live states relate? _(command; planned)_
 - [ ] **D-008** — Dedicated correlated status _(decision; planned)_
-- [ ] **EWP-CMD-STATUS-TS01** — manifest-only, lock-only, ledger-only, live-only state products. _(command-test; planned)_
-- [ ] **EWP-CMD-STATUS-TS02** — dev, pinned, store-linked, unmanaged, broken, and absent classification. _(command-test; planned)_
-- [ ] **EWP-CMD-STATUS-TS03** — revision/content/source drift and verify-state reporting. _(command-test; planned)_
-- [ ] **EWP-CMD-STATUS-TS04** — pending/committed journal, version-1 migration-pending without rewrite, _(command-test; planned)_
-- [ ] **EWP-CMD-STATUS-TS05** — target/tool/scope filters, cross-scope shadowing, and project identity _(command-test; planned)_
-- [ ] **EWP-CMD-STATUS-TS06** — check exit and versioned JSON. _(command-test; planned)_
-- [ ] **EWP-P3A-T02** — Version-discriminating, non-mutating ledger reader plus _(phase-task; ready)_
-- [ ] **EWP-P3A-T03** — Status command. _(phase-task; ready)_
-- [ ] **EWP-P3A-TS02** — Status state-product matrix including missing, version 1, version 2, _(phase-test; planned)_
-- [ ] **EWP-P3A-TS04** — Realistic mixed-fleet inspection fixture. _(phase-test; planned)_
+- [ ] **EWP-CMD-STATUS-TS01** — manifest-only, lock-only, ledger-only, live-only state products. _(command-test; failing)_
+- [ ] **EWP-CMD-STATUS-TS02** — dev, pinned, store-linked, unmanaged, broken, and absent classification. _(command-test; failing)_
+- [ ] **EWP-CMD-STATUS-TS03** — revision/content/source drift and verify-state reporting. _(command-test; failing)_
+- [ ] **EWP-CMD-STATUS-TS04** — pending/committed journal, version-1 migration-pending without rewrite, _(command-test; failing)_
+- [ ] **EWP-CMD-STATUS-TS05** — target/tool/scope filters, cross-scope shadowing, and project identity _(command-test; failing)_
+- [ ] **EWP-CMD-STATUS-TS06** — check exit and versioned JSON. _(command-test; failing)_
+- [ ] **EWP-P3A-T02** — Version-discriminating, non-mutating ledger reader plus _(phase-task; red)_
+- [ ] **EWP-P3A-T03** — Status command. _(phase-task; red)_
+- [ ] **EWP-P3A-TS02** — Status state-product matrix including missing, version 1, version 2, _(phase-test; failing)_
+- [ ] **EWP-P3A-TS04** — Realistic mixed-fleet inspection fixture. _(phase-test; failing)_
 - [ ] **P1-02** — Ledger-aware `status` _(recommendation; planned)_
 
 ## P17-G3A-02 — Deterministic agents/list/commands inventory, duplicates, and capability presentation
