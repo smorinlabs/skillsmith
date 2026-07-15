@@ -798,6 +798,9 @@ const JournalSchema = z
           (mustExpectAbsent && expectedKind !== 'absent') ||
           (!mustExpectAbsent && !mayRetainAtLive && expectedKind === 'absent') ||
           (value.before === 'dev' && expectedKind === 'directory') ||
+          (retention.structural.expected.kind === 'symlink' &&
+            retention.structural.expected.linkTarget === null &&
+            value.before !== 'pinned') ||
           (committedPinnedDev && retention.role === 'store' && expectedKind !== 'directory')
         ) {
           context.addIssue({

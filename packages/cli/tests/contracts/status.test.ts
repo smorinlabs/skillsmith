@@ -1980,6 +1980,17 @@ describe('EWP-CMD-STATUS-TS04', () => {
       statusV1Codec.validate(backedUpPinnedUnknownTargetAggregate).ok,
       'unrecorded pinned symlink target cannot use aggregate-derived eligibility',
     ).toBeFalse();
+    const backedUpDevUnknownTarget = structuredClone(backedUpPinnedUnknownTargetAggregate);
+    const backedUpDevUnknownTargetRow = placementAt(
+      entryNamed(backedUpDevUnknownTarget, 'shadowed-fleet'),
+      1,
+      'backed-up dev legacy unrecorded target',
+    );
+    (backedUpDevUnknownTargetRow.journal as UnknownRecord).before = 'dev';
+    expect(
+      statusV1Codec.validate(backedUpDevUnknownTarget).ok,
+      'unrecorded symlink targets are exclusive to legacy pinned before state',
+    ).toBeFalse();
 
     const livePinnedNotReversible = structuredClone(backedUpPinnedNotReversible);
     const livePinnedNotReversibleRow = placementAt(

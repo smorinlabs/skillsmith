@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { hashManifestSemantics, parseArtifactDigest } from '../../src/artifacts/hash.ts';
+import {
+  hashCanonicalInput,
+  hashManifestBytes,
+  hashManifestSemantics,
+  parseArtifactDigest,
+} from '../../src/artifacts/hash.ts';
 import { validateJournalV1DtoShape } from '../../src/artifacts/journal-codec.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import { fromLedgerV2Dto, ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
@@ -3109,6 +3114,78 @@ describe('G3A-01 focused status reader', () => {
         new Set([alphaFirst.path, alphaSecond.path, beta.path]),
       ),
     ).toEqual([alphaFirst.path, alphaSecond.path, beta.path]);
+  });
+
+  test('keeps repeated logical retention probe identities separate across observation domains', async () => {
+    const readStatus = await loadReader();
+    const retainedPath = '/retained/shared-correlation';
+    const retainedBytes = new TextEncoder().encode('shared retained bytes\n');
+    const repositoryRevision = unwrap(
+      hashCanonicalInput('resource', 1, retainedBytes),
+      'shared retained repository revision',
+    );
+    const manifestContentHash = hashManifestBytes(retainedBytes);
+    const resourceId = 'resource:retained:shared-correlation';
+    const alphaRetained: LogicalJournalV1Dto['actual']['retained'][number] = {
+      resourceId,
+      role: 'backup',
+      sourceRole: 'manifest',
+      path: retainedPath,
+      repositoryRevision: { kind: 'resource', digest: repositoryRevision },
+      contentHash: manifestContentHash,
+      retainUntil: null,
+    };
+    const betaRetained: LogicalJournalV1Dto['actual']['retained'][number] = {
+      ...alphaRetained,
+      sourceRole: 'live',
+    };
+    const sharedTransactionId = 'tx:repeated-probe-correlation';
+    const alpha = logicalJournal({
+      name: 'alpha-probe-correlation',
+      path: join(CODEX_ROOT, 'alpha-probe-correlation'),
+      transactionId: sharedTransactionId,
+      phase: 'committed',
+      retained: [alphaRetained],
+      reversibility: { kind: 'conditional', retentionResourceIds: [resourceId] },
+    });
+    const beta = logicalJournal({
+      name: 'beta-probe-correlation',
+      path: join(CODEX_ROOT, 'beta-probe-correlation'),
+      transactionId: sharedTransactionId,
+      phase: 'committed',
+      retained: [betaRetained],
+      reversibility: { kind: 'conditional', retentionResourceIds: [resourceId] },
+    });
+    const ledger = ledgerV2Codec.encode(emptyLedgerModel({ history: [beta, alpha] }));
+    if (!ledger.ok) {
+      throw new Error(`shared-correlation ledger encoding failed: ${JSON.stringify(ledger.error)}`);
+    }
+    const result = await readStatus(
+      readPorts({
+        bytes: new Map([
+          [LEDGER_PATH, ledger.value],
+          [retainedPath, retainedBytes],
+        ]),
+      }),
+      request(),
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error('expected repeated-correlation status product');
+    const journals = Object.fromEntries(
+      result.value.entries.map((entry) => [entry.name, entry.placements[0]?.journal]),
+    );
+    expect(journals['alpha-probe-correlation']).toMatchObject({
+      state: 'committed',
+      reverseEligibility: 'eligible',
+      retention: [{ contentHash: { state: 'satisfied', domain: 'manifest-bytes' } }],
+      remediation: { reverse: expect.any(Array) },
+    });
+    expect(journals['beta-probe-correlation']).toMatchObject({
+      state: 'committed',
+      reverseEligibility: 'retention-unverified',
+      retention: [{ contentHash: { state: 'unverified', domain: 'source-content' } }],
+      remediation: { reverse: null },
+    });
   });
 
   test('requires user logical journals to carry an explicit null project root in reader and join', async () => {

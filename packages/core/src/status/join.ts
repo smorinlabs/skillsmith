@@ -71,6 +71,8 @@ export interface StatusJoinInput {
 }
 
 export interface StatusRetentionProbeInput {
+  /** Internal exact-correlation token; production logical probes always carry one. */
+  readonly correlationKey?: string;
   readonly transactionId: string;
   readonly resourceId: string | null;
   readonly path: string;
@@ -119,6 +121,7 @@ interface MutableRow {
   live: StatusLiveInput | null;
   journal: StatusJournalState;
   logicalJournal: LogicalJournalV1Dto | null;
+  logicalJournalCorrelationKey: string | null;
   shadow: StatusShadow;
 }
 
@@ -383,6 +386,7 @@ const newRow = (
   live: null,
   journal: { state: 'none' },
   logicalJournal: null,
+  logicalJournalCorrelationKey: null,
   shadow: { state: 'none' },
 });
 
@@ -1143,14 +1147,26 @@ const logicalLiveMatches = (row: MutableRow, journal: LogicalJournalV1Dto): bool
   return observed.nodeKind === before.liveKind;
 };
 
+const logicalRetentionCorrelationKey = (journalKey: string, resourceIndex: number): string =>
+  JSON.stringify(['logical-retention', journalKey, resourceIndex]);
+
 const logicalRetention = (
   journal: LogicalJournalV1Dto,
+  journalCorrelationKey: string,
   input: StatusJoinInput,
-): readonly StatusLogicalRetentionRequirement[] =>
-  journal.actual.retained.map((retained) => {
+): readonly StatusLogicalRetentionRequirement[] => {
+  const hasCorrelationKeys = input.retention.some(
+    (candidate) => candidate.correlationKey !== undefined,
+  );
+  return journal.actual.retained.map((retained, resourceIndex) => {
+    const correlationKey = logicalRetentionCorrelationKey(journalCorrelationKey, resourceIndex);
     const probe = input.retention.find(
       (candidate) =>
-        candidate.transactionId === journal.transactionId &&
+        (hasCorrelationKeys
+          ? candidate.correlationKey === correlationKey
+          : candidate.transactionId === journal.transactionId &&
+            candidate.resourceId === retained.resourceId &&
+            candidate.path === retained.path) &&
         candidate.resourceId === retained.resourceId &&
         candidate.path === retained.path,
     );
@@ -1244,6 +1260,7 @@ const logicalRetention = (
       state,
     };
   });
+};
 
 const logicalEligibility = (
   journal: LogicalJournalV1Dto,
@@ -1285,12 +1302,13 @@ const logicalEligibility = (
 
 const logicalJournalState = (
   journal: LogicalJournalV1Dto,
+  journalCorrelationKey: string,
   path: string,
   input: StatusJoinInput,
   row: MutableRow,
 ): StatusJournalState => {
   const before = logicalBefore(journal);
-  const retention = logicalRetention(journal, input);
+  const retention = logicalRetention(journal, journalCorrelationKey, input);
   const eligibility = logicalEligibility(journal, before, retention, row);
   const argv = Object.freeze([
     'skillsmith',
@@ -1331,6 +1349,7 @@ const logicalJournalState = (
 
 interface LogicalJournalCandidate {
   readonly journal: LogicalJournalV1Dto;
+  readonly correlationKey: string;
   readonly pending: boolean;
   readonly name: string;
   readonly tool: string;
@@ -1358,11 +1377,18 @@ type RankedJournalCandidate =
 const collectLogicalJournals = (input: StatusJoinInput): readonly LogicalJournalCandidate[] => {
   if (input.ledger.state === 'absent') return [];
   const values = [
-    ...Object.values(input.ledger.model.transactions).map((journal) => ({
+    ...Object.entries(input.ledger.model.transactions)
+      .sort(([left], [right]) => compare(left, right))
+      .map(([, journal], index) => ({
+        journal,
+        pending: true,
+        correlationKey: JSON.stringify(['logical-transaction', index]),
+      })),
+    ...input.ledger.model.history.map((journal, index) => ({
       journal,
-      pending: true,
+      pending: false,
+      correlationKey: JSON.stringify(['logical-history', index]),
     })),
-    ...input.ledger.model.history.map((journal) => ({ journal, pending: false })),
   ];
   const candidates: LogicalJournalCandidate[] = [];
   for (const value of values) {
@@ -1385,6 +1411,7 @@ const collectLogicalJournals = (input: StatusJoinInput): readonly LogicalJournal
     }
     const candidate: LogicalJournalCandidate = {
       journal,
+      correlationKey: value.correlationKey,
       pending: value.pending && journal.phase !== 'committed',
       name: membership.name,
       tool: membership.tool,
@@ -1539,8 +1566,15 @@ const attachLogicalJournals = (
     );
     const winner = ranked[0];
     if (winner?.format === 'logical') {
-      row.journal = logicalJournalState(winner.candidate.journal, seed.path, input, row);
+      row.journal = logicalJournalState(
+        winner.candidate.journal,
+        winner.candidate.correlationKey,
+        seed.path,
+        input,
+        row,
+      );
       row.logicalJournal = winner.candidate.journal;
+      row.logicalJournalCorrelationKey = winner.candidate.correlationKey;
     }
     for (const loser of ranked.slice(1)) {
       unmatched.push(
@@ -1734,7 +1768,11 @@ const correlateStatusJournals = (input: StatusJoinInput): StatusJournalCorrelati
 };
 
 export type StatusRetentionPlan =
-  | Readonly<{ readonly format: 'logical'; readonly journal: LogicalJournalV1Dto }>
+  | Readonly<{
+      readonly format: 'logical';
+      readonly journal: LogicalJournalV1Dto;
+      readonly retentionCorrelationKeys: readonly string[];
+    }>
   | Readonly<{
       readonly format: 'legacy-pair';
       readonly journal: LegacyPairJournalV1Dto;
@@ -1759,7 +1797,20 @@ export const planStatusRetention = (
     const selectedJournal = row.journal;
     if (selectedJournal.format === 'logical') {
       const journal = row.logicalJournal;
-      if (journal !== null) plans.push(Object.freeze({ format: 'logical', journal }));
+      const correlationKey = row.logicalJournalCorrelationKey;
+      if (journal !== null && correlationKey !== null) {
+        plans.push(
+          Object.freeze({
+            format: 'logical',
+            journal,
+            retentionCorrelationKeys: Object.freeze(
+              journal.actual.retained.map((_, resourceIndex) =>
+                logicalRetentionCorrelationKey(correlationKey, resourceIndex),
+              ),
+            ),
+          }),
+        );
+      }
       continue;
     }
     const pair = row.ledger;

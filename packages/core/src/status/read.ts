@@ -1015,7 +1015,8 @@ const observeRetention = async (
   for (const plan of plans) {
     const resources =
       plan.format === 'logical'
-        ? plan.journal.actual.retained.map((retained) => ({
+        ? plan.journal.actual.retained.map((retained, resourceIndex) => ({
+            correlationKey: plan.retentionCorrelationKeys[resourceIndex],
             resourceId: retained.resourceId,
             path: retained.path,
             repositoryKind: retained.repositoryRevision.kind,
@@ -1027,6 +1028,7 @@ const observeRetention = async (
             followSourceSymlink: true,
           }))
         : plan.resources.map((resource) => ({
+            correlationKey: undefined,
             resourceId: null,
             path: resource.path,
             repositoryKind: null,
@@ -1049,6 +1051,9 @@ const observeRetention = async (
       );
       const missing = observed.pathState === 'missing';
       probes.push({
+        ...(resource.correlationKey === undefined
+          ? {}
+          : { correlationKey: resource.correlationKey }),
         transactionId: plan.format === 'logical' ? plan.journal.transactionId : plan.journal.txId,
         resourceId: resource.resourceId,
         path: resource.path,
