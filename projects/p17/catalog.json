@@ -3926,6 +3926,7 @@
         "packages/cli/src/output/flip-json.ts",
         "packages/cli/src/spec/options.ts",
         "packages/cli/src/spec/registry.ts",
+        "packages/cli/tests/commands/dev-source.test.ts",
         "packages/cli/tests/commands/dev.test.ts",
         "packages/cli/tests/commands/flip-exit-codes.test.ts",
         "packages/cli/tests/commands/promote.test.ts",
@@ -3934,9 +3935,11 @@
         "packages/cli/tests/contracts/promote.test.ts",
         "packages/cli/tests/fixtures/flip-report-v3.golden.json",
         "packages/cli/tests/help.test.ts",
+        "packages/cli/tests/output/flip-human.test.ts",
         "packages/cli/tests/output/flip-json.test.ts",
         "packages/cli/tests/output/flip-report-v2.test.ts",
         "packages/cli/tests/output/flip-report-v3.test.ts",
+        "packages/cli/tests/util/flip-exit.test.ts",
         "packages/core/src/acquire/run.ts",
         "packages/core/src/acquire/types.ts",
         "packages/core/src/application/lifecycle-services.ts",
@@ -3947,6 +3950,7 @@
         "packages/core/src/index.ts",
         "packages/core/src/place/plan.ts",
         "packages/core/src/place/run.ts",
+        "packages/core/src/place/swap.ts",
         "packages/core/src/place/types.ts",
         "packages/core/src/planning/compatibility.ts",
         "packages/core/src/planning/create.ts",
@@ -3962,6 +3966,7 @@
         "packages/core/tests/place/plan.test.ts",
         "packages/core/tests/place/roundtrip.test.ts",
         "packages/core/tests/place/run.test.ts",
+        "packages/core/tests/place/swap.test.ts",
         "packages/core/tests/planning/compatibility.test.ts",
         "packages/core/tests/planning/create.test.ts",
         "packages/core/tests/planning/order.test.ts",
@@ -4111,7 +4116,10 @@
         "projects/p17/plans/P17-G3B-01.md",
         "projects/p17/evidence/P17-G3B-01.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G3B-01.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-01.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-01.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-01.md#implementation-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-01.md#recovery-race-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-01.md#dev-source-compatibility-ownership-amendment"
       ]
     },
     {
@@ -18685,7 +18693,8 @@
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3B-01.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-01.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-01.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-01.md#implementation-ownership-amendment"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
@@ -18745,9 +18754,11 @@
         "packages/cli/src/output/flip-json.ts",
         "packages/cli/tests/contracts/options.test.ts",
         "packages/cli/tests/fixtures/flip-report-v3.golden.json",
+        "packages/cli/tests/output/flip-human.test.ts",
         "packages/cli/tests/output/flip-json.test.ts",
         "packages/cli/tests/output/flip-report-v2.test.ts",
         "packages/cli/tests/output/flip-report-v3.test.ts",
+        "packages/cli/tests/util/flip-exit.test.ts",
         "packages/core/src/artifacts/plan-types.ts",
         "packages/core/src/contracts/v3/flip.ts",
         "packages/core/src/contracts/v3/index.d.ts",
@@ -18800,7 +18811,9 @@
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3B-01.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-01.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-01.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-01.md#recovery-race-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-01.md#dev-source-compatibility-ownership-amendment"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
@@ -18858,6 +18871,7 @@
         "packages/cli/src/contracts/commander-current-state-v0.json",
         "packages/cli/src/spec/options.ts",
         "packages/cli/src/spec/registry.ts",
+        "packages/cli/tests/commands/dev-source.test.ts",
         "packages/cli/tests/commands/dev.test.ts",
         "packages/cli/tests/commands/flip-exit-codes.test.ts",
         "packages/cli/tests/commands/promote.test.ts",
@@ -18869,6 +18883,7 @@
         "packages/core/src/application/lifecycle-services.ts",
         "packages/core/src/place/plan.ts",
         "packages/core/src/place/run.ts",
+        "packages/core/src/place/swap.ts",
         "packages/core/src/place/types.ts",
         "packages/core/tests/acquire/install-run.test.ts",
         "packages/core/tests/acquire/uninstall-run.test.ts",
@@ -18876,7 +18891,8 @@
         "packages/core/tests/place/dev-source.test.ts",
         "packages/core/tests/place/plan.test.ts",
         "packages/core/tests/place/roundtrip.test.ts",
-        "packages/core/tests/place/run.test.ts"
+        "packages/core/tests/place/run.test.ts",
+        "packages/core/tests/place/swap.test.ts"
       ]
     },
     {

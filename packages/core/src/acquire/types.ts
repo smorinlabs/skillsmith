@@ -2,6 +2,7 @@ import type { InstallRecord } from '../agents/types.ts';
 import type { CanonicalSourceIdentity } from '../artifacts/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { FlipTool, JournalPhase } from '../place/types.ts';
+import type { OperationExecutionResult, OperationPlan } from '../planning/types.ts';
 import type {
   ClockPort,
   DetectionPorts,
@@ -105,8 +106,8 @@ export interface InstallResult {
 }
 
 export interface InstallReport {
-  dryRun: boolean;
-  requested: {
+  readonly dryRun: boolean;
+  readonly requested: {
     sources: string[];
     tools: FlipTool[];
     explicitTools: boolean;
@@ -119,8 +120,8 @@ export interface InstallReport {
     verify: 'static' | 'skipped';
     deep: boolean;
   };
-  results: InstallResult[];
-  summary: {
+  readonly results: InstallResult[];
+  readonly summary: {
     installed: number;
     updated: number;
     repaired: number;
@@ -129,6 +130,11 @@ export interface InstallReport {
     refused: number;
     failed: number;
   };
+}
+
+export interface PlannedInstallReport extends InstallReport {
+  readonly plan: OperationPlan<'install'>;
+  readonly executionResults: readonly OperationExecutionResult[];
 }
 
 export interface InstallDeps {
@@ -142,6 +148,8 @@ export interface InstallDeps {
   newTxId?: () => string; // 8-hex
   pick?: (candidates: readonly CandidateSkill[]) => Promise<CandidateSkill | null>;
   readonly transport?: InstallSourceTransport;
+  /** Test/embedding observation seam; called after exact bindings exist and before any binding runs. */
+  readonly observePreparedPlan?: (plan: OperationPlan<'install'>) => void;
 }
 
 export interface InstallSourceTransport {
@@ -185,8 +193,8 @@ export interface UninstallResult {
 }
 
 export interface UninstallReport {
-  dryRun: boolean;
-  requested: {
+  readonly dryRun: boolean;
+  readonly requested: {
     targets: string[];
     tools: FlipTool[];
     explicitTools: boolean;
@@ -194,11 +202,18 @@ export interface UninstallReport {
     allScopes: boolean;
     force: boolean;
   };
-  results: UninstallResult[];
-  summary: { removed: number; noop: number; refused: number; failed: number };
+  readonly results: UninstallResult[];
+  readonly summary: { removed: number; noop: number; refused: number; failed: number };
+}
+
+export interface PlannedUninstallReport extends UninstallReport {
+  readonly plan: OperationPlan<'uninstall'>;
+  readonly executionResults: readonly OperationExecutionResult[];
 }
 
 export interface UninstallDeps {
   now?: () => string;
   newTxId?: () => string;
+  /** Test/embedding observation seam; called after exact bindings exist and before any binding runs. */
+  readonly observePreparedPlan?: (plan: OperationPlan<'uninstall'>) => void;
 }

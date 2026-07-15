@@ -15,8 +15,9 @@ import { FLIP_TOOLS } from '../agents/registry.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { SkillSmithError } from '../errors.ts';
-import { runDev, runPromote, runRollback } from '../place/run.ts';
+import { prepareDev, preparePromote, prepareRollback } from '../place/run.ts';
 import type { FlipReport, FlipTool } from '../place/types.ts';
+import type { OperationPlan } from '../planning/types.ts';
 import type { Result } from '../result.ts';
 import { validateSelectionRequest } from '../selection/resolve.ts';
 import type { SelectionCapability, SelectionPolicy } from '../selection/types.ts';
@@ -48,18 +49,18 @@ export interface LifecycleDependencies {
   readonly resolveContext: typeof resolveProjectContext;
   readonly install: typeof runInstall;
   readonly uninstall: typeof runUninstall;
-  readonly dev: typeof runDev;
-  readonly promote: typeof runPromote;
-  readonly rollback: typeof runRollback;
+  readonly prepareDev: typeof prepareDev;
+  readonly preparePromote: typeof preparePromote;
+  readonly prepareRollback: typeof prepareRollback;
 }
 
 const DEFAULT_DEPENDENCIES: LifecycleDependencies = {
   resolveContext: resolveProjectContext,
   install: runInstall,
   uninstall: runUninstall,
-  dev: runDev,
-  promote: runPromote,
-  rollback: runRollback,
+  prepareDev,
+  preparePromote,
+  prepareRollback,
 };
 
 const MUTATION_POLICY = (
@@ -211,19 +212,70 @@ const select = (
   targets: readonly string[],
   options: Readonly<Record<string, unknown>>,
   capability: SelectionCapability,
+  normalizedScope?: InstallScope | null,
 ) =>
   validateSelectionRequest(
     {
       targets,
       all: bool(options, 'all'),
       tools: tools(options),
-      ...(optionalString(options, 'scope') === undefined
+      ...((normalizedScope ?? optionalString(options, 'scope')) === undefined
         ? {}
-        : { scopes: [optionalString(options, 'scope') as string] }),
+        : { scopes: [(normalizedScope ?? optionalString(options, 'scope')) as string] }),
       capability,
     },
     POLICIES[command],
   );
+
+type BulkApproval =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly exitClass: 'failure' | 'usage' | 'cancelled';
+      readonly code: string;
+      readonly message: string;
+    };
+
+const authorizeBulkPlan = async (
+  command: 'dev' | 'promote',
+  plan: OperationPlan<'dev' | 'promote'>,
+  interaction: InteractionPort,
+): Promise<BulkApproval> => {
+  if (plan.operations.length === 0) return { ok: true };
+
+  const operations = plan.operations;
+  const groupCount = new Set(operations.map((operation) => operation.groupId)).size;
+  const scopes = plan.selection.scopes;
+  const scopeSummary = scopes.length === 0 ? 'the selected scopes' : scopes.join(', ');
+  const resolution = await interaction.confirm({
+    id: `${command}.bulk-approval`,
+    message: `Confirm ${command} of ${groupCount} groups (${operations.length} operations) across ${scopeSummary}?`,
+  });
+  if (resolution.status === 'cancelled') {
+    return {
+      ok: false,
+      exitClass: 'cancelled',
+      code: 'approval-cancelled',
+      message: `${command} bulk confirmation was cancelled`,
+    };
+  }
+  if (resolution.status === 'refused') {
+    return {
+      ok: false,
+      exitClass: 'usage',
+      code: 'approval-required',
+      message: `${command} bulk work requires approval or confirmation: ${resolution.reason}`,
+    };
+  }
+  return resolution.value
+    ? { ok: true }
+    : {
+        ok: false,
+        exitClass: 'usage',
+        code: 'approval-refused',
+        message: `${command} bulk work was not approved`,
+      };
+};
 
 const interactiveInstallDeps = (
   interaction: InteractionPort,
@@ -295,6 +347,14 @@ const flipMutation = (report: FlipReport): MutationSummary => ({
   unchanged: report.summary.noop + report.summary.skipped,
   failed: report.summary.refused + report.summary.failed,
 });
+
+const explicitBatchTargetFailure = (
+  report: FlipReport,
+  targetCount: number,
+): FlipReport['results'][number] | undefined =>
+  targetCount > 1
+    ? report.results.find((result) => result.error?.code === 'placement-not-found')
+    : undefined;
 
 export const createLifecycleApplicationServices = (
   overrides: Partial<LifecycleDependencies> = {},
@@ -432,7 +492,11 @@ export const createLifecycleApplicationServices = (
     const targets = positionals(request);
     const options = request.options;
     const rollback = bool(options, 'rollback');
-    const selection = select('dev', targets, options, rollback ? 'undo' : 'dev');
+    const mode = validateMode(options);
+    if (!mode.ok) return refusal('dev', 'usage', 'mode-conflict', mode.message);
+    const scope = scopeFlags(options);
+    if (!scope.ok) return refusal('dev', scope.exitClass, 'scope', scope.message);
+    const selection = select('dev', targets, options, rollback ? 'undo' : 'dev', scope.value);
     if (!selection.ok)
       return refusal(
         'dev',
@@ -440,8 +504,6 @@ export const createLifecycleApplicationServices = (
         selection.error.code,
         selection.error.message,
       );
-    const mode = validateMode(options);
-    if (!mode.ok) return refusal('dev', 'usage', 'mode-conflict', mode.message);
     const source = optionalString(options, 'source');
     const dest = optionalString(options, 'dest');
     if (bool(options, 'all') && source !== undefined)
@@ -480,25 +542,52 @@ export const createLifecycleApplicationServices = (
     const flipOptions = {
       targets,
       all: bool(options, 'all'),
+      selectionSource: bool(options, 'all')
+        ? ('explicit-all' as const)
+        : ('explicit-targets' as const),
       ...(selection.value.tools.length === 0
         ? {}
         : { tools: selection.value.tools as readonly FlipTool[] }),
+      ...(scope.value === null ? {} : { scope: scope.value }),
       ...(source === undefined ? {} : { source }),
       ...(dest === undefined ? {} : { dest }),
       strict: bool(options, 'strict'),
       noVerify: !bool(options, 'verify', true),
       dryRun: bool(options, 'dryRun'),
-      cwd: project.value.projectRoot ?? project.value.effectiveCwd,
+      cwd: project.value.effectiveCwd,
+      projectRoot: project.value.projectRoot,
       configuration: context.configuration,
       ...(pause === undefined ? {} : { testPauseAt: pause }),
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
-    const result = rollback
-      ? await dependencies.rollback(context.ports, { ...flipOptions, op: 'dev' })
-      : await dependencies.dev(context.ports, flipOptions);
-    if (!result.ok) return domainFailure('dev', result.error, context.signal);
-    const errors = result.value.results.flatMap((item) => (item.error ? [item.error] : []));
-    return reportOutcome('dev', result.value, errors, flipMutation(result.value), context.signal);
+    const prepared = await (rollback
+      ? dependencies.prepareRollback(context.ports, { ...flipOptions, op: 'dev' })
+      : dependencies.prepareDev(context.ports, flipOptions));
+    if (!prepared.ok) return domainFailure('dev', prepared.error, context.signal);
+    const missingTarget = explicitBatchTargetFailure(prepared.value.preview, targets.length);
+    if (missingTarget !== undefined) {
+      return refusal(
+        'dev',
+        'usage',
+        'explicit-target-not-found',
+        missingTarget.reason ?? 'one or more explicitly named targets were unmatched',
+      );
+    }
+    let report: FlipReport;
+    if (flipOptions.dryRun) {
+      report = prepared.value.preview;
+    } else {
+      if (flipOptions.all || targets.length > 1) {
+        const approval = await authorizeBulkPlan('dev', prepared.value.plan, context.interaction);
+        if (!approval.ok)
+          return refusal('dev', approval.exitClass, approval.code, approval.message);
+      }
+      const result = await prepared.value.execute();
+      if (!result.ok) return domainFailure('dev', result.error, context.signal);
+      report = result.value;
+    }
+    const errors = report.results.flatMap((item) => (item.error ? [item.error] : []));
+    return reportOutcome('dev', report, errors, flipMutation(report), context.signal);
   };
 
   const promote: ApplicationService<CurrentCommandRequest, PromoteApplicationReport> = async (
@@ -508,7 +597,17 @@ export const createLifecycleApplicationServices = (
     const targets = positionals(request);
     const options = request.options;
     const rollback = bool(options, 'rollback');
-    const selection = select('promote', targets, options, rollback ? 'undo' : 'promote');
+    const mode = validateMode(options);
+    if (!mode.ok) return refusal('promote', 'usage', 'mode-conflict', mode.message);
+    const scope = scopeFlags(options);
+    if (!scope.ok) return refusal('promote', scope.exitClass, 'scope', scope.message);
+    const selection = select(
+      'promote',
+      targets,
+      options,
+      rollback ? 'undo' : 'promote',
+      scope.value,
+    );
     if (!selection.ok)
       return refusal(
         'promote',
@@ -516,8 +615,6 @@ export const createLifecycleApplicationServices = (
         selection.error.code,
         selection.error.message,
       );
-    const mode = validateMode(options);
-    if (!mode.ok) return refusal('promote', 'usage', 'mode-conflict', mode.message);
     if (
       rollback &&
       (bool(options, 'strict') || !bool(options, 'verify', true) || bool(options, 'allowDirty'))
@@ -535,30 +632,55 @@ export const createLifecycleApplicationServices = (
     const flipOptions = {
       targets,
       all: bool(options, 'all'),
+      selectionSource: bool(options, 'all')
+        ? ('explicit-all' as const)
+        : ('explicit-targets' as const),
       ...(selection.value.tools.length === 0
         ? {}
         : { tools: selection.value.tools as readonly FlipTool[] }),
+      ...(scope.value === null ? {} : { scope: scope.value }),
       strict: bool(options, 'strict'),
       noVerify: !bool(options, 'verify', true),
       allowDirty: bool(options, 'allowDirty'),
       dryRun: bool(options, 'dryRun'),
-      cwd: project.value.projectRoot ?? project.value.effectiveCwd,
+      cwd: project.value.effectiveCwd,
+      projectRoot: project.value.projectRoot,
       configuration: context.configuration,
       ...(pause === undefined ? {} : { testPauseAt: pause }),
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
-    const result = rollback
-      ? await dependencies.rollback(context.ports, { ...flipOptions, op: 'promote' })
-      : await dependencies.promote(context.ports, flipOptions);
-    if (!result.ok) return domainFailure('promote', result.error, context.signal);
-    const errors = result.value.results.flatMap((item) => (item.error ? [item.error] : []));
-    return reportOutcome(
-      'promote',
-      result.value,
-      errors,
-      flipMutation(result.value),
-      context.signal,
-    );
+    const prepared = await (rollback
+      ? dependencies.prepareRollback(context.ports, { ...flipOptions, op: 'promote' })
+      : dependencies.preparePromote(context.ports, flipOptions));
+    if (!prepared.ok) return domainFailure('promote', prepared.error, context.signal);
+    const missingTarget = explicitBatchTargetFailure(prepared.value.preview, targets.length);
+    if (missingTarget !== undefined) {
+      return refusal(
+        'promote',
+        'usage',
+        'explicit-target-not-found',
+        missingTarget.reason ?? 'one or more explicitly named targets were unmatched',
+      );
+    }
+    let report: FlipReport;
+    if (flipOptions.dryRun) {
+      report = prepared.value.preview;
+    } else {
+      if (flipOptions.all || targets.length > 1) {
+        const approval = await authorizeBulkPlan(
+          'promote',
+          prepared.value.plan,
+          context.interaction,
+        );
+        if (!approval.ok)
+          return refusal('promote', approval.exitClass, approval.code, approval.message);
+      }
+      const result = await prepared.value.execute();
+      if (!result.ok) return domainFailure('promote', result.error, context.signal);
+      report = result.value;
+    }
+    const errors = report.results.flatMap((item) => (item.error ? [item.error] : []));
+    return reportOutcome('promote', report, errors, flipMutation(report), context.signal);
   };
 
   return { install, uninstall, dev, promote } as const;

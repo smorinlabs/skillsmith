@@ -80,7 +80,7 @@ describe('skillsmith dev --source — usage errors (P13)', () => {
 });
 
 describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
-  test('create with one --tool and --dest: exit 0, JSON v2 created, placement under --dest', async () => {
+  test('create with one --tool and --dest: exit 0, JSON v3 correlates created placement work', async () => {
     const f = await buildFixtureFleet();
     try {
       const source = await makeSkillSource(f.base, 'newskill');
@@ -110,12 +110,36 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
 
       const report = JSON.parse(r.stdout) as {
         schemaVersion: number;
-        results: { action: string; placementPath: string | null }[];
+        operations: Array<{
+          operationId: string;
+          kind: string;
+          after: { resource: { location: { path: string } } };
+        }>;
+        results: Array<{
+          operationId: string;
+          outcome: string;
+          actualBefore: unknown;
+          actualAfter: unknown;
+          force: unknown;
+          error: unknown;
+        }>;
         summary: Record<string, number>;
       };
-      expect(report.schemaVersion).toBe(2);
-      expect(report.results[0]?.action).toBe('created');
-      expect(report.results[0]?.placementPath).toBe(join(dest, 'newskill'));
+      expect(report.schemaVersion).toBe(3);
+      expect(report.operations[0]).toMatchObject({
+        kind: 'link-dev',
+        after: { resource: { location: { path: join(dest, 'newskill') } } },
+      });
+      const plannedOperationId = report.operations[0]?.operationId;
+      if (plannedOperationId === undefined) throw new Error('created work omitted its operation');
+      expect(report.results[0]).toEqual({
+        operationId: plannedOperationId,
+        outcome: 'succeeded',
+        actualBefore: expect.anything(),
+        actualAfter: expect.anything(),
+        force: null,
+        error: null,
+      });
       expect(report.summary.created).toBe(1);
 
       const st = await lstat(join(dest, 'newskill'));
@@ -125,7 +149,7 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
     }
   });
 
-  test('re-run over a hand-made ln -s: exit 0, action adopted (record-only)', async () => {
+  test('re-run over a hand-made ln -s: exit 0, JSON v3 correlates adopted record-only work', async () => {
     const f = await buildFixtureFleet();
     try {
       const source = await makeSkillSource(f.base, 'handmade');
@@ -143,10 +167,25 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
 
       const report = JSON.parse(r.stdout) as {
         schemaVersion: number;
-        results: { action: string }[];
+        operations: Array<{
+          operationId: string;
+          kind: string;
+          before: { classification: string };
+          after: { classification: string };
+        }>;
+        results: Array<{ operationId: string; outcome: string }>;
         summary: Record<string, number>;
       };
-      expect(report.results[0]?.action).toBe('adopted');
+      expect(report.schemaVersion).toBe(3);
+      expect(report.operations[0]).toMatchObject({
+        kind: 'link-dev',
+        before: { classification: 'unmanaged' },
+        after: { classification: 'dev' },
+      });
+      expect(report.results[0]).toMatchObject({
+        operationId: report.operations[0]?.operationId,
+        outcome: 'succeeded',
+      });
       expect(report.summary.adopted).toBe(1);
     } finally {
       await destroyFixtureFleet(f);
@@ -193,8 +232,17 @@ describe('skillsmith dev --source — sandboxed CLI e2e (P13)', () => {
         );
       }
 
-      const report = JSON.parse(stdout) as { results: { action: string }[] };
-      expect(report.results[0]?.action).toBe('created');
+      const report = JSON.parse(stdout) as {
+        schemaVersion: number;
+        operations: Array<{ operationId: string; kind: string }>;
+        results: Array<{ operationId: string; outcome: string }>;
+      };
+      expect(report.schemaVersion).toBe(3);
+      expect(report.operations[0]?.kind).toBe('link-dev');
+      expect(report.results[0]).toMatchObject({
+        operationId: report.operations[0]?.operationId,
+        outcome: 'succeeded',
+      });
 
       const ledgerText = await Bun.file(join(f.data, 'placements.json')).text();
       const ledger = JSON.parse(ledgerText) as {

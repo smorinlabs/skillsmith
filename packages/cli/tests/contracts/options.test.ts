@@ -890,6 +890,13 @@ describe('EWP-OPT-TS04', () => {
       }
       expect(Object.hasOwn(NON_MUTATING_MODE_POLICIES, commandName)).toBeTrue();
     }
+    for (const commandName of ['dev', 'promote'] as const) {
+      const command = program.commands.find((candidate) => candidate.name() === commandName);
+      expect(
+        command?.options.some((option) => option.long === '--continue-on-error'),
+        `${commandName} scheduler policy remains G3B-02-owned`,
+      ).toBeFalse();
+    }
   });
 
   test('approval is rejected for preview while output and noninteractive assertions remain valid', () => {

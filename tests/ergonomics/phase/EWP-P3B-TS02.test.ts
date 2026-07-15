@@ -5,6 +5,7 @@ type UnknownRecord = Record<string, unknown>;
 type CreateOperationPlan = (input: UnknownRecord) => UnknownRecord;
 type CreateOperationExecutionResult = (input: UnknownRecord) => UnknownRecord;
 type CreateOperationId = (input: Readonly<UnknownRecord>) => string;
+type CreateStructuredPlanningId = (input: Readonly<UnknownRecord>) => string;
 
 const core = publicCore as unknown as UnknownRecord;
 const CONTENT_HASH = `sha256:${'c'.repeat(64)}`;
@@ -45,6 +46,46 @@ const resourceFor = (skill: string, tool: string, scope: string): UnknownRecord 
   location: { kind: 'portable', token: `skills/${scope}/${tool}/${skill}` },
 });
 
+const groupIdentityFor = ({
+  command = 'install',
+  skill,
+  source = portableSource,
+  scope,
+  target = null,
+}: Readonly<{
+  command?: 'install' | 'uninstall' | 'dev' | 'promote';
+  skill: string | null;
+  source?: Readonly<UnknownRecord> | null;
+  scope: string | null;
+  target?: string | null;
+}>): UnknownRecord => ({
+  domain: 'skillsmith.operation-group-identity',
+  schemaVersion: 1,
+  command,
+  skill,
+  source: source === null ? null : structuredClone(source),
+  scope,
+  target,
+});
+
+const pairIdentityFor = ({
+  groupId,
+  skill,
+  tool,
+  scope,
+}: Readonly<{
+  groupId: string;
+  skill: string;
+  tool: string;
+  scope: string;
+}>): UnknownRecord => ({
+  domain: 'skillsmith.operation-pair-identity',
+  schemaVersion: 1,
+  groupId,
+  tool,
+  resource: resourceFor(skill, tool, scope),
+});
+
 const identityFor = ({
   groupId,
   pairId,
@@ -52,6 +93,7 @@ const identityFor = ({
   skill,
   tool,
   scope,
+  source = portableSource,
 }: Readonly<{
   groupId: string;
   pairId: string;
@@ -59,6 +101,7 @@ const identityFor = ({
   skill: string;
   tool: string;
   scope: string;
+  source?: Readonly<UnknownRecord> | null;
 }>): UnknownRecord => ({
   domain: 'skillsmith.operation-identity',
   schemaVersion: 1,
@@ -66,7 +109,7 @@ const identityFor = ({
   pairId,
   kind,
   skill,
-  source: structuredClone(portableSource),
+  source: source === null ? null : structuredClone(source),
   tool,
   scope,
 });
@@ -170,27 +213,60 @@ describe('EWP-P3B-TS02', () => {
     const createOperationExecutionResult = requireFactory<CreateOperationExecutionResult>(
       'createOperationExecutionResult',
     );
+    const createOperationGroupId =
+      requireFactory<CreateStructuredPlanningId>('createOperationGroupId');
     const createOperationId = requireFactory<CreateOperationId>('createOperationId');
+    const createOperationPairId =
+      requireFactory<CreateStructuredPlanningId>('createOperationPairId');
+    const createPlanCheckId = requireFactory<CreateStructuredPlanningId>('createPlanCheckId');
+    const createPlanningDiagnosticId = requireFactory<CreateStructuredPlanningId>(
+      'createPlanningDiagnosticId',
+    );
+
+    const alphaGroupIdentity = groupIdentityFor({ skill: 'alpha', scope: 'user' });
+    const betaGroupIdentity = groupIdentityFor({ skill: 'beta', scope: 'project' });
+    const alphaGroupId = createOperationGroupId(alphaGroupIdentity);
+    const betaGroupId = createOperationGroupId(betaGroupIdentity);
+    const alphaPairIdentity = pairIdentityFor({
+      groupId: alphaGroupId,
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+    });
+    const betaPairIdentity = pairIdentityFor({
+      groupId: betaGroupId,
+      skill: 'beta',
+      tool: 'opencode',
+      scope: 'project',
+    });
+    const alphaPairId = createOperationPairId(alphaPairIdentity);
+    const betaPairId = createOperationPairId(betaPairIdentity);
+    expect(createOperationGroupId(reverseObjectMembers(alphaGroupIdentity) as UnknownRecord)).toBe(
+      alphaGroupId,
+    );
+    expect(createOperationPairId(reverseObjectMembers(alphaPairIdentity) as UnknownRecord)).toBe(
+      alphaPairId,
+    );
 
     const alphaInstallIdentity = identityFor({
-      groupId: 'group:user:alpha',
-      pairId: 'pair:user:alpha:codex',
+      groupId: alphaGroupId,
+      pairId: alphaPairId,
       kind: 'install',
       skill: 'alpha',
       tool: 'codex',
       scope: 'user',
     });
     const alphaRepairIdentity = identityFor({
-      groupId: 'group:user:alpha',
-      pairId: 'pair:user:alpha:codex',
+      groupId: alphaGroupId,
+      pairId: alphaPairId,
       kind: 'repair',
       skill: 'alpha',
       tool: 'codex',
       scope: 'user',
     });
     const betaInstallIdentity = identityFor({
-      groupId: 'group:project:beta',
-      pairId: 'pair:project:beta:opencode',
+      groupId: betaGroupId,
+      pairId: betaPairId,
       kind: 'install',
       skill: 'beta',
       tool: 'opencode',
@@ -208,36 +284,63 @@ describe('EWP-P3B-TS02', () => {
       expect(operationId.length).toBeGreaterThan(16);
       expect(createOperationId(reverseObjectMembers(identity) as UnknownRecord)).toBe(operationId);
     }
-    expect(new Set([alphaInstallId, alphaRepairId, betaInstallId])).toHaveSize(3);
+    expect(new Set([alphaInstallId, alphaRepairId, betaInstallId]).size).toBe(3);
 
-    const generatedIdentities = Array.from({ length: 64 }, (_, index) =>
-      identityFor({
-        groupId: `group:${index % 2 === 0 ? 'user' : 'project'}:skill:${index}/%`,
-        pairId: `pair:${index}:codex:segment`,
+    const generatedIdentities = Array.from({ length: 64 }, (_, index) => {
+      const skill = `skill:${index}/%`;
+      const tool = index % 2 === 0 ? 'codex' : 'opencode';
+      const scope = index % 2 === 0 ? 'user' : 'project';
+      const groupId = createOperationGroupId(
+        groupIdentityFor({ skill, scope, target: `fixture/source:${index}/%` }),
+      );
+      const pairId = createOperationPairId(pairIdentityFor({ groupId, skill, tool, scope }));
+      return identityFor({
+        groupId,
+        pairId,
         kind: index % 3 === 0 ? 'install' : index % 3 === 1 ? 'update' : 'repair',
-        skill: `skill:${index}/%`,
-        tool: index % 2 === 0 ? 'codex' : 'opencode',
-        scope: index % 2 === 0 ? 'user' : 'project',
-      }),
-    );
+        skill,
+        tool,
+        scope,
+      });
+    });
     const generatedIds = generatedIdentities.map(createOperationId);
-    expect(new Set(generatedIds)).toHaveSize(generatedIdentities.length);
+    expect(new Set(generatedIds).size).toBe(generatedIdentities.length);
     for (const [index, identity] of generatedIdentities.entries()) {
       expect(createOperationId(reverseObjectMembers(identity) as UnknownRecord)).toBe(
         generatedIds[index],
       );
     }
+    const delimiterGroupLeft = createOperationGroupId(
+      groupIdentityFor({ skill: 'a:b', scope: 'user', target: 'c' }),
+    );
+    const delimiterGroupRight = createOperationGroupId(
+      groupIdentityFor({ skill: 'a', scope: 'user', target: 'b:c' }),
+    );
     const delimiterCollisionLeft = identityFor({
-      groupId: 'group:user:a',
-      pairId: 'pair:user:a:b:codex',
+      groupId: delimiterGroupLeft,
+      pairId: createOperationPairId(
+        pairIdentityFor({
+          groupId: delimiterGroupLeft,
+          skill: 'a:b',
+          tool: 'codex',
+          scope: 'user',
+        }),
+      ),
       kind: 'install',
       skill: 'a:b',
       tool: 'codex',
       scope: 'user',
     });
     const delimiterCollisionRight = identityFor({
-      groupId: 'group:user:a:b',
-      pairId: 'pair:user:a:codex',
+      groupId: delimiterGroupRight,
+      pairId: createOperationPairId(
+        pairIdentityFor({
+          groupId: delimiterGroupRight,
+          skill: 'a',
+          tool: 'codex',
+          scope: 'user',
+        }),
+      ),
       kind: 'install',
       skill: 'a',
       tool: 'codex',
@@ -246,13 +349,82 @@ describe('EWP-P3B-TS02', () => {
     expect(createOperationId(delimiterCollisionLeft)).not.toBe(
       createOperationId(delimiterCollisionRight),
     );
+    expect(delimiterGroupLeft).not.toBe(delimiterGroupRight);
 
-    const alphaCheckId = 'check:user:alpha:preconditions';
-    const betaCheckId = 'check:project:beta:preconditions';
+    const localDevSource = {
+      kind: 'local-dev',
+      path: '/fixture/checkout/skills/alpha',
+      contentHash: CONTENT_HASH,
+    };
+    const adapterDevGroupIdentity = groupIdentityFor({
+      command: 'dev',
+      skill: 'alpha',
+      source: localDevSource,
+      scope: 'project',
+      target: '/fixture/project/.codex/skills/alpha',
+    });
+    const adapterDevGroupId = createOperationGroupId(adapterDevGroupIdentity);
+    const adapterDevPairId = createOperationPairId(
+      pairIdentityFor({
+        groupId: adapterDevGroupId,
+        skill: 'alpha',
+        tool: 'codex',
+        scope: 'project',
+      }),
+    );
+    const adapterDevOperationIdentity = identityFor({
+      groupId: adapterDevGroupId,
+      pairId: adapterDevPairId,
+      kind: 'link-dev',
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'project',
+      source: localDevSource,
+    });
+    expect(
+      createOperationGroupId(reverseObjectMembers(adapterDevGroupIdentity) as UnknownRecord),
+    ).toBe(adapterDevGroupId);
+    expect(
+      createOperationId(reverseObjectMembers(adapterDevOperationIdentity) as UnknownRecord),
+    ).toBe(createOperationId(adapterDevOperationIdentity));
+    expect(
+      createOperationGroupId(
+        groupIdentityFor({
+          command: 'dev',
+          skill: 'alpha',
+          source: { ...localDevSource, path: '/fixture/other/skills/alpha' },
+          scope: 'project',
+          target: '/fixture/project/.codex/skills/alpha',
+        }),
+      ),
+    ).not.toBe(adapterDevGroupId);
+
+    const alphaCheckIdentity: UnknownRecord = {
+      domain: 'skillsmith.plan-check-identity',
+      schemaVersion: 1,
+      operationIds: [alphaRepairId, alphaInstallId],
+      kind: 'precondition-validation',
+      preconditionIds: ['precondition:user:alpha:codex'],
+    };
+    const betaCheckIdentity: UnknownRecord = {
+      domain: 'skillsmith.plan-check-identity',
+      schemaVersion: 1,
+      operationIds: [betaInstallId],
+      kind: 'precondition-validation',
+      preconditionIds: ['precondition:project:beta:opencode'],
+    };
+    const alphaCheckId = createPlanCheckId(alphaCheckIdentity);
+    const betaCheckId = createPlanCheckId(betaCheckIdentity);
+    expect(
+      createPlanCheckId({
+        ...alphaCheckIdentity,
+        operationIds: [alphaInstallId, alphaRepairId],
+      }),
+    ).toBe(alphaCheckId);
     const alphaInstall = operationFor({
       operationId: alphaInstallId,
-      groupId: 'group:user:alpha',
-      pairId: 'pair:user:alpha:codex',
+      groupId: alphaGroupId,
+      pairId: alphaPairId,
       kind: 'install',
       skill: 'alpha',
       tool: 'codex',
@@ -261,8 +433,8 @@ describe('EWP-P3B-TS02', () => {
     });
     const alphaRepair = operationFor({
       operationId: alphaRepairId,
-      groupId: 'group:user:alpha',
-      pairId: 'pair:user:alpha:codex',
+      groupId: alphaGroupId,
+      pairId: alphaPairId,
       kind: 'repair',
       skill: 'alpha',
       tool: 'codex',
@@ -272,8 +444,8 @@ describe('EWP-P3B-TS02', () => {
     });
     const betaInstall = operationFor({
       operationId: betaInstallId,
-      groupId: 'group:project:beta',
-      pairId: 'pair:project:beta:opencode',
+      groupId: betaGroupId,
+      pairId: betaPairId,
       kind: 'install',
       skill: 'beta',
       tool: 'opencode',
@@ -295,46 +467,77 @@ describe('EWP-P3B-TS02', () => {
       kind: 'precondition-validation',
       preconditionIds: ['precondition:project:beta:opencode'],
     };
-    const alphaDiagnostic: UnknownRecord = {
-      diagnosticId: 'diagnostic:user:alpha:warning',
+    const alphaAffected = {
+      skill: 'alpha',
+      source: structuredClone(portableSource),
+      tool: 'codex',
+      scope: 'user',
+      path: null,
+    };
+    const alphaCorrelation = {
+      groupId: alphaGroupId,
+      pairId: alphaPairId,
+      operationId: alphaInstallId,
+    };
+    const alphaDiagnosticIdentity: UnknownRecord = {
+      domain: 'skillsmith.planning-diagnostic-identity',
+      schemaVersion: 1,
       kind: 'warning',
       severity: 'warning',
       refusalClass: null,
-      affected: {
-        skill: 'alpha',
-        source: structuredClone(portableSource),
-        tool: 'codex',
-        scope: 'user',
-        path: null,
-      },
-      correlation: {
-        groupId: 'group:user:alpha',
-        pairId: 'pair:user:alpha:codex',
-        operationId: alphaInstallId,
-      },
+      affected: alphaAffected,
+      correlation: alphaCorrelation,
+      reasonCode: 'alpha-warning',
+      selectionSource: 'explicit-all',
+    };
+    const alphaDiagnosticId = createPlanningDiagnosticId(alphaDiagnosticIdentity);
+    const alphaDiagnostic: UnknownRecord = {
+      diagnosticId: alphaDiagnosticId,
+      kind: 'warning',
+      severity: 'warning',
+      refusalClass: null,
+      affected: alphaAffected,
+      correlation: alphaCorrelation,
       reason: { code: 'alpha-warning', message: 'Synthetic local planning warning.' },
       selectionSource: 'explicit-all',
     };
-    const betaDiagnostic: UnknownRecord = {
-      diagnosticId: 'diagnostic:project:beta:noop',
+    const betaAffected = {
+      skill: 'beta',
+      source: structuredClone(portableSource),
+      tool: 'opencode',
+      scope: 'project',
+      path: null,
+    };
+    const betaCorrelation = {
+      groupId: betaGroupId,
+      pairId: betaPairId,
+      operationId: null,
+    };
+    const betaDiagnosticIdentity: UnknownRecord = {
+      domain: 'skillsmith.planning-diagnostic-identity',
+      schemaVersion: 1,
       kind: 'noop',
       severity: 'info',
       refusalClass: null,
-      affected: {
-        skill: 'beta',
-        source: structuredClone(portableSource),
-        tool: 'opencode',
-        scope: 'project',
-        path: null,
-      },
-      correlation: {
-        groupId: 'group:project:beta',
-        pairId: 'pair:project:beta:opencode',
-        operationId: null,
-      },
+      affected: betaAffected,
+      correlation: betaCorrelation,
+      reasonCode: 'beta-noop',
+      selectionSource: 'explicit-all',
+    };
+    const betaDiagnosticId = createPlanningDiagnosticId(betaDiagnosticIdentity);
+    const betaDiagnostic: UnknownRecord = {
+      diagnosticId: betaDiagnosticId,
+      kind: 'noop',
+      severity: 'info',
+      refusalClass: null,
+      affected: betaAffected,
+      correlation: betaCorrelation,
       reason: { code: 'beta-noop', message: 'Synthetic local planning noop.' },
       selectionSource: 'explicit-all',
     };
+    expect(
+      createPlanningDiagnosticId(reverseObjectMembers(alphaDiagnosticIdentity) as UnknownRecord),
+    ).toBe(alphaDiagnosticId);
 
     const baseInput: UnknownRecord = {
       domain: 'skillsmith.operation-plan',
@@ -416,7 +619,7 @@ describe('EWP-P3B-TS02', () => {
       asRecords(previewPlan.diagnostics, 'canonical diagnostics').map(
         (diagnostic) => diagnostic.diagnosticId,
       ),
-    ).toEqual(['diagnostic:user:alpha:warning', 'diagnostic:project:beta:noop']);
+    ).toEqual([alphaDiagnosticId, betaDiagnosticId]);
     expect(
       asRecord(previewOperations[1]?.dependencyMetadata, 'repair dependency metadata'),
     ).toEqual({
@@ -458,11 +661,22 @@ describe('EWP-P3B-TS02', () => {
     ).toThrow(/duplicate|collision|operation.?id/i);
 
     const danglingRepair = structuredClone(alphaRepair);
+    const missingGroupId = createOperationGroupId(
+      groupIdentityFor({ skill: 'missing', scope: 'user' }),
+    );
+    const missingPairId = createOperationPairId(
+      pairIdentityFor({
+        groupId: missingGroupId,
+        skill: 'missing',
+        tool: 'codex',
+        scope: 'user',
+      }),
+    );
     asRecord(danglingRepair.dependencyMetadata, 'dangling dependency metadata').operationIds = [
       createOperationId(
         identityFor({
-          groupId: 'group:user:missing',
-          pairId: 'pair:user:missing:codex',
+          groupId: missingGroupId,
+          pairId: missingPairId,
           kind: 'install',
           skill: 'missing',
           tool: 'codex',
@@ -530,9 +744,20 @@ describe('EWP-P3B-TS02', () => {
       ).toThrow(/depend|domain|schema|version/i);
     }
 
+    const omegaGroupId = createOperationGroupId(
+      groupIdentityFor({ command: 'uninstall', skill: 'omega', scope: 'user', source: null }),
+    );
+    const omegaPairId = createOperationPairId(
+      pairIdentityFor({
+        groupId: omegaGroupId,
+        skill: 'omega',
+        tool: 'codex',
+        scope: 'user',
+      }),
+    );
     const mismatchedIdentity = identityFor({
-      groupId: 'group:user:omega',
-      pairId: 'pair:user:omega:codex',
+      groupId: omegaGroupId,
+      pairId: omegaPairId,
       kind: 'remove',
       skill: 'omega',
       tool: 'codex',

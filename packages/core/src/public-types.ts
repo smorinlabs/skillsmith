@@ -265,3 +265,4 @@ export type {
   VerifyTool,
 } from './verify/types.ts';
 export type { VerifyOptions } from './verify/run.ts';
+export type * from './planning/index.ts';

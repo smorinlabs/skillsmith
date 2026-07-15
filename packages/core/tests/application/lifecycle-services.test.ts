@@ -17,7 +17,7 @@ import {
   createOperationContext,
   noopObserver,
 } from '../../src/observation/index.ts';
-import type { runRollback } from '../../src/place/run.ts';
+import type { prepareRollback } from '../../src/place/run.ts';
 import type { FlipReport } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
 import { err, ok } from '../../src/result.ts';
@@ -139,6 +139,25 @@ const flipReport = (
   op,
   dryRun: false,
   requested: { targets: ['skill'], all: false, tools: ['codex'], explicitTools: true },
+  plan: {
+    domain: 'skillsmith.operation-plan',
+    schemaVersion: 1,
+    command: op === 'promote' ? 'promote' : 'dev',
+    selection: {
+      source: 'explicit-targets',
+      outcome: 'selected',
+      targets: ['skill'],
+      all: false,
+      tools: ['codex'],
+      scopes: ['project'],
+      groupIds: [],
+    },
+    batchPolicy: 'fail-fast',
+    operations: [],
+    checks: [],
+    diagnostics: [],
+  },
+  executionResults: [],
   results: [
     {
       skill: 'skill',
@@ -301,23 +320,27 @@ describe('lifecycle application services', () => {
 
   test('dev rollback dispatches to rollback and translates report refusal semantically', async () => {
     let devCalls = 0;
-    let rollbackOptions: Parameters<typeof runRollback>[1] | undefined;
+    let rollbackOptions: Parameters<typeof prepareRollback>[1] | undefined;
     const refused = flipReport('rollback', {
       action: 'refused',
       reason: 'no prior state',
       error: { code: 'flip-refused', message: 'no prior state' },
     });
     const services = createLifecycleApplicationServices({
-      dev: (async () => {
+      prepareDev: (async () => {
         devCalls++;
-        return ok(flipReport('dev'));
+        throw new Error('rollback dispatched to prepareDev');
       }) as never,
-      rollback: (async (
-        _env: Parameters<typeof runRollback>[0],
-        options: Parameters<typeof runRollback>[1],
+      prepareRollback: (async (
+        _env: Parameters<typeof prepareRollback>[0],
+        options: Parameters<typeof prepareRollback>[1],
       ) => {
         rollbackOptions = options;
-        return ok(refused);
+        return ok({
+          preview: { ...refused, dryRun: true, executionResults: [] },
+          plan: refused.plan,
+          execute: async () => ok(refused),
+        });
       }) as never,
     });
 
@@ -340,7 +363,7 @@ describe('lifecycle application services', () => {
 
   test('promote maps top-level domain errors and cancellation without numeric exit policy', async () => {
     const permissionServices = createLifecycleApplicationServices({
-      promote: (async () =>
+      preparePromote: (async () =>
         err({ code: 'permission-denied', message: 'read only', path: '/store' })) as never,
     });
     const request = {
@@ -351,8 +374,14 @@ describe('lifecycle application services', () => {
 
     const controller = new AbortController();
     controller.abort();
+    const report = flipReport('promote');
     const cancelledServices = createLifecycleApplicationServices({
-      promote: (async () => ok(flipReport('promote'))) as never,
+      preparePromote: (async () =>
+        ok({
+          preview: { ...report, dryRun: true, executionResults: [] },
+          plan: report.plan,
+          execute: async () => ok(report),
+        })) as never,
     });
     const cancelled = await cancelledServices.promote(
       request,

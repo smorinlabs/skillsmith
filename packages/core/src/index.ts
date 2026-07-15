@@ -247,6 +247,27 @@ export { defaultFlipDeps, runDev, runPromote, runRollback } from './place/run.ts
 export { FLIP_TOOLS } from './place/types.ts';
 export { err, isErr, isOk, map, mapErr, ok } from './result.ts';
 export {
+  EXECUTABLE_OPERATION_KINDS,
+  OPERATION_EXECUTION_OUTCOMES,
+  OPERATION_SELECTION_SOURCES,
+  PLANNING_DIAGNOSTIC_KINDS,
+  canonicalPlanningString,
+  compareExecutableOperations,
+  comparePlanChecks,
+  comparePlanningDiagnostics,
+  comparePlanningText,
+  createBoundedForceEffect,
+  createOperationExecutionResult,
+  createOperationGroupId,
+  createOperationId,
+  createOperationPairId,
+  createOperationPlan,
+  createPlanCheckId,
+  createPlanningDiagnosticId,
+  toCurrentCompatibilityAction,
+} from './planning/index.ts';
+export type * from './planning/index.ts';
+export {
   containsSensitiveMaterial,
   redactSensitiveString,
   redactSensitiveValue,

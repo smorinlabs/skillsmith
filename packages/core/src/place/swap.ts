@@ -75,6 +75,10 @@ const fsyncTree = async (env: SwapPorts, dir: string): Promise<void> => {
 // Test seam: hold in a crash window for 30 s (used only by the CLI E2E via SKILLSMITH_TEST_PAUSE_AT).
 const pause = (signal?: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
     const t = setTimeout(resolve, 30_000);
     const onAbort = (): void => {
       clearTimeout(t);
@@ -335,6 +339,7 @@ const forward = async (
 
   // P3 — persist backed-up, then rename(live → backup) if the live path is still the old entry.
   if (idx() < PHASE_INDEX['backed-up']) {
+    if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
     const p = await advance(ctx, j, 'backed-up');
     if (!p.ok) return p;
   }

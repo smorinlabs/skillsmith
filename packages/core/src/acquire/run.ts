@@ -49,6 +49,22 @@ import {
   type SwapCtx,
   type SwapPlan,
 } from '../place/types.ts';
+import {
+  createBoundedForceEffect,
+  createOperationExecutionResult,
+  createOperationGroupId,
+  createOperationId,
+  createOperationPairId,
+  createOperationPlan,
+  createPlanningDiagnosticId,
+} from '../planning/create.ts';
+import type {
+  ExecutableOperation,
+  OperationExecutionResult,
+  OperationImage,
+  OperationPlan,
+  PlanningDiagnostic,
+} from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
   containsSensitiveMaterial,
@@ -77,6 +93,8 @@ import type {
   InstallResult,
   InstallScope,
   InstallSourceTransport,
+  PlannedInstallReport,
+  PlannedUninstallReport,
   SourceSpec,
   UninstallAction,
   UninstallDeps,
@@ -1210,11 +1228,277 @@ const gitToplevel = async (env: AcquisitionPorts, cwd: string): Promise<string |
 // report assembly
 // ---------------------------------------------------------------------------------------------
 
-const buildReport = (
-  dryRun: boolean,
+const acquireLiveResource = (skill: string, tool: FlipTool, scope: InstallScope, path: string) => ({
+  kind: 'live' as const,
+  skill,
+  tool,
+  scope,
+  projectRoot: null,
+  location: { kind: 'machine-bound' as const, path },
+});
+
+const acquireAbsentImage = (
+  skill: string,
+  tool: FlipTool,
+  scope: InstallScope,
+  path: string,
+): OperationImage => ({ kind: 'absent', resource: acquireLiveResource(skill, tool, scope, path) });
+
+const acquirePlacementImage = (
+  skill: string,
+  tool: FlipTool,
+  scope: InstallScope,
+  path: string,
+  mode: 'dev' | 'pinned',
+  representation: 'symlink' | 'copy' | 'other',
+  linkTarget: string | null = null,
+): OperationImage => ({
+  kind: 'placement',
+  resource: acquireLiveResource(skill, tool, scope, path),
+  classification: mode,
+  representation,
+  linkTarget: linkTarget === null ? null : { kind: 'machine-bound', path: linkTarget },
+  dangling: false,
+  source: null,
+  contentHash: null,
+});
+
+const closedPlanningText = (value: string | null, fallback: string): string =>
+  value !== null && value.length > 0 && !containsSensitiveMaterial(value) ? value : fallback;
+
+const planningDiagnosticFor = (
+  family: 'install' | 'uninstall',
+  result: InstallResult | UninstallResult,
+): PlanningDiagnostic => {
+  const skipped = result.action === 'skipped';
+  const noop = result.action === 'noop';
+  const refused = result.action === 'refused' || result.action === 'failed';
+  const tool = result.tool;
+  const scope = result.scope;
+  const path = result.placementPath;
+  const kind = noop ? 'noop' : skipped ? 'skip' : refused ? 'refuse' : 'warning';
+  const severity = refused ? 'error' : 'info';
+  const refusalClass = refused ? 'state' : null;
+  const affected = {
+    skill: result.skill,
+    source: null,
+    tool,
+    scope,
+    path: path === null ? null : { kind: 'machine-bound' as const, path },
+  };
+  const correlation = { groupId: null, pairId: null, operationId: null };
+  const reasonCode = result.error?.code ?? (noop ? 'noop' : skipped ? 'skip' : 'refuse');
+  const diagnosticId = createPlanningDiagnosticId({
+    domain: 'skillsmith.planning-diagnostic-identity',
+    schemaVersion: 1,
+    kind,
+    severity,
+    refusalClass,
+    affected,
+    correlation,
+    reasonCode,
+    selectionSource: 'explicit-targets',
+  });
+  return {
+    diagnosticId,
+    kind,
+    severity,
+    refusalClass,
+    affected,
+    correlation,
+    reason: {
+      code: reasonCode,
+      message: closedPlanningText(result.reason, `${family} ${result.action}`),
+    },
+    selectionSource: 'explicit-targets',
+  };
+};
+
+const createInstallPlanning = (
   requested: InstallReport['requested'],
-  results: InstallResult[],
-): InstallReport => {
+  results: readonly InstallResult[],
+  continueOnError: boolean,
+): Readonly<{
+  plan: OperationPlan<'install'>;
+  operationResults: ReadonlyMap<string, InstallResult>;
+}> => {
+  const operations: ExecutableOperation[] = [];
+  const operationResults = new Map<string, InstallResult>();
+  const diagnostics: PlanningDiagnostic[] = [];
+  const diagnosticIds = new Set<string>();
+  for (const [index, result] of results.entries()) {
+    if (
+      result.skill === null ||
+      result.tool === null ||
+      result.placementPath === null ||
+      result.action === 'noop' ||
+      result.action === 'skipped' ||
+      result.action === 'refused' ||
+      result.action === 'failed'
+    ) {
+      const diagnostic = planningDiagnosticFor('install', result);
+      if (!diagnosticIds.has(diagnostic.diagnosticId)) {
+        diagnosticIds.add(diagnostic.diagnosticId);
+        diagnostics.push(diagnostic);
+      }
+      continue;
+    }
+    const kind: ExecutableOperation['kind'] =
+      result.action === 'updated' ? 'update' : result.action === 'repaired' ? 'repair' : 'install';
+    const requestIndex = result.requestIndex ?? index;
+    const planningSource = closedPlanningText(result.source, `rejected-source:${requestIndex}`);
+    const resource = acquireLiveResource(
+      result.skill,
+      result.tool,
+      result.scope,
+      result.placementPath,
+    );
+    const groupId = createOperationGroupId({
+      domain: 'skillsmith.operation-group-identity',
+      schemaVersion: 1,
+      command: 'install',
+      skill: result.skill,
+      source: null,
+      scope: result.scope,
+      target: planningSource,
+    });
+    const pairId = createOperationPairId({
+      domain: 'skillsmith.operation-pair-identity',
+      schemaVersion: 1,
+      groupId,
+      tool: result.tool,
+      resource,
+    });
+    const operationId = createOperationId({
+      domain: 'skillsmith.operation-identity',
+      schemaVersion: 1,
+      groupId,
+      pairId,
+      kind,
+      skill: result.skill,
+      source: null,
+      tool: result.tool,
+      scope: result.scope,
+    });
+    if (operationResults.has(operationId)) continue;
+    const before =
+      result.action === 'installed'
+        ? acquireAbsentImage(result.skill, result.tool, result.scope, result.placementPath)
+        : acquirePlacementImage(
+            result.skill,
+            result.tool,
+            result.scope,
+            result.placementPath,
+            'pinned',
+            result.placement ?? 'other',
+          );
+    const after = acquirePlacementImage(
+      result.skill,
+      result.tool,
+      result.scope,
+      result.placementPath,
+      'pinned',
+      result.placement ?? 'copy',
+    );
+    operations.push({
+      operationId,
+      groupId,
+      pairId,
+      kind,
+      dependencyMetadata: {
+        domain: 'skillsmith.operation-dependency',
+        schemaVersion: 1,
+        operationIds: [],
+      },
+      skill: result.skill,
+      source: null,
+      tool: result.tool,
+      scope: result.scope,
+      before,
+      after,
+      reason: { code: kind, message: `${kind} ${result.skill}` },
+      selectionSource: 'explicit-targets',
+      preconditionIds: [],
+      requiredCheckIds: [],
+      reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+      conflict: null,
+    });
+    operationResults.set(operationId, result);
+  }
+  const plan = createOperationPlan({
+    domain: 'skillsmith.operation-plan',
+    schemaVersion: 1,
+    command: 'install',
+    selection: {
+      source: 'explicit-targets',
+      targets: [
+        ...new Set(
+          requested.sources.map((source, index) =>
+            closedPlanningText(source, `rejected-source:${index}`),
+          ),
+        ),
+      ],
+      all: false,
+      tools: requested.tools,
+      scopes: [requested.scope],
+      groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+    },
+    batchPolicy: continueOnError ? 'continue-on-error' : 'fail-fast',
+    operations,
+    checks: [],
+    diagnostics,
+  }) as OperationPlan<'install'>;
+  return { plan, operationResults };
+};
+
+const installExecutionResultFor = (
+  operation: ExecutableOperation,
+  result: InstallResult | undefined,
+  requested: InstallReport['requested'],
+): OperationExecutionResult => {
+  const cancelled = result?.action === 'skipped';
+  const succeeded =
+    result?.action === 'installed' || result?.action === 'updated' || result?.action === 'repaired';
+  const actualAfter =
+    succeeded && result.skill !== null && result.tool !== null && result.placementPath !== null
+      ? acquirePlacementImage(
+          result.skill,
+          result.tool,
+          result.scope,
+          result.placementPath,
+          'pinned',
+          result.placement ?? 'copy',
+        )
+      : operation.before;
+  const common = {
+    operationId: operation.operationId,
+    actualBefore: operation.before,
+    actualAfter,
+    force: createBoundedForceEffect({
+      supported: true,
+      requested: requested.force,
+      conflict: null,
+    }),
+  } as const;
+  if (cancelled) {
+    return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
+  }
+  if (!succeeded) {
+    return createOperationExecutionResult({
+      ...common,
+      outcome: 'failed',
+      error: {
+        code: result?.error?.code ?? 'install-failed',
+        message: closedPlanningText(result?.reason ?? null, 'prepared install binding failed'),
+        remediation: 'Resolve the reported condition and retry the same selection.',
+      },
+    });
+  }
+  return createOperationExecutionResult({ ...common, outcome: 'succeeded', error: null });
+};
+
+const installSummary = (results: readonly InstallResult[]): InstallReport['summary'] => {
   const summary = {
     installed: 0,
     updated: 0,
@@ -1224,8 +1508,33 @@ const buildReport = (
     refused: 0,
     failed: 0,
   };
-  for (const r of results) summary[r.action]++;
-  return { dryRun, requested, results, summary };
+  for (const result of results) summary[result.action]++;
+  return summary;
+};
+
+const assembleInstallReport = (
+  dryRun: boolean,
+  requested: InstallReport['requested'],
+  results: InstallResult[],
+  plan: OperationPlan<'install'>,
+  executionResults: readonly OperationExecutionResult[],
+): PlannedInstallReport => ({
+  dryRun,
+  requested,
+  results,
+  summary: installSummary(results),
+  plan,
+  executionResults,
+});
+
+const buildReport = (
+  dryRun: boolean,
+  requested: InstallReport['requested'],
+  results: InstallResult[],
+  continueOnError = false,
+): PlannedInstallReport => {
+  const planning = createInstallPlanning(requested, results, continueOnError);
+  return assembleInstallReport(dryRun, requested, results, planning.plan, []);
 };
 
 const rejectedSourceLabel = (input: string): string => {
@@ -1246,7 +1555,7 @@ const runInstallInternal = async (
   env: AcquisitionPorts,
   opts: InstallOptions,
   deps: InstallDeps,
-): Promise<Result<InstallReport, SkillSmithError>> => {
+): Promise<Result<PlannedInstallReport, SkillSmithError>> => {
   const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
@@ -1315,6 +1624,7 @@ const runInstallInternal = async (
           explicitScope: opts.scope !== undefined,
         },
         results,
+        Boolean(opts.continueOnError),
       ),
     );
   }
@@ -1336,6 +1646,7 @@ const runInstallInternal = async (
           explicitScope: opts.scope !== undefined,
         },
         results,
+        Boolean(opts.continueOnError),
       ),
     );
   }
@@ -1395,14 +1706,27 @@ const runInstallInternal = async (
         reason: msg(e),
         error: safeError(e),
       }));
-      return ok(buildReport(false, requested, results));
+      return ok(buildReport(false, requested, results, Boolean(opts.continueOnError)));
     }
-    return ok(buildReport(false, requested, planningRefusals));
+    return ok(buildReport(false, requested, planningRefusals, Boolean(opts.continueOnError)));
   }
 
-  // ---- per-source processing (shared by locked + dry-run) ----
-  const processAll = async (ledger: LedgerFile, dryRun: boolean): Promise<InstallResult[]> => {
+  interface PreparedInstallBinding {
+    readonly preview: InstallResult;
+    execute(): Promise<InstallResult>;
+  }
+  interface PreparedInstallBatch {
+    readonly preview: PlannedInstallReport;
+    readonly bindings: ReadonlyMap<string, PreparedInstallBinding>;
+    cleanup(): Promise<void>;
+  }
+
+  // Resolve and verify the whole selection into immutable work before any store/placement binding
+  // can run. Fetch materialization remains inside the existing outer lock for normal execution.
+  const prepareAll = async (ledger: LedgerFile): Promise<PreparedInstallBatch> => {
     const results: InstallResult[] = [...planningRefusals];
+    const candidateBindings = new Map<InstallResult, PreparedInstallBinding>();
+    const cleanupDirs = new Set<string>();
     const placeCtx: PlaceCtx = {
       env,
       deps,
@@ -1414,7 +1738,7 @@ const runInstallInternal = async (
       scopeKey,
       projectRoot,
     };
-    let failFast = false;
+    let planningFailFast = false;
 
     for (const { source, spec, requestIndex } of specs) {
       if (opts.signal?.aborted) {
@@ -1424,7 +1748,7 @@ const runInstallInternal = async (
         });
         continue;
       }
-      if (failFast) {
+      if (planningFailFast) {
         results.push({
           ...emptyResult(source, scope, 'skipped', requestIndex),
           reason: 'fail-fast',
@@ -1443,18 +1767,15 @@ const runInstallInternal = async (
         ledger,
         opts,
       );
-      const cleanup = async (dir: string | null): Promise<void> => {
-        if (dir) await env.removeTree(dir).catch(() => {});
-      };
-
       if (resolved.kind === 'result') {
         results.push({ ...resolved.result, requestIndex });
-        await cleanup(resolved.fetchDir);
-        if (resolved.result.error && !opts.continueOnError) failFast = true;
+        if (resolved.fetchDir) cleanupDirs.add(resolved.fetchDir);
+        if (resolved.result.error && !opts.continueOnError) planningFailFast = true;
         continue;
       }
 
       const r = resolved.r;
+      if (r.fetchDir) cleanupDirs.add(r.fetchDir);
       if (
         [dataDir, storeRoot, r.materializedDir, r.skillName, r.skillPath].some(
           containsSensitiveMaterial,
@@ -1468,8 +1789,7 @@ const runInstallInternal = async (
           reason: msg(error),
           error,
         });
-        await cleanup(r.fetchDir);
-        if (!opts.continueOnError) failFast = true;
+        if (!opts.continueOnError) planningFailFast = true;
         continue;
       }
       const sourceResults: InstallResult[] = [];
@@ -1529,79 +1849,142 @@ const runInstallInternal = async (
           continue;
         }
 
-        if (dryRun) {
-          sourceResults.push({
-            ...(await predictPair(placeCtx, spec, r, tool)),
-            requestIndex,
-          });
+        const preview = { ...(await predictPair(placeCtx, spec, r, tool)), requestIndex };
+        sourceResults.push(preview);
+        if (
+          preview.action !== 'installed' &&
+          preview.action !== 'updated' &&
+          preview.action !== 'repaired'
+        ) {
           continue;
         }
-
-        if (snap === null && snapErr === null) {
-          const { ns, name } = clampStoreNs(spec.identity.repository);
-          const provenance: Provenance = {
-            kind: 'git-clean',
-            gitSha: r.sha,
-            ns,
-            name,
-            repoRoot: null,
-            sourceRelPath: null,
-            remote: spec.identity.repository,
-            dirtySummary: null,
-          };
-          const s = await snapshotToStore(env, {
-            sourceDir: r.materializedDir,
-            skill: r.skillName,
-            storeRoot,
-            provenance,
-            txId: txIdOf(env, deps),
-          });
-          if (!s.ok) snapErr = s.error;
-          else snap = s.value;
-        }
-        if (snapErr) {
-          sourceResults.push({
-            ...emptyResult(source, scope, 'failed', requestIndex),
-            skill: r.skillName,
-            tool,
-            reason: msg(snapErr),
-            error: safeError(snapErr),
-          });
-          continue;
-        }
-
-        const storeReused = snapConsumed ? true : (snap as SnapshotResult).reused;
-        const placed = await placePair(
-          placeCtx,
-          spec,
-          r,
-          tool,
-          snap as SnapshotResult,
-          gate,
-          storeReused,
-        );
-        snapConsumed = true;
-        sourceResults.push({ ...placed, requestIndex });
+        candidateBindings.set(preview, {
+          preview,
+          execute: async (): Promise<InstallResult> => {
+            if (snap === null && snapErr === null) {
+              const { ns, name } = clampStoreNs(spec.identity.repository);
+              const provenance: Provenance = {
+                kind: 'git-clean',
+                gitSha: r.sha,
+                ns,
+                name,
+                repoRoot: null,
+                sourceRelPath: null,
+                remote: spec.identity.repository,
+                dirtySummary: null,
+              };
+              const snapshot = await snapshotToStore(env, {
+                sourceDir: r.materializedDir,
+                skill: r.skillName,
+                storeRoot,
+                provenance,
+                txId: txIdOf(env, deps),
+              });
+              if (!snapshot.ok) snapErr = snapshot.error;
+              else snap = snapshot.value;
+            }
+            if (snapErr !== null) {
+              return {
+                ...preview,
+                action: 'failed',
+                reason: msg(snapErr),
+                store: null,
+                error: safeError(snapErr),
+              };
+            }
+            const storeReused = snapConsumed ? true : (snap as SnapshotResult).reused;
+            const placed = await placePair(
+              placeCtx,
+              spec,
+              r,
+              tool,
+              snap as SnapshotResult,
+              gate,
+              storeReused,
+            );
+            snapConsumed = true;
+            return { ...placed, requestIndex };
+          },
+        });
       }
 
       results.push(...sourceResults);
-      await cleanup(r.fetchDir);
-      if (!opts.continueOnError && sourceResults.some((x) => x.error)) failFast = true;
+      if (!opts.continueOnError && sourceResults.some((x) => x.error)) {
+        planningFailFast = true;
+      }
     }
 
-    return results;
+    const planning = createInstallPlanning(requested, results, Boolean(opts.continueOnError));
+    const bindings = new Map<string, PreparedInstallBinding>();
+    for (const [operationId, previewResult] of planning.operationResults) {
+      const binding = candidateBindings.get(previewResult);
+      if (binding === undefined || bindings.has(operationId)) {
+        throw new Error('prepared install operation binding is not one-to-one');
+      }
+      bindings.set(operationId, binding);
+    }
+    if (
+      bindings.size !== planning.plan.operations.length ||
+      planning.plan.operations.some((operation) => !bindings.has(operation.operationId))
+    ) {
+      throw new Error('prepared install plan has no exact execution binding');
+    }
+    const preview = assembleInstallReport(true, requested, results, planning.plan, []);
+    deps.observePreparedPlan?.(planning.plan);
+    return {
+      preview,
+      bindings,
+      cleanup: async (): Promise<void> => {
+        for (const dir of cleanupDirs) await env.removeTree(dir).catch(() => {});
+      },
+    };
+  };
+
+  const executePrepared = async (prepared: PreparedInstallBatch): Promise<PlannedInstallReport> => {
+    const actualByPreview = new Map<InstallResult, InstallResult>();
+    const actualByOperation = new Map<string, InstallResult>();
+    let failFast = false;
+    for (const operation of prepared.preview.plan.operations) {
+      const binding = prepared.bindings.get(operation.operationId);
+      if (binding === undefined) throw new Error('prepared install operation binding is missing');
+      let actual: InstallResult;
+      if (opts.signal?.aborted) {
+        actual = { ...binding.preview, action: 'skipped', reason: 'interrupted', store: null };
+      } else if (failFast) {
+        actual = { ...binding.preview, action: 'skipped', reason: 'fail-fast', store: null };
+      } else {
+        actual = await binding.execute();
+        if (actual.error && !opts.continueOnError) failFast = true;
+      }
+      actualByPreview.set(binding.preview, actual);
+      actualByOperation.set(operation.operationId, actual);
+    }
+    const results = prepared.preview.results.map(
+      (previewResult) => actualByPreview.get(previewResult) ?? previewResult,
+    );
+    const executionResults = prepared.preview.plan.operations.map((operation) =>
+      installExecutionResultFor(operation, actualByOperation.get(operation.operationId), requested),
+    );
+    return assembleInstallReport(
+      false,
+      requested,
+      results,
+      prepared.preview.plan,
+      executionResults,
+    );
   };
 
   // ---- dry-run: no lock, no writes ----
   if (opts.dryRun) {
     const ledgerRes = await readLedger(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
-    const results = await processAll(ledgerRes.value, true);
-    return ok(buildReport(true, requested, results));
+    const prepared = await prepareAll(ledgerRes.value);
+    await prepared.cleanup();
+    return ok(prepared.preview);
   }
 
   // ---- Phase 2: the locked batch (ONE lock across fetch + verify + placement) ----
-  const executeLocked = async (): Promise<Result<InstallReport, SkillSmithError>> => {
+  const executeLocked = async (): Promise<Result<PlannedInstallReport, SkillSmithError>> => {
     await sweepStaging(env, storeRoot);
     await sweepFetchOrphans(env, dataDir);
     const ledgerRes = await readLedger(env, ledgerPath);
@@ -1628,11 +2011,15 @@ const runInstallInternal = async (
       );
     }
 
-    const results = await processAll(ledger, false);
-    return ok(buildReport(false, requested, results));
+    const prepared = await prepareAll(ledger);
+    try {
+      return ok(await executePrepared(prepared));
+    } finally {
+      await prepared.cleanup();
+    }
   };
   const completed = Symbol('install-ledger-callback-completed');
-  let batchResult: Result<InstallReport, SkillSmithError> | undefined;
+  let batchResult: Result<PlannedInstallReport, SkillSmithError> | undefined;
   const locked = await withLedgerLock(env, ledgerPath, async (): Promise<typeof completed> => {
     batchResult = await executeLocked();
     return completed;
@@ -1650,7 +2037,7 @@ export const runInstall = async (
   env: AcquisitionPorts,
   opts: InstallOptions,
   deps: InstallDeps = { ...defaultInstallDeps },
-): Promise<Result<InstallReport, SkillSmithError>> => {
+): Promise<Result<PlannedInstallReport, SkillSmithError>> => {
   try {
     const result = await runInstallInternal(env, opts, deps);
     return result.ok ? result : err(safeError(result.error));
@@ -2188,6 +2575,7 @@ const processUninstallTarget = async (
   explicitTools: boolean,
   scopeKeyFor: (scope: InstallScope) => Promise<string | null>,
   dryRun: boolean,
+  bind?: (preview: UninstallResult, name: string, match: UMatch) => void,
 ): Promise<UninstallResult[]> => {
   if (isUninstallPathTarget(target)) {
     const resolved = await resolveUninstallPathTarget(
@@ -2220,7 +2608,18 @@ const processUninstallTarget = async (
     } else {
       return [notInstalledResult(name)];
     }
-    return [await processUninstallMatch(env, ledger, ledgerPath, opts, deps, name, match, dryRun)];
+    const preview = await processUninstallMatch(
+      env,
+      ledger,
+      ledgerPath,
+      opts,
+      deps,
+      name,
+      match,
+      dryRun,
+    );
+    if (dryRun && preview.action === 'removed') bind?.(preview, name, match);
+    return [preview];
   }
 
   const matches = await collectUninstallMatches(
@@ -2252,28 +2651,206 @@ const processUninstallTarget = async (
 
   const results: UninstallResult[] = [];
   for (const match of matches) {
-    results.push(
-      await processUninstallMatch(env, ledger, ledgerPath, opts, deps, target, match, dryRun),
+    const preview = await processUninstallMatch(
+      env,
+      ledger,
+      ledgerPath,
+      opts,
+      deps,
+      target,
+      match,
+      dryRun,
     );
+    if (dryRun && preview.action === 'removed') bind?.(preview, target, match);
+    results.push(preview);
   }
   return results;
 };
 
-const buildUninstallReport = (
+const createUninstallPlanning = (
+  requested: UninstallReport['requested'],
+  results: readonly UninstallResult[],
+): Readonly<{
+  plan: OperationPlan<'uninstall'>;
+  operationResults: ReadonlyMap<string, UninstallResult>;
+}> => {
+  const operations: ExecutableOperation[] = [];
+  const operationResults = new Map<string, UninstallResult>();
+  const diagnostics: PlanningDiagnostic[] = [];
+  const diagnosticIds = new Set<string>();
+  for (const result of results) {
+    if (
+      result.tool === null ||
+      result.scope === null ||
+      result.placementPath === null ||
+      result.action === 'noop' ||
+      result.action === 'refused'
+    ) {
+      const diagnostic = planningDiagnosticFor('uninstall', result);
+      if (!diagnosticIds.has(diagnostic.diagnosticId)) {
+        diagnosticIds.add(diagnostic.diagnosticId);
+        diagnostics.push(diagnostic);
+      }
+      continue;
+    }
+    const resource = acquireLiveResource(
+      result.skill,
+      result.tool,
+      result.scope,
+      result.placementPath,
+    );
+    const groupId = createOperationGroupId({
+      domain: 'skillsmith.operation-group-identity',
+      schemaVersion: 1,
+      command: 'uninstall',
+      skill: result.skill,
+      source: null,
+      scope: result.scope,
+      target: result.skill,
+    });
+    const pairId = createOperationPairId({
+      domain: 'skillsmith.operation-pair-identity',
+      schemaVersion: 1,
+      groupId,
+      tool: result.tool,
+      resource,
+    });
+    const operationId = createOperationId({
+      domain: 'skillsmith.operation-identity',
+      schemaVersion: 1,
+      groupId,
+      pairId,
+      kind: 'remove',
+      skill: result.skill,
+      source: null,
+      tool: result.tool,
+      scope: result.scope,
+    });
+    if (operationResults.has(operationId)) continue;
+    const before = acquirePlacementImage(
+      result.skill,
+      result.tool,
+      result.scope,
+      result.placementPath,
+      result.before?.mode ?? 'pinned',
+      result.before?.placement ?? (result.before?.mode === 'dev' ? 'symlink' : 'copy'),
+      result.before?.symlinkTarget ?? null,
+    );
+    const after = acquireAbsentImage(result.skill, result.tool, result.scope, result.placementPath);
+    operations.push({
+      operationId,
+      groupId,
+      pairId,
+      kind: 'remove',
+      dependencyMetadata: {
+        domain: 'skillsmith.operation-dependency',
+        schemaVersion: 1,
+        operationIds: [],
+      },
+      skill: result.skill,
+      source: null,
+      tool: result.tool,
+      scope: result.scope,
+      before,
+      after,
+      reason: { code: 'remove', message: `remove ${result.skill}` },
+      selectionSource: 'explicit-targets',
+      preconditionIds: [],
+      requiredCheckIds: [],
+      reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+      conflict: null,
+    });
+    operationResults.set(operationId, result);
+  }
+  const selectedScopes = [
+    ...new Set(
+      results
+        .map((result) => result.scope)
+        .filter((scope): scope is InstallScope => scope !== null),
+    ),
+  ];
+  if (selectedScopes.length === 0 && requested.scope !== null) selectedScopes.push(requested.scope);
+  const plan = createOperationPlan({
+    domain: 'skillsmith.operation-plan',
+    schemaVersion: 1,
+    command: 'uninstall',
+    selection: {
+      source: 'explicit-targets',
+      targets: requested.targets,
+      all: requested.allScopes,
+      tools: requested.tools,
+      scopes: selectedScopes,
+      groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+    },
+    batchPolicy: 'fail-fast',
+    operations,
+    checks: [],
+    diagnostics,
+  }) as OperationPlan<'uninstall'>;
+  return { plan, operationResults };
+};
+
+const uninstallSummary = (results: readonly UninstallResult[]): UninstallReport['summary'] => {
+  const summary = { removed: 0, noop: 0, refused: 0, failed: 0 };
+  for (const result of results) summary[result.action]++;
+  return summary;
+};
+
+const assembleUninstallReport = (
   dryRun: boolean,
   requested: UninstallReport['requested'],
   results: UninstallResult[],
-): UninstallReport => {
-  const summary = { removed: 0, noop: 0, refused: 0, failed: 0 };
-  for (const r of results) summary[r.action]++;
-  return { dryRun, requested, results, summary };
+  plan: OperationPlan<'uninstall'>,
+  executionResults: readonly OperationExecutionResult[],
+): PlannedUninstallReport => ({
+  dryRun,
+  requested,
+  results,
+  summary: uninstallSummary(results),
+  plan,
+  executionResults,
+});
+
+const uninstallExecutionResultFor = (
+  operation: ExecutableOperation,
+  result: UninstallResult | undefined,
+  requested: UninstallReport['requested'],
+): OperationExecutionResult => {
+  const cancelled = result?.reason === 'interrupted';
+  const succeeded = result?.action === 'removed';
+  const common = {
+    operationId: operation.operationId,
+    actualBefore: operation.before,
+    actualAfter: succeeded ? operation.after : operation.before,
+    force: createBoundedForceEffect({
+      supported: true,
+      requested: requested.force,
+      conflict: null,
+    }),
+  } as const;
+  if (cancelled) {
+    return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
+  }
+  if (!succeeded) {
+    return createOperationExecutionResult({
+      ...common,
+      outcome: 'failed',
+      error: {
+        code: result?.error?.code ?? 'uninstall-failed',
+        message: closedPlanningText(result?.reason ?? null, 'prepared uninstall binding failed'),
+        remediation: 'Resolve the reported condition and retry the same selection.',
+      },
+    });
+  }
+  return createOperationExecutionResult({ ...common, outcome: 'succeeded', error: null });
 };
 
 const runUninstallInternal = async (
   env: AcquisitionPorts,
   opts: UninstallOptions,
   deps: UninstallDeps,
-): Promise<Result<UninstallReport, SkillSmithError>> => {
+): Promise<Result<PlannedUninstallReport, SkillSmithError>> => {
   const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
@@ -2300,8 +2877,18 @@ const runUninstallInternal = async (
   const scopeKeyFor = async (scope: InstallScope): Promise<string | null> =>
     scope === 'project' ? (projectRoot ?? (await env.realpath(opts.cwd))) : null;
 
-  const processAll = async (ledger: LedgerFile, dryRun: boolean): Promise<UninstallResult[]> => {
+  interface PreparedUninstallBinding {
+    readonly preview: UninstallResult;
+    execute(): Promise<UninstallResult>;
+  }
+  interface PreparedUninstallBatch {
+    readonly preview: PlannedUninstallReport;
+    readonly bindings: ReadonlyMap<string, PreparedUninstallBinding>;
+  }
+
+  const prepareAll = async (ledger: LedgerFile): Promise<PreparedUninstallBatch> => {
     const results: UninstallResult[] = [];
+    const candidateBindings = new Map<UninstallResult, PreparedUninstallBinding>();
     for (const target of opts.targets) {
       results.push(
         ...(await processUninstallTarget(
@@ -2317,22 +2904,84 @@ const runUninstallInternal = async (
           toolsToSearch,
           explicitTools,
           scopeKeyFor,
-          dryRun,
+          true,
+          (preview, name, match) => {
+            candidateBindings.set(preview, {
+              preview,
+              execute: () =>
+                processUninstallMatch(env, ledger, ledgerPath, opts, deps, name, match, false),
+            });
+          },
         )),
       );
     }
-    return results;
+    const planning = createUninstallPlanning(requested, results);
+    const bindings = new Map<string, PreparedUninstallBinding>();
+    for (const [operationId, previewResult] of planning.operationResults) {
+      const binding = candidateBindings.get(previewResult);
+      if (binding === undefined || bindings.has(operationId)) {
+        throw new Error('prepared uninstall operation binding is not one-to-one');
+      }
+      bindings.set(operationId, binding);
+    }
+    if (
+      bindings.size !== planning.plan.operations.length ||
+      planning.plan.operations.some((operation) => !bindings.has(operation.operationId))
+    ) {
+      throw new Error('prepared uninstall plan has no exact execution binding');
+    }
+    const preview = assembleUninstallReport(true, requested, results, planning.plan, []);
+    deps.observePreparedPlan?.(planning.plan);
+    return { preview, bindings };
+  };
+
+  const executePrepared = async (
+    prepared: PreparedUninstallBatch,
+  ): Promise<PlannedUninstallReport> => {
+    const actualByPreview = new Map<UninstallResult, UninstallResult>();
+    const actualByOperation = new Map<string, UninstallResult>();
+    for (const operation of prepared.preview.plan.operations) {
+      const binding = prepared.bindings.get(operation.operationId);
+      if (binding === undefined) throw new Error('prepared uninstall operation binding is missing');
+      const actual = opts.signal?.aborted
+        ? {
+            ...binding.preview,
+            action: 'failed' as const,
+            reason: 'interrupted',
+            error: genericError('operation interrupted'),
+          }
+        : await binding.execute();
+      actualByPreview.set(binding.preview, actual);
+      actualByOperation.set(operation.operationId, actual);
+    }
+    const results = prepared.preview.results.map(
+      (previewResult) => actualByPreview.get(previewResult) ?? previewResult,
+    );
+    const executionResults = prepared.preview.plan.operations.map((operation) =>
+      uninstallExecutionResultFor(
+        operation,
+        actualByOperation.get(operation.operationId),
+        requested,
+      ),
+    );
+    return assembleUninstallReport(
+      false,
+      requested,
+      results,
+      prepared.preview.plan,
+      executionResults,
+    );
   };
 
   // Uninstall needs no binary detection and no fetch/verify — dry-run only needs a ledger read.
   if (opts.dryRun) {
     const ledgerRes = await readLedger(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
-    const results = await processAll(ledgerRes.value, true);
-    return ok(buildUninstallReport(true, requested, results));
+    const prepared = await prepareAll(ledgerRes.value);
+    return ok(prepared.preview);
   }
 
-  const executeLocked = async (): Promise<Result<UninstallReport, SkillSmithError>> => {
+  const executeLocked = async (): Promise<Result<PlannedUninstallReport, SkillSmithError>> => {
     await sweepStaging(env, storeRoot);
     await sweepFetchOrphans(env, dataDir);
     const ledgerRes = await readLedger(env, ledgerPath);
@@ -2356,11 +3005,11 @@ const runUninstallInternal = async (
       );
     }
 
-    const results = await processAll(ledger, false);
-    return ok(buildUninstallReport(false, requested, results));
+    const prepared = await prepareAll(ledger);
+    return ok(await executePrepared(prepared));
   };
   const completed = Symbol('uninstall-ledger-callback-completed');
-  let batchResult: Result<UninstallReport, SkillSmithError> | undefined;
+  let batchResult: Result<PlannedUninstallReport, SkillSmithError> | undefined;
   const locked = await withLedgerLock(env, ledgerPath, async (): Promise<typeof completed> => {
     batchResult = await executeLocked();
     return completed;
@@ -2378,7 +3027,7 @@ export const runUninstall = async (
   env: AcquisitionPorts,
   opts: UninstallOptions,
   deps: UninstallDeps = { ...defaultUninstallDeps },
-): Promise<Result<UninstallReport, SkillSmithError>> => {
+): Promise<Result<PlannedUninstallReport, SkillSmithError>> => {
   try {
     const result = await runUninstallInternal(env, opts, deps);
     return result.ok ? result : err(safeError(result.error));

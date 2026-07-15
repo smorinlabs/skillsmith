@@ -1,5 +1,30 @@
-import type { ListReport } from '@skillsmith/core';
+import type { FlipReport, ListReport } from '@skillsmith/core';
 import type { WireCodec } from '@skillsmith/core/contracts';
+
+export interface FlipV3Dto {
+  schemaVersion: 3;
+  kind: 'skillsmith.flip';
+  op: 'promote' | 'dev' | 'rollback';
+  dryRun: boolean;
+  summary: FlipReport['summary'];
+  selection: {
+    source: 'explicit-targets' | 'explicit-all' | 'bounded-default';
+    outcome: 'selected' | 'filter-noop';
+    targets: string[];
+    all: boolean;
+    tools: string[];
+    scopes: Array<'user' | 'project'>;
+    groupIds: string[];
+    batchPolicy: 'fail-fast' | 'continue-on-error';
+  };
+  operations: Array<NonNullable<FlipReport['plan']>['operations'][number]>;
+  checks: Array<NonNullable<FlipReport['plan']>['checks'][number]>;
+  diagnostics: Array<NonNullable<FlipReport['plan']>['diagnostics'][number]>;
+  results: Array<NonNullable<FlipReport['executionResults']>[number]>;
+}
+
+export declare const flipV3Codec: WireCodec<'flip', 3, FlipV3Dto>;
+export declare const toFlipV3Dto: (report: FlipReport) => FlipV3Dto;
 
 type Scope = 'system' | 'user' | 'project' | 'managed';
 type EntryOrigin =

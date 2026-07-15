@@ -611,6 +611,76 @@ describe('runUninstall — uncommitted journal (Global Constraint #6)', () => {
 });
 
 describe('runUninstall — dry run', () => {
+  test('prepares the exact immutable match plan before removal and reuses preview IDs', async () => {
+    await installUser();
+    const options = {
+      targets: ['factor-scan'],
+      tools: ['claude-code'] as const,
+      cwd: f.base,
+      configuration: f.configuration,
+    };
+    let previewPlan: Parameters<NonNullable<UninstallDeps['observePreparedPlan']>>[0] | undefined;
+    const preview = await runUninstall(
+      f.env,
+      { ...options, dryRun: true },
+      {
+        ...uninstallDeps(),
+        observePreparedPlan: (plan) => {
+          previewPlan = plan;
+        },
+      },
+    );
+    if (!preview.ok) throw new Error(msg(preview.error));
+    expect(previewPlan).toBe(preview.value.plan);
+    expect(Object.isFrozen(previewPlan)).toBeTrue();
+    expect(preview.value.executionResults).toEqual([]);
+
+    let executionPlan: typeof previewPlan;
+    const invokedOperationIds = new Set<string>();
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const observeLiveMutation = (path: string): void => {
+      if (path !== livePath) return;
+      expect(executionPlan, 'the plan must exist before the first live removal').toBeDefined();
+      const operation = executionPlan?.operations.find(
+        (candidate) =>
+          candidate.before.kind === 'placement' &&
+          candidate.before.resource.location.kind === 'machine-bound' &&
+          candidate.before.resource.location.path === path,
+      );
+      expect(operation, `missing exact prepared match binding for ${path}`).toBeDefined();
+      if (operation) invokedOperationIds.add(operation.operationId);
+    };
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      rename: async (from, to) => {
+        observeLiveMutation(from);
+        await f.env.rename(from, to);
+      },
+      removeTree: async (path) => {
+        observeLiveMutation(path);
+        await f.env.removeTree(path);
+      },
+    };
+    const executed = await runUninstall(executionEnv, options, {
+      ...uninstallDeps(),
+      observePreparedPlan: (plan) => {
+        executionPlan = plan;
+      },
+    });
+    if (!executed.ok) throw new Error(msg(executed.error));
+    expect(executionPlan).toBe(executed.value.plan);
+    expect(executed.value.plan).toEqual(preview.value.plan);
+    expect(executed.value.plan.operations.map(({ operationId }) => operationId)).toEqual(
+      preview.value.plan.operations.map(({ operationId }) => operationId),
+    );
+    expect([...invokedOperationIds].sort()).toEqual(
+      executed.value.plan.operations.map(({ operationId }) => operationId).sort(),
+    );
+    expect(executed.value.executionResults.map(({ operationId }) => operationId)).toEqual(
+      executed.value.plan.operations.map(({ operationId }) => operationId),
+    );
+  });
+
   test('writes nothing; ledger byte-identical afterward', async () => {
     await installUser();
     const before = await f.env.readText(ledgerPathOf(f.data));
@@ -629,6 +699,14 @@ describe('runUninstall — dry run', () => {
     if (!r.ok) throw new Error(msg(r.error));
     expect(r.value.dryRun).toBe(true);
     expect(r.value.results[0]?.action).toBe('removed');
+    expect(r.value.plan).toMatchObject({
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'uninstall',
+    });
+    expect(Object.isFrozen(r.value.plan)).toBe(true);
+    expect(r.value.plan.operations).toHaveLength(1);
+    expect(r.value.executionResults).toEqual([]);
 
     const after = await f.env.readText(ledgerPathOf(f.data));
     expect(after).toBe(before);

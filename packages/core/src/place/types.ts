@@ -1,5 +1,6 @@
 import type { FLIP_TOOLS } from '../agents/registry.ts';
 import type { SkillSmithError } from '../errors.ts';
+import type { OperationExecutionResult, OperationPlan } from '../planning/types.ts';
 import type {
   ClockPort,
   FileReadPort,
@@ -22,7 +23,7 @@ export type PlacementPorts = PlatformPaths &
   ClockPort &
   IdPort & { readonly git: GitPort };
 
-export type PlacementReadPorts = PlatformPaths & FileReadPort;
+export type PlacementReadPorts = PlatformPaths & FileReadPort & { readonly git: GitPort };
 
 export type SwapPorts = Pick<
   FileReadPort,
@@ -200,11 +201,19 @@ export interface FlipResult {
 }
 
 export interface FlipReport {
-  op: FlipOp;
-  dryRun: boolean;
-  requested: { targets: string[]; all: boolean; tools: FlipTool[]; explicitTools: boolean };
-  results: FlipResult[];
-  summary: {
+  readonly op: FlipOp;
+  readonly dryRun: boolean;
+  readonly requested: {
+    targets: string[];
+    all: boolean;
+    tools: FlipTool[];
+    explicitTools: boolean;
+  };
+  readonly plan: OperationPlan<'dev' | 'promote'>;
+  /** Dry-run reports expose an empty array. */
+  readonly executionResults: readonly OperationExecutionResult[];
+  readonly results: FlipResult[];
+  readonly summary: {
     flipped: number;
     updated: number;
     noop: number;
@@ -221,6 +230,8 @@ export interface FlipOptions {
   targets: readonly string[];
   all?: boolean;
   tools?: readonly FlipTool[]; // explicit --tool list; undefined = auto
+  scope?: 'user' | 'project';
+  selectionSource?: 'explicit-targets' | 'explicit-all';
   source?: string; // dev only
   dest?: string; // dev --source create only: override the created placement's destination root
   strict?: boolean; // promote / dev --source only
@@ -229,9 +240,18 @@ export interface FlipOptions {
   rollback?: boolean;
   dryRun?: boolean;
   cwd: string;
+  /** Application-normalized project root; null means the effective cwd is outside a project. */
+  projectRoot?: string | null;
   configuration: ResolvedRuntimeConfiguration;
   testPauseAt?: JournalPhase; // wired only by the CLI under SKILLSMITH_E2E=1
   signal?: AbortSignal;
+}
+
+export interface PreparedFlipRun {
+  readonly preview: FlipReport;
+  readonly plan: OperationPlan<'dev' | 'promote'>;
+  /** Executes the exact prepared operation bindings once. */
+  execute(): Promise<Result<FlipReport, SkillSmithError>>;
 }
 
 export interface FlipDeps {

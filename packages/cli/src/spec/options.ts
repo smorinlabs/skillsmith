@@ -17,6 +17,8 @@ const ALLOWED_SCOPES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith config unset': ['user', 'project', 'system'],
   'skillsmith install': ['user', 'project'],
   'skillsmith uninstall': ['user', 'project'],
+  'skillsmith dev': ['user', 'project'],
+  'skillsmith promote': ['user', 'project'],
 };
 
 const DEFAULT_OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
@@ -118,19 +120,21 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith uninstall:--yes': 'Accepted no-op; uninstall never prompts',
   'skillsmith dev:--all': 'Demote every pinned placement with a recorded dev source',
   'skillsmith dev:--tool': 'Restrict to tools; repeatable',
+  'skillsmith dev:--scope': 'Restrict selection to user or current-project placements',
   'skillsmith dev:--source': 'Create or adopt a placement from this development source',
   'skillsmith dev:--dest': 'Destination root for a created placement; requires one --tool',
   'skillsmith dev:--strict': 'Treat verify warnings as blocking on create or adopt',
   'skillsmith dev:--no-verify': 'Skip the static verify gate on create or adopt',
   'skillsmith dev:--rollback': 'Undo the last dev flip or recover an interrupted one',
-  'skillsmith dev:--yes': 'Accepted no-op; dev never prompts',
+  'skillsmith dev:--yes': 'Approve one planned bulk demotion without prompting',
   'skillsmith promote:--all': 'Promote every dev-mode placement in the selected tools',
   'skillsmith promote:--tool': 'Restrict to tools; repeatable',
+  'skillsmith promote:--scope': 'Restrict selection to user or current-project placements',
   'skillsmith promote:--strict': 'Make verify-gate warnings block promotion',
   'skillsmith promote:--no-verify': 'Skip the verify gate and record the result as unverified',
   'skillsmith promote:--allow-dirty': 'Allow snapshotting a dirty git tree',
   'skillsmith promote:--rollback': 'Undo the last promotion or recover an interrupted one',
-  'skillsmith promote:--yes': 'Accepted no-op; promote never prompts',
+  'skillsmith promote:--yes': 'Approve one planned bulk promotion without prompting',
 };
 
 type StateOption = {

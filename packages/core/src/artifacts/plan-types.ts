@@ -1,3 +1,4 @@
+import type { ExecutableOperationKind } from '../planning/vocabulary.ts';
 import type { ArtifactDigest } from './hash.ts';
 
 export type PlanIdV1 = string;
@@ -215,19 +216,7 @@ export type ConflictV1 =
       backup: 'none';
     };
 
-export type PlanOperationKindV1 =
-  | 'install'
-  | 'update'
-  | 'remove'
-  | 'link-dev'
-  | 'promote'
-  | 'move-scope'
-  | 'adapt'
-  | 'repair'
-  | 'write-manifest'
-  | 'write-lock'
-  | 'migrate-project-config'
-  | 'migrate-ledger';
+export type PlanOperationKindV1 = ExecutableOperationKind;
 
 export interface PlanOperationV1 {
   operationId: PlanIdV1;

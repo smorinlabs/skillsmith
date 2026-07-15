@@ -282,4 +282,27 @@ describe('runSwap / rollbackSwap — guards and abort', () => {
     expect(getPair(s.ledger, 'alpha', 'claude-code')?.journal?.phase).toBe('committed');
     expect(await residue(f.env, s.skillsRoot)).toEqual([]);
   });
+
+  test('abort persisted with the staged phase is observed before the pause listener is installed', async () => {
+    const s = await seedAlphaDev(f);
+    const controller = new AbortController();
+    const baseline = makeCtx(f.env, s.ledgerPath, s.ledger, { signal: controller.signal });
+    const ctx: SwapCtx = {
+      ...baseline,
+      pauseAt: 'staged',
+      persist: async () => {
+        const persisted = await writeLedger(f.env, s.ledgerPath, s.ledger);
+        if (getPair(s.ledger, 'alpha', 'claude-code')?.journal?.phase === 'staged') {
+          controller.abort();
+        }
+        return persisted;
+      },
+    };
+
+    const interrupted = await runSwap(ctx, promotePlan(s));
+    expect(interrupted.ok).toBe(false);
+    if (!interrupted.ok) expect(interrupted.error.code).toBe('flip-failed');
+    expect(getPair(s.ledger, 'alpha', 'claude-code')?.journal?.phase).toBe('staged');
+    expect(await f.env.pathKind(s.placementPath)).toBe('symlink');
+  });
 });

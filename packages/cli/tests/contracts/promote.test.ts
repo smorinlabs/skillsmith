@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { mkdir, readdir, rm, symlink } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rm, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createLifecycleApplicationServices } from '../../../core/src/application/lifecycle-services.ts';
 import type {
@@ -14,8 +14,9 @@ import {
 } from '../../../core/src/observation/index.ts';
 import { getPair, readLedger } from '../../../core/src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../../core/src/place/paths.ts';
-import { runPromote, runRollback } from '../../../core/src/place/run.ts';
+import { preparePromote, runPromote, runRollback } from '../../../core/src/place/run.ts';
 import type { FlipOptions, FlipReport } from '../../../core/src/place/types.ts';
+import type { RuntimePorts } from '../../../core/src/ports/types.ts';
 import type { Result } from '../../../core/src/result.ts';
 import { cannedFlipDeps, passFlipDeps } from '../../../core/tests/fixtures/place/dev-source.ts';
 import {
@@ -23,6 +24,7 @@ import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import { SimulatedCrash } from '../../../core/tests/place/crash-env.ts';
 import { currentWireContractRegistry } from '../../src/contracts/wire-contracts.ts';
 import { renderFlipJson } from '../../src/output/flip-json.ts';
 
@@ -110,6 +112,21 @@ const executionResults = (report: FlipReport, label: string): readonly UnknownRe
 const operationIds = (plan: UnknownRecord): readonly unknown[] =>
   records(plan.operations).map((operation) => operation.operationId);
 
+const wireSelectionForPlan = (plan: UnknownRecord, label: string): UnknownRecord => {
+  expect(isRecord(plan.selection), `${label} plan.selection`).toBeTrue();
+  if (!isRecord(plan.selection)) throw new Error(`${label} selection is unavailable`);
+  return {
+    source: plan.selection.source,
+    outcome: plan.selection.outcome,
+    targets: plan.selection.targets,
+    all: plan.selection.all,
+    tools: plan.selection.tools,
+    scopes: plan.selection.scopes,
+    groupIds: plan.selection.groupIds,
+    batchPolicy: plan.batchPolicy,
+  };
+};
+
 const executionIds = (report: FlipReport, label: string): readonly unknown[] =>
   executionResults(report, label).map((result) => result.operationId);
 
@@ -151,19 +168,29 @@ const residueNames = async (root: string): Promise<readonly string[]> =>
     (name) => name.includes('.skillsmith-staging-') || name.includes('.skillsmith-backup-'),
   );
 
-const waitForJournalPhase = async (
-  fleet: FixtureFleet,
-  skill: string,
-  tool: 'claude-code' | 'codex',
-  phase: 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed',
-): Promise<void> => {
-  for (let attempt = 0; attempt < 200; attempt++) {
-    const ledger = await readLedger(fleet.env, ledgerPathOf(fleet.data));
-    if (ledger.ok && getPair(ledger.value, skill, tool)?.journal?.phase === phase) return;
-    await new Promise<void>((resolveWait) => setTimeout(resolveWait, 5));
-  }
-  throw new Error(`timed out waiting for ${skill}@${tool} journal phase ${phase}`);
-};
+const MUTATION_PORTS = new Set<PropertyKey>([
+  'makeDir',
+  'writeTextFile',
+  'makeSymlink',
+  'rename',
+  'copyTree',
+  'removeTree',
+  'fsyncFile',
+  'fsyncDir',
+  'withFileLock',
+]);
+
+const trackedMutationPorts = (ports: RuntimePorts, events: string[]): RuntimePorts =>
+  new Proxy(ports, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver) as unknown;
+      if (typeof value !== 'function' || !MUTATION_PORTS.has(property)) return value;
+      return (...args: unknown[]) => {
+        events.push(`write:${String(property)}`);
+        return Reflect.apply(value, target, args);
+      };
+    },
+  }) as RuntimePorts;
 
 const observation = Object.freeze({
   context: createOperationContext({
@@ -437,10 +464,12 @@ describe('EWP-CMD-PROMOTE-TS04', () => {
       const projectRoot = join(fleet.project, '.claude', 'skills');
       await mkdir(projectRoot, { recursive: true });
       await symlink(resolve(fleet.betaSrc), join(projectRoot, 'project-beta'));
+      const latePath = join(projectRoot, 'late-project');
 
       let plannedReport: FlipReport | undefined;
       let plannedPlan: UnknownRecord | undefined;
       const events: string[] = [];
+      let prepareCalls = 0;
       const interaction: InteractionPort = {
         mode: 'interactive',
         choose: async <TValue>(request: {
@@ -452,43 +481,58 @@ describe('EWP-CMD-PROMOTE-TS04', () => {
           if (plannedPlan === undefined) throw new Error('approval plan is unavailable');
           expect(Object.isFrozen(plannedPlan)).toBeTrue();
           expect(records(plannedPlan.operations)).toHaveLength(2);
+          await symlink(resolve(fleet.betaSrc), latePath);
           events.push('confirm');
           return { status: 'resolved', value: true };
         },
       };
       const services = createLifecycleApplicationServices({
-        promote: (async (
-          env: Parameters<typeof runPromote>[0],
-          options: Parameters<typeof runPromote>[1],
-          deps: Parameters<typeof runPromote>[2],
-        ) => {
-          const result = await runPromote(env, options, deps);
-          if (options.dryRun) {
-            plannedReport = unwrapReport(result, 'service bulk approval preview');
-            plannedPlan = requirePlan(plannedReport, 'service bulk approval preview');
-            expect(plannedPlan.selection).toMatchObject({
-              source: 'explicit-all',
-              scopes: ['user', 'project'],
-            });
-            expect(plannedPlan.batchPolicy).toBe('fail-fast');
-            expect(
-              records(plannedPlan.operations).map((operation) => [
-                operation.scope,
-                operation.skill,
-                operation.tool,
-              ]),
-            ).toEqual([
-              ['user', 'alpha', 'claude-code'],
-              ['project', 'project-beta', 'claude-code'],
-            ]);
-            expect(executionResults(plannedReport, 'service bulk approval preview')).toEqual([]);
-            events.push('plan');
-          } else {
-            expect(events).toEqual(['plan', 'confirm']);
-            events.push('execute');
-          }
-          return result;
-        }) as never,
+        preparePromote: (async (env, options, deps) => {
+          prepareCalls += 1;
+          expect(prepareCalls, 'bulk approval must prepare exactly once').toBe(1);
+          expect(options.cwd).toBe(fleet.project);
+          expect(options.projectRoot).toBe(fleet.projectReal);
+          const prepared =
+            deps === undefined
+              ? await preparePromote(env, options)
+              : await preparePromote(env, options, deps);
+          if (!prepared.ok) return prepared;
+          plannedReport = prepared.value.preview;
+          plannedPlan = requirePlan(plannedReport, 'service bulk approval preview');
+          expect(plannedPlan.selection).toMatchObject({
+            source: 'explicit-all',
+            scopes: ['user', 'project'],
+          });
+          expect(plannedPlan.batchPolicy).toBe('fail-fast');
+          expect(
+            records(plannedPlan.operations).map((operation) => [
+              operation.scope,
+              operation.skill,
+              operation.tool,
+            ]),
+          ).toEqual([
+            ['user', 'alpha', 'claude-code'],
+            ['project', 'project-beta', 'claude-code'],
+          ]);
+          expect(executionResults(plannedReport, 'service bulk approval preview')).toEqual([]);
+          events.push('plan');
+          return {
+            ok: true,
+            value: {
+              preview: prepared.value.preview,
+              plan: prepared.value.plan,
+              execute: async () => {
+                expect(events).toEqual(['plan', 'confirm']);
+                events.push('execute');
+                const result = await prepared.value.execute();
+                if (result.ok && plannedPlan !== undefined) {
+                  expect(requirePlan(result.value, 'service bulk execution')).toEqual(plannedPlan);
+                }
+                return result;
+              },
+            },
+          };
+        }) as typeof preparePromote,
       });
       const outcome = await services.promote(
         {
@@ -499,6 +543,7 @@ describe('EWP-CMD-PROMOTE-TS04', () => {
       );
 
       expect(events).toEqual(['plan', 'confirm', 'execute']);
+      expect(prepareCalls).toBe(1);
       expect(plannedReport).toBeDefined();
       expect(plannedPlan).toBeDefined();
       expect(outcome.report.value).not.toBeNull();
@@ -510,6 +555,47 @@ describe('EWP-CMD-PROMOTE-TS04', () => {
       expect(executionIds(outcome.report.value, 'approved bulk execution')).toEqual(
         operationIds(executionPlan),
       );
+      expect(
+        records(executionPlan.operations).some((operation) => operation.skill === 'late-project'),
+      ).toBeFalse();
+      expect((await lstat(latePath)).isSymbolicLink()).toBeTrue();
+    } finally {
+      await destroyFixtureFleet(fleet);
+    }
+  });
+
+  test('a missing member fails an explicit multi-target invocation before approval or writes', async () => {
+    const fleet = await buildFixtureFleet();
+    try {
+      const events: string[] = [];
+      let confirmations = 0;
+      const interaction: InteractionPort = {
+        mode: 'interactive',
+        choose: async <TValue>(request: {
+          readonly choices: readonly { readonly value: TValue }[];
+        }) => ({ status: 'resolved', value: request.choices[0]?.value as TValue }),
+        confirm: async () => {
+          confirmations += 1;
+          return { status: 'resolved', value: true };
+        },
+      };
+      const outcome = await createLifecycleApplicationServices().promote(
+        {
+          arguments: [['alpha', 'missing-explicit-target']],
+          options: { tool: ['claude-code'], yes: true, verify: false },
+        },
+        applicationContext(fleet, interaction, {
+          ports: trackedMutationPorts(fleet.env, events),
+        }),
+      );
+
+      expect(outcome.exitClass).toBe('usage');
+      expect(outcome.report.value).toBeNull();
+      expect(outcome.diagnostics.map((diagnostic) => diagnostic.message).join('\n')).toContain(
+        'missing-explicit-target',
+      );
+      expect(confirmations).toBe(0);
+      expect(events.filter((event) => event.startsWith('write:'))).toEqual([]);
     } finally {
       await destroyFixtureFleet(fleet);
     }
@@ -525,7 +611,7 @@ describe('EWP-CMD-PROMOTE-TS05', () => {
         contextCalls++;
         throw new Error('option conflict reached project discovery');
       }) as never,
-      promote: (async () => {
+      preparePromote: (async () => {
         domainCalls++;
         throw new Error('option conflict reached promote runner');
       }) as never,
@@ -576,12 +662,7 @@ describe('EWP-CMD-PROMOTE-TS05', () => {
         results: [],
       });
       expect(Object.keys(previewWire).sort()).toEqual([...FLIP_V3_TOP_LEVEL_KEYS].sort());
-      expect(isRecord(previewPlan.selection)).toBeTrue();
-      if (!isRecord(previewPlan.selection)) throw new Error('promote preview selection is absent');
-      expect(previewWire.selection).toEqual({
-        ...previewPlan.selection,
-        batchPolicy: previewPlan.batchPolicy,
-      });
+      expect(previewWire.selection).toEqual(wireSelectionForPlan(previewPlan, 'promote preview'));
       expect(previewWire.plan).toBeUndefined();
       expect(previewWire.executionResults).toBeUndefined();
 
@@ -609,13 +690,9 @@ describe('EWP-CMD-PROMOTE-TS05', () => {
         results: runtimeExecutionResults,
       });
       expect(Object.keys(executionWire).sort()).toEqual([...FLIP_V3_TOP_LEVEL_KEYS].sort());
-      expect(isRecord(executionPlan.selection)).toBeTrue();
-      if (!isRecord(executionPlan.selection))
-        throw new Error('promote execution selection is absent');
-      expect(executionWire.selection).toEqual({
-        ...executionPlan.selection,
-        batchPolicy: executionPlan.batchPolicy,
-      });
+      expect(executionWire.selection).toEqual(
+        wireSelectionForPlan(executionPlan, 'promote execution'),
+      );
       expect(isRecord(executionWire.selection)).toBeTrue();
       if (!isRecord(executionWire.selection)) throw new Error('flip@3 promote selection is absent');
       expect(Object.keys(executionWire.selection).sort()).toEqual(
@@ -749,25 +826,35 @@ describe('EWP-CMD-PROMOTE-TS06', () => {
         targets: ['beta'],
         tools: ['codex'],
         noVerify: true,
-        testPauseAt: 'staged',
         selectionSource: 'explicit-targets',
       });
       const controller = new AbortController();
+      let interruptedBeforeBackup = false;
+      const interruptedPorts = {
+        ...fleet.env,
+        rename: async (from: string, to: string) => {
+          if (!interruptedBeforeBackup && to.includes('.skillsmith-backup-beta-')) {
+            interruptedBeforeBackup = true;
+            controller.abort();
+            throw new SimulatedCrash(1, 'promote-before-live-to-backup');
+          }
+          return fleet.env.rename(from, to);
+        },
+      };
       const interruptedPromise = runPromote(
-        fleet.env,
+        interruptedPorts,
         { ...crashOptions, signal: controller.signal },
         passFlipDeps(),
       );
-      await waitForJournalPhase(fleet, 'beta', 'codex', 'staged');
-      controller.abort();
       const interrupted = unwrapReport(await interruptedPromise, 'interrupted promote');
+      expect(interruptedBeforeBackup).toBeTrue();
       expect(interrupted.results[0]?.action).toBe('failed');
       requirePlan(interrupted, 'interrupted promote');
 
       const ledgerAfterCrash = await readLedger(fleet.env, ledgerPathOf(fleet.data));
       expect(ledgerAfterCrash.ok).toBeTrue();
       if (!ledgerAfterCrash.ok) throw new Error(errorText(ledgerAfterCrash.error));
-      expect(getPair(ledgerAfterCrash.value, 'beta', 'codex')?.journal?.phase).toBe('staged');
+      expect(getPair(ledgerAfterCrash.value, 'beta', 'codex')?.journal?.phase).toBe('backed-up');
 
       const recovered = unwrapReport(
         await runPromote(

@@ -4,11 +4,12 @@ import {
   type Placement,
   type PlacementClass,
   classifyPlacement,
+  listPlacements,
 } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
 import { type SkillSmithError, flipRefusedError, placementNotFoundError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
-import { getPair } from './ledger.ts';
+import { getPairAt } from './ledger.ts';
 import {
   FLIP_TOOLS,
   type FlipOp,
@@ -22,6 +23,8 @@ import {
 export interface PairPlan {
   skill: string;
   tool: FlipTool;
+  scope: 'user' | 'project';
+  scopeKey: string | null;
   placement: Placement;
   notices: string[]; // e.g. legacy-root info
 }
@@ -29,6 +32,8 @@ export interface PairPlan {
 export interface FlipPlanOutcome {
   pairs: PairPlan[]; // eligible, in (target-order x tool-order) sequence
   preResults: FlipResult[]; // already-decided results (refusals, skips, not-found)
+  /** Explicit named targets with no live or recorded placement under any known tool/scope. */
+  unmatchedTargets?: string[];
 }
 
 const compatibilityLegacyInventory = {
@@ -81,17 +86,23 @@ const isFlippableClass = (cls: PlacementClass): boolean => cls === 'dev' || cls 
  *  not routed to the run layer in that narrower case. */
 const isStoreLinkedFlippableFor = (
   ledger: LedgerFile,
+  scopeKey: string | null,
   skill: string,
   tool: FlipTool,
   explicitTools: boolean,
-): boolean => !explicitTools || getPair(ledger, skill, tool) !== null;
+): boolean => !explicitTools || getPairAt(ledger, scopeKey, skill, tool) !== null;
 
 /** A pair carries an uncommitted journal when an earlier swap was interrupted (crash / SIGKILL).
  *  Such a pair must surface into the plan regardless of its current filesystem class — a crash
  *  window can leave the live path absent (backup holds the old artifact) or in the wrong class —
  *  so the run layer's resume/rollback/refuse logic (spec §8.4) stays reachable via every route. */
-const hasOpenJournal = (ledger: LedgerFile, skill: string, tool: FlipTool): boolean => {
-  const journal = getPair(ledger, skill, tool)?.journal;
+const hasOpenJournal = (
+  ledger: LedgerFile,
+  scopeKey: string | null,
+  skill: string,
+  tool: FlipTool,
+): boolean => {
+  const journal = getPairAt(ledger, scopeKey, skill, tool)?.journal;
   return journal != null && journal.phase !== 'committed';
 };
 
@@ -100,9 +111,14 @@ const hasOpenJournal = (ledger: LedgerFile, skill: string, tool: FlipTool): bool
  *  flip is inverted from the retained inverse record (pinned needs a dev record, dev needs a pinned
  *  record). Mirrors `runRollbackPair`'s "nothing to roll back" guard so `--rollback --all` plans
  *  exactly the pairs it will act on, independent of the forward verb's placement-class filter. */
-const isRollbackablePair = (ledger: LedgerFile, skill: string, tool: FlipTool): boolean => {
-  if (hasOpenJournal(ledger, skill, tool)) return true;
-  const pair = getPair(ledger, skill, tool);
+const isRollbackablePair = (
+  ledger: LedgerFile,
+  scopeKey: string | null,
+  skill: string,
+  tool: FlipTool,
+): boolean => {
+  if (hasOpenJournal(ledger, scopeKey, skill, tool)) return true;
+  const pair = getPairAt(ledger, scopeKey, skill, tool);
   if (pair === null) return false;
   // BF-2: `!= null` (not `!== null`) so a RAW dev-only record whose `pinned` key is OMITTED
   // (undefined) is not selected as rollbackable — a dev-created pair has no pinned state to invert.
@@ -122,7 +138,8 @@ const standardRootsFor = (
   env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   tool: FlipTool,
-): readonly string[] => placementBundleFor(tool).standardRoots(env, ctx);
+  scope: 'user' | 'project' = 'user',
+): readonly string[] => placementBundleFor(tool).roots(env, scope, ctx);
 
 /** BF-1(a): a skill NAME target must be a single leaf — never `.`/`..`/empty/`/`-bearing, which
  *  would classify (and could clobber) the skills ROOT itself rather than a skill in it. */
@@ -141,13 +158,68 @@ const classifyForTool = (
   storeRoot: string,
   skill: string,
   tool: FlipTool,
-): Promise<ToolResolution> =>
-  placementBundleFor(tool)
-    .resolve(env, ctx, storeRoot, skill)
-    .then((resolution) => ({ ...resolution, notices: [...resolution.notices] }));
+  scope: 'user' | 'project' = 'user',
+): Promise<ToolResolution> => {
+  const bundle = placementBundleFor(tool);
+  if (scope === 'user') {
+    return bundle
+      .resolve(env, ctx, storeRoot, skill)
+      .then((resolution) => ({ ...resolution, notices: [...resolution.notices] }));
+  }
+  const roots = bundle.roots(env, scope, ctx);
+  return Promise.all(roots.map((root) => classifyPlacement(env, root, skill, storeRoot))).then(
+    (placements) => {
+      const present = placements.filter((placement) => placement.class !== 'absent');
+      const placement = present[0] ?? placements[0];
+      if (placement === undefined) {
+        throw new Error(`tool registry invariant: ${tool} has no ${scope} placement root`);
+      }
+      const duplicateReason =
+        present.length > 1
+          ? `found in both ${present[0]?.root ?? '<unknown>'} and ${present[1]?.root ?? '<unknown>'}; resolve the duplicate first`
+          : null;
+      return { placement, notices: [], duplicateReason };
+    },
+  );
+};
 
-const searchedRootsDescription = (env: PlacementReadPorts, ctx: SkillRootsCtx): string => {
-  return FLIP_TOOLS.flatMap((tool) => standardRootsFor(env, ctx, tool)).join(', ');
+const listForTool = async (
+  env: PlacementReadPorts,
+  ctx: SkillRootsCtx,
+  storeRoot: string,
+  tool: FlipTool,
+  scope: 'user' | 'project',
+): Promise<Awaited<ReturnType<PlacementBundle['list']>>> => {
+  const bundle = placementBundleFor(tool);
+  if (scope === 'user') return bundle.list(env, ctx, storeRoot);
+  const roots = bundle.roots(env, scope, ctx);
+  const placements = (
+    await Promise.all(roots.map((root) => listPlacements(env, root, storeRoot)))
+  ).flat();
+  const counts = new Map<string, number>();
+  for (const placement of placements) {
+    if (placement.class === 'absent') continue;
+    counts.set(placement.skill, (counts.get(placement.skill) ?? 0) + 1);
+  }
+  return {
+    placements,
+    duplicates: [...counts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([skill]) => skill)
+      .sort(),
+    currentRoot: roots[0] ?? null,
+    legacyRoot: roots[1] ?? null,
+  };
+};
+
+const searchedRootsDescription = (
+  env: PlacementReadPorts,
+  ctx: SkillRootsCtx,
+  scopes: readonly ('user' | 'project')[] = ['user'],
+): string => {
+  return scopes
+    .flatMap((scope) => FLIP_TOOLS.flatMap((tool) => standardRootsFor(env, ctx, tool, scope)))
+    .join(', ');
 };
 
 const resolveNamedTarget = async (
@@ -158,6 +230,8 @@ const resolveNamedTarget = async (
   toolsInOrder: readonly FlipTool[],
   explicitTools: boolean,
   ledger: LedgerFile,
+  scope: 'user' | 'project',
+  scopeKey: string | null,
   withSource: boolean,
   dest: string | undefined,
 ): Promise<{ pairs: PairPlan[]; preResults: FlipResult[] }> => {
@@ -184,8 +258,8 @@ const resolveNamedTarget = async (
       // BF-1(c): a `--dest` create must not shadow an existing placement in the tool's STANDARD
       // roots (codex modern/legacy included) or an existing ledger pair — that silently creates a
       // duplicate the lifecycle can't reconcile. The old code hard-coded duplicateReason:null here.
-      const normal = await classifyForTool(env, ctx, storeRoot, target, tool);
-      const hasPair = getPair(ledger, target, tool) !== null;
+      const normal = await classifyForTool(env, ctx, storeRoot, target, tool, scope);
+      const hasPair = getPairAt(ledger, scopeKey, target, tool) !== null;
       if (normal.duplicateReason || normal.placement.class !== 'absent' || hasPair) {
         anyFlippableFound = true;
         const where = normal.duplicateReason
@@ -201,13 +275,13 @@ const resolveNamedTarget = async (
       }
       res = { placement: destPlacement, notices: [], duplicateReason: null };
     } else {
-      res = await classifyForTool(env, ctx, storeRoot, target, tool);
+      res = await classifyForTool(env, ctx, storeRoot, target, tool, scope);
       // BF-1(d): the ledger is the source of truth for a placement's LOCATION. When the standard
       // roots don't hold it but a ledger pair records a placement at a CUSTOM location (a `--dest`
       // create), classify THERE so promote/dev/uninstall stay able to manage it for its whole life.
       if (res.placement.class === 'absent') {
-        const recorded = getPair(ledger, target, tool)?.placementPath;
-        if (recorded && !standardRootsFor(env, ctx, tool).includes(dirname(recorded))) {
+        const recorded = getPairAt(ledger, scopeKey, target, tool)?.placementPath;
+        if (recorded && !standardRootsFor(env, ctx, tool, scope).includes(dirname(recorded))) {
           res = {
             placement: await classifyPlacement(env, dirname(recorded), target, storeRoot),
             notices: [],
@@ -234,7 +308,7 @@ const resolveNamedTarget = async (
     const flippableNow =
       isFlippableClass(res.placement.class) ||
       (res.placement.class === 'store-linked' &&
-        isStoreLinkedFlippableFor(ledger, target, tool, explicitTools)) ||
+        isStoreLinkedFlippableFor(ledger, scopeKey, target, tool, explicitTools)) ||
       // P13 S1/S6: with `--source`, an absent placement routes to the run layer for create (or a
       // foreign-object refusal when a real file already occupies the placement path).
       (withSource && res.placement.class === 'absent');
@@ -242,9 +316,16 @@ const resolveNamedTarget = async (
     if (!flippableNow) {
       // A journaled pair surfaces even when its live path is absent/wrong-class (F1), so the run
       // layer can resume/rollback/refuse it. Committed/absent-journal pairs keep prior behavior.
-      if (hasOpenJournal(ledger, target, tool)) {
+      if (hasOpenJournal(ledger, scopeKey, target, tool)) {
         anyFlippableFound = true;
-        pairs.push({ skill: target, tool, placement: res.placement, notices: res.notices });
+        pairs.push({
+          skill: target,
+          tool,
+          scope,
+          scopeKey,
+          placement: res.placement,
+          notices: res.notices,
+        });
         continue;
       }
       if (explicitTools) {
@@ -266,11 +347,18 @@ const resolveNamedTarget = async (
     }
 
     anyFlippableFound = true;
-    pairs.push({ skill: target, tool, placement: res.placement, notices: res.notices });
+    pairs.push({
+      skill: target,
+      tool,
+      scope,
+      scopeKey,
+      placement: res.placement,
+      notices: res.notices,
+    });
   }
 
   if (!anyFlippableFound && !explicitTools) {
-    const reason = `no placement found for '${target}'; searched: ${searchedRootsDescription(env, ctx)}`;
+    const reason = `no placement found for '${target}'; searched: ${searchedRootsDescription(env, ctx, [scope])}`;
     preResults.push(emptyFlipResult(target, null, null, reason, placementNotFoundError(reason)));
   }
 
@@ -285,6 +373,8 @@ const resolvePathTarget = async (
   selectedTools: readonly FlipTool[],
   explicitTools: boolean,
   ledger: LedgerFile,
+  scope: 'user' | 'project',
+  scopeKey: string | null,
   withSource: boolean,
 ): Promise<Result<{ pairs: PairPlan[]; preResults: FlipResult[] }, SkillSmithError>> => {
   const resolved = resolve(ctx.cwd, target);
@@ -303,7 +393,7 @@ const resolvePathTarget = async (
   let root: string | null = null;
   for (const candidate of FLIP_TOOLS) {
     const bundle = placementBundleFor(candidate);
-    const candidateRoot = bundle.standardRoots(env, ctx).find((value) => value === parent);
+    const candidateRoot = bundle.roots(env, scope, ctx).find((value) => value === parent);
     if (candidateRoot === undefined) continue;
     const inventory = await bundle.list(env, ctx, storeRoot);
     const notice = bundle.noticeForRoot(candidateRoot, inventory);
@@ -316,7 +406,7 @@ const resolvePathTarget = async (
     // BF-1(d): a custom-location path (outside every standard root) is still managed if the ledger
     // records a pair at exactly this placementPath (a `--dest` create). The ledger owns LOCATION.
     for (const t of FLIP_TOOLS) {
-      if (getPair(ledger, skill, t)?.placementPath === resolved) {
+      if (getPairAt(ledger, scopeKey, skill, t)?.placementPath === resolved) {
         tool = t;
         root = parent;
         break;
@@ -325,7 +415,7 @@ const resolvePathTarget = async (
   }
 
   if (tool === null || root === null) {
-    const reason = `'${target}' is outside every known skills root (${searchedRootsDescription(env, ctx)})`;
+    const reason = `'${target}' is outside every known skills root (${searchedRootsDescription(env, ctx, [scope])})`;
     return err(flipRefusedError(reason));
   }
 
@@ -348,7 +438,7 @@ const resolvePathTarget = async (
     isFlippableClass(placement.class) ||
     placement.class === 'store-linked' ||
     (withSource && placement.class === 'absent');
-  if (!flippable && !hasOpenJournal(ledger, skill, tool)) {
+  if (!flippable && !hasOpenJournal(ledger, scopeKey, skill, tool)) {
     const reason = `'${target}' has no flippable placement for ${tool} (found: ${placement.class})`;
     return ok({
       pairs: [],
@@ -364,7 +454,10 @@ const resolvePathTarget = async (
     });
   }
 
-  return ok({ pairs: [{ skill, tool, placement, notices }], preResults: [] });
+  return ok({
+    pairs: [{ skill, tool, scope, scopeKey, placement, notices }],
+    preResults: [],
+  });
 };
 
 /** Target & tool resolution (spec §5/D2/D3). For a forward flip, `opts.op` picks the `--all`
@@ -382,7 +475,19 @@ export const planFlips = async (
   storeRoot: string,
   ledger: LedgerFile,
 ): Promise<Result<FlipPlanOutcome, SkillSmithError>> => {
-  const ctx: SkillRootsCtx = { cwd: opts.cwd, configuration: opts.configuration };
+  // Project context is normalized by the application/runner boundary. Candidate planning is a
+  // pure consumer of that authority and never re-discovers Git or widens the selected scope.
+  const projectRoot = opts.projectRoot ?? null;
+  const selectedScopes: readonly ('user' | 'project')[] =
+    opts.scope !== undefined ? [opts.scope] : projectRoot === null ? ['user'] : ['user', 'project'];
+  const scopes = selectedScopes.map((scope) => ({
+    scope,
+    scopeKey: scope === 'project' ? projectRoot : null,
+    ctx: {
+      cwd: scope === 'project' ? (projectRoot ?? opts.cwd) : opts.cwd,
+      configuration: opts.configuration,
+    } satisfies SkillRootsCtx,
+  }));
   const requestedTools = opts.tools;
   const explicitTools = requestedTools !== undefined && requestedTools.length > 0;
   const selectedTools: FlipTool[] =
@@ -393,6 +498,7 @@ export const planFlips = async (
 
   const pairs: PairPlan[] = [];
   const preResults: FlipResult[] = [];
+  const unmatchedTargets: string[] = [];
 
   if (opts.all) {
     // P15 (issue #11): bulk rollback is direction-agnostic (D10). Select each pair by its OWN
@@ -401,130 +507,135 @@ export const planFlips = async (
     // opposite, non-overlapping sets. The run layer inverts each pair from its retained records
     // regardless of the verb, so the plan must offer exactly the pairs that layer can invert.
     if (opts.rollback) {
-      for (const skill of Object.keys(ledger.skills).sort()) {
-        for (const tool of toolsInOrder) {
-          if (!isRollbackablePair(ledger, skill, tool)) continue;
-          // BF-1(d)/R3: the ledger owns a placement's LOCATION unconditionally. Classify — and later
-          // swap — at the pair's RECORDED placementPath, NOT the standard root. A same-name real
-          // artifact that appears at the standard root is UNMANAGED and must never be touched: the
-          // pre-fix order classified the standard root FIRST and fell back to the recorded path only
-          // when standard was absent, so such an artifact hijacked the pair — mutating the unrelated
-          // artifact and orphaning the custom placement. When the recorded path IS a standard root,
-          // classifyForTool yields the identical placement (plus codex current/legacy handling), so
-          // standard-recorded pairs are unaffected.
-          const recorded = getPair(ledger, skill, tool)?.placementPath;
-          const res: ToolResolution =
-            recorded && !standardRootsFor(env, ctx, tool).includes(dirname(recorded))
-              ? {
-                  placement: await classifyPlacement(env, dirname(recorded), skill, storeRoot),
-                  notices: [],
-                  duplicateReason: null,
-                }
-              : await classifyForTool(env, ctx, storeRoot, skill, tool);
-          if (res.duplicateReason) {
-            preResults.push(
-              emptyFlipResult(
-                skill,
-                tool,
-                res.placement.path,
-                res.duplicateReason,
-                flipRefusedError(res.duplicateReason),
-              ),
-            );
-            continue;
+      for (const { scope, scopeKey, ctx } of scopes) {
+        const skills =
+          scopeKey === null ? ledger.skills : (ledger.projects?.[scopeKey]?.skills ?? {});
+        for (const skill of Object.keys(skills).sort()) {
+          for (const tool of toolsInOrder) {
+            if (!isRollbackablePair(ledger, scopeKey, skill, tool)) continue;
+            // The ledger owns custom placement locations in either scope.
+            const recorded = getPairAt(ledger, scopeKey, skill, tool)?.placementPath;
+            const res: ToolResolution =
+              recorded && !standardRootsFor(env, ctx, tool, scope).includes(dirname(recorded))
+                ? {
+                    placement: await classifyPlacement(env, dirname(recorded), skill, storeRoot),
+                    notices: [],
+                    duplicateReason: null,
+                  }
+                : await classifyForTool(env, ctx, storeRoot, skill, tool, scope);
+            if (res.duplicateReason) {
+              preResults.push(
+                emptyFlipResult(
+                  skill,
+                  tool,
+                  res.placement.path,
+                  res.duplicateReason,
+                  flipRefusedError(res.duplicateReason),
+                ),
+              );
+              continue;
+            }
+            pairs.push({
+              skill,
+              tool,
+              scope,
+              scopeKey,
+              placement: res.placement,
+              notices: res.notices,
+            });
           }
-          pairs.push({ skill, tool, placement: res.placement, notices: res.notices });
         }
       }
       return ok({ pairs, preResults });
     }
 
     const flippableClass: PlacementClass = opts.op === 'promote' ? 'dev' : 'pinned';
-    const perTool = new Map<FlipTool, Map<string, Placement>>();
-    const inventories = new Map<FlipTool, Awaited<ReturnType<PlacementBundle['list']>>>();
-
-    for (const tool of toolsInOrder) {
-      const bundle = placementBundleFor(tool);
-      const scan = await bundle.list(env, ctx, storeRoot);
-      inventories.set(tool, scan);
-      const byName = new Map<string, Placement>();
-      for (const p of scan.placements) {
-        if (p.class !== flippableClass) continue;
-        if (scan.duplicates.includes(p.skill)) continue;
-        if (!byName.has(p.skill)) byName.set(p.skill, p);
-      }
-      perTool.set(tool, byName);
-
-      for (const dupSkill of scan.duplicates) {
-        // Only relevant to this op's --all set when at least one side actually carries the
-        // class this op flips; a both-pinned duplicate is noise for `promote --all`, for example.
-        const relevant = scan.placements.some(
-          (p) => p.skill === dupSkill && p.class === flippableClass,
-        );
-        if (!relevant) continue;
-        const reason = `found in both ${scan.currentRoot} and ${scan.legacyRoot}; resolve the duplicate first`;
-        preResults.push(
-          emptyFlipResult(
-            dupSkill,
-            tool,
-            join(scan.legacyRoot ?? scan.currentRoot ?? '', dupSkill),
-            reason,
-            flipRefusedError(reason),
-          ),
-        );
-      }
-    }
-
-    const allSkillNames = new Set<string>();
-    for (const byName of perTool.values())
-      for (const name of byName.keys()) allSkillNames.add(name);
-    // F1: also consider any skill whose ledger pair carries an uncommitted journal for a selected
-    // tool, even when the filesystem scan missed it (a crash window can leave the live path absent,
-    // so it never appears in the placement listing — nor in the wrong class the op filters for).
-    for (const skill of Object.keys(ledger.skills))
-      if (toolsInOrder.some((tool) => hasOpenJournal(ledger, skill, tool)))
-        allSkillNames.add(skill);
-
-    for (const skill of [...allSkillNames].sort()) {
+    for (const { scope, scopeKey, ctx } of scopes) {
+      const perTool = new Map<FlipTool, Map<string, Placement>>();
+      const inventories = new Map<FlipTool, Awaited<ReturnType<PlacementBundle['list']>>>();
       for (const tool of toolsInOrder) {
-        const placement = perTool.get(tool)?.get(skill);
-        const bundle = placementBundleFor(tool);
-        const inventory = inventories.get(tool);
-        if (inventory === undefined) {
-          throw new Error(`tool registry invariant: ${tool} placement inventory is missing`);
+        const _bundle = placementBundleFor(tool);
+        const scan = await listForTool(env, ctx, storeRoot, tool, scope);
+        inventories.set(tool, scan);
+        const byName = new Map<string, Placement>();
+        for (const placement of scan.placements) {
+          if (placement.class !== flippableClass || scan.duplicates.includes(placement.skill))
+            continue;
+          if (!byName.has(placement.skill)) byName.set(placement.skill, placement);
         }
-
-        // A journaled pair surfaces regardless of filesystem class or the op's dev-source filter,
-        // so the run layer's resume/rollback/refuse logic remains reachable (F1).
-        if (hasOpenJournal(ledger, skill, tool)) {
-          const p =
-            placement ?? (await classifyForTool(env, ctx, storeRoot, skill, tool)).placement;
-          const notice = bundle.noticeForRoot(p.root, inventory);
-          const notices = notice === null ? [] : [notice];
-          pairs.push({ skill, tool, placement: p, notices });
-          continue;
+        perTool.set(tool, byName);
+        for (const dupSkill of scan.duplicates) {
+          if (!scan.placements.some((p) => p.skill === dupSkill && p.class === flippableClass))
+            continue;
+          const reason = `found in both ${scan.currentRoot} and ${scan.legacyRoot}; resolve the duplicate first`;
+          preResults.push(
+            emptyFlipResult(
+              dupSkill,
+              tool,
+              join(scan.legacyRoot ?? scan.currentRoot ?? '', dupSkill),
+              reason,
+              flipRefusedError(reason),
+            ),
+          );
         }
-
-        if (!placement) continue;
-
-        if (opts.op === 'dev' && !getPair(ledger, skill, tool)?.dev?.sourcePath) {
-          preResults.push({
+      }
+      const allSkillNames = new Set<string>();
+      for (const byName of perTool.values())
+        for (const name of byName.keys()) allSkillNames.add(name);
+      const skills =
+        scopeKey === null ? ledger.skills : (ledger.projects?.[scopeKey]?.skills ?? {});
+      for (const skill of Object.keys(skills)) {
+        if (toolsInOrder.some((tool) => hasOpenJournal(ledger, scopeKey, skill, tool))) {
+          allSkillNames.add(skill);
+        }
+      }
+      for (const skill of [...allSkillNames].sort()) {
+        for (const tool of toolsInOrder) {
+          const placement = perTool.get(tool)?.get(skill);
+          const bundle = placementBundleFor(tool);
+          const inventory = inventories.get(tool);
+          if (inventory === undefined)
+            throw new Error(`tool registry invariant: ${tool} placement inventory is missing`);
+          if (hasOpenJournal(ledger, scopeKey, skill, tool)) {
+            const live =
+              placement ??
+              (await classifyForTool(env, ctx, storeRoot, skill, tool, scope)).placement;
+            const notice = bundle.noticeForRoot(live.root, inventory);
+            pairs.push({
+              skill,
+              tool,
+              scope,
+              scopeKey,
+              placement: live,
+              notices: notice === null ? [] : [notice],
+            });
+            continue;
+          }
+          if (!placement) continue;
+          if (opts.op === 'dev' && !getPairAt(ledger, scopeKey, skill, tool)?.dev?.sourcePath) {
+            preResults.push({
+              skill,
+              tool,
+              placementPath: placement.path,
+              action: 'skipped',
+              reason: 'no recorded dev source',
+              before: null,
+              after: null,
+              store: null,
+              verify: null,
+            });
+            continue;
+          }
+          const notice = bundle.noticeForRoot(placement.root, inventory);
+          pairs.push({
             skill,
             tool,
-            placementPath: placement.path,
-            action: 'skipped',
-            reason: 'no recorded dev source',
-            before: null,
-            after: null,
-            store: null,
-            verify: null,
+            scope,
+            scopeKey,
+            placement,
+            notices: notice === null ? [] : [notice],
           });
-          continue;
         }
-
-        const notice = bundle.noticeForRoot(placement.root, inventory);
-        const notices = notice === null ? [] : [notice];
-        pairs.push({ skill, tool, placement, notices });
       }
     }
 
@@ -533,11 +644,53 @@ export const planFlips = async (
 
   // BF-1(b): resolve `--dest` to an ABSOLUTE, normalized path once, so the recorded placementPath is
   // never relative and join(dest, leaf) is contained under it.
-  const resolvedDest = opts.dest !== undefined ? resolve(ctx.cwd, opts.dest) : undefined;
+  const resolvedDest = opts.dest !== undefined ? resolve(opts.cwd, opts.dest) : undefined;
 
   for (const target of opts.targets) {
     if (isPathTarget(target)) {
-      const resolved = await resolvePathTarget(
+      const matches: PairPlan[] = [];
+      const pathResults: FlipResult[] = [];
+      let firstError: SkillSmithError | null = null;
+      for (const { scope, scopeKey, ctx } of scopes) {
+        const resolvedPath = await resolvePathTarget(
+          env,
+          ctx,
+          storeRoot,
+          target,
+          toolsInOrder,
+          explicitTools,
+          ledger,
+          scope,
+          scopeKey,
+          opts.source !== undefined,
+        );
+        if (resolvedPath.ok) {
+          matches.push(...resolvedPath.value.pairs);
+          pathResults.push(...resolvedPath.value.preResults);
+        } else if (firstError === null) {
+          firstError = resolvedPath.error;
+        }
+      }
+      if (matches.length === 0) {
+        if (firstError !== null) return err(firstError);
+        const reason = `'${target}' is outside the selected skills scope`;
+        preResults.push(emptyFlipResult(target, null, null, reason, flipRefusedError(reason)));
+      } else if (matches.length > 1) {
+        const reason = `'${target}' is ambiguous across user and project scopes`;
+        preResults.push(emptyFlipResult(target, null, null, reason, flipRefusedError(reason)));
+      } else {
+        pairs.push(...matches);
+        preResults.push(...pathResults);
+      }
+      continue;
+    }
+    const scoped = [] as {
+      scope: 'user' | 'project';
+      pairs: PairPlan[];
+      preResults: FlipResult[];
+    }[];
+    for (const { scope, scopeKey, ctx } of scopes) {
+      const resolvedTarget = await resolveNamedTarget(
         env,
         ctx,
         storeRoot,
@@ -545,27 +698,74 @@ export const planFlips = async (
         toolsInOrder,
         explicitTools,
         ledger,
+        scope,
+        scopeKey,
         opts.source !== undefined,
+        resolvedDest,
       );
-      if (!resolved.ok) return resolved;
-      pairs.push(...resolved.value.pairs);
-      preResults.push(...resolved.value.preResults);
-      continue;
+      scoped.push({ scope, ...resolvedTarget });
     }
-    const resolved = await resolveNamedTarget(
-      env,
-      ctx,
-      storeRoot,
-      target,
-      toolsInOrder,
-      explicitTools,
-      ledger,
-      opts.source !== undefined,
-      resolvedDest,
+    let candidates = scoped.flatMap((entry) => entry.pairs);
+    const presentScopes = new Set(
+      candidates.filter((pair) => pair.placement.class !== 'absent').map((pair) => pair.scope),
     );
-    pairs.push(...resolved.pairs);
-    preResults.push(...resolved.preResults);
+    if (presentScopes.size > 0) {
+      // Presence selects a scope, not an individual tool pair. Keep absent pairs in that same
+      // scope so `dev --source` can independently create them when another tool refuses.
+      candidates = candidates.filter((pair) => presentScopes.has(pair.scope));
+    } else if (opts.source !== undefined && candidates.length > 1) {
+      candidates = candidates.filter(
+        (pair) => pair.scope === (projectRoot === null ? 'user' : 'project'),
+      );
+    }
+    const candidateScopes = new Set(candidates.map((pair) => pair.scope));
+    if (candidateScopes.size > 1) {
+      const reason = `'${target}' is ambiguous across user and project scopes; pass --scope`;
+      return err(flipRefusedError(reason));
+    }
+    if (candidates.length > 0) {
+      pairs.push(...candidates);
+      const selectedScope = candidates[0]?.scope;
+      preResults.push(
+        ...scoped
+          .filter((entry) => entry.scope === selectedScope)
+          .flatMap((entry) => entry.preResults),
+      );
+    } else {
+      const allPreResults = scoped.flatMap((entry) => entry.preResults);
+      let existsAnywhere = allPreResults.some((result) => result.placementPath !== null);
+      if (!existsAnywhere) {
+        for (const { scope, scopeKey, ctx } of scopes) {
+          for (const tool of FLIP_TOOLS) {
+            const resolution = await classifyForTool(env, ctx, storeRoot, target, tool, scope);
+            if (
+              resolution.duplicateReason !== null ||
+              resolution.placement.class !== 'absent' ||
+              getPairAt(ledger, scopeKey, target, tool) !== null
+            ) {
+              existsAnywhere = true;
+              break;
+            }
+          }
+          if (existsAnywhere) break;
+        }
+      }
+      if (!existsAnywhere) unmatchedTargets.push(target);
+      preResults.push(
+        ...(allPreResults.length > 0
+          ? allPreResults
+          : [
+              emptyFlipResult(
+                target,
+                null,
+                null,
+                `no placement found for '${target}'`,
+                placementNotFoundError(`no placement found for '${target}'`),
+              ),
+            ]),
+      );
+    }
   }
 
-  return ok({ pairs, preResults });
+  return ok({ pairs, preResults, unmatchedTargets });
 };

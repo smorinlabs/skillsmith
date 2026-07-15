@@ -5,6 +5,30 @@ import { renderFlipHuman } from '../../src/output/flip-human.ts';
 const STORE_PATH =
   '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan';
 
+const planningFields = (
+  command: 'dev' | 'promote',
+): Required<Pick<FlipReport, 'plan' | 'executionResults'>> => ({
+  plan: {
+    domain: 'skillsmith.operation-plan',
+    schemaVersion: 1,
+    command,
+    selection: {
+      source: 'explicit-targets',
+      outcome: 'selected',
+      targets: [],
+      all: false,
+      tools: [],
+      scopes: [],
+      groupIds: [],
+    },
+    batchPolicy: 'fail-fast',
+    operations: [],
+    checks: [],
+    diagnostics: [],
+  },
+  executionResults: [],
+});
+
 describe('renderFlipHuman', () => {
   test('promote success: header, verify/snapshot/swap lines, summary', () => {
     const report: FlipReport = {
@@ -16,6 +40,7 @@ describe('renderFlipHuman', () => {
         tools: ['claude-code', 'codex'],
         explicitTools: false,
       },
+      ...planningFields('promote'),
       results: [
         {
           skill: 'factor-scan',
@@ -84,6 +109,7 @@ describe('renderFlipHuman', () => {
         tools: ['claude-code'],
         explicitTools: false,
       },
+      ...planningFields('dev'),
       results: [
         {
           skill: 'factor-scan',
@@ -133,6 +159,7 @@ describe('renderFlipHuman', () => {
         tools: ['claude-code'],
         explicitTools: false,
       },
+      ...planningFields('dev'),
       results: [
         {
           skill: 'factor-scan',
@@ -176,6 +203,7 @@ describe('renderFlipHuman', () => {
       op: 'dev',
       dryRun: false,
       requested: { targets: ['x'], all: false, tools: ['codex'], explicitTools: true },
+      ...planningFields('dev'),
       results: [
         {
           skill: 'x',
@@ -215,6 +243,7 @@ describe('renderFlipHuman', () => {
       op: 'promote',
       dryRun: false,
       requested: { targets: ['bad'], all: false, tools: ['claude-code'], explicitTools: false },
+      ...planningFields('promote'),
       results: [
         {
           skill: 'bad',

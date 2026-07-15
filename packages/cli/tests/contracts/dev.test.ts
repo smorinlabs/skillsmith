@@ -14,7 +14,7 @@ import {
   writeLedger,
 } from '../../../core/src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../../core/src/place/paths.ts';
-import { runDev, runPromote, runRollback } from '../../../core/src/place/run.ts';
+import { prepareDev, runDev, runPromote, runRollback } from '../../../core/src/place/run.ts';
 import type {
   DevRecord,
   FlipOptions,
@@ -143,6 +143,21 @@ const executionResultsOf = (report: FlipReport, label: string): readonly Unknown
 
 const operationIds = (plan: UnknownRecord): unknown[] =>
   records(plan.operations).map((operation) => operation.operationId);
+
+const wireSelectionForPlan = (plan: UnknownRecord, label: string): UnknownRecord => {
+  expect(isRecord(plan.selection), `${label} plan.selection`).toBeTrue();
+  if (!isRecord(plan.selection)) throw new Error(`${label} selection is unavailable`);
+  return {
+    source: plan.selection.source,
+    outcome: plan.selection.outcome,
+    targets: plan.selection.targets,
+    all: plan.selection.all,
+    tools: plan.selection.tools,
+    scopes: plan.selection.scopes,
+    groupIds: plan.selection.groupIds,
+    batchPolicy: plan.batchPolicy,
+  };
+};
 
 const executionIds = (report: FlipReport, label: string): unknown[] =>
   executionResultsOf(report, label).map((result) => result.operationId);
@@ -344,14 +359,12 @@ describe('EWP-CMD-DEV-TS01', () => {
         ),
         'foreign',
       );
-      const absent = unwrapReport(
-        await runDev(
-          fleet.env,
-          baseOptions(fleet, { targets: ['does-not-exist'], tools: ['claude-code'] }),
-          passFlipDeps(),
-        ),
-        'absent',
+      const absent = await runDev(
+        fleet.env,
+        baseOptions(fleet, { targets: ['does-not-exist'], tools: ['claude-code'] }),
+        passFlipDeps(),
       );
+      expect(absent.ok, 'an absent explicit target must fail the whole invocation').toBeFalse();
 
       expect([
         created.results[0]?.action,
@@ -359,8 +372,7 @@ describe('EWP-CMD-DEV-TS01', () => {
         noop.results[0]?.action,
         mismatch.results[0]?.action,
         foreign.results[0]?.action,
-        absent.results[0]?.action,
-      ]).toEqual(['created', 'adopted', 'noop', 'refused', 'refused', 'refused']);
+      ]).toEqual(['created', 'adopted', 'noop', 'refused', 'refused']);
 
       for (const [label, report] of [
         ['create', created],
@@ -374,7 +386,6 @@ describe('EWP-CMD-DEV-TS01', () => {
         ['noop', noop],
         ['mismatch', mismatch],
         ['foreign', foreign],
-        ['absent', absent],
       ] as const) {
         const plan = requirePlan(report, label);
         expect(records(plan.operations)).toHaveLength(0);
@@ -709,6 +720,7 @@ describe('EWP-CMD-DEV-TS04', () => {
       const userPath = join(fleet.home, '.claude', 'skills', 'copied');
       const projectRoot = join(fleet.project, '.claude', 'skills');
       const projectPath = join(projectRoot, 'project-pinned');
+      const latePath = join(projectRoot, 'late-pinned');
       await mkdir(projectPath, { recursive: true });
       await writeFile(join(projectPath, 'SKILL.md'), '---\nname: project-pinned\n---\n');
 
@@ -726,6 +738,13 @@ describe('EWP-CMD-DEV-TS04', () => {
         'project-pinned',
         'claude-code',
         pinnedPair(projectPath, resolve(fleet.betaSrc), join(fleet.data, 'store', 'project-copy')),
+      );
+      setPairAt(
+        ledger,
+        fleet.projectReal,
+        'late-pinned',
+        'claude-code',
+        pinnedPair(latePath, resolve(fleet.betaSrc), join(fleet.data, 'store', 'late-copy')),
       );
       await writeFixtureLedger(fleet, ledger);
 
@@ -819,45 +838,50 @@ describe('EWP-CMD-DEV-TS04', () => {
           for (const scope of selection.scopes as readonly string[]) {
             expect(request.message).toContain(scope);
           }
+          await mkdir(latePath, { recursive: true });
+          await writeFile(join(latePath, 'SKILL.md'), '---\nname: late-pinned\n---\n');
           events.push('confirm');
           confirmations.push(request);
           return { status: 'resolved', value: true };
         },
       };
-      const twoStageDev: typeof runDev = async (env, options, deps) => {
+      const prepareOnce: typeof prepareDev = async (env, options, deps) => {
         dependencyCalls += 1;
-        if (dependencyCalls === 1) {
-          expect(
-            options.dryRun,
-            'the first dependency call must construct a non-executing plan',
-          ).toBe(true);
-          const planned =
-            deps === undefined ? await runDev(env, options) : await runDev(env, options, deps);
-          if (planned.ok) {
-            capturedPreview = planned.value;
-            capturedPlan = requirePlan(planned.value, 'approval-stage preview');
-            expect(executionResultsOf(planned.value, 'approval-stage preview')).toEqual([]);
-            events.push('plan');
-          }
-          return planned;
-        }
-
-        expect(dependencyCalls, 'approval may trigger exactly one execution call').toBe(2);
-        expect(options.dryRun, 'the second dependency call executes the approved plan').toBe(false);
-        expect(capturedPlan, 'execution cannot precede plan capture').not.toBeNull();
-        events.push('execute');
-        const executed =
-          deps === undefined ? await runDev(env, options) : await runDev(env, options, deps);
-        if (executed.ok && capturedPlan !== null) {
-          const executedPlan = requirePlan(executed.value, 'approval-stage execution');
-          expect(executedPlan).toEqual(capturedPlan);
-          expect(executionIds(executed.value, 'approval-stage execution')).toEqual(
-            operationIds(executedPlan),
-          );
-        }
-        return executed;
+        expect(dependencyCalls, 'bulk approval must prepare exactly once').toBe(1);
+        expect(options.cwd).toBe(fleet.project);
+        expect(options.projectRoot).toBe(fleet.projectReal);
+        const prepared =
+          deps === undefined
+            ? await prepareDev(env, options)
+            : await prepareDev(env, options, deps);
+        if (!prepared.ok) return prepared;
+        capturedPreview = prepared.value.preview;
+        capturedPlan = prepared.value.plan as unknown as UnknownRecord;
+        requirePlan(capturedPreview, 'approval-stage preview');
+        expect(executionResultsOf(capturedPreview, 'approval-stage preview')).toEqual([]);
+        events.push('plan');
+        return {
+          ok: true,
+          value: {
+            preview: prepared.value.preview,
+            plan: prepared.value.plan,
+            execute: async () => {
+              expect(capturedPlan, 'execution cannot precede plan capture').not.toBeNull();
+              events.push('execute');
+              const executed = await prepared.value.execute();
+              if (executed.ok && capturedPlan !== null) {
+                const executedPlan = requirePlan(executed.value, 'approval-stage execution');
+                expect(executedPlan).toEqual(capturedPlan);
+                expect(executionIds(executed.value, 'approval-stage execution')).toEqual(
+                  operationIds(executedPlan),
+                );
+              }
+              return executed;
+            },
+          },
+        };
       };
-      const services = createLifecycleApplicationServices({ dev: twoStageDev });
+      const services = createLifecycleApplicationServices({ prepareDev: prepareOnce });
       const outcome = await services.dev(
         {
           arguments: [[]],
@@ -868,7 +892,7 @@ describe('EWP-CMD-DEV-TS04', () => {
       expect(confirmations, 'a mutating bulk plan requires exactly one confirmation').toHaveLength(
         1,
       );
-      expect(dependencyCalls).toBe(2);
+      expect(dependencyCalls).toBe(1);
       expect(capturedPreview).not.toBeNull();
       expect(outcome.exitClass).toBe('success');
       expect(outcome.report.value).not.toBeNull();
@@ -882,6 +906,43 @@ describe('EWP-CMD-DEV-TS04', () => {
       expect(events.findIndex((event) => event.startsWith('write:'))).toBeGreaterThan(
         events.indexOf('execute'),
       );
+      expect(await pathKind(latePath)).toBe('dir');
+      expect(
+        records(approvedPlan.operations).some((operation) => operation.skill === 'late-pinned'),
+      ).toBeFalse();
+    } finally {
+      await destroyFixtureFleet(fleet);
+    }
+  });
+
+  test('a missing member fails an explicit multi-target invocation before approval or writes', async () => {
+    const fleet = await buildFixtureFleet();
+    try {
+      const events: string[] = [];
+      let confirmations = 0;
+      const interaction: InteractionPort = {
+        mode: 'interactive',
+        choose: async () => ({ status: 'refused', reason: 'no choice expected' }),
+        confirm: async () => {
+          confirmations += 1;
+          return { status: 'resolved', value: true };
+        },
+      };
+      const outcome = await createLifecycleApplicationServices().dev(
+        {
+          arguments: [['alpha', 'missing-explicit-target']],
+          options: { tool: ['claude-code'], yes: true, verify: true },
+        },
+        applicationContext(fleet, trackedMutationPorts(fleet.env, events), interaction),
+      );
+
+      expect(outcome.exitClass).toBe('usage');
+      expect(outcome.report.value).toBeNull();
+      expect(outcome.diagnostics.map((diagnostic) => diagnostic.message).join('\n')).toContain(
+        'missing-explicit-target',
+      );
+      expect(confirmations).toBe(0);
+      expect(events.filter((event) => event.startsWith('write:'))).toEqual([]);
     } finally {
       await destroyFixtureFleet(fleet);
     }
@@ -940,7 +1001,9 @@ describe('EWP-CMD-DEV-TS05', () => {
         op: 'dev',
         dryRun: false,
       });
-      expect(renderedExecution.selection).toEqual(executionPlan.selection);
+      expect(renderedExecution.selection).toEqual(
+        wireSelectionForPlan(executionPlan, 'dev execution'),
+      );
       expect(
         records(renderedExecution.operations).map((operation) => operation.operationId),
       ).toEqual(operationIds(executionPlan));
@@ -1032,7 +1095,9 @@ describe('EWP-CMD-DEV-TS05', () => {
         op: 'rollback',
         dryRun: true,
       });
-      expect(renderedRollback.selection).toEqual(rollbackPlan.selection);
+      expect(renderedRollback.selection).toEqual(
+        wireSelectionForPlan(rollbackPlan, 'dev rollback'),
+      );
       expect(
         records(renderedRollback.operations).map((operation) => operation.operationId),
       ).toEqual(operationIds(rollbackPlan));
@@ -1170,7 +1235,7 @@ describe('EWP-CMD-DEV-TS06', () => {
         dryRun: false,
       });
       expect(renderedRecovery.selection).toEqual(
-        requirePlan(recovery, 'same-operation recovery').selection,
+        wireSelectionForPlan(requirePlan(recovery, 'same-operation recovery'), 'dev recovery'),
       );
       const renderedOperations = records(renderedRecovery.operations);
       expect(renderedOperations).toEqual(

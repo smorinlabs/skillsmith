@@ -7,8 +7,11 @@ import type {
 import * as publicCore from '../../../packages/core/src/index.ts';
 
 type UnknownRecord = Record<string, unknown>;
+type CreateOperationId = (input: Readonly<UnknownRecord>) => string;
+type CreateStructuredPlanningId = (input: Readonly<UnknownRecord>) => string;
 type CreateOperationPlan = (input: UnknownRecord) => UnknownRecord;
 type CreateOperationExecutionResult = (input: UnknownRecord) => UnknownRecord;
+type ComparePlanningDiagnostics = (left: UnknownRecord, right: UnknownRecord) => number;
 type CompatibilityFamily = 'install' | 'uninstall' | 'flip';
 type CurrentCompatibilityAction = InstallAction | UninstallAction | FlipAction;
 type CompatibilityProjectionInput = Readonly<{
@@ -130,6 +133,8 @@ const unmanagedImage = placementImage('unmanaged', null);
 
 const operationInput = (
   operationId: string,
+  groupId: string,
+  pairId: string,
   kind: string,
   before: Readonly<UnknownRecord>,
   after: Readonly<UnknownRecord>,
@@ -137,8 +142,8 @@ const operationInput = (
   requiredCheckIds: readonly string[] = [],
 ): UnknownRecord => ({
   operationId,
-  groupId: 'group:user:alpha',
-  pairId: 'pair:user:alpha:codex',
+  groupId,
+  pairId,
   kind,
   dependencyMetadata: {
     domain: 'skillsmith.operation-dependency',
@@ -161,6 +166,45 @@ const operationInput = (
   reversibility: { kind: 'none', retentionResourceIds: [] },
   mutates: { live: true, manifest: false, lock: false, ledger: true },
   conflict: null,
+});
+
+const operationGroupIdentityInput = (
+  command: 'install' | 'uninstall' | 'dev' | 'promote',
+  kind: string,
+): UnknownRecord => ({
+  domain: 'skillsmith.operation-group-identity',
+  schemaVersion: 1,
+  command,
+  skill: 'alpha',
+  source:
+    kind === 'link-dev' || kind === 'promote'
+      ? structuredClone(localDevSource)
+      : structuredClone(portableSource),
+  scope: 'user',
+  target: null,
+});
+
+const operationPairIdentityInput = (groupId: string): UnknownRecord => ({
+  domain: 'skillsmith.operation-pair-identity',
+  schemaVersion: 1,
+  groupId,
+  tool: 'codex',
+  resource: structuredClone(liveResource),
+});
+
+const operationIdentityInput = (kind: string, groupId: string, pairId: string): UnknownRecord => ({
+  domain: 'skillsmith.operation-identity',
+  schemaVersion: 1,
+  groupId,
+  pairId,
+  kind,
+  skill: 'alpha',
+  source:
+    kind === 'link-dev' || kind === 'promote'
+      ? structuredClone(localDevSource)
+      : structuredClone(portableSource),
+  tool: 'codex',
+  scope: 'user',
 });
 
 const planInput = (
@@ -186,6 +230,11 @@ const planInput = (
 
 describe('EWP-P3B-TS01', () => {
   test('separates immutable planning products and exhaustively projects all current compatibility actions', () => {
+    const createOperationGroupId =
+      requireFactory<CreateStructuredPlanningId>('createOperationGroupId');
+    const createOperationId = requireFactory<CreateOperationId>('createOperationId');
+    const createOperationPairId =
+      requireFactory<CreateStructuredPlanningId>('createOperationPairId');
     const createOperationPlan = requireFactory<CreateOperationPlan>('createOperationPlan');
     const createOperationExecutionResult = requireFactory<CreateOperationExecutionResult>(
       'createOperationExecutionResult',
@@ -193,14 +242,29 @@ describe('EWP-P3B-TS01', () => {
     const toCurrentCompatibilityAction = requireFactory<ToCurrentCompatibilityAction>(
       'toCurrentCompatibilityAction',
     );
+    const createPlanCheckId = requireFactory<CreateStructuredPlanningId>('createPlanCheckId');
+    const createPlanningDiagnosticId = requireFactory<CreateStructuredPlanningId>(
+      'createPlanningDiagnosticId',
+    );
+    const comparePlanningDiagnostics = requireFactory<ComparePlanningDiagnostics>(
+      'comparePlanningDiagnostics',
+    );
 
-    const operationId = 'operation:user:alpha:codex:install';
-    const groupId = 'group:user:alpha';
-    const pairId = 'pair:user:alpha:codex';
-    const checkId = 'check:user:alpha:preconditions';
+    const groupId = createOperationGroupId(operationGroupIdentityInput('install', 'install'));
+    const pairId = createOperationPairId(operationPairIdentityInput(groupId));
+    const operationId = createOperationId(operationIdentityInput('install', groupId, pairId));
+    const checkId = createPlanCheckId({
+      domain: 'skillsmith.plan-check-identity',
+      schemaVersion: 1,
+      kind: 'precondition-validation',
+      operationIds: [operationId],
+      preconditionIds: ['precondition:user:alpha'],
+    });
     const diagnosticKinds = ['noop', 'skip', 'refuse', 'conflict', 'warning'] as const;
     const installOperationInput = operationInput(
       operationId,
+      groupId,
+      pairId,
       'install',
       absentImage,
       pinnedImage,
@@ -214,22 +278,44 @@ describe('EWP-P3B-TS01', () => {
       kind: 'precondition-validation',
       preconditionIds: ['precondition:user:alpha'],
     };
-    const diagnosticInputs = diagnosticKinds.map((kind, index) => ({
-      diagnosticId: `diagnostic:${String(index).padStart(2, '0')}:${kind}`,
-      kind,
-      severity: kind === 'refuse' || kind === 'conflict' ? 'error' : 'info',
-      refusalClass: kind === 'refuse' ? 'state' : null,
-      affected: {
+    const diagnosticInputs = diagnosticKinds.map((kind) => {
+      const severity = kind === 'refuse' || kind === 'conflict' ? 'error' : 'info';
+      const refusalClass = kind === 'refuse' ? 'state' : null;
+      const affected = {
         skill: 'alpha',
         source: structuredClone(portableSource),
         tool: 'codex',
         scope: 'user',
         path: null,
-      },
-      correlation: { groupId, pairId, operationId: kind === 'warning' ? operationId : null },
-      reason: { code: `planned-${kind}`, message: `Planned ${kind} disposition.` },
-      selectionSource: 'explicit-targets',
-    }));
+      };
+      const correlation = {
+        groupId,
+        pairId,
+        operationId: kind === 'warning' ? operationId : null,
+      };
+      const reasonCode = `planned-${kind}`;
+      return {
+        diagnosticId: createPlanningDiagnosticId({
+          domain: 'skillsmith.planning-diagnostic-identity',
+          schemaVersion: 1,
+          kind,
+          severity,
+          refusalClass,
+          affected,
+          correlation,
+          reasonCode,
+          selectionSource: 'explicit-targets',
+        }),
+        kind,
+        severity,
+        refusalClass,
+        affected,
+        correlation,
+        reason: { code: reasonCode, message: `Planned ${kind} disposition.` },
+        selectionSource: 'explicit-targets',
+      };
+    });
+    diagnosticInputs.sort(comparePlanningDiagnostics);
     const input = planInput('install', [installOperationInput], [checkInput], diagnosticInputs);
 
     const plan = createOperationPlan(input);
@@ -242,7 +328,9 @@ describe('EWP-P3B-TS01', () => {
     expect(asRecord(plan.selection, 'plan selection').source).toBe('explicit-targets');
     expect(operations.map((operation) => operation.kind)).toEqual(['install']);
     expect(checks.map((check) => check.kind)).toEqual(['precondition-validation']);
-    expect(diagnostics.map((diagnostic) => diagnostic.kind)).toEqual(diagnosticKinds);
+    expect(diagnostics.map((diagnostic) => diagnostic.kind)).toEqual(
+      diagnosticInputs.map((diagnostic) => diagnostic.kind),
+    );
     expect(operations[0]).not.toHaveProperty('outcome');
     expect(operations[0]).not.toHaveProperty('diagnosticId');
     expect(checks[0]).not.toHaveProperty('operationId');
@@ -338,22 +426,26 @@ describe('EWP-P3B-TS01', () => {
 
     const constructOperation = (
       command: 'install' | 'uninstall' | 'dev' | 'promote',
-      id: string,
       kind: string,
       before: Readonly<UnknownRecord>,
       after: Readonly<UnknownRecord>,
       reasonCode: string,
-    ): UnknownRecord =>
-      asRecords(
+    ): UnknownRecord => {
+      const groupId = createOperationGroupId(operationGroupIdentityInput(command, kind));
+      const pairId = createOperationPairId(operationPairIdentityInput(groupId));
+      const id = createOperationId(operationIdentityInput(kind, groupId, pairId));
+      return asRecords(
         createOperationPlan(
-          planInput(command, [operationInput(id, kind, before, after, reasonCode)]),
+          planInput(command, [
+            operationInput(id, groupId, pairId, kind, before, after, reasonCode),
+          ]),
         ).operations,
         `${reasonCode} operations`,
       )[0] as UnknownRecord;
+    };
     const installOperation = operations[0] as UnknownRecord;
     const updateOperation = constructOperation(
       'install',
-      'operation:user:alpha:codex:update',
       'update',
       oldPinnedImage,
       pinnedImage,
@@ -361,7 +453,6 @@ describe('EWP-P3B-TS01', () => {
     );
     const repairOperation = constructOperation(
       'install',
-      'operation:user:alpha:codex:repair',
       'repair',
       repairedImage,
       pinnedImage,
@@ -369,7 +460,6 @@ describe('EWP-P3B-TS01', () => {
     );
     const removeOperation = constructOperation(
       'uninstall',
-      'operation:user:alpha:codex:remove',
       'remove',
       pinnedImage,
       absentImage,
@@ -377,7 +467,6 @@ describe('EWP-P3B-TS01', () => {
     );
     const promoteOperation = constructOperation(
       'promote',
-      'operation:user:alpha:codex:promote',
       'promote',
       devImage,
       pinnedImage,
@@ -385,7 +474,6 @@ describe('EWP-P3B-TS01', () => {
     );
     const updateDevOperation = constructOperation(
       'dev',
-      'operation:user:alpha:codex:link-dev:update',
       'link-dev',
       devImage,
       changedDevImage,
@@ -393,7 +481,6 @@ describe('EWP-P3B-TS01', () => {
     );
     const createDevOperation = constructOperation(
       'dev',
-      'operation:user:alpha:codex:link-dev:create',
       'link-dev',
       absentImage,
       devImage,
@@ -401,7 +488,6 @@ describe('EWP-P3B-TS01', () => {
     );
     const adoptDevOperation = constructOperation(
       'dev',
-      'operation:user:alpha:codex:link-dev:adopt',
       'link-dev',
       unmanagedImage,
       devImage,

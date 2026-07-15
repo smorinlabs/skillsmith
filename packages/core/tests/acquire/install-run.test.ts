@@ -1034,11 +1034,91 @@ describe('runInstall — unresolved journal (Global Constraint #6)', () => {
 });
 
 describe('runInstall — dry run', () => {
+  test('prepares the exact immutable binding plan before mutation and reuses preview IDs', async () => {
+    let previewPlan: Parameters<NonNullable<InstallDeps['observePreparedPlan']>>[0] | undefined;
+    const preview = await runInstall(
+      f.env,
+      { ...userOpts, dryRun: true },
+      makeDeps({
+        observePreparedPlan: (plan) => {
+          previewPlan = plan;
+        },
+      }),
+    );
+    if (!preview.ok) throw new Error(msg(preview.error));
+    expect(previewPlan).toBe(preview.value.plan);
+    expect(Object.isFrozen(previewPlan)).toBeTrue();
+    expect(preview.value.executionResults).toEqual([]);
+
+    let executionPlan: typeof previewPlan;
+    const invokedOperationIds = new Set<string>();
+    const observeLiveMutation = (path: string): void => {
+      if (
+        path !== join(claudeRoot(), 'factor-scan') &&
+        path !== join(agentsRoot(), 'factor-scan')
+      ) {
+        return;
+      }
+      expect(
+        executionPlan,
+        'the plan must exist before the first live placement mutation',
+      ).toBeDefined();
+      const operation = executionPlan?.operations.find(
+        (candidate) =>
+          candidate.after.kind === 'placement' &&
+          candidate.after.resource.location.kind === 'machine-bound' &&
+          candidate.after.resource.location.path === path,
+      );
+      expect(operation, `missing exact prepared binding for ${path}`).toBeDefined();
+      if (operation) invokedOperationIds.add(operation.operationId);
+    };
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      makeSymlink: async (target, linkPath) => {
+        observeLiveMutation(linkPath);
+        await f.env.makeSymlink(target, linkPath);
+      },
+      rename: async (from, to) => {
+        observeLiveMutation(to);
+        await f.env.rename(from, to);
+      },
+    };
+    const executed = await runInstall(
+      executionEnv,
+      userOpts,
+      makeDeps({
+        observePreparedPlan: (plan) => {
+          executionPlan = plan;
+        },
+      }),
+    );
+    if (!executed.ok) throw new Error(msg(executed.error));
+    expect(executionPlan).toBe(executed.value.plan);
+    expect(executed.value.plan).toEqual(preview.value.plan);
+    expect(executed.value.plan.operations.map(({ operationId }) => operationId)).toEqual(
+      preview.value.plan.operations.map(({ operationId }) => operationId),
+    );
+    expect([...invokedOperationIds].sort()).toEqual(
+      executed.value.plan.operations.map(({ operationId }) => operationId).sort(),
+    );
+    expect(executed.value.executionResults.map(({ operationId }) => operationId)).toEqual(
+      executed.value.plan.operations.map(({ operationId }) => operationId),
+    );
+  });
+
   test('no lock, no ledger write, fetch cleaned, actions predicted', async () => {
     const r = await runInstall(f.env, { ...userOpts, dryRun: true }, makeDeps());
     if (!r.ok) throw new Error(msg(r.error));
     expect(r.value.dryRun).toBe(true);
     expect(r.value.results.every((x) => x.action === 'installed')).toBe(true);
+    expect(r.value.plan).toMatchObject({
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'install',
+    });
+    expect(Object.isFrozen(r.value.plan)).toBe(true);
+    expect(r.value.plan.operations).toHaveLength(r.value.results.length);
+    expect(r.value.executionResults).toEqual([]);
     // no placements, no ledger file, fetch cleaned
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('absent');
     expect(await f.env.pathKind(ledgerPathOf(f.data))).toBe('absent');

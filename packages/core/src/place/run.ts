@@ -10,12 +10,30 @@ import {
   safeErrorCode,
   sourceUnresolvableError,
 } from '../errors.ts';
+import {
+  createOperationExecutionResult,
+  createOperationGroupId,
+  createOperationId,
+  createOperationPairId,
+  createOperationPlan,
+  createPlanCheckId,
+  createPlanningDiagnosticId,
+} from '../planning/create.ts';
+import type {
+  ExecutableOperation,
+  OperationExecutionResult,
+  OperationImage,
+  OperationPlan,
+  OperationSource,
+  PlanCheck,
+  PlanningDiagnostic,
+} from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import type { ToolVerdict } from '../verify/types.ts';
-import { getPair, readLedger, setPair, withLedgerLock, writeLedger } from './ledger.ts';
+import { getPairAt, readLedger, setPairAt, withLedgerLock, writeLedger } from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
-import { type PairPlan, planFlips } from './plan.ts';
+import { type FlipPlanOutcome, type PairPlan, planFlips } from './plan.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore, sweepStaging } from './store.ts';
 import { resumeSwap, rollbackSwap, runSwap, sweepCommittedAcquireJournals } from './swap.ts';
 import {
@@ -31,6 +49,7 @@ import {
   type LedgerFile,
   type PinnedRecord,
   type PlacementPorts,
+  type PreparedFlipRun,
   type Provenance,
   type SwapCtx,
   type SwapPlan,
@@ -259,16 +278,16 @@ const runPromotePair = async (
   opts: FlipOptions,
   deps: FlipDeps,
 ): Promise<FlipResult> => {
-  const { skill, tool, placement, notices } = pair;
+  const { skill, tool, scopeKey, placement, notices } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
-  const existing = getPair(ledger, skill, tool);
+  const existing = getPairAt(ledger, scopeKey, skill, tool);
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     if (existing.journal.op === 'promote') {
       const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
-      const resumed = await resumeSwap(swapCtx, skill, tool);
+      const resumed = await resumeSwap(swapCtx, skill, tool, scopeKey);
       if (!resumed.ok) return failedResult(base, midSwapError(resumed.error));
-      const after = getPair(ledger, skill, tool);
+      const after = getPairAt(ledger, scopeKey, skill, tool);
       return {
         ...base,
         action: 'flipped',
@@ -433,6 +452,7 @@ const runPromotePair = async (
         op: 'install',
         skill,
         tool,
+        scopeKey,
         skillsRoot: dirname(placement.path),
         placementPath: placement.path,
         install: {
@@ -475,6 +495,7 @@ const runPromotePair = async (
       op: 'dev',
       skill,
       tool,
+      scopeKey,
       skillsRoot: dirname(placement.path),
       placementPath: placement.path,
       dev: { sourcePath: devRecord.sourcePath, devRecord },
@@ -511,6 +532,7 @@ const runPromotePair = async (
     op: 'promote',
     skill,
     tool,
+    scopeKey,
     skillsRoot: dirname(placement.path),
     placementPath: placement.path,
     promote: { storePath: snap.storePath, contentHash: snap.contentHash, pinned, devRecord },
@@ -650,6 +672,7 @@ const createDevPlacement = async (
   base: Base,
   skill: string,
   tool: FlipTool,
+  scopeKey: string | null,
   live: string,
   source: string,
   opts: FlipOptions,
@@ -658,7 +681,7 @@ const createDevPlacement = async (
   // BF-5(e): a stale ledger pair (a lingering managed record whose live placement is gone) is the
   // lifecycle source of truth — never silently overwrite it with a fresh dev-only create. The user
   // must `uninstall` the record first.
-  if (getPair(ledger, skill, tool) !== null) {
+  if (getPairAt(ledger, scopeKey, skill, tool) !== null) {
     const reason = `refusing to create '${skill}' (${tool}): a skillsmith record already exists — remove it first with 'skillsmith uninstall ${skill}'`;
     return refusedResult(base, reason, flipRefusedError(reason));
   }
@@ -709,7 +732,7 @@ const createDevPlacement = async (
   // P13 dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely — not explicit
   // nulls — so `Object.hasOwn(record, 'pinned')` is false and every nullish-safe reader treats the
   // pair as having no pinned/journal state.
-  setPair(ledger, skill, tool, { placementPath: live, mode: 'dev', dev: devRecord });
+  setPairAt(ledger, scopeKey, skill, tool, { placementPath: live, mode: 'dev', dev: devRecord });
   const persisted = await writeLedger(env, ledgerPath, ledger);
   if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
 
@@ -733,6 +756,7 @@ const adoptDevPlacement = async (
   base: Base,
   skill: string,
   tool: FlipTool,
+  scopeKey: string | null,
   live: string,
   resolvedSourceDir: string,
   opts: FlipOptions,
@@ -775,7 +799,7 @@ const adoptDevPlacement = async (
   }
 
   // Dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely.
-  setPair(ledger, skill, tool, { placementPath: live, mode: 'dev', dev: devRecord });
+  setPairAt(ledger, scopeKey, skill, tool, { placementPath: live, mode: 'dev', dev: devRecord });
   const persisted = await writeLedger(env, ledgerPath, ledger);
   if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
 
@@ -802,16 +826,16 @@ const runDevPair = async (
   opts: FlipOptions,
   deps: FlipDeps,
 ): Promise<FlipResult> => {
-  const { skill, tool, placement } = pair;
+  const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
-  const existing = getPair(ledger, skill, tool);
+  const existing = getPairAt(ledger, scopeKey, skill, tool);
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     if (existing.journal.op === 'dev') {
       const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
-      const resumed = await resumeSwap(swapCtx, skill, tool);
+      const resumed = await resumeSwap(swapCtx, skill, tool, scopeKey);
       if (!resumed.ok) return failedResult(base, midSwapError(resumed.error));
-      const after = getPair(ledger, skill, tool);
+      const after = getPairAt(ledger, scopeKey, skill, tool);
       return {
         ...base,
         action: 'flipped',
@@ -851,6 +875,7 @@ const runDevPair = async (
       base,
       skill,
       tool,
+      scopeKey,
       placement.path,
       opts.source,
       opts,
@@ -896,6 +921,7 @@ const runDevPair = async (
       base,
       skill,
       tool,
+      scopeKey,
       placement.path,
       resolvedSourceDir,
       opts,
@@ -984,6 +1010,7 @@ const runDevPair = async (
     op: 'dev',
     skill,
     tool,
+    scopeKey,
     skillsRoot: dirname(placement.path),
     placementPath: placement.path,
     dev: { sourcePath: source, devRecord },
@@ -1027,9 +1054,9 @@ const runRollbackPair = async (
   opts: FlipOptions,
   deps: FlipDeps,
 ): Promise<FlipResult> => {
-  const { skill, tool, placement } = pair;
+  const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
-  const existing = getPair(ledger, skill, tool);
+  const existing = getPairAt(ledger, scopeKey, skill, tool);
   const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts);
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
@@ -1038,7 +1065,7 @@ const runRollbackPair = async (
     // state, not the journal that was actually rolled back.
     const journalOp = existing.journal.op;
     const journalBeforeMode = existing.journal.before.mode;
-    const rb = await rollbackSwap(swapCtx, skill, tool);
+    const rb = await rollbackSwap(swapCtx, skill, tool, scopeKey);
     if (!rb.ok) return failedResult(base, midSwapError(rb.error));
 
     // I2: an uncommitted install REPLACE (before-state was a real placement, not a fresh install)
@@ -1082,6 +1109,7 @@ const runRollbackPair = async (
       rollbackOf: 'promote',
       skill,
       tool,
+      scopeKey,
       skillsRoot: dirname(placement.path),
       placementPath: placement.path,
       dev: { sourcePath: devRecord.sourcePath, devRecord },
@@ -1123,6 +1151,7 @@ const runRollbackPair = async (
     rollbackOf: 'dev',
     skill,
     tool,
+    scopeKey,
     skillsRoot: dirname(placement.path),
     placementPath: placement.path,
     promote: {
@@ -1155,9 +1184,9 @@ const runRollbackPair = async (
 };
 
 const predictRollbackPair = (ledger: LedgerFile, pair: PairPlan): FlipResult => {
-  const { skill, tool, placement } = pair;
+  const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
-  const existing = getPair(ledger, skill, tool);
+  const existing = getPairAt(ledger, scopeKey, skill, tool);
   if (existing?.journal && existing.journal.phase !== 'committed') {
     return {
       ...base,
@@ -1199,11 +1228,22 @@ const predictPair = async (
   pair: PairPlan,
   opts: FlipOptions,
 ): Promise<FlipResult> => {
-  const { skill, tool, placement } = pair;
+  const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
-  const existing = getPair(ledger, skill, tool);
+  const existing = getPairAt(ledger, scopeKey, skill, tool);
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
+    if (existing.journal.op === op) {
+      return {
+        ...base,
+        action: 'flipped',
+        reason: null,
+        before: null,
+        after: null,
+        store: null,
+        verify: null,
+      };
+    }
     const reason = `an interrupted ${existing.journal.op} is in progress for '${skill}' (${tool})`;
     return refusedResult(base, reason, flipRefusedError(reason));
   }
@@ -1219,7 +1259,7 @@ const predictPair = async (
       if (!provRes.ok) return failedResult(base, provRes.error);
       const provenance = provRes.value;
       if (provenance.kind === 'git-dirty' && !opts.allowDirty) {
-        const reason = `refusing to promote '${skill}': the source tree is dirty`;
+        const reason = `refusing to promote '${skill}': the source tree is dirty.\n${provenance.dirtySummary ?? ''}\nCommit the changes, or pass --allow-dirty to snapshot as dirty-<hash>.`;
         return refusedResult(base, reason, flipRefusedError(reason));
       }
       const revRes = await computeRevPreview(env, provenance, existing.dev.resolvedPath);
@@ -1244,7 +1284,7 @@ const predictPair = async (
       if (!provRes.ok) return failedResult(base, provRes.error);
       const provenance = provRes.value;
       if (provenance.kind === 'git-dirty' && !opts.allowDirty) {
-        const reason = `refusing to promote '${skill}': the source tree is dirty`;
+        const reason = `refusing to promote '${skill}': the source tree is dirty.\n${provenance.dirtySummary ?? ''}\nCommit the changes, or pass --allow-dirty to snapshot as dirty-<hash>.`;
         return refusedResult(base, reason, flipRefusedError(reason));
       }
       const revRes = await computeRevPreview(env, provenance, existing.dev.resolvedPath);
@@ -1279,7 +1319,7 @@ const predictPair = async (
     const provRes = await resolveProvenance(env, resolvedTarget);
     if (!provRes.ok) return failedResult(base, provRes.error);
     if (provRes.value.kind === 'git-dirty' && !opts.allowDirty) {
-      const reason = `refusing to promote '${skill}': the source tree is dirty`;
+      const reason = `refusing to promote '${skill}': the source tree is dirty.\n${provRes.value.dirtySummary ?? ''}\nCommit the changes, or pass --allow-dirty to snapshot as dirty-<hash>.`;
       return refusedResult(base, reason, flipRefusedError(reason));
     }
 
@@ -1483,15 +1523,492 @@ const ACTION_TO_SUMMARY_KEY: Record<FlipAction, keyof FlipReport['summary']> = {
   adopted: 'adopted',
 };
 
-const buildReport = (
-  op: FlipOp,
+const ZERO_DIGEST = `sha256:${'0'.repeat(64)}` as const;
+
+const selectionSourceOf = (opts: FlipOptions): 'explicit-targets' | 'explicit-all' =>
+  opts.selectionSource ?? (opts.all ? 'explicit-all' : 'explicit-targets');
+
+const liveResourceOf = (pair: PairPlan) => ({
+  kind: 'live' as const,
+  skill: pair.skill,
+  tool: pair.tool,
+  scope: pair.scope,
+  projectRoot:
+    pair.scopeKey === null
+      ? null
+      : ({ kind: 'machine-bound' as const, path: pair.scopeKey } as const),
+  location: { kind: 'machine-bound' as const, path: pair.placement.path },
+});
+
+const placementImageOf = (
+  pair: PairPlan,
+  mode: 'dev' | 'pinned',
+  linkTarget: string | null,
+  contentHash: `sha256:${string}` | null,
+  sourcePath: string | null = null,
+): OperationImage => ({
+  kind: 'placement',
+  resource: liveResourceOf(pair),
+  classification: mode,
+  representation: mode === 'dev' ? 'symlink' : 'copy',
+  linkTarget: linkTarget === null ? null : { kind: 'machine-bound' as const, path: linkTarget },
+  dangling: false,
+  source:
+    contentHash === null || sourcePath === null
+      ? null
+      : { kind: 'local-dev', path: sourcePath, contentHash },
+  contentHash,
+});
+
+const beforeImageOf = (pair: PairPlan): OperationImage => {
+  if (pair.placement.class === 'absent') {
+    return { kind: 'absent', resource: liveResourceOf(pair) };
+  }
+  if (pair.placement.class === 'dev') {
+    return placementImageOf(pair, 'dev', pair.placement.symlinkTarget, null);
+  }
+  return placementImageOf(pair, 'pinned', null, null);
+};
+
+const unmanagedBeforeImageOf = (pair: PairPlan): OperationImage => ({
+  kind: 'placement',
+  resource: liveResourceOf(pair),
+  classification: 'unmanaged',
+  representation: pair.placement.class === 'dev' ? 'symlink' : 'other',
+  linkTarget:
+    pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null
+      ? { kind: 'machine-bound', path: pair.placement.symlinkTarget }
+      : null,
+  dangling: pair.placement.class === 'dev' && pair.placement.dangling,
+  source: null,
+  contentHash: null,
+});
+
+const resultForPair = (results: readonly FlipResult[], pair: PairPlan): FlipResult | undefined => {
+  for (let index = results.length - 1; index >= 0; index--) {
+    const result = results[index];
+    if (
+      result?.skill === pair.skill &&
+      result.tool === pair.tool &&
+      result.placementPath === pair.placement.path
+    ) {
+      return result;
+    }
+  }
+  return undefined;
+};
+
+const digestForPair = async (
+  env: PlacementPorts,
+  ledger: LedgerFile,
+  pair: PairPlan,
+): Promise<`sha256:${string}` | null> => {
+  const recorded = getPairAt(ledger, pair.scopeKey, pair.skill, pair.tool);
+  if (recorded?.pinned?.contentHash?.startsWith('sha256:')) {
+    return recorded.pinned.contentHash as `sha256:${string}`;
+  }
+  const source =
+    pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null
+      ? resolveSymlinkAbsolute(pair.placement.path, pair.placement.symlinkTarget)
+      : recorded?.dev?.resolvedPath;
+  if (source === undefined) return null;
+  const hashed = await contentHashOf(env, source);
+  return hashed.ok ? (hashed.value as `sha256:${string}`) : null;
+};
+
+const devOperationSourceOf = async (
+  env: PlacementPorts,
+  ledger: LedgerFile,
+  pair: PairPlan,
+  opts: FlipOptions,
+): Promise<Extract<OperationSource, { kind: 'local-dev' }> | null> => {
+  const current = getPairAt(ledger, pair.scopeKey, pair.skill, pair.tool);
+  const path =
+    opts.source !== undefined
+      ? resolve(opts.cwd, opts.source)
+      : (current?.dev?.resolvedPath ??
+        (pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null
+          ? resolveSymlinkAbsolute(pair.placement.path, pair.placement.symlinkTarget)
+          : null));
+  if (path === null) return null;
+  const hashed = await contentHashOf(env, path);
+  return hashed.ok
+    ? { kind: 'local-dev', path, contentHash: hashed.value as `sha256:${string}` }
+    : null;
+};
+
+interface PreparedFlipBinding {
+  readonly operationId: string;
+  readonly pair: PairPlan;
+}
+
+const createFlipPlanning = async (
+  env: PlacementPorts,
+  command: 'promote' | 'dev',
+  reportOp: FlipOp,
   dryRun: boolean,
+  opts: FlipOptions,
+  outcome: FlipPlanOutcome,
+  results: readonly FlipResult[],
+  ledger: LedgerFile,
+): Promise<
+  Readonly<{
+    plan: OperationPlan<'dev' | 'promote'>;
+    executionResults: readonly OperationExecutionResult[];
+    bindings: readonly PreparedFlipBinding[];
+  }>
+> => {
+  const selectionSource = selectionSourceOf(opts);
+  const operations: ExecutableOperation[] = [];
+  const checks: PlanCheck[] = [];
+  const bindings: PreparedFlipBinding[] = [];
+  const usedResults = new Set<FlipResult>();
+
+  for (const pair of outcome.pairs) {
+    const result = resultForPair(results, pair);
+    if (result === undefined) continue;
+    const current = getPairAt(ledger, pair.scopeKey, pair.skill, pair.tool);
+    const retainedCommittedInverse =
+      reportOp === 'rollback' &&
+      current?.journal?.phase === 'committed' &&
+      current.journal.before.mode !== 'absent';
+    const executable =
+      result.action === 'flipped' ||
+      result.action === 'updated' ||
+      result.action === 'created' ||
+      result.action === 'adopted' ||
+      result.action === 'failed' ||
+      result.action === 'rolled-back' ||
+      retainedCommittedInverse;
+    if (!executable) continue;
+    usedResults.add(result);
+
+    const rollbackToDev = reportOp === 'rollback' && pair.placement.class !== 'dev';
+    const kind: ExecutableOperation['kind'] =
+      reportOp === 'rollback'
+        ? rollbackToDev
+          ? 'link-dev'
+          : 'promote'
+        : command === 'dev'
+          ? 'link-dev'
+          : 'promote';
+    const operationSource =
+      command === 'dev' ? await devOperationSourceOf(env, ledger, pair, opts) : null;
+    const groupId = createOperationGroupId({
+      domain: 'skillsmith.operation-group-identity',
+      schemaVersion: 1,
+      command,
+      skill: pair.skill,
+      source: operationSource,
+      scope: pair.scope,
+      target: null,
+    });
+    const pairId = createOperationPairId({
+      domain: 'skillsmith.operation-pair-identity',
+      schemaVersion: 1,
+      groupId,
+      tool: pair.tool,
+      resource: liveResourceOf(pair),
+    });
+    const identity = {
+      domain: 'skillsmith.operation-identity' as const,
+      schemaVersion: 1 as const,
+      groupId,
+      pairId,
+      kind,
+      skill: pair.skill,
+      source: operationSource,
+      tool: pair.tool,
+      scope: pair.scope,
+    };
+    const operationId = createOperationId(identity);
+    const digest = operationSource?.contentHash ?? (await digestForPair(env, ledger, pair));
+    const desiredDevTarget =
+      operationSource?.path ??
+      (result.after?.mode === 'dev'
+        ? (result.after.symlinkTarget ?? current?.dev?.sourcePath ?? opts.source ?? null)
+        : (current?.dev?.sourcePath ?? opts.source ?? null));
+    const promoteSource =
+      current?.dev?.resolvedPath ??
+      (pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null
+        ? resolveSymlinkAbsolute(pair.placement.path, pair.placement.symlinkTarget)
+        : null);
+    const before =
+      result.action === 'adopted'
+        ? unmanagedBeforeImageOf(pair)
+        : reportOp === 'rollback' && pair.placement.class !== 'dev'
+          ? placementImageOf(
+              pair,
+              'pinned',
+              null,
+              promoteSource === null ? null : digest,
+              promoteSource,
+            )
+          : reportOp === 'rollback' && pair.placement.class === 'dev'
+            ? placementImageOf(
+                pair,
+                'dev',
+                pair.placement.symlinkTarget,
+                operationSource?.contentHash ?? null,
+                operationSource?.path ?? null,
+              )
+            : beforeImageOf(pair);
+    const after =
+      kind === 'link-dev'
+        ? placementImageOf(
+            pair,
+            'dev',
+            desiredDevTarget,
+            operationSource?.contentHash ?? null,
+            operationSource?.path ?? null,
+          )
+        : reportOp === 'rollback'
+          ? placementImageOf(pair, 'pinned', null, null)
+          : placementImageOf(pair, 'pinned', null, digest, promoteSource);
+    const requiredCheckIds: string[] = [];
+    if (reportOp !== 'rollback' && !opts.noVerify) {
+      const verificationMode =
+        command === 'promote' && pair.tool === 'codex' ? 'static+deep' : 'static';
+      const checkId = createPlanCheckId({
+        domain: 'skillsmith.plan-check-identity',
+        schemaVersion: 1,
+        kind: 'verification',
+        operationIds: [operationId],
+        tool: pair.tool,
+        mode: verificationMode,
+        expectedContentHash: digest ?? ZERO_DIGEST,
+      });
+      requiredCheckIds.push(checkId);
+      checks.push({
+        checkId,
+        blocking: true,
+        operationIds: [operationId],
+        kind: 'verification',
+        tool: pair.tool,
+        mode: verificationMode,
+        expectedContentHash: digest ?? ZERO_DIGEST,
+      });
+    }
+    operations.push({
+      operationId,
+      groupId,
+      pairId,
+      kind,
+      dependencyMetadata: {
+        domain: 'skillsmith.operation-dependency',
+        schemaVersion: 1,
+        operationIds: [],
+      },
+      skill: pair.skill,
+      source: operationSource,
+      tool: pair.tool,
+      scope: pair.scope,
+      before,
+      after,
+      reason:
+        reportOp === 'rollback'
+          ? { code: 'rollback-inverse', message: `rollback inverse for ${pair.skill}` }
+          : { code: kind, message: `${command} ${pair.skill}` },
+      selectionSource,
+      preconditionIds: [],
+      requiredCheckIds,
+      reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+      conflict: null,
+    });
+    bindings.push({ operationId, pair });
+  }
+
+  const diagnostics: PlanningDiagnostic[] = [];
+  const diagnosticIds = new Set<string>();
+  for (const result of results) {
+    if (usedResults.has(result)) continue;
+    const pair = outcome.pairs.find(
+      (candidate) =>
+        candidate.skill === result.skill &&
+        candidate.tool === result.tool &&
+        candidate.placement.path === result.placementPath,
+    );
+    const filterNoop =
+      result.action === 'skipped' &&
+      result.reason === 'no recorded dev source' &&
+      Boolean(opts.all);
+    const kind =
+      result.action === 'noop'
+        ? 'noop'
+        : result.action === 'skipped'
+          ? 'skip'
+          : result.action === 'refused' || result.action === 'failed'
+            ? 'refuse'
+            : 'warning';
+    const severity = kind === 'refuse' ? 'error' : kind === 'warning' ? 'warning' : 'info';
+    const refusalClass = kind === 'refuse' ? 'state' : null;
+    const affectedSource =
+      command === 'dev' && pair !== undefined
+        ? await devOperationSourceOf(env, ledger, pair, opts)
+        : null;
+    const affected = {
+      skill: result.skill,
+      source: affectedSource,
+      tool: result.tool,
+      scope: pair?.scope ?? opts.scope ?? null,
+      path:
+        result.placementPath === null
+          ? null
+          : { kind: 'machine-bound' as const, path: result.placementPath },
+    };
+    const correlation = { groupId: null, pairId: null, operationId: null };
+    const reasonCode = filterNoop ? 'filter-noop' : (result.error?.code ?? kind);
+    const diagnosticId = createPlanningDiagnosticId({
+      domain: 'skillsmith.planning-diagnostic-identity',
+      schemaVersion: 1,
+      kind,
+      severity,
+      refusalClass,
+      affected,
+      correlation,
+      reasonCode,
+      selectionSource,
+    });
+    if (diagnosticIds.has(diagnosticId)) continue;
+    diagnosticIds.add(diagnosticId);
+    diagnostics.push({
+      diagnosticId,
+      kind,
+      severity,
+      refusalClass,
+      affected,
+      correlation,
+      reason: {
+        code: reasonCode,
+        message: result.reason ?? result.action,
+      },
+      selectionSource,
+    });
+  }
+
+  if (operations.length === 0 && diagnostics.length === 0 && opts.all) {
+    const affected = {
+      skill: null,
+      source: null,
+      tool: null,
+      scope: opts.scope ?? null,
+      path: null,
+    };
+    const correlation = { groupId: null, pairId: null, operationId: null };
+    const diagnosticId = createPlanningDiagnosticId({
+      domain: 'skillsmith.planning-diagnostic-identity',
+      schemaVersion: 1,
+      kind: 'noop',
+      severity: 'info',
+      refusalClass: null,
+      affected,
+      correlation,
+      reasonCode: 'filter-noop',
+      selectionSource,
+    });
+    diagnostics.push({
+      diagnosticId,
+      kind: 'noop',
+      severity: 'info',
+      refusalClass: null,
+      affected,
+      correlation,
+      reason: { code: 'filter-noop', message: 'the selected filters matched no eligible work' },
+      selectionSource,
+    });
+  }
+
+  const scopes = [...new Set(outcome.pairs.map((pair) => pair.scope))];
+  if (scopes.length === 0 && opts.scope !== undefined) scopes.push(opts.scope);
+  const filterNoop =
+    operations.length === 0 && diagnostics.some((item) => item.reason.code === 'filter-noop');
+  const plan = createOperationPlan({
+    domain: 'skillsmith.operation-plan',
+    schemaVersion: 1,
+    command,
+    selection: {
+      source: selectionSource,
+      outcome: filterNoop ? 'filter-noop' : 'selected',
+      targets: [...opts.targets],
+      all: Boolean(opts.all),
+      tools: opts.tools ? [...opts.tools] : [...FLIP_TOOLS],
+      scopes,
+      groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+    },
+    batchPolicy: 'fail-fast',
+    operations,
+    checks,
+    diagnostics,
+  }) as OperationPlan<'dev' | 'promote'>;
+  const executionResults = dryRun
+    ? []
+    : plan.operations.map((operation) => {
+        const pair = outcome.pairs.find(
+          (candidate) =>
+            candidate.skill === operation.skill &&
+            candidate.tool === operation.tool &&
+            candidate.scope === operation.scope,
+        );
+        const result = pair === undefined ? undefined : resultForPair(results, pair);
+        const failed = result?.action === 'failed';
+        const common = {
+          operationId: operation.operationId,
+          actualBefore: operation.before,
+          actualAfter: operation.after,
+          force: null,
+        } as const;
+        if (failed) {
+          return createOperationExecutionResult({
+            ...common,
+            outcome: 'failed',
+            error: {
+              code: result.error?.code ?? 'flip-failed',
+              message: result.reason ?? 'operation failed',
+              remediation: 'Resolve the reported condition and retry the same selection.',
+            },
+          });
+        }
+        return createOperationExecutionResult({
+          ...common,
+          outcome:
+            reportOp === 'rollback'
+              ? 'rolled-back'
+              : result?.reason === 'interrupted'
+                ? 'cancelled'
+                : 'succeeded',
+          error: null,
+        });
+      });
+  return { plan, executionResults, bindings };
+};
+
+const buildPreparedPreview = async (
+  env: PlacementPorts,
+  command: 'promote' | 'dev',
+  op: FlipOp,
   requested: FlipReport['requested'],
   results: FlipResult[],
-): FlipReport => {
+  opts: FlipOptions,
+  outcome: FlipPlanOutcome,
+  ledger: LedgerFile,
+): Promise<Readonly<{ report: FlipReport; bindings: readonly PreparedFlipBinding[] }>> => {
   const summary = emptySummary();
   for (const r of results) summary[ACTION_TO_SUMMARY_KEY[r.action]]++;
-  return { op, dryRun, requested, results, summary };
+  const { plan, executionResults, bindings } = await createFlipPlanning(
+    env,
+    command,
+    op,
+    true,
+    opts,
+    outcome,
+    results,
+    ledger,
+  );
+  return {
+    report: { op, dryRun: true, requested, results, summary, plan, executionResults },
+    bindings,
+  };
 };
 
 type PairProcessor = (
@@ -1503,90 +2020,228 @@ type PairProcessor = (
   deps: FlipDeps,
 ) => Promise<FlipResult>;
 
-const runFlipBatch = async (
+type PairPredictor = (
+  env: PlacementPorts,
+  ledger: LedgerFile,
+  pair: PairPlan,
+  opts: FlipOptions,
+) => Promise<FlipResult>;
+
+const normalizeFlipProjectContext = async (
   env: PlacementPorts,
   opts: FlipOptions,
-  op: 'promote' | 'dev',
-  deps: FlipDeps,
-  process: PairProcessor,
-  predict: (env: PlacementPorts, ledger: LedgerFile, pair: PairPlan) => Promise<FlipResult>,
-): Promise<Result<FlipReport, SkillSmithError>> => {
-  const dataDir = resolveDataDir(env, opts.configuration);
-  const storeRoot = storeRootOf(dataDir);
-  const ledgerPath = ledgerPathOf(dataDir);
-  const requested = buildRequested(opts);
-
-  if (opts.dryRun) {
-    const ledgerRes = await readLedger(env, ledgerPath);
-    if (!ledgerRes.ok) return ledgerRes;
-    const planRes = await planFlips(env, { ...opts, op }, storeRoot, ledgerRes.value);
-    if (!planRes.ok) return planRes;
-    const results: FlipResult[] = [...planRes.value.preResults];
-    for (const pair of planRes.value.pairs) results.push(await predict(env, ledgerRes.value, pair));
-    return ok(buildReport(op, true, requested, results));
+): Promise<FlipOptions> => {
+  if (Object.hasOwn(opts, 'projectRoot')) return opts;
+  if (opts.scope === 'user') return { ...opts, projectRoot: null };
+  let projectRoot: string | null;
+  try {
+    projectRoot = await env.git.findRepositoryRoot({ cwd: opts.cwd });
+  } catch {
+    projectRoot = null;
   }
-
-  const locked = await withLedgerLock(
-    env,
-    ledgerPath,
-    async (): Promise<Result<FlipReport, SkillSmithError>> => {
-      await sweepStaging(env, storeRoot);
-      const ledgerRes = await readLedger(env, ledgerPath);
-      if (!ledgerRes.ok) return ledgerRes;
-      let ledger = ledgerRes.value;
-
-      // §8.5 hygiene: finish any committed install/uninstall left mid-terminal by a crash. Notes
-      // are not surfaced by flips; a sweep failure aborts the batch (recovery must complete first).
-      const swept = await sweepCommittedAcquireJournals(
-        makeSwapCtx(env, ledgerPath, ledger, deps, opts),
-      );
-      if (!swept.ok) return err(midSwapError(swept.error));
-
-      const planRes = await planFlips(env, { ...opts, op }, storeRoot, ledger);
-      if (!planRes.ok) return planRes;
-      const { pairs, preResults } = planRes.value;
-
-      const results: FlipResult[] = [...preResults];
-      for (let i = 0; i < pairs.length; i++) {
-        if (opts.signal?.aborted) {
-          for (let j = i; j < pairs.length; j++) {
-            const remaining = pairs[j];
-            if (remaining) results.push(interruptedResult(remaining));
-          }
-          break;
-        }
-        const pair = pairs[i];
-        if (!pair) continue;
-        const result = await process(env, ledger, ledgerPath, pair, opts, deps);
-        results.push(result);
-        if (result.error) {
-          const reread = await readLedger(env, ledgerPath);
-          if (reread.ok) ledger = reread.value;
-        }
-      }
-
-      return ok(buildReport(op, false, requested, results));
-    },
-  );
-
-  if (!locked.ok) return locked;
-  return locked.value;
+  if (projectRoot !== null) {
+    try {
+      projectRoot = await env.realpath(projectRoot);
+    } catch {
+      projectRoot = resolve(projectRoot);
+    }
+  } else if (opts.scope === 'project') {
+    try {
+      projectRoot = await env.realpath(opts.cwd);
+    } catch {
+      projectRoot = resolve(opts.cwd);
+    }
+  }
+  return { ...opts, projectRoot };
 };
 
-export const runPromote = (
+const executedFlipReport = (
+  preview: FlipReport,
+  reportOp: FlipOp,
+  results: FlipResult[],
+  bindings: ReadonlyMap<string, PairPlan>,
+): FlipReport => {
+  const summary = emptySummary();
+  for (const result of results) summary[ACTION_TO_SUMMARY_KEY[result.action]]++;
+  const executionResults = preview.plan.operations.map((operation) => {
+    const pair = bindings.get(operation.operationId);
+    const result = pair === undefined ? undefined : resultForPair(results, pair);
+    const cancelled = result?.reason === 'interrupted';
+    const failed =
+      result === undefined || result.action === 'failed' || result.action === 'refused';
+    const common = {
+      operationId: operation.operationId,
+      actualBefore: operation.before,
+      actualAfter: failed || cancelled ? operation.before : operation.after,
+      force: null,
+    } as const;
+    if (cancelled) {
+      return createOperationExecutionResult({
+        ...common,
+        outcome: 'cancelled',
+        error: null,
+      });
+    }
+    if (failed) {
+      return createOperationExecutionResult({
+        ...common,
+        outcome: 'failed',
+        error: {
+          code: result?.error?.code ?? 'flip-failed',
+          message: result?.reason ?? 'prepared operation did not produce a result',
+          remediation: 'Resolve the reported condition and retry the same selection.',
+        },
+      });
+    }
+    return createOperationExecutionResult({
+      ...common,
+      outcome: reportOp === 'rollback' ? 'rolled-back' : 'succeeded',
+      error: null,
+    });
+  });
+  return {
+    ...preview,
+    dryRun: false,
+    results,
+    summary,
+    executionResults,
+  };
+};
+
+const prepareFlipBatch = async (
+  env: PlacementPorts,
+  opts: FlipOptions,
+  command: 'promote' | 'dev',
+  reportOp: FlipOp,
+  deps: FlipDeps,
+  process: PairProcessor,
+  predict: PairPredictor,
+): Promise<Result<PreparedFlipRun, SkillSmithError>> => {
+  const normalizedOpts = await normalizeFlipProjectContext(env, opts);
+  const dataDir = resolveDataDir(env, normalizedOpts.configuration);
+  const storeRoot = storeRootOf(dataDir);
+  const ledgerPath = ledgerPathOf(dataDir);
+  const requested = buildRequested(normalizedOpts);
+  const ledgerRes = await readLedger(env, ledgerPath);
+  if (!ledgerRes.ok) return ledgerRes;
+  const planningOptions = {
+    ...normalizedOpts,
+    op: command,
+    ...(reportOp === 'rollback' ? { rollback: true } : {}),
+  } as FlipOptions & { op: FlipOp };
+  const planRes = await planFlips(env, planningOptions, storeRoot, ledgerRes.value);
+  if (!planRes.ok) return planRes;
+  if ((planRes.value.unmatchedTargets?.length ?? 0) > 0) {
+    const names = planRes.value.unmatchedTargets as readonly string[];
+    return err(
+      flipRefusedError(`no placement found for ${names.map((name) => `'${name}'`).join(', ')}`),
+    );
+  }
+  const previewResults: FlipResult[] = [...planRes.value.preResults];
+  for (const pair of planRes.value.pairs) {
+    previewResults.push(await predict(env, ledgerRes.value, pair, normalizedOpts));
+  }
+  const preparedPreview = await buildPreparedPreview(
+    env,
+    command,
+    reportOp,
+    requested,
+    previewResults,
+    normalizedOpts,
+    planRes.value,
+    ledgerRes.value,
+  );
+  const bindingMap = new Map<string, PairPlan>();
+  const boundPreviewResults = new Set<FlipResult>();
+  for (const binding of preparedPreview.bindings) {
+    if (bindingMap.has(binding.operationId)) {
+      return err(genericError('prepared operation binding is not one-to-one'));
+    }
+    bindingMap.set(binding.operationId, binding.pair);
+    const result = resultForPair(previewResults, binding.pair);
+    if (result !== undefined) boundPreviewResults.add(result);
+  }
+  if (
+    bindingMap.size !== preparedPreview.report.plan.operations.length ||
+    preparedPreview.report.plan.operations.some(
+      (operation) => !bindingMap.has(operation.operationId),
+    )
+  ) {
+    return err(genericError('prepared plan has no exact execution binding'));
+  }
+  const staticResults = previewResults.filter((result) => !boundPreviewResults.has(result));
+  let consumed = false;
+  const prepared: PreparedFlipRun = {
+    preview: preparedPreview.report,
+    plan: preparedPreview.report.plan,
+    execute: async (): Promise<Result<FlipReport, SkillSmithError>> => {
+      if (consumed) return err(genericError('prepared flip run has already been executed'));
+      consumed = true;
+      if (normalizedOpts.dryRun) return ok(preparedPreview.report);
+      const locked = await withLedgerLock(
+        env,
+        ledgerPath,
+        async (): Promise<Result<FlipReport, SkillSmithError>> => {
+          await sweepStaging(env, storeRoot);
+          const currentLedger = await readLedger(env, ledgerPath);
+          if (!currentLedger.ok) return currentLedger;
+          let ledger = currentLedger.value;
+
+          const swept = await sweepCommittedAcquireJournals(
+            makeSwapCtx(env, ledgerPath, ledger, deps, normalizedOpts),
+          );
+          if (!swept.ok) return err(midSwapError(swept.error));
+
+          const results: FlipResult[] = [...staticResults];
+          const operations = preparedPreview.report.plan.operations;
+          for (let index = 0; index < operations.length; index++) {
+            if (normalizedOpts.signal?.aborted) {
+              for (
+                let remainingIndex = index;
+                remainingIndex < operations.length;
+                remainingIndex++
+              ) {
+                const remaining = operations[remainingIndex];
+                const pair = remaining && bindingMap.get(remaining.operationId);
+                if (pair) results.push(interruptedResult(pair));
+              }
+              break;
+            }
+            const operation = operations[index];
+            if (!operation) continue;
+            const pair = bindingMap.get(operation.operationId);
+            if (!pair) return err(genericError('prepared operation binding is missing'));
+            const result = await process(env, ledger, ledgerPath, pair, normalizedOpts, deps);
+            results.push(result);
+            if (result.error) {
+              const reread = await readLedger(env, ledgerPath);
+              if (reread.ok) ledger = reread.value;
+            }
+          }
+          return ok(executedFlipReport(preparedPreview.report, reportOp, results, bindingMap));
+        },
+      );
+      if (!locked.ok) return locked;
+      return locked.value;
+    },
+  };
+  return ok(prepared);
+};
+
+export const preparePromote = (
   env: PlacementPorts,
   opts: FlipOptions,
   deps: FlipDeps = defaultFlipDeps,
-): Promise<Result<FlipReport, SkillSmithError>> =>
-  runFlipBatch(env, opts, 'promote', deps, runPromotePair, (e, l, p) =>
-    predictPair(e, l, 'promote', p, opts),
+): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
+  prepareFlipBatch(env, opts, 'promote', 'promote', deps, runPromotePair, (e, l, p, o) =>
+    predictPair(e, l, 'promote', p, o),
   );
 
-export const runDev = (
+export const prepareDev = (
   env: PlacementPorts,
   opts: FlipOptions,
   deps: FlipDeps = defaultFlipDeps,
-): Promise<Result<FlipReport, SkillSmithError>> => {
+): Promise<Result<PreparedFlipRun, SkillSmithError>> => {
   // BF-1(f): validate `--dest` constraints in CORE (not CLI-only) — a library consumer calling
   // runDev directly must get the same refusals. `--dest` needs `--source` (an unscoped destination
   // is only meaningful for a create) and exactly one `--tool` (a path is ambiguous across tools).
@@ -1603,80 +2258,59 @@ export const runDev = (
       );
     }
   }
-  return runFlipBatch(env, opts, 'dev', deps, runDevPair, (e, l, p) =>
-    predictPair(e, l, 'dev', p, opts),
+  return prepareFlipBatch(env, opts, 'dev', 'dev', deps, runDevPair, (e, l, p, o) =>
+    predictPair(e, l, 'dev', p, o),
   );
 };
 
-export const runRollback = async (
+export const prepareRollback = async (
   env: PlacementPorts,
   opts: FlipOptions & { op: 'promote' | 'dev' },
   deps: FlipDeps = defaultFlipDeps,
-): Promise<Result<FlipReport, SkillSmithError>> => {
+): Promise<Result<PreparedFlipRun, SkillSmithError>> => {
   // BF-1(f)/BF-7(c): rollback restores prior state — it takes no create/gate flags. Reject them in
   // CORE too (the CLI also rejects them) so a direct library call can't silently ignore a --source.
   if (opts.source !== undefined || opts.dest !== undefined) {
     return err(flipRefusedError('--rollback does not accept --source or --dest'));
   }
 
-  const dataDir = resolveDataDir(env, opts.configuration);
-  const storeRoot = storeRootOf(dataDir);
-  const ledgerPath = ledgerPathOf(dataDir);
-  const requested = buildRequested(opts);
-
-  if (opts.dryRun) {
-    const ledgerRes = await readLedger(env, ledgerPath);
-    if (!ledgerRes.ok) return ledgerRes;
-    const planRes = await planFlips(env, { ...opts, rollback: true }, storeRoot, ledgerRes.value);
-    if (!planRes.ok) return planRes;
-    const results: FlipResult[] = [...planRes.value.preResults];
-    for (const pair of planRes.value.pairs)
-      results.push(predictRollbackPair(ledgerRes.value, pair));
-    return ok(buildReport('rollback', true, requested, results));
-  }
-
-  const locked = await withLedgerLock(
+  return prepareFlipBatch(
     env,
-    ledgerPath,
-    async (): Promise<Result<FlipReport, SkillSmithError>> => {
-      await sweepStaging(env, storeRoot);
-      const ledgerRes = await readLedger(env, ledgerPath);
-      if (!ledgerRes.ok) return ledgerRes;
-      let ledger = ledgerRes.value;
-
-      // §8.5 hygiene: finish any committed install/uninstall left mid-terminal by a crash.
-      const swept = await sweepCommittedAcquireJournals(
-        makeSwapCtx(env, ledgerPath, ledger, deps, opts),
-      );
-      if (!swept.ok) return err(midSwapError(swept.error));
-
-      const planRes = await planFlips(env, { ...opts, rollback: true }, storeRoot, ledger);
-      if (!planRes.ok) return planRes;
-      const { pairs, preResults } = planRes.value;
-
-      const results: FlipResult[] = [...preResults];
-      for (let i = 0; i < pairs.length; i++) {
-        if (opts.signal?.aborted) {
-          for (let j = i; j < pairs.length; j++) {
-            const remaining = pairs[j];
-            if (remaining) results.push(interruptedResult(remaining));
-          }
-          break;
-        }
-        const pair = pairs[i];
-        if (!pair) continue;
-        const result = await runRollbackPair(env, ledger, ledgerPath, pair, opts, deps);
-        results.push(result);
-        if (result.error) {
-          const reread = await readLedger(env, ledgerPath);
-          if (reread.ok) ledger = reread.value;
-        }
-      }
-
-      return ok(buildReport('rollback', false, requested, results));
-    },
+    opts,
+    opts.op,
+    'rollback',
+    deps,
+    runRollbackPair,
+    async (_env, ledger, pair) => predictRollbackPair(ledger, pair),
   );
-
-  if (!locked.ok) return locked;
-  return locked.value;
 };
+
+const runPrepared = async (
+  prepared: Promise<Result<PreparedFlipRun, SkillSmithError>>,
+  dryRun: boolean | undefined,
+): Promise<Result<FlipReport, SkillSmithError>> => {
+  const result = await prepared;
+  if (!result.ok) return result;
+  return dryRun ? ok(result.value.preview) : result.value.execute();
+};
+
+export const runPromote = (
+  env: PlacementPorts,
+  opts: FlipOptions,
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<FlipReport, SkillSmithError>> =>
+  runPrepared(preparePromote(env, opts, deps), opts.dryRun);
+
+export const runDev = (
+  env: PlacementPorts,
+  opts: FlipOptions,
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<FlipReport, SkillSmithError>> =>
+  runPrepared(prepareDev(env, opts, deps), opts.dryRun);
+
+export const runRollback = (
+  env: PlacementPorts,
+  opts: FlipOptions & { op: 'promote' | 'dev' },
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<FlipReport, SkillSmithError>> =>
+  runPrepared(prepareRollback(env, opts, deps), opts.dryRun);
