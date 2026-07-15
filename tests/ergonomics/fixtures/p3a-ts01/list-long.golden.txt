@@ -1,0 +1,30 @@
+Installed skills
+| Tool | Scope | Mode | Name | State | Placement | Path | Real path | Root | Origin | Source | Revision | Store | Verification | Description | Visibility |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| claude-code | user | dev | c02 |  | symlink | /home/alice/.claude/skills/c02 | /work/skills/c02 | /home/alice/.claude/skills | standalone | /work/skills/c02 | — | — | unrecorded | Claude user development skill | unique |
+| claude-code | user | pinned | c04 | unconfigured | symlink | /home/alice/.claude/skills/c04 | /data/skillsmith/store/c04 | /home/alice/.claude/skills | plugin:quality@official@4.0.0(user) | github.com/acme/quality | rev-c04 | /data/skillsmith/store/c04 | warned | Claude plugin skill | unique |
+| claude-code | project | unmanaged | c03 | disabled | copy | /repo/.claude/skills/c03 | /repo/.claude/skills/c03 | /repo/.claude/skills | standalone | — | — | — | unrecorded | — | unique |
+| claude-code | project | pinned | c05 |  | copy | /repo/.claude/skills/c05 | /repo/.claude/skills/c05 | /repo/.claude/skills | standalone | github.com/acme/c05 | rev-c05 | /data/skillsmith/store/c05 | passed | Claude pinned project skill | unique |
+| claude-code | managed | unmanaged | c01 |  | copy | /managed/claude/skills/c01 | /managed/claude/skills/c01 | /managed/claude/skills | policy | — | — | — | unrecorded | Claude managed policy skill | unique |
+| claude-code | managed | unmanaged | c06 |  | copy | /managed/claude/skills/c06 | /managed/claude/skills/c06 | /managed/claude/skills | policy | — | — | — | unrecorded | Claude policy control | unique |
+
+| codex | system | unmanaged | x01 |  | copy | /etc/codex/skills/x01 | /etc/codex/skills/x01 | /etc/codex/skills | standalone | — | — | — | unrecorded | Codex system skill | unique |
+| codex | user | dev | x02 | disabled | symlink | /home/alice/.agents/skills/x02 | /work/skills/x02 | /home/alice/.agents/skills | standalone | /work/skills/x02 | — | — | unrecorded | Codex user development skill | unique |
+| codex | user | pinned | x04 |  | symlink | /home/alice/.codex/skills/x04 | /data/skillsmith/store/x04 | /home/alice/.codex/skills | standalone | github.com/acme/x04 | rev-x04 | /data/skillsmith/store/x04 | warned | Codex pinned user skill | unique |
+| codex | user | unmanaged | x06 |  | copy | /home/alice/.codex/skills/x06 | /home/alice/.codex/skills/x06 | /home/alice/.codex/skills | plugin:codex-extra@community@6.0.0(user) | — | — | — | unrecorded | Codex unmanaged plugin skill | unique |
+| codex | project | unmanaged | x03 | unconfigured | copy | /repo/.agents/skills/x03 | /repo/.agents/skills/x03 | /repo/.agents/skills | standalone | — | — | — | unrecorded | — | unique |
+| codex | project | pinned | x05 | disabled | copy | /repo/.agents/skills/x05 | /repo/.agents/skills/x05 | /repo/.agents/skills | plugin:codex-pack@community@5.0.0(project) | github.com/acme/x05 | rev-x05 | /data/skillsmith/store/x05 | skipped | Codex plugin project skill | unique |
+
+| kilo-code | user | pinned | k01 |  | copy | /home/alice/.kilo/skills/k01 | /home/alice/.kilo/skills/k01 | /home/alice/.kilo/skills | standalone | github.com/acme/k01 | rev-k01 | /data/skillsmith/store/k01 | passed | Kilo pinned user skill | unique |
+| kilo-code | user | unmanaged | k03 | disabled | copy | /home/alice/.kilo/skills/k03 | /home/alice/.kilo/skills/k03 | /home/alice/.kilo/skills | plugin:kilo-tools@community@3.0.0(user) | — | — | — | unrecorded | Kilo plugin skill | unique |
+| kilo-code | user | unmanaged | k06 |  | copy | /home/alice/.kilo/skills/k06 | /home/alice/.kilo/skills/k06 | /home/alice/.kilo/skills | standalone | — | — | — | unrecorded | — | unique |
+| kilo-code | project | dev | k02 | unconfigured | symlink | /repo/.kilo/skills/k02 | /work/skills/k02 | /repo/.kilo/skills | standalone | /work/skills/k02 | — | — | unrecorded | Kilo project development skill | unique |
+| kilo-code | project | pinned | k04 |  | symlink | /repo/.kilo/skills/k04 | /data/skillsmith/store/k04 | /repo/.kilo/skills | standalone | github.com/acme/k04 | rev-k04 | /data/skillsmith/store/k04 | warned | Kilo store-linked project skill | unique |
+| kilo-code | project | pinned | k05 | unconfigured | copy | /repo/.kilo/skills/k05 | /repo/.kilo/skills/k05 | /repo/.kilo/skills | plugin:kilo-pack@community@5.0.0(project) | github.com/acme/k05 | rev-k05 | /data/skillsmith/store/k05 | skipped | Kilo pinned plugin skill | unique |
+
+| opencode | user | pinned | o01 |  | symlink | /home/alice/.config/opencode/skills/o01 | /data/skillsmith/store/o01 | /home/alice/.config/opencode/skills | standalone | github.com/acme/o01 | rev-o01 | /data/skillsmith/store/o01 | passed | OpenCode pinned user skill | unique |
+| opencode | user | unmanaged | o03 | unconfigured | copy | /home/alice/.config/opencode/skills/o03 | /home/alice/.config/opencode/skills/o03 | /home/alice/.config/opencode/skills | plugin:opencode-tools@community@3.0.0(user) | — | — | — | unrecorded | OpenCode plugin skill | unique |
+| opencode | user | pinned | o05 | disabled | symlink | /home/alice/.config/opencode/skills/o05 | /data/skillsmith/store/o05 | /home/alice/.config/opencode/skills | plugin:opencode-pack@community@5.0.0(user) | github.com/acme/o05 | rev-o05 | /data/skillsmith/store/o05 | skipped | OpenCode plugin pinned skill | unique |
+| opencode | project | dev | o02 | disabled | symlink | /repo/.opencode/skills/o02 | /work/skills/o02 | /repo/.opencode/skills | standalone | /work/skills/o02 | — | — | unrecorded | OpenCode project development skill | unique |
+| opencode | project | pinned | o04 |  | copy | /repo/.opencode/skills/o04 | /repo/.opencode/skills/o04 | /repo/.opencode/skills | standalone | github.com/acme/o04 | rev-o04 | /data/skillsmith/store/o04 | warned | OpenCode pinned project skill | unique |
+| opencode | project | unmanaged | o06 |  | copy | /repo/.opencode/skills/o06 | /repo/.opencode/skills/o06 | /repo/.opencode/skills | standalone | — | — | — | unrecorded | — | unique |

@@ -1,0 +1,858 @@
+{
+  "schemaVersion": 3,
+  "kind": "skillsmith.list",
+  "selection": {
+    "source": "bounded-default",
+    "tools": [
+      "claude-code",
+      "codex",
+      "kilo-code",
+      "opencode"
+    ],
+    "scopes": [
+      "system",
+      "user",
+      "project",
+      "managed"
+    ],
+    "filters": {
+      "names": [],
+      "mode": null,
+      "source": null,
+      "revision": null,
+      "description": null,
+      "verification": null,
+      "enabled": null,
+      "duplicates": false
+    },
+    "outcome": "selected"
+  },
+  "summary": {
+    "total": 24,
+    "collisionGroups": 0
+  },
+  "entries": [
+    {
+      "name": "c02",
+      "tool": "claude-code",
+      "scope": "user",
+      "mode": "dev",
+      "placement": "symlink",
+      "path": "/home/alice/.claude/skills/c02",
+      "realpath": "/work/skills/c02",
+      "root": "/home/alice/.claude/skills",
+      "frontmatter": {
+        "name": "c02",
+        "description": "Claude user development skill",
+        "version": "2.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": "/work/skills/c02",
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "Claude user development skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.claude/skills/c02"
+          }
+        ]
+      }
+    },
+    {
+      "name": "c04",
+      "tool": "claude-code",
+      "scope": "user",
+      "mode": "pinned",
+      "placement": "symlink",
+      "path": "/home/alice/.claude/skills/c04",
+      "realpath": "/data/skillsmith/store/c04",
+      "root": "/home/alice/.claude/skills",
+      "frontmatter": {
+        "name": "c04",
+        "description": "Claude plugin skill",
+        "version": "4.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "quality@official",
+        "pluginVersion": "4.0.0",
+        "pluginScope": "user"
+      },
+      "enabled": "unset",
+      "source": "github.com/acme/quality",
+      "revision": "rev-c04",
+      "store": "/data/skillsmith/store/c04",
+      "verification": "warned",
+      "description": "Claude plugin skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.claude/skills/c04"
+          }
+        ]
+      }
+    },
+    {
+      "name": "c03",
+      "tool": "claude-code",
+      "scope": "project",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/repo/.claude/skills/c03",
+      "realpath": "/repo/.claude/skills/c03",
+      "root": "/repo/.claude/skills",
+      "frontmatter": null,
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "off",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": null,
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.claude/skills/c03"
+          }
+        ]
+      }
+    },
+    {
+      "name": "c05",
+      "tool": "claude-code",
+      "scope": "project",
+      "mode": "pinned",
+      "placement": "copy",
+      "path": "/repo/.claude/skills/c05",
+      "realpath": "/repo/.claude/skills/c05",
+      "root": "/repo/.claude/skills",
+      "frontmatter": {
+        "name": "c05",
+        "description": "Claude pinned project skill",
+        "version": "5.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": "github.com/acme/c05",
+      "revision": "rev-c05",
+      "store": "/data/skillsmith/store/c05",
+      "verification": "passed",
+      "description": "Claude pinned project skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.claude/skills/c05"
+          }
+        ]
+      }
+    },
+    {
+      "name": "c01",
+      "tool": "claude-code",
+      "scope": "managed",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/managed/claude/skills/c01",
+      "realpath": "/managed/claude/skills/c01",
+      "root": "/managed/claude/skills",
+      "frontmatter": {
+        "name": "c01",
+        "description": "Claude managed policy skill",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "policy"
+      },
+      "enabled": "on",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "Claude managed policy skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "managed",
+            "path": "/managed/claude/skills/c01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "c06",
+      "tool": "claude-code",
+      "scope": "managed",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/managed/claude/skills/c06",
+      "realpath": "/managed/claude/skills/c06",
+      "root": "/managed/claude/skills",
+      "frontmatter": {
+        "name": "c06",
+        "description": "Claude policy control",
+        "version": "6.0.0"
+      },
+      "origin": {
+        "kind": "policy"
+      },
+      "enabled": "on",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "Claude policy control",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "managed",
+            "path": "/managed/claude/skills/c06"
+          }
+        ]
+      }
+    },
+    {
+      "name": "x01",
+      "tool": "codex",
+      "scope": "system",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/etc/codex/skills/x01",
+      "realpath": "/etc/codex/skills/x01",
+      "root": "/etc/codex/skills",
+      "frontmatter": {
+        "name": "x01",
+        "description": "Codex system skill",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "Codex system skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "system",
+            "path": "/etc/codex/skills/x01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "x02",
+      "tool": "codex",
+      "scope": "user",
+      "mode": "dev",
+      "placement": "symlink",
+      "path": "/home/alice/.agents/skills/x02",
+      "realpath": "/work/skills/x02",
+      "root": "/home/alice/.agents/skills",
+      "frontmatter": {
+        "name": "x02",
+        "description": "Codex user development skill",
+        "version": "2.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "off",
+      "source": "/work/skills/x02",
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "Codex user development skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.agents/skills/x02"
+          }
+        ]
+      }
+    },
+    {
+      "name": "x04",
+      "tool": "codex",
+      "scope": "user",
+      "mode": "pinned",
+      "placement": "symlink",
+      "path": "/home/alice/.codex/skills/x04",
+      "realpath": "/data/skillsmith/store/x04",
+      "root": "/home/alice/.codex/skills",
+      "frontmatter": {
+        "name": "x04",
+        "description": "Codex pinned user skill",
+        "version": "4.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": "github.com/acme/x04",
+      "revision": "rev-x04",
+      "store": "/data/skillsmith/store/x04",
+      "verification": "warned",
+      "description": "Codex pinned user skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.codex/skills/x04"
+          }
+        ]
+      }
+    },
+    {
+      "name": "x06",
+      "tool": "codex",
+      "scope": "user",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/home/alice/.codex/skills/x06",
+      "realpath": "/home/alice/.codex/skills/x06",
+      "root": "/home/alice/.codex/skills",
+      "frontmatter": {
+        "name": "x06",
+        "description": "Codex unmanaged plugin skill",
+        "version": "6.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "codex-extra@community",
+        "pluginVersion": "6.0.0",
+        "pluginScope": "user"
+      },
+      "enabled": "on",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "Codex unmanaged plugin skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.codex/skills/x06"
+          }
+        ]
+      }
+    },
+    {
+      "name": "x03",
+      "tool": "codex",
+      "scope": "project",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/repo/.agents/skills/x03",
+      "realpath": "/repo/.agents/skills/x03",
+      "root": "/repo/.agents/skills",
+      "frontmatter": null,
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "unset",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": null,
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.agents/skills/x03"
+          }
+        ]
+      }
+    },
+    {
+      "name": "x05",
+      "tool": "codex",
+      "scope": "project",
+      "mode": "pinned",
+      "placement": "copy",
+      "path": "/repo/.agents/skills/x05",
+      "realpath": "/repo/.agents/skills/x05",
+      "root": "/repo/.agents/skills",
+      "frontmatter": {
+        "name": "x05",
+        "description": "Codex plugin project skill",
+        "version": "5.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "codex-pack@community",
+        "pluginVersion": "5.0.0",
+        "pluginScope": "project"
+      },
+      "enabled": "off",
+      "source": "github.com/acme/x05",
+      "revision": "rev-x05",
+      "store": "/data/skillsmith/store/x05",
+      "verification": "skipped",
+      "description": "Codex plugin project skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.agents/skills/x05"
+          }
+        ]
+      }
+    },
+    {
+      "name": "k01",
+      "tool": "kilo-code",
+      "scope": "user",
+      "mode": "pinned",
+      "placement": "copy",
+      "path": "/home/alice/.kilo/skills/k01",
+      "realpath": "/home/alice/.kilo/skills/k01",
+      "root": "/home/alice/.kilo/skills",
+      "frontmatter": {
+        "name": "k01",
+        "description": "Kilo pinned user skill",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": "github.com/acme/k01",
+      "revision": "rev-k01",
+      "store": "/data/skillsmith/store/k01",
+      "verification": "passed",
+      "description": "Kilo pinned user skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.kilo/skills/k01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "k03",
+      "tool": "kilo-code",
+      "scope": "user",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/home/alice/.kilo/skills/k03",
+      "realpath": "/home/alice/.kilo/skills/k03",
+      "root": "/home/alice/.kilo/skills",
+      "frontmatter": {
+        "name": "k03",
+        "description": "Kilo plugin skill",
+        "version": "3.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "kilo-tools@community",
+        "pluginVersion": "3.0.0",
+        "pluginScope": "user"
+      },
+      "enabled": "off",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "Kilo plugin skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.kilo/skills/k03"
+          }
+        ]
+      }
+    },
+    {
+      "name": "k06",
+      "tool": "kilo-code",
+      "scope": "user",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/home/alice/.kilo/skills/k06",
+      "realpath": "/home/alice/.kilo/skills/k06",
+      "root": "/home/alice/.kilo/skills",
+      "frontmatter": null,
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": null,
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.kilo/skills/k06"
+          }
+        ]
+      }
+    },
+    {
+      "name": "k02",
+      "tool": "kilo-code",
+      "scope": "project",
+      "mode": "dev",
+      "placement": "symlink",
+      "path": "/repo/.kilo/skills/k02",
+      "realpath": "/work/skills/k02",
+      "root": "/repo/.kilo/skills",
+      "frontmatter": {
+        "name": "k02",
+        "description": "Kilo project development skill",
+        "version": "2.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "unset",
+      "source": "/work/skills/k02",
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "Kilo project development skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.kilo/skills/k02"
+          }
+        ]
+      }
+    },
+    {
+      "name": "k04",
+      "tool": "kilo-code",
+      "scope": "project",
+      "mode": "pinned",
+      "placement": "symlink",
+      "path": "/repo/.kilo/skills/k04",
+      "realpath": "/data/skillsmith/store/k04",
+      "root": "/repo/.kilo/skills",
+      "frontmatter": {
+        "name": "k04",
+        "description": "Kilo store-linked project skill",
+        "version": "4.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": "github.com/acme/k04",
+      "revision": "rev-k04",
+      "store": "/data/skillsmith/store/k04",
+      "verification": "warned",
+      "description": "Kilo store-linked project skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.kilo/skills/k04"
+          }
+        ]
+      }
+    },
+    {
+      "name": "k05",
+      "tool": "kilo-code",
+      "scope": "project",
+      "mode": "pinned",
+      "placement": "copy",
+      "path": "/repo/.kilo/skills/k05",
+      "realpath": "/repo/.kilo/skills/k05",
+      "root": "/repo/.kilo/skills",
+      "frontmatter": {
+        "name": "k05",
+        "description": "Kilo pinned plugin skill",
+        "version": "5.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "kilo-pack@community",
+        "pluginVersion": "5.0.0",
+        "pluginScope": "project"
+      },
+      "enabled": "unset",
+      "source": "github.com/acme/k05",
+      "revision": "rev-k05",
+      "store": "/data/skillsmith/store/k05",
+      "verification": "skipped",
+      "description": "Kilo pinned plugin skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.kilo/skills/k05"
+          }
+        ]
+      }
+    },
+    {
+      "name": "o01",
+      "tool": "opencode",
+      "scope": "user",
+      "mode": "pinned",
+      "placement": "symlink",
+      "path": "/home/alice/.config/opencode/skills/o01",
+      "realpath": "/data/skillsmith/store/o01",
+      "root": "/home/alice/.config/opencode/skills",
+      "frontmatter": {
+        "name": "o01",
+        "description": "OpenCode pinned user skill",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": "github.com/acme/o01",
+      "revision": "rev-o01",
+      "store": "/data/skillsmith/store/o01",
+      "verification": "passed",
+      "description": "OpenCode pinned user skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.config/opencode/skills/o01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "o03",
+      "tool": "opencode",
+      "scope": "user",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/home/alice/.config/opencode/skills/o03",
+      "realpath": "/home/alice/.config/opencode/skills/o03",
+      "root": "/home/alice/.config/opencode/skills",
+      "frontmatter": {
+        "name": "o03",
+        "description": "OpenCode plugin skill",
+        "version": "3.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "opencode-tools@community",
+        "pluginVersion": "3.0.0",
+        "pluginScope": "user"
+      },
+      "enabled": "unset",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "OpenCode plugin skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.config/opencode/skills/o03"
+          }
+        ]
+      }
+    },
+    {
+      "name": "o05",
+      "tool": "opencode",
+      "scope": "user",
+      "mode": "pinned",
+      "placement": "symlink",
+      "path": "/home/alice/.config/opencode/skills/o05",
+      "realpath": "/data/skillsmith/store/o05",
+      "root": "/home/alice/.config/opencode/skills",
+      "frontmatter": {
+        "name": "o05",
+        "description": "OpenCode plugin pinned skill",
+        "version": "5.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "opencode-pack@community",
+        "pluginVersion": "5.0.0",
+        "pluginScope": "user"
+      },
+      "enabled": "off",
+      "source": "github.com/acme/o05",
+      "revision": "rev-o05",
+      "store": "/data/skillsmith/store/o05",
+      "verification": "skipped",
+      "description": "OpenCode plugin pinned skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "user",
+            "path": "/home/alice/.config/opencode/skills/o05"
+          }
+        ]
+      }
+    },
+    {
+      "name": "o02",
+      "tool": "opencode",
+      "scope": "project",
+      "mode": "dev",
+      "placement": "symlink",
+      "path": "/repo/.opencode/skills/o02",
+      "realpath": "/work/skills/o02",
+      "root": "/repo/.opencode/skills",
+      "frontmatter": {
+        "name": "o02",
+        "description": "OpenCode project development skill",
+        "version": "2.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "off",
+      "source": "/work/skills/o02",
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": "OpenCode project development skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.opencode/skills/o02"
+          }
+        ]
+      }
+    },
+    {
+      "name": "o04",
+      "tool": "opencode",
+      "scope": "project",
+      "mode": "pinned",
+      "placement": "copy",
+      "path": "/repo/.opencode/skills/o04",
+      "realpath": "/repo/.opencode/skills/o04",
+      "root": "/repo/.opencode/skills",
+      "frontmatter": {
+        "name": "o04",
+        "description": "OpenCode pinned project skill",
+        "version": "4.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": "github.com/acme/o04",
+      "revision": "rev-o04",
+      "store": "/data/skillsmith/store/o04",
+      "verification": "warned",
+      "description": "OpenCode pinned project skill",
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.opencode/skills/o04"
+          }
+        ]
+      }
+    },
+    {
+      "name": "o06",
+      "tool": "opencode",
+      "scope": "project",
+      "mode": "unmanaged",
+      "placement": "copy",
+      "path": "/repo/.opencode/skills/o06",
+      "realpath": "/repo/.opencode/skills/o06",
+      "root": "/repo/.opencode/skills",
+      "frontmatter": null,
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "source": null,
+      "revision": null,
+      "store": null,
+      "verification": "unrecorded",
+      "description": null,
+      "visibility": {
+        "state": "unique",
+        "winner": null,
+        "members": [
+          {
+            "scope": "project",
+            "path": "/repo/.opencode/skills/o06"
+          }
+        ]
+      }
+    }
+  ],
+  "collisionGroups": []
+}

@@ -1,0 +1,309 @@
+{
+  "schemaVersion": 2,
+  "kind": "skillsmith.commands",
+  "selection": {
+    "source": "bounded-default",
+    "tools": [
+      "claude-code",
+      "codex",
+      "kilo-code",
+      "opencode"
+    ],
+    "scopes": [
+      "user",
+      "project"
+    ],
+    "filters": {
+      "names": [],
+      "enabled": null
+    },
+    "outcome": "selected"
+  },
+  "summary": {
+    "total": 16
+  },
+  "entries": [
+    {
+      "name": "alpha",
+      "tool": "claude-code",
+      "scope": "user",
+      "path": "/home/alice/.claude/commands/alpha.md",
+      "realpath": "/home/alice/.claude/commands/alpha.md",
+      "root": "/home/alice/.claude/commands",
+      "frontmatter": {
+        "description": "Run alpha checks",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Run alpha checks"
+    },
+    {
+      "name": "beta-tools:beta",
+      "tool": "claude-code",
+      "scope": "user",
+      "path": "/plugins/beta/commands/beta.md",
+      "realpath": "/store/beta/commands/beta.md",
+      "root": "/plugins/beta/commands",
+      "frontmatter": {
+        "description": "Run beta checks",
+        "version": "2.1.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "beta-tools@marketplace",
+        "pluginVersion": "2.1.0",
+        "pluginScope": "user"
+      },
+      "enabled": "off",
+      "description": "Run beta checks"
+    },
+    {
+      "name": "deploy",
+      "tool": "claude-code",
+      "scope": "project",
+      "path": "/repo/.claude/commands/deploy.md",
+      "realpath": "/repo/.claude/commands/deploy.md",
+      "root": "/repo/.claude/commands",
+      "frontmatter": {
+        "description": "Deploy the service",
+        "version": "3.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Deploy the service"
+    },
+    {
+      "name": "release-kit:release",
+      "tool": "claude-code",
+      "scope": "project",
+      "path": "/plugins/release/commands/release.md",
+      "realpath": "/store/release/commands/release.md",
+      "root": "/plugins/release/commands",
+      "frontmatter": {
+        "description": "Prepare a release",
+        "version": "3.1.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "release-kit@marketplace",
+        "pluginVersion": "3.1.0",
+        "pluginScope": "project"
+      },
+      "enabled": "unset",
+      "description": "Prepare a release"
+    },
+    {
+      "name": "audit",
+      "tool": "codex",
+      "scope": "user",
+      "path": "/home/alice/.codex/prompts/audit.md",
+      "realpath": "/home/alice/.codex/prompts/audit.md",
+      "root": "/home/alice/.codex/prompts",
+      "frontmatter": {
+        "description": "Audit the workspace",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Audit the workspace"
+    },
+    {
+      "name": "lint",
+      "tool": "codex",
+      "scope": "user",
+      "path": "/home/alice/.codex/prompts/lint.md",
+      "realpath": "/home/alice/.codex/prompts/lint.md",
+      "root": "/home/alice/.codex/prompts",
+      "frontmatter": null,
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": null
+    },
+    {
+      "name": "audit",
+      "tool": "codex",
+      "scope": "project",
+      "path": "/repo/.codex/prompts/audit.md",
+      "realpath": "/repo/.codex/prompts/audit.md",
+      "root": "/repo/.codex/prompts",
+      "frontmatter": {
+        "description": "Audit project changes",
+        "version": "1.1.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Audit project changes"
+    },
+    {
+      "name": "test",
+      "tool": "codex",
+      "scope": "project",
+      "path": "/repo/.codex/prompts/test.md",
+      "realpath": "/repo/.codex/prompts/test.md",
+      "root": "/repo/.codex/prompts",
+      "frontmatter": {
+        "description": "Run the test suite",
+        "version": "1.2.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Run the test suite"
+    },
+    {
+      "name": "build",
+      "tool": "kilo-code",
+      "scope": "user",
+      "path": "/home/alice/.kilo/commands/build.md",
+      "realpath": "/home/alice/.kilo/commands/build.md",
+      "root": "/home/alice/.kilo/commands",
+      "frontmatter": {
+        "description": "Build user workspace",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Build user workspace"
+    },
+    {
+      "name": "format",
+      "tool": "kilo-code",
+      "scope": "user",
+      "path": "/plugins/formatter/commands/format.md",
+      "realpath": "/store/formatter/commands/format.md",
+      "root": "/plugins/formatter/commands",
+      "frontmatter": {
+        "description": "Format source files",
+        "version": "2.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "formatter@marketplace",
+        "pluginVersion": "2.0.0",
+        "pluginScope": "user"
+      },
+      "enabled": "off",
+      "description": "Format source files"
+    },
+    {
+      "name": "build",
+      "tool": "kilo-code",
+      "scope": "project",
+      "path": "/repo/.kilo/commands/build.md",
+      "realpath": "/repo/.kilo/commands/build.md",
+      "root": "/repo/.kilo/commands",
+      "frontmatter": {
+        "description": "Build the project",
+        "version": "1.3.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Build the project"
+    },
+    {
+      "name": "verify",
+      "tool": "kilo-code",
+      "scope": "project",
+      "path": "/repo/.kilo/commands/verify.md",
+      "realpath": "/repo/.kilo/commands/verify.md",
+      "root": "/repo/.kilo/commands",
+      "frontmatter": {
+        "description": "Verify the package",
+        "version": "1.4.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Verify the package"
+    },
+    {
+      "name": "audit",
+      "tool": "opencode",
+      "scope": "user",
+      "path": "/home/alice/.config/opencode/commands/audit.md",
+      "realpath": "/home/alice/.config/opencode/commands/audit.md",
+      "root": "/home/alice/.config/opencode/commands",
+      "frontmatter": {
+        "description": "Audit OpenCode state",
+        "version": "4.2.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Audit OpenCode state"
+    },
+    {
+      "name": "lint",
+      "tool": "opencode",
+      "scope": "user",
+      "path": "/plugins/quality/commands/lint.md",
+      "realpath": "/store/quality/commands/lint.md",
+      "root": "/plugins/quality/commands",
+      "frontmatter": {
+        "description": "Lint with quality rules",
+        "version": "5.2.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "quality@marketplace",
+        "pluginVersion": "5.2.0",
+        "pluginScope": "user"
+      },
+      "enabled": "unset",
+      "description": "Lint with quality rules"
+    },
+    {
+      "name": "format",
+      "tool": "opencode",
+      "scope": "project",
+      "path": "/repo/.opencode/commands/format.md",
+      "realpath": "/repo/.opencode/commands/format.md",
+      "root": "/repo/.opencode/commands",
+      "frontmatter": {
+        "description": "Format the project",
+        "version": "4.1.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Format the project"
+    },
+    {
+      "name": "ship",
+      "tool": "opencode",
+      "scope": "project",
+      "path": "/repo/.opencode/commands/ship.md",
+      "realpath": "/repo/.opencode/commands/ship.md",
+      "root": "/repo/.opencode/commands",
+      "frontmatter": {
+        "name": "ship",
+        "description": "Ship the release",
+        "version": "4.0.0"
+      },
+      "origin": {
+        "kind": "standalone"
+      },
+      "enabled": "on",
+      "description": "Ship the release"
+    }
+  ]
+}

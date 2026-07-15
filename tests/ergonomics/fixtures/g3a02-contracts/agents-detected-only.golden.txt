@@ -1,0 +1,21 @@
+# Tools detected
+
+## codex — one installation
+
+| Path | Version | Install method |
+|---|---|---|
+| /opt/codex\|stable | 1.2\|3 | npm-global |
+
+## kilo-code — multiple installations (2)
+
+| Path | Version | Install method |
+|---|---|---|
+| /opt/kilo/a | 10.0.0 | native-installer |
+| /opt/kilo/z | 2.0.0 | app-bundle |
+
+## opencode — multiple installations (2)
+
+| Path | Version | Install method |
+|---|---|---|
+| /opt/opencode | 0.1.0 | bun-global |
+| /opt/opencode nightly | 0.2 next | brew |
