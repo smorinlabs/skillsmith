@@ -3972,6 +3972,14 @@
         "packages/core/tests/planning/order.test.ts",
         "packages/core/tests/planning/types.test.ts",
         "packages/core/tests/public-api.test.ts",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/flip.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
+        "tests/ergonomics/fixtures/p1-ts10/reports.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
+        "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS01.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS02.test.ts"
       ],
@@ -4077,7 +4085,10 @@
         },
         "ready": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3B-01.md#ready-plan"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-01.md#ready-plan",
+            "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment"
+          ]
         },
         "test-first": {
           "status": "passed",
@@ -4123,7 +4134,8 @@
         "projects/p17/evidence/P17-G3B-01.md#minimal-implementation",
         "projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-01.md#refactor-review",
-        "projects/p17/evidence/P17-G3B-01.md#adversarial-review"
+        "projects/p17/evidence/P17-G3B-01.md#adversarial-review",
+        "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment"
       ]
     },
     {
@@ -18712,7 +18724,8 @@
         "projects/p17/evidence/P17-G3B-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G3B-01.md#implementation-ownership-amendment",
         "projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G3B-01.md#adversarial-review"
+        "projects/p17/evidence/P17-G3B-01.md#adversarial-review",
+        "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
@@ -18794,6 +18807,12 @@
         "packages/core/tests/planning/order.test.ts",
         "packages/core/tests/planning/types.test.ts",
         "packages/core/tests/public-api.test.ts",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/flip.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
+        "tests/ergonomics/fixtures/p1-ts10/reports.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
+        "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS01.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS02.test.ts"
       ]
@@ -18833,7 +18852,8 @@
         "projects/p17/evidence/P17-G3B-01.md#recovery-race-ownership-amendment",
         "projects/p17/evidence/P17-G3B-01.md#dev-source-compatibility-ownership-amendment",
         "projects/p17/evidence/P17-G3B-01.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G3B-01.md#adversarial-review"
+        "projects/p17/evidence/P17-G3B-01.md#adversarial-review",
+        "projects/p17/evidence/P17-G3B-01.md#terminal-full-gate-failure-and-remediation-ownership-amendment"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:dev", "COMMAND:promote", "D-009", "EWP-CF-002", "EWP-CF-025"],
@@ -18912,7 +18932,9 @@
         "packages/core/tests/place/plan.test.ts",
         "packages/core/tests/place/roundtrip.test.ts",
         "packages/core/tests/place/run.test.ts",
-        "packages/core/tests/place/swap.test.ts"
+        "packages/core/tests/place/swap.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts"
       ]
     },
     {
