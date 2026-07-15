@@ -120,7 +120,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:list | P17-G3A-02 | planned | required-pr |
 | COMMAND:plan | P17-G4B-01 | planned | required-pr |
 | COMMAND:promote | P17-G3B-01 | planned | required-pr |
-| COMMAND:status | P17-G3A-01 | planned | required-pr |
+| COMMAND:status | P17-G3A-01 | validated | required-pr |
 | COMMAND:sync | P17-G5-01 | planned | required-pr |
 | COMMAND:undo | P17-G5-03 | planned | required-pr |
 | COMMAND:uninstall | P17-G4A-01 | planned | required-pr |
@@ -141,7 +141,7 @@ Tracked entities: **425** across **45** change groups.
 | P0-07 | P17-G2-05 | signed-off | required-pr |
 | P0-08 | P17-G2-05 | signed-off | required-pr |
 | P1-01 | P17-G3A-02 | planned | required-pr |
-| P1-02 | P17-G3A-01 | planned | required-pr |
+| P1-02 | P17-G3A-01 | validated | required-pr |
 | P1-03 | P17-G3A-02 | planned | required-pr |
 | P1-04 | P17-G5-05 | planned | required-pr |
 | P1-05 | P17-G4A-03 | planned | required-pr |
@@ -226,7 +226,7 @@ Tracked entities: **425** across **45** change groups.
 | D-005 | P17-G4A-02 | planned | required-pr |
 | D-006 | P17-G4A-01 | planned | required-pr |
 | D-007 | P17-G5-01 | planned | required-pr |
-| D-008 | P17-G3A-01 | planned | required-pr |
+| D-008 | P17-G3A-01 | validated | required-pr |
 | D-009 | P17-G3B-01 | planned | required-pr |
 | D-010 | P17-G3B-03 | planned | required-pr |
 | D-011 | P17-G5-02 | planned | required-pr |
@@ -823,9 +823,9 @@ Downstream coverage obligations: none.
 - [x] P17-G3A-01:mapped _(passed)_
 - [x] P17-G3A-01:ready _(passed)_
 - [x] P17-G3A-01:test-first _(passed)_
-- [ ] P17-G3A-01:minimal-implementation _(pending)_
-- [ ] P17-G3A-01:targeted-green _(pending)_
-- [ ] P17-G3A-01:impacted-green _(pending)_
+- [x] P17-G3A-01:minimal-implementation _(passed)_
+- [x] P17-G3A-01:targeted-green _(passed)_
+- [x] P17-G3A-01:impacted-green _(passed)_
 - [ ] P17-G3A-01:refactor _(pending)_
 - [ ] P17-G3A-01:adversarial-review _(pending)_
 - [ ] P17-G3A-01:traceability-closure _(pending)_
@@ -833,19 +833,19 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
-- [ ] **COMMAND:status** — Discover — How do desired, locked, ledger, and live states relate? _(command; planned)_
-- [ ] **D-008** — Dedicated correlated status _(decision; planned)_
-- [ ] **EWP-CMD-STATUS-TS01** — manifest-only, lock-only, ledger-only, live-only state products. _(command-test; failing)_
-- [ ] **EWP-CMD-STATUS-TS02** — dev, pinned, store-linked, unmanaged, broken, and absent classification. _(command-test; failing)_
-- [ ] **EWP-CMD-STATUS-TS03** — revision/content/source drift and verify-state reporting. _(command-test; failing)_
-- [ ] **EWP-CMD-STATUS-TS04** — pending/committed journal, version-1 migration-pending without rewrite, _(command-test; failing)_
-- [ ] **EWP-CMD-STATUS-TS05** — target/tool/scope filters, cross-scope shadowing, and project identity _(command-test; failing)_
-- [ ] **EWP-CMD-STATUS-TS06** — check exit and versioned JSON. _(command-test; failing)_
-- [ ] **EWP-P3A-T02** — Version-discriminating, non-mutating ledger reader plus _(phase-task; red)_
-- [ ] **EWP-P3A-T03** — Status command. _(phase-task; red)_
-- [ ] **EWP-P3A-TS02** — Status state-product matrix including missing, version 1, version 2, _(phase-test; failing)_
-- [ ] **EWP-P3A-TS04** — Realistic mixed-fleet inspection fixture. _(phase-test; failing)_
-- [ ] **P1-02** — Ledger-aware `status` _(recommendation; planned)_
+- [ ] **COMMAND:status** — Discover — How do desired, locked, ledger, and live states relate? _(command; validated)_
+- [ ] **D-008** — Dedicated correlated status _(decision; validated)_
+- [ ] **EWP-CMD-STATUS-TS01** — manifest-only, lock-only, ledger-only, live-only state products. _(command-test; passing)_
+- [ ] **EWP-CMD-STATUS-TS02** — dev, pinned, store-linked, unmanaged, broken, and absent classification. _(command-test; passing)_
+- [ ] **EWP-CMD-STATUS-TS03** — revision/content/source drift and verify-state reporting. _(command-test; passing)_
+- [ ] **EWP-CMD-STATUS-TS04** — pending/committed journal, version-1 migration-pending without rewrite, _(command-test; passing)_
+- [ ] **EWP-CMD-STATUS-TS05** — target/tool/scope filters, cross-scope shadowing, and project identity _(command-test; passing)_
+- [ ] **EWP-CMD-STATUS-TS06** — check exit and versioned JSON. _(command-test; passing)_
+- [ ] **EWP-P3A-T02** — Version-discriminating, non-mutating ledger reader plus _(phase-task; green)_
+- [ ] **EWP-P3A-T03** — Status command. _(phase-task; green)_
+- [ ] **EWP-P3A-TS02** — Status state-product matrix including missing, version 1, version 2, _(phase-test; passing)_
+- [ ] **EWP-P3A-TS04** — Realistic mixed-fleet inspection fixture. _(phase-test; passing)_
+- [ ] **P1-02** — Ledger-aware `status` _(recommendation; validated)_
 
 ## P17-G3A-02 — Deterministic agents/list/commands inventory, duplicates, and capability presentation
 
