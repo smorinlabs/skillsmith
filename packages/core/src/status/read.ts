@@ -1,4 +1,4 @@
-import { basename, dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { types as utilTypes } from 'node:util';
 import { toolRegistry } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS } from '../agents/types.ts';
@@ -182,7 +182,9 @@ const isNormalizedAbsolute = (value: unknown): value is string =>
 
 const isWithin = (root: string, candidate: string): boolean => {
   const offset = relative(resolve(root), resolve(candidate));
-  return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset));
+  return (
+    offset === '' || (offset !== '..' && !offset.startsWith(`..${sep}`) && !isAbsolute(offset))
+  );
 };
 
 const siblingLockPath = (manifestPath: string): string => {
@@ -1092,6 +1094,15 @@ export const readStatus = async (
       pathKind: (path: string) => tracker.track(() => ports.pathKind(path)),
       readBytes: (path: string) => tracker.track(() => ports.readBytes(path)),
     };
+    if (request.projectPlacement.state === 'selected') {
+      const canonicalEffectiveCwd = await tracker.track(() =>
+        ports.realpath(request.projectContext.effectiveCwd),
+      );
+      if (tracker.cancelled(request.signal)) return err(CANCELLED);
+      if (canonicalEffectiveCwd !== request.projectPlacement.canonicalCwd) {
+        return err(INVALID_REQUEST);
+      }
+    }
     let manifest = null;
     let lock = null;
     if (request.artifactSelection.state === 'selected') {

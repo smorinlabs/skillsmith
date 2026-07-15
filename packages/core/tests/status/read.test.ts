@@ -1299,6 +1299,17 @@ describe('G3A-01 focused status reader', () => {
         signal: controller.signal,
       },
       {
+        ...request(selected('explicit', MANIFEST_PATH, LOCK_PATH)),
+        projectPlacement: {
+          state: 'selected',
+          source: 'shared-project',
+          canonicalCwd: '/repo/..cache',
+          root: ROOT,
+          identity: ROOT,
+        },
+        signal: controller.signal,
+      },
+      {
         ...request(selected('user-default', userManifest, userLock)),
         signal: controller.signal,
       },
@@ -1418,6 +1429,85 @@ describe('G3A-01 focused status reader', () => {
         ok: false,
         error: { reason: 'invalid-request' },
       });
+    }
+  });
+
+  test('revalidates canonical cwd before out-of-context I/O and preserves gate errors', async () => {
+    const readStatus = await loadReader();
+    const nonGitContext: ProjectContext = {
+      invocationCwd: ROOT,
+      effectiveCwd: ROOT,
+      projectRoot: null,
+      projectIdentity: null,
+      projectKind: 'non-git',
+      discoveredConfigPath: null,
+      explicitConfigPath: null,
+    };
+    const candidates: readonly Readonly<StatusReadRequest>[] = [
+      request(),
+      {
+        ...request(),
+        projectContext: nonGitContext,
+        projectPlacement: {
+          state: 'selected',
+          source: 'explicit-non-git',
+          canonicalCwd: ROOT,
+          root: ROOT,
+          identity: ROOT,
+        },
+        scopes: ['project'],
+        scopeSelectionSource: 'explicit',
+      },
+    ];
+    const readAtGate = async (
+      candidate: Readonly<StatusReadRequest>,
+      canonicalize: (path: string) => Promise<string>,
+    ) => {
+      const base = readPorts();
+      let canonicalCalls = 0;
+      let outOfContextCalls = 0;
+      const ports = new Proxy(base, {
+        get(target, property, receiver) {
+          if (property === 'realpath') {
+            return async (path: string) => {
+              canonicalCalls += 1;
+              return canonicalize(path);
+            };
+          }
+          const value = Reflect.get(target, property, receiver);
+          if (typeof value !== 'function') return value;
+          return (...args: never[]) => {
+            outOfContextCalls += 1;
+            return (value as (...values: never[]) => unknown)(...args);
+          };
+        },
+      });
+      const result = await readStatus(ports, candidate);
+      return { result, canonicalCalls, outOfContextCalls };
+    };
+
+    for (const candidate of candidates) {
+      const forged = await readAtGate(candidate, async () => '/foreign/canonical-cwd');
+      expect(forged.result).toMatchObject({
+        ok: false,
+        error: { reason: 'invalid-request' },
+      });
+      expect(forged.canonicalCalls).toBe(1);
+      expect(forged.outOfContextCalls).toBe(0);
+    }
+
+    const failures = [
+      [Object.assign(new Error('cancelled gate'), { code: 'ABORT_ERR' }), 'cancelled'],
+      [Object.assign(new Error('denied gate'), { code: 'EACCES' }), 'permission-denied'],
+      [new Error('failed gate'), 'observation-failed'],
+    ] as const;
+    for (const [failure, reason] of failures) {
+      const mapped = await readAtGate(request(), async () => {
+        throw failure;
+      });
+      expect(mapped.result).toMatchObject({ ok: false, error: { reason } });
+      expect(mapped.canonicalCalls).toBe(1);
+      expect(mapped.outOfContextCalls).toBe(0);
     }
   });
 
@@ -1723,6 +1813,55 @@ describe('G3A-01 focused status reader', () => {
     expect(journal === undefined || journal.state === 'none' ? [] : journal.retention).toHaveLength(
       1,
     );
+
+    const missingTargetPair: LedgerPairV1Dto = {
+      ...pair,
+      journal: {
+        ...(pair.journal as NonNullable<LedgerPairV1Dto['journal']>),
+        txId: 'tx:pinned-symlink-to-dev',
+        before: {
+          mode: 'pinned',
+          storePath,
+          contentHash: CONTENT_HASH,
+          liveKind: 'symlink',
+        },
+      },
+    };
+    const missingTargetReport = unwrapJoin(
+      joinInput({
+        ledger: artifactPresent(
+          'ledger',
+          emptyLedgerModel({ skills: { alpha: { tools: { codex: missingTargetPair } } } }),
+          2,
+        ),
+        live: [
+          {
+            ...liveInput('alpha', path),
+            physicalClass: 'dev',
+            observation: {
+              path,
+              realpath: '/source/alpha',
+              nodeKind: 'symlink',
+              linkTarget: '/source/alpha',
+              skillFile: 'valid',
+            },
+          },
+        ],
+        retention: [{ ...retention, transactionId: 'tx:pinned-symlink-to-dev' }],
+      }),
+    );
+    expect(missingTargetReport.entries[0]?.placements[0]?.journal).toMatchObject({
+      state: 'committed',
+      reverseEligibility: 'eligible',
+      retention: [
+        {
+          role: 'store',
+          structural: { expected: { kind: 'directory', linkTarget: null } },
+          state: 'satisfied',
+        },
+      ],
+      remediation: { reverse: expect.any(Array) },
+    });
   });
 
   test('uses literal structure alone for recoverable pinned legacy symlinks', () => {
@@ -1861,6 +2000,48 @@ describe('G3A-01 focused status reader', () => {
         backupPath: missingTargetBackup,
       },
     };
+    const backedUpPath = join(CODEX_ROOT, 'missing-target-backed-up');
+    const backedUpBackup = `${backedUpPath}.backup`;
+    const backedUpPair: LedgerPairV1Dto = {
+      ...pairFor('missing-target-backed-up'),
+      placementPath: backedUpPath,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:missing-target-backed-up',
+        phase: 'backed-up',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: null,
+        before: {
+          mode: 'pinned',
+          storePath: join(DATA_ROOT, 'store', 'missing-target-backed-up'),
+          contentHash: CONTENT_HASH,
+          liveKind: 'symlink',
+        },
+        stagingPath: `${backedUpPath}.stage`,
+        backupPath: backedUpBackup,
+      },
+    };
+    const livePath = join(CODEX_ROOT, 'missing-target-live');
+    const liveBackup = `${livePath}.backup`;
+    const livePair: LedgerPairV1Dto = {
+      ...pairFor('missing-target-live'),
+      placementPath: livePath,
+      journal: {
+        op: 'uninstall',
+        txId: 'tx:missing-target-live',
+        phase: 'live',
+        startedAt: '2026-07-14T00:00:00.000Z',
+        completedAt: null,
+        before: {
+          mode: 'pinned',
+          storePath: join(DATA_ROOT, 'store', 'missing-target-live'),
+          contentHash: CONTENT_HASH,
+          liveKind: 'symlink',
+        },
+        stagingPath: `${livePath}.stage`,
+        backupPath: liveBackup,
+      },
+    };
     const report = unwrapJoin(
       joinInput({
         ledger: artifactPresent(
@@ -1869,6 +2050,8 @@ describe('G3A-01 focused status reader', () => {
             skills: {
               'absent-before': { tools: { codex: absentPair } },
               'missing-target': { tools: { codex: missingTargetPair } },
+              'missing-target-backed-up': { tools: { codex: backedUpPair } },
+              'missing-target-live': { tools: { codex: livePair } },
             },
           }),
           2,
@@ -1892,6 +2075,24 @@ describe('G3A-01 focused status reader', () => {
             contentHash: { state: 'unverified', digest: null },
             node: { state: 'observed', kind: 'symlink', linkTarget: '' },
           },
+          {
+            transactionId: 'tx:missing-target-backed-up',
+            resourceId: null,
+            path: backedUpBackup,
+            pathState: 'satisfied',
+            repositoryRevision: { state: 'unverified', digest: null },
+            contentHash: { state: 'unverified', digest: null },
+            node: { state: 'observed', kind: 'symlink', linkTarget: '/observed/backed-up' },
+          },
+          {
+            transactionId: 'tx:missing-target-live',
+            resourceId: null,
+            path: liveBackup,
+            pathState: 'satisfied',
+            repositoryRevision: { state: 'unverified', digest: null },
+            contentHash: { state: 'unverified', digest: null },
+            node: { state: 'observed', kind: 'symlink', linkTarget: '/observed/live' },
+          },
         ],
       }),
     );
@@ -1907,9 +2108,24 @@ describe('G3A-01 focused status reader', () => {
       state: 'committed',
       before: 'pinned',
       reverseEligibility: 'not-reversible',
-      retention: [{ structural: { expected: { kind: 'symlink' } } }],
+      retention: [{ structural: { expected: { kind: 'symlink', linkTarget: null } } }],
       remediation: { reverse: null },
     });
+    for (const name of ['missing-target-backed-up', 'missing-target-live']) {
+      expect(journals[name], name).toMatchObject({
+        state: 'pending',
+        abortEligibility: 'not-reversible',
+        retention: [
+          {
+            structural: {
+              state: 'mismatch',
+              expected: { kind: 'symlink', linkTarget: null },
+            },
+          },
+        ],
+        remediation: { abort: null },
+      });
+    }
   });
 
   test('includes legacy path state in the aggregate before mapping to status@1', () => {
@@ -2838,6 +3054,32 @@ describe('G3A-01 focused status reader', () => {
       ),
     });
     expect(planStatusRetention(multiInput)).toEqual([]);
+
+    const sameIdAlpha = retained('same-id-alpha');
+    const sameIdBeta = retained('same-id-beta');
+    const sharedId = 'tx:repeated-history-id';
+    const sameIdBetaJournal = logicalJournal({
+      name: 'same-id-beta',
+      path: join(CODEX_ROOT, 'same-id-beta'),
+      transactionId: sharedId,
+      phase: 'committed',
+      retained: [sameIdBeta],
+      reversibility: reversibilityFor([sameIdBeta]),
+    });
+    const sameIdAlphaJournal = logicalJournal({
+      name: 'same-id-alpha',
+      path: join(CODEX_ROOT, 'same-id-alpha'),
+      transactionId: sharedId,
+      phase: 'committed',
+      retained: [sameIdAlpha],
+      reversibility: reversibilityFor([sameIdAlpha]),
+    });
+    expect(
+      await run(
+        emptyLedgerModel({ history: [sameIdBetaJournal, sameIdAlphaJournal] }),
+        new Set([sameIdAlpha.path, sameIdBeta.path]),
+      ),
+    ).toEqual([sameIdAlpha.path, sameIdBeta.path]);
 
     const alphaFirst = retained('alpha-signed-first');
     const alphaSecond = retained('alpha-signed-second');

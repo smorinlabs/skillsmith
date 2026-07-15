@@ -1924,9 +1924,85 @@ describe('EWP-CMD-STATUS-TS04', () => {
       backedUpPinnedNotReversibleRow.journal as UnknownRecord;
     backedUpPinnedNotReversibleJournal.abortEligibility = 'not-reversible';
     (backedUpPinnedNotReversibleJournal.remediation as UnknownRecord).abort = null;
+    expect(
+      statusV1Codec.validate(backedUpPinnedNotReversible).ok,
+      'recorded pinned source eligibility comes from retained state',
+    ).toBeFalse();
+
+    const backedUpPinnedUnknownTarget = structuredClone(backedUpPinnedNotReversible);
+    const backedUpPinnedUnknownTargetRow = placementAt(
+      entryNamed(backedUpPinnedUnknownTarget, 'shadowed-fleet'),
+      1,
+      'backed-up pinned legacy unrecorded target',
+    );
+    const backedUpPinnedUnknownTargetJournal =
+      backedUpPinnedUnknownTargetRow.journal as UnknownRecord;
+    const backedUpPinnedUnknownTargetRetention = (
+      backedUpPinnedUnknownTargetJournal.retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    backedUpPinnedUnknownTargetRetention.structural = {
+      state: 'mismatch',
+      expected: { kind: 'symlink', linkTarget: null },
+      observed: { kind: 'symlink', linkTarget: '/fixture/source' },
+    };
+    backedUpPinnedUnknownTargetRetention.state = 'mismatch';
+    const validUnknownTarget = validateDto(
+      backedUpPinnedUnknownTarget,
+      'unrecorded pinned symlink target is conservatively not reversible',
+    );
+    expect(renderStatusHuman(validUnknownTarget)).toContain(
+      'expected symlink -> unrecorded; observed symlink -> "/fixture/source"',
+    );
+    const backedUpPinnedUnknownTargetAggregate = structuredClone(backedUpPinnedUnknownTarget);
+    const backedUpPinnedUnknownTargetAggregateRow = placementAt(
+      entryNamed(backedUpPinnedUnknownTargetAggregate, 'shadowed-fleet'),
+      1,
+      'backed-up pinned legacy unrecorded target aggregate',
+    );
+    const backedUpPinnedUnknownTargetAggregateJournal =
+      backedUpPinnedUnknownTargetAggregateRow.journal as UnknownRecord;
+    backedUpPinnedUnknownTargetAggregateJournal.abortEligibility = 'retention-mismatch';
+    (backedUpPinnedUnknownTargetAggregateRow.facts as UnknownRecord[]).push({
+      code: 'retention-mismatch',
+      impact: 'drift',
+      subject: 'journal',
+      expected: JSON.stringify([
+        null,
+        (
+          (
+            backedUpPinnedUnknownTargetAggregateJournal.retention as UnknownRecord[]
+          )[0] as UnknownRecord
+        ).path,
+      ]),
+      actual: 'mismatch',
+    });
+    expect(
+      statusV1Codec.validate(backedUpPinnedUnknownTargetAggregate).ok,
+      'unrecorded pinned symlink target cannot use aggregate-derived eligibility',
+    ).toBeFalse();
+
+    const livePinnedNotReversible = structuredClone(backedUpPinnedNotReversible);
+    const livePinnedNotReversibleRow = placementAt(
+      entryNamed(livePinnedNotReversible, 'shadowed-fleet'),
+      1,
+      'live pinned legacy recorded target',
+    );
+    (livePinnedNotReversibleRow.journal as UnknownRecord).phase = 'live';
+    expect(
+      statusV1Codec.validate(livePinnedNotReversible).ok,
+      'live recorded pinned source eligibility comes from retained state',
+    ).toBeFalse();
+
+    const livePinnedUnknownTarget = structuredClone(backedUpPinnedUnknownTarget);
+    const livePinnedUnknownTargetRow = placementAt(
+      entryNamed(livePinnedUnknownTarget, 'shadowed-fleet'),
+      1,
+      'live pinned legacy unrecorded target',
+    );
+    (livePinnedUnknownTargetRow.journal as UnknownRecord).phase = 'live';
     validateDto(
-      backedUpPinnedNotReversible,
-      'hidden pinned source failure is conservatively not reversible',
+      livePinnedUnknownTarget,
+      'live unrecorded pinned symlink target is conservatively not reversible',
     );
 
     const backedUpDevNotReversible = structuredClone(backedUpPinnedNotReversible);
@@ -1942,15 +2018,42 @@ describe('EWP-CMD-STATUS-TS04', () => {
     ).toBeFalse();
 
     for (const [label, dto] of [
-      ['committed pinned uninstall hidden source failure', structuredClone(committed)],
-      ['committed pinned dev hidden source failure', structuredClone(committedStore)],
+      ['committed pinned uninstall recorded source', structuredClone(committed)],
+      ['committed pinned dev satisfied store', structuredClone(committedStore)],
     ] as const) {
       const row = placementAt(entryNamed(dto, 'shadowed-fleet'), 1, label);
       const journal = row.journal as UnknownRecord;
       journal.reverseEligibility = 'not-reversible';
       (journal.remediation as UnknownRecord).reverse = null;
-      validateDto(dto, label);
+      expect(
+        statusV1Codec.validate(dto).ok,
+        `${label} eligibility comes from retained state`,
+      ).toBeFalse();
     }
+
+    const committedPinnedUnknownTarget = structuredClone(committed);
+    const committedPinnedUnknownTargetRow = placementAt(
+      entryNamed(committedPinnedUnknownTarget, 'shadowed-fleet'),
+      1,
+      'committed pinned uninstall unrecorded target',
+    );
+    const committedPinnedUnknownTargetJournal =
+      committedPinnedUnknownTargetRow.journal as UnknownRecord;
+    const committedPinnedUnknownTargetRetention = (
+      committedPinnedUnknownTargetJournal.retention as UnknownRecord[]
+    )[0] as UnknownRecord;
+    committedPinnedUnknownTargetRetention.structural = {
+      state: 'mismatch',
+      expected: { kind: 'symlink', linkTarget: null },
+      observed: { kind: 'symlink', linkTarget: '/fixture/source' },
+    };
+    committedPinnedUnknownTargetRetention.state = 'mismatch';
+    committedPinnedUnknownTargetJournal.reverseEligibility = 'not-reversible';
+    (committedPinnedUnknownTargetJournal.remediation as UnknownRecord).reverse = null;
+    validateDto(
+      committedPinnedUnknownTarget,
+      'committed uninstall cannot recover an unrecorded pinned symlink target',
+    );
 
     const preparedIntentFailure = structuredClone(preparedLegacy);
     const preparedIntentFailureRow = placementAt(

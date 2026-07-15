@@ -109,7 +109,10 @@ const legacyNode = (
     | null,
 ): string => {
   if (node === null) return 'null';
-  return node.kind === 'symlink' ? `symlink -> ${quoteHumanText(node.linkTarget)}` : node.kind;
+  if (node.kind !== 'symlink') return node.kind;
+  return node.linkTarget === null
+    ? 'symlink -> unrecorded'
+    : `symlink -> ${quoteHumanText(node.linkTarget)}`;
 };
 
 const retentionLines = (retention: StatusRetention): readonly string[] => {

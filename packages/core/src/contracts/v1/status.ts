@@ -360,10 +360,12 @@ const UnrecordedCheckSchema = z
 const LegacyExpectedNodeSchema = z.union([
   z.object({ kind: z.literal('absent'), linkTarget: z.null() }).strict(),
   z.object({ kind: z.literal('directory'), linkTarget: z.null() }).strict(),
-  z.object({ kind: z.literal('symlink'), linkTarget: z.string() }).strict(),
+  z.object({ kind: z.literal('symlink'), linkTarget: z.string().nullable() }).strict(),
 ]);
 const LegacyObservedNodeSchema = z.union([
-  LegacyExpectedNodeSchema,
+  z.object({ kind: z.literal('absent'), linkTarget: z.null() }).strict(),
+  z.object({ kind: z.literal('directory'), linkTarget: z.null() }).strict(),
+  z.object({ kind: z.literal('symlink'), linkTarget: z.string() }).strict(),
   z.object({ kind: z.enum(['file', 'other']), linkTarget: z.null() }).strict(),
 ]);
 const LegacyStructuralSchema = z
@@ -395,6 +397,7 @@ const LegacyStructuralSchema = z
     if (value.observed === null) return;
     const equal =
       value.expected.kind === value.observed.kind &&
+      !(value.expected.kind === 'symlink' && value.expected.linkTarget === null) &&
       value.expected.linkTarget === value.observed.linkTarget;
     if ((value.state === 'satisfied') !== equal) {
       context.addIssue({
@@ -805,30 +808,43 @@ const JournalSchema = z
 
         const aggregateEligibility =
           aggregate === 'satisfied' ? 'eligible' : (`retention-${aggregate}` as const);
+        const missingPinnedSymlinkTarget =
+          value.before === 'pinned' &&
+          retention.structural.expected.kind === 'symlink' &&
+          retention.structural.expected.linkTarget === null;
         if (value.state === 'committed') {
           const reversibleCombination =
             (value.operation === 'uninstall' && value.before !== 'absent') ||
             (value.operation === 'promote' && value.before === 'dev') ||
             committedPinnedDev;
-          const expectedEligibility = reversibleCombination
-            ? aggregateEligibility
-            : 'not-reversible';
-          const hiddenPinnedSourceFailure =
-            value.before === 'pinned' &&
-            (value.operation === 'uninstall' || value.operation === 'dev') &&
-            eligibility === 'not-reversible';
-          if (eligibility !== expectedEligibility && !hiddenPinnedSourceFailure) {
+          const requiresMissingSourceFallback =
+            (value.operation === 'uninstall' && missingPinnedSymlinkTarget) ||
+            (committedPinnedDev && retention.role === 'backup');
+          const expectedEligibility = requiresMissingSourceFallback
+            ? 'not-reversible'
+            : reversibleCombination
+              ? aggregateEligibility
+              : 'not-reversible';
+          if (eligibility !== expectedEligibility) {
             context.addIssue({
               code: z.ZodIssueCode.custom,
               message: 'committed legacy eligibility must match operation and retained state',
             });
           }
         } else {
-          const mayFailIntentGate =
-            ((value.phase === 'prepared' || value.phase === 'staged') &&
-              (value.before === 'dev' || value.before === 'pinned')) ||
-            value.before === 'pinned';
-          if (!(mayFailIntentGate && eligibility === 'not-reversible')) {
+          const mayFailEarlyIntentGate =
+            (value.phase === 'prepared' || value.phase === 'staged') &&
+            (value.before === 'dev' || value.before === 'pinned');
+          const requiresMissingSourceFallback =
+            (value.phase === 'backed-up' || value.phase === 'live') && missingPinnedSymlinkTarget;
+          if (requiresMissingSourceFallback) {
+            if (eligibility !== 'not-reversible') {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'pending legacy unrecorded symlink target must be not-reversible',
+              });
+            }
+          } else if (!(mayFailEarlyIntentGate && eligibility === 'not-reversible')) {
             if (eligibility !== aggregateEligibility) {
               context.addIssue({
                 code: z.ZodIssueCode.custom,

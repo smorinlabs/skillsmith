@@ -118,6 +118,7 @@ interface MutableRow {
   ledger: LedgerPairV1Dto | null;
   live: StatusLiveInput | null;
   journal: StatusJournalState;
+  logicalJournal: LogicalJournalV1Dto | null;
   shadow: StatusShadow;
 }
 
@@ -381,6 +382,7 @@ const newRow = (
   ledger: null,
   live: null,
   journal: { state: 'none' },
+  logicalJournal: null,
   shadow: { state: 'none' },
 });
 
@@ -749,18 +751,17 @@ const setShadows = (entries: Map<string, MutableEntry>): void => {
 const journalBefore = (pair: LedgerPairV1Dto): 'dev' | 'pinned' | 'absent' | 'multi-resource' =>
   pair.journal?.before.mode ?? 'multi-resource';
 
+const legacyMissingPinnedSymlinkTarget = (journal: LegacyPairJournalV1Dto): boolean =>
+  journal.before.mode === 'pinned' &&
+  journal.before.liveKind === 'symlink' &&
+  journal.before.symlinkTarget === undefined;
+
 const legacyLiveMatches = (
   live: StatusLiveInput | null,
   journal: LegacyPairJournalV1Dto,
 ): boolean => {
   if (journal.before.mode === 'absent') return live === null;
-  if (
-    journal.before.mode === 'pinned' &&
-    journal.before.liveKind === 'symlink' &&
-    journal.before.symlinkTarget === undefined
-  ) {
-    return false;
-  }
+  if (legacyMissingPinnedSymlinkTarget(journal)) return false;
   if (live === null) return false;
   const observed = live.observation;
   if (journal.before.mode === 'dev') {
@@ -789,7 +790,7 @@ const legacyExpectedNode = (
     return { kind: 'symlink', linkTarget: journal.before.symlinkTarget };
   }
   return journal.before.liveKind === 'symlink'
-    ? { kind: 'symlink', linkTarget: journal.before.symlinkTarget ?? '' }
+    ? { kind: 'symlink', linkTarget: journal.before.symlinkTarget ?? null }
     : { kind: 'directory', linkTarget: null };
 };
 
@@ -998,9 +999,11 @@ const legacyEligibility = (
   | 'retention-mismatch'
   | 'retention-unverified' => {
   if (
-    journal.before.mode === 'pinned' &&
-    journal.before.liveKind === 'symlink' &&
-    journal.before.symlinkTarget === undefined
+    retention.some(
+      (requirement) =>
+        requirement.structural.expected.kind === 'symlink' &&
+        requirement.structural.expected.linkTarget === null,
+    )
   ) {
     return 'not-reversible';
   }
@@ -1537,6 +1540,7 @@ const attachLogicalJournals = (
     const winner = ranked[0];
     if (winner?.format === 'logical') {
       row.journal = logicalJournalState(winner.candidate.journal, seed.path, input, row);
+      row.logicalJournal = winner.candidate.journal;
     }
     for (const loser of ranked.slice(1)) {
       unmatched.push(
@@ -1746,10 +1750,6 @@ export const planStatusRetention = (
 ): readonly StatusRetentionPlan[] => {
   const emptyInput: StatusJoinInput = { ...input, retention: Object.freeze([]) };
   const correlation = correlateStatusJournals(emptyInput);
-  const journals =
-    input.ledger.state === 'present'
-      ? [...Object.values(input.ledger.model.transactions), ...input.ledger.model.history]
-      : [];
   const plans: StatusRetentionPlan[] = [];
   const rows = [...correlation.rows.values()]
     .flat()
@@ -1758,10 +1758,8 @@ export const planStatusRetention = (
     if (row.journal.state === 'none' || !statusRowSelected(row, input.request)) continue;
     const selectedJournal = row.journal;
     if (selectedJournal.format === 'logical') {
-      const journal = journals.find(
-        (candidate) => candidate.transactionId === selectedJournal.transactionId,
-      );
-      if (journal !== undefined) plans.push(Object.freeze({ format: 'logical', journal }));
+      const journal = row.logicalJournal;
+      if (journal !== null) plans.push(Object.freeze({ format: 'logical', journal }));
       continue;
     }
     const pair = row.ledger;

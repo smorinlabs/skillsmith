@@ -412,9 +412,11 @@ export type StatusUnrecordedCheck = Readonly<{
 export type StatusLegacyExpectedNode =
   | Readonly<{ readonly kind: 'absent'; readonly linkTarget: null }>
   | Readonly<{ readonly kind: 'directory'; readonly linkTarget: null }>
-  | Readonly<{ readonly kind: 'symlink'; readonly linkTarget: string }>;
+  | Readonly<{ readonly kind: 'symlink'; readonly linkTarget: string | null }>;
 export type StatusLegacyObservedNode =
-  | StatusLegacyExpectedNode
+  | Readonly<{ readonly kind: 'absent'; readonly linkTarget: null }>
+  | Readonly<{ readonly kind: 'directory'; readonly linkTarget: null }>
+  | Readonly<{ readonly kind: 'symlink'; readonly linkTarget: string }>
   | Readonly<{ readonly kind: 'file' | 'other'; readonly linkTarget: null }>;
 export type StatusLegacyStructuralCheck =
   | Readonly<{
