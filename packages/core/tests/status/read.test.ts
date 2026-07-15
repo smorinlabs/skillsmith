@@ -3188,6 +3188,77 @@ describe('G3A-01 focused status reader', () => {
     });
   });
 
+  test('keeps repeated legacy retention probe identities separate across changing observations', async () => {
+    const readStatus = await loadReader();
+    const sharedTransactionId = 'tx:repeated-legacy-correlation';
+    const sharedBackupPath = '/retained/shared-legacy-correlation';
+    const legacyPair = (name: string): LedgerPairV1Dto => {
+      const pair = pairFor(name);
+      return {
+        ...pair,
+        journal: {
+          op: 'uninstall',
+          txId: sharedTransactionId,
+          phase: 'committed',
+          startedAt: '2026-07-14T00:00:01.000Z',
+          completedAt: '2026-07-14T00:00:02.000Z',
+          before: {
+            mode: 'pinned',
+            storePath: pair.pinned?.storePath ?? null,
+            contentHash: null,
+            liveKind: 'dir',
+          },
+          stagingPath: `/staging/${name}`,
+          backupPath: sharedBackupPath,
+        },
+      };
+    };
+    const ledger = ledgerV2Codec.encode(
+      emptyLedgerModel({
+        skills: {
+          beta: { tools: { codex: legacyPair('beta') } },
+          alpha: { tools: { codex: legacyPair('alpha') } },
+        },
+      }),
+    );
+    if (!ledger.ok) {
+      throw new Error(`legacy correlation ledger encoding failed: ${JSON.stringify(ledger.error)}`);
+    }
+    const base = readPorts({ bytes: new Map([[LEDGER_PATH, ledger.value]]) });
+    let sharedBackupReads = 0;
+    const result = await readStatus(
+      {
+        ...base,
+        readFileMetadata: async (path) => {
+          if (path !== sharedBackupPath) return base.readFileMetadata(path);
+          sharedBackupReads += 1;
+          return sharedBackupReads === 1
+            ? { kind: 'dir', mode: 0o755, identity: 'first-satisfied-observation' }
+            : { kind: 'absent', mode: null, identity: null };
+        },
+      },
+      request(),
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error('expected repeated legacy correlation status product');
+    const journals = Object.fromEntries(
+      result.value.entries.map((entry) => [entry.name, entry.placements[0]?.journal]),
+    );
+    expect(sharedBackupReads).toBe(2);
+    expect(journals.alpha).toMatchObject({
+      state: 'committed',
+      reverseEligibility: 'eligible',
+      retention: [{ state: 'satisfied' }],
+      remediation: { reverse: expect.any(Array) },
+    });
+    expect(journals.beta).toMatchObject({
+      state: 'committed',
+      reverseEligibility: 'retention-missing',
+      retention: [{ state: 'missing' }],
+      remediation: { reverse: null },
+    });
+  });
+
   test('requires user logical journals to carry an explicit null project root in reader and join', async () => {
     const readStatus = await loadReader();
     const validRetained = retainedResource('/retained/valid-user');

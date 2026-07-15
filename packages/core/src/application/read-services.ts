@@ -998,6 +998,16 @@ const STATUS_APPLICATION_CANCELLED: ReadServiceError = Object.freeze({
   message: 'status read was cancelled',
   exitClass: 'cancelled',
 });
+const STATUS_PROJECT_CONTEXT_FAILURE: ReadServiceError = Object.freeze({
+  code: 'status-project-context',
+  message: 'cannot resolve project context for status',
+  exitClass: 'failure',
+});
+const STATUS_CONFIGURATION_FAILURE: ReadServiceError = Object.freeze({
+  code: 'status-configuration',
+  message: 'cannot resolve effective configuration for status',
+  exitClass: 'failure',
+});
 
 const statusProjectPlacement = async (
   ports: CurrentApplicationContext['ports'],
@@ -1010,6 +1020,7 @@ const statusProjectPlacement = async (
   if (isStatusReadCancellation(undefined, signal)) return STATUS_APPLICATION_CANCELLED;
   try {
     const canonicalCwd = `${await ports.realpath(project.effectiveCwd)}`;
+    if (isStatusReadCancellation(undefined, signal)) return STATUS_APPLICATION_CANCELLED;
     if (shared) {
       const displacement = relative(project.projectRoot as string, canonicalCwd);
       if (
@@ -1114,7 +1125,48 @@ export const runStatusApplication: ApplicationService<
   );
   if (!validated.ok) return failed(empty, validated.error);
 
-  const project = await projectFor(context);
+  let preflightPortCancelled = false;
+  const trackPreflight =
+    <Arguments extends readonly unknown[], Value>(
+      operation: (...arguments_: Arguments) => Promise<Value>,
+    ): ((...arguments_: Arguments) => Promise<Value>) =>
+    async (...arguments_) => {
+      try {
+        return await operation(...arguments_);
+      } catch (error) {
+        if (isStatusReadCancellation(error)) preflightPortCancelled = true;
+        throw error;
+      }
+    };
+  const preflightContext: CurrentApplicationContext = {
+    ...context,
+    ports: {
+      ...context.ports,
+      fileExists: trackPreflight(context.ports.fileExists),
+      pathKind: trackPreflight(context.ports.pathKind),
+      readText: trackPreflight(context.ports.readText),
+      realpath: trackPreflight(context.ports.realpath),
+      git: {
+        ...context.ports.git,
+        findRepositoryRoot: trackPreflight(context.ports.git.findRepositoryRoot),
+      },
+    },
+  };
+  const cancelled = (): boolean =>
+    preflightPortCancelled || isStatusReadCancellation(undefined, context.signal);
+  if (cancelled()) return failed(empty, STATUS_APPLICATION_CANCELLED);
+  let project: Awaited<ReturnType<typeof projectFor>>;
+  try {
+    project = await projectFor(preflightContext);
+  } catch (error) {
+    return failed(
+      empty,
+      cancelled() || isStatusReadCancellation(error, context.signal)
+        ? STATUS_APPLICATION_CANCELLED
+        : STATUS_PROJECT_CONTEXT_FAILURE,
+    );
+  }
+  if (cancelled()) return failed(empty, STATUS_APPLICATION_CANCELLED);
   if (!project.ok) return failed(empty, project.error);
   const placement = await statusProjectPlacement(
     context.ports,
@@ -1122,9 +1174,21 @@ export const runStatusApplication: ApplicationService<
     scope.value,
     context.signal,
   );
+  if (cancelled()) return failed(empty, STATUS_APPLICATION_CANCELLED);
   if ('code' in placement) return failed(empty, placement);
 
-  const configuration = await configFor(context, project.value);
+  let configuration: Awaited<ReturnType<typeof configFor>>;
+  try {
+    configuration = await configFor(preflightContext, project.value);
+  } catch (error) {
+    return failed(
+      empty,
+      cancelled() || isStatusReadCancellation(error, context.signal)
+        ? STATUS_APPLICATION_CANCELLED
+        : STATUS_CONFIGURATION_FAILURE,
+    );
+  }
+  if (cancelled()) return failed(empty, STATUS_APPLICATION_CANCELLED);
   if (!configuration.ok) return failed(empty, configuration.error);
   const configuredTools = effectiveTools(configuration.value);
   const tools =

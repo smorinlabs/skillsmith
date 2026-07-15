@@ -304,6 +304,143 @@ describe('read and config outcomes', () => {
     });
   });
 
+  test('status cancellation dominates racing project and configuration preflight outcomes', async () => {
+    const projectController = new AbortController();
+    const projectBase = context(
+      env('/workspace', {
+        realpath: async () => {
+          projectController.abort();
+          throw new Error('ordinary project preflight failure');
+        },
+      }),
+    );
+    const { projectContext: _projectContext, ...projectWithoutContext } = projectBase;
+    const projectRace: CurrentApplicationContext = {
+      ...projectWithoutContext,
+      signal: projectController.signal,
+    };
+    const projectCancelled = await runStatusApplication(request(), projectRace);
+
+    const translatedProjectBase = context(
+      env('/workspace', {
+        realpath: async () => {
+          throw { code: 'ABORT_ERR' };
+        },
+      }),
+    );
+    const { projectContext: _translatedProjectContext, ...translatedProjectWithoutContext } =
+      translatedProjectBase;
+    const translatedProjectCancelled = await runStatusApplication(request(), {
+      ...translatedProjectWithoutContext,
+    });
+
+    const rejectedProjectController = new AbortController();
+    const rejectedProjectBase = context(
+      env('/workspace', {
+        pathKind: async () => 'dir',
+      }),
+    );
+    const { projectContext: _rejectedProjectContext, ...rejectedProjectWithoutContext } =
+      rejectedProjectBase;
+    const rejectedProjectCancelled = await runStatusApplication(request(), {
+      ...rejectedProjectWithoutContext,
+      ports: {
+        ...rejectedProjectWithoutContext.ports,
+        git: {
+          ...rejectedProjectWithoutContext.ports.git,
+          findRepositoryRoot: async () => {
+            rejectedProjectController.abort();
+            throw Object.assign(new Error('ordinary rejected project preflight'), {
+              code: 'EACCES',
+            });
+          },
+        },
+      },
+      signal: rejectedProjectController.signal,
+    });
+
+    const placementController = new AbortController();
+    const placementCancelled = await runStatusApplication(request([], { scope: 'project' }), {
+      ...context(
+        env('/workspace', {
+          realpath: async (path) => {
+            placementController.abort();
+            return path;
+          },
+        }),
+      ),
+      signal: placementController.signal,
+    });
+
+    const configController = new AbortController();
+    const projectConfigPath = '/workspace/skillsmith.toml';
+    const configBase = context(
+      env('/workspace', {
+        fileExists: async (path) => path === projectConfigPath,
+        readText: async () => {
+          configController.abort();
+          throw new Error('ordinary configuration preflight failure');
+        },
+      }),
+      effectiveConfig(),
+      { ...projectContext('/workspace'), discoveredConfigPath: projectConfigPath },
+    );
+    const { effectiveConfig: _effectiveConfig, ...configWithoutEffective } = configBase;
+    const configRace: CurrentApplicationContext = {
+      ...configWithoutEffective,
+      signal: configController.signal,
+    };
+    const configCancelled = await runStatusApplication(request(), configRace);
+
+    const translatedConfigPath = '/workspace/translated.toml';
+    const translatedConfigBase = context(
+      env('/workspace', {
+        fileExists: async (path) => path === translatedConfigPath,
+        readText: async () => {
+          throw { code: 'ABORT_ERR' };
+        },
+      }),
+      effectiveConfig(),
+      { ...projectContext('/workspace'), discoveredConfigPath: translatedConfigPath },
+    );
+    const { effectiveConfig: _translatedEffectiveConfig, ...translatedConfigWithoutEffective } =
+      translatedConfigBase;
+    const translatedConfigCancelled = await runStatusApplication(request(), {
+      ...translatedConfigWithoutEffective,
+    });
+
+    const rejectedConfigController = new AbortController();
+    const rejectedConfigBase = context(env('/workspace'), effectiveConfig());
+    const { effectiveConfig: _rejectedEffectiveConfig, ...rejectedConfigWithoutEffective } =
+      rejectedConfigBase;
+    const rejectedConfigCancelled = await runStatusApplication(request(), {
+      ...rejectedConfigWithoutEffective,
+      ports: {
+        ...rejectedConfigWithoutEffective.ports,
+        fileExists: async () => {
+          rejectedConfigController.abort();
+          throw new Error('rejected configuration preflight');
+        },
+      },
+      signal: rejectedConfigController.signal,
+    });
+
+    for (const outcome of [
+      projectCancelled,
+      translatedProjectCancelled,
+      rejectedProjectCancelled,
+      placementCancelled,
+      configCancelled,
+      translatedConfigCancelled,
+      rejectedConfigCancelled,
+    ]) {
+      expect(outcome).toMatchObject({
+        exitClass: 'cancelled',
+        diagnostics: [{ code: 'cancelled', message: 'status read was cancelled' }],
+      });
+    }
+  });
+
   test('agents, list, and commands return structured no-mutation reports', async () => {
     const current = context(env(), effectiveConfig({ tool: 'codex' }));
     const [agents, skills, commands] = await Promise.all([

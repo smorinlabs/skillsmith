@@ -71,7 +71,7 @@ export interface StatusJoinInput {
 }
 
 export interface StatusRetentionProbeInput {
-  /** Internal exact-correlation token; production logical probes always carry one. */
+  /** Internal exact-correlation token; production probes always carry one. */
   readonly correlationKey?: string;
   readonly transactionId: string;
   readonly resourceId: string | null;
@@ -851,18 +851,35 @@ export const legacyStatusRetentionPlan = (
   });
 };
 
+const legacyRetentionCorrelationKey = (row: MutableRow, resourceIndex: number): string =>
+  JSON.stringify([
+    'legacy-retention',
+    row.name,
+    row.tool,
+    row.scope,
+    row.projectIdentity,
+    row.path,
+    resourceIndex,
+  ]);
+
 const legacyRetention = (
   journal: LegacyPairJournalV1Dto,
   input: StatusJoinInput,
   row: MutableRow,
 ): readonly StatusLegacyRetentionRequirement[] => {
   const resources = legacyStatusRetentionPlan(row.ledger as LedgerPairV1Dto, row.live);
-  return resources.map((resource): StatusLegacyRetentionRequirement => {
+  const hasCorrelationKeys = input.retention.some(
+    (candidate) => candidate.correlationKey !== undefined,
+  );
+  return resources.map((resource, resourceIndex): StatusLegacyRetentionRequirement => {
     const expected = resource.expected;
     const expectedContentHash = resource.contentHash;
+    const correlationKey = legacyRetentionCorrelationKey(row, resourceIndex);
     const probe = input.retention.find(
       (candidate) =>
-        candidate.transactionId === journal.txId &&
+        (hasCorrelationKeys
+          ? candidate.correlationKey === correlationKey
+          : candidate.transactionId === journal.txId) &&
         candidate.resourceId === null &&
         candidate.path === resource.path,
     );
@@ -1777,6 +1794,7 @@ export type StatusRetentionPlan =
       readonly format: 'legacy-pair';
       readonly journal: LegacyPairJournalV1Dto;
       readonly resources: readonly LegacyStatusRetentionPlan[];
+      readonly retentionCorrelationKeys: readonly string[];
     }>;
 
 /**
@@ -1816,11 +1834,15 @@ export const planStatusRetention = (
     const pair = row.ledger;
     const journal = pair?.journal;
     if (pair !== null && journal !== undefined && journal !== null) {
+      const resources = legacyStatusRetentionPlan(pair, row.live);
       plans.push(
         Object.freeze({
           format: 'legacy-pair',
           journal,
-          resources: legacyStatusRetentionPlan(pair, row.live),
+          resources,
+          retentionCorrelationKeys: Object.freeze(
+            resources.map((_, resourceIndex) => legacyRetentionCorrelationKey(row, resourceIndex)),
+          ),
         }),
       );
     }
