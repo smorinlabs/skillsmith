@@ -456,8 +456,38 @@ describe('read and config outcomes', () => {
       'kilo-code',
       'opencode',
     ]);
-    expect(skills.report).toEqual({ entries: [], long: true });
-    expect(commands.report).toEqual({ entries: [], long: false });
+    expect(skills.report).toEqual({
+      entries: [],
+      collisionGroups: [],
+      long: true,
+      selection: {
+        source: 'bounded-default',
+        tools: ['codex'],
+        scopes: ['system', 'user', 'project', 'managed'],
+        filters: {
+          names: [],
+          mode: null,
+          source: null,
+          revision: null,
+          description: null,
+          verification: null,
+          enabled: null,
+          duplicates: false,
+        },
+        outcome: 'selected',
+      },
+    });
+    expect(commands.report).toEqual({
+      entries: [],
+      long: false,
+      selection: {
+        source: 'bounded-default',
+        tools: ['codex'],
+        scopes: ['user', 'project'],
+        filters: { names: [], enabled: null },
+        outcome: 'selected',
+      },
+    });
     expect([agents.mutation.kind, skills.mutation.kind, commands.mutation.kind]).toEqual([
       'none',
       'none',

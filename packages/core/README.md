@@ -136,7 +136,15 @@ import {
   toAgentsV1Dto,
   toStatusV1Dto,
 } from '@skillsmith/core/contracts/v1';
-import { flipV2Codec, toFlipV2Dto } from '@skillsmith/core/contracts/v2';
+import {
+  agentsV2Codec,
+  commandsV2Codec,
+  flipV2Codec,
+  toAgentsV2Dto,
+  toCommandsV2Dto,
+  toFlipV2Dto,
+} from '@skillsmith/core/contracts/v2';
+import { listV3Codec, toListV3Dto } from '@skillsmith/core/contracts/v3';
 ```
 
 The current codec IDs are `agents`, `health`, `commands`, `config-get`, `config-list`, `config-set`,
@@ -145,6 +153,11 @@ The current codec IDs are `agents`, `health`, `commands`, `config-get`, `config-
 preserve their declared JSON framing, and return sanitized `Result` errors rather than throwing for
 untrusted input. Explicit `to*Dto` mappers keep domain-only fields out of public wire shapes. See
 [ADR 0008](../../docs/adr/0008-wire-contract-registry.md).
+
+Current inventory output uses `agents@2`, `commands@2`, and `list@3`. Their mappers own canonical
+registry/scope/name/path ordering, recursively redact public string fields, and preserve complete
+machine output independently of human verbosity. Historical `agents@1`, `commands@1`, and
+`list@2` codecs remain available from their original versioned entry points.
 
 ## Persisted artifact contracts
 

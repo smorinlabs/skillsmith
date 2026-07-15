@@ -1,4 +1,12 @@
-import type { ArtifactDigest, FlipReport, LedgerModel, ListReport, Result } from '@skillsmith/core';
+import type {
+  AgentsReport,
+  ArtifactDigest,
+  CommandsReport,
+  FlipReport,
+  LedgerModel,
+  ListReport,
+  Result,
+} from '@skillsmith/core';
 import type { ArtifactCodec, ArtifactCodecError, WireCodec } from '@skillsmith/core/contracts';
 import type { LedgerV1Dto } from '@skillsmith/core/contracts/v1';
 
@@ -90,6 +98,88 @@ export interface ListV2Dto {
   }>;
 }
 
+type CapabilityOperation =
+  | 'detect'
+  | 'inventory-skills'
+  | 'inventory-commands'
+  | 'diagnostics'
+  | 'install'
+  | 'uninstall'
+  | 'dev'
+  | 'promote'
+  | 'undo'
+  | 'verify-static'
+  | 'verify-deep'
+  | 'plan'
+  | 'apply'
+  | 'sync'
+  | 'update'
+  | 'adapt';
+
+export interface AgentsV2Dto {
+  schemaVersion: 2;
+  kind: 'skillsmith.agents';
+  detections: Array<{
+    tool: string;
+    installations: Array<{
+      path: string;
+      version: string;
+      installMethod:
+        | 'brew'
+        | 'npm-global'
+        | 'bun-global'
+        | 'native-installer'
+        | 'app-bundle'
+        | 'unknown';
+    }>;
+  }>;
+  capabilities: {
+    schemaVersion: 1;
+    kind: 'skillsmith.capabilities';
+    tools: Array<{
+      id: string;
+      order: number;
+      capabilityVersion: number;
+      operations: Record<
+        CapabilityOperation,
+        {
+          supported: boolean;
+          scopes: Array<'user' | 'project' | 'system' | 'managed' | 'custom' | 'artifact'>;
+          remediation: string | null;
+        }
+      >;
+    }>;
+  };
+}
+
+export interface CommandsV2Dto {
+  schemaVersion: 2;
+  kind: 'skillsmith.commands';
+  selection: {
+    source: 'bounded-default';
+    tools: string[];
+    scopes: Array<'user' | 'project'>;
+    filters: {
+      names: string[];
+      enabled: 'enabled-only' | 'disabled-only' | 'unconfigured-only' | null;
+    };
+    outcome: 'selected' | 'filter-noop';
+  };
+  summary: { total: number };
+  entries: Array<{
+    name: string;
+    tool: string;
+    scope: 'user' | 'project';
+    path: string;
+    realpath: string;
+    root: string;
+    frontmatter: EntryFrontmatter;
+    origin: EntryOrigin;
+    enabled: 'on' | 'off' | 'unset';
+    description: string | null;
+  }>;
+}
+
 export type LedgerV2Dto = Readonly<{
   readonly schemaVersion: 2;
   readonly kind: 'skillsmith.placements';
@@ -117,6 +207,10 @@ export interface LedgerMigrationV1ToV2 {
 
 export declare const flipV2Codec: WireCodec<'flip', 2, FlipV2Dto>;
 export declare const toFlipV2Dto: (report: FlipReport) => FlipV2Dto;
+export declare const agentsV2Codec: WireCodec<'agents', 2, AgentsV2Dto>;
+export declare const toAgentsV2Dto: (report: AgentsReport) => AgentsV2Dto;
+export declare const commandsV2Codec: WireCodec<'commands', 2, CommandsV2Dto>;
+export declare const toCommandsV2Dto: (report: CommandsReport) => CommandsV2Dto;
 export declare const listV2Codec: WireCodec<'list', 2, ListV2Dto>;
 export declare const toListV2Dto: (report: ListReport) => ListV2Dto;
 export declare const ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel>;

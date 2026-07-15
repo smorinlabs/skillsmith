@@ -20,6 +20,7 @@ import type { FlipReport, FlipTool } from '../place/types.ts';
 import type { Result } from '../result.ts';
 import { validateSelectionRequest } from '../selection/resolve.ts';
 import type { SelectionCapability, SelectionPolicy } from '../selection/types.ts';
+import { exitClassForApplicationError, selectApplicationExitClass } from './exit-policy.ts';
 import {
   type ApplicationService,
   type CommandExitClass,
@@ -109,48 +110,6 @@ const errorMessage = (error: SkillSmithError): string => {
   return `unknown tool '${error.tool}'`;
 };
 
-const exitClassForError = (error: SkillSmithError): CommandExitClass => {
-  switch (error.code) {
-    case 'generic':
-    case 'skill-parse-error':
-    case 'flip-failed':
-      return 'failure';
-    case 'invalid-argument':
-    case 'unknown-tool':
-    case 'flip-refused':
-      return 'usage';
-    case 'config-error':
-    case 'ledger-error':
-      return 'state';
-    case 'placement-not-found':
-    case 'tool-unavailable':
-      return 'capability';
-    case 'source-unresolvable':
-      return 'source';
-    case 'permission-denied':
-      return 'permission';
-  }
-};
-
-const EXIT_PRECEDENCE: Readonly<Record<CommandExitClass, number>> = {
-  success: 0,
-  failure: 1,
-  usage: 2,
-  state: 3,
-  capability: 4,
-  source: 5,
-  permission: 6,
-  drift: 0,
-  cancelled: 7,
-};
-
-const selectExitClass = (classes: readonly CommandExitClass[]): CommandExitClass =>
-  classes.reduce<CommandExitClass>(
-    (selected, candidate) =>
-      EXIT_PRECEDENCE[candidate] > EXIT_PRECEDENCE[selected] ? candidate : selected,
-    'success',
-  );
-
 const diagnosticForError = (error: SkillSmithError): Diagnostic => ({
   code: `skillsmith.${error.code}`,
   severity: 'error',
@@ -177,7 +136,7 @@ const domainFailure = <TReport>(
 ): CommandOutcome<LifecycleApplicationReport<TReport>> => ({
   report: { command, value: null },
   diagnostics: [diagnosticForError(error)],
-  exitClass: signal?.aborted ? 'cancelled' : exitClassForError(error),
+  exitClass: exitClassForApplicationError(error, signal),
   mutation: NO_MUTATION,
   deprecations: [],
 });
@@ -303,7 +262,7 @@ const reportOutcome = <TReport extends InstallReport | UninstallReport | FlipRep
   diagnostics: errors.map(diagnosticForError),
   exitClass: signal?.aborted
     ? 'cancelled'
-    : selectExitClass(errors.map((error) => exitClassForError(error))),
+    : selectApplicationExitClass(errors.map((error) => exitClassForApplicationError(error))),
   mutation,
   deprecations: [],
 });

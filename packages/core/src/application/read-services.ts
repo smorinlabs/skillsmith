@@ -1,5 +1,6 @@
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { listSupportedTools } from '../agents/registry.ts';
+import { Glob } from 'bun';
+import { listSupportedTools, toolRegistry } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS, type SupportedTool } from '../agents/types.ts';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
 import { normalizePortablePath, normalizeRegistryIdentity } from '../artifacts/identity.ts';
@@ -20,15 +21,17 @@ import {
 } from '../config/types.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
+import {
+  type CapabilitySnapshotV1Dto,
+  toCapabilitySnapshotV1Dto,
+} from '../contracts/v1/capability-snapshot.ts';
 import { type StatusV1Dto, statusV1Codec, toStatusV1Dto } from '../contracts/v1/status.ts';
 import { builtInChecks } from '../doctor/registry.ts';
 import { focusDoctorPorts, runChecks } from '../doctor/run.ts';
 import type { CheckRunMode, CheckRunResult } from '../doctor/types.ts';
-import type { SkillSmithError } from '../errors.ts';
+import { type SkillSmithError, errorMessage, safeErrorCode } from '../errors.ts';
+import { readCommandInventory, readSkillInventory } from '../inventory/read.ts';
 import { redactSensitiveValue } from '../safety/redaction.ts';
-import { detectAll } from '../scan/index.ts';
-import { listCommands } from '../scan/list-commands.ts';
-import { listSkills } from '../scan/list-skills.ts';
 import { validateSelectionRequest } from '../selection/resolve.ts';
 import type {
   SelectionPolicy,
@@ -46,6 +49,7 @@ import type {
 } from '../status/types.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import { VERIFY_TOOLS, type VerifyReport, type VerifyTool } from '../verify/types.ts';
+import { exitClassForApplicationError, selectApplicationExitClass } from './exit-policy.ts';
 import {
   type ApplicationService,
   type CommandExitClass,
@@ -77,6 +81,8 @@ export interface AgentsReport {
   >;
   readonly format: 'markdown' | 'json';
   readonly detectedOnly: boolean;
+  readonly showCapabilities?: boolean;
+  readonly capabilities?: CapabilitySnapshotV1Dto;
 }
 
 export interface ConfigGetReport {
@@ -110,13 +116,57 @@ export interface ConfigUnsetReport {
   readonly operation?: 'migrate-project-config';
 }
 
+export interface InventorySelectionReport {
+  readonly source: 'bounded-default';
+  readonly tools: readonly SupportedTool[];
+  readonly scopes: readonly Scope[];
+  readonly filters: Readonly<Record<string, string | boolean | readonly string[] | null>>;
+  readonly outcome: 'selected' | 'filter-noop';
+}
+
+export interface InventoryMemberReport {
+  readonly scope: Scope;
+  readonly path: string;
+}
+
+export interface InventoryVisibilityReport {
+  readonly state: 'unique' | 'winner' | 'shadowed' | 'duplicate';
+  readonly winner: string | null;
+  readonly members: readonly InventoryMemberReport[];
+}
+
+export type ListApplicationEntry = SkillEntry &
+  Readonly<{
+    readonly mode?: 'dev' | 'pinned' | 'unmanaged';
+    readonly placement?: 'symlink' | 'copy' | 'unknown';
+    readonly source?: string | null;
+    readonly revision?: string | null;
+    readonly store?: string | null;
+    readonly verification?: 'passed' | 'warned' | 'skipped' | 'unrecorded';
+    readonly description?: string | null;
+    readonly visibility?: InventoryVisibilityReport;
+  }>;
+
+export interface InventoryCollisionGroupReport {
+  readonly tool: SupportedTool;
+  readonly name: string;
+  readonly winner: string | null;
+  readonly members: readonly InventoryMemberReport[];
+}
+
 export interface ListReport {
-  readonly entries: readonly SkillEntry[];
+  readonly selection?: InventorySelectionReport;
+  readonly entries: readonly ListApplicationEntry[];
+  readonly collisionGroups?: readonly InventoryCollisionGroupReport[];
   readonly long: boolean;
 }
 
+export type CommandApplicationEntry = CommandEntry &
+  Readonly<{ readonly description?: string | null }>;
+
 export interface CommandsReport {
-  readonly entries: readonly CommandEntry[];
+  readonly selection?: InventorySelectionReport;
+  readonly entries: readonly CommandApplicationEntry[];
   readonly long: boolean;
 }
 
@@ -205,37 +255,32 @@ const messageForError = (error: ApplicationError): string => {
   return error.code;
 };
 
-const exitClassForError = (error: ApplicationError): CommandExitClass => {
-  if ('exitClass' in error && error.exitClass !== undefined) return error.exitClass;
-  switch (error.code) {
-    case 'usage':
-    case 'invalid-enum':
-    case 'invalid-argument':
-      return 'usage';
-    case 'capability':
-    case 'unknown-tool':
-    case 'tool-unavailable':
-      return 'capability';
-    case 'source-unresolvable':
-      return 'source';
-    case 'permission-denied':
-      return 'permission';
-    case 'placement-not-found':
-    case 'ledger-error':
-    case 'config-error':
-    case 'flip-refused':
-      return 'state';
-    default:
-      return 'failure';
-  }
-};
-
 const failed = <T>(report: T, error: ApplicationError): CommandOutcome<T> =>
   success(report, {
     diagnostics: redactSensitiveValue([
       { code: error.code, severity: 'error', message: messageForError(error) },
     ]) as readonly Diagnostic[],
-    exitClass: exitClassForError(error),
+    exitClass: exitClassForApplicationError(error),
+  });
+
+const failedMany = <T>(
+  report: T,
+  errors: readonly ApplicationError[],
+  signal?: AbortSignal,
+): CommandOutcome<T> =>
+  success(report, {
+    diagnostics: redactSensitiveValue(
+      errors.map((error) => ({
+        code: error.code,
+        severity: 'error' as const,
+        message: messageForError(error),
+      })),
+    ) as readonly Diagnostic[],
+    exitClass: signal?.aborted
+      ? 'cancelled'
+      : selectApplicationExitClass(
+          errors.map((error) => exitClassForApplicationError(error, signal)),
+        ),
   });
 
 const usage = (message: string): ReadServiceError => ({
@@ -243,6 +288,64 @@ const usage = (message: string): ReadServiceError => ({
   message,
   exitClass: 'usage',
 });
+
+const cancelled = (message: string): ReadServiceError => ({
+  code: 'cancelled',
+  message,
+  exitClass: 'cancelled',
+});
+
+const isCancellationCause = (cause: unknown, seen = new Set<object>()): boolean => {
+  const code = safeErrorCode(cause);
+  if (code === 'ABORT_ERR' || code === 'cancelled') return true;
+  if (cause === null || typeof cause !== 'object' || seen.has(cause)) return false;
+  seen.add(cause);
+  if (cause instanceof AggregateError) {
+    return [...cause.errors].some((error) => isCancellationCause(error, seen));
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(cause, 'cause');
+  return descriptor !== undefined && 'value' in descriptor
+    ? isCancellationCause(descriptor.value, seen)
+    : false;
+};
+
+const normalizeReadCause = (cause: unknown, signal?: AbortSignal): ApplicationError => {
+  const code = safeErrorCode(cause);
+  if (signal?.aborted || isCancellationCause(cause)) {
+    return cancelled('inventory read was cancelled');
+  }
+  if (code === 'EACCES' || code === 'EPERM' || code === 'permission-denied') {
+    return {
+      code: 'permission-denied',
+      message: errorMessage(cause),
+      exitClass: 'permission',
+    };
+  }
+  if (code === 'source-unresolvable') {
+    return { code, message: errorMessage(cause), exitClass: 'source' };
+  }
+  if (code === 'tool-unavailable' || code === 'placement-not-found' || code === 'capability') {
+    return { code, message: errorMessage(cause), exitClass: 'capability' };
+  }
+  if (code === 'config-error' || code === 'ledger-error') {
+    return { code, message: errorMessage(cause), exitClass: 'state' };
+  }
+  if (code === 'invalid-argument' || code === 'unknown-tool' || code === 'usage') {
+    return { code, message: errorMessage(cause), exitClass: 'usage' };
+  }
+  return { code: code ?? 'generic', message: errorMessage(cause), exitClass: 'failure' };
+};
+
+const readCauses = (cause: unknown, signal?: AbortSignal): readonly ApplicationError[] => {
+  if (cause instanceof AggregateError) {
+    const errors = [...cause.errors].map((error) => normalizeReadCause(error, signal));
+    if (signal?.aborted || errors.some((error) => error.code === 'cancelled')) {
+      return [cancelled('inventory read was cancelled')];
+    }
+    return errors.length > 0 ? errors : [normalizeReadCause(cause, signal)];
+  }
+  return [normalizeReadCause(cause, signal)];
+};
 
 const option = (request: Readonly<CurrentCommandRequest>, name: string): unknown =>
   request.options[name];
@@ -482,6 +585,11 @@ const emptyEffectiveConfig = (): EffectiveConfig => ({
 const effectiveTools = (config: EffectiveConfig): readonly SupportedTool[] =>
   config.toolSelection?.tools ?? (config.value.tool === undefined ? [] : [config.value.tool]);
 
+const registryOrderedTools = (tools: readonly SupportedTool[]): readonly SupportedTool[] => {
+  const selected = new Set(tools);
+  return Object.freeze(SUPPORTED_TOOLS.filter((tool) => selected.has(tool)));
+};
+
 const configPatch = (key: ConfigKey, value: string): Partial<Config> =>
   CONFIG_ACCESSORS[key].patch(value);
 
@@ -538,6 +646,94 @@ const enabledFilter = (
   return undefined;
 };
 
+const verificationFilter = (
+  request: Readonly<CurrentCommandRequest>,
+): 'verified' | 'unverified' | ReadServiceError | undefined => {
+  if (enabled(request, 'verified') && enabled(request, 'unverified')) {
+    return usage('--verified and --unverified are mutually exclusive');
+  }
+  if (enabled(request, 'verified')) return 'verified';
+  if (enabled(request, 'unverified')) return 'unverified';
+  return undefined;
+};
+
+const validateMode = (
+  request: Readonly<CurrentCommandRequest>,
+): 'dev' | 'pinned' | 'unmanaged' | ReadServiceError | undefined => {
+  const value = option(request, 'mode');
+  if (value === undefined) return undefined;
+  if (value === 'dev' || value === 'pinned' || value === 'unmanaged') return value;
+  return usage(`unknown list mode '${String(value)}'`);
+};
+
+const globSyntaxError = (pattern: string): string | null => {
+  if (pattern.length === 0) return 'must not be empty';
+  if (pattern.includes('\u0000')) return 'must not contain NUL';
+
+  const stack: string[] = [];
+  let escaped = false;
+  for (const character of pattern) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (character === '[' || character === '{' || character === '(') {
+      stack.push(character);
+      continue;
+    }
+    const expected =
+      character === ']' ? '[' : character === '}' ? '{' : character === ')' ? '(' : null;
+    if (expected !== null && stack.pop() !== expected) return `has an unmatched '${character}'`;
+  }
+  if (escaped) return 'must not end with an escape';
+  if (stack.length > 0) return `has an unmatched '${stack[stack.length - 1]}'`;
+  try {
+    new Glob(pattern);
+  } catch {
+    return 'could not be compiled';
+  }
+  return null;
+};
+
+const validateGlobs = (
+  patterns: readonly Readonly<{ readonly label: string; readonly value: string }>[],
+): ReadServiceError | null => {
+  for (const { label, value } of patterns) {
+    const reason = globSyntaxError(value);
+    if (reason !== null) return usage(`${label} glob '${value}' ${reason}`);
+  }
+  return null;
+};
+
+const stringOptionValue = (
+  request: Readonly<CurrentCommandRequest>,
+  name: string,
+): string | undefined => {
+  const value = option(request, name);
+  return typeof value === 'string' ? value : undefined;
+};
+
+const selectedListScopes = (scope: Scope | null, project: ProjectContext): readonly Scope[] =>
+  scope !== null
+    ? Object.freeze([scope])
+    : project.projectRoot === null
+      ? Object.freeze(['system', 'user', 'managed'] as const)
+      : SCOPES;
+
+const selectedCommandScopes = (
+  scope: Scope | null,
+  project: ProjectContext,
+): readonly ('user' | 'project')[] =>
+  scope === 'user' || scope === 'project'
+    ? Object.freeze([scope])
+    : project.projectRoot === null
+      ? Object.freeze(['user'] as const)
+      : Object.freeze(['user', 'project'] as const);
+
 const artifactPair = async (
   ports: CurrentApplicationContext['ports'],
   project: ProjectContext,
@@ -567,20 +763,102 @@ export const runAgentsApplication: ApplicationService<CurrentCommandRequest, Age
   request,
   context,
 ) => {
-  const report = (): AgentsReport => ({
+  const rawFormat = optionalString(request, 'format');
+  const jsonAlias = enabled(request, 'json');
+  const format: AgentsReport['format'] = jsonAlias || rawFormat === 'json' ? 'json' : 'markdown';
+  const selectedAdapters = (tools: readonly SupportedTool[]) =>
+    toolRegistry.adapters.filter((adapter) => tools.includes(adapter.descriptor.id));
+  const report = (tools: readonly SupportedTool[] = SUPPORTED_TOOLS): AgentsReport => ({
     detections: new Map(),
-    format: optionalString(request, 'format') === 'json' ? 'json' : 'markdown',
+    format,
     detectedOnly: enabled(request, 'detectedOnly'),
+    showCapabilities: enabled(request, 'capabilities'),
+    capabilities: toCapabilitySnapshotV1Dto({ adapters: selectedAdapters(tools) }),
   });
+  if (rawFormat !== undefined && rawFormat !== 'markdown' && rawFormat !== 'json') {
+    return failed(report(), usage(`unknown agents format '${rawFormat}'`));
+  }
+  if (jsonAlias && rawFormat === 'markdown') {
+    return failed(report(), usage('--json cannot be combined with --format markdown'));
+  }
   const selection = validateReadSelection(request, READ_POLICY);
   if (!selection.ok) return failed(report(), selection.error);
-  const detected = await detectAll(context.ports, {
-    ...(selection.value.tools.length > 0 ? { tools: selection.value.tools } : {}),
-    ...(context.signal === undefined ? {} : { signal: context.signal }),
-    observation: context.observation,
-  });
-  if (!detected.ok) return failed(report(), detected.error);
-  return success({ ...report(), detections: detected.value });
+  const tools = SUPPORTED_TOOLS.filter(
+    (tool) => selection.value.tools.length === 0 || selection.value.tools.includes(tool),
+  );
+  const attempts = await Promise.all(
+    tools.map(async (tool) => {
+      const adapter = toolRegistry.get(tool);
+      if (adapter === undefined) {
+        return { tool, error: { code: 'unknown-tool', tool } as SkillSmithError } as const;
+      }
+      const span = context.observation.emitter.begin(context.observation.context, {
+        kind: 'tool.detection.started',
+        toolId: tool,
+      });
+      try {
+        const detected = await adapter.inventory.detect(context.ports, context.signal);
+        context.observation.emitter.complete(span, {
+          outcome: detected.ok ? 'success' : 'failure',
+          errorCode: detected.ok ? null : detected.error.code,
+          resultCount: detected.ok ? detected.value.length : 0,
+        });
+        return detected.ok
+          ? ({ tool, records: detected.value } as const)
+          : ({ tool, error: detected.error } as const);
+      } catch (cause) {
+        context.observation.emitter.complete(span, {
+          outcome: 'failure',
+          errorCode: safeErrorCode(cause) ?? 'generic',
+          resultCount: 0,
+        });
+        return { tool, cause } as const;
+      }
+    }),
+  );
+  const cancelledAttempt = attempts.find(
+    (attempt) =>
+      ('cause' in attempt && isCancellationCause(attempt.cause)) ||
+      ('error' in attempt && isCancellationCause(attempt.error)),
+  );
+  if (context.signal?.aborted || cancelledAttempt !== undefined) {
+    return failed(report(tools), {
+      code: 'cancelled',
+      message: 'agent detection was cancelled',
+      exitClass: 'cancelled',
+    });
+  }
+  const failedAttempt = attempts.find((attempt) => 'error' in attempt || 'cause' in attempt);
+  if (failedAttempt !== undefined) {
+    const normalized =
+      'error' in failedAttempt
+        ? failedAttempt.error
+        : normalizeReadCause(failedAttempt.cause, context.signal);
+    return failed(report(tools), {
+      code: normalized.code,
+      message: messageForError(normalized),
+      exitClass: 'failure',
+    });
+  }
+  const compareText = (left: string, right: string): number =>
+    left < right ? -1 : left > right ? 1 : 0;
+  const ordered = new Map(
+    attempts.map(
+      (attempt) =>
+        [
+          attempt.tool,
+          Object.freeze(
+            [...(attempt.records ?? [])].sort(
+              (left, right) =>
+                compareText(left.path, right.path) ||
+                compareText(left.version, right.version) ||
+                compareText(left.installMethod, right.installMethod),
+            ),
+          ),
+        ] as const,
+    ),
+  );
+  return success({ ...report(tools), detections: ordered });
 };
 
 export const runConfigGetApplication: ApplicationService<
@@ -770,30 +1048,88 @@ export const runListApplication: ApplicationService<CurrentCommandRequest, ListR
   if (!selection.ok) return failed(empty, selection.error);
   const filter = enabledFilter(request);
   if (filter && typeof filter === 'object') return failed(empty, filter);
+  const verification = verificationFilter(request);
+  if (verification && typeof verification === 'object') return failed(empty, verification);
+  const mode = validateMode(request);
+  if (mode && typeof mode === 'object') return failed(empty, mode);
+  const names = argumentStrings(request, 0);
+  const source = stringOptionValue(request, 'source');
+  const revision = stringOptionValue(request, 'revision');
+  const description = stringOptionValue(request, 'description');
+  const invalidGlob = validateGlobs([
+    ...names.map((value) => ({ label: 'name', value })),
+    ...(source === undefined ? [] : [{ label: 'source', value: source }]),
+    ...(revision === undefined ? [] : [{ label: 'revision', value: revision }]),
+    ...(description === undefined ? [] : [{ label: 'description', value: description }]),
+  ]);
+  if (invalidGlob !== null) return failed(empty, invalidGlob);
   const project = await projectFor(context);
   if (!project.ok) return failed(empty, project.error);
   const config = await configFor(context, project.value);
   if (!config.ok) return failed(empty, config.error);
-  const tools =
+  const requestedTools =
     selection.value.tools.length > 0
       ? selection.value.tools
       : effectiveTools(config.value).length > 0
         ? effectiveTools(config.value)
         : SUPPORTED_TOOLS;
-  const listed = await listSkills(context.ports, {
-    tools,
-    scopes: scope.value === null ? SCOPES : [scope.value],
-    ...(argumentStrings(request, 0).length > 0 ? { globs: argumentStrings(request, 0) } : {}),
-    duplicatesOnly: enabled(request, 'duplicates'),
-    ...(typeof filter === 'string' ? { enabledFilter: filter } : {}),
-    cwd: project.value.projectRoot ?? project.value.effectiveCwd,
-    configuration: context.configuration,
-    ...(context.signal === undefined ? {} : { signal: context.signal }),
-    observation: context.observation,
+  const tools = registryOrderedTools(requestedTools);
+  const scopes = selectedListScopes(scope.value, project.value);
+  const filters = Object.freeze({
+    names: Object.freeze([...names]),
+    mode: typeof mode === 'string' ? mode : null,
+    source: source ?? null,
+    revision: revision ?? null,
+    description: description ?? null,
+    verification: typeof verification === 'string' ? verification : null,
+    enabled: typeof filter === 'string' ? filter : null,
+    duplicates: enabled(request, 'duplicates'),
   });
-  if (!listed.ok) return failed(empty, listed.error);
+  const emptySelected: ListReport = {
+    ...empty,
+    selection: Object.freeze({
+      source: 'bounded-default',
+      tools,
+      scopes,
+      filters,
+      outcome: 'selected',
+    }),
+    collisionGroups: Object.freeze([]),
+  };
+  let listed: Awaited<ReturnType<typeof readSkillInventory>>;
+  try {
+    listed = await readSkillInventory(context.ports, {
+      tools,
+      scopes,
+      ...(names.length > 0 ? { globs: names } : {}),
+      duplicatesOnly: enabled(request, 'duplicates'),
+      ...(typeof filter === 'string' ? { enabledFilter: filter } : {}),
+      ...(typeof mode === 'string' ? { modeFilter: mode } : {}),
+      ...(source === undefined ? {} : { sourceGlob: source }),
+      ...(revision === undefined ? {} : { revisionGlob: revision }),
+      ...(description === undefined ? {} : { descriptionGlob: description }),
+      ...(typeof verification === 'string' ? { verificationFilter: verification } : {}),
+      cwd: project.value.projectRoot ?? project.value.effectiveCwd,
+      configuration: context.configuration,
+      ...(context.signal === undefined ? {} : { signal: context.signal }),
+      observation: context.observation,
+    });
+  } catch (cause) {
+    return failedMany(emptySelected, readCauses(cause, context.signal), context.signal);
+  }
+  if (!listed.ok) {
+    if (context.signal?.aborted) {
+      return failed(emptySelected, cancelled('inventory read was cancelled'));
+    }
+    return failed(emptySelected, listed.error);
+  }
   return success(
-    { ...empty, entries: listed.value },
+    Object.freeze({
+      ...empty,
+      selection: Object.freeze({ ...listed.value.selection, filters }),
+      entries: listed.value.entries,
+      collisionGroups: listed.value.collisionGroups,
+    }),
     { diagnostics: configNoticeDiagnostics(config.value) },
   );
 };
@@ -813,29 +1149,62 @@ export const runCommandsApplication: ApplicationService<
   if (!selection.ok) return failed(empty, selection.error);
   const filter = enabledFilter(request);
   if (filter && typeof filter === 'object') return failed(empty, filter);
+  const names = argumentStrings(request, 0);
+  const invalidGlob = validateGlobs(names.map((value) => ({ label: 'name', value })));
+  if (invalidGlob !== null) return failed(empty, invalidGlob);
   const project = await projectFor(context);
   if (!project.ok) return failed(empty, project.error);
   const config = await configFor(context, project.value);
   if (!config.ok) return failed(empty, config.error);
-  const tools =
+  const requestedTools =
     selection.value.tools.length > 0
       ? selection.value.tools
       : effectiveTools(config.value).length > 0
         ? effectiveTools(config.value)
         : SUPPORTED_TOOLS;
-  const listed = await listCommands(context.ports, {
-    tools,
-    scopes: scope.value === null ? ['user', 'project'] : [scope.value],
-    ...(argumentStrings(request, 0).length > 0 ? { globs: argumentStrings(request, 0) } : {}),
-    ...(typeof filter === 'string' ? { enabledFilter: filter } : {}),
-    cwd: project.value.projectRoot ?? project.value.effectiveCwd,
-    configuration: context.configuration,
-    ...(context.signal === undefined ? {} : { signal: context.signal }),
-    observation: context.observation,
+  const tools = registryOrderedTools(requestedTools);
+  const scopes = selectedCommandScopes(scope.value, project.value);
+  const filters = Object.freeze({
+    names: Object.freeze([...names]),
+    enabled: typeof filter === 'string' ? filter : null,
   });
-  if (!listed.ok) return failed(empty, listed.error);
+  const emptySelected: CommandsReport = {
+    ...empty,
+    selection: Object.freeze({
+      source: 'bounded-default',
+      tools,
+      scopes,
+      filters,
+      outcome: 'selected',
+    }),
+  };
+  let listed: Awaited<ReturnType<typeof readCommandInventory>>;
+  try {
+    listed = await readCommandInventory(context.ports, {
+      tools,
+      scopes,
+      ...(names.length > 0 ? { globs: names } : {}),
+      ...(typeof filter === 'string' ? { enabledFilter: filter } : {}),
+      cwd: project.value.projectRoot ?? project.value.effectiveCwd,
+      configuration: context.configuration,
+      ...(context.signal === undefined ? {} : { signal: context.signal }),
+      observation: context.observation,
+    });
+  } catch (cause) {
+    return failedMany(emptySelected, readCauses(cause, context.signal), context.signal);
+  }
+  if (!listed.ok) {
+    if (context.signal?.aborted) {
+      return failed(emptySelected, cancelled('inventory read was cancelled'));
+    }
+    return failed(emptySelected, listed.error);
+  }
   return success(
-    { ...empty, entries: listed.value },
+    Object.freeze({
+      ...empty,
+      selection: Object.freeze({ ...listed.value.selection, filters }),
+      entries: listed.value.entries,
+    }),
     { diagnostics: configNoticeDiagnostics(config.value) },
   );
 };
