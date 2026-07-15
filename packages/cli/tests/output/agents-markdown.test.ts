@@ -10,17 +10,16 @@ const empty: Map<SupportedTool, InstallRecord[]> = new Map([
 ]);
 
 describe('renderAgentsMarkdown', () => {
-  test('renders "Not detected" for all tools when nothing is found', () => {
+  test('labels every empty tool as not detected', () => {
     const md = renderAgentsMarkdown(empty, { detectedOnly: false });
     expect(md).toContain('# Tools detected');
-    expect(md).toContain('## Not detected');
-    expect(md).toContain('- claude-code');
-    expect(md).toContain('- codex');
+    expect(md).toContain('## claude-code — not detected');
+    expect(md).toContain('## codex — not detected');
   });
 
-  test('omits Not-detected section when detectedOnly', () => {
+  test('omits not-detected tools when detectedOnly', () => {
     const md = renderAgentsMarkdown(empty, { detectedOnly: true });
-    expect(md).not.toContain('## Not detected');
+    expect(md).not.toContain('not detected');
   });
 
   test('renders table rows for detected installs', () => {
@@ -37,7 +36,7 @@ describe('renderAgentsMarkdown', () => {
       ['opencode', []],
     ]);
     const md = renderAgentsMarkdown(results, { detectedOnly: false });
-    expect(md).toContain('## claude-code');
+    expect(md).toContain('## claude-code — multiple installations (2)');
     expect(md).toContain('| Path | Version | Install method |');
     expect(md).toContain('| /opt/homebrew/bin/claude | 1.2.3 | brew |');
     expect(md).toContain('| /Users/u/.npm/bin/claude | 1.1.0 | npm-global |');

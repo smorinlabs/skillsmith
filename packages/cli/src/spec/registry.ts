@@ -468,6 +468,7 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   conflicts('skillsmith', '--quiet', '--debug'),
   conflicts('skillsmith', '--color', '--no-color'),
   exclusive('skillsmith list', ['--enabled', '--disabled', '--unconfigured']),
+  exclusive('skillsmith list', ['--verified', '--unverified']),
   ...scopeRelations('skillsmith list', ['user', 'project', 'system', 'managed']),
   exclusive('skillsmith commands', ['--enabled', '--disabled', '--unconfigured']),
   ...scopeRelations('skillsmith commands', ['user', 'project']),

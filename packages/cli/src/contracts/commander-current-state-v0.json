@@ -232,6 +232,28 @@
     "validationOwner": "EWP-CMD-AGENTS-TS01"
   },
   {
+    "key": "option:skillsmith agents:--capabilities",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-AGENTS-TS01",
+    "option": {
+      "flags": "--capabilities",
+      "short": null,
+      "long": "--capabilities",
+      "attributeName": "capabilities",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
     "key": "option:skillsmith agents:--detected-only",
     "disposition": "K",
     "phase": "P17-G3A-02",
@@ -254,12 +276,12 @@
     }
   },
   {
-    "key": "option:skillsmith agents:--format <fmt>",
+    "key": "option:skillsmith agents:--format <markdown|json>",
     "disposition": "K",
     "phase": "P17-G3A-02",
     "validationOwner": "EWP-CMD-AGENTS-TS01",
     "option": {
-      "flags": "--format <fmt>",
+      "flags": "--format <markdown|json>",
       "short": null,
       "long": "--format",
       "attributeName": "format",
@@ -269,6 +291,28 @@
       "valueShape": "required",
       "choices": ["json", "markdown"],
       "defaultValue": "\"markdown\"",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith agents:--json",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-AGENTS-TS01",
+    "option": {
+      "flags": "--json",
+      "short": null,
+      "long": "--json",
+      "attributeName": "json",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
       "defaultSource": "literal",
       "repeatable": false,
       "negated": false,
@@ -2479,6 +2523,138 @@
       "choices": [],
       "defaultValue": "null",
       "defaultSource": "none"
+    }
+  },
+  {
+    "key": "option:skillsmith list:--description <glob>",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-LIST-TS03",
+    "option": {
+      "flags": "--description <glob>",
+      "short": null,
+      "long": "--description",
+      "attributeName": "description",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith list:--mode <dev|pinned|unmanaged>",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-LIST-TS03",
+    "option": {
+      "flags": "--mode <dev|pinned|unmanaged>",
+      "short": null,
+      "long": "--mode",
+      "attributeName": "mode",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": ["dev", "pinned", "unmanaged"],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith list:--revision <glob>",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-LIST-TS03",
+    "option": {
+      "flags": "--revision <glob>",
+      "short": null,
+      "long": "--revision",
+      "attributeName": "revision",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith list:--source <glob>",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-LIST-TS03",
+    "option": {
+      "flags": "--source <glob>",
+      "short": null,
+      "long": "--source",
+      "attributeName": "source",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith list:--unverified",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-LIST-TS03",
+    "option": {
+      "flags": "--unverified",
+      "short": null,
+      "long": "--unverified",
+      "attributeName": "unverified",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith list:--verified",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-LIST-TS03",
+    "option": {
+      "flags": "--verified",
+      "short": null,
+      "long": "--verified",
+      "attributeName": "verified",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
     }
   },
   {

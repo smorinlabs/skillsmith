@@ -259,11 +259,15 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
       (value, outcome) =>
         withDiagnostics(
           outcome,
-          `${renderAgentsMarkdown(value.detections as Map<never, never>, {
+          renderAgentsMarkdown(value.detections as Map<never, never>, {
             detectedOnly: value.detectedOnly,
-          })}\n`,
+            ...(value.showCapabilities === undefined
+              ? {}
+              : { capabilities: value.showCapabilities }),
+            ...(value.capabilities === undefined ? {} : { capabilitySnapshot: value.capabilities }),
+          }),
         ),
-      (value) => renderAgentsJson(value.detections as Map<never, never>),
+      (value) => renderAgentsJson(value),
     ),
     configGet: guarded<ConfigGetReport>(
       (value, outcome) => withDiagnostics(outcome, `${value.value ?? ''}\n`),
@@ -293,12 +297,12 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     list: guarded<ListReport>(
       (value, outcome) =>
         withDiagnostics(outcome, renderListHuman(value.entries, { long: value.long })),
-      (value) => renderListJson(value.entries),
+      (value) => renderListJson(value),
     ),
     commands: guarded<CommandsReport>(
       (value, outcome) =>
         withDiagnostics(outcome, renderCommandsHuman(value.entries, { long: value.long })),
-      (value) => renderCommandsJson(value.entries),
+      (value) => renderCommandsJson(value),
     ),
     doctor: guarded<HealthReport>(
       (value, outcome) =>

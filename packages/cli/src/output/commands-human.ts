@@ -1,44 +1,110 @@
-import type { CommandEntry, Origin } from '@skillsmith/core';
+import { type CommandEntry, type Origin, SUPPORTED_TOOLS } from '@skillsmith/core';
 
 export interface CommandsHumanOpts {
   long: boolean;
 }
 
-const formatOrigin = (o: Origin): string => {
-  if (o.kind === 'standalone') return 'standalone';
-  if (o.kind === 'plugin') return `plugin:${o.pluginId}@${o.pluginVersion}`;
+type PresentedCommandEntry = CommandEntry & {
+  readonly description?: string | null;
+};
+
+const SCOPE_ORDER = Object.freeze(['user', 'project']);
+const TOOL_ORDER = new Map(SUPPORTED_TOOLS.map((tool, index) => [tool, index]));
+const scopeOrder = new Map(SCOPE_ORDER.map((scope, index) => [scope, index]));
+const COMPACT_ROW_LIMIT = 100;
+
+const compareText = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+const compareEntries = (left: PresentedCommandEntry, right: PresentedCommandEntry): number =>
+  (TOOL_ORDER.get(left.tool) ?? Number.MAX_SAFE_INTEGER) -
+    (TOOL_ORDER.get(right.tool) ?? Number.MAX_SAFE_INTEGER) ||
+  (scopeOrder.get(left.scope) ?? Number.MAX_SAFE_INTEGER) -
+    (scopeOrder.get(right.scope) ?? Number.MAX_SAFE_INTEGER) ||
+  compareText(left.name, right.name) ||
+  compareText(left.path, right.path);
+
+const escapeCell = (value: string): string =>
+  value
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/[\r\n]+/g, ' ');
+
+const valueCell = (value: string | null | undefined): string => escapeCell(value ?? '');
+
+const formatOrigin = (origin: Origin): string => {
+  if (origin.kind === 'standalone') return 'standalone';
+  if (origin.kind === 'plugin')
+    return `plugin:${origin.pluginId}@${origin.pluginVersion}:${origin.pluginScope}`;
   return 'policy';
 };
 
+const formatFrontmatter = (entry: PresentedCommandEntry): string => {
+  if (entry.frontmatter === null) return 'null';
+  const values = [
+    ['name', entry.frontmatter.name],
+    ['description', entry.frontmatter.description],
+    ['version', entry.frontmatter.version],
+  ] as const;
+  return `{${values
+    .flatMap(([name, value]) => (value === undefined ? [] : [`${name}=${value}`]))
+    .join(';')}}`;
+};
+
+const stateCell = (entry: PresentedCommandEntry): string =>
+  entry.enabled === 'on' ? '' : entry.enabled === 'off' ? 'disabled' : 'unconfigured';
+
 export const renderCommandsHuman = (
-  entries: readonly CommandEntry[],
+  entries: readonly PresentedCommandEntry[],
   opts: CommandsHumanOpts,
 ): string => {
-  if (entries.length === 0) return 'No commands installed.\n';
-  const grouped = new Map<string, Map<string, CommandEntry[]>>();
-  for (const e of entries) {
-    if (!grouped.has(e.tool)) grouped.set(e.tool, new Map());
-    const byScope = grouped.get(e.tool);
-    if (!byScope) continue;
-    if (!byScope.has(e.scope)) byScope.set(e.scope, []);
-    byScope.get(e.scope)?.push(e);
+  if (entries.length === 0) return 'No slash commands installed.\n';
+
+  const columns = opts.long
+    ? [
+        'Tool',
+        'Scope',
+        'Name',
+        'State',
+        'Logical path',
+        'Real path',
+        'Root',
+        'Origin',
+        'Version',
+        'Frontmatter',
+        'Description',
+      ]
+    : ['Tool', 'Scope', 'Name', 'State'];
+  const lines = [
+    'Installed slash commands',
+    `| ${columns.join(' | ')} |`,
+    `| ${columns.map(() => '---').join(' | ')} |`,
+  ];
+  const ordered = [...entries].sort(compareEntries);
+  const displayed = opts.long ? ordered : ordered.slice(0, COMPACT_ROW_LIMIT);
+  let previousTool: string | undefined;
+  for (const entry of displayed) {
+    if (previousTool !== undefined && entry.tool !== previousTool) lines.push('');
+    previousTool = entry.tool;
+    const compact = [entry.tool, entry.scope, entry.name, stateCell(entry)];
+    const row = opts.long
+      ? [
+          ...compact,
+          entry.path,
+          entry.realpath,
+          entry.root,
+          formatOrigin(entry.origin),
+          entry.frontmatter?.version ?? '',
+          formatFrontmatter(entry),
+          entry.description ?? entry.frontmatter?.description ?? '',
+        ]
+      : compact;
+    lines.push(`| ${row.map(valueCell).join(' | ')} |`);
   }
-  const lines: string[] = [];
-  for (const [tool, byScope] of grouped) {
-    lines.push(`# ${tool}`);
-    for (const [scope, cmds] of byScope) {
-      lines.push(`  ${scope}:`);
-      for (const c of cmds) {
-        const desc = c.frontmatter?.description ?? '';
-        const status = c.enabled === 'on' ? '' : ` [${c.enabled}]`;
-        const origin = formatOrigin(c.origin);
-        lines.push(
-          opts.long
-            ? `    ${c.name}  ${origin}${status}  ${c.path}  ${desc}`
-            : `    ${c.name}  ${origin}${status}  ${desc}`,
-        );
-      }
-    }
+  if (!opts.long && ordered.length > COMPACT_ROW_LIMIT) {
+    lines.push(
+      `... ${ordered.length - COMPACT_ROW_LIMIT} more entries; narrow with filters or use --long or --json.`,
+    );
   }
   return `${lines.join('\n')}\n`;
 };

@@ -1,12 +1,16 @@
 import type { CommandEntry, CommandsReport } from '@skillsmith/core';
-import { toCommandsV1Dto } from '@skillsmith/core/contracts/v1';
+import { toCommandsV2Dto } from '@skillsmith/core/contracts/v2';
 import { currentWireCodecs } from '../contracts/wire-contracts.ts';
 import { encodeWire, wireSchema } from './wire-codec.ts';
 
 export const CommandsJsonSchema = wireSchema(currentWireCodecs.commands);
 
-export const renderCommandsJson = (entries: readonly CommandEntry[]): string =>
+export const renderCommandsJson = (value: readonly CommandEntry[] | CommandsReport): string =>
   encodeWire(
     currentWireCodecs.commands,
-    toCommandsV1Dto({ entries, long: false } satisfies CommandsReport),
+    toCommandsV2Dto(
+      Array.isArray(value)
+        ? ({ entries: value, long: false } satisfies CommandsReport)
+        : (value as CommandsReport),
+    ),
   );

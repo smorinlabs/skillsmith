@@ -1,7 +1,25 @@
-import type { InstallRecord, SupportedTool } from '@skillsmith/core';
+import { type InstallRecord, SUPPORTED_TOOLS, type SupportedTool } from '@skillsmith/core';
 
 export interface RenderOptions {
   detectedOnly: boolean;
+  capabilities?: boolean;
+  capabilitySnapshot?: Readonly<{
+    readonly tools: ReadonlyArray<
+      Readonly<{
+        readonly id: string;
+        readonly operations: Readonly<
+          Record<
+            string,
+            Readonly<{
+              readonly supported: boolean;
+              readonly scopes: readonly string[];
+              readonly remediation: string | null;
+            }>
+          >
+        >;
+      }>
+    >;
+  }>;
 }
 
 const escapeCell = (s: string): string =>
@@ -11,30 +29,49 @@ const escapeCell = (s: string): string =>
     .replace(/[\r\n]+/g, ' ');
 
 export const renderAgentsMarkdown = (
-  results: Map<SupportedTool, InstallRecord[]>,
+  results: ReadonlyMap<SupportedTool, readonly InstallRecord[]>,
   opts: RenderOptions,
 ): string => {
   const lines: string[] = ['# Tools detected', ''];
-  const detected: [SupportedTool, InstallRecord[]][] = [];
-  const notDetected: SupportedTool[] = [];
+  for (const tool of SUPPORTED_TOOLS) {
+    const records = results.get(tool) ?? [];
+    if (records.length === 0) {
+      if (!opts.detectedOnly) lines.push(`## ${tool} — not detected`, '');
+      continue;
+    }
 
-  for (const [tool, records] of results) {
-    if (records.length > 0) detected.push([tool, records]);
-    else notDetected.push(tool);
-  }
-
-  for (const [tool, records] of detected) {
-    lines.push(`## ${tool}`, '', '| Path | Version | Install method |', '|---|---|---|');
-    for (const r of records) {
-      lines.push(`| ${escapeCell(r.path)} | ${escapeCell(r.version)} | ${r.installMethod} |`);
+    const classification =
+      records.length === 1 ? 'one installation' : `multiple installations (${records.length})`;
+    lines.push(
+      `## ${tool} — ${classification}`,
+      '',
+      '| Path | Version | Install method |',
+      '|---|---|---|',
+    );
+    for (const record of [...records].sort((left, right) => left.path.localeCompare(right.path))) {
+      lines.push(
+        `| ${escapeCell(record.path)} | ${escapeCell(record.version)} | ${escapeCell(record.installMethod)} |`,
+      );
     }
     lines.push('');
   }
 
-  if (!opts.detectedOnly && notDetected.length > 0) {
-    lines.push('## Not detected', '');
-    for (const t of notDetected) lines.push(`- ${t}`);
-    lines.push('');
+  if (opts.capabilities && opts.capabilitySnapshot !== undefined) {
+    lines.push('# Capabilities', '');
+    for (const tool of opts.capabilitySnapshot.tools) {
+      lines.push(
+        `## ${tool.id}`,
+        '',
+        '| Operation | Supported | Scopes | Remediation |',
+        '|---|---|---|---|',
+      );
+      for (const [operation, capability] of Object.entries(tool.operations)) {
+        lines.push(
+          `| ${escapeCell(operation)} | ${capability.supported ? 'yes' : 'no'} | ${capability.scopes.length === 0 ? '—' : escapeCell(capability.scopes.join(', '))} | ${capability.remediation === null ? '—' : escapeCell(capability.remediation)} |`,
+        );
+      }
+      lines.push('');
+    }
   }
 
   return lines.join('\n');
