@@ -75,12 +75,18 @@ describe('skillsmith help routing', () => {
     expect(r.code).toBe(2);
   });
 
-  test('`skillsmith agents --format json` returns valid JSON, exit 0', async () => {
-    const r = await run(['agents', '--format', 'json']);
-    expect(r.code).toBe(0);
-    const parsed = JSON.parse(r.stdout);
-    expect(parsed.schemaVersion).toBe(1);
-    expect(typeof parsed.tools).toBe('object');
+  test('agents JSON spelling and alias both return current valid JSON, exit 0', async () => {
+    for (const args of [
+      ['agents', '--format', 'json'],
+      ['agents', '--json'],
+    ]) {
+      const r = await run(args);
+      expect(r.code, args.join(' ')).toBe(0);
+      const parsed = JSON.parse(r.stdout);
+      expect(parsed.schemaVersion, args.join(' ')).toBe(2);
+      expect(parsed.kind, args.join(' ')).toBe('skillsmith.agents');
+      expect(Array.isArray(parsed.detections), args.join(' ')).toBeTrue();
+    }
   });
 
   test('install help preserves source grammar, option guidance, real examples, and exit meanings', async () => {

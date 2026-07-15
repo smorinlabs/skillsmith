@@ -50,7 +50,20 @@ export interface ProgramBuildExtensions {
 
 const commandRequest = (values: readonly unknown[]): CurrentCommandRequest => {
   const command = values.at(-1) as Command;
-  const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+  const options = {
+    ...(command.optsWithGlobals() as Readonly<Record<string, unknown>>),
+  } as Record<string, unknown>;
+  // Preserve the distinction between Commander's implicit markdown default and
+  // an explicit `--format markdown`, so the documented `--json` alias can win
+  // only over the former while the explicit conflict remains a usage error.
+  if (
+    command.name() === 'agents' &&
+    options.json === true &&
+    options.format === 'markdown' &&
+    command.getOptionValueSource('format') === 'default'
+  ) {
+    options.format = undefined;
+  }
   return {
     arguments: values.slice(0, Math.max(0, values.length - 2)),
     options:
