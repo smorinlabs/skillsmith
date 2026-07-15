@@ -11,15 +11,15 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 10 | 18 | 6 |
-| phase-task | 65 | 31 | 34 | 0 |
-| phase-test | 61 | 28 | 33 | 0 |
-| command-test | 157 | 14 | 143 | 0 |
+| recommendation | 34 | 11 | 17 | 6 |
+| phase-task | 65 | 33 | 32 | 0 |
+| phase-test | 61 | 30 | 31 | 0 |
+| command-test | 157 | 20 | 137 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
-| command | 23 | 4 | 19 | 0 |
+| command | 23 | 5 | 18 | 0 |
 | finding | 43 | 25 | 18 | 0 |
-| decision | 16 | 2 | 13 | 1 |
+| decision | 16 | 3 | 12 | 1 |
 
 ### Phases
 
@@ -28,7 +28,7 @@ Tracked entities: **425** across **45** change groups.
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
-| 3 | 8 | 84 | 0 | 0 |
+| 3 | 8 | 84 | 13 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 66 | 0 | 0 |
 | 6 | 5 | 39 | 0 | 0 |
@@ -120,7 +120,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:list | P17-G3A-02 | planned | required-pr |
 | COMMAND:plan | P17-G4B-01 | planned | required-pr |
 | COMMAND:promote | P17-G3B-01 | planned | required-pr |
-| COMMAND:status | P17-G3A-01 | validated | required-pr |
+| COMMAND:status | P17-G3A-01 | signed-off | required-pr |
 | COMMAND:sync | P17-G5-01 | planned | required-pr |
 | COMMAND:undo | P17-G5-03 | planned | required-pr |
 | COMMAND:uninstall | P17-G4A-01 | planned | required-pr |
@@ -141,7 +141,7 @@ Tracked entities: **425** across **45** change groups.
 | P0-07 | P17-G2-05 | signed-off | required-pr |
 | P0-08 | P17-G2-05 | signed-off | required-pr |
 | P1-01 | P17-G3A-02 | planned | required-pr |
-| P1-02 | P17-G3A-01 | validated | required-pr |
+| P1-02 | P17-G3A-01 | signed-off | required-pr |
 | P1-03 | P17-G3A-02 | planned | required-pr |
 | P1-04 | P17-G5-05 | planned | required-pr |
 | P1-05 | P17-G4A-03 | planned | required-pr |
@@ -226,7 +226,7 @@ Tracked entities: **425** across **45** change groups.
 | D-005 | P17-G4A-02 | planned | required-pr |
 | D-006 | P17-G4A-01 | planned | required-pr |
 | D-007 | P17-G5-01 | planned | required-pr |
-| D-008 | P17-G3A-01 | validated | required-pr |
+| D-008 | P17-G3A-01 | signed-off | required-pr |
 | D-009 | P17-G3B-01 | planned | required-pr |
 | D-010 | P17-G3B-03 | planned | required-pr |
 | D-011 | P17-G5-02 | planned | required-pr |
@@ -814,7 +814,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G3A-01 — Canonical correlated read model and status state-product surface
 
-Phase: 3A; status: **reviewed**; dependencies: P17-G2-05.
+Phase: 3A; status: **signed-off**; dependencies: P17-G2-05.
 Required-now validations: EWP-CMD-STATUS-TS01, EWP-CMD-STATUS-TS02, EWP-CMD-STATUS-TS03, EWP-CMD-STATUS-TS04, EWP-CMD-STATUS-TS05, EWP-CMD-STATUS-TS06, EWP-P3A-TS02, EWP-P3A-TS04.
 Downstream coverage obligations: none.
 
@@ -828,24 +828,24 @@ Downstream coverage obligations: none.
 - [x] P17-G3A-01:impacted-green _(passed)_
 - [x] P17-G3A-01:refactor _(passed)_
 - [x] P17-G3A-01:adversarial-review _(passed)_
-- [ ] P17-G3A-01:traceability-closure _(pending)_
-- [ ] P17-G3A-01:signed-off _(pending)_
+- [x] P17-G3A-01:traceability-closure _(passed)_
+- [x] P17-G3A-01:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:status** — Discover — How do desired, locked, ledger, and live states relate? _(command; validated)_
-- [ ] **D-008** — Dedicated correlated status _(decision; validated)_
-- [ ] **EWP-CMD-STATUS-TS01** — manifest-only, lock-only, ledger-only, live-only state products. _(command-test; passing)_
-- [ ] **EWP-CMD-STATUS-TS02** — dev, pinned, store-linked, unmanaged, broken, and absent classification. _(command-test; passing)_
-- [ ] **EWP-CMD-STATUS-TS03** — revision/content/source drift and verify-state reporting. _(command-test; passing)_
-- [ ] **EWP-CMD-STATUS-TS04** — pending/committed journal, version-1 migration-pending without rewrite, _(command-test; passing)_
-- [ ] **EWP-CMD-STATUS-TS05** — target/tool/scope filters, cross-scope shadowing, and project identity _(command-test; passing)_
-- [ ] **EWP-CMD-STATUS-TS06** — check exit and versioned JSON. _(command-test; passing)_
-- [ ] **EWP-P3A-T02** — Version-discriminating, non-mutating ledger reader plus _(phase-task; green)_
-- [ ] **EWP-P3A-T03** — Status command. _(phase-task; green)_
-- [ ] **EWP-P3A-TS02** — Status state-product matrix including missing, version 1, version 2, _(phase-test; passing)_
-- [ ] **EWP-P3A-TS04** — Realistic mixed-fleet inspection fixture. _(phase-test; passing)_
-- [ ] **P1-02** — Ledger-aware `status` _(recommendation; validated)_
+- [x] **COMMAND:status** — Discover — How do desired, locked, ledger, and live states relate? _(command; signed-off)_
+- [x] **D-008** — Dedicated correlated status _(decision; signed-off)_
+- [x] **EWP-CMD-STATUS-TS01** — manifest-only, lock-only, ledger-only, live-only state products. _(command-test; signed-off)_
+- [x] **EWP-CMD-STATUS-TS02** — dev, pinned, store-linked, unmanaged, broken, and absent classification. _(command-test; signed-off)_
+- [x] **EWP-CMD-STATUS-TS03** — revision/content/source drift and verify-state reporting. _(command-test; signed-off)_
+- [x] **EWP-CMD-STATUS-TS04** — pending/committed journal, version-1 migration-pending without rewrite, _(command-test; signed-off)_
+- [x] **EWP-CMD-STATUS-TS05** — target/tool/scope filters, cross-scope shadowing, and project identity _(command-test; signed-off)_
+- [x] **EWP-CMD-STATUS-TS06** — check exit and versioned JSON. _(command-test; signed-off)_
+- [x] **EWP-P3A-T02** — Version-discriminating, non-mutating ledger reader plus _(phase-task; signed-off)_
+- [x] **EWP-P3A-T03** — Status command. _(phase-task; signed-off)_
+- [x] **EWP-P3A-TS02** — Status state-product matrix including missing, version 1, version 2, _(phase-test; signed-off)_
+- [x] **EWP-P3A-TS04** — Realistic mixed-fleet inspection fixture. _(phase-test; signed-off)_
+- [x] **P1-02** — Ledger-aware `status` _(recommendation; signed-off)_
 
 ## P17-G3A-02 — Deterministic agents/list/commands inventory, duplicates, and capability presentation
 
