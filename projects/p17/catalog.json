@@ -5075,7 +5075,7 @@
       "phase": "3B",
       "title": "Operation context and lifecycle events through execution and recovery",
       "dependsOn": ["P17-G3B-02", "P17-G1-07"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0009-operation-scoped-observation.md",
@@ -5097,6 +5097,12 @@
         "packages/core/src/place/ledger-persistence.ts",
         "packages/core/src/artifacts/ledger-writer.ts",
         "packages/core/src/doctor/repair.ts",
+        "packages/core/tests/acquire/install-run.test.ts",
+        "packages/core/tests/acquire/uninstall-run.test.ts",
+        "packages/core/tests/application/lifecycle-services.test.ts",
+        "packages/core/tests/execution/coordinator.test.ts",
+        "packages/core/tests/execution/scheduler.test.ts",
+        "packages/core/tests/place/recovery.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts"
       ],
@@ -5108,7 +5114,7 @@
         "bun test tests/ergonomics/phase/EWP-P3B-TS07.test.ts --test-name-pattern EWP-P3B-TS07"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g3b06_final_architecture",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -5135,12 +5141,12 @@
           "evidence": ["projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -5157,7 +5163,9 @@
         "projects/p17/evidence/P17-G3B-06.md#ready-plan",
         "projects/p17/evidence/P17-G3B-06.md#test-first-evidence",
         "projects/p17/evidence/P17-G3B-06.md#minimal-implementation",
-        "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-06.md#final-review-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review"
       ]
     },
     {
@@ -20026,7 +20034,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-06",
-      "status": "green",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-06",
       "target": null,
@@ -20034,7 +20042,9 @@
         "projects/p17/evidence/P17-G3B-06.md#ready-plan",
         "projects/p17/evidence/P17-G3B-06.md#test-first-evidence",
         "projects/p17/evidence/P17-G3B-06.md#minimal-implementation",
-        "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-06.md#final-review-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -20064,6 +20074,12 @@
         "packages/core/src/place/ledger-persistence.ts",
         "packages/core/src/artifacts/ledger-writer.ts",
         "packages/core/src/doctor/repair.ts",
+        "packages/core/tests/acquire/install-run.test.ts",
+        "packages/core/tests/acquire/uninstall-run.test.ts",
+        "packages/core/tests/application/lifecycle-services.test.ts",
+        "packages/core/tests/execution/coordinator.test.ts",
+        "packages/core/tests/execution/scheduler.test.ts",
+        "packages/core/tests/place/recovery.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts"
       ]
