@@ -5075,7 +5075,7 @@
       "phase": "3B",
       "title": "Operation context and lifecycle events through execution and recovery",
       "dependsOn": ["P17-G3B-02", "P17-G1-07"],
-      "status": "planned",
+      "status": "mapped",
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
@@ -5087,8 +5087,8 @@
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-06.md#mapping-and-prerequisites"]
         },
         "ready": {
           "status": "pending",
@@ -5127,7 +5127,7 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": ["projects/p17/evidence/P17-G3B-06.md#mapping-and-prerequisites"]
     },
     {
       "id": "P17-G4A-01",
