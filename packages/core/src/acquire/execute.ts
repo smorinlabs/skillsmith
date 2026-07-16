@@ -80,11 +80,23 @@ import type {
   InstallOptions,
   InstallScope,
   SourceSpec,
-  UninstallDeps,
   UninstallOptions,
 } from './types.ts';
 
 export type AcquireExecutionInput = PlacementExecutionInput;
+
+export const detectAcquireTool = (
+  env: AcquisitionPorts,
+  tool: FlipTool,
+  signal: AbortSignal | undefined,
+  deps: InstallDeps,
+  defaultDetect: InstallDeps['detect'],
+  registry: LifecycleToolRegistry<string>,
+): ReturnType<InstallDeps['detect']> => {
+  if (deps.detect !== defaultDetect) return deps.detect(env, tool, signal);
+  const inventory = registry.get(tool)?.inventory;
+  return inventory === undefined ? deps.detect(env, tool, signal) : inventory.detect(env, signal);
+};
 
 export interface AcquirePlacementFacts {
   readonly pathKind: 'absent' | 'file' | 'dir' | 'symlink';
@@ -179,19 +191,15 @@ export const createAcquireExecutionInput = (
   env: AcquisitionPorts,
   ledgerPath: string,
   ledger: LedgerModel,
-  deps: InstallDeps | UninstallDeps,
+  effects: readonly [journalNow: () => string, newTransactionId: () => string],
   opts: Pick<InstallOptions | UninstallOptions, 'testPauseAt' | 'signal'>,
   logicalOperation: ExecutableOperation | null,
 ): AcquireExecutionInput => ({
   env,
   ledgerPath,
   ledger,
-  journalNow: () => {
-    const value = deps.now?.() ?? env.wallNowIso();
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.valueOf()) ? value : parsed.toISOString();
-  },
-  newTransactionId: () => deps.newTxId?.() ?? env.nextId('acquisition-transaction'),
+  journalNow: effects[0],
+  newTransactionId: effects[1],
   ...(opts.testPauseAt === undefined ? {} : { pauseAt: opts.testPauseAt }),
   ...(opts.signal === undefined ? {} : { signal: opts.signal }),
   ...(logicalOperation === null ? {} : { logicalOperation }),

@@ -17,7 +17,6 @@ import {
   genericError,
   sourceUnresolvableError,
   toolUnavailableError,
-  unknownToolError,
 } from '../errors.ts';
 import { executeOperationPlan } from '../execution/index.ts';
 import { createContentObservationExecutionPrecondition } from '../execution/preconditions.ts';
@@ -101,6 +100,7 @@ import {
   createAcquisitionPinnedRecord,
   createAcquisitionRepositoryLifecycleControllerV1,
   destinationSkillRootFor,
+  detectAcquireTool,
   executeAcquirePlan,
   executeAcquireReplacement,
   executeRecordOnlyAcquirePlan,
@@ -191,20 +191,22 @@ const journalNowOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps
 };
 const txIdOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string =>
   deps.newTxId?.() ?? ports.nextId('acquisition-transaction');
-
-const detectInstallTool = (
+const executionInputOf = (
   env: AcquisitionPorts,
-  tool: FlipTool,
-  signal: AbortSignal | undefined,
-  deps: InstallDeps,
-  registry: LifecycleToolRegistry<string>,
-): ReturnType<InstallDeps['detect']> => {
-  if (deps.detect !== defaultInstallDetect) return deps.detect(env, tool, signal);
-  const inventory = registry.get(tool)?.inventory;
-  return inventory === undefined
-    ? Promise.resolve(err(unknownToolError(tool)))
-    : inventory.detect(env, signal);
-};
+  ledgerPath: string,
+  ledger: LedgerModel,
+  deps: InstallDeps | UninstallDeps,
+  opts: Pick<InstallOptions | UninstallOptions, 'testPauseAt' | 'signal'>,
+  logicalOperation: ExecutableOperation | null,
+): AcquireExecutionInput =>
+  createAcquireExecutionInput(
+    env,
+    ledgerPath,
+    ledger,
+    [() => journalNowOf(env, deps), () => txIdOf(env, deps)] as const,
+    opts,
+    logicalOperation,
+  );
 
 const installHintFor = (registry: LifecycleToolRegistry<string>, tool: FlipTool): string => {
   const hint = registry.get(tool)?.inventory.installHint;
@@ -812,7 +814,7 @@ interface PlaceCtx {
 }
 
 const placeExecutionInput = (p: PlaceCtx): AcquireExecutionInput =>
-  createAcquireExecutionInput(p.env, p.ledgerPath, p.ledger, p.deps, p.opts, p.logicalOperation);
+  executionInputOf(p.env, p.ledgerPath, p.ledger, p.deps, p.opts, p.logicalOperation);
 
 // dir→dir routing: the swap engine rejects a same-kind copy-over-copy replace, so a copy re-install
 // over a real dir is routed as two kind changes (dir→store-symlink, then store-symlink→dir). Every
@@ -1557,7 +1559,7 @@ const runInstallInternal = async (
   const undetectedExplicit: FlipTool[] = [];
   for (const tool of candidateTools) {
     const d = safeDependencyResult<readonly unknown[]>(
-      await detectInstallTool(env, tool, opts.signal, deps, registry),
+      await detectAcquireTool(env, tool, opts.signal, deps, defaultInstallDetect, registry),
     );
     if (!d.ok) return d;
     if (!Array.isArray(d.value)) return err(genericError('tool detection failed'));
@@ -2862,7 +2864,7 @@ const processUninstallMatch = async (
   const { scope, scopeKey, tool, existing, notice } = match;
 
   const executionInput = (): AcquireExecutionInput =>
-    createAcquireExecutionInput(env, ledgerPath, ledgerCtx.ledger, deps, opts, logicalOperation);
+    executionInputOf(env, ledgerPath, ledgerCtx.ledger, deps, opts, logicalOperation);
   const midSwap = (e: SkillSmithError): SkillSmithError =>
     e.code === 'ledger-error' ? flipFailedError(msg(e)) : e;
   const failed = (e: SkillSmithError, placementPath: string | null): UninstallResult => ({
@@ -3897,7 +3899,7 @@ const runUninstallInternal = async (
     const ledger = ledgerModelForMutation(ledgerRes.value, nowOf(env, deps));
 
     const swept = await recoverCommittedAcquireJournals(
-      createAcquireExecutionInput(env, ledgerPath, ledger, deps, opts, null),
+      executionInputOf(env, ledgerPath, ledger, deps, opts, null),
     );
     if (!swept.ok) {
       const sweepError = safeError(swept.error);
