@@ -1,4 +1,7 @@
 import { dirname, resolve } from 'node:path';
+import type { ToolCapabilityScope } from '../agents/adapter-types.ts';
+import type { RelevantCapabilityQueryV1 } from '../agents/capabilities.ts';
+import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import type { SupportedTool } from '../agents/types.ts';
 import type { LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
 import {
@@ -119,6 +122,41 @@ export interface AcquisitionUninstallIntentV1 {
   readonly liveResourceId: string;
   readonly storeResourceId: string | null;
 }
+
+const relevantCapabilityQuery = (
+  tool: string,
+  operation: RelevantCapabilityQueryV1['operation'],
+  scope: ToolCapabilityScope,
+): RelevantCapabilityQueryV1 => Object.freeze({ schemaVersion: 1, tool, operation, scope });
+
+export const createInstallCapabilityQueries = (
+  registry: LifecycleToolRegistry<string>,
+  intents: readonly AcquisitionInstallIntentV1[],
+  opts: Readonly<{ noVerify?: boolean; deep?: boolean }>,
+): readonly RelevantCapabilityQueryV1[] =>
+  Object.freeze(
+    intents.flatMap((intent) => {
+      const queries = [relevantCapabilityQuery(intent.tool, 'install', intent.scope)];
+      if (opts.noVerify) return queries;
+      queries.push(relevantCapabilityQuery(intent.tool, 'verify-static', 'artifact'));
+      if (opts.deep && registry.get(intent.tool)?.verification?.gatePolicy.installDeep === true) {
+        queries.push(relevantCapabilityQuery(intent.tool, 'verify-deep', 'artifact'));
+      }
+      return queries;
+    }),
+  );
+
+export const createUninstallCapabilityQueries = (
+  prepared: readonly Readonly<{
+    intent: AcquisitionUninstallIntentV1;
+    capabilityScope: ToolCapabilityScope;
+  }>[],
+): readonly RelevantCapabilityQueryV1[] =>
+  Object.freeze(
+    prepared.map(({ intent, capabilityScope }) =>
+      relevantCapabilityQuery(intent.tool, 'uninstall', capabilityScope),
+    ),
+  );
 
 const planningError = (error: unknown): SnapshotPlanningErrorV1 =>
   Object.freeze({

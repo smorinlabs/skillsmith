@@ -16,6 +16,57 @@ type ToolOrderContext<ToolId extends string = string> = Pick<
   'toolOrder'
 >;
 
+const planningContextFail = (message: string): never => {
+  throw new TypeError(`operation planning: ${message}`);
+};
+
+const builtInPlanningToolContext = (registry = toolRegistry): PlanningToolContext<string> =>
+  Object.freeze({
+    registry,
+    toolOrder: registry.ids,
+  });
+
+const validatePlanningToolContext = (context: unknown): PlanningToolContext<string> => {
+  if (context === null || typeof context !== 'object' || Array.isArray(context)) {
+    return planningContextFail('$planningContext must be an object');
+  }
+  const candidate = context as Partial<PlanningToolContext<string>>;
+  if (!Array.isArray(candidate.toolOrder)) {
+    return planningContextFail('$planningContext.toolOrder must be an array');
+  }
+  if (
+    candidate.registry === null ||
+    typeof candidate.registry !== 'object' ||
+    typeof candidate.registry.get !== 'function'
+  ) {
+    return planningContextFail('$planningContext.registry must provide get');
+  }
+  const orderedTools = [...candidate.toolOrder];
+  if (new Set(orderedTools).size !== orderedTools.length) {
+    return planningContextFail('$planningContext.toolOrder contains duplicate values');
+  }
+  for (const [index, tool] of orderedTools.entries()) {
+    if (typeof tool !== 'string' || tool.length === 0) {
+      return planningContextFail(`$planningContext.toolOrder[${index}] must be a non-empty string`);
+    }
+    if (candidate.registry.get(tool)?.descriptor.id !== tool) {
+      return planningContextFail(`$planningContext.toolOrder[${index}] is not registered`);
+    }
+  }
+  return context as PlanningToolContext<string>;
+};
+
+export function resolvePlanningToolContext(): PlanningToolContext;
+export function resolvePlanningToolContext<ToolId extends string>(
+  context: PlanningToolContext<ToolId>,
+): PlanningToolContext<ToolId>;
+export function resolvePlanningToolContext<ToolId extends string>(
+  context: PlanningToolContext<ToolId> | undefined,
+): PlanningToolContext<ToolId>;
+export function resolvePlanningToolContext(context?: unknown): PlanningToolContext<string> {
+  return validatePlanningToolContext(context ?? builtInPlanningToolContext());
+}
+
 const builtInToolOrder = (registry = toolRegistry): ToolOrderContext => ({
   toolOrder: registry.ids,
 });

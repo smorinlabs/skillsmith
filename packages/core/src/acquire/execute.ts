@@ -1,16 +1,20 @@
 import { join, parse, resolve } from 'node:path';
+import type { RegisteredPlacementBundle, SkillRootsCtx } from '../agents/adapter-types.ts';
 import type {
   RelevantCapabilityQueryV1,
   RelevantCapabilitySnapshotV1,
 } from '../agents/capabilities.ts';
+import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
 import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
+import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { LedgerWriterPorts } from '../artifacts/ledger-writer.ts';
 import { createLockRepository, createManifestRepository } from '../artifacts/repository.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
+import { type SkillSmithError, flipFailedError, genericError } from '../errors.ts';
 import {
   type DurabilityReceiptV1,
   type RevisionCursorV1,
@@ -35,9 +39,12 @@ import {
   createLivePlacementRepository,
 } from '../place/live-repository.ts';
 import { type StoreResourceV1, createStoreRepository } from '../place/store-repository.ts';
+import { type SnapshotResult, contentHashOf } from '../place/store.ts';
 import type {
   FlipTool,
+  OriginRecord,
   PairRecord,
+  PinnedRecord,
   PlacementPorts,
   SwapExecutionResult,
   SwapOutcome,
@@ -48,6 +55,7 @@ import type {
   ExecutableOperation,
   OperationDigest,
   OperationExecutionResult,
+  OperationImage,
   OperationResourceIdentity,
 } from '../planning/types.ts';
 import type { LockPort } from '../ports/types.ts';
@@ -60,13 +68,264 @@ import {
   createRelevantCapabilityStateReaderV1,
 } from '../state/repositories.ts';
 import {
+  type ContentObservationIdentityV1,
   type ExpectedRevisionV1,
   type ObservedStateSnapshotV1,
+  createContentObservationIdentityV1,
   sameExpectedRevisionV1,
 } from '../state/types.ts';
-import type { InstallScope } from './types.ts';
+import type {
+  AcquisitionPorts,
+  InstallDeps,
+  InstallOptions,
+  InstallScope,
+  SourceSpec,
+  UninstallDeps,
+  UninstallOptions,
+} from './types.ts';
 
 export type AcquireExecutionInput = PlacementExecutionInput;
+
+export interface AcquirePlacementFacts {
+  readonly pathKind: 'absent' | 'file' | 'dir' | 'symlink';
+  readonly canonicalPath: string;
+  readonly placement: Placement;
+  readonly contentHash: string | null;
+}
+
+export interface AcquireContentFacts {
+  readonly path: string;
+  readonly pathKind: 'absent' | 'file' | 'dir' | 'symlink';
+  readonly contentHash: string | null;
+}
+
+export const acquireContentFacts = async (
+  env: AcquisitionPorts,
+  path: string,
+): Promise<AcquireContentFacts> => {
+  const pathKind = await env.pathKind(path);
+  const hash = pathKind === 'dir' ? await contentHashOf(env, path) : null;
+  if (hash !== null && !hash.ok) throw hash.error;
+  return { path: resolve(path), pathKind, contentHash: hash?.value ?? null };
+};
+
+export const acquireContentObservationIdentity = (
+  resourceId: string,
+  facts: AcquireContentFacts,
+): ContentObservationIdentityV1 => {
+  if (facts.pathKind !== 'dir' || facts.contentHash === null) {
+    throw new Error('acquisition materialized source is not a content-addressed directory');
+  }
+  return createContentObservationIdentityV1({
+    schemaVersion: 1,
+    resourceId,
+    targetIdentity: facts.path,
+    targetKind: 'directory',
+    contentRevision: facts.contentHash,
+  });
+};
+
+export const acquirePlacementFacts = async (
+  env: AcquisitionPorts,
+  root: string,
+  skill: string,
+  storeRoot: string,
+): Promise<AcquirePlacementFacts> => {
+  const path = join(root, skill);
+  const [pathKind, placement] = await Promise.all([
+    env.pathKind(path),
+    classifyPlacement(env, root, skill, storeRoot),
+  ]);
+  const hash = pathKind === 'dir' ? await contentHashOf(env, path) : null;
+  if (hash !== null && !hash.ok) throw hash.error;
+  return {
+    pathKind,
+    canonicalPath: resolve(path),
+    placement,
+    contentHash: hash?.value ?? null,
+  };
+};
+
+export const acquireActualBefore = (
+  resource: Extract<OperationImage, { kind: 'placement' }>['resource'],
+  facts: AcquirePlacementFacts,
+  pair: PairRecord | null,
+): OperationImage => {
+  if (facts.placement.class === 'absent') return { kind: 'absent', resource };
+  const representation =
+    facts.pathKind === 'symlink' ? 'symlink' : facts.pathKind === 'dir' ? 'copy' : 'other';
+  return {
+    kind: 'placement',
+    resource,
+    classification: pair === null ? 'unmanaged' : facts.placement.class,
+    representation,
+    linkTarget:
+      facts.placement.symlinkTarget === null
+        ? null
+        : { kind: 'machine-bound', path: facts.placement.symlinkTarget },
+    dangling: facts.placement.dangling,
+    source: null,
+    contentHash: null,
+  };
+};
+
+export const acquisitionPreconditionStateChanged = (error: unknown): boolean =>
+  error !== null &&
+  typeof error === 'object' &&
+  'code' in error &&
+  (error.code === 'precondition-state-changed' || error.code === 'precondition-observation-failed');
+
+export const createAcquireExecutionInput = (
+  env: AcquisitionPorts,
+  ledgerPath: string,
+  ledger: LedgerModel,
+  deps: InstallDeps | UninstallDeps,
+  opts: Pick<InstallOptions | UninstallOptions, 'testPauseAt' | 'signal'>,
+  logicalOperation: ExecutableOperation | null,
+): AcquireExecutionInput => ({
+  env,
+  ledgerPath,
+  ledger,
+  journalNow: () => {
+    const value = deps.now?.() ?? env.wallNowIso();
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.valueOf()) ? value : parsed.toISOString();
+  },
+  newTransactionId: () => deps.newTxId?.() ?? env.nextId('acquisition-transaction'),
+  ...(opts.testPauseAt === undefined ? {} : { pauseAt: opts.testPauseAt }),
+  ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+  ...(logicalOperation === null ? {} : { logicalOperation }),
+});
+
+const ledgerVerificationState = (
+  gate: 'passed' | 'warned' | 'failed' | 'skipped' | 'inconclusive',
+): 'passed' | 'warned' | 'skipped' =>
+  gate === 'passed' ? 'passed' : gate === 'warned' ? 'warned' : 'skipped';
+
+export const createAcquisitionPinnedRecord = (
+  snapshot: SnapshotResult,
+  sha: string,
+  placement: 'symlink' | 'copy',
+  gate: 'passed' | 'warned' | 'failed' | 'skipped' | 'inconclusive',
+  now: string,
+): PinnedRecord => ({
+  storePath: snapshot.storePath,
+  rev: sha.slice(0, 12),
+  gitSha: sha,
+  dirty: false,
+  contentHash: snapshot.contentHash,
+  snapshotAt: now,
+  verify: ledgerVerificationState(gate),
+  placement,
+});
+
+export const createAcquisitionOriginRecord = (
+  source: SourceSpec,
+  sha: string,
+  skillPath: string,
+  pin: boolean,
+  now: string,
+): OriginRecord => ({
+  source: source.originSource,
+  host: source.identity.host,
+  repo: source.identity.repository,
+  skillPath,
+  refRequested: source.ref,
+  refResolved: sha,
+  pin,
+  installedAt: now,
+});
+
+export const executeAcquireReplacement = async (
+  input: AcquireExecutionInput,
+  plan: SwapPlan,
+  intermediatePinned: PinnedRecord | null,
+): Promise<SwapExecutionResult<void>> => {
+  const install = plan.install;
+  if (install === undefined) {
+    return {
+      ok: false,
+      error: genericError('install plan missing install payload'),
+      state: { ledger: input.ledger },
+    };
+  }
+  const executed =
+    intermediatePinned === null
+      ? await executePlacementPlan(input, plan)
+      : await executePlacementPlans(input, [
+          {
+            ...plan,
+            install: {
+              ...install,
+              build: 'symlink',
+              pinned: intermediatePinned,
+              adoptedDev: null,
+            },
+          },
+          plan,
+        ]);
+  return executed.ok
+    ? { ok: true, value: undefined, state: executed.state }
+    : { ok: false, error: executed.error, state: executed.state };
+};
+
+export const verificationRegistryFor = (registry: LifecycleToolRegistry<string>) =>
+  Object.freeze({
+    adapters: Object.freeze(
+      registry.ids.flatMap((id) => {
+        const adapter = registry.get(id);
+        return adapter === undefined ? [] : [adapter];
+      }),
+    ),
+    ids: registry.ids,
+    get: (id: string) => registry.get(id),
+    toolsFor: (operation: Parameters<LifecycleToolRegistry<string>['toolsFor']>[0]) =>
+      registry.toolsFor(operation),
+  });
+
+export const placementBundleFor = (
+  registry: LifecycleToolRegistry<string>,
+  tool: FlipTool,
+): RegisteredPlacementBundle => {
+  const placement = registry.get(tool)?.placement;
+  if (placement === undefined) throw new Error(`tool registry invariant: ${tool} has no placement`);
+  return placement;
+};
+
+export const skillRootFactsFor = (
+  registry: LifecycleToolRegistry<string>,
+  tool: FlipTool,
+  env: PlacementPorts,
+  scope: InstallScope,
+  ctx: SkillRootsCtx,
+): ReturnType<RegisteredPlacementBundle['rootFacts']> =>
+  placementBundleFor(registry, tool).rootFacts(env, scope, ctx);
+
+export const destinationSkillRootFor = (
+  registry: LifecycleToolRegistry<string>,
+  tool: FlipTool,
+  env: PlacementPorts,
+  scope: InstallScope,
+  ctx: SkillRootsCtx,
+): string => {
+  const destination = skillRootFactsFor(registry, tool, env, scope, ctx).find(
+    ({ role }) => role === 'destination',
+  );
+  if (destination === undefined) {
+    throw new Error(`tool registry invariant: ${tool} has no ${scope} destination root`);
+  }
+  return destination.path;
+};
+
+export const resolvePlacementFor = (
+  registry: LifecycleToolRegistry<string>,
+  tool: FlipTool,
+  env: PlacementPorts,
+  scope: InstallScope,
+  ctx: SkillRootsCtx,
+  storeRoot: string,
+  skill: string,
+) => placementBundleFor(registry, tool).resolveScoped(env, ctx, storeRoot, skill, scope);
 
 export interface AcquireStoreSnapshotResourceV1 {
   readonly resource: StoreResourceV1;
@@ -359,6 +618,23 @@ export const createAcquisitionExecutionLockPortV1 = (input: {
         if (callbackStarted) throw error;
         throw input.lockFailure(error);
       }
+    },
+  });
+
+export const createAcquireExecutionLockPort = (
+  env: AcquisitionPorts,
+  ledgerPath: string,
+  sanitize: (error: unknown) => SkillSmithError,
+  message: (error: SkillSmithError) => string,
+): LockPort =>
+  createAcquisitionExecutionLockPortV1({
+    lockPort: env,
+    ledgerPath,
+    lockFailure: (error) => {
+      const safe = sanitize(error);
+      return safe.code === 'cancelled'
+        ? safe
+        : flipFailedError(`another skillsmith operation is running: ${message(safe)}`);
     },
   });
 

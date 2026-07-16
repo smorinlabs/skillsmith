@@ -76,6 +76,7 @@ import {
   type PlacementPromoteIntentV1,
   type PlacementRollbackIntentV1,
   createPlacementPlan,
+  placementSelectionFor,
   planFlipsWithRegistry,
 } from './plan.ts';
 import { recoverPlacement } from './recovery.ts';
@@ -1648,27 +1649,6 @@ const predictPair = async (
 // batch orchestration
 // ---------------------------------------------------------------------------------------------
 
-type PlacementLifecycleOperation = 'dev' | 'promote' | 'undo';
-
-const placementToolsFor = (
-  registry: LifecycleToolRegistry,
-  operation: PlacementLifecycleOperation,
-): readonly FlipTool[] =>
-  registry
-    .toolsFor(operation)
-    .filter((tool) => registry.get(tool)?.placement !== undefined) as readonly FlipTool[];
-
-const buildRequested = (
-  registry: LifecycleToolRegistry,
-  opts: FlipOptions,
-  operation: PlacementLifecycleOperation,
-): FlipReport['requested'] => {
-  const requestedTools = opts.tools;
-  const explicitTools = requestedTools !== undefined && requestedTools.length > 0;
-  const tools = explicitTools ? [...requestedTools] : [...placementToolsFor(registry, operation)];
-  return { targets: [...opts.targets], all: Boolean(opts.all), tools, explicitTools };
-};
-
 const emptySummary = (): FlipReport['summary'] => ({
   flipped: 0,
   updated: 0,
@@ -1692,9 +1672,6 @@ const ACTION_TO_SUMMARY_KEY: Record<FlipAction, keyof FlipReport['summary']> = {
   created: 'created',
   adopted: 'adopted',
 };
-
-const selectionSourceOf = (opts: FlipOptions): 'explicit-targets' | 'explicit-all' =>
-  opts.selectionSource ?? (opts.all ? 'explicit-all' : 'explicit-targets');
 
 const resultForPair = (results: readonly FlipResult[], pair: PairPlan): FlipResult | undefined => {
   for (let index = results.length - 1; index >= 0; index--) {
@@ -1809,7 +1786,9 @@ const createFlipPlanning = async (
   }>
 > => {
   const ledgerPath = ledgerPathOf(resolveDataDir(env, opts.configuration));
-  const selectionSource = selectionSourceOf(opts);
+  const activeOperation = reportOp === 'rollback' ? 'undo' : command;
+  const selection = placementSelectionFor(registry, opts, activeOperation);
+  const selectionSource = selection.source;
   const planningContext = { registry, toolOrder: registry.ids };
   const compatibilityOperations: ExecutableOperation[] = [];
   const intents: (PlacementDevIntentV1 | PlacementPromoteIntentV1 | PlacementRollbackIntentV1)[] =
@@ -2163,9 +2142,7 @@ const createFlipPlanning = async (
       outcome: filterNoop ? ('filter-noop' as const) : ('selected' as const),
       targets: [...opts.targets],
       all: Boolean(opts.all),
-      tools: opts.tools
-        ? [...opts.tools]
-        : [...placementToolsFor(registry, reportOp === 'rollback' ? 'undo' : command)],
+      tools: selection.planTools,
       scopes,
     },
     batchPolicy: opts.continueOnError ? ('continue-on-error' as const) : ('fail-fast' as const),
@@ -2542,8 +2519,8 @@ const prepareFlipBatch = async (
   const dataDir = resolveDataDir(env, normalizedOpts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
-  const activeOperation: PlacementLifecycleOperation = reportOp === 'rollback' ? 'undo' : command;
-  const requested = buildRequested(registry, normalizedOpts, activeOperation);
+  const activeOperation = reportOp === 'rollback' ? 'undo' : command;
+  const requested = placementSelectionFor(registry, normalizedOpts, activeOperation).requested;
   const prepareSnapshot = async (): Promise<
     Result<
       Readonly<{

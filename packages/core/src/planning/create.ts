@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
-import { toolRegistry } from '../agents/registry.ts';
 import type { SupportedTool } from '../agents/types.ts';
 import type { LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
 import { containsSensitiveMaterial, redactSensitiveString } from '../safety/redaction.ts';
@@ -17,6 +16,7 @@ import {
   comparePlanChecks,
   comparePlanningDiagnostics,
   comparePlanningText,
+  resolvePlanningToolContext,
   sortPlanningScopes,
   sortPlanningStrings,
   sortPlanningTools,
@@ -63,12 +63,6 @@ const currentMutatorCommands = new Set<string>([
   'promote',
   'doctor',
 ]);
-
-const builtInPlanningToolContext = (registry = toolRegistry): PlanningToolContext<SupportedTool> =>
-  Object.freeze({
-    registry,
-    toolOrder: registry.ids,
-  });
 
 const fail = (message: string): never => {
   throw new TypeError(`operation planning: ${message}`);
@@ -339,27 +333,6 @@ const rejectDuplicates = (values: readonly string[], path: string): void => {
   if (new Set(values).size !== values.length) fail(`${path} contains duplicate values`);
 };
 
-const validatePlanningToolContext = (
-  context: PlanningToolContext<string>,
-): PlanningToolContext<string> => {
-  const orderedTools = [...context.toolOrder];
-  rejectDuplicates(orderedTools, '$planningContext.toolOrder');
-  for (const [index, tool] of orderedTools.entries()) {
-    if (typeof tool !== 'string' || tool.length === 0) {
-      fail(`$planningContext.toolOrder[${index}] must be a non-empty string`);
-    }
-    if (context.registry.get(tool)?.descriptor.id !== tool) {
-      fail(`$planningContext.toolOrder[${index}] is not registered`);
-    }
-  }
-  return context;
-};
-
-export const resolvePlanningToolContext = (
-  context: PlanningToolContext<string> | undefined,
-): PlanningToolContext<string> =>
-  validatePlanningToolContext(context ?? builtInPlanningToolContext());
-
 const registeredTool = (
   value: unknown,
   context: PlanningToolContext<string>,
@@ -508,7 +481,7 @@ const validateManifestSnapshot = (value: unknown, path: string): void => {
       const defaultTools = stringArray(defaults.tools, `${path}.defaults.tools`);
       rejectDuplicates(defaultTools, `${path}.defaults.tools`);
       for (const tool of defaultTools) {
-        registeredTool(tool, builtInPlanningToolContext(), `${path}.defaults.tools`);
+        registeredTool(tool, resolvePlanningToolContext(), `${path}.defaults.tools`);
       }
     }
     if (defaults.scope !== null) {
@@ -545,7 +518,7 @@ const validateManifestSnapshot = (value: unknown, path: string): void => {
     const entryTools = stringArray(entry.tools, `${entryPath}.tools`);
     rejectDuplicates(entryTools, `${entryPath}.tools`);
     for (const tool of entryTools) {
-      registeredTool(tool, builtInPlanningToolContext(), `${entryPath}.tools`);
+      registeredTool(tool, resolvePlanningToolContext(), `${entryPath}.tools`);
     }
     literal(entry.scope, new Set(['user', 'project']), `${entryPath}.scope`);
     literal(entry.placement, new Set(['symlink', 'copy']), `${entryPath}.placement`);
@@ -843,14 +816,46 @@ export function createOperationPairId(
   return createStructuredPlanningId('pair', identity);
 }
 
+const isArrayMapCallbackInvocation = (
+  input: unknown,
+  candidateIndex: unknown,
+  candidateSource: unknown,
+): candidateSource is readonly unknown[] =>
+  typeof candidateIndex === 'number' &&
+  Number.isInteger(candidateIndex) &&
+  candidateIndex >= 0 &&
+  Array.isArray(candidateSource) &&
+  candidateIndex < candidateSource.length &&
+  Object.hasOwn(candidateSource, candidateIndex) &&
+  candidateSource[candidateIndex] === input;
+
+const resolveCallbackCompatiblePlanningToolContext = (
+  input: unknown,
+  suppliedContext: unknown,
+  callbackSource: unknown,
+): PlanningToolContext<string> =>
+  resolvePlanningToolContext(
+    isArrayMapCallbackInvocation(input, suppliedContext, callbackSource)
+      ? undefined
+      : (suppliedContext as PlanningToolContext<string> | undefined),
+  );
+
 export function createOperationId(input: OperationIdentity): string;
 export function createOperationId<ToolId extends string>(
   input: OperationIdentity<ToolId>,
   context: PlanningToolContext<ToolId>,
 ): string;
-export function createOperationId(input: unknown, context?: PlanningToolContext<string>): string {
+export function createOperationId(
+  input: unknown,
+  suppliedContext?: PlanningToolContext<string> | number,
+  callbackSource?: readonly unknown[],
+): string {
   const snapshot = ownPlanningData(input);
-  const identity = validateIdentity(snapshot, '$identity', resolvePlanningToolContext(context));
+  const identity = validateIdentity(
+    snapshot,
+    '$identity',
+    resolveCallbackCompatiblePlanningToolContext(input, suppliedContext, callbackSource),
+  );
   return createStructuredPlanningId('operation', identity);
 }
 
@@ -1626,9 +1631,14 @@ export function createOperationExecutionResult<ToolId extends string>(
 ): OperationExecutionResult<ToolId>;
 export function createOperationExecutionResult(
   input: unknown,
-  suppliedContext?: PlanningToolContext<string>,
+  suppliedContext?: PlanningToolContext<string> | number,
+  callbackSource?: readonly unknown[],
 ): OperationExecutionResult<string> {
-  const context = resolvePlanningToolContext(suppliedContext);
+  const context = resolveCallbackCompatiblePlanningToolContext(
+    input,
+    suppliedContext,
+    callbackSource,
+  );
   const snapshot = ownPlanningData(input);
   const result = record(snapshot, '$result');
   exactKeys(

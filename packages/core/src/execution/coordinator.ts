@@ -1,6 +1,5 @@
 import type { SupportedTool } from '../agents/types.ts';
-import { resolvePlanningToolContext } from '../planning/create.ts';
-import { canonicalPlanningString } from '../planning/order.ts';
+import { canonicalPlanningString, resolvePlanningToolContext } from '../planning/order.ts';
 import type {
   CurrentMutatorCommand,
   ExecutableOperation,
@@ -292,20 +291,19 @@ const bindUnderLock = async <ToolId extends string>(
   return Object.freeze(bindings);
 };
 
-export function executeOperationPlan(
-  request: ExecutionCoordinatorRequest,
-): Promise<readonly OperationExecutionResult[]>;
-export function executeOperationPlan<ToolId extends string>(
-  request: ExecutionCoordinatorRequest<ToolId>,
-  context: PlanningToolContext<ToolId>,
-): Promise<readonly OperationExecutionResult<ToolId>[]>;
-export async function executeOperationPlan<ToolId extends string>(
+interface ExecuteOperationPlan {
+  (request: ExecutionCoordinatorRequest): Promise<readonly OperationExecutionResult[]>;
+  <ToolId extends string>(
+    request: ExecutionCoordinatorRequest<ToolId>,
+    context: PlanningToolContext<ToolId>,
+  ): Promise<readonly OperationExecutionResult<ToolId>[]>;
+}
+
+export const executeOperationPlan: ExecuteOperationPlan = async <ToolId extends string>(
   request: ExecutionCoordinatorRequest<ToolId>,
   suppliedContext?: PlanningToolContext<ToolId>,
-): Promise<readonly OperationExecutionResult<ToolId>[]> {
-  const context = resolvePlanningToolContext(
-    suppliedContext as PlanningToolContext<string> | undefined,
-  ) as PlanningToolContext<ToolId>;
+): Promise<readonly OperationExecutionResult<ToolId>[]> => {
+  const context = resolvePlanningToolContext(suppliedContext);
   const prepared = preflightBindings(request);
   const options =
     request.signal === undefined ? Object.freeze({}) : Object.freeze({ signal: request.signal });
@@ -320,7 +318,7 @@ export async function executeOperationPlan<ToolId extends string>(
     },
     options,
   );
-}
+};
 
 const revisionCursorError = (
   code: RevisionCursorErrorV1['code'],

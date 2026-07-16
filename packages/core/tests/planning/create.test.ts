@@ -360,6 +360,42 @@ describe('planning constructors', () => {
     expect(() => (plan.operations as ExecutableOperation[]).push(install)).toThrow(TypeError);
   });
 
+  test('preserves unary Array.map constructors without accepting numeric contexts', () => {
+    const identities = [identityFor('install'), identityFor('repair')];
+    const expectedIds = identities.map((identity) => createOperationId(identity));
+
+    expect(identities.map(createOperationId)).toEqual(expectedIds);
+
+    const resultInputs = expectedIds.map((operationId) => ({
+      operationId,
+      outcome: 'succeeded' as const,
+      actualBefore: structuredClone(ABSENT),
+      actualAfter: structuredClone(PINNED),
+      force: null,
+      error: null,
+    }));
+    expect(resultInputs.map(createOperationExecutionResult)).toEqual(resultInputs);
+
+    const invokeId = createOperationId as unknown as (
+      input: OperationIdentity,
+      context: unknown,
+      callbackSource?: readonly unknown[],
+    ) => string;
+    const invokeResult = createOperationExecutionResult as unknown as (
+      input: (typeof resultInputs)[number],
+      context: unknown,
+    ) => unknown;
+    expect(() => invokeId(identities[0] as OperationIdentity, 0)).toThrow(
+      /\$planningContext must be an object/i,
+    );
+    expect(() =>
+      invokeId(identities[0] as OperationIdentity, 0, [structuredClone(identities[0])]),
+    ).toThrow(/\$planningContext must be an object/i);
+    expect(() => invokeResult(resultInputs[0] as (typeof resultInputs)[number], 0)).toThrow(
+      /\$planningContext must be an object/i,
+    );
+  });
+
   test('accepts registered private tool IDs only with explicit planning context', () => {
     const input = fixturePlanFor();
     const plan = createOperationPlan(input, FIXTURE_CONTEXT);

@@ -1,6 +1,6 @@
 import type { SupportedTool } from '../agents/types.ts';
-import { createOperationExecutionResult, resolvePlanningToolContext } from '../planning/create.ts';
-import { canonicalPlanningString } from '../planning/order.ts';
+import { createOperationExecutionResult } from '../planning/create.ts';
+import { canonicalPlanningString, resolvePlanningToolContext } from '../planning/order.ts';
 import type {
   CurrentMutatorCommand,
   ExecutableOperation,

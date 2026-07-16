@@ -192,6 +192,33 @@ const placementToolsFor = (
     .toolsFor(operation)
     .filter((tool) => registry.get(tool)?.placement !== undefined) as readonly FlipTool[];
 
+export const placementSelectionFor = (
+  registry: LifecycleToolRegistry,
+  opts: FlipOptions,
+  operation: PlacementLifecycleOperation,
+) => {
+  const requestedTools = opts.tools;
+  const registeredTools = placementToolsFor(registry, operation);
+  const explicitTools = requestedTools !== undefined && requestedTools.length > 0;
+  const source: 'explicit-targets' | 'explicit-all' =
+    opts.selectionSource ?? (opts.all ? 'explicit-all' : 'explicit-targets');
+  return {
+    source,
+    requested: {
+      targets: [...opts.targets],
+      all: Boolean(opts.all),
+      tools: explicitTools ? [...requestedTools] : [...registeredTools],
+      explicitTools,
+    },
+    registeredTools,
+    selectedTools:
+      requestedTools !== undefined && requestedTools.length > 0
+        ? [...requestedTools]
+        : [...registeredTools],
+    planTools: requestedTools ? [...requestedTools] : [...registeredTools],
+  };
+};
+
 const placementBundleFor = (registry: LifecycleToolRegistry, tool: FlipTool) => {
   const placement = registry.get(tool)?.placement;
   if (placement === undefined) throw new Error(`tool registry invariant: ${tool} has no placement`);
@@ -566,15 +593,13 @@ export const planFlipsWithRegistry = async (
       configuration: opts.configuration,
     } satisfies SkillRootsCtx,
   }));
-  const requestedTools = opts.tools;
-  const explicitTools = requestedTools !== undefined && requestedTools.length > 0;
   const operation: PlacementLifecycleOperation =
     opts.rollback || opts.op === 'rollback' ? 'undo' : opts.op;
-  const registeredPlacementTools = placementToolsFor(registry, operation);
-  const selectedTools: FlipTool[] =
-    requestedTools !== undefined && requestedTools.length > 0
-      ? [...requestedTools]
-      : [...registeredPlacementTools];
+  const {
+    requested: { explicitTools },
+    registeredTools: registeredPlacementTools,
+    selectedTools,
+  } = placementSelectionFor(registry, opts, operation);
   const toolsInOrder = registeredPlacementTools.filter((t) => selectedTools.includes(t));
 
   const pairs: PairPlan[] = [];
