@@ -11,15 +11,15 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 13 | 15 | 6 |
-| phase-task | 65 | 39 | 26 | 0 |
-| phase-test | 61 | 35 | 26 | 0 |
-| command-test | 157 | 46 | 111 | 0 |
+| recommendation | 34 | 14 | 14 | 6 |
+| phase-task | 65 | 40 | 25 | 0 |
+| phase-test | 61 | 36 | 25 | 0 |
+| command-test | 157 | 52 | 105 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
-| command | 23 | 10 | 13 | 0 |
-| finding | 43 | 29 | 14 | 0 |
-| decision | 16 | 4 | 11 | 1 |
+| command | 23 | 11 | 12 | 0 |
+| finding | 43 | 31 | 12 | 0 |
+| decision | 16 | 5 | 10 | 1 |
 
 ### Phases
 
@@ -28,7 +28,7 @@ Tracked entities: **425** across **45** change groups.
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
-| 3 | 8 | 82 | 62 | 0 |
+| 3 | 8 | 82 | 75 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 68 | 0 | 0 |
 | 6 | 5 | 39 | 0 | 0 |
@@ -111,7 +111,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:completion | P17-G6-02B | planned | supported-platform |
 | COMMAND:config | P17-G2-01 | signed-off | required-pr |
 | COMMAND:dev | P17-G3B-01 | signed-off | required-pr |
-| COMMAND:doctor | P17-G3B-03 | planned | required-pr |
+| COMMAND:doctor | P17-G3B-03 | signed-off | required-pr |
 | COMMAND:export | P17-G4A-02 | planned | required-pr |
 | COMMAND:gc | P17-G5-04 | planned | required-pr |
 | COMMAND:help | P17-G6-02A | planned | required-pr |
@@ -158,7 +158,7 @@ Tracked entities: **425** across **45** change groups.
 | P2-04 | P17-G6-02B | planned | supported-platform |
 | P2-05 | P17-G6-02A | planned | required-pr |
 | P2-06 | P17-G1-05 | signed-off | required-pr |
-| P2-07 | P17-G3B-03 | planned | required-pr |
+| P2-07 | P17-G3B-03 | signed-off | required-pr |
 | P2-08 | P17-G6-03 | planned | required-pr |
 | P3-01 | P17-G7-01 | deferred | deferred |
 | P3-02 | P17-G7-01 | deferred | deferred |
@@ -176,7 +176,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-003 | P17-G2-01 | signed-off | required-pr |
 | EWP-CF-004 | P17-G1-02A | signed-off | required-pr |
 | EWP-CF-005 | P17-G3B-02 | signed-off | required-pr |
-| EWP-CF-006 | P17-G3B-03 | planned | required-pr |
+| EWP-CF-006 | P17-G3B-03 | signed-off | required-pr |
 | EWP-CF-007 | P17-G1-05 | signed-off | required-pr |
 | EWP-CF-008 | P17-G5-02 | planned | required-pr |
 | EWP-CF-009 | P17-G4B-02 | planned | required-pr |
@@ -198,7 +198,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-025 | P17-G3B-01 | signed-off | required-pr |
 | EWP-CF-026 | P17-G3B-02 | signed-off | required-pr |
 | EWP-CF-027 | P17-G2-02 | signed-off | required-pr |
-| EWP-CF-028 | P17-G3B-03 | planned | required-pr |
+| EWP-CF-028 | P17-G3B-03 | signed-off | required-pr |
 | EWP-CF-029 | P17-G2-05 | signed-off | required-pr |
 | EWP-CF-030 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-031 | P17-G1-01 | signed-off | required-pr |
@@ -228,7 +228,7 @@ Tracked entities: **425** across **45** change groups.
 | D-007 | P17-G5-01 | planned | required-pr |
 | D-008 | P17-G3A-01 | signed-off | required-pr |
 | D-009 | P17-G3B-01 | signed-off | required-pr |
-| D-010 | P17-G3B-03 | planned | required-pr |
+| D-010 | P17-G3B-03 | signed-off | required-pr |
 | D-011 | P17-G5-02 | planned | required-pr |
 | D-012 | P17-G5-04 | planned | required-pr |
 | D-013 | P17-G7-01 | deferred | deferred |
@@ -964,7 +964,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 ## P17-G3B-03 — Ledger writer, journals, recovery/resume/abort, history, and deterministic repair
 
-Phase: 3B; status: **active**; dependencies: P17-G3B-02.
+Phase: 3B; status: **signed-off**; dependencies: P17-G3B-02.
 Required-now validations: EWP-CMD-DOCTOR-TS01, EWP-CMD-DOCTOR-TS02, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS04, EWP-CMD-DOCTOR-TS05, EWP-CMD-DOCTOR-TS06, EWP-CMD-STATUS-TS04, EWP-P3B-TS03, EWP-P3B-TS04.
 Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD-GC-TS02, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-WF11, EWP-WF12.
 
@@ -973,29 +973,29 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD
 - [x] P17-G3B-03:mapped _(passed)_
 - [x] P17-G3B-03:ready _(passed)_
 - [x] P17-G3B-03:test-first _(passed)_
-- [ ] P17-G3B-03:minimal-implementation _(pending)_
-- [ ] P17-G3B-03:targeted-green _(pending)_
-- [ ] P17-G3B-03:impacted-green _(pending)_
-- [ ] P17-G3B-03:refactor _(pending)_
-- [ ] P17-G3B-03:adversarial-review _(pending)_
-- [ ] P17-G3B-03:traceability-closure _(pending)_
-- [ ] P17-G3B-03:signed-off _(pending)_
+- [x] P17-G3B-03:minimal-implementation _(passed)_
+- [x] P17-G3B-03:targeted-green _(passed)_
+- [x] P17-G3B-03:impacted-green _(passed)_
+- [x] P17-G3B-03:refactor _(passed)_
+- [x] P17-G3B-03:adversarial-review _(passed)_
+- [x] P17-G3B-03:traceability-closure _(passed)_
+- [x] P17-G3B-03:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:doctor** — Maintain — What is unhealthy and what deterministic repair is available? _(command; planned)_
-- [ ] **D-010** — Undo pending or committed changes; resume interrupted operations _(decision; planned)_
-- [ ] **EWP-CF-006** — Preserve both abort and resume after interruption _(finding; planned)_
-- [ ] **EWP-CF-028** — Migrate the local ledger explicitly and never treat corruption as empty state _(finding; planned)_
-- [ ] **EWP-CMD-DOCTOR-TS01** — detected default versus all-tools and tool capability checks. _(command-test; failing)_
-- [ ] **EWP-CMD-DOCTOR-TS02** — scope/config/XDG/network offline checks using the same project context as _(command-test; failing)_
-- [ ] **EWP-CMD-DOCTOR-TS03** — duplicate/legacy/multi-install/journal/manifest-lock findings, including _(command-test; failing)_
-- [ ] **EWP-CMD-DOCTOR-TS04** — strict and human/JSON exit semantics. _(command-test; failing)_
-- [ ] **EWP-CMD-DOCTOR-TS05** — fix dry-run, deterministic ledger and exact-project-config migration, _(command-test; failing)_
-- [ ] **EWP-CMD-DOCTOR-TS06** — remediation commands parse and target the finding; no standalone ledger _(command-test; failing)_
-- [ ] **EWP-P3B-T04** — Extend the Phase-3A reader with the canonical version-2 writer, visible _(phase-task; red)_
-- [ ] **EWP-P3B-TS04** — Missing versus empty/truncated/malformed ledger; version-1 read-only and dry-run _(phase-test; failing)_
-- [ ] **P2-07** — Safe `doctor --fix` _(recommendation; planned)_
+- [x] **COMMAND:doctor** — Maintain — What is unhealthy and what deterministic repair is available? _(command; signed-off)_
+- [x] **D-010** — Undo pending or committed changes; resume interrupted operations _(decision; signed-off)_
+- [x] **EWP-CF-006** — Preserve both abort and resume after interruption _(finding; signed-off)_
+- [x] **EWP-CF-028** — Migrate the local ledger explicitly and never treat corruption as empty state _(finding; signed-off)_
+- [x] **EWP-CMD-DOCTOR-TS01** — detected default versus all-tools and tool capability checks. _(command-test; signed-off)_
+- [x] **EWP-CMD-DOCTOR-TS02** — scope/config/XDG/network offline checks using the same project context as _(command-test; signed-off)_
+- [x] **EWP-CMD-DOCTOR-TS03** — duplicate/legacy/multi-install/journal/manifest-lock findings, including _(command-test; signed-off)_
+- [x] **EWP-CMD-DOCTOR-TS04** — strict and human/JSON exit semantics. _(command-test; signed-off)_
+- [x] **EWP-CMD-DOCTOR-TS05** — fix dry-run, deterministic ledger and exact-project-config migration, _(command-test; signed-off)_
+- [x] **EWP-CMD-DOCTOR-TS06** — remediation commands parse and target the finding; no standalone ledger _(command-test; signed-off)_
+- [x] **EWP-P3B-T04** — Extend the Phase-3A reader with the canonical version-2 writer, visible _(phase-task; signed-off)_
+- [x] **EWP-P3B-TS04** — Missing versus empty/truncated/malformed ledger; version-1 read-only and dry-run _(phase-test; signed-off)_
+- [x] **P2-07** — Safe `doctor --fix` _(recommendation; signed-off)_
 
 ## P17-G3B-04 — Immutable snapshots, pure planners, repositories, expected revisions, and extraction
 
