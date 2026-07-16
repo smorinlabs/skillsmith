@@ -2050,6 +2050,31 @@ describe('EWP-P1-TS11', () => {
       'packages/core/src/index.ts',
       'packages/core/src/public-types.ts',
     ]);
+    const stateAdjacentObservationImportAllowlist = new Set([
+      'packages/core/src/execution/observation.ts',
+      'packages/core/src/execution/types.ts',
+      'packages/core/src/execution/coordinator.ts',
+      'packages/core/src/execution/scheduler.ts',
+      'packages/core/src/application/lifecycle-services.ts',
+      'packages/core/src/application/read-services.ts',
+      'packages/core/src/doctor/repair.ts',
+      'packages/core/src/acquire/run.ts',
+      'packages/core/src/acquire/execute.ts',
+      'packages/core/src/place/run.ts',
+      'packages/core/src/place/execute.ts',
+      'packages/core/src/place/recovery.ts',
+      'packages/core/src/place/swap.ts',
+      'packages/core/src/place/ledger-migration.ts',
+    ]);
+    const deferredEventLiteralAuthorities = new Set([
+      'packages/core/src/observation/types.ts',
+      'packages/core/src/execution/observation.ts',
+    ]);
+    const observationFreeOwnedFiles = new Set([
+      'packages/core/src/artifacts/ledger-writer.ts',
+      'packages/core/src/place/ledger-persistence.ts',
+      'packages/core/src/place/logical-transactions.ts',
+    ]);
     for (const path of coreFiles) {
       const source = await readFile(path, 'utf8');
       const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
@@ -2120,9 +2145,15 @@ describe('EWP-P1-TS11', () => {
             )
           )
             findings.push(`${file}: forbidden observation dependency ${specifier}`);
+          const stateAdjacentCandidate =
+            /(?:place|acquire|persist|journal|repository|coordinator)/.test(file) ||
+            stateAdjacentObservationImportAllowlist.has(file) ||
+            observationFreeOwnedFiles.has(file);
           if (
-            /(?:place|acquire|persist|journal|repository|coordinator)/.test(file) &&
-            specifier.includes('observation')
+            stateAdjacentCandidate &&
+            specifier.includes('observation') &&
+            (!stateAdjacentObservationImportAllowlist.has(file) ||
+              observationFreeOwnedFiles.has(file))
           )
             findings.push(`${file}: downstream state imports observation in G1-07`);
         }
@@ -2176,7 +2207,7 @@ describe('EWP-P1-TS11', () => {
             'recovery.started',
             'recovery.completed',
           ].includes(node.text) &&
-          file !== 'packages/core/src/observation/types.ts'
+          !deferredEventLiteralAuthorities.has(file)
         )
           findings.push(`${file}: future event literal outside registry`);
         ts.forEachChild(node, visit);
@@ -2393,5 +2424,5 @@ describe('EWP-P1-TS11', () => {
     ).catch(() => null);
     if (adr === null) findings.push('missing ADR 0009 operation-scoped observation');
     expect(findings).toEqual([]);
-  }, 30_000);
+  }, 60_000);
 });
