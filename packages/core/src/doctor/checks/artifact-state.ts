@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { SUPPORTED_TOOLS } from '../../agents/types.ts';
 import {
   type ArtifactDigest,
   hashCanonicalInput,
@@ -154,6 +155,7 @@ const pendingJournalFindings = (model: LedgerModel): Finding[] => {
   const visit = (skills: LedgerModel['skills']): void => {
     for (const entry of Object.values(skills)) {
       for (const [tool, unknownPair] of Object.entries(entry.tools)) {
+        const supportedTool = SUPPORTED_TOOLS.find((candidate) => candidate === tool);
         const pair = unknownPair as {
           placementPath?: string;
           journal?: { txId?: string; phase?: string } | null;
@@ -164,12 +166,7 @@ const pendingJournalFindings = (model: LedgerModel): Finding[] => {
           severity: 'warning',
           title: 'placement transaction is pending',
           message: 'an interrupted placement transaction requires same-operation recovery',
-          ...(tool === 'claude-code' ||
-          tool === 'codex' ||
-          tool === 'kilo-code' ||
-          tool === 'opencode'
-            ? { tool }
-            : {}),
+          ...(supportedTool === undefined ? {} : { tool: supportedTool }),
           ...(pair.placementPath === undefined ? {} : { path: pair.placementPath }),
           reason: `pending transaction ${pair.journal.txId ?? 'unknown'} at ${pair.journal.phase ?? 'unknown'}`,
           remediation: 'rerun the same operation or use the validated pending-abort workflow',

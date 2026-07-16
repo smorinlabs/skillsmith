@@ -1012,9 +1012,17 @@ describe('EWP-P2-TS07', () => {
       expect(success.results).toHaveLength(resultCount + 1);
       success.results.pop();
 
-      const ledgerResult = await ledgerModule.readLedger(fleet.env, ledgerPath);
+      const ledgerResult = await ledgerModule.readLedgerState(fleet.env, ledgerPath);
       if (!ledgerResult.ok) throw new Error(JSON.stringify(ledgerResult.error));
-      const pair = ledgerModule.getPairAt(ledgerResult.value, null, 'factor-scan', 'claude-code');
+      if (ledgerResult.value.state !== 'present') {
+        throw new Error('committed sweep: expected present canonical ledger');
+      }
+      const pair = ledgerModule.getLedgerPairAt(
+        ledgerResult.value.model,
+        null,
+        'factor-scan',
+        'claude-code',
+      );
       if (!pair?.pinned) throw new Error('committed sweep: expected seeded pinned pair');
       const backupPath = join(
         fleet.home,
@@ -1022,27 +1030,37 @@ describe('EWP-P2-TS07', () => {
         'skills',
         '.skillsmith-backup-factor-scan-deadbeef',
       );
-      pair.journal = {
-        op: 'install',
-        txId: 'deadbeef',
-        phase: 'committed',
-        startedAt: '2026-07-13T00:00:00Z',
-        completedAt: '2026-07-13T00:00:00Z',
-        before: {
-          mode: 'pinned',
-          storePath: pair.pinned.storePath,
-          contentHash: pair.pinned.contentHash,
-          liveKind: 'symlink',
+      const seededLedger = ledgerModule.withLedgerPairAt(
+        ledgerResult.value.model,
+        null,
+        'factor-scan',
+        'claude-code',
+        {
+          ...pair,
+          journal: {
+            op: 'install',
+            txId: 'deadbeef',
+            phase: 'committed',
+            startedAt: '2026-07-13T00:00:00Z',
+            completedAt: '2026-07-13T00:00:00Z',
+            before: {
+              mode: 'pinned',
+              storePath: pair.pinned.storePath,
+              contentHash: pair.pinned.contentHash,
+              liveKind: 'symlink',
+            },
+            stagingPath: join(
+              fleet.home,
+              '.claude',
+              'skills',
+              '.skillsmith-staging-factor-scan-deadbeef',
+            ),
+            backupPath,
+          },
         },
-        stagingPath: join(
-          fleet.home,
-          '.claude',
-          'skills',
-          '.skillsmith-staging-factor-scan-deadbeef',
-        ),
-        backupPath,
-      };
-      const persisted = await ledgerModule.writeLedger(fleet.env, ledgerPath, ledgerResult.value);
+      );
+      if (!seededLedger.ok) throw new Error(JSON.stringify(seededLedger.error));
+      const persisted = await ledgerModule.writeLedger(fleet.env, ledgerPath, seededLedger.value);
       if (!persisted.ok) throw new Error(JSON.stringify(persisted.error));
       const sweepFailureEnv = {
         ...fleet.env,

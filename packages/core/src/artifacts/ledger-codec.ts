@@ -435,11 +435,22 @@ const shadowOperations = (
     case 'link-dev':
       return DEV_SHADOW_OPERATIONS;
     case 'promote':
-      return PROMOTE_SHADOW_OPERATIONS;
+      return journal.intent.before.kind === 'placement' &&
+        journal.intent.before.representation === 'symlink' &&
+        journal.intent.after.kind === 'placement' &&
+        journal.intent.after.classification === 'pinned'
+        ? UPDATE_SHADOW_OPERATIONS
+        : PROMOTE_SHADOW_OPERATIONS;
     default:
       return null;
   }
 };
+
+/** Closed operation-only subset of logical/legacy compatibility-shadow matching. */
+export const legacyJournalOperationMatchesLogicalShadow = (
+  logical: LogicalJournalV1Dto,
+  operation: LegacyJournalOperation,
+): boolean => shadowOperations(logical)?.includes(operation) ?? false;
 
 /** Closed logical/legacy compatibility-shadow predicate shared by codec and status projection. */
 export const legacyJournalMatchesLogicalShadow = (
@@ -468,7 +479,7 @@ export const legacyJournalMatchesLogicalShadow = (
     paths.size === 1 &&
     paths.has(pair.placementPath) &&
     physical.txId === logical.transactionId &&
-    operations.includes(physical.op) &&
+    legacyJournalOperationMatchesLogicalShadow(logical, physical.op) &&
     physical.phase === logical.phase &&
     physical.startedAt === logical.context.startedAt &&
     physical.completedAt === logical.completedAt

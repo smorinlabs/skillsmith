@@ -25,7 +25,11 @@ import {
   runUninstall,
 } from '@skillsmith/core';
 import type { VerifyReport } from '@skillsmith/core';
-import { readLedger, writeLedger } from '../../../core/src/place/ledger.ts';
+import {
+  readLedgerState,
+  withoutLedgerPairAt,
+  writeLedger,
+} from '../../../core/src/place/ledger.ts';
 import { ledgerPathOf, resolveDataDir } from '../../../core/src/place/paths.ts';
 import { runDev } from '../../../core/src/place/run.ts';
 import {
@@ -195,10 +199,18 @@ describe('install/uninstall exit-code table (§13)', () => {
     if (!r1.ok) throw new Error(msg(r1.error));
     // drop the ledger's skills entry, leave the placement on disk untouched
     const ledgerPath = ledgerPathOf(resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars)));
-    const ledgerRes = await readLedger(f.env, ledgerPath);
-    if (!ledgerRes.ok) throw new Error(msg(ledgerRes.error));
-    Reflect.deleteProperty(ledgerRes.value.skills, 'factor-scan');
-    const w = await writeLedger(f.env, ledgerPath, ledgerRes.value);
+    const ledgerRes = await readLedgerState(f.env, ledgerPath);
+    if (!ledgerRes.ok || ledgerRes.value.state !== 'present') {
+      throw new Error('installed ledger is absent');
+    }
+    const withoutPair = withoutLedgerPairAt(
+      ledgerRes.value.model,
+      null,
+      'factor-scan',
+      'claude-code',
+    );
+    if (!withoutPair.ok) throw new Error(msg(withoutPair.error));
+    const w = await writeLedger(f.env, ledgerPath, withoutPair.value);
     if (!w.ok) throw new Error(msg(w.error));
 
     const r2 = await runInstall(f.env, opts, installDeps(detectClaudeOnly));

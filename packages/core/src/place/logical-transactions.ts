@@ -7,7 +7,10 @@ import type {
   LegacyPairBeforeV1Dto,
   LegacyPairJournalV1Dto,
 } from '../artifacts/ledger-types.ts';
-import { validateJournalV1DtoShape } from '../artifacts/registry.ts';
+import {
+  legacyJournalOperationMatchesLogicalShadow,
+  validateJournalV1DtoShape,
+} from '../artifacts/registry.ts';
 import { type Result, err, ok } from '../result.ts';
 
 export interface LogicalTransactionError {
@@ -261,11 +264,6 @@ const legacyOperation = (journal: LogicalJournalV1Dto): LegacyPairJournalV1Dto['
   return 'install';
 };
 
-const legacyOperationCompatible = (
-  journal: LogicalJournalV1Dto,
-  operation: LegacyPairJournalV1Dto['op'],
-): boolean => operation === legacyOperation(journal);
-
 const derivedTransactionRoot = (path: string): string => dirname(dirname(path));
 
 const physicalShadow = (
@@ -275,7 +273,10 @@ const physicalShadow = (
   const path = placementPath(journal) ?? '/';
   const root = derivedTransactionRoot(path);
   return {
-    op: legacyOperation(journal),
+    op:
+      previous !== null && legacyJournalOperationMatchesLogicalShadow(journal, previous.op)
+        ? previous.op
+        : legacyOperation(journal),
     txId: journal.transactionId,
     phase: journal.phase,
     startedAt: journal.context.startedAt,
@@ -355,7 +356,7 @@ const pairFromJournal = (
 const shadowMatches = (journal: LogicalJournalV1Dto, shadow: LegacyPairJournalV1Dto): boolean => {
   const expected = physicalShadow(journal, shadow);
   return (
-    legacyOperationCompatible(journal, shadow.op) &&
+    legacyJournalOperationMatchesLogicalShadow(journal, shadow.op) &&
     shadow.op === expected.op &&
     shadow.txId === expected.txId &&
     shadow.phase === expected.phase &&

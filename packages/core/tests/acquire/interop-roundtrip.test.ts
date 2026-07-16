@@ -246,10 +246,9 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
     expect(p3?.pinned?.placement).toBe('symlink');
     expect(p3?.pinned?.rev).not.toBe(revR1);
     expect(p3?.origin).toEqual(originalOrigin); // retained verbatim, unchanged by the dev-mode edit
-    // D9's re-pin runs an 'install'-shaped swap under the hood (a fresh store symlink), which
-    // nulls the journal at its terminal write — unlike a plain promote/dev swap, which leaves a
-    // committed record at rest (see step 5 below).
-    expect(p3?.journal).toBeNull();
+    // D9's physical recovery shadow is install-shaped, while the read-only compatibility view
+    // truthfully projects its committed logical promote identity.
+    expect(p3?.journal).toMatchObject({ op: 'promote', phase: 'committed' });
     const revR2 = p3?.pinned?.rev;
     const contentHashR2 = p3?.pinned?.contentHash;
     if (!revR2 || !contentHashR2) throw new Error('expected a pinned rev/contentHash after re-pin');

@@ -12,8 +12,8 @@ import {
   unsignedUtf16Compare,
 } from '../../src/artifacts/codec.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
-import { legacyJournalMatchesLogicalShadow } from '../../src/artifacts/ledger-codec.ts';
 import type { LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
+import { legacyJournalMatchesLogicalShadow } from '../../src/artifacts/registry.ts';
 
 const decoder = new TextDecoder();
 
@@ -242,5 +242,74 @@ describe('artifact codec foundation', () => {
 
     expect((['install', 'promote'] as const).map(matches)).toEqual([true, true]);
     expect((['uninstall', 'dev', 'rollback'] as const).map(matches)).toEqual([false, false, false]);
+  });
+
+  test('accepts an install shadow only for the symlink re-pin subset of logical promote', () => {
+    const placementPath = '/home/fixture/.claude/skills/alpha';
+    const transactionId = 'transaction:repin-alpha';
+    const startedAt = '2026-07-15T00:00:00.000Z';
+    const liveResource = {
+      kind: 'live' as const,
+      skill: 'alpha',
+      tool: 'claude-code',
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path: placementPath },
+    };
+    const logical = {
+      transactionId,
+      disposition: 'forward',
+      phase: 'prepared',
+      completedAt: null,
+      context: { startedAt },
+      intent: {
+        kind: 'promote',
+        pairId: 'pair:alpha:claude-code',
+        skill: 'alpha',
+        tool: 'claude-code',
+        scope: 'user',
+        before: {
+          kind: 'placement',
+          resource: liveResource,
+          classification: 'dev',
+          representation: 'symlink',
+        },
+        after: {
+          kind: 'placement',
+          resource: liveResource,
+          classification: 'pinned',
+          representation: 'copy',
+        },
+      },
+      actual: { before: [], after: [{ role: 'live', placementPath }] },
+    } as unknown as LogicalJournalV1Dto;
+    const pair = (op: 'install' | 'promote'): LedgerPairV1Dto =>
+      ({
+        placementPath,
+        journal: {
+          op,
+          txId: transactionId,
+          phase: 'prepared',
+          startedAt,
+          completedAt: null,
+        },
+      }) as LedgerPairV1Dto;
+    const identity = { projectRoot: null, skill: 'alpha', tool: 'claude-code' } as const;
+
+    expect(legacyJournalMatchesLogicalShadow(logical, identity, pair('install'))).toBeTrue();
+    expect(legacyJournalMatchesLogicalShadow(logical, identity, pair('promote'))).toBeTrue();
+    expect(
+      legacyJournalMatchesLogicalShadow(
+        {
+          ...logical,
+          intent: {
+            ...logical.intent,
+            before: { ...logical.intent.before, representation: 'copy' },
+          },
+        } as unknown as LogicalJournalV1Dto,
+        identity,
+        pair('install'),
+      ),
+    ).toBeFalse();
   });
 });

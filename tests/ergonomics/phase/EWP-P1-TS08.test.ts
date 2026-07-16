@@ -477,14 +477,14 @@ describe('EWP-P1-TS08', () => {
     ]);
     expect(ledgerModule).not.toBeNull();
     expect(fetchModule).not.toBeNull();
-    const emptyLedger = ledgerModule?.emptyLedger;
+    const emptyLedgerModel = ledgerModule?.emptyLedgerModel;
     const writeLedger = ledgerModule?.writeLedger;
     const sweepFetchOrphans = fetchModule?.sweepFetchOrphans;
-    expect(emptyLedger).toBeFunction();
+    expect(emptyLedgerModel).toBeFunction();
     expect(writeLedger).toBeFunction();
     expect(sweepFetchOrphans).toBeFunction();
     if (
-      typeof emptyLedger !== 'function' ||
+      typeof emptyLedgerModel !== 'function' ||
       typeof writeLedger !== 'function' ||
       typeof sweepFetchOrphans !== 'function'
     )
@@ -510,7 +510,7 @@ describe('EWP-P1-TS08', () => {
     const writeResult = await writeLedger(
       effectPorts,
       '/state/placements.json',
-      emptyLedger('earlier'),
+      emptyLedgerModel('earlier'),
     );
     expect(writeResult).toMatchObject({ ok: true });
     expect(writes).toHaveLength(1);
@@ -535,8 +535,14 @@ describe('EWP-P1-TS08', () => {
     expect(removed).toEqual(['/state/.fetch/stale']);
 
     const allow = new Set([
+      // Parses injected timestamps for journal canonicalization; neither module reads now.
+      'packages/core/src/acquire/run.ts',
+      'packages/core/src/place/run.ts',
+      'packages/core/src/place/ledger-migration.ts',
       // Focused production ID adapter for private artifact coordination.
       'packages/core/src/artifacts/node-coordinator.ts',
+      // Focused private durable ledger adapter owns its production fallback IDs.
+      'packages/core/src/artifacts/ledger-writer.ts',
       'packages/core/src/ports/default.ts',
       // Parses an injected wall-clock value to enforce canonical UTC ISO form; it never reads now.
       'packages/core/src/observation/operation-context.ts',
@@ -618,6 +624,8 @@ describe('EWP-P1-TS08', () => {
     const realImplementationAllow = new Set([
       'packages/core/src/artifacts/node-coordinator.ts',
       'packages/core/src/artifacts/recovery-file.ts',
+      // Focused private adapter for durable ledger replacement and recovery.
+      'packages/core/src/artifacts/ledger-writer.ts',
       'packages/core/src/ports/default.ts',
     ]);
     const defaultAdapterImportAllow = new Set([

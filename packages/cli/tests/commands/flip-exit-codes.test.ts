@@ -4,6 +4,7 @@ import type { FlipDeps, FlipOptions, FlipReport, SkillSmithError } from '@skills
 import { resolveRuntimeConfiguration, runDev, runPromote } from '@skillsmith/core';
 import { emptyLedger, setPair, writeLedger } from '../../../core/src/place/ledger.ts';
 import { ledgerPathOf, resolveDataDir } from '../../../core/src/place/paths.ts';
+import { canonicalFixtureLedger } from '../../../core/tests/fixtures/place/canonical-ledger.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -135,7 +136,7 @@ const plantMismatchedJournal = async (f: FixtureFleet): Promise<void> => {
       backupPath: join(skillsRoot, '.skillsmith-backup-alpha-aaaa1111'),
     },
   });
-  const w = await writeLedger(f.env, ledgerPath, ledger);
+  const w = await writeLedger(f.env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(`failed to plant journal: ${msg(w.error)}`);
 };
 

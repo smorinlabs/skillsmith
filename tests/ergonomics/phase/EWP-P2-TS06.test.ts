@@ -1504,7 +1504,15 @@ describe('EWP-P2-TS06', () => {
       },
       '/fixture/placements.json',
     );
-    expect(readResult).toMatchObject({ ok: false, error: { code: 'ledger-error' } });
+    expect(readResult).toMatchObject({
+      ok: true,
+      value: {
+        schemaVersion: 1,
+        kind: 'skillsmith.placements',
+        updatedAt: 'x',
+        skills: {},
+      },
+    });
 
     let writes = 0;
     const legacyWrite = facade.writeLedger as (
@@ -1525,7 +1533,7 @@ describe('EWP-P2-TS06', () => {
         removeTree: async () => undefined,
       },
       '/fixture/placements.json',
-      JSON.parse(v2Source),
+      readResult.ok ? readResult.value : null,
     );
     expect(writeResult).toMatchObject({ ok: false, error: { code: 'ledger-error' } });
     expect(writes).toBe(0);

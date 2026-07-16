@@ -1,21 +1,29 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { cp, mkdir, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
 import type { PathKind } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { emptyLedger, getPair, readLedger, setPair, writeLedger } from '../../src/place/ledger.ts';
+import {
+  emptyLedger,
+  getPair,
+  readLedger,
+  readLedgerState,
+  setPair,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../src/place/paths.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from '../../src/place/store.ts';
 import { resumeSwap, rollbackSwap, runSwap } from '../../src/place/swap.ts';
 import type {
   DevRecord,
   JournalPhase,
-  LedgerFile,
   PinnedRecord,
   SwapCtx,
   SwapPlan,
 } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
+import { canonicalFixtureLedger } from '../fixtures/place/canonical-ledger.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -48,19 +56,26 @@ const pinnedOf = (storePath: string, rev: string, contentHash: string): PinnedRe
   verify: 'passed',
 });
 
-const makeCtx = (env: RuntimePorts, ledgerPath: string, ledger: LedgerFile): SwapCtx => ({
-  env,
-  ledgerPath,
-  ledger,
-  persist: () => writeLedger(env, ledgerPath, ledger),
-  now: () => NOW,
-  newTxId: () => TXID,
-});
+const modelCtx = (
+  env: RuntimePorts,
+  ledgerPath: string,
+  ledger: LedgerModel,
+): SwapCtx & { ledger: LedgerModel } => {
+  const ctx: SwapCtx & { ledger: LedgerModel } = {
+    env,
+    ledgerPath,
+    ledger,
+    persist: () => writeLedger(env, ledgerPath, ctx.ledger),
+    now: () => NOW,
+    newTxId: () => TXID,
+  };
+  return ctx;
+};
 
 const ctxFromDisk = async (env: RuntimePorts, ledgerPath: string): Promise<SwapCtx> => {
-  const read = await readLedger(env, ledgerPath);
-  if (!read.ok) throw new Error(msg(read.error));
-  return makeCtx(env, ledgerPath, read.value);
+  const read = await readLedgerState(env, ledgerPath);
+  if (!read.ok || read.value.state !== 'present') throw new Error('fixture ledger is absent');
+  return modelCtx(env, ledgerPath, read.value.model);
 };
 
 const hashOf = async (env: RuntimePorts, dir: string): Promise<string> => {
@@ -160,7 +175,7 @@ const setupPromote = async (f: FixtureFleet): Promise<SweepCfg> => {
     pinned: null,
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'promote',

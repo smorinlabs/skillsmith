@@ -3,12 +3,14 @@ import { cp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
+import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
 import type { PathKind } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   emptyLedger,
   getPairAt,
   readLedger,
+  readLedgerState,
   setPairAt,
   writeLedger,
 } from '../../src/place/ledger.ts';
@@ -19,7 +21,6 @@ import {
   type DevRecord,
   FLIP_TOOLS,
   type JournalPhase,
-  type LedgerFile,
   type OriginRecord,
   type PairRecord,
   type PinnedRecord,
@@ -28,6 +29,7 @@ import {
 } from '../../src/place/types.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
+import { canonicalFixtureLedger } from '../fixtures/place/canonical-ledger.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -77,19 +79,26 @@ const pinnedOf = (
   placement,
 });
 
-const makeCtx = (env: RuntimePorts, ledgerPath: string, ledger: LedgerFile): SwapCtx => ({
-  env,
-  ledgerPath,
-  ledger,
-  persist: () => writeLedger(env, ledgerPath, ledger),
-  now: () => NOW,
-  newTxId: () => TXID,
-});
+const modelCtx = (
+  env: RuntimePorts,
+  ledgerPath: string,
+  ledger: LedgerModel,
+): SwapCtx & { ledger: LedgerModel } => {
+  const ctx: SwapCtx & { ledger: LedgerModel } = {
+    env,
+    ledgerPath,
+    ledger,
+    persist: () => writeLedger(env, ledgerPath, ctx.ledger),
+    now: () => NOW,
+    newTxId: () => TXID,
+  };
+  return ctx;
+};
 
 const ctxFromDisk = async (env: RuntimePorts, ledgerPath: string): Promise<SwapCtx> => {
-  const read = await readLedger(env, ledgerPath);
-  if (!read.ok) throw new Error(msg(read.error));
-  return makeCtx(env, ledgerPath, read.value);
+  const read = await readLedgerState(env, ledgerPath);
+  if (!read.ok || read.value.state !== 'present') throw new Error('fixture ledger is absent');
+  return modelCtx(env, ledgerPath, read.value.model);
 };
 
 const hashOf = async (env: RuntimePorts, dir: string): Promise<string> => {
@@ -335,7 +344,7 @@ const freshInstall = async (f: FixtureFleet, build: 'symlink' | 'copy'): Promise
   const placementPath = join(skillsRoot, SKILL);
   const ledgerPath = ledgerPathOf(f.data);
   const s = await seedStore(f, env);
-  const w = await writeLedger(env, ledgerPath, emptyLedger(NOW));
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(emptyLedger(NOW)));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'install',
@@ -385,7 +394,7 @@ const replaceOverCopy = async (f: FixtureFleet): Promise<AcquireCfg> => {
     origin: origin(),
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'install',
@@ -435,7 +444,7 @@ const replaceOverDev = async (f: FixtureFleet): Promise<AcquireCfg> => {
     pinned: null,
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'install',
@@ -487,7 +496,7 @@ const replaceSymlinkOverSymlink = async (f: FixtureFleet): Promise<AcquireCfg> =
     origin: origin(),
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'install',
@@ -537,7 +546,7 @@ const uninstall = async (f: FixtureFleet, placement: 'symlink' | 'copy'): Promis
     origin: origin(),
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'uninstall',

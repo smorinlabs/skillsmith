@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { SUPPORTED_TOOLS } from '@skillsmith/core';
+import { type ExitCode, exitCodeForError } from '../util/exit-codes.ts';
 import { validateNonMutatingMode } from '../util/non-mutating-mode.ts';
 
 export interface DoctorInputRequest {
@@ -86,16 +87,18 @@ export interface DoctorExitInput {
   readonly failure: null | 'health' | 'usage' | 'state' | 'source' | 'permission' | 'cancelled';
 }
 
-export const resolveDoctorExitCode = (input: DoctorExitInput): 0 | 1 | 2 | 3 | 5 | 6 | 130 => {
+export const resolveDoctorExitCode = (input: DoctorExitInput): ExitCode => {
   if (input.failure !== null) {
-    return {
-      health: 1,
-      usage: 2,
-      state: 3,
-      source: 5,
-      permission: 6,
-      cancelled: 130,
-    }[input.failure] as 1 | 2 | 3 | 5 | 6 | 130;
+    return (
+      {
+        health: 1,
+        usage: 2,
+        state: 3,
+        source: 5,
+        permission: 6,
+        cancelled: exitCodeForError({ code: 'cancelled', message: 'doctor execution cancelled' }),
+      } as const
+    )[input.failure];
   }
   if (input.report === null) return 1;
   if ((input.report.repair?.results ?? []).some((result) => result.outcome === 'failed')) return 1;
