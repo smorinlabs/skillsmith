@@ -4926,7 +4926,7 @@
       "phase": "3B",
       "title": "Tool-specific lifecycle behavior behind registered adapter bundles",
       "dependsOn": ["P17-G3B-01"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0007-tool-adapter-registry.md",
@@ -5009,8 +5009,8 @@
           "evidence": ["projects/p17/evidence/P17-G3B-05.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-05.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -5044,7 +5044,8 @@
       "evidence": [
         "projects/p17/plans/P17-G3B-05.md",
         "projects/p17/evidence/P17-G3B-05.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G3B-05.md#ready-plan"
+        "projects/p17/evidence/P17-G3B-05.md#ready-plan",
+        "projects/p17/evidence/P17-G3B-05.md#test-first-evidence"
       ]
     },
     {
@@ -19886,11 +19887,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-05",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-05",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3B-05.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-05.md#ready-plan",
+        "projects/p17/evidence/P17-G3B-05.md#test-first-evidence"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS06"],
@@ -20172,18 +20176,29 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-05:tests/ergonomics/phase/EWP-P3B-TS06.test.ts#EWP-P3B-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P3B-TS06.test.ts",
+        "selector": "EWP-P3B-TS06",
+        "command": "bun test tests/ergonomics/phase/EWP-P3B-TS06.test.ts --test-name-pattern EWP-P3B-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G3B-05.md#red-execution-receipt-ewp-p3b-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS06"],
       "impactedValidations": ["EWP-P3B-TS06"],
       "affectedContracts": [],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P3B-TS06.test.ts --test-name-pattern EWP-P3B-TS06"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/fixtures/p3b-ts06/read-only-adapter.ts",
+        "tests/ergonomics/fixtures/p3b-ts06/write-adapter.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS06.test.ts"
+      ]
     },
     {
       "id": "EWP-P3B-TS07",
