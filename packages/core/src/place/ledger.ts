@@ -6,6 +6,7 @@ import {
   fromLedgerV2Dto,
   ledgerByteRevision,
   ledgerSemanticRevision,
+  legacyJournalOperationMatchesLogicalShadow,
   logicalJournalPairIdentity,
   resolveLedgerArtifactCodec,
   toLedgerV2Dto,
@@ -203,6 +204,20 @@ export const legacyLedgerView = (model: LedgerModel): LedgerFile => {
           projects: structuredClone(model.projects) as NonNullable<LedgerFile['projects']>,
         }),
   };
+  const terminalPairIdentities = new Map<string | null, Map<string, Set<string>>>();
+  const claimTerminalPairIdentity = (
+    projectRoot: string | null,
+    skill: string,
+    tool: string,
+  ): boolean => {
+    const skills = terminalPairIdentities.get(projectRoot) ?? new Map<string, Set<string>>();
+    terminalPairIdentities.set(projectRoot, skills);
+    const tools = skills.get(skill) ?? new Set<string>();
+    skills.set(skill, tools);
+    if (tools.has(tool)) return false;
+    tools.add(tool);
+    return true;
+  };
   for (let index = model.history.length - 1; index >= 0; index -= 1) {
     const journal = model.history[index];
     if (journal === undefined) continue;
@@ -211,8 +226,12 @@ export const legacyLedgerView = (model: LedgerModel): LedgerFile => {
     const skills =
       identity.projectRoot === null ? view.skills : view.projects?.[identity.projectRoot]?.skills;
     const pair = skills?.[identity.skill]?.tools[identity.tool as FlipTool];
-    if (pair === undefined || pair.journal != null) continue;
-    pair.journal = legacyJournalView(journal, pair, identity.skill);
+    if (pair === undefined) continue;
+    if (!claimTerminalPairIdentity(identity.projectRoot, identity.skill, identity.tool)) continue;
+    if (pair.journal != null || journal.disposition === 'rollback') continue;
+    const candidate = legacyJournalView(journal, pair, identity.skill);
+    if (!legacyJournalOperationMatchesLogicalShadow(journal, candidate.op)) continue;
+    pair.journal = candidate;
   }
   return view;
 };

@@ -21,6 +21,7 @@ import type { NormalizedManifestV1 } from '../../src/artifacts/types.ts';
 import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
 import { toStatusV1Dto } from '../../src/contracts/v1/status.ts';
+import { legacyLedgerView } from '../../src/place/ledger.ts';
 import type {
   FileMetadata,
   FileMetadataReadPort,
@@ -508,7 +509,7 @@ interface LogicalJournalOptions {
   readonly updatedAt?: string;
   readonly retained?: LogicalJournalV1Dto['actual']['retained'];
   readonly reversibility?: LogicalJournalV1Dto['intent']['reversibility'];
-  readonly kind?: 'repair' | 'remove';
+  readonly kind?: 'install' | 'update' | 'repair' | 'remove' | 'link-dev';
 }
 
 const logicalJournal = (options: LogicalJournalOptions): LogicalJournalV1Dto => {
@@ -673,6 +674,76 @@ const relationshipOf = (report: StatusReport) => {
   if (report.artifacts.state !== 'selected') throw new Error('expected selected artifacts');
   return report.artifacts.relationship;
 };
+
+describe('legacy ledger history projection', () => {
+  test('uses unsupported repair as a tombstone without hiding ordinary update or dev history', () => {
+    const repairName = 'repair-tombstone';
+    const repairPath = join(CODEX_ROOT, repairName);
+    const repairHistory = [
+      logicalJournal({
+        name: repairName,
+        path: repairPath,
+        transactionId: 'transaction-install-older',
+        phase: 'committed',
+        kind: 'install',
+      }),
+      logicalJournal({
+        name: repairName,
+        path: repairPath,
+        transactionId: 'transaction-update-older',
+        phase: 'committed',
+        kind: 'update',
+      }),
+      logicalJournal({
+        name: repairName,
+        path: repairPath,
+        transactionId: 'transaction-repair-newest',
+        phase: 'committed',
+        kind: 'repair',
+      }),
+    ];
+    const updateName = 'ordinary-update';
+    const devName = 'ordinary-dev';
+    const projected = legacyLedgerView(
+      emptyLedgerModel({
+        skills: {
+          [repairName]: { tools: { codex: pairFor(repairName) } },
+          [updateName]: { tools: { codex: pairFor(updateName) } },
+          [devName]: { tools: { codex: pairFor(devName) } },
+        },
+        history: [
+          ...repairHistory,
+          logicalJournal({
+            name: updateName,
+            path: join(CODEX_ROOT, updateName),
+            transactionId: 'transaction-update-ordinary',
+            phase: 'committed',
+            kind: 'update',
+          }),
+          logicalJournal({
+            name: devName,
+            path: join(CODEX_ROOT, devName),
+            transactionId: 'transaction-dev-ordinary',
+            phase: 'committed',
+            kind: 'link-dev',
+          }),
+        ],
+      }),
+    );
+
+    expect(projected.skills[repairName]?.tools.codex?.journal).toBeNull();
+    expect(projected.skills[updateName]?.tools.codex?.journal).toMatchObject({
+      op: 'install',
+      txId: 'transaction-update-ordinary',
+      phase: 'committed',
+    });
+    expect(projected.skills[devName]?.tools.codex?.journal).toMatchObject({
+      op: 'dev',
+      txId: 'transaction-dev-ordinary',
+      phase: 'committed',
+    });
+  });
+});
 
 describe('G3A-01 focused status reader', () => {
   test('owns a recursively immutable and permutation-stable converged product', async () => {

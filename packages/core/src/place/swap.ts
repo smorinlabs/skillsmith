@@ -9,6 +9,7 @@ import { validateJournalV1DtoShape } from '../artifacts/registry.ts';
 import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
+  cancelledError,
   errorMessage,
   flipFailedError,
   flipRefusedError,
@@ -26,7 +27,11 @@ import {
   withLedgerPairAt,
   withoutLedgerPairAt,
 } from './ledger.ts';
-import { advanceLogicalTransaction, commitLogicalTransaction } from './logical-transactions.ts';
+import {
+  abortPendingLogicalTransaction,
+  advanceLogicalTransaction,
+  commitLogicalTransaction,
+} from './logical-transactions.ts';
 import { contentHashOf } from './store.ts';
 import type {
   FlipTool,
@@ -501,6 +506,96 @@ const persistWithoutPair = async (
   const next = withoutLedgerPairAt(ctx.ledger, scopeKey, skill, tool);
   if (!next.ok) return next;
   ctx.ledger = next.value;
+  return ctx.persist();
+};
+
+const logicalRollbackError = (message: string, cancelled = false): SkillSmithError =>
+  cancelled ? cancelledError(message) : flipFailedError(message);
+
+/**
+ * Switch the original interrupted transaction to rollback before changing the filesystem. The
+ * durable direction change makes a crash after this boundary resume rollback instead of allowing a
+ * same-operation retry to drive the interrupted forward transaction to committed.
+ */
+const prepareLogicalRollback = async (
+  ctx: SwapCtx,
+  transactionId: string,
+): Promise<Result<LogicalJournalV1Dto | null, SkillSmithError>> => {
+  if ('schemaVersion' in ctx.ledger) return ok(null);
+
+  const pending = ctx.ledger.transactions[transactionId];
+  // Canonical ledgers migrated from the legacy schema may still carry an unmatched compatibility
+  // shadow. There is no logical transaction to abort in that representation, so retain the legacy
+  // journal-clearing path. A matched logical transaction always takes the durable rollback route.
+  if (pending === undefined) return ok(null);
+  if (pending.disposition === 'rollback') return ok(pending);
+
+  const aborted = abortPendingLogicalTransaction(ctx.ledger, {
+    transactionId: pending.transactionId,
+    pairId: pending.intent.pairId,
+    command: 'skillsmith-rollback',
+    workflow: 'placement-swap',
+    updatedAt: ctx.now(),
+    ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+  });
+  if (!aborted.ok) {
+    return err(logicalRollbackError(aborted.error.message, aborted.error.reason === 'cancelled'));
+  }
+  ctx.ledger = aborted.value;
+  const persisted = await ctx.persist();
+  if (!persisted.ok) return persisted;
+
+  const rollback = ctx.ledger.transactions[transactionId];
+  return rollback?.disposition === 'rollback'
+    ? ok(rollback)
+    : err(flipFailedError('durable logical placement rollback transaction is missing'));
+};
+
+/** Finish the original transaction as rollback after its before-image is authoritative on disk. */
+const commitLogicalRollback = async (
+  ctx: SwapCtx,
+  transactionId: string,
+  scopeKey: string | null,
+  skill: string,
+  tool: string,
+  restoredMode: PairRecord['mode'],
+): Promise<Result<void, SkillSmithError>> => {
+  if ('schemaVersion' in ctx.ledger) {
+    return err(flipFailedError('logical placement rollback requires a canonical ledger'));
+  }
+  const pending = ctx.ledger.transactions[transactionId];
+  if (pending === undefined || pending.disposition !== 'rollback') {
+    return err(flipFailedError('logical placement rollback transaction is not pending'));
+  }
+
+  let terminalBase = ctx.ledger;
+  if (pending.intent.before.kind !== 'absent') {
+    const currentPair = getLedgerPairAt(terminalBase, scopeKey, skill, tool);
+    if (currentPair === null) {
+      return err(flipFailedError('logical placement rollback pair is missing'));
+    }
+    const restored = withLedgerPairAt(terminalBase, scopeKey, skill, tool, {
+      ...currentPair,
+      mode: restoredMode,
+    });
+    if (!restored.ok) return restored;
+    terminalBase = restored.value;
+  }
+
+  const terminalPending = terminalBase.transactions[transactionId];
+  if (terminalPending === undefined || terminalPending.disposition !== 'rollback') {
+    return err(flipFailedError('logical placement rollback transaction was lost during staging'));
+  }
+  const completedAt = ctx.now();
+  const committed = commitLogicalTransaction(terminalBase, {
+    ...terminalPending,
+    phase: 'committed',
+    actual: { ...terminalPending.actual, after: terminalPending.actual.before },
+    updatedAt: completedAt,
+    completedAt,
+  });
+  if (!committed.ok) return err(flipFailedError(committed.error.message));
+  ctx.ledger = committed.value;
   return ctx.persist();
 };
 
@@ -1187,6 +1282,9 @@ export const rollbackSwap = async (
     return err(flipRefusedError(`cannot roll back a committed ${j.op} of ${skill}`));
   }
 
+  const logicalRollback = await prepareLogicalRollback(ctx, j.txId);
+  if (!logicalRollback.ok) return logicalRollback;
+
   // Fresh install: the only live entry that can exist is the new artifact. Restore "nothing there".
   if (before.mode === 'absent') {
     try {
@@ -1195,7 +1293,10 @@ export const rollbackSwap = async (
     } catch (e) {
       return err(mapFsErr(e, `cannot roll back ${skill}`));
     }
-    const persisted = await persistWithoutPair(ctx, scopeKey, skill, tool);
+    const persisted =
+      logicalRollback.value === null
+        ? await persistWithoutPair(ctx, scopeKey, skill, tool)
+        : await commitLogicalRollback(ctx, j.txId, scopeKey, skill, tool, pair.mode);
     if (!persisted.ok) return persisted;
     return ok({ committed: false, backupKept: null, warning: null });
   }
@@ -1243,8 +1344,10 @@ export const rollbackSwap = async (
   // (mirrors P12 promote-rollback — the engine never retains the old PinnedRecord/origin, so it
   // cannot restore them). The run layer (Task 7) MUST reconcile the ledger record after such a rollback.
   pair.mode = before.mode;
-  pair.journal = null;
-  const persisted = await persistPair(ctx, scopeKey, skill, tool, pair);
+  if (logicalRollback.value === null) pair.journal = null;
+  const persisted = await (logicalRollback.value === null
+    ? persistPair(ctx, scopeKey, skill, tool, pair)
+    : commitLogicalRollback(ctx, j.txId, scopeKey, skill, tool, before.mode));
   if (!persisted.ok) return persisted;
   return ok({ committed: false, backupKept: null, warning: null });
 };

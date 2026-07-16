@@ -9,6 +9,7 @@ import { ledgerPathOf } from '../../src/place/paths.ts';
 import { runDev, runPromote, runRollback } from '../../src/place/run.ts';
 import type { LedgerFile, PairRecord } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
+import { canonicalFixtureLedger } from '../fixtures/place/canonical-ledger.ts';
 import {
   DEV_SOURCE_NOW,
   type DevSourceFlipOptions,
@@ -251,7 +252,7 @@ describe('P13-T6b review regressions', () => {
   // BF-2 — omitted-field ledger shape
   // -------------------------------------------------------------------------------------------
 
-  test('BF-2: S1 create writes a record that OMITS the pinned/journal keys entirely', async () => {
+  test('BF-2: S1 create omits pinned and settles its physical shadow into logical history', async () => {
     const r = await runDev(
       f.env,
       opts({ targets: ['beta'], tools: ['claude-code'], source: resolve(f.betaSrc) }),
@@ -261,10 +262,20 @@ describe('P13-T6b review regressions', () => {
     expect(actionV2(r.value.results[0])).toBe('created');
     const raw = (await rawLedger()) as {
       skills: { beta: { tools: { 'claude-code': Record<string, unknown> } } };
+      transactions: Record<string, unknown>;
+      history: Array<Record<string, unknown>>;
     };
     const rec = raw.skills.beta.tools['claude-code'];
     expect(Object.hasOwn(rec, 'pinned')).toBe(false);
-    expect(Object.hasOwn(rec, 'journal')).toBe(false);
+    expect(Object.hasOwn(rec, 'journal')).toBe(true);
+    expect(rec.journal).toBeNull();
+    expect(Object.keys(raw.transactions)).toEqual([]);
+    expect(raw.history).toHaveLength(1);
+    expect(raw.history[0]).toMatchObject({
+      disposition: 'forward',
+      phase: 'committed',
+      intent: { kind: 'link-dev', skill: 'beta', tool: 'claude-code' },
+    });
   });
 
   // Seed a RAW omitted-field record (undefined, NOT explicit null) directly on disk.
@@ -389,7 +400,7 @@ describe('P13-T6b review regressions', () => {
       },
       pinned: null,
     });
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), l);
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), canonicalFixtureLedger(l));
     if (!w.ok) throw new Error(msg(w.error));
 
     // --source that MATCHES the recorded resolvedPath must NOT be treated as a redirect (no refuse).
@@ -528,7 +539,7 @@ describe('P13-T6b review regressions', () => {
       },
     };
     setPair(l, 'pinnedghost', 'claude-code', rec);
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), l);
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), canonicalFixtureLedger(l));
     if (!w.ok) throw new Error(msg(w.error));
 
     const r = await runDev(
@@ -560,7 +571,7 @@ describe('P13-T6b review regressions', () => {
         recordedAt: NOW,
       },
     });
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), l);
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), canonicalFixtureLedger(l));
     if (!w.ok) throw new Error(msg(w.error));
 
     const r = await runDev(
@@ -589,7 +600,7 @@ describe('P13-T6b review regressions', () => {
         verify: 'passed',
       },
     });
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), l);
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), canonicalFixtureLedger(l));
     if (!w.ok) throw new Error(msg(w.error));
 
     const r = await runDev(

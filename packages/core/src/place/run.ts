@@ -1629,6 +1629,17 @@ const liveResourceOf = (pair: PairPlan) => ({
   location: { kind: 'machine-bound' as const, path: pair.placement.path },
 });
 
+/** Logical plan locations are canonical machine-bound paths. Preserve the symlink's literal bytes
+ * in the physical pair/journal records, but resolve a relative payload against its placement for
+ * operation images so the journal remains schema-valid and stable across caller cwd changes. */
+const logicalLinkTargetOf = (pair: PairPlan, target: string | null) =>
+  target === null
+    ? null
+    : {
+        kind: 'machine-bound' as const,
+        path: resolveSymlinkAbsolute(pair.placement.path, target),
+      };
+
 const placementImageOf = (
   pair: PairPlan,
   mode: 'dev' | 'pinned',
@@ -1640,7 +1651,7 @@ const placementImageOf = (
   resource: liveResourceOf(pair),
   classification: mode,
   representation: mode === 'dev' ? 'symlink' : 'copy',
-  linkTarget: linkTarget === null ? null : { kind: 'machine-bound' as const, path: linkTarget },
+  linkTarget: logicalLinkTargetOf(pair, linkTarget),
   dangling: false,
   source:
     contentHash === null || sourcePath === null
@@ -1664,7 +1675,7 @@ const currentRollbackImageOf = (
     representation: symlink ? 'symlink' : 'copy',
     linkTarget:
       symlink && pair.placement.symlinkTarget !== null
-        ? { kind: 'machine-bound', path: pair.placement.symlinkTarget }
+        ? logicalLinkTargetOf(pair, pair.placement.symlinkTarget)
         : null,
     dangling: pair.placement.dangling,
     source,
@@ -1688,7 +1699,7 @@ const journalBeforeImageOf = (pair: PairPlan, before: Journal['before']): Operat
     resource: liveResourceOf(pair),
     classification: before.mode,
     representation,
-    linkTarget: linkTarget === null ? null : { kind: 'machine-bound', path: linkTarget },
+    linkTarget: logicalLinkTargetOf(pair, linkTarget),
     dangling: false,
     source: null,
     contentHash: null,
@@ -1702,6 +1713,18 @@ const beforeImageOf = (pair: PairPlan): OperationImage => {
   if (pair.placement.class === 'dev') {
     return placementImageOf(pair, 'dev', pair.placement.symlinkTarget, null);
   }
+  if (pair.placement.class === 'store-linked') {
+    return {
+      kind: 'placement',
+      resource: liveResourceOf(pair),
+      classification: 'store-linked',
+      representation: 'symlink',
+      linkTarget: logicalLinkTargetOf(pair, pair.placement.symlinkTarget),
+      dangling: pair.placement.dangling,
+      source: null,
+      contentHash: null,
+    };
+  }
   return placementImageOf(pair, 'pinned', null, null);
 };
 
@@ -1712,7 +1735,7 @@ const unmanagedBeforeImageOf = (pair: PairPlan): OperationImage => ({
   representation: pair.placement.class === 'dev' ? 'symlink' : 'other',
   linkTarget:
     pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null
-      ? { kind: 'machine-bound', path: pair.placement.symlinkTarget }
+      ? logicalLinkTargetOf(pair, pair.placement.symlinkTarget)
       : null,
   dangling: pair.placement.class === 'dev' && pair.placement.dangling,
   source: null,
@@ -2018,7 +2041,7 @@ const createFlipPlanning = async (
           : 'promote'
         : command === 'dev'
           ? 'link-dev'
-          : pair.placement.class === 'pinned'
+          : pair.placement.class === 'pinned' || pair.placement.class === 'store-linked'
             ? 'update'
             : 'promote';
     const localDevSource = await devOperationSourceOf(env, ledger, pair, opts);
@@ -2671,12 +2694,12 @@ const prepareFlipBatch = async (
               operation,
             );
             startedResults.set(operation.operationId, result);
-            if (result.error) {
-              const reread = await readLedgerState(env, ledgerPath);
-              if (reread.ok) {
-                executionLedger = ledgerModelForMutation(reread.value, nowOf(env, deps));
-              }
-            }
+            const reread = await readLedgerState(env, ledgerPath);
+            // The durable ledger is the sole composition source after a started operation. Even a
+            // failed operation can have crossed its live-replace boundary before reporting the
+            // error; continuing after an unreadable refresh could erase that durable partial state.
+            if (!reread.ok) throw reread.error;
+            executionLedger = ledgerModelForMutation(reread.value, nowOf(env, deps));
             return operationResultForFlip(operation, validatedBinding, result, reportOp);
           },
         };

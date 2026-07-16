@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { join, resolve } from 'node:path';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { emptyLedger, getPair, readLedger, setPair, writeLedger } from '../../src/place/ledger.ts';
+import {
+  emptyLedger,
+  getLedgerPairAt,
+  getPair,
+  readLedger,
+  readLedgerState,
+  setPair,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../src/place/paths.ts';
 import { runDev, runPromote } from '../../src/place/run.ts';
 import { resolveProvenance, snapshotToStore } from '../../src/place/store.ts';
@@ -17,6 +25,7 @@ import { ok } from '../../src/result.ts';
 import type { VerifyOptions } from '../../src/verify/run.ts';
 import type { ModeResult, ToolVerdict, VerifyReport, VerifyTool } from '../../src/verify/types.ts';
 import { hermeticGitEnv } from '../fixtures/git-env.ts';
+import { canonicalFixtureLedger } from '../fixtures/place/canonical-ledger.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -214,7 +223,8 @@ describe('store-linked flip (D9)', () => {
       origin: seededOrigin,
       journal: null,
     });
-    await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const written = await writeLedger(f.env, ledgerPathOf(f.data), canonicalFixtureLedger(ledger));
+    if (!written.ok) throw new Error(msg(written.error));
 
     // --- runDev: store-linked with a dev record flips to the recorded source ---
     const devResult = await runDev(f.env, opts(f, { targets: ['alpha-inst'] }), passDeps());
@@ -312,7 +322,8 @@ describe('store-linked flip (D9)', () => {
       origin: seededOrigin,
       journal: null,
     });
-    await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const written = await writeLedger(f.env, ledgerPathOf(f.data), canonicalFixtureLedger(ledger));
+    if (!written.ok) throw new Error(msg(written.error));
 
     // Confirm the live path is genuinely store-linked BEFORE promote (guards against the coverage
     // silently regressing to the dev-class branch if the seed or classifier ever changes).
@@ -341,15 +352,29 @@ describe('store-linked flip (D9)', () => {
     expect(pr?.store?.path).toBeDefined();
     expect(await f.env.readLink(live)).toBe(pr?.store?.path as string);
 
-    const after = await readLedgerOf(f);
-    if (!after.ok) throw new Error(msg(after.error));
-    const pair = getPair(after.value, 'alpha-inst', 'claude-code');
+    const canonical = await readLedgerState(f.env, ledgerPathOf(f.data));
+    if (!canonical.ok || canonical.value.state !== 'present') {
+      throw new Error('canonical store-linked re-pin ledger is missing');
+    }
+    expect(
+      getLedgerPairAt(canonical.value.model, null, 'alpha-inst', 'claude-code')?.journal ?? null,
+    ).toBeNull();
+    expect(canonical.value.model.history.at(-1)).toMatchObject({
+      intent: { kind: 'update', skill: 'alpha-inst', tool: 'claude-code' },
+      phase: 'committed',
+    });
+
+    const legacy = await readLedgerOf(f);
+    if (!legacy.ok) throw new Error(msg(legacy.error));
+    const pair = getPair(legacy.value, 'alpha-inst', 'claude-code');
     expect(pair?.mode).toBe('pinned');
     expect(pair?.pinned?.placement).toBe('symlink');
     expect(pair?.pinned?.rev).not.toBe(s.rev);
     expect(pair?.origin).toEqual(seededOrigin); // retained verbatim
     expect(pair?.dev).not.toBeNull(); // dev record retained
-    expect(pair?.journal).toBeNull();
+    // The physical install-shaped recovery shadow is cleared, while the compatibility view
+    // projects the committed logical pinned-to-pinned update for legacy readers.
+    expect(pair?.journal).toMatchObject({ op: 'install', phase: 'committed' });
 
     const residue = (await f.env.listDir(skillsRoot)).filter((n) => n.startsWith('.skillsmith-'));
     expect(residue).toEqual([]);
@@ -402,6 +427,7 @@ describe('store-linked flip (D9)', () => {
     const pair = getPair(ledgerRes.value, 'slink', 'claude-code');
     expect(pair?.mode).toBe('dev');
     expect(pair?.dev?.sourcePath).toBe(resolve(f.alphaSrc));
+    expect(getPair(ledgerRes.value, 'slink', 'codex')?.mode).toBe('dev');
   });
 
   test('store-linked with a pair but no dev record: promote noops, dev refuses without --source', async () => {
@@ -418,7 +444,8 @@ describe('store-linked flip (D9)', () => {
       origin: origin('smorinlabs/fixture-harness/alpha'),
       journal: null,
     });
-    await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const written = await writeLedger(f.env, ledgerPathOf(f.data), canonicalFixtureLedger(ledger));
+    if (!written.ok) throw new Error(msg(written.error));
 
     const promoted = await runPromote(f.env, opts(f, { targets: ['beta-inst'] }), passDeps());
     if (!promoted.ok) throw new Error(msg(promoted.error));

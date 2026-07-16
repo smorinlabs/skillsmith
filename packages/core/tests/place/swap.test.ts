@@ -294,6 +294,35 @@ describe('runSwap / rollbackSwap — guards and abort', () => {
     }
   });
 
+  test('rollbackSwap preserves the migrated compatibility path when no logical transaction exists', async () => {
+    const s = await seedAlphaDev(f);
+    const pair = getSwapPair(s.ledger, 'alpha', 'claude-code');
+    if (!pair) throw new Error('seed pair missing');
+    const stagingPath = join(s.skillsRoot, '.skillsmith-staging-alpha-deadbeef');
+    await f.env.copyTree(s.storePath, stagingPath);
+    const pending = withLedgerPairAt(s.ledger, null, 'alpha', 'claude-code', {
+      ...pair,
+      journal: {
+        op: 'promote',
+        txId: 'deadbeef',
+        phase: 'staged',
+        startedAt: NOW,
+        completedAt: null,
+        before: { mode: 'dev', symlinkTarget: s.target },
+        stagingPath,
+        backupPath: join(s.skillsRoot, '.skillsmith-backup-alpha-deadbeef'),
+      },
+    });
+    if (!pending.ok) throw new Error(msg(pending.error));
+    const ctx = makeCtx(f.env, s.ledgerPath, pending.value);
+
+    const rolledBack = await rollbackSwap(ctx, 'alpha', 'claude-code');
+    if (!rolledBack.ok) throw new Error(msg(rolledBack.error));
+    expect(await f.env.readLink(s.placementPath)).toBe(s.target);
+    expect(await f.env.pathKind(stagingPath)).toBe('absent');
+    expect(getSwapPair(ctx.ledger, 'alpha', 'claude-code')?.journal).toBeNull();
+  });
+
   test('pre-aborted signal → flip-failed, journal left recoverable, resumeSwap completes it', async () => {
     const s = await seedAlphaDev(f);
     const controller = new AbortController();

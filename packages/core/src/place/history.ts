@@ -65,7 +65,10 @@ const locationTuple = (
 const journalAnchors = (
   journal: LogicalJournalV1Dto,
 ): Result<readonly LedgerHistoryAnchor[], LedgerHistoryError> => {
-  if (JSON.stringify(journal.actual.before) === JSON.stringify(journal.actual.after)) {
+  if (
+    journal.disposition !== 'rollback' &&
+    JSON.stringify(journal.actual.before) === JSON.stringify(journal.actual.after)
+  ) {
     return err({ code: 'invalid-history', transactionId: journal.transactionId });
   }
   const anchors = new Map<string, LedgerHistoryAnchor>();

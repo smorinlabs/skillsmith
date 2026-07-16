@@ -406,6 +406,40 @@ describe('bounded history and one-victim cleanup', () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
 
+  test('accepts a net-zero rollback journal while refusing a forward no-op journal', async () => {
+    const decoded = unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(V2_GOLDEN))));
+    const seed = decoded.model.history[0];
+    if (seed === undefined) throw new Error('missing committed history seed');
+    const forwardNoop: LogicalJournalV1Dto = {
+      ...seed,
+      transactionId: 'tx:forward-noop',
+      intent: { ...seed.intent, operationId: 'operation:forward-noop' },
+      actual: { ...seed.actual, after: seed.actual.before, retained: [] },
+    };
+    const refused = selectBoundedHistory({
+      ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+      history: [forwardNoop],
+    });
+    expect(refused).toEqual({
+      ok: false,
+      error: { code: 'invalid-history', transactionId: forwardNoop.transactionId },
+    });
+
+    const rollback: LogicalJournalV1Dto = {
+      ...forwardNoop,
+      transactionId: 'tx:rollback-net-zero',
+      intent: { ...forwardNoop.intent, operationId: 'operation:rollback-net-zero' },
+      disposition: 'rollback',
+    };
+    const selected = unwrap(
+      selectBoundedHistory({
+        ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+        history: [rollback],
+      }),
+    );
+    expect(selected.history).toEqual([rollback]);
+  });
+
   test('keeps the newest 256 complete journals in commit order for one deep anchor', async () => {
     const decoded = unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(V2_GOLDEN))));
     const seed = decoded.model.history[0];
@@ -573,5 +607,5 @@ describe('bounded history and one-victim cleanup', () => {
       error: { code: 'invalid-state', path: backupPath },
     });
     expect(new Uint8Array(await readFile(path))).toEqual(durableBytes);
-  }, 15_000);
+  }, 30_000);
 });

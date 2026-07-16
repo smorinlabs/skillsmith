@@ -679,6 +679,66 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     expect(Object.keys(afterAdopt.value.model.transactions)).toEqual([]);
   });
 
+  test('a failed mandatory post-operation ledger reread aborts the remaining tool in its group', async () => {
+    const ledgerPath = ledgerPathOf(f.data);
+    const firstLive = join(f.home, '.claude', 'skills', 'boundary-fail');
+    const secondLive = join(f.home, '.agents', 'skills', 'boundary-fail');
+    const verifyCalls: VerifyOptions[] = [];
+    let crossedDurableBoundary = 0;
+    let failedMandatoryReads = 0;
+    let failLedgerReads = false;
+    const executionEnv: RuntimePorts & {
+      readonly afterLedgerBarrier: (barrier: Readonly<{ readonly kind: string }>) => Promise<void>;
+    } = {
+      ...f.env,
+      readBytes: async (path) => {
+        if (path === ledgerPath && failLedgerReads) {
+          failedMandatoryReads += 1;
+          const error = new Error('injected mandatory post-operation ledger reread failure');
+          Object.assign(error, { code: 'EIO' });
+          throw error;
+        }
+        return f.env.readBytes(path);
+      },
+      afterLedgerBarrier: async (barrier) => {
+        if (barrier.kind !== 'writer-live-parent-fsync' || crossedDurableBoundary > 0) return;
+        crossedDurableBoundary += 1;
+        failLedgerReads = true;
+        const error = new Error('injected failure after durable ledger publication');
+        Object.assign(error, { code: 'EIO' });
+        throw error;
+      },
+    };
+    const prepared = await prepareDev(
+      executionEnv,
+      opts(f, { targets: ['boundary-fail'], source: resolve(f.betaSrc) }),
+      passDeps(verifyCalls),
+    );
+    if (!prepared.ok) throw new Error(msg(prepared.error));
+    expect(prepared.value.plan.operations).toHaveLength(2);
+    expect(new Set(prepared.value.plan.operations.map(({ groupId }) => groupId)).size).toBe(1);
+
+    const executed = await prepared.value.execute();
+
+    expect(executed.ok).toBeFalse();
+    if (executed.ok) throw new Error('mandatory ledger reread failure was ignored');
+    expect(executed.error.code).toBe('ledger-error');
+    expect(crossedDurableBoundary).toBe(1);
+    expect(failedMandatoryReads).toBe(1);
+    expect(verifyCalls.map(({ tools }) => tools?.[0])).toEqual(['claude-code']);
+    expect(await f.env.pathKind(firstLive)).toBe('symlink');
+    expect(await f.env.pathKind(secondLive)).toBe('absent');
+
+    const canonical = await readLedgerState(f.env, ledgerPath);
+    if (!canonical.ok || canonical.value.state !== 'present') {
+      throw new Error('durably published first-tool ledger is missing');
+    }
+    expect(
+      getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'claude-code'),
+    ).not.toBeNull();
+    expect(getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'codex')).toBeNull();
+  });
+
   test('G3B-02: selected store drift after preview is refused with zero execution writes', async () => {
     const promoted = await runPromote(
       f.env,
