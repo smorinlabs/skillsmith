@@ -9,8 +9,13 @@ import { executeProjectConfigMigration } from '../artifacts/migration-executor.t
 import type { ResolvedArtifactPair } from '../artifacts/pair.ts';
 import type { PlanDigestV1, PlanImageV1 } from '../artifacts/plan-types.ts';
 import { safeErrorCode } from '../errors.ts';
-import { scheduleOperationPlan } from '../execution/scheduler.ts';
+import {
+  type ObservedValidatedExecutionBinding,
+  scheduleOperationPlan,
+  scheduleOperationPlanObserved,
+} from '../execution/scheduler.ts';
 import type { ValidatedExecutionBinding } from '../execution/types.ts';
+import type { ObservationBundle } from '../observation/index.ts';
 import { withLedgerLock } from '../place/ledger.ts';
 import {
   createOperationExecutionResult,
@@ -342,7 +347,7 @@ const journalSequence = (
         conflict: null,
       },
       context: {
-        parentOperationId: null,
+        parentOperationId: operation.operationId,
         command: 'skillsmith doctor',
         workflow: 'doctor',
         attempt: 1,
@@ -477,10 +482,12 @@ const executeAuthorizedRepair = async (
     : { changed: false, error: repairError(result.error) };
 };
 
-/** Default adapter: shared scheduler plus canonical ledger/artifact mutation authorities. */
-export const executeDoctorRepairs: DoctorRepairExecutor = async (request) => {
+const executeDoctorRepairsWithObservation = async (
+  request: DoctorRepairExecutionRequest,
+  observation?: ObservationBundle,
+): Promise<readonly DoctorRepairResult[]> => {
   const outcomes = new Map<string, DoctorRepairResult>();
-  const bindings: ValidatedExecutionBinding[] = request.plan.operations.map((operation) => ({
+  const bindings = request.plan.operations.map((operation) => ({
     operationId: operation.operationId,
     groupId: operation.groupId,
     pairId: operation.pairId,
@@ -535,9 +542,20 @@ export const executeDoctorRepairs: DoctorRepairExecutor = async (request) => {
       });
     },
   }));
-  const scheduled = await scheduleOperationPlan(request.plan, bindings, {
-    ...(request.signal === undefined ? {} : { signal: request.signal }),
-  });
+  const options = request.signal === undefined ? {} : { signal: request.signal };
+  const scheduled =
+    observation === undefined
+      ? await scheduleOperationPlan(
+          request.plan,
+          bindings as readonly ValidatedExecutionBinding[],
+          options,
+        )
+      : await scheduleOperationPlanObserved(
+          request.plan,
+          bindings as readonly ObservedValidatedExecutionBinding[],
+          options,
+          observation,
+        );
   if (scheduled.some((result) => result.outcome === 'cancelled')) {
     throw Object.assign(new Error('repair cancelled'), { code: 'cancelled' });
   }
@@ -549,3 +567,13 @@ export const executeDoctorRepairs: DoctorRepairExecutor = async (request) => {
     }),
   );
 };
+
+/** Default adapter: shared scheduler plus canonical ledger/artifact mutation authorities. */
+export const executeDoctorRepairs: DoctorRepairExecutor = (request) =>
+  executeDoctorRepairsWithObservation(request);
+
+export const executeDoctorRepairsObserved = (
+  request: DoctorRepairExecutionRequest,
+  observation: ObservationBundle,
+): Promise<readonly DoctorRepairResult[]> =>
+  executeDoctorRepairsWithObservation(request, observation);

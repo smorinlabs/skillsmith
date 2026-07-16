@@ -101,6 +101,7 @@ export interface LedgerMigrationReceipt extends LedgerWriteReceipt {
 export interface LedgerWriterOptions {
   readonly nextId?: (purpose: 'stage' | 'cas' | 'owner') => string;
   readonly afterBarrier?: (barrier: LedgerWriterBarrier) => Promise<void>;
+  readonly afterCursorTransition?: (cursor: LedgerMigrationCursor) => void;
   readonly ports?: LedgerWriterPorts;
   readonly signal?: AbortSignal;
 }
@@ -117,6 +118,7 @@ export interface LedgerWriter {
   readonly ledgerPath: string;
   readonly recoveryPointerPath: string;
   read(): Promise<Result<LedgerReadState, LedgerWriterError>>;
+  readMigrationRecoveryJournal(): Promise<Result<LogicalJournalV1Dto | null, LedgerWriterError>>;
   replace(request: LedgerReplaceRequest): Promise<Result<LedgerWriteReceipt, LedgerWriterError>>;
   finalizeHistory(
     request: LedgerReplaceRequest,
@@ -955,6 +957,13 @@ const makeWriter = async (
     await options.afterBarrier?.(Object.freeze({ kind }));
     if (kind.includes('fsync') || kind.includes('cleanup')) assertActive();
   };
+  const afterCursorTransition = (cursor: LedgerMigrationCursor): void => {
+    try {
+      options.afterCursorTransition?.(cursor);
+    } catch {
+      // Cursor notifications are non-authoritative and cannot fail durable migration.
+    }
+  };
   const next = (purpose: 'stage' | 'cas' | 'owner'): string => {
     const value =
       options.nextId?.(purpose) ?? randomBytes(purpose === 'owner' ? 32 : 8).toString('hex');
@@ -985,6 +994,34 @@ const makeWriter = async (
     } catch (error) {
       return err(mapNodeError(error, pointerPath));
     }
+  };
+  const currentMigrationAttempt = (
+    journals: LedgerMigrationJournalSequence,
+  ): Result<number, LedgerWriterError> => {
+    const attempts = [
+      journals.prepared.context.attempt,
+      journals.staged.context.attempt,
+      journals.backedUp.context.attempt,
+      journals.live.context.attempt,
+      journals.committed.context.attempt,
+    ];
+    return attempts.every((attempt) => Number.isSafeInteger(attempt) && attempt > 0)
+      ? ok(Math.max(...attempts))
+      : err(failure('invalid-state', pointerPath));
+  };
+  const readMigrationRecoveryJournal = async (): Promise<
+    Result<LogicalJournalV1Dto | null, LedgerWriterError>
+  > => {
+    const pointer = await readPointer();
+    if (!pointer.ok) return err(pointer.error);
+    if (pointer.value === null) return ok(null);
+    const { journals } = pointer.value.record;
+    const attempt = currentMigrationAttempt(journals);
+    if (!attempt.ok) return attempt;
+    return ok({
+      ...journals.committed,
+      context: { ...journals.committed.context, attempt: attempt.value },
+    });
   };
   const createPointer = async (
     record: LedgerMigrationRecoveryRecord,
@@ -1334,15 +1371,15 @@ const makeWriter = async (
     resumed: boolean,
   ): Promise<Result<LedgerMigrationReceipt, LedgerWriterError>> => {
     let envelope = initial;
-    const record = initial.record;
+    let record = initial.record;
     const transactionDirectory = join(transactionRoot, record.transactionDirectoryBasename);
     const stage = join(transactionDirectory, record.stageBasename);
     const backup = join(transactionDirectory, record.backupBasename);
     const base = await recoverBase(record);
     if (!base.ok) return base;
-    const bytes = sequenceBytes(base.value, record.journals);
+    let bytes = sequenceBytes(base.value, record.journals);
     if (!bytes.ok) return bytes;
-    const expected: MigrationRevisions = {
+    let expected: MigrationRevisions = {
       pure: digestBytes(bytes.value.pure),
       staged: digestBytes(bytes.value.staged),
       backedUp: digestBytes(bytes.value.backedUp),
@@ -1352,18 +1389,15 @@ const makeWriter = async (
     if (JSON.stringify(expected) !== JSON.stringify(record.revisions)) {
       return err(failure('invalid-state', pointerPath));
     }
-    const transition = async (
-      cursor: LedgerMigrationCursor,
-      amendment: Partial<LedgerMigrationRecoveryRecord> = {},
-    ): Promise<Result<void, LedgerWriterError>> => {
-      const nextRecord = Object.freeze({ ...envelope.record, ...amendment, cursor });
-      const nextEnvelope = await replacePointer(envelope, nextRecord);
-      if (!nextEnvelope.ok) return nextEnvelope;
-      envelope = nextEnvelope.value;
-      return ok(undefined);
-    };
-    const observeAction = async (): Promise<
-      Result<LedgerMigrationRecoveryDecision['action'], LedgerWriterError>
+    const observeState = async (): Promise<
+      Result<
+        Readonly<{
+          action: LedgerMigrationRecoveryDecision['action'];
+          livePhase: LedgerMigrationMatrixState['livePhase'];
+          stagePhase: LedgerMigrationMatrixState['stagePhase'];
+        }>,
+        LedgerWriterError
+      >
     > => {
       try {
         const live = await io.readRegular(ledgerPath);
@@ -1404,10 +1438,77 @@ const makeWriter = async (
           backupPresent: backedUp !== null,
           directoryPresent: directoryIdentity !== null,
         });
-        return action === null ? err(failure('invalid-state', pointerPath)) : ok(action);
+        return action === null
+          ? err(failure('invalid-state', pointerPath))
+          : ok({ action, livePhase, stagePhase });
       } catch (error) {
         return err(mapNodeError(error, pointerPath));
       }
+    };
+    const observedBeforeAttempt = await observeState();
+    if (!observedBeforeAttempt.ok) return observedBeforeAttempt;
+    if (resumed && observedBeforeAttempt.value.livePhase !== 'committed') {
+      // This pointer CAS is the recovery-attempt boundary. Journals whose phase image is already
+      // durable retain its exact revision; only later phase images carry the new attempt.
+      const currentAttempt = currentMigrationAttempt(record.journals);
+      if (!currentAttempt.ok) return currentAttempt;
+      if (currentAttempt.value >= Number.MAX_SAFE_INTEGER)
+        return err(failure('invalid-state', pointerPath));
+      const nextAttempt = currentAttempt.value + 1;
+      const durablePhase =
+        observedBeforeAttempt.value.livePhase === 'live'
+          ? 3
+          : observedBeforeAttempt.value.livePhase === 'backed-up' ||
+              observedBeforeAttempt.value.stagePhase === 'backed-up'
+            ? 2
+            : observedBeforeAttempt.value.stagePhase === 'staged'
+              ? 1
+              : 0;
+      const withAttempt = (journal: LogicalJournalV1Dto, phase: number): LogicalJournalV1Dto =>
+        phase <= durablePhase
+          ? journal
+          : { ...journal, context: { ...journal.context, attempt: nextAttempt } };
+      const journals: LedgerMigrationJournalSequence = {
+        prepared: withAttempt(record.journals.prepared, 0),
+        staged: withAttempt(record.journals.staged, 1),
+        backedUp: withAttempt(record.journals.backedUp, 2),
+        live: withAttempt(record.journals.live, 3),
+        committed: withAttempt(record.journals.committed, 4),
+      };
+      const attemptedBytes = sequenceBytes(base.value, journals);
+      if (!attemptedBytes.ok) return attemptedBytes;
+      const revisions: MigrationRevisions = {
+        pure: digestBytes(attemptedBytes.value.pure),
+        staged: digestBytes(attemptedBytes.value.staged),
+        backedUp: digestBytes(attemptedBytes.value.backedUp),
+        live: digestBytes(attemptedBytes.value.live),
+        committed: digestBytes(attemptedBytes.value.committed),
+      };
+      const attemptedRecord = Object.freeze({ ...record, journals, revisions });
+      const attemptedEnvelope = await replacePointer(envelope, attemptedRecord);
+      if (!attemptedEnvelope.ok) return attemptedEnvelope;
+      envelope = attemptedEnvelope.value;
+      record = envelope.record;
+      bytes = attemptedBytes;
+      expected = revisions;
+    }
+    const transition = async (
+      cursor: LedgerMigrationCursor,
+      amendment: Partial<LedgerMigrationRecoveryRecord> = {},
+    ): Promise<Result<void, LedgerWriterError>> => {
+      const nextRecord = Object.freeze({ ...envelope.record, ...amendment, cursor });
+      const nextEnvelope = await replacePointer(envelope, nextRecord);
+      if (!nextEnvelope.ok) return nextEnvelope;
+      envelope = nextEnvelope.value;
+      record = envelope.record;
+      afterCursorTransition(cursor);
+      return ok(undefined);
+    };
+    const observeAction = async (): Promise<
+      Result<LedgerMigrationRecoveryDecision['action'], LedgerWriterError>
+    > => {
+      const observed = await observeState();
+      return observed.ok ? ok(observed.value.action) : observed;
     };
     while (true) {
       const observedAction = await observeAction();
@@ -1745,6 +1846,7 @@ const makeWriter = async (
     ledgerPath,
     recoveryPointerPath: pointerPath,
     read,
+    readMigrationRecoveryJournal,
     replace: replaceModel,
     finalizeHistory,
     recoverMigration,

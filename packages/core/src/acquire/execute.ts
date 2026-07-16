@@ -14,30 +14,53 @@ import type { LedgerWriterPorts } from '../artifacts/ledger-writer.ts';
 import { createLockRepository, createManifestRepository } from '../artifacts/repository.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
-import { type SkillSmithError, flipFailedError, genericError } from '../errors.ts';
+import { type SkillSmithError, flipFailedError, genericError, safeErrorCode } from '../errors.ts';
 import {
   type DurabilityReceiptV1,
+  type ObservedExecutionCoordinatorRequest,
   type RevisionCursorV1,
   createRevisionCursorV1,
+  executeOperationPlan,
+  executeOperationPlanObserved,
   executeRepositoryLifecycleV1,
 } from '../execution/coordinator.ts';
+import {
+  beginToolDetectionObservation,
+  completeToolDetectionObservation,
+  emitOperationPlanCreated,
+} from '../execution/observation.ts';
 import { createExpectedRevisionExecutionPrecondition } from '../execution/preconditions.ts';
 import type {
+  ExecutionCoordinatorRequest,
   ExecutionPrecondition,
   PreparedExecutionBinding,
   ValidatedExecutionBinding,
 } from '../execution/types.ts';
+import type { ObservationBundle } from '../observation/index.ts';
 import {
   type PlacementExecutionInput,
   executePlacementPlan,
+  executePlacementPlanObserved,
   executePlacementPlans,
+  executePlacementPlansObserved,
   executeRecordOnlyPlacementPlan,
 } from '../place/execute.ts';
+import {
+  ledgerMigrationExecutionBinding,
+  ledgerMigrationExecutionBindingObserved,
+} from '../place/ledger-migration.ts';
 import { readLedgerState } from '../place/ledger.ts';
 import {
   type LivePlacementResourceV1,
   createLivePlacementRepository,
 } from '../place/live-repository.ts';
+import {
+  type PlacementRecoveryTarget,
+  recoverCommittedAcquirePlacements,
+  recoverCommittedAcquirePlacementsObserved,
+  recoverPlacement,
+  recoverPlacementObserved,
+} from '../place/recovery.ts';
 import { type StoreResourceV1, createStoreRepository } from '../place/store-repository.ts';
 import { type SnapshotResult, contentHashOf } from '../place/store.ts';
 import type {
@@ -56,6 +79,7 @@ import type {
   OperationDigest,
   OperationExecutionResult,
   OperationImage,
+  OperationPlan,
   OperationResourceIdentity,
 } from '../planning/types.ts';
 import type { LockPort } from '../ports/types.ts';
@@ -97,6 +121,51 @@ export const detectAcquireTool = (
   const inventory = registry.get(tool)?.inventory;
   return inventory === undefined ? deps.detect(env, tool, signal) : inventory.detect(env, signal);
 };
+
+export const detectAcquireToolObserved = async (
+  env: AcquisitionPorts,
+  tool: FlipTool,
+  signal: AbortSignal | undefined,
+  deps: InstallDeps,
+  defaultDetect: InstallDeps['detect'],
+  registry: LifecycleToolRegistry<string>,
+  observation: ObservationBundle,
+): Promise<Awaited<ReturnType<InstallDeps['detect']>>> => {
+  const span = beginToolDetectionObservation(observation, tool);
+  try {
+    const detected = await detectAcquireTool(env, tool, signal, deps, defaultDetect, registry);
+    completeToolDetectionObservation(
+      observation,
+      span,
+      detected.ok ? 'success' : 'failure',
+      detected.ok ? null : (safeErrorCode(detected.error) ?? 'generic'),
+      detected.ok ? detected.value.length : 0,
+    );
+    return detected;
+  } catch (error) {
+    completeToolDetectionObservation(
+      observation,
+      span,
+      'failure',
+      safeErrorCode(error) ?? 'generic',
+      0,
+    );
+    throw error;
+  }
+};
+
+export const detectAcquireToolWithObservation = (
+  env: AcquisitionPorts,
+  tool: FlipTool,
+  signal: AbortSignal | undefined,
+  deps: InstallDeps,
+  defaultDetect: InstallDeps['detect'],
+  registry: LifecycleToolRegistry<string>,
+  observation?: ObservationBundle,
+): ReturnType<InstallDeps['detect']> =>
+  observation === undefined
+    ? detectAcquireTool(env, tool, signal, deps, defaultDetect, registry)
+    : detectAcquireToolObserved(env, tool, signal, deps, defaultDetect, registry, observation);
 
 export interface AcquirePlacementFacts {
   readonly pathKind: 'absent' | 'file' | 'dir' | 'symlink';
@@ -276,6 +345,54 @@ export const executeAcquireReplacement = async (
     ? { ok: true, value: undefined, state: executed.state }
     : { ok: false, error: executed.error, state: executed.state };
 };
+
+export const executeAcquireReplacementObserved = async (
+  input: AcquireExecutionInput,
+  plan: SwapPlan,
+  intermediatePinned: PinnedRecord | null,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<void>> => {
+  const install = plan.install;
+  if (install === undefined) {
+    return {
+      ok: false,
+      error: genericError('install plan missing install payload'),
+      state: { ledger: input.ledger },
+    };
+  }
+  const executed =
+    intermediatePinned === null
+      ? await executePlacementPlanObserved(input, plan, observation)
+      : await executePlacementPlansObserved(
+          input,
+          [
+            {
+              ...plan,
+              install: {
+                ...install,
+                build: 'symlink',
+                pinned: intermediatePinned,
+                adoptedDev: null,
+              },
+            },
+            plan,
+          ],
+          observation,
+        );
+  return executed.ok
+    ? { ok: true, value: undefined, state: executed.state }
+    : { ok: false, error: executed.error, state: executed.state };
+};
+
+export const executeAcquireReplacementWithObservation = (
+  input: AcquireExecutionInput,
+  plan: SwapPlan,
+  intermediatePinned: PinnedRecord | null,
+  observation?: ObservationBundle,
+): Promise<SwapExecutionResult<void>> =>
+  observation === undefined
+    ? executeAcquireReplacement(input, plan, intermediatePinned)
+    : executeAcquireReplacementObserved(input, plan, intermediatePinned, observation);
 
 export const verificationRegistryFor = (registry: LifecycleToolRegistry<string>) =>
   Object.freeze({
@@ -646,6 +763,63 @@ export const createAcquireExecutionLockPort = (
     },
   });
 
+export const createAcquisitionLedgerMigrationBinding = (
+  args: Parameters<typeof ledgerMigrationExecutionBinding>[0],
+): PreparedExecutionBinding => {
+  const binding = ledgerMigrationExecutionBinding(args);
+  return Object.freeze({
+    ...binding,
+    execute: (
+      validated: ValidatedExecutionBinding,
+      observation?: ObservationBundle,
+    ): Promise<OperationExecutionResult> =>
+      observation === undefined
+        ? binding.execute(validated)
+        : ledgerMigrationExecutionBindingObserved(args, observation).execute(validated),
+  });
+};
+
+export const executeAcquisitionOperationPlan = (
+  request: ExecutionCoordinatorRequest,
+  observation?: ObservationBundle,
+): Promise<readonly OperationExecutionResult[]> =>
+  observation === undefined
+    ? executeOperationPlan(request)
+    : executeOperationPlanObserved(request as ObservedExecutionCoordinatorRequest, observation);
+
+export interface AcquisitionPlanObservationState {
+  emitted: boolean;
+}
+
+export const emitAcquisitionPlanCreated = (
+  observation: ObservationBundle | undefined,
+  plan: OperationPlan,
+  state: AcquisitionPlanObservationState | undefined,
+): void => {
+  if (observation === undefined) return;
+  emitOperationPlanCreated(observation, plan);
+  if (state !== undefined) state.emitted = true;
+};
+
+export const runAcquisitionWithObservation = async <
+  Report extends Readonly<{ plan: OperationPlan }>,
+>(
+  operation: (state: AcquisitionPlanObservationState) => Promise<Result<Report, SkillSmithError>>,
+  sanitize: (error: unknown) => SkillSmithError,
+  observation?: ObservationBundle,
+): Promise<Result<Report, SkillSmithError>> => {
+  const state = { emitted: false };
+  try {
+    const result = await operation(state);
+    if (observation !== undefined && result.ok && !state.emitted) {
+      emitOperationPlanCreated(observation, result.value.plan);
+    }
+    return result.ok ? result : err(sanitize(result.error));
+  } catch (error) {
+    return err(sanitize(error));
+  }
+};
+
 const lifecycleRepository = (
   authority: AcquisitionSnapshotAuthorityV1,
   revision: ExpectedRevisionV1,
@@ -757,6 +931,7 @@ export const createAcquisitionRepositoryLifecycleControllerV1 = (input: {
         ...binding,
         execute: async (
           validatedBinding: ValidatedExecutionBinding,
+          operationObservation?: ObservationBundle,
         ): Promise<OperationExecutionResult> => {
           if (blocked) return lifecycleFailedExecution(operation, validatedBinding);
           const expectedByResource = new Map(
@@ -787,7 +962,11 @@ export const createAcquisitionRepositoryLifecycleControllerV1 = (input: {
               return ok(Object.freeze(stages));
             },
             commit: async (stages) => {
-              physicalResult = await binding.execute(validatedBinding);
+              const execute = binding.execute as (
+                validated: ValidatedExecutionBinding,
+                observation?: ObservationBundle,
+              ) => Promise<OperationExecutionResult>;
+              physicalResult = await execute(validatedBinding, operationObservation);
               return physicalResult.outcome === 'succeeded'
                 ? observeLifecycleReceipt(
                     input.authority,
@@ -825,6 +1004,39 @@ export const executeAcquirePlan = (
   input: AcquireExecutionInput,
   plan: SwapPlan,
 ): Promise<SwapExecutionResult<SwapOutcome>> => executePlacementPlan(input, plan);
+
+export const executeAcquirePlanObserved = (
+  input: AcquireExecutionInput,
+  plan: SwapPlan,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  executePlacementPlanObserved(input, plan, observation);
+
+export const executeAcquirePlanWithObservation = (
+  input: AcquireExecutionInput,
+  plan: SwapPlan,
+  observation?: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  observation === undefined
+    ? executeAcquirePlan(input, plan)
+    : executeAcquirePlanObserved(input, plan, observation);
+
+export const recoverAcquireWithObservation = (
+  input: AcquireExecutionInput,
+  target: PlacementRecoveryTarget,
+  observation?: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  observation === undefined
+    ? recoverPlacement(input, 'resume', target)
+    : recoverPlacementObserved(input, 'resume', target, observation);
+
+export const recoverCommittedAcquireJournalsWithObservation = (
+  input: AcquireExecutionInput,
+  observation?: ObservationBundle,
+): Promise<SwapExecutionResult<string[]>> =>
+  observation === undefined
+    ? recoverCommittedAcquirePlacements(input)
+    : recoverCommittedAcquirePlacementsObserved(input, observation);
 
 export const executeAcquirePlans = (
   input: AcquireExecutionInput,

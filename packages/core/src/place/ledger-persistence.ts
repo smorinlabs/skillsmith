@@ -1,6 +1,7 @@
 import type { ArtifactDigest } from '../artifacts/hash.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import {
+  type LedgerMigrationCursor,
   type LedgerWriteReceipt,
   type LedgerWriter,
   type LedgerWriterBarrier,
@@ -48,12 +49,14 @@ export const openCallerLedgerWriter = (
   env: CallerLedgerWriterPorts,
   ledgerPath: string,
   signal?: AbortSignal,
+  afterCursorTransition?: (cursor: LedgerMigrationCursor) => void,
 ): Promise<Result<LedgerWriter, LedgerPersistenceError>> => {
   return runLedgerWriterOperation(async () =>
     ok(
       await createTestNodeLedgerWriter(ledgerPath, {
         ports: env.ledgerWriterPorts ?? env,
         ...(env.afterLedgerBarrier === undefined ? {} : { afterBarrier: env.afterLedgerBarrier }),
+        ...(afterCursorTransition === undefined ? {} : { afterCursorTransition }),
         ...(signal === undefined ? {} : { signal }),
       }),
     ),

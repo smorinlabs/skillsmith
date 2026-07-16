@@ -18,17 +18,14 @@ import {
   sourceUnresolvableError,
   toolUnavailableError,
 } from '../errors.ts';
-import { executeOperationPlan } from '../execution/index.ts';
 import { createContentObservationExecutionPrecondition } from '../execution/preconditions.ts';
 import type {
   ExecutionPrecondition,
   PreparedExecutionBinding,
   ValidatedExecutionBinding,
 } from '../execution/types.ts';
-import {
-  ledgerMigrationExecutionBinding,
-  prepareLedgerMigration,
-} from '../place/ledger-migration.ts';
+import type { ObservationBundle } from '../observation/index.ts';
+import { prepareLedgerMigration } from '../place/ledger-migration.ts';
 import {
   getLedgerPairAt,
   getPairAt as getLegacyPairAt,
@@ -86,6 +83,7 @@ import {
   type AcquireLiveSnapshotResourceV1,
   type AcquirePlacementFacts,
   type AcquireStoreSnapshotResourceV1,
+  type AcquisitionPlanObservationState,
   type AcquisitionSnapshotAuthorityV1,
   acquireActualBefore,
   acquireContentFacts,
@@ -96,18 +94,24 @@ import {
   acquisitionRevisionPreconditions,
   createAcquireExecutionInput,
   createAcquireExecutionLockPort,
+  createAcquisitionLedgerMigrationBinding,
   createAcquisitionOriginRecord,
   createAcquisitionPinnedRecord,
   createAcquisitionRepositoryLifecycleControllerV1,
   destinationSkillRootFor,
-  detectAcquireTool,
-  executeAcquirePlan,
-  executeAcquireReplacement,
+  detectAcquireToolWithObservation,
+  emitAcquisitionPlanCreated,
+  executeAcquirePlanWithObservation,
+  executeAcquireReplacementWithObservation,
+  executeAcquisitionOperationPlan,
   executeRecordOnlyAcquirePlan,
   placementBundleFor,
   readAcquisitionSnapshotV1,
+  recoverAcquireWithObservation,
+  recoverCommittedAcquireJournalsWithObservation,
   resolveAcquisitionProjectContextV1,
   resolvePlacementFor,
+  runAcquisitionWithObservation,
   skillRootFactsFor,
   verificationRegistryFor,
 } from './execute.ts';
@@ -128,11 +132,7 @@ import {
   createUninstallCapabilityQueries,
   createUninstallPlanning,
 } from './plan.ts';
-import {
-  recoverAcquire,
-  recoverCommittedAcquireJournals,
-  recoveryRefusedMessage,
-} from './recovery.ts';
+import { recoveryRefusedMessage } from './recovery.ts';
 import { matchCandidates, selectSkill } from './resolve.ts';
 import { parseSource } from './source.ts';
 import type {
@@ -154,24 +154,19 @@ import type {
   UninstallReport,
   UninstallResult,
 } from './types.ts';
-
 const defaultInstallDetect: InstallDeps['detect'] = (env, tool, signal) =>
   detectTool(env, tool, signal);
-
 export const defaultInstallDeps: Omit<InstallDeps, 'pick' | 'transport'> = {
   verify: verifyPlugin,
   detect: defaultInstallDetect,
 };
-
 export const defaultInstallSourceTransport: InstallSourceTransport = Object.freeze({
   resolveRef: resolveRefViaLsRemote,
   fetchRepo,
   listSkills: lsTreeSkills,
   materializeSkill: sparseCheckoutSkill,
 });
-
 type AcquireLedger = LedgerFile | LedgerModel;
-
 const getPairAt = (
   ledger: AcquireLedger,
   scopeKey: string | null,
@@ -181,7 +176,6 @@ const getPairAt = (
   'schemaVersion' in ledger
     ? getLegacyPairAt(ledger, scopeKey, skill, tool)
     : (getLedgerPairAt(ledger, scopeKey, skill, tool) as PairRecord | null);
-
 const nowOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string =>
   deps.now?.() ?? ports.wallNowIso();
 const journalNowOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string => {
@@ -207,16 +201,13 @@ const executionInputOf = (
     opts,
     logicalOperation,
   );
-
 const installHintFor = (registry: LifecycleToolRegistry<string>, tool: FlipTool): string => {
   const hint = registry.get(tool)?.inventory.installHint;
   if (hint === undefined) throw new Error(`tool registry invariant: ${tool} has no install hint`);
   return hint;
 };
-
 const msg = (e: SkillSmithError): string =>
   redactSensitiveString('message' in e ? e.message : e.code);
-
 const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
   'generic',
   'invalid-argument',
@@ -232,7 +223,6 @@ const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
   'tool-unavailable',
   'cancelled',
 ]);
-
 const safeError = (error: unknown): SkillSmithError => {
   const redacted = redactSensitiveValue(error);
   if (
@@ -246,22 +236,18 @@ const safeError = (error: unknown): SkillSmithError => {
   }
   return genericError('operation failed');
 };
-
 type SafeTransportResult =
   | { readonly kind: 'ok'; readonly value: unknown }
   | { readonly kind: 'error'; readonly error: SkillSmithError }
   | { readonly kind: 'invalid' };
-
 const dataRecord = (value: unknown): Readonly<Record<string, unknown>> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Readonly<Record<string, unknown>>)
     : null;
-
 const ownDataValue = (value: Readonly<Record<string, unknown>>, key: string): unknown => {
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
   return descriptor && 'value' in descriptor ? descriptor.value : undefined;
 };
-
 const hasExactOwnKeys = (
   value: Readonly<Record<string, unknown>>,
   expected: readonly string[],
@@ -272,7 +258,6 @@ const hasExactOwnKeys = (
     keys.every((key) => typeof key === 'string' && expected.includes(key))
   );
 };
-
 const safeTransportResult = (input: unknown): SafeTransportResult => {
   const copied = dataRecord(redactSensitiveValue(input));
   if (copied === null) return { kind: 'invalid' };
@@ -293,7 +278,6 @@ const safeTransportResult = (input: unknown): SafeTransportResult => {
   }
   return { kind: 'invalid' };
 };
-
 /**
  * The acquisition entry points accept injectable ports, so even values statically typed as a
  * Result are untrusted at the public boundary. Copy the envelope without invoking accessors or
@@ -305,7 +289,6 @@ const safeDependencyResult = <T>(input: unknown): Result<T, SkillSmithError> => 
   if (safe.kind === 'error') return err(safe.error);
   return err(genericError('operation failed'));
 };
-
 const safeUnknownMessage = (error: unknown): string => {
   const redacted = redactSensitiveValue(error);
   if (typeof redacted === 'string') return redacted;
@@ -317,26 +300,21 @@ const safeUnknownMessage = (error: unknown): string => {
   }
   return 'operation failed';
 };
-
 const lastSegment = (repoPath: string): string =>
   repoPath
     .split('/')
     .filter((s) => s.length > 0)
     .pop() ?? repoPath;
-
 const selectorLabel = (spec: SourceSpec): string => {
   if (spec.selector.kind === 'path') return spec.selector.path;
   if (spec.selector.kind === 'name') return spec.selector.name;
   return spec.identity.repository;
 };
-
 const resolveSymlinkAbsolute = (placementPath: string, literalTarget: string): string =>
   isAbsolute(literalTarget) ? literalTarget : join(dirname(placementPath), literalTarget);
-
 // ---------------------------------------------------------------------------------------------
 // result builders
 // ---------------------------------------------------------------------------------------------
-
 const emptyResult = (
   source: string,
   scope: InstallScope,
@@ -357,11 +335,9 @@ const emptyResult = (
   candidates: null,
   ...(requestIndex === undefined ? {} : { requestIndex }),
 });
-
 // ---------------------------------------------------------------------------------------------
 // verify gate (D11 mirror; install-specific --deep wiring)
 // ---------------------------------------------------------------------------------------------
-
 interface Gate {
   blocked: SkillSmithError | null;
   gate: 'passed' | 'warned' | 'failed' | 'skipped' | 'inconclusive';
@@ -369,7 +345,6 @@ interface Gate {
   mode: 'static' | 'static+deep' | null;
   notice: string | null;
 }
-
 const summarizeFindings = (tv: ToolVerdict<string> | undefined): string => {
   if (!tv) return 'no verdict produced';
   const findings = tv.modes
@@ -378,7 +353,6 @@ const summarizeFindings = (tv: ToolVerdict<string> | undefined): string => {
   if (findings.length === 0) return `verdict ${tv.verdict}`;
   return findings.map((fnd) => `${fnd.checkId}: ${fnd.message}`).join('; ');
 };
-
 const runInstallVerifyGate = async (
   env: AcquisitionPorts,
   deps: InstallDeps,
@@ -386,6 +360,7 @@ const runInstallVerifyGate = async (
   tool: FlipTool,
   path: string,
   opts: InstallOptions,
+  observation?: ObservationBundle,
 ): Promise<Gate> => {
   if (opts.noVerify) {
     return { blocked: null, gate: 'skipped', verdict: null, mode: null, notice: null };
@@ -404,6 +379,7 @@ const runInstallVerifyGate = async (
       tools: [tool],
       deep,
       strict: opts.strict ?? false,
+      ...(observation === undefined ? {} : { observation }),
       ...(opts.signal ? { signal: opts.signal } : {}),
     };
     untrustedVerification =
@@ -424,7 +400,6 @@ const runInstallVerifyGate = async (
       notice: null,
     };
   }
-
   const tv = vr.value.tools.find((t) => t.tool === tool);
   const verdict = tv?.verdict ?? vr.value.summary.verdict;
   const outcome = evaluateVerificationGate({
@@ -455,11 +430,9 @@ const runInstallVerifyGate = async (
         : null,
   };
 };
-
 // ---------------------------------------------------------------------------------------------
 // source resolution and remote acquisition (once per source)
 // ---------------------------------------------------------------------------------------------
-
 interface Resolved {
   sha: string;
   skillName: string;
@@ -467,11 +440,9 @@ interface Resolved {
   materializedDir: string; // fetched skill dir OR store entry (verify + snapshot source)
   fetchDir: string | null; // for cleanup (null when elided)
 }
-
 type ResolveOutcome =
   | { kind: 'resolved'; r: Resolved }
   | { kind: 'result'; result: InstallResult; fetchDir: string | null };
-
 const sourcePathIsValid = (path: string): boolean => {
   if (path === '') return true;
   const normalized = normalizeSourceIdentity(
@@ -480,7 +451,6 @@ const sourcePathIsValid = (path: string): boolean => {
   );
   return normalized.ok && normalized.value.path === path;
 };
-
 // Elision (F-fetch): a full-SHA-resolvable ref whose skill path is known without a tree scan and
 // whose store entry already exists — skip the clone entirely (restricted to //path or a
 // ledger-recorded origin so R2's never-guess is not bypassed).
@@ -504,7 +474,6 @@ const tryElide = async (
   if (probe.value === null) return null;
   const sha = probe.value;
   if (!/^[0-9a-f]{40}$/u.test(sha) || containsSensitiveMaterial(sha)) return null;
-
   let name: string | null = null;
   let path: string | null = null;
   if (spec.selector.kind === 'path') {
@@ -548,14 +517,11 @@ const tryElide = async (
   ) {
     return null;
   }
-
   const { ns, name: nsName } = clampStoreNs(spec.identity.repository);
   const storeEntry = join(storeRoot, ns, `${nsName}@${sha.slice(0, 12)}`, name);
   if ((await env.pathKind(storeEntry)) === 'absent') return null;
-
   return { sha, skillName: name, skillPath: path, materializedDir: storeEntry, fetchDir: null };
 };
-
 const resolveSource = async (
   env: AcquisitionPorts,
   deps: InstallDeps,
@@ -570,7 +536,6 @@ const resolveSource = async (
   const transport = deps.transport ?? defaultInstallSourceTransport;
   const elided = await tryElide(env, transport, spec, storeRoot, ledger, scopeKey, opts.signal);
   if (elided) return { kind: 'resolved', r: elided };
-
   const fetchDir = join(dataDir, '.fetch', txIdOf(env, deps));
   let rawFetchResult: unknown;
   try {
@@ -636,7 +601,6 @@ const resolveSource = async (
       fetchDir,
     };
   }
-
   let rawListResult: unknown;
   try {
     rawListResult = await transport.listSkills(env, fetchDir, opts.signal);
@@ -711,7 +675,6 @@ const resolveSource = async (
   }
   const matches = matchCandidates(candidates, spec.selector);
   const selection = await selectSkill(matches, scanned, deps.pick);
-
   if (selection.kind === 'none') {
     const e = {
       code: 'source-unresolvable' as const,
@@ -742,7 +705,6 @@ const resolveSource = async (
       fetchDir,
     };
   }
-
   const skillPath = selection.skill.path;
   const skillName = skillPath === '' ? lastSegment(spec.identity.repository) : selection.skill.name;
   if (
@@ -788,17 +750,14 @@ const resolveSource = async (
       fetchDir,
     };
   }
-
   return {
     kind: 'resolved',
     r: { sha, skillName, skillPath, materializedDir: co.value, fetchDir },
   };
 };
-
 // ---------------------------------------------------------------------------------------------
 // placement (per tool, scope)
 // ---------------------------------------------------------------------------------------------
-
 interface PlaceCtx {
   env: AcquisitionPorts;
   registry: LifecycleToolRegistry<string>;
@@ -811,11 +770,10 @@ interface PlaceCtx {
   scopeKey: string | null;
   projectRoot: string | null;
   logicalOperation: ExecutableOperation | null;
+  operationObservation: ObservationBundle | undefined;
 }
-
 const placeExecutionInput = (p: PlaceCtx): AcquireExecutionInput =>
   executionInputOf(p.env, p.ledgerPath, p.ledger, p.deps, p.opts, p.logicalOperation);
-
 // dir→dir routing: the swap engine rejects a same-kind copy-over-copy replace, so a copy re-install
 // over a real dir is routed as two kind changes (dir→store-symlink, then store-symlink→dir). Every
 // other transition (symlink→symlink re-pin, dir→symlink, symlink→dir) is a single swap the engine
@@ -833,16 +791,16 @@ const replaceSwap = async (
     build === 'copy' && live.class === 'pinned'
       ? createAcquisitionPinnedRecord(snap, sha, 'symlink', gate.gate, nowOf(p.env, p.deps))
       : null;
-  const executed = await executeAcquireReplacement(
+  const executed = await executeAcquireReplacementWithObservation(
     placeExecutionInput(p),
     plan,
     intermediatePinned,
+    p.operationObservation,
   );
   p.ledger = executed.state.ledger;
   if (!executed.ok) return err(executed.error);
   return ok(undefined);
 };
-
 const placePair = async (
   p: PlaceCtx,
   spec: SourceSpec,
@@ -878,7 +836,6 @@ const placePair = async (
     gitSha: sha,
     reused: storeReused,
   };
-
   const base: InstallResult = {
     source: spec.canonicalInvocation,
     skill,
@@ -922,7 +879,6 @@ const placePair = async (
           error: safeError(e),
         }),
   });
-
   const currentResolution = await resolvePlacementFor(
     p.registry,
     tool,
@@ -945,13 +901,11 @@ const placePair = async (
       `'${skill}' already exists at ${currentResolution.placement.path}.${notice} Remove it first: skillsmith uninstall ${skill} --tool ${tool}`,
     );
   }
-
   try {
     await env.makeDir(installRoot);
   } catch (e) {
     return fail(genericError(`cannot create skills root ${installRoot}: ${errorMessage(e)}`));
   }
-
   // F5: cross-scope shadowing (project shadows user for this repo).
   let shadowWarning: string | null = null;
   const otherScope: InstallScope = p.scope === 'project' ? 'user' : 'project';
@@ -981,7 +935,6 @@ const placePair = async (
       shadowWarning = `proceeding despite shadow (--force): ${reason}`;
     }
   }
-
   const existing = getPairAt(p.ledger, p.scopeKey, skill, tool);
   if (existing?.journal && existing.journal.phase !== 'committed') {
     // Global Constraint #6: an unresolved journal refuses every operation EXCEPT a same-op re-run
@@ -990,11 +943,11 @@ const placePair = async (
     // journal's op for the same-op-re-run / --rollback recovery.
     if (existing.journal.op === 'install') {
       const wasFresh = existing.journal.before.mode === 'absent';
-      const resumed = await recoverAcquire(placeExecutionInput(p), {
-        skill,
-        tool,
-        scopeKey: p.scopeKey,
-      });
+      const resumed = await recoverAcquireWithObservation(
+        placeExecutionInput(p),
+        { skill, tool, scopeKey: p.scopeKey },
+        p.operationObservation,
+      );
       p.ledger = resumed.state.ledger;
       if (!resumed.ok) {
         return fail(
@@ -1021,9 +974,7 @@ const placePair = async (
     }
     return refuse(recoveryRefusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
   }
-
   const live = currentResolution.placement;
-
   // Does the live placement already materialize THIS resolved store entry?
   let liveKind: 'symlink' | 'copy' | null = null;
   if (live.class === 'store-linked' && live.symlinkTarget === snap.storePath) {
@@ -1032,13 +983,11 @@ const placePair = async (
     const h = await contentHashOf(env, live.path);
     if (h.ok && h.value === snap.contentHash) liveKind = 'copy';
   }
-
   const finalize = (action: InstallAction): InstallResult => ({
     ...base,
     action,
     reason: shadowWarning ?? gate.notice,
   });
-
   // Idempotence / repair (F7 / D14) — only when not forcing.
   if (liveKind !== null && !opts.force) {
     const recordMatches =
@@ -1087,7 +1036,6 @@ const placePair = async (
     if (!persisted.ok) return fail(persisted.error);
     return { ...finalize('repaired'), placement: liveKind };
   }
-
   const pinned = createAcquisitionPinnedRecord(snap, sha, build, gate.gate, nowOf(p.env, p.deps));
   const origin = createAcquisitionOriginRecord(
     spec,
@@ -1124,7 +1072,6 @@ const placePair = async (
       adoptedDev,
     },
   };
-
   // Fresh install: the slot is empty. Clear any stale records so the engine lands on an empty slot.
   if (live.class === 'absent') {
     if (existing && (existing.pinned || existing.dev)) {
@@ -1132,7 +1079,11 @@ const placePair = async (
       if (!cleared.ok) return fail(cleared.error);
       p.ledger = cleared.value;
     }
-    const r = await executeAcquirePlan(placeExecutionInput(p), plan);
+    const r = await executeAcquirePlanWithObservation(
+      placeExecutionInput(p),
+      plan,
+      p.operationObservation,
+    );
     p.ledger = r.state.ledger;
     if (!r.ok)
       return fail(r.error.code === 'ledger-error' ? flipFailedError(msg(r.error)) : r.error);
@@ -1140,7 +1091,6 @@ const placePair = async (
       shadowWarning = shadowWarning ? `${shadowWarning}; ${r.value.warning}` : r.value.warning;
     return { ...finalize('installed'), store: { ...storeOut, reused: storeReused } };
   }
-
   // Replace. A managed pair for this same repo may update freely; anything else needs --force.
   const managed = existing?.origin?.repo === spec.identity.repository;
   if (!managed && !opts.force) {
@@ -1149,7 +1099,6 @@ const placePair = async (
       `'${skill}' (${tool}) already exists at ${placementPath} (recorded origin: ${recorded}); re-run with --force to overwrite`,
     );
   }
-
   const swapRes = await replaceSwap(p, plan, build, live, snap, sha, gate);
   if (!swapRes.ok) {
     return fail(
@@ -1158,11 +1107,9 @@ const placePair = async (
   }
   return { ...finalize('updated'), store: { ...storeOut, reused: storeReused } };
 };
-
 // ---------------------------------------------------------------------------------------------
 // dry-run prediction (read-only)
 // ---------------------------------------------------------------------------------------------
-
 const predictPair = async (
   p: PlaceCtx,
   spec: SourceSpec,
@@ -1181,7 +1128,6 @@ const predictPair = async (
   const placementPath = join(installRoot, skill);
   const { ns, name } = clampStoreNs(spec.identity.repository);
   const expectedStorePath = join(p.storeRoot, ns, `${name}@${sha.slice(0, 12)}`, skill);
-
   const base: InstallResult = {
     source: spec.canonicalInvocation,
     skill,
@@ -1212,7 +1158,6 @@ const predictPair = async (
     origin: null,
     error: flipRefusedError(reason),
   });
-
   const currentResolution = await resolvePlacementFor(
     p.registry,
     tool,
@@ -1235,7 +1180,6 @@ const predictPair = async (
       `'${skill}' already exists at ${currentResolution.placement.path}.${notice} Remove it first: skillsmith uninstall ${skill} --tool ${tool}`,
     );
   }
-
   const otherScope: InstallScope = p.scope === 'project' ? 'user' : 'project';
   const otherKey = otherScope === 'project' ? p.projectRoot : null;
   if (!(otherScope === 'project' && otherKey === null)) {
@@ -1262,7 +1206,6 @@ const predictPair = async (
       );
     }
   }
-
   const existing = getPairAt(p.ledger, p.scopeKey, skill, tool);
   if (existing?.journal && existing.journal.phase !== 'committed') {
     // A same-op install re-run would RESUME to completion (#6); a different op still refuses.
@@ -1274,10 +1217,8 @@ const predictPair = async (
     }
     return refuse(recoveryRefusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
   }
-
   const live = currentResolution.placement;
   if (live.class === 'absent') return { ...base, action: 'installed' };
-
   const matchesResolved =
     (live.class === 'store-linked' && live.symlinkTarget === expectedStorePath) ||
     live.class === 'pinned';
@@ -1296,14 +1237,11 @@ const predictPair = async (
   }
   return { ...base, action: 'updated' };
 };
-
 // ---------------------------------------------------------------------------------------------
 // report assembly
 // ---------------------------------------------------------------------------------------------
-
 const closedPlanningText = (value: string | null, fallback: string): string =>
   value !== null && value.length > 0 && !containsSensitiveMaterial(value) ? value : fallback;
-
 const createInstallExecutionResult = (
   operation: ExecutableOperation,
   result: InstallResult | undefined,
@@ -1350,7 +1288,6 @@ const createInstallExecutionResult = (
   }
   return createOperationExecutionResult({ ...common, outcome: 'succeeded', error: null });
 };
-
 const installSummary = (results: readonly InstallResult[]): InstallReport['summary'] => {
   const summary = {
     installed: 0,
@@ -1364,7 +1301,6 @@ const installSummary = (results: readonly InstallResult[]): InstallReport['summa
   for (const result of results) summary[result.action]++;
   return summary;
 };
-
 const assembleInstallReport = (
   dryRun: boolean,
   requested: InstallReport['requested'],
@@ -1379,7 +1315,6 @@ const assembleInstallReport = (
   plan,
   executionResults,
 });
-
 const createInstallDiagnosticReport = (
   dryRun: boolean,
   requested: InstallReport['requested'],
@@ -1413,32 +1348,29 @@ const createInstallDiagnosticReport = (
   if (!planned.ok) throw new Error(planned.error.message);
   return assembleInstallReport(dryRun, requested, results, planned.value, []);
 };
-
 const rejectedSourceLabel = (input: string): string => {
   const safe = redactSensitiveString(input);
   return safe === input ? '[REJECTED_SOURCE]' : safe;
 };
-
 const rejectedRefLabel = (input: string): string => {
   const safe = redactSensitiveString(input);
   return safe === input ? '[REJECTED_REF]' : safe;
 };
-
 // ---------------------------------------------------------------------------------------------
 // orchestrator
 // ---------------------------------------------------------------------------------------------
-
 const runInstallInternal = async (
   env: AcquisitionPorts,
   opts: InstallOptions,
   deps: InstallDeps,
   registry: LifecycleToolRegistry<string>,
+  observation?: ObservationBundle,
+  planObservation?: AcquisitionPlanObservationState,
 ): Promise<Result<PlannedInstallReport, SkillSmithError>> => {
   const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
   const explicitTools = opts.tools !== undefined && opts.tools.length > 0;
-
   // ---- Phase 0: pure pre-flight (no I/O) ----
   const overrideAllowed = opts.ref !== undefined && opts.sources.length === 1;
   const parsed = opts.sources.map((input, requestIndex) => {
@@ -1474,7 +1406,6 @@ const runInstallInternal = async (
     verify: (opts.noVerify ? 'skipped' : 'static') as 'static' | 'skipped',
     deep: Boolean(opts.deep),
   };
-
   const anyParseFail = parsed.some((x) => !x.res.ok);
   if (anyParseFail) {
     // Resolution 3: whole invocation refuses before any I/O.
@@ -1507,7 +1438,6 @@ const runInstallInternal = async (
       ),
     );
   }
-
   // --ref rules.
   if (opts.ref !== undefined && opts.sources.length > 1) {
     const results = parsed.map(({ input, requestIndex, baseRes, res }) => ({
@@ -1530,14 +1460,12 @@ const runInstallInternal = async (
       ),
     );
   }
-
   const specs: { source: string; spec: SourceSpec; requestIndex: number }[] = parsed.map(
     ({ requestIndex, res }) => {
       const spec = (res as { ok: true; value: SourceSpec }).value;
       return { source: spec.canonicalInvocation, spec, requestIndex };
     },
   );
-
   // ---- Phase 1: target planning (local I/O only) ----
   const projectContext = await resolveAcquisitionProjectContextV1({
     env,
@@ -1550,7 +1478,6 @@ const runInstallInternal = async (
   const scope: InstallScope = opts.scope ?? (projectRoot ? 'project' : 'user');
   const scopeKey = scope === 'project' ? (projectRoot ?? (await env.realpath(opts.cwd))) : null;
   const explicitScope = opts.scope !== undefined;
-
   const installTools = registry.toolsFor('install') as readonly FlipTool[];
   const candidateTools = explicitTools
     ? [...(opts.tools as readonly FlipTool[])]
@@ -1559,21 +1486,27 @@ const runInstallInternal = async (
   const undetectedExplicit: FlipTool[] = [];
   for (const tool of candidateTools) {
     const d = safeDependencyResult<readonly unknown[]>(
-      await detectAcquireTool(env, tool, opts.signal, deps, defaultInstallDetect, registry),
+      await detectAcquireToolWithObservation(
+        env,
+        tool,
+        opts.signal,
+        deps,
+        defaultInstallDetect,
+        registry,
+        observation,
+      ),
     );
     if (!d.ok) return d;
     if (!Array.isArray(d.value)) return err(genericError('tool detection failed'));
     if (d.value.length > 0) detectedTools.push(tool);
     else if (explicitTools) undetectedExplicit.push(tool);
   }
-
   const requested: InstallReport['requested'] = {
     ...requestedBase,
     tools: detectedTools,
     scope,
     explicitScope,
   };
-
   // Planning refusals: explicitly named but undetected tools → exit-4 per source.
   const planningRefusals: InstallResult[] = [];
   for (const tool of undetectedExplicit) {
@@ -1589,7 +1522,6 @@ const runInstallInternal = async (
       });
     }
   }
-
   if (detectedTools.length === 0) {
     if (!explicitTools) {
       const e = toolUnavailableError(`no supported tool detected (${installTools.join(', ')})`);
@@ -1618,7 +1550,6 @@ const runInstallInternal = async (
       ),
     );
   }
-
   interface PreparedInstallPairBinding {
     readonly kind: 'pair';
     readonly preview: InstallResult;
@@ -1627,7 +1558,10 @@ const runInstallInternal = async (
     readonly liveResourceId: string;
     readonly storeResourceId: string;
     observe(): Promise<InstallPreconditionFacts>;
-    execute(operation: ExecutableOperation): Promise<InstallResult>;
+    execute(
+      operation: ExecutableOperation,
+      operationObservation?: ObservationBundle,
+    ): Promise<InstallResult>;
   }
   interface PreparedInstallMigrationBinding {
     readonly kind: 'migrate-ledger';
@@ -1644,7 +1578,6 @@ const runInstallInternal = async (
     readonly snapshotId: `snapshot:v1:${string}`;
     cleanup(): Promise<void>;
   }
-
   interface InstallPreconditionFacts {
     readonly projectRoot: string | null;
     readonly selectedPair: PairRecord | null;
@@ -1666,7 +1599,6 @@ const runInstallInternal = async (
     }>;
     readonly store: AcquireContentFacts;
   }
-
   interface InstallBindingSeed {
     readonly preview: InstallResult;
     readonly spec: SourceSpec;
@@ -1674,7 +1606,6 @@ const runInstallInternal = async (
     readonly tool: FlipTool;
     execute(): Promise<InstallResult>;
   }
-
   const observeInstallState = async (
     seed: InstallBindingSeed,
   ): Promise<Readonly<{ ledger: LedgerModel; facts: InstallPreconditionFacts }>> => {
@@ -1737,7 +1668,6 @@ const runInstallInternal = async (
       },
     };
   };
-
   // Resolve and verify the whole selection into immutable work before any store/placement binding
   // can run. Fetch materialization remains inside the existing outer lock for normal execution.
   const prepareAll = async (ledgerState: LedgerReadState): Promise<PreparedInstallBatch> => {
@@ -1758,9 +1688,9 @@ const runInstallInternal = async (
       scopeKey,
       projectRoot,
       logicalOperation: null,
+      operationObservation: undefined,
     };
     let planningFailFast = false;
-
     for (const { source, spec, requestIndex } of specs) {
       if (opts.signal?.aborted) {
         results.push({
@@ -1776,7 +1706,6 @@ const runInstallInternal = async (
         });
         continue;
       }
-
       const resolved = await resolveSource(
         env,
         deps,
@@ -1794,7 +1723,6 @@ const runInstallInternal = async (
         if (resolved.result.error && !opts.continueOnError) planningFailFast = true;
         continue;
       }
-
       const r = resolved.r;
       if (r.fetchDir) cleanupDirs.add(r.fetchDir);
       if (
@@ -1817,7 +1745,6 @@ const runInstallInternal = async (
       let snap: SnapshotResult | null = null;
       let snapErr: SkillSmithError | null = null;
       let snapConsumed = false;
-
       for (const tool of detectedTools) {
         if (opts.signal?.aborted) {
           sourceResults.push({
@@ -1828,7 +1755,6 @@ const runInstallInternal = async (
           });
           continue;
         }
-
         const derivedRootsContext = {
           cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
           configuration: opts.configuration,
@@ -1850,8 +1776,15 @@ const runInstallInternal = async (
           });
           continue;
         }
-
-        const gate = await runInstallVerifyGate(env, deps, registry, tool, r.materializedDir, opts);
+        const gate = await runInstallVerifyGate(
+          env,
+          deps,
+          registry,
+          tool,
+          r.materializedDir,
+          opts,
+          observation,
+        );
         if (gate.blocked) {
           const rootsCtx = {
             cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
@@ -1869,7 +1802,6 @@ const runInstallInternal = async (
           });
           continue;
         }
-
         let preview = { ...(await predictPair(placeCtx, spec, r, tool)), requestIndex };
         if (preview.action === 'noop' && preview.store !== null) {
           const [fetchedHash, storedHash] = await Promise.all([
@@ -1956,13 +1888,11 @@ const runInstallInternal = async (
           },
         });
       }
-
       results.push(...sourceResults);
       if (!opts.continueOnError && sourceResults.some((x) => x.error)) {
         planningFailFast = true;
       }
     }
-
     const preparedIntents: Array<
       Readonly<{
         seed: InstallBindingSeed;
@@ -2280,9 +2210,14 @@ const runInstallInternal = async (
           placeCtx.ledger = current.ledger;
           return current.facts;
         },
-        execute: async (logicalOperation) => {
+        execute: async (logicalOperation, operationObservation) => {
           placeCtx.logicalOperation = logicalOperation;
-          return prepared.seed.execute();
+          placeCtx.operationObservation = operationObservation;
+          try {
+            return await prepared.seed.execute();
+          } finally {
+            placeCtx.operationObservation = undefined;
+          }
         },
       });
     }
@@ -2330,6 +2265,7 @@ const runInstallInternal = async (
       throw new Error('prepared install plan has no exact execution binding');
     }
     const preview = assembleInstallReport(true, requested, canonicalResults, plan, []);
+    emitAcquisitionPlanCreated(observation, plan, planObservation);
     deps.observePreparedPlan?.(plan);
     return {
       preview,
@@ -2343,7 +2279,6 @@ const runInstallInternal = async (
       },
     };
   };
-
   const executePrepared = async (prepared: PreparedInstallBatch): Promise<PlannedInstallReport> => {
     const actualByPreview = new Map<InstallResult, InstallResult>();
     const actualByOperation = new Map<string, InstallResult>();
@@ -2367,7 +2302,7 @@ const runInstallInternal = async (
         if (binding.kind === 'migrate-ledger') {
           return lifecycle.bind(
             operation,
-            ledgerMigrationExecutionBinding({
+            createAcquisitionLedgerMigrationBinding({
               env,
               ledgerPath,
               operation,
@@ -2407,8 +2342,12 @@ const runInstallInternal = async (
             },
             execute: async (
               validatedBinding: ValidatedExecutionBinding,
+              operationObservation?: ObservationBundle,
             ): Promise<OperationExecutionResult> => {
-              const actual = await binding.execute({ ...operation, before: compatibilityBefore });
+              const actual = await binding.execute(
+                { ...operation, before: compatibilityBefore },
+                operationObservation,
+              );
               projectActual(binding, actual);
               actualByOperation.set(operation.operationId, actual);
               return createInstallExecutionResult(
@@ -2429,14 +2368,17 @@ const runInstallInternal = async (
     );
     let executionResults: readonly OperationExecutionResult[];
     try {
-      executionResults = await executeOperationPlan({
-        plan: prepared.preview.plan as CurrentMutatorOperationPlan,
-        bindings: schedulerBindings,
-        preconditions: prepared.preconditions,
-        locks: [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }],
-        lockPort: createAcquireExecutionLockPort(env, ledgerPath, safeError, msg),
-        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-      });
+      executionResults = await executeAcquisitionOperationPlan(
+        {
+          plan: prepared.preview.plan as CurrentMutatorOperationPlan,
+          bindings: schedulerBindings,
+          preconditions: prepared.preconditions,
+          locks: [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }],
+          lockPort: createAcquireExecutionLockPort(env, ledgerPath, safeError, msg),
+          ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+        },
+        observation,
+      );
     } catch (error) {
       if (!acquisitionPreconditionStateChanged(error)) throw error;
       const reason = 'prepared placement state changed before execution';
@@ -2502,7 +2444,6 @@ const runInstallInternal = async (
       executionResults,
     );
   };
-
   // ---- dry-run: no lock, no writes ----
   if (opts.dryRun) {
     const ledgerRes = await readLedgerState(env, ledgerPath);
@@ -2511,7 +2452,6 @@ const runInstallInternal = async (
     await prepared.cleanup();
     return ok(prepared.preview);
   }
-
   // ---- Phase 2: compatibility recovery/preparation, followed by final coordinator validation ----
   const prepareLocked = async (): Promise<Result<PreparedInstallBatch, SkillSmithError>> => {
     await sweepStaging(env, storeRoot);
@@ -2522,7 +2462,6 @@ const runInstallInternal = async (
       return ok(await prepareAll(ledgerRes.value));
     }
     const ledger = ledgerModelForMutation(ledgerRes.value, nowOf(env, deps));
-
     const sweepPlaceCtx: PlaceCtx = {
       env,
       registry,
@@ -2535,8 +2474,12 @@ const runInstallInternal = async (
       scopeKey,
       projectRoot,
       logicalOperation: null,
+      operationObservation: undefined,
     };
-    const swept = await recoverCommittedAcquireJournals(placeExecutionInput(sweepPlaceCtx));
+    const swept = await recoverCommittedAcquireJournalsWithObservation(
+      placeExecutionInput(sweepPlaceCtx),
+      observation,
+    );
     sweepPlaceCtx.ledger = swept.state.ledger;
     if (!swept.ok) {
       const sweepError = safeError(swept.error);
@@ -2544,7 +2487,6 @@ const runInstallInternal = async (
         sweepError.code === 'ledger-error' ? flipFailedError(msg(sweepError)) : sweepError,
       );
     }
-
     const current = await readLedgerState(env, ledgerPath);
     if (!current.ok) return err(safeError(current.error));
     return ok(await prepareAll(current.value));
@@ -2574,19 +2516,35 @@ const runInstallInternal = async (
   }
 };
 
-export const runInstallWithRegistry = async (
+const runInstallWithRegistryInternal = async (
   env: AcquisitionPorts,
   opts: InstallOptions,
   deps: InstallDeps,
   registry: LifecycleToolRegistry<string>,
-): Promise<Result<PlannedInstallReport, SkillSmithError>> => {
-  try {
-    const result = await runInstallInternal(env, opts, deps, registry);
-    return result.ok ? result : err(safeError(result.error));
-  } catch (error) {
-    return err(safeError(error));
-  }
-};
+  observation?: ObservationBundle,
+): Promise<Result<PlannedInstallReport, SkillSmithError>> =>
+  runAcquisitionWithObservation(
+    (state) => runInstallInternal(env, opts, deps, registry, observation, state),
+    safeError,
+    observation,
+  );
+
+export const runInstallWithRegistry = (
+  env: AcquisitionPorts,
+  opts: InstallOptions,
+  deps: InstallDeps,
+  registry: LifecycleToolRegistry<string>,
+): Promise<Result<PlannedInstallReport, SkillSmithError>> =>
+  runInstallWithRegistryInternal(env, opts, deps, registry);
+
+export const runInstallWithRegistryObserved = (
+  env: AcquisitionPorts,
+  opts: InstallOptions,
+  deps: InstallDeps,
+  registry: LifecycleToolRegistry<string>,
+  observation: ObservationBundle,
+): Promise<Result<PlannedInstallReport, SkillSmithError>> =>
+  runInstallWithRegistryInternal(env, opts, deps, registry, observation);
 
 export const runInstall = (
   env: AcquisitionPorts,
@@ -2638,12 +2596,10 @@ const emptyUninstallResult = (
   storeRetained: null,
   backupKept: null,
 });
-
 const notInstalledResult = (skill: string): UninstallResult => ({
   ...emptyUninstallResult(skill, null, null, 'noop'),
   reason: `'${skill}' is not installed anywhere skillsmith manages`,
 });
-
 // D12: before.placement/storePath come straight off the ledger record; symlinkTarget is populated
 // only for dev (the recorded dev source) or a store-linked pinned record (a plain 'copy' placement
 // has no symlink to report) — per the brief, "symlinkTarget for dev/store-linked".
@@ -2662,7 +2618,6 @@ const uninstallBeforeFromRecord = (
         ? pinned.storePath
         : null,
 });
-
 // Search-set resolution for a NAME target (U2): every (scope, tool) in the requested search set,
 // each classified against every root that tool owns at that scope (codex/user owns two: current +
 // legacy). "Found" = a non-absent placement OR a ledger pair (spec's convergent definition).
@@ -2757,7 +2712,6 @@ const collectUninstallMatches = async (
   }
   return matches;
 };
-
 interface PathTargetMatch {
   name: string;
   scope: InstallScope;
@@ -2766,7 +2720,6 @@ interface PathTargetMatch {
   root: string;
   notice: string | null;
 }
-
 // A path target (contains '/', or absolute) resolves to exactly one (tool, scope, root) by
 // dirname match — claude-code user/project, codex current user/project, codex legacy. No
 // ambiguity concept applies (one path, one owning root); outside every root is a hard refusal.
@@ -2783,7 +2736,6 @@ const resolveUninstallPathTarget = async (
   const resolved = resolve(opts.cwd, target);
   const parent = dirname(resolved);
   const name = basename(resolved);
-
   const ctxUser = { cwd: opts.cwd, configuration: opts.configuration };
   const candidates: Omit<PathTargetMatch, 'name'>[] = [];
   const uninstallTools = registry.toolsFor('uninstall') as readonly FlipTool[];
@@ -2822,7 +2774,6 @@ const resolveUninstallPathTarget = async (
       }
     }
   }
-
   const match = candidates.find((c) => c.root === parent);
   if (!match) {
     const roots = candidates.map((c) => c.root).join(', ');
@@ -2844,7 +2795,6 @@ const resolveUninstallPathTarget = async (
   }
   return ok({ name, ...match });
 };
-
 // Decide + (unless dry-run) execute the removal for one resolved (skill, tool, scope) match.
 // Refusals happen before any journal write; a managed removal drives the already-recorded pair
 // through the engine's 'uninstall' swap directly, an unmanaged --force removal first synthesizes
@@ -2860,9 +2810,9 @@ const processUninstallMatch = async (
   match: UMatch,
   dryRun: boolean,
   logicalOperation: ExecutableOperation | null,
+  operationObservation?: ObservationBundle,
 ): Promise<UninstallResult> => {
   const { scope, scopeKey, tool, existing, notice } = match;
-
   const executionInput = (): AcquireExecutionInput =>
     executionInputOf(env, ledgerPath, ledgerCtx.ledger, deps, opts, logicalOperation);
   const midSwap = (e: SkillSmithError): SkillSmithError =>
@@ -2879,7 +2829,6 @@ const processUninstallMatch = async (
     backupKept: null,
     error: safeError(e),
   });
-
   // Constraint #6: an uncommitted journal on the pair refuses every op except a same-op re-run
   // (which resumes it to completion) — checked first, ahead of the stale-pair shortcut and the
   // dev/unmanaged gates below, since a crash window can leave the live placement absent or in an
@@ -2902,7 +2851,11 @@ const processUninstallMatch = async (
           backupKept: null,
         };
       }
-      const resumed = await recoverAcquire(executionInput(), { skill: name, tool, scopeKey });
+      const resumed = await recoverAcquireWithObservation(
+        executionInput(),
+        { skill: name, tool, scopeKey },
+        operationObservation,
+      );
       ledgerCtx.ledger = resumed.state.ledger;
       if (!resumed.ok) return failed(midSwap(resumed.error), placementPath);
       return {
@@ -2931,7 +2884,6 @@ const processUninstallMatch = async (
       error: flipRefusedError(reason),
     };
   }
-
   if (match.kind === 'duplicate') {
     const paths = match.duplicatePaths ?? [];
     const reason =
@@ -2950,7 +2902,6 @@ const processUninstallMatch = async (
       error: flipRefusedError(reason),
     };
   }
-
   if (match.kind === 'stale') {
     const ex = existing as PairRecord;
     const placementPath = ex.placementPath;
@@ -2996,11 +2947,9 @@ const processUninstallMatch = async (
       backupKept: null,
     };
   }
-
   // match.kind === 'live'
   const placement = match.placement as Placement;
   const placementPath = placement.path;
-
   if (existing) {
     // P13: a dev-mode pair with a RETAINED pin (installed/promoted then demoted) still refuses
     // without --force — the pin is precious and promote/dev --rollback can restore it. A dev-CREATED
@@ -3046,7 +2995,11 @@ const processUninstallMatch = async (
       placementPath: placement.path,
       scopeKey,
     };
-    const swapRes = await executeAcquirePlan(executionInput(), plan);
+    const swapRes = await executeAcquirePlanWithObservation(
+      executionInput(),
+      plan,
+      operationObservation,
+    );
     ledgerCtx.ledger = swapRes.state.ledger;
     if (!swapRes.ok) return failed(midSwap(swapRes.error), placementPath);
     return {
@@ -3061,7 +3014,6 @@ const processUninstallMatch = async (
       backupKept: swapRes.value.backupKept,
     };
   }
-
   // unmanaged (no ledger pair)
   if (!opts.force) {
     const reason = `'${name}' (${tool}) has no skillsmith record; pass --force to remove it anyway`;
@@ -3116,7 +3068,11 @@ const processUninstallMatch = async (
     placementPath: placement.path,
     scopeKey,
   };
-  const swapRes = await executeAcquirePlan(executionInput(), plan);
+  const swapRes = await executeAcquirePlanWithObservation(
+    executionInput(),
+    plan,
+    operationObservation,
+  );
   ledgerCtx.ledger = swapRes.state.ledger;
   if (!swapRes.ok) return failed(midSwap(swapRes.error), placementPath);
   return {
@@ -3131,10 +3087,8 @@ const processUninstallMatch = async (
     backupKept: swapRes.value.backupKept,
   };
 };
-
 const isUninstallPathTarget = (target: string): boolean =>
   target.includes('/') || isAbsolute(target);
-
 // Resolve one CLI target (name or path) to zero or more UninstallResults. A name target searches
 // the whole (scope x tool) search set and applies U2 ambiguity; a path target pins exactly one
 // (scope, tool) by dirname match and skips the ambiguity question entirely.
@@ -3202,7 +3156,6 @@ const processUninstallTarget = async (
     if (dryRun && preview.action === 'removed') bind?.(preview, name, match);
     return [preview];
   }
-
   const matches = await collectUninstallMatches(
     env,
     registry,
@@ -3215,7 +3168,6 @@ const processUninstallTarget = async (
     scopeKeyFor,
   );
   if (matches.length === 0) return [notInstalledResult(target)];
-
   const distinctScopes = new Set(matches.map((m) => m.scope));
   if (distinctScopes.size > 1 && opts.scope === undefined && !opts.allScopes) {
     const list = matches
@@ -3310,6 +3262,8 @@ const runUninstallInternal = async (
   opts: UninstallOptions,
   deps: UninstallDeps,
   registry: LifecycleToolRegistry<string>,
+  observation?: ObservationBundle,
+  planObservation?: AcquisitionPlanObservationState,
 ): Promise<Result<PlannedUninstallReport, SkillSmithError>> => {
   const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
@@ -3350,7 +3304,10 @@ const runUninstallInternal = async (
     readonly actualBefore: OperationImage;
     readonly liveResourceId: string;
     observe(): Promise<UninstallPreconditionFacts>;
-    execute(operation: ExecutableOperation): Promise<UninstallResult>;
+    execute(
+      operation: ExecutableOperation,
+      operationObservation?: ObservationBundle,
+    ): Promise<UninstallResult>;
   }
   interface PreparedUninstallMigrationBinding {
     readonly kind: 'migrate-ledger';
@@ -3386,7 +3343,10 @@ const runUninstallInternal = async (
     readonly target: string;
     readonly name: string;
     readonly match: UMatch;
-    execute(operation: ExecutableOperation): Promise<UninstallResult>;
+    execute(
+      operation: ExecutableOperation,
+      operationObservation?: ObservationBundle,
+    ): Promise<UninstallResult>;
   }
 
   const observeUninstallFacts = async (
@@ -3479,7 +3439,7 @@ const runUninstallInternal = async (
               target,
               name,
               match,
-              execute: (operation) =>
+              execute: (operation, operationObservation) =>
                 processUninstallMatch(
                   env,
                   ledgerCtx,
@@ -3490,6 +3450,7 @@ const runUninstallInternal = async (
                   match,
                   false,
                   operation,
+                  operationObservation,
                 ),
             });
           },
@@ -3685,7 +3646,8 @@ const runUninstallInternal = async (
         actualBefore,
         liveResourceId: prepared.intent.liveResourceId,
         observe: () => observeUninstallFacts(prepared.seed),
-        execute: (logicalOperation) => prepared.seed.execute(logicalOperation),
+        execute: (logicalOperation, operationObservation) =>
+          prepared.seed.execute(logicalOperation, operationObservation),
       });
     }
     if (migration !== null) {
@@ -3713,6 +3675,7 @@ const runUninstallInternal = async (
       throw new Error('prepared uninstall plan has no exact execution binding');
     }
     const preview = assembleUninstallReport(true, requested, results, plan, []);
+    emitAcquisitionPlanCreated(observation, plan, planObservation);
     deps.observePreparedPlan?.(plan);
     return {
       preview,
@@ -3742,7 +3705,7 @@ const runUninstallInternal = async (
         if (binding.kind === 'migrate-ledger') {
           return lifecycle.bind(
             operation,
-            ledgerMigrationExecutionBinding({
+            createAcquisitionLedgerMigrationBinding({
               env,
               ledgerPath,
               operation,
@@ -3780,11 +3743,15 @@ const runUninstallInternal = async (
               compatibilityBefore = acquireActualBefore(resource, facts.live, facts.selectedPair);
               return operation.before;
             },
-            execute: async (): Promise<OperationExecutionResult> => {
+            execute: async (
+              _validatedBinding: ValidatedExecutionBinding,
+              operationObservation?: ObservationBundle,
+            ): Promise<OperationExecutionResult> => {
               const actual = await binding.execute(
                 compatibilityBefore.kind === 'absent' && operation.before.kind === 'placement'
                   ? operation
                   : { ...operation, before: compatibilityBefore },
+                operationObservation,
               );
               actualByPreview.set(binding.preview, actual);
               actualByOperation.set(operation.operationId, actual);
@@ -3797,14 +3764,17 @@ const runUninstallInternal = async (
     );
     let executionResults: readonly OperationExecutionResult[];
     try {
-      executionResults = await executeOperationPlan({
-        plan: prepared.preview.plan as CurrentMutatorOperationPlan,
-        bindings: schedulerBindings,
-        preconditions: prepared.preconditions,
-        locks: [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }],
-        lockPort: createAcquireExecutionLockPort(env, ledgerPath, safeError, msg),
-        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-      });
+      executionResults = await executeAcquisitionOperationPlan(
+        {
+          plan: prepared.preview.plan as CurrentMutatorOperationPlan,
+          bindings: schedulerBindings,
+          preconditions: prepared.preconditions,
+          locks: [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }],
+          lockPort: createAcquireExecutionLockPort(env, ledgerPath, safeError, msg),
+          ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+        },
+        observation,
+      );
     } catch (error) {
       if (!acquisitionPreconditionStateChanged(error)) throw error;
       const reason = 'prepared placement state changed before execution';
@@ -3898,8 +3868,9 @@ const runUninstallInternal = async (
     }
     const ledger = ledgerModelForMutation(ledgerRes.value, nowOf(env, deps));
 
-    const swept = await recoverCommittedAcquireJournals(
+    const swept = await recoverCommittedAcquireJournalsWithObservation(
       executionInputOf(env, ledgerPath, ledger, deps, opts, null),
+      observation,
     );
     if (!swept.ok) {
       const sweepError = safeError(swept.error);
@@ -3933,19 +3904,35 @@ const runUninstallInternal = async (
   return ok(await executePrepared(settled.value));
 };
 
-export const runUninstallWithRegistry = async (
+const runUninstallWithRegistryInternal = async (
   env: AcquisitionPorts,
   opts: UninstallOptions,
   deps: UninstallDeps,
   registry: LifecycleToolRegistry<string>,
-): Promise<Result<PlannedUninstallReport, SkillSmithError>> => {
-  try {
-    const result = await runUninstallInternal(env, opts, deps, registry);
-    return result.ok ? result : err(safeError(result.error));
-  } catch (error) {
-    return err(safeError(error));
-  }
-};
+  observation?: ObservationBundle,
+): Promise<Result<PlannedUninstallReport, SkillSmithError>> =>
+  runAcquisitionWithObservation(
+    (state) => runUninstallInternal(env, opts, deps, registry, observation, state),
+    safeError,
+    observation,
+  );
+
+export const runUninstallWithRegistry = (
+  env: AcquisitionPorts,
+  opts: UninstallOptions,
+  deps: UninstallDeps,
+  registry: LifecycleToolRegistry<string>,
+): Promise<Result<PlannedUninstallReport, SkillSmithError>> =>
+  runUninstallWithRegistryInternal(env, opts, deps, registry);
+
+export const runUninstallWithRegistryObserved = (
+  env: AcquisitionPorts,
+  opts: UninstallOptions,
+  deps: UninstallDeps,
+  registry: LifecycleToolRegistry<string>,
+  observation: ObservationBundle,
+): Promise<Result<PlannedUninstallReport, SkillSmithError>> =>
+  runUninstallWithRegistryInternal(env, opts, deps, registry, observation);
 
 export const runUninstall = (
   env: AcquisitionPorts,

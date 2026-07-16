@@ -46,6 +46,13 @@ export interface AbortPendingLogicalTransactionRequest {
   readonly cancelAt?: 'after-durable-boundary';
 }
 
+export interface BeginTransactionRecoveryAttemptRequest {
+  readonly transactionId: string;
+  readonly command: string;
+  readonly workflow: string;
+  readonly updatedAt: string;
+}
+
 export interface LogicalShadowCollapse {
   readonly model: LedgerModel;
   readonly transactionIds: readonly string[];
@@ -553,9 +560,64 @@ const retainedResourcesValid = (
   });
 };
 
-export const abortPendingLogicalTransaction = (
+/**
+ * Source-only pure projection shared by recovery observation and the durable model reducer.
+ */
+export const projectTransactionRecoveryAttemptJournal = (
+  pending: LogicalJournalV1Dto,
+  request: Readonly<{
+    command: string;
+    workflow: string;
+    updatedAt?: string;
+  }>,
+): LogicalJournalV1Dto => ({
+  ...pending,
+  context: {
+    parentOperationId: pending.intent.operationId,
+    command: request.command,
+    workflow: request.workflow,
+    attempt: pending.context.attempt + 1,
+    startedAt: pending.context.startedAt,
+  },
+  updatedAt: request.updatedAt ?? pending.updatedAt,
+});
+
+/**
+ * Begin one recovery invocation by advancing the pending logical context and its matching legacy
+ * physical shadow as one pure model rewrite. Durable persistence remains owned by the caller.
+ */
+export const beginTransactionRecoveryAttempt = (
+  model: LedgerModel,
+  request: BeginTransactionRecoveryAttemptRequest,
+): Result<LedgerModel, LogicalTransactionError> => {
+  if (!modelIdentityValid(model))
+    return err(failure('invalid-model', 'logical transaction model is invalid'));
+  const pending = model.transactions[request.transactionId];
+  if (pending === undefined) {
+    return err(failure('identity-conflict', 'recovery has no matching pending transaction'));
+  }
+  const attempted = projectTransactionRecoveryAttemptJournal(pending, {
+    command: request.command,
+    workflow: request.workflow,
+    updatedAt: request.updatedAt,
+  });
+  if (!validJournal(attempted))
+    return err(failure('invalid-journal', 'recovery attempt journal is invalid'));
+  const shadowed = withPendingShadow(model, attempted, pending);
+  if (!shadowed.ok) return shadowed;
+  return ok({
+    ...shadowed.value,
+    transactions: {
+      ...shadowed.value.transactions,
+      [attempted.transactionId]: attempted,
+    },
+  });
+};
+
+const abortPendingLogicalTransactionInternal = (
   model: LedgerModel,
   request: AbortPendingLogicalTransactionRequest,
+  attempt: 'increment' | 'preserve',
 ): Result<LedgerModel, LogicalTransactionError> => {
   if (request.signal?.aborted)
     return err(failure('cancelled', 'logical transaction abort cancelled'));
@@ -578,7 +640,7 @@ export const abortPendingLogicalTransaction = (
       parentOperationId: pending.intent.operationId,
       command: request.command,
       workflow: request.workflow,
-      attempt: pending.context.attempt + 1,
+      attempt: attempt === 'preserve' ? pending.context.attempt : pending.context.attempt + 1,
       startedAt: pending.context.startedAt,
     },
     disposition: 'rollback',
@@ -605,6 +667,19 @@ export const abortPendingLogicalTransaction = (
       )
     : ok(durableModel);
 };
+
+export const abortPendingLogicalTransaction = (
+  model: LedgerModel,
+  request: AbortPendingLogicalTransactionRequest,
+): Result<LedgerModel, LogicalTransactionError> =>
+  abortPendingLogicalTransactionInternal(model, request, 'increment');
+
+/** Source-only rollback transition after beginTransactionRecoveryAttempt is already durable. */
+export const abortPendingLogicalTransactionAfterRecoveryAttempt = (
+  model: LedgerModel,
+  request: AbortPendingLogicalTransactionRequest,
+): Result<LedgerModel, LogicalTransactionError> =>
+  abortPendingLogicalTransactionInternal(model, request, 'preserve');
 
 export const collapseLogicalTransactionShadows = (
   model: LedgerModel,

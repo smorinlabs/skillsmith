@@ -1,4 +1,5 @@
 import type { SupportedTool } from '../agents/types.ts';
+import type { ObservationBundle } from '../observation/types.ts';
 import { canonicalPlanningString, resolvePlanningToolContext } from '../planning/order.ts';
 import type {
   CurrentMutatorCommand,
@@ -32,6 +33,25 @@ import type {
   PreparedExecutionBinding,
   ValidatedExecutionBinding,
 } from './types.ts';
+
+export type ObservedPreparedExecutionBinding<ToolId extends string = SupportedTool> = Omit<
+  PreparedExecutionBinding<ToolId>,
+  'execute'
+> &
+  Readonly<{
+    execute: (
+      binding: ValidatedExecutionBinding<ToolId>,
+      observation?: ObservationBundle,
+    ) => Promise<OperationExecutionResult<ToolId>>;
+  }>;
+
+export type ObservedExecutionCoordinatorRequest<ToolId extends string = SupportedTool> = Omit<
+  ExecutionCoordinatorRequest<ToolId>,
+  'bindings'
+> &
+  Readonly<{
+    bindings: readonly ObservedPreparedExecutionBinding<ToolId>[];
+  }>;
 
 export type RepositoryRevisionV1 = ExpectedRevisionV1;
 
@@ -116,6 +136,7 @@ interface PreparedBindingAdapter<ToolId extends string = SupportedTool> {
   readonly observeActualBefore: () => Promise<OperationImage<ToolId>>;
   readonly execute: (
     binding: ValidatedExecutionBinding<ToolId>,
+    observation?: ObservationBundle,
   ) => Promise<OperationExecutionResult<ToolId>>;
 }
 
@@ -169,7 +190,7 @@ const validateGenericPreconditions = validateExecutionPreconditions as <ToolId e
 ) => Promise<void>;
 
 const preflightBindings = <ToolId extends string>(
-  request: ExecutionCoordinatorRequest<ToolId>,
+  request: ExecutionCoordinatorRequest<ToolId> | ObservedExecutionCoordinatorRequest<ToolId>,
 ): readonly PreparedBindingAdapter<ToolId>[] => {
   validateExecutionPlanShape(request.plan);
   if (
@@ -274,12 +295,14 @@ const bindUnderLock = async <ToolId extends string>(
         pairId: input.pairId,
         actualBefore,
         unstartedForce: input.unstartedForce,
-        execute: (): Promise<OperationExecutionResult<ToolId>> => {
+        execute: (
+          operationObservation?: ObservationBundle,
+        ): Promise<OperationExecutionResult<ToolId>> => {
           const binding = bindingReference.current;
           if (binding === null) {
             return fail(`binding ${index} executed before validation completed`);
           }
-          return input.execute(binding);
+          return input.execute(binding, operationObservation);
         },
       },
       index,
@@ -299,9 +322,22 @@ interface ExecuteOperationPlan {
   ): Promise<readonly OperationExecutionResult<ToolId>[]>;
 }
 
-export const executeOperationPlan: ExecuteOperationPlan = async <ToolId extends string>(
-  request: ExecutionCoordinatorRequest<ToolId>,
-  suppliedContext?: PlanningToolContext<ToolId>,
+interface ExecuteOperationPlanObserved {
+  (
+    request: ObservedExecutionCoordinatorRequest,
+    observation: ObservationBundle,
+  ): Promise<readonly OperationExecutionResult[]>;
+  <ToolId extends string>(
+    request: ObservedExecutionCoordinatorRequest<ToolId>,
+    observation: ObservationBundle,
+    context: PlanningToolContext<ToolId>,
+  ): Promise<readonly OperationExecutionResult<ToolId>[]>;
+}
+
+const executeOperationPlanWithObservation = async <ToolId extends string>(
+  request: ExecutionCoordinatorRequest<ToolId> | ObservedExecutionCoordinatorRequest<ToolId>,
+  suppliedContext: PlanningToolContext<ToolId> | undefined,
+  observation: ObservationBundle | undefined,
 ): Promise<readonly OperationExecutionResult<ToolId>[]> => {
   const context = resolvePlanningToolContext(suppliedContext);
   const prepared = preflightBindings(request);
@@ -314,11 +350,26 @@ export const executeOperationPlan: ExecuteOperationPlan = async <ToolId extends 
     async () => {
       await validateGenericPreconditions(request.plan, request.preconditions, options);
       const bindings = await bindUnderLock(prepared, request.signal, context);
-      return scheduleValidatedOperationPlan(request.plan, bindings, options, context);
+      return scheduleValidatedOperationPlan(request.plan, bindings, options, context, observation);
     },
     options,
   );
 };
+
+export const executeOperationPlan: ExecuteOperationPlan = async <ToolId extends string>(
+  request: ExecutionCoordinatorRequest<ToolId>,
+  suppliedContext?: PlanningToolContext<ToolId>,
+): Promise<readonly OperationExecutionResult<ToolId>[]> =>
+  executeOperationPlanWithObservation(request, suppliedContext, undefined);
+
+export const executeOperationPlanObserved: ExecuteOperationPlanObserved = async <
+  ToolId extends string,
+>(
+  request: ObservedExecutionCoordinatorRequest<ToolId>,
+  observation: ObservationBundle,
+  suppliedContext?: PlanningToolContext<ToolId>,
+): Promise<readonly OperationExecutionResult<ToolId>[]> =>
+  executeOperationPlanWithObservation(request, suppliedContext, observation);
 
 const revisionCursorError = (
   code: RevisionCursorErrorV1['code'],

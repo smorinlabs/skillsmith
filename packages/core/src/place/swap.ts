@@ -17,11 +17,26 @@ import {
   permissionDeniedError,
   safeErrorCode,
 } from '../errors.ts';
+import {
+  beginRecoveryObservation,
+  beginTransactionStageObservation,
+  completeRecoveryObservation,
+  completeTransactionStageObservation,
+  createTransactionObservation,
+  emitTransactionCommitted,
+  emitTransactionRolledBack,
+} from '../execution/observation.ts';
+import type {
+  ObservationBundle,
+  ObservationOutcome,
+  TransactionStage,
+} from '../observation/index.ts';
 import type { ExecutableOperation, OperationImage } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { getLedgerPairAt, withLedgerPairAt, withoutLedgerPairAt } from './ledger.ts';
 import {
   abortPendingLogicalTransaction,
+  abortPendingLogicalTransactionAfterRecoveryAttempt,
   advanceLogicalTransaction,
   commitLogicalTransaction,
 } from './logical-transactions.ts';
@@ -81,6 +96,107 @@ const executeWithSwapState = async <T>(
   return result.ok
     ? Object.freeze({ ok: true, value: result.value, state })
     : Object.freeze({ ok: false, error: result.error, state });
+};
+
+const TRANSACTION_STAGES: ReadonlySet<LogicalJournalV1Dto['phase']> = new Set([
+  'prepared',
+  'staged',
+  'backed-up',
+  'live',
+  'committed',
+]);
+
+const journalForOperation = (
+  model: LedgerModel,
+  operationId: string,
+  transactionId: string | null,
+): LogicalJournalV1Dto | null => {
+  if (transactionId !== null) {
+    return (
+      model.transactions[transactionId] ??
+      model.history.find((journal) => journal.transactionId === transactionId) ??
+      null
+    );
+  }
+  const pending = Object.values(model.transactions).find(
+    (journal) => journal.intent.operationId === operationId,
+  );
+  if (pending !== undefined) return pending;
+  for (let index = model.history.length - 1; index >= 0; index -= 1) {
+    const journal = model.history[index];
+    if (journal?.intent.operationId === operationId) return journal;
+  }
+  return null;
+};
+
+const persistenceOutcome = (
+  error: unknown,
+): Readonly<{ outcome: ObservationOutcome; errorCode: string }> => {
+  const code = safeErrorCode(error);
+  const cancelled = code === 'cancelled' || code === 'ABORT_ERR' || code === 'AbortError';
+  return {
+    outcome: cancelled ? 'cancelled' : 'failure',
+    errorCode: cancelled ? 'cancelled' : (code ?? 'durable-write-failed'),
+  };
+};
+
+const observeSwapPersistence = (
+  request: SwapRequest,
+  observation: ObservationBundle,
+  operation: Readonly<{ operationId: string }>,
+  rolledBackReasonCode = 'rollback-requested',
+  suppressCommittedObservation = false,
+): SwapRequest => {
+  let transactionId: string | null = null;
+  let transactionObservation: ObservationBundle | null = null;
+  const completedStages = new Set<TransactionStage>();
+  if (suppressCommittedObservation) completedStages.add('committed');
+  let terminalEmitted = suppressCommittedObservation;
+  return Object.freeze({
+    ...request,
+    effects: Object.freeze({
+      ...request.effects,
+      persistLedger: async (candidate: LedgerModel) => {
+        const journal = journalForOperation(candidate, operation.operationId, transactionId);
+        const stage =
+          journal !== null && TRANSACTION_STAGES.has(journal.phase)
+            ? (journal.phase as TransactionStage)
+            : null;
+        if (journal !== null && transactionId === null) transactionId = journal.transactionId;
+        if (journal !== null && transactionObservation === null) {
+          transactionObservation = createTransactionObservation(observation, journal);
+        }
+        const stageSpan =
+          stage !== null && !completedStages.has(stage) && transactionObservation !== null
+            ? beginTransactionStageObservation(transactionObservation, stage)
+            : null;
+        const persisted = await request.effects.persistLedger(candidate);
+        if (stage !== null && !completedStages.has(stage) && transactionObservation !== null) {
+          if (persisted.ok) {
+            completeTransactionStageObservation(transactionObservation, stageSpan, 'success', null);
+            completedStages.add(stage);
+            if (stage === 'committed' && !terminalEmitted && journal !== null) {
+              if (journal.disposition === 'rollback') {
+                emitTransactionRolledBack(transactionObservation, rolledBackReasonCode);
+              } else {
+                emitTransactionCommitted(transactionObservation);
+              }
+              terminalEmitted = true;
+            }
+          } else {
+            const completion = persistenceOutcome(persisted.error);
+            completeTransactionStageObservation(
+              transactionObservation,
+              stageSpan,
+              completion.outcome,
+              completion.errorCode,
+            );
+          }
+        }
+        return persisted;
+      },
+    }),
+  });
 };
 
 const ZERO_DIGEST = `sha256:${'0'.repeat(64)}` as ArtifactDigest;
@@ -224,7 +340,7 @@ const logicalJournalFor = (
       conflict: null,
     },
     context: {
-      parentOperationId: null,
+      parentOperationId: operation.operationId,
       command: 'skillsmith-place',
       workflow: 'placement-swap',
       attempt: 1,
@@ -369,6 +485,20 @@ export const commitRecordOnlyLogicalTransaction = (
 ): Promise<SwapExecutionResult<void>> =>
   executeWithSwapState(request, (ctx, ledger, effects) =>
     commitRecordOnlyLogicalTransactionInternal(ctx, ledger, effects, operation, pair, scopeKey),
+  );
+
+export const commitRecordOnlyLogicalTransactionObserved = (
+  request: SwapRequest,
+  operation: ExecutableOperation,
+  pair: PairRecord,
+  scopeKey: string | null,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<void>> =>
+  commitRecordOnlyLogicalTransaction(
+    observeSwapPersistence(request, observation, operation),
+    operation,
+    pair,
+    scopeKey,
   );
 
 const hydrateLogicalPendingFromShadow = (
@@ -566,6 +696,7 @@ const prepareLogicalRollback = async (
   ledger: SwapLedgerAccess,
   effects: SwapEffects,
   transactionId: string,
+  recoveryAttemptBegun = false,
 ): Promise<Result<LogicalJournalV1Dto | null, SkillSmithError>> => {
   const pending = ledger.current().transactions[transactionId];
   // Canonical ledgers migrated from the legacy schema may still carry an unmatched compatibility
@@ -574,11 +705,14 @@ const prepareLogicalRollback = async (
   if (pending === undefined) return ok(null);
   if (pending.disposition === 'rollback') return ok(pending);
 
-  const aborted = abortPendingLogicalTransaction(ledger.current(), {
+  const abort = recoveryAttemptBegun
+    ? abortPendingLogicalTransactionAfterRecoveryAttempt
+    : abortPendingLogicalTransaction;
+  const aborted = abort(ledger.current(), {
     transactionId: pending.transactionId,
     pairId: pending.intent.pairId,
-    command: 'skillsmith-rollback',
-    workflow: 'placement-swap',
+    command: recoveryAttemptBegun ? pending.context.command : 'skillsmith-rollback',
+    workflow: recoveryAttemptBegun ? pending.context.workflow : 'placement-swap',
     updatedAt: effects.journalNow(),
     ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
   });
@@ -1258,6 +1392,17 @@ export const runSwap = (
     runSwapInternal(ctx, ledger, effects, plan),
   );
 
+export const runSwapObserved = (
+  request: SwapRequest,
+  plan: SwapPlan,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> => {
+  const operation = request.context.logicalOperation;
+  return operation === undefined
+    ? runSwap(request, plan)
+    : runSwap(observeSwapPersistence(request, observation, operation), plan);
+};
+
 const reconstructPlan = (
   pair: PairRecord,
   j: Journal,
@@ -1348,6 +1493,49 @@ export const resumeSwap = (
     resumeSwapInternal(ctx, ledger, effects, skill, tool, scopeKey),
   );
 
+const recoveryOperationId = (
+  request: SwapRequest,
+  skill: string,
+  tool: FlipTool,
+  scopeKey: string | null,
+): string | null => {
+  const pair = pairAt(request.state.ledger, scopeKey, skill, tool);
+  const transactionId = pair?.journal?.txId;
+  if (transactionId === undefined) return null;
+  return (
+    request.state.ledger.transactions[transactionId]?.intent.operationId ??
+    request.state.ledger.history.find((journal) => journal.transactionId === transactionId)?.intent
+      .operationId ??
+    null
+  );
+};
+
+export const resumeSwapObserved = (
+  request: SwapRequest,
+  skill: string,
+  tool: FlipTool,
+  scopeKey: string | null,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> => {
+  const committedCleanup =
+    pairAt(request.state.ledger, scopeKey, skill, tool)?.journal?.phase === 'committed';
+  const operationId = recoveryOperationId(request, skill, tool, scopeKey);
+  return operationId === null
+    ? resumeSwap(request, skill, tool, scopeKey)
+    : resumeSwap(
+        observeSwapPersistence(
+          request,
+          observation,
+          { operationId },
+          'rollback-requested',
+          committedCleanup,
+        ),
+        skill,
+        tool,
+        scopeKey,
+      );
+};
+
 /** Uncommitted-journal recovery (spec §8.4 --rollback column). Restores the before-state with at
  *  most two renames and clears the journal. A committed promote/dev/install is refused — the run
  *  layer performs the inverse via the retained records. A committed uninstall is still reversible
@@ -1360,6 +1548,7 @@ const rollbackSwapInternal = async (
   skill: string,
   tool: FlipTool,
   scopeKey: string | null = null,
+  recoveryAttemptBegun = false,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
   const pair = pairAt(ledger.current(), scopeKey, skill, tool);
   const j = pair?.journal ?? null;
@@ -1384,7 +1573,13 @@ const rollbackSwapInternal = async (
     return err(flipRefusedError(`cannot roll back a committed ${j.op} of ${skill}`));
   }
 
-  const logicalRollback = await prepareLogicalRollback(ctx, ledger, effects, j.txId);
+  const logicalRollback = await prepareLogicalRollback(
+    ctx,
+    ledger,
+    effects,
+    j.txId,
+    recoveryAttemptBegun,
+  );
   if (!logicalRollback.ok) return logicalRollback;
 
   // Fresh install: the only live entry that can exist is the new artifact. Restore "nothing there".
@@ -1464,13 +1659,53 @@ export const rollbackSwap = (
     rollbackSwapInternal(ctx, ledger, effects, skill, tool, scopeKey),
   );
 
+export const rollbackSwapAfterRecoveryAttempt = (
+  request: SwapRequest,
+  skill: string,
+  tool: FlipTool,
+  scopeKey: string | null,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  executeWithSwapState(request, (ctx, ledger, effects) =>
+    rollbackSwapInternal(ctx, ledger, effects, skill, tool, scopeKey, true),
+  );
+
+export const rollbackSwapObserved = (
+  request: SwapRequest,
+  skill: string,
+  tool: FlipTool,
+  scopeKey: string | null,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> => {
+  const operationId = recoveryOperationId(request, skill, tool, scopeKey);
+  return operationId === null
+    ? rollbackSwapAfterRecoveryAttempt(request, skill, tool, scopeKey)
+    : executeWithSwapState(
+        observeSwapPersistence(request, observation, { operationId }),
+        (ctx, ledger, effects) =>
+          rollbackSwapInternal(ctx, ledger, effects, skill, tool, scopeKey, true),
+      );
+};
+
 /** §8.5: finish any committed acquisition journal left by a crash between the committed write and
  *  the terminal write. Walks the user `skills` tree AND every `projects` subtree. Runs at the start
  *  of every locked batch (install, uninstall, promote, dev, rollback). Idempotent. */
+const withoutCommittedAcquireShadow = (
+  model: LedgerModel,
+  scopeKey: string | null,
+  skill: string,
+  tool: FlipTool,
+): LedgerModel => {
+  const candidate = structuredClone(model);
+  const pair = getLedgerPairAt(candidate, scopeKey, skill, tool);
+  if (pair !== null) Reflect.set(pair, 'journal', null);
+  return candidate;
+};
+
 const sweepCommittedAcquireJournalsInternal = async (
   ctx: SwapCtx,
   ledger: SwapLedgerAccess,
   effects: SwapEffects,
+  observation?: ObservationBundle,
 ): Promise<Result<string[], SkillSmithError>> => {
   type Target = { scopeKey: string | null; skill: string; tool: FlipTool };
   const targets: Target[] = [];
@@ -1502,11 +1737,73 @@ const sweepCommittedAcquireJournalsInternal = async (
     const pair = pairAt(ledger.current(), t.scopeKey, t.skill, t.tool);
     const j = pair?.journal ?? null;
     if (!pair || !j) continue;
+    const journal =
+      ledger.current().transactions[j.txId] ??
+      ledger.current().history.find(({ transactionId }) => transactionId === j.txId) ??
+      null;
+    const transactionObservation =
+      observation === undefined || journal === null
+        ? null
+        : createTransactionObservation(observation, journal);
+    const span =
+      transactionObservation === null
+        ? null
+        : beginRecoveryObservation(transactionObservation, 'cleanup');
     const plan = reconstructPlan(pair, j, t.skill, t.tool, t.scopeKey);
-    if (!plan.ok) return plan;
-    const done = await forward(ctx, ledger, effects, plan.value, pair);
-    if (!done.ok) return done;
-    if (done.value.warning) notes.push(done.value.warning);
+    if (!plan.ok) {
+      if (transactionObservation !== null) {
+        completeRecoveryObservation(
+          transactionObservation,
+          span,
+          plan.error.code === 'cancelled' ? 'cancelled' : 'failure',
+          plan.error.code,
+        );
+      }
+      return plan;
+    }
+    try {
+      // A committed forward install/remove history entry deliberately cannot coexist in a settled
+      // schema-v2 model with its compatibility shadow. Recovery may still receive that exact
+      // in-memory crash window, so drive physical cleanup from the shadow while persisting from the
+      // canonical shadow-free base. Legacy-only shadows continue through the ordinary path.
+      const recoveryLedger =
+        journal?.phase === 'committed' &&
+        journal.disposition === 'forward' &&
+        (journal.intent.kind === 'install' || journal.intent.kind === 'remove')
+          ? Object.freeze({
+              current: () =>
+                withoutCommittedAcquireShadow(ledger.current(), t.scopeKey, t.skill, t.tool),
+              persist: ledger.persist,
+            })
+          : ledger;
+      const done = await forward(ctx, recoveryLedger, effects, plan.value, pair);
+      if (transactionObservation !== null) {
+        completeRecoveryObservation(
+          transactionObservation,
+          span,
+          done.ok ? 'success' : done.error.code === 'cancelled' ? 'cancelled' : 'failure',
+          done.ok ? null : done.error.code,
+        );
+      }
+      if (!done.ok) return done;
+      if (done.value.warning) notes.push(done.value.warning);
+    } catch (error) {
+      if (transactionObservation !== null) {
+        const code = safeErrorCode(error);
+        const cancelled =
+          ctx.signal?.aborted === true ||
+          code === 'cancelled' ||
+          code === 'ABORT_ERR' ||
+          code === 'AbortError';
+        completeRecoveryObservation(
+          transactionObservation,
+          span,
+          cancelled ? 'cancelled' : 'failure',
+          cancelled ? 'cancelled' : (code ?? 'recovery-threw'),
+        );
+      }
+      throw error;
+    }
   }
   return ok(notes);
 };
@@ -1516,4 +1813,12 @@ export const sweepCommittedAcquireJournals = (
 ): Promise<SwapExecutionResult<string[]>> =>
   executeWithSwapState(request, (ctx, ledger, effects) =>
     sweepCommittedAcquireJournalsInternal(ctx, ledger, effects),
+  );
+
+export const sweepCommittedAcquireJournalsObserved = (
+  request: SwapRequest,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<string[]>> =>
+  executeWithSwapState(request, (ctx, ledger, effects) =>
+    sweepCommittedAcquireJournalsInternal(ctx, ledger, effects, observation),
   );

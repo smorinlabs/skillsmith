@@ -671,7 +671,6 @@ const durableSwapSnapshot = async (
 
 const durableRecoverySnapshot = async (
   lane: string,
-  beginAttempt: AnyFunction,
   recoverObserved: AnyFunction,
   observer: ((event: ObserverEvent) => void | PromiseLike<void>) | null,
 ): Promise<UnknownRecord> => {
@@ -695,20 +694,11 @@ const durableRecoverySnapshot = async (
       fixture.plan,
     );
     if (pending.ok) throw new Error('recovery parity fixture did not retain a prepared journal');
-    const advanced = moduleRecord(
-      beginAttempt(pending.state.ledger, {
-        transactionId: fixture.transactionId,
-        command: 'skillsmith promote --resume alpha',
-        workflow: 'promote-resume',
-        updatedAt: '2026-07-16T00:00:01.000Z',
-      }),
-    );
-    if (advanced.ok !== true) throw new Error('recovery parity attempt reducer failed');
     const input: PlacementExecutionInput = {
       env: fixture.env,
       ledgerPath: ledgerPathOf(fixture.data),
-      ledger: advanced.value as LedgerModel,
-      journalNow: () => '2026-07-16T00:00:02.000Z',
+      ledger: pending.state.ledger,
+      journalNow: () => '2026-07-16T00:00:01.000Z',
       newTransactionId: () => 'unused',
     };
     const recovered =
@@ -732,7 +722,7 @@ const durableRecoverySnapshot = async (
       attempt: 2,
       startedAt: NOW,
     });
-    return durableSwapSnapshot(fixture, recovered);
+    return await durableSwapSnapshot(fixture, recovered);
   } finally {
     await destroyPromoteSwapFixture(fixture);
   }
@@ -1236,8 +1226,11 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
           logicalOperation: operation,
         };
         const observation = operationObservationFixture(operation);
-        const result = moduleRecord(await acquireObserved(input, plan, null, observation.bundle));
+        const result = (await acquireObserved(input, plan, null, observation.bundle)) as Awaited<
+          ReturnType<typeof acquireExecution.executeAcquireReplacement>
+        >;
         expect(result.ok).toBeTrue();
+        if (!result.ok) return;
         expect(
           observation.events
             .filter((event) => event.kind === 'transaction.stage.completed')
@@ -1247,6 +1240,114 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
           kind: 'transaction.committed',
           parentOperationId: operation.operationId,
         });
+        const stagingPath = join(
+          acquired.plan.skillsRoot,
+          `.skillsmith-staging-alpha-${acquired.transactionId}`,
+        );
+        const backupPath = join(
+          acquired.plan.skillsRoot,
+          `.skillsmith-backup-alpha-${acquired.transactionId}`,
+        );
+        const pair = result.state.ledger.skills.alpha?.tools['claude-code'];
+        const committed = result.state.ledger.history.find(
+          ({ transactionId }) => transactionId === acquired.transactionId,
+        );
+        expect(pair).toBeDefined();
+        expect(committed).toBeDefined();
+        if (pair === undefined || committed === undefined) return;
+        const legacyTransactionId = `${acquired.transactionId}:legacy`;
+        const cleanupLedger: LedgerModel = {
+          ...result.state.ledger,
+          skills: {
+            ...result.state.ledger.skills,
+            alpha: {
+              tools: {
+                ...result.state.ledger.skills.alpha?.tools,
+                'claude-code': {
+                  ...pair,
+                  journal: {
+                    op: 'install',
+                    txId: acquired.transactionId,
+                    phase: 'committed',
+                    startedAt: committed.context.startedAt,
+                    completedAt: committed.completedAt,
+                    before: { mode: 'absent' },
+                    stagingPath,
+                    backupPath,
+                  },
+                },
+                codex: {
+                  ...pair,
+                  placementPath: join(acquired.plan.skillsRoot, 'legacy-cleanup'),
+                  journal: {
+                    op: 'install',
+                    txId: legacyTransactionId,
+                    phase: 'committed',
+                    startedAt: committed.context.startedAt,
+                    completedAt: committed.completedAt,
+                    before: { mode: 'absent' },
+                    stagingPath: join(acquired.plan.skillsRoot, '.legacy-staging'),
+                    backupPath: join(acquired.plan.skillsRoot, '.legacy-backup'),
+                  },
+                },
+              },
+            },
+          },
+        };
+        // This is the exact in-memory crash window: the canonical install history is untouched,
+        // while its terminal compatibility shadow has not yet been cleared. Settled v2 encoding
+        // intentionally rejects that combination, so recovery must canonicalize before persisting.
+        expect(ledgerV2Codec.encode(cleanupLedger).ok).toBeFalse();
+        const { logicalOperation: _completedOperation, ...cleanupInput } = input;
+        const parityLedgerPath = join(acquired.data, 'cleanup-parity.json');
+        const parityWritten = await writeLedger(
+          acquired.env,
+          parityLedgerPath,
+          result.state.ledger,
+        );
+        if (!parityWritten.ok) throw new Error(JSON.stringify(parityWritten.error));
+        const cleanupBaseline = await placementRecovery.recoverCommittedAcquirePlacements({
+          ...cleanupInput,
+          ledgerPath: parityLedgerPath,
+          ledger: cleanupLedger,
+        });
+        if (!cleanupBaseline.ok) throw new Error(JSON.stringify(cleanupBaseline.error));
+        const cleanupObservation = observationFixture();
+        const cleaned = await placementRecovery.recoverCommittedAcquirePlacementsObserved(
+          { ...cleanupInput, ledger: cleanupLedger },
+          cleanupObservation.bundle,
+        );
+        if (!cleaned.ok) throw new Error(JSON.stringify(cleaned.error));
+        expect(cleaned.ok).toBeTrue();
+        expect(cleaned.value).toEqual(cleanupBaseline.value);
+        expect(cleaned.state.ledger).toEqual(cleanupBaseline.state.ledger);
+        expect(cleaned.state.ledger.skills.alpha?.tools['claude-code']?.journal).toBeNull();
+        expect(cleaned.state.ledger.skills.alpha?.tools.codex?.journal).toBeNull();
+        expect(
+          cleaned.state.ledger.history.find(
+            ({ transactionId }) => transactionId === acquired.transactionId,
+          ),
+        ).toEqual(committed);
+        expect(await acquired.env.pathKind(acquired.placementPath)).toBe('dir');
+        expect(cleanupObservation.events.map(({ kind }) => kind)).toEqual([
+          'recovery.started',
+          'recovery.completed',
+        ]);
+        expect(cleanupObservation.events).toMatchObject([
+          {
+            kind: 'recovery.started',
+            operationId: acquired.transactionId,
+            parentOperationId: committed.intent.operationId,
+            recoveryKind: 'cleanup',
+          },
+          {
+            kind: 'recovery.completed',
+            operationId: acquired.transactionId,
+            parentOperationId: committed.intent.operationId,
+            recoveryKind: 'cleanup',
+            outcome: 'success',
+          },
+        ]);
       } finally {
         await destroyPromoteSwapFixture(acquired);
       }
@@ -1330,8 +1431,8 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
         const recoveryInput: PlacementExecutionInput = {
           env: fixture.env,
           ledgerPath: ledgerPathOf(fixture.data),
-          ledger: model,
-          journalNow: () => '2026-07-16T00:00:02.000Z',
+          ledger: pendingResult.state.ledger,
+          journalNow: () => '2026-07-16T00:00:01.000Z',
           newTransactionId: () => 'unused',
         };
         const recovered = await recoverObserved(
@@ -1397,24 +1498,14 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
           rollbackFixture.plan,
         );
         expect(pending.ok).toBeFalse();
-        const advanced = moduleRecord(
-          beginAttempt(pending.state.ledger, {
-            transactionId: rollbackFixture.transactionId,
-            command: 'skillsmith promote --rollback alpha',
-            workflow: 'promote-rollback',
-            updatedAt: '2026-07-16T00:00:03.000Z',
-          }),
-        );
-        expect(advanced.ok).toBeTrue();
-        if (advanced.ok !== true) return;
         const observation = operationObservationFixture(rollbackFixture.operation);
         const recovered = moduleRecord(
           await recoverObserved(
             {
               env: rollbackFixture.env,
               ledgerPath: ledgerPathOf(rollbackFixture.data),
-              ledger: advanced.value as LedgerModel,
-              journalNow: () => '2026-07-16T00:00:04.000Z',
+              ledger: pending.state.ledger,
+              journalNow: () => '2026-07-16T00:00:03.000Z',
               newTransactionId: () => 'unused',
             },
             'rollback',
@@ -1435,6 +1526,17 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
           recoveryKind: 'rollback',
           outcome: 'success',
           errorCode: null,
+        });
+        expect(
+          recovered.state.ledger.history.find(
+            ({ transactionId }) => transactionId === rollbackFixture?.transactionId,
+          )?.context,
+        ).toMatchObject({
+          parentOperationId: rollbackFixture.operation.operationId,
+          command: 'skillsmith-rollback',
+          workflow: 'placement-swap',
+          attempt: 2,
+          startedAt: NOW,
         });
         expect(await rollbackFixture.env.pathKind(rollbackFixture.placementPath)).toBe('symlink');
         expect(await rollbackFixture.env.readLink(rollbackFixture.placementPath)).toBe(
@@ -1472,6 +1574,310 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
         await rm(cleanupRoot, { recursive: true, force: true });
       }
     });
+
+    test('EWP-P3B-TS07 red: exhausted recovery attempts preserve observer parity', async () => {
+      const controller = new AbortController();
+      let fixture: PromoteSwapFixture | null = null;
+      fixture = await buildPromoteSwapFixture((model) => {
+        if (model.transactions[fixture?.transactionId ?? '']?.phase === 'prepared') {
+          controller.abort();
+        }
+      });
+      try {
+        const pending = await swap.runSwap(
+          {
+            ...fixture.request,
+            context: {
+              ...fixture.request.context,
+              pauseAt: 'prepared',
+              signal: controller.signal,
+            },
+          },
+          fixture.plan,
+        );
+        expect(pending.ok).toBeFalse();
+        const pendingJournal = pending.state.ledger.transactions[fixture.transactionId];
+        expect(pendingJournal).toBeDefined();
+        if (pendingJournal === undefined) return;
+        const exhaustedLedger: LedgerModel = {
+          ...pending.state.ledger,
+          transactions: {
+            ...pending.state.ledger.transactions,
+            [fixture.transactionId]: {
+              ...pendingJournal,
+              context: { ...pendingJournal.context, attempt: Number.MAX_SAFE_INTEGER },
+            },
+          },
+        };
+        const input: PlacementExecutionInput = {
+          env: fixture.env,
+          ledgerPath: ledgerPathOf(fixture.data),
+          ledger: exhaustedLedger,
+          journalNow: () => '2026-07-16T00:00:01.000Z',
+          newTransactionId: () => 'unused',
+        };
+        const target = { skill: 'alpha' as const, tool: 'claude-code' as const };
+        const unobserved = await placementRecovery.recoverPlacement(input, 'resume', target);
+        const observation = operationObservationFixture(fixture.operation);
+        const observed = await placementRecovery.recoverPlacementObserved(
+          input,
+          'resume',
+          target,
+          observation.bundle,
+        );
+        expect(observed).toEqual(unobserved);
+        expect(observed.ok).toBeFalse();
+        if (!observed.ok) {
+          expect(observed.error.message).toContain('cannot begin placement recovery');
+        }
+        expect(observation.events).toEqual([]);
+      } finally {
+        await destroyPromoteSwapFixture(fixture);
+      }
+    });
+
+    test('EWP-P3B-TS07 red: attempt persistence failure, cancellation, and throws close recovery spans', async () => {
+      const pendingFixture = async (): Promise<
+        Readonly<{
+          fixture: PromoteSwapFixture;
+          pending: Awaited<ReturnType<typeof swap.runSwap>>;
+        }>
+      > => {
+        const controller = new AbortController();
+        let fixture: PromoteSwapFixture | null = null;
+        fixture = await buildPromoteSwapFixture((model) => {
+          if (model.transactions[fixture?.transactionId ?? '']?.phase === 'prepared') {
+            controller.abort();
+          }
+        });
+        const pending = await swap.runSwap(
+          {
+            ...fixture.request,
+            context: {
+              ...fixture.request.context,
+              pauseAt: 'prepared',
+              signal: controller.signal,
+            },
+          },
+          fixture.plan,
+        );
+        if (pending.ok) {
+          await destroyPromoteSwapFixture(fixture);
+          throw new Error('attempt-persistence fixture did not retain a prepared journal');
+        }
+        return Object.freeze({ fixture, pending });
+      };
+      const recoveryInput = (
+        fixture: PromoteSwapFixture,
+        pending: Awaited<ReturnType<typeof swap.runSwap>>,
+        env: RuntimePorts,
+        signal?: AbortSignal,
+      ): PlacementExecutionInput => ({
+        env,
+        ledgerPath: ledgerPathOf(fixture.data),
+        ledger: pending.state.ledger,
+        journalNow: () => '2026-07-16T00:00:05.000Z',
+        newTransactionId: () => 'unused',
+        ...(signal === undefined ? {} : { signal }),
+      });
+      const target = { skill: 'alpha' as const, tool: 'claude-code' as const };
+
+      const failedAttempt = await pendingFixture();
+      try {
+        const failureObservation = operationObservationFixture(failedAttempt.fixture.operation);
+        const failureEnv: RuntimePorts & {
+          readonly afterLedgerBarrier: (barrier: Readonly<{ kind: string }>) => Promise<void>;
+        } = {
+          ...failedAttempt.fixture.env,
+          afterLedgerBarrier: async (barrier) => {
+            if (barrier.kind !== 'writer-stage-write') return;
+            throw Object.assign(new Error('injected recovery attempt persistence failure'), {
+              code: 'EIO',
+            });
+          },
+        };
+        const failed = await placementRecovery.recoverPlacementObserved(
+          recoveryInput(failedAttempt.fixture, failedAttempt.pending, failureEnv),
+          'resume',
+          target,
+          failureObservation.bundle,
+        );
+        expect(failed.ok).toBeFalse();
+        if (failed.ok) throw new Error('attempt persistence failure was ignored');
+        expect(failureObservation.events).toMatchObject([
+          {
+            kind: 'recovery.started',
+            attempt: 2,
+            recoveryKind: 'resume',
+          },
+          {
+            kind: 'recovery.completed',
+            attempt: 2,
+            recoveryKind: 'resume',
+            outcome: 'failure',
+            errorCode: failed.error.code,
+          },
+        ]);
+        expect(failureObservation.events).toHaveLength(2);
+
+        const retryObservation = operationObservationFixture(failedAttempt.fixture.operation);
+        const retried = await placementRecovery.recoverPlacementObserved(
+          recoveryInput(failedAttempt.fixture, failed, failedAttempt.fixture.env),
+          'resume',
+          target,
+          retryObservation.bundle,
+        );
+        expect(retried.ok).toBeTrue();
+        expect(retryObservation.events[0]).toMatchObject({
+          kind: 'recovery.started',
+          attempt: 2,
+        });
+      } finally {
+        await destroyPromoteSwapFixture(failedAttempt.fixture);
+      }
+
+      const cancelledAttempt = await pendingFixture();
+      try {
+        const controller = new AbortController();
+        const cancellationObservation = operationObservationFixture(
+          cancelledAttempt.fixture.operation,
+        );
+        const cancellationEnv: RuntimePorts & {
+          readonly afterLedgerBarrier: (barrier: Readonly<{ kind: string }>) => Promise<void>;
+        } = {
+          ...cancelledAttempt.fixture.env,
+          afterLedgerBarrier: async (barrier) => {
+            if (barrier.kind === 'writer-stage-write') controller.abort();
+          },
+        };
+        const cancelled = await placementRecovery.recoverPlacementObserved(
+          recoveryInput(
+            cancelledAttempt.fixture,
+            cancelledAttempt.pending,
+            cancellationEnv,
+            controller.signal,
+          ),
+          'resume',
+          target,
+          cancellationObservation.bundle,
+        );
+        expect(cancelled.ok).toBeFalse();
+        if (cancelled.ok) throw new Error('attempt persistence cancellation was ignored');
+        expect(cancelled.error.code).toBe('cancelled');
+        expect(cancellationObservation.events).toMatchObject([
+          {
+            kind: 'recovery.started',
+            attempt: 2,
+            recoveryKind: 'resume',
+          },
+          {
+            kind: 'recovery.completed',
+            attempt: 2,
+            recoveryKind: 'resume',
+            outcome: 'cancelled',
+            errorCode: 'cancelled',
+          },
+        ]);
+        expect(cancellationObservation.events).toHaveLength(2);
+      } finally {
+        await destroyPromoteSwapFixture(cancelledAttempt.fixture);
+      }
+
+      const thrownCancellationAttempt = await pendingFixture();
+      try {
+        const thrownCancellationObservation = operationObservationFixture(
+          thrownCancellationAttempt.fixture.operation,
+        );
+        let thrownCancellation: unknown = null;
+        try {
+          await placementRecovery.recoverPlacementObserved(
+            {
+              ...recoveryInput(
+                thrownCancellationAttempt.fixture,
+                thrownCancellationAttempt.pending,
+                thrownCancellationAttempt.fixture.env,
+              ),
+              journalNow: () => {
+                throw Object.assign(new Error('injected thrown recovery cancellation'), {
+                  name: 'AbortError',
+                });
+              },
+            },
+            'resume',
+            target,
+            thrownCancellationObservation.bundle,
+          );
+        } catch (error) {
+          thrownCancellation = error;
+        }
+        expect(thrownCancellation).not.toBeNull();
+        expect(thrownCancellationObservation.events).toMatchObject([
+          {
+            kind: 'recovery.started',
+            attempt: 2,
+            recoveryKind: 'resume',
+          },
+          {
+            kind: 'recovery.completed',
+            attempt: 2,
+            recoveryKind: 'resume',
+            outcome: 'cancelled',
+            errorCode: 'cancelled',
+          },
+        ]);
+        expect(thrownCancellationObservation.events).toHaveLength(2);
+      } finally {
+        await destroyPromoteSwapFixture(thrownCancellationAttempt.fixture);
+      }
+
+      const thrownAttempt = await pendingFixture();
+      try {
+        const thrownObservation = operationObservationFixture(thrownAttempt.fixture.operation);
+        const throwingPorts = new Proxy(thrownAttempt.fixture.env, {
+          get(targetPorts, property, receiver) {
+            if (property === 'readFileMetadata') {
+              throw Object.assign(new Error('injected unexpected recovery persistence throw'), {
+                code: 'EIO',
+              });
+            }
+            return Reflect.get(targetPorts, property, receiver);
+          },
+        });
+        const throwingEnv = {
+          ...thrownAttempt.fixture.env,
+          ledgerWriterPorts: throwingPorts,
+        } as RuntimePorts & { readonly ledgerWriterPorts: RuntimePorts };
+        let thrown: unknown = null;
+        try {
+          await placementRecovery.recoverPlacementObserved(
+            recoveryInput(thrownAttempt.fixture, thrownAttempt.pending, throwingEnv),
+            'resume',
+            target,
+            thrownObservation.bundle,
+          );
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).not.toBeNull();
+        expect(thrownObservation.events).toMatchObject([
+          {
+            kind: 'recovery.started',
+            attempt: 2,
+            recoveryKind: 'resume',
+          },
+          {
+            kind: 'recovery.completed',
+            attempt: 2,
+            recoveryKind: 'resume',
+            outcome: 'failure',
+            errorCode: 'EIO',
+          },
+        ]);
+        expect(thrownObservation.events).toHaveLength(2);
+      } finally {
+        await destroyPromoteSwapFixture(thrownAttempt.fixture);
+      }
+    });
   });
 
   describe('family 7 — ledger migration and doctor repair', () => {
@@ -1490,6 +1896,230 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
       expect(asFunction(moduleRecord(doctorRepair).createDoctorRepairPlan)).not.toBeNull();
       expect(asFunction(moduleRecord(ledgerMigration).ledgerMigrationJournals)).not.toBeNull();
+    });
+
+    test('EWP-P3B-TS07 red: migration recovery attempts are durable before pointer cleanup', async () => {
+      const retryRoot = await mkdtemp(join(tmpdir(), 'skillsmith-p3b-ts07-ledger-retries-'));
+      try {
+        const path = join(retryRoot, 'placements.json');
+        const { state, operation } = await prepareLedgerMigrationFixture(path);
+        const journals = ledgerMigration.ledgerMigrationJournals(operation, NOW);
+        const interrupted = await ledgerWriter.createTestNodeLedgerWriter(path, {
+          afterBarrier: async ({ kind }) => {
+            if (kind === 'migration-backup-copy') {
+              throw Object.assign(new Error('fixture first migration interruption'), {
+                code: 'cancelled',
+              });
+            }
+          },
+        });
+        await expect(
+          interrupted.migrateV1ToV2({
+            expectedSourceByteRevision: state.byteRevision,
+            expectedSourceSemanticRevision: state.semanticRevision,
+            journals,
+          }),
+        ).rejects.toMatchObject({ code: 'cancelled' });
+        expect((await interrupted.readMigrationRecoveryJournal()).value?.context.attempt).toBe(1);
+
+        const second = await ledgerWriter.createTestNodeLedgerWriter(path, {
+          afterBarrier: async ({ kind }) => {
+            if (kind === 'migration-handoff-fsync') {
+              throw Object.assign(new Error('fixture second migration interruption'), {
+                code: 'cancelled',
+              });
+            }
+          },
+        });
+        await expect(second.recoverMigration()).rejects.toMatchObject({ code: 'cancelled' });
+        expect((await second.readMigrationRecoveryJournal()).value?.context.attempt).toBe(2);
+
+        const runtime = await defaultRuntimePorts();
+        const env: RuntimePorts = {
+          ...runtime,
+          wallNowIso: () => NOW,
+          epochMilliseconds: () => 0,
+          monotonicMilliseconds: () => 0,
+        };
+        const observation = operationObservationFixture(operation);
+        let migratedModel: LedgerModel | null = null;
+        const binding = ledgerMigration.ledgerMigrationExecutionBindingObserved(
+          {
+            env,
+            ledgerPath: path,
+            operation,
+            expectedState: state,
+            startedAt: NOW,
+            onMigrated: (model) => {
+              migratedModel = model;
+            },
+          },
+          observation.bundle,
+        );
+        const recovered = await binding.execute({
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: null,
+          actualBefore: operation.before,
+          unstartedForce: null,
+          execute: async () => {
+            throw new Error('validated binding callback must not run');
+          },
+        });
+        expect(recovered.outcome).toBe('succeeded');
+        expect(
+          (migratedModel as LedgerModel | null)?.history.find(
+            ({ transactionId }) => transactionId === journals.committed.transactionId,
+          )?.context,
+        ).toMatchObject({ attempt: 3, startedAt: NOW });
+        expect(observation.events.at(0)).toMatchObject({
+          kind: 'recovery.started',
+          operationId: journals.committed.transactionId,
+          parentOperationId: operation.operationId,
+          attempt: 3,
+          recoveryKind: 'resume',
+        });
+        expect(observation.events.at(-1)).toMatchObject({
+          kind: 'recovery.completed',
+          operationId: journals.committed.transactionId,
+          parentOperationId: operation.operationId,
+          attempt: 3,
+          recoveryKind: 'resume',
+          outcome: 'success',
+          errorCode: null,
+        });
+        for (const event of observation.events) expect(event.attempt).toBe(3);
+        const final = await ledgerWriter.createTestNodeLedgerWriter(path, {});
+        expect(await final.readMigrationRecoveryJournal()).toEqual({ ok: true, value: null });
+      } finally {
+        await rm(retryRoot, { recursive: true, force: true });
+      }
+
+      const cleanupRoot = await mkdtemp(
+        join(tmpdir(), 'skillsmith-p3b-ts07-ledger-pointer-cleanup-'),
+      );
+      try {
+        const path = join(cleanupRoot, 'placements.json');
+        const { state, operation } = await prepareLedgerMigrationFixture(path);
+        const journals = ledgerMigration.ledgerMigrationJournals(operation, NOW);
+        const interrupted = await ledgerWriter.createTestNodeLedgerWriter(path, {
+          afterBarrier: async ({ kind }) => {
+            if (kind === 'migration-backup-copy') {
+              throw Object.assign(new Error('fixture pre-recovery interruption'), {
+                code: 'cancelled',
+              });
+            }
+          },
+        });
+        await expect(
+          interrupted.migrateV1ToV2({
+            expectedSourceByteRevision: state.byteRevision,
+            expectedSourceSemanticRevision: state.semanticRevision,
+            journals,
+          }),
+        ).rejects.toMatchObject({ code: 'cancelled' });
+
+        const cleanupCrash = await ledgerWriter.createTestNodeLedgerWriter(path, {
+          afterBarrier: async ({ kind }) => {
+            if (kind === 'migration-pointer-cleanup') {
+              throw Object.assign(new Error('fixture pointer-cleanup interruption'), {
+                code: 'cancelled',
+              });
+            }
+          },
+        });
+        await expect(cleanupCrash.recoverMigration()).rejects.toMatchObject({ code: 'cancelled' });
+        expect(existsSync(cleanupCrash.recoveryPointerPath)).toBeFalse();
+
+        const afterCrash = await ledgerWriter.createTestNodeLedgerWriter(path, {});
+        const durable = await afterCrash.read();
+        expect(durable.ok).toBeTrue();
+        if (!durable.ok || durable.value.state !== 'present') return;
+        expect(
+          durable.value.model.history.find(
+            ({ transactionId }) => transactionId === journals.committed.transactionId,
+          )?.context,
+        ).toMatchObject({ attempt: 2, startedAt: NOW });
+        expect(await afterCrash.recoverMigration()).toEqual({ ok: true, value: null });
+      } finally {
+        await rm(cleanupRoot, { recursive: true, force: true });
+      }
+    });
+
+    test('EWP-P3B-TS07 red: malformed migration attempts preserve observer parity', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'skillsmith-p3b-ts07-ledger-attempt-parity-'));
+      try {
+        const path = join(root, 'placements.json');
+        const { state, operation } = await prepareLedgerMigrationFixture(path);
+        const journals = ledgerMigration.ledgerMigrationJournals(operation, NOW);
+        const interrupted = await ledgerWriter.createTestNodeLedgerWriter(path, {
+          afterBarrier: async ({ kind }) => {
+            if (kind === 'migration-backup-copy') {
+              throw Object.assign(new Error('fixture migration interruption'), {
+                code: 'cancelled',
+              });
+            }
+          },
+        });
+        await expect(
+          interrupted.migrateV1ToV2({
+            expectedSourceByteRevision: state.byteRevision,
+            expectedSourceSemanticRevision: state.semanticRevision,
+            journals,
+          }),
+        ).rejects.toMatchObject({ code: 'cancelled' });
+        const pointer = JSON.parse(
+          await readFile(interrupted.recoveryPointerPath, 'utf8'),
+        ) as UnknownRecord;
+        const pointerJournals = moduleRecord(pointer.journals);
+        const prepared = moduleRecord(pointerJournals.prepared);
+        const preparedContext = moduleRecord(prepared.context);
+        preparedContext.attempt = 0;
+        await writeFile(interrupted.recoveryPointerPath, `${JSON.stringify(pointer)}\n`);
+
+        const runtime = await defaultRuntimePorts();
+        const env: RuntimePorts = {
+          ...runtime,
+          wallNowIso: () => NOW,
+          epochMilliseconds: () => 0,
+          monotonicMilliseconds: () => 0,
+        };
+        const input = {
+          env,
+          ledgerPath: path,
+          operation,
+          expectedState: state,
+          startedAt: NOW,
+          onMigrated: () => {
+            throw new Error('malformed migration must not report a migrated model');
+          },
+        };
+        const validated = {
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: null,
+          actualBefore: operation.before,
+          unstartedForce: null,
+          execute: async () => {
+            throw new Error('validated binding callback must not run');
+          },
+        };
+        const unobserved = await ledgerMigration
+          .ledgerMigrationExecutionBinding(input)
+          .execute(validated);
+        const observation = operationObservationFixture(operation);
+        const observed = await ledgerMigration
+          .ledgerMigrationExecutionBindingObserved(input, observation.bundle)
+          .execute(validated);
+        expect(observed).toEqual(unobserved);
+        expect(observed).toMatchObject({
+          outcome: 'failed',
+          error: { code: 'ledger-invalid-state' },
+        });
+        expect(observation.events).toEqual([]);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
     });
 
     test('EWP-P3B-TS07 red: durable cursor and doctor execution have narrow observed seams', async () => {
@@ -1657,6 +2287,218 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
         }
       } finally {
         await rm(mappingRoot, { recursive: true, force: true });
+      }
+      const resumedRoot = await mkdtemp(
+        join(tmpdir(), 'skillsmith-p3b-ts07-ledger-resumed-events-'),
+      );
+      try {
+        const path = join(resumedRoot, 'placements.json');
+        const { state, operation } = await prepareLedgerMigrationFixture(path);
+        const journals = ledgerMigration.ledgerMigrationJournals(operation, NOW);
+        const interrupted = await ledgerWriter.createTestNodeLedgerWriter(path, {
+          afterBarrier: async ({ kind }) => {
+            if (kind === 'migration-backup-copy') {
+              throw Object.assign(new Error('fixture interruption'), { code: 'cancelled' });
+            }
+          },
+        });
+        await expect(
+          interrupted.migrateV1ToV2({
+            expectedSourceByteRevision: state.byteRevision,
+            expectedSourceSemanticRevision: state.semanticRevision,
+            journals,
+          }),
+        ).rejects.toMatchObject({ code: 'cancelled' });
+        expect(existsSync(interrupted.recoveryPointerPath)).toBeTrue();
+
+        const runtime = await defaultRuntimePorts();
+        const env: RuntimePorts = {
+          ...runtime,
+          wallNowIso: () => NOW,
+          epochMilliseconds: () => 0,
+          monotonicMilliseconds: () => 0,
+        };
+        const observation = operationObservationFixture(operation);
+        let migratedModel: LedgerModel | null = null;
+        const binding = moduleRecord(
+          observedBindingFactory(
+            {
+              env,
+              ledgerPath: path,
+              operation,
+              expectedState: state,
+              startedAt: NOW,
+              onMigrated: (model: LedgerModel) => {
+                migratedModel = model;
+              },
+            },
+            observation.bundle,
+          ),
+        );
+        const observeActualBefore = asFunction(binding.observeActualBefore);
+        const execute = asFunction(binding.execute);
+        expect(observeActualBefore).not.toBeNull();
+        expect(execute).not.toBeNull();
+        if (observeActualBefore === null || execute === null) return;
+        const actualBefore = await observeActualBefore();
+        const result = moduleRecord(
+          await execute({
+            operationId: operation.operationId,
+            groupId: operation.groupId,
+            pairId: null,
+            actualBefore,
+            unstartedForce: null,
+            execute: async () => {
+              throw new Error('validated binding callback must not run');
+            },
+          }),
+        );
+        expect(result.outcome).toBe('succeeded');
+        const committed = (migratedModel as LedgerModel | null)?.history.find(
+          ({ transactionId }) => transactionId === journals.committed.transactionId,
+        );
+        expect(committed?.context).toMatchObject({
+          parentOperationId: operation.operationId,
+          attempt: 2,
+          startedAt: NOW,
+        });
+        expect(observation.events.map(({ kind }) => kind)).toEqual([
+          'recovery.started',
+          'transaction.stage.started',
+          'transaction.stage.completed',
+          'transaction.stage.started',
+          'transaction.stage.completed',
+          'transaction.stage.started',
+          'transaction.stage.completed',
+          'transaction.committed',
+          'recovery.completed',
+        ]);
+        expect(
+          observation.events
+            .filter((event) => event.kind === 'transaction.stage.completed')
+            .map(({ stage }) => stage),
+        ).toEqual(['backed-up', 'live', 'committed']);
+        for (const event of observation.events) {
+          expect(event).toMatchObject({
+            operationId: journals.committed.transactionId,
+            parentOperationId: operation.operationId,
+            groupId: operation.groupId,
+            pairId: null,
+            attempt: 2,
+          });
+        }
+        expect(observation.events[0]).toMatchObject({
+          kind: 'recovery.started',
+          recoveryKind: 'resume',
+        });
+        expect(observation.events.at(-1)).toMatchObject({
+          kind: 'recovery.completed',
+          recoveryKind: 'resume',
+          outcome: 'success',
+          errorCode: null,
+        });
+      } finally {
+        await rm(resumedRoot, { recursive: true, force: true });
+      }
+      const committedCleanupRoot = await mkdtemp(
+        join(tmpdir(), 'skillsmith-p3b-ts07-ledger-committed-cleanup-events-'),
+      );
+      try {
+        const path = join(committedCleanupRoot, 'placements.json');
+        const { state, operation } = await prepareLedgerMigrationFixture(path);
+        const journals = ledgerMigration.ledgerMigrationJournals(operation, NOW, {
+          operationId: operation.operationId,
+          transactionId: `transaction:${operation.operationId}`,
+          startedAt: NOW,
+          attempt: Number.MAX_SAFE_INTEGER,
+        });
+        const interrupted = await ledgerWriter.createTestNodeLedgerWriter(path, {
+          afterBarrier: async ({ kind }) => {
+            if (kind === 'migration-commit-fsync') {
+              throw Object.assign(new Error('fixture post-commit interruption'), {
+                code: 'cancelled',
+              });
+            }
+          },
+        });
+        await expect(
+          interrupted.migrateV1ToV2({
+            expectedSourceByteRevision: state.byteRevision,
+            expectedSourceSemanticRevision: state.semanticRevision,
+            journals,
+          }),
+        ).rejects.toMatchObject({ code: 'cancelled' });
+        expect(existsSync(interrupted.recoveryPointerPath)).toBeTrue();
+
+        const runtime = await defaultRuntimePorts();
+        const env: RuntimePorts = {
+          ...runtime,
+          wallNowIso: () => NOW,
+          epochMilliseconds: () => 0,
+          monotonicMilliseconds: () => 0,
+        };
+        const observation = operationObservationFixture(operation);
+        let migratedModel: LedgerModel | null = null;
+        const binding = moduleRecord(
+          observedBindingFactory(
+            {
+              env,
+              ledgerPath: path,
+              operation,
+              expectedState: state,
+              startedAt: NOW,
+              onMigrated: (model: LedgerModel) => {
+                migratedModel = model;
+              },
+            },
+            observation.bundle,
+          ),
+        );
+        const execute = asFunction(binding.execute);
+        expect(execute).not.toBeNull();
+        if (execute === null) return;
+        const result = moduleRecord(
+          await execute({
+            operationId: operation.operationId,
+            groupId: operation.groupId,
+            pairId: null,
+            actualBefore: operation.before,
+            unstartedForce: null,
+            execute: async () => {
+              throw new Error('validated binding callback must not run');
+            },
+          }),
+        );
+        expect(result.outcome).toBe('succeeded');
+        const committed = (migratedModel as LedgerModel | null)?.history.find(
+          ({ transactionId }) => transactionId === journals.committed.transactionId,
+        );
+        expect(committed?.context).toMatchObject({
+          parentOperationId: operation.operationId,
+          attempt: Number.MAX_SAFE_INTEGER,
+          startedAt: NOW,
+        });
+        expect(observation.events).toMatchObject([
+          {
+            kind: 'recovery.started',
+            operationId: journals.committed.transactionId,
+            parentOperationId: operation.operationId,
+            attempt: Number.MAX_SAFE_INTEGER,
+            recoveryKind: 'cleanup',
+          },
+          {
+            kind: 'recovery.completed',
+            operationId: journals.committed.transactionId,
+            parentOperationId: operation.operationId,
+            attempt: Number.MAX_SAFE_INTEGER,
+            recoveryKind: 'cleanup',
+            outcome: 'success',
+            errorCode: null,
+          },
+        ]);
+        expect(observation.events).toHaveLength(2);
+      } finally {
+        await rm(committedCleanupRoot, { recursive: true, force: true });
       }
       expect(
         asFunction(moduleRecord(doctorRepair).executeDoctorRepairsObserved),
@@ -1932,16 +2774,11 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
             await destroyPromoteSwapFixture(fixture);
           }
         }
-        const recoveryBaseline = await durableRecoverySnapshot(
-          lane,
-          beginAttempt,
-          recoverObserved,
-          null,
-        );
+        const recoveryBaseline = await durableRecoverySnapshot(lane, recoverObserved, null);
         for (const observer of observers) {
-          expect(
-            await durableRecoverySnapshot(lane, beginAttempt, recoverObserved, observer),
-          ).toEqual(recoveryBaseline);
+          expect(await durableRecoverySnapshot(lane, recoverObserved, observer)).toEqual(
+            recoveryBaseline,
+          );
         }
       } finally {
         await rm(base, { recursive: true, force: true });

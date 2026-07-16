@@ -33,7 +33,7 @@ import {
   createDoctorRepairPlan,
   doctorMutationSummary,
   executeDoctorRepairPlan,
-  executeDoctorRepairs,
+  executeDoctorRepairsObserved,
   identifyDoctorFindings,
 } from '../doctor/repair.ts';
 import { detectionPortsWithoutVersionProbe, focusDoctorPorts, runChecks } from '../doctor/run.ts';
@@ -45,6 +45,7 @@ import type {
   DoctorSourceResolution,
 } from '../doctor/types.ts';
 import { type SkillSmithError, errorMessage, safeErrorCode } from '../errors.ts';
+import { emitOperationPlanCreated } from '../execution/observation.ts';
 import { readCommandInventory, readSkillInventory } from '../inventory/read.ts';
 import { redactSensitiveValue } from '../safety/redaction.ts';
 import { validateSelectionRequest } from '../selection/resolve.ts';
@@ -1392,6 +1393,7 @@ const runHealthApplication = async (
         ? ('preview' as const)
         : ('execute' as const);
     const repairPlan = fix ? createDoctorRepairPlan(findings) : null;
+    if (repairPlan !== null) emitOperationPlanCreated(context.observation, repairPlan.plan);
     const operations = repairPlan?.operations ?? [];
     let results = [] as DoctorRunResult['repair']['results'];
     if (repairMode === 'execute' && repairPlan !== null && operations.length > 0) {
@@ -1411,11 +1413,15 @@ const runHealthApplication = async (
         }
       }
       try {
-        results = await executeDoctorRepairPlan(repairPlan, executeDoctorRepairs, {
-          ports: context.ports,
-          artifactCoordinator: context.artifactCoordinator,
-          ...(context.signal === undefined ? {} : { signal: context.signal }),
-        });
+        results = await executeDoctorRepairPlan(
+          repairPlan,
+          (executionRequest) => executeDoctorRepairsObserved(executionRequest, context.observation),
+          {
+            ports: context.ports,
+            artifactCoordinator: context.artifactCoordinator,
+            ...(context.signal === undefined ? {} : { signal: context.signal }),
+          },
+        );
       } catch (error) {
         if (
           context.signal?.aborted ||

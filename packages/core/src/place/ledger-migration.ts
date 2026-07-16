@@ -5,9 +5,19 @@ import type {
   LedgerModel,
   LedgerReadState,
 } from '../artifacts/ledger-types.ts';
+import type { LedgerMigrationCursor } from '../artifacts/ledger-writer.ts';
 import { ledgerByteRevision, resolveLedgerArtifactCodec } from '../artifacts/registry.ts';
 import { createExecutionPrecondition } from '../execution/index.ts';
+import {
+  beginRecoveryObservation,
+  beginTransactionStageObservation,
+  completeRecoveryObservation,
+  completeTransactionStageObservation,
+  createTransactionObservation,
+  emitTransactionCommitted,
+} from '../execution/observation.ts';
 import type { ExecutionPrecondition, PreparedExecutionBinding } from '../execution/types.ts';
+import type { ObservationBundle, TransactionStage } from '../observation/index.ts';
 import {
   createOperationExecutionResult,
   createOperationGroupId,
@@ -213,7 +223,7 @@ export const ledgerMigrationJournals = (
         conflict: null,
       },
       context: {
-        parentOperationId: null,
+        parentOperationId: journalOperationId,
         command: `skillsmith ${operation.kind}`,
         workflow: 'placement-ledger-migration',
         attempt: callerIdentity?.attempt ?? 1,
@@ -295,7 +305,7 @@ export const prepareLedgerMigration = (
   };
 };
 
-export const ledgerMigrationExecutionBinding = (
+const ledgerMigrationExecutionBindingInternal = (
   args: Readonly<{
     env: PlacementPorts;
     ledgerPath: string;
@@ -305,6 +315,7 @@ export const ledgerMigrationExecutionBinding = (
     signal?: AbortSignal;
     onMigrated(model: LedgerModel): void;
   }>,
+  observation?: ObservationBundle,
 ): PreparedExecutionBinding => {
   const { env, ledgerPath, operation, expectedState, startedAt, signal, onMigrated } = args;
   if (
@@ -364,23 +375,99 @@ export const ledgerMigrationExecutionBinding = (
           },
         });
       };
-      const opened = await openCallerLedgerWriter(env, ledgerPath, signal);
-      if (!opened.ok) return writerFailure(opened.error, 'preflight');
-      const writer = opened.value;
       const journals = ledgerMigrationJournals(
         operation,
         startedAt,
         callerLedgerOperationIdentity(env),
       );
+      let transactionObservation: ObservationBundle | null = null;
+      let recoverySpan: ReturnType<typeof beginRecoveryObservation> = null;
+      const observedStages = new Set<TransactionStage>();
+      const cursorStage = (cursor: LedgerMigrationCursor): TransactionStage | null => {
+        if (
+          cursor === 'prepared' ||
+          cursor === 'staged' ||
+          cursor === 'backed-up' ||
+          cursor === 'committed'
+        ) {
+          return cursor;
+        }
+        return cursor === 'handed-off' ? 'live' : null;
+      };
+      const afterCursorTransition =
+        observation === undefined
+          ? undefined
+          : (cursor: LedgerMigrationCursor): void => {
+              if (transactionObservation === null) return;
+              const stage = cursorStage(cursor);
+              if (stage === null || observedStages.has(stage)) return;
+              const span = beginTransactionStageObservation(transactionObservation, stage);
+              completeTransactionStageObservation(transactionObservation, span, 'success', null);
+              observedStages.add(stage);
+              if (stage === 'committed') emitTransactionCommitted(transactionObservation);
+            };
+      const opened = await openCallerLedgerWriter(env, ledgerPath, signal, afterCursorTransition);
+      if (!opened.ok) return writerFailure(opened.error, 'preflight');
+      const writer = opened.value;
+      const recoveryJournal = await runLedgerWriterOperation(() =>
+        writer.readMigrationRecoveryJournal(),
+      );
+      if (!recoveryJournal.ok) return writerFailure(recoveryJournal.error, 'preflight');
+      const recoveryPending = recoveryJournal.value !== null;
       const beforeRecovery = await runLedgerWriterOperation(() => writer.read());
       if (!beforeRecovery.ok) return writerFailure(beforeRecovery.error, 'preflight');
-      const wasAlreadyCommitted =
-        beforeRecovery.value.state === 'present' &&
-        beforeRecovery.value.model.history.some(
-          (journal) =>
-            journal.transactionId === journals.committed.transactionId &&
-            journal.phase === 'committed',
+      const recoveryTransactionId =
+        recoveryJournal.value?.transactionId ?? journals.committed.transactionId;
+      const alreadyCommittedJournal =
+        beforeRecovery.value.state === 'present'
+          ? beforeRecovery.value.model.history.find(
+              (journal) =>
+                journal.transactionId === recoveryTransactionId && journal.phase === 'committed',
+            )
+          : undefined;
+      const wasAlreadyCommitted = alreadyCommittedJournal !== undefined;
+      if (
+        !wasAlreadyCommitted &&
+        recoveryJournal.value !== null &&
+        (!Number.isSafeInteger(recoveryJournal.value.context.attempt) ||
+          recoveryJournal.value.context.attempt >= Number.MAX_SAFE_INTEGER)
+      ) {
+        return writerFailure(
+          { code: 'invalid-state', path: writer.recoveryPointerPath },
+          'preflight',
         );
+      }
+      if (observation !== undefined) {
+        if (wasAlreadyCommitted) observedStages.add('committed');
+        const observedJournal =
+          alreadyCommittedJournal !== undefined
+            ? alreadyCommittedJournal
+            : recoveryJournal.value !== null
+              ? {
+                  ...recoveryJournal.value,
+                  context: {
+                    ...recoveryJournal.value.context,
+                    attempt: recoveryJournal.value.context.attempt + 1,
+                  },
+                }
+              : journals.prepared;
+        transactionObservation = createTransactionObservation(observation, observedJournal);
+        if (recoveryPending) {
+          recoverySpan = beginRecoveryObservation(
+            transactionObservation,
+            wasAlreadyCommitted ? 'cleanup' : 'resume',
+          );
+        }
+      }
+      const completeRecoveryFailure = (error: LedgerPersistenceError): void => {
+        if (transactionObservation === null || recoverySpan === null) return;
+        completeRecoveryObservation(
+          transactionObservation,
+          recoverySpan,
+          error.code === 'cancelled' ? 'cancelled' : 'failure',
+          error.code,
+        );
+      };
       const migrated = await runLedgerWriterOperation(() =>
         writer.migrateV1ToV2({
           expectedSourceByteRevision: expectedState.byteRevision,
@@ -388,29 +475,24 @@ export const ledgerMigrationExecutionBinding = (
           journals,
         }),
       );
-      if (!migrated.ok) return writerFailure(migrated.error, 'migration');
-      let migratedModel = migrated.value.model;
-      if (migrated.value.resumed && !wasAlreadyCommitted) {
-        migratedModel = {
-          ...migratedModel,
-          history: migratedModel.history.map((journal) =>
-            journal.transactionId === migrated.value.transactionId
-              ? {
-                  ...journal,
-                  context: { ...journal.context, attempt: journal.context.attempt + 1 },
-                }
-              : journal,
-          ),
-        };
+      if (!migrated.ok) {
+        completeRecoveryFailure(migrated.error);
+        return writerFailure(migrated.error, 'migration');
       }
       const finalized = await runLedgerWriterOperation(() =>
         writer.finalizeHistory({
-          model: migratedModel,
+          model: migrated.value.model,
           expectedByteRevision: migrated.value.byteRevision,
         }),
       );
-      if (!finalized.ok) return writerFailure(finalized.error, 'history finalization');
+      if (!finalized.ok) {
+        completeRecoveryFailure(finalized.error);
+        return writerFailure(finalized.error, 'history finalization');
+      }
       onMigrated(finalized.value.model);
+      if (transactionObservation !== null && recoverySpan !== null) {
+        completeRecoveryObservation(transactionObservation, recoverySpan, 'success', null);
+      }
       return createOperationExecutionResult({
         operationId: operation.operationId,
         outcome: 'succeeded',
@@ -422,3 +504,12 @@ export const ledgerMigrationExecutionBinding = (
     },
   };
 };
+
+export const ledgerMigrationExecutionBinding = (
+  args: Parameters<typeof ledgerMigrationExecutionBindingInternal>[0],
+): PreparedExecutionBinding => ledgerMigrationExecutionBindingInternal(args);
+
+export const ledgerMigrationExecutionBindingObserved = (
+  args: Parameters<typeof ledgerMigrationExecutionBindingInternal>[0],
+  observation: ObservationBundle,
+): PreparedExecutionBinding => ledgerMigrationExecutionBindingInternal(args, observation);

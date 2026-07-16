@@ -2,7 +2,9 @@ import {
   defaultInstallDeps,
   defaultUninstallDeps,
   runInstallWithRegistry,
+  runInstallWithRegistryObserved,
   runUninstallWithRegistry,
+  runUninstallWithRegistryObserved,
 } from '../acquire/run.ts';
 import type { runInstall, runUninstall } from '../acquire/run.ts';
 import type {
@@ -16,10 +18,14 @@ import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts'
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { SkillSmithError } from '../errors.ts';
+import type { ObservationBundle } from '../observation/index.ts';
 import {
   prepareDevWithRegistry,
+  prepareDevWithRegistryObserved,
   preparePromoteWithRegistry,
+  preparePromoteWithRegistryObserved,
   prepareRollbackWithRegistry,
+  prepareRollbackWithRegistryObserved,
 } from '../place/run.ts';
 import type { prepareDev, preparePromote, prepareRollback } from '../place/run.ts';
 import type { FlipReport, FlipTool } from '../place/types.ts';
@@ -60,15 +66,53 @@ export interface LifecycleDependencies {
   readonly prepareRollback: typeof prepareRollback;
 }
 
+type ObservedInstallDependency = (
+  env: Parameters<typeof runInstall>[0],
+  opts: Parameters<typeof runInstall>[1],
+  deps: Parameters<typeof runInstall>[2],
+  observation: ObservationBundle,
+) => ReturnType<typeof runInstall>;
+type ObservedUninstallDependency = (
+  env: Parameters<typeof runUninstall>[0],
+  opts: Parameters<typeof runUninstall>[1],
+  deps: Parameters<typeof runUninstall>[2],
+  observation: ObservationBundle,
+) => ReturnType<typeof runUninstall>;
+type ObservedPrepareDependency = (
+  env: Parameters<typeof prepareDev>[0],
+  opts: Parameters<typeof prepareDev>[1],
+  deps: Parameters<typeof prepareDev>[2],
+  observation: ObservationBundle,
+) => ReturnType<typeof prepareDev>;
+type ObservedRollbackDependency = (
+  env: Parameters<typeof prepareRollback>[0],
+  opts: Parameters<typeof prepareRollback>[1],
+  deps: Parameters<typeof prepareRollback>[2],
+  observation: ObservationBundle,
+) => ReturnType<typeof prepareRollback>;
+
 const defaultDependenciesFor = (registry: LifecycleToolRegistry): LifecycleDependencies => ({
   resolveContext: resolveProjectContext,
-  install: (env, opts, deps = { ...defaultInstallDeps }) =>
-    runInstallWithRegistry(env, opts, deps, registry),
-  uninstall: (env, opts, deps = { ...defaultUninstallDeps }) =>
-    runUninstallWithRegistry(env, opts, deps, registry),
-  prepareDev: (env, opts, deps) => prepareDevWithRegistry(registry, env, opts, deps),
-  preparePromote: (env, opts, deps) => preparePromoteWithRegistry(registry, env, opts, deps),
-  prepareRollback: (env, opts, deps) => prepareRollbackWithRegistry(registry, env, opts, deps),
+  install: (env, opts, deps = { ...defaultInstallDeps }, observation?: ObservationBundle) =>
+    observation === undefined
+      ? runInstallWithRegistry(env, opts, deps, registry)
+      : runInstallWithRegistryObserved(env, opts, deps, registry, observation),
+  uninstall: (env, opts, deps = { ...defaultUninstallDeps }, observation?: ObservationBundle) =>
+    observation === undefined
+      ? runUninstallWithRegistry(env, opts, deps, registry)
+      : runUninstallWithRegistryObserved(env, opts, deps, registry, observation),
+  prepareDev: (env, opts, deps, observation?: ObservationBundle) =>
+    observation === undefined
+      ? prepareDevWithRegistry(registry, env, opts, deps)
+      : prepareDevWithRegistryObserved(registry, env, opts, observation, deps),
+  preparePromote: (env, opts, deps, observation?: ObservationBundle) =>
+    observation === undefined
+      ? preparePromoteWithRegistry(registry, env, opts, deps)
+      : preparePromoteWithRegistryObserved(registry, env, opts, observation, deps),
+  prepareRollback: (env, opts, deps, observation?: ObservationBundle) =>
+    observation === undefined
+      ? prepareRollbackWithRegistry(registry, env, opts, deps)
+      : prepareRollbackWithRegistryObserved(registry, env, opts, observation, deps),
 });
 
 type MutationSelectionCapability = Exclude<SelectionCapability, 'read'>;
@@ -410,7 +454,7 @@ export const createLifecycleApplicationServices = (
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('install', project.error, context.signal);
     const pause = context.configuration.journalPause;
-    const result = await dependencies.install(
+    const result = await (dependencies.install as ObservedInstallDependency)(
       context.ports,
       {
         sources,
@@ -435,6 +479,7 @@ export const createLifecycleApplicationServices = (
         ...(context.signal === undefined ? {} : { signal: context.signal }),
       },
       interactiveInstallDeps(context.interaction, options),
+      context.observation,
     );
     if (!result.ok) return domainFailure('install', result.error, context.signal);
     const errors = result.value.results.flatMap((item) => (item.error ? [item.error] : []));
@@ -476,7 +521,7 @@ export const createLifecycleApplicationServices = (
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('uninstall', project.error, context.signal);
     const pause = context.configuration.journalPause;
-    const result = await dependencies.uninstall(
+    const result = await (dependencies.uninstall as ObservedUninstallDependency)(
       context.ports,
       {
         targets,
@@ -493,6 +538,7 @@ export const createLifecycleApplicationServices = (
         ...(context.signal === undefined ? {} : { signal: context.signal }),
       },
       { ...defaultUninstallDeps },
+      context.observation,
     );
     if (!result.ok) return domainFailure('uninstall', result.error, context.signal);
     const errors = result.value.results.flatMap((item) => (item.error ? [item.error] : []));
@@ -589,8 +635,18 @@ export const createLifecycleApplicationServices = (
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
     const prepared = await (rollback
-      ? dependencies.prepareRollback(context.ports, { ...flipOptions, op: 'dev' })
-      : dependencies.prepareDev(context.ports, flipOptions));
+      ? (dependencies.prepareRollback as ObservedRollbackDependency)(
+          context.ports,
+          { ...flipOptions, op: 'dev' },
+          undefined,
+          context.observation,
+        )
+      : (dependencies.prepareDev as ObservedPrepareDependency)(
+          context.ports,
+          flipOptions,
+          undefined,
+          context.observation,
+        ));
     if (!prepared.ok) return domainFailure('dev', prepared.error, context.signal);
     const missingTarget = explicitBatchTargetFailure(prepared.value.preview, targets.length);
     if (missingTarget !== undefined) {
@@ -680,8 +736,18 @@ export const createLifecycleApplicationServices = (
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
     const prepared = await (rollback
-      ? dependencies.prepareRollback(context.ports, { ...flipOptions, op: 'promote' })
-      : dependencies.preparePromote(context.ports, flipOptions));
+      ? (dependencies.prepareRollback as ObservedRollbackDependency)(
+          context.ports,
+          { ...flipOptions, op: 'promote' },
+          undefined,
+          context.observation,
+        )
+      : (dependencies.preparePromote as ObservedPrepareDependency)(
+          context.ports,
+          flipOptions,
+          undefined,
+          context.observation,
+        ));
     if (!prepared.ok) return domainFailure('promote', prepared.error, context.signal);
     const missingTarget = explicitBatchTargetFailure(prepared.value.preview, targets.length);
     if (missingTarget !== undefined) {

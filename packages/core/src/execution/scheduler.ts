@@ -1,4 +1,5 @@
 import type { SupportedTool } from '../agents/types.ts';
+import type { ObservationBundle } from '../observation/types.ts';
 import { createOperationExecutionResult } from '../planning/create.ts';
 import { canonicalPlanningString, resolvePlanningToolContext } from '../planning/order.ts';
 import type {
@@ -9,7 +10,22 @@ import type {
   OperationPlan,
   PlanningToolContext,
 } from '../planning/types.ts';
+import {
+  beginOperationObservation,
+  completeOperationObservation,
+  createPlannedOperationObservation,
+  operationCompletionForResult,
+  operationCompletionForThrown,
+} from './observation.ts';
 import type { ExecutionScheduleOptions, ValidatedExecutionBinding } from './types.ts';
+
+export type ObservedValidatedExecutionBinding<ToolId extends string = SupportedTool> = Omit<
+  ValidatedExecutionBinding<ToolId>,
+  'execute'
+> &
+  Readonly<{
+    execute: (observation?: ObservationBundle) => Promise<OperationExecutionResult<ToolId>>;
+  }>;
 
 const fail = (message: string): never => {
   throw new TypeError(`operation scheduler: ${message}`);
@@ -232,21 +248,62 @@ const unstartedResult = <ToolId extends string>(
 
 const executeBinding = async <ToolId extends string>(
   binding: ValidatedExecutionBinding<ToolId>,
+  operation: ExecutableOperation<ToolId>,
   context: PlanningToolContext<ToolId>,
+  observation: ObservationBundle | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<OperationExecutionResult<ToolId>> => {
-  const result = createOperationExecutionResult(await binding.execute(), context);
-  if (result.operationId !== binding.operationId) {
-    fail(`binding ${binding.operationId} returned a mismatched result`);
+  let operationObservation: ObservationBundle | undefined;
+  let span: ReturnType<typeof beginOperationObservation> = null;
+  if (observation !== undefined) {
+    try {
+      operationObservation = createPlannedOperationObservation(observation, operation);
+      span = beginOperationObservation(
+        operationObservation,
+        operation as ExecutableOperation<string>,
+      );
+    } catch {
+      operationObservation = undefined;
+      span = null;
+    }
   }
-  if (
-    canonicalPlanningString(result.actualBefore) !== canonicalPlanningString(binding.actualBefore)
-  ) {
-    fail(`binding ${binding.operationId} returned a mismatched actual-before image`);
+  try {
+    const execute = binding.execute as (
+      operationObservation?: ObservationBundle,
+    ) => Promise<OperationExecutionResult<ToolId>>;
+    const result = createOperationExecutionResult(
+      await (operationObservation === undefined ? execute() : execute(operationObservation)),
+      context,
+    );
+    if (result.operationId !== binding.operationId) {
+      fail(`binding ${binding.operationId} returned a mismatched result`);
+    }
+    if (
+      canonicalPlanningString(result.actualBefore) !== canonicalPlanningString(binding.actualBefore)
+    ) {
+      fail(`binding ${binding.operationId} returned a mismatched actual-before image`);
+    }
+    if (result.outcome === 'skipped-after-failure') {
+      fail(`started binding ${binding.operationId} returned an unstarted scheduling outcome`);
+    }
+    if (operationObservation !== undefined) {
+      completeOperationObservation(
+        operationObservation,
+        span,
+        operationCompletionForResult(result as OperationExecutionResult<string>),
+      );
+    }
+    return result;
+  } catch (error) {
+    if (operationObservation !== undefined) {
+      completeOperationObservation(
+        operationObservation,
+        span,
+        operationCompletionForThrown(error, signal),
+      );
+    }
+    throw error;
   }
-  if (result.outcome === 'skipped-after-failure') {
-    fail(`started binding ${binding.operationId} returned an unstarted scheduling outcome`);
-  }
-  return result;
 };
 
 export const scheduleValidatedOperationPlan = async <ToolId extends string = SupportedTool>(
@@ -254,6 +311,7 @@ export const scheduleValidatedOperationPlan = async <ToolId extends string = Sup
   bindings: readonly ValidatedExecutionBinding<ToolId>[],
   options: ExecutionScheduleOptions,
   context: PlanningToolContext<ToolId>,
+  observation?: ObservationBundle,
 ): Promise<readonly OperationExecutionResult<ToolId>[]> => {
   const results: OperationExecutionResult<ToolId>[] = [];
   let cursor = 0;
@@ -309,7 +367,10 @@ export const scheduleValidatedOperationPlan = async <ToolId extends string = Sup
       }
       const result = await executeBinding(
         bindings[index] as ValidatedExecutionBinding<ToolId>,
+        plan.operations[index] as ExecutableOperation<ToolId>,
         context,
+        observation,
+        options.signal,
       );
       results.push(result);
       if (result.outcome === 'failed') {
@@ -381,3 +442,24 @@ export async function scheduleOperationPlan(
     context,
   );
 }
+
+export const scheduleOperationPlanObserved = async <ToolId extends string>(
+  plan: OperationPlan<CurrentMutatorCommand, ToolId>,
+  inputs: readonly ObservedValidatedExecutionBinding<ToolId>[],
+  options: ExecutionScheduleOptions,
+  observation: ObservationBundle,
+  suppliedContext?: PlanningToolContext<ToolId>,
+): Promise<readonly OperationExecutionResult<ToolId>[]> => {
+  const context = resolvePlanningToolContext(suppliedContext);
+  return scheduleValidatedOperationPlan(
+    plan,
+    validateExecutionBindings(
+      plan,
+      inputs as readonly ValidatedExecutionBinding<ToolId>[],
+      context,
+    ),
+    options,
+    context,
+    observation,
+  );
+};

@@ -17,22 +17,18 @@ import {
   safeErrorCode,
   sourceUnresolvableError,
 } from '../errors.ts';
-import {
-  type ExecutionPrecondition,
-  type PreparedExecutionBinding,
-  type ValidatedExecutionBinding,
-  executeOperationPlan,
-} from '../execution/index.ts';
+import type { ExecutionPrecondition } from '../execution/index.ts';
+import { emitOperationPlanCreated } from '../execution/observation.ts';
 import {
   createContentObservationExecutionPrecondition,
   createExpectedRevisionExecutionPrecondition,
 } from '../execution/preconditions.ts';
+import type { ObservationBundle } from '../observation/index.ts';
 import { createOperationExecutionResult, createPlanningDiagnosticId } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   ExecutableOperation,
   OperationExecutionResult,
-  OperationImage,
   OperationPlan,
   OperationResourceIdentity,
   OperationSource,
@@ -53,20 +49,19 @@ import {
   type PlacementSnapshotAuthority,
   type PlacementStoreResource,
   createPlacementExecutionInput,
-  createPlacementLifecycleExecutor,
   createPlacementSnapshotAuthority,
-  executePlacementPlan,
-  executeRecordOnlyPlacementPlan,
+  executePlacementOperationPlan,
+  executePlacementPlanWithObservation,
+  executeRecordOnlyPlacementPlanWithObservation,
   placementSnapshotResourceId,
 } from './execute.ts';
-import { ledgerMigrationExecutionBinding, prepareLedgerMigration } from './ledger-migration.ts';
+import { prepareLedgerMigration } from './ledger-migration.ts';
 import {
   getLedgerPairAt,
   getPairAt,
   ledgerModelForMutation,
   legacyLedgerView,
   readLedgerState,
-  withLedgerLock,
 } from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
 import {
@@ -79,7 +74,7 @@ import {
   placementSelectionFor,
   planFlipsWithRegistry,
 } from './plan.ts';
-import { recoverPlacement } from './recovery.ts';
+import { recoverPlacementWithObservation } from './recovery.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from './store.ts';
 import type {
   DevRecord,
@@ -115,7 +110,7 @@ const txIdOf = (ports: PlacementPorts, deps: FlipDeps): string =>
 const errMessage = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
 
 /** Mid-swap `ledgerError` maps to flip-failed (exit 1), not the ledger-unreadable exit 3 — a
- *  persist failure DURING an in-flight flip is a flip failure, not a corrupt/unreadable ledger. */
+ * persist failure DURING an in-flight flip is a flip failure, not a corrupt/unreadable ledger. */
 const midSwapError = (e: SkillSmithError): SkillSmithError =>
   e.code === 'ledger-error' ? flipFailedError(errMessage(e)) : e;
 
@@ -125,11 +120,11 @@ const resolveSymlinkAbsolute = (placementPath: string, literalTarget: string): s
 const isEexist = (e: unknown): boolean => safeErrorCode(e) === 'EEXIST';
 
 /** Non-blocking (T5 hard-kill orphan): remove any stale `.skillsmith-staging-<skill>-*` entries for
- *  THIS placement name before an S1 create publishes. A staging entry for this name can only be an
- *  orphan from a SIGKILLed earlier attempt — the single-ledger-lock assumption guarantees no other
- *  skillsmith op is concurrently mid-create for the same name. Best-effort: a listDir failure (root
- *  not yet created) or a removeTree race is swallowed; the create's own no-clobber publish is the
- *  real safety gate. */
+ * THIS placement name before an S1 create publishes. A staging entry for this name can only be an
+ * orphan from a SIGKILLed earlier attempt — the single-ledger-lock assumption guarantees no other
+ * skillsmith op is concurrently mid-create for the same name. Best-effort: a listDir failure (root
+ * not yet created) or a removeTree race is swallowed; the create's own no-clobber publish is the
+ * real safety gate. */
 const sweepOwnStaging = async (
   env: PlacementPorts,
   skillsRoot: string,
@@ -253,8 +248,8 @@ const verificationRegistryFor = (registry: LifecycleToolRegistry<string>) =>
   });
 
 /** Promote's verify gate (spec §9/D11): claude-code -> static only; codex -> deep (implies
- *  static). `fail` blocks; `warn` blocks only under --strict; `inconclusive` proceeds with a
- *  notice unless --strict. `--no-verify` skips the gate entirely. */
+ * static). `fail` blocks; `warn` blocks only under --strict; `inconclusive` proceeds with a
+ * notice unless --strict. `--no-verify` skips the gate entirely. */
 const runVerifyGate = async (
   registry: LifecycleToolRegistry,
   env: PlacementPorts,
@@ -262,6 +257,7 @@ const runVerifyGate = async (
   tool: FlipTool,
   sourceDir: string,
   opts: FlipOptions,
+  observation?: ObservationBundle,
   requestedMode?: 'static' | 'static+deep',
 ): Promise<GateOutcome> => {
   if (opts.noVerify) return { blocked: null, gate: 'skipped', verdict: null, notice: null };
@@ -282,6 +278,7 @@ const runVerifyGate = async (
     deep,
     strict: opts.strict ?? false,
     ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(observation === undefined ? {} : { observation }),
   };
   const vr =
     deps.verify === verifyPlugin
@@ -332,10 +329,6 @@ const runVerifyGate = async (
 const ledgerVerifyOf = (gate: GateOutcome['gate']): 'passed' | 'warned' | 'skipped' =>
   gate === 'passed' ? 'passed' : gate === 'warned' ? 'warned' : 'skipped';
 
-// ---------------------------------------------------------------------------------------------
-// promote (real)
-// ---------------------------------------------------------------------------------------------
-
 const runPromotePair = async (
   registry: LifecycleToolRegistry,
   env: PlacementPorts,
@@ -346,6 +339,7 @@ const runPromotePair = async (
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
   preparedPromote: PreparedPromoteExecution | null,
+  observation?: ObservationBundle,
 ): Promise<FlipResult> => {
   const { skill, tool, scopeKey, placement, notices } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
@@ -354,10 +348,11 @@ const runPromotePair = async (
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     if (existing.journal.op === 'promote') {
-      const resumed = await recoverPlacement(
+      const resumed = await recoverPlacementWithObservation(
         createPlacementExecutionInput(env, ledgerPath, currentLedger, deps, opts, logicalOperation),
         'resume',
         { skill, tool, scopeKey },
+        observation,
       );
       if (!resumed.ok) return failedResult(base, midSwapError(resumed.error));
       currentLedger = resumed.state.ledger;
@@ -467,7 +462,7 @@ const runPromotePair = async (
   }
   const provenance = preparedPromote.provenance;
 
-  const gate = await runVerifyGate(registry, env, deps, tool, resolvedSourceDir, opts);
+  const gate = await runVerifyGate(registry, env, deps, tool, resolvedSourceDir, opts, observation);
   if (gate.blocked) {
     return {
       ...base,
@@ -561,9 +556,10 @@ const runPromotePair = async (
           adoptedDev: placement.class === 'dev' ? devRecord : null,
         },
       };
-      const swapRes = await executePlacementPlan(
+      const swapRes = await executePlacementPlanWithObservation(
         createPlacementExecutionInput(env, ledgerPath, currentLedger, deps, opts, logicalOperation),
         installPlan,
+        observation,
       );
       if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
       if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
@@ -601,9 +597,10 @@ const runPromotePair = async (
     };
     // This kind-changing demotion is an internal implementation step of the approved update,
     // not a second planned operation. The final promote swap owns the update's logical journal.
-    const toDevRes = await executePlacementPlan(
+    const toDevRes = await executePlacementPlanWithObservation(
       createPlacementExecutionInput(env, ledgerPath, currentLedger, deps, opts),
       toDevPlan,
+      observation,
     );
     if (!toDevRes.ok) return failedResult(base, midSwapError(toDevRes.error));
     currentLedger = toDevRes.state.ledger;
@@ -648,9 +645,10 @@ const runPromotePair = async (
     placementPath: placement.path,
     promote: { storePath: snap.storePath, contentHash: snap.contentHash, pinned, devRecord },
   };
-  const swapRes = await executePlacementPlan(
+  const swapRes = await executePlacementPlanWithObservation(
     createPlacementExecutionInput(env, ledgerPath, currentLedger, deps, opts, logicalOperation),
     plan,
+    observation,
   );
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
   if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
@@ -675,19 +673,17 @@ const runPromotePair = async (
   };
 };
 
-// ---------------------------------------------------------------------------------------------
 // dev --source: create + adopt (P13). Dev-only records — no journal, no pinned (D3). Write order
 // for create is symlink-first (direct atomic no-clobber publish) then ledger, so a crash between the
 // two leaves state S2, which a re-run adopts and converges. (Design evolved at adversarial review:
 // direct EEXIST publish replaces the earlier staged-rename — it eliminates the staging-orphan class;
 // convergence semantics are unchanged.)
-// ---------------------------------------------------------------------------------------------
 
 /** BF-3: canonicalize a path for source-equality comparison. `resolve` makes it absolute and folds
- *  `.`/`..`/trailing slashes; `realpath` additionally follows symlink chains and normalizes
- *  platform quirks (macOS `/var` → `/private/var`, case-folding). A not-yet-existing path has no
- *  realpath, so we fall back to the resolved (lexically normalized) form — still trailing-slash- and
- *  `..`-tolerant. */
+ * `.`/`..`/trailing slashes; `realpath` additionally follows symlink chains and normalizes
+ * platform quirks (macOS `/var` → `/private/var`, case-folding). A not-yet-existing path has no
+ * realpath, so we fall back to the resolved (lexically normalized) form — still trailing-slash- and
+ * `..`-tolerant. */
 const canonicalizePath = async (env: PlacementPorts, cwd: string, p: string): Promise<string> => {
   const abs = resolve(cwd, p);
   try {
@@ -698,8 +694,8 @@ const canonicalizePath = async (env: PlacementPorts, cwd: string, p: string): Pr
 };
 
 /** BF-3: are two paths the same location? Resolved + realpath'd on BOTH sides, so a trailing slash,
- *  a `..` segment, a symlinked tmp dir (/var vs /private/var), or a symlink chain no longer produces
- *  a false mismatch. Used by S2/S4/S5b in the real AND dry-run paths. */
+ * a `..` segment, a symlinked tmp dir (/var vs /private/var), or a symlink chain no longer produces
+ * a false mismatch. Used by S2/S4/S5b in the real AND dry-run paths. */
 const samePath = async (env: PlacementPorts, cwd: string, a: string, b: string): Promise<boolean> =>
   (await canonicalizePath(env, cwd, a)) === (await canonicalizePath(env, cwd, b));
 
@@ -717,13 +713,10 @@ const resolveDevSource = (
     : resolve(opts.cwd, sourcePath);
 
 /** BF-6 / R4: a usable `SKILL.md` is a regular FILE *after following symlinks* — a directory named
- *  `SKILL.md` is still rejected (BF-6), but a `SKILL.md` that is a symlink to a regular file is now
- *  accepted (R4: the PRD only requires the source "contains SKILL.md"; the pre-fix `pathKind==='file'`
- *  lstat rejected the symlink case). `env.fileExists` (a follow-`stat`) can't be used alone — it would
- *  also accept a directory. So: a plain regular file passes directly; a symlink is followed via
- *  `realpath` and accepted only when its ultimate target is a regular file (a dangling link or a
- *  symlink-to-directory is rejected). Shared by create/adopt and their dry-run predictions so the two
- *  never diverge. */
+ * `SKILL.md` is still rejected (BF-6), but a `SKILL.md` symlink to a regular file is accepted.
+ * `env.fileExists` cannot be used alone because it would also accept a directory. A plain regular
+ * file passes directly; a symlink is followed and accepted only when its ultimate target is a
+ * regular file. Shared by create/adopt and dry-run so the two never diverge. */
 const sourceHasSkillMd = async (env: PlacementPorts, sourceDir: string): Promise<boolean> => {
   const p = join(sourceDir, 'SKILL.md');
   const kind = await env.pathKind(p);
@@ -736,8 +729,8 @@ const sourceHasSkillMd = async (env: PlacementPorts, sourceDir: string): Promise
   }
 };
 
-/** Provenance-enriched dev record for a create/adopt. `sourcePath` and `resolvedPath` are BOTH the
- *  ABSOLUTE resolved source (PRD: never record a relative source — sidesteps #10 for new records). */
+/** Provenance-enriched dev record for create/adopt. `sourcePath` and `resolvedPath` are BOTH the
+ * ABSOLUTE resolved source, so new records are never cwd-sensitive. */
 const buildDevSourceRecord = async (
   env: PlacementPorts,
   resolvedSourceDir: string,
@@ -754,7 +747,7 @@ const buildDevSourceRecord = async (
   };
 };
 
-/** S1/S2 warning (not a refusal): the source directory's basename differs from the placement name. */
+/** S1/S2 warning (not a refusal): the source directory basename differs from the placement name. */
 const basenameNotice = (resolvedSourceDir: string, skill: string): string | null =>
   basename(resolvedSourceDir) !== skill
     ? `source basename '${basename(resolvedSourceDir)}' does not match placement name '${skill}'`
@@ -776,8 +769,8 @@ const combineNotes = (...notes: (string | null)[]): string | null => {
   return kept.length > 0 ? kept.join('; ') : null;
 };
 
-/** S1: absent placement -> validate source -> static verify gate -> direct atomic no-clobber symlink
- *  publish -> dev record. A foreign real file already occupying the placement path (S6) refuses. */
+/** S1: absent placement -> validate source -> static verify -> atomic no-clobber symlink -> record.
+ * A foreign object occupying the placement path refuses. */
 const createDevPlacement = async (
   registry: LifecycleToolRegistry,
   env: PlacementPorts,
@@ -792,6 +785,7 @@ const createDevPlacement = async (
   opts: FlipOptions,
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
+  observation?: ObservationBundle,
 ): Promise<FlipResult> => {
   // BF-5(e): a stale ledger pair (a lingering managed record whose live placement is gone) is the
   // lifecycle source of truth — never silently overwrite it with a fresh dev-only create. The user
@@ -801,13 +795,13 @@ const createDevPlacement = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
+  // A real directory classifies as 'pinned' upstream, so 'absent' here is truly absent or a file.
   let liveKind: PathKind;
   try {
     liveKind = await env.pathKind(live);
   } catch (e) {
     return failedResult(base, flipFailedError(`cannot probe ${live}: ${errorMessage(e)}`));
   }
-  // A real dir classifies as 'pinned' upstream, so 'absent' here is either truly absent or a file.
   if (liveKind !== 'absent') {
     const reason = `refusing to create '${skill}' (${tool}): a foreign ${liveKind} already exists at ${live}`;
     return refusedResult(base, reason, flipRefusedError(reason));
@@ -819,7 +813,16 @@ const createDevPlacement = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  const gate = await runVerifyGate(registry, env, deps, tool, resolvedSourceDir, opts, 'static');
+  const gate = await runVerifyGate(
+    registry,
+    env,
+    deps,
+    tool,
+    resolvedSourceDir,
+    opts,
+    observation,
+    'static',
+  );
   if (gate.blocked) return gateFailedResult(base, gate);
 
   const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
@@ -845,18 +848,18 @@ const createDevPlacement = async (
   }
 
   // P13 dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely — not explicit
-  // nulls — so `Object.hasOwn(record, 'pinned')` is false and every nullish-safe reader treats the
-  // pair as having no pinned/journal state.
+  // nulls — so `Object.hasOwn(record, 'pinned')` is false.
   const pairRecord: PairRecord = {
     placementPath: live,
     mode: 'dev',
     dev: devRecord,
   };
-  const committed = await executeRecordOnlyPlacementPlan(
+  const committed = await executeRecordOnlyPlacementPlanWithObservation(
     createPlacementExecutionInput(env, ledgerPath, ledger, deps, opts, logicalOperation),
     logicalOperation,
     pairRecord,
     scopeKey,
+    observation,
   );
   if (!committed.ok) return failedResult(base, midSwapError(committed.error));
 
@@ -871,8 +874,7 @@ const createDevPlacement = async (
   };
 };
 
-/** S2: a matching hand-made symlink not in the ledger -> record-only adopt. Disk is untouched;
- *  the gate still runs (D2). */
+/** S2: record a matching hand-made symlink without touching disk; the D2 gate still runs. */
 const adoptDevPlacement = async (
   registry: LifecycleToolRegistry,
   env: PlacementPorts,
@@ -887,23 +889,31 @@ const adoptDevPlacement = async (
   opts: FlipOptions,
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
+  observation?: ObservationBundle,
 ): Promise<FlipResult> => {
   if (!(await sourceHasSkillMd(env, resolvedSourceDir))) {
     const reason = `--source '${opts.source ?? resolvedSourceDir}' does not contain SKILL.md`;
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  const gate = await runVerifyGate(registry, env, deps, tool, resolvedSourceDir, opts, 'static');
+  const gate = await runVerifyGate(
+    registry,
+    env,
+    deps,
+    tool,
+    resolvedSourceDir,
+    opts,
+    observation,
+    'static',
+  );
   if (gate.blocked) return gateFailedResult(base, gate);
 
   // R1: collect provenance FIRST — its async git work is the widest classify->act window. The record
-  // content derives purely from `--source` (never the live link), so building it early is safe and
-  // moves the wide async gap OUT from between the live re-read and the ledger write.
+  // derives purely from `--source`, so this moves the wide async gap before the final live read.
   const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
 
   // BF-5(b)/R1: re-read the LIVE symlink immediately before recording — AFTER provenance, so a
-  // concurrent retarget that lands during provenance collection is still observed here. A mismatch
-  // refuses rather than record source A while the disk points at B.
+  // concurrent retarget during provenance collection is observed and refuses.
   let literalNow: string;
   try {
     literalNow = await env.readLink(live);
@@ -912,29 +922,27 @@ const adoptDevPlacement = async (
   }
   const resolvedNow = resolveSymlinkAbsolute(live, literalNow);
   // R1 (final window): from this final readLink to setPair the invariant is "record exactly what was
-  // read" — `live` and its captured target are NEVER touched on the filesystem again. The check
-  // compares the CAPTURED target STRING against the resolved source canonicalized LEXICALLY (`resolve`
-  // folds `.`/`..`/trailing slashes; no realpath). A fresh realpath here would re-dereference the
-  // live-derived path and open a retarget window: the pre-fix `samePath` trusted that realpath and
-  // could record the source while the disk pointed elsewhere (a mix). Post-final-read TOCTOU is out of
-  // scope BY CONSTRUCTION — a retarget landing after this read is indistinguishable from one committed
-  // just after setPair, and doctor parity reconciles the drift.
+  // read" — `live` and its captured target are NEVER touched on the filesystem again. Compare the
+  // CAPTURED target STRING lexically; a fresh realpath would re-dereference the live-derived path
+  // and reopen the retarget window. A retarget after this read is indistinguishable from one just
+  // after setPair, and doctor parity reconciles that drift.
   if (resolve(opts.cwd, resolvedNow) !== resolve(opts.cwd, resolvedSourceDir)) {
     const reason = `refusing to adopt '${skill}' (${tool}): the live symlink now points to ${resolvedNow}, not --source ${resolvedSourceDir}`;
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  // Dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely.
+  // Dev-only record shape (BF-2): omit pinned and journal keys entirely.
   const pairRecord: PairRecord = {
     placementPath: live,
     mode: 'dev',
     dev: devRecord,
   };
-  const committed = await executeRecordOnlyPlacementPlan(
+  const committed = await executeRecordOnlyPlacementPlanWithObservation(
     createPlacementExecutionInput(env, ledgerPath, ledger, deps, opts, logicalOperation),
     logicalOperation,
     pairRecord,
     scopeKey,
+    observation,
   );
   if (!committed.ok) return failedResult(base, midSwapError(committed.error));
 
@@ -949,10 +957,6 @@ const adoptDevPlacement = async (
   };
 };
 
-// ---------------------------------------------------------------------------------------------
-// dev (real)
-// ---------------------------------------------------------------------------------------------
-
 const runDevPair = async (
   registry: LifecycleToolRegistry,
   env: PlacementPorts,
@@ -963,6 +967,7 @@ const runDevPair = async (
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
   _preparedPromote: PreparedPromoteExecution | null,
+  observation?: ObservationBundle,
 ): Promise<FlipResult> => {
   const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
@@ -970,10 +975,11 @@ const runDevPair = async (
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     if (existing.journal.op === 'dev') {
-      const resumed = await recoverPlacement(
+      const resumed = await recoverPlacementWithObservation(
         createPlacementExecutionInput(env, ledgerPath, ledger, deps, opts, logicalOperation),
         'resume',
         { skill, tool, scopeKey },
+        observation,
       );
       if (!resumed.ok) return failedResult(base, midSwapError(resumed.error));
       const after = getLedgerPairAt(resumed.state.ledger, scopeKey, skill, tool);
@@ -1002,8 +1008,7 @@ const runDevPair = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  // P13 S1 create / S6 foreign-object refusal: an absent placement only reaches the run layer when
-  // `--source` is present (plan.ts routes it). Without a source there is nothing to create.
+  // P13 S1 create / S6 foreign-object refusal: absent reaches this layer only with --source.
   if (placement.class === 'absent') {
     if (opts.source === undefined) {
       const reason = 'no recorded dev source; pass --source <path>';
@@ -1023,18 +1028,18 @@ const runDevPair = async (
       opts,
       deps,
       logicalOperation,
+      observation,
     );
   }
 
-  // P13 S2/S3/S4: an existing dev symlink under `--source`. Without a source this stays the P12
+  // P13 S2/S3/S4: an existing dev symlink under --source. Without --source this remains the
   // "already in dev mode" no-op.
   if (placement.class === 'dev') {
     if (opts.source === undefined) return noopResult(base, null);
     const resolvedSourceDir = resolve(opts.cwd, opts.source);
     const literal = placement.symlinkTarget;
     const resolvedLink = literal !== null ? resolveSymlinkAbsolute(placement.path, literal) : null;
-    // BF-3: canonical comparison (realpath both sides) — a trailing slash, `..`, symlink chain, or
-    // /var vs /private/var no longer produces a false S4 mismatch.
+    // BF-3: canonical comparison prevents lexical aliases and symlink chains from becoming S4.
     const linkMatches =
       resolvedLink !== null && (await samePath(env, opts.cwd, resolvedLink, resolvedSourceDir));
     if (!linkMatches) {
@@ -1042,10 +1047,8 @@ const runDevPair = async (
       const reason = `existing dev symlink for '${skill}' (${tool}) points to ${resolvedLink ?? '<unknown>'}, not --source ${resolvedSourceDir}`;
       return refusedResult(base, reason, flipRefusedError(reason));
     }
-    // BF-5(c)/(d): S3 no-op only when the ledger pair genuinely records THIS source in dev mode; S2
-    // adopt only when the pair is GENUINELY absent. Any other existing record (e.g. a pinned/origin
-    // pair whose live symlink was manually replaced) must refuse — adopting would setPair over it and
-    // silently discard the retained pin.
+    // BF-5(c)/(d): S3 requires genuine record/source agreement. S2 adoption requires no existing
+    // pair; otherwise it could overwrite and silently discard retained pin history.
     if (existing !== null) {
       if (
         existing.mode === 'dev' &&
@@ -1071,13 +1074,12 @@ const runDevPair = async (
       opts,
       deps,
       logicalOperation,
+      observation,
     );
   }
 
-  // BF-4: a real dir (class 'pinned') that is neither a skill (no usable SKILL.md) nor
-  // skillsmith-managed (no ledger pair) is a FOREIGN object — refuse (S6), never hand-copy-flip it
-  // into a dev symlink. A genuine hand-copied skill (has SKILL.md) keeps its P12 flip behavior; a
-  // managed pinned pair (has a ledger record) keeps its lifecycle.
+  // BF-4: a recordless real directory without SKILL.md is foreign. Never hand-copy-flip it into a
+  // dev symlink; managed placements and genuine hand-copied skills keep their lifecycle behavior.
   if (placement.class === 'pinned' && existing === null) {
     const placementHasSkillMd = (await env.pathKind(join(placement.path, 'SKILL.md'))) === 'file';
     if (!placementHasSkillMd) {
@@ -1089,17 +1091,15 @@ const runDevPair = async (
   const recordedSource = existing?.dev?.sourcePath ?? null;
   const recordedResolved = existing?.dev?.resolvedPath ?? null;
   const source = opts.source ?? recordedSource;
-  // BF-3: S5b compares --source against the recorded RESOLVED (absolute) path via the canonical
-  // helper — a relative P12-adoption record resolved against a different cwd no longer falsely
-  // mismatches, nor does a trailing slash / symlink chain.
+  // BF-3/S5b: compare --source with the recorded resolved path, not cwd-sensitive source text.
   const updatedRecord =
     opts.source !== undefined &&
     recordedResolved !== null &&
     !(await samePath(env, opts.cwd, opts.source, recordedResolved));
 
   if (source === null) {
-    // D9: a recordless store-linked placement (hand-made symlink into the store) has no dev
-    // history to point at — the reinstall guidance applies, not the generic --source hint.
+    // D9: a recordless store-linked placement has no dev history; reinstall is the only route back
+    // to known managed state.
     if (placement.class === 'store-linked' && !existing) {
       const reason = "managed state missing; reinstall with 'skillsmith install --force'";
       return refusedResult(base, reason, flipRefusedError(reason));
@@ -1119,8 +1119,7 @@ const runDevPair = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  // PRD S5b (behavior change from P12): for a pinned/store-linked pair, a --source that disagrees
-  // with the RECORDED dev source now REFUSES rather than silently repointing the record.
+  // P13 S5b: refuse a source disagreement instead of silently repointing retained history.
   if (updatedRecord) {
     const reason = `refusing to redirect '${skill}' (${tool}): --source ${resolve(opts.cwd, opts.source ?? '')} disagrees with the recorded dev source ${recordedResolved}`;
     return refusedResult(base, reason, flipRefusedError(reason));
@@ -1160,13 +1159,13 @@ const runDevPair = async (
     placementPath: placement.path,
     dev: { sourcePath: source, devRecord },
   };
-  const swapRes = await executePlacementPlan(
+  const swapRes = await executePlacementPlanWithObservation(
     createPlacementExecutionInput(env, ledgerPath, ledger, deps, opts, logicalOperation),
     plan,
+    observation,
   );
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
 
-  // `updatedRecord` no longer reaches here — S5b refuses a recorded-source disagreement above.
   const notesAcc: string[] = [];
   if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
 
@@ -1189,10 +1188,6 @@ const runDevPair = async (
   };
 };
 
-// ---------------------------------------------------------------------------------------------
-// rollback (real) — D10, direction-agnostic
-// ---------------------------------------------------------------------------------------------
-
 const runRollbackPair = async (
   _registry: LifecycleToolRegistry,
   env: PlacementPorts,
@@ -1203,6 +1198,7 @@ const runRollbackPair = async (
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
   _preparedPromote: PreparedPromoteExecution | null,
+  observation?: ObservationBundle,
 ): Promise<FlipResult> => {
   const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
@@ -1217,20 +1213,19 @@ const runRollbackPair = async (
   );
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
-    // Captured BEFORE the call: `rollbackSwap` mutates this same pair record in place (nulls
-    // `.journal` on success), so reading `existing.journal` afterward would see the post-mutation
-    // state, not the journal that was actually rolled back.
+    // Capture before recovery: rollback mutates the pair journal in place on success.
     const journalOp = existing.journal.op;
     const journalBeforeMode = existing.journal.before.mode;
-    const rb = await recoverPlacement(executionInput, 'rollback', { skill, tool, scopeKey });
+    const rb = await recoverPlacementWithObservation(
+      executionInput,
+      'rollback',
+      { skill, tool, scopeKey },
+      observation,
+    );
     if (!rb.ok) return failedResult(base, midSwapError(rb.error));
 
-    // I2: an uncommitted install REPLACE (before-state was a real placement, not a fresh install)
-    // restores the OLD live bytes but the engine never captures the OLD pinned/origin records, so
-    // they're left stranded on the pair pointing at the un-materialized new rev — a silent ledger/
-    // disk mismatch until the next `install` reconciles it. Scoped to exactly that case: a fresh
-    // install rollback deletes the pair (coherent), and uninstall/promote/dev rollbacks never
-    // overwrote records (coherent) — neither needs this warning.
+    // I2: interrupted install replacement restores old bytes without old pinned/origin records.
+    // Warn only for that case; fresh install and other operation rollbacks remain coherent.
     const isInterruptedInstallReplace = journalOp === 'install' && journalBeforeMode !== 'absent';
     const reconcileWarning = `placement bytes were restored to the previous state, but the ledger still records the interrupted install's rev for '${skill}' — re-run 'skillsmith install' to reconcile it (it self-corrects on the next install)`;
     const reason = isInterruptedInstallReplace
@@ -1271,7 +1266,7 @@ const runRollbackPair = async (
       placementPath: placement.path,
       dev: { sourcePath: devRecord.sourcePath, devRecord },
     };
-    const swapRes = await executePlacementPlan(executionInput, plan);
+    const swapRes = await executePlacementPlanWithObservation(executionInput, plan, observation);
     if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
     return {
       ...base,
@@ -1318,7 +1313,7 @@ const runRollbackPair = async (
       devRecord: devRecordForPlan,
     },
   };
-  const swapRes = await executePlacementPlan(executionInput, plan);
+  const swapRes = await executePlacementPlanWithObservation(executionInput, plan, observation);
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
   return {
     ...base,
@@ -1373,10 +1368,6 @@ const predictRollbackPair = (ledger: LedgerFile, pair: PairPlan): FlipResult => 
     verify: null,
   };
 };
-
-// ---------------------------------------------------------------------------------------------
-// dry-run prediction (read-only; no verify, no lock, no journal, no store writes)
-// ---------------------------------------------------------------------------------------------
 
 const predictPair = async (
   env: PlacementPorts,
@@ -1480,8 +1471,8 @@ const predictPair = async (
       return refusedResult(base, reason, flipRefusedError(reason));
     }
 
-    // D9: mirror runPromotePair's re-pin convergence for a dev symlink whose pair still carries a
-    // symlink-placement pinned record + origin (install -> `dev --source` -> promote loop).
+    // D9 dry-run parity: retained symlink-placement + origin follows the same re-pin convergence
+    // as real execution.
     if (existing?.pinned?.placement === 'symlink' && existing?.origin !== undefined) {
       const revRes = await computeRevPreview(env, provRes.value, resolvedTarget);
       if (!revRes.ok) return failedResult(base, revRes.error);
@@ -1510,17 +1501,14 @@ const predictPair = async (
     };
   }
 
-  // op === 'dev'
-  // P13 S1 create / S6 foreign-object (dry-run predicts without writing). BF-6: the prediction runs
-  // the SAME structural source validation as the real path (dir + `pathKind(SKILL.md)==='file'`), so
-  // dry-run never reports `created`/`adopted` for a source the real run would refuse. Only the
-  // external verify GATE is skipped in dry-run (documented — it needs network/tool auth).
+  // P13 S1/S6 dry-run mirrors structural source validation and stale-record refusal. Only the
+  // external verifier is skipped because it may require tool authentication.
   if (placement.class === 'absent') {
     if (opts.source === undefined) {
       const reason = 'no recorded dev source; pass --source <path>';
       return refusedResult(base, reason, flipRefusedError(reason));
     }
-    // BF-5(e): a stale ledger pair would make the real create refuse — mirror it here.
+    // BF-5(e): prediction must refuse the stale record exactly as execution does.
     if (existing !== null) {
       const reason = `refusing to create '${skill}' (${tool}): a skillsmith record already exists — remove it first with 'skillsmith uninstall ${skill}'`;
       return refusedResult(base, reason, flipRefusedError(reason));
@@ -1546,7 +1534,7 @@ const predictPair = async (
     };
   }
 
-  // P13 S2/S3/S4 (dry-run) for an existing dev symlink under --source.
+  // P13 S2/S3/S4 dry-run path for an existing dev symlink under --source.
   if (placement.class === 'dev') {
     if (opts.source === undefined) return noopResult(base, null);
     const resolvedSourceDir = resolve(opts.cwd, opts.source);
@@ -1558,8 +1546,7 @@ const predictPair = async (
       const reason = `existing dev symlink for '${skill}' (${tool}) points to ${resolvedLink ?? '<unknown>'}, not --source ${resolvedSourceDir}`;
       return refusedResult(base, reason, flipRefusedError(reason));
     }
-    // BF-5(c)/(d): S3 only on genuine agreement; any other existing record refuses; S2 adopt only
-    // when the pair is genuinely absent (and its source has a SKILL.md — BF-6).
+    // BF-5(c)/(d): S3 requires agreement; adoption requires the pair to be genuinely absent.
     if (existing !== null) {
       if (
         existing.mode === 'dev' &&
@@ -1586,8 +1573,7 @@ const predictPair = async (
     };
   }
 
-  // BF-4 (dry-run mirror): a foreign real dir (no SKILL.md, no ledger pair) refuses, matching the
-  // real path — dry-run must not predict a flip the real run would reject.
+  // BF-4 dry-run parity: a recordless foreign directory refuses just as real execution does.
   if (placement.class === 'pinned' && existing === null) {
     const placementHasSkillMd = (await env.pathKind(join(placement.path, 'SKILL.md'))) === 'file';
     if (!placementHasSkillMd) {
@@ -1599,8 +1585,7 @@ const predictPair = async (
   const recordedSource = existing?.dev?.sourcePath ?? null;
   const recordedResolved = existing?.dev?.resolvedPath ?? null;
   const source = opts.source ?? recordedSource;
-  // PRD S5b (dry-run mirror, BF-3): compare against the recorded RESOLVED path via the canonical
-  // helper, not a lexical string compare.
+  // S5b/BF-3 dry-run parity: compare the canonical recorded path, not lexical source text.
   if (
     opts.source !== undefined &&
     recordedResolved !== null &&
@@ -1644,10 +1629,6 @@ const predictPair = async (
     verify: null,
   };
 };
-
-// ---------------------------------------------------------------------------------------------
-// batch orchestration
-// ---------------------------------------------------------------------------------------------
 
 const emptySummary = (): FlipReport['summary'] => ({
   flipped: 0,
@@ -2389,6 +2370,7 @@ type PairProcessor = (
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
   preparedPromote: PreparedPromoteExecution | null,
+  observation?: ObservationBundle,
 ) => Promise<FlipResult>;
 
 type PairPredictor = (
@@ -2441,57 +2423,6 @@ const executedFlipReport = (
   };
 };
 
-const operationResultForFlip = (
-  operation: ExecutableOperation,
-  binding: ValidatedExecutionBinding,
-  result: FlipResult,
-  reportOp: FlipOp,
-): OperationExecutionResult => {
-  const cancelled = result.reason === 'interrupted' || result.error?.code === 'cancelled';
-  const failed = result.action === 'failed' || result.action === 'refused';
-  const unchanged = failed || cancelled || result.action === 'noop' || result.action === 'skipped';
-  const common = {
-    operationId: operation.operationId,
-    actualBefore: binding.actualBefore,
-    actualAfter: unchanged ? binding.actualBefore : operation.after,
-    force: null,
-  } as const;
-  if (cancelled) {
-    return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
-  }
-  if (failed) {
-    return createOperationExecutionResult({
-      ...common,
-      outcome: 'failed',
-      error: {
-        code: result.error?.code ?? 'flip-failed',
-        message: result.reason ?? 'operation failed',
-        remediation: 'Resolve the reported condition and retry the same selection.',
-      },
-    });
-  }
-  return createOperationExecutionResult({
-    ...common,
-    outcome: reportOp === 'rollback' ? 'rolled-back' : 'succeeded',
-    error: null,
-  });
-};
-
-const failClosedPlannedNoop = (operation: ExecutableOperation, result: FlipResult): FlipResult => {
-  if (result.action !== 'noop' && result.action !== 'skipped') return result;
-  const reason = `planned ${operation.kind} operation did not execute its approved mutation`;
-  return {
-    ...result,
-    action: 'failed',
-    reason,
-    before: null,
-    after: null,
-    store: null,
-    verify: null,
-    error: flipFailedError(reason),
-  };
-};
-
 const isExecutionStateError = (
   error: unknown,
 ): error is { readonly code: 'precondition-state-changed' | 'precondition-observation-failed' } =>
@@ -2512,6 +2443,7 @@ const prepareFlipBatch = async (
   deps: FlipDeps,
   process: PairProcessor,
   predict: PairPredictor,
+  observation?: ObservationBundle,
 ): Promise<Result<PreparedFlipRun, SkillSmithError>> => {
   const normalized = await normalizeFlipProjectContext(env, opts);
   if (!normalized.ok) return normalized;
@@ -2577,6 +2509,7 @@ const prepareFlipBatch = async (
   const snapshotResult = await prepareSnapshot();
   if (!snapshotResult.ok) return snapshotResult;
   const { preparedPreview, previewResults } = snapshotResult.value;
+  if (observation !== undefined) emitOperationPlanCreated(observation, preparedPreview.report.plan);
   const bindingMap = new Map<string, PreparedFlipBinding>();
   const boundPreviewResults = new Set<FlipResult>();
   for (const binding of preparedPreview.bindings) {
@@ -2611,116 +2544,48 @@ const prepareFlipBatch = async (
         return ok(executedFlipReport(preparedPreview.report, [...staticResults], []));
       }
 
-      let executionLedger: LedgerModel | null = null;
-      const lifecycle = createPlacementLifecycleExecutor(preparedPreview.authority);
       const startedResults = new Map<string, FlipResult>();
-      const coordinatorBindings: PreparedExecutionBinding[] = operations.map((operation) => {
-        const preparedBinding = bindingMap.get(operation.operationId);
-        if (!preparedBinding) throw new Error('prepared operation binding is missing');
-        if (preparedBinding.kind === 'migrate-ledger') {
-          const migrationBinding = ledgerMigrationExecutionBinding({
-            env,
-            ledgerPath,
-            operation,
-            expectedState: preparedBinding.expectedState,
-            startedAt: journalNowOf(env, deps),
-            ...(normalizedOpts.signal === undefined ? {} : { signal: normalizedOpts.signal }),
-            onMigrated: (model) => {
-              executionLedger = model;
-            },
-          });
-          return {
-            ...migrationBinding,
-            execute: (binding: ValidatedExecutionBinding) =>
-              lifecycle.execute(operation, [], () => migrationBinding.execute(binding)),
-          };
-        }
-        if (operation.pairId === null)
-          throw new Error('prepared operation pair identity is missing');
-        return {
-          operationId: operation.operationId,
-          groupId: operation.groupId,
-          pairId: operation.pairId,
-          unstartedForce: null,
-          observeActualBefore: async (): Promise<OperationImage> => {
-            const current = await readLedgerState(env, ledgerPath);
-            if (!current.ok) throw current.error;
-            executionLedger = ledgerModelForMutation(current.value, nowOf(env, deps));
-            return operation.before;
-          },
-          execute: async (
-            validatedBinding: ValidatedExecutionBinding,
-          ): Promise<OperationExecutionResult> => {
-            const ledger = executionLedger;
-            if (ledger === null) throw new Error('validated execution ledger is missing');
-            return lifecycle.execute(operation, preparedBinding.stageResourceIds, async () => {
-              const result = failClosedPlannedNoop(
-                operation,
-                await process(
-                  registry,
-                  env,
-                  ledger,
-                  ledgerPath,
-                  preparedBinding.pair,
-                  normalizedOpts,
-                  deps,
-                  operation,
-                  preparedBinding.promote,
-                ),
-              );
-              startedResults.set(operation.operationId, result);
-              const reread = await readLedgerState(env, ledgerPath);
-              // The durable ledger is the sole composition source after a started operation.
-              if (!reread.ok) throw reread.error;
-              executionLedger = ledgerModelForMutation(reread.value, nowOf(env, deps));
-              return operationResultForFlip(operation, validatedBinding, result, reportOp);
-            });
-          },
-        };
-      });
-      const compatibilityLockPort = {
-        withFileLock: async <T>(
-          path: string,
-          callback: () => Promise<T>,
-          options?: Readonly<{ signal?: AbortSignal }>,
-        ): Promise<T> => {
-          let callbackThrew = false;
-          let callbackError: unknown;
-          const locked = await withLedgerLock(
-            env,
-            path,
-            async () => {
-              try {
-                return await callback();
-              } catch (error) {
-                callbackThrew = true;
-                callbackError = error;
-                throw error;
-              }
-            },
-            options,
-          );
-          if (callbackThrew) throw callbackError;
-          if (!locked.ok) throw locked.error;
-          return locked.value;
-        },
-      };
-
       let executionResults: readonly OperationExecutionResult[];
       try {
-        executionResults = await executeOperationPlan({
+        executionResults = await executePlacementOperationPlan({
+          env,
+          ledgerPath,
           plan: preparedPreview.report.plan,
-          bindings: coordinatorBindings,
           preconditions: preparedPreview.preconditions,
-          locks: [
-            {
-              rank: 'ledger',
-              key: `placements-ledger:${ledgerPath}`,
-              path: ledgerPath,
-            },
-          ],
-          lockPort: compatibilityLockPort,
+          authority: preparedPreview.authority,
+          reportOp,
+          modelNow: () => nowOf(env, deps),
+          journalNow: () => journalNowOf(env, deps),
+          bindingForOperation: (operation) => {
+            const binding = bindingMap.get(operation.operationId);
+            if (!binding) throw new Error('prepared operation binding is missing');
+            return binding.kind === 'migrate-ledger'
+              ? { kind: binding.kind, expectedState: binding.expectedState }
+              : { kind: binding.kind, stageResourceIds: binding.stageResourceIds };
+          },
+          executePair: async (operation, ledger, operationObservation) => {
+            const binding = bindingMap.get(operation.operationId);
+            if (!binding || binding.kind !== 'pair') {
+              throw new Error('prepared pair operation binding is missing');
+            }
+            return process(
+              registry,
+              env,
+              ledger,
+              ledgerPath,
+              binding.pair,
+              normalizedOpts,
+              deps,
+              operation,
+              binding.promote,
+              operationObservation,
+            );
+          },
+          onStarted: (operation, result) => {
+            startedResults.set(operation.operationId, result);
+          },
           ...(normalizedOpts.signal === undefined ? {} : { signal: normalizedOpts.signal }),
+          ...(observation === undefined ? {} : { observation }),
         });
       } catch (error) {
         if (isExecutionStateError(error)) {
@@ -2813,6 +2678,25 @@ export const preparePromoteWithRegistry = (
     predictPair(e, l, 'promote', p, o),
   );
 
+export const preparePromoteWithRegistryObserved = (
+  registry: LifecycleToolRegistry,
+  env: PlacementPorts,
+  opts: FlipOptions,
+  observation: ObservationBundle,
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
+  prepareFlipBatch(
+    registry,
+    env,
+    opts,
+    'promote',
+    'promote',
+    deps,
+    runPromotePair,
+    (e, l, p, o) => predictPair(e, l, 'promote', p, o),
+    observation,
+  );
+
 export const preparePromote = (
   env: PlacementPorts,
   opts: FlipOptions,
@@ -2820,11 +2704,12 @@ export const preparePromote = (
 ): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
   preparePromoteWithRegistry(defaultLifecycleToolRegistry, env, opts, deps);
 
-export const prepareDevWithRegistry = (
+const prepareDevWithObservation = (
   registry: LifecycleToolRegistry,
   env: PlacementPorts,
   opts: FlipOptions,
-  deps: FlipDeps = defaultFlipDeps,
+  deps: FlipDeps,
+  observation?: ObservationBundle,
 ): Promise<Result<PreparedFlipRun, SkillSmithError>> => {
   // BF-1(f): validate `--dest` constraints in CORE (not CLI-only) — a library consumer calling
   // runDev directly must get the same refusals. `--dest` needs `--source` (an unscoped destination
@@ -2842,10 +2727,35 @@ export const prepareDevWithRegistry = (
       );
     }
   }
-  return prepareFlipBatch(registry, env, opts, 'dev', 'dev', deps, runDevPair, (e, l, p, o) =>
-    predictPair(e, l, 'dev', p, o),
+  return prepareFlipBatch(
+    registry,
+    env,
+    opts,
+    'dev',
+    'dev',
+    deps,
+    runDevPair,
+    (e, l, p, o) => predictPair(e, l, 'dev', p, o),
+    observation,
   );
 };
+
+export const prepareDevWithRegistry = (
+  registry: LifecycleToolRegistry,
+  env: PlacementPorts,
+  opts: FlipOptions,
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
+  prepareDevWithObservation(registry, env, opts, deps);
+
+export const prepareDevWithRegistryObserved = (
+  registry: LifecycleToolRegistry,
+  env: PlacementPorts,
+  opts: FlipOptions,
+  observation: ObservationBundle,
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
+  prepareDevWithObservation(registry, env, opts, deps, observation);
 
 export const prepareDev = (
   env: PlacementPorts,
@@ -2854,11 +2764,12 @@ export const prepareDev = (
 ): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
   prepareDevWithRegistry(defaultLifecycleToolRegistry, env, opts, deps);
 
-export const prepareRollbackWithRegistry = async (
+const prepareRollbackWithObservation = async (
   registry: LifecycleToolRegistry,
   env: PlacementPorts,
   opts: FlipOptions & { op: 'promote' | 'dev' },
-  deps: FlipDeps = defaultFlipDeps,
+  deps: FlipDeps,
+  observation?: ObservationBundle,
 ): Promise<Result<PreparedFlipRun, SkillSmithError>> => {
   // BF-1(f)/BF-7(c): rollback restores prior state — it takes no create/gate flags. Reject them in
   // CORE too (the CLI also rejects them) so a direct library call can't silently ignore a --source.
@@ -2875,8 +2786,26 @@ export const prepareRollbackWithRegistry = async (
     deps,
     runRollbackPair,
     async (_env, ledger, pair) => predictRollbackPair(ledger, pair),
+    observation,
   );
 };
+
+export const prepareRollbackWithRegistry = (
+  registry: LifecycleToolRegistry,
+  env: PlacementPorts,
+  opts: FlipOptions & { op: 'promote' | 'dev' },
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
+  prepareRollbackWithObservation(registry, env, opts, deps);
+
+export const prepareRollbackWithRegistryObserved = (
+  registry: LifecycleToolRegistry,
+  env: PlacementPorts,
+  opts: FlipOptions & { op: 'promote' | 'dev' },
+  observation: ObservationBundle,
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
+  prepareRollbackWithObservation(registry, env, opts, deps, observation);
 
 export const prepareRollback = (
   env: PlacementPorts,

@@ -6,7 +6,7 @@ import type {
 import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
-import type { LedgerModel } from '../artifacts/ledger-types.ts';
+import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import type { LedgerWriterPorts } from '../artifacts/ledger-writer.ts';
 import { createLockRepository, createManifestRepository } from '../artifacts/repository.ts';
 import type { ProjectContext } from '../context/types.ts';
@@ -18,12 +18,28 @@ import {
 } from '../errors.ts';
 import {
   type DurabilityReceiptV1,
+  type ObservedExecutionCoordinatorRequest,
+  type ObservedPreparedExecutionBinding,
   type RevisionCursorV1,
   createRevisionCursorV1,
+  executeOperationPlanObserved,
   executeRepositoryLifecycleV1,
 } from '../execution/coordinator.ts';
+import {
+  type ExecutionCoordinatorRequest,
+  type ExecutionPrecondition,
+  type ValidatedExecutionBinding,
+  executeOperationPlan,
+} from '../execution/index.ts';
+import type { ObservationBundle } from '../observation/index.ts';
+import { createOperationExecutionResult } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
-import type { ExecutableOperation, OperationExecutionResult } from '../planning/types.ts';
+import type {
+  ExecutableOperation,
+  OperationExecutionResult,
+  OperationImage,
+  OperationPlan,
+} from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { readObservedStateSnapshotV1 } from '../state/read.ts';
 import {
@@ -33,17 +49,28 @@ import {
   createRelevantCapabilityStateReaderV1,
 } from '../state/repositories.ts';
 import { type ObservedStateSnapshotV1, sameExpectedRevisionV1 } from '../state/types.ts';
+import {
+  ledgerMigrationExecutionBinding,
+  ledgerMigrationExecutionBindingObserved,
+} from './ledger-migration.ts';
 import { createLedgerPersistenceGateway } from './ledger-persistence.ts';
-import { readLedgerState } from './ledger.ts';
+import { ledgerModelForMutation, readLedgerState, withLedgerLock } from './ledger.ts';
 import { createLivePlacementRepository } from './live-repository.ts';
 import type { LivePlacementResourceV1 } from './live-repository.ts';
 import type { PairPlan } from './plan.ts';
 import { createStoreRepository } from './store-repository.ts';
 import type { StoreResourceV1 } from './store-repository.ts';
-import { commitRecordOnlyLogicalTransaction, runSwap } from './swap.ts';
+import {
+  commitRecordOnlyLogicalTransaction,
+  commitRecordOnlyLogicalTransactionObserved,
+  runSwap,
+  runSwapObserved,
+} from './swap.ts';
 import type {
   FlipDeps,
+  FlipOp,
   FlipOptions,
+  FlipResult,
   JournalPhase,
   PairRecord,
   PlacementPorts,
@@ -377,6 +404,205 @@ export const createPlacementLifecycleExecutor = (
   });
 };
 
+export type PlacementCoordinatorBinding =
+  | Readonly<{
+      kind: 'migrate-ledger';
+      expectedState: Extract<LedgerReadState, { readonly state: 'present' }>;
+    }>
+  | Readonly<{
+      kind: 'pair';
+      stageResourceIds: readonly string[];
+    }>;
+
+export interface PlacementOperationPlanExecutionInput {
+  readonly env: PlacementPorts;
+  readonly ledgerPath: string;
+  readonly plan: OperationPlan<'dev' | 'promote'>;
+  readonly preconditions: readonly ExecutionPrecondition[];
+  readonly authority: PlacementSnapshotAuthority;
+  readonly reportOp: FlipOp;
+  readonly modelNow: () => string;
+  readonly journalNow: () => string;
+  readonly bindingForOperation: (operation: ExecutableOperation) => PlacementCoordinatorBinding;
+  readonly executePair: (
+    operation: ExecutableOperation,
+    ledger: LedgerModel,
+    observation?: ObservationBundle,
+  ) => Promise<FlipResult>;
+  readonly onStarted: (operation: ExecutableOperation, result: FlipResult) => void;
+  readonly signal?: AbortSignal;
+  readonly observation?: ObservationBundle;
+}
+
+const operationResultForFlip = (
+  operation: ExecutableOperation,
+  binding: ValidatedExecutionBinding,
+  result: FlipResult,
+  reportOp: FlipOp,
+): OperationExecutionResult => {
+  const cancelled = result.reason === 'interrupted' || result.error?.code === 'cancelled';
+  const failed = result.action === 'failed' || result.action === 'refused';
+  const unchanged = failed || cancelled || result.action === 'noop' || result.action === 'skipped';
+  const common = {
+    operationId: operation.operationId,
+    actualBefore: binding.actualBefore,
+    actualAfter: unchanged ? binding.actualBefore : operation.after,
+    force: null,
+  } as const;
+  if (cancelled) {
+    return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
+  }
+  if (failed) {
+    return createOperationExecutionResult({
+      ...common,
+      outcome: 'failed',
+      error: {
+        code: result.error?.code ?? 'flip-failed',
+        message: result.reason ?? 'operation failed',
+        remediation: 'Resolve the reported condition and retry the same selection.',
+      },
+    });
+  }
+  return createOperationExecutionResult({
+    ...common,
+    outcome: reportOp === 'rollback' ? 'rolled-back' : 'succeeded',
+    error: null,
+  });
+};
+
+const failClosedPlannedNoop = (operation: ExecutableOperation, result: FlipResult): FlipResult => {
+  if (result.action !== 'noop' && result.action !== 'skipped') return result;
+  const reason = `planned ${operation.kind} operation did not execute its approved mutation`;
+  return {
+    ...result,
+    action: 'failed',
+    reason,
+    before: null,
+    after: null,
+    store: null,
+    verify: null,
+    error: flipFailedError(reason),
+  };
+};
+
+export const executePlacementOperationPlan = async (
+  input: PlacementOperationPlanExecutionInput,
+): Promise<readonly OperationExecutionResult[]> => {
+  let executionLedger: LedgerModel | null = null;
+  const lifecycle = createPlacementLifecycleExecutor(input.authority);
+  const coordinatorBindings: ObservedPreparedExecutionBinding[] = input.plan.operations.map(
+    (operation) => {
+      const binding = input.bindingForOperation(operation);
+      if (binding.kind === 'migrate-ledger') {
+        const migrationInput = {
+          env: input.env,
+          ledgerPath: input.ledgerPath,
+          operation,
+          expectedState: binding.expectedState,
+          startedAt: input.journalNow(),
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
+          onMigrated: (model: LedgerModel) => {
+            executionLedger = model;
+          },
+        };
+        const migrationBinding = ledgerMigrationExecutionBinding(migrationInput);
+        return {
+          ...migrationBinding,
+          execute: (validatedBinding: ValidatedExecutionBinding, observation?: ObservationBundle) =>
+            lifecycle.execute(operation, [], () =>
+              observation === undefined
+                ? migrationBinding.execute(validatedBinding)
+                : ledgerMigrationExecutionBindingObserved(migrationInput, observation).execute(
+                    validatedBinding,
+                  ),
+            ),
+        };
+      }
+      if (operation.pairId === null) {
+        throw new Error('prepared operation pair identity is missing');
+      }
+      return {
+        operationId: operation.operationId,
+        groupId: operation.groupId,
+        pairId: operation.pairId,
+        unstartedForce: null,
+        observeActualBefore: async (): Promise<OperationImage> => {
+          const current = await readLedgerState(input.env, input.ledgerPath);
+          if (!current.ok) throw current.error;
+          executionLedger = ledgerModelForMutation(current.value, input.modelNow());
+          return operation.before;
+        },
+        execute: async (
+          validatedBinding: ValidatedExecutionBinding,
+          observation?: ObservationBundle,
+        ): Promise<OperationExecutionResult> => {
+          const ledger = executionLedger;
+          if (ledger === null) throw new Error('validated execution ledger is missing');
+          return lifecycle.execute(operation, binding.stageResourceIds, async () => {
+            const result = failClosedPlannedNoop(
+              operation,
+              await input.executePair(operation, ledger, observation),
+            );
+            input.onStarted(operation, result);
+            const reread = await readLedgerState(input.env, input.ledgerPath);
+            // The durable ledger is the sole composition source after a started operation.
+            if (!reread.ok) throw reread.error;
+            executionLedger = ledgerModelForMutation(reread.value, input.modelNow());
+            return operationResultForFlip(operation, validatedBinding, result, input.reportOp);
+          });
+        },
+      };
+    },
+  );
+  const compatibilityLockPort = {
+    withFileLock: async <T>(
+      path: string,
+      callback: () => Promise<T>,
+      options?: Readonly<{ signal?: AbortSignal }>,
+    ): Promise<T> => {
+      let callbackThrew = false;
+      let callbackError: unknown;
+      const locked = await withLedgerLock(
+        input.env,
+        path,
+        async () => {
+          try {
+            return await callback();
+          } catch (error) {
+            callbackThrew = true;
+            callbackError = error;
+            throw error;
+          }
+        },
+        options,
+      );
+      if (callbackThrew) throw callbackError;
+      if (!locked.ok) throw locked.error;
+      return locked.value;
+    },
+  };
+  const request = {
+    plan: input.plan,
+    bindings: coordinatorBindings,
+    preconditions: input.preconditions,
+    locks: [
+      {
+        rank: 'ledger' as const,
+        key: `placements-ledger:${input.ledgerPath}`,
+        path: input.ledgerPath,
+      },
+    ],
+    lockPort: compatibilityLockPort,
+    ...(input.signal === undefined ? {} : { signal: input.signal }),
+  };
+  return input.observation === undefined
+    ? executeOperationPlan(request as ExecutionCoordinatorRequest)
+    : executeOperationPlanObserved(
+        request as ObservedExecutionCoordinatorRequest,
+        input.observation,
+      );
+};
+
 export interface PlacementExecutionInput {
   readonly env: PlacementPorts;
   readonly ledgerPath: string;
@@ -452,6 +678,22 @@ export const executePlacementPlan = (
   plan: SwapPlan,
 ): Promise<SwapExecutionResult<SwapOutcome>> => runSwap(createPlacementSwapRequest(input), plan);
 
+export const executePlacementPlanObserved = (
+  input: PlacementExecutionInput,
+  plan: SwapPlan,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  runSwapObserved(createPlacementSwapRequest(input), plan, observation);
+
+export const executePlacementPlanWithObservation = (
+  input: PlacementExecutionInput,
+  plan: SwapPlan,
+  observation?: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  observation === undefined
+    ? executePlacementPlan(input, plan)
+    : executePlacementPlanObserved(input, plan, observation);
+
 export const executePlacementPlans = async (
   input: PlacementExecutionInput,
   plans: readonly SwapPlan[],
@@ -467,6 +709,22 @@ export const executePlacementPlans = async (
   return Object.freeze({ ok: true, value: Object.freeze(outcomes), state: request.state });
 };
 
+export const executePlacementPlansObserved = async (
+  input: PlacementExecutionInput,
+  plans: readonly SwapPlan[],
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<readonly SwapOutcome[]>> => {
+  let request = createPlacementSwapRequest(input);
+  const outcomes: SwapOutcome[] = [];
+  for (const plan of plans) {
+    const executed = await runSwapObserved(request, plan, observation);
+    if (!executed.ok) return executed;
+    outcomes.push(executed.value);
+    request = Object.freeze({ ...request, state: executed.state });
+  }
+  return Object.freeze({ ok: true, value: Object.freeze(outcomes), state: request.state });
+};
+
 export const executeRecordOnlyPlacementPlan = (
   input: PlacementExecutionInput,
   operation: ExecutableOperation,
@@ -474,6 +732,32 @@ export const executeRecordOnlyPlacementPlan = (
   scopeKey: string | null = null,
 ): Promise<SwapExecutionResult<void>> =>
   commitRecordOnlyLogicalTransaction(createPlacementSwapRequest(input), operation, pair, scopeKey);
+
+export const executeRecordOnlyPlacementPlanObserved = (
+  input: PlacementExecutionInput,
+  operation: ExecutableOperation,
+  pair: PairRecord,
+  scopeKey: string | null,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<void>> =>
+  commitRecordOnlyLogicalTransactionObserved(
+    createPlacementSwapRequest(input),
+    operation,
+    pair,
+    scopeKey,
+    observation,
+  );
+
+export const executeRecordOnlyPlacementPlanWithObservation = (
+  input: PlacementExecutionInput,
+  operation: ExecutableOperation,
+  pair: PairRecord,
+  scopeKey: string | null,
+  observation?: ObservationBundle,
+): Promise<SwapExecutionResult<void>> =>
+  observation === undefined
+    ? executeRecordOnlyPlacementPlan(input, operation, pair, scopeKey)
+    : executeRecordOnlyPlacementPlanObserved(input, operation, pair, scopeKey, observation);
 
 export const mapPlacementExecutionError = (
   result: SwapExecutionResult<unknown>,
