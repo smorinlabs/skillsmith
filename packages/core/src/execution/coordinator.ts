@@ -1,9 +1,14 @@
+import type { SupportedTool } from '../agents/types.ts';
+import { resolvePlanningToolContext } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
+  CurrentMutatorCommand,
   ExecutableOperation,
   OperationExecutionResult,
   OperationImage,
+  OperationPlan,
   OperationResourceIdentity,
+  PlanningToolContext,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
@@ -24,6 +29,7 @@ import {
 } from './scheduler.ts';
 import type {
   ExecutionCoordinatorRequest,
+  ExecutionPrecondition,
   PreparedExecutionBinding,
   ValidatedExecutionBinding,
 } from './types.ts';
@@ -102,14 +108,16 @@ export type RepositoryLifecycleResultV1 = Result<
   Readonly<Record<string, unknown>>
 >;
 
-interface PreparedBindingAdapter {
-  readonly operation: ExecutableOperation;
+interface PreparedBindingAdapter<ToolId extends string = SupportedTool> {
+  readonly operation: ExecutableOperation<ToolId>;
   readonly operationId: string;
   readonly groupId: string;
   readonly pairId: string | null;
-  readonly unstartedForce: ValidatedExecutionBinding['unstartedForce'];
-  readonly observeActualBefore: () => Promise<OperationImage>;
-  readonly execute: (binding: ValidatedExecutionBinding) => Promise<OperationExecutionResult>;
+  readonly unstartedForce: ValidatedExecutionBinding<ToolId>['unstartedForce'];
+  readonly observeActualBefore: () => Promise<OperationImage<ToolId>>;
+  readonly execute: (
+    binding: ValidatedExecutionBinding<ToolId>,
+  ) => Promise<OperationExecutionResult<ToolId>>;
 }
 
 const preparedKeys = Object.freeze([
@@ -135,16 +143,35 @@ const exactKeys = (value: object, expected: readonly string[]): boolean => {
   return keys.length === expected.length && keys.every((key, index) => key === expected[index]);
 };
 
-const resourceForImage = (image: OperationImage): OperationResourceIdentity => {
+const resourceForImage = <ToolId extends string>(
+  image: OperationImage<ToolId>,
+): OperationResourceIdentity<ToolId> => {
   if (image.kind === 'absent' || image.kind === 'placement') return image.resource;
   if (image.kind === 'manifest') return { kind: 'manifest-bytes', location: image.location };
   if (image.kind === 'lock') return { kind: 'lock', location: image.location };
   return { kind: 'ledger', projectRoot: image.projectRoot };
 };
 
-const preflightBindings = (
-  request: ExecutionCoordinatorRequest,
-): readonly PreparedBindingAdapter[] => {
+/**
+ * Preconditions compare opaque canonical resource facts and operation IDs; their implementation
+ * does not branch on the built-in tool union. Keep that validator generic at this private seam.
+ */
+const validateGenericPreconditionCoverage = validateExecutionPreconditionCoverage as <
+  ToolId extends string,
+>(
+  plan: OperationPlan<CurrentMutatorCommand, ToolId>,
+  preconditions: readonly ExecutionPrecondition[],
+) => readonly ExecutionPrecondition[];
+
+const validateGenericPreconditions = validateExecutionPreconditions as <ToolId extends string>(
+  plan: OperationPlan<CurrentMutatorCommand, ToolId>,
+  preconditions: readonly ExecutionPrecondition[],
+  options?: Readonly<{ readonly signal?: AbortSignal }>,
+) => Promise<void>;
+
+const preflightBindings = <ToolId extends string>(
+  request: ExecutionCoordinatorRequest<ToolId>,
+): readonly PreparedBindingAdapter<ToolId>[] => {
   validateExecutionPlanShape(request.plan);
   if (
     !Array.isArray(request.bindings) ||
@@ -152,11 +179,11 @@ const preflightBindings = (
   ) {
     fail('binding coverage must exactly match planned operations');
   }
-  const preconditions = validateExecutionPreconditionCoverage(request.plan, request.preconditions);
+  const preconditions = validateGenericPreconditionCoverage(request.plan, request.preconditions);
 
   return Object.freeze(
     request.plan.operations.map((operation, index) => {
-      const candidate = request.bindings[index] as PreparedExecutionBinding;
+      const candidate = request.bindings[index] as PreparedExecutionBinding<ToolId>;
       if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
         return fail(`binding ${index} must be an object`);
       }
@@ -200,11 +227,12 @@ const preflightBindings = (
   );
 };
 
-const bindUnderLock = async (
-  prepared: readonly PreparedBindingAdapter[],
+const bindUnderLock = async <ToolId extends string>(
+  prepared: readonly PreparedBindingAdapter<ToolId>[],
   signal: AbortSignal | undefined,
-): Promise<readonly ValidatedExecutionBinding[]> => {
-  const bindings: ValidatedExecutionBinding[] = [];
+  context: PlanningToolContext<ToolId>,
+): Promise<readonly ValidatedExecutionBinding<ToolId>[]> => {
+  const bindings: ValidatedExecutionBinding<ToolId>[] = [];
   for (const [index, input] of prepared.entries()) {
     if (signal?.aborted) {
       throw Object.freeze({
@@ -212,7 +240,7 @@ const bindUnderLock = async (
         message: 'execution binding observation cancelled',
       });
     }
-    let actualBefore: OperationImage;
+    let actualBefore: OperationImage<ToolId>;
     try {
       actualBefore = await input.observeActualBefore();
     } catch (error) {
@@ -236,6 +264,9 @@ const bindUnderLock = async (
       );
     }
 
+    const bindingReference: { current: ValidatedExecutionBinding<ToolId> | null } = {
+      current: null,
+    };
     const validated = createValidatedExecutionBinding(
       input.operation,
       {
@@ -244,18 +275,37 @@ const bindUnderLock = async (
         pairId: input.pairId,
         actualBefore,
         unstartedForce: input.unstartedForce,
-        execute: () => input.execute(validated),
+        execute: (): Promise<OperationExecutionResult<ToolId>> => {
+          const binding = bindingReference.current;
+          if (binding === null) {
+            return fail(`binding ${index} executed before validation completed`);
+          }
+          return input.execute(binding);
+        },
       },
       index,
+      context,
     );
+    bindingReference.current = validated;
     bindings.push(validated);
   }
   return Object.freeze(bindings);
 };
 
-export const executeOperationPlan = async (
+export function executeOperationPlan(
   request: ExecutionCoordinatorRequest,
-): Promise<readonly OperationExecutionResult[]> => {
+): Promise<readonly OperationExecutionResult[]>;
+export function executeOperationPlan<ToolId extends string>(
+  request: ExecutionCoordinatorRequest<ToolId>,
+  context: PlanningToolContext<ToolId>,
+): Promise<readonly OperationExecutionResult<ToolId>[]>;
+export async function executeOperationPlan<ToolId extends string>(
+  request: ExecutionCoordinatorRequest<ToolId>,
+  suppliedContext?: PlanningToolContext<ToolId>,
+): Promise<readonly OperationExecutionResult<ToolId>[]> {
+  const context = resolvePlanningToolContext(
+    suppliedContext as PlanningToolContext<string> | undefined,
+  ) as PlanningToolContext<ToolId>;
   const prepared = preflightBindings(request);
   const options =
     request.signal === undefined ? Object.freeze({}) : Object.freeze({ signal: request.signal });
@@ -264,13 +314,13 @@ export const executeOperationPlan = async (
     request.lockPort,
     request.locks,
     async () => {
-      await validateExecutionPreconditions(request.plan, request.preconditions, options);
-      const bindings = await bindUnderLock(prepared, request.signal);
-      return scheduleValidatedOperationPlan(request.plan, bindings, options);
+      await validateGenericPreconditions(request.plan, request.preconditions, options);
+      const bindings = await bindUnderLock(prepared, request.signal, context);
+      return scheduleValidatedOperationPlan(request.plan, bindings, options, context);
     },
     options,
   );
-};
+}
 
 const revisionCursorError = (
   code: RevisionCursorErrorV1['code'],

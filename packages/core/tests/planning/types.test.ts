@@ -6,6 +6,8 @@ import {
   type ExecutableOperationKind,
   OPERATION_EXECUTION_OUTCOMES,
   OPERATION_SELECTION_SOURCES,
+  type OperationManifestSnapshot,
+  type OperationPlan,
   type OperationPlanPersistenceMapper,
   PLANNING_DIAGNOSTIC_KINDS,
 } from '../../src/planning/index.ts';
@@ -77,5 +79,19 @@ describe('planning domain types', () => {
 
     expect(commandParity).toBeTrue();
     expect(revisionArrayParity).toBeTrue();
+  });
+
+  test('defaults public plans to built-ins while allowing private tool-id generics', () => {
+    const privateToolParity: Equal<
+      OperationPlan<'install', 'fixture-write'>['selection']['tools'][number],
+      'fixture-write'
+    > = true;
+    const publicArtifactParity: Equal<
+      OperationManifestSnapshot['skills'][number]['tools'][number],
+      'claude-code' | 'codex' | 'kilo-code' | 'opencode'
+    > = true;
+
+    expect(privateToolParity).toBeTrue();
+    expect(publicArtifactParity).toBeTrue();
   });
 });

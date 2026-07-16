@@ -2,6 +2,12 @@ import { type SkillSmithError, unknownToolError } from '../errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
   type InventoryBundle,
+  type PlacementBundle,
+  type PlacementInventory,
+  type PlacementResolution,
+  type PlacementRootFact,
+  type RegisteredPlacementBundle,
+  type SkillRootsCtx,
   TOOL_OPERATIONS,
   type ToolAdapter,
   type ToolCapabilityScope,
@@ -12,6 +18,7 @@ import { claudeCodeAdapter } from './claude-code/index.ts';
 import { codexAdapter } from './codex/index.ts';
 import { kiloCodeAdapter } from './kilo-code/index.ts';
 import { opencodeAdapter } from './opencode/index.ts';
+import { classifyPlacement, listPlacements } from './placement-shared.ts';
 
 const BUILT_IN_ADAPTERS = [
   claudeCodeAdapter,
@@ -52,17 +59,29 @@ export interface ToolUsageError {
 
 export type ToolCapabilityResult = ToolOperationFact | ToolCapabilityError | ToolUsageError;
 
+export type RegisteredToolAdapter<ToolId extends string = string> = Omit<
+  ToolAdapter<ToolId>,
+  'placement'
+> & {
+  readonly placement?: RegisteredPlacementBundle;
+};
+
 export interface ToolRegistry<
   ToolId extends string = string,
   VerificationId extends ToolId = ToolId,
 > {
-  readonly adapters: readonly ToolAdapter<ToolId>[];
+  readonly adapters: readonly RegisteredToolAdapter<ToolId>[];
   readonly ids: readonly ToolId[];
-  get(id: string): ToolAdapter<ToolId> | undefined;
+  get(id: string): RegisteredToolAdapter<ToolId> | undefined;
   toolsFor(operation: 'verify-static' | 'verify-deep'): readonly VerificationId[];
   toolsFor(operation: ToolOperation): readonly ToolId[];
   capability(id: string, operation: ToolOperation): ToolCapabilityResult;
 }
+
+export type LifecycleToolRegistry<
+  ToolId extends string = BuiltInToolId,
+  VerificationId extends ToolId = ToolId,
+> = Pick<ToolRegistry<ToolId, VerificationId>, 'ids' | 'get' | 'toolsFor' | 'capability'>;
 
 const VALID_SCOPES = new Set<ToolCapabilityScope>([
   'user',
@@ -258,6 +277,11 @@ const validateBundles = (adapter: ToolAdapter): void => {
     for (const method of ['roots', 'standardRoots', 'list', 'resolve', 'noticeForRoot'] as const) {
       requireFunction(adapter.placement[method], `${id} placement.${method}`);
     }
+    for (const method of ['rootFacts', 'listScoped', 'resolveScoped'] as const) {
+      if (adapter.placement[method] !== undefined) {
+        requireFunction(adapter.placement[method], `${id} placement.${method}`);
+      }
+    }
   }
 
   const adaptationDeclared = operations.adapt.supported;
@@ -275,9 +299,151 @@ const validateBundles = (adapter: ToolAdapter): void => {
   }
 };
 
+const compareText = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+const normalizedRootFacts = (
+  id: string,
+  facts: readonly PlacementRootFact[],
+): readonly PlacementRootFact[] => {
+  if (!Array.isArray(facts)) fail(`${id} placement root facts must be an array`);
+  const paths = new Set<string>();
+  let destinations = 0;
+  const normalized = facts.map((fact, index) => {
+    if (!fact || typeof fact !== 'object') {
+      fail(`${id} placement root fact ${index} must be an object`);
+    }
+    if (typeof fact.path !== 'string' || fact.path.trim() === '') {
+      fail(`${id} placement root fact ${index} path is empty`);
+    }
+    if (paths.has(fact.path)) fail(`${id} placement root path '${fact.path}' is duplicated`);
+    paths.add(fact.path);
+    if (fact.role !== 'destination' && fact.role !== 'alternate') {
+      fail(`${id} placement root fact ${index} role is invalid`);
+    }
+    if (fact.role === 'destination') destinations += 1;
+    return Object.freeze({ path: fact.path, role: fact.role });
+  });
+  if (normalized.length > 0 && destinations !== 1) {
+    fail(`${id} placement root facts require exactly one destination`);
+  }
+  return Object.freeze(normalized);
+};
+
+const placementInventory = async (
+  rootFacts: RegisteredPlacementBundle['rootFacts'],
+  env: Parameters<RegisteredPlacementBundle['listScoped']>[0],
+  ctx: SkillRootsCtx,
+  storeRoot: string,
+  scope: Parameters<RegisteredPlacementBundle['listScoped']>[3],
+): Promise<PlacementInventory> => {
+  const facts = rootFacts(env, scope, ctx);
+  const placements = (
+    await Promise.all(facts.map((fact) => listPlacements(env, fact.path, storeRoot)))
+  ).flat();
+  const present = new Map<string, number>();
+  for (const item of placements) {
+    if (item.class === 'absent') continue;
+    present.set(item.skill, (present.get(item.skill) ?? 0) + 1);
+  }
+  const duplicates = [...present]
+    .filter(([, count]) => count > 1)
+    .map(([skill]) => skill)
+    .sort(compareText);
+  return {
+    placements,
+    duplicates,
+    currentRoot: facts.find((fact) => fact.role === 'destination')?.path ?? null,
+    legacyRoot: facts.find((fact) => fact.role === 'alternate')?.path ?? null,
+  };
+};
+
+const placementResolution = async (
+  id: string,
+  placement: PlacementBundle,
+  rootFacts: RegisteredPlacementBundle['rootFacts'],
+  env: Parameters<RegisteredPlacementBundle['resolveScoped']>[0],
+  ctx: SkillRootsCtx,
+  storeRoot: string,
+  skill: string,
+  scope: Parameters<RegisteredPlacementBundle['resolveScoped']>[4],
+): Promise<PlacementResolution> => {
+  const facts = rootFacts(env, scope, ctx);
+  const destination =
+    facts.find((fact) => fact.role === 'destination') ??
+    fail(`${id} placement has no destination root for ${scope}`);
+  const classified = await Promise.all(
+    facts.map(async (fact) => ({
+      fact,
+      placement: await classifyPlacement(env, fact.path, skill, storeRoot),
+    })),
+  );
+  const present = classified.filter((item) => item.placement.class !== 'absent');
+  const destinationPlacement =
+    classified.find((item) => item.fact === destination) ??
+    fail(`${id} placement destination root was not classified`);
+  if (present.length > 1) {
+    return {
+      placement: destinationPlacement.placement,
+      notices: [],
+      duplicateReason: `found ${skill} in multiple adapter roots: ${present
+        .map((item) => item.fact.path)
+        .join(', ')}; resolve the duplicate first`,
+    };
+  }
+  const selected = present[0] ?? destinationPlacement;
+  const inventory: PlacementInventory = {
+    placements: classified.map((item) => item.placement),
+    duplicates: [],
+    currentRoot: destination.path,
+    legacyRoot: facts.find((fact) => fact.role === 'alternate')?.path ?? null,
+  };
+  const notice = placement.noticeForRoot(selected.fact.path, inventory);
+  return {
+    placement: selected.placement,
+    notices: notice === null ? [] : [notice],
+    duplicateReason: null,
+  };
+};
+
+const normalizePlacement = (id: string, placement: PlacementBundle): RegisteredPlacementBundle => {
+  const rootFacts: RegisteredPlacementBundle['rootFacts'] = (env, scope, ctx) => {
+    const declared =
+      placement.rootFacts?.(env, scope, ctx) ??
+      placement
+        .roots(env, scope, ctx)
+        .map((path, index) => ({ path, role: index === 0 ? 'destination' : 'alternate' }));
+    return normalizedRootFacts(id, declared);
+  };
+  const listScoped: RegisteredPlacementBundle['listScoped'] = (env, ctx, storeRoot, scope) =>
+    placement.listScoped
+      ? placement.listScoped(env, ctx, storeRoot, scope)
+      : scope === 'user'
+        ? placement.list(env, ctx, storeRoot)
+        : placementInventory(rootFacts, env, ctx, storeRoot, scope);
+  const resolveScoped: RegisteredPlacementBundle['resolveScoped'] = (
+    env,
+    ctx,
+    storeRoot,
+    skill,
+    scope,
+  ) =>
+    placement.resolveScoped
+      ? placement.resolveScoped(env, ctx, storeRoot, skill, scope)
+      : scope === 'user'
+        ? placement.resolve(env, ctx, storeRoot, skill)
+        : placementResolution(id, placement, rootFacts, env, ctx, storeRoot, skill, scope);
+  return {
+    ...placement,
+    rootFacts,
+    listScoped,
+    resolveScoped,
+  };
+};
+
 const cloneAdapter = <ToolId extends string>(
   adapter: ToolAdapter<ToolId>,
-): ToolAdapter<ToolId> => ({
+): RegisteredToolAdapter<ToolId> => ({
   descriptor: {
     ...adapter.descriptor,
     operations: Object.fromEntries(
@@ -299,7 +465,9 @@ const cloneAdapter = <ToolId extends string>(
         },
       }
     : {}),
-  ...(adapter.placement ? { placement: { ...adapter.placement } } : {}),
+  ...(adapter.placement
+    ? { placement: normalizePlacement(adapter.descriptor.id, { ...adapter.placement }) }
+    : {}),
   ...(adapter.adaptation ? { adaptation: { ...adapter.adaptation } } : {}),
 });
 

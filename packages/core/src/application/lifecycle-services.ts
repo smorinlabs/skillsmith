@@ -11,7 +11,7 @@ import type {
   InstallScope,
   UninstallReport,
 } from '../acquire/types.ts';
-import { FLIP_TOOLS } from '../agents/registry.ts';
+import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { SkillSmithError } from '../errors.ts';
@@ -63,23 +63,27 @@ const DEFAULT_DEPENDENCIES: LifecycleDependencies = {
   prepareRollback,
 };
 
-const MUTATION_POLICY = (
+type MutationSelectionCapability = Exclude<SelectionCapability, 'read'>;
+
+const mutationPolicy = (
+  registry: LifecycleToolRegistry,
+  capability: MutationSelectionCapability,
   capabilities: readonly SelectionCapability[],
   allowAbsentCreate = false,
-): SelectionPolicy => ({
+): SelectionPolicy<string> => ({
   requiresSelection: true,
   allowBoundedDefault: false,
   allowAbsentCreate,
-  allowedTools: FLIP_TOOLS,
+  allowedTools: registry.toolsFor(capability),
   allowedScopes: ['user', 'project'],
   allowedCapabilities: capabilities,
 });
 
 const POLICIES = {
-  install: MUTATION_POLICY(['install'], true),
-  uninstall: MUTATION_POLICY(['uninstall']),
-  dev: MUTATION_POLICY(['dev', 'undo'], true),
-  promote: MUTATION_POLICY(['promote', 'undo']),
+  install: { capabilities: ['install'], allowAbsentCreate: true },
+  uninstall: { capabilities: ['uninstall'], allowAbsentCreate: false },
+  dev: { capabilities: ['dev', 'undo'], allowAbsentCreate: true },
+  promote: { capabilities: ['promote', 'undo'], allowAbsentCreate: false },
 } as const;
 
 const stringArray = (value: unknown): readonly string[] => {
@@ -208,10 +212,11 @@ const validateMode = (
 };
 
 const select = (
+  registry: LifecycleToolRegistry,
   command: keyof typeof POLICIES,
   targets: readonly string[],
   options: Readonly<Record<string, unknown>>,
-  capability: SelectionCapability,
+  capability: MutationSelectionCapability,
   normalizedScope?: InstallScope | null,
 ) =>
   validateSelectionRequest(
@@ -224,7 +229,13 @@ const select = (
         : { scopes: [(normalizedScope ?? optionalString(options, 'scope')) as string] }),
       capability,
     },
-    POLICIES[command],
+    mutationPolicy(
+      registry,
+      capability,
+      POLICIES[command].capabilities,
+      POLICIES[command].allowAbsentCreate,
+    ),
+    registry,
   );
 
 type BulkApproval =
@@ -358,6 +369,7 @@ const explicitBatchTargetFailure = (
 
 export const createLifecycleApplicationServices = (
   overrides: Partial<LifecycleDependencies> = {},
+  registry: LifecycleToolRegistry = toolRegistry,
 ) => {
   const dependencies: LifecycleDependencies = { ...DEFAULT_DEPENDENCIES, ...overrides };
 
@@ -367,7 +379,7 @@ export const createLifecycleApplicationServices = (
   ) => {
     const sources = positionals(request);
     const options = request.options;
-    const selection = select('install', sources, options, 'install');
+    const selection = select(registry, 'install', sources, options, 'install');
     if (!selection.ok)
       return refusal(
         'install',
@@ -433,7 +445,7 @@ export const createLifecycleApplicationServices = (
   ) => {
     const targets = positionals(request);
     const options = request.options;
-    const selection = select('uninstall', targets, options, 'uninstall');
+    const selection = select(registry, 'uninstall', targets, options, 'uninstall');
     if (!selection.ok)
       return refusal(
         'uninstall',
@@ -496,7 +508,14 @@ export const createLifecycleApplicationServices = (
     if (!mode.ok) return refusal('dev', 'usage', 'mode-conflict', mode.message);
     const scope = scopeFlags(options);
     if (!scope.ok) return refusal('dev', scope.exitClass, 'scope', scope.message);
-    const selection = select('dev', targets, options, rollback ? 'undo' : 'dev', scope.value);
+    const selection = select(
+      registry,
+      'dev',
+      targets,
+      options,
+      rollback ? 'undo' : 'dev',
+      scope.value,
+    );
     if (!selection.ok)
       return refusal(
         'dev',
@@ -603,6 +622,7 @@ export const createLifecycleApplicationServices = (
     const scope = scopeFlags(options);
     if (!scope.ok) return refusal('promote', scope.exitClass, 'scope', scope.message);
     const selection = select(
+      registry,
       'promote',
       targets,
       options,

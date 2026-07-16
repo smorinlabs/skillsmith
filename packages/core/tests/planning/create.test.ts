@@ -8,9 +8,11 @@ import {
   type OperationImage,
   type OperationPairIdentity,
   type OperationPlanInput,
+  type OperationResourceIdentity,
   type OperationSource,
   type PlanCheckIdentity,
   type PlanningDiagnosticIdentity,
+  type PlanningToolContext,
   createBoundedForceEffect,
   createOperationExecutionResult,
   createOperationGroupId,
@@ -127,6 +129,104 @@ const planFor = (
   },
   batchPolicy: 'fail-fast',
   operations,
+  checks: [],
+  diagnostics: [],
+});
+
+type FixtureTool = 'fixture-a' | 'fixture-z';
+
+const FIXTURE_CONTEXT: PlanningToolContext<FixtureTool> = {
+  registry: {
+    get: (id) => {
+      if (id === 'fixture-a') return { descriptor: { id: 'fixture-a' } };
+      if (id === 'fixture-z') return { descriptor: { id: 'fixture-z' } };
+      return undefined;
+    },
+  },
+  toolOrder: ['fixture-z', 'fixture-a'],
+};
+
+const fixtureResourceFor = (
+  tool: FixtureTool,
+): Extract<OperationResourceIdentity<FixtureTool>, { readonly kind: 'live' }> => ({
+  kind: 'live',
+  skill: 'alpha',
+  tool,
+  scope: 'user',
+  projectRoot: null,
+  location: { kind: 'portable', token: `skills/user/${tool}/alpha` },
+});
+
+const fixtureOperationFor = (tool: FixtureTool): ExecutableOperation<FixtureTool> => {
+  const groupId = createOperationGroupId(groupIdentityFor());
+  const resource = fixtureResourceFor(tool);
+  const pairIdentity: OperationPairIdentity<FixtureTool> = {
+    domain: 'skillsmith.operation-pair-identity',
+    schemaVersion: 1,
+    groupId,
+    tool,
+    resource,
+  };
+  const pairId = createOperationPairId(pairIdentity, FIXTURE_CONTEXT);
+  const identity: OperationIdentity<FixtureTool> = {
+    domain: 'skillsmith.operation-identity',
+    schemaVersion: 1,
+    groupId,
+    pairId,
+    kind: 'install',
+    skill: 'alpha',
+    source: SOURCE,
+    tool,
+    scope: 'user',
+  };
+  const after: OperationImage<FixtureTool> = {
+    kind: 'placement',
+    resource,
+    classification: 'pinned',
+    representation: 'copy',
+    linkTarget: null,
+    dangling: false,
+    source: SOURCE,
+    contentHash: CONTENT_HASH,
+  };
+  return {
+    operationId: createOperationId(identity, FIXTURE_CONTEXT),
+    groupId,
+    pairId,
+    kind: 'install',
+    dependencyMetadata: {
+      domain: 'skillsmith.operation-dependency',
+      schemaVersion: 1,
+      operationIds: [],
+    },
+    skill: 'alpha',
+    source: SOURCE,
+    tool,
+    scope: 'user',
+    before: { kind: 'absent', resource },
+    after,
+    reason: { code: 'install-selected', message: 'install selected.' },
+    selectionSource: 'explicit-targets',
+    preconditionIds: [],
+    requiredCheckIds: [],
+    reversibility: { kind: 'none', retentionResourceIds: [] },
+    mutates: { live: true, manifest: false, lock: false, ledger: true },
+    conflict: null,
+  };
+};
+
+const fixturePlanFor = (): OperationPlanInput<'install', FixtureTool> => ({
+  domain: 'skillsmith.operation-plan',
+  schemaVersion: 1,
+  command: 'install',
+  selection: {
+    source: 'explicit-targets',
+    skills: ['alpha'],
+    tools: ['fixture-a', 'fixture-z'],
+    scopes: ['user'],
+  },
+  batchPolicy: 'fail-fast',
+  operations: [fixtureOperationFor('fixture-a'), fixtureOperationFor('fixture-z')],
   checks: [],
   diagnostics: [],
 });
@@ -258,6 +358,104 @@ describe('planning constructors', () => {
     mutableInput.selection.skills?.push('caller-mutation');
     expect(plan.selection.skills).toEqual(['alpha']);
     expect(() => (plan.operations as ExecutableOperation[]).push(install)).toThrow(TypeError);
+  });
+
+  test('accepts registered private tool IDs only with explicit planning context', () => {
+    const input = fixturePlanFor();
+    const plan = createOperationPlan(input, FIXTURE_CONTEXT);
+
+    expect(plan.selection.tools).toEqual(['fixture-z', 'fixture-a']);
+    expect(plan.operations.map(({ tool }) => tool)).toEqual(['fixture-z', 'fixture-a']);
+    expect(Object.isFrozen(plan)).toBeTrue();
+    const firstOperation = plan.operations[0];
+    if (firstOperation === undefined) throw new Error('fixture plan operation missing');
+    const resultInput = {
+      operationId: firstOperation.operationId,
+      outcome: 'succeeded',
+      actualBefore: firstOperation.before,
+      actualAfter: firstOperation.after,
+      force: null,
+      error: null,
+    } as const;
+    expect(createOperationExecutionResult(resultInput, FIXTURE_CONTEXT).outcome).toBe('succeeded');
+    expect(() =>
+      (createOperationExecutionResult as (value: unknown) => unknown)(resultInput),
+    ).toThrow(/tool.*unsupported/i);
+
+    const fixtureIdentity: OperationIdentity<FixtureTool> = {
+      ...identityFor('install'),
+      tool: 'fixture-z',
+    };
+    expect(createOperationId(fixtureIdentity, FIXTURE_CONTEXT)).toMatch(
+      /^operation:v1:[0-9a-f]{64}$/,
+    );
+    expect(() => (createOperationId as (value: unknown) => string)(fixtureIdentity)).toThrow(
+      /tool.*unsupported/i,
+    );
+    expect(() => (createOperationPlan as (value: unknown) => unknown)(input)).toThrow(
+      /tool.*unsupported/i,
+    );
+
+    const checkIdentity: PlanCheckIdentity<FixtureTool> = {
+      domain: 'skillsmith.plan-check-identity',
+      schemaVersion: 1,
+      kind: 'verification',
+      operationIds: [firstOperation.operationId],
+      tool: 'fixture-z',
+      mode: 'static',
+      expectedContentHash: CONTENT_HASH,
+    };
+    expect(createPlanCheckId(checkIdentity, FIXTURE_CONTEXT)).toMatch(/^check:v1:[0-9a-f]{64}$/);
+
+    const diagnosticIdentity: PlanningDiagnosticIdentity<FixtureTool> = {
+      domain: 'skillsmith.planning-diagnostic-identity',
+      schemaVersion: 1,
+      kind: 'warning',
+      severity: 'warning',
+      refusalClass: null,
+      affected: {
+        skill: 'alpha',
+        source: SOURCE,
+        tool: 'fixture-z',
+        scope: 'user',
+        path: fixtureResourceFor('fixture-z').location,
+      },
+      correlation: { groupId: null, pairId: null, operationId: null },
+      reasonCode: 'fixture-warning',
+      selectionSource: 'explicit-targets',
+    };
+    expect(createPlanningDiagnosticId(diagnosticIdentity, FIXTURE_CONTEXT)).toMatch(
+      /^diagnostic:v1:[0-9a-f]{64}$/,
+    );
+  });
+
+  test('keeps private tool IDs out of built-in manifest snapshots', () => {
+    const input = structuredClone(fixturePlanFor()) as unknown as {
+      operations: Record<string, unknown>[];
+    };
+    const operation = input.operations[0];
+    if (operation === undefined) throw new Error('fixture plan operation missing');
+    operation.before = {
+      kind: 'manifest',
+      location: { kind: 'portable', token: 'skillsmith.toml' },
+      shape: 'canonical',
+      version: 1,
+      byteHash: BYTE_HASH,
+      semanticHash: BYTE_HASH,
+      value: {
+        version: 1,
+        defaults: { tools: ['fixture-z'], scope: null, path: null },
+        registry: null,
+        skills: [],
+      },
+    };
+
+    expect(() =>
+      createOperationPlan(
+        input as unknown as OperationPlanInput<'install', FixtureTool>,
+        FIXTURE_CONTEXT,
+      ),
+    ).toThrow(/defaults\.tools.*unsupported/i);
   });
 
   test('rejects non-ordinary input and invalid dependency or identity facts', () => {

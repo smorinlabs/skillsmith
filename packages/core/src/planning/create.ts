@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
-import { SUPPORTED_TOOLS } from '../agents/registry.ts';
+import { toolRegistry } from '../agents/registry.ts';
+import type { SupportedTool } from '../agents/types.ts';
 import type { LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
 import { containsSensitiveMaterial, redactSensitiveString } from '../safety/redaction.ts';
 import { type OrdinaryDataError, ownOrdinaryData } from '../state/ownership.ts';
@@ -25,7 +26,6 @@ import type {
   BoundedForceEffect,
   BoundedForceEffectInput,
   CurrentMutatorCommand,
-  CurrentMutatorOperationPlan,
   ExecutableOperation,
   OperationExecutionResult,
   OperationExecutionResultInput,
@@ -41,6 +41,7 @@ import type {
   PlanCheckIdentity,
   PlanningDiagnostic,
   PlanningDiagnosticIdentity,
+  PlanningToolContext,
 } from './types.ts';
 import {
   EXECUTABLE_OPERATION_KINDS,
@@ -51,7 +52,6 @@ import {
 
 type UnknownRecord = Record<string, unknown>;
 
-const tools = new Set<string>(SUPPORTED_TOOLS);
 const operationKinds = new Set<string>(EXECUTABLE_OPERATION_KINDS);
 const selectionSources = new Set<string>(OPERATION_SELECTION_SOURCES);
 const diagnosticKinds = new Set<string>(PLANNING_DIAGNOSTIC_KINDS);
@@ -63,6 +63,12 @@ const currentMutatorCommands = new Set<string>([
   'promote',
   'doctor',
 ]);
+
+const builtInPlanningToolContext = (registry = toolRegistry): PlanningToolContext<SupportedTool> =>
+  Object.freeze({
+    registry,
+    toolOrder: registry.ids,
+  });
 
 const fail = (message: string): never => {
   throw new TypeError(`operation planning: ${message}`);
@@ -117,11 +123,12 @@ const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
  */
 export interface SnapshotBoundOperationPlanV1<
   Command extends CurrentMutatorCommand = CurrentMutatorCommand,
+  ToolId extends string = SupportedTool,
 > {
   readonly schemaVersion: 1;
   readonly snapshotId: ObservedStateSnapshotV1['snapshotId'];
   readonly expectedRevisions: readonly ExpectedRevisionV1[];
-  readonly plan: OperationPlan<Command>;
+  readonly plan: OperationPlan<Command, ToolId>;
 }
 
 export interface SnapshotPlanningErrorV1 {
@@ -257,10 +264,13 @@ export const expectedRevisionPreconditionIdsForSnapshotV1 = (
   );
 
 /** Bind an already canonical immutable operation plan to its exact approved observation. */
-export const bindOperationPlanToSnapshotV1 = <Command extends CurrentMutatorCommand>(
+export const bindOperationPlanToSnapshotV1 = <
+  Command extends CurrentMutatorCommand,
+  ToolId extends string = SupportedTool,
+>(
   snapshot: ObservedStateSnapshotV1,
-  plan: OperationPlan<Command>,
-): SnapshotBoundOperationPlanV1<Command> =>
+  plan: OperationPlan<Command, ToolId>,
+): SnapshotBoundOperationPlanV1<Command, ToolId> =>
   deepFreeze({
     schemaVersion: 1,
     snapshotId: snapshot.snapshotId,
@@ -326,6 +336,41 @@ const stringArray = (value: unknown, path: string, nonEmpty = false): string[] =
 
 const rejectDuplicates = (values: readonly string[], path: string): void => {
   if (new Set(values).size !== values.length) fail(`${path} contains duplicate values`);
+};
+
+const validatePlanningToolContext = (
+  context: PlanningToolContext<string>,
+): PlanningToolContext<string> => {
+  const orderedTools = [...context.toolOrder];
+  rejectDuplicates(orderedTools, '$planningContext.toolOrder');
+  for (const [index, tool] of orderedTools.entries()) {
+    if (typeof tool !== 'string' || tool.length === 0) {
+      fail(`$planningContext.toolOrder[${index}] must be a non-empty string`);
+    }
+    if (context.registry.get(tool)?.descriptor.id !== tool) {
+      fail(`$planningContext.toolOrder[${index}] is not registered`);
+    }
+  }
+  return context;
+};
+
+export const resolvePlanningToolContext = (
+  context: PlanningToolContext<string> | undefined,
+): PlanningToolContext<string> =>
+  validatePlanningToolContext(context ?? builtInPlanningToolContext());
+
+const registeredTool = (
+  value: unknown,
+  context: PlanningToolContext<string>,
+  path: string,
+): string => {
+  string(value, path);
+  if (typeof value !== 'string') return fail(`${path} is unsupported`);
+  const tool = value;
+  if (context.registry.get(tool)?.descriptor.id !== tool) {
+    fail(`${path} is unsupported`);
+  }
+  return tool;
 };
 
 const validateOperationId = (value: unknown, path: string): void => {
@@ -401,7 +446,11 @@ const validateSource = (value: unknown, path: string): void => {
   fail(`${path}.kind is unsupported`);
 };
 
-const validateResource = (value: unknown, path: string): void => {
+const validateResource = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): void => {
   const resource = record(value, path);
   switch (resource.kind) {
     case 'live':
@@ -412,7 +461,7 @@ const validateResource = (value: unknown, path: string): void => {
         path,
       );
       string(resource.skill, `${path}.skill`);
-      literal(resource.tool, tools, `${path}.tool`);
+      registeredTool(resource.tool, context, `${path}.tool`);
       literal(resource.scope, new Set(['user', 'project']), `${path}.scope`);
       if (resource.projectRoot !== null)
         validateLocation(resource.projectRoot, `${path}.projectRoot`);
@@ -457,7 +506,9 @@ const validateManifestSnapshot = (value: unknown, path: string): void => {
     if (defaults.tools !== null) {
       const defaultTools = stringArray(defaults.tools, `${path}.defaults.tools`);
       rejectDuplicates(defaultTools, `${path}.defaults.tools`);
-      for (const tool of defaultTools) literal(tool, tools, `${path}.defaults.tools`);
+      for (const tool of defaultTools) {
+        registeredTool(tool, builtInPlanningToolContext(), `${path}.defaults.tools`);
+      }
     }
     if (defaults.scope !== null) {
       literal(defaults.scope, new Set(['user', 'project']), `${path}.defaults.scope`);
@@ -492,7 +543,9 @@ const validateManifestSnapshot = (value: unknown, path: string): void => {
     string(entry.ref, `${entryPath}.ref`, true);
     const entryTools = stringArray(entry.tools, `${entryPath}.tools`);
     rejectDuplicates(entryTools, `${entryPath}.tools`);
-    for (const tool of entryTools) literal(tool, tools, `${entryPath}.tools`);
+    for (const tool of entryTools) {
+      registeredTool(tool, builtInPlanningToolContext(), `${entryPath}.tools`);
+    }
     literal(entry.scope, new Set(['user', 'project']), `${entryPath}.scope`);
     literal(entry.placement, new Set(['symlink', 'copy']), `${entryPath}.placement`);
     string(entry.path, `${entryPath}.path`, true);
@@ -528,11 +581,15 @@ const validateLockSnapshot = (value: unknown, path: string): void => {
   }
 };
 
-const validateImage = (value: unknown, path: string): void => {
+const validateImage = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): void => {
   const image = record(value, path);
   if (image.kind === 'absent') {
     exactKeys(image, ['kind', 'resource'], ['kind', 'resource'], path);
-    validateResource(image.resource, `${path}.resource`);
+    validateResource(image.resource, `${path}.resource`, context);
     return;
   }
   if (image.kind === 'placement') {
@@ -560,7 +617,7 @@ const validateImage = (value: unknown, path: string): void => {
       ],
       path,
     );
-    validateResource(image.resource, `${path}.resource`);
+    validateResource(image.resource, `${path}.resource`, context);
     if (record(image.resource, `${path}.resource`).kind !== 'live') {
       fail(`${path}.resource must identify a live placement`);
     }
@@ -632,7 +689,11 @@ const validateReason = (value: unknown, path: string): void => {
   string(reason.message, `${path}.message`);
 };
 
-const validateConflict = (value: unknown, path: string): void => {
+const validateConflict = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): void => {
   const conflict = record(value, path);
   exactKeys(
     conflict,
@@ -651,7 +712,7 @@ const validateConflict = (value: unknown, path: string): void => {
     `${path}.class`,
   );
   if (conflict.normal !== 'refuse') fail(`${path}.normal must be refuse`);
-  validateResource(conflict.target, `${path}.target`);
+  validateResource(conflict.target, `${path}.target`, context);
   if (conflict.class === 'source-changed') {
     if (conflict.forced !== 'replace' || conflict.backup !== 'none')
       fail(`${path} source-changed policy is invalid`);
@@ -660,7 +721,9 @@ const validateConflict = (value: unknown, path: string): void => {
   }
 };
 
-const identityFromOperation = (operation: ExecutableOperation): OperationIdentity => ({
+const identityFromOperation = <ToolId extends string>(
+  operation: ExecutableOperation<ToolId>,
+): OperationIdentity<ToolId> => ({
   domain: 'skillsmith.operation-identity',
   schemaVersion: 1,
   groupId: operation.groupId,
@@ -672,7 +735,11 @@ const identityFromOperation = (operation: ExecutableOperation): OperationIdentit
   scope: operation.scope,
 });
 
-const validateIdentity = (value: unknown, path: string): OperationIdentity => {
+const validateIdentity = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): OperationIdentity<string> => {
   const identity = record(value, path);
   exactKeys(
     identity,
@@ -690,10 +757,10 @@ const validateIdentity = (value: unknown, path: string): OperationIdentity => {
   literal(identity.kind, operationKinds, `${path}.kind`);
   string(identity.skill, `${path}.skill`, true);
   if (identity.source !== null) validateSource(identity.source, `${path}.source`);
-  if (identity.tool !== null) literal(identity.tool, tools, `${path}.tool`);
+  if (identity.tool !== null) registeredTool(identity.tool, context, `${path}.tool`);
   if (identity.scope !== null)
     literal(identity.scope, new Set(['user', 'project']), `${path}.scope`);
-  return identity as unknown as OperationIdentity;
+  return identity as unknown as OperationIdentity<string>;
 };
 
 const validateGroupIdentity = (value: unknown, path: string): OperationGroupIdentity => {
@@ -725,7 +792,11 @@ const validateGroupIdentity = (value: unknown, path: string): OperationGroupIden
   return identity as unknown as OperationGroupIdentity;
 };
 
-const validatePairIdentity = (value: unknown, path: string): OperationPairIdentity => {
+const validatePairIdentity = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): OperationPairIdentity<string> => {
   const identity = record(value, path);
   exactKeys(
     identity,
@@ -737,13 +808,13 @@ const validatePairIdentity = (value: unknown, path: string): OperationPairIdenti
     fail(`${path} has an unsupported pair identity domain or schema`);
   }
   validateStructuredId(identity.groupId, 'group', `${path}.groupId`);
-  literal(identity.tool, tools, `${path}.tool`);
-  validateResource(identity.resource, `${path}.resource`);
+  registeredTool(identity.tool, context, `${path}.tool`);
+  validateResource(identity.resource, `${path}.resource`, context);
   const resource = identity.resource as UnknownRecord;
   if (resource.kind === 'live' && resource.tool !== identity.tool) {
     fail(`${path}.tool must match its live resource`);
   }
-  return identity as unknown as OperationPairIdentity;
+  return identity as unknown as OperationPairIdentity<string>;
 };
 
 export function createOperationGroupId(input: OperationGroupIdentity): string;
@@ -754,20 +825,39 @@ export function createOperationGroupId(input: unknown): string {
 }
 
 export function createOperationPairId(input: OperationPairIdentity): string;
-export function createOperationPairId(input: unknown): string {
+export function createOperationPairId<ToolId extends string>(
+  input: OperationPairIdentity<ToolId>,
+  context: PlanningToolContext<ToolId>,
+): string;
+export function createOperationPairId(
+  input: unknown,
+  context?: PlanningToolContext<string>,
+): string {
   const snapshot = ownPlanningData(input);
-  const identity = validatePairIdentity(snapshot, '$pairIdentity');
+  const identity = validatePairIdentity(
+    snapshot,
+    '$pairIdentity',
+    resolvePlanningToolContext(context),
+  );
   return createStructuredPlanningId('pair', identity);
 }
 
 export function createOperationId(input: OperationIdentity): string;
-export function createOperationId(input: unknown): string {
+export function createOperationId<ToolId extends string>(
+  input: OperationIdentity<ToolId>,
+  context: PlanningToolContext<ToolId>,
+): string;
+export function createOperationId(input: unknown, context?: PlanningToolContext<string>): string {
   const snapshot = ownPlanningData(input);
-  const identity = validateIdentity(snapshot, '$identity');
+  const identity = validateIdentity(snapshot, '$identity', resolvePlanningToolContext(context));
   return createStructuredPlanningId('operation', identity);
 }
 
-const validateOperation = (value: unknown, path: string): ExecutableOperation => {
+const validateOperation = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): ExecutableOperation<string> => {
   const operation = record(value, path);
   exactKeys(
     operation,
@@ -821,11 +911,11 @@ const validateOperation = (value: unknown, path: string): ExecutableOperation =>
   literal(operation.kind, operationKinds, `${path}.kind`);
   string(operation.skill, `${path}.skill`, true);
   if (operation.source !== null) validateSource(operation.source, `${path}.source`);
-  if (operation.tool !== null) literal(operation.tool, tools, `${path}.tool`);
+  if (operation.tool !== null) registeredTool(operation.tool, context, `${path}.tool`);
   if (operation.scope !== null)
     literal(operation.scope, new Set(['user', 'project']), `${path}.scope`);
-  validateImage(operation.before, `${path}.before`);
-  validateImage(operation.after, `${path}.after`);
+  validateImage(operation.before, `${path}.before`, context);
+  validateImage(operation.after, `${path}.after`, context);
   validateReason(operation.reason, `${path}.reason`);
   literal(operation.selectionSource, selectionSources, `${path}.selectionSource`);
   const preconditionIds = stringArray(operation.preconditionIds, `${path}.preconditionIds`);
@@ -879,16 +969,27 @@ const validateOperation = (value: unknown, path: string): ExecutableOperation =>
   );
   for (const key of ['live', 'manifest', 'lock', 'ledger'])
     boolean(mutates[key], `${path}.mutates.${key}`);
-  if (operation.conflict !== null) validateConflict(operation.conflict, `${path}.conflict`);
+  if (operation.conflict !== null) {
+    validateConflict(operation.conflict, `${path}.conflict`, context);
+  }
 
-  const typed = operation as unknown as ExecutableOperation;
-  if (typed.operationId !== createOperationId(identityFromOperation(typed))) {
+  const typed = operation as unknown as ExecutableOperation<string>;
+  const semanticIdentity = validateIdentity(
+    identityFromOperation(typed),
+    `${path}.identity`,
+    context,
+  );
+  if (typed.operationId !== createStructuredPlanningId('operation', semanticIdentity)) {
     fail(`${path}.operationId does not match its semantic identity`);
   }
   return typed;
 };
 
-const validateCheck = (value: unknown, path: string): PlanCheck => {
+const validateCheck = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): PlanCheck<string> => {
   const check = record(value, path);
   const common = ['checkId', 'blocking', 'operationIds', 'kind'];
   const variantKeys: Record<string, string[]> = {
@@ -918,7 +1019,7 @@ const validateCheck = (value: unknown, path: string): PlanCheck => {
     validateDigest(check.expectedContentHash, `${path}.expectedContentHash`);
   }
   if (check.kind === 'verification') {
-    literal(check.tool, tools, `${path}.tool`);
+    registeredTool(check.tool, context, `${path}.tool`);
     literal(check.mode, new Set(['static', 'static+deep']), `${path}.mode`);
     validateDigest(check.expectedContentHash, `${path}.expectedContentHash`);
   }
@@ -926,10 +1027,14 @@ const validateCheck = (value: unknown, path: string): PlanCheck => {
     const ids = stringArray(check.preconditionIds, `${path}.preconditionIds`, true);
     rejectDuplicates(ids, `${path}.preconditionIds`);
   }
-  return check as unknown as PlanCheck;
+  return check as unknown as PlanCheck<string>;
 };
 
-const validateDiagnostic = (value: unknown, path: string): PlanningDiagnostic => {
+const validateDiagnostic = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): PlanningDiagnostic<string> => {
   const diagnostic = record(value, path);
   exactKeys(
     diagnostic,
@@ -974,7 +1079,9 @@ const validateDiagnostic = (value: unknown, path: string): PlanningDiagnostic =>
   );
   string(affected.skill, `${path}.affected.skill`, true);
   if (affected.source !== null) validateSource(affected.source, `${path}.affected.source`);
-  if (affected.tool !== null) literal(affected.tool, tools, `${path}.affected.tool`);
+  if (affected.tool !== null) {
+    registeredTool(affected.tool, context, `${path}.affected.tool`);
+  }
   if (affected.scope !== null)
     literal(affected.scope, new Set(['user', 'project']), `${path}.affected.scope`);
   if (affected.path !== null) validateLocation(affected.path, `${path}.affected.path`);
@@ -999,10 +1106,14 @@ const validateDiagnostic = (value: unknown, path: string): PlanningDiagnostic =>
   }
   validateReason(diagnostic.reason, `${path}.reason`);
   literal(diagnostic.selectionSource, selectionSources, `${path}.selectionSource`);
-  return diagnostic as unknown as PlanningDiagnostic;
+  return diagnostic as unknown as PlanningDiagnostic<string>;
 };
 
-const validateCheckIdentity = (value: unknown, path: string): PlanCheckIdentity => {
+const validateCheckIdentity = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): PlanCheckIdentity<string> => {
   const identity = record(value, path);
   const common = ['domain', 'schemaVersion', 'operationIds', 'kind'];
   const variantKeys: Record<string, string[]> = {
@@ -1028,6 +1139,7 @@ const validateCheckIdentity = (value: unknown, path: string): PlanCheckIdentity 
       ...checkFacts,
     },
     path,
+    context,
   );
   for (const operationId of check.operationIds) {
     validateOperationId(operationId, `${path}.operationIds`);
@@ -1038,13 +1150,14 @@ const validateCheckIdentity = (value: unknown, path: string): PlanCheckIdentity 
     ...('preconditionIds' in check
       ? { preconditionIds: sortPlanningStrings(check.preconditionIds) }
       : {}),
-  } as unknown as PlanCheckIdentity;
+  } as unknown as PlanCheckIdentity<string>;
 };
 
 const validatePlanningDiagnosticIdentity = (
   value: unknown,
   path: string,
-): PlanningDiagnosticIdentity => {
+  context: PlanningToolContext<string>,
+): PlanningDiagnosticIdentity<string> => {
   const identity = record(value, path);
   exactKeys(
     identity,
@@ -1090,6 +1203,7 @@ const validatePlanningDiagnosticIdentity = (
       selectionSource: identity.selectionSource,
     },
     path,
+    context,
   );
   if (diagnostic.correlation.groupId !== null) {
     validateStructuredId(diagnostic.correlation.groupId, 'group', `${path}.correlation.groupId`);
@@ -1100,24 +1214,46 @@ const validatePlanningDiagnosticIdentity = (
   if (diagnostic.correlation.operationId !== null) {
     validateOperationId(diagnostic.correlation.operationId, `${path}.correlation.operationId`);
   }
-  return identity as unknown as PlanningDiagnosticIdentity;
+  return identity as unknown as PlanningDiagnosticIdentity<string>;
 };
 
 export function createPlanCheckId(input: PlanCheckIdentity): string;
-export function createPlanCheckId(input: unknown): string {
+export function createPlanCheckId<ToolId extends string>(
+  input: PlanCheckIdentity<ToolId>,
+  context: PlanningToolContext<ToolId>,
+): string;
+export function createPlanCheckId(input: unknown, context?: PlanningToolContext<string>): string {
   const snapshot = ownPlanningData(input);
-  const identity = validateCheckIdentity(snapshot, '$checkIdentity');
+  const identity = validateCheckIdentity(
+    snapshot,
+    '$checkIdentity',
+    resolvePlanningToolContext(context),
+  );
   return createStructuredPlanningId('check', identity);
 }
 
 export function createPlanningDiagnosticId(input: PlanningDiagnosticIdentity): string;
-export function createPlanningDiagnosticId(input: unknown): string {
+export function createPlanningDiagnosticId<ToolId extends string>(
+  input: PlanningDiagnosticIdentity<ToolId>,
+  context: PlanningToolContext<ToolId>,
+): string;
+export function createPlanningDiagnosticId(
+  input: unknown,
+  context?: PlanningToolContext<string>,
+): string {
   const snapshot = ownPlanningData(input);
-  const identity = validatePlanningDiagnosticIdentity(snapshot, '$diagnosticIdentity');
+  const identity = validatePlanningDiagnosticIdentity(
+    snapshot,
+    '$diagnosticIdentity',
+    resolvePlanningToolContext(context),
+  );
   return createStructuredPlanningId('diagnostic', identity);
 }
 
-const canonicalSelection = (value: unknown): OperationSelection => {
+const canonicalSelection = (
+  value: unknown,
+  context: PlanningToolContext<string>,
+): OperationSelection<string> => {
   const selection = record(value, '$plan.selection');
   exactKeys(
     selection,
@@ -1143,20 +1279,22 @@ const canonicalSelection = (value: unknown): OperationSelection => {
   }
   const selectedTools = stringArray(selection.tools, '$plan.selection.tools');
   rejectDuplicates(selectedTools, '$plan.selection.tools');
-  for (const tool of selectedTools) literal(tool, tools, '$plan.selection.tools');
-  output.tools = sortPlanningTools(selectedTools);
+  for (const tool of selectedTools) {
+    registeredTool(tool, context, '$plan.selection.tools');
+  }
+  output.tools = sortPlanningTools(selectedTools, context);
   const scopes = stringArray(selection.scopes, '$plan.selection.scopes');
   rejectDuplicates(scopes, '$plan.selection.scopes');
   for (const scope of scopes)
     literal(scope, new Set(['user', 'project']), '$plan.selection.scopes');
   output.scopes = sortPlanningScopes(scopes);
-  return output as unknown as OperationSelection;
+  return output as unknown as OperationSelection<string>;
 };
 
-const canonicalizeCheck = (
-  check: PlanCheck,
+const canonicalizeCheck = <ToolId extends string>(
+  check: PlanCheck<ToolId>,
   operationIndex: ReadonlyMap<string, number>,
-): PlanCheck => {
+): PlanCheck<ToolId> => {
   const operationIds = [...check.operationIds].sort(
     (left, right) =>
       (operationIndex.get(left) ?? Number.POSITIVE_INFINITY) -
@@ -1168,13 +1306,21 @@ const canonicalizeCheck = (
     ...('preconditionIds' in check
       ? { preconditionIds: sortPlanningStrings(check.preconditionIds) }
       : {}),
-  } as unknown as PlanCheck;
+  } as unknown as PlanCheck<ToolId>;
 };
 
 export function createOperationPlan<Command extends CurrentMutatorCommand>(
   input: OperationPlanInput<Command>,
 ): OperationPlan<Command>;
-export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan {
+export function createOperationPlan<Command extends CurrentMutatorCommand, ToolId extends string>(
+  input: OperationPlanInput<Command, ToolId>,
+  context: PlanningToolContext<ToolId>,
+): OperationPlan<Command, ToolId>;
+export function createOperationPlan(
+  input: unknown,
+  suppliedContext?: PlanningToolContext<string>,
+): OperationPlan<CurrentMutatorCommand, string> {
+  const context = resolvePlanningToolContext(suppliedContext);
   const snapshot = ownPlanningData(input);
   const plan = record(snapshot, '$plan');
   exactKeys(
@@ -1206,7 +1352,7 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
   }
   literal(plan.command, currentMutatorCommands, '$plan.command');
   literal(plan.batchPolicy, new Set(['fail-fast', 'continue-on-error']), '$plan.batchPolicy');
-  const selection = canonicalSelection(plan.selection);
+  const selection = canonicalSelection(plan.selection, context);
   if (
     (plan.command === 'dev' || plan.command === 'promote') &&
     selection.source === 'bounded-default'
@@ -1215,7 +1361,7 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
   }
 
   const operations = array(plan.operations, '$plan.operations').map((operation, index) =>
-    validateOperation(operation, `$plan.operations[${index}]`),
+    validateOperation(operation, `$plan.operations[${index}]`, context),
   );
   const operationIds = operations.map((operation) => operation.operationId);
   rejectDuplicates(operationIds, '$plan.operations.operationId');
@@ -1259,7 +1405,7 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
       fail('$plan doctor repairs must continue across independent artifact failures');
     }
   }
-  operations.sort(compareExecutableOperations);
+  operations.sort((left, right) => compareExecutableOperations(left, right, context));
   const operationIndex = new Map(
     operations.map((operation, index) => [operation.operationId, index]),
   );
@@ -1292,7 +1438,7 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
   });
 
   const checks = array(plan.checks, '$plan.checks').map((check, index) =>
-    validateCheck(check, `$plan.checks[${index}]`),
+    validateCheck(check, `$plan.checks[${index}]`, context),
   );
   rejectDuplicates(
     checks.map((check) => check.checkId),
@@ -1315,7 +1461,7 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
   canonicalChecks.sort((left, right) => comparePlanChecks(operationIndex, left, right));
 
   const diagnostics = array(plan.diagnostics, '$plan.diagnostics').map((diagnostic, index) =>
-    validateDiagnostic(diagnostic, `$plan.diagnostics[${index}]`),
+    validateDiagnostic(diagnostic, `$plan.diagnostics[${index}]`, context),
   );
   rejectDuplicates(
     diagnostics.map((diagnostic) => diagnostic.diagnosticId),
@@ -1329,17 +1475,21 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
       fail(`diagnostic ${diagnostic.diagnosticId} references an unknown operation`);
     }
   }
-  diagnostics.sort(comparePlanningDiagnostics);
+  diagnostics.sort((left, right) => comparePlanningDiagnostics(left, right, context));
   return deepFreeze({
     ...plan,
     selection,
     operations: canonicalOperations,
     checks: canonicalChecks,
     diagnostics,
-  } as unknown as CurrentMutatorOperationPlan);
+  } as unknown as OperationPlan<CurrentMutatorCommand, string>);
 }
 
-const validateForceEffect = (value: unknown, path: string): void => {
+const validateForceEffect = (
+  value: unknown,
+  path: string,
+  context: PlanningToolContext<string>,
+): void => {
   const force = record(value, path);
   exactKeys(
     force,
@@ -1387,7 +1537,7 @@ const validateForceEffect = (value: unknown, path: string): void => {
     ]),
     `${path}.conflictType`,
   );
-  validateResource(force.target, `${path}.target`);
+  validateResource(force.target, `${path}.target`, context);
   if (force.normalBehavior !== 'refuse') fail(`${path}.normalBehavior must be refuse`);
   literal(
     force.forcedBehavior,
@@ -1406,7 +1556,15 @@ const validateForceEffect = (value: unknown, path: string): void => {
 };
 
 export function createBoundedForceEffect(input: BoundedForceEffectInput): BoundedForceEffect;
-export function createBoundedForceEffect(input: unknown): BoundedForceEffect {
+export function createBoundedForceEffect<ToolId extends string>(
+  input: BoundedForceEffectInput<ToolId>,
+  context: PlanningToolContext<ToolId>,
+): BoundedForceEffect<ToolId>;
+export function createBoundedForceEffect(
+  input: unknown,
+  suppliedContext?: PlanningToolContext<string>,
+): BoundedForceEffect<string> {
+  const context = resolvePlanningToolContext(suppliedContext);
   const snapshot = ownPlanningData(input);
   const request = record(snapshot, '$force');
   exactKeys(
@@ -1434,8 +1592,8 @@ export function createBoundedForceEffect(input: unknown): BoundedForceEffect {
       backup: null,
     });
   }
-  validateConflict(request.conflict, '$force.conflict');
-  const conflict = request.conflict as unknown as BoundedConflict;
+  validateConflict(request.conflict, '$force.conflict', context);
+  const conflict = request.conflict as unknown as BoundedConflict<string>;
   if (conflict.class === 'source-changed') {
     return deepFreeze({
       requested: true,
@@ -1461,7 +1619,15 @@ export function createBoundedForceEffect(input: unknown): BoundedForceEffect {
 export function createOperationExecutionResult(
   input: OperationExecutionResultInput,
 ): OperationExecutionResult;
-export function createOperationExecutionResult(input: unknown): OperationExecutionResult {
+export function createOperationExecutionResult<ToolId extends string>(
+  input: OperationExecutionResultInput<ToolId>,
+  context: PlanningToolContext<ToolId>,
+): OperationExecutionResult<ToolId>;
+export function createOperationExecutionResult(
+  input: unknown,
+  suppliedContext?: PlanningToolContext<string>,
+): OperationExecutionResult<string> {
+  const context = resolvePlanningToolContext(suppliedContext);
   const snapshot = ownPlanningData(input);
   const result = record(snapshot, '$result');
   exactKeys(
@@ -1472,9 +1638,9 @@ export function createOperationExecutionResult(input: unknown): OperationExecuti
   );
   validateOperationId(result.operationId, '$result.operationId');
   literal(result.outcome, executionOutcomes, '$result.outcome');
-  validateImage(result.actualBefore, '$result.actualBefore');
-  validateImage(result.actualAfter, '$result.actualAfter');
-  if (result.force !== null) validateForceEffect(result.force, '$result.force');
+  validateImage(result.actualBefore, '$result.actualBefore', context);
+  validateImage(result.actualAfter, '$result.actualAfter', context);
+  if (result.force !== null) validateForceEffect(result.force, '$result.force', context);
   if (result.error !== null) {
     const error = record(result.error, '$result.error');
     exactKeys(
@@ -1499,9 +1665,9 @@ export function createOperationExecutionResult(input: unknown): OperationExecuti
   if (
     result.outcome === 'skipped-after-failure' &&
     result.force !== null &&
-    (result.force as unknown as BoundedForceEffect).applied
+    (result.force as unknown as BoundedForceEffect<string>).applied
   ) {
     fail('$result skipped-after-failure force must not be applied');
   }
-  return deepFreeze(result as unknown as OperationExecutionResult);
+  return deepFreeze(result as unknown as OperationExecutionResult<string>);
 }

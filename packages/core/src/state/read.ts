@@ -4,6 +4,7 @@ import { hashPortableLock, serializePortableLock } from '../artifacts/lock.ts';
 import type { PortableLockV1 } from '../artifacts/lock.ts';
 import { ledgerSemanticRevision } from '../artifacts/registry.ts';
 import type { NormalizedManifestV1 } from '../artifacts/types.ts';
+import type { CapabilitySnapshotV1Dto } from '../contracts/v1/capability-snapshot.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
   containsSensitiveMaterial,
@@ -59,8 +60,6 @@ interface ResourceDescriptor {
   readonly resourceId: string;
 }
 
-type OwnedObservation = ObservedComponentV1<never>;
-
 const invalidRequest = (): SnapshotReadRequestError =>
   Object.freeze({ code: 'snapshot-invalid-request' as const });
 
@@ -112,8 +111,10 @@ const canonicalResources = (
   return ok(Object.freeze(descriptors));
 };
 
-const repositoryFor = (repositories: ObservedStateRepositoriesV1, domain: StateDomainV1) =>
-  repositories[domain];
+const repositoryFor = <CapabilityModel>(
+  repositories: ObservedStateRepositoriesV1<CapabilityModel>,
+  domain: StateDomainV1,
+) => repositories[domain];
 
 const acceptsSnapshotString = (_path: string, value: string): boolean =>
   !containsSensitiveMaterial(value) || redactSensitiveString(value) === value;
@@ -246,10 +247,10 @@ const coherentObservationValue = (revision: ExpectedRevisionV1, value: unknown):
   );
 };
 
-const ownObservation = (
-  input: unknown,
+const ownObservation = <Model>(
+  input: ObservedComponentV1<Model>,
   descriptor: ResourceDescriptor,
-): Result<OwnedObservation, SnapshotObservationError> => {
+): Result<ObservedComponentV1<Model>, SnapshotObservationError> => {
   const owned = ownOrdinaryData(input, acceptsSnapshotString, {
     rootPath: `$observation.${descriptor.domain}.${descriptor.resourceId}`,
     objectPrototype: 'null',
@@ -270,7 +271,24 @@ const ownObservation = (
   ) {
     return err(invalidObservation(descriptor.domain, descriptor.resourceId));
   }
-  return ok(candidate as unknown as OwnedObservation);
+  return ok(
+    Object.freeze({
+      revision: candidate.revision,
+      value: candidate.value as Model | null,
+    }),
+  );
+};
+
+interface SnapshotObserver<Model> {
+  observe(resourceId: string): Promise<Result<ObservedComponentV1<Model>, StateRepositoryError>>;
+}
+
+const observeOwned = async <Model>(
+  repository: SnapshotObserver<Model>,
+  descriptor: ResourceDescriptor,
+): Promise<Result<ObservedComponentV1<Model>, SnapshotObservationError | StateRepositoryError>> => {
+  const observed = await repository.observe(descriptor.resourceId);
+  return observed.ok ? ownObservation(observed.value, descriptor) : observed;
 };
 
 const snapshotId = (
@@ -297,10 +315,10 @@ const snapshotId = (
   return `snapshot:v1:${hashed.value.slice('sha256:'.length)}`;
 };
 
-export const readObservedStateSnapshotV1 = async (
+export const readObservedStateSnapshotV1 = async <CapabilityModel = CapabilitySnapshotV1Dto>(
   request: ObservedStateReadRequestV1,
-  repositories: ObservedStateRepositoriesV1,
-): Promise<Result<ObservedStateSnapshotV1, ObservedStateReadError>> => {
+  repositories: ObservedStateRepositoriesV1<CapabilityModel>,
+): Promise<Result<ObservedStateSnapshotV1<CapabilityModel>, ObservedStateReadError>> => {
   const resources = canonicalResources(request);
   if (!resources.ok) return resources;
   if (
@@ -310,16 +328,55 @@ export const readObservedStateSnapshotV1 = async (
     return err(invalidRequest());
   }
 
-  const observations: OwnedObservation[] = [];
-  for (const descriptor of resources.value) {
-    const observed = await repositoryFor(repositories, descriptor.domain).observe(
-      descriptor.resourceId,
-    );
-    if (!observed.ok) return observed;
-    const owned = ownObservation(observed.value, descriptor);
-    if (!owned.ok) return owned;
-    observations.push(owned.value);
+  const projectDescriptor = resources.value[0];
+  const manifestDescriptor = resources.value[1];
+  const lockDescriptor = resources.value[2];
+  const ledgerDescriptor = resources.value[3];
+  const liveStart = 4;
+  const storeStart = liveStart + request.liveResourceIds.length;
+  const storeEnd = storeStart + request.storeResourceIds.length;
+  const capabilitiesDescriptor = resources.value[storeEnd];
+  if (
+    projectDescriptor === undefined ||
+    manifestDescriptor === undefined ||
+    lockDescriptor === undefined ||
+    ledgerDescriptor === undefined ||
+    capabilitiesDescriptor === undefined
+  ) {
+    return err(invalidRequest());
   }
+
+  const project = await observeOwned(repositories.project, projectDescriptor);
+  if (!project.ok) return project;
+  const manifest = await observeOwned(repositories.manifest, manifestDescriptor);
+  if (!manifest.ok) return manifest;
+  const lock = await observeOwned(repositories.lock, lockDescriptor);
+  if (!lock.ok) return lock;
+  const ledger = await observeOwned(repositories.ledger, ledgerDescriptor);
+  if (!ledger.ok) return ledger;
+  const live: ObservedStateSnapshotV1<CapabilityModel>['live'][number][] = [];
+  for (const descriptor of resources.value.slice(liveStart, storeStart)) {
+    const observed = await observeOwned(repositories.live, descriptor);
+    if (!observed.ok) return observed;
+    live.push(observed.value);
+  }
+  const store: ObservedStateSnapshotV1<CapabilityModel>['store'][number][] = [];
+  for (const descriptor of resources.value.slice(storeStart, storeEnd)) {
+    const observed = await observeOwned(repositories.store, descriptor);
+    if (!observed.ok) return observed;
+    store.push(observed.value);
+  }
+  const capabilities = await observeOwned(repositories.capabilities, capabilitiesDescriptor);
+  if (!capabilities.ok) return capabilities;
+  const observations: readonly ObservedComponentV1<unknown>[] = Object.freeze([
+    project.value,
+    manifest.value,
+    lock.value,
+    ledger.value,
+    ...live,
+    ...store,
+    capabilities.value,
+  ]);
 
   const revisionVector: ExpectedRevisionV1[] = [];
   for (const descriptor of resources.value) {
@@ -345,24 +402,7 @@ export const readObservedStateSnapshotV1 = async (
     return err(Object.freeze({ code: 'snapshot-changed' as const }));
   }
 
-  const project = observations[0];
-  const manifest = observations[1];
-  const lock = observations[2];
-  const ledger = observations[3];
-  const capabilities = observations.at(-1);
-  if (
-    project === undefined ||
-    manifest === undefined ||
-    lock === undefined ||
-    ledger === undefined ||
-    capabilities === undefined
-  ) {
-    return err(invalidRequest());
-  }
-  const liveStart = 4;
-  const storeStart = liveStart + request.liveResourceIds.length;
-  const storeEnd = storeStart + request.storeResourceIds.length;
-  const snapshot = Object.freeze({
+  const snapshot: ObservedStateSnapshotV1<CapabilityModel> = Object.freeze({
     schemaVersion: 1 as const,
     snapshotId: snapshotId(
       resources.value,
@@ -370,13 +410,13 @@ export const readObservedStateSnapshotV1 = async (
       request.statusRevision,
     ),
     ...(request.statusRevision === undefined ? {} : { statusRevision: request.statusRevision }),
-    project,
-    manifest,
-    lock,
-    ledger,
-    live: Object.freeze(observations.slice(liveStart, storeStart)),
-    store: Object.freeze(observations.slice(storeStart, storeEnd)),
-    capabilities,
+    project: project.value,
+    manifest: manifest.value,
+    lock: lock.value,
+    ledger: ledger.value,
+    live: Object.freeze(live),
+    store: Object.freeze(store),
+    capabilities: capabilities.value,
   });
-  return ok(snapshot as unknown as ObservedStateSnapshotV1);
+  return ok(snapshot);
 };

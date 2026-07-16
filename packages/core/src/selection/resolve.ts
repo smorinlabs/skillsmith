@@ -1,4 +1,5 @@
-import { SUPPORTED_TOOLS } from '../agents/types.ts';
+import type { ToolRegistry } from '../agents/registry.ts';
+import { SUPPORTED_TOOLS, type SupportedTool } from '../agents/types.ts';
 import { SCOPES } from '../config/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
@@ -55,19 +56,24 @@ const validateKnownAllowed = <T extends string>(
   allowed: readonly T[],
   field: SelectionInvalidEnumError['field'],
 ): Result<readonly T[], SelectionInvalidEnumError | SelectionCapabilityError> => {
-  const knownSet = new Set<string>(known);
   const allowedSet = new Set<string>(allowed);
+  const selected: T[] = [];
   for (const value of values) {
-    if (!knownSet.has(value)) return err(invalidEnumError(field, value));
+    const knownValue = known.find((candidate) => candidate === value);
+    if (knownValue === undefined) return err(invalidEnumError(field, value));
     if (!allowedSet.has(value)) return err(capabilityError(field, value));
+    if (!selected.includes(knownValue)) selected.push(knownValue);
   }
-  return ok(unique(values) as readonly T[]);
+  return ok(selected);
 };
 
-export const validateSelectionRequest = (
+type SelectionRegistry<ToolId extends string> = Pick<ToolRegistry<ToolId>, 'ids'>;
+
+const validateSelectionRequestWithRegistry = <ToolId extends string>(
   request: SelectionRequest,
-  policy: SelectionPolicy,
-): Result<ValidatedSelectionRequest, SelectionValidationError> => {
+  policy: SelectionPolicy<ToolId>,
+  registry: SelectionRegistry<ToolId>,
+): Result<ValidatedSelectionRequest<ToolId>, SelectionValidationError> => {
   const targets = unique(request.targets);
   if (targets.some((target) => target.trim().length === 0))
     return err(usageError('selection targets must not be empty'));
@@ -83,7 +89,7 @@ export const validateSelectionRequest = (
 
   const tools = validateKnownAllowed(
     request.tools ?? [],
-    SUPPORTED_TOOLS,
+    registry.ids,
     policy.allowedTools,
     'tool',
   );
@@ -121,26 +127,45 @@ export const validateSelectionRequest = (
   });
 };
 
+export function validateSelectionRequest(
+  request: SelectionRequest,
+  policy: SelectionPolicy<SupportedTool>,
+): Result<ValidatedSelectionRequest<SupportedTool>, SelectionValidationError>;
+export function validateSelectionRequest<ToolId extends string>(
+  request: SelectionRequest,
+  policy: SelectionPolicy<ToolId>,
+  registry: SelectionRegistry<ToolId>,
+): Result<ValidatedSelectionRequest<ToolId>, SelectionValidationError>;
+export function validateSelectionRequest(
+  request: SelectionRequest,
+  policy: SelectionPolicy<string>,
+  registry: SelectionRegistry<string> = { ids: SUPPORTED_TOOLS },
+): Result<ValidatedSelectionRequest<string>, SelectionValidationError> {
+  return validateSelectionRequestWithRegistry(request, policy, registry);
+}
+
 const wildcardPattern = (target: string): RegExp | null => {
   if (!target.includes('*') && !target.includes('?')) return null;
   const escaped = target.replace(/[.+^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`^${escaped.replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
 };
 
-const matchesTarget = (candidate: SelectionCandidate, target: string): boolean => {
+const matchesTarget = (candidate: SelectionCandidate<string>, target: string): boolean => {
   const wildcard = wildcardPattern(target);
   if (wildcard) return wildcard.test(candidate.name) || wildcard.test(candidate.path);
   return candidate.name === target || candidate.path === target;
 };
 
-const isExisting = (candidate: SelectionCandidate): boolean => candidate.exists !== false;
+const isExisting = (candidate: SelectionCandidate<string>): boolean => candidate.exists !== false;
 
-const matchesTool = (candidate: SelectionCandidate, request: ValidatedSelectionRequest): boolean =>
-  request.tools.length === 0 || request.tools.includes(candidate.tool);
+const matchesTool = (
+  candidate: SelectionCandidate<string>,
+  request: ValidatedSelectionRequest<string>,
+): boolean => request.tools.length === 0 || request.tools.includes(candidate.tool);
 
 const matchesCapability = (
-  candidate: SelectionCandidate,
-  request: ValidatedSelectionRequest,
+  candidate: SelectionCandidate<string>,
+  request: ValidatedSelectionRequest<string>,
 ): boolean =>
   request.capability === undefined || candidate.capabilities.includes(request.capability);
 
@@ -151,7 +176,7 @@ const unmatchedError = (targets: readonly string[]): SelectionUnmatchedError => 
   message: `no target matched: ${targets.join(', ')}`,
 });
 
-const ambiguousError = <C extends SelectionCandidate>(
+const ambiguousError = <C extends SelectionCandidate<string>>(
   target: string,
   candidates: readonly C[],
 ): SelectionAmbiguousError<C> => ({
@@ -163,7 +188,7 @@ const ambiguousError = <C extends SelectionCandidate>(
   message: `target '${target}' is ambiguous; select a scope or exact path`,
 });
 
-const success = <C extends SelectionCandidate>(
+const success = <C extends SelectionCandidate<string>>(
   selected: readonly C[],
   selectionSource: SelectionSource,
 ): TargetSelection<C> =>
@@ -181,9 +206,9 @@ const success = <C extends SelectionCandidate>(
  * pre-tool matches are retained solely to distinguish a valid filter-to-zero from an unmatched
  * explicit target. At no point can an empty explicit match widen into a bulk selection.
  */
-export const resolveTargetSelection = <C extends SelectionCandidate>(
+export const resolveTargetSelection = <C extends SelectionCandidate<string>>(
   candidates: readonly C[],
-  request: ValidatedSelectionRequest,
+  request: ValidatedSelectionRequest<string>,
 ): Result<TargetSelection<C>, TargetSelectionError<C>> => {
   const scoped =
     request.scopes.length === 0

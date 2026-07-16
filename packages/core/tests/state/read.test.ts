@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, normalize } from 'node:path';
-import { toolRegistry } from '../../src/agents/registry.ts';
+import {
+  type RelevantCapabilitySnapshotV1,
+  canonicalRelevantCapabilityQueriesV1,
+  toCapabilityPreconditionsV1,
+} from '../../src/agents/capabilities.ts';
+import { type ToolRegistry, createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import { ledgerSemanticRevision } from '../../src/artifacts/ledger-codec.ts';
 import { toCapabilitySnapshotV1Dto } from '../../src/contracts/v1/capability-snapshot.ts';
 import { emptyLedgerModel } from '../../src/place/ledger.ts';
@@ -15,6 +20,7 @@ import {
   type StateRepositoryError,
   createCapabilityStateReaderV1,
   createProjectStateReaderV1,
+  createRelevantCapabilityStateReaderV1,
   stageLogicalRepositoryEditV1,
 } from '../../src/state/repositories.ts';
 import {
@@ -366,6 +372,246 @@ describe('state revisions and snapshot reads', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  test('isolates relevant capability identity and revision from unrelated registry changes', async () => {
+    const userInstall = Object.freeze({
+      schemaVersion: 1 as const,
+      tool: 'codex',
+      operation: 'install' as const,
+      scope: 'user' as const,
+    });
+    const projectInstall = Object.freeze({ ...userInstall, scope: 'project' as const });
+    const userDev = Object.freeze({ ...userInstall, operation: 'dev' as const });
+    const queries = Object.freeze([userInstall, userDev]);
+    const base = createRelevantCapabilityStateReaderV1(toolRegistry, queries);
+    const reorderedDuplicate = createRelevantCapabilityStateReaderV1(
+      toolRegistry,
+      Object.freeze([userDev, userInstall, { ...userInstall }]),
+    );
+    const bumpVersion = (tool: 'codex' | 'opencode') =>
+      createToolRegistry(
+        toolRegistry.adapters.map((adapter) =>
+          adapter.descriptor.id === tool
+            ? {
+                ...adapter,
+                descriptor: {
+                  ...adapter.descriptor,
+                  capabilityVersion: adapter.descriptor.capabilityVersion + 1,
+                },
+              }
+            : adapter,
+        ),
+      );
+    const withoutCodex = createToolRegistry(
+      toolRegistry.adapters.filter((adapter) => adapter.descriptor.id !== 'codex'),
+    );
+    const withoutOpencode = createToolRegistry(
+      toolRegistry.adapters.filter((adapter) => adapter.descriptor.id !== 'opencode'),
+    );
+    const codexProjectOnly = createToolRegistry(
+      toolRegistry.adapters.map((adapter) =>
+        adapter.descriptor.id === 'codex'
+          ? {
+              ...adapter,
+              descriptor: {
+                ...adapter.descriptor,
+                operations: {
+                  ...adapter.descriptor.operations,
+                  install: {
+                    supported: true,
+                    scopes: ['project'] as const,
+                    remediation: null,
+                  },
+                },
+              },
+            }
+          : adapter,
+      ),
+    );
+
+    const observe = async (reader: ReturnType<typeof createRelevantCapabilityStateReaderV1>) =>
+      unwrap(await reader.observe(reader.resourceId));
+    const observed = {
+      base: await observe(base),
+      reorderedDuplicate: await observe(reorderedDuplicate),
+      usedVersion: await observe(
+        createRelevantCapabilityStateReaderV1(bumpVersion('codex'), queries),
+      ),
+      usedScope: await observe(createRelevantCapabilityStateReaderV1(codexProjectOnly, queries)),
+      unrelatedVersion: await observe(
+        createRelevantCapabilityStateReaderV1(bumpVersion('opencode'), queries),
+      ),
+      unrelatedRemoved: await observe(
+        createRelevantCapabilityStateReaderV1(withoutOpencode, queries),
+      ),
+      missing: await observe(createRelevantCapabilityStateReaderV1(withoutCodex, queries)),
+      operationQuery: await observe(createRelevantCapabilityStateReaderV1(toolRegistry, [userDev])),
+      scopeQuery: await observe(
+        createRelevantCapabilityStateReaderV1(toolRegistry, [projectInstall]),
+      ),
+    };
+
+    expect(canonicalRelevantCapabilityQueriesV1(toolRegistry, queries)).toEqual(queries);
+    expect(
+      canonicalRelevantCapabilityQueriesV1(toolRegistry, [
+        userDev,
+        userInstall,
+        { ...userInstall },
+      ]),
+    ).toEqual(queries);
+    expect(reorderedDuplicate.resourceId).toBe(base.resourceId);
+    expect(observed.reorderedDuplicate).toEqual(observed.base);
+    expect(observed.usedVersion.revision.revisionDigest).not.toBe(
+      observed.base.revision.revisionDigest,
+    );
+    expect(observed.usedScope.revision.revisionDigest).not.toBe(
+      observed.base.revision.revisionDigest,
+    );
+    expect(observed.unrelatedVersion.revision).toEqual(observed.base.revision);
+    expect(observed.unrelatedRemoved.revision).toEqual(observed.base.revision);
+    expect(observed.missing.value?.facts).toEqual([
+      {
+        schemaVersion: 1,
+        tool: 'codex',
+        operation: 'install',
+        scope: 'user',
+        capabilityVersion: null,
+        supported: false,
+      },
+      {
+        schemaVersion: 1,
+        tool: 'codex',
+        operation: 'dev',
+        scope: 'user',
+        capabilityVersion: null,
+        supported: false,
+      },
+    ]);
+    expect(observed.missing.revision.revisionDigest).not.toBe(
+      observed.base.revision.revisionDigest,
+    );
+    expect(createRelevantCapabilityStateReaderV1(bumpVersion('codex'), queries).resourceId).toBe(
+      base.resourceId,
+    );
+    expect(createRelevantCapabilityStateReaderV1(withoutCodex, queries).resourceId).toBe(
+      base.resourceId,
+    );
+    expect(createRelevantCapabilityStateReaderV1(toolRegistry, [userDev]).resourceId).not.toBe(
+      base.resourceId,
+    );
+    expect(
+      createRelevantCapabilityStateReaderV1(toolRegistry, [projectInstall]).resourceId,
+    ).not.toBe(createRelevantCapabilityStateReaderV1(toolRegistry, [userInstall]).resourceId);
+    expect(Object.isFrozen(base)).toBeTrue();
+    const canonicalQueries = canonicalRelevantCapabilityQueriesV1(toolRegistry, queries);
+    expect(Object.isFrozen(canonicalQueries)).toBeTrue();
+    expect(canonicalQueries.every((query) => Object.isFrozen(query))).toBeTrue();
+    expect(
+      canonicalRelevantCapabilityQueriesV1(toolRegistry, [
+        {
+          schemaVersion: 1,
+          tool: 'opencode',
+          operation: 'diagnostics',
+          scope: 'user',
+        },
+        userInstall,
+      ]).map((query) => query.tool),
+    ).toEqual(['codex', 'opencode']);
+    expect(Object.isFrozen(observed.base.value)).toBeTrue();
+    expect(Object.isFrozen(observed.base.value?.facts)).toBeTrue();
+    expect(observed.base.value?.facts.every((fact) => Object.isFrozen(fact))).toBeTrue();
+    expect(await base.observe('capabilities:relevant:wrong')).toEqual({
+      ok: false,
+      error: {
+        code: 'state-repository',
+        domain: 'capabilities',
+        reason: 'invalid-request',
+      },
+    });
+  });
+
+  test('re-resolves relevant facts on every observation and maps only built-in supported facts', async () => {
+    const codex = toolRegistry.get('codex');
+    if (codex === undefined) throw new Error('codex fixture adapter is missing');
+    let capabilityVersion = codex.descriptor.capabilityVersion;
+    const dynamicRegistry: Pick<ToolRegistry, 'ids' | 'get'> = {
+      ids: Object.freeze(['codex']),
+      get: (id) =>
+        id === 'codex'
+          ? {
+              ...codex,
+              descriptor: { ...codex.descriptor, capabilityVersion },
+            }
+          : undefined,
+    };
+    const reader = createRelevantCapabilityStateReaderV1(dynamicRegistry, [
+      {
+        schemaVersion: 1,
+        tool: 'codex',
+        operation: 'install',
+        scope: 'user',
+      },
+    ]);
+    const before = unwrap(await reader.observe(reader.resourceId));
+    capabilityVersion += 1;
+    const after = unwrap(await reader.observe(reader.resourceId));
+    expect(after.revision.revisionDigest).not.toBe(before.revision.revisionDigest);
+    expect(after.value?.facts[0]?.capabilityVersion).toBe(capabilityVersion);
+
+    const snapshot = Object.freeze({
+      schemaVersion: 1 as const,
+      facts: Object.freeze([
+        Object.freeze({
+          schemaVersion: 1 as const,
+          tool: 'codex',
+          operation: 'install' as const,
+          scope: 'project' as const,
+          capabilityVersion,
+          supported: true,
+        }),
+        Object.freeze({
+          schemaVersion: 1 as const,
+          tool: 'fixture-private-tool',
+          operation: 'install' as const,
+          scope: 'user' as const,
+          capabilityVersion: 1,
+          supported: true,
+        }),
+        Object.freeze({
+          schemaVersion: 1 as const,
+          tool: 'codex',
+          operation: 'install' as const,
+          scope: 'user' as const,
+          capabilityVersion,
+          supported: true,
+        }),
+        Object.freeze({
+          schemaVersion: 1 as const,
+          tool: 'codex',
+          operation: 'dev' as const,
+          scope: 'user' as const,
+          capabilityVersion,
+          supported: false,
+        }),
+      ]),
+    }) satisfies RelevantCapabilitySnapshotV1;
+    const preconditions = toCapabilityPreconditionsV1(snapshot);
+    expect(preconditions).toHaveLength(1);
+    expect(preconditions[0]).toMatchObject({
+      domain: 'capability',
+      hashSchemaVersion: 1,
+      tool: 'codex',
+      operation: 'install',
+      capabilityVersion,
+      supported: true,
+      scopes: ['user', 'project'],
+    });
+    expect(preconditions[0]?.preconditionId).toMatch(/^precondition:v1:[0-9a-f]{64}$/u);
+    expect(preconditions[0]?.expectedHash).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(Object.isFrozen(preconditions)).toBeTrue();
+    expect(Object.isFrozen(preconditions[0])).toBeTrue();
+    expect(Object.isFrozen(preconditions[0]?.scopes)).toBeTrue();
   });
 
   test('reads in canonical two-pass order and refuses a changed second-pass revision without retry', async () => {

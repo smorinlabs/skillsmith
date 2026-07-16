@@ -1,10 +1,13 @@
-import { createOperationExecutionResult } from '../planning/create.ts';
+import type { SupportedTool } from '../agents/types.ts';
+import { createOperationExecutionResult, resolvePlanningToolContext } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
-  CurrentMutatorOperationPlan,
+  CurrentMutatorCommand,
   ExecutableOperation,
   OperationExecutionResult,
   OperationImage,
+  OperationPlan,
+  PlanningToolContext,
 } from '../planning/types.ts';
 import type { ExecutionScheduleOptions, ValidatedExecutionBinding } from './types.ts';
 
@@ -37,8 +40,8 @@ const sameLocation = (left: unknown, right: unknown): boolean =>
 
 const validArtifactImages = (
   kind: ArtifactPrerequisiteKind,
-  before: OperationImage,
-  after: OperationImage,
+  before: OperationImage<string>,
+  after: OperationImage<string>,
 ): boolean => {
   if (kind === 'migrate-ledger') {
     return (
@@ -67,7 +70,7 @@ const validArtifactImages = (
   );
 };
 
-const validateArtifactPrerequisite = (operation: ExecutableOperation): void => {
+const validateArtifactPrerequisite = (operation: ExecutableOperation<string>): void => {
   const kind: ArtifactPrerequisiteKind = isArtifactPrerequisiteKind(operation.kind)
     ? operation.kind
     : fail(`null-pair operation ${operation.operationId} has an unsupported kind`);
@@ -100,7 +103,9 @@ const validateArtifactPrerequisite = (operation: ExecutableOperation): void => {
   }
 };
 
-export const validateExecutionPlanShape = (plan: CurrentMutatorOperationPlan): void => {
+export const validateExecutionPlanShape = <ToolId extends string = SupportedTool>(
+  plan: OperationPlan<CurrentMutatorCommand, ToolId>,
+): void => {
   const pairs = new Map<string, number>();
   const closedGroups = new Set<string>();
   const groupOperationCounts = new Map<string, number>();
@@ -144,11 +149,12 @@ export const validateExecutionPlanShape = (plan: CurrentMutatorOperationPlan): v
   }
 };
 
-export const createValidatedExecutionBinding = (
-  operation: ExecutableOperation,
-  input: ValidatedExecutionBinding,
+export const createValidatedExecutionBinding = <ToolId extends string = SupportedTool>(
+  operation: ExecutableOperation<ToolId>,
+  input: ValidatedExecutionBinding<ToolId>,
   index: number,
-): ValidatedExecutionBinding => {
+  context: PlanningToolContext<ToolId>,
+): ValidatedExecutionBinding<ToolId> => {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     fail(`binding ${index} must be an object`);
   }
@@ -165,14 +171,17 @@ export const createValidatedExecutionBinding = (
   if (input.pairId !== operation.pairId) fail(`binding ${index} pair identity mismatch`);
   if (typeof input.execute !== 'function') fail(`binding ${index} execute must be a function`);
   if (input.unstartedForce?.applied) fail(`binding ${index} unstarted force must not be applied`);
-  const validated = createOperationExecutionResult({
-    operationId: operation.operationId,
-    outcome: 'cancelled',
-    actualBefore: input.actualBefore,
-    actualAfter: input.actualBefore,
-    force: input.unstartedForce,
-    error: null,
-  });
+  const validated = createOperationExecutionResult(
+    {
+      operationId: operation.operationId,
+      outcome: 'cancelled',
+      actualBefore: input.actualBefore,
+      actualAfter: input.actualBefore,
+      force: input.unstartedForce,
+      error: null,
+    },
+    context,
+  );
   return Object.freeze({
     operationId: input.operationId,
     groupId: input.groupId,
@@ -183,38 +192,49 @@ export const createValidatedExecutionBinding = (
   });
 };
 
-export const validateExecutionBindings = (
-  plan: CurrentMutatorOperationPlan,
-  inputs: readonly ValidatedExecutionBinding[],
-): readonly ValidatedExecutionBinding[] => {
+export const validateExecutionBindings = <ToolId extends string = SupportedTool>(
+  plan: OperationPlan<CurrentMutatorCommand, ToolId>,
+  inputs: readonly ValidatedExecutionBinding<ToolId>[],
+  context: PlanningToolContext<ToolId>,
+): readonly ValidatedExecutionBinding<ToolId>[] => {
   validateExecutionPlanShape(plan);
   if (!Array.isArray(inputs) || inputs.length !== plan.operations.length) {
     fail('binding coverage must exactly match planned operations');
   }
   return Object.freeze(
     plan.operations.map((operation, index) =>
-      createValidatedExecutionBinding(operation, inputs[index] as ValidatedExecutionBinding, index),
+      createValidatedExecutionBinding(
+        operation,
+        inputs[index] as ValidatedExecutionBinding<ToolId>,
+        index,
+        context,
+      ),
     ),
   );
 };
 
-const unstartedResult = (
-  binding: ValidatedExecutionBinding,
+const unstartedResult = <ToolId extends string>(
+  binding: ValidatedExecutionBinding<ToolId>,
   outcome: 'cancelled' | 'skipped-after-failure',
-): OperationExecutionResult =>
-  createOperationExecutionResult({
-    operationId: binding.operationId,
-    outcome,
-    actualBefore: binding.actualBefore,
-    actualAfter: binding.actualBefore,
-    force: binding.unstartedForce,
-    error: null,
-  });
+  context: PlanningToolContext<ToolId>,
+): OperationExecutionResult<ToolId> =>
+  createOperationExecutionResult(
+    {
+      operationId: binding.operationId,
+      outcome,
+      actualBefore: binding.actualBefore,
+      actualAfter: binding.actualBefore,
+      force: binding.unstartedForce,
+      error: null,
+    },
+    context,
+  );
 
-const executeBinding = async (
-  binding: ValidatedExecutionBinding,
-): Promise<OperationExecutionResult> => {
-  const result = createOperationExecutionResult(await binding.execute());
+const executeBinding = async <ToolId extends string>(
+  binding: ValidatedExecutionBinding<ToolId>,
+  context: PlanningToolContext<ToolId>,
+): Promise<OperationExecutionResult<ToolId>> => {
+  const result = createOperationExecutionResult(await binding.execute(), context);
   if (result.operationId !== binding.operationId) {
     fail(`binding ${binding.operationId} returned a mismatched result`);
   }
@@ -229,12 +249,13 @@ const executeBinding = async (
   return result;
 };
 
-export const scheduleValidatedOperationPlan = async (
-  plan: CurrentMutatorOperationPlan,
-  bindings: readonly ValidatedExecutionBinding[],
-  options: ExecutionScheduleOptions = {},
-): Promise<readonly OperationExecutionResult[]> => {
-  const results: OperationExecutionResult[] = [];
+export const scheduleValidatedOperationPlan = async <ToolId extends string = SupportedTool>(
+  plan: OperationPlan<CurrentMutatorCommand, ToolId>,
+  bindings: readonly ValidatedExecutionBinding<ToolId>[],
+  options: ExecutionScheduleOptions,
+  context: PlanningToolContext<ToolId>,
+): Promise<readonly OperationExecutionResult<ToolId>[]> => {
+  const results: OperationExecutionResult<ToolId>[] = [];
   let cursor = 0;
   let stopAfterFailure = false;
 
@@ -247,14 +268,24 @@ export const scheduleValidatedOperationPlan = async (
 
     if (options.signal?.aborted) {
       for (let index = cursor; index < bindings.length; index += 1) {
-        results.push(unstartedResult(bindings[index] as ValidatedExecutionBinding, 'cancelled'));
+        results.push(
+          unstartedResult(
+            bindings[index] as ValidatedExecutionBinding<ToolId>,
+            'cancelled',
+            context,
+          ),
+        );
       }
       break;
     }
     if (stopAfterFailure) {
       for (let index = cursor; index < bindings.length; index += 1) {
         results.push(
-          unstartedResult(bindings[index] as ValidatedExecutionBinding, 'skipped-after-failure'),
+          unstartedResult(
+            bindings[index] as ValidatedExecutionBinding<ToolId>,
+            'skipped-after-failure',
+            context,
+          ),
         );
       }
       break;
@@ -266,23 +297,31 @@ export const scheduleValidatedOperationPlan = async (
       if (options.signal?.aborted) {
         for (let remaining = index; remaining < bindings.length; remaining += 1) {
           results.push(
-            unstartedResult(bindings[remaining] as ValidatedExecutionBinding, 'cancelled'),
+            unstartedResult(
+              bindings[remaining] as ValidatedExecutionBinding<ToolId>,
+              'cancelled',
+              context,
+            ),
           );
         }
         cancelled = true;
         break;
       }
-      const result = await executeBinding(bindings[index] as ValidatedExecutionBinding);
+      const result = await executeBinding(
+        bindings[index] as ValidatedExecutionBinding<ToolId>,
+        context,
+      );
       results.push(result);
       if (result.outcome === 'failed') {
         groupFailed = true;
-        const operation = plan.operations[index] as ExecutableOperation;
+        const operation = plan.operations[index] as ExecutableOperation<ToolId>;
         if (operation.pairId === null) {
           for (let remaining = index + 1; remaining < groupEnd; remaining += 1) {
             results.push(
               unstartedResult(
-                bindings[remaining] as ValidatedExecutionBinding,
+                bindings[remaining] as ValidatedExecutionBinding<ToolId>,
                 'skipped-after-failure',
+                context,
               ),
             );
           }
@@ -295,7 +334,11 @@ export const scheduleValidatedOperationPlan = async (
       if (result.outcome === 'cancelled') {
         for (let remaining = index + 1; remaining < bindings.length; remaining += 1) {
           results.push(
-            unstartedResult(bindings[remaining] as ValidatedExecutionBinding, 'cancelled'),
+            unstartedResult(
+              bindings[remaining] as ValidatedExecutionBinding<ToolId>,
+              'cancelled',
+              context,
+            ),
           );
         }
         cancelled = true;
@@ -313,9 +356,28 @@ export const scheduleValidatedOperationPlan = async (
   return Object.freeze(results);
 };
 
-export const scheduleOperationPlan = async (
-  plan: CurrentMutatorOperationPlan,
+export function scheduleOperationPlan(
+  plan: OperationPlan<CurrentMutatorCommand>,
   inputs: readonly ValidatedExecutionBinding[],
+  options?: ExecutionScheduleOptions,
+): Promise<readonly OperationExecutionResult[]>;
+export function scheduleOperationPlan<ToolId extends string>(
+  plan: OperationPlan<CurrentMutatorCommand, ToolId>,
+  inputs: readonly ValidatedExecutionBinding<ToolId>[],
+  options: ExecutionScheduleOptions | undefined,
+  context: PlanningToolContext<ToolId>,
+): Promise<readonly OperationExecutionResult<ToolId>[]>;
+export async function scheduleOperationPlan(
+  plan: OperationPlan<CurrentMutatorCommand, string>,
+  inputs: readonly ValidatedExecutionBinding<string>[],
   options: ExecutionScheduleOptions = {},
-): Promise<readonly OperationExecutionResult[]> =>
-  scheduleValidatedOperationPlan(plan, validateExecutionBindings(plan, inputs), options);
+  suppliedContext?: PlanningToolContext<string>,
+): Promise<readonly OperationExecutionResult<string>[]> {
+  const context = resolvePlanningToolContext(suppliedContext);
+  return scheduleValidatedOperationPlan(
+    plan,
+    validateExecutionBindings(plan, inputs, context),
+    options,
+    context,
+  );
+}

@@ -112,17 +112,53 @@ export interface PlacementResolution {
   readonly duplicateReason: string | null;
 }
 
+export interface PlacementRootFact {
+  readonly path: string;
+  readonly role: 'destination' | 'alternate';
+}
+
 export interface PlacementBundle {
   roots(env: PlatformPaths, scope: Scope, ctx: SkillRootsCtx): readonly string[];
+  rootFacts?(env: PlatformPaths, scope: Scope, ctx: SkillRootsCtx): readonly PlacementRootFact[];
   standardRoots(env: PlatformPaths, ctx: SkillRootsCtx): readonly string[];
   list(env: InventoryReadPorts, ctx: SkillRootsCtx, storeRoot: string): Promise<PlacementInventory>;
+  listScoped?(
+    env: InventoryReadPorts,
+    ctx: SkillRootsCtx,
+    storeRoot: string,
+    scope: Scope,
+  ): Promise<PlacementInventory>;
   resolve(
     env: InventoryReadPorts,
     ctx: SkillRootsCtx,
     storeRoot: string,
     skill: string,
   ): Promise<PlacementResolution>;
+  resolveScoped?(
+    env: InventoryReadPorts,
+    ctx: SkillRootsCtx,
+    storeRoot: string,
+    skill: string,
+    scope: Scope,
+  ): Promise<PlacementResolution>;
   noticeForRoot(root: string, inventory: PlacementInventory): string | null;
+}
+
+export interface RegisteredPlacementBundle extends PlacementBundle {
+  rootFacts(env: PlatformPaths, scope: Scope, ctx: SkillRootsCtx): readonly PlacementRootFact[];
+  listScoped(
+    env: InventoryReadPorts,
+    ctx: SkillRootsCtx,
+    storeRoot: string,
+    scope: Scope,
+  ): Promise<PlacementInventory>;
+  resolveScoped(
+    env: InventoryReadPorts,
+    ctx: SkillRootsCtx,
+    storeRoot: string,
+    skill: string,
+    scope: Scope,
+  ): Promise<PlacementResolution>;
 }
 
 export interface AdaptationBundle {

@@ -1,4 +1,12 @@
+import {
+  type RelevantCapabilityQueryV1,
+  type RelevantCapabilitySnapshotV1,
+  canonicalRelevantCapabilityQueriesV1,
+  createRelevantCapabilitySnapshotV1,
+  relevantCapabilityQueryDigestV1,
+} from '../agents/capabilities.ts';
 import { toolRegistry } from '../agents/registry.ts';
+import type { ToolRegistry } from '../agents/registry.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { PortableLockV1 } from '../artifacts/lock.ts';
@@ -95,16 +103,22 @@ export interface StoreRepository extends StateObserverV1<StoreStateV1>, DomainSt
 
 export interface ProjectStateReaderV1 extends StateObserverV1<ProjectContext> {}
 
-export interface CapabilityStateReaderV1 extends StateObserverV1<CapabilitySnapshotV1Dto> {}
+export interface CapabilityStateReaderV1<Model = CapabilitySnapshotV1Dto>
+  extends StateObserverV1<Model> {}
 
-export interface ObservedStateRepositoriesV1 {
+export interface RelevantCapabilityStateReaderV1
+  extends CapabilityStateReaderV1<RelevantCapabilitySnapshotV1> {
+  readonly resourceId: string;
+}
+
+export interface ObservedStateRepositoriesV1<CapabilityModel = CapabilitySnapshotV1Dto> {
   readonly project: ProjectStateReaderV1;
   readonly manifest: ManifestRepository;
   readonly lock: LockRepository;
   readonly ledger: LedgerRepository;
   readonly live: LivePlacementRepository;
   readonly store: StoreRepository;
-  readonly capabilities: CapabilityStateReaderV1;
+  readonly capabilities: CapabilityStateReaderV1<CapabilityModel>;
 }
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
@@ -281,6 +295,35 @@ export const createCapabilityStateReaderV1 = (resourceId: string): CapabilitySta
     return semanticObservation('capabilities', resourceId, owned.value as CapabilitySnapshotV1Dto);
   };
   return Object.freeze({
+    observe,
+    observeRevision: async (requestedResourceId: string) => {
+      const observed = await observe(requestedResourceId);
+      return observed.ok ? ok(observed.value.revision) : observed;
+    },
+  });
+};
+
+export const createRelevantCapabilityStateReaderV1 = (
+  registry: Pick<ToolRegistry, 'ids' | 'get'>,
+  input: readonly RelevantCapabilityQueryV1[],
+): RelevantCapabilityStateReaderV1 => {
+  const queries = canonicalRelevantCapabilityQueriesV1(registry, input);
+  const queryDigest = relevantCapabilityQueryDigestV1(queries);
+  const resourceId = `capabilities:relevant:${queryDigest.slice('sha256:'.length)}`;
+  const observe = async (
+    requestedResourceId: string,
+  ): Promise<Result<ObservedComponentV1<RelevantCapabilitySnapshotV1>, StateRepositoryError>> => {
+    if (requestedResourceId !== resourceId) {
+      return err(observationError('capabilities', 'invalid-request'));
+    }
+    return semanticObservation(
+      'capabilities',
+      resourceId,
+      createRelevantCapabilitySnapshotV1(registry, queries),
+    );
+  };
+  return Object.freeze({
+    resourceId,
     observe,
     observeRevision: async (requestedResourceId: string) => {
       const observed = await observe(requestedResourceId);

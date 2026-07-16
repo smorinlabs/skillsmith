@@ -10,13 +10,13 @@ import {
   comparePlanningText,
 } from '../../src/planning/index.ts';
 
-const operation = (
+const operation = <ToolId extends string>(
   operationId: string,
   scope: 'user' | 'project',
   skill: string,
-  tool: 'claude-code' | 'codex' | 'opencode',
+  tool: ToolId,
   kind: 'install' | 'repair',
-): ExecutableOperation =>
+): ExecutableOperation<ToolId> =>
   ({
     operationId,
     scope,
@@ -26,7 +26,7 @@ const operation = (
     source: null,
     groupId: `group:${scope}:${skill}`,
     pairId: `pair:${scope}:${skill}:${tool}`,
-  }) as unknown as ExecutableOperation;
+  }) as unknown as ExecutableOperation<ToolId>;
 
 describe('planning canonical order', () => {
   test('uses unsigned UTF-16 comparison and canonical object-member order', () => {
@@ -73,6 +73,29 @@ describe('planning canonical order', () => {
       comparePlanningDiagnostics,
     );
     expect(diagnostics.map(({ diagnosticId }) => diagnosticId)).toEqual(['user', 'project']);
+  });
+
+  test('uses supplied descriptor order with lexical fallback beyond that context', () => {
+    type FixtureTool = 'fixture-a' | 'fixture-b' | 'fixture-z';
+    const descriptorContext = { toolOrder: ['fixture-z', 'fixture-a'] as const };
+    const operations = [
+      operation('a', 'user', 'alpha', 'fixture-a', 'install'),
+      operation('b', 'user', 'alpha', 'fixture-b', 'install'),
+      operation('z', 'user', 'alpha', 'fixture-z', 'install'),
+    ] as ExecutableOperation<FixtureTool>[];
+
+    operations.sort((left, right) => compareExecutableOperations(left, right, descriptorContext));
+
+    expect(operations.map(({ tool }) => tool)).toEqual(['fixture-z', 'fixture-a', 'fixture-b']);
+
+    const lexicalFallback = [
+      operation('z-outside', 'user', 'alpha', 'fixture-z', 'install'),
+      operation('b-outside', 'user', 'alpha', 'fixture-b', 'install'),
+    ];
+    lexicalFallback.sort((left, right) =>
+      compareExecutableOperations(left, right, { toolOrder: [] }),
+    );
+    expect(lexicalFallback.map(({ tool }) => tool)).toEqual(['fixture-b', 'fixture-z']);
   });
 
   test('orders null-pair artifact prerequisites before pair-bound live operations', () => {

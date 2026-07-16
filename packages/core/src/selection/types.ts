@@ -24,19 +24,19 @@ export interface SelectionRequest {
 }
 
 /** Command policy. Known values outside these sets are capability errors, not invalid enums. */
-export interface SelectionPolicy {
+export interface SelectionPolicy<ToolId extends string = SupportedTool> {
   readonly requiresSelection: boolean;
   readonly allowBoundedDefault: boolean;
   readonly allowAbsentCreate: boolean;
-  readonly allowedTools: readonly SupportedTool[];
+  readonly allowedTools: readonly ToolId[];
   readonly allowedScopes: readonly Scope[];
   readonly allowedCapabilities: readonly SelectionCapability[];
 }
 
-export interface ValidatedSelectionRequest {
+export interface ValidatedSelectionRequest<ToolId extends string = SupportedTool> {
   readonly targets: readonly string[];
   readonly all: boolean;
-  readonly tools: readonly SupportedTool[];
+  readonly tools: readonly ToolId[];
   readonly scopes: readonly Scope[];
   readonly capability?: SelectionCapability;
   /** Carried from policy so resolution cannot accidentally widen absent candidates. */
@@ -45,9 +45,9 @@ export interface ValidatedSelectionRequest {
 }
 
 /** Minimal structural contract shared by placement, history, and later artifact selectors. */
-export interface SelectionCandidate {
+export interface SelectionCandidate<ToolId extends string = SupportedTool> {
   readonly name: string;
-  readonly tool: SupportedTool;
+  readonly tool: ToolId;
   readonly scope: Scope;
   readonly path: string;
   readonly capabilities: readonly SelectionCapability[];
@@ -55,7 +55,7 @@ export interface SelectionCandidate {
   readonly exists?: boolean;
 }
 
-export interface TargetSelection<C extends SelectionCandidate = SelectionCandidate> {
+export interface TargetSelection<C extends SelectionCandidate<string> = SelectionCandidate> {
   readonly selected: readonly C[];
   readonly selectionSource: SelectionSource;
   readonly outcome: SelectionOutcome;
@@ -91,7 +91,9 @@ export interface SelectionUnmatchedError {
   readonly message: string;
 }
 
-export interface SelectionAmbiguousError<C extends SelectionCandidate = SelectionCandidate> {
+export interface SelectionAmbiguousError<
+  C extends SelectionCandidate<string> = SelectionCandidate,
+> {
   readonly code: 'ambiguous';
   readonly exitCode: 2;
   readonly target: string;
@@ -105,6 +107,6 @@ export type SelectionValidationError =
   | SelectionInvalidEnumError
   | SelectionCapabilityError;
 
-export type TargetSelectionError<C extends SelectionCandidate = SelectionCandidate> =
+export type TargetSelectionError<C extends SelectionCandidate<string> = SelectionCandidate> =
   | SelectionUnmatchedError
   | SelectionAmbiguousError<C>;

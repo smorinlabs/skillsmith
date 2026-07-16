@@ -6,6 +6,7 @@ import {
   resolveTargetSelection,
   validateSelectionRequest,
 } from '../../../core/src/selection/resolve.ts';
+import type { SelectionPolicy, SelectionRequest } from '../../../core/src/selection/types.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import { walk } from '../../src/completion/walk.ts';
 import {
@@ -1115,10 +1116,7 @@ describe('EWP-OPT-TS06', () => {
     allowedCapabilities: ['dev', 'promote', 'undo'],
   } as const;
 
-  const validate = (
-    request: Parameters<typeof validateSelectionRequest>[0],
-    policy: Parameters<typeof validateSelectionRequest>[1] = mutationPolicy,
-  ) => {
+  const validate = (request: SelectionRequest, policy: SelectionPolicy = mutationPolicy) => {
     const result = validateSelectionRequest(request, policy);
     if (!result.ok)
       throw new Error(`unexpected selection validation failure: ${result.error.code}`);

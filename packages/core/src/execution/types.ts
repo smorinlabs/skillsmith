@@ -1,34 +1,38 @@
+import type { SupportedTool } from '../agents/types.ts';
 import type { LockRequest } from '../env/types.ts';
 import type {
   BoundedForceEffect,
-  CurrentMutatorOperationPlan,
+  CurrentMutatorCommand,
   OperationExecutionResult,
   OperationId,
   OperationImage,
+  OperationPlan,
   OperationResourceIdentity,
 } from '../planning/types.ts';
 import type { LockPort } from '../ports/types.ts';
 
-export interface ValidatedExecutionBinding {
+export interface ValidatedExecutionBinding<ToolId extends string = SupportedTool> {
   readonly operationId: OperationId;
   readonly groupId: OperationId;
   readonly pairId: OperationId | null;
-  readonly actualBefore: OperationImage;
-  readonly unstartedForce: BoundedForceEffect | null;
-  readonly execute: () => Promise<OperationExecutionResult>;
+  readonly actualBefore: OperationImage<ToolId>;
+  readonly unstartedForce: BoundedForceEffect<ToolId> | null;
+  readonly execute: () => Promise<OperationExecutionResult<ToolId>>;
 }
 
 /**
  * Coordinator input whose current image is observed only after the mutation lock and all declared
  * preconditions are held. The coordinator alone turns this into a ValidatedExecutionBinding.
  */
-export interface PreparedExecutionBinding {
+export interface PreparedExecutionBinding<ToolId extends string = SupportedTool> {
   readonly operationId: OperationId;
   readonly groupId: OperationId;
   readonly pairId: OperationId | null;
-  readonly unstartedForce: BoundedForceEffect | null;
-  readonly observeActualBefore: () => Promise<OperationImage>;
-  readonly execute: (binding: ValidatedExecutionBinding) => Promise<OperationExecutionResult>;
+  readonly unstartedForce: BoundedForceEffect<ToolId> | null;
+  readonly observeActualBefore: () => Promise<OperationImage<ToolId>>;
+  readonly execute: (
+    binding: ValidatedExecutionBinding<ToolId>,
+  ) => Promise<OperationExecutionResult<ToolId>>;
 }
 
 export interface ExecutionScheduleOptions extends LockRequest {}
@@ -66,9 +70,10 @@ export interface ExecutionPreconditionStateError {
   readonly message: string;
 }
 
-export interface ExecutionCoordinatorRequest extends LockRequest {
-  readonly plan: CurrentMutatorOperationPlan;
-  readonly bindings: readonly PreparedExecutionBinding[];
+export interface ExecutionCoordinatorRequest<ToolId extends string = SupportedTool>
+  extends LockRequest {
+  readonly plan: OperationPlan<CurrentMutatorCommand, ToolId>;
+  readonly bindings: readonly PreparedExecutionBinding<ToolId>[];
   readonly preconditions: readonly ExecutionPrecondition[];
   readonly locks: readonly ExecutionLockDescriptor[];
   readonly lockPort: LockPort;

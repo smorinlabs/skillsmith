@@ -669,24 +669,31 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
         location: { kind: 'portable', token: 'skills/user/fixture-p3b-write/alpha' },
       } as const;
       try {
-        const pairId = createOperationPairId({
-          domain: 'skillsmith.operation-pair-identity',
-          schemaVersion: 1,
-          groupId,
-          tool: FIXTURE_P3B_WRITE_TOOL,
-          resource,
-        });
-        const operationId = createOperationId({
-          domain: 'skillsmith.operation-identity',
-          schemaVersion: 1,
-          groupId,
-          pairId,
-          kind: 'install',
-          skill: 'alpha',
-          source: null,
-          tool: FIXTURE_P3B_WRITE_TOOL,
-          scope: 'user',
-        });
+        const planningContext = { registry, toolOrder: registry.ids };
+        const pairId = createOperationPairId(
+          {
+            domain: 'skillsmith.operation-pair-identity',
+            schemaVersion: 1,
+            groupId,
+            tool: FIXTURE_P3B_WRITE_TOOL,
+            resource,
+          },
+          planningContext,
+        );
+        const operationId = createOperationId(
+          {
+            domain: 'skillsmith.operation-identity',
+            schemaVersion: 1,
+            groupId,
+            pairId,
+            kind: 'install',
+            skill: 'alpha',
+            source: null,
+            tool: FIXTURE_P3B_WRITE_TOOL,
+            scope: 'user',
+          },
+          planningContext,
+        );
         expect(groupId).toBe(
           'group:v1:25c0be498bd2a451aa2b22fe83f3bddda18b98915484bfc2027c1f890608789d',
         );
@@ -805,14 +812,17 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
           execute: async () => {
             physicalExecutions += 1;
             currentRevision = secondRevision.value;
-            return createOperationExecutionResult({
-              operationId,
-              outcome: 'succeeded',
-              actualBefore: before,
-              actualAfter: after,
-              force: null,
-              error: null,
-            });
+            return createOperationExecutionResult(
+              {
+                operationId,
+                outcome: 'succeeded',
+                actualBefore: before,
+                actualAfter: after,
+                force: null,
+                error: null,
+              },
+              planningContext,
+            );
           },
         };
         const bound = bind(operation, physicalBinding, [firstRevision.value.resourceId]);
@@ -825,15 +835,18 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
         expect(asRecord(privatePrepared.plan)?.operations).toHaveLength(1);
 
         const executePrepared = () =>
-          executeOperationPlan({
-            plan: privatePrepared.plan as never,
-            bindings: privatePrepared.bindings as never,
-            preconditions: [precondition],
-            locks: [],
-            lockPort: {
-              withFileLock: async (_path, execute) => execute(),
+          executeOperationPlan(
+            {
+              plan: privatePrepared.plan as never,
+              bindings: privatePrepared.bindings as never,
+              preconditions: [precondition],
+              locks: [],
+              lockPort: {
+                withFileLock: async (_path, execute) => execute(),
+              },
             },
-          });
+            planningContext,
+          );
         const first = await executePrepared();
         expect(first).toHaveLength(1);
         expect(first[0]).toMatchObject({ operationId, outcome: 'succeeded' });

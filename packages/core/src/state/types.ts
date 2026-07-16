@@ -222,7 +222,7 @@ export const createStoreSnapshotIdentityV1 = (
   return `store:v1:${hashed.value.slice('sha256:'.length)}`;
 };
 
-export interface ObservedStateSnapshotV1 {
+export interface ObservedStateSnapshotV1<CapabilityModel = CapabilitySnapshotV1Dto> {
   readonly schemaVersion: 1;
   readonly snapshotId: `snapshot:v1:${string}`;
   /** Closed status-only adjunct revision; mutator snapshots omit this field. */
@@ -233,7 +233,7 @@ export interface ObservedStateSnapshotV1 {
   readonly ledger: ObservedComponentV1<LedgerModel>;
   readonly live: readonly ObservedComponentV1<LivePlacementStateV1>[];
   readonly store: readonly ObservedComponentV1<StoreStateV1>[];
-  readonly capabilities: ObservedComponentV1<CapabilitySnapshotV1Dto>;
+  readonly capabilities: ObservedComponentV1<CapabilityModel>;
 }
 
 const DOMAINS = new Set<StateDomainV1>([
