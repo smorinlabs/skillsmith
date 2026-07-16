@@ -4761,7 +4761,7 @@
       "phase": "3B",
       "title": "Immutable snapshots, pure planners, repositories, expected revisions, and extraction",
       "dependsOn": ["P17-G3B-02"],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0006-immutable-observed-state-and-repositories.md",
@@ -4856,7 +4856,7 @@
         "/root/g3b04_planner_extraction",
         "/root/g3b04_repository_execution"
       ],
-      "reviewer": null,
+      "reviewer": "/root/g3b04_terminal_corrections_audit",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -4871,39 +4871,54 @@
           "evidence": ["projects/p17/evidence/P17-G3B-04.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-04.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-04.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-04.md#targeted-and-impacted-green",
+            "projects/p17/evidence/P17-G3B-04.md#terminal-full-repository-gate"
+          ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-04.md#terminal-correction-and-mandatory-architecture-review"
+          ]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-04.md#terminal-correction-and-mandatory-architecture-review"
+          ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-04.md#terminal-full-repository-gate",
+            "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"
+          ]
         }
       },
       "evidence": [
         "projects/p17/plans/P17-G3B-04.md",
         "projects/p17/evidence/P17-G3B-04.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G3B-04.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-04.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-04.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-04.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-04.md#terminal-correction-and-mandatory-architecture-review",
+        "projects/p17/evidence/P17-G3B-04.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"
       ]
     },
     {
@@ -10231,11 +10246,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G3B-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G3B-04",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G4B-01", "P17-G5-03", "P17-G4A-04"],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS05", "EWP-WF06", "EWP-WF11", "EWP-WF13"],
@@ -19696,13 +19711,18 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-04",
-      "status": "red",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-04",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3B-04.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-04.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-04.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-04.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-04.md#terminal-correction-and-mandatory-architecture-review",
+        "projects/p17/evidence/P17-G3B-04.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": ["EWP-CF-035"],
@@ -19998,7 +20018,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-04",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-04:tests/ergonomics/phase/EWP-P3B-TS05.test.ts#EWP-P3B-TS05",
       "target": {
@@ -20007,7 +20027,10 @@
         "selector": "EWP-P3B-TS05",
         "command": "bun test tests/ergonomics/phase/EWP-P3B-TS05.test.ts --test-name-pattern EWP-P3B-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-04.md#red-execution-receipt-ewp-p3b-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-04.md#final-green-execution-receipt-ewp-p3b-ts05",
+        "projects/p17/evidence/P17-G3B-04.md#red-execution-receipt-ewp-p3b-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS05"],

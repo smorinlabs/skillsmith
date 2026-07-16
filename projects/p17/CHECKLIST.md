@@ -12,13 +12,13 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 14 | 14 | 6 |
-| phase-task | 65 | 40 | 25 | 0 |
-| phase-test | 61 | 36 | 25 | 0 |
+| phase-task | 65 | 41 | 24 | 0 |
+| phase-test | 61 | 37 | 24 | 0 |
 | command-test | 157 | 52 | 105 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
 | command | 23 | 11 | 12 | 0 |
-| finding | 43 | 31 | 12 | 0 |
+| finding | 43 | 32 | 11 | 0 |
 | decision | 16 | 5 | 10 | 1 |
 
 ### Phases
@@ -28,7 +28,7 @@ Tracked entities: **425** across **45** change groups.
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
-| 3 | 8 | 82 | 75 | 0 |
+| 3 | 8 | 82 | 78 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 68 | 0 | 0 |
 | 6 | 5 | 39 | 0 | 0 |
@@ -205,7 +205,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-032 | P17-G6-02A | planned | required-pr |
 | EWP-CF-033 | P17-G1-03 | signed-off | required-pr |
 | EWP-CF-034 | P17-G1-04 | signed-off | required-pr |
-| EWP-CF-035 | P17-G3B-04 | planned | required-pr |
+| EWP-CF-035 | P17-G3B-04 | signed-off | required-pr |
 | EWP-CF-036 | P17-G1-05 | signed-off | required-pr |
 | EWP-CF-037 | P17-G1-06 | signed-off | required-pr |
 | EWP-CF-038 | P17-G1-07 | signed-off | required-pr |
@@ -999,7 +999,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD
 
 ## P17-G3B-04 — Immutable snapshots, pure planners, repositories, expected revisions, and extraction
 
-Phase: 3B; status: **active**; dependencies: P17-G3B-02.
+Phase: 3B; status: **signed-off**; dependencies: P17-G3B-02.
 Required-now validations: EWP-P3B-TS05.
 Downstream coverage obligations: EWP-WF06, EWP-WF11, EWP-WF13.
 
@@ -1008,19 +1008,19 @@ Downstream coverage obligations: EWP-WF06, EWP-WF11, EWP-WF13.
 - [x] P17-G3B-04:mapped _(passed)_
 - [x] P17-G3B-04:ready _(passed)_
 - [x] P17-G3B-04:test-first _(passed)_
-- [ ] P17-G3B-04:minimal-implementation _(pending)_
-- [ ] P17-G3B-04:targeted-green _(pending)_
-- [ ] P17-G3B-04:impacted-green _(pending)_
-- [ ] P17-G3B-04:refactor _(pending)_
-- [ ] P17-G3B-04:adversarial-review _(pending)_
-- [ ] P17-G3B-04:traceability-closure _(pending)_
-- [ ] P17-G3B-04:signed-off _(pending)_
+- [x] P17-G3B-04:minimal-implementation _(passed)_
+- [x] P17-G3B-04:targeted-green _(passed)_
+- [x] P17-G3B-04:impacted-green _(passed)_
+- [x] P17-G3B-04:refactor _(passed)_
+- [x] P17-G3B-04:adversarial-review _(passed)_
+- [x] P17-G3B-04:traceability-closure _(passed)_
+- [x] P17-G3B-04:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CF-035** — Separate immutable state snapshots, pure planning, and repository writes _(finding; planned)_
-- [ ] **EWP-P3B-T05** — Add ADR 0006; domain-specific manifest/lock/ledger/live/store repositories; _(phase-task; red)_
-- [ ] **EWP-P3B-TS05** — Deep-freeze mutation traps, pure planner determinism/property tests, _(phase-test; failing)_
+- [x] **EWP-CF-035** — Separate immutable state snapshots, pure planning, and repository writes _(finding; signed-off)_
+- [x] **EWP-P3B-T05** — Add ADR 0006; domain-specific manifest/lock/ledger/live/store repositories; _(phase-task; signed-off)_
+- [x] **EWP-P3B-TS05** — Deep-freeze mutation traps, pure planner determinism/property tests, _(phase-test; signed-off)_
 
 ## P17-G3B-05 — Tool-specific lifecycle behavior behind registered adapter bundles
 
