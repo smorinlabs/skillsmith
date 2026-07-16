@@ -1024,13 +1024,13 @@ Downstream coverage obligations: EWP-WF06, EWP-WF11, EWP-WF13.
 
 ## P17-G3B-05 — Tool-specific lifecycle behavior behind registered adapter bundles
 
-Phase: 3B; status: **planned**; dependencies: P17-G3B-01.
+Phase: 3B; status: **mapped**; dependencies: P17-G3B-01.
 Required-now validations: EWP-P3B-TS06.
 Downstream coverage obligations: none.
 
 ### Group gates
 
-- [ ] P17-G3B-05:mapped _(pending)_
+- [x] P17-G3B-05:mapped _(passed)_
 - [ ] P17-G3B-05:ready _(pending)_
 - [ ] P17-G3B-05:test-first _(pending)_
 - [ ] P17-G3B-05:minimal-implementation _(pending)_
