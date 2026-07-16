@@ -1,18 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import { createLedgerRepository } from '../../src/artifacts/ledger-repository.ts';
-import type { LedgerWriter } from '../../src/artifacts/ledger-writer.ts';
 import { emptyLedgerModel } from '../../src/place/ledger.ts';
 
 const digest = (hex: string): ArtifactDigest => `sha256:${hex.repeat(64)}` as ArtifactDigest;
 
 describe('private ledger repository adapter', () => {
-  test('maps a canonical writer observation into one immutable expected revision', async () => {
+  test('maps a canonical ledger observation into one immutable expected revision', async () => {
     const ledgerPath = '/fixture/data/placements.json';
     const model = emptyLedgerModel('2026-07-16T00:00:00.000Z');
-    const writer = {
+    const reader = {
       ledgerPath,
-      recoveryPointerPath: '/fixture/data/recovery/ledger.json',
       read: async () => ({
         ok: true as const,
         value: Object.freeze({
@@ -24,10 +22,10 @@ describe('private ledger repository adapter', () => {
           model,
         }),
       }),
-    } as LedgerWriter;
+    };
     const repository = createLedgerRepository({
       resourceId: 'ledger:user',
-      writer,
+      reader,
       metadata: {
         readFileMetadata: async (path) =>
           path === ledgerPath
@@ -56,9 +54,8 @@ describe('private ledger repository adapter', () => {
     const ledgerPath = '/fixture/data/placements.json';
     const repository = createLedgerRepository({
       resourceId: 'ledger:user',
-      writer: {
+      reader: {
         ledgerPath,
-        recoveryPointerPath: '/fixture/data/recovery/ledger.json',
         read: async () => ({
           ok: true as const,
           value: Object.freeze({
@@ -70,7 +67,7 @@ describe('private ledger repository adapter', () => {
             model: null,
           }),
         }),
-      } as LedgerWriter,
+      },
       metadata: {
         readFileMetadata: async (path) =>
           path === ledgerPath
@@ -106,9 +103,8 @@ describe('private ledger repository adapter', () => {
     let parentIdentity = 'parent:1';
     const repository = createLedgerRepository({
       resourceId: 'ledger:user',
-      writer: {
+      reader: {
         ledgerPath,
-        recoveryPointerPath: '/fixture/data/recovery/ledger.json',
         read: async () => ({
           ok: true as const,
           value: Object.freeze({
@@ -120,7 +116,7 @@ describe('private ledger repository adapter', () => {
             model: null,
           }),
         }),
-      } as LedgerWriter,
+      },
       metadata: {
         readFileMetadata: async (path) =>
           path === ledgerPath
@@ -153,9 +149,8 @@ describe('private ledger repository adapter', () => {
     let byteRevision = digest('a');
     const repository = createLedgerRepository({
       resourceId: 'ledger:user',
-      writer: {
+      reader: {
         ledgerPath,
-        recoveryPointerPath: '/fixture/data/recovery/ledger.json',
         read: async () => ({
           ok: true as const,
           value: Object.freeze({
@@ -167,7 +162,7 @@ describe('private ledger repository adapter', () => {
             model,
           }),
         }),
-      } as LedgerWriter,
+      },
       metadata: {
         readFileMetadata: async (path) =>
           path === ledgerPath

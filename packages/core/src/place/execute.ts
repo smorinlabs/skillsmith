@@ -2,13 +2,13 @@ import { join, parse } from 'node:path';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
+import type { LedgerWriterPorts } from '../artifacts/ledger-writer.ts';
 import { createLockRepository, createManifestRepository } from '../artifacts/repository.ts';
 import type { ProjectContext } from '../context/types.ts';
 import {
   type SkillSmithError,
   flipFailedError,
   flipRefusedError,
-  genericError,
   safeErrorCode,
 } from '../errors.ts';
 import {
@@ -29,7 +29,7 @@ import {
 } from '../state/repositories.ts';
 import { type ObservedStateSnapshotV1, sameExpectedRevisionV1 } from '../state/types.ts';
 import { createLedgerPersistenceGateway } from './ledger-persistence.ts';
-import { openCallerLedgerWriter } from './ledger-persistence.ts';
+import { readLedgerState } from './ledger.ts';
 import { createLivePlacementRepository } from './live-repository.ts';
 import type { LivePlacementResourceV1 } from './live-repository.ts';
 import type { PairPlan } from './plan.ts';
@@ -115,6 +115,11 @@ export const createPlacementSnapshotAuthority = async (
   const lockResourceId = placementSnapshotResourceId('lock', lockPath);
   const ledgerResourceId = placementSnapshotResourceId('ledger', ledgerPath);
   const capabilitiesResourceId = placementSnapshotResourceId('capabilities', 'registry-v1');
+  const ledgerWriterPorts = (
+    env as PlacementPorts & {
+      readonly ledgerWriterPorts?: LedgerWriterPorts;
+    }
+  ).ledgerWriterPorts;
   const liveResources = pairs.map(
     (pair): LivePlacementResourceV1 => ({
       resourceId: placementSnapshotResourceId('live', pairIdentityKey(pair)),
@@ -126,10 +131,6 @@ export const createPlacementSnapshotAuthority = async (
       storeRoot,
     }),
   );
-  const openedWriter = await openCallerLedgerWriter(env, ledgerPath);
-  if (!openedWriter.ok) {
-    return err(genericError(`cannot open placement ledger observer: ${openedWriter.error.code}`));
-  }
   const repositories: ObservedStateRepositoriesV1 = Object.freeze({
     project: createProjectStateReaderV1({
       resourceId: projectResourceId,
@@ -144,7 +145,10 @@ export const createPlacementSnapshotAuthority = async (
     lock: createLockRepository({ resourceId: lockResourceId, path: lockPath, ports: env }),
     ledger: createLedgerRepository({
       resourceId: ledgerResourceId,
-      writer: openedWriter.value,
+      reader: {
+        ledgerPath,
+        read: () => readLedgerState(ledgerWriterPorts ?? env, ledgerPath),
+      },
       metadata: env,
     }),
     live: createLivePlacementRepository({ resources: liveResources, ports: env }),

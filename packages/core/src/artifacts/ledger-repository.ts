@@ -15,19 +15,18 @@ import {
   createFilesystemMetadataIdentityV1,
 } from '../state/types.ts';
 import type { LedgerModel, LedgerReadState } from './ledger-types.ts';
-import type { LedgerWriter, LedgerWriterError } from './ledger-writer.ts';
 
 export interface LedgerRepositoryOptions {
   readonly resourceId: string;
-  readonly writer: LedgerWriter;
+  readonly reader: Readonly<{
+    ledgerPath: string;
+    read(): Promise<Result<LedgerReadState, unknown>>;
+  }>;
   readonly metadata: FileMetadataReadPort;
 }
 
 const repositoryError = (reason: StateRepositoryError['reason']): StateRepositoryError =>
   Object.freeze({ code: 'state-repository', domain: 'ledger', reason });
-
-const mapWriterError = (error: LedgerWriterError): StateRepositoryError =>
-  repositoryError(error.code === 'permission-denied' ? 'permission-denied' : 'observation-failed');
 
 const mapUnknownError = (error: unknown): StateRepositoryError => {
   const code =
@@ -54,11 +53,11 @@ const observeState = async (
     StateRepositoryError
   >
 > => {
-  const ledgerPath = resolve(options.writer.ledgerPath);
+  const ledgerPath = resolve(options.reader.ledgerPath);
   const parentPath = dirname(ledgerPath);
   try {
-    const state = await options.writer.read();
-    if (!state.ok) return err(mapWriterError(state.error));
+    const state = await options.reader.read();
+    if (!state.ok) return err(mapUnknownError(state.error));
     const target = await options.metadata.readFileMetadata(ledgerPath);
     const parent = await options.metadata.readFileMetadata(parentPath);
     if (

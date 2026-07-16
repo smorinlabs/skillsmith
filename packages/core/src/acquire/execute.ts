@@ -2,6 +2,7 @@ import { join, parse, resolve } from 'node:path';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
+import type { LedgerWriterPorts } from '../artifacts/ledger-writer.ts';
 import { createLockRepository, createManifestRepository } from '../artifacts/repository.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
@@ -23,7 +24,7 @@ import {
   executePlacementPlans,
   executeRecordOnlyPlacementPlan,
 } from '../place/execute.ts';
-import { openCallerLedgerWriter } from '../place/ledger-persistence.ts';
+import { readLedgerState } from '../place/ledger.ts';
 import {
   type LivePlacementResourceV1,
   createLivePlacementRepository,
@@ -44,7 +45,7 @@ import type {
   OperationExecutionResult,
   OperationResourceIdentity,
 } from '../planning/types.ts';
-import type { FileMetadataReadPort, LockPort } from '../ports/types.ts';
+import type { LockPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { readObservedStateSnapshotV1 } from '../state/read.ts';
 import {
@@ -157,11 +158,9 @@ export const readAcquisitionSnapshotV1 = async (input: {
   const lockResourceId = acquireStateResourceId('lock', [lockPath]);
   const ledgerResourceId = acquireStateResourceId('ledger', [resolve(input.ledgerPath)]);
   const capabilitiesResourceId = acquireStateResourceId('capabilities', ['current-registry']);
-  const openedWriter = await openCallerLedgerWriter(input.env, input.ledgerPath, input.signal);
-  if (!openedWriter.ok) throw openedWriter.error;
   const ledgerWriterPorts = (
     input.env as PlacementPorts & {
-      readonly ledgerWriterPorts?: FileMetadataReadPort;
+      readonly ledgerWriterPorts?: LedgerWriterPorts;
     }
   ).ledgerWriterPorts;
   const stateReadPorts =
@@ -186,7 +185,10 @@ export const readAcquisitionSnapshotV1 = async (input: {
     }),
     ledger: createLedgerRepository({
       resourceId: ledgerResourceId,
-      writer: openedWriter.value,
+      reader: {
+        ledgerPath: input.ledgerPath,
+        read: () => readLedgerState(ledgerWriterPorts ?? input.env, input.ledgerPath),
+      },
       metadata: stateReadPorts,
     }),
     live: createLivePlacementRepository({

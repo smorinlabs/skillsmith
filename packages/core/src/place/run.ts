@@ -1786,6 +1786,19 @@ const createFlipPlanning = async (
     const result = resultForPair(results, pair);
     if (result === undefined) continue;
     const current = getPairAt(ledger, pair.scopeKey, pair.skill, pair.tool);
+    const retainedCommittedInverse =
+      reportOp === 'rollback' &&
+      current?.journal?.phase === 'committed' &&
+      current.journal.before.mode !== 'absent';
+    const executable =
+      result.action === 'flipped' ||
+      result.action === 'updated' ||
+      result.action === 'created' ||
+      result.action === 'adopted' ||
+      result.action === 'failed' ||
+      result.action === 'rolled-back' ||
+      retainedCommittedInverse;
+    if (!executable) continue;
     usedResults.add(result);
 
     const liveResourceId = placementSnapshotResourceId('live', pairIdentityKey(pair));
@@ -1812,7 +1825,7 @@ const createFlipPlanning = async (
     }
     if (reportOp === 'rollback') {
       const rollbackBefore =
-        (current?.journal?.phase === 'committed' ? null : current?.journal?.before) ??
+        current?.journal?.before ??
         (current?.mode === 'pinned' && current.dev != null
           ? { mode: 'dev' as const, symlinkTarget: current.dev.resolvedPath }
           : current?.mode === 'dev' && current.pinned != null
@@ -2317,9 +2330,10 @@ const normalizeFlipProjectContext = async (
         opts: {
           ...opts,
           projectRoot:
-            opts.scope === 'project' || typeof opts.projectRoot === 'string'
-              ? (projectContext.value.projectRoot ?? projectContext.value.effectiveCwd)
-              : null,
+            opts.scope === 'user'
+              ? null
+              : (projectContext.value.projectRoot ??
+                (opts.scope === 'project' ? projectContext.value.effectiveCwd : null)),
         },
       })
     : projectContext;
@@ -2471,16 +2485,7 @@ const prepareFlipBatch = async (
       previewResults,
     });
   };
-  let snapshotResult: Awaited<ReturnType<typeof prepareSnapshot>>;
-  if (normalizedOpts.dryRun) {
-    snapshotResult = await prepareSnapshot();
-  } else {
-    const preparedSnapshot = await withLedgerLock(env, ledgerPath, prepareSnapshot, {
-      ...(normalizedOpts.signal === undefined ? {} : { signal: normalizedOpts.signal }),
-    });
-    if (!preparedSnapshot.ok) return preparedSnapshot;
-    snapshotResult = preparedSnapshot.value;
-  }
+  const snapshotResult = await prepareSnapshot();
   if (!snapshotResult.ok) return snapshotResult;
   const { preparedPreview, previewResults } = snapshotResult.value;
   const bindingMap = new Map<string, PreparedFlipBinding>();

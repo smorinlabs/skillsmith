@@ -7,6 +7,9 @@ import {
   listPlacements,
 } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
+import { parseArtifactDigest } from '../artifacts/hash.ts';
+import type { PlanImageV1, PlanSourceV1 } from '../artifacts/plan-types.ts';
+import { logicalJournalPairIdentity } from '../artifacts/registry.ts';
 import { type SkillSmithError, flipRefusedError, placementNotFoundError } from '../errors.ts';
 import {
   type SnapshotBoundOperationPlanV1,
@@ -21,8 +24,10 @@ import {
   operationImageFromLiveStateV1,
   operationSourceFromLedgerPairV1,
 } from '../planning/create.ts';
+import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   ExecutableOperation,
+  OperationImage,
   OperationLocation,
   OperationSelection,
   OperationSource,
@@ -1329,6 +1334,104 @@ const pinnedRollbackSource = (
   };
 };
 
+const ownedOperationDigest = (value: unknown): `sha256:${string}` => {
+  const parsed = parseArtifactDigest(value);
+  if (!parsed.ok) {
+    throw new TypeError('placement planning: retained rollback digest is invalid');
+  }
+  return `sha256:${parsed.value.slice('sha256:'.length)}`;
+};
+
+const ownedOperationSource = (source: PlanSourceV1 | null): OperationSource | null => {
+  if (source === null) return null;
+  const contentHash = ownedOperationDigest(source.contentHash);
+  return source.kind === 'local-dev'
+    ? { kind: 'local-dev', path: source.path, contentHash }
+    : {
+        kind: 'portable',
+        identity: {
+          host: source.identity.host,
+          repository: source.identity.repository,
+          path: source.identity.path,
+        },
+        requestedRef: source.requestedRef,
+        resolvedSha: source.resolvedSha,
+        sourcePath: source.sourcePath,
+        contentHash,
+      };
+};
+
+type LiveOperationImage =
+  | Extract<OperationImage, { readonly kind: 'absent' }>
+  | Extract<OperationImage, { readonly kind: 'placement' }>;
+
+const ownedLiveOperationImage = (
+  image: PlanImageV1,
+  liveResource: ReturnType<typeof placementLiveResource>,
+): LiveOperationImage => {
+  if (image.kind !== 'placement' && image.kind !== 'absent') {
+    throw new TypeError('placement planning: retained rollback history is not placement-scoped');
+  }
+  if (
+    image.resource.kind !== 'live' ||
+    canonicalPlanningString(image.resource) !== canonicalPlanningString(liveResource)
+  ) {
+    throw new TypeError('placement planning: retained rollback history targets another placement');
+  }
+  if (image.kind === 'absent') return { kind: 'absent', resource: liveResource };
+  const source = ownedOperationSource(image.source);
+  const contentHash = image.contentHash === null ? null : ownedOperationDigest(image.contentHash);
+  return {
+    kind: 'placement',
+    resource: liveResource,
+    classification: image.classification,
+    representation: image.representation,
+    linkTarget:
+      image.linkTarget === null
+        ? null
+        : image.linkTarget.kind === 'portable'
+          ? { kind: 'portable', token: image.linkTarget.token }
+          : { kind: 'machine-bound', path: image.linkTarget.path },
+    dangling: image.dangling,
+    source,
+    contentHash,
+  };
+};
+
+const retainedPlacementHistoryInverse = (
+  snapshot: ObservedStateSnapshotV1,
+  intent: PlacementRollbackIntentV1,
+  current: OperationImage,
+  liveResource: ReturnType<typeof placementLiveResource>,
+) => {
+  const ledger = snapshot.ledger.value;
+  if (ledger === null) return null;
+  const projectRoot = intent.projectRoot?.kind === 'machine-bound' ? intent.projectRoot.path : null;
+  for (let index = ledger.history.length - 1; index >= 0; index -= 1) {
+    const journal = ledger.history[index];
+    if (journal === undefined) continue;
+    const identity = logicalJournalPairIdentity(journal);
+    if (
+      identity === null ||
+      identity.projectRoot !== projectRoot ||
+      identity.skill !== intent.skill ||
+      identity.tool !== intent.tool
+    ) {
+      continue;
+    }
+    if (journal.phase !== 'committed' || journal.disposition !== 'forward') return null;
+    const inverse = ownedLiveOperationImage(journal.intent.before, liveResource);
+    const retainedCurrent = ownedLiveOperationImage(journal.intent.after, liveResource);
+    if (canonicalPlanningString(retainedCurrent) !== canonicalPlanningString(current)) {
+      throw new TypeError(
+        'placement planning: retained rollback history does not match live state',
+      );
+    }
+    return { journal, inverse };
+  }
+  return null;
+};
+
 const placementRollbackOperationFor = (
   request: PlacementRollbackPlanRequestV1,
   intent: PlacementRollbackIntentV1,
@@ -1365,8 +1468,63 @@ const placementRollbackOperationFor = (
     managed: true,
     source: beforeSource,
   });
+  const retainedHistory = retainedPlacementHistoryInverse(snapshot, intent, before, liveResource);
+  if (retainedHistory !== null) {
+    const { inverse: after, journal } = retainedHistory;
+    const kind: ExecutableOperation['kind'] =
+      after.kind === 'absent' ? 'remove' : after.classification === 'dev' ? 'link-dev' : 'promote';
+    const source = after.kind === 'placement' ? after.source : null;
+    const target =
+      kind === 'link-dev' &&
+      after.kind === 'placement' &&
+      after.linkTarget?.kind === 'machine-bound'
+        ? after.linkTarget.path
+        : null;
+    if (kind === 'link-dev' && (source?.kind !== 'local-dev' || target === null)) {
+      throw new TypeError('placement planning: retained dev rollback history is incomplete');
+    }
+    if (journal.intent.pairId === null) {
+      throw new TypeError('placement planning: retained rollback pair identity is missing');
+    }
+    const base = placementOperationBase(
+      request,
+      intent,
+      snapshot,
+      liveResource,
+      kind,
+      source,
+      target,
+    );
+    const operationId = createOperationId({
+      domain: 'skillsmith.operation-identity',
+      schemaVersion: 1,
+      groupId: journal.intent.groupId,
+      pairId: journal.intent.pairId,
+      kind,
+      skill: intent.skill,
+      source,
+      tool: intent.tool,
+      scope: intent.scope,
+    });
+    return {
+      ...base,
+      groupId: journal.intent.groupId,
+      pairId: journal.intent.pairId,
+      operationId,
+      reversibility: {
+        kind: 'conditional',
+        retentionResourceIds: [journal.intent.pairId],
+      },
+      before,
+      after,
+      reason: {
+        code: 'rollback-inverse',
+        message: `Rollback inverse restores the retained placement for ${intent.skill}.`,
+      },
+    };
+  }
   const rollbackBefore =
-    (ledgerPair.journal?.phase === 'committed' ? null : ledgerPair.journal?.before) ??
+    ledgerPair.journal?.before ??
     (ledgerPair.mode === 'pinned' && ledgerPair.dev != null
       ? {
           mode: 'dev' as const,
