@@ -999,13 +999,13 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD
 
 ## P17-G3B-04 — Immutable snapshots, pure planners, repositories, expected revisions, and extraction
 
-Phase: 3B; status: **planned**; dependencies: P17-G3B-02.
+Phase: 3B; status: **mapped**; dependencies: P17-G3B-02.
 Required-now validations: EWP-P3B-TS05.
 Downstream coverage obligations: EWP-WF06, EWP-WF11, EWP-WF13.
 
 ### Group gates
 
-- [ ] P17-G3B-04:mapped _(pending)_
+- [x] P17-G3B-04:mapped _(passed)_
 - [ ] P17-G3B-04:ready _(pending)_
 - [ ] P17-G3B-04:test-first _(pending)_
 - [ ] P17-G3B-04:minimal-implementation _(pending)_
