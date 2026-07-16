@@ -4926,7 +4926,7 @@
       "phase": "3B",
       "title": "Tool-specific lifecycle behavior behind registered adapter bundles",
       "dependsOn": ["P17-G3B-01"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0007-tool-adapter-registry.md",
@@ -4994,11 +4994,14 @@
       ],
       "implementers": [
         "root-codex-goal",
-        "/root/g3b05_registry_capability",
-        "/root/g3b05_placement_lifecycle",
-        "/root/g3b05_selector_rendering"
+        "/root/g3b05_acquire_migration",
+        "/root/g3b05_place_migration",
+        "/root/g3b05_gate_renderers",
+        "/root/g3b05_acquire_detect_dispatch_fix",
+        "/root/g3b05_place_verify_dispatch_fix",
+        "/root/g3b05_planning_context_fix"
       ],
-      "reviewer": null,
+      "reviewer": "/root/g3b05_final_simplicity_audit",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -5013,24 +5016,24 @@
           "evidence": ["projects/p17/evidence/P17-G3B-05.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-05.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-05.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-05.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-05.md#refactor-review"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-05.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -5045,7 +5048,11 @@
         "projects/p17/plans/P17-G3B-05.md",
         "projects/p17/evidence/P17-G3B-05.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G3B-05.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-05.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-05.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-05.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-05.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-05.md#refactor-review",
+        "projects/p17/evidence/P17-G3B-05.md#adversarial-review"
       ]
     },
     {
@@ -19887,13 +19894,16 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-05",
-      "status": "red",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-05",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3B-05.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-05.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-05.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-05.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-05.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G3B-05.md#adversarial-review"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -20176,7 +20186,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-05",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-05:tests/ergonomics/phase/EWP-P3B-TS06.test.ts#EWP-P3B-TS06",
       "target": {
@@ -20185,7 +20195,10 @@
         "selector": "EWP-P3B-TS06",
         "command": "bun test tests/ergonomics/phase/EWP-P3B-TS06.test.ts --test-name-pattern EWP-P3B-TS06"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-05.md#red-execution-receipt-ewp-p3b-ts06"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-05.md#final-green-execution-receipt-ewp-p3b-ts06",
+        "projects/p17/evidence/P17-G3B-05.md#red-execution-receipt-ewp-p3b-ts06"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS06"],
