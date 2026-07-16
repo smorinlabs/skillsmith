@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { PlanOperationKindV1 } from '../../src/artifacts/plan-types.ts';
+import type { SnapshotBoundOperationPlanV1 } from '../../src/planning/create.ts';
 import {
   EXECUTABLE_OPERATION_KINDS,
   type ExecutableOperationKind,
@@ -62,5 +63,19 @@ describe('planning domain types', () => {
 
     expect(parity).toBeTrue();
     expect(persistenceMapper.toPersistence).toBeFunction();
+  });
+
+  test('keeps snapshot binding generic over the immutable operation plan command', () => {
+    const commandParity: Equal<
+      SnapshotBoundOperationPlanV1<'install'>['plan']['command'],
+      'install'
+    > = true;
+    const revisionArrayParity: Equal<
+      SnapshotBoundOperationPlanV1['expectedRevisions'],
+      SnapshotBoundOperationPlanV1['expectedRevisions']
+    > = true;
+
+    expect(commandParity).toBeTrue();
+    expect(revisionArrayParity).toBeTrue();
   });
 });

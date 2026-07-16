@@ -973,7 +973,79 @@ describe('runInstall — post-transport safety boundary', () => {
     expect(r.value.requested.sources).toEqual([fsLabel, fsLabel]);
     expect(r.value.results.map(({ requestIndex }) => requestIndex)).toEqual([0, 0, 1, 1]);
     expect(r.value.results.every(({ source }) => source === fsLabel)).toBeTrue();
+    expect(r.value.plan.operations).toHaveLength(2);
+    for (const operation of r.value.plan.operations) {
+      expect(operation.preconditionIds).toHaveLength(11);
+      expect(new Set(operation.preconditionIds).size).toBe(11);
+    }
   });
+
+  for (const driftOccurrence of [0, 1] as const) {
+    test(`binds duplicate source occurrence ${driftOccurrence} to its exact materialized path`, async () => {
+      const materialized: string[] = [];
+      let prepared = false;
+      const targetWrites: string[] = [];
+      const baseMaterialize = fixture.transport.materializeSkill;
+      const transport: NonNullable<InstallDeps['transport']> = {
+        ...fixture.transport,
+        materializeSkill: async (env, fetchDir, skillPath, signal) => {
+          const result = await baseMaterialize(env, fetchDir, skillPath, signal);
+          if (result.ok) materialized.push(result.value);
+          return result;
+        },
+      };
+      const executionEnv: RuntimePorts = {
+        ...f.env,
+        readBytes: async (path) => {
+          const bytes = await f.env.readBytes(path);
+          if (
+            prepared &&
+            materialized[driftOccurrence] !== undefined &&
+            path === join(materialized[driftOccurrence], 'SKILL.md')
+          ) {
+            return new TextEncoder().encode(`${new TextDecoder().decode(bytes)}\ndrift\n`);
+          }
+          return bytes;
+        },
+        writeTextFile: async (path, text) => {
+          if (prepared && !path.includes('/.fetch/')) targetWrites.push(`write:${path}`);
+          await f.env.writeTextFile(path, text);
+        },
+        makeSymlink: async (target, path) => {
+          if (prepared) targetWrites.push(`symlink:${path}`);
+          await f.env.makeSymlink(target, path);
+        },
+        rename: async (from, to) => {
+          if (prepared && !from.includes('/.fetch/')) targetWrites.push(`rename:${from}->${to}`);
+          await f.env.rename(from, to);
+        },
+        copyTree: async (from, to) => {
+          if (prepared) targetWrites.push(`copy:${from}->${to}`);
+          await f.env.copyTree(from, to);
+        },
+      };
+      const result = await runInstall(
+        executionEnv,
+        {
+          ...userOpts,
+          sources: [fsSource, fsSource],
+          tools: ['claude-code'],
+        },
+        makeDeps({
+          transport,
+          observePreparedPlan: () => {
+            prepared = true;
+          },
+        }),
+      );
+      if (!result.ok) throw new Error(msg(result.error));
+
+      expect(new Set(materialized).size).toBe(2);
+      expect(result.value.results.map(({ action }) => action)).toEqual(['refused', 'refused']);
+      expect(targetWrites).toEqual([]);
+      expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('absent');
+    });
+  }
 });
 
 describe('runInstall — fetch elision', () => {
@@ -1128,8 +1200,11 @@ describe('runInstall — dry run', () => {
     expect(Object.isFrozen(previewPlan)).toBeTrue();
     expect(preview.value.executionResults).toEqual([]);
     for (const operation of preview.value.plan.operations) {
-      expect(operation.preconditionIds).toHaveLength(1);
-      expect(operation.preconditionIds[0]).toMatch(/^precondition:v1:[0-9a-f]{64}$/);
+      expect(operation.preconditionIds).toHaveLength(10);
+      expect(new Set(operation.preconditionIds).size).toBe(10);
+      expect(
+        operation.preconditionIds.every((id) => /^precondition:v1:[0-9a-f]{64}$/.test(id)),
+      ).toBeTrue();
     }
 
     let executionPlan: typeof previewPlan;
@@ -1288,7 +1363,7 @@ describe('runInstall — dry run', () => {
     expect(await f.env.readText(ledgerPath)).toBe(ledgerBefore);
   });
 
-  test('G3B-02: final under-lock ledger rebind preserves an unrelated concurrent pair', async () => {
+  test('G3B-04: final under-lock ledger revision refuses after an unrelated concurrent write', async () => {
     const ledgerPath = ledgerPathOf(f.data);
     let lockCount = 0;
     const concurrentPair = {
@@ -1338,10 +1413,22 @@ describe('runInstall — dry run', () => {
     if (!result.ok) throw new Error(msg(result.error));
 
     expect(lockCount).toBe(2);
-    expect(result.value.results[0]?.action).toBe('installed');
+    expect(result.value.results[0]?.action).toBe('refused');
     const finalLedger = await led();
     expect(getPairAt(finalLedger, null, 'concurrent-skill', 'codex')).toEqual(concurrentPair);
-    expect(getPairAt(finalLedger, null, 'factor-scan', 'claude-code')).not.toBeNull();
+    expect(getPairAt(finalLedger, null, 'factor-scan', 'claude-code')).toBeNull();
+
+    const retried = await runInstall(
+      executionEnv,
+      { ...userOpts, tools: ['claude-code'] },
+      makeDeps(),
+    );
+    if (!retried.ok) throw new Error(msg(retried.error));
+    expect(retried.value.results[0]?.action).toBe('installed');
+    expect(retried.value.plan).not.toEqual(result.value.plan);
+    const retriedLedger = await led();
+    expect(getPairAt(retriedLedger, null, 'concurrent-skill', 'codex')).toEqual(concurrentPair);
+    expect(getPairAt(retriedLedger, null, 'factor-scan', 'claude-code')).not.toBeNull();
   });
 
   test('G3B-02: started swap and recovery cancellation stay cancelled and recoverable', async () => {

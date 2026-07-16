@@ -1,12 +1,11 @@
-import type { InstallAction, UninstallAction } from '../acquire/types.ts';
-import type { FlipAction } from '../place/types.ts';
+import type { CurrentCompatibilityAction } from './legacy-action.ts';
 import type {
   CurrentCompatibilityProjection,
   ExecutableOperation,
   OperationImage,
 } from './types.ts';
 
-export type CurrentCompatibilityAction = InstallAction | UninstallAction | FlipAction;
+export type { CurrentCompatibilityAction } from './legacy-action.ts';
 
 const fail = (message: string): never => {
   throw new TypeError(`operation compatibility: ${message}`);

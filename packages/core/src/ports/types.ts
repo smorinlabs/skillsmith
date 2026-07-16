@@ -7,7 +7,8 @@ import type {
   Platform,
   XdgDirs,
 } from '../env/types.ts';
-import type { JournalPhase } from '../place/types.ts';
+
+type RuntimeJournalPhase = 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';
 
 export interface PlatformPaths {
   readonly homeDir: string;
@@ -198,7 +199,7 @@ export interface ResolvedRuntimeConfiguration {
   readonly opencodeClaudeSkillsDisabled: boolean;
   readonly forceColor: boolean;
   readonly noColor: boolean;
-  readonly journalPause: JournalPhase | undefined;
+  readonly journalPause: RuntimeJournalPhase | undefined;
 }
 
 export type InventoryReadPorts = PlatformPaths & FileReadPort;

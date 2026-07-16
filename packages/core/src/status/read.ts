@@ -4,9 +4,14 @@ import { toolRegistry } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS } from '../agents/types.ts';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
 import { hashCanonicalInput, hashManifestBytes } from '../artifacts/hash.ts';
-import { readPortableLockSource } from '../artifacts/lock.ts';
-import type { ArtifactRepositoryError } from '../artifacts/repository.ts';
+import type { LedgerModel } from '../artifacts/ledger-types.ts';
+import { readPortableLockSource, serializePortableLock } from '../artifacts/lock.ts';
+import type { PortableLockV1 } from '../artifacts/lock.ts';
+import { artifactContractRegistry, resolveLedgerArtifactCodec } from '../artifacts/registry.ts';
+import type { ArtifactReadResult, ArtifactRepositoryError } from '../artifacts/repository.ts';
 import {
+  createLockRepository,
+  createManifestRepository,
   readLedgerArtifact,
   readLockArtifact,
   readManifestArtifact,
@@ -17,11 +22,35 @@ import {
   serializeSourceContentProjection,
 } from '../artifacts/source-content.ts';
 import type { SourceContentReadPort } from '../artifacts/source-content.ts';
+import type { NormalizedManifestV1 } from '../artifacts/types.ts';
 import { SCOPES, type Scope } from '../config/types.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
+import type { FileMetadata } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { parseSkillFrontmatter } from '../skills/frontmatter.ts';
+import { readObservedStateSnapshotV1 } from '../state/read.ts';
 import {
+  type LedgerRepository,
+  type LivePlacementRepository,
+  type LogicalRepositoryStageError,
+  type LogicalRepositoryStageV1,
+  type ObservedStateRepositoriesV1,
+  type ProjectStateReaderV1,
+  type RepositoryStageRequestV1,
+  type StateRepositoryError,
+  type StoreRepository,
+  createCapabilityStateReaderV1,
+} from '../state/repositories.ts';
+import {
+  type ExpectedRevisionV1,
+  type LivePlacementStateV1,
+  type ObservedComponentV1,
+  type ObservedStateSnapshotV1,
+  createExpectedRevisionV1,
+  semanticValueRevisionV1,
+} from '../state/types.ts';
+import {
+  type StatusJoinInput,
   type StatusLiveInput,
   type StatusRetentionPlan,
   type StatusRetentionProbeInput,
@@ -38,6 +67,7 @@ import type {
 } from './types.ts';
 
 const decoder = new TextDecoder('utf-8', { fatal: true });
+const encoder = new TextEncoder();
 const knownTools = new Set<string>(SUPPORTED_TOOLS);
 const knownScopes = new Set<string>(SCOPES);
 
@@ -1150,17 +1180,77 @@ export const readStatus = async (
     });
     const retention = await observeRetention(ports, retentionPlan, request);
     if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
-    const joined = joinStatus({
+    const facts = {
       homeDir: ports.homeDir,
-      request,
       manifest,
       lock,
       ledger: ledgerRead.value,
       ledgerPath,
       live,
       retention,
-    });
-    return joined.ok ? ok(joined.value) : err(UNMATCHED_TARGET);
+    } as const;
+    const artifactSelection = request.artifactSelection;
+    if (
+      artifactSelection.state === 'unselected' ||
+      facts.live.some(
+        (input) =>
+          input.observation.nodeKind !== 'directory' &&
+          input.observation.nodeKind !== 'symlink' &&
+          input.observation.nodeKind !== 'file',
+      )
+    ) {
+      return createStatusReportFromFacts(request, facts);
+    }
+    const snapshotParentPaths = [
+      ...(facts.manifest?.state === 'present' ? [dirname(artifactSelection.manifestPath)] : []),
+      ...(facts.lock?.state === 'present' ? [dirname(artifactSelection.lockPath)] : []),
+      ...(facts.ledger.state === 'present' ? [dirname(facts.ledgerPath)] : []),
+      ...facts.live.map((input) => dirname(input.path)),
+    ];
+    for (const path of new Set(snapshotParentPaths)) {
+      const metadata = await tracker.track(() => ports.readFileMetadata(path));
+      if (metadata.kind !== 'dir') return createStatusReportFromFacts(request, facts);
+    }
+    const reobserveFacts = async (): Promise<Readonly<Omit<StatusJoinInput, 'request'>>> => {
+      const manifestRead = await readManifestArtifact(
+        artifactPorts,
+        artifactSelection.manifestPath,
+      );
+      if (!manifestRead.ok) throw artifactError(manifestRead.error, request.signal);
+      const lockRead = await readLockArtifact(artifactPorts, artifactSelection.lockPath);
+      if (!lockRead.ok) throw artifactError(lockRead.error, request.signal);
+      const nextLedger = await readLedgerArtifact(artifactPorts, ledgerPath);
+      if (!nextLedger.ok) throw artifactError(nextLedger.error, request.signal);
+      const nextLive = await observeSelectedRoots(ports, request, storeRootOf(dataDir));
+      const nextRetentionPlan = planStatusRetention({
+        homeDir: ports.homeDir,
+        request,
+        manifest: manifestRead.value,
+        lock: lockRead.value,
+        ledger: nextLedger.value,
+        ledgerPath,
+        live: nextLive,
+      });
+      const nextRetention = await observeRetention(ports, nextRetentionPlan, request);
+      return {
+        homeDir: ports.homeDir,
+        manifest: manifestRead.value,
+        lock: lockRead.value,
+        ledger: nextLedger.value,
+        ledgerPath,
+        live: nextLive,
+        retention: nextRetention,
+      };
+    };
+    const prepared = await createSharedStatusSnapshotV1(
+      ports,
+      request,
+      facts,
+      reobserveFacts,
+      (path) => tracker.track(() => ports.readFileMetadata(path)),
+    );
+    if (tracker.cancelled(request.signal)) return err(CANCELLED);
+    return createStatusReportFromSnapshot(request, prepared.snapshot, prepared.adjunct);
   } catch (error) {
     if (
       error === CANCELLED ||
@@ -1172,4 +1262,696 @@ export const readStatus = async (
     }
     return err(mapThrowable(error, request.signal));
   }
+};
+
+export interface StatusSnapshotAdjunctV1 {
+  readonly schemaVersion: 1;
+  readonly snapshotId: ObservedStateSnapshotV1['snapshotId'];
+  readonly revisionDigest: `sha256:${string}`;
+  readonly facts: Readonly<Omit<StatusJoinInput, 'request'>>;
+}
+
+const statusAdjunctRevision = (
+  projectContext: StatusReadRequest['projectContext'],
+  facts: Readonly<Omit<StatusJoinInput, 'request'>>,
+): `sha256:${string}` => {
+  const identity = {
+    domain: 'skillsmith.status-snapshot-adjunct',
+    schemaVersion: 1,
+    projectContext,
+    facts,
+  } as const;
+  const hashed = hashCanonicalInput('resource', 1, JSON.stringify(identity));
+  if (!hashed.ok) throw OBSERVATION_FAILED;
+  return hashed.value as `sha256:${string}`;
+};
+
+const statusMetadataIdentity = (path: string, metadata: FileMetadata): string => {
+  const hashed = hashCanonicalInput(
+    'resource',
+    1,
+    JSON.stringify([
+      'skillsmith-status-metadata',
+      1,
+      resolve(path),
+      metadata.kind,
+      metadata.mode,
+      metadata.identity,
+      metadata.linkCount ?? null,
+    ]),
+  );
+  if (!hashed.ok) throw OBSERVATION_FAILED;
+  return `metadata:v1:${hashed.value.slice('sha256:'.length)}`;
+};
+
+const statusExpectedRevision = (input: unknown): ExpectedRevisionV1 => {
+  const revision = createExpectedRevisionV1(input);
+  if (!revision.ok) throw OBSERVATION_FAILED;
+  return revision.value;
+};
+
+const statusArtifactComponent = async <Model>(
+  artifact: 'manifest' | 'lock' | 'ledger',
+  resourceId: string,
+  path: string,
+  value: ArtifactReadResult<Model>,
+  readMetadata: (path: string) => Promise<FileMetadata>,
+): Promise<ObservedComponentV1<Model>> => {
+  const target = await readMetadata(path);
+  const parentPath = dirname(path);
+  const parent = await readMetadata(parentPath);
+  if (value.state === 'absent') {
+    if (target.kind !== 'absent' || (parent.kind !== 'dir' && parent.kind !== 'absent')) {
+      throw OBSERVATION_FAILED;
+    }
+    return {
+      revision: statusExpectedRevision({
+        schemaVersion: 1,
+        domain: artifact,
+        resourceId,
+        state: 'absent',
+        targetIdentity: path,
+        targetKind: 'absent',
+        parentIdentity: parentPath,
+        parentKind: parent.kind === 'dir' ? 'directory' : 'absent',
+        parentMetadataIdentity: statusMetadataIdentity(parentPath, parent),
+      }),
+      value: null,
+    };
+  }
+  if (target.kind !== 'file' || parent.kind !== 'dir' || value.semanticRevision === null) {
+    throw OBSERVATION_FAILED;
+  }
+  return {
+    revision: statusExpectedRevision({
+      schemaVersion: 1,
+      domain: artifact,
+      resourceId,
+      state: 'present',
+      targetIdentity: path,
+      targetKind: 'file',
+      targetMetadataIdentity: statusMetadataIdentity(path, target),
+      parentIdentity: parentPath,
+      parentKind: 'directory',
+      parentMetadataIdentity: statusMetadataIdentity(parentPath, parent),
+      byteRevision: value.byteRevision,
+      semanticRevision: value.semanticRevision,
+    }),
+    value: value.model,
+  };
+};
+
+const statusLiveResourceId = (input: StatusLiveInput): string => {
+  const resourceHash = hashCanonicalInput(
+    'resource',
+    1,
+    JSON.stringify([
+      'skillsmith-status-live-resource',
+      1,
+      input.tool,
+      input.scope,
+      input.projectIdentity,
+      input.path,
+    ]),
+  );
+  if (!resourceHash.ok) throw OBSERVATION_FAILED;
+  return `status-live:${resourceHash.value.slice('sha256:'.length)}`;
+};
+
+const statusAbsentLiveComponent = async (
+  resourceId: string,
+  path: string,
+  readMetadata: (path: string) => Promise<FileMetadata>,
+): Promise<ObservedComponentV1<LivePlacementStateV1>> => {
+  const target = await readMetadata(path);
+  const parentPath = dirname(path);
+  const parent = await readMetadata(parentPath);
+  if (target.kind !== 'absent' || (parent.kind !== 'dir' && parent.kind !== 'absent')) {
+    throw OBSERVATION_FAILED;
+  }
+  return {
+    revision: statusExpectedRevision({
+      schemaVersion: 1,
+      domain: 'live',
+      resourceId,
+      state: 'absent',
+      targetIdentity: path,
+      targetKind: 'absent',
+      parentIdentity: parentPath,
+      parentKind: parent.kind === 'dir' ? 'directory' : 'absent',
+      parentMetadataIdentity: statusMetadataIdentity(parentPath, parent),
+    }),
+    value: null,
+  };
+};
+
+const statusLiveComponent = async (
+  resourceId: string,
+  input: StatusLiveInput,
+  readMetadata: (path: string) => Promise<FileMetadata>,
+): Promise<ObservedComponentV1<LivePlacementStateV1> | null> => {
+  const representation =
+    input.observation.nodeKind === 'directory' ||
+    input.observation.nodeKind === 'symlink' ||
+    input.observation.nodeKind === 'file'
+      ? input.observation.nodeKind
+      : null;
+  if (representation === null) return null;
+  const target = await readMetadata(input.path);
+  const parentPath = dirname(input.path);
+  const parent = await readMetadata(parentPath);
+  const expectedTargetKind = representation === 'directory' ? 'dir' : representation;
+  if (target.kind !== expectedTargetKind || parent.kind !== 'dir') throw OBSERVATION_FAILED;
+  const resourceRevision = hashCanonicalInput(
+    'resource',
+    1,
+    JSON.stringify(['skillsmith-status-live-observation', 1, input]),
+  );
+  if (!resourceRevision.ok) throw OBSERVATION_FAILED;
+  const value: LivePlacementStateV1 = {
+    skill: input.name,
+    tool: input.tool,
+    scope: input.scope,
+    projectIdentity: input.projectIdentity,
+    representation,
+    path: input.path,
+    realpath: input.observation.realpath,
+    linkTarget: input.observation.linkTarget,
+    dangling: input.brokenReason === 'dangling-link',
+    placementClass:
+      input.physicalClass === 'directory'
+        ? 'pinned'
+        : input.physicalClass === 'broken'
+          ? 'absent'
+          : input.physicalClass,
+    skillFile: input.observation.skillFile,
+    brokenReason: input.brokenReason,
+    contentRevision: null,
+  };
+  return {
+    revision: statusExpectedRevision({
+      schemaVersion: 1,
+      domain: 'live',
+      resourceId,
+      state: 'present',
+      targetIdentity: input.path,
+      targetKind: representation,
+      targetMetadataIdentity: statusMetadataIdentity(input.path, target),
+      parentIdentity: parentPath,
+      parentKind: 'directory',
+      parentMetadataIdentity: statusMetadataIdentity(parentPath, parent),
+      resourceRevision: resourceRevision.value,
+      contentRevision: null,
+    }),
+    value,
+  };
+};
+
+const statusRepositoryError = (
+  domain: 'project' | 'manifest' | 'lock' | 'ledger' | 'live' | 'store' | 'capabilities',
+  reason: 'invalid-request' | 'observation-failed' | 'permission-denied',
+) => Object.freeze({ code: 'state-repository' as const, domain, reason });
+
+const invalidStatusStage = async (
+  _request: RepositoryStageRequestV1,
+): Promise<Result<LogicalRepositoryStageV1, LogicalRepositoryStageError>> =>
+  err({ code: 'invalid-logical-stage' as const });
+
+const observeStatusArtifact = async <Model>(
+  domain: 'ledger',
+  resourceId: string,
+  requestedResourceId: string,
+  path: string,
+  readArtifact: () => Promise<Result<ArtifactReadResult<Model>, ArtifactRepositoryError>>,
+  readMetadata: (path: string) => Promise<FileMetadata>,
+): Promise<Result<ObservedComponentV1<Model>, StateRepositoryError>> => {
+  if (requestedResourceId !== resourceId) {
+    return err(statusRepositoryError(domain, 'invalid-request'));
+  }
+  try {
+    const artifact = await readArtifact();
+    if (!artifact.ok) {
+      return err(
+        statusRepositoryError(
+          domain,
+          artifact.error.reason === 'permission-denied'
+            ? 'permission-denied'
+            : 'observation-failed',
+        ),
+      );
+    }
+    return ok(
+      await statusArtifactComponent(domain, resourceId, path, artifact.value, readMetadata),
+    );
+  } catch {
+    return err(statusRepositoryError(domain, 'observation-failed'));
+  }
+};
+
+const statusLedgerReadRepository = (
+  resourceId: string,
+  path: string,
+  readArtifact: () => Promise<Result<ArtifactReadResult<LedgerModel>, ArtifactRepositoryError>>,
+  readMetadata: (path: string) => Promise<FileMetadata>,
+): LedgerRepository => {
+  const observe = (requestedResourceId: string) =>
+    observeStatusArtifact(
+      'ledger',
+      resourceId,
+      requestedResourceId,
+      path,
+      readArtifact,
+      readMetadata,
+    );
+  return {
+    observe,
+    observeRevision: async (requestedResourceId: string) => {
+      const observed = await observe(requestedResourceId);
+      return observed.ok ? ok(observed.value.revision) : observed;
+    },
+    stage: invalidStatusStage,
+  };
+};
+
+const statusProjectReadRepository = (
+  resourceId: string,
+  context: StatusReadRequest['projectContext'],
+): ProjectStateReaderV1 => {
+  const observe = async (requestedResourceId: string) => {
+    if (requestedResourceId !== resourceId) {
+      return err(statusRepositoryError('project', 'invalid-request'));
+    }
+    const value = deepFreeze({ ...context });
+    return ok({
+      revision: statusExpectedRevision({
+        schemaVersion: 1,
+        domain: 'project',
+        resourceId,
+        state: 'present',
+        targetKind: 'semantic',
+        semanticRevision: semanticValueRevisionV1('project', value),
+      }),
+      value,
+    });
+  };
+  return {
+    observe,
+    observeRevision: async (requestedResourceId: string) => {
+      const observed = await observe(requestedResourceId);
+      return observed.ok ? ok(observed.value.revision) : observed;
+    },
+  };
+};
+
+const statusLiveReadRepository = (
+  ports: StatusReadPorts,
+  resources: ReadonlyMap<string, StatusLiveInput>,
+  storeRoot: string,
+  signal: AbortSignal | undefined,
+  readMetadata: (path: string) => Promise<FileMetadata>,
+): LivePlacementRepository => {
+  const observe = async (resourceId: string) => {
+    const resource = resources.get(resourceId);
+    if (resource === undefined) return err(statusRepositoryError('live', 'invalid-request'));
+    try {
+      const observed = await observeLive(
+        ports,
+        resource.tool,
+        resource.scope,
+        resource.projectIdentity,
+        resource.path,
+        storeRoot,
+        signal,
+      );
+      if (observed === null) {
+        return ok(await statusAbsentLiveComponent(resourceId, resource.path, readMetadata));
+      }
+      const component = await statusLiveComponent(resourceId, observed, readMetadata);
+      return component === null
+        ? err(statusRepositoryError('live', 'observation-failed'))
+        : ok(component);
+    } catch {
+      return err(statusRepositoryError('live', 'observation-failed'));
+    }
+  };
+  return {
+    observe,
+    observeRevision: async (resourceId: string) => {
+      const observed = await observe(resourceId);
+      return observed.ok ? ok(observed.value.revision) : observed;
+    },
+    stage: invalidStatusStage,
+  };
+};
+
+const statusEmptyStoreReadRepository = (): StoreRepository => ({
+  observe: async () => err(statusRepositoryError('store', 'invalid-request')),
+  observeRevision: async () => err(statusRepositoryError('store', 'invalid-request')),
+  stage: invalidStatusStage,
+});
+
+const createSharedStatusSnapshotV1 = async (
+  ports: StatusReadPorts,
+  request: Readonly<StatusReadRequest>,
+  facts: Readonly<Omit<StatusJoinInput, 'request'>>,
+  reobserveFacts: () => Promise<Readonly<Omit<StatusJoinInput, 'request'>>>,
+  readMetadata: (path: string) => Promise<FileMetadata>,
+): Promise<Readonly<{ snapshot: ObservedStateSnapshotV1; adjunct: StatusSnapshotAdjunctV1 }>> => {
+  const artifactSelection = request.artifactSelection;
+  if (artifactSelection.state !== 'selected') throw OBSERVATION_FAILED;
+  const projectResourceId = `status-project:${request.projectContext.projectIdentity ?? request.projectContext.effectiveCwd}`;
+  const manifestResourceId = `status-manifest:${artifactSelection.manifestPath}`;
+  const lockResourceId = `status-lock:${artifactSelection.lockPath}`;
+  const ledgerResourceId = `status-ledger:${facts.ledgerPath}`;
+  const liveResources = new Map(
+    facts.live.map((input) => [statusLiveResourceId(input), input] as const),
+  );
+  const capabilitiesResourceId = 'status-capabilities:current';
+  const adjunctRevision = statusAdjunctRevision(request.projectContext, facts);
+  const artifactPorts = {
+    pathKind: (path: string) => ports.pathKind(path),
+    readBytes: (path: string) => ports.readBytes(path),
+    readFileMetadata: readMetadata,
+  };
+  const repositories = {
+    project: statusProjectReadRepository(projectResourceId, request.projectContext),
+    manifest: createManifestRepository({
+      resourceId: manifestResourceId,
+      path: artifactSelection.manifestPath,
+      ports: artifactPorts,
+    }),
+    lock: createLockRepository({
+      resourceId: lockResourceId,
+      path: artifactSelection.lockPath,
+      ports: artifactPorts,
+    }),
+    ledger: statusLedgerReadRepository(
+      ledgerResourceId,
+      facts.ledgerPath,
+      () => readLedgerArtifact(artifactPorts, facts.ledgerPath),
+      readMetadata,
+    ),
+    live: statusLiveReadRepository(
+      ports,
+      liveResources,
+      storeRootOf(resolveDataDir({ xdg: ports.xdg }, request.configuration)),
+      request.signal,
+      readMetadata,
+    ),
+    store: statusEmptyStoreReadRepository(),
+    capabilities: createCapabilityStateReaderV1(capabilitiesResourceId),
+  } satisfies ObservedStateRepositoriesV1;
+  const observed = await readObservedStateSnapshotV1(
+    {
+      schemaVersion: 1,
+      projectResourceId,
+      manifestResourceId,
+      lockResourceId,
+      ledgerResourceId,
+      liveResourceIds: [...liveResources.keys()],
+      storeResourceIds: [],
+      capabilitiesResourceId,
+      statusRevision: adjunctRevision,
+    },
+    repositories,
+  );
+  if (!observed.ok) throw OBSERVATION_FAILED;
+  const reobservedFacts = await reobserveFacts();
+  const reobservedRevision = statusAdjunctRevision(request.projectContext, reobservedFacts);
+  if (reobservedRevision !== adjunctRevision) throw OBSERVATION_FAILED;
+  return deepFreeze({
+    snapshot: observed.value,
+    adjunct: {
+      schemaVersion: 1,
+      snapshotId: observed.value.snapshotId,
+      revisionDigest: adjunctRevision,
+      facts: reobservedFacts,
+    },
+  });
+};
+
+const canonicalSnapshotArtifact = <Model>(
+  artifact: 'manifest' | 'lock' | 'ledger',
+  component:
+    | ObservedStateSnapshotV1['manifest']
+    | ObservedStateSnapshotV1['lock']
+    | ObservedStateSnapshotV1['ledger'],
+): ArtifactReadResult<Model> | null => {
+  if (component.revision.domain !== artifact) return null;
+  if (component.revision.state === 'absent') {
+    return component.value === null ? { state: 'absent', artifact, migration: null } : null;
+  }
+  if (component.value === null) return null;
+  let bytes: Uint8Array;
+  if (artifact === 'manifest') {
+    const codec = artifactContractRegistry.get('manifest', 1);
+    if (codec === undefined) return null;
+    const encoded = codec.encode(component.value as NormalizedManifestV1);
+    if (!encoded.ok) return null;
+    bytes = encoded.value;
+  } else if (artifact === 'lock') {
+    const encoded = serializePortableLock(component.value as PortableLockV1);
+    if (!encoded.ok) return null;
+    bytes = encoder.encode(encoded.value);
+  } else {
+    const encoded = resolveLedgerArtifactCodec(2).encode(component.value as LedgerModel);
+    if (!encoded.ok) return null;
+    bytes = encoded.value;
+  }
+  const canonicalByteRevision = hashCanonicalInput('resource', 1, bytes);
+  if (
+    !canonicalByteRevision.ok ||
+    canonicalByteRevision.value !== component.revision.byteRevision
+  ) {
+    return null;
+  }
+  return {
+    state: 'present',
+    artifact,
+    sourceVersion: artifact === 'ledger' ? 2 : 1,
+    currentVersion: artifact === 'ledger' ? 2 : 1,
+    source: decoder.decode(bytes),
+    byteLength: bytes.byteLength,
+    byteRevision: component.revision.byteRevision,
+    semanticRevision: component.revision.semanticRevision,
+    model: component.value as Model,
+    canonical: true,
+    migration: null,
+  } as ArtifactReadResult<Model>;
+};
+
+const ledgerNeedsRetentionCompatibility = (ledger: LedgerModel): boolean => {
+  if (Object.keys(ledger.transactions).length > 0 || ledger.history.length > 0) return true;
+  const containsPairJournal = (skills: LedgerModel['skills']): boolean =>
+    Object.values(skills).some((skill) =>
+      Object.values(skill.tools).some((pair) => pair.journal != null),
+    );
+  return (
+    containsPairJournal(ledger.skills) ||
+    Object.values(ledger.projects).some((project) => containsPairJournal(project.skills))
+  );
+};
+
+const snapshotLiveInputs = (
+  snapshot: ObservedStateSnapshotV1,
+): readonly StatusLiveInput[] | null => {
+  const live: StatusLiveInput[] = [];
+  for (const observation of snapshot.live) {
+    const revision = observation.revision;
+    if (revision.domain !== 'live') return null;
+    if (revision.state === 'absent') {
+      if (observation.value !== null) return null;
+      continue;
+    }
+    const value = observation.value;
+    if (
+      value === null ||
+      revision.targetIdentity !== value.path ||
+      revision.contentRevision !== value.contentRevision ||
+      revision.targetKind !== value.representation ||
+      (value.placementClass === 'absent' && value.brokenReason === null)
+    ) {
+      return null;
+    }
+    const physicalClass: StatusLiveInput['physicalClass'] =
+      value.brokenReason !== null
+        ? 'broken'
+        : value.placementClass === 'absent'
+          ? 'broken'
+          : value.placementClass === 'pinned'
+            ? 'directory'
+            : value.placementClass;
+    live.push({
+      name: value.skill,
+      tool: value.tool,
+      scope: value.scope,
+      projectIdentity: value.projectIdentity,
+      path: value.path,
+      observation: {
+        path: value.path,
+        realpath: value.realpath,
+        nodeKind: value.representation,
+        linkTarget: value.linkTarget,
+        skillFile: value.skillFile,
+      },
+      physicalClass,
+      brokenReason: value.brokenReason,
+    });
+  }
+  return Object.freeze(live);
+};
+
+const sameProjectContext = (
+  left: StatusReadRequest['projectContext'],
+  right: StatusReadRequest['projectContext'],
+): boolean =>
+  left.invocationCwd === right.invocationCwd &&
+  left.effectiveCwd === right.effectiveCwd &&
+  left.projectRoot === right.projectRoot &&
+  left.projectIdentity === right.projectIdentity &&
+  left.projectKind === right.projectKind &&
+  left.discoveredConfigPath === right.discoveredConfigPath &&
+  left.explicitConfigPath === right.explicitConfigPath;
+
+const createStatusReportFromFacts = (
+  request: Readonly<StatusReadRequest>,
+  facts: Readonly<Omit<StatusJoinInput, 'request'>>,
+): Result<StatusReport, StatusReadError> => {
+  const joined = joinStatus({ ...facts, request });
+  return joined.ok ? ok(joined.value) : err(UNMATCHED_TARGET);
+};
+
+const snapshotArtifactMatchesFact = <Model>(
+  component:
+    | ObservedStateSnapshotV1['manifest']
+    | ObservedStateSnapshotV1['lock']
+    | ObservedStateSnapshotV1['ledger'],
+  fact: ArtifactReadResult<Model> | null,
+): boolean => {
+  if (fact === null) return false;
+  if (fact.state === 'absent') {
+    return component.revision.state === 'absent' && component.value === null;
+  }
+  return (
+    component.revision.state === 'present' &&
+    'byteRevision' in component.revision &&
+    'semanticRevision' in component.revision &&
+    component.value !== null &&
+    component.revision.byteRevision === fact.byteRevision &&
+    component.revision.semanticRevision === fact.semanticRevision &&
+    JSON.stringify(component.value) === JSON.stringify(fact.model)
+  );
+};
+
+const statusLiveKey = (input: StatusLiveInput): string =>
+  `${input.tool}\u0000${input.scope}\u0000${input.projectIdentity ?? ''}\u0000${input.path}`;
+
+const snapshotMatchesStatusAdjunct = (
+  snapshot: ObservedStateSnapshotV1,
+  adjunct: StatusSnapshotAdjunctV1,
+): boolean => {
+  if (
+    !snapshotArtifactMatchesFact(snapshot.manifest, adjunct.facts.manifest) ||
+    !snapshotArtifactMatchesFact(snapshot.lock, adjunct.facts.lock) ||
+    !snapshotArtifactMatchesFact(snapshot.ledger, adjunct.facts.ledger)
+  ) {
+    return false;
+  }
+  if (
+    !('targetIdentity' in snapshot.ledger.revision) ||
+    snapshot.ledger.revision.targetIdentity !== adjunct.facts.ledgerPath
+  ) {
+    return false;
+  }
+  const snapshotLive = snapshotLiveInputs(snapshot);
+  if (snapshotLive === null) return false;
+  const canonical = (values: readonly StatusLiveInput[]): string =>
+    JSON.stringify(
+      [...values].sort((left, right) => statusLiveKey(left).localeCompare(statusLiveKey(right))),
+    );
+  return canonical(snapshotLive) === canonical(adjunct.facts.live);
+};
+
+/**
+ * Pure snapshot projection used by new read services. `readStatus` remains the bounded
+ * compatibility observation shell while migration provenance and selected retention probes are
+ * not yet carried by `ObservedStateSnapshotV1`; this path therefore accepts only byte-proven
+ * canonical artifacts and journal-free ledgers instead of inventing a generic retention reader.
+ */
+export const createStatusReportFromSnapshot = (
+  rawRequest: Readonly<StatusReadRequest>,
+  snapshot: ObservedStateSnapshotV1,
+  adjunct?: StatusSnapshotAdjunctV1,
+): Result<StatusReport, StatusReadError> => {
+  let request: Readonly<StatusReadRequest> | null = null;
+  try {
+    const requestWithSnapshotPlacement =
+      rawRequest.projectPlacement.state === 'unselected' &&
+      rawRequest.projectContext.projectRoot !== null &&
+      rawRequest.projectContext.projectIdentity !== null
+        ? {
+            ...rawRequest,
+            projectPlacement: {
+              state: 'selected' as const,
+              source: 'shared-project' as const,
+              canonicalCwd: rawRequest.projectContext.effectiveCwd,
+              root: rawRequest.projectContext.projectRoot,
+              identity: rawRequest.projectContext.projectIdentity,
+            },
+          }
+        : rawRequest;
+    request = snapshotRequest(requestWithSnapshotPlacement);
+  } catch {
+    return err(INVALID_REQUEST);
+  }
+  if (request === null || snapshot.schemaVersion !== 1) return err(INVALID_REQUEST);
+  if (
+    snapshot.project.value === null ||
+    !sameProjectContext(snapshot.project.value, request.projectContext)
+  ) {
+    return err(INVALID_REQUEST);
+  }
+  if (adjunct !== undefined) {
+    if (
+      adjunct.schemaVersion !== 1 ||
+      adjunct.snapshotId !== snapshot.snapshotId ||
+      snapshot.statusRevision !== adjunct.revisionDigest ||
+      statusAdjunctRevision(request.projectContext, adjunct.facts) !== adjunct.revisionDigest ||
+      !snapshotMatchesStatusAdjunct(snapshot, adjunct)
+    ) {
+      return err(INVALID_REQUEST);
+    }
+    return createStatusReportFromFacts(request, adjunct.facts);
+  }
+  const live = snapshotLiveInputs(snapshot);
+  if (live === null) return err(INVALID_REQUEST);
+  const manifest =
+    request.artifactSelection.state === 'unselected'
+      ? null
+      : canonicalSnapshotArtifact<NormalizedManifestV1>('manifest', snapshot.manifest);
+  const lock =
+    request.artifactSelection.state === 'unselected'
+      ? null
+      : canonicalSnapshotArtifact<PortableLockV1>('lock', snapshot.lock);
+  const ledger = canonicalSnapshotArtifact<LedgerModel>('ledger', snapshot.ledger);
+  if (
+    (request.artifactSelection.state === 'selected' && (manifest === null || lock === null)) ||
+    ledger === null ||
+    !('targetIdentity' in snapshot.ledger.revision) ||
+    (ledger.state === 'present' && ledgerNeedsRetentionCompatibility(ledger.model)) ||
+    (manifest !== null &&
+      manifest.state === 'present' &&
+      manifest.model.skills.some((skill) => skill.scope === 'user' && skill.path !== null))
+  ) {
+    return err(INVALID_REQUEST);
+  }
+  return createStatusReportFromFacts(request, {
+    homeDir: request.projectContext.effectiveCwd,
+    manifest,
+    lock,
+    ledger,
+    ledgerPath: snapshot.ledger.revision.targetIdentity,
+    live,
+    retention: [],
+  });
 };

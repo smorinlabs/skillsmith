@@ -1,7 +1,22 @@
+import { dirname, resolve } from 'node:path';
 import { types as utilTypes } from 'node:util';
-import type { FileReadPort } from '../ports/types.ts';
+import type { FileMetadata, FileMetadataReadPort, FileReadPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial } from '../safety/redaction.ts';
+import {
+  type LockRepository,
+  type LogicalRepositoryStageError,
+  type LogicalRepositoryStageV1,
+  type ManifestRepository,
+  type RepositoryStageRequestV1,
+  type StateRepositoryError,
+  stageLogicalRepositoryEditV1,
+} from '../state/repositories.ts';
+import {
+  type ExpectedRevisionV1,
+  createExpectedRevisionV1,
+  createFilesystemMetadataIdentityV1,
+} from '../state/types.ts';
 import {
   type ArtifactCodec,
   type ArtifactCodecError,
@@ -25,6 +40,7 @@ import {
 import type { NormalizedManifestV1 } from './types.ts';
 
 export type ArtifactReadPorts = Pick<FileReadPort, 'pathKind' | 'readBytes'>;
+type ArtifactStateReadPorts = ArtifactReadPorts & FileMetadataReadPort;
 
 export interface ProjectConfigMigration {
   readonly kind: 'migrate-project-config';
@@ -137,7 +153,9 @@ const portError = (artifactId: ArtifactId, input: unknown): ArtifactRepositoryEr
   return artifactRepositoryError(
     artifactId,
     null,
-    code === 'EACCES' || code === 'EPERM' ? 'permission-denied' : 'read-failed',
+    code === 'EACCES' || code === 'EPERM' || code === 'permission' || code === 'permission-denied'
+      ? 'permission-denied'
+      : 'read-failed',
   );
 };
 
@@ -348,6 +366,185 @@ export const readLockArtifact = (
   path: string,
 ): Promise<Result<ArtifactReadResult<PortableLockV1>, ArtifactRepositoryError>> =>
   readArtifact(ports, path, 'lock');
+
+const artifactStateRepositoryError = (
+  domain: 'manifest' | 'lock',
+  reason: StateRepositoryError['reason'],
+): StateRepositoryError => Object.freeze({ code: 'state-repository', domain, reason });
+
+const mapArtifactStateError = (
+  domain: 'manifest' | 'lock',
+  error: ArtifactRepositoryError,
+): StateRepositoryError =>
+  artifactStateRepositoryError(
+    domain,
+    error.reason === 'permission-denied' ? 'permission-denied' : 'observation-failed',
+  );
+
+const mapArtifactStatePortError = (
+  domain: 'manifest' | 'lock',
+  error: unknown,
+): StateRepositoryError => {
+  const code = ownErrorCode(error);
+  return artifactStateRepositoryError(
+    domain,
+    code === 'EACCES' || code === 'EPERM' || code === 'permission' || code === 'permission-denied'
+      ? 'permission-denied'
+      : 'observation-failed',
+  );
+};
+
+const artifactStateRevision = (
+  domain: 'manifest' | 'lock',
+  resourceId: string,
+  path: string,
+  artifact: ArtifactReadResult<unknown>,
+  target: FileMetadata,
+  parent: FileMetadata,
+): Result<ExpectedRevisionV1, StateRepositoryError> => {
+  const parentPath = dirname(path);
+  if (artifact.state === 'absent') {
+    if (target.kind !== 'absent' || (parent.kind !== 'dir' && parent.kind !== 'absent')) {
+      return err(artifactStateRepositoryError(domain, 'observation-failed'));
+    }
+    const revision = createExpectedRevisionV1({
+      schemaVersion: 1,
+      domain,
+      resourceId,
+      state: 'absent',
+      targetIdentity: path,
+      targetKind: 'absent',
+      parentIdentity: parentPath,
+      parentKind: parent.kind === 'dir' ? 'directory' : 'absent',
+      parentMetadataIdentity: createFilesystemMetadataIdentityV1(parentPath, parent, 'parent'),
+    });
+    return revision.ok ? revision : err(artifactStateRepositoryError(domain, 'observation-failed'));
+  }
+  if (target.kind !== 'file' || parent.kind !== 'dir' || artifact.semanticRevision === null) {
+    return err(artifactStateRepositoryError(domain, 'observation-failed'));
+  }
+  const revision = createExpectedRevisionV1({
+    schemaVersion: 1,
+    domain,
+    resourceId,
+    state: 'present',
+    targetIdentity: path,
+    targetKind: 'file',
+    targetMetadataIdentity: createFilesystemMetadataIdentityV1(path, target, 'target'),
+    parentIdentity: parentPath,
+    parentKind: 'directory',
+    parentMetadataIdentity: createFilesystemMetadataIdentityV1(parentPath, parent, 'parent'),
+    byteRevision: artifact.byteRevision,
+    semanticRevision: artifact.semanticRevision,
+  });
+  return revision.ok ? revision : err(artifactStateRepositoryError(domain, 'observation-failed'));
+};
+
+const observeArtifactState = async <Model>(
+  domain: 'manifest' | 'lock',
+  resourceId: string,
+  path: string,
+  ports: ArtifactStateReadPorts,
+  read: (
+    ports: ArtifactReadPorts,
+    path: string,
+  ) => Promise<Result<ArtifactReadResult<Model>, ArtifactRepositoryError>>,
+): Promise<
+  Result<Readonly<{ revision: ExpectedRevisionV1; value: Model | null }>, StateRepositoryError>
+> => {
+  try {
+    const artifact = await read(ports, path);
+    if (!artifact.ok) return err(mapArtifactStateError(domain, artifact.error));
+    const target = await ports.readFileMetadata(path);
+    const parent = await ports.readFileMetadata(dirname(path));
+    const revision = artifactStateRevision(
+      domain,
+      resourceId,
+      path,
+      artifact.value,
+      target,
+      parent,
+    );
+    return revision.ok
+      ? ok(
+          Object.freeze({
+            revision: revision.value,
+            value: artifact.value.state === 'present' ? artifact.value.model : null,
+          }),
+        )
+      : revision;
+  } catch (error) {
+    return err(mapArtifactStatePortError(domain, error));
+  }
+};
+
+export const createManifestRepository = (options: {
+  readonly resourceId: string;
+  readonly path: string;
+  readonly ports: ArtifactStateReadPorts;
+}): ManifestRepository => {
+  const path = resolve(options.path);
+  const observe = (resourceId: string) =>
+    resourceId === options.resourceId
+      ? observeArtifactState(
+          'manifest',
+          options.resourceId,
+          path,
+          options.ports,
+          readManifestArtifact,
+        )
+      : Promise.resolve(err(artifactStateRepositoryError('manifest', 'invalid-request')));
+  const observeRevision = async (resourceId: string) => {
+    const observed = await observe(resourceId);
+    return observed.ok ? ok(observed.value.revision) : observed;
+  };
+  return Object.freeze({
+    observe,
+    observeRevision,
+    stage: async (
+      request: RepositoryStageRequestV1,
+    ): Promise<Result<LogicalRepositoryStageV1, LogicalRepositoryStageError>> => {
+      if (request.domain !== 'manifest' || request.resourceId !== options.resourceId) {
+        return err(Object.freeze({ code: 'invalid-logical-stage' as const }));
+      }
+      const observed = await observeRevision(request.resourceId);
+      return observed.ok
+        ? stageLogicalRepositoryEditV1({ ...request, observedRevision: observed.value })
+        : observed;
+    },
+  });
+};
+
+export const createLockRepository = (options: {
+  readonly resourceId: string;
+  readonly path: string;
+  readonly ports: ArtifactStateReadPorts;
+}): LockRepository => {
+  const path = resolve(options.path);
+  const observe = (resourceId: string) =>
+    resourceId === options.resourceId
+      ? observeArtifactState('lock', options.resourceId, path, options.ports, readLockArtifact)
+      : Promise.resolve(err(artifactStateRepositoryError('lock', 'invalid-request')));
+  const observeRevision = async (resourceId: string) => {
+    const observed = await observe(resourceId);
+    return observed.ok ? ok(observed.value.revision) : observed;
+  };
+  return Object.freeze({
+    observe,
+    observeRevision,
+    stage: async (
+      request: RepositoryStageRequestV1,
+    ): Promise<Result<LogicalRepositoryStageV1, LogicalRepositoryStageError>> => {
+      if (request.domain !== 'lock' || request.resourceId !== options.resourceId) {
+        return err(Object.freeze({ code: 'invalid-logical-stage' as const }));
+      }
+      const observed = await observeRevision(request.resourceId);
+      return observed.ok
+        ? stageLogicalRepositoryEditV1({ ...request, observedRevision: observed.value })
+        : observed;
+    },
+  });
+};
 
 export const readSavedPlanArtifact = (
   ports: ArtifactReadPorts,

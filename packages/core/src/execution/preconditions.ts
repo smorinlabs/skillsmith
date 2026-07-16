@@ -1,12 +1,24 @@
 import { createHash } from 'node:crypto';
-import { types as utilTypes } from 'node:util';
 import { canonicalPlanningString, comparePlanningText } from '../planning/order.ts';
-import type { CurrentMutatorOperationPlan } from '../planning/types.ts';
+import type {
+  CurrentMutatorOperationPlan,
+  OperationId,
+  OperationResourceIdentity,
+} from '../planning/types.ts';
 import {
   containsSensitiveMaterial,
   isSensitivePropertyName,
   redactSensitiveString,
 } from '../safety/redaction.ts';
+import { type OrdinaryDataError, ownOrdinaryData } from '../state/ownership.ts';
+import {
+  type ContentObservationIdentityV1,
+  type ExpectedRevisionV1,
+  createContentObservationPreconditionIdV1,
+  createExpectedRevisionPreconditionIdV1,
+  isContentObservationIdentityV1,
+  isExpectedRevisionV1,
+} from '../state/types.ts';
 import type {
   ExecutionPrecondition,
   ExecutionPreconditionInput,
@@ -14,104 +26,78 @@ import type {
   ExecutionScheduleOptions,
 } from './types.ts';
 
-type UnknownRecord = Record<string, unknown>;
+interface ExpectedRevisionExecutionPreconditionInput {
+  readonly operationIds: readonly OperationId[];
+  readonly resource: OperationResourceIdentity;
+  readonly expectedRevision: ExpectedRevisionV1;
+  readonly observeRevision: () => Promise<ExpectedRevisionV1>;
+}
 
-const MAX_SNAPSHOT_NODES = 20_000;
-const MAX_SNAPSHOT_DEPTH = 64;
+interface ContentObservationExecutionPreconditionInput {
+  readonly operationIds: readonly OperationId[];
+  readonly resource: OperationResourceIdentity;
+  readonly expectedContent: ContentObservationIdentityV1;
+  readonly observeContent: () => Promise<ContentObservationIdentityV1>;
+}
 
 const fail = (message: string): never => {
   throw new TypeError(`execution precondition: ${message}`);
 };
 
-const snapshotOrdinary = (
-  value: unknown,
-  path = '$',
-  active = new Set<object>(),
-  budget = { nodes: 0 },
-  depth = 0,
-): unknown => {
-  budget.nodes += 1;
-  if (budget.nodes > MAX_SNAPSHOT_NODES || depth > MAX_SNAPSHOT_DEPTH) {
-    fail(`${path} exceeds the snapshot budget`);
-  }
-  if (typeof value === 'string') {
-    if (containsSensitiveMaterial(value) && redactSensitiveString(value) !== value) {
-      return fail(`${path} contains sensitive material`);
-    }
-    return value;
-  }
-  if (
-    value === null ||
-    typeof value === 'boolean' ||
-    (typeof value === 'number' && Number.isFinite(value))
-  ) {
-    return value;
-  }
-  if (typeof value !== 'object') return fail(`${path} must contain plain data`);
-  const objectValue = value as object;
-  if (utilTypes.isProxy(objectValue)) return fail(`${path} must not contain proxies`);
-  if (active.has(objectValue)) return fail(`${path} contains a cycle`);
-  active.add(objectValue);
-  try {
-    if (Array.isArray(value)) {
-      if (Object.getPrototypeOf(value) !== Array.prototype) fail(`${path} has an exotic array`);
-      for (const key of Reflect.ownKeys(value)) {
-        if (typeof key !== 'string' || (key !== 'length' && !/^(0|[1-9][0-9]*)$/.test(key))) {
-          return fail(`${path} contains non-index array properties`);
-        }
-      }
-      if (Object.keys(value).length !== value.length) return fail(`${path} is sparse`);
-      return value.map((_entry, index) => {
-        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-        if (!descriptor || !('value' in descriptor)) {
-          return fail(`${path}[${index}] is an accessor`);
-        }
-        return snapshotOrdinary(descriptor.value, `${path}[${index}]`, active, budget, depth + 1);
-      });
-    }
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      fail(`${path} has an exotic prototype`);
-    }
-    const output = Object.create(null) as UnknownRecord;
-    const keys = Reflect.ownKeys(value);
-    for (const key of keys) {
-      if (typeof key !== 'string') return fail(`${path} contains symbol keys`);
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (!descriptor || !('value' in descriptor)) return fail(`${path}.${key} is an accessor`);
-      if (!descriptor.enumerable) return fail(`${path}.${key} must be enumerable`);
-      // `OperationLocation` deliberately names its portable identifier `token`; it is a public,
-      // non-credential planning identity. All other sensitive property names fail closed.
-      const kindDescriptor = Object.getOwnPropertyDescriptor(value, 'kind');
-      const portableLocationToken =
-        key === 'token' &&
-        kindDescriptor !== undefined &&
-        'value' in kindDescriptor &&
-        kindDescriptor.value === 'portable' &&
-        keys.length === 2 &&
-        Object.hasOwn(value, 'token');
-      if (isSensitivePropertyName(key) && !portableLocationToken) {
-        return fail(`${path}.${key} contains sensitive material`);
-      }
-      const child = snapshotOrdinary(descriptor.value, `${path}.${key}`, active, budget, depth + 1);
-      Object.defineProperty(output, key, {
-        value: child,
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      });
-    }
-    return output;
-  } finally {
-    active.delete(objectValue);
+const executionOwnershipMessage = (error: OrdinaryDataError): string => {
+  switch (error.reason) {
+    case 'proxy':
+      return `${error.path} must not contain proxies`;
+    case 'accessor':
+      return `${error.path} is an accessor`;
+    case 'symbol-key':
+      return `${error.path} contains symbol keys`;
+    case 'non-index-array-property':
+      return `${error.path} contains non-index array properties`;
+    case 'exotic-array':
+      return `${error.path} has an exotic array`;
+    case 'exotic-prototype':
+      return `${error.path} has an exotic prototype`;
+    case 'non-enumerable':
+      return `${error.path} must be enumerable`;
+    case 'sparse':
+      return `${error.path} is sparse`;
+    case 'cycle':
+      return `${error.path} contains a cycle`;
+    case 'depth':
+    case 'nodes':
+      return `${error.path} exceeds the snapshot budget`;
+    case 'rejected-property':
+    case 'rejected-string':
+      return `${error.path} contains sensitive material`;
+    case 'non-finite':
+    case 'unsupported':
+      return `${error.path} must contain plain data`;
   }
 };
 
-const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
-  if (value === null || typeof value !== 'object' || seen.has(value)) return value;
-  seen.add(value);
-  for (const child of Object.values(value)) deepFreeze(child, seen);
-  return Object.freeze(value);
+const acceptsExecutionString = (_path: string, value: string): boolean =>
+  !containsSensitiveMaterial(value) || redactSensitiveString(value) === value;
+
+const acceptsExecutionProperty = (
+  _propertyPath: string,
+  key: string,
+  parent: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): boolean => {
+  if (!isSensitivePropertyName(key)) return true;
+  if (key !== 'token' || keys.length !== 2 || !Object.hasOwn(parent, 'token')) return false;
+  const kind = Object.getOwnPropertyDescriptor(parent, 'kind');
+  return kind !== undefined && 'value' in kind && kind.value === 'portable';
+};
+
+const ownExecutionData = (input: unknown, rootPath: string): unknown => {
+  const owned = ownOrdinaryData(input, acceptsExecutionString, {
+    rootPath,
+    objectPrototype: 'null',
+    acceptProperty: acceptsExecutionProperty,
+  });
+  return owned.ok ? owned.value : fail(executionOwnershipMessage(owned.error));
 };
 
 const semanticOperationId = (value: unknown, path: string): string => {
@@ -150,8 +136,8 @@ export const createExecutionPrecondition = (
     fail('operationIds contains duplicates');
   }
   operationIds.sort(comparePlanningText);
-  const resource = snapshotOrdinary(input.resource, '$precondition.resource');
-  const expected = snapshotOrdinary(input.expected, '$precondition.expected');
+  const resource = ownExecutionData(input.resource, '$precondition.resource');
+  const expected = ownExecutionData(input.expected, '$precondition.expected');
   const identity = {
     domain: 'skillsmith.execution-precondition',
     schemaVersion: 1,
@@ -163,9 +149,64 @@ export const createExecutionPrecondition = (
   return Object.freeze({
     preconditionId: `precondition:v1:${digest}`,
     operationIds: Object.freeze(operationIds),
-    resource: deepFreeze(resource) as ExecutionPrecondition['resource'],
-    expected: deepFreeze(expected),
+    resource: resource as ExecutionPrecondition['resource'],
+    expected,
     observe: input.observe,
+  });
+};
+
+/**
+ * Bind an observer to one approved snapshot revision without changing the planner-owned identity.
+ * The planner and executor intentionally share only this pure revision identity, never effects.
+ */
+export const createExpectedRevisionExecutionPrecondition = (
+  input: ExpectedRevisionExecutionPreconditionInput,
+): ExecutionPrecondition => {
+  const precondition = createExecutionPrecondition({
+    operationIds: input.operationIds,
+    resource: input.resource,
+    expected: input.expectedRevision,
+    observe: input.observeRevision,
+  });
+  if (!isExpectedRevisionV1(precondition.expected)) {
+    fail('expectedRevision must be a valid ExpectedRevisionV1');
+  }
+  return Object.freeze({
+    ...precondition,
+    preconditionId: createExpectedRevisionPreconditionIdV1(
+      precondition.expected as ExpectedRevisionV1,
+    ),
+  });
+};
+
+/**
+ * Bind execution coverage and an observer to one planner-owned content identity without changing
+ * its operation-independent precondition ID.
+ */
+export const createContentObservationExecutionPrecondition = (
+  input: ContentObservationExecutionPreconditionInput,
+): ExecutionPrecondition => {
+  if (!isContentObservationIdentityV1(input.expectedContent)) {
+    fail('expectedContent must be a valid ContentObservationIdentityV1');
+  }
+  if (typeof input.observeContent !== 'function') {
+    fail('observeContent must be a function');
+  }
+  const precondition = createExecutionPrecondition({
+    operationIds: input.operationIds,
+    resource: input.resource,
+    expected: input.expectedContent,
+    observe: async () => {
+      const observed = await input.observeContent();
+      if (!isContentObservationIdentityV1(observed)) {
+        fail('content observer must return an exact ContentObservationIdentityV1');
+      }
+      return observed;
+    },
+  });
+  return Object.freeze({
+    ...precondition,
+    preconditionId: createContentObservationPreconditionIdV1(input.expectedContent),
   });
 };
 
@@ -252,7 +293,7 @@ export const validateExecutionPreconditions = async (
     if (options.signal?.aborted) cancelled();
     let actual: unknown;
     try {
-      actual = snapshotOrdinary(
+      actual = ownExecutionData(
         await precondition.observe(),
         `$actual.${precondition.preconditionId}`,
       );

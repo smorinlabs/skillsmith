@@ -19,8 +19,8 @@ import type {
   DevRecord,
   JournalPhase,
   PinnedRecord,
-  SwapCtx,
   SwapPlan,
+  SwapRequest,
 } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
 import { canonicalFixtureLedger } from '../fixtures/place/canonical-ledger.ts';
@@ -56,23 +56,25 @@ const pinnedOf = (storePath: string, rev: string, contentHash: string): PinnedRe
   verify: 'passed',
 });
 
-const modelCtx = (
-  env: RuntimePorts,
-  ledgerPath: string,
-  ledger: LedgerModel,
-): SwapCtx & { ledger: LedgerModel } => {
-  const ctx: SwapCtx & { ledger: LedgerModel } = {
-    env,
-    ledgerPath,
-    ledger,
-    persist: () => writeLedger(env, ledgerPath, ctx.ledger),
-    now: () => NOW,
-    newTxId: () => TXID,
+const modelCtx = (env: RuntimePorts, ledgerPath: string, ledger: LedgerModel): SwapRequest => {
+  let durableLedger = ledger;
+  return {
+    context: { env },
+    state: { ledger },
+    effects: {
+      persistLedger: async (candidate) => {
+        const written = await writeLedger(env, ledgerPath, candidate);
+        if (!written.ok) return { ok: false, error: written.error, ledger: durableLedger };
+        durableLedger = candidate;
+        return { ok: true, ledger: candidate };
+      },
+      journalNow: () => NOW,
+      newTransactionId: () => TXID,
+    },
   };
-  return ctx;
 };
 
-const ctxFromDisk = async (env: RuntimePorts, ledgerPath: string): Promise<SwapCtx> => {
+const ctxFromDisk = async (env: RuntimePorts, ledgerPath: string): Promise<SwapRequest> => {
   const read = await readLedgerState(env, ledgerPath);
   if (!read.ok || read.value.state !== 'present') throw new Error('fixture ledger is absent');
   return modelCtx(env, ledgerPath, read.value.model);
@@ -208,7 +210,7 @@ const setupDev = async (f: FixtureFleet): Promise<SweepCfg> => {
   const ctx = await ctxFromDisk(env, base.ledgerPath);
   const up = await runSwap(ctx, base.makePlan());
   if (!up.ok) throw new Error(`baseline promote failed: ${msg(up.error)}`);
-  const w = await writeLedger(env, base.ledgerPath, ctx.ledger);
+  const w = await writeLedger(env, base.ledgerPath, up.state.ledger);
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'dev',

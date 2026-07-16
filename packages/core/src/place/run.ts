@@ -1,7 +1,8 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { classifyPlacement } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
+import { resolveProjectContext } from '../context/project.ts';
+import type { ProjectContext } from '../context/types.ts';
 import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
@@ -16,33 +17,44 @@ import {
   type ExecutionPrecondition,
   type PreparedExecutionBinding,
   type ValidatedExecutionBinding,
-  createExecutionPrecondition,
   executeOperationPlan,
 } from '../execution/index.ts';
 import {
-  createOperationExecutionResult,
-  createOperationGroupId,
-  createOperationId,
-  createOperationPairId,
-  createOperationPlan,
-  createPlanCheckId,
-  createPlanningDiagnosticId,
-} from '../planning/create.ts';
+  createContentObservationExecutionPrecondition,
+  createExpectedRevisionExecutionPrecondition,
+} from '../execution/preconditions.ts';
+import { createOperationExecutionResult, createPlanningDiagnosticId } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   ExecutableOperation,
   OperationExecutionResult,
   OperationImage,
   OperationPlan,
+  OperationResourceIdentity,
   OperationSource,
-  PlanCheck,
   PlanningDiagnostic,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import {
+  type ContentObservationIdentityV1,
+  type ExpectedRevisionV1,
+  createContentObservationIdentityV1,
+  createContentObservationPreconditionIdV1,
+  createExpectedRevisionPreconditionIdV1,
+} from '../state/types.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import type { ToolVerdict } from '../verify/types.ts';
+import {
+  type PlacementSnapshotAuthority,
+  type PlacementStoreResource,
+  createPlacementExecutionInput,
+  createPlacementLifecycleExecutor,
+  createPlacementSnapshotAuthority,
+  executePlacementPlan,
+  executeRecordOnlyPlacementPlan,
+  placementSnapshotResourceId,
+} from './execute.ts';
 import { ledgerMigrationExecutionBinding, prepareLedgerMigration } from './ledger-migration.ts';
-import { createLedgerPersistenceGateway } from './ledger-persistence.ts';
 import {
   getLedgerPairAt,
   getPairAt,
@@ -52,9 +64,17 @@ import {
   withLedgerLock,
 } from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
-import { type FlipPlanOutcome, type PairPlan, planFlips } from './plan.ts';
+import {
+  type FlipPlanOutcome,
+  type PairPlan,
+  type PlacementDevIntentV1,
+  type PlacementPromoteIntentV1,
+  type PlacementRollbackIntentV1,
+  createPlacementPlan,
+  planFlips,
+} from './plan.ts';
+import { recoverPlacement } from './recovery.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from './store.ts';
-import { commitRecordOnlyLogicalTransaction, resumeSwap, rollbackSwap, runSwap } from './swap.ts';
 import {
   type DevRecord,
   FLIP_TOOLS,
@@ -65,14 +85,12 @@ import {
   type FlipReport,
   type FlipResult,
   type FlipTool,
-  type Journal,
   type LedgerFile,
   type PairRecord,
   type PinnedRecord,
   type PlacementPorts,
   type PreparedFlipRun,
   type Provenance,
-  type SwapCtx,
   type SwapPlan,
 } from './types.ts';
 
@@ -199,44 +217,6 @@ const skippedAfterFailureResult = (pair: PairPlan): FlipResult => ({
   verify: null,
 });
 
-const makeSwapCtx = (
-  env: PlacementPorts,
-  ledgerPath: string,
-  ledger: LedgerModel,
-  deps: FlipDeps,
-  opts: FlipOptions,
-  logicalOperation?: ExecutableOperation,
-): SwapCtx => {
-  const persistence = createLedgerPersistenceGateway(env, ledgerPath, opts.signal);
-  const ctx: SwapCtx = {
-    env,
-    ledgerPath,
-    ledger,
-    persist: async () => {
-      const written = await persistence.persist(ctx.ledger as LedgerModel);
-      if (!written.ok) {
-        if (written.error.code === 'cancelled') return err(written.error);
-        return err(flipFailedError(`ledger write failed: ${written.error.code}`));
-      }
-      ctx.ledger = written.value.model;
-      return ok(undefined);
-    },
-    now: () => journalNowOf(env, deps),
-    newTxId: () => {
-      const candidate = txIdOf(env, deps);
-      const model = ctx.ledger as LedgerModel;
-      return model.transactions[candidate] !== undefined ||
-        model.history.some((journal) => journal.transactionId === candidate)
-        ? `transaction:${logicalOperation?.operationId ?? candidate}`
-        : candidate;
-    },
-    pauseAt: opts.testPauseAt,
-    signal: opts.signal,
-    ...(logicalOperation === undefined ? {} : { logicalOperation }),
-  };
-  return ctx;
-};
-
 const summarizeFindings = (tv: ToolVerdict | undefined): string => {
   if (!tv) return 'no verdict produced';
   const findings = tv.modes
@@ -337,6 +317,7 @@ const runPromotePair = async (
   opts: FlipOptions,
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
+  preparedPromote: PreparedPromoteExecution | null,
 ): Promise<FlipResult> => {
   const { skill, tool, scopeKey, placement, notices } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
@@ -345,10 +326,13 @@ const runPromotePair = async (
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     if (existing.journal.op === 'promote') {
-      const swapCtx = makeSwapCtx(env, ledgerPath, currentLedger, deps, opts, logicalOperation);
-      const resumed = await resumeSwap(swapCtx, skill, tool, scopeKey);
+      const resumed = await recoverPlacement(
+        createPlacementExecutionInput(env, ledgerPath, currentLedger, deps, opts, logicalOperation),
+        'resume',
+        { skill, tool, scopeKey },
+      );
       if (!resumed.ok) return failedResult(base, midSwapError(resumed.error));
-      currentLedger = swapCtx.ledger as LedgerModel;
+      currentLedger = resumed.state.ledger;
       const after = getLedgerPairAt(currentLedger, scopeKey, skill, tool);
       return {
         ...base,
@@ -428,6 +412,33 @@ const runPromotePair = async (
   const symlinkRepin = existing?.pinned?.placement === 'symlink' && existing?.origin !== undefined;
   if (symlinkRepin) isReplace = true;
 
+  if (
+    preparedPromote === null ||
+    resolve(preparedPromote.sourcePath) !== resolve(resolvedSourceDir)
+  ) {
+    return failedResult(base, genericError('planned promotion execution seed is missing'));
+  }
+  const observedProvenance = await resolveProvenance(env, resolvedSourceDir);
+  if (!observedProvenance.ok) return failedResult(base, observedProvenance.error);
+  const observedRev = await computeRevPreview(env, observedProvenance.value, resolvedSourceDir);
+  if (!observedRev.ok) return failedResult(base, observedRev.error);
+  const observedStorePath = join(
+    storeRootOf(resolveDataDir(env, opts.configuration)),
+    observedProvenance.value.ns,
+    `${observedProvenance.value.name}@${observedRev.value}`,
+    skill,
+  );
+  if (
+    canonicalPlanningString(observedProvenance.value) !==
+      canonicalPlanningString(preparedPromote.provenance) ||
+    observedRev.value !== preparedPromote.rev ||
+    resolve(observedStorePath) !== resolve(preparedPromote.storePath)
+  ) {
+    const reason = 'prepared promotion provenance changed before execution';
+    return refusedResult(base, reason, flipRefusedError(reason));
+  }
+  const provenance = preparedPromote.provenance;
+
   const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts);
   if (gate.blocked) {
     return {
@@ -441,10 +452,6 @@ const runPromotePair = async (
       error: gate.blocked,
     };
   }
-
-  const provRes = await resolveProvenance(env, resolvedSourceDir);
-  if (!provRes.ok) return failedResult(base, provRes.error);
-  const provenance = provRes.value;
 
   if (!isReplace) {
     devRecord = {
@@ -471,13 +478,6 @@ const runPromotePair = async (
   }
 
   if (isReplace) {
-    const currentRevRes = await computeRevPreview(env, provenance, resolvedSourceDir);
-    if (!currentRevRes.ok) return failedResult(base, currentRevRes.error);
-    if (existing?.pinned && currentRevRes.value === existing.pinned.rev) {
-      const reason = notesAcc.length > 0 ? notesAcc.join('; ') : 'already pinned; source unchanged';
-      return noopResult(base, reason);
-    }
-
     if (symlinkRepin) {
       const repinOrigin = existing?.origin;
       if (!repinOrigin)
@@ -494,6 +494,13 @@ const runPromotePair = async (
       });
       if (!snapRes.ok) return failedResult(base, snapRes.error);
       const snap = snapRes.value;
+      if (
+        resolve(snap.storePath) !== resolve(preparedPromote.storePath) ||
+        snap.rev !== preparedPromote.rev ||
+        snap.contentHash !== preparedPromote.contentHash
+      ) {
+        return failedResult(base, flipFailedError('promotion snapshot differs from prepared plan'));
+      }
 
       const pinned: PinnedRecord = {
         storePath: snap.storePath,
@@ -526,8 +533,10 @@ const runPromotePair = async (
           adoptedDev: placement.class === 'dev' ? devRecord : null,
         },
       };
-      const swapCtx = makeSwapCtx(env, ledgerPath, currentLedger, deps, opts, logicalOperation);
-      const swapRes = await runSwap(swapCtx, installPlan);
+      const swapRes = await executePlacementPlan(
+        createPlacementExecutionInput(env, ledgerPath, currentLedger, deps, opts, logicalOperation),
+        installPlan,
+      );
       if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
       if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
 
@@ -564,10 +573,12 @@ const runPromotePair = async (
     };
     // This kind-changing demotion is an internal implementation step of the approved update,
     // not a second planned operation. The final promote swap owns the update's logical journal.
-    const toDevCtx = makeSwapCtx(env, ledgerPath, currentLedger, deps, opts);
-    const toDevRes = await runSwap(toDevCtx, toDevPlan);
+    const toDevRes = await executePlacementPlan(
+      createPlacementExecutionInput(env, ledgerPath, currentLedger, deps, opts),
+      toDevPlan,
+    );
     if (!toDevRes.ok) return failedResult(base, midSwapError(toDevRes.error));
-    currentLedger = toDevCtx.ledger as LedgerModel;
+    currentLedger = toDevRes.state.ledger;
     if (toDevRes.value.warning) notesAcc.push(toDevRes.value.warning);
   }
 
@@ -582,6 +593,13 @@ const runPromotePair = async (
   });
   if (!snapRes.ok) return failedResult(base, snapRes.error);
   const snap = snapRes.value;
+  if (
+    resolve(snap.storePath) !== resolve(preparedPromote.storePath) ||
+    snap.rev !== preparedPromote.rev ||
+    snap.contentHash !== preparedPromote.contentHash
+  ) {
+    return failedResult(base, flipFailedError('promotion snapshot differs from prepared plan'));
+  }
 
   const pinned: PinnedRecord = {
     storePath: snap.storePath,
@@ -602,8 +620,10 @@ const runPromotePair = async (
     placementPath: placement.path,
     promote: { storePath: snap.storePath, contentHash: snap.contentHash, pinned, devRecord },
   };
-  const swapCtx = makeSwapCtx(env, ledgerPath, currentLedger, deps, opts, logicalOperation);
-  const swapRes = await runSwap(swapCtx, plan);
+  const swapRes = await executePlacementPlan(
+    createPlacementExecutionInput(env, ledgerPath, currentLedger, deps, opts, logicalOperation),
+    plan,
+  );
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
   if (swapRes.value.warning) notesAcc.push(swapRes.value.warning);
 
@@ -803,8 +823,8 @@ const createDevPlacement = async (
     mode: 'dev',
     dev: devRecord,
   };
-  const committed = await commitRecordOnlyLogicalTransaction(
-    makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation),
+  const committed = await executeRecordOnlyPlacementPlan(
+    createPlacementExecutionInput(env, ledgerPath, ledger, deps, opts, logicalOperation),
     logicalOperation,
     pairRecord,
     scopeKey,
@@ -880,8 +900,8 @@ const adoptDevPlacement = async (
     mode: 'dev',
     dev: devRecord,
   };
-  const committed = await commitRecordOnlyLogicalTransaction(
-    makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation),
+  const committed = await executeRecordOnlyPlacementPlan(
+    createPlacementExecutionInput(env, ledgerPath, ledger, deps, opts, logicalOperation),
     logicalOperation,
     pairRecord,
     scopeKey,
@@ -911,6 +931,7 @@ const runDevPair = async (
   opts: FlipOptions,
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
+  _preparedPromote: PreparedPromoteExecution | null,
 ): Promise<FlipResult> => {
   const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
@@ -918,10 +939,13 @@ const runDevPair = async (
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     if (existing.journal.op === 'dev') {
-      const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation);
-      const resumed = await resumeSwap(swapCtx, skill, tool, scopeKey);
+      const resumed = await recoverPlacement(
+        createPlacementExecutionInput(env, ledgerPath, ledger, deps, opts, logicalOperation),
+        'resume',
+        { skill, tool, scopeKey },
+      );
       if (!resumed.ok) return failedResult(base, midSwapError(resumed.error));
-      const after = getLedgerPairAt(swapCtx.ledger as LedgerModel, scopeKey, skill, tool);
+      const after = getLedgerPairAt(resumed.state.ledger, scopeKey, skill, tool);
       return {
         ...base,
         action: 'flipped',
@@ -1103,8 +1127,10 @@ const runDevPair = async (
     placementPath: placement.path,
     dev: { sourcePath: source, devRecord },
   };
-  const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation);
-  const swapRes = await runSwap(swapCtx, plan);
+  const swapRes = await executePlacementPlan(
+    createPlacementExecutionInput(env, ledgerPath, ledger, deps, opts, logicalOperation),
+    plan,
+  );
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
 
   // `updatedRecord` no longer reaches here — S5b refuses a recorded-source disagreement above.
@@ -1142,11 +1168,19 @@ const runRollbackPair = async (
   opts: FlipOptions,
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
+  _preparedPromote: PreparedPromoteExecution | null,
 ): Promise<FlipResult> => {
   const { skill, tool, scopeKey, placement } = pair;
   const base: Base = { skill, tool, placementPath: placement.path };
   const existing = getLedgerPairAt(ledger, scopeKey, skill, tool);
-  const swapCtx = makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation);
+  const executionInput = createPlacementExecutionInput(
+    env,
+    ledgerPath,
+    ledger,
+    deps,
+    opts,
+    logicalOperation,
+  );
 
   if (existing?.journal && existing.journal.phase !== 'committed') {
     // Captured BEFORE the call: `rollbackSwap` mutates this same pair record in place (nulls
@@ -1154,7 +1188,7 @@ const runRollbackPair = async (
     // state, not the journal that was actually rolled back.
     const journalOp = existing.journal.op;
     const journalBeforeMode = existing.journal.before.mode;
-    const rb = await rollbackSwap(swapCtx, skill, tool, scopeKey);
+    const rb = await recoverPlacement(executionInput, 'rollback', { skill, tool, scopeKey });
     if (!rb.ok) return failedResult(base, midSwapError(rb.error));
 
     // I2: an uncommitted install REPLACE (before-state was a real placement, not a fresh install)
@@ -1203,7 +1237,7 @@ const runRollbackPair = async (
       placementPath: placement.path,
       dev: { sourcePath: devRecord.sourcePath, devRecord },
     };
-    const swapRes = await runSwap(swapCtx, plan);
+    const swapRes = await executePlacementPlan(executionInput, plan);
     if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
     return {
       ...base,
@@ -1250,7 +1284,7 @@ const runRollbackPair = async (
       devRecord: devRecordForPlan,
     },
   };
-  const swapRes = await runSwap(swapCtx, plan);
+  const swapRes = await executePlacementPlan(executionInput, plan);
   if (!swapRes.ok) return failedResult(base, midSwapError(swapRes.error));
   return {
     ...base,
@@ -1612,135 +1646,8 @@ const ACTION_TO_SUMMARY_KEY: Record<FlipAction, keyof FlipReport['summary']> = {
   adopted: 'adopted',
 };
 
-const ZERO_DIGEST = `sha256:${'0'.repeat(64)}` as const;
-
 const selectionSourceOf = (opts: FlipOptions): 'explicit-targets' | 'explicit-all' =>
   opts.selectionSource ?? (opts.all ? 'explicit-all' : 'explicit-targets');
-
-const liveResourceOf = (pair: PairPlan) => ({
-  kind: 'live' as const,
-  skill: pair.skill,
-  tool: pair.tool,
-  scope: pair.scope,
-  projectRoot:
-    pair.scopeKey === null
-      ? null
-      : ({ kind: 'machine-bound' as const, path: pair.scopeKey } as const),
-  location: { kind: 'machine-bound' as const, path: pair.placement.path },
-});
-
-/** Logical plan locations are canonical machine-bound paths. Preserve the symlink's literal bytes
- * in the physical pair/journal records, but resolve a relative payload against its placement for
- * operation images so the journal remains schema-valid and stable across caller cwd changes. */
-const logicalLinkTargetOf = (pair: PairPlan, target: string | null) =>
-  target === null
-    ? null
-    : {
-        kind: 'machine-bound' as const,
-        path: resolveSymlinkAbsolute(pair.placement.path, target),
-      };
-
-const placementImageOf = (
-  pair: PairPlan,
-  mode: 'dev' | 'pinned',
-  linkTarget: string | null,
-  contentHash: `sha256:${string}` | null,
-  sourcePath: string | null = null,
-): OperationImage => ({
-  kind: 'placement',
-  resource: liveResourceOf(pair),
-  classification: mode,
-  representation: mode === 'dev' ? 'symlink' : 'copy',
-  linkTarget: logicalLinkTargetOf(pair, linkTarget),
-  dangling: false,
-  source:
-    contentHash === null || sourcePath === null
-      ? null
-      : { kind: 'local-dev', path: sourcePath, contentHash },
-  contentHash,
-});
-
-const currentRollbackImageOf = (
-  pair: PairPlan,
-  source: Extract<OperationSource, { kind: 'local-dev' }> | null,
-): OperationImage => {
-  if (pair.placement.class === 'absent') {
-    return { kind: 'absent', resource: liveResourceOf(pair) };
-  }
-  const symlink = pair.placement.class === 'dev' || pair.placement.class === 'store-linked';
-  return {
-    kind: 'placement',
-    resource: liveResourceOf(pair),
-    classification: pair.placement.class,
-    representation: symlink ? 'symlink' : 'copy',
-    linkTarget:
-      symlink && pair.placement.symlinkTarget !== null
-        ? logicalLinkTargetOf(pair, pair.placement.symlinkTarget)
-        : null,
-    dangling: pair.placement.dangling,
-    source,
-    contentHash: source?.contentHash ?? null,
-  };
-};
-
-const journalBeforeImageOf = (pair: PairPlan, before: Journal['before']): OperationImage => {
-  if (before.mode === 'absent') {
-    return { kind: 'absent', resource: liveResourceOf(pair) };
-  }
-  const representation = before.liveKind === 'dir' ? 'copy' : 'symlink';
-  const linkTarget =
-    before.mode === 'dev'
-      ? before.symlinkTarget
-      : before.symlinkTarget === undefined
-        ? null
-        : before.symlinkTarget;
-  return {
-    kind: 'placement',
-    resource: liveResourceOf(pair),
-    classification: before.mode,
-    representation,
-    linkTarget: logicalLinkTargetOf(pair, linkTarget),
-    dangling: false,
-    source: null,
-    contentHash: null,
-  };
-};
-
-const beforeImageOf = (pair: PairPlan): OperationImage => {
-  if (pair.placement.class === 'absent') {
-    return { kind: 'absent', resource: liveResourceOf(pair) };
-  }
-  if (pair.placement.class === 'dev') {
-    return placementImageOf(pair, 'dev', pair.placement.symlinkTarget, null);
-  }
-  if (pair.placement.class === 'store-linked') {
-    return {
-      kind: 'placement',
-      resource: liveResourceOf(pair),
-      classification: 'store-linked',
-      representation: 'symlink',
-      linkTarget: logicalLinkTargetOf(pair, pair.placement.symlinkTarget),
-      dangling: pair.placement.dangling,
-      source: null,
-      contentHash: null,
-    };
-  }
-  return placementImageOf(pair, 'pinned', null, null);
-};
-
-const unmanagedBeforeImageOf = (pair: PairPlan): OperationImage => ({
-  kind: 'placement',
-  resource: liveResourceOf(pair),
-  classification: 'unmanaged',
-  representation: pair.placement.class === 'dev' ? 'symlink' : 'other',
-  linkTarget:
-    pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null
-      ? logicalLinkTargetOf(pair, pair.placement.symlinkTarget)
-      : null,
-  dangling: pair.placement.class === 'dev' && pair.placement.dangling,
-  source: null,
-  contentHash: null,
-});
 
 const resultForPair = (results: readonly FlipResult[], pair: PairPlan): FlipResult | undefined => {
   for (let index = results.length - 1; index >= 0; index--) {
@@ -1754,24 +1661,6 @@ const resultForPair = (results: readonly FlipResult[], pair: PairPlan): FlipResu
     }
   }
   return undefined;
-};
-
-const digestForPair = async (
-  env: PlacementPorts,
-  ledger: LedgerFile,
-  pair: PairPlan,
-): Promise<`sha256:${string}` | null> => {
-  const recorded = getPairAt(ledger, pair.scopeKey, pair.skill, pair.tool);
-  if (recorded?.pinned?.contentHash?.startsWith('sha256:')) {
-    return recorded.pinned.contentHash as `sha256:${string}`;
-  }
-  const source =
-    pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null
-      ? resolveSymlinkAbsolute(pair.placement.path, pair.placement.symlinkTarget)
-      : recorded?.dev?.resolvedPath;
-  if (source === undefined) return null;
-  const hashed = await contentHashOf(env, source);
-  return hashed.ok ? (hashed.value as `sha256:${string}`) : null;
 };
 
 const devOperationSourceOf = async (
@@ -1789,183 +1678,50 @@ const devOperationSourceOf = async (
           ? resolveSymlinkAbsolute(pair.placement.path, pair.placement.symlinkTarget)
           : null));
   if (path === null) return null;
+  if ((await env.pathKind(path)) !== 'dir') return null;
   const hashed = await contentHashOf(env, path);
   return hashed.ok
     ? { kind: 'local-dev', path, contentHash: hashed.value as `sha256:${string}` }
     : null;
 };
 
-const canonicalLeafPath = async (env: PlacementPorts, cwd: string, path: string): Promise<string> =>
-  join(await canonicalizePath(env, cwd, dirname(path)), basename(path));
+const pairIdentityKey = (pair: PairPlan): string =>
+  JSON.stringify([pair.scope, pair.scopeKey, pair.skill, pair.tool, pair.placement.path]);
 
-const pairRecordSnapshot = (record: ReturnType<typeof getPairAt>): unknown => {
-  if (record === null) return null;
-  return {
-    placementPath: record.placementPath,
-    mode: record.mode,
-    dev:
-      record.dev === null
-        ? null
-        : {
-            sourcePath: record.dev.sourcePath,
-            resolvedPath: record.dev.resolvedPath,
-            repoRoot: record.dev.repoRoot,
-            sourceRelPath: record.dev.sourceRelPath,
-            remote: record.dev.remote,
-            recordedAt: record.dev.recordedAt,
-          },
-    pinned:
-      record.pinned == null
-        ? null
-        : {
-            storePath: record.pinned.storePath,
-            rev: record.pinned.rev,
-            gitSha: record.pinned.gitSha,
-            dirty: record.pinned.dirty,
-            contentHash: record.pinned.contentHash,
-            snapshotAt: record.pinned.snapshotAt,
-            verify: record.pinned.verify,
-            placement: record.pinned.placement ?? null,
-          },
-    origin:
-      record.origin === undefined
-        ? null
-        : {
-            source: record.origin.source,
-            host: record.origin.host,
-            repo: record.origin.repo,
-            skillPath: record.origin.skillPath,
-            refRequested: record.origin.refRequested,
-            refResolved: record.origin.refResolved,
-            pin: record.origin.pin,
-            installedAt: record.origin.installedAt,
-          },
-    journal:
-      record.journal == null
-        ? null
-        : {
-            op: record.journal.op,
-            txId: record.journal.txId,
-            phase: record.journal.phase,
-            startedAt: record.journal.startedAt,
-            completedAt: record.journal.completedAt,
-            before: structuredClone(record.journal.before),
-            stagingPath: record.journal.stagingPath,
-            backupPath: record.journal.backupPath,
-          },
-  };
-};
+const contentObservationForSource = (
+  path: string,
+  contentHash: `sha256:${string}`,
+): ContentObservationIdentityV1 =>
+  createContentObservationIdentityV1({
+    schemaVersion: 1,
+    resourceId: placementSnapshotResourceId('source', resolve(path)),
+    targetIdentity: resolve(path),
+    targetKind: 'directory',
+    contentRevision: contentHash,
+  });
 
-const capturePathIdentity = async (
+const observeSourceContent = async (
   env: PlacementPorts,
-  cwd: string,
-  path: string | null,
-): Promise<unknown> => {
-  if (path === null) return null;
-  const pathKind = await env.pathKind(path);
-  const symlinkTarget = pathKind === 'symlink' ? await env.readLink(path) : null;
-  const canonicalPath =
-    pathKind === 'absent' ? resolve(cwd, path) : await canonicalizePath(env, cwd, path);
-  let hashable = pathKind === 'dir';
-  if (pathKind === 'symlink') {
-    try {
-      hashable = (await env.pathKind(canonicalPath)) === 'dir';
-    } catch {
-      hashable = false;
-    }
+  expected: ContentObservationIdentityV1,
+): Promise<ContentObservationIdentityV1> => {
+  const kind = await env.pathKind(expected.targetIdentity);
+  if (kind !== 'dir') {
+    throw new Error('prepared placement source is no longer a directory');
   }
-  let contentHash: string | null = null;
-  if (hashable) {
-    const hashed = await contentHashOf(env, path);
-    if (!hashed.ok) throw hashed.error;
-    contentHash = hashed.value;
-  }
-  return { path, canonicalPath, pathKind, symlinkTarget, contentHash };
-};
-
-const sourcePathForBinding = (
-  command: 'promote' | 'dev',
-  pair: PairPlan,
-  current: ReturnType<typeof getPairAt>,
-  opts: FlipOptions,
-): string | null => {
-  if (opts.source !== undefined) return resolve(opts.cwd, opts.source);
-  if (current?.dev?.resolvedPath) return current.dev.resolvedPath;
-  if (pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null) {
-    return resolveSymlinkAbsolute(pair.placement.path, pair.placement.symlinkTarget);
-  }
-  return command === 'dev' ? (current?.dev?.sourcePath ?? null) : null;
-};
-
-interface FlipFactIdentity {
-  readonly command: 'promote' | 'dev';
-  readonly reportOp: FlipOp;
-  readonly operationId: string;
-  readonly groupId: string;
-  readonly pairId: string;
-  readonly kind: ExecutableOperation['kind'];
-}
-
-const captureFlipFacts = async (
-  env: PlacementPorts,
-  identity: FlipFactIdentity,
-  pair: PairPlan,
-  opts: FlipOptions,
-  storeRoot: string,
-  ledger: LedgerFile,
-): Promise<unknown> => {
-  const current = getPairAt(ledger, pair.scopeKey, pair.skill, pair.tool);
-  const placement = await classifyPlacement(env, pair.placement.root, pair.skill, storeRoot);
-  const livePathKind = await env.pathKind(pair.placement.path);
-  const liveContent =
-    livePathKind === 'dir' ? await capturePathIdentity(env, opts.cwd, pair.placement.path) : null;
-  const sourcePath = sourcePathForBinding(identity.command, pair, current, opts);
-  const sourceIdentity = await capturePathIdentity(env, opts.cwd, sourcePath);
-  let sourceProvenance: Provenance | null = null;
-  if (sourcePath !== null && (await env.pathKind(sourcePath)) !== 'absent') {
-    const provenance = await resolveProvenance(env, sourcePath);
-    if (!provenance.ok) throw provenance.error;
-    sourceProvenance = provenance.value;
-  }
-  const storePath = current?.pinned?.storePath ?? null;
-  const journal = current?.journal ?? null;
-  return {
-    ...identity,
-    skill: pair.skill,
-    tool: pair.tool,
-    scope: pair.scope,
-    scopeKey: pair.scopeKey,
-    projectRoot:
-      opts.projectRoot == null
-        ? null
-        : {
-            path: opts.projectRoot,
-            canonicalPath: await canonicalizePath(env, opts.cwd, opts.projectRoot),
-          },
-    ledger: { pair: pairRecordSnapshot(current) },
-    live: {
-      path: pair.placement.path,
-      canonicalPath: await canonicalLeafPath(env, opts.cwd, pair.placement.path),
-      pathKind: livePathKind,
-      classification: placement.class,
-      symlinkTarget: placement.symlinkTarget,
-      dangling: placement.dangling,
-      content: liveContent,
-    },
-    source: { identity: sourceIdentity, provenance: sourceProvenance },
-    store: await capturePathIdentity(env, opts.cwd, storePath),
-    recovery: {
-      staging: await capturePathIdentity(env, opts.cwd, journal?.stagingPath ?? null),
-      backup: await capturePathIdentity(env, opts.cwd, journal?.backupPath ?? null),
-    },
-  };
+  const hashed = await contentHashOf(env, expected.targetIdentity);
+  if (!hashed.ok) throw hashed.error;
+  return createContentObservationIdentityV1({
+    ...expected,
+    contentRevision: hashed.value,
+  });
 };
 
 interface PreparedPairFlipBinding {
   readonly kind: 'pair';
   readonly operationId: string;
   readonly pair: PairPlan;
-  readonly expectedFacts: unknown;
+  readonly promote: PreparedPromoteExecution | null;
+  readonly stageResourceIds: readonly string[];
 }
 
 interface PreparedLedgerMigrationBinding {
@@ -1976,12 +1732,20 @@ interface PreparedLedgerMigrationBinding {
 
 type PreparedFlipBinding = PreparedPairFlipBinding | PreparedLedgerMigrationBinding;
 
+interface PreparedPromoteExecution {
+  readonly sourcePath: string;
+  readonly provenance: Provenance;
+  readonly rev: string;
+  readonly storePath: string;
+  readonly contentHash: `sha256:${string}`;
+}
+
 const createFlipPlanning = async (
   env: PlacementPorts,
   command: 'promote' | 'dev',
   reportOp: FlipOp,
-  dryRun: boolean,
   opts: FlipOptions,
+  projectContext: ProjectContext,
   storeRoot: string,
   outcome: FlipPlanOutcome,
   results: readonly FlipResult[],
@@ -1993,19 +1757,23 @@ const createFlipPlanning = async (
     executionResults: readonly OperationExecutionResult[];
     bindings: readonly PreparedFlipBinding[];
     preconditions: readonly ExecutionPrecondition[];
+    authority: PlacementSnapshotAuthority;
   }>
 > => {
   const ledgerPath = ledgerPathOf(resolveDataDir(env, opts.configuration));
   const selectionSource = selectionSourceOf(opts);
-  const operations: ExecutableOperation[] = [];
-  const checks: PlanCheck[] = [];
+  const compatibilityOperations: ExecutableOperation[] = [];
+  const intents: (PlacementDevIntentV1 | PlacementPromoteIntentV1 | PlacementRollbackIntentV1)[] =
+    [];
+  const stores = new Map<string, PlacementStoreResource>();
+  const promoteExecutions = new Map<string, PreparedPromoteExecution>();
   const bindings: PreparedFlipBinding[] = [];
   const preconditions: ExecutionPrecondition[] = [];
   const usedResults = new Set<FlipResult>();
 
   const migration = prepareLedgerMigration(env, command, selectionSource, ledgerPath, ledgerState);
   if (migration !== null) {
-    operations.push(migration.operation);
+    compatibilityOperations.push(migration.operation);
     preconditions.push(migration.precondition);
     bindings.push({
       kind: 'migrate-ledger',
@@ -2018,220 +1786,145 @@ const createFlipPlanning = async (
     const result = resultForPair(results, pair);
     if (result === undefined) continue;
     const current = getPairAt(ledger, pair.scopeKey, pair.skill, pair.tool);
-    const retainedCommittedInverse =
-      reportOp === 'rollback' &&
-      current?.journal?.phase === 'committed' &&
-      current.journal.before.mode !== 'absent';
-    const executable =
-      result.action === 'flipped' ||
-      result.action === 'updated' ||
-      result.action === 'created' ||
-      result.action === 'adopted' ||
-      result.action === 'failed' ||
-      result.action === 'rolled-back' ||
-      retainedCommittedInverse;
-    if (!executable) continue;
     usedResults.add(result);
 
-    const rollbackToDev = reportOp === 'rollback' && pair.placement.class !== 'dev';
-    const kind: ExecutableOperation['kind'] =
-      reportOp === 'rollback'
-        ? rollbackToDev
-          ? 'link-dev'
-          : 'promote'
-        : command === 'dev'
-          ? 'link-dev'
-          : pair.placement.class === 'pinned' || pair.placement.class === 'store-linked'
-            ? 'update'
-            : 'promote';
-    const localDevSource = await devOperationSourceOf(env, ledger, pair, opts);
-    const digest = localDevSource?.contentHash ?? (await digestForPair(env, ledger, pair));
-    const operationSource: OperationSource | null =
-      kind === 'link-dev'
-        ? localDevSource
-        : digest === null
-          ? null
-          : {
-              kind: 'portable',
-              identity: {
-                host: 'github.com',
-                repository: 'local/source',
-                path: pair.skill,
-              },
-              requestedRef: null,
-              resolvedSha: '0'.repeat(40),
-              sourcePath: pair.skill,
-              contentHash: digest,
-            };
-    const committedForward =
-      reportOp === 'rollback' && current?.journal?.phase === 'committed'
-        ? ledgerState.state === 'present'
-          ? ledgerState.model.history.find(
-              (journal) => journal.transactionId === current.journal?.txId,
-            )
-          : undefined
-        : undefined;
-    const groupId =
-      committedForward?.intent.groupId ??
-      createOperationGroupId({
-        domain: 'skillsmith.operation-group-identity',
-        schemaVersion: 1,
-        command,
-        skill: pair.skill,
-        source: operationSource,
-        scope: pair.scope,
-        target: null,
-      });
-    const pairId =
-      committedForward?.intent.pairId ??
-      createOperationPairId({
-        domain: 'skillsmith.operation-pair-identity',
-        schemaVersion: 1,
-        groupId,
-        tool: pair.tool,
-        resource: liveResourceOf(pair),
-      });
-    if (pairId === null) throw new Error('committed placement history has no pair identity');
-    const identity = {
-      domain: 'skillsmith.operation-identity' as const,
-      schemaVersion: 1 as const,
-      groupId,
-      pairId,
-      kind,
-      skill: pair.skill,
-      source: operationSource,
-      tool: pair.tool,
-      scope: pair.scope,
-    };
-    const operationId = createOperationId(identity);
-    const desiredDevTarget =
-      localDevSource?.path ??
-      (result.after?.mode === 'dev'
-        ? (result.after.symlinkTarget ?? current?.dev?.sourcePath ?? opts.source ?? null)
-        : (current?.dev?.sourcePath ?? opts.source ?? null));
-    const promoteSource =
-      current?.dev?.resolvedPath ??
-      (pair.placement.class === 'dev' && pair.placement.symlinkTarget !== null
-        ? resolveSymlinkAbsolute(pair.placement.path, pair.placement.symlinkTarget)
-        : null);
-    const rollbackCurrentSource =
-      reportOp !== 'rollback'
-        ? null
-        : (localDevSource ??
-          (promoteSource === null || digest === null
-            ? null
-            : { kind: 'local-dev', path: promoteSource, contentHash: digest }));
-    const before =
-      result.action === 'adopted'
-        ? unmanagedBeforeImageOf(pair)
-        : reportOp === 'rollback'
-          ? currentRollbackImageOf(pair, rollbackCurrentSource)
-          : beforeImageOf(pair);
-    const after =
-      reportOp === 'rollback' && current?.journal != null
-        ? journalBeforeImageOf(pair, current.journal.before)
-        : kind === 'link-dev'
-          ? placementImageOf(
-              pair,
-              'dev',
-              desiredDevTarget,
-              reportOp === 'rollback' ? null : (localDevSource?.contentHash ?? null),
-              reportOp === 'rollback' ? null : (localDevSource?.path ?? null),
-            )
-          : reportOp === 'rollback'
-            ? placementImageOf(pair, 'pinned', null, null)
-            : placementImageOf(pair, 'pinned', null, digest, promoteSource);
-    const requiredCheckIds: string[] = [];
-    if (reportOp !== 'rollback' && !opts.noVerify) {
-      const verification = toolRegistry.get(pair.tool)?.verification;
-      if (verification === undefined) {
-        throw new Error(`tool registry invariant: ${pair.tool} has no verifier`);
+    const liveResourceId = placementSnapshotResourceId('live', pairIdentityKey(pair));
+    const projectRoot =
+      pair.scopeKey === null ? null : ({ kind: 'machine-bound', path: pair.scopeKey } as const);
+    const addStore = (path: string, contentHash: string): string => {
+      if (!/^sha256:[0-9a-f]{64}$/u.test(contentHash)) {
+        throw new Error('placement store content hash is invalid');
       }
-      const verificationMode = command === 'promote' ? verification.gatePolicy.promote : 'static';
-      const checkId = createPlanCheckId({
-        domain: 'skillsmith.plan-check-identity',
-        schemaVersion: 1,
-        kind: 'verification',
-        operationIds: [operationId],
-        tool: pair.tool,
-        mode: verificationMode,
-        expectedContentHash: digest ?? ZERO_DIGEST,
+      const resourceId = placementSnapshotResourceId('store', resolve(path));
+      const existing = stores.get(resourceId);
+      if (existing !== undefined && existing.contentHash !== contentHash) {
+        throw new Error('placement store resource has conflicting content expectations');
+      }
+      stores.set(resourceId, {
+        resourceId,
+        storePath: path,
+        contentHash: contentHash as `sha256:${string}`,
       });
-      requiredCheckIds.push(checkId);
-      checks.push({
-        checkId,
-        blocking: true,
-        operationIds: [operationId],
-        kind: 'verification',
-        tool: pair.tool,
-        mode: verificationMode,
-        expectedContentHash: digest ?? ZERO_DIGEST,
-      });
+      return resourceId;
+    };
+    if (current?.pinned != null) {
+      addStore(current.pinned.storePath, current.pinned.contentHash);
     }
-    const operationWithoutPrecondition = {
-      operationId,
-      groupId,
-      pairId,
-      kind,
-      dependencyMetadata: {
-        domain: 'skillsmith.operation-dependency',
-        schemaVersion: 1,
-        operationIds: [],
-      },
+    if (reportOp === 'rollback') {
+      const rollbackBefore =
+        (current?.journal?.phase === 'committed' ? null : current?.journal?.before) ??
+        (current?.mode === 'pinned' && current.dev != null
+          ? { mode: 'dev' as const, symlinkTarget: current.dev.resolvedPath }
+          : current?.mode === 'dev' && current.pinned != null
+            ? {
+                mode: 'pinned' as const,
+                storePath: current.pinned.storePath,
+                contentHash: current.pinned.contentHash,
+              }
+            : null);
+      if (rollbackBefore === null) {
+        usedResults.delete(result);
+        continue;
+      }
+      let storeResourceId: string | null = null;
+      let sourceContent: ContentObservationIdentityV1 | undefined;
+      if (rollbackBefore?.mode === 'pinned' && rollbackBefore.storePath != null) {
+        if (rollbackBefore.contentHash != null) {
+          storeResourceId = addStore(rollbackBefore.storePath, rollbackBefore.contentHash);
+        }
+        if (current?.dev != null) {
+          const target = resolve(current.dev.resolvedPath);
+          const hashed = await contentHashOf(env, target);
+          if (hashed.ok) {
+            sourceContent = contentObservationForSource(target, hashed.value as `sha256:${string}`);
+          }
+        }
+      } else if (rollbackBefore?.mode === 'dev') {
+        const target = resolve(dirname(pair.placement.path), rollbackBefore.symlinkTarget);
+        const hashed = await contentHashOf(env, target);
+        if (!hashed.ok) throw hashed.error;
+        sourceContent = contentObservationForSource(target, hashed.value as `sha256:${string}`);
+      }
+      intents.push({
+        kind: 'rollback',
+        skill: pair.skill,
+        tool: pair.tool,
+        scope: pair.scope,
+        projectRoot,
+        liveResourceId,
+        storeResourceId,
+        ...(sourceContent === undefined ? {} : { sourceContent }),
+      });
+      continue;
+    }
+    const source = await devOperationSourceOf(env, ledger, pair, opts);
+    if (source === null) {
+      usedResults.delete(result);
+      continue;
+    }
+    const sourceContent = contentObservationForSource(source.path, source.contentHash);
+    const verification = opts.noVerify
+      ? undefined
+      : {
+          mode:
+            command === 'promote'
+              ? (toolRegistry.get(pair.tool)?.verification?.gatePolicy.promote ?? 'static')
+              : ('static' as const),
+          expectedContentHash: source.contentHash,
+        };
+    if (command === 'dev') {
+      intents.push({
+        kind: 'link-dev',
+        skill: pair.skill,
+        tool: pair.tool,
+        scope: pair.scope,
+        projectRoot,
+        liveResourceId,
+        source,
+        sourceContent,
+        ...(verification === undefined ? {} : { verification }),
+      });
+      continue;
+    }
+    const provenance = await resolveProvenance(env, source.path);
+    if (!provenance.ok) {
+      usedResults.delete(result);
+      continue;
+    }
+    const rev = await computeRevPreview(env, provenance.value, source.path);
+    if (!rev.ok) {
+      usedResults.delete(result);
+      continue;
+    }
+    const storePath = join(
+      storeRoot,
+      provenance.value.ns,
+      `${provenance.value.name}@${rev.value}`,
+      pair.skill,
+    );
+    promoteExecutions.set(pairIdentityKey(pair), {
+      sourcePath: source.path,
+      provenance: provenance.value,
+      rev: rev.value,
+      storePath,
+      contentHash: source.contentHash,
+    });
+    intents.push({
+      kind: 'promote',
       skill: pair.skill,
-      source: operationSource,
       tool: pair.tool,
       scope: pair.scope,
-      before,
-      after,
-      reason:
-        reportOp === 'rollback'
-          ? { code: 'rollback-inverse', message: `rollback inverse for ${pair.skill}` }
-          : { code: kind, message: `${command} ${pair.skill}` },
-      selectionSource,
-      requiredCheckIds,
-      reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
-      mutates: { live: true, manifest: false, lock: false, ledger: true },
-      conflict: null,
-    } as const;
-    const factIdentity: FlipFactIdentity = {
-      command,
-      reportOp,
-      operationId,
-      groupId,
-      pairId,
-      kind,
-    };
-    const expectedFacts = await captureFlipFacts(env, factIdentity, pair, opts, storeRoot, ledger);
-    const precondition = createExecutionPrecondition({
-      operationIds: [operationId],
-      resource: liveResourceOf(pair),
-      expected: expectedFacts,
-      observe: async () => {
-        const currentLedger = await readLedgerState(env, ledgerPath);
-        if (!currentLedger.ok) throw currentLedger.error;
-        return captureFlipFacts(
-          env,
-          factIdentity,
-          pair,
-          opts,
-          storeRoot,
-          legacyLedgerView(
-            ledgerModelForMutation(currentLedger.value, nowOf(env, defaultFlipDeps)),
-          ),
-        );
-      },
-    });
-    operations.push({
-      ...operationWithoutPrecondition,
-      preconditionIds: [precondition.preconditionId],
-    });
-    preconditions.push(precondition);
-    bindings.push({
-      kind: 'pair',
-      operationId,
-      pair,
-      expectedFacts,
+      projectRoot,
+      liveResourceId,
+      storeResourceId: addStore(storePath, source.contentHash),
+      source,
+      sourceContent,
+      representation:
+        current?.pinned?.placement === 'symlink' && current.origin !== undefined
+          ? 'symlink'
+          : 'copy',
+      desiredContentHash: source.contentHash,
+      ...(verification === undefined ? {} : { verification }),
     });
   }
 
@@ -2303,7 +1996,7 @@ const createFlipPlanning = async (
     });
   }
 
-  if (operations.length === 0 && diagnostics.length === 0 && opts.all) {
+  if (intents.length === 0 && diagnostics.length === 0 && opts.all) {
     const affected = {
       skill: null,
       source: null,
@@ -2338,65 +2031,213 @@ const createFlipPlanning = async (
   const scopes = [...new Set(outcome.pairs.map((pair) => pair.scope))];
   if (scopes.length === 0 && opts.scope !== undefined) scopes.push(opts.scope);
   const filterNoop =
-    operations.length === 0 && diagnostics.some((item) => item.reason.code === 'filter-noop');
-  const plan = createOperationPlan({
-    domain: 'skillsmith.operation-plan',
-    schemaVersion: 1,
-    command,
+    intents.length === 0 && diagnostics.some((item) => item.reason.code === 'filter-noop');
+  const authorityResult = await createPlacementSnapshotAuthority(
+    env,
+    projectContext,
+    ledgerPath,
+    storeRoot,
+    outcome.pairs,
+    [...stores.values()],
+  );
+  if (!authorityResult.ok) throw authorityResult.error;
+  const authority = authorityResult.value;
+  const commonRequest = {
+    schemaVersion: 1 as const,
     selection: {
       source: selectionSource,
-      outcome: filterNoop ? 'filter-noop' : 'selected',
+      outcome: filterNoop ? ('filter-noop' as const) : ('selected' as const),
       targets: [...opts.targets],
       all: Boolean(opts.all),
       tools: opts.tools ? [...opts.tools] : [...FLIP_TOOLS],
       scopes,
-      groupIds: [...new Set(operations.map((operation) => operation.groupId))],
     },
-    batchPolicy: opts.continueOnError ? 'continue-on-error' : 'fail-fast',
-    operations,
-    checks,
+    batchPolicy: opts.continueOnError ? ('continue-on-error' as const) : ('fail-fast' as const),
     diagnostics,
-  }) as OperationPlan<'dev' | 'promote'>;
-  const executionResults = dryRun
-    ? []
-    : plan.operations.map((operation) => {
-        const pair = outcome.pairs.find(
-          (candidate) =>
-            candidate.skill === operation.skill &&
-            candidate.tool === operation.tool &&
-            candidate.scope === operation.scope,
-        );
-        const result = pair === undefined ? undefined : resultForPair(results, pair);
-        const failed = result?.action === 'failed';
-        const common = {
-          operationId: operation.operationId,
-          actualBefore: operation.before,
-          actualAfter: operation.after,
-          force: null,
-        } as const;
-        if (failed) {
-          return createOperationExecutionResult({
-            ...common,
-            outcome: 'failed',
-            error: {
-              code: result.error?.code ?? 'flip-failed',
-              message: result.reason ?? 'operation failed',
-              remediation: 'Resolve the reported condition and retry the same selection.',
+    compatibilityOperations,
+  };
+  const planned =
+    reportOp === 'rollback'
+      ? createPlacementPlan(
+          {
+            ...commonRequest,
+            command,
+            mode: 'rollback',
+            intents: intents as PlacementRollbackIntentV1[],
+          },
+          authority.snapshot,
+        )
+      : command === 'dev'
+        ? createPlacementPlan(
+            {
+              ...commonRequest,
+              command: 'dev',
+              mode: 'forward',
+              intents: intents as PlacementDevIntentV1[],
             },
-          });
-        }
-        return createOperationExecutionResult({
-          ...common,
-          outcome:
-            reportOp === 'rollback'
-              ? 'rolled-back'
-              : result?.reason === 'interrupted'
-                ? 'cancelled'
-                : 'succeeded',
-          error: null,
-        });
-      });
-  return { plan, executionResults, bindings, preconditions };
+            authority.snapshot,
+          )
+        : createPlacementPlan(
+            {
+              ...commonRequest,
+              command: 'promote',
+              mode: 'forward',
+              intents: intents as PlacementPromoteIntentV1[],
+            },
+            authority.snapshot,
+          );
+  if (!planned.ok) throw new Error(planned.error.message);
+  const plan = planned.value.plan;
+  const revisionResource = (revision: ExpectedRevisionV1): OperationResourceIdentity => {
+    if (revision.domain === 'manifest') {
+      return {
+        kind: 'manifest-bytes',
+        location: { kind: 'machine-bound', path: authority.manifestPath },
+      };
+    }
+    if (revision.domain === 'lock') {
+      return { kind: 'lock', location: { kind: 'machine-bound', path: authority.lockPath } };
+    }
+    if (revision.domain === 'ledger') return { kind: 'ledger', projectRoot: null };
+    if (revision.domain === 'store') {
+      const store = authority.storeResources.find(
+        (item) => item.resourceId === revision.resourceId,
+      );
+      if (store === undefined) throw new Error('placement store revision resource is missing');
+      return { kind: 'store', contentHash: store.contentHash };
+    }
+    if (revision.domain === 'live') {
+      const live = authority.liveResources.find((item) => item.resourceId === revision.resourceId);
+      if (live === undefined) throw new Error('placement live revision resource is missing');
+      return {
+        kind: 'live',
+        skill: live.skill,
+        tool: live.tool as FlipTool,
+        scope: live.scope === 'project' ? 'project' : 'user',
+        projectRoot:
+          live.projectIdentity === null
+            ? null
+            : { kind: 'machine-bound', path: live.projectIdentity },
+        location: { kind: 'machine-bound', path: live.placementPath },
+      };
+    }
+    return {
+      kind: 'project-context',
+      root: { kind: 'machine-bound', path: authority.projectRoot },
+    };
+  };
+  for (const revision of planned.value.expectedRevisions) {
+    const preconditionId = createExpectedRevisionPreconditionIdV1(revision);
+    const operationIds = plan.operations
+      .filter((operation) => operation.preconditionIds.includes(preconditionId))
+      .map((operation) => operation.operationId);
+    if (operationIds.length === 0) continue;
+    preconditions.push(
+      createExpectedRevisionExecutionPrecondition({
+        operationIds,
+        resource: revisionResource(revision),
+        expectedRevision: revision,
+        observeRevision: () =>
+          authority.repositories[revision.domain]
+            .observeRevision(revision.resourceId)
+            .then((observed) => {
+              if (!observed.ok) throw observed.error;
+              if (
+                revision.domain === 'ledger' &&
+                revision.state === 'absent' &&
+                observed.value.domain === 'ledger' &&
+                observed.value.state === 'absent' &&
+                revision.targetIdentity === observed.value.targetIdentity &&
+                revision.parentIdentity === observed.value.parentIdentity
+              ) {
+                return revision;
+              }
+              return observed.value;
+            }),
+      }),
+    );
+  }
+  const contents = intents
+    .map((intent) => intent.sourceContent)
+    .filter((value): value is ContentObservationIdentityV1 => value !== undefined);
+  const contentByResource = new Map<string, ContentObservationIdentityV1>();
+  for (const content of contents) {
+    const existing = contentByResource.get(content.resourceId);
+    if (
+      existing !== undefined &&
+      canonicalPlanningString(existing) !== canonicalPlanningString(content)
+    ) {
+      throw new Error('placement source content resource identity is ambiguous');
+    }
+    contentByResource.set(content.resourceId, content);
+  }
+  for (const content of contentByResource.values()) {
+    const preconditionId = createContentObservationPreconditionIdV1(content);
+    const covered = plan.operations.filter((operation) =>
+      operation.preconditionIds.includes(preconditionId),
+    );
+    if (covered.length === 0) continue;
+    preconditions.push(
+      createContentObservationExecutionPrecondition({
+        operationIds: covered.map((operation) => operation.operationId),
+        resource:
+          covered[0]?.before.kind === 'placement' || covered[0]?.before.kind === 'absent'
+            ? covered[0].before.resource
+            : {
+                kind: 'project-context',
+                root: { kind: 'machine-bound', path: authority.projectRoot },
+              },
+        expectedContent: content,
+        observeContent: () => observeSourceContent(env, content),
+      }),
+    );
+  }
+  for (const operation of plan.operations) {
+    if (bindings.some((binding) => binding.operationId === operation.operationId)) continue;
+    const pair = outcome.pairs.find(
+      (candidate) =>
+        candidate.skill === operation.skill &&
+        candidate.tool === operation.tool &&
+        candidate.scope === operation.scope,
+    );
+    if (pair === undefined) throw new Error('planned placement pair binding is missing');
+    const intent = intents.find(
+      (candidate) =>
+        candidate.skill === operation.skill &&
+        candidate.tool === operation.tool &&
+        candidate.scope === operation.scope,
+    );
+    const ownResourceIds = new Set([
+      placementSnapshotResourceId('live', pairIdentityKey(pair)),
+      ...(intent !== undefined && 'storeResourceId' in intent && intent.storeResourceId !== null
+        ? [intent.storeResourceId]
+        : []),
+    ]);
+    const mutable = [...authority.snapshot.live, ...authority.snapshot.store]
+      .map(({ revision }) => revision)
+      .filter(
+        (revision): revision is ExpectedRevisionV1 & Readonly<{ parentIdentity: string }> =>
+          'parentIdentity' in revision,
+      );
+    const parentIdentities = new Set(
+      mutable
+        .filter(({ resourceId }) => ownResourceIds.has(resourceId))
+        .map(({ parentIdentity }) => parentIdentity),
+    );
+    bindings.push({
+      kind: 'pair',
+      operationId: operation.operationId,
+      pair,
+      promote: promoteExecutions.get(pairIdentityKey(pair)) ?? null,
+      stageResourceIds: mutable
+        .filter(
+          ({ resourceId, parentIdentity }) =>
+            ownResourceIds.has(resourceId) || parentIdentities.has(parentIdentity),
+        )
+        .map(({ resourceId }) => resourceId),
+    });
+  }
+  return { plan, executionResults: [], bindings, preconditions, authority };
 };
 
 const buildPreparedPreview = async (
@@ -2406,6 +2247,7 @@ const buildPreparedPreview = async (
   requested: FlipReport['requested'],
   results: FlipResult[],
   opts: FlipOptions,
+  projectContext: ProjectContext,
   outcome: FlipPlanOutcome,
   ledger: LedgerFile,
   ledgerState: LedgerReadState,
@@ -2414,16 +2256,17 @@ const buildPreparedPreview = async (
     report: FlipReport;
     bindings: readonly PreparedFlipBinding[];
     preconditions: readonly ExecutionPrecondition[];
+    authority: PlacementSnapshotAuthority;
   }>
 > => {
   const summary = emptySummary();
   for (const r of results) summary[ACTION_TO_SUMMARY_KEY[r.action]]++;
-  const { plan, executionResults, bindings, preconditions } = await createFlipPlanning(
+  const { plan, executionResults, bindings, preconditions, authority } = await createFlipPlanning(
     env,
     command,
     op,
-    true,
     opts,
+    projectContext,
     storeRootOf(resolveDataDir(env, opts.configuration)),
     outcome,
     results,
@@ -2434,6 +2277,7 @@ const buildPreparedPreview = async (
     report: { op, dryRun: true, requested, results, summary, plan, executionResults },
     bindings,
     preconditions,
+    authority,
   };
 };
 
@@ -2445,6 +2289,7 @@ type PairProcessor = (
   opts: FlipOptions,
   deps: FlipDeps,
   logicalOperation: ExecutableOperation,
+  preparedPromote: PreparedPromoteExecution | null,
 ) => Promise<FlipResult>;
 
 type PairPredictor = (
@@ -2457,29 +2302,27 @@ type PairPredictor = (
 const normalizeFlipProjectContext = async (
   env: PlacementPorts,
   opts: FlipOptions,
-): Promise<FlipOptions> => {
-  if (Object.hasOwn(opts, 'projectRoot')) return opts;
-  if (opts.scope === 'user') return { ...opts, projectRoot: null };
-  let projectRoot: string | null;
-  try {
-    projectRoot = await env.git.findRepositoryRoot({ cwd: opts.cwd });
-  } catch {
-    projectRoot = null;
-  }
-  if (projectRoot !== null) {
-    try {
-      projectRoot = await env.realpath(projectRoot);
-    } catch {
-      projectRoot = resolve(projectRoot);
-    }
-  } else if (opts.scope === 'project') {
-    try {
-      projectRoot = await env.realpath(opts.cwd);
-    } catch {
-      projectRoot = resolve(opts.cwd);
-    }
-  }
-  return { ...opts, projectRoot };
+): Promise<
+  Result<Readonly<{ opts: FlipOptions; projectContext: ProjectContext }>, SkillSmithError>
+> => {
+  const projectContext = await resolveProjectContext(env, {
+    invocationCwd: opts.cwd,
+    ...(opts.configuration.explicitConfigPath === undefined
+      ? {}
+      : { explicitConfigPath: opts.configuration.explicitConfigPath }),
+  });
+  return projectContext.ok
+    ? ok({
+        projectContext: projectContext.value,
+        opts: {
+          ...opts,
+          projectRoot:
+            opts.scope === 'project' || typeof opts.projectRoot === 'string'
+              ? (projectContext.value.projectRoot ?? projectContext.value.effectiveCwd)
+              : null,
+        },
+      })
+    : projectContext;
 };
 
 const executedFlipReport = (
@@ -2534,6 +2377,21 @@ const operationResultForFlip = (
   });
 };
 
+const failClosedPlannedNoop = (operation: ExecutableOperation, result: FlipResult): FlipResult => {
+  if (result.action !== 'noop' && result.action !== 'skipped') return result;
+  const reason = `planned ${operation.kind} operation did not execute its approved mutation`;
+  return {
+    ...result,
+    action: 'failed',
+    reason,
+    before: null,
+    after: null,
+    store: null,
+    verify: null,
+    error: flipFailedError(reason),
+  };
+};
+
 const isExecutionStateError = (
   error: unknown,
 ): error is { readonly code: 'precondition-state-changed' | 'precondition-observation-failed' } =>
@@ -2554,43 +2412,77 @@ const prepareFlipBatch = async (
   process: PairProcessor,
   predict: PairPredictor,
 ): Promise<Result<PreparedFlipRun, SkillSmithError>> => {
-  const normalizedOpts = await normalizeFlipProjectContext(env, opts);
+  const normalized = await normalizeFlipProjectContext(env, opts);
+  if (!normalized.ok) return normalized;
+  const { opts: normalizedOpts, projectContext } = normalized.value;
   const dataDir = resolveDataDir(env, normalizedOpts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
   const requested = buildRequested(normalizedOpts);
-  const ledgerState = await readLedgerState(env, ledgerPath);
-  if (!ledgerState.ok) return ledgerState;
-  const ledgerModel = ledgerModelForMutation(ledgerState.value, nowOf(env, deps));
-  const ledger = legacyLedgerView(ledgerModel);
-  const planningOptions = {
-    ...normalizedOpts,
-    op: command,
-    ...(reportOp === 'rollback' ? { rollback: true } : {}),
-  } as FlipOptions & { op: FlipOp };
-  const planRes = await planFlips(env, planningOptions, storeRoot, ledger);
-  if (!planRes.ok) return planRes;
-  if ((planRes.value.unmatchedTargets?.length ?? 0) > 0) {
-    const names = planRes.value.unmatchedTargets as readonly string[];
-    return err(
-      flipRefusedError(`no placement found for ${names.map((name) => `'${name}'`).join(', ')}`),
-    );
+  const prepareSnapshot = async (): Promise<
+    Result<
+      Readonly<{
+        preparedPreview: Awaited<ReturnType<typeof buildPreparedPreview>>;
+        previewResults: readonly FlipResult[];
+      }>,
+      SkillSmithError
+    >
+  > => {
+    const ledgerState = await readLedgerState(env, ledgerPath);
+    if (!ledgerState.ok) return ledgerState;
+    const ledger = legacyLedgerView(ledgerModelForMutation(ledgerState.value, nowOf(env, deps)));
+    const planningOptions = {
+      ...normalizedOpts,
+      op: command,
+      ...(reportOp === 'rollback' ? { rollback: true } : {}),
+    } as FlipOptions & { op: FlipOp };
+    const planRes = await planFlips(env, planningOptions, storeRoot, ledger);
+    if (!planRes.ok) return planRes;
+    if ((planRes.value.unmatchedTargets?.length ?? 0) > 0) {
+      const names = planRes.value.unmatchedTargets as readonly string[];
+      return err(
+        flipRefusedError(`no placement found for ${names.map((name) => `'${name}'`).join(', ')}`),
+      );
+    }
+    const previewResults: FlipResult[] = [...planRes.value.preResults];
+    for (const pair of planRes.value.pairs) {
+      previewResults.push(await predict(env, ledger, pair, normalizedOpts));
+    }
+    let preparedPreview: Awaited<ReturnType<typeof buildPreparedPreview>>;
+    try {
+      preparedPreview = await buildPreparedPreview(
+        env,
+        command,
+        reportOp,
+        requested,
+        previewResults,
+        normalizedOpts,
+        projectContext,
+        planRes.value,
+        ledger,
+        ledgerState.value,
+      );
+    } catch (error) {
+      if (isSkillSmithError(error)) return err(error);
+      throw error;
+    }
+    return ok({
+      preparedPreview,
+      previewResults,
+    });
+  };
+  let snapshotResult: Awaited<ReturnType<typeof prepareSnapshot>>;
+  if (normalizedOpts.dryRun) {
+    snapshotResult = await prepareSnapshot();
+  } else {
+    const preparedSnapshot = await withLedgerLock(env, ledgerPath, prepareSnapshot, {
+      ...(normalizedOpts.signal === undefined ? {} : { signal: normalizedOpts.signal }),
+    });
+    if (!preparedSnapshot.ok) return preparedSnapshot;
+    snapshotResult = preparedSnapshot.value;
   }
-  const previewResults: FlipResult[] = [...planRes.value.preResults];
-  for (const pair of planRes.value.pairs) {
-    previewResults.push(await predict(env, ledger, pair, normalizedOpts));
-  }
-  const preparedPreview = await buildPreparedPreview(
-    env,
-    command,
-    reportOp,
-    requested,
-    previewResults,
-    normalizedOpts,
-    planRes.value,
-    ledger,
-    ledgerState.value,
-  );
+  if (!snapshotResult.ok) return snapshotResult;
+  const { preparedPreview, previewResults } = snapshotResult.value;
   const bindingMap = new Map<string, PreparedFlipBinding>();
   const boundPreviewResults = new Set<FlipResult>();
   for (const binding of preparedPreview.bindings) {
@@ -2626,12 +2518,13 @@ const prepareFlipBatch = async (
       }
 
       let executionLedger: LedgerModel | null = null;
+      const lifecycle = createPlacementLifecycleExecutor(preparedPreview.authority);
       const startedResults = new Map<string, FlipResult>();
       const coordinatorBindings: PreparedExecutionBinding[] = operations.map((operation) => {
         const preparedBinding = bindingMap.get(operation.operationId);
         if (!preparedBinding) throw new Error('prepared operation binding is missing');
         if (preparedBinding.kind === 'migrate-ledger') {
-          return ledgerMigrationExecutionBinding({
+          const migrationBinding = ledgerMigrationExecutionBinding({
             env,
             ledgerPath,
             operation,
@@ -2642,17 +2535,14 @@ const prepareFlipBatch = async (
               executionLedger = model;
             },
           });
+          return {
+            ...migrationBinding,
+            execute: (binding: ValidatedExecutionBinding) =>
+              lifecycle.execute(operation, [], () => migrationBinding.execute(binding)),
+          };
         }
         if (operation.pairId === null)
           throw new Error('prepared operation pair identity is missing');
-        const factIdentity: FlipFactIdentity = {
-          command,
-          reportOp,
-          operationId: operation.operationId,
-          groupId: operation.groupId,
-          pairId: operation.pairId,
-          kind: operation.kind,
-        };
         return {
           operationId: operation.operationId,
           groupId: operation.groupId,
@@ -2661,22 +2551,7 @@ const prepareFlipBatch = async (
           observeActualBefore: async (): Promise<OperationImage> => {
             const current = await readLedgerState(env, ledgerPath);
             if (!current.ok) throw current.error;
-            const currentModel = ledgerModelForMutation(current.value, nowOf(env, deps));
-            const actualFacts = await captureFlipFacts(
-              env,
-              factIdentity,
-              preparedBinding.pair,
-              normalizedOpts,
-              storeRoot,
-              legacyLedgerView(currentModel),
-            );
-            if (
-              canonicalPlanningString(actualFacts) !==
-              canonicalPlanningString(preparedBinding.expectedFacts)
-            ) {
-              throw new Error('prepared placement facts changed');
-            }
-            executionLedger = currentModel;
+            executionLedger = ledgerModelForMutation(current.value, nowOf(env, deps));
             return operation.before;
           },
           execute: async (
@@ -2684,23 +2559,27 @@ const prepareFlipBatch = async (
           ): Promise<OperationExecutionResult> => {
             const ledger = executionLedger;
             if (ledger === null) throw new Error('validated execution ledger is missing');
-            const result = await process(
-              env,
-              ledger,
-              ledgerPath,
-              preparedBinding.pair,
-              normalizedOpts,
-              deps,
-              operation,
-            );
-            startedResults.set(operation.operationId, result);
-            const reread = await readLedgerState(env, ledgerPath);
-            // The durable ledger is the sole composition source after a started operation. Even a
-            // failed operation can have crossed its live-replace boundary before reporting the
-            // error; continuing after an unreadable refresh could erase that durable partial state.
-            if (!reread.ok) throw reread.error;
-            executionLedger = ledgerModelForMutation(reread.value, nowOf(env, deps));
-            return operationResultForFlip(operation, validatedBinding, result, reportOp);
+            return lifecycle.execute(operation, preparedBinding.stageResourceIds, async () => {
+              const result = failClosedPlannedNoop(
+                operation,
+                await process(
+                  env,
+                  ledger,
+                  ledgerPath,
+                  preparedBinding.pair,
+                  normalizedOpts,
+                  deps,
+                  operation,
+                  preparedBinding.promote,
+                ),
+              );
+              startedResults.set(operation.operationId, result);
+              const reread = await readLedgerState(env, ledgerPath);
+              // The durable ledger is the sole composition source after a started operation.
+              if (!reread.ok) throw reread.error;
+              executionLedger = ledgerModelForMutation(reread.value, nowOf(env, deps));
+              return operationResultForFlip(operation, validatedBinding, result, reportOp);
+            });
           },
         };
       });

@@ -6,7 +6,6 @@ import { copyFile, lstat, mkdir, open, rename, rm, rmdir, unlink } from 'node:fs
 // eslint-disable-next-line skillsmith/capability-ownership -- Account identity is owned by this focused adapter.
 import { userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { cleanupHistoryVictim, selectBoundedHistory } from '../place/history.ts';
 import type {
   FileMetadata,
   FileMetadataReadPort,
@@ -17,6 +16,7 @@ import type {
 import { type Result, err, ok } from '../result.ts';
 import type { ArtifactDigest } from './hash.ts';
 import type { LogicalJournalV1Dto } from './journal-types.ts';
+import { cleanupHistoryVictim, selectBoundedHistory } from './ledger-history.ts';
 import type {
   LedgerMigrationJournalSequence,
   LedgerModel,

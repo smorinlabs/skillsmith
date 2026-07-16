@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   hashCanonicalInput,
   hashManifestBytes,
@@ -8,7 +8,11 @@ import {
 } from '../../src/artifacts/hash.ts';
 import { validateJournalV1DtoShape } from '../../src/artifacts/journal-codec.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
-import { fromLedgerV2Dto, ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
+import {
+  deriveLedgerProjectRegistrations,
+  fromLedgerV2Dto,
+  ledgerV2Codec,
+} from '../../src/artifacts/ledger-codec.ts';
 import type {
   LedgerModel,
   LedgerPairV1Dto,
@@ -29,6 +33,7 @@ import type {
   ResolvedRuntimeConfiguration,
 } from '../../src/ports/types.ts';
 import type { Result } from '../../src/result.ts';
+import type { LivePlacementStateV1, ObservedStateSnapshotV1 } from '../../src/state/types.ts';
 import {
   type StatusJoinInput,
   type StatusLiveInput,
@@ -36,6 +41,7 @@ import {
   joinStatus,
   planStatusRetention,
 } from '../../src/status/join.ts';
+import { createStatusReportFromSnapshot } from '../../src/status/read.ts';
 import type { StatusReadRequest, StatusReport } from '../../src/status/types.ts';
 
 type StatusReader = (
@@ -675,6 +681,305 @@ const relationshipOf = (report: StatusReport) => {
   return report.artifacts.relationship;
 };
 
+const snapshotArtifactRevision = (
+  domain: 'manifest' | 'lock' | 'ledger',
+  resourceId: string,
+  path: string,
+  bytes: Uint8Array,
+  semanticRevision: string,
+) => {
+  const byteRevision = hashCanonicalInput('resource', 1, bytes);
+  if (!byteRevision.ok) throw new Error(`snapshot ${domain} byte revision failed`);
+  return {
+    schemaVersion: 1 as const,
+    domain,
+    resourceId,
+    state: 'present' as const,
+    targetIdentity: path,
+    targetKind: 'file' as const,
+    targetMetadataIdentity: `metadata:v1:${'a'.repeat(64)}`,
+    parentIdentity: ROOT,
+    parentKind: 'directory' as const,
+    parentMetadataIdentity: `metadata:v1:${'b'.repeat(64)}`,
+    byteRevision: byteRevision.value,
+    semanticRevision,
+    revisionDigest: `revision:v1:${'c'.repeat(64)}`,
+  };
+};
+
+const canonicalPresentStatusSnapshot = (): ObservedStateSnapshotV1 => {
+  const manifest: NormalizedManifestV1 = {
+    version: 1,
+    skills: [
+      {
+        name: 'alpha',
+        source: { host: 'github.com', repository: 'acme/skills', path: 'alpha' },
+        ref: null,
+        tools: ['codex'],
+        scope: 'project',
+        placement: 'copy',
+        path: null,
+      },
+    ],
+  };
+  const lock: PortableLockV1 = {
+    version: 1,
+    hashSchemaVersion: 1,
+    manifestHash: hashManifestSemantics(manifest),
+    skills: [
+      {
+        name: 'alpha',
+        source: 'github.com/acme/skills//alpha',
+        requestedRef: null,
+        resolvedSha: SHA,
+        sourcePath: 'alpha',
+        contentHash: CONTENT_HASH,
+      },
+    ],
+  };
+  const placementPath = join(ROOT, '.agents', 'skills', 'alpha');
+  const projects: LedgerModel['projects'] = {
+    [ROOT]: {
+      skills: {
+        alpha: {
+          tools: {
+            codex: { ...pairFor('alpha'), placementPath },
+          },
+        },
+      },
+    },
+  };
+  const ledger = emptyLedgerModel({
+    projects,
+    projectRegistrations: deriveLedgerProjectRegistrations(projects),
+  });
+  const manifestBytes = unwrap(manifestV1Codec.encode(manifest), 'snapshot manifest encoding');
+  const lockBytes = new TextEncoder().encode(
+    unwrap(serializePortableLock(lock), 'snapshot lock encoding'),
+  );
+  const ledgerBytes = unwrap(ledgerV2Codec.encode(ledger), 'snapshot ledger encoding');
+  const lockSemantic = hashCanonicalInput('lock-canonical', 1, lockBytes);
+  if (!lockSemantic.ok) throw new Error('snapshot lock semantic revision failed');
+  const live: LivePlacementStateV1 = {
+    skill: 'alpha',
+    tool: 'codex',
+    scope: 'project',
+    projectIdentity: ROOT,
+    representation: 'directory',
+    path: placementPath,
+    realpath: placementPath,
+    linkTarget: null,
+    dangling: false,
+    placementClass: 'pinned',
+    skillFile: 'valid',
+    brokenReason: null,
+    contentRevision: CONTENT_HASH,
+  };
+  return {
+    schemaVersion: 1,
+    snapshotId: `snapshot:v1:${'a'.repeat(64)}`,
+    project: {
+      revision: {
+        schemaVersion: 1,
+        domain: 'project',
+        resourceId: `project:${ROOT}`,
+        state: 'present',
+        targetKind: 'semantic',
+        semanticRevision: `sha256:${'a'.repeat(64)}`,
+        revisionDigest: `revision:v1:${'a'.repeat(64)}`,
+      },
+      value: projectContext,
+    },
+    manifest: {
+      revision: snapshotArtifactRevision(
+        'manifest',
+        `manifest:${MANIFEST_PATH}`,
+        MANIFEST_PATH,
+        manifestBytes,
+        hashManifestSemantics(manifest),
+      ),
+      value: manifest,
+    },
+    lock: {
+      revision: snapshotArtifactRevision(
+        'lock',
+        `lock:${LOCK_PATH}`,
+        LOCK_PATH,
+        lockBytes,
+        lockSemantic.value,
+      ),
+      value: lock,
+    },
+    ledger: {
+      revision: snapshotArtifactRevision(
+        'ledger',
+        `ledger:${LEDGER_PATH}`,
+        LEDGER_PATH,
+        ledgerBytes,
+        `sha256:${'d'.repeat(64)}`,
+      ),
+      value: ledger,
+    },
+    live: [
+      {
+        revision: {
+          schemaVersion: 1,
+          domain: 'live',
+          resourceId: 'live:project:codex:alpha',
+          state: 'present',
+          targetIdentity: placementPath,
+          targetKind: 'directory',
+          targetMetadataIdentity: `metadata:v1:${'a'.repeat(64)}`,
+          parentIdentity: dirname(placementPath),
+          parentKind: 'directory',
+          parentMetadataIdentity: `metadata:v1:${'b'.repeat(64)}`,
+          resourceRevision: `sha256:${'c'.repeat(64)}`,
+          contentRevision: CONTENT_HASH,
+          revisionDigest: `revision:v1:${'d'.repeat(64)}`,
+        },
+        value: live,
+      },
+    ],
+    store: [],
+    capabilities: {
+      revision: {
+        schemaVersion: 1,
+        domain: 'capabilities',
+        resourceId: 'capabilities:status',
+        state: 'present',
+        targetKind: 'semantic',
+        semanticRevision: `sha256:${'b'.repeat(64)}`,
+        revisionDigest: `revision:v1:${'b'.repeat(64)}`,
+      },
+      value: { adapters: ['codex'] },
+    },
+  } as unknown as ObservedStateSnapshotV1;
+};
+
+describe('snapshot-backed status projection', () => {
+  const snapshotRequest = (): Readonly<StatusReadRequest> => ({
+    ...request(),
+    scopes: Object.freeze(['project']),
+    projectPlacement: Object.freeze({
+      state: 'selected',
+      source: 'shared-project',
+      canonicalCwd: ROOT,
+      root: ROOT,
+      identity: ROOT,
+    }),
+  });
+
+  test('maps canonical present artifacts and enriched live facts into the existing join authority', () => {
+    const snapshot = canonicalPresentStatusSnapshot();
+    const result = createStatusReportFromSnapshot(snapshotRequest(), snapshot);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.artifacts).toMatchObject({
+      state: 'selected',
+      manifest: { state: 'present', canonical: true, migrationPending: false },
+      lock: { state: 'present', canonical: true, migrationPending: false },
+    });
+    expect(result.value.ledger).toMatchObject({
+      state: 'present',
+      sourceVersion: 2,
+      migrationPending: false,
+    });
+    expect(result.value.entries).toHaveLength(1);
+    expect(result.value.entries[0]?.placements[0]).toMatchObject({
+      identity: {
+        tool: 'codex',
+        scope: 'project',
+        projectIdentity: ROOT,
+        path: join(ROOT, '.agents', 'skills', 'alpha'),
+      },
+      classification: 'pinned',
+      brokenReason: null,
+      live: {
+        state: 'present',
+        value: {
+          path: join(ROOT, '.agents', 'skills', 'alpha'),
+          nodeKind: 'directory',
+          skillFile: 'valid',
+        },
+      },
+    });
+    expectDeepFrozen(result.value);
+  });
+
+  test('requires complete project-context parity with the approved snapshot', () => {
+    const base = canonicalPresentStatusSnapshot();
+    const mismatches: readonly ProjectContext[] = [
+      { ...projectContext, invocationCwd: '/other-invocation' },
+      { ...projectContext, effectiveCwd: '/other-effective' },
+      { ...projectContext, projectRoot: '/other-root' },
+      { ...projectContext, projectIdentity: '/other-identity' },
+      { ...projectContext, projectKind: 'non-git' },
+      { ...projectContext, discoveredConfigPath: null },
+      { ...projectContext, explicitConfigPath: MANIFEST_PATH },
+    ];
+    for (const value of mismatches) {
+      const snapshot = { ...base, project: { ...base.project, value } };
+      expect(createStatusReportFromSnapshot(snapshotRequest(), snapshot)).toMatchObject({
+        ok: false,
+        error: { reason: 'invalid-request' },
+      });
+    }
+  });
+
+  test('fails closed at the explicit migration and retention compatibility boundary', () => {
+    const migrationBase = canonicalPresentStatusSnapshot();
+    const migrated = {
+      ...migrationBase,
+      manifest: {
+        ...migrationBase.manifest,
+        revision: {
+          ...migrationBase.manifest.revision,
+          byteRevision: `sha256:${'f'.repeat(64)}`,
+        },
+      },
+    };
+    expect(createStatusReportFromSnapshot(snapshotRequest(), migrated)).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-request' },
+    });
+
+    const retentionBase = canonicalPresentStatusSnapshot();
+    if (retentionBase.ledger.value === null) throw new Error('missing ledger fixture');
+    const retainedLedger: LedgerModel = {
+      ...retentionBase.ledger.value,
+      history: [
+        logicalJournal({
+          name: 'alpha',
+          path: join(ROOT, '.agents', 'skills', 'alpha'),
+          transactionId: 'tx:snapshot-retention',
+          phase: 'committed',
+        }),
+      ],
+    };
+    const retainedLedgerBytes = unwrap(
+      ledgerV2Codec.encode(retainedLedger),
+      'retained snapshot ledger encoding',
+    );
+    const retained = {
+      ...retentionBase,
+      ledger: {
+        revision: snapshotArtifactRevision(
+          'ledger',
+          `ledger:${LEDGER_PATH}`,
+          LEDGER_PATH,
+          retainedLedgerBytes,
+          `sha256:${'e'.repeat(64)}`,
+        ),
+        value: retainedLedger,
+      },
+    };
+    expect(createStatusReportFromSnapshot(snapshotRequest(), retained)).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-request' },
+    });
+  });
+});
+
 describe('legacy ledger history projection', () => {
   test('uses unsupported repair as a tombstone without hiding ordinary update or dev history', () => {
     const repairName = 'repair-tombstone';
@@ -758,8 +1063,8 @@ describe('G3A-01 focused status reader', () => {
       readPorts({ names: [...names].reverse(), listing: ['beta', 'alpha'], bytes }),
       request(),
     );
-    expect(forward.ok).toBeTrue();
-    expect(reverse.ok).toBeTrue();
+    expect(forward.ok, JSON.stringify(forward)).toBeTrue();
+    expect(reverse.ok, JSON.stringify(reverse)).toBeTrue();
     if (!forward.ok || !reverse.ok) throw new Error('expected converged status products');
 
     expect(reverse.value).toEqual(forward.value);
@@ -835,6 +1140,47 @@ describe('G3A-01 focused status reader', () => {
     });
     expect(forbiddenReads).toEqual([]);
     expectDeepFrozen(result.value);
+  });
+
+  test('routes selected canonical reads through the shared snapshot and refuses a pass change', async () => {
+    const readStatus = await loadReader();
+    const initialBytes = artifactBytes(['alpha']);
+    const changedManifest = artifactBytes(['beta']).get(MANIFEST_PATH);
+    if (changedManifest === undefined) throw new Error('missing changed manifest fixture');
+    const base = readPorts({ bytes: initialBytes });
+    let manifestReads = 0;
+    const ports = {
+      ...base,
+      readBytes: async (path: string) => {
+        if (path === MANIFEST_PATH) {
+          manifestReads += 1;
+          return manifestReads >= 3 ? new Uint8Array(changedManifest) : base.readBytes(path);
+        }
+        return base.readBytes(path);
+      },
+      readFileMetadata: async (path: string): Promise<FileMetadata> => {
+        if (path === ROOT || path === DATA_ROOT) {
+          return Object.freeze({
+            kind: 'dir',
+            mode: 0o755,
+            identity: `fixture:${path}`,
+          });
+        }
+        return base.readFileMetadata(path);
+      },
+    };
+
+    const result = await readStatus(ports, request());
+    expect(manifestReads).toBeGreaterThanOrEqual(3);
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'status-read',
+        reason: 'observation-failed',
+        exitClass: 'failure',
+        message: 'status observation failed',
+      },
+    });
   });
 
   test('maps hostile primary read throwables to one fixed secret-safe failure', async () => {

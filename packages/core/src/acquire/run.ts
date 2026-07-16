@@ -18,11 +18,8 @@ import {
   sourceUnresolvableError,
   toolUnavailableError,
 } from '../errors.ts';
-import {
-  createExecutionPrecondition,
-  executeOperationPlan,
-  validateExecutionPreconditions,
-} from '../execution/index.ts';
+import { executeOperationPlan } from '../execution/index.ts';
+import { createContentObservationExecutionPrecondition } from '../execution/preconditions.ts';
 import type {
   ExecutionPrecondition,
   PreparedExecutionBinding,
@@ -32,7 +29,6 @@ import {
   ledgerMigrationExecutionBinding,
   prepareLedgerMigration,
 } from '../place/ledger-migration.ts';
-import { createLedgerPersistenceGateway } from '../place/ledger-persistence.ts';
 import {
   getLedgerPairAt,
   getPairAt as getLegacyPairAt,
@@ -52,13 +48,6 @@ import {
   sweepStaging,
 } from '../place/store.ts';
 import {
-  commitRecordOnlyLogicalTransaction,
-  refusedMessage,
-  resumeSwap,
-  runSwap,
-  sweepCommittedAcquireJournals,
-} from '../place/swap.ts';
-import {
   FLIP_TOOLS,
   type FlipTool,
   type LedgerFile,
@@ -66,18 +55,9 @@ import {
   type PairRecord,
   type PinnedRecord,
   type Provenance,
-  type SwapCtx,
   type SwapPlan,
 } from '../place/types.ts';
-import {
-  createBoundedForceEffect,
-  createOperationExecutionResult,
-  createOperationGroupId,
-  createOperationId,
-  createOperationPairId,
-  createOperationPlan,
-  createPlanningDiagnosticId,
-} from '../planning/create.ts';
+import { createBoundedForceEffect, createOperationExecutionResult } from '../planning/create.ts';
 import type {
   CurrentMutatorOperationPlan,
   ExecutableOperation,
@@ -85,7 +65,6 @@ import type {
   OperationExecutionResult,
   OperationImage,
   OperationPlan,
-  PlanningDiagnostic,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
@@ -94,8 +73,30 @@ import {
   redactSensitiveValue,
 } from '../safety/redaction.ts';
 import { detectTool } from '../scan/index.ts';
+import {
+  type ContentObservationIdentityV1,
+  type ExpectedRevisionV1,
+  createContentObservationIdentityV1,
+  createContentObservationPreconditionIdV1,
+  createStoreSnapshotIdentityV1,
+} from '../state/types.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import type { ToolVerdict, VerifyReport } from '../verify/types.ts';
+import {
+  type AcquireExecutionInput,
+  type AcquireLiveSnapshotResourceV1,
+  type AcquireStoreSnapshotResourceV1,
+  type AcquisitionSnapshotAuthorityV1,
+  acquireStateResourceId,
+  acquisitionRevisionPreconditions,
+  createAcquisitionExecutionLockPortV1,
+  createAcquisitionRepositoryLifecycleControllerV1,
+  executeAcquirePlan,
+  executeAcquirePlans,
+  executeRecordOnlyAcquirePlan,
+  readAcquisitionSnapshotV1,
+  resolveAcquisitionProjectContextV1,
+} from './execute.ts';
 import {
   fetchRepo,
   lsTreeSkills,
@@ -103,6 +104,19 @@ import {
   sparseCheckoutSkill,
   sweepFetchOrphans,
 } from './fetch.ts';
+import {
+  type AcquisitionInstallIntentV1,
+  type AcquisitionUninstallIntentV1,
+  createAcquisitionDiagnosticPlan,
+  createAcquisitionPlan,
+  createInstallPlanning,
+  createUninstallPlanning,
+} from './plan.ts';
+import {
+  recoverAcquire,
+  recoverCommittedAcquireJournals,
+  recoveryRefusedMessage,
+} from './recovery.ts';
 import { matchCandidates, selectSkill } from './resolve.ts';
 import { parseSource } from './source.ts';
 import type {
@@ -838,30 +852,26 @@ interface PlaceCtx {
   logicalOperation: ExecutableOperation | null;
 }
 
-const makeSwapCtx = (p: PlaceCtx): SwapCtx => {
-  const persistence = createLedgerPersistenceGateway(p.env, p.ledgerPath, p.opts.signal);
-  const ctx: SwapCtx = {
-    env: p.env,
-    ledgerPath: p.ledgerPath,
-    ledger: p.ledger,
-    persist: async () => {
-      const written = await persistence.persist(ctx.ledger as LedgerModel);
-      if (!written.ok) {
-        if (written.error.code === 'cancelled') return err(written.error);
-        return err(flipFailedError(`ledger write failed: ${written.error.code}`));
-      }
-      ctx.ledger = written.value.model;
-      p.ledger = written.value.model;
-      return ok(undefined);
-    },
-    now: () => journalNowOf(p.env, p.deps),
-    newTxId: () => txIdOf(p.env, p.deps),
-    pauseAt: p.opts.testPauseAt,
-    signal: p.opts.signal,
-    ...(p.logicalOperation === null ? {} : { logicalOperation: p.logicalOperation }),
-  };
-  return ctx;
-};
+const makeAcquireExecutionInput = (
+  env: AcquisitionPorts,
+  ledgerPath: string,
+  ledger: LedgerModel,
+  deps: InstallDeps | UninstallDeps,
+  opts: Pick<InstallOptions | UninstallOptions, 'testPauseAt' | 'signal'>,
+  logicalOperation: ExecutableOperation | null,
+): AcquireExecutionInput => ({
+  env,
+  ledgerPath,
+  ledger,
+  journalNow: () => journalNowOf(env, deps),
+  newTransactionId: () => txIdOf(env, deps),
+  ...(opts.testPauseAt === undefined ? {} : { pauseAt: opts.testPauseAt }),
+  ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+  ...(logicalOperation === null ? {} : { logicalOperation }),
+});
+
+const placeExecutionInput = (p: PlaceCtx): AcquireExecutionInput =>
+  makeAcquireExecutionInput(p.env, p.ledgerPath, p.ledger, p.deps, p.opts, p.logicalOperation);
 
 // dir→dir routing: the swap engine rejects a same-kind copy-over-copy replace, so a copy re-install
 // over a real dir is routed as two kind changes (dir→store-symlink, then store-symlink→dir). Every
@@ -876,7 +886,6 @@ const replaceSwap = async (
   sha: string,
   gate: Gate,
 ): Promise<Result<void, SkillSmithError>> => {
-  const ctx = makeSwapCtx(p);
   const inst = plan.install;
   if (!inst) return err(genericError('install plan missing install payload'));
   if (build === 'copy' && live.class === 'pinned') {
@@ -885,14 +894,14 @@ const replaceSwap = async (
       ...plan,
       install: { ...inst, build: 'symlink', pinned: symPinned, adoptedDev: null },
     };
-    const r1 = await runSwap(ctx, intermediate);
-    if (!r1.ok) return r1;
-    const r2 = await runSwap(ctx, plan);
-    if (!r2.ok) return r2;
+    const executed = await executeAcquirePlans(placeExecutionInput(p), [intermediate, plan]);
+    p.ledger = executed.state.ledger;
+    if (!executed.ok) return err(executed.error);
     return ok(undefined);
   }
-  const r = await runSwap(ctx, plan);
-  if (!r.ok) return r;
+  const executed = await executeAcquirePlan(placeExecutionInput(p), plan);
+  p.ledger = executed.state.ledger;
+  if (!executed.ok) return err(executed.error);
   return ok(undefined);
 };
 
@@ -1021,8 +1030,12 @@ const placePair = async (
     // journal's op for the same-op-re-run / --rollback recovery.
     if (existing.journal.op === 'install') {
       const wasFresh = existing.journal.before.mode === 'absent';
-      const ctx = makeSwapCtx(p);
-      const resumed = await resumeSwap(ctx, skill, tool, p.scopeKey);
+      const resumed = await recoverAcquire(placeExecutionInput(p), {
+        skill,
+        tool,
+        scopeKey: p.scopeKey,
+      });
+      p.ledger = resumed.state.ledger;
       if (!resumed.ok) {
         return fail(
           resumed.error.code === 'ledger-error'
@@ -1046,7 +1059,7 @@ const placePair = async (
           : base.store,
       };
     }
-    return refuse(refusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
+    return refuse(recoveryRefusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
   }
 
   const live = await classifyPlacement(env, installRoot, skill, p.storeRoot);
@@ -1092,12 +1105,13 @@ const placePair = async (
         flipFailedError('record-only install repair requires logical operation identity'),
       );
     }
-    const persisted = await commitRecordOnlyLogicalTransaction(
-      makeSwapCtx(p),
+    const persisted = await executeRecordOnlyAcquirePlan(
+      placeExecutionInput(p),
       p.logicalOperation,
       repaired,
       p.scopeKey,
     );
+    p.ledger = persisted.state.ledger;
     if (!persisted.ok) return fail(persisted.error);
     return { ...finalize('repaired'), placement: liveKind };
   }
@@ -1140,8 +1154,8 @@ const placePair = async (
       if (!cleared.ok) return fail(cleared.error);
       p.ledger = cleared.value;
     }
-    const ctx = makeSwapCtx(p);
-    const r = await runSwap(ctx, plan);
+    const r = await executeAcquirePlan(placeExecutionInput(p), plan);
+    p.ledger = r.state.ledger;
     if (!r.ok)
       return fail(r.error.code === 'ledger-error' ? flipFailedError(msg(r.error)) : r.error);
     if (r.value.warning)
@@ -1258,7 +1272,7 @@ const predictPair = async (
         action: existing.journal.before.mode === 'absent' ? 'installed' : 'updated',
       };
     }
-    return refuse(refusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
+    return refuse(recoveryRefusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
   }
 
   const live = await classifyPlacement(env, installRoot, skill, p.storeRoot);
@@ -1284,45 +1298,8 @@ const predictPair = async (
 };
 
 // ---------------------------------------------------------------------------------------------
-// project root + scope
-// ---------------------------------------------------------------------------------------------
-
-const gitToplevel = async (env: AcquisitionPorts, cwd: string): Promise<string | null> => {
-  let top: string | null;
-  try {
-    top = await env.git.findRepositoryRoot({ cwd });
-  } catch {
-    return null;
-  }
-  if (top === null) return null;
-  try {
-    return await env.realpath(top);
-  } catch {
-    return top;
-  }
-};
-
-// ---------------------------------------------------------------------------------------------
 // report assembly
 // ---------------------------------------------------------------------------------------------
-
-const acquireLiveResource = (
-  skill: string,
-  tool: FlipTool,
-  scope: InstallScope,
-  path: string,
-  projectRoot: string | null = null,
-) => ({
-  kind: 'live' as const,
-  skill,
-  tool,
-  scope,
-  projectRoot:
-    scope === 'project' && projectRoot !== null
-      ? ({ kind: 'machine-bound' as const, path: projectRoot } as const)
-      : null,
-  location: { kind: 'machine-bound' as const, path },
-});
 
 interface AcquirePlacementFacts {
   readonly pathKind: 'absent' | 'file' | 'dir' | 'symlink';
@@ -1349,6 +1326,22 @@ const acquireContentFacts = async (
     pathKind,
     contentHash: hash?.value ?? null,
   };
+};
+
+const acquireContentObservationIdentity = (
+  resourceId: string,
+  facts: AcquireContentFacts,
+): ContentObservationIdentityV1 => {
+  if (facts.pathKind !== 'dir' || facts.contentHash === null) {
+    throw new Error('acquisition materialized source is not a content-addressed directory');
+  }
+  return createContentObservationIdentityV1({
+    schemaVersion: 1,
+    resourceId,
+    targetIdentity: facts.path,
+    targetKind: 'directory',
+    contentRevision: facts.contentHash,
+  });
 };
 
 const acquirePlacementFacts = async (
@@ -1404,237 +1397,20 @@ const preconditionStateChanged = (error: unknown): boolean =>
   'code' in error &&
   (error.code === 'precondition-state-changed' || error.code === 'precondition-observation-failed');
 
-const acquireAbsentImage = (
-  skill: string,
-  tool: FlipTool,
-  scope: InstallScope,
-  path: string,
-  projectRoot: string | null = null,
-): OperationImage => ({
-  kind: 'absent',
-  resource: acquireLiveResource(skill, tool, scope, path, projectRoot),
-});
-
-const acquirePlacementImage = (
-  skill: string,
-  tool: FlipTool,
-  scope: InstallScope,
-  path: string,
-  mode: 'dev' | 'pinned',
-  representation: 'symlink' | 'copy' | 'other',
-  linkTarget: string | null = null,
-  projectRoot: string | null = null,
-): OperationImage => ({
-  kind: 'placement',
-  resource: acquireLiveResource(skill, tool, scope, path, projectRoot),
-  classification: mode,
-  representation,
-  linkTarget: linkTarget === null ? null : { kind: 'machine-bound', path: linkTarget },
-  dangling: false,
-  source: null,
-  contentHash: null,
-});
+const acquireExecutionLockPort = (env: AcquisitionPorts, ledgerPath: string) =>
+  createAcquisitionExecutionLockPortV1({
+    lockPort: env,
+    ledgerPath,
+    lockFailure: (error) => {
+      const safe = safeError(error);
+      return safe.code === 'cancelled'
+        ? safe
+        : flipFailedError(`another skillsmith operation is running: ${msg(safe)}`);
+    },
+  });
 
 const closedPlanningText = (value: string | null, fallback: string): string =>
   value !== null && value.length > 0 && !containsSensitiveMaterial(value) ? value : fallback;
-
-const planningDiagnosticFor = (
-  family: 'install' | 'uninstall',
-  result: InstallResult | UninstallResult,
-): PlanningDiagnostic => {
-  const skipped = result.action === 'skipped';
-  const noop = result.action === 'noop';
-  const refused = result.action === 'refused' || result.action === 'failed';
-  const tool = result.tool;
-  const scope = result.scope;
-  const path = result.placementPath;
-  const kind = noop ? 'noop' : skipped ? 'skip' : refused ? 'refuse' : 'warning';
-  const severity = refused ? 'error' : 'info';
-  const refusalClass = refused ? 'state' : null;
-  const affected = {
-    skill: result.skill,
-    source: null,
-    tool,
-    scope,
-    path: path === null ? null : { kind: 'machine-bound' as const, path },
-  };
-  const correlation = { groupId: null, pairId: null, operationId: null };
-  const reasonCode = result.error?.code ?? (noop ? 'noop' : skipped ? 'skip' : 'refuse');
-  const diagnosticId = createPlanningDiagnosticId({
-    domain: 'skillsmith.planning-diagnostic-identity',
-    schemaVersion: 1,
-    kind,
-    severity,
-    refusalClass,
-    affected,
-    correlation,
-    reasonCode,
-    selectionSource: 'explicit-targets',
-  });
-  return {
-    diagnosticId,
-    kind,
-    severity,
-    refusalClass,
-    affected,
-    correlation,
-    reason: {
-      code: reasonCode,
-      message: closedPlanningText(result.reason, `${family} ${result.action}`),
-    },
-    selectionSource: 'explicit-targets',
-  };
-};
-
-const createInstallPlanning = (
-  requested: InstallReport['requested'],
-  results: readonly InstallResult[],
-  continueOnError: boolean,
-  projectRoot: string | null = null,
-): Readonly<{
-  plan: OperationPlan<'install'>;
-  operationResults: ReadonlyMap<string, InstallResult>;
-}> => {
-  const operations: ExecutableOperation[] = [];
-  const operationResults = new Map<string, InstallResult>();
-  const diagnostics: PlanningDiagnostic[] = [];
-  const diagnosticIds = new Set<string>();
-  for (const [index, result] of results.entries()) {
-    if (
-      result.skill === null ||
-      result.tool === null ||
-      result.placementPath === null ||
-      result.action === 'noop' ||
-      result.action === 'skipped' ||
-      result.action === 'refused' ||
-      result.action === 'failed'
-    ) {
-      const diagnostic = planningDiagnosticFor('install', result);
-      if (!diagnosticIds.has(diagnostic.diagnosticId)) {
-        diagnosticIds.add(diagnostic.diagnosticId);
-        diagnostics.push(diagnostic);
-      }
-      continue;
-    }
-    const kind: ExecutableOperation['kind'] =
-      result.action === 'updated' ? 'update' : result.action === 'repaired' ? 'repair' : 'install';
-    const requestIndex = result.requestIndex ?? index;
-    const planningSource = closedPlanningText(result.source, `rejected-source:${requestIndex}`);
-    const resource = acquireLiveResource(
-      result.skill,
-      result.tool,
-      result.scope,
-      result.placementPath,
-      projectRoot,
-    );
-    const groupId = createOperationGroupId({
-      domain: 'skillsmith.operation-group-identity',
-      schemaVersion: 1,
-      command: 'install',
-      skill: result.skill,
-      source: null,
-      scope: result.scope,
-      target: planningSource,
-    });
-    const pairId = createOperationPairId({
-      domain: 'skillsmith.operation-pair-identity',
-      schemaVersion: 1,
-      groupId,
-      tool: result.tool,
-      resource,
-    });
-    const operationId = createOperationId({
-      domain: 'skillsmith.operation-identity',
-      schemaVersion: 1,
-      groupId,
-      pairId,
-      kind,
-      skill: result.skill,
-      source: null,
-      tool: result.tool,
-      scope: result.scope,
-    });
-    if (operationResults.has(operationId)) continue;
-    const before =
-      result.action === 'installed'
-        ? acquireAbsentImage(
-            result.skill,
-            result.tool,
-            result.scope,
-            result.placementPath,
-            projectRoot,
-          )
-        : acquirePlacementImage(
-            result.skill,
-            result.tool,
-            result.scope,
-            result.placementPath,
-            'pinned',
-            result.placement ?? 'other',
-            null,
-            projectRoot,
-          );
-    const after = acquirePlacementImage(
-      result.skill,
-      result.tool,
-      result.scope,
-      result.placementPath,
-      'pinned',
-      result.placement ?? 'copy',
-      null,
-      projectRoot,
-    );
-    operations.push({
-      operationId,
-      groupId,
-      pairId,
-      kind,
-      dependencyMetadata: {
-        domain: 'skillsmith.operation-dependency',
-        schemaVersion: 1,
-        operationIds: [],
-      },
-      skill: result.skill,
-      source: null,
-      tool: result.tool,
-      scope: result.scope,
-      before,
-      after,
-      reason: { code: kind, message: `${kind} ${result.skill}` },
-      selectionSource: 'explicit-targets',
-      preconditionIds: [],
-      requiredCheckIds: [],
-      reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
-      mutates: { live: true, manifest: false, lock: false, ledger: true },
-      conflict: null,
-    });
-    operationResults.set(operationId, result);
-  }
-  const plan = createOperationPlan({
-    domain: 'skillsmith.operation-plan',
-    schemaVersion: 1,
-    command: 'install',
-    selection: {
-      source: 'explicit-targets',
-      targets: [
-        ...new Set(
-          requested.sources.map((source, index) =>
-            closedPlanningText(source, `rejected-source:${index}`),
-          ),
-        ),
-      ],
-      all: false,
-      tools: requested.tools,
-      scopes: [requested.scope],
-      groupIds: [...new Set(operations.map((operation) => operation.groupId))],
-    },
-    batchPolicy: continueOnError ? 'continue-on-error' : 'fail-fast',
-    operations,
-    checks: [],
-    diagnostics,
-  }) as OperationPlan<'install'>;
-  return { plan, operationResults };
-};
 
 const installExecutionResultFor = (
   operation: ExecutableOperation,
@@ -1718,8 +1494,21 @@ const buildReport = (
   results: InstallResult[],
   continueOnError = false,
 ): PlannedInstallReport => {
-  const planning = createInstallPlanning(requested, results, continueOnError);
-  return assembleInstallReport(dryRun, requested, results, planning.plan, []);
+  const compatibility = createInstallPlanning(requested, results, continueOnError);
+  const planned = createAcquisitionDiagnosticPlan({
+    schemaVersion: 1,
+    command: 'install',
+    selection: {
+      source: 'explicit-targets',
+      skills: [...new Set(results.flatMap(({ skill }) => (skill === null ? [] : [skill])))],
+      tools: [...new Set(results.flatMap(({ tool }) => (tool === null ? [] : [tool])))],
+      scopes: [requested.scope],
+    },
+    batchPolicy: continueOnError ? 'continue-on-error' : 'fail-fast',
+    diagnostics: compatibility.plan.diagnostics,
+  });
+  if (!planned.ok) throw new Error(planned.error.message);
+  return assembleInstallReport(dryRun, requested, results, planned.value, []);
 };
 
 const rejectedSourceLabel = (input: string): string => {
@@ -1844,7 +1633,14 @@ const runInstallInternal = async (
   );
 
   // ---- Phase 1: target planning (local I/O only) ----
-  const projectRoot = await gitToplevel(env, opts.cwd);
+  const projectContext = await resolveAcquisitionProjectContextV1({
+    env,
+    cwd: opts.cwd,
+    ...(opts.configuration.explicitConfigPath === undefined
+      ? {}
+      : { explicitConfigPath: opts.configuration.explicitConfigPath }),
+  });
+  const projectRoot = projectContext.projectRoot;
   const scope: InstallScope = opts.scope ?? (projectRoot ? 'project' : 'user');
   const scopeKey = scope === 'project' ? (projectRoot ?? (await env.realpath(opts.cwd))) : null;
   const explicitScope = opts.scope !== undefined;
@@ -1899,8 +1695,10 @@ const runInstallInternal = async (
   interface PreparedInstallPairBinding {
     readonly kind: 'pair';
     readonly preview: InstallResult;
-    readonly expected: InstallPreconditionFacts;
+    readonly reportPreviews: readonly InstallResult[];
     readonly actualBefore: OperationImage;
+    readonly liveResourceId: string;
+    readonly storeResourceId: string;
     observe(): Promise<InstallPreconditionFacts>;
     execute(operation: ExecutableOperation): Promise<InstallResult>;
   }
@@ -1914,6 +1712,9 @@ const runInstallInternal = async (
     readonly preview: PlannedInstallReport;
     readonly bindings: ReadonlyMap<string, PreparedInstallBinding>;
     readonly preconditions: readonly ExecutionPrecondition[];
+    readonly snapshotAuthority: AcquisitionSnapshotAuthorityV1;
+    readonly expectedRevisions: readonly ExpectedRevisionV1[];
+    readonly snapshotId: `snapshot:v1:${string}`;
     cleanup(): Promise<void>;
   }
 
@@ -2170,7 +1971,8 @@ const runInstallInternal = async (
         if (
           preview.action !== 'installed' &&
           preview.action !== 'updated' &&
-          preview.action !== 'repaired'
+          preview.action !== 'repaired' &&
+          preview.action !== 'noop'
         ) {
           continue;
         }
@@ -2233,99 +2035,145 @@ const runInstallInternal = async (
       }
     }
 
-    const initialPlanning = createInstallPlanning(
-      requested,
-      results,
-      Boolean(opts.continueOnError),
-      scopeKey,
-    );
-    const preparedBindings = new Map<string, PreparedInstallBinding>();
-    const preconditions: ExecutionPrecondition[] = [];
-    const operations: ExecutableOperation[] = [];
-    for (const operation of initialPlanning.plan.operations) {
-      const previewResult = initialPlanning.operationResults.get(operation.operationId);
-      const seed = previewResult === undefined ? undefined : candidateBindings.get(previewResult);
-      if (seed === undefined) throw new Error('prepared install operation binding is missing');
+    const preparedIntents: Array<
+      Readonly<{
+        seed: InstallBindingSeed;
+        expectedFacts: InstallPreconditionFacts;
+        intent: AcquisitionInstallIntentV1;
+      }>
+    > = [];
+    const liveResourcesByPath = new Map<string, AcquireLiveSnapshotResourceV1>();
+    const storeResourcesByPath = new Map<string, AcquireStoreSnapshotResourceV1>();
+    const addLiveResource = (resource: AcquireLiveSnapshotResourceV1): void => {
+      const existing = liveResourcesByPath.get(resource.placementPath);
+      if (
+        existing !== undefined &&
+        (existing.skill !== resource.skill ||
+          existing.tool !== resource.tool ||
+          existing.scope !== resource.scope ||
+          existing.projectIdentity !== resource.projectIdentity)
+      ) {
+        throw new Error('acquisition live resource path is ambiguous');
+      }
+      liveResourcesByPath.set(resource.placementPath, existing ?? resource);
+    };
+    for (const seed of candidateBindings.values()) {
+      if (
+        seed.preview.skill === null ||
+        seed.preview.placementPath === null ||
+        seed.preview.store === null
+      ) {
+        throw new Error('prepared install intent requires an executable result');
+      }
       const expectedFacts = (await observeInstallState(seed)).facts;
-      const resource =
-        operation.before.kind === 'absent' || operation.before.kind === 'placement'
-          ? operation.before.resource
-          : null;
-      if (resource === null) throw new Error('prepared install resource is not live');
-      if (resource.kind !== 'live') throw new Error('prepared install resource is not live');
-      const actualBefore = acquireActualBefore(
-        resource,
-        expectedFacts.live,
-        expectedFacts.selectedPair,
+      const requestIndex = seed.preview.requestIndex;
+      if (!Number.isSafeInteger(requestIndex) || (requestIndex as number) < 0) {
+        throw new Error('prepared install request occurrence is invalid');
+      }
+      const sourceResourceId = acquireStateResourceId('store', [
+        'materialized-source',
+        requestIndex,
+        seed.spec.identity.host,
+        seed.spec.identity.repository,
+        seed.resolved.sha,
+        seed.resolved.skillPath,
+      ]);
+      const sourceContent = acquireContentObservationIdentity(
+        sourceResourceId,
+        await acquireContentFacts(env, seed.resolved.materializedDir),
       );
-      const expected = {
-        command: 'install',
-        operationId: operation.operationId,
-        groupId: operation.groupId,
-        pairId: operation.pairId,
-        skill: operation.skill,
-        tool: operation.tool,
-        scope: operation.scope,
-        ...expectedFacts,
-      } as const;
-      const precondition = createExecutionPrecondition({
-        operationIds: [operation.operationId],
-        resource,
-        expected,
-        observe: async () => ({
-          command: 'install',
-          operationId: operation.operationId,
-          groupId: operation.groupId,
-          pairId: operation.pairId,
-          skill: operation.skill,
-          tool: operation.tool,
-          scope: operation.scope,
-          ...(await observeInstallState(seed)).facts,
-        }),
+      const livePath = resolve(seed.preview.placementPath);
+      const liveResourceId = acquireStateResourceId('live', [livePath]);
+      addLiveResource({
+        resourceId: liveResourceId,
+        skill: seed.preview.skill,
+        tool: seed.tool,
+        scope,
+        projectIdentity: scope === 'project' ? scopeKey : null,
+        placementPath: livePath,
+        storeRoot,
       });
-      preconditions.push(precondition);
-      const desiredContentHash = expectedFacts.store.contentHash as OperationDigest | null;
-      const desiredAfter =
-        operation.after.kind === 'placement' && desiredContentHash !== null
-          ? {
-              ...operation.after,
-              source: {
-                kind: 'portable' as const,
-                identity: {
-                  host: seed.spec.identity.host,
-                  repository: seed.spec.identity.repository,
-                  path: seed.resolved.skillPath.length === 0 ? null : seed.resolved.skillPath,
-                },
-                requestedRef: seed.spec.ref,
-                resolvedSha: seed.resolved.sha,
-                sourcePath: seed.resolved.skillPath.length === 0 ? '.' : seed.resolved.skillPath,
-                contentHash: desiredContentHash,
-              },
-              contentHash: desiredContentHash,
-            }
-          : operation.after;
-      operations.push({
-        ...operation,
-        before: actualBefore,
-        after: desiredAfter,
-        preconditionIds: [precondition.preconditionId],
-      });
-      preparedBindings.set(operation.operationId, {
-        kind: 'pair',
-        preview: seed.preview,
-        expected: expectedFacts,
-        actualBefore,
-        observe: async () => {
-          const current = await observeInstallState(seed);
-          // Preparation and approval may be separated from execution by another completed
-          // ledger mutation. Rebind the mutation closure to the whole current under-lock ledger;
-          // the exact approved operation and its expected selected/live facts remain unchanged.
-          placeCtx.ledger = current.ledger;
-          return current.facts;
+      for (const legacy of expectedFacts.legacy) {
+        addLiveResource({
+          resourceId: acquireStateResourceId('live', [legacy.canonicalPath]),
+          skill: seed.preview.skill,
+          tool: seed.tool,
+          scope: 'user',
+          projectIdentity: null,
+          placementPath: legacy.canonicalPath,
+          storeRoot,
+        });
+      }
+      if (expectedFacts.shadow !== null) {
+        const shadowScope: InstallScope = scope === 'project' ? 'user' : 'project';
+        addLiveResource({
+          resourceId: acquireStateResourceId('live', [expectedFacts.shadow.live.canonicalPath]),
+          skill: seed.preview.skill,
+          tool: seed.tool,
+          scope: shadowScope,
+          projectIdentity: shadowScope === 'project' ? projectRoot : null,
+          placementPath: expectedFacts.shadow.live.canonicalPath,
+          storeRoot,
+        });
+      }
+      const storePath = resolve(seed.preview.store.path);
+      const storeResourceId = acquireStateResourceId('store', [storePath]);
+      const existingStore = storeResourcesByPath.get(storePath);
+      if (
+        existingStore !== undefined &&
+        existingStore.contentHash !== sourceContent.contentRevision
+      ) {
+        throw new Error('acquisition store resource content is ambiguous');
+      }
+      storeResourcesByPath.set(
+        storePath,
+        existingStore ?? {
+          resource: { resourceId: storeResourceId, storePath },
+          contentHash: sourceContent.contentRevision,
         },
-        execute: async (logicalOperation) => {
-          placeCtx.logicalOperation = logicalOperation;
-          return seed.execute();
+      );
+      preparedIntents.push({
+        seed,
+        expectedFacts,
+        intent: {
+          kind: 'install',
+          skill: seed.preview.skill,
+          tool: seed.tool,
+          scope,
+          projectRoot:
+            scope === 'project' && scopeKey !== null
+              ? { kind: 'machine-bound', path: scopeKey }
+              : null,
+          liveResourceId,
+          storeResourceId,
+          force: Boolean(opts.force),
+          sourceContent,
+          sourcePreconditionId: createContentObservationPreconditionIdV1(sourceContent),
+          source: {
+            kind: 'portable',
+            identity: {
+              host: seed.spec.identity.host,
+              repository: seed.spec.identity.repository,
+              path: seed.resolved.skillPath.length === 0 ? null : seed.resolved.skillPath,
+            },
+            requestedRef: seed.spec.ref,
+            resolvedSha: seed.resolved.sha,
+            sourcePath: seed.resolved.skillPath.length === 0 ? '.' : seed.resolved.skillPath,
+            contentHash: sourceContent.contentRevision,
+          },
+          placement: {
+            classification: 'pinned',
+            representation: opts.direct ? 'copy' : 'symlink',
+            location: { kind: 'machine-bound', path: livePath },
+          },
+          store: {
+            location: { kind: 'machine-bound', path: storePath },
+            contentHash: sourceContent.contentRevision,
+            snapshotIdentity: createStoreSnapshotIdentityV1(
+              storeResourceId,
+              sourceContent.contentRevision,
+            ),
+          },
         },
       });
     }
@@ -2336,8 +2184,190 @@ const runInstallInternal = async (
       ledgerPath,
       ledgerState,
     );
+    const compatibilityPlanning = createInstallPlanning(
+      requested,
+      results,
+      Boolean(opts.continueOnError),
+      scopeKey,
+    );
+    const snapshotAuthority = await readAcquisitionSnapshotV1({
+      env,
+      projectContext,
+      artifactScope: scope,
+      ledgerPath,
+      liveResources: [...liveResourcesByPath.values()],
+      storeResources: [...storeResourcesByPath.values()],
+      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+    });
+    const boundPlanning = createAcquisitionPlan(
+      {
+        schemaVersion: 1,
+        command: 'install',
+        selection: {
+          source: 'explicit-targets',
+          skills: [...new Set(preparedIntents.map(({ intent }) => intent.skill))],
+          tools: [...new Set(preparedIntents.map(({ intent }) => intent.tool))],
+          scopes: [scope],
+        },
+        batchPolicy: opts.continueOnError ? 'continue-on-error' : 'fail-fast',
+        diagnostics: compatibilityPlanning.plan.diagnostics,
+        compatibilityOperations: migration === null ? [] : [migration.operation],
+        intents: preparedIntents.map(({ intent }) => intent),
+      },
+      snapshotAuthority.snapshot,
+    );
+    if (!boundPlanning.ok) {
+      throw new Error(boundPlanning.error.message);
+    }
+    const plan = boundPlanning.value.plan;
+    const canonicalOperations = plan.operations.filter(
+      (operation) =>
+        migration === null || operation.operationId !== migration.operation.operationId,
+    );
+    const operationByLivePath = new Map<string, ExecutableOperation>();
+    for (const operation of canonicalOperations) {
+      if (operation.before.kind !== 'absent' && operation.before.kind !== 'placement') {
+        throw new Error('acquisition install operation does not target live state');
+      }
+      if (
+        operation.before.resource.kind !== 'live' ||
+        operation.before.resource.location.kind !== 'machine-bound' ||
+        operationByLivePath.has(operation.before.resource.location.path)
+      ) {
+        throw new Error('acquisition install operation binding is ambiguous');
+      }
+      operationByLivePath.set(operation.before.resource.location.path, operation);
+    }
+    const canonicalPreviewByOriginal = new Map<InstallResult, InstallResult>();
+    const preparedIntentsByOperationId = new Map<string, Array<(typeof preparedIntents)[number]>>();
+    for (const prepared of preparedIntents) {
+      const placementPath = resolve(prepared.seed.preview.placementPath as string);
+      const operation = operationByLivePath.get(placementPath);
+      const action: InstallAction =
+        operation === undefined
+          ? 'noop'
+          : operation.kind === 'install'
+            ? 'installed'
+            : operation.kind === 'update'
+              ? 'updated'
+              : 'repaired';
+      const canonicalPreview = {
+        ...prepared.seed.preview,
+        action,
+        reason:
+          operation === undefined
+            ? `already installed at ${prepared.seed.resolved.sha.slice(0, 12)}`
+            : prepared.seed.preview.reason,
+      };
+      canonicalPreviewByOriginal.set(prepared.seed.preview, canonicalPreview);
+      if (operation !== undefined) {
+        const operationIntents = preparedIntentsByOperationId.get(operation.operationId);
+        if (operationIntents === undefined) {
+          preparedIntentsByOperationId.set(operation.operationId, [prepared]);
+        } else {
+          operationIntents.push(prepared);
+        }
+      }
+    }
+    const canonicalResults = results.map(
+      (result) => canonicalPreviewByOriginal.get(result) ?? result,
+    );
+    const preparedBindings = new Map<string, PreparedInstallBinding>();
+    const preconditions: ExecutionPrecondition[] = [
+      ...acquisitionRevisionPreconditions(snapshotAuthority, plan.operations),
+    ];
+    const sourcePreconditionGroups = new Map<
+      string,
+      Readonly<{
+        expectedContent: ContentObservationIdentityV1;
+        operations: ExecutableOperation[];
+        seed: InstallBindingSeed;
+      }>
+    >();
+    for (const operation of canonicalOperations) {
+      const operationIntents = preparedIntentsByOperationId.get(operation.operationId);
+      if (operationIntents === undefined || operationIntents[0] === undefined) {
+        throw new Error('prepared install operation binding is missing');
+      }
+      const prepared = operationIntents[0];
+      for (const occurrence of operationIntents) {
+        const currentGroup = sourcePreconditionGroups.get(occurrence.intent.sourcePreconditionId);
+        if (currentGroup === undefined) {
+          sourcePreconditionGroups.set(occurrence.intent.sourcePreconditionId, {
+            expectedContent: occurrence.intent.sourceContent,
+            operations: [operation],
+            seed: occurrence.seed,
+          });
+        } else {
+          if (
+            JSON.stringify(currentGroup.expectedContent) !==
+              JSON.stringify(occurrence.intent.sourceContent) ||
+            currentGroup.seed.resolved.materializedDir !== occurrence.seed.resolved.materializedDir
+          ) {
+            throw new Error('acquisition source precondition identity collision');
+          }
+          currentGroup.operations.push(operation);
+        }
+      }
+      const resource =
+        operation.before.kind === 'absent' || operation.before.kind === 'placement'
+          ? operation.before.resource
+          : null;
+      if (resource === null || resource.kind !== 'live') {
+        throw new Error('prepared install resource is not live');
+      }
+      const actualBefore = acquireActualBefore(
+        resource,
+        prepared.expectedFacts.live,
+        prepared.expectedFacts.selectedPair,
+      );
+      const canonicalPreview = canonicalPreviewByOriginal.get(prepared.seed.preview);
+      if (canonicalPreview === undefined) {
+        throw new Error('prepared install canonical preview is missing');
+      }
+      preparedBindings.set(operation.operationId, {
+        kind: 'pair',
+        preview: canonicalPreview,
+        reportPreviews: operationIntents.map(
+          ({ seed }) => canonicalPreviewByOriginal.get(seed.preview) ?? seed.preview,
+        ),
+        actualBefore,
+        liveResourceId: prepared.intent.liveResourceId,
+        storeResourceId: prepared.intent.storeResourceId,
+        observe: async () => {
+          const current = await observeInstallState(prepared.seed);
+          // Preparation and approval may be separated from execution by another completed
+          // ledger mutation. Rebind the mutation closure to the whole current under-lock ledger;
+          // the exact approved operation and its expected selected/live facts remain unchanged.
+          placeCtx.ledger = current.ledger;
+          return current.facts;
+        },
+        execute: async (logicalOperation) => {
+          placeCtx.logicalOperation = logicalOperation;
+          return prepared.seed.execute();
+        },
+      });
+    }
+    for (const group of sourcePreconditionGroups.values()) {
+      preconditions.push(
+        createContentObservationExecutionPrecondition({
+          operationIds: group.operations.map(({ operationId }) => operationId),
+          resource: {
+            kind: 'store',
+            contentHash: group.expectedContent.contentRevision,
+          },
+          expectedContent: group.expectedContent,
+          observeContent: async () => {
+            const observed = acquireContentObservationIdentity(
+              group.expectedContent.resourceId,
+              await acquireContentFacts(env, group.seed.resolved.materializedDir),
+            );
+            return observed;
+          },
+        }),
+      );
+    }
     if (migration !== null) {
-      operations.unshift(migration.operation);
       preconditions.unshift(migration.precondition);
       preparedBindings.set(migration.operation.operationId, {
         kind: 'migrate-ledger',
@@ -2347,13 +2377,8 @@ const runInstallInternal = async (
         },
       });
     }
-    const plan = createOperationPlan({
-      ...initialPlanning.plan,
-      operations,
-    }) as OperationPlan<'install'>;
-    const planning = { plan, operationResults: initialPlanning.operationResults };
     const bindings = new Map<string, PreparedInstallBinding>();
-    for (const operation of planning.plan.operations) {
+    for (const operation of plan.operations) {
       const binding = preparedBindings.get(operation.operationId);
       if (binding === undefined || bindings.has(operation.operationId)) {
         throw new Error('prepared install operation binding is not one-to-one');
@@ -2361,17 +2386,20 @@ const runInstallInternal = async (
       bindings.set(operation.operationId, binding);
     }
     if (
-      bindings.size !== planning.plan.operations.length ||
-      planning.plan.operations.some((operation) => !bindings.has(operation.operationId))
+      bindings.size !== plan.operations.length ||
+      plan.operations.some((operation) => !bindings.has(operation.operationId))
     ) {
       throw new Error('prepared install plan has no exact execution binding');
     }
-    const preview = assembleInstallReport(true, requested, results, planning.plan, []);
-    deps.observePreparedPlan?.(planning.plan);
+    const preview = assembleInstallReport(true, requested, canonicalResults, plan, []);
+    deps.observePreparedPlan?.(plan);
     return {
       preview,
       bindings,
       preconditions: Object.freeze(preconditions),
+      snapshotAuthority,
+      expectedRevisions: boundPlanning.value.expectedRevisions,
+      snapshotId: boundPlanning.value.snapshotId,
       cleanup: async (): Promise<void> => {
         for (const dir of cleanupDirs) await env.removeTree(dir).catch(() => {});
       },
@@ -2381,87 +2409,86 @@ const runInstallInternal = async (
   const executePrepared = async (prepared: PreparedInstallBatch): Promise<PlannedInstallReport> => {
     const actualByPreview = new Map<InstallResult, InstallResult>();
     const actualByOperation = new Map<string, InstallResult>();
+    const projectActual = (binding: PreparedInstallPairBinding, actual: InstallResult): void => {
+      for (const preview of binding.reportPreviews) {
+        const projected = { ...actual };
+        if (preview.requestIndex === undefined) Reflect.deleteProperty(projected, 'requestIndex');
+        else projected.requestIndex = preview.requestIndex;
+        actualByPreview.set(preview, projected);
+      }
+    };
+    const lifecycle = createAcquisitionRepositoryLifecycleControllerV1({
+      authority: prepared.snapshotAuthority,
+      snapshotId: prepared.snapshotId,
+      expectedRevisions: prepared.expectedRevisions,
+    });
     const schedulerBindings: PreparedExecutionBinding[] = prepared.preview.plan.operations.map(
       (operation) => {
         const binding = prepared.bindings.get(operation.operationId);
         if (binding === undefined) throw new Error('prepared install operation binding is missing');
         if (binding.kind === 'migrate-ledger') {
-          return ledgerMigrationExecutionBinding({
-            env,
-            ledgerPath,
+          return lifecycle.bind(
             operation,
-            expectedState: binding.expectedState,
-            startedAt: journalNowOf(env, deps),
-            ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-            onMigrated: binding.onMigrated,
-          });
+            ledgerMigrationExecutionBinding({
+              env,
+              ledgerPath,
+              operation,
+              expectedState: binding.expectedState,
+              startedAt: journalNowOf(env, deps),
+              ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+              onMigrated: binding.onMigrated,
+            }),
+            [prepared.snapshotAuthority.ledgerResourceId],
+          );
         }
         if (operation.pairId === null)
           throw new Error('prepared install operation pair is missing');
-        return {
-          operationId: operation.operationId,
-          groupId: operation.groupId,
-          pairId: operation.pairId,
-          unstartedForce: createBoundedForceEffect({
-            supported: true,
-            requested: requested.force,
-            conflict: null,
-          }),
-          observeActualBefore: async (): Promise<OperationImage> => {
-            const facts = await binding.observe();
-            const resource =
-              operation.before.kind === 'absent' || operation.before.kind === 'placement'
-                ? operation.before.resource
-                : null;
-            if (resource === null || resource.kind !== 'live') {
-              throw new Error('prepared install actual-before resource is not live');
-            }
-            return acquireActualBefore(resource, facts.live, facts.selectedPair);
+        let compatibilityBefore = binding.actualBefore;
+        return lifecycle.bind(
+          operation,
+          {
+            operationId: operation.operationId,
+            groupId: operation.groupId,
+            pairId: operation.pairId,
+            unstartedForce: createBoundedForceEffect({
+              supported: true,
+              requested: requested.force,
+              conflict: null,
+            }),
+            observeActualBefore: async (): Promise<OperationImage> => {
+              const facts = await binding.observe();
+              const resource =
+                operation.before.kind === 'absent' || operation.before.kind === 'placement'
+                  ? operation.before.resource
+                  : null;
+              if (resource === null || resource.kind !== 'live') {
+                throw new Error('prepared install actual-before resource is not live');
+              }
+              compatibilityBefore = acquireActualBefore(resource, facts.live, facts.selectedPair);
+              return operation.before;
+            },
+            execute: async (
+              validatedBinding: ValidatedExecutionBinding,
+            ): Promise<OperationExecutionResult> => {
+              const actual = await binding.execute({ ...operation, before: compatibilityBefore });
+              projectActual(binding, actual);
+              actualByOperation.set(operation.operationId, actual);
+              return installExecutionResultFor(
+                operation,
+                actual,
+                requested,
+                validatedBinding.actualBefore,
+              );
+            },
           },
-          execute: async (
-            validatedBinding: ValidatedExecutionBinding,
-          ): Promise<OperationExecutionResult> => {
-            const actual = await binding.execute(operation);
-            actualByPreview.set(binding.preview, actual);
-            actualByOperation.set(operation.operationId, actual);
-            return installExecutionResultFor(
-              operation,
-              actual,
-              requested,
-              validatedBinding.actualBefore,
-            );
-          },
-        };
+          [
+            prepared.snapshotAuthority.ledgerResourceId,
+            binding.liveResourceId,
+            binding.storeResourceId,
+          ],
+        );
       },
     );
-    const executionLockPort = {
-      withFileLock: async <T>(
-        path: string,
-        operation: () => Promise<T>,
-        options?: Readonly<{ signal?: AbortSignal }>,
-      ): Promise<T> => {
-        if (path !== ledgerPath) throw new Error('unexpected acquire execution lock path');
-        let callbackStarted = false;
-        try {
-          return await env.withFileLock(
-            ledgerPath,
-            async () => {
-              callbackStarted = true;
-              return operation();
-            },
-            options,
-          );
-        } catch (error) {
-          // The compatibility helper intentionally maps lock-acquisition failures, but it cannot
-          // distinguish them from a semantic precondition refusal thrown by the held callback.
-          // Preserve callback identity here so the adapter can project a truthful refusal.
-          if (callbackStarted) throw error;
-          const safe = safeError(error);
-          if (safe.code === 'cancelled') throw safe;
-          throw flipFailedError(`another skillsmith operation is running: ${msg(safe)}`);
-        }
-      },
-    };
     let executionResults: readonly OperationExecutionResult[];
     try {
       executionResults = await executeOperationPlan({
@@ -2469,7 +2496,7 @@ const runInstallInternal = async (
         bindings: schedulerBindings,
         preconditions: prepared.preconditions,
         locks: [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }],
-        lockPort: executionLockPort,
+        lockPort: acquireExecutionLockPort(env, ledgerPath),
         ...(opts.signal === undefined ? {} : { signal: opts.signal }),
       });
     } catch (error) {
@@ -2486,7 +2513,7 @@ const runInstallInternal = async (
           store: null,
           error: flipRefusedError(reason),
         };
-        actualByPreview.set(binding.preview, actual);
+        projectActual(binding, actual);
         actualByOperation.set(operation.operationId, actual);
       }
       executionResults = prepared.preview.plan.operations.map((operation) =>
@@ -2512,7 +2539,7 @@ const runInstallInternal = async (
           reason: 'fail-fast',
           store: null,
         };
-        actualByPreview.set(binding.preview, actual);
+        projectActual(binding, actual);
         actualByOperation.set(operation.operationId, actual);
       } else if (execution.outcome === 'cancelled') {
         const actual = {
@@ -2522,7 +2549,7 @@ const runInstallInternal = async (
           store: null,
           error: cancelledError('interrupted'),
         };
-        actualByPreview.set(binding.preview, actual);
+        projectActual(binding, actual);
         actualByOperation.set(operation.operationId, actual);
       }
     }
@@ -2570,7 +2597,8 @@ const runInstallInternal = async (
       projectRoot,
       logicalOperation: null,
     };
-    const swept = await sweepCommittedAcquireJournals(makeSwapCtx(sweepPlaceCtx));
+    const swept = await recoverCommittedAcquireJournals(placeExecutionInput(sweepPlaceCtx));
+    sweepPlaceCtx.ledger = swept.state.ledger;
     if (!swept.ok) {
       const sweepError = safeError(swept.error);
       return err(
@@ -2871,28 +2899,8 @@ const processUninstallMatch = async (
 ): Promise<UninstallResult> => {
   const { scope, scopeKey, tool, existing, notice } = match;
 
-  const persistence = createLedgerPersistenceGateway(env, ledgerPath, opts.signal);
-  let swapCtx: SwapCtx;
-  swapCtx = {
-    env,
-    ledgerPath,
-    ledger: ledgerCtx.ledger,
-    persist: async () => {
-      const written = await persistence.persist(swapCtx.ledger as LedgerModel);
-      if (!written.ok) {
-        if (written.error.code === 'cancelled') return err(written.error);
-        return err(flipFailedError(`ledger write failed: ${written.error.code}`));
-      }
-      swapCtx.ledger = written.value.model;
-      ledgerCtx.ledger = written.value.model;
-      return ok(undefined);
-    },
-    now: () => journalNowOf(env, deps),
-    newTxId: () => txIdOf(env, deps),
-    pauseAt: opts.testPauseAt,
-    signal: opts.signal,
-    ...(logicalOperation === null ? {} : { logicalOperation }),
-  };
+  const executionInput = (): AcquireExecutionInput =>
+    makeAcquireExecutionInput(env, ledgerPath, ledgerCtx.ledger, deps, opts, logicalOperation);
   const midSwap = (e: SkillSmithError): SkillSmithError =>
     e.code === 'ledger-error' ? flipFailedError(msg(e)) : e;
   const failed = (e: SkillSmithError, placementPath: string | null): UninstallResult => ({
@@ -2930,7 +2938,8 @@ const processUninstallMatch = async (
           backupKept: null,
         };
       }
-      const resumed = await resumeSwap(swapCtx, name, tool, scopeKey);
+      const resumed = await recoverAcquire(executionInput(), { skill: name, tool, scopeKey });
+      ledgerCtx.ledger = resumed.state.ledger;
       if (!resumed.ok) return failed(midSwap(resumed.error), placementPath);
       return {
         skill: name,
@@ -2944,7 +2953,7 @@ const processUninstallMatch = async (
         backupKept: resumed.value.backupKept,
       };
     }
-    const reason = refusedMessage(existing.journal.op, name);
+    const reason = recoveryRefusedMessage(existing.journal.op, name);
     return {
       skill: name,
       tool,
@@ -3001,14 +3010,14 @@ const processUninstallMatch = async (
         placementPath,
       );
     }
-    const persisted = await commitRecordOnlyLogicalTransaction(
-      swapCtx,
+    const persisted = await executeRecordOnlyAcquirePlan(
+      executionInput(),
       logicalOperation,
       ex,
       scopeKey,
     );
+    ledgerCtx.ledger = persisted.state.ledger;
     if (!persisted.ok) return failed(persisted.error, placementPath);
-    ledgerCtx.ledger = swapCtx.ledger as LedgerModel;
     return {
       skill: name,
       tool,
@@ -3071,7 +3080,8 @@ const processUninstallMatch = async (
       placementPath: placement.path,
       scopeKey,
     };
-    const swapRes = await runSwap(swapCtx, plan);
+    const swapRes = await executeAcquirePlan(executionInput(), plan);
+    ledgerCtx.ledger = swapRes.state.ledger;
     if (!swapRes.ok) return failed(midSwap(swapRes.error), placementPath);
     return {
       skill: name,
@@ -3132,7 +3142,6 @@ const processUninstallMatch = async (
   const staged = withLedgerPairAt(ledgerCtx.ledger, scopeKey, name, tool, synth);
   if (!staged.ok) return failed(staged.error, placementPath);
   ledgerCtx.ledger = staged.value;
-  swapCtx.ledger = staged.value;
   const plan: SwapPlan = {
     op: 'uninstall',
     skill: name,
@@ -3141,7 +3150,8 @@ const processUninstallMatch = async (
     placementPath: placement.path,
     scopeKey,
   };
-  const swapRes = await runSwap(swapCtx, plan);
+  const swapRes = await executeAcquirePlan(executionInput(), plan);
+  ledgerCtx.ledger = swapRes.state.ledger;
   if (!swapRes.ok) return failed(midSwap(swapRes.error), placementPath);
   return {
     skill: name,
@@ -3271,139 +3281,6 @@ const processUninstallTarget = async (
   return results;
 };
 
-const createUninstallPlanning = (
-  requested: UninstallReport['requested'],
-  results: readonly UninstallResult[],
-  projectRoot: string | null,
-): Readonly<{
-  plan: OperationPlan<'uninstall'>;
-  operationResults: ReadonlyMap<string, UninstallResult>;
-}> => {
-  const operations: ExecutableOperation[] = [];
-  const operationResults = new Map<string, UninstallResult>();
-  const diagnostics: PlanningDiagnostic[] = [];
-  const diagnosticIds = new Set<string>();
-  for (const result of results) {
-    if (
-      result.tool === null ||
-      result.scope === null ||
-      result.placementPath === null ||
-      result.action === 'noop' ||
-      result.action === 'refused'
-    ) {
-      const diagnostic = planningDiagnosticFor('uninstall', result);
-      if (!diagnosticIds.has(diagnostic.diagnosticId)) {
-        diagnosticIds.add(diagnostic.diagnosticId);
-        diagnostics.push(diagnostic);
-      }
-      continue;
-    }
-    const resource = acquireLiveResource(
-      result.skill,
-      result.tool,
-      result.scope,
-      result.placementPath,
-      projectRoot,
-    );
-    const groupId = createOperationGroupId({
-      domain: 'skillsmith.operation-group-identity',
-      schemaVersion: 1,
-      command: 'uninstall',
-      skill: result.skill,
-      source: null,
-      scope: result.scope,
-      target: result.skill,
-    });
-    const pairId = createOperationPairId({
-      domain: 'skillsmith.operation-pair-identity',
-      schemaVersion: 1,
-      groupId,
-      tool: result.tool,
-      resource,
-    });
-    const operationId = createOperationId({
-      domain: 'skillsmith.operation-identity',
-      schemaVersion: 1,
-      groupId,
-      pairId,
-      kind: 'remove',
-      skill: result.skill,
-      source: null,
-      tool: result.tool,
-      scope: result.scope,
-    });
-    if (operationResults.has(operationId)) continue;
-    const before = acquirePlacementImage(
-      result.skill,
-      result.tool,
-      result.scope,
-      result.placementPath,
-      result.before?.mode ?? 'pinned',
-      result.before?.placement ?? (result.before?.mode === 'dev' ? 'symlink' : 'copy'),
-      result.before?.symlinkTarget ?? null,
-      projectRoot,
-    );
-    const after = acquireAbsentImage(
-      result.skill,
-      result.tool,
-      result.scope,
-      result.placementPath,
-      projectRoot,
-    );
-    operations.push({
-      operationId,
-      groupId,
-      pairId,
-      kind: 'remove',
-      dependencyMetadata: {
-        domain: 'skillsmith.operation-dependency',
-        schemaVersion: 1,
-        operationIds: [],
-      },
-      skill: result.skill,
-      source: null,
-      tool: result.tool,
-      scope: result.scope,
-      before,
-      after,
-      reason: { code: 'remove', message: `remove ${result.skill}` },
-      selectionSource: 'explicit-targets',
-      preconditionIds: [],
-      requiredCheckIds: [],
-      reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
-      mutates: { live: true, manifest: false, lock: false, ledger: true },
-      conflict: null,
-    });
-    operationResults.set(operationId, result);
-  }
-  const selectedScopes = [
-    ...new Set(
-      results
-        .map((result) => result.scope)
-        .filter((scope): scope is InstallScope => scope !== null),
-    ),
-  ];
-  if (selectedScopes.length === 0 && requested.scope !== null) selectedScopes.push(requested.scope);
-  const plan = createOperationPlan({
-    domain: 'skillsmith.operation-plan',
-    schemaVersion: 1,
-    command: 'uninstall',
-    selection: {
-      source: 'explicit-targets',
-      targets: requested.targets,
-      all: requested.allScopes,
-      tools: requested.tools,
-      scopes: selectedScopes,
-      groupIds: [...new Set(operations.map((operation) => operation.groupId))],
-    },
-    batchPolicy: 'fail-fast',
-    operations,
-    checks: [],
-    diagnostics,
-  }) as OperationPlan<'uninstall'>;
-  return { plan, operationResults };
-};
-
 const uninstallSummary = (results: readonly UninstallResult[]): UninstallReport['summary'] => {
   const summary = { removed: 0, noop: 0, refused: 0, failed: 0 };
   for (const result of results) summary[result.action]++;
@@ -3484,7 +3361,14 @@ const runUninstallInternal = async (
   // U2 search set: user scope + the current project's scope (Task 7 phase-1 rule) unless --scope
   // restricts to one. --all-scopes doesn't change the search set (both are already searched) — it
   // only changes the ambiguity POLICY below (act on every match instead of refusing).
-  const projectRoot = await gitToplevel(env, opts.cwd);
+  const projectContext = await resolveAcquisitionProjectContextV1({
+    env,
+    cwd: opts.cwd,
+    ...(opts.configuration.explicitConfigPath === undefined
+      ? {}
+      : { explicitConfigPath: opts.configuration.explicitConfigPath }),
+  });
+  const projectRoot = projectContext.projectRoot;
   const scopesToSearch: InstallScope[] =
     opts.scope !== undefined ? [opts.scope] : projectRoot !== null ? ['user', 'project'] : ['user'];
   const scopeKeyFor = async (scope: InstallScope): Promise<string | null> =>
@@ -3493,10 +3377,10 @@ const runUninstallInternal = async (
   interface PreparedUninstallPairBinding {
     readonly kind: 'pair';
     readonly preview: UninstallResult;
-    readonly expected: UninstallPreconditionFacts;
     readonly actualBefore: OperationImage;
+    readonly liveResourceId: string;
     observe(): Promise<UninstallPreconditionFacts>;
-    execute(): Promise<UninstallResult>;
+    execute(operation: ExecutableOperation): Promise<UninstallResult>;
   }
   interface PreparedUninstallMigrationBinding {
     readonly kind: 'migrate-ledger';
@@ -3508,6 +3392,9 @@ const runUninstallInternal = async (
     readonly preview: PlannedUninstallReport;
     readonly bindings: ReadonlyMap<string, PreparedUninstallBinding>;
     readonly preconditions: readonly ExecutionPrecondition[];
+    readonly snapshotAuthority: AcquisitionSnapshotAuthorityV1;
+    readonly expectedRevisions: readonly ExpectedRevisionV1[];
+    readonly snapshotId: `snapshot:v1:${string}`;
   }
   interface UninstallPreconditionFacts {
     readonly projectRoot: string | null;
@@ -3637,66 +3524,6 @@ const runUninstallInternal = async (
         )),
       );
     }
-    const initialPlanning = createUninstallPlanning(requested, results, projectRoot);
-    const preparedBindings = new Map<string, PreparedUninstallBinding>();
-    const preconditions: ExecutionPrecondition[] = [];
-    const operations: ExecutableOperation[] = [];
-    for (const operation of initialPlanning.plan.operations) {
-      const previewResult = initialPlanning.operationResults.get(operation.operationId);
-      const seed = previewResult === undefined ? undefined : candidateBindings.get(previewResult);
-      if (seed === undefined) throw new Error('prepared uninstall operation binding is missing');
-      const expectedFacts = await observeUninstallFacts(seed);
-      const resource =
-        operation.before.kind === 'absent' || operation.before.kind === 'placement'
-          ? operation.before.resource
-          : null;
-      if (resource === null) throw new Error('prepared uninstall resource is not live');
-      if (resource.kind !== 'live') throw new Error('prepared uninstall resource is not live');
-      const actualBefore = acquireActualBefore(
-        resource,
-        expectedFacts.live,
-        expectedFacts.selectedPair,
-      );
-      const expected = {
-        command: 'uninstall',
-        operationId: operation.operationId,
-        groupId: operation.groupId,
-        pairId: operation.pairId,
-        skill: operation.skill,
-        tool: operation.tool,
-        scope: operation.scope,
-        ...expectedFacts,
-      } as const;
-      const precondition = createExecutionPrecondition({
-        operationIds: [operation.operationId],
-        resource,
-        expected,
-        observe: async () => ({
-          command: 'uninstall',
-          operationId: operation.operationId,
-          groupId: operation.groupId,
-          pairId: operation.pairId,
-          skill: operation.skill,
-          tool: operation.tool,
-          scope: operation.scope,
-          ...(await observeUninstallFacts(seed)),
-        }),
-      });
-      preconditions.push(precondition);
-      operations.push({
-        ...operation,
-        before: actualBefore,
-        preconditionIds: [precondition.preconditionId],
-      });
-      preparedBindings.set(operation.operationId, {
-        kind: 'pair',
-        preview: seed.preview,
-        expected: expectedFacts,
-        actualBefore,
-        observe: () => observeUninstallFacts(seed),
-        execute: () => seed.execute(operation),
-      });
-    }
     const migration = prepareLedgerMigration(
       env,
       'uninstall',
@@ -3704,8 +3531,170 @@ const runUninstallInternal = async (
       ledgerPath,
       ledgerState,
     );
+    const compatibilityPlanning = createUninstallPlanning(requested, results, projectRoot);
+    const preparedIntents: Array<
+      Readonly<{
+        seed: UninstallBindingSeed;
+        expectedFacts: UninstallPreconditionFacts;
+        intent: AcquisitionUninstallIntentV1;
+      }>
+    > = [];
+    const liveResourcesByPath = new Map<string, AcquireLiveSnapshotResourceV1>();
+    const storeResourcesByPath = new Map<string, AcquireStoreSnapshotResourceV1>();
+    const addLiveResource = (resource: AcquireLiveSnapshotResourceV1): void => {
+      const existing = liveResourcesByPath.get(resource.placementPath);
+      if (
+        existing !== undefined &&
+        (existing.skill !== resource.skill ||
+          existing.tool !== resource.tool ||
+          existing.scope !== resource.scope ||
+          existing.projectIdentity !== resource.projectIdentity)
+      ) {
+        throw new Error('acquisition uninstall live resource path is ambiguous');
+      }
+      liveResourcesByPath.set(resource.placementPath, existing ?? resource);
+    };
+    for (const seed of candidateBindings.values()) {
+      if (seed.preview.placementPath === null) {
+        throw new Error('prepared uninstall intent requires a live path');
+      }
+      const expectedFacts = await observeUninstallFacts(seed);
+      const livePath = resolve(seed.preview.placementPath);
+      const liveResourceId = acquireStateResourceId('live', [livePath]);
+      addLiveResource({
+        resourceId: liveResourceId,
+        skill: seed.name,
+        tool: seed.match.tool,
+        scope: seed.match.scope,
+        projectIdentity: seed.match.scope === 'project' ? seed.match.scopeKey : null,
+        placementPath: livePath,
+        storeRoot,
+      });
+      for (const selection of expectedFacts.selection) {
+        for (const path of selection.paths) {
+          const placementPath = resolve(path);
+          addLiveResource({
+            resourceId: acquireStateResourceId('live', [placementPath]),
+            skill: seed.name,
+            tool: selection.tool,
+            scope: selection.scope,
+            projectIdentity: selection.scope === 'project' ? selection.scopeKey : null,
+            placementPath,
+            storeRoot,
+          });
+        }
+      }
+      let storeResourceId: string | null = null;
+      const pinned = expectedFacts.selectedPair?.pinned ?? null;
+      if (pinned !== null) {
+        const storePath = resolve(pinned.storePath);
+        storeResourceId = acquireStateResourceId('store', [storePath]);
+        const existingStore = storeResourcesByPath.get(storePath);
+        if (existingStore !== undefined && existingStore.contentHash !== pinned.contentHash) {
+          throw new Error('acquisition uninstall store resource content is ambiguous');
+        }
+        storeResourcesByPath.set(
+          storePath,
+          existingStore ?? {
+            resource: { resourceId: storeResourceId, storePath },
+            contentHash: pinned.contentHash as OperationDigest,
+          },
+        );
+      }
+      preparedIntents.push({
+        seed,
+        expectedFacts,
+        intent: {
+          kind: 'remove',
+          skill: seed.name,
+          tool: seed.match.tool,
+          scope: seed.match.scope,
+          projectRoot:
+            seed.match.scope === 'project' && seed.match.scopeKey !== null
+              ? { kind: 'machine-bound', path: seed.match.scopeKey }
+              : null,
+          liveResourceId,
+          storeResourceId,
+        },
+      });
+    }
+    const artifactScope: InstallScope = opts.scope ?? (projectRoot === null ? 'user' : 'project');
+    const snapshotAuthority = await readAcquisitionSnapshotV1({
+      env,
+      projectContext,
+      artifactScope,
+      ledgerPath,
+      liveResources: [...liveResourcesByPath.values()],
+      storeResources: [...storeResourcesByPath.values()],
+      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+    });
+    const boundPlanning = createAcquisitionPlan(
+      {
+        schemaVersion: 1,
+        command: 'uninstall',
+        selection: {
+          source: 'explicit-targets',
+          skills: [...new Set(preparedIntents.map(({ intent }) => intent.skill))],
+          tools: [...new Set(preparedIntents.map(({ intent }) => intent.tool))],
+          scopes: [...new Set(preparedIntents.map(({ intent }) => intent.scope))],
+        },
+        batchPolicy: 'continue-on-error',
+        diagnostics: compatibilityPlanning.plan.diagnostics,
+        compatibilityOperations: migration === null ? [] : [migration.operation],
+        intents: preparedIntents.map(({ intent }) => intent),
+      },
+      snapshotAuthority.snapshot,
+    );
+    if (!boundPlanning.ok) throw new Error(boundPlanning.error.message);
+    const plan = boundPlanning.value.plan;
+    const canonicalOperations = plan.operations.filter(
+      (operation) =>
+        migration === null || operation.operationId !== migration.operation.operationId,
+    );
+    const operationByLivePath = new Map<string, ExecutableOperation>();
+    for (const operation of canonicalOperations) {
+      if (
+        (operation.before.kind !== 'absent' && operation.before.kind !== 'placement') ||
+        operation.before.resource.kind !== 'live' ||
+        operation.before.resource.location.kind !== 'machine-bound' ||
+        operationByLivePath.has(operation.before.resource.location.path)
+      ) {
+        throw new Error('acquisition uninstall operation binding is ambiguous');
+      }
+      operationByLivePath.set(operation.before.resource.location.path, operation);
+    }
+    const preparedBindings = new Map<string, PreparedUninstallBinding>();
+    const preconditions: ExecutionPrecondition[] = [
+      ...acquisitionRevisionPreconditions(snapshotAuthority, plan.operations),
+    ];
+    for (const prepared of preparedIntents) {
+      const operation = operationByLivePath.get(
+        resolve(prepared.seed.preview.placementPath as string),
+      );
+      if (operation === undefined)
+        throw new Error('prepared uninstall operation binding is missing');
+      const resource =
+        operation.before.kind === 'absent' || operation.before.kind === 'placement'
+          ? operation.before.resource
+          : null;
+      if (resource === null || resource.kind !== 'live') {
+        throw new Error('prepared uninstall resource is not live');
+      }
+      const actualBefore = acquireActualBefore(
+        resource,
+        prepared.expectedFacts.live,
+        prepared.expectedFacts.selectedPair,
+      );
+      preparedBindings.set(operation.operationId, {
+        kind: 'pair',
+        preview: prepared.seed.preview,
+        actualBefore,
+        liveResourceId: prepared.intent.liveResourceId,
+        observe: () => observeUninstallFacts(prepared.seed),
+        execute: (logicalOperation) => prepared.seed.execute(logicalOperation),
+      });
+    }
     if (migration !== null) {
-      operations.unshift(migration.operation);
       preconditions.unshift(migration.precondition);
       preparedBindings.set(migration.operation.operationId, {
         kind: 'migrate-ledger',
@@ -3715,13 +3704,8 @@ const runUninstallInternal = async (
         },
       });
     }
-    const plan = createOperationPlan({
-      ...initialPlanning.plan,
-      operations,
-    }) as OperationPlan<'uninstall'>;
-    const planning = { plan, operationResults: initialPlanning.operationResults };
     const bindings = new Map<string, PreparedUninstallBinding>();
-    for (const operation of planning.plan.operations) {
+    for (const operation of plan.operations) {
       const binding = preparedBindings.get(operation.operationId);
       if (binding === undefined || bindings.has(operation.operationId)) {
         throw new Error('prepared uninstall operation binding is not one-to-one');
@@ -3729,41 +3713,124 @@ const runUninstallInternal = async (
       bindings.set(operation.operationId, binding);
     }
     if (
-      bindings.size !== planning.plan.operations.length ||
-      planning.plan.operations.some((operation) => !bindings.has(operation.operationId))
+      bindings.size !== plan.operations.length ||
+      plan.operations.some((operation) => !bindings.has(operation.operationId))
     ) {
       throw new Error('prepared uninstall plan has no exact execution binding');
     }
-    const preview = assembleUninstallReport(true, requested, results, planning.plan, []);
-    deps.observePreparedPlan?.(planning.plan);
-    return { preview, bindings, preconditions: Object.freeze(preconditions) };
+    const preview = assembleUninstallReport(true, requested, results, plan, []);
+    deps.observePreparedPlan?.(plan);
+    return {
+      preview,
+      bindings,
+      preconditions: Object.freeze(preconditions),
+      snapshotAuthority,
+      expectedRevisions: boundPlanning.value.expectedRevisions,
+      snapshotId: boundPlanning.value.snapshotId,
+    };
   };
 
   const executePrepared = async (
     prepared: PreparedUninstallBatch,
   ): Promise<PlannedUninstallReport> => {
     const actualByPreview = new Map<UninstallResult, UninstallResult>();
-    const executionResults: OperationExecutionResult[] = [];
-    let stateChanged = false;
-    let migrationBlocked = false;
+    const actualByOperation = new Map<string, UninstallResult>();
+    const lifecycle = createAcquisitionRepositoryLifecycleControllerV1({
+      authority: prepared.snapshotAuthority,
+      snapshotId: prepared.snapshotId,
+      expectedRevisions: prepared.expectedRevisions,
+    });
+    const schedulerBindings: PreparedExecutionBinding[] = prepared.preview.plan.operations.map(
+      (operation) => {
+        const binding = prepared.bindings.get(operation.operationId);
+        if (binding === undefined)
+          throw new Error('prepared uninstall operation binding is missing');
+        if (binding.kind === 'migrate-ledger') {
+          return lifecycle.bind(
+            operation,
+            ledgerMigrationExecutionBinding({
+              env,
+              ledgerPath,
+              operation,
+              expectedState: binding.expectedState,
+              startedAt: journalNowOf(env, deps),
+              ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+              onMigrated: binding.onMigrated,
+            }),
+            [prepared.snapshotAuthority.ledgerResourceId],
+          );
+        }
+        if (operation.pairId === null)
+          throw new Error('prepared uninstall operation pair is missing');
+        let compatibilityBefore = binding.actualBefore;
+        return lifecycle.bind(
+          operation,
+          {
+            operationId: operation.operationId,
+            groupId: operation.groupId,
+            pairId: operation.pairId,
+            unstartedForce: createBoundedForceEffect({
+              supported: true,
+              requested: requested.force,
+              conflict: null,
+            }),
+            observeActualBefore: async (): Promise<OperationImage> => {
+              const facts = await binding.observe();
+              const resource =
+                operation.before.kind === 'absent' || operation.before.kind === 'placement'
+                  ? operation.before.resource
+                  : null;
+              if (resource === null || resource.kind !== 'live') {
+                throw new Error('prepared uninstall actual-before resource is not live');
+              }
+              compatibilityBefore = acquireActualBefore(resource, facts.live, facts.selectedPair);
+              return operation.before;
+            },
+            execute: async (): Promise<OperationExecutionResult> => {
+              const actual = await binding.execute(
+                compatibilityBefore.kind === 'absent' && operation.before.kind === 'placement'
+                  ? operation
+                  : { ...operation, before: compatibilityBefore },
+              );
+              actualByPreview.set(binding.preview, actual);
+              actualByOperation.set(operation.operationId, actual);
+              return uninstallExecutionResultFor(operation, actual, requested);
+            },
+          },
+          [prepared.snapshotAuthority.ledgerResourceId, binding.liveResourceId],
+        );
+      },
+    );
+    let executionResults: readonly OperationExecutionResult[];
     try {
-      await validateExecutionPreconditions(
-        prepared.preview.plan as CurrentMutatorOperationPlan,
-        prepared.preconditions,
-        opts.signal === undefined ? {} : { signal: opts.signal },
-      );
+      executionResults = await executeOperationPlan({
+        plan: prepared.preview.plan as CurrentMutatorOperationPlan,
+        bindings: schedulerBindings,
+        preconditions: prepared.preconditions,
+        locks: [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }],
+        lockPort: acquireExecutionLockPort(env, ledgerPath),
+        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+      });
     } catch (error) {
       if (!preconditionStateChanged(error)) throw error;
-      stateChanged = true;
-    }
-    for (const operation of prepared.preview.plan.operations) {
-      const binding = prepared.bindings.get(operation.operationId);
-      if (binding === undefined) throw new Error('prepared uninstall operation binding is missing');
-      if (binding.kind === 'migrate-ledger') {
-        if (stateChanged) {
-          migrationBlocked = true;
-          executionResults.push(
-            createOperationExecutionResult({
+      const reason = 'prepared placement state changed before execution';
+      for (const operation of prepared.preview.plan.operations) {
+        const binding = prepared.bindings.get(operation.operationId);
+        if (binding === undefined)
+          throw new Error('prepared uninstall operation binding is missing');
+        if (binding.kind === 'migrate-ledger') continue;
+        const actual: UninstallResult = {
+          ...binding.preview,
+          action: 'refused',
+          reason,
+          error: flipRefusedError(reason),
+        };
+        actualByPreview.set(binding.preview, actual);
+        actualByOperation.set(operation.operationId, actual);
+      }
+      executionResults = prepared.preview.plan.operations.map((operation) =>
+        operation.pairId === null
+          ? createOperationExecutionResult({
               operationId: operation.operationId,
               outcome: 'failed',
               actualBefore: operation.before,
@@ -3774,89 +3841,38 @@ const runUninstallInternal = async (
                 message: 'prepared ledger migration source changed before execution',
                 remediation: 'Re-run the command to prepare the current ledger state.',
               },
-            }),
-          );
-          continue;
-        }
-        if (opts.signal?.aborted) {
-          migrationBlocked = true;
-          executionResults.push(
-            createOperationExecutionResult({
-              operationId: operation.operationId,
-              outcome: 'cancelled',
-              actualBefore: operation.before,
-              actualAfter: operation.before,
-              force: null,
-              error: null,
-            }),
-          );
-          continue;
-        }
-        const preparedMigration = ledgerMigrationExecutionBinding({
-          env,
-          ledgerPath,
-          operation,
-          expectedState: binding.expectedState,
-          startedAt: journalNowOf(env, deps),
-          ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-          onMigrated: binding.onMigrated,
-        });
-        const actualBefore = await preparedMigration.observeActualBefore();
-        const execution = await preparedMigration.execute({
-          operationId: operation.operationId,
-          groupId: operation.groupId,
-          pairId: null,
-          actualBefore,
-          unstartedForce: null,
-          execute: async () => {
-            throw new Error('migration execution binding cannot be re-entered');
-          },
-        });
-        executionResults.push(execution);
-        migrationBlocked = execution.outcome !== 'succeeded';
-        continue;
+            })
+          : uninstallExecutionResultFor(
+              operation,
+              actualByOperation.get(operation.operationId),
+              requested,
+            ),
+      );
+    }
+    for (const [index, operation] of prepared.preview.plan.operations.entries()) {
+      if (actualByOperation.has(operation.operationId)) continue;
+      const binding = prepared.bindings.get(operation.operationId);
+      const execution = executionResults[index];
+      if (binding === undefined || execution === undefined) {
+        throw new Error('prepared uninstall result projection is missing');
       }
-      if (migrationBlocked) {
-        const actual = {
-          ...binding.preview,
-          action: 'failed' as const,
-          reason: 'ledger migration failed before placement execution',
-          error: genericError('ledger migration failed before placement execution'),
-        };
-        actualByPreview.set(binding.preview, actual);
-        executionResults.push(
-          createOperationExecutionResult({
-            operationId: operation.operationId,
-            outcome: 'skipped-after-failure',
-            actualBefore: binding.actualBefore,
-            actualAfter: binding.actualBefore,
-            force: createBoundedForceEffect({
-              supported: true,
-              requested: requested.force,
-              conflict: null,
-            }),
-            error: null,
-          }),
-        );
-        continue;
-      }
-      const actual = stateChanged
-        ? {
-            ...binding.preview,
-            action: 'refused' as const,
-            reason: 'prepared placement state changed before execution',
-            error: flipRefusedError('prepared placement state changed before execution'),
-          }
-        : opts.signal?.aborted
+      if (binding.kind === 'migrate-ledger') continue;
+      const actual =
+        execution.outcome === 'cancelled'
           ? {
               ...binding.preview,
               action: 'failed' as const,
               reason: 'interrupted',
               error: genericError('operation interrupted'),
             }
-          : await binding.execute();
+          : {
+              ...binding.preview,
+              action: 'failed' as const,
+              reason: 'ledger migration failed before placement execution',
+              error: genericError('ledger migration failed before placement execution'),
+            };
       actualByPreview.set(binding.preview, actual);
-      executionResults.push(uninstallExecutionResultFor(operation, actual, requested));
+      actualByOperation.set(operation.operationId, actual);
     }
     const results = prepared.preview.results.map(
       (previewResult) => actualByPreview.get(previewResult) ?? previewResult,
@@ -3878,37 +3894,19 @@ const runUninstallInternal = async (
     return ok(prepared.preview);
   }
 
-  const executeLocked = async (): Promise<Result<PlannedUninstallReport, SkillSmithError>> => {
+  const prepareLocked = async (): Promise<Result<PreparedUninstallBatch, SkillSmithError>> => {
     await sweepStaging(env, storeRoot);
     await sweepFetchOrphans(env, dataDir);
     const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
     if (ledgerRes.value.state === 'present' && ledgerRes.value.sourceVersion === 1) {
-      const prepared = await prepareAll(ledgerRes.value);
-      return ok(await executePrepared(prepared));
+      return ok(await prepareAll(ledgerRes.value));
     }
     const ledger = ledgerModelForMutation(ledgerRes.value, nowOf(env, deps));
 
-    const sweepPersistence = createLedgerPersistenceGateway(env, ledgerPath, opts.signal);
-    const sweepCtx: SwapCtx = {
-      env,
-      ledgerPath,
-      ledger,
-      persist: async () => {
-        const written = await sweepPersistence.persist(sweepCtx.ledger as LedgerModel);
-        if (!written.ok) {
-          if (written.error.code === 'cancelled') return err(written.error);
-          return err(flipFailedError(`ledger write failed: ${written.error.code}`));
-        }
-        sweepCtx.ledger = written.value.model;
-        return ok(undefined);
-      },
-      now: () => journalNowOf(env, deps),
-      newTxId: () => txIdOf(env, deps),
-      pauseAt: opts.testPauseAt,
-      signal: opts.signal,
-    };
-    const swept = await sweepCommittedAcquireJournals(sweepCtx);
+    const swept = await recoverCommittedAcquireJournals(
+      makeAcquireExecutionInput(env, ledgerPath, ledger, deps, opts, null),
+    );
     if (!swept.ok) {
       const sweepError = safeError(swept.error);
       return err(
@@ -3918,27 +3916,27 @@ const runUninstallInternal = async (
 
     const current = await readLedgerState(env, ledgerPath);
     if (!current.ok) return err(safeError(current.error));
-    const prepared = await prepareAll(current.value);
-    return ok(await executePrepared(prepared));
+    return ok(await prepareAll(current.value));
   };
-  const completed = Symbol('uninstall-ledger-callback-completed');
-  let batchResult: Result<PlannedUninstallReport, SkillSmithError> | undefined;
+  const completed = Symbol('uninstall-prepare-lock-completed');
+  let preparedResult: Result<PreparedUninstallBatch, SkillSmithError> | undefined;
   const locked = await withLedgerLock(
     env,
     ledgerPath,
     async (): Promise<typeof completed> => {
-      batchResult = await executeLocked();
+      preparedResult = await prepareLocked();
       return completed;
     },
     opts.signal === undefined ? undefined : { signal: opts.signal },
   );
 
   if (!locked.ok) return err(safeError(locked.error));
-  const settled = batchResult;
+  const settled = preparedResult;
   if (locked.value !== completed || settled === undefined) {
     return err(genericError('operation failed'));
   }
-  return settled.ok ? settled : err(safeError(settled.error));
+  if (!settled.ok) return err(safeError(settled.error));
+  return ok(await executePrepared(settled.value));
 };
 
 export const runUninstall = async (

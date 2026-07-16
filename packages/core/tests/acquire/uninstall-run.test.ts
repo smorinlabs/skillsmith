@@ -656,8 +656,11 @@ describe('runUninstall — dry run', () => {
     expect(Object.isFrozen(previewPlan)).toBeTrue();
     expect(preview.value.executionResults).toEqual([]);
     for (const operation of preview.value.plan.operations) {
-      expect(operation.preconditionIds).toHaveLength(1);
-      expect(operation.preconditionIds[0]).toMatch(/^precondition:v1:[0-9a-f]{64}$/);
+      expect(operation.preconditionIds).toHaveLength(7);
+      expect(new Set(operation.preconditionIds).size).toBe(7);
+      expect(
+        operation.preconditionIds.every((id) => /^precondition:v1:[0-9a-f]{64}$/.test(id)),
+      ).toBeTrue();
     }
 
     let executionPlan: typeof previewPlan;

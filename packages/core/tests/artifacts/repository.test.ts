@@ -8,6 +8,8 @@ import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node
 import {
   type ArtifactReadPorts,
   type ArtifactRepositoryError,
+  createLockRepository,
+  createManifestRepository,
   planProjectConfigMigration,
   readJournalArtifact,
   readLedgerArtifact,
@@ -18,6 +20,10 @@ import {
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 
 const TS08 = join(import.meta.dir, '../../../../tests/ergonomics/fixtures/p2-ts08');
+const TS03_LOCK = join(
+  import.meta.dir,
+  '../../../../tests/ergonomics/fixtures/p2-ts03/lock-v1.golden.toml',
+);
 const TS06_MIGRATIONS = join(
   import.meta.dir,
   '../../../../tests/ergonomics/fixtures/p2-ts06/migration-cases.json',
@@ -167,6 +173,107 @@ describe('artifact repository', () => {
       canonical: true,
       migration: null,
     });
+  });
+
+  test('reobserves manifest and lock artifacts plus filesystem metadata before staging', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-artifact-state-repositories-'));
+    roots.push(root);
+    const manifestPath = join(root, 'skillsmith.toml');
+    const lockPath = join(root, 'skillsmith.lock');
+    await writeFile(manifestPath, await readFile(join(TS08, 'manifest-v1.golden.toml')));
+    await writeFile(lockPath, await readFile(join(TS08, 'lock-v1.golden.toml')));
+    const ports = await defaultRuntimePorts();
+    const manifestResourceId = `manifest:${manifestPath}`;
+    const lockResourceId = `lock:${lockPath}`;
+    const manifest = createManifestRepository({
+      resourceId: manifestResourceId,
+      path: manifestPath,
+      ports,
+    });
+    const lock = createLockRepository({
+      resourceId: lockResourceId,
+      path: lockPath,
+      ports,
+    });
+
+    const manifestBefore = unwrap(await manifest.observe(manifestResourceId));
+    const lockBefore = unwrap(await lock.observe(lockResourceId));
+    expect(manifestBefore).toMatchObject({
+      revision: {
+        domain: 'manifest',
+        resourceId: manifestResourceId,
+        state: 'present',
+        targetKind: 'file',
+      },
+      value: { version: 1 },
+    });
+    expect(lockBefore).toMatchObject({
+      revision: {
+        domain: 'lock',
+        resourceId: lockResourceId,
+        state: 'present',
+        targetKind: 'file',
+      },
+      value: { version: 1 },
+    });
+    expect(Object.isFrozen(manifest)).toBeTrue();
+    expect(Object.isFrozen(lock)).toBeTrue();
+    expect(Object.isFrozen(manifestBefore)).toBeTrue();
+    expect(Object.isFrozen(lockBefore)).toBeTrue();
+
+    await chmod(manifestPath, 0o640);
+    await writeFile(lockPath, await readFile(TS03_LOCK));
+    const manifestAfter = unwrap(await manifest.observe(manifestResourceId));
+    const lockAfter = unwrap(await lock.observe(lockResourceId));
+    expect(manifestAfter.revision.revisionDigest).not.toBe(manifestBefore.revision.revisionDigest);
+    expect(lockAfter.revision.revisionDigest).not.toBe(lockBefore.revision.revisionDigest);
+
+    expect(
+      await manifest.stage({
+        schemaVersion: 1,
+        operationId: 'operation:manifest-state-edit',
+        domain: 'manifest',
+        resourceId: manifestResourceId,
+        expectedRevision: manifestBefore.revision,
+        editDigest: `sha256:${'a'.repeat(64)}`,
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: 'stale-revision',
+        domain: 'manifest',
+        resourceId: manifestResourceId,
+      },
+    });
+    expect(await lock.observe('lock:wrong-resource')).toEqual({
+      ok: false,
+      error: {
+        code: 'state-repository',
+        domain: 'lock',
+        reason: 'invalid-request',
+      },
+    });
+  });
+
+  test('binds absent artifacts to stable parent identity but ignores sibling lock topology', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-artifact-absent-parent-'));
+    roots.push(root);
+    const manifestPath = join(root, 'skillsmith.toml');
+    const ports = await defaultRuntimePorts();
+    const resourceId = `manifest:${manifestPath}`;
+    const manifest = createManifestRepository({
+      resourceId,
+      path: manifestPath,
+      ports,
+    });
+    const beforeLock = unwrap(await manifest.observeRevision(resourceId));
+    await ports.makeDir(join(root, 'skillsmith.toml.lock'));
+    const whileLocked = unwrap(await manifest.observeRevision(resourceId));
+    await chmod(root, 0o750);
+    const afterParentModeChange = unwrap(await manifest.observeRevision(resourceId));
+
+    expect(whileLocked).toEqual(beforeLock);
+    expect(afterParentModeChange.revisionDigest).not.toBe(beforeLock.revisionDigest);
   });
 
   test('plans the exact lossless manifest migration and exposes it on legacy reads', async () => {

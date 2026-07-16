@@ -2,9 +2,12 @@ import type { InstallRecord } from '../agents/types.ts';
 import type { CanonicalSourceIdentity } from '../artifacts/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { FlipTool, JournalPhase, PlacementPorts } from '../place/types.ts';
+import type { InstallAction, UninstallAction } from '../planning/legacy-action.ts';
 import type { OperationExecutionResult, OperationPlan } from '../planning/types.ts';
 import type { DetectionPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import type { Result } from '../result.ts';
+
+export type { InstallAction, UninstallAction } from '../planning/legacy-action.ts';
 
 export type AcquisitionPorts = PlacementPorts;
 
@@ -32,15 +35,6 @@ export type Selection =
   | { kind: 'none'; searched: number }; // caller: exit-5 source-unresolvable
 
 export type InstallScope = 'user' | 'project';
-export type InstallAction =
-  | 'installed'
-  | 'updated'
-  | 'repaired'
-  | 'noop'
-  | 'skipped'
-  | 'refused'
-  | 'failed';
-
 export interface InstallOptions {
   sources: readonly string[];
   tools?: readonly FlipTool[]; // explicit --tool list; undefined = all DETECTED tools
@@ -141,8 +135,6 @@ export interface InstallSourceTransport {
   readonly listSkills: typeof import('./fetch.ts').lsTreeSkills;
   readonly materializeSkill: typeof import('./fetch.ts').sparseCheckoutSkill;
 }
-
-export type UninstallAction = 'removed' | 'noop' | 'refused' | 'failed';
 
 export interface UninstallOptions {
   targets: readonly string[]; // skill names (leaf dir names) or placement paths

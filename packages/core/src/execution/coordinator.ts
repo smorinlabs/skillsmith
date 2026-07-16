@@ -1,4 +1,3 @@
-import { createOperationExecutionResult } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   ExecutableOperation,
@@ -6,6 +5,13 @@ import type {
   OperationImage,
   OperationResourceIdentity,
 } from '../planning/types.ts';
+import { type Result, err, ok } from '../result.ts';
+import {
+  type ExpectedRevisionV1,
+  type StateDomainV1,
+  isExpectedRevisionV1,
+  sameExpectedRevisionV1,
+} from '../state/types.ts';
 import { withExecutionLockHierarchy } from './lock-hierarchy.ts';
 import {
   validateExecutionPreconditionCoverage,
@@ -21,6 +27,80 @@ import type {
   PreparedExecutionBinding,
   ValidatedExecutionBinding,
 } from './types.ts';
+
+export type RepositoryRevisionV1 = ExpectedRevisionV1;
+
+export interface RevisionCursorV1 {
+  readonly schemaVersion: 1;
+  readonly snapshotId: string;
+  readonly revisions: readonly RepositoryRevisionV1[];
+}
+
+export interface RevisionCursorPlanV1 {
+  readonly schemaVersion: 1;
+  readonly snapshotId: string;
+  readonly expectedRevisions: readonly RepositoryRevisionV1[];
+}
+
+export type DurabilityDispositionV1 = 'committed' | 'rolled-back' | 'indeterminate';
+
+export interface DurabilityRevisionTransitionV1 {
+  readonly resourceId: string;
+  readonly beforeRevision: RepositoryRevisionV1;
+  readonly afterRevision: RepositoryRevisionV1;
+}
+
+export interface DurabilityReceiptV1 {
+  readonly schemaVersion: 1;
+  readonly operationId: string;
+  readonly disposition: DurabilityDispositionV1;
+  readonly revisions: readonly DurabilityRevisionTransitionV1[];
+}
+
+export interface RevisionCursorErrorV1 {
+  readonly code:
+    | 'invalid-cursor'
+    | 'invalid-receipt'
+    | 'indeterminate'
+    | 'stale-revision'
+    | 'unknown-resource';
+  readonly operationId: string | null;
+  readonly resourceId: string | null;
+}
+
+export interface RepositoryLifecycleStageV1 {
+  readonly operationId: string;
+  readonly domain: StateDomainV1;
+  readonly resourceId: string;
+  readonly beforeRevision: RepositoryRevisionV1;
+}
+
+export interface RepositoryLifecycleV1<
+  Stage extends RepositoryLifecycleStageV1 = RepositoryLifecycleStageV1,
+  Failure = unknown,
+> {
+  readonly operationId: string;
+  readonly stage: () => Promise<Result<readonly Stage[], Failure>>;
+  readonly commit: (stages: readonly Stage[]) => Promise<Result<DurabilityReceiptV1, Failure>>;
+  readonly rollback: (
+    stages: readonly Stage[],
+    commitFailure: Failure,
+  ) => Promise<Result<DurabilityReceiptV1, Failure>>;
+  readonly cleanup: (
+    stages: readonly Stage[],
+    disposition: Exclude<DurabilityDispositionV1, 'indeterminate'>,
+  ) => Promise<Result<void, Failure>>;
+}
+
+export interface RepositoryLifecycleValueV1 {
+  readonly cursor: RevisionCursorV1;
+  readonly receipt: DurabilityReceiptV1;
+}
+
+export type RepositoryLifecycleResultV1 = Result<
+  RepositoryLifecycleValueV1,
+  Readonly<Record<string, unknown>>
+>;
 
 interface PreparedBindingAdapter {
   readonly operation: ExecutableOperation;
@@ -134,15 +214,7 @@ const bindUnderLock = async (
     }
     let actualBefore: OperationImage;
     try {
-      const observed = await input.observeActualBefore();
-      actualBefore = createOperationExecutionResult({
-        operationId: input.operationId,
-        outcome: 'cancelled',
-        actualBefore: observed,
-        actualAfter: observed,
-        force: input.unstartedForce,
-        error: null,
-      }).actualBefore;
+      actualBefore = await input.observeActualBefore();
     } catch (error) {
       if (
         error !== null &&
@@ -198,4 +270,318 @@ export const executeOperationPlan = async (
     },
     options,
   );
+};
+
+const revisionCursorError = (
+  code: RevisionCursorErrorV1['code'],
+  operationId: string | null,
+  resourceId: string | null,
+): RevisionCursorErrorV1 => Object.freeze({ code, operationId, resourceId });
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const ownRevision = (value: unknown): RepositoryRevisionV1 => {
+  if (!isExpectedRevisionV1(value)) fail('revision must be a valid ExpectedRevisionV1');
+  return Object.freeze(structuredClone(value)) as RepositoryRevisionV1;
+};
+
+const sameRevision = (left: RepositoryRevisionV1, right: RepositoryRevisionV1): boolean =>
+  sameExpectedRevisionV1(left, right);
+
+const ownRevisionCursor = (
+  snapshotId: string,
+  revisions: readonly RepositoryRevisionV1[],
+): RevisionCursorV1 =>
+  Object.freeze({
+    schemaVersion: 1,
+    snapshotId,
+    revisions: Object.freeze(revisions.map((revision) => ownRevision(revision))),
+  });
+
+export const createRevisionCursorV1 = (plan: RevisionCursorPlanV1): RevisionCursorV1 => {
+  if (
+    !isRecord(plan) ||
+    plan.schemaVersion !== 1 ||
+    typeof plan.snapshotId !== 'string' ||
+    !/^snapshot:v1:[0-9a-f]{64}$/u.test(plan.snapshotId) ||
+    !Array.isArray(plan.expectedRevisions)
+  ) {
+    fail('revision cursor plan is invalid');
+  }
+  const revisions = plan.expectedRevisions.map((revision) => ownRevision(revision));
+  const resourceIds = revisions.map((revision) => revision.resourceId);
+  if (new Set(resourceIds).size !== resourceIds.length) {
+    fail('revision cursor resources must be unique');
+  }
+  return ownRevisionCursor(plan.snapshotId, revisions);
+};
+
+const transitionReceipt = (
+  cursor: RevisionCursorV1,
+  receipt: DurabilityReceiptV1,
+  disposition: Exclude<DurabilityDispositionV1, 'indeterminate'>,
+): Result<RevisionCursorV1, RevisionCursorErrorV1> => {
+  const revisions = new Map(cursor.revisions.map((revision) => [revision.resourceId, revision]));
+  const seen = new Set<string>();
+  for (const transition of receipt.revisions) {
+    if (
+      !isRecord(transition) ||
+      typeof transition.resourceId !== 'string' ||
+      seen.has(transition.resourceId)
+    ) {
+      return err(revisionCursorError('invalid-receipt', receipt.operationId, null));
+    }
+    seen.add(transition.resourceId);
+    const current = revisions.get(transition.resourceId);
+    if (current === undefined) {
+      return err(
+        revisionCursorError('unknown-resource', receipt.operationId, transition.resourceId),
+      );
+    }
+    let beforeRevision: RepositoryRevisionV1;
+    let afterRevision: RepositoryRevisionV1;
+    try {
+      beforeRevision = ownRevision(transition.beforeRevision);
+      afterRevision = ownRevision(transition.afterRevision);
+    } catch {
+      return err(
+        revisionCursorError('invalid-receipt', receipt.operationId, transition.resourceId),
+      );
+    }
+    if (
+      beforeRevision.resourceId !== transition.resourceId ||
+      afterRevision.resourceId !== transition.resourceId ||
+      beforeRevision.domain !== current.domain ||
+      afterRevision.domain !== current.domain
+    ) {
+      return err(
+        revisionCursorError('invalid-receipt', receipt.operationId, transition.resourceId),
+      );
+    }
+    if (!sameRevision(current, beforeRevision)) {
+      return err(revisionCursorError('stale-revision', receipt.operationId, transition.resourceId));
+    }
+    if (disposition === 'rolled-back' && !sameRevision(beforeRevision, afterRevision)) {
+      return err(
+        revisionCursorError('invalid-receipt', receipt.operationId, transition.resourceId),
+      );
+    }
+    revisions.set(
+      transition.resourceId,
+      disposition === 'committed' ? afterRevision : beforeRevision,
+    );
+  }
+  const ordered = cursor.revisions.map(
+    (revision) => revisions.get(revision.resourceId) ?? revision,
+  );
+  return ok(ownRevisionCursor(cursor.snapshotId, ordered));
+};
+
+const advanceRevisionCursor = (
+  cursor: RevisionCursorV1,
+  receipt: DurabilityReceiptV1,
+): Result<RevisionCursorV1, RevisionCursorErrorV1> =>
+  transitionReceipt(cursor, receipt, 'committed');
+
+const restoreRevisionCursor = (
+  cursor: RevisionCursorV1,
+  receipt: DurabilityReceiptV1,
+): Result<RevisionCursorV1, RevisionCursorErrorV1> =>
+  transitionReceipt(cursor, receipt, 'rolled-back');
+
+export const applyDurabilityReceiptV1 = (
+  cursor: RevisionCursorV1,
+  receipt: DurabilityReceiptV1,
+): Result<RevisionCursorV1, RevisionCursorErrorV1> => {
+  if (
+    !isRecord(cursor) ||
+    cursor.schemaVersion !== 1 ||
+    typeof cursor.snapshotId !== 'string' ||
+    !Array.isArray(cursor.revisions)
+  ) {
+    return err(revisionCursorError('invalid-cursor', null, null));
+  }
+  if (
+    !isRecord(receipt) ||
+    receipt.schemaVersion !== 1 ||
+    typeof receipt.operationId !== 'string' ||
+    !Array.isArray(receipt.revisions) ||
+    (receipt.disposition !== 'committed' &&
+      receipt.disposition !== 'rolled-back' &&
+      receipt.disposition !== 'indeterminate')
+  ) {
+    return err(revisionCursorError('invalid-receipt', null, null));
+  }
+  if (receipt.disposition === 'indeterminate') {
+    return err(revisionCursorError('indeterminate', receipt.operationId, null));
+  }
+  return receipt.disposition === 'committed'
+    ? advanceRevisionCursor(cursor, receipt)
+    : restoreRevisionCursor(cursor, receipt);
+};
+
+const isResult = (value: unknown): value is Result<unknown, unknown> =>
+  isRecord(value) &&
+  typeof value.ok === 'boolean' &&
+  (value.ok ? 'value' in value : 'error' in value);
+
+const invokeLifecycle = async (
+  operation: () => Promise<unknown>,
+): Promise<Result<unknown, unknown>> => {
+  try {
+    const result = await operation();
+    return isResult(result) ? result : err({ code: 'invalid-lifecycle-result' });
+  } catch (error) {
+    return err(error);
+  }
+};
+
+const lifecycleFailure = (
+  failure: unknown,
+  cursor: RevisionCursorV1 | null,
+  disposition: DurabilityDispositionV1 | 'unstarted',
+): Readonly<Record<string, unknown>> => {
+  const details: Record<string, unknown> = {};
+  if (isRecord(failure)) {
+    for (const key of ['code', 'reason', 'message']) {
+      const descriptor = Object.getOwnPropertyDescriptor(failure, key);
+      if (
+        descriptor !== undefined &&
+        'value' in descriptor &&
+        (descriptor.value === null ||
+          typeof descriptor.value === 'string' ||
+          typeof descriptor.value === 'number' ||
+          typeof descriptor.value === 'boolean')
+      ) {
+        details[key] = descriptor.value;
+      }
+    }
+  }
+  if (typeof details.code !== 'string') details.code = 'repository-lifecycle-failed';
+  return Object.freeze({ ...details, disposition, cursor });
+};
+
+const cleanupLifecycle = async <Stage extends RepositoryLifecycleStageV1>(
+  lifecycle: RepositoryLifecycleV1<Stage>,
+  stages: readonly Stage[],
+  disposition: Exclude<DurabilityDispositionV1, 'indeterminate'>,
+  cursor: RevisionCursorV1,
+): Promise<Result<void, Readonly<Record<string, unknown>>>> => {
+  const cleanup = await invokeLifecycle(() => lifecycle.cleanup(stages, disposition));
+  return cleanup.ok ? ok(undefined) : err(lifecycleFailure(cleanup.error, cursor, disposition));
+};
+
+const validLifecycleStages = (
+  stages: readonly unknown[],
+  operationId: string,
+): stages is readonly RepositoryLifecycleStageV1[] => {
+  const resources = new Set<string>();
+  for (const stage of stages) {
+    if (
+      !isRecord(stage) ||
+      stage.operationId !== operationId ||
+      typeof stage.domain !== 'string' ||
+      typeof stage.resourceId !== 'string' ||
+      resources.has(stage.resourceId) ||
+      !isExpectedRevisionV1(stage.beforeRevision) ||
+      stage.beforeRevision.domain !== stage.domain ||
+      stage.beforeRevision.resourceId !== stage.resourceId
+    ) {
+      return false;
+    }
+    resources.add(stage.resourceId);
+  }
+  return true;
+};
+
+const receiptExactlyCoversStages = (
+  stages: readonly RepositoryLifecycleStageV1[],
+  receipt: DurabilityReceiptV1,
+): boolean => {
+  if (!Array.isArray(receipt.revisions) || receipt.revisions.length !== stages.length) return false;
+  const transitions = new Map(receipt.revisions.map((item) => [item.resourceId, item]));
+  if (transitions.size !== stages.length) return false;
+  for (const stage of stages) {
+    const transition = transitions.get(stage.resourceId);
+    if (
+      transition === undefined ||
+      !isExpectedRevisionV1(transition.beforeRevision) ||
+      !isExpectedRevisionV1(transition.afterRevision) ||
+      transition.beforeRevision.domain !== stage.domain ||
+      transition.afterRevision.domain !== stage.domain ||
+      transition.beforeRevision.resourceId !== stage.resourceId ||
+      transition.afterRevision.resourceId !== stage.resourceId ||
+      !sameExpectedRevisionV1(transition.beforeRevision, stage.beforeRevision)
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+export const executeRepositoryLifecycleV1 = async <Stage extends RepositoryLifecycleStageV1>(
+  cursor: RevisionCursorV1,
+  lifecycle: RepositoryLifecycleV1<Stage>,
+): Promise<RepositoryLifecycleResultV1> => {
+  if (typeof lifecycle.operationId !== 'string' || lifecycle.operationId.length === 0) {
+    return err(lifecycleFailure({ code: 'invalid-operation-id' }, cursor, 'unstarted'));
+  }
+  const staged = await invokeLifecycle(() => lifecycle.stage());
+  if (!staged.ok) return err(lifecycleFailure(staged.error, cursor, 'unstarted'));
+  if (!Array.isArray(staged.value)) {
+    return err(lifecycleFailure({ code: 'invalid-stage-result' }, cursor, 'unstarted'));
+  }
+  const stages = staged.value as readonly Stage[];
+  if (!validLifecycleStages(stages, lifecycle.operationId)) {
+    return err(lifecycleFailure({ code: 'invalid-stage-result' }, cursor, 'unstarted'));
+  }
+  const committed = await invokeLifecycle(() => lifecycle.commit(stages));
+  if (committed.ok) {
+    const receipt = committed.value as DurabilityReceiptV1;
+    if (receipt?.operationId !== lifecycle.operationId) {
+      return err(lifecycleFailure({ code: 'invalid-receipt' }, null, 'indeterminate'));
+    }
+    if (receipt?.disposition === 'indeterminate') {
+      return err(lifecycleFailure({ code: 'indeterminate' }, null, 'indeterminate'));
+    }
+    if (!receiptExactlyCoversStages(stages, receipt)) {
+      return err(lifecycleFailure({ code: 'invalid-receipt' }, null, 'indeterminate'));
+    }
+    const advanced = applyDurabilityReceiptV1(cursor, receipt);
+    if (!advanced.ok) {
+      return err(lifecycleFailure(advanced.error, null, 'indeterminate'));
+    }
+    const cleanup = await cleanupLifecycle(lifecycle, stages, receipt.disposition, advanced.value);
+    if (!cleanup.ok) return cleanup;
+    if (receipt.disposition === 'rolled-back') {
+      return err(lifecycleFailure({ code: 'rolled-back' }, advanced.value, 'rolled-back'));
+    }
+    return ok(Object.freeze({ cursor: advanced.value, receipt }));
+  }
+
+  const rolledBack = await invokeLifecycle(() => lifecycle.rollback(stages, committed.error));
+  if (!rolledBack.ok) {
+    return err(lifecycleFailure(rolledBack.error, null, 'indeterminate'));
+  }
+  const receipt = rolledBack.value as DurabilityReceiptV1;
+  if (receipt?.operationId !== lifecycle.operationId) {
+    return err(lifecycleFailure({ code: 'invalid-receipt' }, null, 'indeterminate'));
+  }
+  if (receipt?.disposition === 'indeterminate') {
+    return err(lifecycleFailure(committed.error, null, 'indeterminate'));
+  }
+  if (!receiptExactlyCoversStages(stages, receipt)) {
+    return err(lifecycleFailure({ code: 'invalid-receipt' }, null, 'indeterminate'));
+  }
+  const resolved = applyDurabilityReceiptV1(cursor, receipt);
+  if (!resolved.ok) {
+    return err(lifecycleFailure(resolved.error, null, 'indeterminate'));
+  }
+  const cleanup = await cleanupLifecycle(lifecycle, stages, receipt.disposition, resolved.value);
+  if (!cleanup.ok) return cleanup;
+  if (receipt.disposition === 'committed') {
+    return ok(Object.freeze({ cursor: resolved.value, receipt }));
+  }
+  return err(lifecycleFailure(committed.error, resolved.value, 'rolled-back'));
 };

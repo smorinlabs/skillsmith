@@ -147,8 +147,13 @@ describe('planning constructors', () => {
       pairId,
     });
 
-    expect(groupId).toMatch(/^group:v1:[0-9a-f]{64}$/);
-    expect(pairId).toMatch(/^pair:v1:[0-9a-f]{64}$/);
+    expect(groupId).toBe(
+      'group:v1:d904fde91d76f2c68d1b810cb70b8ab58fea79c40e6b5cf0be76c2f0cd745bb2',
+    );
+    expect(pairId).toBe('pair:v1:29c1373c528f63f4d64d14326ae8087116c572df5df55e26b20477270712157b');
+    expect(installId).toBe(
+      'operation:v1:204dab42b2550651bd7ae11d718496e6fee8fa63b715992b6b5afeed12e2ccd0',
+    );
     expect(
       createOperationGroupId(
         Object.fromEntries(
@@ -295,6 +300,64 @@ describe('planning constructors', () => {
     (implicitDev.selection as Record<string, unknown>).source = 'bounded-default';
     expect(() => createOperationPlan(implicitDev as unknown as OperationPlanInput<'dev'>)).toThrow(
       /selection.*explicit/i,
+    );
+  });
+
+  test('preserves closed hostile-data error families and ownership budgets', () => {
+    const symbolic = { ...identityFor('install'), [Symbol('trap')]: true };
+    expect(() => createOperationId(symbolic as OperationIdentity)).toThrow(
+      /^operation planning: \$ contains symbol keys$/i,
+    );
+
+    const cyclic = { ...identityFor('install') } as Record<string, unknown>;
+    cyclic.self = cyclic;
+    expect(() => createOperationId(cyclic as unknown as OperationIdentity)).toThrow(
+      /^operation planning: \$\.self contains a cycle$/i,
+    );
+
+    const nonEnumerable = { ...identityFor('install') };
+    Object.defineProperty(nonEnumerable, 'hidden', { value: true, enumerable: false });
+    expect(() => createOperationId(nonEnumerable)).toThrow(
+      /^operation planning: \$\.hidden must be an enumerable data property$/i,
+    );
+
+    const nonFinite = { ...identityFor('install'), schemaVersion: Number.POSITIVE_INFINITY };
+    expect(() => createOperationId(nonFinite as unknown as OperationIdentity)).toThrow(
+      /^operation planning: \$\.schemaVersion must contain plain data$/i,
+    );
+
+    const extendedArray = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    const extendedSkills: unknown[] = [];
+    Object.defineProperty(extendedSkills, 'extra', { value: true, enumerable: true });
+    (extendedArray.selection as Record<string, unknown>).skills = extendedSkills;
+    expect(() => createOperationPlan(extendedArray as unknown as OperationPlanInput)).toThrow(
+      /^operation planning: \$\.selection\.skills contains non-index array properties$/i,
+    );
+
+    const exoticArray = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    const exoticSkills: unknown[] = [];
+    Object.setPrototypeOf(exoticSkills, null);
+    (exoticArray.selection as Record<string, unknown>).skills = exoticSkills;
+    expect(() => createOperationPlan(exoticArray as unknown as OperationPlanInput)).toThrow(
+      /^operation planning: \$\.selection\.skills has an exotic array$/i,
+    );
+
+    let tooDeep: unknown = 'alpha';
+    for (let depth = 0; depth < 66; depth += 1) tooDeep = { value: tooDeep };
+    expect(() =>
+      createOperationId({
+        ...identityFor('install'),
+        skill: tooDeep,
+      } as unknown as OperationIdentity),
+    ).toThrow(/^operation planning: .* exceeds the snapshot budget$/i);
+
+    const tooWide = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    (tooWide.selection as Record<string, unknown>).skills = Array.from(
+      { length: 20_001 },
+      (_, index) => `skill-${index}`,
+    );
+    expect(() => createOperationPlan(tooWide as unknown as OperationPlanInput)).toThrow(
+      /^operation planning: .* exceeds the snapshot budget$/i,
     );
   });
 

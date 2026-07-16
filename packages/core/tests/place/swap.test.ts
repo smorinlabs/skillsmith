@@ -7,7 +7,6 @@ import type { SkillSmithError } from '../../src/errors.ts';
 import {
   emptyLedger,
   getLedgerPairAt,
-  getPairAt,
   setPair,
   withLedgerPairAt,
   writeLedger,
@@ -19,8 +18,8 @@ import type {
   DevRecord,
   LedgerFile,
   PinnedRecord,
-  SwapCtx,
   SwapPlan,
+  SwapRequest,
 } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
@@ -38,15 +37,8 @@ const canonicalLedger = (ledger: LedgerFile): LedgerModel => {
   return converted.value;
 };
 
-const getSwapPair = (ledger: SwapCtx['ledger'], skill: string, tool: 'claude-code') =>
-  'schemaVersion' in ledger
-    ? getPairAt(ledger, null, skill, tool)
-    : getLedgerPairAt(ledger, null, skill, tool);
-
-const canonicalCtxLedger = (ledger: SwapCtx['ledger']): LedgerModel => {
-  if ('schemaVersion' in ledger) throw new Error('swap context retained a schema-v1 ledger');
-  return ledger;
-};
+const getSwapPair = (ledger: LedgerModel, skill: string, tool: 'claude-code') =>
+  getLedgerPairAt(ledger, null, skill, tool);
 
 const dev = (sourcePath: string): DevRecord => ({
   sourcePath,
@@ -71,18 +63,33 @@ const makeCtx = (
   env: RuntimePorts,
   ledgerPath: string,
   ledger: LedgerModel,
-  opts: { txId?: string; signal?: AbortSignal } = {},
-): SwapCtx => {
-  const ctx: SwapCtx = {
-    env,
-    ledgerPath,
-    ledger,
-    persist: () => writeLedger(env, ledgerPath, canonicalCtxLedger(ctx.ledger)),
-    now: () => NOW,
-    newTxId: () => opts.txId ?? 'aabbccdd',
-    signal: opts.signal,
+  opts: {
+    txId?: string;
+    signal?: AbortSignal;
+    pauseAt?: 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';
+    afterPersist?: (ledger: LedgerModel) => void;
+  } = {},
+): SwapRequest => {
+  let durableLedger = ledger;
+  return {
+    context: {
+      env,
+      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+      ...(opts.pauseAt === undefined ? {} : { pauseAt: opts.pauseAt }),
+    },
+    state: { ledger },
+    effects: {
+      persistLedger: async (candidate) => {
+        const written = await writeLedger(env, ledgerPath, candidate);
+        if (!written.ok) return { ok: false, error: written.error, ledger: durableLedger };
+        durableLedger = candidate;
+        opts.afterPersist?.(candidate);
+        return { ok: true, ledger: candidate };
+      },
+      journalNow: () => NOW,
+      newTransactionId: () => opts.txId ?? 'aabbccdd',
+    },
   };
-  return ctx;
 };
 
 interface Seeded {
@@ -179,7 +186,7 @@ describe('runSwap — promote / demote happy paths', () => {
     if (!h.ok) throw new Error(msg(h.error));
     expect(h.value).toBe(s.contentHash);
     expect(await residue(f.env, s.skillsRoot)).toEqual([]);
-    const pair = getSwapPair(ctx.ledger, 'alpha', 'claude-code');
+    const pair = getSwapPair(r.state.ledger, 'alpha', 'claude-code');
     expect(pair?.mode).toBe('pinned');
     expect(pair?.journal?.phase).toBe('committed');
     expect(pair?.journal?.completedAt).not.toBeNull();
@@ -191,14 +198,14 @@ describe('runSwap — promote / demote happy paths', () => {
     const ctx = makeCtx(f.env, s.ledgerPath, s.ledger);
     const up = await runSwap(ctx, promotePlan(s));
     if (!up.ok) throw new Error(msg(up.error));
-    const down = await runSwap(ctx, demotePlan(s));
+    const down = await runSwap(makeCtx(f.env, s.ledgerPath, up.state.ledger), demotePlan(s));
     if (!down.ok) throw new Error(msg(down.error));
     expect(down.value.backupKept).toBeNull();
     expect(down.value.warning).toBeNull();
     expect(await f.env.pathKind(s.placementPath)).toBe('symlink');
     expect(await f.env.readLink(s.placementPath)).toBe(s.target);
     expect(await residue(f.env, s.skillsRoot)).toEqual([]);
-    const pair = getSwapPair(ctx.ledger, 'alpha', 'claude-code');
+    const pair = getSwapPair(down.state.ledger, 'alpha', 'claude-code');
     expect(pair?.mode).toBe('dev');
     expect(pair?.pinned).not.toBeNull();
   });
@@ -209,7 +216,7 @@ describe('runSwap — promote / demote happy paths', () => {
     const up = await runSwap(ctx, promotePlan(s));
     if (!up.ok) throw new Error(msg(up.error));
     await appendFile(join(s.placementPath, 'SKILL.md'), '\nedited in place\n');
-    const down = await runSwap(ctx, demotePlan(s));
+    const down = await runSwap(makeCtx(f.env, s.ledgerPath, up.state.ledger), demotePlan(s));
     if (!down.ok) throw new Error(msg(down.error));
     expect(down.value.backupKept).not.toBeNull();
     expect(down.value.warning).not.toBeNull();
@@ -320,7 +327,7 @@ describe('runSwap / rollbackSwap — guards and abort', () => {
     if (!rolledBack.ok) throw new Error(msg(rolledBack.error));
     expect(await f.env.readLink(s.placementPath)).toBe(s.target);
     expect(await f.env.pathKind(stagingPath)).toBe('absent');
-    expect(getSwapPair(ctx.ledger, 'alpha', 'claude-code')?.journal).toBeNull();
+    expect(getSwapPair(rolledBack.state.ledger, 'alpha', 'claude-code')?.journal).toBeNull();
   });
 
   test('pre-aborted signal → flip-failed, journal left recoverable, resumeSwap completes it', async () => {
@@ -331,37 +338,41 @@ describe('runSwap / rollbackSwap — guards and abort', () => {
     const r = await runSwap(ctx, promotePlan(s));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('flip-failed');
-    const pair = getSwapPair(ctx.ledger, 'alpha', 'claude-code');
+    const pair = getSwapPair(r.state.ledger, 'alpha', 'claude-code');
     expect(pair?.journal).not.toBeNull();
     expect(pair?.journal?.phase).toBe('prepared');
     expect(await f.env.pathKind(s.placementPath)).toBe('symlink'); // live still old
 
-    const resumeCtx = makeCtx(f.env, s.ledgerPath, canonicalCtxLedger(ctx.ledger));
+    const resumeCtx = makeCtx(f.env, s.ledgerPath, r.state.ledger);
     const resumed = await resumeSwap(resumeCtx, 'alpha', 'claude-code');
     if (!resumed.ok) throw new Error(msg(resumed.error));
     expect(resumed.value.committed).toBe(true);
     expect(await f.env.pathKind(s.placementPath)).toBe('dir');
-    expect(getSwapPair(resumeCtx.ledger, 'alpha', 'claude-code')?.journal?.phase).toBe('committed');
+    expect(getSwapPair(resumed.state.ledger, 'alpha', 'claude-code')?.journal?.phase).toBe(
+      'committed',
+    );
     expect(await residue(f.env, s.skillsRoot)).toEqual([]);
   });
 
   test('abort persisted with the staged phase is observed before the pause listener is installed', async () => {
     const s = await seedAlphaDev(f);
     const controller = new AbortController();
-    const ctx = makeCtx(f.env, s.ledgerPath, s.ledger, { signal: controller.signal });
-    ctx.pauseAt = 'staged';
-    ctx.persist = async () => {
-      const persisted = await writeLedger(f.env, s.ledgerPath, canonicalCtxLedger(ctx.ledger));
-      if (getSwapPair(ctx.ledger, 'alpha', 'claude-code')?.journal?.phase === 'staged') {
-        controller.abort();
-      }
-      return persisted;
-    };
+    const ctx = makeCtx(f.env, s.ledgerPath, s.ledger, {
+      signal: controller.signal,
+      pauseAt: 'staged',
+      afterPersist: (ledger) => {
+        if (getSwapPair(ledger, 'alpha', 'claude-code')?.journal?.phase === 'staged') {
+          controller.abort();
+        }
+      },
+    });
 
     const interrupted = await runSwap(ctx, promotePlan(s));
     expect(interrupted.ok).toBe(false);
     if (!interrupted.ok) expect(interrupted.error.code).toBe('flip-failed');
-    expect(getSwapPair(ctx.ledger, 'alpha', 'claude-code')?.journal?.phase).toBe('staged');
+    expect(getSwapPair(interrupted.state.ledger, 'alpha', 'claude-code')?.journal?.phase).toBe(
+      'staged',
+    );
     expect(await f.env.pathKind(s.placementPath)).toBe('symlink');
   });
 });

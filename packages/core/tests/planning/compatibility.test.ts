@@ -1,11 +1,25 @@
 import { describe, expect, test } from 'bun:test';
+import type { InstallAction, UninstallAction } from '../../src/acquire/types.ts';
+import type { FlipAction } from '../../src/place/types.ts';
 import {
+  type CurrentCompatibilityAction,
   type CurrentCompatibilityProjection,
   type ExecutableOperation,
   type OperationExecutionResult,
   type PlanningDiagnostic,
   toCurrentCompatibilityAction,
 } from '../../src/planning/index.ts';
+import type {
+  InstallAction as EdgeInstallAction,
+  UninstallAction as EdgeUninstallAction,
+} from '../../src/planning/legacy-action.ts';
+import type { FlipAction as EdgeFlipAction } from '../../src/planning/legacy-action.ts';
+
+type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends <
+  Value,
+>() => Value extends Right ? 1 : 2
+  ? true
+  : false;
 
 const operation = (
   operationId: string,
@@ -33,6 +47,22 @@ const result = (
 const project = (input: CurrentCompatibilityProjection) => toCurrentCompatibilityAction(input);
 
 describe('current planning compatibility projection', () => {
+  test('keeps runner-facing aliases identical to the neutral legacy vocabulary', () => {
+    const installParity: Equal<InstallAction, EdgeInstallAction> = true;
+    const uninstallParity: Equal<UninstallAction, EdgeUninstallAction> = true;
+    const flipParity: Equal<FlipAction, EdgeFlipAction> = true;
+    const unionParity: Equal<
+      CurrentCompatibilityAction,
+      EdgeInstallAction | EdgeUninstallAction | EdgeFlipAction
+    > = true;
+    expect([installParity, uninstallParity, flipParity, unionParity]).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+  });
+
   test('keeps dispositions and outcomes distinct from executable work', () => {
     expect(
       project({ family: 'install', operation: null, diagnostic: diagnostic('noop'), result: null }),

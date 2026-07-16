@@ -8,7 +8,36 @@ import {
 } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
 import { type SkillSmithError, flipRefusedError, placementNotFoundError } from '../errors.ts';
+import {
+  type SnapshotBoundOperationPlanV1,
+  type SnapshotPlanningErrorV1,
+  bindOperationPlanToSnapshotV1,
+  createOperationGroupId,
+  createOperationId,
+  createOperationPairId,
+  createOperationPlan,
+  createPlanCheckId,
+  expectedRevisionPreconditionIdsForSnapshotV1,
+  operationImageFromLiveStateV1,
+  operationSourceFromLedgerPairV1,
+} from '../planning/create.ts';
+import type {
+  ExecutableOperation,
+  OperationLocation,
+  OperationSelection,
+  OperationSource,
+  PlanCheck,
+  PlanningDiagnostic,
+} from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import {
+  type ContentObservationIdentityV1,
+  type LivePlacementStateV1,
+  type ObservedStateSnapshotV1,
+  type StoreStateV1,
+  createContentObservationPreconditionIdV1,
+  createStoreSnapshotIdentityV1,
+} from '../state/types.ts';
 import { getPairAt } from './ledger.ts';
 import {
   FLIP_TOOLS,
@@ -768,4 +797,822 @@ export const planFlips = async (
   }
 
   return ok({ pairs, preResults, unmatchedTargets });
+};
+
+interface PlacementPlanRequestCommonV1 {
+  readonly schemaVersion: 1;
+  readonly selection: OperationSelection;
+  readonly batchPolicy: 'fail-fast' | 'continue-on-error';
+  readonly diagnostics?: readonly PlanningDiagnostic[];
+  readonly compatibilityOperations?: readonly ExecutableOperation[];
+}
+
+export interface PlacementDevPlanRequestV1 extends PlacementPlanRequestCommonV1 {
+  readonly command: 'dev';
+  readonly mode?: 'forward';
+  readonly intents: readonly PlacementDevIntentV1[];
+}
+
+export interface PlacementPromotePlanRequestV1 extends PlacementPlanRequestCommonV1 {
+  readonly command: 'promote';
+  readonly mode?: 'forward';
+  readonly intents: readonly PlacementPromoteIntentV1[];
+}
+
+export interface PlacementRollbackPlanRequestV1 extends PlacementPlanRequestCommonV1 {
+  readonly command: 'dev' | 'promote';
+  readonly mode: 'rollback';
+  readonly intents: readonly PlacementRollbackIntentV1[];
+}
+
+export type PlacementPlanRequestV1 =
+  | PlacementDevPlanRequestV1
+  | PlacementPromotePlanRequestV1
+  | PlacementRollbackPlanRequestV1;
+
+interface PlacementIntentIdentityV1 {
+  readonly skill: string;
+  readonly tool: FlipTool;
+  readonly scope: 'user' | 'project';
+  readonly projectRoot: OperationLocation | null;
+  readonly liveResourceId: string;
+  readonly sourceContent?: ContentObservationIdentityV1;
+  readonly verification?: Readonly<{
+    readonly mode: 'static' | 'static+deep';
+    readonly expectedContentHash: `sha256:${string}`;
+  }>;
+}
+
+export interface PlacementDevIntentV1 extends PlacementIntentIdentityV1 {
+  readonly kind: 'link-dev';
+  readonly source: Extract<OperationSource, { readonly kind: 'local-dev' }>;
+  readonly sourceContent: ContentObservationIdentityV1;
+}
+
+export interface PlacementPromoteIntentV1 extends PlacementIntentIdentityV1 {
+  readonly kind: 'promote';
+  readonly storeResourceId: string;
+  readonly source: Extract<OperationSource, { readonly kind: 'local-dev' }>;
+  readonly representation: 'symlink' | 'copy';
+  readonly desiredContentHash: `sha256:${string}`;
+  readonly sourceContent: ContentObservationIdentityV1;
+}
+
+export interface PlacementRollbackIntentV1 extends PlacementIntentIdentityV1 {
+  readonly kind: 'rollback';
+  readonly storeResourceId: string | null;
+  readonly sourceContent?: ContentObservationIdentityV1;
+}
+
+const placementPlanningError = (error: unknown): SnapshotPlanningErrorV1 =>
+  Object.freeze({
+    code: 'planning-invalid',
+    message: error instanceof Error ? error.message : 'placement planning failed',
+  });
+
+const placementExpectedRevisionIds = (snapshot: ObservedStateSnapshotV1): readonly string[] =>
+  expectedRevisionPreconditionIdsForSnapshotV1(snapshot);
+
+const placementLiveObservation = (
+  snapshot: ObservedStateSnapshotV1,
+  resourceId: string,
+): ObservedStateSnapshotV1['live'][number] => {
+  const matches = snapshot.live.filter(
+    (observation) =>
+      observation.revision.domain === 'live' && observation.revision.resourceId === resourceId,
+  );
+  if (matches.length !== 1) {
+    throw new TypeError('placement planning: live resource observation is missing or ambiguous');
+  }
+  const observation = matches[0] as ObservedStateSnapshotV1['live'][number];
+  const revision = observation.revision;
+  const state = observation.value;
+  if (revision.domain !== 'live') {
+    throw new TypeError('placement planning: live resource observation is incoherent');
+  }
+  if (revision.state === 'absent') {
+    if (state !== null) {
+      throw new TypeError('placement planning: live resource observation is incoherent');
+    }
+    return observation;
+  }
+  const targetKind = state?.representation === 'directory' ? 'directory' : state?.representation;
+  if (
+    revision.state !== 'present' ||
+    state === null ||
+    revision.targetIdentity !== state.path ||
+    revision.targetKind !== targetKind ||
+    revision.contentRevision !== state.contentRevision
+  ) {
+    throw new TypeError('placement planning: live resource observation is incoherent');
+  }
+  return observation;
+};
+
+const placementStoreObservation = (
+  snapshot: ObservedStateSnapshotV1,
+  resourceId: string,
+): ObservedStateSnapshotV1['store'][number] => {
+  const matches = snapshot.store.filter(
+    (observation) =>
+      observation.revision.domain === 'store' && observation.revision.resourceId === resourceId,
+  );
+  if (matches.length !== 1) {
+    throw new TypeError('placement planning: store resource observation is missing or ambiguous');
+  }
+  const observation = matches[0] as ObservedStateSnapshotV1['store'][number];
+  const revision = observation.revision;
+  const state = observation.value;
+  if (revision.domain !== 'store') {
+    throw new TypeError('placement planning: store resource observation is incoherent');
+  }
+  if (revision.state === 'absent') {
+    if (state !== null) {
+      throw new TypeError('placement planning: store resource observation is incoherent');
+    }
+    return observation;
+  }
+  if (
+    revision.state !== 'present' ||
+    state === null ||
+    revision.targetIdentity !== state.path ||
+    revision.contentRevision !== state.contentRevision ||
+    revision.resourceRevision !== state.repositoryRevision ||
+    revision.snapshotIdentity !== state.snapshotIdentity
+  ) {
+    throw new TypeError('placement planning: store resource observation is incoherent');
+  }
+  return observation;
+};
+
+const placementLiveLocation = (
+  observation: ObservedStateSnapshotV1['live'][number],
+): Extract<OperationLocation, { readonly kind: 'machine-bound' }> => {
+  if (observation.value !== null) {
+    return { kind: 'machine-bound', path: observation.value.path };
+  }
+  if (observation.revision.state !== 'absent') {
+    throw new TypeError('placement planning: live resource observation is invalid');
+  }
+  return { kind: 'machine-bound', path: observation.revision.targetIdentity };
+};
+
+const validatePlacementLive = (
+  intent: PlacementIntentIdentityV1,
+  state: LivePlacementStateV1 | null,
+): void => {
+  if (state === null) return;
+  if (
+    state.skill !== intent.skill ||
+    state.tool !== intent.tool ||
+    state.scope !== intent.scope ||
+    (intent.projectRoot?.kind === 'machine-bound' &&
+      state.projectIdentity !== intent.projectRoot.path)
+  ) {
+    throw new TypeError('placement planning: live resource does not match placement intent');
+  }
+};
+
+interface PlacementStoreFactsV1 {
+  readonly path: string;
+  readonly state: StoreStateV1 | null;
+}
+
+const validatePlacementStore = (
+  resourceId: string,
+  desiredContentHash: `sha256:${string}`,
+  observation: ObservedStateSnapshotV1['store'][number],
+  requirePresent: boolean,
+): PlacementStoreFactsV1 => {
+  const state = observation.value;
+  const revision = observation.revision;
+  const expectedSnapshotIdentity = createStoreSnapshotIdentityV1(resourceId, desiredContentHash);
+  if (
+    (requirePresent && revision.state !== 'present') ||
+    (revision.state === 'present' &&
+      (state === null ||
+        state.contentRevision !== desiredContentHash ||
+        state.snapshotIdentity !== expectedSnapshotIdentity))
+  ) {
+    throw new TypeError('placement planning: store resource does not match placement intent');
+  }
+  return {
+    path: revision.state === 'absent' ? revision.targetIdentity : (state as StoreStateV1).path,
+    state,
+  };
+};
+
+const placementLedgerPair = (
+  snapshot: ObservedStateSnapshotV1,
+  intent: PlacementIntentIdentityV1,
+  observation: ObservedStateSnapshotV1['live'][number],
+  live: LivePlacementStateV1 | null,
+) => {
+  const ledger = snapshot.ledger.value;
+  if (
+    (snapshot.ledger.revision.state === 'absent' && ledger !== null) ||
+    (snapshot.ledger.revision.state === 'present' && ledger === null)
+  ) {
+    throw new TypeError('placement planning: ledger observation is incoherent');
+  }
+  if (ledger === null) return null;
+  const projectIdentity =
+    intent.scope === 'user'
+      ? null
+      : (live?.projectIdentity ??
+        (intent.projectRoot?.kind === 'machine-bound' ? intent.projectRoot.path : null));
+  const skills =
+    projectIdentity === null ? ledger.skills : ledger.projects[projectIdentity]?.skills;
+  const pair = skills?.[intent.skill]?.tools[intent.tool] ?? null;
+  const livePath =
+    live === null && observation.revision.state === 'absent'
+      ? observation.revision.targetIdentity
+      : live?.path;
+  if (pair !== null && pair.placementPath !== livePath) {
+    throw new TypeError('placement planning: ledger/live placement paths differ');
+  }
+  return pair;
+};
+
+const placementLiveResource = (
+  intent: PlacementIntentIdentityV1,
+  observation: ObservedStateSnapshotV1['live'][number],
+) => ({
+  kind: 'live' as const,
+  skill: intent.skill,
+  tool: intent.tool,
+  scope: intent.scope,
+  projectRoot: intent.projectRoot,
+  location: placementLiveLocation(observation),
+});
+
+const placementOperationIds = (
+  request: PlacementPlanRequestV1,
+  intent: PlacementIntentIdentityV1,
+  liveResource: ReturnType<typeof placementLiveResource>,
+  kind: ExecutableOperation['kind'],
+  source: OperationSource | null,
+  target: string | null = null,
+) => {
+  const groupId = createOperationGroupId({
+    domain: 'skillsmith.operation-group-identity',
+    schemaVersion: 1,
+    command: request.command,
+    skill: intent.skill,
+    source,
+    scope: intent.scope,
+    target,
+  });
+  const pairId = createOperationPairId({
+    domain: 'skillsmith.operation-pair-identity',
+    schemaVersion: 1,
+    groupId,
+    tool: intent.tool,
+    resource: liveResource,
+  });
+  const operationId = createOperationId({
+    domain: 'skillsmith.operation-identity',
+    schemaVersion: 1,
+    groupId,
+    pairId,
+    kind,
+    skill: intent.skill,
+    source,
+    tool: intent.tool,
+    scope: intent.scope,
+  });
+  return { groupId, pairId, operationId };
+};
+
+const placementOperationBase = (
+  request: PlacementPlanRequestV1,
+  intent: PlacementIntentIdentityV1,
+  snapshot: ObservedStateSnapshotV1,
+  liveResource: ReturnType<typeof placementLiveResource>,
+  kind: ExecutableOperation['kind'],
+  source: OperationSource | null,
+  target: string | null = null,
+) => {
+  const ids = placementOperationIds(request, intent, liveResource, kind, source, target);
+  const requiredCheckIds =
+    intent.verification === undefined
+      ? []
+      : [
+          createPlanCheckId({
+            domain: 'skillsmith.plan-check-identity',
+            schemaVersion: 1,
+            kind: 'verification',
+            operationIds: [ids.operationId],
+            tool: intent.tool,
+            mode: intent.verification.mode,
+            expectedContentHash: intent.verification.expectedContentHash,
+          }),
+        ];
+  return {
+    ...ids,
+    kind,
+    dependencyMetadata: {
+      domain: 'skillsmith.operation-dependency' as const,
+      schemaVersion: 1 as const,
+      operationIds: [],
+    },
+    skill: intent.skill,
+    source,
+    tool: intent.tool,
+    scope: intent.scope,
+    selectionSource: request.selection.source,
+    preconditionIds: [
+      ...placementExpectedRevisionIds(snapshot),
+      ...(intent.sourceContent === undefined
+        ? []
+        : [createContentObservationPreconditionIdV1(intent.sourceContent)]),
+    ],
+    requiredCheckIds,
+    reversibility: {
+      kind: 'conditional' as const,
+      retentionResourceIds: [ids.pairId] as const,
+    },
+    mutates: { live: true, manifest: false, lock: false, ledger: true },
+    conflict: null,
+  };
+};
+
+const validatePlacementSourceContent = (
+  source: Extract<OperationSource, { readonly kind: 'local-dev' }>,
+  sourceContent: ContentObservationIdentityV1,
+): void => {
+  if (
+    sourceContent.targetKind !== 'directory' ||
+    sourceContent.targetIdentity !== resolve(source.path) ||
+    sourceContent.contentRevision !== source.contentHash
+  ) {
+    throw new TypeError('placement planning: source content observation differs from intent');
+  }
+};
+
+const placementDevOperationFor = (
+  request: PlacementDevPlanRequestV1,
+  intent: PlacementDevIntentV1,
+  snapshot: ObservedStateSnapshotV1,
+): ExecutableOperation | null => {
+  validatePlacementSourceContent(intent.source, intent.sourceContent);
+  const observation = placementLiveObservation(snapshot, intent.liveResourceId);
+  const liveState = observation.value;
+  validatePlacementLive(intent, liveState);
+  const ledgerPair = placementLedgerPair(snapshot, intent, observation, liveState);
+  const liveResource = placementLiveResource(intent, observation);
+  const beforeSource = operationSourceFromLedgerPairV1(ledgerPair, liveState);
+  if (
+    liveState?.placementClass === 'dev' &&
+    liveState.brokenReason === null &&
+    !liveState.dangling &&
+    liveState.representation === 'symlink' &&
+    liveState.linkTarget !== null &&
+    resolve(dirname(liveState.path), liveState.linkTarget) === resolve(intent.source.path) &&
+    liveState.contentRevision === intent.source.contentHash &&
+    ledgerPair?.mode === 'dev' &&
+    ledgerPair.dev?.resolvedPath === intent.source.path
+  ) {
+    return null;
+  }
+  return {
+    ...placementOperationBase(request, intent, snapshot, liveResource, 'link-dev', intent.source),
+    before: operationImageFromLiveStateV1({
+      resource: liveResource,
+      state: liveState,
+      managed: ledgerPair !== null,
+      source: beforeSource,
+    }),
+    after: {
+      kind: 'placement',
+      resource: liveResource,
+      classification: 'dev',
+      representation: 'symlink',
+      linkTarget: { kind: 'machine-bound', path: intent.source.path },
+      dangling: false,
+      source: intent.source,
+      contentHash: intent.source.contentHash,
+    },
+    reason: {
+      code: 'link-dev-selected',
+      message: `Link ${intent.skill} for ${intent.tool} to its development source.`,
+    },
+  };
+};
+
+const placementPromoteOperationFor = (
+  request: PlacementPromotePlanRequestV1,
+  intent: PlacementPromoteIntentV1,
+  snapshot: ObservedStateSnapshotV1,
+): ExecutableOperation | null => {
+  validatePlacementSourceContent(intent.source, intent.sourceContent);
+  const observation = placementLiveObservation(snapshot, intent.liveResourceId);
+  const liveState = observation.value;
+  validatePlacementLive(intent, liveState);
+  if (intent.source.contentHash !== intent.desiredContentHash) {
+    throw new TypeError('placement planning: source/store content revisions differ');
+  }
+  const ledgerPair = placementLedgerPair(snapshot, intent, observation, liveState);
+  if (liveState?.placementClass === 'dev') {
+    const expectedPath =
+      liveState.linkTarget === null ? null : resolve(dirname(liveState.path), liveState.linkTarget);
+    if (
+      intent.source.kind !== 'local-dev' ||
+      expectedPath !== intent.source.path ||
+      liveState.contentRevision !== intent.source.contentHash ||
+      (ledgerPair?.dev !== null &&
+        ledgerPair?.dev !== undefined &&
+        ledgerPair.dev.resolvedPath !== intent.source.path)
+    ) {
+      throw new TypeError('placement planning: dev promotion requires an exact local source');
+    }
+  }
+  const storeFacts = validatePlacementStore(
+    intent.storeResourceId,
+    intent.desiredContentHash,
+    placementStoreObservation(snapshot, intent.storeResourceId),
+    false,
+  );
+  const operationKind: ExecutableOperation['kind'] =
+    liveState?.placementClass === 'pinned' || liveState?.placementClass === 'store-linked'
+      ? 'update'
+      : 'promote';
+  const beforeSource =
+    liveState?.placementClass === 'dev'
+      ? intent.source
+      : operationSourceFromLedgerPairV1(ledgerPair, liveState);
+  const liveResource = placementLiveResource(intent, observation);
+  const expectedLinkTarget = intent.representation === 'symlink' ? resolve(storeFacts.path) : null;
+  const observedLinkTarget =
+    liveState?.linkTarget === null || liveState?.linkTarget === undefined
+      ? null
+      : resolve(dirname(liveState.path), liveState.linkTarget);
+  if (
+    (liveState?.placementClass === 'pinned' || liveState?.placementClass === 'store-linked') &&
+    liveState.brokenReason === null &&
+    !liveState.dangling &&
+    liveState.representation === (intent.representation === 'symlink' ? 'symlink' : 'directory') &&
+    observedLinkTarget === expectedLinkTarget &&
+    liveState.contentRevision === intent.desiredContentHash &&
+    ledgerPair?.mode === 'pinned' &&
+    ledgerPair.pinned?.storePath === storeFacts.path &&
+    ledgerPair.pinned.contentHash === intent.desiredContentHash &&
+    (ledgerPair.pinned.placement === undefined ||
+      ledgerPair.pinned.placement === intent.representation)
+  ) {
+    return null;
+  }
+  return {
+    ...placementOperationBase(
+      request,
+      intent,
+      snapshot,
+      liveResource,
+      operationKind,
+      intent.source,
+    ),
+    before: operationImageFromLiveStateV1({
+      resource: liveResource,
+      state: liveState,
+      managed: ledgerPair !== null || liveState?.placementClass === 'dev',
+      source: beforeSource,
+    }),
+    after: {
+      kind: 'placement',
+      resource: liveResource,
+      classification: 'pinned',
+      representation: intent.representation,
+      linkTarget:
+        intent.representation === 'symlink'
+          ? { kind: 'machine-bound', path: storeFacts.path }
+          : null,
+      dangling: false,
+      source: intent.source,
+      contentHash: intent.desiredContentHash,
+    },
+    reason: {
+      code: operationKind === 'update' ? 'update-selected' : 'promote-selected',
+      message:
+        operationKind === 'update'
+          ? `Update ${intent.skill} for ${intent.tool}.`
+          : `Promote ${intent.skill} for ${intent.tool}.`,
+    },
+  };
+};
+
+const pinnedRollbackSource = (
+  pair: NonNullable<ReturnType<typeof placementLedgerPair>>,
+  contentHash: string,
+): Extract<OperationSource, { readonly kind: 'portable' }> | null => {
+  if (
+    pair.pinned == null ||
+    pair.origin === undefined ||
+    pair.pinned.contentHash !== contentHash ||
+    pair.origin.host.length === 0 ||
+    pair.origin.repo.length === 0 ||
+    pair.origin.refResolved.length === 0 ||
+    !/^sha256:[0-9a-f]{64}$/u.test(contentHash)
+  ) {
+    return null;
+  }
+  return {
+    kind: 'portable',
+    identity: {
+      host: pair.origin.host,
+      repository: pair.origin.repo,
+      path: pair.origin.skillPath,
+    },
+    requestedRef: pair.origin.refRequested,
+    resolvedSha: pair.origin.refResolved,
+    sourcePath: pair.origin.skillPath.length === 0 ? '.' : pair.origin.skillPath,
+    contentHash: contentHash as `sha256:${string}`,
+  };
+};
+
+const placementRollbackOperationFor = (
+  request: PlacementRollbackPlanRequestV1,
+  intent: PlacementRollbackIntentV1,
+  snapshot: ObservedStateSnapshotV1,
+): ExecutableOperation => {
+  const observation = placementLiveObservation(snapshot, intent.liveResourceId);
+  const liveState = observation.value;
+  validatePlacementLive(intent, liveState);
+  const ledgerPair = placementLedgerPair(snapshot, intent, observation, liveState);
+  if (ledgerPair === null) {
+    throw new TypeError('placement planning: rollback intent has no retained inverse');
+  }
+  const liveResource = placementLiveResource(intent, observation);
+  const observedBeforeSource = operationSourceFromLedgerPairV1(ledgerPair, liveState);
+  const retainedDevSource =
+    observedBeforeSource === null &&
+    ledgerPair.mode === 'pinned' &&
+    ledgerPair.dev != null &&
+    ledgerPair.pinned != null &&
+    intent.sourceContent !== undefined &&
+    resolve(ledgerPair.dev.resolvedPath) === intent.sourceContent.targetIdentity &&
+    ledgerPair.pinned.contentHash === intent.sourceContent.contentRevision &&
+    liveState?.contentRevision === intent.sourceContent.contentRevision
+      ? {
+          kind: 'local-dev' as const,
+          path: intent.sourceContent.targetIdentity,
+          contentHash: intent.sourceContent.contentRevision,
+        }
+      : null;
+  const beforeSource = observedBeforeSource ?? retainedDevSource;
+  const before = operationImageFromLiveStateV1({
+    resource: liveResource,
+    state: liveState,
+    managed: true,
+    source: beforeSource,
+  });
+  const rollbackBefore =
+    (ledgerPair.journal?.phase === 'committed' ? null : ledgerPair.journal?.before) ??
+    (ledgerPair.mode === 'pinned' && ledgerPair.dev != null
+      ? {
+          mode: 'dev' as const,
+          symlinkTarget: ledgerPair.dev.resolvedPath,
+          liveKind: 'symlink' as const,
+        }
+      : ledgerPair.mode === 'dev' && ledgerPair.pinned != null
+        ? {
+            mode: 'pinned' as const,
+            storePath: ledgerPair.pinned.storePath,
+            contentHash: ledgerPair.pinned.contentHash,
+            liveKind:
+              ledgerPair.pinned.placement === 'symlink' ? ('symlink' as const) : ('dir' as const),
+            ...(ledgerPair.pinned.placement === 'symlink'
+              ? { symlinkTarget: ledgerPair.pinned.storePath }
+              : {}),
+          }
+        : null);
+  if (rollbackBefore === null) {
+    throw new TypeError('placement planning: rollback intent has no retained inverse');
+  }
+  if (rollbackBefore.mode === 'absent') {
+    return {
+      ...placementOperationBase(request, intent, snapshot, liveResource, 'remove', null),
+      before,
+      after: { kind: 'absent', resource: liveResource },
+      reason: {
+        code: 'rollback-inverse',
+        message: `Remove the interrupted fresh placement for ${intent.skill}.`,
+      },
+    };
+  }
+  if (rollbackBefore.mode === 'dev') {
+    if (intent.storeResourceId !== null) {
+      throw new TypeError('placement planning: dev rollback must not select a store resource');
+    }
+    const targetPath = resolve(dirname(liveResource.location.path), rollbackBefore.symlinkTarget);
+    if (intent.sourceContent === undefined) {
+      throw new TypeError('placement planning: dev rollback source observation is missing');
+    }
+    const source = {
+      kind: 'local-dev' as const,
+      path: targetPath,
+      contentHash: intent.sourceContent.contentRevision,
+    };
+    validatePlacementSourceContent(source, intent.sourceContent);
+    return {
+      ...placementOperationBase(
+        request,
+        intent,
+        snapshot,
+        liveResource,
+        'link-dev',
+        source,
+        targetPath,
+      ),
+      before,
+      after: {
+        kind: 'placement',
+        resource: liveResource,
+        classification: 'dev',
+        representation: 'symlink',
+        linkTarget: { kind: 'machine-bound', path: targetPath },
+        dangling: false,
+        source,
+        contentHash: source.contentHash,
+      },
+      reason: {
+        code: 'rollback-inverse',
+        message: `Restore the retained development placement for ${intent.skill}.`,
+      },
+    };
+  }
+  const rollbackLiveKind =
+    rollbackBefore.liveKind ??
+    (rollbackBefore.symlinkTarget === undefined ? ('dir' as const) : ('symlink' as const));
+  if (rollbackLiveKind !== 'dir' && rollbackLiveKind !== 'symlink') {
+    throw new TypeError('placement planning: pinned rollback inverse is incomplete');
+  }
+  if (intent.storeResourceId === null || rollbackBefore.contentHash === null) {
+    if (intent.storeResourceId !== null || rollbackBefore.contentHash !== null) {
+      throw new TypeError('placement planning: pinned rollback inverse is incomplete');
+    }
+    const representation = rollbackLiveKind === 'dir' ? 'copy' : 'symlink';
+    const linkTarget =
+      representation === 'symlink' && rollbackBefore.symlinkTarget !== undefined
+        ? {
+            kind: 'machine-bound' as const,
+            path: resolve(dirname(liveResource.location.path), rollbackBefore.symlinkTarget),
+          }
+        : null;
+    return {
+      ...placementOperationBase(request, intent, snapshot, liveResource, 'promote', null),
+      before,
+      after: {
+        kind: 'placement',
+        resource: liveResource,
+        classification: 'pinned',
+        representation,
+        linkTarget,
+        dangling: false,
+        source: null,
+        contentHash: null,
+      },
+      reason: {
+        code: 'rollback-inverse',
+        message: `Restore the retained pinned placement for ${intent.skill}.`,
+      },
+    };
+  }
+  const storeFacts = validatePlacementStore(
+    intent.storeResourceId,
+    rollbackBefore.contentHash as `sha256:${string}`,
+    placementStoreObservation(snapshot, intent.storeResourceId),
+    true,
+  );
+  if (storeFacts.path !== rollbackBefore.storePath) {
+    throw new TypeError('placement planning: rollback store path differs from retained inverse');
+  }
+  const source =
+    pinnedRollbackSource(ledgerPair, rollbackBefore.contentHash) ??
+    (intent.sourceContent !== undefined &&
+    intent.sourceContent.contentRevision === rollbackBefore.contentHash
+      ? {
+          kind: 'local-dev' as const,
+          path: intent.sourceContent.targetIdentity,
+          contentHash: intent.sourceContent.contentRevision,
+        }
+      : null);
+  if (source === null) {
+    throw new TypeError('placement planning: rollback pinned source is incomplete');
+  }
+  if (source.kind === 'local-dev' && intent.sourceContent !== undefined) {
+    validatePlacementSourceContent(source, intent.sourceContent);
+  }
+  const representation = rollbackLiveKind === 'dir' ? 'copy' : 'symlink';
+  if (representation === 'symlink' && rollbackBefore.symlinkTarget === undefined) {
+    throw new TypeError('placement planning: pinned rollback symlink target is incomplete');
+  }
+  return {
+    ...placementOperationBase(request, intent, snapshot, liveResource, 'promote', source),
+    before,
+    after: {
+      kind: 'placement',
+      resource: liveResource,
+      classification: 'pinned',
+      representation,
+      linkTarget:
+        representation === 'symlink'
+          ? {
+              kind: 'machine-bound',
+              path: resolve(
+                dirname(liveResource.location.path),
+                rollbackBefore.symlinkTarget ?? '',
+              ),
+            }
+          : null,
+      dangling: false,
+      source,
+      contentHash: rollbackBefore.contentHash as `sha256:${string}`,
+    },
+    reason: {
+      code: 'rollback-inverse',
+      message: `Restore the retained pinned placement for ${intent.skill}.`,
+    },
+  };
+};
+
+const placementChecksFor = (
+  request: PlacementPlanRequestV1,
+  operations: readonly ExecutableOperation[],
+): readonly PlanCheck[] => {
+  const intents = request.intents as readonly PlacementIntentIdentityV1[];
+  const checks: PlanCheck[] = [];
+  for (const operation of operations) {
+    const intent = intents.find(
+      (candidate) =>
+        candidate.skill === operation.skill &&
+        candidate.tool === operation.tool &&
+        candidate.scope === operation.scope,
+    );
+    if (intent?.verification === undefined) continue;
+    const checkId = operation.requiredCheckIds[0];
+    if (checkId === undefined) {
+      throw new TypeError('placement planning: verification check identity is missing');
+    }
+    checks.push({
+      checkId,
+      blocking: true,
+      operationIds: [operation.operationId],
+      kind: 'verification',
+      tool: intent.tool,
+      mode: intent.verification.mode,
+      expectedContentHash: intent.verification.expectedContentHash,
+    });
+  }
+  return checks;
+};
+
+/**
+ * Pure snapshot-bound placement planning seam. `planFlips` remains the compatibility observer
+ * while callers migrate their reads into `ObservedStateSnapshotV1`.
+ */
+export const createPlacementPlan = (
+  request: PlacementPlanRequestV1,
+  snapshot: ObservedStateSnapshotV1,
+): Result<SnapshotBoundOperationPlanV1<'dev' | 'promote'>, SnapshotPlanningErrorV1> => {
+  try {
+    if (
+      request.schemaVersion !== 1 ||
+      (request.command !== 'dev' && request.command !== 'promote') ||
+      (request.mode !== undefined && request.mode !== 'forward' && request.mode !== 'rollback')
+    ) {
+      throw new TypeError('placement planning: unsupported request');
+    }
+    const plannedOperations =
+      request.mode === 'rollback'
+        ? request.intents.map((intent) => placementRollbackOperationFor(request, intent, snapshot))
+        : request.command === 'dev'
+          ? request.intents
+              .map((intent) => placementDevOperationFor(request, intent, snapshot))
+              .filter((operation): operation is ExecutableOperation => operation !== null)
+          : request.intents
+              .map((intent) => placementPromoteOperationFor(request, intent, snapshot))
+              .filter((operation): operation is ExecutableOperation => operation !== null);
+    const expectedRevisionIds = placementExpectedRevisionIds(snapshot);
+    const compatibilityOperations = (request.compatibilityOperations ?? []).map((operation) => ({
+      ...operation,
+      preconditionIds: [...new Set([...operation.preconditionIds, ...expectedRevisionIds])],
+    }));
+    const operations = [...compatibilityOperations, ...plannedOperations];
+    const plan = createOperationPlan({
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: request.command,
+      selection: {
+        ...request.selection,
+        groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+      },
+      batchPolicy: request.batchPolicy,
+      operations,
+      checks: placementChecksFor(request, plannedOperations),
+      diagnostics: request.diagnostics ?? [],
+    });
+    return ok(bindOperationPlanToSnapshotV1(snapshot, plan));
+  } catch (error) {
+    return err(placementPlanningError(error));
+  }
 };

@@ -1,7 +1,15 @@
 import { createHash } from 'node:crypto';
-import { types as utilTypes } from 'node:util';
+import { dirname, resolve } from 'node:path';
 import { SUPPORTED_TOOLS } from '../agents/registry.ts';
+import type { LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
 import { containsSensitiveMaterial, redactSensitiveString } from '../safety/redaction.ts';
+import { type OrdinaryDataError, ownOrdinaryData } from '../state/ownership.ts';
+import type {
+  ExpectedRevisionV1,
+  LivePlacementStateV1,
+  ObservedStateSnapshotV1,
+} from '../state/types.ts';
+import { createExpectedRevisionPreconditionIdV1 } from '../state/types.ts';
 import {
   canonicalPlanningString,
   compareExecutableOperations,
@@ -23,10 +31,12 @@ import type {
   OperationExecutionResultInput,
   OperationGroupIdentity,
   OperationIdentity,
+  OperationImage,
   OperationPairIdentity,
   OperationPlan,
   OperationPlanInput,
   OperationSelection,
+  OperationSource,
   PlanCheck,
   PlanCheckIdentity,
   PlanningDiagnostic,
@@ -40,12 +50,7 @@ import {
 } from './vocabulary.ts';
 
 type UnknownRecord = Record<string, unknown>;
-interface SnapshotBudget {
-  nodes: number;
-}
 
-const MAX_SNAPSHOT_NODES = 20_000;
-const MAX_SNAPSHOT_DEPTH = 64;
 const tools = new Set<string>(SUPPORTED_TOOLS);
 const operationKinds = new Set<string>(EXECUTABLE_OPERATION_KINDS);
 const selectionSources = new Set<string>(OPERATION_SELECTION_SOURCES);
@@ -63,89 +68,40 @@ const fail = (message: string): never => {
   throw new TypeError(`operation planning: ${message}`);
 };
 
-const snapshotOrdinary = (
-  input: unknown,
-  path = '$',
-  active = new Set<object>(),
-  budget: SnapshotBudget = { nodes: 0 },
-  depth = 0,
-): unknown => {
-  budget.nodes += 1;
-  if (budget.nodes > MAX_SNAPSHOT_NODES || depth > MAX_SNAPSHOT_DEPTH) {
-    fail(`${path} exceeds the snapshot budget`);
+const planningOwnershipMessage = (error: OrdinaryDataError): string => {
+  switch (error.reason) {
+    case 'proxy':
+      return `${error.path} must not contain proxies`;
+    case 'accessor':
+      return `${error.path} is an accessor`;
+    case 'symbol-key':
+      return `${error.path} contains symbol keys`;
+    case 'non-index-array-property':
+      return `${error.path} contains non-index array properties`;
+    case 'exotic-array':
+      return `${error.path} has an exotic array`;
+    case 'exotic-prototype':
+      return `${error.path} has an exotic prototype`;
+    case 'non-enumerable':
+      return `${error.path} must be an enumerable data property`;
+    case 'sparse':
+      return `${error.path} contains non-enumerable or sparse array elements`;
+    case 'cycle':
+      return `${error.path} contains a cycle`;
+    case 'depth':
+    case 'nodes':
+      return `${error.path} exceeds the snapshot budget`;
+    case 'non-finite':
+    case 'unsupported':
+    case 'rejected-property':
+    case 'rejected-string':
+      return `${error.path} must contain plain data`;
   }
-  if (
-    input === null ||
-    typeof input === 'string' ||
-    typeof input === 'boolean' ||
-    (typeof input === 'number' && Number.isFinite(input))
-  ) {
-    return input;
-  }
-  if (typeof input !== 'object') return fail(`${path} must contain plain data`);
-  if (utilTypes.isProxy(input)) return fail(`${path} must not contain proxies`);
-  const objectInput = input as object;
-  if (active.has(objectInput)) return fail(`${path} contains a cycle`);
-  active.add(objectInput);
-  try {
-    if (Array.isArray(input)) {
-      if (Object.getPrototypeOf(input) !== Array.prototype) fail(`${path} has an exotic array`);
-      for (const key of Reflect.ownKeys(input)) {
-        if (typeof key !== 'string' || (key !== 'length' && !/^(0|[1-9][0-9]*)$/.test(key))) {
-          fail(`${path} contains non-index array properties`);
-        }
-      }
-      if (Object.keys(input).length !== input.length) {
-        fail(`${path} contains non-enumerable or sparse array elements`);
-      }
-      const output: unknown[] = [];
-      for (let index = 0; index < input.length; index++) {
-        if (!Object.hasOwn(input, index)) fail(`${path} is sparse`);
-        const descriptor = Object.getOwnPropertyDescriptor(input, String(index));
-        if (!descriptor || !('value' in descriptor))
-          return fail(`${path}[${index}] is an accessor`);
-        output.push(
-          snapshotOrdinary(descriptor.value, `${path}[${index}]`, active, budget, depth + 1),
-        );
-      }
-      return output;
-    }
-    const prototype = Object.getPrototypeOf(input);
-    if (prototype !== Object.prototype && prototype !== null)
-      fail(`${path} has an exotic prototype`);
-    const output: UnknownRecord = {};
-    for (const key of Reflect.ownKeys(input)) {
-      if (typeof key !== 'string') return fail(`${path} contains symbol keys`);
-      const stringKey = key as string;
-      const descriptor = Object.getOwnPropertyDescriptor(input, stringKey);
-      if (!descriptor || !('value' in descriptor)) {
-        return fail(`${path}.${stringKey} is an accessor`);
-      }
-      if (!descriptor.enumerable) {
-        return fail(`${path}.${stringKey} must be an enumerable data property`);
-      }
-      const child = snapshotOrdinary(
-        descriptor.value,
-        `${path}.${stringKey}`,
-        active,
-        budget,
-        depth + 1,
-      );
-      Object.defineProperty(output, stringKey, {
-        value: child,
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      });
-    }
-    return output;
-  } catch (error) {
-    if (error instanceof TypeError && error.message.startsWith('operation planning:')) throw error;
-    fail(`${path} could not be snapshotted`);
-  } finally {
-    active.delete(objectInput);
-  }
-  return fail(`${path} could not be snapshotted`);
+};
+
+const ownPlanningData = (input: unknown): unknown => {
+  const owned = ownOrdinaryData(input, () => true);
+  return owned.ok ? owned.value : fail(planningOwnershipMessage(owned.error));
 };
 
 const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
@@ -154,6 +110,163 @@ const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
   for (const child of Object.values(value)) deepFreeze(child, seen);
   return Object.freeze(value);
 };
+
+/**
+ * Private prepared-plan envelope. Semantic operation IDs stay independent of the observed
+ * snapshot; exact expected revisions own staleness at execution time.
+ */
+export interface SnapshotBoundOperationPlanV1<
+  Command extends CurrentMutatorCommand = CurrentMutatorCommand,
+> {
+  readonly schemaVersion: 1;
+  readonly snapshotId: ObservedStateSnapshotV1['snapshotId'];
+  readonly expectedRevisions: readonly ExpectedRevisionV1[];
+  readonly plan: OperationPlan<Command>;
+}
+
+export interface SnapshotPlanningErrorV1 {
+  readonly code: 'planning-invalid';
+  readonly message: string;
+}
+
+export interface LiveOperationImageInputV1 {
+  readonly resource: Extract<OperationImage, { readonly kind: 'placement' }>['resource'];
+  readonly state: LivePlacementStateV1 | null;
+  readonly managed: boolean;
+  readonly source: OperationSource | null;
+}
+
+/**
+ * Pure shared projection from an exact live observation into the planning image vocabulary.
+ * A physical node whose semantic placement class is absent remains absent; callers must not infer
+ * management solely from its node representation.
+ */
+export const operationImageFromLiveStateV1 = (input: LiveOperationImageInputV1): OperationImage => {
+  const state = input.state;
+  if (state === null || state.placementClass === 'absent') {
+    return { kind: 'absent', resource: input.resource };
+  }
+  const representation =
+    state.representation === 'symlink'
+      ? 'symlink'
+      : state.representation === 'directory'
+        ? 'copy'
+        : 'other';
+  return {
+    kind: 'placement',
+    resource: input.resource,
+    classification: input.managed ? state.placementClass : 'unmanaged',
+    representation,
+    linkTarget:
+      state.linkTarget === null
+        ? null
+        : { kind: 'machine-bound', path: resolve(dirname(state.path), state.linkTarget) },
+    dangling: state.dangling,
+    source: input.source,
+    contentHash:
+      input.source === null
+        ? null
+        : ((state.contentRevision ?? input.source.contentHash) as `sha256:${string}`),
+  };
+};
+
+/** Derive only provenance that the canonical ledger and live snapshot jointly prove. */
+export const operationSourceFromLedgerPairV1 = (
+  pair: LedgerPairV1Dto | null,
+  live: LivePlacementStateV1 | null,
+): OperationSource | null => {
+  if (
+    pair?.mode === 'dev' &&
+    pair.dev !== null &&
+    pair.dev.resolvedPath.length > 0 &&
+    live?.contentRevision !== null &&
+    live?.contentRevision !== undefined &&
+    /^sha256:[0-9a-f]{64}$/u.test(live.contentRevision)
+  ) {
+    return {
+      kind: 'local-dev',
+      path: pair.dev.resolvedPath,
+      contentHash: live.contentRevision as `sha256:${string}`,
+    };
+  }
+  if (
+    pair?.mode === 'pinned' &&
+    pair.origin !== undefined &&
+    pair.pinned != null &&
+    (live?.contentRevision == null || live.contentRevision === pair.pinned.contentHash) &&
+    pair.origin.host.length > 0 &&
+    pair.origin.repo.length > 0 &&
+    pair.origin.refResolved.length > 0 &&
+    /^sha256:[0-9a-f]{64}$/u.test(pair.pinned.contentHash)
+  ) {
+    return {
+      kind: 'portable',
+      identity: {
+        host: pair.origin.host,
+        repository: pair.origin.repo,
+        path: pair.origin.skillPath.length === 0 ? null : pair.origin.skillPath,
+      },
+      requestedRef: pair.origin.refRequested,
+      resolvedSha: pair.origin.refResolved,
+      sourcePath: pair.origin.skillPath.length === 0 ? '.' : pair.origin.skillPath,
+      contentHash: pair.pinned.contentHash as `sha256:${string}`,
+    };
+  }
+  return null;
+};
+
+type RevisionIdentityV1 = ExpectedRevisionV1 &
+  Readonly<{
+    resourceId: string;
+    revisionDigest: string;
+  }>;
+
+const compareRevisionIdentity = (left: ExpectedRevisionV1, right: ExpectedRevisionV1): number => {
+  const leftIdentity = left as RevisionIdentityV1;
+  const rightIdentity = right as RevisionIdentityV1;
+  const leftKey = `${leftIdentity.domain}\u0000${leftIdentity.resourceId}\u0000${leftIdentity.revisionDigest}`;
+  const rightKey = `${rightIdentity.domain}\u0000${rightIdentity.resourceId}\u0000${rightIdentity.revisionDigest}`;
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+};
+
+/** Copy the complete approved revision vector without retaining caller-owned containers. */
+export const expectedRevisionsForSnapshotV1 = (
+  snapshot: ObservedStateSnapshotV1,
+): readonly ExpectedRevisionV1[] => {
+  const revisions = [
+    snapshot.project.revision,
+    snapshot.manifest.revision,
+    snapshot.lock.revision,
+    snapshot.ledger.revision,
+    ...snapshot.live.map((observation) => observation.revision),
+    ...snapshot.store.map((observation) => observation.revision),
+    snapshot.capabilities.revision,
+  ].map((revision) => structuredClone(revision));
+  revisions.sort(compareRevisionIdentity);
+  return deepFreeze(revisions);
+};
+
+/** Stable operation-precondition identities for the complete approved revision vector. */
+export const expectedRevisionPreconditionIdsForSnapshotV1 = (
+  snapshot: ObservedStateSnapshotV1,
+): readonly string[] =>
+  deepFreeze(
+    expectedRevisionsForSnapshotV1(snapshot).map((revision) =>
+      createExpectedRevisionPreconditionIdV1(revision),
+    ),
+  );
+
+/** Bind an already canonical immutable operation plan to its exact approved observation. */
+export const bindOperationPlanToSnapshotV1 = <Command extends CurrentMutatorCommand>(
+  snapshot: ObservedStateSnapshotV1,
+  plan: OperationPlan<Command>,
+): SnapshotBoundOperationPlanV1<Command> =>
+  deepFreeze({
+    schemaVersion: 1,
+    snapshotId: snapshot.snapshotId,
+    expectedRevisions: expectedRevisionsForSnapshotV1(snapshot),
+    plan,
+  });
 
 const record = (value: unknown, path: string): UnknownRecord => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -635,21 +748,21 @@ const validatePairIdentity = (value: unknown, path: string): OperationPairIdenti
 
 export function createOperationGroupId(input: OperationGroupIdentity): string;
 export function createOperationGroupId(input: unknown): string {
-  const snapshot = snapshotOrdinary(input);
+  const snapshot = ownPlanningData(input);
   const identity = validateGroupIdentity(snapshot, '$groupIdentity');
   return createStructuredPlanningId('group', identity);
 }
 
 export function createOperationPairId(input: OperationPairIdentity): string;
 export function createOperationPairId(input: unknown): string {
-  const snapshot = snapshotOrdinary(input);
+  const snapshot = ownPlanningData(input);
   const identity = validatePairIdentity(snapshot, '$pairIdentity');
   return createStructuredPlanningId('pair', identity);
 }
 
 export function createOperationId(input: OperationIdentity): string;
 export function createOperationId(input: unknown): string {
-  const snapshot = snapshotOrdinary(input);
+  const snapshot = ownPlanningData(input);
   const identity = validateIdentity(snapshot, '$identity');
   return createStructuredPlanningId('operation', identity);
 }
@@ -919,11 +1032,13 @@ const validateCheckIdentity = (value: unknown, path: string): PlanCheckIdentity 
   for (const operationId of check.operationIds) {
     validateOperationId(operationId, `${path}.operationIds`);
   }
-  identity.operationIds = sortPlanningStrings(check.operationIds);
-  if ('preconditionIds' in check) {
-    identity.preconditionIds = sortPlanningStrings(check.preconditionIds);
-  }
-  return identity as unknown as PlanCheckIdentity;
+  return {
+    ...identity,
+    operationIds: sortPlanningStrings(check.operationIds),
+    ...('preconditionIds' in check
+      ? { preconditionIds: sortPlanningStrings(check.preconditionIds) }
+      : {}),
+  } as unknown as PlanCheckIdentity;
 };
 
 const validatePlanningDiagnosticIdentity = (
@@ -990,14 +1105,14 @@ const validatePlanningDiagnosticIdentity = (
 
 export function createPlanCheckId(input: PlanCheckIdentity): string;
 export function createPlanCheckId(input: unknown): string {
-  const snapshot = snapshotOrdinary(input);
+  const snapshot = ownPlanningData(input);
   const identity = validateCheckIdentity(snapshot, '$checkIdentity');
   return createStructuredPlanningId('check', identity);
 }
 
 export function createPlanningDiagnosticId(input: PlanningDiagnosticIdentity): string;
 export function createPlanningDiagnosticId(input: unknown): string {
-  const snapshot = snapshotOrdinary(input);
+  const snapshot = ownPlanningData(input);
   const identity = validatePlanningDiagnosticIdentity(snapshot, '$diagnosticIdentity');
   return createStructuredPlanningId('diagnostic', identity);
 }
@@ -1042,22 +1157,25 @@ const canonicalizeCheck = (
   check: PlanCheck,
   operationIndex: ReadonlyMap<string, number>,
 ): PlanCheck => {
-  const output = check as unknown as UnknownRecord;
-  output.operationIds = [...check.operationIds].sort(
+  const operationIds = [...check.operationIds].sort(
     (left, right) =>
       (operationIndex.get(left) ?? Number.POSITIVE_INFINITY) -
         (operationIndex.get(right) ?? Number.POSITIVE_INFINITY) || comparePlanningText(left, right),
   );
-  if ('preconditionIds' in check)
-    output.preconditionIds = sortPlanningStrings(check.preconditionIds);
-  return output as unknown as PlanCheck;
+  return {
+    ...check,
+    operationIds,
+    ...('preconditionIds' in check
+      ? { preconditionIds: sortPlanningStrings(check.preconditionIds) }
+      : {}),
+  } as unknown as PlanCheck;
 };
 
 export function createOperationPlan<Command extends CurrentMutatorCommand>(
   input: OperationPlanInput<Command>,
 ): OperationPlan<Command>;
 export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan {
-  const snapshot = snapshotOrdinary(input);
+  const snapshot = ownPlanningData(input);
   const plan = record(snapshot, '$plan');
   exactKeys(
     plan,
@@ -1088,10 +1206,10 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
   }
   literal(plan.command, currentMutatorCommands, '$plan.command');
   literal(plan.batchPolicy, new Set(['fail-fast', 'continue-on-error']), '$plan.batchPolicy');
-  plan.selection = canonicalSelection(plan.selection);
+  const selection = canonicalSelection(plan.selection);
   if (
     (plan.command === 'dev' || plan.command === 'promote') &&
-    (plan.selection as unknown as OperationSelection).source === 'bounded-default'
+    selection.source === 'bounded-default'
   ) {
     fail(`$plan.selection.source must be explicit for ${plan.command}`);
   }
@@ -1145,7 +1263,7 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
   const operationIndex = new Map(
     operations.map((operation, index) => [operation.operationId, index]),
   );
-  for (const operation of operations) {
+  const canonicalOperations = operations.map((operation) => {
     const dependencies = [...operation.dependencyMetadata.operationIds];
     dependencies.sort(
       (left, right) =>
@@ -1162,14 +1280,16 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
         fail(`operation ${operation.operationId} has a forward or cyclic dependency`);
       }
     }
-    (operation.dependencyMetadata as unknown as UnknownRecord).operationIds = dependencies;
-    (operation as unknown as UnknownRecord).preconditionIds = sortPlanningStrings(
-      operation.preconditionIds,
-    );
-    (operation as unknown as UnknownRecord).requiredCheckIds = sortPlanningStrings(
-      operation.requiredCheckIds,
-    );
-  }
+    return {
+      ...operation,
+      dependencyMetadata: {
+        ...operation.dependencyMetadata,
+        operationIds: dependencies,
+      },
+      preconditionIds: sortPlanningStrings(operation.preconditionIds),
+      requiredCheckIds: sortPlanningStrings(operation.requiredCheckIds),
+    };
+  });
 
   const checks = array(plan.checks, '$plan.checks').map((check, index) =>
     validateCheck(check, `$plan.checks[${index}]`),
@@ -1191,8 +1311,8 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
         fail(`operation ${operation.operationId} requires an unknown check`);
     }
   }
-  for (const check of checks) canonicalizeCheck(check, operationIndex);
-  checks.sort((left, right) => comparePlanChecks(operationIndex, left, right));
+  const canonicalChecks = checks.map((check) => canonicalizeCheck(check, operationIndex));
+  canonicalChecks.sort((left, right) => comparePlanChecks(operationIndex, left, right));
 
   const diagnostics = array(plan.diagnostics, '$plan.diagnostics').map((diagnostic, index) =>
     validateDiagnostic(diagnostic, `$plan.diagnostics[${index}]`),
@@ -1210,10 +1330,13 @@ export function createOperationPlan(input: unknown): CurrentMutatorOperationPlan
     }
   }
   diagnostics.sort(comparePlanningDiagnostics);
-  plan.operations = operations;
-  plan.checks = checks;
-  plan.diagnostics = diagnostics;
-  return deepFreeze(plan as unknown as CurrentMutatorOperationPlan);
+  return deepFreeze({
+    ...plan,
+    selection,
+    operations: canonicalOperations,
+    checks: canonicalChecks,
+    diagnostics,
+  } as unknown as CurrentMutatorOperationPlan);
 }
 
 const validateForceEffect = (value: unknown, path: string): void => {
@@ -1284,7 +1407,7 @@ const validateForceEffect = (value: unknown, path: string): void => {
 
 export function createBoundedForceEffect(input: BoundedForceEffectInput): BoundedForceEffect;
 export function createBoundedForceEffect(input: unknown): BoundedForceEffect {
-  const snapshot = snapshotOrdinary(input);
+  const snapshot = ownPlanningData(input);
   const request = record(snapshot, '$force');
   exactKeys(
     request,
@@ -1339,7 +1462,7 @@ export function createOperationExecutionResult(
   input: OperationExecutionResultInput,
 ): OperationExecutionResult;
 export function createOperationExecutionResult(input: unknown): OperationExecutionResult {
-  const snapshot = snapshotOrdinary(input);
+  const snapshot = ownPlanningData(input);
   const result = record(snapshot, '$result');
   exactKeys(
     result,

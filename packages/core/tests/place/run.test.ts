@@ -408,6 +408,26 @@ describe('runPromote — happy paths and convergence', () => {
     expect(
       getLedgerPairAt(canonical.value.model, null, 'alpha', 'claude-code')?.journal ?? null,
     ).toBeNull();
+    const operation = r.value.plan.operations[0];
+    const logicalJournal = canonical.value.model.history.at(-1);
+    if (operation?.source?.kind !== 'local-dev' || logicalJournal === undefined) {
+      throw new Error('prepared promotion journal identity is missing');
+    }
+    const journalSource = logicalJournal.intent.source;
+    if (journalSource?.kind !== 'portable') {
+      throw new Error('prepared promotion journal source is not codec-portable');
+    }
+    expect(journalSource.identity).toEqual({
+      host: 'local.skillsmith.invalid',
+      repository: 'content/placement',
+      path: 'alpha',
+    });
+    expect(journalSource.requestedRef).toBeNull();
+    expect(journalSource.resolvedSha).toBe(
+      operation.source.contentHash.slice('sha256:'.length).slice(0, 40),
+    );
+    expect(journalSource.sourcePath).toBe('alpha');
+    expect(String(journalSource.contentHash)).toBe(operation.source.contentHash);
   });
 
   test('ledger persistence cancellation remains a cancelled placement result', async () => {
@@ -435,6 +455,85 @@ describe('runPromote — happy paths and convergence', () => {
       outcome: 'cancelled',
       actualAfter: result.value.plan.operations[0]?.before,
       error: null,
+    });
+  });
+
+  test('preparation binds one fresh project context including an explicit config path', async () => {
+    const projectSkills = join(f.project, '.claude', 'skills');
+    await f.env.makeDir(projectSkills);
+    await f.env.makeSymlink(resolve(f.alphaSrc), join(projectSkills, 'alpha'));
+    const explicitConfigPath = join(f.project, 'placement-config.toml');
+
+    const prepared = await preparePromote(
+      f.env,
+      opts(f, {
+        cwd: f.project,
+        scope: 'project',
+        projectRoot: join(f.base, 'stale-project-root'),
+        targets: ['alpha'],
+        tools: ['claude-code'],
+        dryRun: true,
+        configuration: { ...f.configuration, explicitConfigPath },
+      }),
+      passDeps(),
+    );
+    if (!prepared.ok) throw new Error(msg(prepared.error));
+    const operation = prepared.value.plan.operations[0];
+    if (operation?.before.kind !== 'placement') {
+      throw new Error('project placement operation is missing');
+    }
+
+    expect(operation.scope).toBe('project');
+    expect(operation.before.resource.projectRoot).toEqual({
+      kind: 'machine-bound',
+      path: f.projectReal,
+    });
+    expect(operation.before.resource.location).toEqual({
+      kind: 'machine-bound',
+      path: join(f.projectReal, '.claude', 'skills', 'alpha'),
+    });
+  });
+
+  test('preparation refuses when the project context changes during snapshot observation', async () => {
+    const projectSkills = join(f.project, '.claude', 'skills');
+    await f.env.makeDir(projectSkills);
+    await f.env.makeSymlink(resolve(f.alphaSrc), join(projectSkills, 'alpha'));
+    const explicitConfigPath = join(f.project, 'placement-config.toml');
+    let projectContextReads = 0;
+    const driftingEnv: RuntimePorts = {
+      ...f.env,
+      git: {
+        ...f.env.git,
+        findRepositoryRoot: async (options) => {
+          if (resolve(options.cwd) === resolve(f.project)) {
+            projectContextReads++;
+            return projectContextReads === 1 ? f.project : f.checkout;
+          }
+          return f.env.git.findRepositoryRoot(options);
+        },
+      },
+    };
+
+    const prepared = await preparePromote(
+      driftingEnv,
+      opts(f, {
+        cwd: f.project,
+        scope: 'project',
+        projectRoot: join(f.base, 'stale-project-root'),
+        targets: ['alpha'],
+        tools: ['claude-code'],
+        dryRun: true,
+        configuration: { ...f.configuration, explicitConfigPath },
+      }),
+      passDeps(),
+    );
+
+    expect(projectContextReads).toBe(3);
+    expect(prepared.ok).toBeFalse();
+    if (prepared.ok) throw new Error('expected changed project context refusal');
+    expect(prepared.error).toEqual({
+      code: 'flip-refused',
+      message: 'project context changed while preparing the operation; retry',
     });
   });
 
@@ -569,8 +668,10 @@ describe('runPromote — happy paths and convergence', () => {
       result.placementPath,
     ]);
     const operation = prepared.value.plan.operations[0];
-    expect(operation?.preconditionIds).toHaveLength(1);
-    expect(operation?.preconditionIds[0]).toMatch(/^precondition:v1:[0-9a-f]{64}$/);
+    expect(operation?.preconditionIds.length).toBeGreaterThan(1);
+    expect(
+      operation?.preconditionIds.every((id) => /^precondition:v1:[0-9a-f]{64}$/u.test(id)),
+    ).toBeTrue();
 
     await f.env.writeTextFile(
       join(f.alphaSrc, 'SKILL.md'),
@@ -881,7 +982,12 @@ describe('runRollback', () => {
         promotedPair.pinned.contentHash as `sha256:${string}`,
         resolve(f.alphaSrc),
       ),
-      devImage('alpha', live, resolve(f.alphaSrc)),
+      devImage(
+        'alpha',
+        live,
+        resolve(f.alphaSrc),
+        promotedPair.pinned.contentHash as `sha256:${string}`,
+      ),
     );
     expect(await f.env.pathKind(live)).toBe('symlink');
   });
@@ -1170,7 +1276,7 @@ describe('runRollback — interrupted install-replace reconciliation warning (I2
     expectRolledBackExecution(
       rb.value,
       devImage(skill, live, target, targetHash.value as `sha256:${string}`),
-      devImage(skill, live, target),
+      devImage(skill, live, target, targetHash.value as `sha256:${string}`),
     );
   });
 });

@@ -10,6 +10,13 @@ import {
   withLedgerPairAt,
   withoutLedgerPairAt,
 } from '../../../packages/core/src/place/ledger.ts';
+import {
+  createContentObservationIdentityV1,
+  createContentObservationPreconditionIdV1,
+  createExpectedRevisionV1,
+  createStoreSnapshotIdentityV1,
+  semanticValueRevisionV1,
+} from '../../../packages/core/src/state/types.ts';
 
 type UnknownRecord = Record<string, unknown>;
 type AnyFunction = (...args: unknown[]) => unknown;
@@ -146,6 +153,33 @@ const exportedNames = (path: string): readonly string[] => {
   return [...names].sort();
 };
 
+const declarationSources = (path: string, names: readonly string[]): string => {
+  const file = syntax(path);
+  const selected = new Set(names);
+  const declarations: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isInterfaceDeclaration(node) ||
+        ts.isTypeAliasDeclaration(node) ||
+        ts.isEnumDeclaration(node)) &&
+      node.name !== undefined &&
+      selected.has(node.name.text)
+    ) {
+      declarations.push(node.getText(file));
+    } else if (ts.isVariableStatement(node)) {
+      const matches = node.declarationList.declarations.some(
+        (declaration) => ts.isIdentifier(declaration.name) && selected.has(declaration.name.text),
+      );
+      if (matches) declarations.push(node.getText(file));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return declarations.join('\n');
+};
+
 const interfaceMembers = (path: string, name: string): readonly string[] => {
   const members: string[] = [];
   const visit = (node: ts.Node): void => {
@@ -199,6 +233,10 @@ const usedPrivateSymbols = (path: string): readonly string[] => {
     'LedgerRepository',
     'LivePlacementRepository',
     'StoreRepository',
+    'ContentObservationIdentityV1',
+    'createContentObservationIdentityV1',
+    'createContentObservationPreconditionIdV1',
+    'createContentObservationExecutionPrecondition',
   ]);
   const matches = new Set<string>();
   const visit = (node: ts.Node): void => {
@@ -242,15 +280,39 @@ const HEX = Object.freeze({
   d: 'd'.repeat(64),
 });
 
-const semanticRevision = (domain: 'project' | 'capabilities', resourceId: string, hex: string) =>
-  Object.freeze({
+const expectedRevision = (input: unknown): UnknownRecord => {
+  const created = createExpectedRevisionV1(input);
+  if (!created.ok) throw new Error('invalid TS05 expected revision fixture');
+  return created.value as unknown as UnknownRecord;
+};
+
+const semanticRevision = (
+  domain: 'project' | 'capabilities',
+  resourceId: string,
+  value: unknown,
+) => {
+  const semantic = semanticValueRevisionV1(domain, value);
+  return expectedRevision({
     schemaVersion: 1 as const,
     domain,
     resourceId,
     state: 'present' as const,
     targetKind: 'semantic' as const,
-    semanticRevision: `sha256:${hex}`,
-    revisionDigest: `revision:v1:${hex}`,
+    semanticRevision: semantic,
+  });
+};
+
+const contentObservation = (
+  resourceId: string,
+  targetIdentity: string,
+  contentRevision: `sha256:${string}`,
+) =>
+  createContentObservationIdentityV1({
+    schemaVersion: 1,
+    resourceId,
+    targetIdentity,
+    targetKind: 'directory',
+    contentRevision,
   });
 
 const absentRevision = (
@@ -260,7 +322,7 @@ const absentRevision = (
   parentIdentity: string,
   hex: string,
 ) =>
-  Object.freeze({
+  expectedRevision({
     schemaVersion: 1 as const,
     domain,
     resourceId,
@@ -270,25 +332,61 @@ const absentRevision = (
     parentIdentity,
     parentKind: 'directory' as const,
     parentMetadataIdentity: `metadata:v1:${hex}`,
-    absenceDigest: `absence:v1:${hex}`,
-    revisionDigest: `revision:v1:${hex}`,
   });
 
-const snapshotFixture = () =>
-  Object.freeze({
+const presentStoreObservation = (
+  resourceId: string,
+  targetIdentity: string,
+  contentRevision: string,
+  hex: string,
+) => {
+  const snapshotIdentity = createStoreSnapshotIdentityV1(resourceId, contentRevision);
+  return Object.freeze({
+    revision: expectedRevision({
+      schemaVersion: 1 as const,
+      domain: 'store' as const,
+      resourceId,
+      state: 'present' as const,
+      targetIdentity,
+      targetKind: 'directory' as const,
+      targetMetadataIdentity: `metadata:v1:${hex}`,
+      parentIdentity: dirname(targetIdentity),
+      parentKind: 'directory' as const,
+      parentMetadataIdentity: `metadata:v1:${hex}`,
+      resourceRevision: `sha256:${HEX.d}`,
+      contentRevision,
+      snapshotIdentity,
+    }),
+    value: Object.freeze({
+      path: targetIdentity,
+      repositoryRevision: `sha256:${HEX.d}`,
+      contentRevision,
+      snapshotIdentity,
+    }),
+  });
+};
+
+const snapshotFixture = () => {
+  const projectValue = Object.freeze({
+    invocationCwd: '/fixture',
+    effectiveCwd: '/fixture',
+    projectRoot: '/fixture',
+    projectIdentity: '/fixture',
+    projectKind: 'git',
+    discoveredConfigPath: null,
+    explicitConfigPath: null,
+  });
+  const capabilitiesValue = Object.freeze({
+    schemaVersion: 1 as const,
+    kind: 'skillsmith.capabilities' as const,
+    tools: Object.freeze([]),
+  });
+  return Object.freeze({
     schemaVersion: 1 as const,
     snapshotId: `snapshot:v1:${HEX.a}`,
     project: Object.freeze({
-      revision: semanticRevision('project', 'project:/fixture', HEX.a),
-      value: Object.freeze({
-        invocationCwd: '/fixture',
-        effectiveCwd: '/fixture',
-        projectRoot: '/fixture',
-        projectIdentity: '/fixture',
-        projectKind: 'git',
-        discoveredConfigPath: null,
-        explicitConfigPath: null,
-      }),
+      revision: semanticRevision('project', 'project:/fixture', projectValue),
+      value: projectValue,
     }),
     manifest: Object.freeze({
       revision: absentRevision(
@@ -333,22 +431,14 @@ const snapshotFixture = () =>
       }),
     ]),
     store: Object.freeze([
-      Object.freeze({
-        revision: absentRevision(
-          'store',
-          'store:alpha',
-          '/fixture/store/alpha',
-          '/fixture/store',
-          HEX.a,
-        ),
-        value: null,
-      }),
+      presentStoreObservation('store:alpha', '/fixture/store/alpha', `sha256:${HEX.a}`, HEX.a),
     ]),
     capabilities: Object.freeze({
-      revision: semanticRevision('capabilities', 'capabilities:fixture', HEX.b),
-      value: Object.freeze({ adapters: ['codex'] }),
+      revision: semanticRevision('capabilities', 'capabilities:fixture', capabilitiesValue),
+      value: capabilitiesValue,
     }),
   });
+};
 
 const resolveOwnedImport = (from: string, specifier: string): string | null => {
   const target = resolve(dirname(absolute(from)), specifier);
@@ -435,7 +525,8 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     const statusTypes = source('packages/core/src/status/types.ts');
     expect(planning).toContain('export function createOperationId');
     expect(planning).toContain('export function createOperationPlan');
-    expect(planning).toContain('utilTypes.isProxy');
+    expect(planning).toContain('ownOrdinaryData');
+    expect(preconditions).toContain('ownOrdinaryData');
     expect(planning).toContain('Object.freeze');
     expect(preconditions).toContain('export const validateExecutionPreconditions');
     expect(coordinator.lastIndexOf('validateExecutionPreconditions')).toBeLessThan(
@@ -648,12 +739,13 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
           calls.push(`revision:ledger:${resourceId}`);
           return okResult(
             changeLedgerRevision
-              ? Object.freeze({
-                  ...fixture.ledger.revision,
-                  parentMetadataIdentity: `metadata:v1:${HEX.d}`,
-                  absenceDigest: `absence:v1:${HEX.d}`,
-                  revisionDigest: `revision:v1:${HEX.d}`,
-                })
+              ? absentRevision(
+                  'ledger',
+                  fixture.ledger.revision.resourceId as string,
+                  '/fixture/data/placements.json',
+                  '/fixture/data',
+                  HEX.d,
+                )
               : fixture.ledger.revision,
           );
         },
@@ -722,6 +814,11 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     const module = await loadFutureModule('packages/core/src/acquire/plan.ts');
     const createAcquisitionPlan = requiredFunction(module, 'createAcquisitionPlan');
     const snapshot = structuredClone(snapshotFixture());
+    const sourceContent = contentObservation(
+      'source:alpha',
+      '/fixture/source/alpha',
+      `sha256:${HEX.a}`,
+    );
     const request = {
       schemaVersion: 1,
       command: 'install',
@@ -739,6 +836,10 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
           tool: 'codex',
           scope: 'user',
           projectRoot: null,
+          liveResourceId: 'live:user:codex:alpha',
+          storeResourceId: 'store:alpha',
+          sourceContent,
+          sourcePreconditionId: createContentObservationPreconditionIdV1(sourceContent),
           source: {
             kind: 'portable',
             identity: { host: 'example.test', repository: 'fixture/repo', path: 'skills/alpha' },
@@ -755,7 +856,7 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
           store: {
             location: { kind: 'portable', token: 'store/fixture/alpha' },
             contentHash: `sha256:${HEX.a}`,
-            snapshotIdentity: `snapshot:v1:${HEX.b}`,
+            snapshotIdentity: createStoreSnapshotIdentityV1('store:alpha', `sha256:${HEX.a}`),
           },
         },
       ],
@@ -794,6 +895,11 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     const module = await loadFutureModule('packages/core/src/place/plan.ts');
     const createPlacementPlan = requiredFunction(module, 'createPlacementPlan');
     const snapshot = structuredClone(snapshotFixture());
+    const sourceContent = contentObservation(
+      'source:alpha',
+      '/fixture/source/alpha',
+      `sha256:${HEX.a}`,
+    );
     const request = {
       schemaVersion: 1,
       command: 'promote',
@@ -813,6 +919,12 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
           projectRoot: null,
           liveResourceId: 'live:user:codex:alpha',
           storeResourceId: 'store:alpha',
+          sourceContent,
+          source: {
+            kind: 'local-dev',
+            path: '/fixture/source/alpha',
+            contentHash: `sha256:${HEX.a}`,
+          },
           representation: 'copy',
           desiredContentHash: `sha256:${HEX.a}`,
         },
@@ -848,12 +960,6 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     const stageLogicalRepositoryEditV1 = requiredFunction(module, 'stageLogicalRepositoryEditV1');
     const fixture = snapshotFixture();
     const expected = fixture.ledger.revision;
-    const after = Object.freeze({
-      ...expected,
-      parentMetadataIdentity: `metadata:v1:${HEX.d}`,
-      absenceDigest: `absence:v1:${HEX.d}`,
-      revisionDigest: `revision:v1:${HEX.d}`,
-    });
     const request = {
       schemaVersion: 1,
       operationId: `operation:v1:${HEX.c}`,
@@ -861,7 +967,6 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
       resourceId: expected.resourceId,
       expectedRevision: expected,
       observedRevision: expected,
-      afterRevision: after,
       editDigest: `sha256:${HEX.a}`,
     };
     const first = unwrapResult(
@@ -874,18 +979,20 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     );
     expect(first).toEqual(second);
     expect(first.stageId).toMatch(/^stage:v1:[0-9a-f]{64}$/u);
-    expect(first.changed).toBeTrue();
     expect(Object.isFrozen(first)).toBeTrue();
     expect(first.beforeRevision).toEqual(expected);
-    expect(first.afterRevision).toEqual(after);
+    expect(first.editDigest).toBe(`sha256:${HEX.a}`);
+    expect('afterRevision' in first).toBeFalse();
+    expect('changed' in first).toBeFalse();
 
-    const parentChanged = Object.freeze({
-      ...expected,
-      parentMetadataIdentity: `metadata:v1:${HEX.b}`,
-      absenceDigest: `absence:v1:${HEX.b}`,
-      revisionDigest: `revision:v1:${HEX.b}`,
-    });
-    const appeared = Object.freeze({
+    const parentChanged = absentRevision(
+      'ledger',
+      expected.resourceId as string,
+      '/fixture/data/placements.json',
+      '/fixture/data',
+      HEX.b,
+    );
+    const appeared = expectedRevision({
       schemaVersion: 1,
       domain: 'ledger',
       resourceId: expected.resourceId,
@@ -898,7 +1005,6 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
       parentMetadataIdentity: `metadata:v1:${HEX.a}`,
       byteRevision: `sha256:${HEX.a}`,
       semanticRevision: `sha256:${HEX.b}`,
-      revisionDigest: `revision:v1:${HEX.c}`,
     });
     for (const observedRevision of [parentChanged, appeared]) {
       const refused = resultRecord(
@@ -917,12 +1023,13 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     const fixture = snapshotFixture();
     const beforeLedger = fixture.ledger.revision;
     const beforeLive = fixture.live[0]?.revision;
-    const afterLedger = Object.freeze({
-      ...beforeLedger,
-      parentMetadataIdentity: `metadata:v1:${HEX.d}`,
-      absenceDigest: `absence:v1:${HEX.d}`,
-      revisionDigest: `revision:v1:${HEX.d}`,
-    });
+    const afterLedger = absentRevision(
+      'ledger',
+      beforeLedger.resourceId as string,
+      '/fixture/data/placements.json',
+      '/fixture/data',
+      HEX.d,
+    );
     const operationId = `operation:v1:${HEX.a}`;
     const plan = Object.freeze({
       schemaVersion: 1,
@@ -1008,12 +1115,13 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     const fixture = snapshotFixture();
     const beforeA = fixture.ledger.revision;
     const beforeB = fixture.live[0]?.revision;
-    const afterA = Object.freeze({
-      ...beforeA,
-      parentMetadataIdentity: `metadata:v1:${HEX.d}`,
-      absenceDigest: `absence:v1:${HEX.d}`,
-      revisionDigest: `revision:v1:${HEX.d}`,
-    });
+    const afterA = absentRevision(
+      'ledger',
+      beforeA.resourceId as string,
+      '/fixture/data/placements.json',
+      '/fixture/data',
+      HEX.d,
+    );
     const operationA = `operation:v1:${HEX.a}`;
     const operationB = `operation:v1:${HEX.b}`;
     const initial = createRevisionCursorV1({
@@ -1073,12 +1181,13 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     const executeRepositoryLifecycleV1 = requiredFunction(module, 'executeRepositoryLifecycleV1');
     const fixture = snapshotFixture();
     const before = fixture.ledger.revision;
-    const after = Object.freeze({
-      ...before,
-      parentMetadataIdentity: `metadata:v1:${HEX.d}`,
-      absenceDigest: `absence:v1:${HEX.d}`,
-      revisionDigest: `revision:v1:${HEX.d}`,
-    });
+    const after = absentRevision(
+      'ledger',
+      before.resourceId as string,
+      '/fixture/data/placements.json',
+      '/fixture/data',
+      HEX.d,
+    );
     const operationId = `operation:v1:${HEX.b}`;
     const cursor = createRevisionCursorV1({
       schemaVersion: 1,
@@ -1094,8 +1203,6 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
       resourceId: before.resourceId,
       expectedRevision: before,
       beforeRevision: before,
-      afterRevision: after,
-      changed: true,
       editDigest: `sha256:${HEX.a}`,
     });
     const receipt = (disposition: 'committed' | 'rolled-back' | 'indeterminate') =>
@@ -1280,7 +1387,57 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     );
     expect(indeterminate.ok).toBeFalse();
     expect(indeterminateCalls).toEqual(['stage', 'commit']);
-    expect((indeterminate.error as UnknownRecord).cursor).toEqual(cursor);
+    expect((indeterminate.error as UnknownRecord).cursor).toBeNull();
+
+    const rollbackIndeterminateCalls: string[] = [];
+    const rollbackIndeterminate = resultRecord(
+      await executeRepositoryLifecycleV1(cursor, {
+        operationId,
+        stage: async () => {
+          rollbackIndeterminateCalls.push('stage');
+          return okResult([stage]);
+        },
+        commit: async () => {
+          rollbackIndeterminateCalls.push('commit');
+          return errResult('commit-failed-after-boundary');
+        },
+        rollback: async () => {
+          rollbackIndeterminateCalls.push('rollback');
+          return okResult(receipt('indeterminate'));
+        },
+        cleanup: async () => {
+          rollbackIndeterminateCalls.push('cleanup');
+          return okResult(undefined);
+        },
+      }),
+      'rollback-indeterminate repository lifecycle',
+    );
+    expect(rollbackIndeterminate.ok).toBeFalse();
+    expect(rollbackIndeterminateCalls).toEqual(['stage', 'commit', 'rollback']);
+    expect((rollbackIndeterminate.error as UnknownRecord).cursor).toBeNull();
+
+    const incompleteReceipt = resultRecord(
+      await executeRepositoryLifecycleV1(cursor, {
+        operationId,
+        stage: async () => okResult([stage]),
+        commit: async () =>
+          okResult({
+            schemaVersion: 1,
+            operationId,
+            disposition: 'committed',
+            revisions: [],
+          }),
+        rollback: async () => errResult('rollback-must-not-run'),
+        cleanup: async () => errResult('cleanup-must-not-run'),
+      }),
+      'incomplete durable receipt',
+    );
+    expect(incompleteReceipt.ok).toBeFalse();
+    expect(incompleteReceipt.error).toMatchObject({
+      code: 'invalid-receipt',
+      disposition: 'indeterminate',
+      cursor: null,
+    });
   });
 
   test('derives status from the approved snapshot without receiving write capabilities', async () => {
@@ -1358,6 +1515,21 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     ]) {
       expect(ownership, `ordinary-data ownership must enforce ${marker}`).toContain(marker);
     }
+    for (const path of [
+      'packages/core/src/planning/create.ts',
+      'packages/core/src/execution/preconditions.ts',
+    ]) {
+      const consumer = source(path);
+      expect(
+        relativeImports(path).some((specifier) =>
+          /(?:^|\/)state\/ownership(?:\.ts)?$/u.test(specifier),
+        ),
+        `${path} must consume the shared ordinary-data owner`,
+      ).toBeTrue();
+      expect(consumer, `${path} must not retain a private hostile-data traversal`).not.toMatch(
+        /\b(?:snapshotOrdinary|MAX_SNAPSHOT_NODES|MAX_SNAPSHOT_DEPTH|utilTypes\.isProxy)\b/u,
+      );
+    }
     for (const marker of [
       'ExpectedRevisionV1',
       'targetIdentity',
@@ -1422,10 +1594,28 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
       ),
       'planners must remain synchronous',
     ).toBeFalse();
+    for (const marker of [
+      'liveResourceId',
+      'storeResourceId',
+      'operationImageFromLiveStateV1',
+      'createStoreSnapshotIdentityV1',
+    ]) {
+      expect(
+        `${placementPlanner}\n${acquisitionPlanner}`,
+        `snapshot planners must reconcile ${marker}`,
+      ).toContain(marker);
+    }
+    expect(placementPlanner, 'placement source must never be fabricated').not.toMatch(
+      /skillsmith\.local|resolvedSha:\s*['"]0['"]\.repeat/u,
+    );
+    expect(acquisitionPlanner).toContain('export const createInstallPlanning');
+    expect(acquisitionPlanner).toContain('export const createUninstallPlanning');
   });
 
-  test('defines five behavior-specific isolated repositories with an explicit stage lifecycle', () => {
+  test('defines isolated behavior-specific repositories and coordinator-owned durability phases', () => {
     const contracts = source('packages/core/src/state/repositories.ts');
+    const artifacts = source('packages/core/src/artifacts/repository.ts');
+    const coordinator = source('packages/core/src/execution/coordinator.ts');
     for (const name of [
       'ManifestRepository',
       'LockRepository',
@@ -1435,12 +1625,30 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
     ]) {
       expect(contracts, `missing focused ${name}`).toContain(name);
     }
-    for (const phase of ['stage', 'commit', 'rollback', 'cleanup']) {
-      expect(contracts, `repository lifecycle must expose ${phase}`).toMatch(
+    expect(contracts, 'domain repository contracts must expose logical staging').toMatch(
+      /\bstage\b/u,
+    );
+    expect(contracts).not.toMatch(/\bRepositoryLifecyclePhasesV1\b/u);
+    for (const phase of ['commit', 'rollback', 'cleanup']) {
+      expect(coordinator, `private execution coordinator must own ${phase}`).toMatch(
         new RegExp(`\\b${phase}\\b`, 'u'),
       );
     }
+    expect(coordinator).toContain('export interface RepositoryLifecycleV1');
     expect(contracts).not.toMatch(/\b(?:interface|type|class)\s+Repository\s*</u);
+    for (const factory of ['createManifestRepository', 'createLockRepository']) {
+      expect(artifacts, `missing production ${factory}`).toContain(`export const ${factory}`);
+    }
+    for (const factory of ['createProjectStateReaderV1', 'createCapabilityStateReaderV1']) {
+      expect(contracts, `missing production ${factory}`).toContain(`export const ${factory}`);
+    }
+    expect(artifacts).toContain('readManifestArtifact');
+    expect(artifacts).toContain('readLockArtifact');
+    expect(artifacts).toContain('readFileMetadata');
+    expect(contracts).toContain('resolveProjectContext');
+    expect(contracts).toContain('toolRegistry.adapters');
+    expect(contracts).toContain('toCapabilitySnapshotV1Dto');
+    expect(contracts).toContain('semanticValueRevisionV1');
 
     const adapters = [
       'packages/core/src/artifacts/ledger-repository.ts',
@@ -1457,11 +1665,25 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
 
   test('keeps revision comparison and advancement in the execution coordinator only', () => {
     const coordinator = source('packages/core/src/execution/coordinator.ts');
+    const scheduler = source('packages/core/src/execution/scheduler.ts');
     const types = source('packages/core/src/execution/types.ts');
     expect(
       coordinator.includes('../planning/create.ts'),
       'execution-to-planner reversal',
     ).toBeFalse();
+    expect(scheduler).toContain(
+      "import { createOperationExecutionResult } from '../planning/create.ts';",
+    );
+    for (const forbiddenPlanner of [
+      'createOperationPlan',
+      'createAcquisitionPlan',
+      'createPlacementPlan',
+    ]) {
+      expect(
+        scheduler.includes(forbiddenPlanner),
+        `scheduler must not import or call ${forbiddenPlanner}`,
+      ).toBeFalse();
+    }
     expect(
       `${types}\n${coordinator}`.includes('RevisionCursor'),
       'execution revision cursor type',
@@ -1478,9 +1700,18 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
   });
 
   test('retires mutable ledger authority from SwapCtx and keeps reducers copy-on-write', () => {
-    const reducers = `${source('packages/core/src/place/ledger.ts')}\n${source(
-      'packages/core/src/place/logical-transactions.ts',
-    )}`;
+    const reducers = [
+      declarationSources('packages/core/src/place/ledger.ts', [
+        'withLedgerPairAt',
+        'withoutLedgerPairAt',
+      ]),
+      declarationSources('packages/core/src/place/logical-transactions.ts', [
+        'advanceLogicalTransaction',
+        'commitLogicalTransaction',
+        'abortPendingLogicalTransaction',
+        'collapseLogicalTransactionShadows',
+      ]),
+    ].join('\n');
     const forbiddenMembers = new Set(['ledger', 'persist', 'now', 'newTxId']);
     expect(
       interfaceMembers('packages/core/src/place/types.ts', 'SwapCtx').filter((member) =>
@@ -1508,6 +1739,17 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
       'status must import the shared state boundary',
     ).toBeTrue();
     expect(status.includes('ObservedStateSnapshotV1'), 'status shared snapshot input').toBeTrue();
+    for (const marker of [
+      'canonicalSnapshotArtifact',
+      'snapshotLiveInputs',
+      'ledgerNeedsRetentionCompatibility',
+      'joinStatus',
+    ]) {
+      expect(status, `status snapshot projection must retain ${marker}`).toContain(marker);
+    }
+    expect(status, 'status must not invent a generic retention repository').not.toMatch(
+      /\b(?:class|interface|type)\s+RetentionRepository\b/u,
+    );
     expect(
       /\b(?:FileWritePort|LockPort|ProcessPort|ClockPort|IdPort|InteractionPort)\b/u.test(status),
       'status must not receive write/effect capabilities',

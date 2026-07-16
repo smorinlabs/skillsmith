@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm, symlink } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import type { LedgerModel, LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
 import { emptyLedger, setPair } from '../../src/place/ledger.ts';
 import { storeRootOf } from '../../src/place/paths.ts';
-import { LEGACY_ROOT_NOTICE, planFlips } from '../../src/place/plan.ts';
+import { LEGACY_ROOT_NOTICE, createPlacementPlan, planFlips } from '../../src/place/plan.ts';
 import type {
   DevRecord,
   FlipOptions,
@@ -11,6 +12,15 @@ import type {
   PairRecord,
   PinnedRecord,
 } from '../../src/place/types.ts';
+import {
+  type ExpectedRevisionV1,
+  type LivePlacementStateV1,
+  type ObservedStateSnapshotV1,
+  type StoreStateV1,
+  createContentObservationIdentityV1,
+  createExpectedRevisionV1,
+  createStoreSnapshotIdentityV1,
+} from '../../src/state/types.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -394,6 +404,1128 @@ describe('planFlips', () => {
       expect(await named('promote', 'copied')).toEqual(['copied@claude-code']);
       expect(await named('promote', 'alpha')).toEqual(await named('dev', 'alpha'));
       expect(await named('promote', 'alpha')).toEqual(['alpha@claude-code']);
+    });
+  });
+});
+
+const PLANNER_HEX = {
+  a: 'a'.repeat(64),
+  b: 'b'.repeat(64),
+  c: 'c'.repeat(64),
+  d: 'd'.repeat(64),
+} as const;
+
+const plannerCanonicalRevision = (input: unknown): ExpectedRevisionV1 => {
+  const result = createExpectedRevisionV1(input);
+  if (!result.ok) throw new Error('invalid placement planner revision fixture');
+  return result.value;
+};
+
+const plannerRevision = (
+  domain: 'manifest' | 'lock' | 'ledger' | 'live' | 'store' | 'project' | 'capabilities',
+  resourceId: string,
+  hex: string,
+) =>
+  domain === 'project' || domain === 'capabilities'
+    ? plannerCanonicalRevision({
+        schemaVersion: 1,
+        domain,
+        resourceId,
+        state: 'present',
+        targetKind: 'semantic',
+        semanticRevision: `sha256:${hex}`,
+      })
+    : plannerCanonicalRevision({
+        schemaVersion: 1,
+        domain,
+        resourceId,
+        state: 'absent',
+        targetIdentity: domain === 'live' ? '/fixture/live/alpha' : `/fixture/${domain}`,
+        targetKind: 'absent',
+        parentIdentity: '/fixture',
+        parentKind: 'directory',
+        parentMetadataIdentity: `metadata:v1:${hex}`,
+      });
+
+const plannerPresentStoreRevision = (resourceId: string, value: StoreStateV1, hex: string) =>
+  plannerCanonicalRevision({
+    schemaVersion: 1 as const,
+    domain: 'store' as const,
+    resourceId,
+    state: 'present' as const,
+    targetIdentity: value.path,
+    targetKind: 'directory' as const,
+    targetMetadataIdentity: `metadata:v1:${hex}`,
+    parentIdentity: '/fixture/store',
+    parentKind: 'directory' as const,
+    parentMetadataIdentity: `metadata:v1:${hex}`,
+    resourceRevision: value.repositoryRevision,
+    contentRevision: value.contentRevision,
+    snapshotIdentity: value.snapshotIdentity,
+  });
+
+const plannerPresentLiveRevision = (resourceId: string, value: LivePlacementStateV1, hex: string) =>
+  plannerCanonicalRevision({
+    schemaVersion: 1 as const,
+    domain: 'live' as const,
+    resourceId,
+    state: 'present' as const,
+    targetIdentity: value.path,
+    targetKind:
+      value.representation === 'directory' ? ('directory' as const) : value.representation,
+    targetMetadataIdentity: `metadata:v1:${hex}`,
+    parentIdentity: '/fixture/live',
+    parentKind: 'directory' as const,
+    parentMetadataIdentity: `metadata:v1:${hex}`,
+    resourceRevision: `sha256:${PLANNER_HEX.c}`,
+    contentRevision: value.contentRevision,
+  });
+
+const plannerPresentLedgerRevision = (hex: string) =>
+  plannerCanonicalRevision({
+    schemaVersion: 1 as const,
+    domain: 'ledger' as const,
+    resourceId: 'ledger:user',
+    state: 'present' as const,
+    targetIdentity: '/fixture/ledger.json',
+    targetKind: 'file' as const,
+    targetMetadataIdentity: `metadata:v1:${hex}`,
+    parentIdentity: '/fixture',
+    parentKind: 'directory' as const,
+    parentMetadataIdentity: `metadata:v1:${hex}`,
+    byteRevision: `sha256:${hex}`,
+    semanticRevision: `sha256:${hex}`,
+  });
+
+const plannerAbsentRevision = (
+  domain: 'live' | 'store',
+  resourceId: string,
+  targetIdentity: string,
+  hex: string,
+) =>
+  plannerCanonicalRevision({
+    schemaVersion: 1 as const,
+    domain,
+    resourceId,
+    state: 'absent' as const,
+    targetIdentity,
+    targetKind: 'absent' as const,
+    parentIdentity: dirname(targetIdentity),
+    parentKind: 'directory' as const,
+    parentMetadataIdentity: `metadata:v1:${hex}`,
+  });
+
+const plannerLedgerWithAlphaPair = (pair: LedgerPairV1Dto): LedgerModel => ({
+  updatedAt: '2026-07-16T00:00:00.000Z',
+  skills: { alpha: { tools: { codex: pair } } },
+  projects: {},
+  projectRegistrations: {},
+  transactions: {},
+  history: [],
+});
+
+const plannerStore = (
+  resourceId: string,
+  name: string,
+  contentRevision = `sha256:${PLANNER_HEX.a}`,
+) => {
+  const value: StoreStateV1 = {
+    path: `/fixture/store/${name}`,
+    repositoryRevision: `sha256:${PLANNER_HEX.d}`,
+    contentRevision,
+    snapshotIdentity: createStoreSnapshotIdentityV1(resourceId, contentRevision),
+  };
+  return {
+    revision: plannerPresentStoreRevision(resourceId, value, PLANNER_HEX.a),
+    value,
+  };
+};
+
+const plannerSourceContent = (
+  path = '/fixture/source/alpha',
+  contentRevision = `sha256:${PLANNER_HEX.a}` as `sha256:${string}`,
+) =>
+  createContentObservationIdentityV1({
+    schemaVersion: 1,
+    resourceId: `source:${path}`,
+    targetIdentity: path,
+    targetKind: 'directory',
+    contentRevision,
+  });
+
+interface PlannerSnapshotOverrides {
+  readonly live?: ObservedStateSnapshotV1['live'];
+  readonly store?: ObservedStateSnapshotV1['store'];
+  readonly ledger?: ObservedStateSnapshotV1['ledger'];
+}
+
+const plannerSnapshot = (
+  snapshotHex = PLANNER_HEX.a,
+  capabilityHex = PLANNER_HEX.b,
+  overrides: PlannerSnapshotOverrides = {},
+): ObservedStateSnapshotV1 =>
+  ({
+    schemaVersion: 1,
+    snapshotId: `snapshot:v1:${snapshotHex}`,
+    project: {
+      revision: plannerRevision('project', 'project:/fixture', PLANNER_HEX.a),
+      value: {},
+    },
+    manifest: {
+      revision: plannerRevision('manifest', 'manifest:/fixture', PLANNER_HEX.a),
+      value: null,
+    },
+    lock: {
+      revision: plannerRevision('lock', 'lock:/fixture', PLANNER_HEX.b),
+      value: null,
+    },
+    ledger: overrides.ledger ?? {
+      revision: plannerRevision('ledger', 'ledger:user', PLANNER_HEX.c),
+      value: null,
+    },
+    live: overrides.live ?? [
+      {
+        revision: plannerRevision('live', 'live-resource-alpha', PLANNER_HEX.d),
+        value: null,
+      },
+    ],
+    store: overrides.store ?? [plannerStore('store-resource-alpha', 'alpha')],
+    capabilities: {
+      revision: plannerRevision('capabilities', 'capabilities:fixture', capabilityHex),
+      value: {},
+    },
+  }) as unknown as ObservedStateSnapshotV1;
+
+const placementRequest = () => ({
+  schemaVersion: 1 as const,
+  command: 'promote' as const,
+  selection: {
+    source: 'explicit-targets' as const,
+    skills: ['alpha'],
+    tools: ['codex'] as const,
+    scopes: ['user'] as const,
+  },
+  batchPolicy: 'fail-fast' as const,
+  intents: [
+    {
+      kind: 'promote' as const,
+      skill: 'alpha',
+      tool: 'codex' as const,
+      scope: 'user' as const,
+      projectRoot: null,
+      liveResourceId: 'live-resource-alpha',
+      storeResourceId: 'store-resource-alpha',
+      source: {
+        kind: 'local-dev' as const,
+        path: '/fixture/source/alpha',
+        contentHash: `sha256:${PLANNER_HEX.a}` as const,
+      },
+      representation: 'copy' as const,
+      desiredContentHash: `sha256:${PLANNER_HEX.a}` as const,
+      sourceContent: plannerSourceContent(),
+    },
+  ],
+});
+
+describe('createPlacementPlan', () => {
+  test('creates deterministic immutable plans from request and observed snapshot only', () => {
+    const request = placementRequest();
+    const observed = plannerSnapshot();
+    const requestBefore = structuredClone(request);
+    const observedBefore = structuredClone(observed);
+    const first = createPlacementPlan(request, observed);
+    const second = createPlacementPlan(request, observed);
+
+    expect(first).toEqual(second);
+    expect(request).toEqual(requestBefore);
+    expect(observed).toEqual(observedBefore);
+    expect(first.ok).toBeTrue();
+    if (!first.ok) throw new Error(first.error.message);
+    expect(first.value.snapshotId).toBe(observed.snapshotId);
+    expect(first.value.plan.operations).toHaveLength(1);
+    expect(first.value.plan.operations[0]?.operationId).toMatch(/^operation:v1:[0-9a-f]{64}$/u);
+    expect(Object.isFrozen(first.value)).toBeTrue();
+    expect(Object.isFrozen(first.value.plan)).toBeTrue();
+    expect(Object.isFrozen(first.value.expectedRevisions)).toBeTrue();
+  });
+
+  test('does not fold snapshot identity or unrelated capability revisions into operation IDs', () => {
+    const first = createPlacementPlan(
+      placementRequest(),
+      plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b),
+    );
+    const second = createPlacementPlan(
+      placementRequest(),
+      plannerSnapshot(PLANNER_HEX.c, PLANNER_HEX.d),
+    );
+    expect(first.ok).toBeTrue();
+    expect(second.ok).toBeTrue();
+    if (!first.ok || !second.ok) throw new Error('expected placement plans');
+    expect(first.value.plan.operations.map((operation) => operation.operationId)).toEqual(
+      second.value.plan.operations.map((operation) => operation.operationId),
+    );
+    expect(first.value.snapshotId).not.toBe(second.value.snapshotId);
+  });
+
+  test('does fold the desired store content revision into semantic operation identity', () => {
+    const first = createPlacementPlan(placementRequest(), plannerSnapshot());
+    const changed = placementRequest();
+    const second = createPlacementPlan(
+      {
+        ...changed,
+        intents: changed.intents.map((intent) => ({
+          ...intent,
+          source: {
+            ...intent.source,
+            contentHash: `sha256:${PLANNER_HEX.d}` as const,
+          },
+          desiredContentHash: `sha256:${PLANNER_HEX.d}` as const,
+          sourceContent: plannerSourceContent(intent.source.path, `sha256:${PLANNER_HEX.d}`),
+        })),
+      },
+      plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+        store: [plannerStore('store-resource-alpha', 'alpha', `sha256:${PLANNER_HEX.d}`)],
+      }),
+    );
+    expect(first.ok).toBeTrue();
+    expect(second.ok).toBeTrue();
+    if (!first.ok || !second.ok) throw new Error('expected placement plans');
+    expect(first.value.plan.operations[0]?.operationId).not.toBe(
+      second.value.plan.operations[0]?.operationId,
+    );
+  });
+
+  test('selects each live and store observation by explicit resource ID in multi-resource plans', () => {
+    const alpha = placementRequest().intents[0];
+    if (alpha === undefined) throw new Error('missing alpha intent');
+    const beta = {
+      ...structuredClone(alpha),
+      skill: 'beta',
+      liveResourceId: 'live-resource-beta-nonconventional',
+      storeResourceId: 'store-resource-beta-nonconventional',
+      source: { ...alpha.source, path: '/fixture/source/beta' },
+      sourceContent: plannerSourceContent('/fixture/source/beta'),
+      representation: 'symlink' as const,
+    };
+    const input = {
+      ...placementRequest(),
+      selection: { ...placementRequest().selection, skills: ['alpha', 'beta'] },
+      intents: [alpha, beta],
+    };
+    expect(alpha.sourceContent.contentRevision).toBe(beta.sourceContent.contentRevision);
+    expect(alpha.sourceContent.resourceId).not.toBe(beta.sourceContent.resourceId);
+    expect(alpha.sourceContent.targetIdentity).toBe('/fixture/source/alpha');
+    expect(beta.sourceContent.targetIdentity).toBe('/fixture/source/beta');
+    const observed = plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+      live: [
+        {
+          revision: plannerRevision('live', 'live-resource-beta-nonconventional', PLANNER_HEX.c),
+          value: null,
+        },
+        {
+          revision: plannerRevision('live', 'live-resource-alpha', PLANNER_HEX.d),
+          value: null,
+        },
+      ] as ObservedStateSnapshotV1['live'],
+      store: [
+        plannerStore('store-resource-beta-nonconventional', 'beta'),
+        plannerStore('store-resource-alpha', 'alpha'),
+      ],
+    });
+    const result = createPlacementPlan(input, observed);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    const bySkill = new Map(
+      result.value.plan.operations.map((operation) => [operation.skill, operation]),
+    );
+    expect(bySkill.get('alpha')?.before).toMatchObject({
+      kind: 'absent',
+      resource: {
+        location: { kind: 'machine-bound', path: '/fixture/live/alpha' },
+      },
+    });
+    expect(bySkill.get('beta')?.after).toMatchObject({
+      kind: 'placement',
+      representation: 'symlink',
+      linkTarget: { kind: 'machine-bound', path: '/fixture/store/beta' },
+    });
+  });
+
+  test('derives update kind and an exact present-live before image without fabricated source facts', () => {
+    const live: LivePlacementStateV1 = {
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      representation: 'symlink',
+      path: '/fixture/live/alpha',
+      realpath: '/fixture/store/old-alpha',
+      linkTarget: '../store/old-alpha',
+      dangling: true,
+      placementClass: 'store-linked',
+      skillFile: 'invalid',
+      brokenReason: 'dangling-link',
+      contentRevision: null,
+    };
+    const ledger: LedgerModel = {
+      updatedAt: '2026-07-16T00:00:00.000Z',
+      skills: {
+        alpha: {
+          tools: {
+            codex: {
+              placementPath: live.path,
+              mode: 'pinned',
+              dev: null,
+              pinned: {
+                storePath: '/fixture/store/old-alpha',
+                rev: 'c'.repeat(40),
+                gitSha: 'c'.repeat(40),
+                dirty: false,
+                contentHash: `sha256:${PLANNER_HEX.c}`,
+                snapshotAt: '2026-07-16T00:00:00.000Z',
+                verify: 'passed',
+                placement: 'symlink',
+              },
+              origin: {
+                source: 'example.test/fixture/repo//skills/alpha',
+                host: 'example.test',
+                repo: 'fixture/repo',
+                skillPath: 'skills/alpha',
+                refRequested: null,
+                refResolved: 'c'.repeat(40),
+                pin: true,
+                installedAt: '2026-07-16T00:00:00.000Z',
+              },
+              journal: null,
+            },
+          },
+        },
+      },
+      projects: {},
+      projectRegistrations: {},
+      transactions: {},
+      history: [],
+    };
+    const observed = plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+      live: [
+        {
+          revision: plannerPresentLiveRevision('live-resource-alpha', live, PLANNER_HEX.d),
+          value: live,
+        },
+      ],
+      ledger: {
+        revision: plannerPresentLedgerRevision(PLANNER_HEX.c),
+        value: ledger,
+      },
+    });
+    const result = createPlacementPlan(placementRequest(), observed);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations[0]).toMatchObject({
+      kind: 'update',
+      source: {
+        kind: 'local-dev',
+        path: '/fixture/source/alpha',
+        contentHash: `sha256:${PLANNER_HEX.a}`,
+      },
+      before: {
+        kind: 'placement',
+        classification: 'store-linked',
+        representation: 'symlink',
+        linkTarget: { kind: 'machine-bound', path: '/fixture/store/old-alpha' },
+        dangling: true,
+        source: {
+          kind: 'portable',
+          identity: {
+            host: 'example.test',
+            repository: 'fixture/repo',
+            path: 'skills/alpha',
+          },
+          contentHash: `sha256:${PLANNER_HEX.c}`,
+        },
+        contentHash: `sha256:${PLANNER_HEX.c}`,
+      },
+      reason: { code: 'update-selected' },
+    });
+  });
+
+  test('fails closed for missing observations, mismatched store facts, or fabricated source content', () => {
+    const missing = placementRequest();
+    const missingIntent = missing.intents[0];
+    if (missingIntent === undefined) throw new Error('missing placement intent');
+    missing.intents[0] = {
+      ...missingIntent,
+      liveResourceId: 'live-resource-missing',
+    };
+    expect(createPlacementPlan(missing, plannerSnapshot())).toMatchObject({
+      ok: false,
+      error: { message: 'placement planning: live resource observation is missing or ambiguous' },
+    });
+
+    const mismatchedStore = placementRequest();
+    const wrongStore = plannerStore('store-resource-alpha', 'alpha', `sha256:${PLANNER_HEX.d}`);
+    expect(
+      createPlacementPlan(
+        mismatchedStore,
+        plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, { store: [wrongStore] }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { message: 'placement planning: store resource does not match placement intent' },
+    });
+
+    const mismatchedSource = placementRequest();
+    const mismatchedSourceIntent = mismatchedSource.intents[0];
+    if (mismatchedSourceIntent === undefined) throw new Error('missing placement intent');
+    mismatchedSource.intents[0] = {
+      ...mismatchedSourceIntent,
+      source: {
+        ...mismatchedSourceIntent.source,
+        contentHash: `sha256:${PLANNER_HEX.d}`,
+      },
+    };
+    expect(createPlacementPlan(mismatchedSource, plannerSnapshot())).toMatchObject({
+      ok: false,
+      error: { message: 'placement planning: source content observation differs from intent' },
+    });
+  });
+
+  test('plans deterministic forward dev from exact absent-live state without effects', () => {
+    const input = {
+      schemaVersion: 1 as const,
+      command: 'dev' as const,
+      mode: 'forward' as const,
+      selection: {
+        source: 'explicit-targets' as const,
+        skills: ['alpha'],
+        tools: ['codex'] as const,
+        scopes: ['user'] as const,
+      },
+      batchPolicy: 'fail-fast' as const,
+      intents: [
+        {
+          kind: 'link-dev' as const,
+          skill: 'alpha',
+          tool: 'codex' as const,
+          scope: 'user' as const,
+          projectRoot: null,
+          liveResourceId: 'live-resource-alpha',
+          source: {
+            kind: 'local-dev' as const,
+            path: '/fixture/source/alpha',
+            contentHash: `sha256:${PLANNER_HEX.a}` as const,
+          },
+          sourceContent: plannerSourceContent(),
+        },
+      ],
+    };
+    const observed = plannerSnapshot();
+    const inputBefore = structuredClone(input);
+    const observedBefore = structuredClone(observed);
+
+    const first = createPlacementPlan(input, observed);
+    const second = createPlacementPlan(input, observed);
+
+    expect(first).toEqual(second);
+    expect(first.ok).toBeTrue();
+    if (!first.ok) throw new Error(first.error.message);
+    expect(input).toEqual(inputBefore);
+    expect(observed).toEqual(observedBefore);
+    expect(first.value.plan.command).toBe('dev');
+    expect(first.value.plan.operations[0]).toMatchObject({
+      kind: 'link-dev',
+      before: {
+        kind: 'absent',
+        resource: {
+          location: { kind: 'machine-bound', path: '/fixture/live/alpha' },
+        },
+      },
+      after: {
+        kind: 'placement',
+        classification: 'dev',
+        representation: 'symlink',
+        linkTarget: { kind: 'machine-bound', path: '/fixture/source/alpha' },
+        source: {
+          kind: 'local-dev',
+          path: '/fixture/source/alpha',
+          contentHash: `sha256:${PLANNER_HEX.a}`,
+        },
+        contentHash: `sha256:${PLANNER_HEX.a}`,
+      },
+      reason: { code: 'link-dev-selected' },
+    });
+    expect(first.value.plan.operations[0]?.preconditionIds).toHaveLength(
+      first.value.expectedRevisions.length + 1,
+    );
+    expect(first.value.plan.checks).toEqual([]);
+  });
+
+  test('omits forward dev when the exact managed source is already linked', () => {
+    const source = {
+      kind: 'local-dev' as const,
+      path: '/fixture/source/alpha',
+      contentHash: `sha256:${PLANNER_HEX.a}` as const,
+    };
+    const live: LivePlacementStateV1 = {
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      representation: 'symlink',
+      path: '/fixture/live/alpha',
+      realpath: source.path,
+      linkTarget: source.path,
+      dangling: false,
+      placementClass: 'dev',
+      skillFile: 'valid',
+      brokenReason: null,
+      contentRevision: source.contentHash,
+    };
+    const pair: LedgerPairV1Dto = {
+      placementPath: live.path,
+      mode: 'dev',
+      dev: {
+        sourcePath: source.path,
+        resolvedPath: source.path,
+        repoRoot: '/fixture',
+        sourceRelPath: 'source/alpha',
+        remote: null,
+        recordedAt: '2026-07-16T00:00:00.000Z',
+      },
+      pinned: null,
+      journal: null,
+    };
+    const observed = plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+      live: [
+        {
+          revision: plannerPresentLiveRevision('live-resource-alpha', live, PLANNER_HEX.d),
+          value: live,
+        },
+      ],
+      ledger: {
+        revision: plannerPresentLedgerRevision(PLANNER_HEX.c),
+        value: plannerLedgerWithAlphaPair(pair),
+      },
+    });
+    const input = {
+      schemaVersion: 1 as const,
+      command: 'dev' as const,
+      selection: placementRequest().selection,
+      batchPolicy: 'fail-fast' as const,
+      intents: [
+        {
+          kind: 'link-dev' as const,
+          skill: 'alpha',
+          tool: 'codex' as const,
+          scope: 'user' as const,
+          projectRoot: null,
+          liveResourceId: 'live-resource-alpha',
+          source,
+          sourceContent: plannerSourceContent(),
+        },
+      ],
+    };
+
+    const result = createPlacementPlan(input, observed);
+
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations).toEqual([]);
+    expect(result.value.expectedRevisions).toHaveLength(7);
+  });
+
+  test('plans promote against an exact absent-store expectation', () => {
+    const base = placementRequest();
+    const intent = base.intents[0];
+    if (intent === undefined) throw new Error('missing promote intent');
+    const input = {
+      ...base,
+      intents: [{ ...intent, representation: 'symlink' as const }],
+    };
+    const observed = plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+      store: [
+        {
+          revision: plannerAbsentRevision(
+            'store',
+            'store-resource-alpha',
+            '/fixture/store/alpha',
+            PLANNER_HEX.a,
+          ),
+          value: null,
+        },
+      ],
+    });
+
+    const result = createPlacementPlan(input, observed);
+
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations[0]).toMatchObject({
+      kind: 'promote',
+      after: {
+        kind: 'placement',
+        representation: 'symlink',
+        linkTarget: { kind: 'machine-bound', path: '/fixture/store/alpha' },
+        contentHash: `sha256:${PLANNER_HEX.a}`,
+      },
+    });
+  });
+
+  test('plans rollback to retained dev with exact observed source content and a bound precondition', () => {
+    const live: LivePlacementStateV1 = {
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      representation: 'directory',
+      path: '/fixture/live/alpha',
+      realpath: '/fixture/live/alpha',
+      linkTarget: null,
+      dangling: false,
+      placementClass: 'pinned',
+      skillFile: 'valid',
+      brokenReason: null,
+      contentRevision: `sha256:${PLANNER_HEX.c}`,
+    };
+    const pair: LedgerPairV1Dto = {
+      placementPath: live.path,
+      mode: 'pinned',
+      dev: {
+        sourcePath: '/fixture/source/alpha',
+        resolvedPath: '/fixture/source/alpha',
+        repoRoot: '/fixture',
+        sourceRelPath: 'source/alpha',
+        remote: null,
+        recordedAt: '2026-07-16T00:00:00.000Z',
+      },
+      pinned: {
+        storePath: '/fixture/store/current-alpha',
+        rev: 'c'.repeat(40),
+        gitSha: 'c'.repeat(40),
+        dirty: false,
+        contentHash: `sha256:${PLANNER_HEX.c}`,
+        snapshotAt: '2026-07-16T00:00:00.000Z',
+        verify: 'passed',
+        placement: 'copy',
+      },
+      origin: {
+        source: 'example.test/fixture/repo//skills/alpha',
+        host: 'example.test',
+        repo: 'fixture/repo',
+        skillPath: 'skills/alpha',
+        refRequested: null,
+        refResolved: 'c'.repeat(40),
+        pin: true,
+        installedAt: '2026-07-16T00:00:00.000Z',
+      },
+      journal: {
+        op: 'promote',
+        txId: 'tx-rollback-dev',
+        phase: 'committed',
+        startedAt: '2026-07-16T00:00:00.000Z',
+        completedAt: '2026-07-16T00:00:01.000Z',
+        before: { mode: 'dev', symlinkTarget: '/fixture/source/alpha', liveKind: 'symlink' },
+        stagingPath: '/fixture/staging/alpha',
+        backupPath: '/fixture/backup/alpha',
+      },
+    };
+    const observed = plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+      live: [
+        {
+          revision: plannerPresentLiveRevision('live-resource-alpha', live, PLANNER_HEX.d),
+          value: live,
+        },
+      ],
+      ledger: {
+        revision: plannerPresentLedgerRevision(PLANNER_HEX.c),
+        value: plannerLedgerWithAlphaPair(pair),
+      },
+    });
+    const input = {
+      schemaVersion: 1 as const,
+      command: 'promote' as const,
+      mode: 'rollback' as const,
+      selection: placementRequest().selection,
+      batchPolicy: 'fail-fast' as const,
+      intents: [
+        {
+          kind: 'rollback' as const,
+          skill: 'alpha',
+          tool: 'codex' as const,
+          scope: 'user' as const,
+          projectRoot: null,
+          liveResourceId: 'live-resource-alpha',
+          storeResourceId: null,
+          sourceContent: plannerSourceContent(),
+        },
+      ],
+    };
+    const inputBefore = structuredClone(input);
+    const observedBefore = structuredClone(observed);
+
+    const result = createPlacementPlan(input, observed);
+    const repeated = createPlacementPlan(input, observed);
+
+    expect(result).toEqual(repeated);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(input).toEqual(inputBefore);
+    expect(observed).toEqual(observedBefore);
+    expect(result.value.plan.command).toBe('promote');
+    expect(result.value.plan.operations[0]).toMatchObject({
+      kind: 'link-dev',
+      source: {
+        kind: 'local-dev',
+        path: '/fixture/source/alpha',
+        contentHash: `sha256:${PLANNER_HEX.a}`,
+      },
+      before: {
+        kind: 'placement',
+        classification: 'pinned',
+        representation: 'copy',
+        contentHash: `sha256:${PLANNER_HEX.c}`,
+      },
+      after: {
+        kind: 'placement',
+        classification: 'dev',
+        representation: 'symlink',
+        linkTarget: { kind: 'machine-bound', path: '/fixture/source/alpha' },
+        source: {
+          kind: 'local-dev',
+          path: '/fixture/source/alpha',
+          contentHash: `sha256:${PLANNER_HEX.a}`,
+        },
+        contentHash: `sha256:${PLANNER_HEX.a}`,
+      },
+      reason: { code: 'rollback-inverse' },
+    });
+    expect(result.value.plan.operations[0]?.preconditionIds).toHaveLength(
+      result.value.expectedRevisions.length + 1,
+    );
+  });
+
+  test('plans rollback to retained pinned state with existing promote vocabulary', () => {
+    const live: LivePlacementStateV1 = {
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      representation: 'symlink',
+      path: '/fixture/live/alpha',
+      realpath: '/fixture/source/alpha',
+      linkTarget: '/fixture/source/alpha',
+      dangling: false,
+      placementClass: 'dev',
+      skillFile: 'valid',
+      brokenReason: null,
+      contentRevision: `sha256:${PLANNER_HEX.a}`,
+    };
+    const pair: LedgerPairV1Dto = {
+      placementPath: live.path,
+      mode: 'dev',
+      dev: {
+        sourcePath: '/fixture/source/alpha',
+        resolvedPath: '/fixture/source/alpha',
+        repoRoot: '/fixture',
+        sourceRelPath: 'source/alpha',
+        remote: null,
+        recordedAt: '2026-07-16T00:00:00.000Z',
+      },
+      pinned: {
+        storePath: '/fixture/store/alpha',
+        rev: 'c'.repeat(40),
+        gitSha: 'c'.repeat(40),
+        dirty: false,
+        contentHash: `sha256:${PLANNER_HEX.c}`,
+        snapshotAt: '2026-07-16T00:00:00.000Z',
+        verify: 'passed',
+        placement: 'symlink',
+      },
+      origin: {
+        source: 'example.test/fixture/repo//skills/alpha',
+        host: 'example.test',
+        repo: 'fixture/repo',
+        skillPath: 'skills/alpha',
+        refRequested: null,
+        refResolved: 'c'.repeat(40),
+        pin: true,
+        installedAt: '2026-07-16T00:00:00.000Z',
+      },
+      journal: {
+        op: 'dev',
+        txId: 'tx-rollback-pinned',
+        phase: 'committed',
+        startedAt: '2026-07-16T00:00:00.000Z',
+        completedAt: '2026-07-16T00:00:01.000Z',
+        before: {
+          mode: 'pinned',
+          storePath: '/fixture/store/alpha',
+          contentHash: `sha256:${PLANNER_HEX.c}`,
+          liveKind: 'symlink',
+          symlinkTarget: '../store/alpha',
+        },
+        stagingPath: '/fixture/staging/alpha',
+        backupPath: '/fixture/backup/alpha',
+      },
+    };
+    const observed = plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+      live: [
+        {
+          revision: plannerPresentLiveRevision('live-resource-alpha', live, PLANNER_HEX.d),
+          value: live,
+        },
+      ],
+      store: [plannerStore('store-resource-alpha', 'alpha', `sha256:${PLANNER_HEX.c}`)],
+      ledger: {
+        revision: plannerPresentLedgerRevision(PLANNER_HEX.c),
+        value: plannerLedgerWithAlphaPair(pair),
+      },
+    });
+    const input = {
+      schemaVersion: 1 as const,
+      command: 'dev' as const,
+      mode: 'rollback' as const,
+      selection: placementRequest().selection,
+      batchPolicy: 'fail-fast' as const,
+      intents: [
+        {
+          kind: 'rollback' as const,
+          skill: 'alpha',
+          tool: 'codex' as const,
+          scope: 'user' as const,
+          projectRoot: null,
+          liveResourceId: 'live-resource-alpha',
+          storeResourceId: 'store-resource-alpha',
+        },
+      ],
+    };
+
+    const result = createPlacementPlan(input, observed);
+
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.command).toBe('dev');
+    expect(result.value.plan.operations[0]).toMatchObject({
+      kind: 'promote',
+      before: {
+        kind: 'placement',
+        classification: 'dev',
+        representation: 'symlink',
+        source: {
+          kind: 'local-dev',
+          path: '/fixture/source/alpha',
+          contentHash: `sha256:${PLANNER_HEX.a}`,
+        },
+      },
+      after: {
+        kind: 'placement',
+        classification: 'pinned',
+        representation: 'symlink',
+        linkTarget: { kind: 'machine-bound', path: '/fixture/store/alpha' },
+        source: {
+          kind: 'portable',
+          identity: {
+            host: 'example.test',
+            repository: 'fixture/repo',
+            path: 'skills/alpha',
+          },
+          contentHash: `sha256:${PLANNER_HEX.c}`,
+        },
+        contentHash: `sha256:${PLANNER_HEX.c}`,
+      },
+      reason: { code: 'rollback-inverse' },
+    });
+  });
+
+  test('plans interrupted fresh-install rollback as remove to exact absent state', () => {
+    const live: LivePlacementStateV1 = {
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      representation: 'directory',
+      path: '/fixture/live/alpha',
+      realpath: '/fixture/live/alpha',
+      linkTarget: null,
+      dangling: false,
+      placementClass: 'pinned',
+      skillFile: 'valid',
+      brokenReason: null,
+      contentRevision: `sha256:${PLANNER_HEX.c}`,
+    };
+    const pair: LedgerPairV1Dto = {
+      placementPath: live.path,
+      mode: 'pinned',
+      dev: null,
+      pinned: {
+        storePath: '/fixture/store/alpha',
+        rev: 'c'.repeat(40),
+        gitSha: 'c'.repeat(40),
+        dirty: false,
+        contentHash: `sha256:${PLANNER_HEX.c}`,
+        snapshotAt: '2026-07-16T00:00:00.000Z',
+        verify: 'passed',
+        placement: 'copy',
+      },
+      journal: {
+        op: 'install',
+        txId: 'tx-interrupted-install',
+        phase: 'staged',
+        startedAt: '2026-07-16T00:00:00.000Z',
+        completedAt: null,
+        before: { mode: 'absent' },
+        stagingPath: '/fixture/staging/alpha',
+        backupPath: '/fixture/backup/alpha',
+      },
+    };
+    const observed = plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+      live: [
+        {
+          revision: plannerPresentLiveRevision('live-resource-alpha', live, PLANNER_HEX.d),
+          value: live,
+        },
+      ],
+      ledger: {
+        revision: plannerPresentLedgerRevision(PLANNER_HEX.c),
+        value: plannerLedgerWithAlphaPair(pair),
+      },
+    });
+
+    const result = createPlacementPlan(
+      {
+        schemaVersion: 1,
+        command: 'promote',
+        mode: 'rollback',
+        selection: placementRequest().selection,
+        batchPolicy: 'fail-fast',
+        intents: [
+          {
+            kind: 'rollback',
+            skill: 'alpha',
+            tool: 'codex',
+            scope: 'user',
+            projectRoot: null,
+            liveResourceId: 'live-resource-alpha',
+            storeResourceId: null,
+          },
+        ],
+      },
+      observed,
+    );
+
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations).toHaveLength(1);
+    expect(result.value.plan.operations[0]).toMatchObject({
+      kind: 'remove',
+      before: {
+        kind: 'placement',
+        classification: 'pinned',
+        contentHash: null,
+      },
+      after: {
+        kind: 'absent',
+        resource: {
+          kind: 'live',
+          skill: 'alpha',
+          tool: 'codex',
+        },
+      },
+      reason: { code: 'rollback-inverse' },
+    });
+  });
+
+  test('fails closed for incoherent supplied components and rollback without retained inverse', () => {
+    const live: LivePlacementStateV1 = {
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      representation: 'directory',
+      path: '/fixture/live/alpha',
+      realpath: '/fixture/live/alpha',
+      linkTarget: null,
+      dangling: false,
+      placementClass: 'pinned',
+      skillFile: 'valid',
+      brokenReason: null,
+      contentRevision: `sha256:${PLANNER_HEX.a}`,
+    };
+    expect(
+      createPlacementPlan(
+        placementRequest(),
+        plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+          live: [
+            {
+              revision: plannerAbsentRevision(
+                'live',
+                'live-resource-alpha',
+                '/fixture/live/alpha',
+                PLANNER_HEX.d,
+              ),
+              value: live,
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { message: 'placement planning: live resource observation is incoherent' },
+    });
+
+    expect(
+      createPlacementPlan(
+        placementRequest(),
+        plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+          store: [
+            {
+              revision: plannerStore('store-resource-alpha', 'alpha').revision,
+              value: null,
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { message: 'placement planning: store resource observation is incoherent' },
+    });
+
+    expect(
+      createPlacementPlan(
+        placementRequest(),
+        plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+          ledger: {
+            revision: plannerPresentLedgerRevision(PLANNER_HEX.c),
+            value: null,
+          },
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { message: 'placement planning: ledger observation is incoherent' },
+    });
+
+    const rollback = {
+      schemaVersion: 1 as const,
+      command: 'dev' as const,
+      mode: 'rollback' as const,
+      selection: placementRequest().selection,
+      batchPolicy: 'fail-fast' as const,
+      intents: [
+        {
+          kind: 'rollback' as const,
+          skill: 'alpha',
+          tool: 'codex' as const,
+          scope: 'user' as const,
+          projectRoot: null,
+          liveResourceId: 'live-resource-alpha',
+          storeResourceId: null,
+        },
+      ],
+    };
+    expect(createPlacementPlan(rollback, plannerSnapshot())).toMatchObject({
+      ok: false,
+      error: { message: 'placement planning: rollback intent has no retained inverse' },
     });
   });
 });

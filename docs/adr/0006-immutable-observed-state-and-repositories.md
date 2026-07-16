@@ -59,8 +59,9 @@ The following rules are normative:
 - planners never import ports, repositories, execution, application services, or current runners;
 - status receives only read repository/snapshot contracts and never write, lock, process, clock,
   ID, or interaction capability;
-- execution may consume plan types, preconditions, repository contracts, and physical adapters,
-  but never calls a planner implementation;
+- execution may consume plan types, preconditions, repository contracts, physical adapters, and
+  the canonical `createOperationExecutionResult` validator from the neutral planning constructor
+  layer, but never imports or calls a command planner, constructs operations, or replans;
 - the existing execution coordinator is the sole cross-domain lock, validation, scheduling, and
   revision-cursor owner;
 - the artifact coordinator remains the manifest/lock physical durability authority;
@@ -147,6 +148,12 @@ No revision uses a clock, random ID, mutable object identity, renderer string, o
 - selected store observations; and
 - the relevant capability fingerprint.
 
+A fully representable selected status read may additionally bind one closed optional
+`statusRevision` digest into `snapshotId`. It covers only the existing migration/retention facts
+that are outside the seven resource domains, is reobserved once with no retry, and is not a generic
+adjunct extension point. Mutator snapshots omit it; unselected or unrepresentable status reads stay
+inside the bounded compatibility reader.
+
 Every component includes its exact `ExpectedRevisionV1` and the immutable domain model/facts needed
 by planning. Snapshot construction rejects proxies, accessors, symbols, exotic prototypes, sparse
 arrays, cycles, non-finite numbers, excessive depth/node count, and sensitive material at the
@@ -196,20 +203,26 @@ fresh apply creates and displays a new plan before approval.
 ### Logical staging and physical durability
 
 Repository staging is logical at the shared boundary. A domain-specific stage method validates an
-immutable edit against an exact expected revision and returns an immutable stage record containing:
+immutable edit against an exact expected revision. The concrete repository adapter reobserves that
+revision under the coordinator-held lock; callers cannot supply the observed revision. The adapter
+returns an immutable stage record containing:
 
 ```text
+operationId
 domain
 resourceId
+expectedRevision
 beforeRevision
-proposedRevision
-changed
-domain payload or adapter token
+editDigest
 ```
 
-The shared stage record does not claim that bytes are already durable. Physical staging, recovery
-files, backups, atomic replacement, fsync order, and cleanup remain owned by the existing artifact
-coordinator, ledger writer, and placement/store adapters.
+The shared stage record neither predicts a future filesystem revision nor claims that bytes are
+already durable. Physical staging, recovery files, backups, atomic replacement, fsync order, and
+cleanup remain owned by the existing artifact coordinator, ledger writer, and placement/store
+adapters. After durability is resolved, the owning adapter reobserves the actual revision and
+returns it in a receipt. The coordinator accepts that receipt only when it exactly covers every
+staged domain/resource, repeats the exact staged before revision, and reports a valid after revision
+for the same domain/resource.
 
 For coordinator fault injection, every write adapter exposes the same lifecycle phases—stage,
 commit, rollback, and cleanup—while retaining domain-specific inputs and results. This common
@@ -234,7 +247,8 @@ After a repository operation:
 - a completely rolled-back operation restores the before revisions and leaves the cursor there;
 - a failure after a durable boundary must be resolved by the owning physical adapter/recovery path
   into a committed or rolled-back receipt before later work may start; and
-- an indeterminate or unobservable result stops the group and fails closed.
+- an indeterminate or unobservable result stops the group, discards the stale in-memory cursor, and
+  fails closed.
 
 The coordinator never guesses from an in-memory model. When an operation can cross a durable
 boundary before returning an error, the mandatory post-operation reread/recovery rule from G3B-03

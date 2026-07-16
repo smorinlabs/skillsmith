@@ -1,6 +1,7 @@
 import type { FLIP_TOOLS } from '../agents/registry.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { SkillSmithError } from '../errors.ts';
+import type { FlipAction } from '../planning/legacy-action.ts';
 import type {
   ExecutableOperation,
   OperationExecutionResult,
@@ -21,6 +22,7 @@ import type {
 } from '../ports/types.ts';
 import type { Result } from '../result.ts';
 export { FLIP_TOOLS } from '../agents/registry.ts';
+export type { FlipAction } from '../planning/legacy-action.ts';
 
 export type PlacementPorts = PlatformPaths &
   FileReadPort &
@@ -138,16 +140,37 @@ export interface Provenance {
 }
 
 export interface SwapCtx {
-  env: SwapPorts;
-  ledgerPath: string;
-  ledger: LedgerModel | LedgerFile;
-  persist: () => Promise<Result<void, SkillSmithError>>;
-  logicalOperation?: ExecutableOperation;
-  now: () => string; // injectable clock (ISO string)
-  newTxId: () => string; // injectable 8-hex generator
-  pauseAt?: JournalPhase | undefined; // test seam, see swap.ts
-  signal?: AbortSignal | undefined;
+  readonly env: SwapPorts;
+  readonly logicalOperation?: ExecutableOperation;
+  readonly pauseAt?: JournalPhase | undefined; // test seam, see swap.ts
+  readonly signal?: AbortSignal | undefined;
 }
+
+/** Immutable canonical ledger image supplied to and returned by one physical swap attempt. */
+export interface SwapState {
+  readonly ledger: LedgerModel;
+}
+
+/** Effect authorities bound by the execute/recovery adapters, never by ledger reducers. */
+export interface SwapEffects {
+  readonly persistLedger: (candidate: LedgerModel) => Promise<SwapPersistenceResult>;
+  readonly journalNow: () => string;
+  readonly newTransactionId: (ledger: LedgerModel) => string;
+}
+
+export type SwapPersistenceResult =
+  | { readonly ok: true; readonly ledger: LedgerModel }
+  | { readonly ok: false; readonly error: SkillSmithError; readonly ledger: LedgerModel };
+
+export interface SwapRequest {
+  readonly context: SwapCtx;
+  readonly state: SwapState;
+  readonly effects: SwapEffects;
+}
+
+export type SwapExecutionResult<T> =
+  | { readonly ok: true; readonly value: T; readonly state: SwapState }
+  | { readonly ok: false; readonly error: SkillSmithError; readonly state: SwapState };
 
 export interface SwapPlan {
   op: 'promote' | 'dev' | 'install' | 'uninstall';
@@ -176,17 +199,6 @@ export interface SwapOutcome {
   backupKept: string | null; // path of a preserved backup (hash mismatch / no pinned record)
   warning: string | null;
 }
-
-export type FlipAction =
-  | 'flipped'
-  | 'updated'
-  | 'noop'
-  | 'skipped'
-  | 'refused'
-  | 'failed'
-  | 'rolled-back'
-  | 'created'
-  | 'adopted';
 
 export interface FlipResult {
   skill: string;

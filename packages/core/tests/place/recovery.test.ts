@@ -1,0 +1,27 @@
+import { describe, expect, test } from 'bun:test';
+import type { PlacementExecutionInput } from '../../src/place/execute.ts';
+import { emptyLedgerModel } from '../../src/place/ledger.ts';
+import { recoverPlacement, recoveryRefusedMessage } from '../../src/place/recovery.ts';
+import type { PlacementPorts } from '../../src/place/types.ts';
+
+const input: PlacementExecutionInput = {
+  env: {} as PlacementPorts,
+  ledgerPath: '/tmp/placements.json',
+  ledger: emptyLedgerModel('2026-07-16T00:00:00.000Z'),
+  journalNow: () => '2026-07-16T00:00:00.000Z',
+  newTransactionId: () => 'unused',
+};
+
+describe('placement recovery boundary', () => {
+  test('routes recovery without mutating the supplied immutable state', async () => {
+    const recovered = await recoverPlacement(input, 'resume', {
+      skill: 'missing',
+      tool: 'codex',
+    });
+
+    expect(recovered.ok).toBeFalse();
+    if (!recovered.ok) expect(recovered.error.code).toBe('flip-refused');
+    expect(recovered.state.ledger).toBe(input.ledger);
+    expect(recoveryRefusedMessage('dev', 'alpha')).toContain('previous dev');
+  });
+});

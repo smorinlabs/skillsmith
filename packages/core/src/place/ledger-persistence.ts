@@ -61,8 +61,16 @@ export const openCallerLedgerWriter = (
 };
 
 export interface LedgerPersistenceGateway {
-  persist(model: LedgerModel): Promise<Result<LedgerWriteReceipt, LedgerPersistenceError>>;
+  persist(model: LedgerModel): Promise<LedgerPersistenceResult>;
 }
+
+export type LedgerPersistenceResult =
+  | { readonly ok: true; readonly value: LedgerWriteReceipt }
+  | {
+      readonly ok: false;
+      readonly error: LedgerPersistenceError;
+      readonly acknowledgedModel: LedgerModel | null;
+    };
 
 /**
  * Canonical expected-revision gateway for every placement mutation. `finalizeHistory` first
@@ -78,8 +86,8 @@ export const createLedgerPersistenceGateway = (
   let expectedByteRevision: ArtifactDigest | null | undefined;
   let durableModel: LedgerModel | null = null;
   return Object.freeze({
-    persist: (model: LedgerModel) =>
-      runLedgerWriterOperation(async () => {
+    persist: async (model: LedgerModel): Promise<LedgerPersistenceResult> => {
+      const persisted = await runLedgerWriterOperation(async () => {
         if (writer === null) {
           const opened = await openCallerLedgerWriter(env, ledgerPath, signal);
           if (!opened.ok) return opened;
@@ -117,6 +125,14 @@ export const createLedgerPersistenceGateway = (
           durableModel = written.value.model;
         }
         return written;
-      }),
+      });
+      return persisted.ok
+        ? persisted
+        : Object.freeze({
+            ok: false,
+            error: persisted.error,
+            acknowledgedModel: durableModel,
+          });
+    },
   });
 };
