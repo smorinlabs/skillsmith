@@ -1057,7 +1057,7 @@ Downstream coverage obligations: none.
 - [x] P17-G3B-06:mapped _(passed)_
 - [x] P17-G3B-06:ready _(passed)_
 - [x] P17-G3B-06:test-first _(passed)_
-- [ ] P17-G3B-06:minimal-implementation _(pending)_
+- [x] P17-G3B-06:minimal-implementation _(passed)_
 - [ ] P17-G3B-06:targeted-green _(pending)_
 - [ ] P17-G3B-06:impacted-green _(pending)_
 - [ ] P17-G3B-06:refactor _(pending)_

@@ -5123,8 +5123,8 @@
           "evidence": ["projects/p17/evidence/P17-G3B-06.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-06.md#minimal-implementation"]
         },
         "targeted-green": {
           "status": "pending",
@@ -5155,7 +5155,8 @@
         "projects/p17/plans/P17-G3B-06.md",
         "projects/p17/evidence/P17-G3B-06.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G3B-06.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-06.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-06.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-06.md#minimal-implementation"
       ]
     },
     {
