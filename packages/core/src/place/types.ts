@@ -8,6 +8,8 @@ import type {
 } from '../planning/types.ts';
 import type {
   ClockPort,
+  FileMetadataReadPort,
+  FileModeWritePort,
   FileReadPort,
   FileWritePort,
   GitPort,
@@ -22,7 +24,9 @@ export { FLIP_TOOLS } from '../agents/registry.ts';
 
 export type PlacementPorts = PlatformPaths &
   FileReadPort &
+  FileMetadataReadPort &
   FileWritePort &
+  FileModeWritePort &
   LockPort &
   ProcessPort &
   ClockPort &

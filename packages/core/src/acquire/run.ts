@@ -7,7 +7,7 @@ import {
   validateManifestName,
   validateRequestedRef,
 } from '../artifacts/identity.ts';
-import type { LedgerModel } from '../artifacts/ledger-types.ts';
+import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import {
   type SkillSmithError,
   cancelledError,
@@ -29,14 +29,19 @@ import type {
   ValidatedExecutionBinding,
 } from '../execution/types.ts';
 import {
+  ledgerMigrationExecutionBinding,
+  prepareLedgerMigration,
+} from '../place/ledger-migration.ts';
+import { createLedgerPersistenceGateway } from '../place/ledger-persistence.ts';
+import {
   getLedgerPairAt,
   getPairAt as getLegacyPairAt,
   ledgerModelForMutation,
+  legacyLedgerView,
   readLedgerState,
   withLedgerLock,
   withLedgerPairAt,
   withoutLedgerPairAt,
-  writeLedger,
 } from '../place/ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
 import {
@@ -47,6 +52,7 @@ import {
   sweepStaging,
 } from '../place/store.ts';
 import {
+  commitRecordOnlyLogicalTransaction,
   refusedMessage,
   resumeSwap,
   runSwap,
@@ -75,6 +81,7 @@ import {
 import type {
   CurrentMutatorOperationPlan,
   ExecutableOperation,
+  OperationDigest,
   OperationExecutionResult,
   OperationImage,
   OperationPlan,
@@ -131,16 +138,6 @@ export const defaultInstallSourceTransport: InstallSourceTransport = Object.free
 });
 
 type AcquireLedger = LedgerFile | LedgerModel;
-
-const legacyLedgerView = (model: LedgerModel): LedgerFile => ({
-  schemaVersion: 1,
-  kind: 'skillsmith.placements',
-  updatedAt: model.updatedAt,
-  skills: structuredClone(model.skills) as LedgerFile['skills'],
-  ...(Object.keys(model.projects).length === 0
-    ? {}
-    : { projects: structuredClone(model.projects) as NonNullable<LedgerFile['projects']> }),
-});
 
 const getPairAt = (
   ledger: AcquireLedger,
@@ -842,13 +839,20 @@ interface PlaceCtx {
 }
 
 const makeSwapCtx = (p: PlaceCtx): SwapCtx => {
+  const persistence = createLedgerPersistenceGateway(p.env, p.ledgerPath, p.opts.signal);
   const ctx: SwapCtx = {
     env: p.env,
     ledgerPath: p.ledgerPath,
     ledger: p.ledger,
     persist: async () => {
-      p.ledger = ctx.ledger as LedgerModel;
-      return writeLedger(p.env, p.ledgerPath, p.ledger);
+      const written = await persistence.persist(ctx.ledger as LedgerModel);
+      if (!written.ok) {
+        if (written.error.code === 'cancelled') return err(written.error);
+        return err(flipFailedError(`ledger write failed: ${written.error.code}`));
+      }
+      ctx.ledger = written.value.model;
+      p.ledger = written.value.model;
+      return ok(undefined);
     },
     now: () => journalNowOf(p.env, p.deps),
     newTxId: () => txIdOf(p.env, p.deps),
@@ -1075,17 +1079,25 @@ const placePair = async (
     // rewrite the pair record only (no filesystem change).
     const pinned = buildPinned(snap, sha, liveKind, gate, nowOf(p.env, p.deps));
     const origin = buildOrigin(spec, sha, resolved.skillPath, opts, nowOf(p.env, p.deps));
-    const repaired = withLedgerPairAt(p.ledger, p.scopeKey, skill, tool, {
+    const repaired: PairRecord = {
       placementPath,
       mode: 'pinned',
       dev: existing?.dev ?? null,
       pinned,
       origin,
       journal: null,
-    });
-    if (!repaired.ok) return fail(repaired.error);
-    p.ledger = repaired.value;
-    const persisted = await writeLedger(env, p.ledgerPath, p.ledger);
+    };
+    if (p.logicalOperation === null) {
+      return fail(
+        flipFailedError('record-only install repair requires logical operation identity'),
+      );
+    }
+    const persisted = await commitRecordOnlyLogicalTransaction(
+      makeSwapCtx(p),
+      p.logicalOperation,
+      repaired,
+      p.scopeKey,
+    );
     if (!persisted.ok) return fail(persisted.error);
     return { ...finalize('repaired'), placement: liveKind };
   }
@@ -1884,13 +1896,20 @@ const runInstallInternal = async (
     return ok(buildReport(false, requested, planningRefusals, Boolean(opts.continueOnError)));
   }
 
-  interface PreparedInstallBinding {
+  interface PreparedInstallPairBinding {
+    readonly kind: 'pair';
     readonly preview: InstallResult;
     readonly expected: InstallPreconditionFacts;
     readonly actualBefore: OperationImage;
     observe(): Promise<InstallPreconditionFacts>;
     execute(operation: ExecutableOperation): Promise<InstallResult>;
   }
+  interface PreparedInstallMigrationBinding {
+    readonly kind: 'migrate-ledger';
+    readonly expectedState: Extract<LedgerReadState, { readonly state: 'present' }>;
+    onMigrated(model: LedgerModel): void;
+  }
+  type PreparedInstallBinding = PreparedInstallPairBinding | PreparedInstallMigrationBinding;
   interface PreparedInstallBatch {
     readonly preview: PlannedInstallReport;
     readonly bindings: ReadonlyMap<string, PreparedInstallBinding>;
@@ -1993,7 +2012,8 @@ const runInstallInternal = async (
 
   // Resolve and verify the whole selection into immutable work before any store/placement binding
   // can run. Fetch materialization remains inside the existing outer lock for normal execution.
-  const prepareAll = async (ledger: LedgerModel): Promise<PreparedInstallBatch> => {
+  const prepareAll = async (ledgerState: LedgerReadState): Promise<PreparedInstallBatch> => {
+    const ledger = ledgerModelForMutation(ledgerState, nowOf(env, deps));
     const legacyLedger = legacyLedgerView(ledger);
     const results: InstallResult[] = [...planningRefusals];
     const candidateBindings = new Map<InstallResult, InstallBindingSeed>();
@@ -2264,12 +2284,34 @@ const runInstallInternal = async (
         }),
       });
       preconditions.push(precondition);
+      const desiredContentHash = expectedFacts.store.contentHash as OperationDigest | null;
+      const desiredAfter =
+        operation.after.kind === 'placement' && desiredContentHash !== null
+          ? {
+              ...operation.after,
+              source: {
+                kind: 'portable' as const,
+                identity: {
+                  host: seed.spec.identity.host,
+                  repository: seed.spec.identity.repository,
+                  path: seed.resolved.skillPath.length === 0 ? null : seed.resolved.skillPath,
+                },
+                requestedRef: seed.spec.ref,
+                resolvedSha: seed.resolved.sha,
+                sourcePath: seed.resolved.skillPath.length === 0 ? '.' : seed.resolved.skillPath,
+                contentHash: desiredContentHash,
+              },
+              contentHash: desiredContentHash,
+            }
+          : operation.after;
       operations.push({
         ...operation,
         before: actualBefore,
+        after: desiredAfter,
         preconditionIds: [precondition.preconditionId],
       });
       preparedBindings.set(operation.operationId, {
+        kind: 'pair',
         preview: seed.preview,
         expected: expectedFacts,
         actualBefore,
@@ -2287,18 +2329,36 @@ const runInstallInternal = async (
         },
       });
     }
+    const migration = prepareLedgerMigration(
+      env,
+      'install',
+      'explicit-targets',
+      ledgerPath,
+      ledgerState,
+    );
+    if (migration !== null) {
+      operations.unshift(migration.operation);
+      preconditions.unshift(migration.precondition);
+      preparedBindings.set(migration.operation.operationId, {
+        kind: 'migrate-ledger',
+        expectedState: migration.expectedState,
+        onMigrated: (model) => {
+          placeCtx.ledger = model;
+        },
+      });
+    }
     const plan = createOperationPlan({
       ...initialPlanning.plan,
       operations,
     }) as OperationPlan<'install'>;
     const planning = { plan, operationResults: initialPlanning.operationResults };
     const bindings = new Map<string, PreparedInstallBinding>();
-    for (const operationId of planning.operationResults.keys()) {
-      const binding = preparedBindings.get(operationId);
-      if (binding === undefined || bindings.has(operationId)) {
+    for (const operation of planning.plan.operations) {
+      const binding = preparedBindings.get(operation.operationId);
+      if (binding === undefined || bindings.has(operation.operationId)) {
         throw new Error('prepared install operation binding is not one-to-one');
       }
-      bindings.set(operationId, binding);
+      bindings.set(operation.operationId, binding);
     }
     if (
       bindings.size !== planning.plan.operations.length ||
@@ -2325,6 +2385,17 @@ const runInstallInternal = async (
       (operation) => {
         const binding = prepared.bindings.get(operation.operationId);
         if (binding === undefined) throw new Error('prepared install operation binding is missing');
+        if (binding.kind === 'migrate-ledger') {
+          return ledgerMigrationExecutionBinding({
+            env,
+            ledgerPath,
+            operation,
+            expectedState: binding.expectedState,
+            startedAt: journalNowOf(env, deps),
+            ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+            onMigrated: binding.onMigrated,
+          });
+        }
         if (operation.pairId === null)
           throw new Error('prepared install operation pair is missing');
         return {
@@ -2407,6 +2478,7 @@ const runInstallInternal = async (
       for (const operation of prepared.preview.plan.operations) {
         const binding = prepared.bindings.get(operation.operationId);
         if (binding === undefined) throw new Error('prepared install operation binding is missing');
+        if (binding.kind === 'migrate-ledger') continue;
         const actual: InstallResult = {
           ...binding.preview,
           action: 'refused',
@@ -2432,6 +2504,7 @@ const runInstallInternal = async (
       if (binding === undefined || execution === undefined) {
         throw new Error('prepared install result projection is missing');
       }
+      if (binding.kind === 'migrate-ledger') continue;
       if (execution.outcome === 'skipped-after-failure') {
         const actual = {
           ...binding.preview,
@@ -2469,7 +2542,7 @@ const runInstallInternal = async (
   if (opts.dryRun) {
     const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
-    const prepared = await prepareAll(ledgerModelForMutation(ledgerRes.value, nowOf(env, deps)));
+    const prepared = await prepareAll(ledgerRes.value);
     await prepared.cleanup();
     return ok(prepared.preview);
   }
@@ -2480,6 +2553,9 @@ const runInstallInternal = async (
     await sweepFetchOrphans(env, dataDir);
     const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
+    if (ledgerRes.value.state === 'present' && ledgerRes.value.sourceVersion === 1) {
+      return ok(await prepareAll(ledgerRes.value));
+    }
     const ledger = ledgerModelForMutation(ledgerRes.value, nowOf(env, deps));
 
     const sweepPlaceCtx: PlaceCtx = {
@@ -2502,7 +2578,9 @@ const runInstallInternal = async (
       );
     }
 
-    return ok(await prepareAll(sweepPlaceCtx.ledger));
+    const current = await readLedgerState(env, ledgerPath);
+    if (!current.ok) return err(safeError(current.error));
+    return ok(await prepareAll(current.value));
   };
   const completed = Symbol('install-prepare-lock-completed');
   let preparedResult: Result<PreparedInstallBatch, SkillSmithError> | undefined;
@@ -2793,14 +2871,21 @@ const processUninstallMatch = async (
 ): Promise<UninstallResult> => {
   const { scope, scopeKey, tool, existing, notice } = match;
 
+  const persistence = createLedgerPersistenceGateway(env, ledgerPath, opts.signal);
   let swapCtx: SwapCtx;
   swapCtx = {
     env,
     ledgerPath,
     ledger: ledgerCtx.ledger,
     persist: async () => {
-      ledgerCtx.ledger = swapCtx.ledger as LedgerModel;
-      return writeLedger(env, ledgerPath, ledgerCtx.ledger);
+      const written = await persistence.persist(swapCtx.ledger as LedgerModel);
+      if (!written.ok) {
+        if (written.error.code === 'cancelled') return err(written.error);
+        return err(flipFailedError(`ledger write failed: ${written.error.code}`));
+      }
+      swapCtx.ledger = written.value.model;
+      ledgerCtx.ledger = written.value.model;
+      return ok(undefined);
     },
     now: () => journalNowOf(env, deps),
     newTxId: () => txIdOf(env, deps),
@@ -2910,11 +2995,20 @@ const processUninstallMatch = async (
         backupKept: null,
       };
     }
-    const removed = withoutLedgerPairAt(ledgerCtx.ledger, scopeKey, name, tool);
-    if (!removed.ok) return failed(removed.error, placementPath);
-    ledgerCtx.ledger = removed.value;
-    const persisted = await writeLedger(env, ledgerPath, ledgerCtx.ledger);
+    if (logicalOperation === null) {
+      return failed(
+        flipFailedError('record-only stale uninstall requires logical operation identity'),
+        placementPath,
+      );
+    }
+    const persisted = await commitRecordOnlyLogicalTransaction(
+      swapCtx,
+      logicalOperation,
+      ex,
+      scopeKey,
+    );
     if (!persisted.ok) return failed(persisted.error, placementPath);
+    ledgerCtx.ledger = swapCtx.ledger as LedgerModel;
     return {
       skill: name,
       tool,
@@ -3396,13 +3490,20 @@ const runUninstallInternal = async (
   const scopeKeyFor = async (scope: InstallScope): Promise<string | null> =>
     scope === 'project' ? (projectRoot ?? (await env.realpath(opts.cwd))) : null;
 
-  interface PreparedUninstallBinding {
+  interface PreparedUninstallPairBinding {
+    readonly kind: 'pair';
     readonly preview: UninstallResult;
     readonly expected: UninstallPreconditionFacts;
     readonly actualBefore: OperationImage;
     observe(): Promise<UninstallPreconditionFacts>;
     execute(): Promise<UninstallResult>;
   }
+  interface PreparedUninstallMigrationBinding {
+    readonly kind: 'migrate-ledger';
+    readonly expectedState: Extract<LedgerReadState, { readonly state: 'present' }>;
+    onMigrated(model: LedgerModel): void;
+  }
+  type PreparedUninstallBinding = PreparedUninstallPairBinding | PreparedUninstallMigrationBinding;
   interface PreparedUninstallBatch {
     readonly preview: PlannedUninstallReport;
     readonly bindings: ReadonlyMap<string, PreparedUninstallBinding>;
@@ -3490,7 +3591,8 @@ const runUninstallInternal = async (
     };
   };
 
-  const prepareAll = async (ledger: LedgerModel): Promise<PreparedUninstallBatch> => {
+  const prepareAll = async (ledgerState: LedgerReadState): Promise<PreparedUninstallBatch> => {
+    const ledger = ledgerModelForMutation(ledgerState, nowOf(env, deps));
     const legacyLedger = legacyLedgerView(ledger);
     const ledgerCtx = { ledger };
     const results: UninstallResult[] = [];
@@ -3587,11 +3689,30 @@ const runUninstallInternal = async (
         preconditionIds: [precondition.preconditionId],
       });
       preparedBindings.set(operation.operationId, {
+        kind: 'pair',
         preview: seed.preview,
         expected: expectedFacts,
         actualBefore,
         observe: () => observeUninstallFacts(seed),
         execute: () => seed.execute(operation),
+      });
+    }
+    const migration = prepareLedgerMigration(
+      env,
+      'uninstall',
+      'explicit-targets',
+      ledgerPath,
+      ledgerState,
+    );
+    if (migration !== null) {
+      operations.unshift(migration.operation);
+      preconditions.unshift(migration.precondition);
+      preparedBindings.set(migration.operation.operationId, {
+        kind: 'migrate-ledger',
+        expectedState: migration.expectedState,
+        onMigrated: (model) => {
+          ledgerCtx.ledger = model;
+        },
       });
     }
     const plan = createOperationPlan({
@@ -3600,12 +3721,12 @@ const runUninstallInternal = async (
     }) as OperationPlan<'uninstall'>;
     const planning = { plan, operationResults: initialPlanning.operationResults };
     const bindings = new Map<string, PreparedUninstallBinding>();
-    for (const operationId of planning.operationResults.keys()) {
-      const binding = preparedBindings.get(operationId);
-      if (binding === undefined || bindings.has(operationId)) {
+    for (const operation of planning.plan.operations) {
+      const binding = preparedBindings.get(operation.operationId);
+      if (binding === undefined || bindings.has(operation.operationId)) {
         throw new Error('prepared uninstall operation binding is not one-to-one');
       }
-      bindings.set(operationId, binding);
+      bindings.set(operation.operationId, binding);
     }
     if (
       bindings.size !== planning.plan.operations.length ||
@@ -3622,8 +3743,9 @@ const runUninstallInternal = async (
     prepared: PreparedUninstallBatch,
   ): Promise<PlannedUninstallReport> => {
     const actualByPreview = new Map<UninstallResult, UninstallResult>();
-    const actualByOperation = new Map<string, UninstallResult>();
+    const executionResults: OperationExecutionResult[] = [];
     let stateChanged = false;
+    let migrationBlocked = false;
     try {
       await validateExecutionPreconditions(
         prepared.preview.plan as CurrentMutatorOperationPlan,
@@ -3637,6 +3759,87 @@ const runUninstallInternal = async (
     for (const operation of prepared.preview.plan.operations) {
       const binding = prepared.bindings.get(operation.operationId);
       if (binding === undefined) throw new Error('prepared uninstall operation binding is missing');
+      if (binding.kind === 'migrate-ledger') {
+        if (stateChanged) {
+          migrationBlocked = true;
+          executionResults.push(
+            createOperationExecutionResult({
+              operationId: operation.operationId,
+              outcome: 'failed',
+              actualBefore: operation.before,
+              actualAfter: operation.before,
+              force: null,
+              error: {
+                code: 'flip-refused',
+                message: 'prepared ledger migration source changed before execution',
+                remediation: 'Re-run the command to prepare the current ledger state.',
+              },
+            }),
+          );
+          continue;
+        }
+        if (opts.signal?.aborted) {
+          migrationBlocked = true;
+          executionResults.push(
+            createOperationExecutionResult({
+              operationId: operation.operationId,
+              outcome: 'cancelled',
+              actualBefore: operation.before,
+              actualAfter: operation.before,
+              force: null,
+              error: null,
+            }),
+          );
+          continue;
+        }
+        const preparedMigration = ledgerMigrationExecutionBinding({
+          env,
+          ledgerPath,
+          operation,
+          expectedState: binding.expectedState,
+          startedAt: journalNowOf(env, deps),
+          ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+          onMigrated: binding.onMigrated,
+        });
+        const actualBefore = await preparedMigration.observeActualBefore();
+        const execution = await preparedMigration.execute({
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: null,
+          actualBefore,
+          unstartedForce: null,
+          execute: async () => {
+            throw new Error('migration execution binding cannot be re-entered');
+          },
+        });
+        executionResults.push(execution);
+        migrationBlocked = execution.outcome !== 'succeeded';
+        continue;
+      }
+      if (migrationBlocked) {
+        const actual = {
+          ...binding.preview,
+          action: 'failed' as const,
+          reason: 'ledger migration failed before placement execution',
+          error: genericError('ledger migration failed before placement execution'),
+        };
+        actualByPreview.set(binding.preview, actual);
+        executionResults.push(
+          createOperationExecutionResult({
+            operationId: operation.operationId,
+            outcome: 'skipped-after-failure',
+            actualBefore: binding.actualBefore,
+            actualAfter: binding.actualBefore,
+            force: createBoundedForceEffect({
+              supported: true,
+              requested: requested.force,
+              conflict: null,
+            }),
+            error: null,
+          }),
+        );
+        continue;
+      }
       const actual = stateChanged
         ? {
             ...binding.preview,
@@ -3653,17 +3856,10 @@ const runUninstallInternal = async (
             }
           : await binding.execute();
       actualByPreview.set(binding.preview, actual);
-      actualByOperation.set(operation.operationId, actual);
+      executionResults.push(uninstallExecutionResultFor(operation, actual, requested));
     }
     const results = prepared.preview.results.map(
       (previewResult) => actualByPreview.get(previewResult) ?? previewResult,
-    );
-    const executionResults = prepared.preview.plan.operations.map((operation) =>
-      uninstallExecutionResultFor(
-        operation,
-        actualByOperation.get(operation.operationId),
-        requested,
-      ),
     );
     return assembleUninstallReport(
       false,
@@ -3678,7 +3874,7 @@ const runUninstallInternal = async (
   if (opts.dryRun) {
     const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
-    const prepared = await prepareAll(ledgerModelForMutation(ledgerRes.value, nowOf(env, deps)));
+    const prepared = await prepareAll(ledgerRes.value);
     return ok(prepared.preview);
   }
 
@@ -3687,13 +3883,26 @@ const runUninstallInternal = async (
     await sweepFetchOrphans(env, dataDir);
     const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
+    if (ledgerRes.value.state === 'present' && ledgerRes.value.sourceVersion === 1) {
+      const prepared = await prepareAll(ledgerRes.value);
+      return ok(await executePrepared(prepared));
+    }
     const ledger = ledgerModelForMutation(ledgerRes.value, nowOf(env, deps));
 
+    const sweepPersistence = createLedgerPersistenceGateway(env, ledgerPath, opts.signal);
     const sweepCtx: SwapCtx = {
       env,
       ledgerPath,
       ledger,
-      persist: () => writeLedger(env, ledgerPath, sweepCtx.ledger as LedgerModel),
+      persist: async () => {
+        const written = await sweepPersistence.persist(sweepCtx.ledger as LedgerModel);
+        if (!written.ok) {
+          if (written.error.code === 'cancelled') return err(written.error);
+          return err(flipFailedError(`ledger write failed: ${written.error.code}`));
+        }
+        sweepCtx.ledger = written.value.model;
+        return ok(undefined);
+      },
       now: () => journalNowOf(env, deps),
       newTxId: () => txIdOf(env, deps),
       pauseAt: opts.testPauseAt,
@@ -3707,7 +3916,9 @@ const runUninstallInternal = async (
       );
     }
 
-    const prepared = await prepareAll(sweepCtx.ledger as LedgerModel);
+    const current = await readLedgerState(env, ledgerPath);
+    if (!current.ok) return err(safeError(current.error));
+    const prepared = await prepareAll(current.value);
     return ok(await executePrepared(prepared));
   };
   const completed = Symbol('uninstall-ledger-callback-completed');

@@ -1638,6 +1638,81 @@ describe('EWP-CMD-DOCTOR-TS04', () => {
     ]);
   });
 
+  test('health@2 rejects inactive mutation counters and unrelated finding authorization', () => {
+    expect(healthV2Codec).toBeDefined();
+    if (healthV2Codec === undefined) return;
+    const findingId = `finding:v1:${'1'.repeat(64)}`;
+    const operationId = `operation:v1:${'2'.repeat(64)}`;
+    const digest = `sha256:${'3'.repeat(64)}`;
+    const inactive = {
+      schemaVersion: 2,
+      experimental: true,
+      findings: [],
+      counts: { ok: 0, warning: 0, error: 0 },
+      repair: { mode: 'not-requested', operations: [], results: [] },
+      mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+    };
+    for (const counter of ['changed', 'unchanged', 'failed'] as const) {
+      const candidate = structuredClone(inactive);
+      candidate.mutation[counter] = 1;
+      expect(healthV2Codec.validate(candidate), counter).toMatchObject({ ok: false });
+    }
+
+    const authorized = {
+      schemaVersion: 2,
+      experimental: true,
+      findings: [
+        {
+          findingId,
+          checkId: 'lock-regeneration',
+          severity: 'info',
+          title: 'portable lock regeneration is available',
+          message: 'the selected lock has one canonical repair',
+          operation: 'write-lock',
+          path: '/workspace/skillsmith.lock',
+        },
+      ],
+      counts: { ok: 1, warning: 0, error: 0 },
+      repair: {
+        mode: 'preview',
+        operations: [
+          {
+            operationId,
+            kind: 'write-lock',
+            artifact: 'lock',
+            path: '/workspace/skillsmith.lock',
+            before: {
+              state: 'absent',
+              schemaVersion: null,
+              byteRevision: null,
+              semanticRevision: null,
+            },
+            after: {
+              state: 'present',
+              schemaVersion: 1,
+              byteRevision: digest,
+              semanticRevision: digest,
+            },
+            findingIds: [findingId],
+          },
+        ],
+        results: [],
+      },
+      mutation: { kind: 'preview', planned: 1, changed: 0, unchanged: 0, failed: 0 },
+    };
+    expect(healthV2Codec.validate(authorized)).toMatchObject({ ok: true });
+    for (const mutation of [
+      { key: 'operation', value: 'migrate-ledger' },
+      { key: 'path', value: '/workspace/other.lock' },
+    ] as const) {
+      const candidate = structuredClone(authorized);
+      const candidateFinding = candidate.findings[0];
+      if (candidateFinding === undefined) throw new Error('fixture finding is missing');
+      candidateFinding[mutation.key] = mutation.value;
+      expect(healthV2Codec.validate(candidate), mutation.key).toMatchObject({ ok: false });
+    }
+  });
+
   test('strict changes warning exit semantics identically for human and JSON output', async () => {
     const root = await sandbox('strict');
     const codexHome = join(root, 'codex-home');
@@ -2029,6 +2104,115 @@ describe('EWP-CMD-DOCTOR-TS05', () => {
     ]);
     expect(await readFile(lock, 'utf8')).toBe(serialized.value);
     expect(await readFile(siblingLock, 'utf8')).toBe(siblingSource);
+  });
+
+  test('project migration keeps lock diagnosis visible but defers lock repair to the converged rerun', async () => {
+    const root = await sandbox('project-lock-converged-rerun');
+    const manifest = await writeLegacyProject(root);
+    const lock = join(root, 'skillsmith.lock');
+    const invalidLock = 'not a portable lock\n';
+    await writeFile(lock, invalidLock, 'utf8');
+    const base = [
+      '-C',
+      root,
+      '--no-prompt',
+      'doctor',
+      '--tool',
+      'codex',
+      '--scope',
+      'project',
+      '--offline',
+      '--file',
+      manifest,
+      '--lockfile',
+      lock,
+      '--fix',
+    ];
+
+    const preview = await runCli(root, [...base, '--dry-run', '--json']);
+    expect(records(json(preview).findings).map((finding) => finding.operation)).toEqual(
+      expect.arrayContaining(['migrate-project-config', 'write-lock']),
+    );
+    expect(
+      records(repairFrom(json(preview)).operations).map((operation) => operation.kind),
+    ).toEqual(['migrate-project-config']);
+    expect(await readFile(lock, 'utf8')).toBe(invalidLock);
+
+    const migrated = await runCli(root, [...base, '--yes', '--json']);
+    expect(
+      records(repairFrom(json(migrated)).operations).map((operation) => operation.kind),
+    ).toEqual(['migrate-project-config']);
+    const migratedSource = await readFile(manifest, 'utf8');
+    const readable = readManifestSource(migratedSource);
+    expect(readable).toMatchObject({ ok: true, value: { shape: 'canonical' } });
+    expect(await readFile(lock, 'utf8')).toBe(invalidLock);
+
+    const converged = await runCli(root, [...base, '--dry-run', '--json']);
+    expect(
+      records(repairFrom(json(converged)).operations).map((operation) => operation.kind),
+    ).toEqual(['write-lock']);
+  });
+
+  test('failed project migration never attempts the deferred lock repair coordinator path', async () => {
+    const root = await sandbox('project-lock-migration-failure');
+    const manifest = await writeLegacyProject(root);
+    const lock = join(root, 'skillsmith.lock');
+    const invalidLock = 'not a portable lock\n';
+    await writeFile(lock, invalidLock, 'utf8');
+    const ports = await defaultRuntimePorts();
+    const backing = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    let firstManifestRead = true;
+    let lockCoordinatorCalls = 0;
+    const artifactCoordinator: CurrentApplicationContext['artifactCoordinator'] = {
+      ...backing,
+      observe: async (path) => {
+        if (path === lock) lockCoordinatorCalls += 1;
+        return backing.observe(path);
+      },
+      readBytes: async (path) => {
+        if (path === lock) lockCoordinatorCalls += 1;
+        if (path === manifest && firstManifestRead) {
+          firstManifestRead = false;
+          throw Object.assign(new Error('synthetic migration refusal'), { code: 'EACCES' });
+        }
+        return backing.readBytes(path);
+      },
+      withFileLock: async (target, options, operation) => {
+        if (target === lock) lockCoordinatorCalls += 1;
+        return backing.withFileLock(target, options, operation);
+      },
+    };
+    const project: ProjectContext = {
+      ...projectContext,
+      invocationCwd: root,
+      effectiveCwd: root,
+      projectRoot: root,
+      projectIdentity: root,
+    };
+    const outcome = await runDoctorApplication(
+      {
+        arguments: [],
+        options: {
+          tool: ['codex'],
+          scope: 'project',
+          offline: true,
+          file: manifest,
+          lockfile: lock,
+          fix: true,
+          yes: true,
+          json: true,
+        },
+      },
+      doctorContext({ ports, artifactCoordinator, project }),
+    );
+    const repair = repairFrom(record(record(outcome.report).result));
+
+    expect(records(repair.operations).map((operation) => operation.kind)).toEqual([
+      'migrate-project-config',
+    ]);
+    expect(records(repair.results)).toEqual([expect.objectContaining({ outcome: 'failed' })]);
+    expect(lockCoordinatorCalls).toBe(0);
+    expect(await readFile(lock, 'utf8')).toBe(invalidLock);
   });
 
   test('project repair uses the injected coordinator and never a host filesystem adapter', async () => {

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Deprecation } from '../../application/types.ts';
 import type { DoctorRunResult } from '../../doctor/types.ts';
+import { redactSensitiveValue } from '../../safety/redaction.ts';
 import { createJsonWireCodec } from '../codec.ts';
 
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/u) as z.ZodType<`sha256:${string}`>;
@@ -160,12 +161,21 @@ const HealthV2Schema = z
     if (new Set(ids).size !== ids.length) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'finding IDs must be unique' });
     }
-    const knownFindings = new Set(ids);
+    const knownFindings = new Map(
+      value.findings.map((finding) => [finding.findingId, finding] as const),
+    );
     const operationIds = value.repair.operations.map((operation) => operation.operationId);
     if (
       new Set(operationIds).size !== operationIds.length ||
       value.repair.operations.some((operation) =>
-        operation.findingIds.some((id) => !knownFindings.has(id)),
+        operation.findingIds.some((id) => {
+          const finding = knownFindings.get(id);
+          return (
+            finding === undefined ||
+            finding.operation !== operation.kind ||
+            finding.path !== operation.path
+          );
+        }),
       )
     ) {
       context.addIssue({
@@ -194,9 +204,9 @@ const HealthV2Schema = z
         value.mutation.kind === 'none' &&
         planned === 0 &&
         value.mutation.planned === 0 &&
-        changed === 0 &&
-        unchanged === 0 &&
-        failed === 0) ||
+        value.mutation.changed === 0 &&
+        value.mutation.unchanged === 0 &&
+        value.mutation.failed === 0) ||
       (value.repair.mode === 'preview' &&
         value.mutation.kind === (planned === 0 ? 'none' : 'preview') &&
         value.mutation.planned === planned &&
@@ -267,7 +277,7 @@ export const toHealthV2Dto = (
       ? {}
       : { deprecations: deprecations.map((deprecation) => ({ ...deprecation })) }),
   };
-  return HealthV2Schema.parse(dto);
+  return HealthV2Schema.parse(redactSensitiveValue(dto));
 };
 
 export const healthV2Codec = createJsonWireCodec(

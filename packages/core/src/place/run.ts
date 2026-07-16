@@ -1,19 +1,7 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { classifyPlacement } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
-import type { ArtifactDigest } from '../artifacts/hash.ts';
-import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
-import type {
-  LedgerMigrationJournalSequence,
-  LedgerModel,
-  LedgerReadState,
-} from '../artifacts/ledger-types.ts';
-import {
-  type LedgerWriter,
-  type LedgerWriterPorts,
-  createTestNodeLedgerWriter,
-} from '../artifacts/ledger-writer.ts';
-import { ledgerByteRevision, resolveLedgerArtifactCodec } from '../artifacts/registry.ts';
+import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
@@ -43,7 +31,6 @@ import {
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   ExecutableOperation,
-  OperationDigest,
   OperationExecutionResult,
   OperationImage,
   OperationPlan,
@@ -54,6 +41,8 @@ import type {
 import { type Result, err, ok } from '../result.ts';
 import { verifyPlugin } from '../verify/run.ts';
 import type { ToolVerdict } from '../verify/types.ts';
+import { ledgerMigrationExecutionBinding, prepareLedgerMigration } from './ledger-migration.ts';
+import { createLedgerPersistenceGateway } from './ledger-persistence.ts';
 import {
   getLedgerPairAt,
   getPairAt,
@@ -61,13 +50,11 @@ import {
   legacyLedgerView,
   readLedgerState,
   withLedgerLock,
-  withLedgerPairAt,
-  writeLedger,
 } from './ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from './paths.ts';
 import { type FlipPlanOutcome, type PairPlan, planFlips } from './plan.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from './store.ts';
-import { resumeSwap, rollbackSwap, runSwap } from './swap.ts';
+import { commitRecordOnlyLogicalTransaction, resumeSwap, rollbackSwap, runSwap } from './swap.ts';
 import {
   type DevRecord,
   FLIP_TOOLS,
@@ -80,6 +67,7 @@ import {
   type FlipTool,
   type Journal,
   type LedgerFile,
+  type PairRecord,
   type PinnedRecord,
   type PlacementPorts,
   type PreparedFlipRun,
@@ -88,61 +76,9 @@ import {
   type SwapPlan,
 } from './types.ts';
 
-const ledgerV2Codec = resolveLedgerArtifactCodec(2);
-
 export const defaultFlipDeps: FlipDeps = {
   verify: verifyPlugin,
 };
-
-const callerLedgerWriter = (
-  env: PlacementPorts,
-  ledgerPath: string,
-  signal?: AbortSignal,
-): Promise<LedgerWriter> => {
-  const barrier = (
-    env as PlacementPorts & {
-      readonly afterLedgerBarrier?: (value: Readonly<{ kind: string }>) => Promise<void>;
-    }
-  ).afterLedgerBarrier;
-  const candidatePorts = env as PlacementPorts & Partial<LedgerWriterPorts>;
-  const boundedWorkerIdentity = (
-    env as PlacementPorts & { readonly ledgerOperationIdentity?: unknown }
-  ).ledgerOperationIdentity;
-  const durablePorts =
-    boundedWorkerIdentity === undefined &&
-    typeof candidatePorts.readFileMetadata === 'function' &&
-    typeof candidatePorts.setFileMode === 'function'
-      ? (candidatePorts as PlacementPorts & LedgerWriterPorts)
-      : null;
-  return createTestNodeLedgerWriter(ledgerPath, {
-    ...(durablePorts === null ? {} : { ports: durablePorts }),
-    ...(barrier === undefined ? {} : { afterBarrier: barrier }),
-    ...(signal === undefined ? {} : { signal }),
-  });
-};
-
-const callerLedgerOperationIdentity = (
-  env: PlacementPorts,
-):
-  | Readonly<{
-      operationId: string;
-      transactionId: string;
-      sourceRevision: string | null;
-      startedAt: string;
-      attempt?: number;
-    }>
-  | undefined =>
-  (
-    env as PlacementPorts & {
-      readonly ledgerOperationIdentity?: Readonly<{
-        operationId: string;
-        transactionId: string;
-        sourceRevision: string | null;
-        startedAt: string;
-        attempt?: number;
-      }>;
-    }
-  ).ledgerOperationIdentity;
 
 const nowOf = (ports: PlacementPorts, deps: FlipDeps): string => deps.now?.() ?? ports.wallNowIso();
 const journalNowOf = (ports: PlacementPorts, deps: FlipDeps): string => {
@@ -271,30 +207,17 @@ const makeSwapCtx = (
   opts: FlipOptions,
   logicalOperation?: ExecutableOperation,
 ): SwapCtx => {
-  let writer: LedgerWriter | null = null;
-  let expectedByteRevision: ArtifactDigest | null | undefined;
+  const persistence = createLedgerPersistenceGateway(env, ledgerPath, opts.signal);
   const ctx: SwapCtx = {
     env,
     ledgerPath,
     ledger,
     persist: async () => {
-      writer ??= await callerLedgerWriter(env, ledgerPath, opts.signal);
-      if (expectedByteRevision === undefined) {
-        const current = await writer.read();
-        if (!current.ok) {
-          return err(flipFailedError(`ledger write preflight failed: ${current.error.code}`));
-        }
-        expectedByteRevision =
-          current.value.state === 'present' ? current.value.byteRevision : null;
-      }
-      const written = await writer.replace({
-        model: ctx.ledger as LedgerModel,
-        expectedByteRevision,
-      });
+      const written = await persistence.persist(ctx.ledger as LedgerModel);
       if (!written.ok) {
+        if (written.error.code === 'cancelled') return err(written.error);
         return err(flipFailedError(`ledger write failed: ${written.error.code}`));
       }
-      expectedByteRevision = written.value.byteRevision;
       ctx.ledger = written.value.model;
       return ok(undefined);
     },
@@ -819,6 +742,7 @@ const createDevPlacement = async (
   source: string,
   opts: FlipOptions,
   deps: FlipDeps,
+  logicalOperation: ExecutableOperation,
 ): Promise<FlipResult> => {
   // BF-5(e): a stale ledger pair (a lingering managed record whose live placement is gone) is the
   // lifecycle source of truth — never silently overwrite it with a fresh dev-only create. The user
@@ -874,14 +798,18 @@ const createDevPlacement = async (
   // P13 dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely — not explicit
   // nulls — so `Object.hasOwn(record, 'pinned')` is false and every nullish-safe reader treats the
   // pair as having no pinned/journal state.
-  const next = withLedgerPairAt(ledger, scopeKey, skill, tool, {
+  const pairRecord: PairRecord = {
     placementPath: live,
     mode: 'dev',
     dev: devRecord,
-  });
-  if (!next.ok) return failedResult(base, midSwapError(next.error));
-  const persisted = await writeLedger(env, ledgerPath, next.value);
-  if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
+  };
+  const committed = await commitRecordOnlyLogicalTransaction(
+    makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation),
+    logicalOperation,
+    pairRecord,
+    scopeKey,
+  );
+  if (!committed.ok) return failedResult(base, midSwapError(committed.error));
 
   return {
     ...base,
@@ -908,6 +836,7 @@ const adoptDevPlacement = async (
   resolvedSourceDir: string,
   opts: FlipOptions,
   deps: FlipDeps,
+  logicalOperation: ExecutableOperation,
 ): Promise<FlipResult> => {
   if (!(await sourceHasSkillMd(env, resolvedSourceDir))) {
     const reason = `--source '${opts.source ?? resolvedSourceDir}' does not contain SKILL.md`;
@@ -946,14 +875,18 @@ const adoptDevPlacement = async (
   }
 
   // Dev-only record shape (BF-2): OMIT `pinned` and `journal` keys entirely.
-  const next = withLedgerPairAt(ledger, scopeKey, skill, tool, {
+  const pairRecord: PairRecord = {
     placementPath: live,
     mode: 'dev',
     dev: devRecord,
-  });
-  if (!next.ok) return failedResult(base, midSwapError(next.error));
-  const persisted = await writeLedger(env, ledgerPath, next.value);
-  if (!persisted.ok) return failedResult(base, midSwapError(persisted.error));
+  };
+  const committed = await commitRecordOnlyLogicalTransaction(
+    makeSwapCtx(env, ledgerPath, ledger, deps, opts, logicalOperation),
+    logicalOperation,
+    pairRecord,
+    scopeKey,
+  );
+  if (!committed.ok) return failedResult(base, midSwapError(committed.error));
 
   return {
     ...base,
@@ -1033,6 +966,7 @@ const runDevPair = async (
       opts.source,
       opts,
       deps,
+      logicalOperation,
     );
   }
 
@@ -1079,6 +1013,7 @@ const runDevPair = async (
       resolvedSourceDir,
       opts,
       deps,
+      logicalOperation,
     );
   }
 
@@ -2018,209 +1953,6 @@ interface PreparedLedgerMigrationBinding {
 
 type PreparedFlipBinding = PreparedPairFlipBinding | PreparedLedgerMigrationBinding;
 
-const ledgerStateFacts = (state: LedgerReadState): unknown =>
-  state.state === 'absent'
-    ? { state: 'absent', sourceVersion: null, byteRevision: null, semanticRevision: null }
-    : {
-        state: 'present',
-        sourceVersion: state.sourceVersion,
-        byteRevision: state.byteRevision,
-        semanticRevision: state.semanticRevision,
-      };
-
-const operationDigest = (value: ArtifactDigest): OperationDigest => value as OperationDigest;
-const artifactDigest = (value: OperationDigest): ArtifactDigest => value as ArtifactDigest;
-
-const ledgerMigrationOperation = (
-  command: 'promote' | 'dev',
-  selectionSource: ExecutableOperation['selectionSource'],
-  ledgerPath: string,
-  state: Extract<LedgerReadState, { readonly state: 'present' }>,
-  recoveryJournal?: LogicalJournalV1Dto,
-): ExecutableOperation => {
-  const targetBytes = ledgerV2Codec.encode(state.model);
-  if (!targetBytes.ok)
-    throw new TypeError('ledger v1 projection cannot be encoded as canonical v2');
-  const groupId = createOperationGroupId({
-    domain: 'skillsmith.operation-group-identity',
-    schemaVersion: 1,
-    command,
-    skill: null,
-    source: null,
-    scope: null,
-    target: ledgerPath,
-  });
-  const identity = {
-    domain: 'skillsmith.operation-identity' as const,
-    schemaVersion: 1 as const,
-    groupId,
-    pairId: null,
-    kind: 'migrate-ledger' as const,
-    skill: null,
-    source: null,
-    tool: null,
-    scope: null,
-  };
-  const operationId = createOperationId(identity);
-  return {
-    operationId,
-    groupId,
-    pairId: null,
-    kind: 'migrate-ledger',
-    dependencyMetadata: {
-      domain: 'skillsmith.operation-dependency',
-      schemaVersion: 1,
-      operationIds: [],
-    },
-    skill: null,
-    source: null,
-    tool: null,
-    scope: null,
-    before:
-      recoveryJournal?.intent.before.kind === 'ledger'
-        ? {
-            ...recoveryJournal.intent.before,
-            byteHash: operationDigest(recoveryJournal.intent.before.byteHash),
-            semanticHash: operationDigest(recoveryJournal.intent.before.semanticHash),
-          }
-        : {
-            kind: 'ledger',
-            projectRoot: null,
-            schemaVersion: 1,
-            byteHash: operationDigest(state.byteRevision),
-            semanticHash: operationDigest(state.semanticRevision),
-          },
-    after:
-      recoveryJournal?.intent.after.kind === 'ledger'
-        ? {
-            ...recoveryJournal.intent.after,
-            byteHash: operationDigest(recoveryJournal.intent.after.byteHash),
-            semanticHash: operationDigest(recoveryJournal.intent.after.semanticHash),
-          }
-        : {
-            kind: 'ledger',
-            projectRoot: null,
-            schemaVersion: 2,
-            byteHash: operationDigest(ledgerByteRevision(targetBytes.value)),
-            semanticHash: operationDigest(state.semanticRevision),
-          },
-    reason: { code: 'migrate-ledger', message: 'migrate placement ledger to canonical v2' },
-    selectionSource,
-    preconditionIds: [],
-    requiredCheckIds: [],
-    reversibility: { kind: 'none', retentionResourceIds: [] },
-    mutates: { live: false, manifest: false, lock: false, ledger: true },
-    conflict: null,
-  };
-};
-
-const ledgerMigrationJournals = (
-  operation: ExecutableOperation,
-  startedAt: string,
-  callerIdentity?: Readonly<{
-    operationId: string;
-    transactionId: string;
-    startedAt: string;
-    attempt?: number;
-  }>,
-): LedgerMigrationJournalSequence => {
-  if (
-    operation.kind !== 'migrate-ledger' ||
-    operation.before.kind !== 'ledger' ||
-    operation.before.schemaVersion !== 1 ||
-    operation.after.kind !== 'ledger' ||
-    operation.after.schemaVersion !== 2
-  ) {
-    throw new TypeError('placement ledger migration operation is invalid');
-  }
-  const transactionId = callerIdentity?.transactionId ?? `transaction:${operation.operationId}`;
-  const journalOperationId = callerIdentity?.operationId ?? operation.operationId;
-  const rawJournalStartedAt = callerIdentity?.startedAt ?? startedAt;
-  const parsedJournalStartedAt = new Date(rawJournalStartedAt);
-  const journalStartedAt = Number.isNaN(parsedJournalStartedAt.valueOf())
-    ? rawJournalStartedAt
-    : parsedJournalStartedAt.toISOString();
-  const beforeImage = {
-    kind: 'ledger' as const,
-    projectRoot: null,
-    schemaVersion: 1 as const,
-    byteHash: artifactDigest(operation.before.byteHash),
-    semanticHash: artifactDigest(operation.before.semanticHash),
-  };
-  const afterImage = {
-    kind: 'ledger' as const,
-    projectRoot: null,
-    schemaVersion: 2 as const,
-    byteHash: artifactDigest(operation.after.byteHash),
-    semanticHash: artifactDigest(operation.after.semanticHash),
-  };
-  const before = {
-    resourceId: 'ledger:placements',
-    role: 'ledger' as const,
-    state: 'present' as const,
-    repositoryRevision: {
-      kind: 'artifact-bytes' as const,
-      digest: beforeImage.byteHash,
-    },
-    schemaVersion: 1 as const,
-    semanticHash: beforeImage.semanticHash,
-  };
-  const after = {
-    resourceId: 'ledger:placements',
-    role: 'ledger' as const,
-    state: 'present' as const,
-    repositoryRevision: {
-      kind: 'artifact-bytes' as const,
-      digest: afterImage.byteHash,
-    },
-    schemaVersion: 2 as const,
-    semanticHash: afterImage.semanticHash,
-  };
-  const at = (phase: LogicalJournalV1Dto['phase']): LogicalJournalV1Dto => {
-    const committed = phase === 'committed';
-    const visible = phase === 'live' || committed;
-    return {
-      schemaVersion: 1,
-      kind: 'skillsmith.transaction-journal',
-      transactionId,
-      intent: {
-        operationId: journalOperationId,
-        groupId: operation.groupId,
-        pairId: null,
-        kind: 'migrate-ledger',
-        skill: null,
-        source: null,
-        tool: null,
-        scope: null,
-        before: beforeImage,
-        after: afterImage,
-        mutates: operation.mutates,
-        reversibility: { kind: 'none', retentionResourceIds: [] },
-        conflict: null,
-      },
-      context: {
-        parentOperationId: null,
-        command: `skillsmith ${operation.kind}`,
-        workflow: 'placement-ledger-migration',
-        attempt: callerIdentity?.attempt ?? 1,
-        startedAt: journalStartedAt,
-      },
-      disposition: 'forward',
-      phase,
-      actual: { before: [before], after: visible ? [after] : [], retained: [] },
-      updatedAt: journalStartedAt,
-      completedAt: committed ? journalStartedAt : null,
-    };
-  };
-  return {
-    prepared: at('prepared'),
-    staged: at('staged'),
-    backedUp: at('backed-up'),
-    live: at('live'),
-    committed: at('committed'),
-  };
-};
-
 const createFlipPlanning = async (
   env: PlacementPorts,
   command: 'promote' | 'dev',
@@ -2248,40 +1980,14 @@ const createFlipPlanning = async (
   const preconditions: ExecutionPrecondition[] = [];
   const usedResults = new Set<FlipResult>();
 
-  const recoveryMigration =
-    ledgerState.state === 'present'
-      ? Object.values(ledgerState.model.transactions).find(
-          (journal) => journal.intent.kind === 'migrate-ledger' && journal.intent.pairId === null,
-        )
-      : undefined;
-  if (
-    ledgerState.state === 'present' &&
-    (ledgerState.sourceVersion === 1 || recoveryMigration !== undefined)
-  ) {
-    const migration = ledgerMigrationOperation(
-      command,
-      selectionSource,
-      ledgerPath,
-      ledgerState,
-      recoveryMigration,
-    );
-    const expected = ledgerStateFacts(ledgerState);
-    const precondition = createExecutionPrecondition({
-      operationIds: [migration.operationId],
-      resource: { kind: 'ledger', projectRoot: null },
-      expected,
-      observe: async () => {
-        const current = await readLedgerState(env, ledgerPath);
-        if (!current.ok) throw current.error;
-        return ledgerStateFacts(current.value);
-      },
-    });
-    operations.push({ ...migration, preconditionIds: [precondition.preconditionId] });
-    preconditions.push(precondition);
+  const migration = prepareLedgerMigration(env, command, selectionSource, ledgerPath, ledgerState);
+  if (migration !== null) {
+    operations.push(migration.operation);
+    preconditions.push(migration.precondition);
     bindings.push({
       kind: 'migrate-ledger',
-      operationId: migration.operationId,
-      expectedState: ledgerState,
+      operationId: migration.operation.operationId,
+      expectedState: migration.expectedState,
     });
   }
 
@@ -2902,127 +2608,17 @@ const prepareFlipBatch = async (
         const preparedBinding = bindingMap.get(operation.operationId);
         if (!preparedBinding) throw new Error('prepared operation binding is missing');
         if (preparedBinding.kind === 'migrate-ledger') {
-          if (
-            operation.pairId !== null ||
-            operation.before.kind !== 'ledger' ||
-            operation.after.kind !== 'ledger'
-          ) {
-            throw new Error('prepared ledger migration binding is invalid');
-          }
-          return {
-            operationId: operation.operationId,
-            groupId: operation.groupId,
-            pairId: null,
-            unstartedForce: null,
-            observeActualBefore: async (): Promise<OperationImage> => {
-              const current = await readLedgerState(env, ledgerPath);
-              if (!current.ok) throw current.error;
-              if (
-                canonicalPlanningString(ledgerStateFacts(current.value)) !==
-                canonicalPlanningString(ledgerStateFacts(preparedBinding.expectedState))
-              ) {
-                throw new Error('prepared ledger migration source changed');
-              }
-              return operation.before;
+          return ledgerMigrationExecutionBinding({
+            env,
+            ledgerPath,
+            operation,
+            expectedState: preparedBinding.expectedState,
+            startedAt: journalNowOf(env, deps),
+            ...(normalizedOpts.signal === undefined ? {} : { signal: normalizedOpts.signal }),
+            onMigrated: (model) => {
+              executionLedger = model;
             },
-            execute: async (
-              validatedBinding: ValidatedExecutionBinding,
-            ): Promise<OperationExecutionResult> => {
-              const writer = await callerLedgerWriter(env, ledgerPath, normalizedOpts.signal);
-              const callerIdentity = callerLedgerOperationIdentity(env);
-              const journals = ledgerMigrationJournals(
-                operation,
-                journalNowOf(env, deps),
-                callerIdentity,
-              );
-              const beforeRecovery = await writer.read();
-              if (!beforeRecovery.ok) {
-                return createOperationExecutionResult({
-                  operationId: operation.operationId,
-                  outcome: 'failed',
-                  actualBefore: validatedBinding.actualBefore,
-                  actualAfter: validatedBinding.actualBefore,
-                  force: null,
-                  error: {
-                    code: `ledger-${beforeRecovery.error.code}`,
-                    message: `placement ledger migration preflight failed: ${beforeRecovery.error.code}`,
-                    remediation: 'Re-run the command to prepare the current ledger state.',
-                  },
-                });
-              }
-              const wasAlreadyCommitted =
-                beforeRecovery.value.state === 'present' &&
-                beforeRecovery.value.model.history.some(
-                  (journal) =>
-                    journal.transactionId === journals.committed.transactionId &&
-                    journal.phase === 'committed',
-                );
-              const migrated = await writer.migrateV1ToV2({
-                expectedSourceByteRevision: preparedBinding.expectedState.byteRevision,
-                expectedSourceSemanticRevision: preparedBinding.expectedState.semanticRevision,
-                journals,
-              });
-              if (!migrated.ok) {
-                return createOperationExecutionResult({
-                  operationId: operation.operationId,
-                  outcome: 'failed',
-                  actualBefore: validatedBinding.actualBefore,
-                  actualAfter: validatedBinding.actualBefore,
-                  force: null,
-                  error: {
-                    code:
-                      migrated.error.code === 'stale-state'
-                        ? 'flip-refused'
-                        : `ledger-${migrated.error.code}`,
-                    message: `placement ledger migration failed: ${migrated.error.code}`,
-                    remediation: 'Re-run the command to prepare the current ledger state.',
-                  },
-                });
-              }
-              let migratedModel = migrated.value.model;
-              if (migrated.value.resumed && !wasAlreadyCommitted) {
-                migratedModel = {
-                  ...migratedModel,
-                  history: migratedModel.history.map((journal) =>
-                    journal.transactionId === migrated.value.transactionId
-                      ? {
-                          ...journal,
-                          context: { ...journal.context, attempt: journal.context.attempt + 1 },
-                        }
-                      : journal,
-                  ),
-                };
-                const rewritten = await writer.replace({
-                  model: migratedModel,
-                  expectedByteRevision: migrated.value.byteRevision,
-                });
-                if (!rewritten.ok) {
-                  return createOperationExecutionResult({
-                    operationId: operation.operationId,
-                    outcome: 'failed',
-                    actualBefore: validatedBinding.actualBefore,
-                    actualAfter: validatedBinding.actualBefore,
-                    force: null,
-                    error: {
-                      code: `ledger-${rewritten.error.code}`,
-                      message: `placement ledger migration recovery handoff failed: ${rewritten.error.code}`,
-                      remediation: 'Re-run the command to complete ledger recovery.',
-                    },
-                  });
-                }
-                migratedModel = rewritten.value.model;
-              }
-              executionLedger = migratedModel;
-              return createOperationExecutionResult({
-                operationId: operation.operationId,
-                outcome: 'succeeded',
-                actualBefore: validatedBinding.actualBefore,
-                actualAfter: operation.after,
-                force: null,
-                error: null,
-              });
-            },
-          };
+          });
         }
         if (operation.pairId === null)
           throw new Error('prepared operation pair identity is missing');

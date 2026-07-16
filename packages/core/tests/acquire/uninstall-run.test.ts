@@ -15,6 +15,7 @@ import type { InstallDeps, InstallOptions, UninstallDeps } from '../../src/acqui
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   getLedgerPairAt as getPairAt,
+  legacyLedgerView,
   readLedgerState,
   withLedgerPairAt,
   writeLedger,
@@ -462,6 +463,11 @@ describe('runUninstall — absent / stale', () => {
     expect(res?.reason).toBe('placement was already gone');
     const ledger = await led();
     expect(getPairAt(ledger, null, 'factor-scan', 'claude-code')).toBeNull();
+    expect(ledger.history.at(-1)).toMatchObject({
+      intent: { kind: 'remove', skill: 'factor-scan', tool: 'claude-code' },
+      phase: 'committed',
+    });
+    expect(Object.keys(ledger.transactions)).toEqual([]);
   });
 });
 
@@ -846,6 +852,80 @@ describe('runUninstall — dry run', () => {
     const after = await f.env.readText(ledgerPathOf(f.data));
     expect(after).toBe(before);
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('symlink');
+  });
+
+  test('supported v1 dry-run visibly prefixes migrate-ledger before uninstall', async () => {
+    await installUser();
+    const ledgerPath = ledgerPathOf(f.data);
+    const current = await readLedgerState(f.env, ledgerPath);
+    if (!current.ok || current.value.state !== 'present') {
+      throw new Error('expected installed canonical ledger');
+    }
+    const source = JSON.stringify(legacyLedgerView(current.value.model));
+    await f.env.writeTextFile(ledgerPath, source);
+    let preparedKinds: readonly string[] = [];
+
+    const result = await runUninstall(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        dryRun: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      {
+        ...uninstallDeps(),
+        observePreparedPlan: (plan) => {
+          preparedKinds = plan.operations.map((operation) => operation.kind);
+        },
+      },
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(preparedKinds[0]).toBe('migrate-ledger');
+    expect(result.value.plan.operations.map((operation) => operation.kind)).toEqual([
+      'migrate-ledger',
+      'remove',
+    ]);
+    expect(await f.env.readText(ledgerPath)).toBe(source);
+  });
+
+  test('supported v1 execution migrates before removal and commits exact histories', async () => {
+    await installUser();
+    const ledgerPath = ledgerPathOf(f.data);
+    const current = await readLedgerState(f.env, ledgerPath);
+    if (!current.ok || current.value.state !== 'present') {
+      throw new Error('expected installed canonical ledger');
+    }
+    await f.env.writeTextFile(ledgerPath, JSON.stringify(legacyLedgerView(current.value.model)));
+
+    const result = await runUninstall(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.plan.operations.map((operation) => operation.kind)).toEqual([
+      'migrate-ledger',
+      'remove',
+    ]);
+
+    const state = await readLedgerState(f.env, ledgerPath);
+    if (!state.ok || state.value.state !== 'present') {
+      throw new Error('expected migrated uninstall ledger');
+    }
+    expect(state.value.sourceVersion).toBe(2);
+    expect(state.value.model.history.map((journal) => journal.intent.kind)).toEqual([
+      'migrate-ledger',
+      'remove',
+    ]);
+    expect(Object.keys(state.value.model.transactions)).toEqual([]);
   });
 });
 

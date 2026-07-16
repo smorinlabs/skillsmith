@@ -173,9 +173,11 @@ const createFileReadPort = (): FileReadPort & FileMetadataReadPort => ({
         kind,
         mode: value.mode & 0o7777,
         identity: `${value.dev}:${value.ino}`,
+        linkCount: value.nlink,
       };
     } catch (error) {
-      if (nodeCode(error) === 'ENOENT') return { kind: 'absent', mode: null, identity: null };
+      if (nodeCode(error) === 'ENOENT')
+        return { kind: 'absent', mode: null, identity: null, linkCount: 0 };
       throw toPortError(error, {
         capability: 'file-read',
         operation: 'readFileMetadata',

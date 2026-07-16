@@ -180,6 +180,7 @@ describe('defaultRuntimePorts', () => {
         kind: 'absent',
         mode: null,
         identity: null,
+        linkCount: 0,
       });
     } finally {
       await rm(root, { recursive: true, force: true });

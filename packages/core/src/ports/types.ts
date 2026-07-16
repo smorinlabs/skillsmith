@@ -25,6 +25,8 @@ export interface FileMetadata {
   readonly mode: number | null;
   /** Stable identity for change detection; null when the path is absent. */
   readonly identity: string | null;
+  /** Hard-link count when the adapter can prove it; consumers that require it fail closed. */
+  readonly linkCount?: number | null;
 }
 
 /** Focused metadata capability used only by lossless editors and transaction planners. */

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, link, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -17,6 +17,7 @@ import type {
   LedgerModel,
   LedgerPairV1Dto,
 } from '../../../packages/core/src/artifacts/ledger-types.ts';
+import { ledgerRecoveryKey } from '../../../packages/core/src/artifacts/ledger-writer.ts';
 import * as publicCore from '../../../packages/core/src/index.ts';
 import * as ledgerFacade from '../../../packages/core/src/place/ledger.ts';
 import { ledgerPathOf } from '../../../packages/core/src/place/paths.ts';
@@ -1633,12 +1634,17 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
       (await selectedHistory(select, { ...emptyModel(), history: allProtected })).history,
     ).toHaveLength(cases.history.protectedOverCapacityCount);
 
-    const beta = journal(0, 'committed', { skill: 'quiet-beta' });
+    const quietOld = journal(0, 'committed', { skill: 'quiet-beta' });
+    const quietNew = journal(1, 'committed', { skill: 'quiet-beta' });
     const busy = Array.from({ length: 260 }, (_, index) =>
-      journal(index + 1, 'committed', { skill: 'busy-alpha' }),
+      journal(index + 2, 'committed', { skill: 'busy-alpha' }),
     );
-    const fair = await selectedHistory(select, { ...emptyModel(), history: [beta, ...busy] });
-    expect(fair.history.map((item) => item.transactionId)).toContain(beta.transactionId);
+    const fair = await selectedHistory(select, {
+      ...emptyModel(),
+      history: [quietOld, quietNew, ...busy],
+    });
+    expect(fair.history.map((item) => item.transactionId)).toContain(quietOld.transactionId);
+    expect(fair.history.map((item) => item.transactionId)).toContain(quietNew.transactionId);
     expect(fair.history).toHaveLength(256);
 
     const protectedOld = journal(0, 'committed', {
@@ -1719,7 +1725,9 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
         ),
       },
     };
-    const newerArtifact = artifactJournal(10, 'manifest');
+    const newerArtifacts = Array.from({ length: 260 }, (_, index) =>
+      artifactJournal(index + 1_000, 'manifest'),
+    );
     const pendingArtifactSeed = artifactJournal(11, 'manifest');
     const pendingArtifact: LogicalJournalV1Dto = {
       ...pendingArtifactSeed,
@@ -1733,7 +1741,7 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
     );
     const withoutPending = await selectedHistory(select, {
       ...emptyModel(),
-      history: [oldArtifact, newerArtifact, ...evictionDepth],
+      history: [oldArtifact, ...newerArtifacts, ...evictionDepth],
     });
     expect(withoutPending.history.map((item) => item.transactionId)).not.toContain(
       oldArtifact.transactionId,
@@ -1741,7 +1749,7 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
     const withPending = await selectedHistory(select, {
       ...emptyModel(),
       transactions: { [pendingArtifact.transactionId]: pendingArtifact },
-      history: [oldArtifact, newerArtifact, ...evictionDepth],
+      history: [oldArtifact, ...newerArtifacts, ...evictionDepth],
     });
     expect(withPending.history.map((item) => item.transactionId)).toContain(
       oldArtifact.transactionId,
@@ -1887,10 +1895,11 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
     const root = await mkdtemp(join(tmpdir(), 'p3b-ts04-cleanup-'));
     roots.push(root);
     const transactionId = 'transaction-cleanup';
-    const transactionDir = join(root, `.skillsmith-transaction-${transactionId}`);
+    const transactionDir = join(root, `.skillsmith-artifact-${transactionId}`);
     const backupPath = join(transactionDir, 'live.backup');
     const storePath = join(root, 'store', 'preserved');
     await mkdir(transactionDir, { recursive: true });
+    await chmod(transactionDir, 0o700);
     await mkdir(storePath, { recursive: true });
     const bytes = Buffer.from('owned backup bytes\n');
     await writeFile(backupPath, bytes);
@@ -1981,19 +1990,108 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
       },
     });
 
-    for (const [kind, observation] of [
-      ['owner-mismatch', { owned: false }],
-      ['shared-backup', { linkCount: 2 }],
-      ['path-escape', { path: join(root, '..', 'foreign.backup') }],
-      ['revision-mismatch', { repositoryRevision: { kind: 'resource', digest: digestB } }],
-      ['hash-mismatch', { contentHash: digestB }],
-      ['pending-reference-blocker', { referencedByPending: true }],
-      ['kept-history-reference-blocker', { referencedByKeptHistory: true }],
-      ['legacy-reference-blocker', { referencedByLegacyJournal: true }],
-      ['live-reference-blocker', { referencedByLive: true }],
-    ] as const) {
+    const backup = victim.actual.retained.find((resource) => resource.role === 'backup');
+    if (backup === undefined) throw new Error('cleanup victim backup missing');
+    const withBackup = (model: LedgerModel, replacement: typeof backup): LedgerModel => ({
+      ...model,
+      history: model.history.map((candidate) =>
+        candidate.transactionId === transactionId
+          ? {
+              ...candidate,
+              actual: {
+                ...candidate.actual,
+                retained: candidate.actual.retained.map((resource) =>
+                  resource.role === 'backup' ? replacement : resource,
+                ),
+              },
+            }
+          : candidate,
+      ),
+    });
+    const pendingReferenceSeed = journal(900, 'prepared', { skill: 'pending-reference' });
+    const pendingReference: LogicalJournalV1Dto = {
+      ...pendingReferenceSeed,
+      intent: {
+        ...pendingReferenceSeed.intent,
+        reversibility: { kind: 'conditional', retentionResourceIds: [backup.resourceId] },
+      },
+      actual: { ...pendingReferenceSeed.actual, retained: [backup] },
+    };
+    const keptReferenceModel: LedgerModel = {
+      ...tombstoneModel,
+      history: tombstoneModel.history.map((candidate, index) =>
+        index === tombstoneModel.history.length - 1
+          ? { ...candidate, actual: { ...candidate.actual, retained: [backup] } }
+          : candidate,
+      ),
+    };
+    const legacyReferencePair: LedgerPairV1Dto = {
+      placementPath: '/fixture/live/legacy-reference',
+      mode: 'pinned',
+      dev: null,
+      pinned: null,
+      journal: {
+        op: 'install',
+        txId: 'legacy-reference',
+        phase: 'committed',
+        startedAt: '2026-07-15T00:00:00.000Z',
+        completedAt: '2026-07-15T00:00:01.000Z',
+        before: { mode: 'absent' },
+        stagingPath: '/fixture/staging/legacy-reference',
+        backupPath,
+      },
+    };
+    const liveReferencePair: LedgerPairV1Dto = {
+      placementPath: backupPath,
+      mode: 'pinned',
+      dev: null,
+      pinned: null,
+      journal: null,
+    };
+    const refusalModels = [
+      [
+        'path-escape',
+        withBackup(tombstoneModel, { ...backup, path: join(root, '..', 'foreign.backup') }),
+      ],
+      [
+        'filename-mismatch',
+        withBackup(tombstoneModel, { ...backup, path: join(transactionDir, 'foreign.backup') }),
+      ],
+      [
+        'revision-mismatch',
+        withBackup(tombstoneModel, {
+          ...backup,
+          repositoryRevision: { kind: 'resource', digest: digestB },
+          contentHash: digestB,
+        }),
+      ],
+      ['hash-mismatch', withBackup(tombstoneModel, { ...backup, contentHash: digestB })],
+      [
+        'pending-reference-blocker',
+        {
+          ...tombstoneModel,
+          transactions: { [pendingReference.transactionId]: pendingReference },
+        },
+      ],
+      ['kept-history-reference-blocker', keptReferenceModel],
+      [
+        'legacy-reference-blocker',
+        {
+          ...tombstoneModel,
+          skills: { legacy: { tools: { codex: legacyReferencePair } } },
+        },
+      ],
+      [
+        'live-reference-blocker',
+        {
+          ...tombstoneModel,
+          skills: { live: { tools: { codex: liveReferencePair } } },
+        },
+      ],
+    ] as const satisfies readonly (readonly [string, LedgerModel])[];
+
+    for (const [kind, refusalModel] of refusalModels) {
       calls.length = 0;
-      const refusalModel = structuredClone(tombstoneModel);
       const before = JSON.stringify(refusalModel);
       await expectRefusal(
         () =>
@@ -2001,13 +2099,41 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
             transactionId,
             ledgerRevision,
             expectedLedgerRevision: ledgerRevision,
-            observation: { path: backupPath, owned: true, linkCount: 1, ...observation },
           }),
         kind,
       );
-      expect(calls, `${kind} filesystem calls`).toEqual([]);
+      expect(calls, `${kind} must not delete`).not.toContain(`removeTree:${backupPath}`);
       expect(JSON.stringify(refusalModel), `${kind} model bytes`).toBe(before);
     }
+
+    await chmod(transactionDir, 0o755);
+    calls.length = 0;
+    await expectRefusal(
+      () =>
+        cleanup(ports, tombstoneModel, {
+          transactionId,
+          ledgerRevision,
+          expectedLedgerRevision: ledgerRevision,
+        }),
+      'owner-mode-mismatch',
+    );
+    expect(calls).not.toContain(`removeTree:${backupPath}`);
+    await chmod(transactionDir, 0o700);
+
+    const sharedPath = join(root, 'shared-backup');
+    await link(backupPath, sharedPath);
+    calls.length = 0;
+    await expectRefusal(
+      () =>
+        cleanup(ports, tombstoneModel, {
+          transactionId,
+          ledgerRevision,
+          expectedLedgerRevision: ledgerRevision,
+        }),
+      'shared-backup',
+    );
+    expect(calls).not.toContain(`removeTree:${backupPath}`);
+    await rm(sharedPath);
 
     await rm(backupPath);
     const recomputed = await unwrapModel(
@@ -2025,7 +2151,6 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
         transactionId,
         ledgerRevision,
         expectedLedgerRevision: ledgerRevision,
-        recognizedMissingBackup: true,
       }),
       'accept already-missing backup only from the unchanged live tombstone',
     );
@@ -2398,8 +2523,8 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
             : role === 'live'
               ? 'placements.json'
               : role === 'stage'
-                ? 'placements.stage'
-                : 'placements.backup',
+                ? 'ledger.stage'
+                : 'ledger.v1.backup',
         identity: image === null ? null : `identity:${role}:${state}`,
         byteRevision: image?.byteRevision ?? null,
         semanticRevision: image?.semanticRevision ?? null,
@@ -2411,7 +2536,9 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
       candidate: FixtureCases['recoveryCursorCases'][number],
       mutate: (() => void)[],
     ): UnknownRecord => {
-      const transactionDirectoryBasename = '.skillsmith-transaction-transaction-recovery-matrix';
+      const transactionDirectoryBasename = `v1-${createHash('sha256')
+        .update('transaction-recovery-matrix')
+        .digest('hex')}`;
       const directoryPresent = candidate.permittedResidue.includes('transaction-directory');
       const live = observedFile(candidate.live, 'live');
       const stage = observedFile(candidate.stage, 'stage');
@@ -2450,9 +2577,9 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
           expectedImages,
           transactionDirectoryBasename,
           transactionDirectoryIdentity: directoryPresent ? 'identity:transaction-directory' : null,
-          stageBasename: 'placements.stage',
+          stageBasename: 'ledger.stage',
           stageFileIdentity: stage.identity,
-          backupBasename: 'placements.backup',
+          backupBasename: 'ledger.v1.backup',
           backupFileIdentity: backup.identity,
           liveByteRevision: live.byteRevision,
           liveSemanticRevision: live.semanticRevision,
@@ -2811,6 +2938,16 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
             historyStartedAts: ['2026-07-15T00:00:00.000Z'],
             sourceRevisionPreserved: true,
           });
+          const recoveryRoot = join(fleet.data, 'recovery', 'ledger');
+          const pointerPath = join(
+            recoveryRoot,
+            `${ledgerRecoveryKey(ledgerPathOf(fleet.data))}.json`,
+          );
+          expect(existsSync(pointerPath), `${crash.id} recovery pointer residue`).toBeFalse();
+          expect(
+            await readdir(join(recoveryRoot, 'transactions')),
+            `${crash.id} recovery transaction residue`,
+          ).toEqual([]);
           if (committedHistoryBeforeRecovery !== null) {
             const recoveredValue = JSON.parse(
               await readFile(ledgerPathOf(fleet.data), 'utf8'),

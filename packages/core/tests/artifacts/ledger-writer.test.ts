@@ -1,5 +1,18 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import {
+  chmod,
+  link,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArtifactDigest } from '../../src/artifacts/hash.ts';
@@ -58,6 +71,68 @@ const migrationSequence = async (): Promise<LedgerMigrationJournalSequence> => {
     backedUp: at('backed-up'),
     live: at('live'),
     committed: at('committed'),
+  });
+};
+
+const cleanupHistoryModel = async (
+  root: string,
+  length: number,
+  backupCount: number,
+): Promise<
+  Readonly<{ model: ReturnType<typeof emptyLedgerModel>; backupPaths: readonly string[] }>
+> => {
+  const decoded = unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(V2_GOLDEN))));
+  const seed = decoded.model.history[0];
+  if (seed === undefined) throw new Error('missing committed history seed');
+  const backupPaths: string[] = [];
+  const history: LogicalJournalV1Dto[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const transactionId = index.toString(16).padStart(16, '0');
+    const backupPath = join(root, `.skillsmith-artifact-${transactionId}`, 'live.backup');
+    const bytes = Buffer.from(`history backup ${transactionId}\n`);
+    const hash = unwrap(
+      parseArtifactDigest(`sha256:${createHash('sha256').update(bytes).digest('hex')}`),
+    );
+    const retained =
+      index < backupCount
+        ? [
+            {
+              resourceId: `backup:${transactionId}`,
+              role: 'backup' as const,
+              sourceRole: 'live' as const,
+              path: backupPath,
+              repositoryRevision: { kind: 'resource' as const, digest: hash },
+              contentHash: hash,
+              retainUntil: null,
+            },
+          ]
+        : [];
+    if (retained.length === 1) {
+      await mkdir(join(root, `.skillsmith-artifact-${transactionId}`), { recursive: true });
+      await chmod(join(root, `.skillsmith-artifact-${transactionId}`), 0o700);
+      await writeFile(backupPath, bytes);
+      backupPaths.push(backupPath);
+    }
+    history.push({
+      ...seed,
+      transactionId,
+      intent: {
+        ...seed.intent,
+        operationId: `operation:${transactionId}`,
+        reversibility:
+          retained.length === 0
+            ? seed.intent.reversibility
+            : {
+                kind: 'conditional',
+                retentionResourceIds: [`backup:${transactionId}`],
+              },
+      },
+      actual: { ...seed.actual, retained },
+    });
+  }
+  return Object.freeze({
+    model: { ...emptyLedgerModel('2026-07-15T00:00:00.000Z'), history },
+    backupPaths: Object.freeze(backupPaths),
   });
 };
 
@@ -145,6 +220,68 @@ describe('private canonical ledger writer', () => {
     expect(await writer.recoverMigration()).toEqual({ ok: true, value: null });
     expect(barriers).toContain('recovery-pointer-prepared-write');
     expect(barriers).toContain('migration-pointer-cleanup');
+  });
+
+  test('a later canonical replacement finishes a committed migration cleanup pointer first', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-cleanup-resume-'));
+    roots.push(root);
+    const path = join(root, 'placements.json');
+    const source = new Uint8Array(await readFile(V1_GOLDEN));
+    await writeFile(path, source);
+    const decoded = unwrap(ledgerV2Codec.decode(source));
+    const semantic = unwrap(ledgerSemanticRevision(decoded.model));
+    const sequence = await migrationSequence();
+    let interrupted = false;
+    const writer = await createTestNodeLedgerWriter(path, {
+      afterBarrier: async ({ kind }) => {
+        if (kind === 'migration-directory-cleanup') {
+          interrupted = true;
+          throw Object.assign(new Error('focused cleanup interruption'), { code: 'cancelled' });
+        }
+      },
+    });
+    await expect(
+      writer.migrateV1ToV2({
+        expectedSourceByteRevision: ledgerByteRevision(source),
+        expectedSourceSemanticRevision: semantic,
+        journals: sequence,
+      }),
+    ).rejects.toThrow('focused cleanup interruption');
+    expect(interrupted).toBeTrue();
+    expect(existsSync(writer.recoveryPointerPath)).toBeTrue();
+
+    const committedBytes = new Uint8Array(await readFile(path));
+    const committed = unwrap(ledgerV2Codec.decode(committedBytes));
+    const replacement = await createTestNodeLedgerWriter(path, {});
+    const receipt = unwrap(
+      await replacement.replace({
+        model: committed.model,
+        expectedByteRevision: ledgerByteRevision(committedBytes),
+      }),
+    );
+    expect(receipt.changed).toBeFalse();
+    expect(await replacement.recoverMigration()).toEqual({ ok: true, value: null });
+    expect(await readdir(join(root, 'recovery', 'ledger', 'transactions'))).toEqual([]);
+  });
+
+  test('refuses a symlinked recovery root without changing its external target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-symlink-root-'));
+    const external = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-external-'));
+    roots.push(root, external);
+    const sentinel = join(external, 'sentinel.txt');
+    await writeFile(sentinel, 'unchanged\n');
+    await chmod(external, 0o755);
+    await mkdir(join(root, 'data'));
+    await symlink(external, join(root, 'data', 'recovery'));
+    const beforeMode = (await stat(external)).mode & 0o777;
+
+    await expect(
+      createTestNodeLedgerWriter(join(root, 'data', 'placements.json'), {}),
+    ).rejects.toMatchObject({ code: 'invalid-state' });
+
+    expect((await stat(external)).mode & 0o777).toBe(beforeMode);
+    expect(await readFile(sentinel, 'utf8')).toBe('unchanged\n');
+    expect(await readdir(external)).toEqual(['sentinel.txt']);
   });
 
   test('uses injected reads for the second CAS observation and refuses stale bytes before write', async () => {
@@ -264,6 +401,11 @@ describe('private canonical ledger writer', () => {
 });
 
 describe('bounded history and one-victim cleanup', () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+
   test('keeps the newest 256 complete journals in commit order for one deep anchor', async () => {
     const decoded = unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(V2_GOLDEN))));
     const seed = decoded.model.history[0];
@@ -290,9 +432,9 @@ describe('bounded history and one-victim cleanup', () => {
     const model = emptyLedgerModel('2026-07-15T00:00:00.000Z');
     const result = await cleanupHistoryVictim(
       {
-        pathKind: async (path) => {
+        readFileMetadata: async (path) => {
           calls.push(path);
-          return 'absent';
+          return { kind: 'absent', mode: null, identity: null, linkCount: 0 };
         },
         readBytes: async () => new Uint8Array(),
         removeTree: async () => undefined,
@@ -309,4 +451,127 @@ describe('bounded history and one-victim cleanup', () => {
     expect(result.ok).toBeFalse();
     expect(calls).toEqual([]);
   });
+
+  test('persists over-capacity history before cleanup and recognizes deletion-complete on restart', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-history-finalize-restart-'));
+    roots.push(root);
+    const path = join(root, 'placements.json');
+    const fixture = await cleanupHistoryModel(root, 257, 1);
+    let interrupted = false;
+    const writer = await createTestNodeLedgerWriter(path, {
+      afterBarrier: async ({ kind }) => {
+        if (kind === 'history-backup-cleanup') {
+          interrupted = true;
+          throw Object.assign(new Error('history cleanup interruption'), { code: 'cancelled' });
+        }
+      },
+    });
+    await expect(
+      writer.finalizeHistory({ model: fixture.model, expectedByteRevision: null }),
+    ).rejects.toThrow('history cleanup interruption');
+    expect(interrupted).toBeTrue();
+    const durableBytes = new Uint8Array(await readFile(path));
+    const durable = unwrap(ledgerV2Codec.decode(durableBytes));
+    expect(durable.model.history).toHaveLength(257);
+    expect(existsSync(fixture.backupPaths[0] as string)).toBeFalse();
+
+    const resumed = await createTestNodeLedgerWriter(path, {});
+    const receipt = unwrap(
+      await resumed.finalizeHistory({
+        model: durable.model,
+        expectedByteRevision: ledgerByteRevision(durableBytes),
+      }),
+    );
+    expect(receipt.model.history).toHaveLength(256);
+    expect(
+      unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(path)))).model.history,
+    ).toEqual(receipt.model.history);
+  }, 15_000);
+
+  test('recomputes and removes one exact victim at a time until history converges', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-history-finalize-repeat-'));
+    roots.push(root);
+    const path = join(root, 'placements.json');
+    const fixture = await cleanupHistoryModel(root, 258, 2);
+    const writer = await createTestNodeLedgerWriter(path, {});
+    const receipt = unwrap(
+      await writer.finalizeHistory({ model: fixture.model, expectedByteRevision: null }),
+    );
+    expect(receipt.model.history).toHaveLength(256);
+    expect(fixture.backupPaths.map((backupPath) => existsSync(backupPath))).toEqual([false, false]);
+  }, 15_000);
+
+  test('allows a later terminal history change when durable pruning needs no backup proof', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-history-finalize-benign-'));
+    roots.push(root);
+    const path = join(root, 'placements.json');
+    const durable = await cleanupHistoryModel(root, 257, 0);
+    const terminal = await cleanupHistoryModel(root, 258, 0);
+    const writer = await createTestNodeLedgerWriter(path, {});
+    const persisted = unwrap(
+      await writer.replace({ model: durable.model, expectedByteRevision: null }),
+    );
+    expect(persisted.model.history).toHaveLength(257);
+
+    const finalized = unwrap(
+      await writer.finalizeHistory({
+        model: terminal.model,
+        expectedByteRevision: persisted.byteRevision,
+      }),
+    );
+    expect(finalized.model.history).toHaveLength(256);
+    expect(finalized.model.history.at(-1)?.transactionId).toBe(
+      terminal.model.history.at(-1)?.transactionId,
+    );
+  }, 15_000);
+
+  test('leaves an unsafe linked victim durable and blocks a later history mutation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-history-finalize-unsafe-'));
+    roots.push(root);
+    const path = join(root, 'placements.json');
+    const fixture = await cleanupHistoryModel(root, 257, 1);
+    const backupPath = fixture.backupPaths[0] as string;
+    await link(backupPath, join(root, 'shared-backup'));
+    const writer = await createTestNodeLedgerWriter(path, {});
+    const unsafe = await writer.finalizeHistory({
+      model: fixture.model,
+      expectedByteRevision: null,
+    });
+    expect(unsafe).toEqual({ ok: false, error: { code: 'invalid-state', path: backupPath } });
+    const durableBytes = new Uint8Array(await readFile(path));
+    const durable = unwrap(ledgerV2Codec.decode(durableBytes));
+    expect(durable.model.history).toHaveLength(257);
+    expect(existsSync(backupPath)).toBeTrue();
+
+    const later = await cleanupHistoryModel(root, 258, 0);
+    const blocked = await writer.finalizeHistory({
+      model: later.model,
+      expectedByteRevision: ledgerByteRevision(durableBytes),
+    });
+    expect(blocked).toEqual({ ok: false, error: { code: 'invalid-state', path: backupPath } });
+    expect(new Uint8Array(await readFile(path))).toEqual(durableBytes);
+
+    await rm(join(root, 'shared-backup'));
+    const basePorts = await defaultRuntimePorts();
+    const missingLinkCount = await createTestNodeLedgerWriter(path, {
+      ports: {
+        ...basePorts,
+        readFileMetadata: async (candidate) => {
+          const metadata = await basePorts.readFileMetadata(candidate);
+          if (candidate !== backupPath) return metadata;
+          const { linkCount: _linkCount, ...withoutLinkCount } = metadata;
+          return withoutLinkCount;
+        },
+      },
+    });
+    const unavailableProof = await missingLinkCount.finalizeHistory({
+      model: durable.model,
+      expectedByteRevision: ledgerByteRevision(durableBytes),
+    });
+    expect(unavailableProof).toEqual({
+      ok: false,
+      error: { code: 'invalid-state', path: backupPath },
+    });
+    expect(new Uint8Array(await readFile(path))).toEqual(durableBytes);
+  }, 15_000);
 });

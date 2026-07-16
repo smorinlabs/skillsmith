@@ -1,29 +1,12 @@
 import type { InstallRecord } from '../agents/types.ts';
 import type { CanonicalSourceIdentity } from '../artifacts/types.ts';
 import type { SkillSmithError } from '../errors.ts';
-import type { FlipTool, JournalPhase } from '../place/types.ts';
+import type { FlipTool, JournalPhase, PlacementPorts } from '../place/types.ts';
 import type { OperationExecutionResult, OperationPlan } from '../planning/types.ts';
-import type {
-  ClockPort,
-  DetectionPorts,
-  FileReadPort,
-  FileWritePort,
-  GitPort,
-  IdPort,
-  LockPort,
-  PlatformPaths,
-  ProcessPort,
-  ResolvedRuntimeConfiguration,
-} from '../ports/types.ts';
+import type { DetectionPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import type { Result } from '../result.ts';
 
-export type AcquisitionPorts = PlatformPaths &
-  FileReadPort &
-  FileWritePort &
-  LockPort &
-  ProcessPort &
-  ClockPort &
-  IdPort & { readonly git: GitPort };
+export type AcquisitionPorts = PlacementPorts;
 
 export interface SourceSpec {
   readonly identity: CanonicalSourceIdentity;

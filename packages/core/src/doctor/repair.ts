@@ -92,6 +92,11 @@ const authorizationKey = (authorization: DoctorRepairAuthorization): string =>
     after: authorization.after,
   });
 
+const artifactPairKey = (authorization: DoctorRepairAuthorization): string | null =>
+  authorization.artifactPair === undefined
+    ? null
+    : JSON.stringify([authorization.artifactPair.file, authorization.artifactPair.lockfile]);
+
 export const createDoctorRepairPlan = (
   findings: readonly IdentifiedFinding[],
 ): DoctorRepairPlan => {
@@ -114,7 +119,21 @@ export const createDoctorRepairPlan = (
   const byOperationId = new Map<string, DoctorRepairAuthorization>();
   const wireByOperationId = new Map<string, DoctorRepairOperation>();
   const targets = new Set<string>();
+  const pendingProjectMigrations = new Set(
+    [...grouped.values()]
+      .filter(({ authorization }) => authorization.kind === 'migrate-project-config')
+      .map(({ authorization }) => artifactPairKey(authorization))
+      .filter((key): key is string => key !== null),
+  );
   for (const { authorization, findingIds } of grouped.values()) {
+    const pairKey = artifactPairKey(authorization);
+    if (
+      authorization.kind === 'write-lock' &&
+      pairKey !== null &&
+      pendingProjectMigrations.has(pairKey)
+    ) {
+      continue;
+    }
     const groupId = createOperationGroupId({
       domain: 'skillsmith.operation-group-identity',
       schemaVersion: 1,

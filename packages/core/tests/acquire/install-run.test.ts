@@ -291,6 +291,10 @@ describe('runInstall — idempotence / update / repair', () => {
     expect(getPairAt(ledger2, null, 'factor-scan', 'claude-code')?.origin?.refResolved).toBe(
       fixture.multiHead,
     );
+    const repairs = ledger2.history.filter((journal) => journal.intent.kind === 'repair');
+    expect(repairs).toHaveLength(2);
+    expect(repairs.map((journal) => journal.intent.tool).sort()).toEqual(['claude-code', 'codex']);
+    expect(Object.keys(ledger2.transactions)).toEqual([]);
   });
 });
 
@@ -1433,5 +1437,180 @@ describe('runInstall — dry run', () => {
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('absent');
     expect(await f.env.pathKind(ledgerPathOf(f.data))).toBe('absent');
     expect(await fetchDirs()).toEqual([]);
+  });
+
+  test('supported v1 dry-run visibly prefixes migrate-ledger and preserves exact bytes', async () => {
+    const ledgerPath = ledgerPathOf(f.data);
+    const source = JSON.stringify({
+      schemaVersion: 1,
+      kind: 'skillsmith.placements',
+      updatedAt: NOW,
+      skills: {},
+    });
+    await f.env.writeTextFile(ledgerPath, source);
+    let preparedKinds: readonly string[] = [];
+
+    const result = await runInstall(
+      f.env,
+      { ...userOpts, tools: ['claude-code'], dryRun: true },
+      makeDeps({
+        observePreparedPlan: (plan) => {
+          preparedKinds = plan.operations.map((operation) => operation.kind);
+        },
+      }),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(preparedKinds[0]).toBe('migrate-ledger');
+    expect(result.value.plan.operations[0]?.kind).toBe('migrate-ledger');
+    expect(
+      result.value.plan.operations.slice(1).every((operation) => operation.pairId !== null),
+    ).toBe(true);
+    expect(await f.env.readText(ledgerPath)).toBe(source);
+  });
+
+  test('supported v1 execution migrates before installing and commits both histories', async () => {
+    const ledgerPath = ledgerPathOf(f.data);
+    await f.env.writeTextFile(
+      ledgerPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'skillsmith.placements',
+        updatedAt: NOW,
+        skills: {},
+      }),
+    );
+
+    const result = await runInstall(f.env, userOpts, makeDeps());
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.plan.operations[0]?.kind).toBe('migrate-ledger');
+    expect(result.value.summary.installed).toBe(2);
+
+    const state = await readLedgerState(f.env, ledgerPath);
+    if (!state.ok || state.value.state !== 'present') {
+      throw new Error('expected migrated installed ledger');
+    }
+    expect(state.value.sourceVersion).toBe(2);
+    expect(state.value.model.history.map((journal) => journal.intent.kind)).toEqual([
+      'migrate-ledger',
+      'install',
+      'install',
+    ]);
+    expect(Object.keys(state.value.model.transactions)).toEqual([]);
+  });
+
+  test('supported v1 migration cancellation is a cancelled execution result, not an exception', async () => {
+    const ledgerPath = ledgerPathOf(f.data);
+    await f.env.writeTextFile(
+      ledgerPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'skillsmith.placements',
+        updatedAt: NOW,
+        skills: {},
+      }),
+    );
+    const controller = new AbortController();
+    const executionEnv = {
+      ...f.env,
+      afterLedgerBarrier: async (barrier: Readonly<{ kind: string }>) => {
+        if (barrier.kind === 'recovery-pointer-prepared-write') controller.abort();
+      },
+    } as RuntimePorts;
+
+    const result = await runInstall(
+      executionEnv,
+      { ...userOpts, tools: ['claude-code'], signal: controller.signal },
+      makeDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.executionResults[0]).toMatchObject({
+      outcome: 'cancelled',
+      actualAfter: result.value.plan.operations[0]?.before,
+      error: null,
+    });
+    expect(
+      result.value.executionResults.slice(1).every(({ outcome }) => outcome === 'cancelled'),
+    ).toBe(true);
+    expect(result.value.results.every(({ error }) => error?.code === 'cancelled')).toBe(true);
+  });
+
+  test('supported v1 migration uses the default explicit caller ports with caller identity', async () => {
+    const ledgerPath = ledgerPathOf(f.data);
+    await f.env.writeTextFile(
+      ledgerPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'skillsmith.placements',
+        updatedAt: NOW,
+        skills: {},
+      }),
+    );
+    let metadataReads = 0;
+    const executionEnv = {
+      ...f.env,
+      ledgerOperationIdentity: {
+        operationId: 'operation:explicit-ledger-ports',
+        transactionId: 'transaction:explicit-ledger-ports',
+        sourceRevision: null,
+        startedAt: NOW,
+        attempt: 1,
+      },
+      readFileMetadata: async (path: string) => {
+        metadataReads += 1;
+        return f.env.readFileMetadata(path);
+      },
+    } as RuntimePorts;
+
+    const result = await runInstall(
+      executionEnv,
+      { ...userOpts, tools: ['claude-code'] },
+      makeDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.executionResults[0]?.outcome).toBe('succeeded');
+    expect(metadataReads).toBeGreaterThan(0);
+  });
+
+  test('supported v1 migration honors an explicit dedicated ledger-writer port composition', async () => {
+    const ledgerPath = ledgerPathOf(f.data);
+    await f.env.writeTextFile(
+      ledgerPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        kind: 'skillsmith.placements',
+        updatedAt: NOW,
+        skills: {},
+      }),
+    );
+    let callerMetadataReads = 0;
+    let writerMetadataReads = 0;
+    const executionEnv: RuntimePorts & { readonly ledgerWriterPorts: RuntimePorts } = {
+      ...f.env,
+      readFileMetadata: async (path) => {
+        callerMetadataReads += 1;
+        return f.env.readFileMetadata(path);
+      },
+      ledgerWriterPorts: {
+        ...f.env,
+        readFileMetadata: async (path) => {
+          writerMetadataReads += 1;
+          return f.env.readFileMetadata(path);
+        },
+      },
+    };
+
+    const result = await runInstall(
+      executionEnv,
+      { ...userOpts, tools: ['claude-code'] },
+      makeDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.executionResults[0]?.outcome).toBe('succeeded');
+    expect(writerMetadataReads).toBeGreaterThan(0);
+    expect(callerMetadataReads).toBe(0);
   });
 });

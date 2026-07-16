@@ -46,10 +46,13 @@ export const runtimePorts = (env: ScanEnv): RuntimePorts => ({
                 : 'other',
           mode: value.mode & 0o7777,
           identity: `${value.dev}:${value.ino}`,
+          linkCount: value.nlink,
         };
       } catch {
         const kind = await env.pathKind(path);
-        return { kind, mode: null, identity: kind === 'absent' ? null : path };
+        return kind === 'absent'
+          ? { kind, mode: null, identity: null, linkCount: 0 }
+          : { kind, mode: null, identity: path };
       }
     },
     setFileMode: (path, mode) => chmod(path, mode),

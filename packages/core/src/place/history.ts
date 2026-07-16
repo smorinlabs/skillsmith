@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { basename, dirname } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import { logicalJournalPairIdentity } from '../artifacts/registry.ts';
+import type { FileMetadataReadPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 
 export const LEDGER_HISTORY_LIMIT = 256 as const;
@@ -221,26 +222,20 @@ export const selectBoundedHistory = (
   for (const values of buckets.values()) values.sort((left, right) => right - left);
 
   const maximumDepth = Math.max(0, ...[...buckets.values()].map((values) => values.length));
-  const representedAnchors = new Set<string>();
-  for (const index of retained) {
-    for (const anchor of anchorsByIndex[index] ?? []) representedAnchors.add(anchor.key);
-  }
-  const breadthCandidates = new Set<number>();
-  for (const [key, values] of buckets) {
-    if (representedAnchors.has(key)) continue;
-    const index = values[0];
-    if (index !== undefined) breadthCandidates.add(index);
-  }
-  for (const index of [...breadthCandidates].sort((left, right) => right - left)) {
-    if (retained.size >= effectiveCapacity) break;
-    retained.add(index);
-  }
-  for (
-    let index = history.length - 1;
-    index >= 0 && retained.size < effectiveCapacity;
-    index -= 1
-  ) {
-    retained.add(index);
+  for (let depth = 0; depth < maximumDepth && retained.size < effectiveCapacity; depth += 1) {
+    const candidates = new Set<number>();
+    for (const values of buckets.values()) {
+      const index = values[depth];
+      if (index !== undefined) candidates.add(index);
+    }
+    const ordered = [...candidates].sort((left, right) => {
+      if (left !== right) return right - left;
+      return compare(history[right]?.transactionId ?? '', history[left]?.transactionId ?? '');
+    });
+    for (const index of ordered) {
+      if (retained.size >= effectiveCapacity) break;
+      retained.add(index);
+    }
   }
 
   const excluded = history
@@ -266,9 +261,14 @@ export const selectBoundedHistory = (
   const cleanupDeleted = cleanupMatches && options.cleanup?.outcome === 'deleted';
   const cleanupUnsafe = cleanupMatches && options.cleanup?.outcome === 'unsafe';
   const visibleIndexes = new Set(retained);
-  if (victimIndex !== undefined && !cleanupDeleted) {
-    // Keep the frontier tombstone and every older excluded candidate until it converges.
-    for (const index of excluded) if (index <= victimIndex) visibleIndexes.add(index);
+  if (victimIndex !== undefined) {
+    // Keep the frontier tombstone and every older excluded candidate until each converges. Once
+    // this victim is deleted, keep only older candidates so the next call recomputes one victim.
+    for (const index of excluded) {
+      if (index < victimIndex || (index === victimIndex && !cleanupDeleted)) {
+        visibleIndexes.add(index);
+      }
+    }
   }
   const selectedHistory = Object.freeze(
     [...visibleIndexes]
@@ -332,8 +332,7 @@ export const selectBoundedHistory = (
   return ok(Object.freeze(output) as BoundedLedgerHistory);
 };
 
-export interface LedgerHistoryCleanupPorts {
-  readonly pathKind: (path: string) => Promise<'absent' | 'file' | 'dir' | 'symlink'>;
+export interface LedgerHistoryCleanupPorts extends FileMetadataReadPort {
   readonly readBytes: (path: string) => Promise<Uint8Array>;
   readonly removeTree: (path: string) => Promise<void>;
   readonly fsyncDir: (path: string) => Promise<void>;
@@ -343,19 +342,68 @@ export interface LedgerHistoryCleanupOptions {
   readonly transactionId: string;
   readonly ledgerRevision: string;
   readonly expectedLedgerRevision: string;
-  readonly recognizedMissingBackup?: boolean;
-  readonly observation?: Readonly<{
-    readonly path?: string;
-    readonly owned?: boolean;
-    readonly linkCount?: number;
-    readonly repositoryRevision?: Readonly<{ readonly kind: string; readonly digest: string }>;
-    readonly contentHash?: string;
-    readonly referencedByPending?: boolean;
-    readonly referencedByKeptHistory?: boolean;
-    readonly referencedByLegacyJournal?: boolean;
-    readonly referencedByLive?: boolean;
-  }>;
 }
+
+const journalReferencesPath = (journal: LogicalJournalV1Dto, path: string): boolean => {
+  for (const resource of [
+    ...journal.actual.before,
+    ...journal.actual.after,
+    ...journal.actual.retained,
+  ]) {
+    if ('path' in resource && resource.path === path) return true;
+    if ('placementPath' in resource && resource.placementPath === path) return true;
+    if (
+      'location' in resource &&
+      resource.location.kind === 'machine-bound' &&
+      resource.location.path === path
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const pairReferencesPath = (model: LedgerModel, path: string): boolean => {
+  const scan = (skills: LedgerModel['skills']): boolean => {
+    for (const entry of Object.values(skills)) {
+      for (const pair of Object.values(entry.tools)) {
+        if (
+          pair.placementPath === path ||
+          pair.dev?.sourcePath === path ||
+          pair.dev?.resolvedPath === path ||
+          pair.dev?.repoRoot === path ||
+          pair.pinned?.storePath === path ||
+          pair.journal?.stagingPath === path ||
+          pair.journal?.backupPath === path
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  if (scan(model.skills)) return true;
+  return Object.values(model.projects).some((project) => scan(project.skills));
+};
+
+const backupIsUnreferenced = (
+  model: LedgerModel,
+  victimTransactionId: string,
+  path: string,
+): boolean => {
+  if (Object.values(model.transactions).some((journal) => journalReferencesPath(journal, path))) {
+    return false;
+  }
+  if (
+    model.history.some(
+      (journal) =>
+        journal.transactionId !== victimTransactionId && journalReferencesPath(journal, path),
+    )
+  ) {
+    return false;
+  }
+  return !pairReferencesPath(model, path);
+};
 
 /**
  * Preflight every backup before deleting any, then remove exactly the current deterministic victim.
@@ -382,41 +430,37 @@ export const cleanupHistoryVictim = async (
     return err({ code: 'victim-mismatch', transactionId: options.transactionId });
   }
   const backups = journal.actual.retained.filter((resource) => resource.role === 'backup');
-  const observation = options.observation;
-  if (
-    backups.length === 0 ||
-    observation?.owned === false ||
-    (observation?.linkCount !== undefined && observation.linkCount !== 1) ||
-    observation?.referencedByPending === true ||
-    observation?.referencedByKeptHistory === true ||
-    observation?.referencedByLegacyJournal === true ||
-    observation?.referencedByLive === true
-  ) {
+  if (backups.length === 0) {
     return err({ code: 'victim-mismatch', transactionId: options.transactionId });
   }
 
-  const present: string[] = [];
+  const seenPaths = new Set<string>();
+  const present: Array<
+    Readonly<{ readonly path: string; readonly identity: string; readonly parentIdentity: string }>
+  > = [];
   for (const backup of backups) {
     const directory = dirname(backup.path);
     if (
-      basename(directory) !== `.skillsmith-transaction-${options.transactionId}` ||
+      backup.path !== resolve(backup.path) ||
+      basename(directory) !== `.skillsmith-artifact-${options.transactionId}` ||
+      basename(backup.path) !== `${backup.sourceRole}.backup` ||
       dirname(backup.path) === backup.path ||
-      (observation?.path !== undefined && observation.path !== backup.path) ||
-      (observation?.repositoryRevision !== undefined &&
-        (observation.repositoryRevision.kind !== backup.repositoryRevision.kind ||
-          observation.repositoryRevision.digest !== backup.repositoryRevision.digest)) ||
-      (observation?.contentHash !== undefined && observation.contentHash !== backup.contentHash)
+      backup.repositoryRevision.digest !== backup.contentHash ||
+      seenPaths.has(backup.path) ||
+      !backupIsUnreferenced(model, options.transactionId, backup.path)
     ) {
       return err({ code: 'victim-mismatch', transactionId: options.transactionId });
     }
-    const kind = await ports.pathKind(backup.path);
-    if (kind === 'absent') {
-      if (options.recognizedMissingBackup !== true) {
-        return err({ code: 'victim-mismatch', transactionId: options.transactionId });
-      }
+    seenPaths.add(backup.path);
+    const parent = await ports.readFileMetadata(directory);
+    if (parent.kind !== 'dir' || parent.identity === null || parent.mode !== 0o700) {
+      return err({ code: 'victim-mismatch', transactionId: options.transactionId });
+    }
+    const before = await ports.readFileMetadata(backup.path);
+    if (before.kind === 'absent' && before.identity === null && before.linkCount === 0) {
       continue;
     }
-    if (kind !== 'file') {
+    if (before.kind !== 'file' || before.identity === null || before.linkCount !== 1) {
       return err({ code: 'victim-mismatch', transactionId: options.transactionId });
     }
     const bytes = await ports.readBytes(backup.path);
@@ -424,12 +468,40 @@ export const cleanupHistoryVictim = async (
     if (digest !== backup.repositoryRevision.digest || digest !== backup.contentHash) {
       return err({ code: 'victim-mismatch', transactionId: options.transactionId });
     }
-    present.push(backup.path);
+    const after = await ports.readFileMetadata(backup.path);
+    const parentAfter = await ports.readFileMetadata(directory);
+    if (
+      after.kind !== 'file' ||
+      after.identity !== before.identity ||
+      after.linkCount !== 1 ||
+      parentAfter.kind !== 'dir' ||
+      parentAfter.identity !== parent.identity ||
+      parentAfter.mode !== 0o700
+    ) {
+      return err({ code: 'victim-mismatch', transactionId: options.transactionId });
+    }
+    present.push({ path: backup.path, identity: before.identity, parentIdentity: parent.identity });
   }
 
-  for (const path of present) {
-    await ports.removeTree(path);
-    await ports.fsyncDir(dirname(path));
+  for (const backup of present) {
+    const parent = await ports.readFileMetadata(dirname(backup.path));
+    const current = await ports.readFileMetadata(backup.path);
+    if (
+      parent.kind !== 'dir' ||
+      parent.identity !== backup.parentIdentity ||
+      parent.mode !== 0o700 ||
+      current.kind !== 'file' ||
+      current.identity !== backup.identity ||
+      current.linkCount !== 1
+    ) {
+      return err({ code: 'victim-mismatch', transactionId: options.transactionId });
+    }
+    await ports.removeTree(backup.path);
+    const removed = await ports.readFileMetadata(backup.path);
+    if (removed.kind !== 'absent' || removed.identity !== null || removed.linkCount !== 0) {
+      return err({ code: 'victim-mismatch', transactionId: options.transactionId });
+    }
+    await ports.fsyncDir(dirname(backup.path));
   }
   return selectBoundedHistory(model, {
     ledgerRevision: options.ledgerRevision,

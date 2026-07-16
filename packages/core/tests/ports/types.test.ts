@@ -57,11 +57,17 @@ describe('capability port contracts', () => {
       kind: 'file',
       mode: 0o600,
       identity: '1:2',
+      linkCount: 1,
     });
     const setMode: FileModeWritePort['setFileMode'] = async () => {};
     expect(broadReadHasMetadata).toBeFalse();
     expect(broadWriteHasMode).toBeFalse();
-    expect(await metadata('/config')).toEqual({ kind: 'file', mode: 0o600, identity: '1:2' });
+    expect(await metadata('/config')).toEqual({
+      kind: 'file',
+      mode: 0o600,
+      identity: '1:2',
+      linkCount: 1,
+    });
     const special: Awaited<ReturnType<FileMetadataReadPort['readFileMetadata']>> = {
       kind: 'other',
       mode: 0o600,

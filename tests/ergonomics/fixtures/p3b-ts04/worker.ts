@@ -12,6 +12,18 @@ import { runPromote } from '../../../../packages/core/src/place/run.ts';
 import type { FlipTool } from '../../../../packages/core/src/place/types.ts';
 import type { RuntimePorts } from '../../../../packages/core/src/ports/types.ts';
 
+type WorkerPorts = RuntimePorts & {
+  readonly ledgerWriterPorts: RuntimePorts;
+  readonly ledgerOperationIdentity: Readonly<{
+    operationId: string;
+    transactionId: string;
+    sourceRevision: string | null;
+    startedAt: string;
+    attempt: number;
+  }>;
+  readonly afterLedgerBarrier: (value: unknown) => Promise<void>;
+};
+
 type PlainData =
   | null
   | boolean
@@ -445,8 +457,9 @@ const main = async (): Promise<void> => {
       return base.removeTree(path);
     },
   };
-  const ports = {
+  const ports: WorkerPorts = {
     ...primitivePorts,
+    ledgerWriterPorts: base,
     ledgerOperationIdentity: {
       operationId: start.operationId,
       transactionId: start.transactionId,
@@ -461,7 +474,7 @@ const main = async (): Promise<void> => {
       }
       await reportBarrier(record.kind as Barrier);
     },
-  } as RuntimePorts;
+  };
   const target =
     start.mode === 'migrate-v1' && start.dataDir !== null
       ? join(start.dataDir, start.target)
@@ -513,7 +526,11 @@ const main = async (): Promise<void> => {
         },
       );
       outcome = result.ok
-        ? 'committed'
+        ? result.value.executionResults.some(({ outcome }) => outcome === 'cancelled')
+          ? 'interrupted'
+          : result.value.executionResults.some(({ outcome }) => outcome === 'failed')
+            ? 'refused'
+            : 'committed'
         : result.error.code === 'cancelled'
           ? 'interrupted'
           : 'refused';

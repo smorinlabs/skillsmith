@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { readlink, rm, symlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fromLedgerV1Dto } from '../../src/artifacts/registry.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
@@ -32,6 +32,7 @@ import type {
   PinnedRecord,
 } from '../../src/place/types.ts';
 import type { OperationImage } from '../../src/planning/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import type { Result } from '../../src/result.ts';
 import { ok } from '../../src/result.ts';
 import type { VerifyOptions } from '../../src/verify/run.ts';
@@ -409,6 +410,34 @@ describe('runPromote — happy paths and convergence', () => {
     ).toBeNull();
   });
 
+  test('ledger persistence cancellation remains a cancelled placement result', async () => {
+    const controller = new AbortController();
+    const executionEnv = {
+      ...f.env,
+      afterLedgerBarrier: async (barrier: Readonly<{ kind: string }>) => {
+        if (barrier.kind === 'writer-stage-write') controller.abort();
+      },
+    } as RuntimePorts;
+
+    const result = await runPromote(
+      executionEnv,
+      opts(f, { targets: ['alpha'], signal: controller.signal }),
+      passDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.results[0]).toMatchObject({
+      action: 'failed',
+      reason: 'interrupted',
+      error: { code: 'cancelled' },
+    });
+    expect(result.value.executionResults[0]).toMatchObject({
+      outcome: 'cancelled',
+      actualAfter: result.value.plan.operations[0]?.before,
+      error: null,
+    });
+  });
+
   test('re-pin after source moves: action updated, new rev', async () => {
     const first = await runPromote(f.env, opts(f, { targets: ['alpha'] }), passDeps());
     if (!first.ok) throw new Error(msg(first.error));
@@ -599,6 +628,55 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     const pair = getPair(ledgerRes.value, 'alpha', 'claude-code');
     expect(pair?.mode).toBe('dev');
     expect(pair?.pinned).not.toBeNull();
+  });
+
+  test('fresh and adopted dev records commit exact logical history', async () => {
+    const betaLive = join(f.home, '.claude', 'skills', 'beta');
+    const created = await runDev(
+      f.env,
+      opts(f, { targets: ['beta'], tools: ['claude-code'], source: resolve(f.betaSrc) }),
+      passDeps(),
+    );
+    if (!created.ok) throw new Error(msg(created.error));
+    expect(created.value.results[0]?.action).toBe('created');
+
+    const afterCreate = await readLedgerState(f.env, ledgerPathOf(f.data));
+    if (!afterCreate.ok || afterCreate.value.state !== 'present') {
+      throw new Error('created dev placement did not persist a ledger');
+    }
+    expect(afterCreate.value.model.history).toHaveLength(1);
+    expect(afterCreate.value.model.history[0]).toMatchObject({
+      intent: { kind: 'link-dev', skill: 'beta', tool: 'claude-code' },
+      phase: 'committed',
+    });
+    expect(Object.keys(afterCreate.value.model.transactions)).toEqual([]);
+
+    await rm(betaLive, { force: true });
+    const withoutPair = { ...afterCreate.value.model, skills: {} };
+    const reset = await writeLedger(f.env, ledgerPathOf(f.data), withoutPair);
+    if (!reset.ok) throw new Error(msg(reset.error));
+    await symlink(resolve(f.betaSrc), betaLive);
+    const beforeTarget = await readlink(betaLive);
+
+    const adopted = await runDev(
+      f.env,
+      opts(f, { targets: ['beta'], tools: ['claude-code'], source: resolve(f.betaSrc) }),
+      passDeps(),
+    );
+    if (!adopted.ok) throw new Error(msg(adopted.error));
+    expect(adopted.value.results[0]?.action).toBe('adopted');
+    expect(await readlink(betaLive)).toBe(beforeTarget);
+
+    const afterAdopt = await readLedgerState(f.env, ledgerPathOf(f.data));
+    if (!afterAdopt.ok || afterAdopt.value.state !== 'present') {
+      throw new Error('adopted dev placement did not persist a ledger');
+    }
+    expect(afterAdopt.value.model.history).toHaveLength(2);
+    expect(afterAdopt.value.model.history.at(-1)).toMatchObject({
+      intent: { kind: 'link-dev', skill: 'beta', tool: 'claude-code' },
+      phase: 'committed',
+    });
+    expect(Object.keys(afterAdopt.value.model.transactions)).toEqual([]);
   });
 
   test('G3B-02: selected store drift after preview is refused with zero execution writes', async () => {

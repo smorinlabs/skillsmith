@@ -136,7 +136,9 @@ const logicalJournalFor = (
           sourcePath: operation.skill ?? '.',
           contentHash: imageSource.contentHash as unknown as ArtifactDigest,
         }
-      : (operation.kind === 'install' || operation.kind === 'update') &&
+      : (operation.kind === 'install' ||
+            operation.kind === 'update' ||
+            operation.kind === 'repair') &&
           pair.origin !== undefined &&
           pair.pinned != null
         ? {
@@ -197,6 +199,120 @@ const logicalJournalFor = (
     updatedAt: shadow.completedAt ?? shadow.startedAt,
     completedAt: shadow.completedAt,
   };
+};
+
+const recordOnlyBefore = (operation: ExecutableOperation): Journal['before'] => {
+  if (operation.before.kind === 'absent') return { mode: 'absent' };
+  if (operation.before.kind !== 'placement') return { mode: 'absent' };
+  if (operation.before.classification === 'dev') {
+    const linkTarget = operation.before.linkTarget ?? operation.before.resource.location;
+    return {
+      mode: 'dev',
+      symlinkTarget: linkTarget.kind === 'machine-bound' ? linkTarget.path : linkTarget.token,
+      liveKind: operation.before.representation === 'symlink' ? 'symlink' : 'dir',
+    };
+  }
+  return {
+    mode: 'pinned',
+    storePath: null,
+    contentHash: operation.before.contentHash,
+    liveKind: operation.before.representation === 'symlink' ? 'symlink' : 'dir',
+  };
+};
+
+/**
+ * One canonical finalizer for mutations whose live filesystem state is already authoritative.
+ * Repair writes the terminal pair plus committed logical history directly, without inventing a
+ * physical shadow. Other record-only operations advance their logical/compatibility-shadow phases
+ * in memory. Both paths persist exactly one terminal ledger image; there is no recoverable
+ * filesystem phase because these callers deliberately perform no live mutation.
+ */
+export const commitRecordOnlyLogicalTransaction = async (
+  ctx: SwapCtx,
+  operation: ExecutableOperation,
+  pair: PairRecord,
+  scopeKey: string | null = null,
+): Promise<Result<void, SkillSmithError>> => {
+  if ('schemaVersion' in ctx.ledger || operation.pairId === null) {
+    return err(flipFailedError('record-only logical transaction requires canonical pair identity'));
+  }
+  const canonicalLedger = ctx.ledger as LedgerModel;
+  const transactionId = ctx.newTxId();
+  const startedAt = ctx.now();
+  const stagedCtx: SwapCtx = {
+    ...ctx,
+    ledger: canonicalLedger,
+    persist: async () => ok(undefined),
+  };
+  const journal: Journal = {
+    op:
+      operation.kind === 'remove' ? 'uninstall' : operation.kind === 'link-dev' ? 'dev' : 'install',
+    txId: transactionId,
+    phase: 'prepared',
+    startedAt,
+    completedAt: null,
+    before: recordOnlyBefore(operation),
+    stagingPath: join(
+      dirname(pair.placementPath),
+      `.skillsmith-staging-${operation.skill ?? 'skill'}-${transactionId}`,
+    ),
+    backupPath: join(
+      dirname(pair.placementPath),
+      `.skillsmith-backup-${operation.skill ?? 'skill'}-${transactionId}`,
+    ),
+  };
+  if (operation.kind === 'repair') {
+    if (
+      canonicalLedger.transactions[transactionId] !== undefined ||
+      canonicalLedger.history.some((candidate) => candidate.transactionId === transactionId)
+    ) {
+      return err(flipFailedError('record-only repair transaction identity already exists'));
+    }
+    const completedAt = ctx.now();
+    const committed = logicalJournalFor(operation, pair, {
+      ...journal,
+      phase: 'committed',
+      completedAt,
+    });
+    const validation = validateJournalV1DtoShape(committed);
+    if (!validation.ok) {
+      return err(
+        flipFailedError(
+          `record-only repair journal is invalid: ${JSON.stringify(validation.error)}`,
+        ),
+      );
+    }
+    const terminal = withLedgerPairAt(
+      canonicalLedger,
+      scopeKey,
+      operation.skill ?? '',
+      operation.tool ?? '',
+      { ...pair, journal: null },
+    );
+    if (!terminal.ok) return terminal;
+    ctx.ledger = {
+      ...terminal.value,
+      history: [...terminal.value.history, committed],
+    };
+    return ctx.persist();
+  }
+  for (const phase of ['prepared', 'staged', 'backed-up', 'live', 'committed'] as const) {
+    if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
+    const completedAt = phase === 'committed' ? ctx.now() : null;
+    const persisted = await persistPair(
+      stagedCtx,
+      scopeKey,
+      operation.skill ?? '',
+      operation.tool ?? '',
+      {
+        ...pair,
+        journal: { ...journal, phase, completedAt },
+      },
+    );
+    if (!persisted.ok) return persisted;
+  }
+  ctx.ledger = stagedCtx.ledger;
+  return ctx.persist();
 };
 
 const hydrateLogicalPendingFromShadow = (
