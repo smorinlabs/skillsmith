@@ -1365,6 +1365,11 @@ type LiveOperationImage =
   | Extract<OperationImage, { readonly kind: 'absent' }>
   | Extract<OperationImage, { readonly kind: 'placement' }>;
 
+const placementOperationImage = (image: OperationImage): LiveOperationImage => {
+  if (image.kind === 'absent' || image.kind === 'placement') return image;
+  throw new TypeError('placement planning: live projection returned a non-placement image');
+};
+
 const ownedLiveOperationImage = (
   image: PlanImageV1,
   liveResource: ReturnType<typeof placementLiveResource>,
@@ -1398,10 +1403,32 @@ const ownedLiveOperationImage = (
   };
 };
 
+const retainedPlacementMatchesLive = (
+  retained: LiveOperationImage,
+  current: LiveOperationImage,
+): boolean => {
+  if (canonicalPlanningString(retained) === canonicalPlanningString(current)) return true;
+  // A managed pinned symlink is observed physically as store-linked; no other image field aliases.
+  if (
+    retained.kind !== 'placement' ||
+    current.kind !== 'placement' ||
+    retained.classification !== 'pinned' ||
+    current.classification !== 'store-linked' ||
+    retained.representation !== 'symlink' ||
+    current.representation !== 'symlink'
+  ) {
+    return false;
+  }
+  return (
+    canonicalPlanningString(retained) ===
+    canonicalPlanningString({ ...current, classification: 'pinned' })
+  );
+};
+
 const retainedPlacementHistoryInverse = (
   snapshot: ObservedStateSnapshotV1,
   intent: PlacementRollbackIntentV1,
-  current: OperationImage,
+  current: LiveOperationImage,
   liveResource: ReturnType<typeof placementLiveResource>,
 ) => {
   const ledger = snapshot.ledger.value;
@@ -1422,7 +1449,7 @@ const retainedPlacementHistoryInverse = (
     if (journal.phase !== 'committed' || journal.disposition !== 'forward') return null;
     const inverse = ownedLiveOperationImage(journal.intent.before, liveResource);
     const retainedCurrent = ownedLiveOperationImage(journal.intent.after, liveResource);
-    if (canonicalPlanningString(retainedCurrent) !== canonicalPlanningString(current)) {
+    if (!retainedPlacementMatchesLive(retainedCurrent, current)) {
       throw new TypeError(
         'placement planning: retained rollback history does not match live state',
       );
@@ -1446,8 +1473,18 @@ const placementRollbackOperationFor = (
   }
   const liveResource = placementLiveResource(intent, observation);
   const observedBeforeSource = operationSourceFromLedgerPairV1(ledgerPair, liveState);
+  const before = placementOperationImage(
+    operationImageFromLiveStateV1({
+      resource: liveResource,
+      state: liveState,
+      managed: true,
+      source: observedBeforeSource,
+    }),
+  );
+  // D9 retains both portable origin and local-dev facts. Prefer the latter only for retained
+  // history comparison when the ledger, source observation, and live content prove it exactly.
   const retainedDevSource =
-    observedBeforeSource === null &&
+    (observedBeforeSource === null || liveState?.placementClass === 'store-linked') &&
     ledgerPair.mode === 'pinned' &&
     ledgerPair.dev != null &&
     ledgerPair.pinned != null &&
@@ -1461,14 +1498,21 @@ const placementRollbackOperationFor = (
           contentHash: intent.sourceContent.contentRevision,
         }
       : null;
-  const beforeSource = observedBeforeSource ?? retainedDevSource;
-  const before = operationImageFromLiveStateV1({
-    resource: liveResource,
-    state: liveState,
-    managed: true,
-    source: beforeSource,
-  });
-  const retainedHistory = retainedPlacementHistoryInverse(snapshot, intent, before, liveResource);
+  const retainedBefore =
+    retainedDevSource === null
+      ? before
+      : placementOperationImage(
+          operationImageFromLiveStateV1({
+            resource: liveResource,
+            state: liveState,
+            managed: true,
+            source: retainedDevSource,
+          }),
+        );
+  const retainedHistory =
+    ledgerPair.journal == null
+      ? retainedPlacementHistoryInverse(snapshot, intent, retainedBefore, liveResource)
+      : null;
   if (retainedHistory !== null) {
     const { inverse: after, journal } = retainedHistory;
     const kind: ExecutableOperation['kind'] =
@@ -1515,7 +1559,7 @@ const placementRollbackOperationFor = (
         kind: 'conditional',
         retentionResourceIds: [journal.intent.pairId],
       },
-      before,
+      before: retainedBefore,
       after,
       reason: {
         code: 'rollback-inverse',

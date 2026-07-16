@@ -13,7 +13,7 @@ import { runInstall, runUninstall } from '../../src/acquire/run.ts';
 import type { InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { getPairAt, readLedger } from '../../src/place/ledger.ts';
+import { getPairAt, readLedger, readLedgerState } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { runDev, runPromote, runRollback } from '../../src/place/run.ts';
 import { contentHashOf } from '../../src/place/store.ts';
@@ -171,6 +171,12 @@ const led = async () => {
   if (!r.ok) throw new Error(msg(r.error));
   return r.value;
 };
+const canonicalLed = async () => {
+  const r = await readLedgerState(f.env, ledgerPathOf(f.data));
+  if (!r.ok) throw new Error(msg(r.error));
+  if (r.value.state !== 'present') throw new Error('expected canonical ledger state');
+  return r.value.model;
+};
 const pair = async () => getPairAt(await led(), null, 'factor-scan', 'claude-code');
 // The dev source used throughout: multiWork's real, on-disk factor-scan checkout (a genuine git
 // working tree — `runDev`'s provenance resolution needs a real repo to classify git-clean/dirty).
@@ -266,6 +272,18 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
     expect(pr2.value.results[0]?.action).toBe('noop');
     const p4 = await pair();
     expect(p4?.pinned?.rev).toBe(revR2); // lossless: unchanged
+    expect((await canonicalLed()).history.at(-1)?.intent.after).toMatchObject({
+      kind: 'placement',
+      classification: 'pinned',
+      representation: 'symlink',
+      linkTarget: { kind: 'machine-bound', path: storeR2 },
+      source: {
+        kind: 'local-dev',
+        path: devSrc,
+        contentHash: contentHashR2,
+      },
+      contentHash: contentHashR2,
+    });
 
     // --- 5. runRollback (op promote) -> dev symlink restored byte-identically ---
     const rb = await runRollback(f.env, { ...flipOpts(), op: 'promote' }, flipDeps());

@@ -294,6 +294,8 @@ export const createPlacementLifecycleExecutor = (
     ): Promise<OperationExecutionResult> => {
       let value: OperationExecutionResult | undefined;
       let committed = false;
+      let commitFailed = false;
+      let commitFailure: unknown;
       let mandatoryLedgerReadFailed = false;
       const lifecycle = await executeRepositoryLifecycleV1(cursor, {
         operationId: operation.operationId,
@@ -321,6 +323,8 @@ export const createPlacementLifecycleExecutor = (
                   : 'committed',
             });
           } catch (error) {
+            commitFailed = true;
+            commitFailure = error;
             mandatoryLedgerReadFailed = safeErrorCode(error) === 'ledger-error';
             return err(error);
           }
@@ -358,6 +362,7 @@ export const createPlacementLifecycleExecutor = (
         throw lifecycle.error;
       }
       cursor = lifecycle.value.cursor;
+      if (commitFailed) throw commitFailure;
       if (!committed) throw new Error('placement lifecycle resolved without a commit result');
       return value as OperationExecutionResult;
     },
