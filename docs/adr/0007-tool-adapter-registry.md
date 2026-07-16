@@ -1,6 +1,6 @@
 # ADR 0007 — Validated tool-adapter registry as capability authority
 
-**Status:** Accepted (2026-07-12)
+**Status:** Accepted (2026-07-12); lifecycle-consumption amendment accepted (2026-07-16)
 
 ## Context
 
@@ -163,6 +163,30 @@ not removed. Registry construction and lookup do not acquire ambient filesystem,
 process, clock, ID, or network authority; bundle operations continue to use the focused ports from
 ADR 0005.
 
+### Lifecycle-consumption amendment
+
+The deferred G3B-05 consumption boundary completes this decision without adding another adapter
+layer:
+
+- generic lifecycle selection, planning, execution, capability observation, and human rendering
+  receive a narrow validated registry projection instead of importing production registry globals;
+- production wrappers retain the built-in default registry and existing public tool unions, while
+  internal generic kernels can carry another validated registry's string IDs;
+- placement bundles own scope-aware roots, destination/alternate roles, list, resolution,
+  duplicates, and notices; generic lifecycle code owns only cross-scope selection and ledger-owned
+  custom paths;
+- one pure helper may reduce existing verification gate policy, but command-specific messages and
+  error mapping remain separate;
+- renderers consume injected adapter facts or the actual recorded verification mode without adding
+  report fields; and
+- mutation capability revisions contain only the used adapter version, operation, verification
+  mode operations, and scope, so unrelated adapters do not stale approved work.
+
+The complete public agents capability snapshot remains a separate full-registry presentation. The
+relevant mutation fingerprint is private immutable planning state. Saved-plan persistence and apply
+remain deferred even though G3B-05 provides the deterministic relevant-capability precondition
+mapping.
+
 ## Consequences
 
 ### Positive
@@ -205,11 +229,12 @@ ADR 0005.
 
 ## Downstream exclusions
 
-This ADR does not activate final `agents --capabilities` output, saved-plan capability fingerprints
-or staleness, manifest/lock implementation, immutable snapshot/planner/repository work, operation
-observation, new codecs or DTOs, generated help/manual work, new verification modes, adaptation,
-or full Kilo Code/OpenCode placement. Those remain owned by their later P17 groups. ADR 0006 remains
-reserved for the later immutable snapshot/planner/repository decision.
+This ADR does not activate saved-plan persistence/apply, manifest/lock desired-state mutation,
+operation observation, new codecs or DTOs, generated help/manual work, new verification modes,
+adaptation, or full Kilo Code/OpenCode placement. Those remain owned by their later P17 groups. The
+complete agents capability presentation and immutable snapshot/planner/repository foundation are
+already owned by their signed groups; G3B-05 only completes registry-bound lifecycle consumption
+and relevant capability fingerprints.
 
 ## References
 
@@ -218,6 +243,7 @@ reserved for the later immutable snapshot/planner/repository decision.
 - [ADR 0004 — Command runtime and application services](0004-command-runtime-application-boundary.md)
 - [ADR 0005 — Capability-scoped ports](0005-capability-scoped-ports.md)
 - [P17-G1-05 implementation plan](../../projects/p17/plans/P17-G1-05.md)
+- [P17-G3B-05 Ready plan](../../projects/p17/plans/P17-G3B-05.md)
 - [Canonical P17 ergonomics workflow plan](../superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md)
 - `tests/ergonomics/phase/EWP-P1-TS09.test.ts`
 - `packages/cli/tests/contracts/verify.test.ts`
