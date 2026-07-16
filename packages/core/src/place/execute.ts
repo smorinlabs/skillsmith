@@ -1,4 +1,9 @@
 import { join, parse } from 'node:path';
+import type {
+  RelevantCapabilityQueryV1,
+  RelevantCapabilitySnapshotV1,
+} from '../agents/capabilities.ts';
+import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
@@ -24,8 +29,8 @@ import { readObservedStateSnapshotV1 } from '../state/read.ts';
 import {
   type LogicalRepositoryStageV1,
   type ObservedStateRepositoriesV1,
-  createCapabilityStateReaderV1,
   createProjectStateReaderV1,
+  createRelevantCapabilityStateReaderV1,
 } from '../state/repositories.ts';
 import { type ObservedStateSnapshotV1, sameExpectedRevisionV1 } from '../state/types.ts';
 import { createLedgerPersistenceGateway } from './ledger-persistence.ts';
@@ -72,8 +77,8 @@ export interface PlacementStoreResource extends StoreResourceV1 {
 }
 
 export interface PlacementSnapshotAuthority {
-  readonly snapshot: ObservedStateSnapshotV1;
-  readonly repositories: ObservedStateRepositoriesV1;
+  readonly snapshot: ObservedStateSnapshotV1<RelevantCapabilitySnapshotV1>;
+  readonly repositories: ObservedStateRepositoriesV1<RelevantCapabilitySnapshotV1>;
   readonly projectRoot: string;
   readonly manifestPath: string;
   readonly lockPath: string;
@@ -91,6 +96,8 @@ export interface PlacementLifecycleExecutor {
 }
 
 export const createPlacementSnapshotAuthority = async (
+  registry: LifecycleToolRegistry,
+  capabilityQueries: readonly RelevantCapabilityQueryV1[],
   env: PlacementPorts,
   projectContext: ProjectContext,
   ledgerPath: string,
@@ -114,7 +121,8 @@ export const createPlacementSnapshotAuthority = async (
   const manifestResourceId = placementSnapshotResourceId('manifest', manifestPath);
   const lockResourceId = placementSnapshotResourceId('lock', lockPath);
   const ledgerResourceId = placementSnapshotResourceId('ledger', ledgerPath);
-  const capabilitiesResourceId = placementSnapshotResourceId('capabilities', 'registry-v1');
+  const capabilities = createRelevantCapabilityStateReaderV1(registry, capabilityQueries);
+  const capabilitiesResourceId = capabilities.resourceId;
   const ledgerWriterPorts = (
     env as PlacementPorts & {
       readonly ledgerWriterPorts?: LedgerWriterPorts;
@@ -131,7 +139,7 @@ export const createPlacementSnapshotAuthority = async (
       storeRoot,
     }),
   );
-  const repositories: ObservedStateRepositoriesV1 = Object.freeze({
+  const repositories: ObservedStateRepositoriesV1<RelevantCapabilitySnapshotV1> = Object.freeze({
     project: createProjectStateReaderV1({
       resourceId: projectResourceId,
       ports: env,
@@ -153,7 +161,7 @@ export const createPlacementSnapshotAuthority = async (
     }),
     live: createLivePlacementRepository({ resources: liveResources, ports: env }),
     store: createStoreRepository({ resources: stores, ports: env }),
-    capabilities: createCapabilityStateReaderV1(capabilitiesResourceId),
+    capabilities,
   });
   const observed = await readObservedStateSnapshotV1(
     {

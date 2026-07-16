@@ -20,6 +20,7 @@ import {
   type VerifyApplicationReport,
   type VersionReport,
   getConfigValue,
+  toolRegistry,
 } from '@skillsmith/core';
 import {
   toConfigGetV1Dto,
@@ -40,13 +41,20 @@ import { renderDoctorJson } from '../output/doctor-json.ts';
 import { renderCliError } from '../output/error-boundary.ts';
 import { renderFlipHuman } from '../output/flip-human.ts';
 import { renderFlipJson } from '../output/flip-json.ts';
-import { renderInstallHuman, renderUninstallHuman } from '../output/install-human.ts';
+import {
+  type InstallStaticNoticeResolver,
+  renderInstallHuman,
+  renderUninstallHuman,
+} from '../output/install-human.ts';
 import { renderInstallJson, renderUninstallJson } from '../output/install-json.ts';
 import { renderListHuman } from '../output/list-human.ts';
 import { renderListJson } from '../output/list-json.ts';
 import { renderStatusHuman } from '../output/status-human.ts';
 import { renderStatusJson } from '../output/status-json.ts';
-import { renderVerifyHuman } from '../output/verify-human.ts';
+import {
+  type VerifyDeepCoverageSuffixResolver,
+  renderVerifyHuman,
+} from '../output/verify-human.ts';
 import { renderVerifyJson } from '../output/verify-json.ts';
 import { encodeWire } from '../output/wire-codec.ts';
 import type { RendererRegistry, RuntimeOutcome } from './adapter.ts';
@@ -120,6 +128,14 @@ const guarded = <T>(
 
 const renderedLifecycleOutput = (stdout: string, stderr: string) =>
   stderr.length === 0 ? { stdout } : { stdout, stderr };
+
+const currentInstallStaticNotice: InstallStaticNoticeResolver = (tool, skill) => {
+  const notice = toolRegistry.get(tool)?.verification?.renderedFacts.installStaticNotice;
+  return notice?.(skill) ?? null;
+};
+
+const currentDeepCoverageSuffix: VerifyDeepCoverageSuffixResolver = (tool) =>
+  toolRegistry.get(tool)?.verification?.renderedFacts.deepSkillCoverageSuffix ?? null;
 
 const itemLine = (level: 'error' | 'warning', label: string, reason: string): string => {
   const rendered = renderCliError(
@@ -377,14 +393,19 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
       (value, outcome) =>
         value.result === null
           ? (errorOutput(outcome, 'human') ?? '')
-          : renderVerifyHuman(value.result, exitCodeForClass(outcome.exitClass)),
+          : renderVerifyHuman(
+              value.result,
+              exitCodeForClass(outcome.exitClass),
+              currentDeepCoverageSuffix,
+            ),
       (value, outcome) =>
         value.result === null
           ? (errorOutput(outcome, 'json') ?? '')
           : renderVerifyJson(value.result),
     ),
     install: lifecycleRenderer<NonNullable<InstallApplicationReport['value']>>(
-      (value, outcome) => renderInstallHuman(value, exitCodeForClass(outcome.exitClass)),
+      (value, outcome) =>
+        renderInstallHuman(value, exitCodeForClass(outcome.exitClass), currentInstallStaticNotice),
       renderInstallJson,
       installStderr,
     ),

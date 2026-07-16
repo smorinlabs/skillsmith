@@ -239,6 +239,135 @@ describe('renderFlipHuman', () => {
     expect(out).toContain('1 created.  Exit code: 0');
   });
 
+  test('uses an injected recorded verification mode instead of tool policy', () => {
+    const report: FlipReport = {
+      op: 'promote',
+      dryRun: false,
+      requested: { targets: ['x'], all: false, tools: ['codex'], explicitTools: true },
+      ...planningFields('promote'),
+      results: [
+        {
+          skill: 'x',
+          tool: 'codex',
+          placementPath: '/Users/alice/.agents/skills/x',
+          action: 'flipped',
+          reason: null,
+          before: { mode: 'dev', symlinkTarget: '/Users/alice/c/x' },
+          after: { mode: 'pinned', storePath: STORE_PATH },
+          store: null,
+          verify: { gate: 'passed', verdict: 'pass' },
+        },
+      ],
+      summary: {
+        flipped: 1,
+        updated: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 0,
+        failed: 0,
+        rolledBack: 0,
+        created: 0,
+        adopted: 0,
+      },
+    };
+
+    const out = renderFlipHuman(report, 0, () => 'static');
+    expect(out).toContain('verify   static: pass');
+    expect(out).not.toContain('verify   deep: pass');
+  });
+
+  test('the pure renderer legacy fallback is tool-neutral', () => {
+    const report: FlipReport = {
+      op: 'promote',
+      dryRun: false,
+      requested: { targets: ['x'], all: false, tools: ['codex'], explicitTools: true },
+      ...planningFields('promote'),
+      results: [
+        {
+          skill: 'x',
+          tool: 'codex',
+          placementPath: '/Users/alice/.agents/skills/x',
+          action: 'flipped',
+          reason: null,
+          before: { mode: 'dev', symlinkTarget: '/Users/alice/c/x' },
+          after: { mode: 'pinned', storePath: STORE_PATH },
+          store: null,
+          verify: { gate: 'passed', verdict: 'pass' },
+        },
+      ],
+      summary: {
+        flipped: 1,
+        updated: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 0,
+        failed: 0,
+        rolledBack: 0,
+        created: 0,
+        adopted: 0,
+      },
+    };
+
+    expect(renderFlipHuman(report, 0)).toContain('verify   static: pass');
+  });
+
+  test('selects the recorded verification check from the operation plan', () => {
+    const base: FlipReport = {
+      op: 'promote',
+      dryRun: false,
+      requested: { targets: ['x'], all: false, tools: ['codex'], explicitTools: true },
+      ...planningFields('promote'),
+      results: [
+        {
+          skill: 'x',
+          tool: 'codex',
+          placementPath: '/Users/alice/.agents/skills/x',
+          action: 'flipped',
+          reason: null,
+          before: { mode: 'dev', symlinkTarget: '/Users/alice/c/x' },
+          after: { mode: 'pinned', storePath: STORE_PATH },
+          store: null,
+          verify: { gate: 'passed', verdict: 'pass' },
+        },
+      ],
+      summary: {
+        flipped: 1,
+        updated: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 0,
+        failed: 0,
+        rolledBack: 0,
+        created: 0,
+        adopted: 0,
+      },
+    };
+    const report = {
+      ...base,
+      plan: {
+        ...base.plan,
+        operations: [
+          {
+            skill: 'x',
+            tool: 'codex',
+            requiredCheckIds: ['check:verify:x'],
+          },
+        ],
+        checks: [
+          {
+            checkId: 'check:verify:x',
+            kind: 'verification',
+            mode: 'static',
+          },
+        ],
+      },
+    } as unknown as FlipReport;
+
+    const out = renderFlipHuman(report, 0);
+    expect(out).toContain('verify   static: pass');
+    expect(out).not.toContain('verify   deep: pass');
+  });
+
   test('a refused result renders a refusal line and the summary counts it', () => {
     const report: FlipReport = {
       op: 'promote',

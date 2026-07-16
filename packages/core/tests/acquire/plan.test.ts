@@ -6,6 +6,7 @@ import {
   createInstallPlanning,
   createUninstallPlanning,
 } from '../../src/acquire/plan.ts';
+import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
 import {
   type ExpectedRevisionV1,
@@ -245,6 +246,43 @@ const expectDeepFrozen = (value: unknown, seen = new Set<object>()): void => {
 };
 
 describe('createAcquisitionPlan', () => {
+  test('uses the supplied registry ordering during canonical planning', () => {
+    const reorderedRegistry = createToolRegistry(
+      toolRegistry.adapters.map((adapter) => ({
+        ...adapter,
+        descriptor: {
+          ...adapter.descriptor,
+          order:
+            adapter.descriptor.id === 'codex'
+              ? 1
+              : adapter.descriptor.id === 'claude-code'
+                ? 2
+                : adapter.descriptor.order + 10,
+        },
+      })),
+    );
+    const input = {
+      schemaVersion: 1 as const,
+      command: 'uninstall' as const,
+      selection: {
+        source: 'explicit-targets' as const,
+        skills: [] as const,
+        tools: ['claude-code', 'codex'] as const,
+        scopes: ['user'] as const,
+      },
+      batchPolicy: 'fail-fast' as const,
+      intents: [],
+    };
+
+    const result = createAcquisitionPlan(input, snapshot(), {
+      registry: reorderedRegistry,
+      toolOrder: reorderedRegistry.ids,
+    });
+
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.selection.tools).toEqual(['codex', 'claude-code']);
+  });
+
   test('owns deterministic snapshot-bound plans without mutating inputs', () => {
     const input = request();
     const observed = snapshot();

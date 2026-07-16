@@ -1,4 +1,9 @@
 import { join, parse, resolve } from 'node:path';
+import type {
+  RelevantCapabilityQueryV1,
+  RelevantCapabilitySnapshotV1,
+} from '../agents/capabilities.ts';
+import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
@@ -51,8 +56,8 @@ import { readObservedStateSnapshotV1 } from '../state/read.ts';
 import {
   type LogicalRepositoryStageV1,
   type ObservedStateRepositoriesV1,
-  createCapabilityStateReaderV1,
   createProjectStateReaderV1,
+  createRelevantCapabilityStateReaderV1,
 } from '../state/repositories.ts';
 import {
   type ExpectedRevisionV1,
@@ -74,8 +79,8 @@ export interface AcquireLiveSnapshotResourceV1 extends LivePlacementResourceV1 {
 }
 
 export interface AcquisitionSnapshotAuthorityV1 {
-  readonly snapshot: ObservedStateSnapshotV1;
-  readonly repositories: ObservedStateRepositoriesV1;
+  readonly snapshot: ObservedStateSnapshotV1<RelevantCapabilitySnapshotV1>;
+  readonly repositories: ObservedStateRepositoriesV1<RelevantCapabilitySnapshotV1>;
   readonly projectContext: ProjectContext;
   readonly manifestPath: string;
   readonly lockPath: string;
@@ -128,6 +133,8 @@ export const resolveAcquisitionProjectContextV1 = async (input: {
 
 export const readAcquisitionSnapshotV1 = async (input: {
   readonly env: PlacementPorts;
+  readonly registry: LifecycleToolRegistry<string>;
+  readonly capabilityQueries: readonly RelevantCapabilityQueryV1[];
   readonly projectContext: ProjectContext;
   readonly artifactScope: InstallScope;
   readonly ledgerPath: string;
@@ -157,7 +164,11 @@ export const readAcquisitionSnapshotV1 = async (input: {
   const manifestResourceId = acquireStateResourceId('manifest', [manifestPath]);
   const lockResourceId = acquireStateResourceId('lock', [lockPath]);
   const ledgerResourceId = acquireStateResourceId('ledger', [resolve(input.ledgerPath)]);
-  const capabilitiesResourceId = acquireStateResourceId('capabilities', ['current-registry']);
+  const capabilities = createRelevantCapabilityStateReaderV1(
+    input.registry,
+    input.capabilityQueries,
+  );
+  const capabilitiesResourceId = capabilities.resourceId;
   const ledgerWriterPorts = (
     input.env as PlacementPorts & {
       readonly ledgerWriterPorts?: LedgerWriterPorts;
@@ -199,8 +210,8 @@ export const readAcquisitionSnapshotV1 = async (input: {
       resources: input.storeResources.map(({ resource }) => resource),
       ports: stateReadPorts,
     }),
-    capabilities: createCapabilityStateReaderV1(capabilitiesResourceId),
-  } satisfies ObservedStateRepositoriesV1;
+    capabilities,
+  } satisfies ObservedStateRepositoriesV1<RelevantCapabilitySnapshotV1>;
   const observed = await readObservedStateSnapshotV1(
     {
       schemaVersion: 1,

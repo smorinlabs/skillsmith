@@ -10,8 +10,9 @@ import {
 } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { runInstall, runUninstall } from '../../src/acquire/run.ts';
+import { runInstall, runUninstall, runUninstallWithRegistry } from '../../src/acquire/run.ts';
 import type { InstallDeps, InstallOptions, UninstallDeps } from '../../src/acquire/types.ts';
+import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   getLedgerPairAt as getPairAt,
@@ -521,6 +522,43 @@ describe('runUninstall — path target', () => {
     expect(await f.env.pathKind(path)).toBe('absent');
   });
 
+  test('joins every adapter notice for an alternate-root path target', async () => {
+    const registry = createToolRegistry(
+      toolRegistry.adapters.map((adapter) => {
+        if (adapter.descriptor.id !== 'codex' || adapter.placement === undefined) return adapter;
+        const placement = adapter.placement;
+        return {
+          ...adapter,
+          placement: {
+            ...placement,
+            resolveScoped: async (...args: Parameters<typeof placement.resolveScoped>) => {
+              const resolution = await placement.resolveScoped(...args);
+              return { ...resolution, notices: ['NOTICE-ONE', 'NOTICE-TWO'] };
+            },
+          },
+        };
+      }),
+    );
+    const path = join(legacyRoot(), 'legacy-only');
+    const r = await runUninstallWithRegistry(
+      f.env,
+      {
+        targets: [path],
+        tools: ['codex'],
+        force: true,
+        dryRun: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+      registry,
+    );
+    if (!r.ok) throw new Error(msg(r.error));
+
+    expect(r.value.results[0]?.action).toBe('removed');
+    expect(r.value.results[0]?.reason).toBe('NOTICE-ONE; NOTICE-TWO');
+  });
+
   test('a path outside every known root → refused', async () => {
     const path = join(f.base, 'nowhere', 'ghost');
     const r = await runUninstall(
@@ -533,6 +571,73 @@ describe('runUninstall — path target', () => {
     expect(res?.action).toBe('refused');
     expect(res?.error?.code).toBe('flip-refused');
     expect(res?.reason).toContain('outside every known skills root');
+  });
+});
+
+describe('runUninstall — relevant capability scope', () => {
+  test('a custom placement fingerprints uninstall/custom rather than its ledger scope', async () => {
+    const dest = join(f.base, 'custom-skills');
+    await f.env.makeDir(dest);
+    const created = await runDev(
+      f.env,
+      {
+        targets: ['beta'],
+        tools: ['claude-code'],
+        source: f.betaSrc,
+        dest,
+        cwd: f.home,
+        configuration: f.configuration,
+        noVerify: true,
+      },
+      flipDeps(),
+    );
+    if (!created.ok) throw new Error(msg(created.error));
+    expect(created.value.results[0]?.action).toBe('created');
+
+    const withUninstallScopes = (scopes: readonly ('user' | 'project' | 'custom')[]) =>
+      createToolRegistry(
+        toolRegistry.adapters.map((adapter) =>
+          adapter.descriptor.id === 'claude-code'
+            ? {
+                ...adapter,
+                descriptor: {
+                  ...adapter.descriptor,
+                  operations: {
+                    ...adapter.descriptor.operations,
+                    uninstall: {
+                      ...adapter.descriptor.operations.uninstall,
+                      scopes,
+                    },
+                  },
+                },
+              }
+            : adapter,
+        ),
+      );
+    const prepare = async (registry: ReturnType<typeof createToolRegistry>) => {
+      const result = await runUninstallWithRegistry(
+        f.env,
+        {
+          targets: ['beta'],
+          tools: ['claude-code'],
+          cwd: f.home,
+          configuration: f.configuration,
+          dryRun: true,
+        },
+        uninstallDeps(),
+        registry,
+      );
+      if (!result.ok) throw new Error(msg(result.error));
+      expect(result.value.results[0]?.placementPath).toBe(join(dest, 'beta'));
+      return result.value.plan.operations[0]?.preconditionIds ?? [];
+    };
+
+    const baseline = await prepare(toolRegistry);
+    const withoutUser = await prepare(withUninstallScopes(['project', 'custom']));
+    const withoutCustom = await prepare(withUninstallScopes(['user', 'project']));
+
+    expect(withoutUser).toEqual(baseline);
+    expect(withoutCustom).not.toEqual(baseline);
   });
 });
 

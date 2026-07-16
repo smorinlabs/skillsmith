@@ -61,6 +61,14 @@ const registeredPlacement = (placement: PlacementBundle) => {
   return registered;
 };
 
+const legacyPlacementBundle = (placement: PlacementBundle): PlacementBundle => ({
+  roots: placement.roots,
+  standardRoots: placement.standardRoots,
+  list: placement.list,
+  resolve: placement.resolve,
+  noticeForRoot: placement.noticeForRoot,
+});
+
 describe('agents registry', () => {
   test('listSupportedTools returns all four tools in order', () => {
     expect(listSupportedTools()).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode']);
@@ -186,7 +194,7 @@ describe('agents registry', () => {
 
   test('rejects duplicate roots and any nonempty root set without one destination', () => {
     const duplicate = registeredPlacement({
-      ...codexPlacementBundle,
+      ...legacyPlacementBundle(codexPlacementBundle),
       roots: () => ['/duplicate', '/duplicate'],
     });
     expect(() => duplicate.rootFacts(ENV, 'project', CTX)).toThrow(/duplicate/i);
@@ -209,7 +217,7 @@ describe('agents registry', () => {
   test('does not invent notices for neutral alternate roots', async () => {
     const alternate = '/neutral/project/alternate';
     const placement = registeredPlacement({
-      ...codexPlacementBundle,
+      ...legacyPlacementBundle(codexPlacementBundle),
       roots: (_env, scope) => [`/neutral/${scope}/destination`, `/neutral/${scope}/alternate`],
       noticeForRoot: () => null,
     });

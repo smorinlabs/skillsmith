@@ -1,5 +1,9 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { toolRegistry } from '../agents/registry.ts';
+import type { RelevantCapabilityQueryV1 } from '../agents/capabilities.ts';
+import {
+  type LifecycleToolRegistry,
+  toolRegistry as defaultLifecycleToolRegistry,
+} from '../agents/registry.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
@@ -42,7 +46,8 @@ import {
   createContentObservationPreconditionIdV1,
   createExpectedRevisionPreconditionIdV1,
 } from '../state/types.ts';
-import { verifyPlugin } from '../verify/run.ts';
+import { evaluateVerificationGate } from '../verify/gate.ts';
+import { runVerify, verifyPlugin } from '../verify/run.ts';
 import type { ToolVerdict } from '../verify/types.ts';
 import {
   type PlacementSnapshotAuthority,
@@ -71,27 +76,26 @@ import {
   type PlacementPromoteIntentV1,
   type PlacementRollbackIntentV1,
   createPlacementPlan,
-  planFlips,
+  planFlipsWithRegistry,
 } from './plan.ts';
 import { recoverPlacement } from './recovery.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from './store.ts';
-import {
-  type DevRecord,
-  FLIP_TOOLS,
-  type FlipAction,
-  type FlipDeps,
-  type FlipOp,
-  type FlipOptions,
-  type FlipReport,
-  type FlipResult,
-  type FlipTool,
-  type LedgerFile,
-  type PairRecord,
-  type PinnedRecord,
-  type PlacementPorts,
-  type PreparedFlipRun,
-  type Provenance,
-  type SwapPlan,
+import type {
+  DevRecord,
+  FlipAction,
+  FlipDeps,
+  FlipOp,
+  FlipOptions,
+  FlipReport,
+  FlipResult,
+  FlipTool,
+  LedgerFile,
+  PairRecord,
+  PinnedRecord,
+  PlacementPorts,
+  PreparedFlipRun,
+  Provenance,
+  SwapPlan,
 } from './types.ts';
 
 export const defaultFlipDeps: FlipDeps = {
@@ -217,7 +221,7 @@ const skippedAfterFailureResult = (pair: PairPlan): FlipResult => ({
   verify: null,
 });
 
-const summarizeFindings = (tv: ToolVerdict | undefined): string => {
+const summarizeFindings = (tv: ToolVerdict<string> | undefined): string => {
   if (!tv) return 'no verdict produced';
   const findings = tv.modes
     .flatMap((m) => m.findings)
@@ -233,10 +237,25 @@ interface GateOutcome {
   notice: string | null;
 }
 
+const verificationRegistryFor = (registry: LifecycleToolRegistry<string>) =>
+  Object.freeze({
+    adapters: Object.freeze(
+      registry.ids.flatMap((id) => {
+        const adapter = registry.get(id);
+        return adapter === undefined ? [] : [adapter];
+      }),
+    ),
+    ids: registry.ids,
+    get: (id: string) => registry.get(id),
+    toolsFor: (operation: Parameters<LifecycleToolRegistry<string>['toolsFor']>[0]) =>
+      registry.toolsFor(operation),
+  });
+
 /** Promote's verify gate (spec §9/D11): claude-code -> static only; codex -> deep (implies
  *  static). `fail` blocks; `warn` blocks only under --strict; `inconclusive` proceeds with a
  *  notice unless --strict. `--no-verify` skips the gate entirely. */
 const runVerifyGate = async (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   deps: FlipDeps,
   tool: FlipTool,
@@ -245,7 +264,7 @@ const runVerifyGate = async (
   requestedMode?: 'static' | 'static+deep',
 ): Promise<GateOutcome> => {
   if (opts.noVerify) return { blocked: null, gate: 'skipped', verdict: null, notice: null };
-  const verification = toolRegistry.get(tool)?.verification;
+  const verification = registry.get(tool)?.verification;
   if (verification === undefined) {
     return {
       blocked: genericError(`tool registry invariant: ${tool} has no verifier`),
@@ -256,50 +275,57 @@ const runVerifyGate = async (
   }
   const deep = (requestedMode ?? verification.gatePolicy.promote) === 'static+deep';
 
-  const vr = await deps.verify(env, {
+  const request = {
     path: sourceDir,
     tools: [tool],
     deep,
     strict: opts.strict ?? false,
     ...(opts.signal ? { signal: opts.signal } : {}),
-  });
+  };
+  const vr =
+    deps.verify === verifyPlugin
+      ? await runVerify(env, request, verificationRegistryFor(registry))
+      : await deps.verify(env, request);
   if (!vr.ok) return { blocked: vr.error, gate: 'failed', verdict: 'fail', notice: null };
 
   const toolVerdict = vr.value.tools.find((t) => t.tool === tool);
   const verdict = toolVerdict?.verdict ?? vr.value.summary.verdict;
-
-  if (verdict === 'fail') {
-    const reason = `promotion blocked: '${sourceDir}' failed verification for ${tool}: ${summarizeFindings(toolVerdict)}`;
-    return { blocked: flipFailedError(reason), gate: 'failed', verdict: 'fail', notice: null };
-  }
-  if (verdict === 'warn') {
-    if (opts.strict) {
-      return {
-        blocked: flipFailedError(`verify warnings blocked under --strict for ${tool}`),
-        gate: 'failed',
-        verdict: 'warn',
-        notice: null,
-      };
-    }
-    return { blocked: null, gate: 'warned', verdict: 'warn', notice: null };
-  }
-  if (verdict === 'inconclusive') {
-    if (opts.strict) {
-      return {
-        blocked: flipFailedError(`verify gate inconclusive under --strict for ${tool}`),
-        gate: 'failed',
-        verdict: 'inconclusive',
-        notice: null,
-      };
+  const evaluated = evaluateVerificationGate({
+    verdict,
+    strict: opts.strict ?? false,
+    requestedMode: deep ? 'static+deep' : 'static',
+  });
+  if (evaluated.blocked) {
+    let reason: string;
+    switch (verdict) {
+      case 'fail':
+        reason = `promotion blocked: '${sourceDir}' failed verification for ${tool}: ${summarizeFindings(toolVerdict)}`;
+        break;
+      case 'warn':
+        reason = `verify warnings blocked under --strict for ${tool}`;
+        break;
+      case 'inconclusive':
+        reason = `verify gate inconclusive under --strict for ${tool}`;
+        break;
+      default:
+        reason = `verification blocked for ${tool}`;
     }
     return {
-      blocked: null,
-      gate: 'inconclusive',
-      verdict: 'inconclusive',
-      notice: `verify gate was inconclusive for ${tool}; proceeding unverified`,
+      blocked: flipFailedError(reason),
+      gate: evaluated.gate,
+      verdict,
+      notice: null,
     };
   }
-  return { blocked: null, gate: 'passed', verdict: 'pass', notice: null };
+  return {
+    blocked: null,
+    gate: evaluated.gate,
+    verdict,
+    notice:
+      verdict === 'inconclusive'
+        ? `verify gate was inconclusive for ${tool}; proceeding unverified`
+        : null,
+  };
 };
 
 const ledgerVerifyOf = (gate: GateOutcome['gate']): 'passed' | 'warned' | 'skipped' =>
@@ -310,6 +336,7 @@ const ledgerVerifyOf = (gate: GateOutcome['gate']): 'passed' | 'warned' | 'skipp
 // ---------------------------------------------------------------------------------------------
 
 const runPromotePair = async (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   ledger: LedgerModel,
   ledgerPath: string,
@@ -439,7 +466,7 @@ const runPromotePair = async (
   }
   const provenance = preparedPromote.provenance;
 
-  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts);
+  const gate = await runVerifyGate(registry, env, deps, tool, resolvedSourceDir, opts);
   if (gate.blocked) {
     return {
       ...base,
@@ -751,6 +778,7 @@ const combineNotes = (...notes: (string | null)[]): string | null => {
 /** S1: absent placement -> validate source -> static verify gate -> direct atomic no-clobber symlink
  *  publish -> dev record. A foreign real file already occupying the placement path (S6) refuses. */
 const createDevPlacement = async (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   ledger: LedgerModel,
   ledgerPath: string,
@@ -790,7 +818,7 @@ const createDevPlacement = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, 'static');
+  const gate = await runVerifyGate(registry, env, deps, tool, resolvedSourceDir, opts, 'static');
   if (gate.blocked) return gateFailedResult(base, gate);
 
   const devRecord = await buildDevSourceRecord(env, resolvedSourceDir, deps);
@@ -845,6 +873,7 @@ const createDevPlacement = async (
 /** S2: a matching hand-made symlink not in the ledger -> record-only adopt. Disk is untouched;
  *  the gate still runs (D2). */
 const adoptDevPlacement = async (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   ledger: LedgerModel,
   ledgerPath: string,
@@ -863,7 +892,7 @@ const adoptDevPlacement = async (
     return refusedResult(base, reason, flipRefusedError(reason));
   }
 
-  const gate = await runVerifyGate(env, deps, tool, resolvedSourceDir, opts, 'static');
+  const gate = await runVerifyGate(registry, env, deps, tool, resolvedSourceDir, opts, 'static');
   if (gate.blocked) return gateFailedResult(base, gate);
 
   // R1: collect provenance FIRST — its async git work is the widest classify->act window. The record
@@ -924,6 +953,7 @@ const adoptDevPlacement = async (
 // ---------------------------------------------------------------------------------------------
 
 const runDevPair = async (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   ledger: LedgerModel,
   ledgerPath: string,
@@ -979,6 +1009,7 @@ const runDevPair = async (
       return refusedResult(base, reason, flipRefusedError(reason));
     }
     return createDevPlacement(
+      registry,
       env,
       ledger,
       ledgerPath,
@@ -1026,6 +1057,7 @@ const runDevPair = async (
       return refusedResult(base, reason, flipRefusedError(reason));
     }
     return adoptDevPlacement(
+      registry,
       env,
       ledger,
       ledgerPath,
@@ -1161,6 +1193,7 @@ const runDevPair = async (
 // ---------------------------------------------------------------------------------------------
 
 const runRollbackPair = async (
+  _registry: LifecycleToolRegistry,
   env: PlacementPorts,
   ledger: LedgerModel,
   ledgerPath: string,
@@ -1615,10 +1648,24 @@ const predictPair = async (
 // batch orchestration
 // ---------------------------------------------------------------------------------------------
 
-const buildRequested = (opts: FlipOptions): FlipReport['requested'] => {
+type PlacementLifecycleOperation = 'dev' | 'promote' | 'undo';
+
+const placementToolsFor = (
+  registry: LifecycleToolRegistry,
+  operation: PlacementLifecycleOperation,
+): readonly FlipTool[] =>
+  registry
+    .toolsFor(operation)
+    .filter((tool) => registry.get(tool)?.placement !== undefined) as readonly FlipTool[];
+
+const buildRequested = (
+  registry: LifecycleToolRegistry,
+  opts: FlipOptions,
+  operation: PlacementLifecycleOperation,
+): FlipReport['requested'] => {
   const requestedTools = opts.tools;
   const explicitTools = requestedTools !== undefined && requestedTools.length > 0;
-  const tools = explicitTools ? [...requestedTools] : [...FLIP_TOOLS];
+  const tools = explicitTools ? [...requestedTools] : [...placementToolsFor(registry, operation)];
   return { targets: [...opts.targets], all: Boolean(opts.all), tools, explicitTools };
 };
 
@@ -1741,6 +1788,7 @@ interface PreparedPromoteExecution {
 }
 
 const createFlipPlanning = async (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   command: 'promote' | 'dev',
   reportOp: FlipOp,
@@ -1762,6 +1810,7 @@ const createFlipPlanning = async (
 > => {
   const ledgerPath = ledgerPathOf(resolveDataDir(env, opts.configuration));
   const selectionSource = selectionSourceOf(opts);
+  const planningContext = { registry, toolOrder: registry.ids };
   const compatibilityOperations: ExecutableOperation[] = [];
   const intents: (PlacementDevIntentV1 | PlacementPromoteIntentV1 | PlacementRollbackIntentV1)[] =
     [];
@@ -1881,7 +1930,7 @@ const createFlipPlanning = async (
       : {
           mode:
             command === 'promote'
-              ? (toolRegistry.get(pair.tool)?.verification?.gatePolicy.promote ?? 'static')
+              ? (registry.get(pair.tool)?.verification?.gatePolicy.promote ?? 'static')
               : ('static' as const),
           expectedContentHash: source.contentHash,
         };
@@ -1981,17 +2030,20 @@ const createFlipPlanning = async (
     };
     const correlation = { groupId: null, pairId: null, operationId: null };
     const reasonCode = filterNoop ? 'filter-noop' : (result.error?.code ?? kind);
-    const diagnosticId = createPlanningDiagnosticId({
-      domain: 'skillsmith.planning-diagnostic-identity',
-      schemaVersion: 1,
-      kind,
-      severity,
-      refusalClass,
-      affected,
-      correlation,
-      reasonCode,
-      selectionSource,
-    });
+    const diagnosticId = createPlanningDiagnosticId(
+      {
+        domain: 'skillsmith.planning-diagnostic-identity',
+        schemaVersion: 1,
+        kind,
+        severity,
+        refusalClass,
+        affected,
+        correlation,
+        reasonCode,
+        selectionSource,
+      },
+      planningContext,
+    );
     if (diagnosticIds.has(diagnosticId)) continue;
     diagnosticIds.add(diagnosticId);
     diagnostics.push({
@@ -2018,17 +2070,20 @@ const createFlipPlanning = async (
       path: null,
     };
     const correlation = { groupId: null, pairId: null, operationId: null };
-    const diagnosticId = createPlanningDiagnosticId({
-      domain: 'skillsmith.planning-diagnostic-identity',
-      schemaVersion: 1,
-      kind: 'noop',
-      severity: 'info',
-      refusalClass: null,
-      affected,
-      correlation,
-      reasonCode: 'filter-noop',
-      selectionSource,
-    });
+    const diagnosticId = createPlanningDiagnosticId(
+      {
+        domain: 'skillsmith.planning-diagnostic-identity',
+        schemaVersion: 1,
+        kind: 'noop',
+        severity: 'info',
+        refusalClass: null,
+        affected,
+        correlation,
+        reasonCode: 'filter-noop',
+        selectionSource,
+      },
+      planningContext,
+    );
     diagnostics.push({
       diagnosticId,
       kind: 'noop',
@@ -2045,7 +2100,53 @@ const createFlipPlanning = async (
   if (scopes.length === 0 && opts.scope !== undefined) scopes.push(opts.scope);
   const filterNoop =
     intents.length === 0 && diagnostics.some((item) => item.reason.code === 'filter-noop');
+  const capabilityQueries: RelevantCapabilityQueryV1[] = [];
+  for (const intent of intents) {
+    const pair = outcome.pairs.find(
+      (candidate) =>
+        candidate.skill === intent.skill &&
+        candidate.tool === intent.tool &&
+        candidate.scope === intent.scope,
+    );
+    if (pair === undefined) {
+      throw new Error('placement capability query has no selected pair');
+    }
+    const ctx = {
+      cwd: pair.scopeKey ?? opts.cwd,
+      configuration: opts.configuration,
+    };
+    const standardRoots =
+      registry
+        .get(pair.tool)
+        ?.placement?.rootFacts(env, pair.scope, ctx)
+        .map((fact) => fact.path) ?? [];
+    const scope = standardRoots.includes(pair.placement.root) ? pair.scope : 'custom';
+    capabilityQueries.push({
+      schemaVersion: 1,
+      tool: intent.tool,
+      operation: reportOp === 'rollback' ? 'undo' : command,
+      scope,
+    });
+    if (intent.verification !== undefined) {
+      capabilityQueries.push({
+        schemaVersion: 1,
+        tool: intent.tool,
+        operation: 'verify-static',
+        scope: 'artifact',
+      });
+      if (intent.verification.mode === 'static+deep') {
+        capabilityQueries.push({
+          schemaVersion: 1,
+          tool: intent.tool,
+          operation: 'verify-deep',
+          scope: 'artifact',
+        });
+      }
+    }
+  }
   const authorityResult = await createPlacementSnapshotAuthority(
+    registry,
+    capabilityQueries,
     env,
     projectContext,
     ledgerPath,
@@ -2062,7 +2163,9 @@ const createFlipPlanning = async (
       outcome: filterNoop ? ('filter-noop' as const) : ('selected' as const),
       targets: [...opts.targets],
       all: Boolean(opts.all),
-      tools: opts.tools ? [...opts.tools] : [...FLIP_TOOLS],
+      tools: opts.tools
+        ? [...opts.tools]
+        : [...placementToolsFor(registry, reportOp === 'rollback' ? 'undo' : command)],
       scopes,
     },
     batchPolicy: opts.continueOnError ? ('continue-on-error' as const) : ('fail-fast' as const),
@@ -2079,6 +2182,7 @@ const createFlipPlanning = async (
             intents: intents as PlacementRollbackIntentV1[],
           },
           authority.snapshot,
+          planningContext,
         )
       : command === 'dev'
         ? createPlacementPlan(
@@ -2089,6 +2193,7 @@ const createFlipPlanning = async (
               intents: intents as PlacementDevIntentV1[],
             },
             authority.snapshot,
+            planningContext,
           )
         : createPlacementPlan(
             {
@@ -2098,6 +2203,7 @@ const createFlipPlanning = async (
               intents: intents as PlacementPromoteIntentV1[],
             },
             authority.snapshot,
+            planningContext,
           );
   if (!planned.ok) throw new Error(planned.error.message);
   const plan = planned.value.plan;
@@ -2254,6 +2360,7 @@ const createFlipPlanning = async (
 };
 
 const buildPreparedPreview = async (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   command: 'promote' | 'dev',
   op: FlipOp,
@@ -2275,6 +2382,7 @@ const buildPreparedPreview = async (
   const summary = emptySummary();
   for (const r of results) summary[ACTION_TO_SUMMARY_KEY[r.action]]++;
   const { plan, executionResults, bindings, preconditions, authority } = await createFlipPlanning(
+    registry,
     env,
     command,
     op,
@@ -2295,6 +2403,7 @@ const buildPreparedPreview = async (
 };
 
 type PairProcessor = (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   ledger: LedgerModel,
   ledgerPath: string,
@@ -2418,6 +2527,7 @@ const isSkillSmithError = (error: unknown): error is SkillSmithError =>
   error !== null && typeof error === 'object' && 'code' in error && typeof error.code === 'string';
 
 const prepareFlipBatch = async (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   opts: FlipOptions,
   command: 'promote' | 'dev',
@@ -2432,7 +2542,8 @@ const prepareFlipBatch = async (
   const dataDir = resolveDataDir(env, normalizedOpts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
-  const requested = buildRequested(normalizedOpts);
+  const activeOperation: PlacementLifecycleOperation = reportOp === 'rollback' ? 'undo' : command;
+  const requested = buildRequested(registry, normalizedOpts, activeOperation);
   const prepareSnapshot = async (): Promise<
     Result<
       Readonly<{
@@ -2450,7 +2561,7 @@ const prepareFlipBatch = async (
       op: command,
       ...(reportOp === 'rollback' ? { rollback: true } : {}),
     } as FlipOptions & { op: FlipOp };
-    const planRes = await planFlips(env, planningOptions, storeRoot, ledger);
+    const planRes = await planFlipsWithRegistry(registry, env, planningOptions, storeRoot, ledger);
     if (!planRes.ok) return planRes;
     if ((planRes.value.unmatchedTargets?.length ?? 0) > 0) {
       const names = planRes.value.unmatchedTargets as readonly string[];
@@ -2465,6 +2576,7 @@ const prepareFlipBatch = async (
     let preparedPreview: Awaited<ReturnType<typeof buildPreparedPreview>>;
     try {
       preparedPreview = await buildPreparedPreview(
+        registry,
         env,
         command,
         reportOp,
@@ -2568,6 +2680,7 @@ const prepareFlipBatch = async (
               const result = failClosedPlannedNoop(
                 operation,
                 await process(
+                  registry,
                   env,
                   ledger,
                   ledgerPath,
@@ -2713,16 +2826,25 @@ const prepareFlipBatch = async (
   return ok(prepared);
 };
 
+export const preparePromoteWithRegistry = (
+  registry: LifecycleToolRegistry,
+  env: PlacementPorts,
+  opts: FlipOptions,
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
+  prepareFlipBatch(registry, env, opts, 'promote', 'promote', deps, runPromotePair, (e, l, p, o) =>
+    predictPair(e, l, 'promote', p, o),
+  );
+
 export const preparePromote = (
   env: PlacementPorts,
   opts: FlipOptions,
   deps: FlipDeps = defaultFlipDeps,
 ): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
-  prepareFlipBatch(env, opts, 'promote', 'promote', deps, runPromotePair, (e, l, p, o) =>
-    predictPair(e, l, 'promote', p, o),
-  );
+  preparePromoteWithRegistry(defaultLifecycleToolRegistry, env, opts, deps);
 
-export const prepareDev = (
+export const prepareDevWithRegistry = (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   opts: FlipOptions,
   deps: FlipDeps = defaultFlipDeps,
@@ -2743,12 +2865,20 @@ export const prepareDev = (
       );
     }
   }
-  return prepareFlipBatch(env, opts, 'dev', 'dev', deps, runDevPair, (e, l, p, o) =>
+  return prepareFlipBatch(registry, env, opts, 'dev', 'dev', deps, runDevPair, (e, l, p, o) =>
     predictPair(e, l, 'dev', p, o),
   );
 };
 
-export const prepareRollback = async (
+export const prepareDev = (
+  env: PlacementPorts,
+  opts: FlipOptions,
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
+  prepareDevWithRegistry(defaultLifecycleToolRegistry, env, opts, deps);
+
+export const prepareRollbackWithRegistry = async (
+  registry: LifecycleToolRegistry,
   env: PlacementPorts,
   opts: FlipOptions & { op: 'promote' | 'dev' },
   deps: FlipDeps = defaultFlipDeps,
@@ -2760,6 +2890,7 @@ export const prepareRollback = async (
   }
 
   return prepareFlipBatch(
+    registry,
     env,
     opts,
     opts.op,
@@ -2769,6 +2900,13 @@ export const prepareRollback = async (
     async (_env, ledger, pair) => predictRollbackPair(ledger, pair),
   );
 };
+
+export const prepareRollback = (
+  env: PlacementPorts,
+  opts: FlipOptions & { op: 'promote' | 'dev' },
+  deps: FlipDeps = defaultFlipDeps,
+): Promise<Result<PreparedFlipRun, SkillSmithError>> =>
+  prepareRollbackWithRegistry(defaultLifecycleToolRegistry, env, opts, deps);
 
 const runPrepared = async (
   prepared: Promise<Result<PreparedFlipRun, SkillSmithError>>,

@@ -237,8 +237,8 @@ const compareRevisionIdentity = (left: ExpectedRevisionV1, right: ExpectedRevisi
 };
 
 /** Copy the complete approved revision vector without retaining caller-owned containers. */
-export const expectedRevisionsForSnapshotV1 = (
-  snapshot: ObservedStateSnapshotV1,
+export const expectedRevisionsForSnapshotV1 = <CapabilityModel>(
+  snapshot: ObservedStateSnapshotV1<CapabilityModel>,
 ): readonly ExpectedRevisionV1[] => {
   const revisions = [
     snapshot.project.revision,
@@ -254,8 +254,8 @@ export const expectedRevisionsForSnapshotV1 = (
 };
 
 /** Stable operation-precondition identities for the complete approved revision vector. */
-export const expectedRevisionPreconditionIdsForSnapshotV1 = (
-  snapshot: ObservedStateSnapshotV1,
+export const expectedRevisionPreconditionIdsForSnapshotV1 = <CapabilityModel>(
+  snapshot: ObservedStateSnapshotV1<CapabilityModel>,
 ): readonly string[] =>
   deepFreeze(
     expectedRevisionsForSnapshotV1(snapshot).map((revision) =>
@@ -267,8 +267,9 @@ export const expectedRevisionPreconditionIdsForSnapshotV1 = (
 export const bindOperationPlanToSnapshotV1 = <
   Command extends CurrentMutatorCommand,
   ToolId extends string = SupportedTool,
+  CapabilityModel = unknown,
 >(
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<CapabilityModel>,
   plan: OperationPlan<Command, ToolId>,
 ): SnapshotBoundOperationPlanV1<Command, ToolId> =>
   deepFreeze({

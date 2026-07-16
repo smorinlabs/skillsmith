@@ -1,12 +1,14 @@
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
-import type { PlacementBundle, SkillRootsCtx } from '../agents/adapter-types.ts';
+import { basename, dirname, isAbsolute, resolve, sep } from 'node:path';
+import type { PlacementInventory, SkillRootsCtx } from '../agents/adapter-types.ts';
 import {
   type Placement,
   type PlacementClass,
   classifyPlacement,
-  listPlacements,
 } from '../agents/placement-shared.ts';
-import { toolRegistry } from '../agents/registry.ts';
+import {
+  type LifecycleToolRegistry,
+  toolRegistry as defaultLifecycleToolRegistry,
+} from '../agents/registry.ts';
 import { parseArtifactDigest } from '../artifacts/hash.ts';
 import type { PlanImageV1, PlanSourceV1 } from '../artifacts/plan-types.ts';
 import { logicalJournalPairIdentity } from '../artifacts/registry.ts';
@@ -26,13 +28,18 @@ import {
 } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
+  CurrentMutatorCommand,
   ExecutableOperation,
   OperationImage,
   OperationLocation,
+  OperationPlan,
+  OperationPlanInput,
   OperationSelection,
   OperationSource,
   PlanCheck,
+  PlanCheckIdentity,
   PlanningDiagnostic,
+  PlanningToolContext,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import {
@@ -44,14 +51,13 @@ import {
   createStoreSnapshotIdentityV1,
 } from '../state/types.ts';
 import { getPairAt } from './ledger.ts';
-import {
-  FLIP_TOOLS,
-  type FlipOp,
-  type FlipOptions,
-  type FlipResult,
-  type FlipTool,
-  type LedgerFile,
-  type PlacementReadPorts,
+import type {
+  FlipOp,
+  FlipOptions,
+  FlipResult,
+  FlipTool,
+  LedgerFile,
+  PlacementReadPorts,
 } from './types.ts';
 
 export interface PairPlan {
@@ -79,11 +85,13 @@ const compatibilityLegacyInventory = {
 
 /** @deprecated Compatibility view; placement bundles own legacy-root notices. */
 export const LEGACY_ROOT_NOTICE = (() => {
-  for (const adapter of toolRegistry.adapters) {
-    const notice = adapter.placement?.noticeForRoot(
-      compatibilityLegacyInventory.legacyRoot,
-      compatibilityLegacyInventory,
-    );
+  for (const tool of defaultLifecycleToolRegistry.toolsFor('install')) {
+    const notice = defaultLifecycleToolRegistry
+      .get(tool)
+      ?.placement?.noticeForRoot(
+        compatibilityLegacyInventory.legacyRoot,
+        compatibilityLegacyInventory,
+      );
     if (notice) return notice;
   }
   throw new Error('tool registry invariant: no legacy-root notice is registered');
@@ -159,8 +167,33 @@ const isRollbackablePair = (
   return pair.mode === 'pinned' ? pair.dev != null : pair.pinned != null;
 };
 
-const placementBundleFor = (tool: FlipTool): PlacementBundle => {
-  const placement = toolRegistry.get(tool)?.placement;
+type PlacementLifecycleOperation = 'dev' | 'promote' | 'undo';
+type PlacementPlanningContext = PlanningToolContext<string>;
+
+const createCanonicalPlacementPlan = <Command extends CurrentMutatorCommand>(
+  input: OperationPlanInput<Command>,
+  context: PlacementPlanningContext | undefined,
+): OperationPlan<Command> =>
+  context === undefined
+    ? createOperationPlan(input)
+    : (createOperationPlan(input, context) as OperationPlan<Command>);
+
+const createPlacementCheckId = (
+  identity: PlanCheckIdentity,
+  context: PlacementPlanningContext | undefined,
+): string =>
+  context === undefined ? createPlanCheckId(identity) : createPlanCheckId(identity, context);
+
+const placementToolsFor = (
+  registry: LifecycleToolRegistry,
+  operation: PlacementLifecycleOperation,
+): readonly FlipTool[] =>
+  registry
+    .toolsFor(operation)
+    .filter((tool) => registry.get(tool)?.placement !== undefined) as readonly FlipTool[];
+
+const placementBundleFor = (registry: LifecycleToolRegistry, tool: FlipTool) => {
+  const placement = registry.get(tool)?.placement;
   if (placement === undefined) throw new Error(`tool registry invariant: ${tool} has no placement`);
   return placement;
 };
@@ -169,11 +202,15 @@ const placementBundleFor = (tool: FlipTool): PlacementBundle => {
  *  Used to decide whether a ledger-recorded placementPath lives at a CUSTOM location (a `--dest`
  *  create) — BF-1(d). */
 const standardRootsFor = (
+  registry: LifecycleToolRegistry,
   env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   tool: FlipTool,
   scope: 'user' | 'project' = 'user',
-): readonly string[] => placementBundleFor(tool).roots(env, scope, ctx);
+): readonly string[] =>
+  placementBundleFor(registry, tool)
+    .rootFacts(env, scope, ctx)
+    .map((fact) => fact.path);
 
 /** BF-1(a): a skill NAME target must be a single leaf — never `.`/`..`/empty/`/`-bearing, which
  *  would classify (and could clobber) the skills ROOT itself rather than a skill in it. */
@@ -187,6 +224,7 @@ interface ToolResolution {
 }
 
 const classifyForTool = (
+  registry: LifecycleToolRegistry,
   env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
@@ -194,69 +232,36 @@ const classifyForTool = (
   tool: FlipTool,
   scope: 'user' | 'project' = 'user',
 ): Promise<ToolResolution> => {
-  const bundle = placementBundleFor(tool);
-  if (scope === 'user') {
-    return bundle
-      .resolve(env, ctx, storeRoot, skill)
-      .then((resolution) => ({ ...resolution, notices: [...resolution.notices] }));
-  }
-  const roots = bundle.roots(env, scope, ctx);
-  return Promise.all(roots.map((root) => classifyPlacement(env, root, skill, storeRoot))).then(
-    (placements) => {
-      const present = placements.filter((placement) => placement.class !== 'absent');
-      const placement = present[0] ?? placements[0];
-      if (placement === undefined) {
-        throw new Error(`tool registry invariant: ${tool} has no ${scope} placement root`);
-      }
-      const duplicateReason =
-        present.length > 1
-          ? `found in both ${present[0]?.root ?? '<unknown>'} and ${present[1]?.root ?? '<unknown>'}; resolve the duplicate first`
-          : null;
-      return { placement, notices: [], duplicateReason };
-    },
-  );
+  const bundle = placementBundleFor(registry, tool);
+  return bundle
+    .resolveScoped(env, ctx, storeRoot, skill, scope)
+    .then((resolution) => ({ ...resolution, notices: [...resolution.notices] }));
 };
 
 const listForTool = async (
+  registry: LifecycleToolRegistry,
   env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
   tool: FlipTool,
   scope: 'user' | 'project',
-): Promise<Awaited<ReturnType<PlacementBundle['list']>>> => {
-  const bundle = placementBundleFor(tool);
-  if (scope === 'user') return bundle.list(env, ctx, storeRoot);
-  const roots = bundle.roots(env, scope, ctx);
-  const placements = (
-    await Promise.all(roots.map((root) => listPlacements(env, root, storeRoot)))
-  ).flat();
-  const counts = new Map<string, number>();
-  for (const placement of placements) {
-    if (placement.class === 'absent') continue;
-    counts.set(placement.skill, (counts.get(placement.skill) ?? 0) + 1);
-  }
-  return {
-    placements,
-    duplicates: [...counts.entries()]
-      .filter(([, count]) => count > 1)
-      .map(([skill]) => skill)
-      .sort(),
-    currentRoot: roots[0] ?? null,
-    legacyRoot: roots[1] ?? null,
-  };
-};
+): Promise<PlacementInventory> =>
+  placementBundleFor(registry, tool).listScoped(env, ctx, storeRoot, scope);
 
 const searchedRootsDescription = (
+  registry: LifecycleToolRegistry,
   env: PlacementReadPorts,
   ctx: SkillRootsCtx,
+  tools: readonly FlipTool[],
   scopes: readonly ('user' | 'project')[] = ['user'],
 ): string => {
   return scopes
-    .flatMap((scope) => FLIP_TOOLS.flatMap((tool) => standardRootsFor(env, ctx, tool, scope)))
+    .flatMap((scope) => tools.flatMap((tool) => standardRootsFor(registry, env, ctx, tool, scope)))
     .join(', ');
 };
 
 const resolveNamedTarget = async (
+  registry: LifecycleToolRegistry,
   env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
@@ -292,7 +297,7 @@ const resolveNamedTarget = async (
       // BF-1(c): a `--dest` create must not shadow an existing placement in the tool's STANDARD
       // roots (codex modern/legacy included) or an existing ledger pair — that silently creates a
       // duplicate the lifecycle can't reconcile. The old code hard-coded duplicateReason:null here.
-      const normal = await classifyForTool(env, ctx, storeRoot, target, tool, scope);
+      const normal = await classifyForTool(registry, env, ctx, storeRoot, target, tool, scope);
       const hasPair = getPairAt(ledger, scopeKey, target, tool) !== null;
       if (normal.duplicateReason || normal.placement.class !== 'absent' || hasPair) {
         anyFlippableFound = true;
@@ -309,13 +314,16 @@ const resolveNamedTarget = async (
       }
       res = { placement: destPlacement, notices: [], duplicateReason: null };
     } else {
-      res = await classifyForTool(env, ctx, storeRoot, target, tool, scope);
+      res = await classifyForTool(registry, env, ctx, storeRoot, target, tool, scope);
       // BF-1(d): the ledger is the source of truth for a placement's LOCATION. When the standard
       // roots don't hold it but a ledger pair records a placement at a CUSTOM location (a `--dest`
       // create), classify THERE so promote/dev/uninstall stay able to manage it for its whole life.
       if (res.placement.class === 'absent') {
         const recorded = getPairAt(ledger, scopeKey, target, tool)?.placementPath;
-        if (recorded && !standardRootsFor(env, ctx, tool, scope).includes(dirname(recorded))) {
+        if (
+          recorded &&
+          !standardRootsFor(registry, env, ctx, tool, scope).includes(dirname(recorded))
+        ) {
           res = {
             placement: await classifyPlacement(env, dirname(recorded), target, storeRoot),
             notices: [],
@@ -392,7 +400,7 @@ const resolveNamedTarget = async (
   }
 
   if (!anyFlippableFound && !explicitTools) {
-    const reason = `no placement found for '${target}'; searched: ${searchedRootsDescription(env, ctx, [scope])}`;
+    const reason = `no placement found for '${target}'; searched: ${searchedRootsDescription(registry, env, ctx, toolsInOrder, [scope])}`;
     preResults.push(emptyFlipResult(target, null, null, reason, placementNotFoundError(reason)));
   }
 
@@ -400,10 +408,12 @@ const resolveNamedTarget = async (
 };
 
 const resolvePathTarget = async (
+  registry: LifecycleToolRegistry,
   env: PlacementReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
   target: string,
+  availableTools: readonly FlipTool[],
   selectedTools: readonly FlipTool[],
   explicitTools: boolean,
   ledger: LedgerFile,
@@ -425,21 +435,54 @@ const resolvePathTarget = async (
   let tool: FlipTool | null = null;
   let notices: string[] = [];
   let root: string | null = null;
-  for (const candidate of FLIP_TOOLS) {
-    const bundle = placementBundleFor(candidate);
-    const candidateRoot = bundle.roots(env, scope, ctx).find((value) => value === parent);
+  let selectedPlacement: Placement | null = null;
+  for (const candidate of availableTools) {
+    const bundle = placementBundleFor(registry, candidate);
+    const candidateRoot = bundle
+      .rootFacts(env, scope, ctx)
+      .find((fact) => fact.path === parent)?.path;
     if (candidateRoot === undefined) continue;
-    const inventory = await bundle.list(env, ctx, storeRoot);
-    const notice = bundle.noticeForRoot(candidateRoot, inventory);
+    const resolution = await bundle.resolveScoped(env, ctx, storeRoot, skill, scope);
+    if (resolution.duplicateReason !== null) {
+      return ok({
+        pairs: [],
+        preResults: [
+          emptyFlipResult(
+            skill,
+            candidate,
+            resolution.placement.path,
+            resolution.duplicateReason,
+            flipRefusedError(resolution.duplicateReason),
+          ),
+        ],
+      });
+    }
+    if (resolution.placement.class !== 'absent' && resolution.placement.root !== candidateRoot) {
+      const notice = resolution.notices.length === 0 ? '' : ` ${resolution.notices.join('; ')}`;
+      const reason = `'${target}' conflicts with the existing ${candidate} placement at ${resolution.placement.path}.${notice} Resolve it first`;
+      return ok({
+        pairs: [],
+        preResults: [
+          emptyFlipResult(
+            skill,
+            candidate,
+            resolution.placement.path,
+            reason,
+            flipRefusedError(reason),
+          ),
+        ],
+      });
+    }
     tool = candidate;
-    notices = notice === null ? [] : [notice];
+    notices = [...resolution.notices];
     root = candidateRoot;
+    selectedPlacement = resolution.placement.root === candidateRoot ? resolution.placement : null;
     break;
   }
   if (tool === null) {
     // BF-1(d): a custom-location path (outside every standard root) is still managed if the ledger
     // records a pair at exactly this placementPath (a `--dest` create). The ledger owns LOCATION.
-    for (const t of FLIP_TOOLS) {
+    for (const t of availableTools) {
       if (getPairAt(ledger, scopeKey, skill, t)?.placementPath === resolved) {
         tool = t;
         root = parent;
@@ -449,7 +492,7 @@ const resolvePathTarget = async (
   }
 
   if (tool === null || root === null) {
-    const reason = `'${target}' is outside every known skills root (${searchedRootsDescription(env, ctx, [scope])})`;
+    const reason = `'${target}' is outside every known skills root (${searchedRootsDescription(registry, env, ctx, availableTools, [scope])})`;
     return err(flipRefusedError(reason));
   }
 
@@ -461,7 +504,7 @@ const resolvePathTarget = async (
     });
   }
 
-  const placement = await classifyPlacement(env, root, skill, storeRoot);
+  const placement = selectedPlacement ?? (await classifyPlacement(env, root, skill, storeRoot));
   // A journaled pair surfaces even when its live path is absent/wrong-class (F1); otherwise a
   // non-flippable class is a placement-not-found refusal as before. A path target resolves to
   // exactly one tool already (no multi-tool search to fall back on), so — unlike a named target —
@@ -503,7 +546,8 @@ const resolvePathTarget = async (
  *  rollback selection, and — across every route — to surface any pair carrying an uncommitted
  *  journal regardless of its filesystem class, so an interrupted swap stays reachable by
  *  --rollback / re-run / resume (F1). */
-export const planFlips = async (
+export const planFlipsWithRegistry = async (
+  registry: LifecycleToolRegistry,
   env: PlacementReadPorts,
   opts: FlipOptions & { op: FlipOp },
   storeRoot: string,
@@ -524,11 +568,14 @@ export const planFlips = async (
   }));
   const requestedTools = opts.tools;
   const explicitTools = requestedTools !== undefined && requestedTools.length > 0;
+  const operation: PlacementLifecycleOperation =
+    opts.rollback || opts.op === 'rollback' ? 'undo' : opts.op;
+  const registeredPlacementTools = placementToolsFor(registry, operation);
   const selectedTools: FlipTool[] =
     requestedTools !== undefined && requestedTools.length > 0
       ? [...requestedTools]
-      : [...FLIP_TOOLS];
-  const toolsInOrder = FLIP_TOOLS.filter((t) => selectedTools.includes(t));
+      : [...registeredPlacementTools];
+  const toolsInOrder = registeredPlacementTools.filter((t) => selectedTools.includes(t));
 
   const pairs: PairPlan[] = [];
   const preResults: FlipResult[] = [];
@@ -550,13 +597,14 @@ export const planFlips = async (
             // The ledger owns custom placement locations in either scope.
             const recorded = getPairAt(ledger, scopeKey, skill, tool)?.placementPath;
             const res: ToolResolution =
-              recorded && !standardRootsFor(env, ctx, tool, scope).includes(dirname(recorded))
+              recorded &&
+              !standardRootsFor(registry, env, ctx, tool, scope).includes(dirname(recorded))
                 ? {
                     placement: await classifyPlacement(env, dirname(recorded), skill, storeRoot),
                     notices: [],
                     duplicateReason: null,
                   }
-                : await classifyForTool(env, ctx, storeRoot, skill, tool, scope);
+                : await classifyForTool(registry, env, ctx, storeRoot, skill, tool, scope);
             if (res.duplicateReason) {
               preResults.push(
                 emptyFlipResult(
@@ -586,10 +634,9 @@ export const planFlips = async (
     const flippableClass: PlacementClass = opts.op === 'promote' ? 'dev' : 'pinned';
     for (const { scope, scopeKey, ctx } of scopes) {
       const perTool = new Map<FlipTool, Map<string, Placement>>();
-      const inventories = new Map<FlipTool, Awaited<ReturnType<PlacementBundle['list']>>>();
+      const inventories = new Map<FlipTool, PlacementInventory>();
       for (const tool of toolsInOrder) {
-        const _bundle = placementBundleFor(tool);
-        const scan = await listForTool(env, ctx, storeRoot, tool, scope);
+        const scan = await listForTool(registry, env, ctx, storeRoot, tool, scope);
         inventories.set(tool, scan);
         const byName = new Map<string, Placement>();
         for (const placement of scan.placements) {
@@ -601,12 +648,23 @@ export const planFlips = async (
         for (const dupSkill of scan.duplicates) {
           if (!scan.placements.some((p) => p.skill === dupSkill && p.class === flippableClass))
             continue;
-          const reason = `found in both ${scan.currentRoot} and ${scan.legacyRoot}; resolve the duplicate first`;
+          const resolution = await classifyForTool(
+            registry,
+            env,
+            ctx,
+            storeRoot,
+            dupSkill,
+            tool,
+            scope,
+          );
+          const reason =
+            resolution.duplicateReason ??
+            `found '${dupSkill}' in multiple adapter roots; resolve the duplicate first`;
           preResults.push(
             emptyFlipResult(
               dupSkill,
               tool,
-              join(scan.legacyRoot ?? scan.currentRoot ?? '', dupSkill),
+              resolution.placement.path,
               reason,
               flipRefusedError(reason),
             ),
@@ -626,22 +684,26 @@ export const planFlips = async (
       for (const skill of [...allSkillNames].sort()) {
         for (const tool of toolsInOrder) {
           const placement = perTool.get(tool)?.get(skill);
-          const bundle = placementBundleFor(tool);
-          const inventory = inventories.get(tool);
-          if (inventory === undefined)
+          if (!inventories.has(tool))
             throw new Error(`tool registry invariant: ${tool} placement inventory is missing`);
           if (hasOpenJournal(ledger, scopeKey, skill, tool)) {
-            const live =
-              placement ??
-              (await classifyForTool(env, ctx, storeRoot, skill, tool, scope)).placement;
-            const notice = bundle.noticeForRoot(live.root, inventory);
+            const resolution = await classifyForTool(
+              registry,
+              env,
+              ctx,
+              storeRoot,
+              skill,
+              tool,
+              scope,
+            );
+            const live = placement ?? resolution.placement;
             pairs.push({
               skill,
               tool,
               scope,
               scopeKey,
               placement: live,
-              notices: notice === null ? [] : [notice],
+              notices: resolution.notices,
             });
             continue;
           }
@@ -660,14 +722,22 @@ export const planFlips = async (
             });
             continue;
           }
-          const notice = bundle.noticeForRoot(placement.root, inventory);
+          const resolution = await classifyForTool(
+            registry,
+            env,
+            ctx,
+            storeRoot,
+            skill,
+            tool,
+            scope,
+          );
           pairs.push({
             skill,
             tool,
             scope,
             scopeKey,
             placement,
-            notices: notice === null ? [] : [notice],
+            notices: resolution.notices,
           });
         }
       }
@@ -687,10 +757,12 @@ export const planFlips = async (
       let firstError: SkillSmithError | null = null;
       for (const { scope, scopeKey, ctx } of scopes) {
         const resolvedPath = await resolvePathTarget(
+          registry,
           env,
           ctx,
           storeRoot,
           target,
+          registeredPlacementTools,
           toolsInOrder,
           explicitTools,
           ledger,
@@ -706,9 +778,13 @@ export const planFlips = async (
         }
       }
       if (matches.length === 0) {
-        if (firstError !== null) return err(firstError);
-        const reason = `'${target}' is outside the selected skills scope`;
-        preResults.push(emptyFlipResult(target, null, null, reason, flipRefusedError(reason)));
+        if (pathResults.length > 0) {
+          preResults.push(...pathResults);
+        } else {
+          if (firstError !== null) return err(firstError);
+          const reason = `'${target}' is outside the selected skills scope`;
+          preResults.push(emptyFlipResult(target, null, null, reason, flipRefusedError(reason)));
+        }
       } else if (matches.length > 1) {
         const reason = `'${target}' is ambiguous across user and project scopes`;
         preResults.push(emptyFlipResult(target, null, null, reason, flipRefusedError(reason)));
@@ -725,6 +801,7 @@ export const planFlips = async (
     }[];
     for (const { scope, scopeKey, ctx } of scopes) {
       const resolvedTarget = await resolveNamedTarget(
+        registry,
         env,
         ctx,
         storeRoot,
@@ -770,8 +847,16 @@ export const planFlips = async (
       let existsAnywhere = allPreResults.some((result) => result.placementPath !== null);
       if (!existsAnywhere) {
         for (const { scope, scopeKey, ctx } of scopes) {
-          for (const tool of FLIP_TOOLS) {
-            const resolution = await classifyForTool(env, ctx, storeRoot, target, tool, scope);
+          for (const tool of registeredPlacementTools) {
+            const resolution = await classifyForTool(
+              registry,
+              env,
+              ctx,
+              storeRoot,
+              target,
+              tool,
+              scope,
+            );
             if (
               resolution.duplicateReason !== null ||
               resolution.placement.class !== 'absent' ||
@@ -803,6 +888,14 @@ export const planFlips = async (
 
   return ok({ pairs, preResults, unmatchedTargets });
 };
+
+export const planFlips = (
+  env: PlacementReadPorts,
+  opts: FlipOptions & { op: FlipOp },
+  storeRoot: string,
+  ledger: LedgerFile,
+): Promise<Result<FlipPlanOutcome, SkillSmithError>> =>
+  planFlipsWithRegistry(defaultLifecycleToolRegistry, env, opts, storeRoot, ledger);
 
 interface PlacementPlanRequestCommonV1 {
   readonly schemaVersion: 1;
@@ -875,13 +968,14 @@ const placementPlanningError = (error: unknown): SnapshotPlanningErrorV1 =>
     message: error instanceof Error ? error.message : 'placement planning failed',
   });
 
-const placementExpectedRevisionIds = (snapshot: ObservedStateSnapshotV1): readonly string[] =>
-  expectedRevisionPreconditionIdsForSnapshotV1(snapshot);
+const placementExpectedRevisionIds = (
+  snapshot: ObservedStateSnapshotV1<unknown>,
+): readonly string[] => expectedRevisionPreconditionIdsForSnapshotV1(snapshot);
 
 const placementLiveObservation = (
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
   resourceId: string,
-): ObservedStateSnapshotV1['live'][number] => {
+): ObservedStateSnapshotV1<unknown>['live'][number] => {
   const matches = snapshot.live.filter(
     (observation) =>
       observation.revision.domain === 'live' && observation.revision.resourceId === resourceId,
@@ -889,7 +983,7 @@ const placementLiveObservation = (
   if (matches.length !== 1) {
     throw new TypeError('placement planning: live resource observation is missing or ambiguous');
   }
-  const observation = matches[0] as ObservedStateSnapshotV1['live'][number];
+  const observation = matches[0] as ObservedStateSnapshotV1<unknown>['live'][number];
   const revision = observation.revision;
   const state = observation.value;
   if (revision.domain !== 'live') {
@@ -915,9 +1009,9 @@ const placementLiveObservation = (
 };
 
 const placementStoreObservation = (
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
   resourceId: string,
-): ObservedStateSnapshotV1['store'][number] => {
+): ObservedStateSnapshotV1<unknown>['store'][number] => {
   const matches = snapshot.store.filter(
     (observation) =>
       observation.revision.domain === 'store' && observation.revision.resourceId === resourceId,
@@ -925,7 +1019,7 @@ const placementStoreObservation = (
   if (matches.length !== 1) {
     throw new TypeError('placement planning: store resource observation is missing or ambiguous');
   }
-  const observation = matches[0] as ObservedStateSnapshotV1['store'][number];
+  const observation = matches[0] as ObservedStateSnapshotV1<unknown>['store'][number];
   const revision = observation.revision;
   const state = observation.value;
   if (revision.domain !== 'store') {
@@ -951,7 +1045,7 @@ const placementStoreObservation = (
 };
 
 const placementLiveLocation = (
-  observation: ObservedStateSnapshotV1['live'][number],
+  observation: ObservedStateSnapshotV1<unknown>['live'][number],
 ): Extract<OperationLocation, { readonly kind: 'machine-bound' }> => {
   if (observation.value !== null) {
     return { kind: 'machine-bound', path: observation.value.path };
@@ -986,7 +1080,7 @@ interface PlacementStoreFactsV1 {
 const validatePlacementStore = (
   resourceId: string,
   desiredContentHash: `sha256:${string}`,
-  observation: ObservedStateSnapshotV1['store'][number],
+  observation: ObservedStateSnapshotV1<unknown>['store'][number],
   requirePresent: boolean,
 ): PlacementStoreFactsV1 => {
   const state = observation.value;
@@ -1008,9 +1102,9 @@ const validatePlacementStore = (
 };
 
 const placementLedgerPair = (
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
   intent: PlacementIntentIdentityV1,
-  observation: ObservedStateSnapshotV1['live'][number],
+  observation: ObservedStateSnapshotV1<unknown>['live'][number],
   live: LivePlacementStateV1 | null,
 ) => {
   const ledger = snapshot.ledger.value;
@@ -1041,7 +1135,7 @@ const placementLedgerPair = (
 
 const placementLiveResource = (
   intent: PlacementIntentIdentityV1,
-  observation: ObservedStateSnapshotV1['live'][number],
+  observation: ObservedStateSnapshotV1<unknown>['live'][number],
 ) => ({
   kind: 'live' as const,
   skill: intent.skill,
@@ -1058,6 +1152,7 @@ const placementOperationIds = (
   kind: ExecutableOperation['kind'],
   source: OperationSource | null,
   target: string | null = null,
+  planningContext?: PlacementPlanningContext,
 ) => {
   const groupId = createOperationGroupId({
     domain: 'skillsmith.operation-group-identity',
@@ -1068,14 +1163,18 @@ const placementOperationIds = (
     scope: intent.scope,
     target,
   });
-  const pairId = createOperationPairId({
+  const pairIdentity = {
     domain: 'skillsmith.operation-pair-identity',
     schemaVersion: 1,
     groupId,
     tool: intent.tool,
     resource: liveResource,
-  });
-  const operationId = createOperationId({
+  } as const;
+  const pairId =
+    planningContext === undefined
+      ? createOperationPairId(pairIdentity)
+      : createOperationPairId(pairIdentity, planningContext);
+  const operationIdentity = {
     domain: 'skillsmith.operation-identity',
     schemaVersion: 1,
     groupId,
@@ -1085,33 +1184,49 @@ const placementOperationIds = (
     source,
     tool: intent.tool,
     scope: intent.scope,
-  });
+  } as const;
+  const operationId =
+    planningContext === undefined
+      ? createOperationId(operationIdentity)
+      : createOperationId(operationIdentity, planningContext);
   return { groupId, pairId, operationId };
 };
 
 const placementOperationBase = (
   request: PlacementPlanRequestV1,
   intent: PlacementIntentIdentityV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
   liveResource: ReturnType<typeof placementLiveResource>,
   kind: ExecutableOperation['kind'],
   source: OperationSource | null,
   target: string | null = null,
+  planningContext?: PlacementPlanningContext,
 ) => {
-  const ids = placementOperationIds(request, intent, liveResource, kind, source, target);
+  const ids = placementOperationIds(
+    request,
+    intent,
+    liveResource,
+    kind,
+    source,
+    target,
+    planningContext,
+  );
   const requiredCheckIds =
     intent.verification === undefined
       ? []
       : [
-          createPlanCheckId({
-            domain: 'skillsmith.plan-check-identity',
-            schemaVersion: 1,
-            kind: 'verification',
-            operationIds: [ids.operationId],
-            tool: intent.tool,
-            mode: intent.verification.mode,
-            expectedContentHash: intent.verification.expectedContentHash,
-          }),
+          createPlacementCheckId(
+            {
+              domain: 'skillsmith.plan-check-identity',
+              schemaVersion: 1,
+              kind: 'verification',
+              operationIds: [ids.operationId],
+              tool: intent.tool,
+              mode: intent.verification.mode,
+              expectedContentHash: intent.verification.expectedContentHash,
+            },
+            planningContext,
+          ),
         ];
   return {
     ...ids,
@@ -1158,7 +1273,8 @@ const validatePlacementSourceContent = (
 const placementDevOperationFor = (
   request: PlacementDevPlanRequestV1,
   intent: PlacementDevIntentV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
+  planningContext: PlacementPlanningContext | undefined,
 ): ExecutableOperation | null => {
   validatePlacementSourceContent(intent.source, intent.sourceContent);
   const observation = placementLiveObservation(snapshot, intent.liveResourceId);
@@ -1181,7 +1297,16 @@ const placementDevOperationFor = (
     return null;
   }
   return {
-    ...placementOperationBase(request, intent, snapshot, liveResource, 'link-dev', intent.source),
+    ...placementOperationBase(
+      request,
+      intent,
+      snapshot,
+      liveResource,
+      'link-dev',
+      intent.source,
+      null,
+      planningContext,
+    ),
     before: operationImageFromLiveStateV1({
       resource: liveResource,
       state: liveState,
@@ -1208,7 +1333,8 @@ const placementDevOperationFor = (
 const placementPromoteOperationFor = (
   request: PlacementPromotePlanRequestV1,
   intent: PlacementPromoteIntentV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
+  planningContext: PlacementPlanningContext | undefined,
 ): ExecutableOperation | null => {
   validatePlacementSourceContent(intent.source, intent.sourceContent);
   const observation = placementLiveObservation(snapshot, intent.liveResourceId);
@@ -1275,6 +1401,8 @@ const placementPromoteOperationFor = (
       liveResource,
       operationKind,
       intent.source,
+      null,
+      planningContext,
     ),
     before: operationImageFromLiveStateV1({
       resource: liveResource,
@@ -1426,7 +1554,7 @@ const retainedPlacementMatchesLive = (
 };
 
 const retainedPlacementHistoryInverse = (
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
   intent: PlacementRollbackIntentV1,
   current: LiveOperationImage,
   liveResource: ReturnType<typeof placementLiveResource>,
@@ -1462,7 +1590,8 @@ const retainedPlacementHistoryInverse = (
 const placementRollbackOperationFor = (
   request: PlacementRollbackPlanRequestV1,
   intent: PlacementRollbackIntentV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
+  planningContext: PlacementPlanningContext | undefined,
 ): ExecutableOperation => {
   const observation = placementLiveObservation(snapshot, intent.liveResourceId);
   const liveState = observation.value;
@@ -1538,8 +1667,9 @@ const placementRollbackOperationFor = (
       kind,
       source,
       target,
+      planningContext,
     );
-    const operationId = createOperationId({
+    const operationIdentity = {
       domain: 'skillsmith.operation-identity',
       schemaVersion: 1,
       groupId: journal.intent.groupId,
@@ -1549,7 +1679,11 @@ const placementRollbackOperationFor = (
       source,
       tool: intent.tool,
       scope: intent.scope,
-    });
+    } as const;
+    const operationId =
+      planningContext === undefined
+        ? createOperationId(operationIdentity)
+        : createOperationId(operationIdentity, planningContext);
     return {
       ...base,
       groupId: journal.intent.groupId,
@@ -1592,7 +1726,16 @@ const placementRollbackOperationFor = (
   }
   if (rollbackBefore.mode === 'absent') {
     return {
-      ...placementOperationBase(request, intent, snapshot, liveResource, 'remove', null),
+      ...placementOperationBase(
+        request,
+        intent,
+        snapshot,
+        liveResource,
+        'remove',
+        null,
+        null,
+        planningContext,
+      ),
       before,
       after: { kind: 'absent', resource: liveResource },
       reason: {
@@ -1624,6 +1767,7 @@ const placementRollbackOperationFor = (
         'link-dev',
         source,
         targetPath,
+        planningContext,
       ),
       before,
       after: {
@@ -1661,7 +1805,16 @@ const placementRollbackOperationFor = (
           }
         : null;
     return {
-      ...placementOperationBase(request, intent, snapshot, liveResource, 'promote', null),
+      ...placementOperationBase(
+        request,
+        intent,
+        snapshot,
+        liveResource,
+        'promote',
+        null,
+        null,
+        planningContext,
+      ),
       before,
       after: {
         kind: 'placement',
@@ -1709,7 +1862,16 @@ const placementRollbackOperationFor = (
     throw new TypeError('placement planning: pinned rollback symlink target is incomplete');
   }
   return {
-    ...placementOperationBase(request, intent, snapshot, liveResource, 'promote', source),
+    ...placementOperationBase(
+      request,
+      intent,
+      snapshot,
+      liveResource,
+      'promote',
+      source,
+      null,
+      planningContext,
+    ),
     before,
     after: {
       kind: 'placement',
@@ -1774,7 +1936,8 @@ const placementChecksFor = (
  */
 export const createPlacementPlan = (
   request: PlacementPlanRequestV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
+  planningContext?: PlacementPlanningContext,
 ): Result<SnapshotBoundOperationPlanV1<'dev' | 'promote'>, SnapshotPlanningErrorV1> => {
   try {
     if (
@@ -1786,13 +1949,17 @@ export const createPlacementPlan = (
     }
     const plannedOperations =
       request.mode === 'rollback'
-        ? request.intents.map((intent) => placementRollbackOperationFor(request, intent, snapshot))
+        ? request.intents.map((intent) =>
+            placementRollbackOperationFor(request, intent, snapshot, planningContext),
+          )
         : request.command === 'dev'
           ? request.intents
-              .map((intent) => placementDevOperationFor(request, intent, snapshot))
+              .map((intent) => placementDevOperationFor(request, intent, snapshot, planningContext))
               .filter((operation): operation is ExecutableOperation => operation !== null)
           : request.intents
-              .map((intent) => placementPromoteOperationFor(request, intent, snapshot))
+              .map((intent) =>
+                placementPromoteOperationFor(request, intent, snapshot, planningContext),
+              )
               .filter((operation): operation is ExecutableOperation => operation !== null);
     const expectedRevisionIds = placementExpectedRevisionIds(snapshot);
     const compatibilityOperations = (request.compatibilityOperations ?? []).map((operation) => ({
@@ -1800,19 +1967,22 @@ export const createPlacementPlan = (
       preconditionIds: [...new Set([...operation.preconditionIds, ...expectedRevisionIds])],
     }));
     const operations = [...compatibilityOperations, ...plannedOperations];
-    const plan = createOperationPlan({
-      domain: 'skillsmith.operation-plan',
-      schemaVersion: 1,
-      command: request.command,
-      selection: {
-        ...request.selection,
-        groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+    const plan = createCanonicalPlacementPlan(
+      {
+        domain: 'skillsmith.operation-plan',
+        schemaVersion: 1,
+        command: request.command,
+        selection: {
+          ...request.selection,
+          groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+        },
+        batchPolicy: request.batchPolicy,
+        operations,
+        checks: placementChecksFor(request, plannedOperations),
+        diagnostics: request.diagnostics ?? [],
       },
-      batchPolicy: request.batchPolicy,
-      operations,
-      checks: placementChecksFor(request, plannedOperations),
-      diagnostics: request.diagnostics ?? [],
-    });
+      planningContext,
+    );
     return ok(bindOperationPlanToSnapshotV1(snapshot, plan));
   } catch (error) {
     return err(placementPlanningError(error));

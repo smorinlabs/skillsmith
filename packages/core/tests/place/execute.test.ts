@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { toolRegistry } from '../../src/agents/registry.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
+import { resolveProjectContext } from '../../src/context/project.ts';
 import {
   createPlacementExecutionInput,
+  createPlacementSnapshotAuthority,
   createPlacementSwapRequest,
   executeRecordOnlyPlacementPlan,
   placementSnapshotResourceId,
@@ -51,6 +54,84 @@ test('placement snapshot resource IDs bind the full private path identity', () =
   expect(alpha).toMatch(/^placement-source:v1:[0-9a-f]{64}$/u);
   expect(beta).not.toBe(alpha);
   expect(alpha).not.toContain('/fixture/source/alpha');
+});
+
+test('placement snapshots bind only the selected lifecycle and verification capabilities', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillsmith-place-capabilities-'));
+  try {
+    const ports = await defaultRuntimePorts();
+    const project = await resolveProjectContext(ports, { invocationCwd: root });
+    if (!project.ok) throw new Error(JSON.stringify(project.error));
+    const queries = [
+      {
+        schemaVersion: 1,
+        tool: 'codex',
+        operation: 'promote',
+        scope: 'user',
+      },
+      {
+        schemaVersion: 1,
+        tool: 'codex',
+        operation: 'verify-static',
+        scope: 'artifact',
+      },
+      {
+        schemaVersion: 1,
+        tool: 'codex',
+        operation: 'verify-deep',
+        scope: 'artifact',
+      },
+    ] as const;
+    const authority = await createPlacementSnapshotAuthority(
+      toolRegistry,
+      queries,
+      ports,
+      project.value,
+      join(root, 'placements.json'),
+      join(root, 'store'),
+      [],
+      [],
+    );
+    if (!authority.ok) throw new Error(JSON.stringify(authority.error));
+    const capabilityVersion = toolRegistry.get('codex')?.descriptor.capabilityVersion;
+    if (capabilityVersion === undefined) throw new Error('codex capability descriptor is missing');
+
+    expect(authority.value.snapshot.capabilities.value?.facts).toEqual([
+      {
+        schemaVersion: 1,
+        tool: 'codex',
+        capabilityVersion,
+        operation: 'promote',
+        scope: 'user',
+        supported: true,
+      },
+      {
+        schemaVersion: 1,
+        tool: 'codex',
+        capabilityVersion,
+        operation: 'verify-static',
+        scope: 'artifact',
+        supported: true,
+      },
+      {
+        schemaVersion: 1,
+        tool: 'codex',
+        capabilityVersion,
+        operation: 'verify-deep',
+        scope: 'artifact',
+        supported: true,
+      },
+    ]);
+    const resourceId = authority.value.snapshot.capabilities.revision.resourceId;
+    expect(resourceId).toMatch(/^capabilities:relevant:[0-9a-f]{64}$/u);
+    const reobserved = await authority.value.repositories.capabilities.observe(resourceId);
+    expect(reobserved.ok).toBeTrue();
+    if (reobserved.ok) {
+      expect(reobserved.value.revision).toEqual(authority.value.snapshot.capabilities.revision);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 const installOperation = (): ExecutableOperation => {

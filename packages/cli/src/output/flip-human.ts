@@ -1,4 +1,11 @@
-import { type FlipAction, type FlipReport, type FlipResult, toolRegistry } from '@skillsmith/core';
+import type { FlipAction, FlipReport, FlipResult } from '@skillsmith/core';
+
+export type FlipVerificationMode = 'static' | 'deep';
+export type FlipVerificationModeResolver = (
+  tool: string,
+  result: FlipResult,
+  report: FlipReport,
+) => FlipVerificationMode | null;
 
 const SWAP_COL = 60;
 
@@ -23,7 +30,34 @@ const headerFor = (op: FlipReport['op'], skill: string, tools: string[]): string
   return `Promoting ${skill}  (tools: ${toolsStr})`;
 };
 
-const renderPair = (op: FlipReport['op'], r: FlipResult): string[] => {
+export const resolveRecordedFlipVerificationMode: FlipVerificationModeResolver = (
+  tool,
+  result,
+  report,
+) => {
+  const operation = report.plan?.operations.find(
+    (candidate) =>
+      candidate.skill === result.skill &&
+      candidate.tool === tool &&
+      candidate.requiredCheckIds.length > 0,
+  );
+  if (operation !== undefined) {
+    const verification = report.plan?.checks.find(
+      (check) =>
+        check.kind === 'verification' && operation.requiredCheckIds.includes(check.checkId),
+    );
+    if (verification?.kind === 'verification') {
+      return verification.mode === 'static+deep' ? 'deep' : 'static';
+    }
+  }
+  return null;
+};
+
+const renderPair = (
+  report: FlipReport,
+  r: FlipResult,
+  verificationModeFor: FlipVerificationModeResolver,
+): string[] => {
   const lines: string[] = [];
   const tool = r.tool ?? 'unknown';
   lines.push(`${tool.padEnd(12)} ${r.placementPath ?? '(no placement resolved)'}`);
@@ -33,15 +67,12 @@ const renderPair = (op: FlipReport['op'], r: FlipResult): string[] => {
     return lines;
   }
 
-  if (r.before?.mode === 'dev' && op === 'promote' && r.reason) {
+  if (r.before?.mode === 'dev' && report.op === 'promote' && r.reason) {
     lines.push(`  note     ${r.reason}`);
   }
 
   if (r.verify) {
-    // BF-7b: render the ACTUAL gate mode. `dev --source` create/adopt always gates STATIC (PRD D2),
-    // even for codex — only promote runs codex deep. Labeling create/adopt "deep" was a lie.
-    const promoteMode = toolRegistry.get(tool)?.verification?.gatePolicy.promote;
-    const modeLabel = op === 'promote' && promoteMode === 'static+deep' ? 'deep' : 'static';
+    const modeLabel = verificationModeFor(tool, r, report) ?? 'static';
     lines.push(`  verify   ${modeLabel}: ${r.verify.verdict ?? r.verify.gate}`);
   }
 
@@ -51,7 +82,7 @@ const renderPair = (op: FlipReport['op'], r: FlipResult): string[] => {
   }
 
   const isCreateAdopt = r.action === 'created' || r.action === 'adopted';
-  if (op === 'dev' && r.action !== 'noop' && r.after?.symlinkTarget) {
+  if (report.op === 'dev' && r.action !== 'noop' && r.after?.symlinkTarget) {
     // A dev-CREATED/adopted placement's source is the --source the user gave, not something
     // "recorded at promote" (a fresh create has never been promoted).
     const provenance = isCreateAdopt ? '(dev source)' : '(recorded at promote)';
@@ -59,21 +90,21 @@ const renderPair = (op: FlipReport['op'], r: FlipResult): string[] => {
   }
 
   const swapLabel =
-    op === 'dev'
+    report.op === 'dev'
       ? r.action === 'created'
         ? 'new dev symlink'
         : r.action === 'adopted'
           ? 'adopt dev symlink (record only)'
           : 'pinned copy -> dev symlink'
-      : op === 'rollback'
+      : report.op === 'rollback'
         ? 'restoring prior state'
         : 'dev symlink -> pinned copy';
   lines.push(`  swap     ${padSwap(swapLabel)}${r.action}`);
 
-  if (op === 'dev' && r.store) {
+  if (report.op === 'dev' && r.store) {
     lines.push(`           pin retained: ${storeLabel(r.store.path)}`);
   }
-  if (op !== 'promote' && r.reason) {
+  if (report.op !== 'promote' && r.reason) {
     lines.push(`  note     ${r.reason}`);
   }
 
@@ -93,7 +124,11 @@ const ACTION_LABEL: Record<FlipAction, string> = {
 };
 
 /** Human-readable render of a `skillsmith.flip` report (mockups in `research/commands/{promote,dev}.md`). */
-export const renderFlipHuman = (report: FlipReport, exitCode: number): string => {
+export const renderFlipHuman = (
+  report: FlipReport,
+  exitCode: number,
+  verificationModeFor: FlipVerificationModeResolver = resolveRecordedFlipVerificationMode,
+): string => {
   const lines: string[] = [];
   const bySkill = new Map<string, FlipResult[]>();
   for (const r of report.results) {
@@ -107,7 +142,7 @@ export const renderFlipHuman = (report: FlipReport, exitCode: number): string =>
     lines.push(headerFor(report.op, skill, tools));
     lines.push('');
     for (const r of results) {
-      lines.push(...renderPair(report.op, r));
+      lines.push(...renderPair(report, r, verificationModeFor));
       lines.push('');
     }
   }

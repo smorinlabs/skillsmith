@@ -1,10 +1,27 @@
 import { describe, expect, test } from 'bun:test';
-import type { InstallReport, UninstallReport } from '@skillsmith/core';
+import type { InstallReport, UninstallReport, VerifyReport } from '@skillsmith/core';
+import { Command } from 'commander';
+import { CURRENT_RENDERER_REPORTS } from '../../../../tests/ergonomics/fixtures/p1-ts10/reports.ts';
 import { renderInstallHuman, renderUninstallHuman } from '../../src/output/install-human.ts';
+import type { RuntimeOutcome } from '../../src/runtime/adapter.ts';
+import { createCurrentRendererRegistry } from '../../src/runtime/current-renderers.ts';
 
 const SHA = `8c1d2e3f4a5b${'0'.repeat(28)}`;
 const STORE_PATH =
   '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@8c1d2e3f4a5b/factor-scan';
+const codexStaticNotice = (_tool: string, skill: string): string =>
+  `codex static checks the manifest only — run 'skillsmith verify ${skill} --deep' for a full load check`;
+
+const successOutcome = (report: unknown): RuntimeOutcome => ({
+  report,
+  diagnostics: [],
+  exitClass: 'success',
+  mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+  deprecations: [],
+});
+
+const stdout = (rendered: string | { readonly stdout?: string }): string =>
+  typeof rendered === 'string' ? rendered : (rendered.stdout ?? '');
 
 describe('renderInstallHuman', () => {
   test('success: header, verify/store/place lines (claude-code + codex), codex manifest-only note, summary', () => {
@@ -78,7 +95,7 @@ describe('renderInstallHuman', () => {
       },
     };
 
-    const out = renderInstallHuman(report, 0);
+    const out = renderInstallHuman(report, 0, codexStaticNotice);
     expect(out).toContain(
       'Installing factor-scan  (smorinlabs/smorinlabs-harness @ 8c1d2e3f4a5b, scope: user)',
     );
@@ -90,6 +107,104 @@ describe('renderInstallHuman', () => {
     );
     expect(out).toContain('installed');
     expect(out).toContain('2 installed.  Exit code: 0');
+  });
+
+  test('the pure renderer default contains no selected adapter notice', () => {
+    const base = {
+      dryRun: false,
+      requested: {
+        sources: ['fixture/source'],
+        tools: ['codex'],
+        explicitTools: true,
+        scope: 'user',
+        explicitScope: false,
+        ref: null,
+        pin: false,
+        direct: false,
+        force: false,
+        verify: 'static',
+        deep: false,
+      },
+      results: [
+        {
+          source: 'fixture/source',
+          skill: 'fixture-skill',
+          tool: 'codex',
+          scope: 'user',
+          placementPath: '/fixture/skills/fixture-skill',
+          action: 'installed',
+          reason: null,
+          placement: 'symlink',
+          store: { path: '/fixture/store/fixture-skill', rev: 'main', gitSha: SHA, reused: false },
+          origin: null,
+          verify: { gate: 'passed', verdict: 'pass', mode: 'static' },
+          candidates: null,
+        },
+      ],
+      summary: {
+        installed: 1,
+        updated: 0,
+        repaired: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 0,
+        failed: 0,
+      },
+    } satisfies InstallReport;
+
+    expect(renderInstallHuman(base, 0)).not.toContain('note:');
+  });
+
+  test('uses an injected selected static notice without reading registry state', () => {
+    const base = {
+      dryRun: false,
+      requested: {
+        sources: ['fixture/source'],
+        tools: ['codex'],
+        explicitTools: true,
+        scope: 'user',
+        explicitScope: false,
+        ref: null,
+        pin: false,
+        direct: false,
+        force: false,
+        verify: 'static',
+        deep: false,
+      },
+      results: [
+        {
+          source: 'fixture/source',
+          skill: 'fixture-skill',
+          tool: 'codex',
+          scope: 'user',
+          placementPath: '/fixture/skills/fixture-skill',
+          action: 'installed',
+          reason: null,
+          placement: 'symlink',
+          store: { path: '/fixture/store/fixture-skill', rev: 'main', gitSha: SHA, reused: false },
+          origin: null,
+          verify: { gate: 'passed', verdict: 'pass', mode: 'static' },
+          candidates: null,
+        },
+      ],
+      summary: {
+        installed: 1,
+        updated: 0,
+        repaired: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 0,
+        failed: 0,
+      },
+    } satisfies InstallReport;
+
+    const out = renderInstallHuman(
+      base,
+      0,
+      (tool, skill) => `${tool} selected notice for ${skill}`,
+    );
+    expect(out).toContain('codex selected notice for fixture-skill');
+    expect(out).not.toContain('checks the manifest only');
   });
 
   test('--deep codex result: static+deep verdict, no manifest-only note', () => {
@@ -305,6 +420,35 @@ describe('renderInstallHuman', () => {
     const output = renderInstallHuman(report, 2);
     expect(output.match(/^Installing \[REJECTED_SOURCE\]$/gmu)).toHaveLength(2);
     expect(output).toContain('2 refused.  Exit code: 2');
+  });
+});
+
+describe('current renderer adapter facts', () => {
+  const renderers = createCurrentRendererRegistry(new Command());
+  const renderer = (name: string) => {
+    const selected = renderers[name];
+    if (selected === undefined) throw new Error(`missing current renderer ${name}`);
+    return selected;
+  };
+
+  test('injects the registered install static notice', () => {
+    const rendered = stdout(
+      renderer('install').human(successOutcome(CURRENT_RENDERER_REPORTS.install)),
+    );
+    expect(rendered).toContain(
+      "codex static checks the manifest only — run 'skillsmith verify fixture-skill --deep'",
+    );
+  });
+
+  test('injects the registered deep-coverage suffix', () => {
+    const fixture = CURRENT_RENDERER_REPORTS.verify.result;
+    const value = {
+      ...fixture,
+      requested: { ...fixture.requested, tools: ['claude-code'] },
+      tools: fixture.tools.map((tool) => ({ ...tool, tool: 'claude-code' })),
+    } as unknown as VerifyReport;
+    const rendered = stdout(renderer('verify').human(successOutcome({ result: value })));
+    expect(rendered).toContain('skills ✓ (presence)');
   });
 });
 

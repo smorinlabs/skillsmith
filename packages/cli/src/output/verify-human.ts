@@ -1,5 +1,8 @@
-import { toolRegistry } from '@skillsmith/core';
 import type { ToolVerdict, VerifyFinding, VerifyReport } from '@skillsmith/core';
+
+export type VerifyDeepCoverageSuffixResolver = (tool: string) => string | null;
+
+const noDeepCoverageSuffix: VerifyDeepCoverageSuffixResolver = () => null;
 
 const SEVERITY_MARKER: Record<VerifyFinding['normalizedSeverity'], string> = {
   error: '✘',
@@ -16,7 +19,11 @@ const skipDescription = (t: ToolVerdict): string => {
   return `${t.tool}: ${reason ?? 'did not run'}`;
 };
 
-export const renderVerifyHuman = (report: VerifyReport, exitCode: number): string => {
+export const renderVerifyHuman = (
+  report: VerifyReport,
+  exitCode: number,
+  deepCoverageSuffixFor: VerifyDeepCoverageSuffixResolver = noDeepCoverageSuffix,
+): string => {
   const lines: string[] = [];
   const modesStr = report.requested.modes.join(', ');
   const toolsStr = report.requested.tools.join(', ');
@@ -39,12 +46,7 @@ export const renderVerifyHuman = (report: VerifyReport, exitCode: number): strin
 
       const manifestMark = m.coverage.manifest ? '✓' : '—';
       const skillsMark = m.coverage.skills
-        ? `✓${
-            m.mode === 'deep'
-              ? (toolRegistry.get(t.tool)?.verification?.renderedFacts.deepSkillCoverageSuffix ??
-                '')
-              : ''
-          }`
+        ? `✓${m.mode === 'deep' ? (deepCoverageSuffixFor(t.tool) ?? '') : ''}`
         : '—';
       const noFindings = m.findings.length === 0 ? '  (no findings)' : '';
       lines.push(`  ${m.mode}  manifest ${manifestMark}  skills ${skillsMark}${noFindings}`);

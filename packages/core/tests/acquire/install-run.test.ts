@@ -11,9 +11,10 @@ import {
 import { writeFileSync } from 'node:fs';
 import { lstat, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runInstall } from '../../src/acquire/run.ts';
+import { defaultInstallDeps, runInstall, runInstallWithRegistry } from '../../src/acquire/run.ts';
 import { parseSource } from '../../src/acquire/source.ts';
 import type { CandidateSkill, InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
+import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
 import type { ExecResult } from '../../src/env/types.ts';
 import { type SkillSmithError, sourceUnresolvableError } from '../../src/errors.ts';
@@ -365,6 +366,29 @@ describe('runInstall — codex legacy conflict (D15)', () => {
     expect(cx?.reason).toContain('uninstall');
     expect(cc?.action).toBe('installed');
   });
+
+  test('project install detects a user-scope legacy shadow and reports its adapter path', async () => {
+    const legacyPath = join(legacyRoot(), 'factor-scan');
+    await f.env.makeDir(legacyPath);
+    await f.env.writeTextFile(join(legacyPath, 'SKILL.md'), '---\nname: factor-scan\n---\n');
+
+    const r = await runInstall(
+      f.env,
+      {
+        sources: [fsSource],
+        tools: ['codex'],
+        cwd: f.project,
+        configuration: f.configuration,
+      },
+      makeDeps(),
+    );
+    if (!r.ok) throw new Error(msg(r.error));
+
+    expect(r.value.results).toHaveLength(1);
+    expect(r.value.results[0]?.action).toBe('refused');
+    expect(r.value.results[0]?.error?.code).toBe('flip-refused');
+    expect(r.value.results[0]?.reason).toContain(legacyPath);
+  });
 });
 
 describe('runInstall — tool detection', () => {
@@ -390,6 +414,85 @@ describe('runInstall — tool detection', () => {
     expect(r.value.results.length).toBe(1);
     expect(r.value.results[0]?.tool).toBe('claude-code');
     expect(r.value.results[0]?.action).toBe('installed');
+  });
+});
+
+describe('runInstall — injected lifecycle registry', () => {
+  test('default detection dispatches through the injected registry inventory', async () => {
+    let detectedEnv: Parameters<InstallDeps['detect']>[0] | undefined;
+    let detectedSignal: AbortSignal | undefined;
+    let detectionCalls = 0;
+    const registry = createToolRegistry(
+      toolRegistry.adapters.map((adapter) =>
+        adapter.descriptor.id === 'codex'
+          ? {
+              ...adapter,
+              inventory: {
+                ...adapter.inventory,
+                detect: async (env: Parameters<InstallDeps['detect']>[0], signal?: AbortSignal) => {
+                  detectionCalls += 1;
+                  detectedEnv = env;
+                  detectedSignal = signal;
+                  return ok<InstallRecord[]>([
+                    {
+                      path: '/fixture/bin/codex',
+                      version: 'fixture',
+                      installMethod: 'unknown',
+                    },
+                  ]);
+                },
+              },
+            }
+          : adapter,
+      ),
+    );
+    const signal = new AbortController().signal;
+
+    const result = await runInstallWithRegistry(
+      f.env,
+      { ...userOpts, tools: ['codex'], dryRun: true, signal },
+      makeDeps({ detect: defaultInstallDeps.detect }),
+      registry,
+    );
+
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw result.error;
+    expect(result.value.results[0]?.action).toBe('installed');
+    expect(detectionCalls).toBe(1);
+    expect(detectedEnv).toBe(f.env);
+    expect(detectedSignal).toBe(signal);
+  });
+
+  test('fingerprints only the selected operation and verification capabilities', async () => {
+    const withCapabilityVersion = (tool: string, capabilityVersion: number) =>
+      createToolRegistry(
+        toolRegistry.adapters.map((adapter) =>
+          adapter.descriptor.id === tool
+            ? {
+                ...adapter,
+                descriptor: { ...adapter.descriptor, capabilityVersion },
+              }
+            : adapter,
+        ),
+      );
+    const options = {
+      ...userOpts,
+      tools: ['codex'],
+      dryRun: true,
+    } as const;
+    const prepare = async (registry: ReturnType<typeof createToolRegistry>) => {
+      const result = await runInstallWithRegistry(f.env, options, makeDeps(), registry);
+      expect(result.ok).toBeTrue();
+      if (!result.ok) throw result.error;
+      return result.value.plan.operations[0]?.preconditionIds ?? [];
+    };
+
+    const baseline = await prepare(toolRegistry);
+    const unrelated = await prepare(withCapabilityVersion('kilo-code', 99));
+    const selected = await prepare(withCapabilityVersion('codex', 99));
+
+    expect(unrelated).toEqual(baseline);
+    expect(selected).not.toEqual(baseline);
   });
 });
 

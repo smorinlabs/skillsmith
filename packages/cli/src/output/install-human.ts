@@ -6,7 +6,10 @@ import type {
   UninstallReport,
   UninstallResult,
 } from '@skillsmith/core';
-import { toolRegistry } from '@skillsmith/core';
+
+export type InstallStaticNoticeResolver = (tool: string, skill: string) => string | null;
+
+const noInstallStaticNotice: InstallStaticNoticeResolver = () => null;
 
 // Column conventions measured against the mockups in `research/commands/install.md` /
 // `uninstall.md`: a 2-space indent, a 9-wide label field ('verify   ', 'store    ',
@@ -35,7 +38,10 @@ const placementLabel = (placement: 'symlink' | 'copy' | null): string =>
 // install
 // ---------------------------------------------------------------------------------------------
 
-const renderInstallToolBlock = (r: InstallResult): string[] => {
+const renderInstallToolBlock = (
+  r: InstallResult,
+  staticNoticeFor: InstallStaticNoticeResolver,
+): string[] => {
   const lines: string[] = [];
   const tool = r.tool ?? 'unknown';
   lines.push(`${tool.padEnd(12)} ${r.placementPath ?? '(no placement resolved)'}`);
@@ -53,9 +59,9 @@ const renderInstallToolBlock = (r: InstallResult): string[] => {
     const modeLabel = r.verify.mode ?? 'static';
     lines.push(`  ${padLabel('verify')}${modeLabel}: ${r.verify.verdict ?? r.verify.gate}`);
     const staticNotice =
-      toolRegistry.get(tool)?.verification?.renderedFacts.installStaticNotice ?? null;
-    if (r.verify.mode === 'static' && staticNotice !== null && r.skill !== null) {
-      lines.push(`${NOTE_INDENT}note: ${staticNotice(r.skill)}`);
+      r.verify.mode === 'static' && r.skill !== null ? staticNoticeFor(tool, r.skill) : null;
+    if (staticNotice !== null) {
+      lines.push(`${NOTE_INDENT}note: ${staticNotice}`);
     }
   }
 
@@ -86,7 +92,11 @@ const INSTALL_BUCKET_LABEL: Record<InstallAction, string> = {
  *  `research/commands/install.md`). Refusal/error detail blocks (ambiguity candidate lists,
  *  shadowing, legacy-root, local-path guidance) are written to stderr by the command action,
  *  not here — this renderer covers the per-source/per-tool report and the summary line. */
-export const renderInstallHuman = (report: InstallReport, exitCode: number): string => {
+export const renderInstallHuman = (
+  report: InstallReport,
+  exitCode: number,
+  staticNoticeFor: InstallStaticNoticeResolver = noInstallStaticNotice,
+): string => {
   const lines: string[] = [];
   const groups = new Map<string, { readonly source: string; readonly results: InstallResult[] }>();
   for (const r of report.results) {
@@ -125,7 +135,7 @@ export const renderInstallHuman = (report: InstallReport, exitCode: number): str
       lines.push(header);
       lines.push('');
       for (const r of results) {
-        lines.push(...renderInstallToolBlock(r));
+        lines.push(...renderInstallToolBlock(r, staticNoticeFor));
         lines.push('');
       }
       continue;

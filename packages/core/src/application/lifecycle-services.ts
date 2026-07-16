@@ -1,9 +1,10 @@
 import {
   defaultInstallDeps,
   defaultUninstallDeps,
-  runInstall,
-  runUninstall,
+  runInstallWithRegistry,
+  runUninstallWithRegistry,
 } from '../acquire/run.ts';
+import type { runInstall, runUninstall } from '../acquire/run.ts';
 import type {
   CandidateSkill,
   InstallDeps,
@@ -15,7 +16,12 @@ import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts'
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { SkillSmithError } from '../errors.ts';
-import { prepareDev, preparePromote, prepareRollback } from '../place/run.ts';
+import {
+  prepareDevWithRegistry,
+  preparePromoteWithRegistry,
+  prepareRollbackWithRegistry,
+} from '../place/run.ts';
+import type { prepareDev, preparePromote, prepareRollback } from '../place/run.ts';
 import type { FlipReport, FlipTool } from '../place/types.ts';
 import type { OperationPlan } from '../planning/types.ts';
 import type { Result } from '../result.ts';
@@ -54,14 +60,16 @@ export interface LifecycleDependencies {
   readonly prepareRollback: typeof prepareRollback;
 }
 
-const DEFAULT_DEPENDENCIES: LifecycleDependencies = {
+const defaultDependenciesFor = (registry: LifecycleToolRegistry): LifecycleDependencies => ({
   resolveContext: resolveProjectContext,
-  install: runInstall,
-  uninstall: runUninstall,
-  prepareDev,
-  preparePromote,
-  prepareRollback,
-};
+  install: (env, opts, deps = { ...defaultInstallDeps }) =>
+    runInstallWithRegistry(env, opts, deps, registry),
+  uninstall: (env, opts, deps = { ...defaultUninstallDeps }) =>
+    runUninstallWithRegistry(env, opts, deps, registry),
+  prepareDev: (env, opts, deps) => prepareDevWithRegistry(registry, env, opts, deps),
+  preparePromote: (env, opts, deps) => preparePromoteWithRegistry(registry, env, opts, deps),
+  prepareRollback: (env, opts, deps) => prepareRollbackWithRegistry(registry, env, opts, deps),
+});
 
 type MutationSelectionCapability = Exclude<SelectionCapability, 'read'>;
 
@@ -371,7 +379,7 @@ export const createLifecycleApplicationServices = (
   overrides: Partial<LifecycleDependencies> = {},
   registry: LifecycleToolRegistry = toolRegistry,
 ) => {
-  const dependencies: LifecycleDependencies = { ...DEFAULT_DEPENDENCIES, ...overrides };
+  const dependencies: LifecycleDependencies = { ...defaultDependenciesFor(registry), ...overrides };
 
   const install: ApplicationService<CurrentCommandRequest, InstallApplicationReport> = async (
     request,

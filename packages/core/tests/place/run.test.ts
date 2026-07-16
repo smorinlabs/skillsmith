@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { readlink, rm, symlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import { fromLedgerV1Dto } from '../../src/artifacts/registry.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
@@ -15,6 +16,7 @@ import {
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import {
   prepareDev,
+  prepareDevWithRegistry,
   preparePromote,
   runDev,
   runPromote,
@@ -363,6 +365,52 @@ describe('runPromote / runDev — verify gate matrix', () => {
       const codexCall = calls.find((c) => c.tools?.[0] === 'codex');
       expect(claudeCall?.deep).toBeFalsy();
       expect(codexCall?.deep).toBe(true);
+    } finally {
+      await destroyFixtureFleet(f);
+    }
+  });
+
+  test('default verification dispatch uses the injected lifecycle registry adapter', async () => {
+    const f = await buildFixtureFleet();
+    try {
+      const verifierCalls: string[] = [];
+      const registry = createToolRegistry(
+        toolRegistry.adapters.map((adapter) =>
+          adapter.descriptor.id === 'claude-code' && adapter.verification
+            ? {
+                ...adapter,
+                verification: {
+                  ...adapter.verification,
+                  verify: async (_env, verifyOpts) => {
+                    verifierCalls.push(verifyOpts.path);
+                    const verdict = makeVerifyReport('claude-code', 'pass').tools[0];
+                    if (verdict === undefined) throw new Error('fixture verdict is missing');
+                    return ok(verdict);
+                  },
+                },
+              }
+            : adapter,
+        ),
+      );
+      const prepared = await prepareDevWithRegistry(
+        registry,
+        f.env,
+        opts(f, {
+          targets: ['beta'],
+          tools: ['claude-code'],
+          source: resolve(f.betaSrc),
+        }),
+      );
+      if (!prepared.ok) throw new Error(msg(prepared.error));
+
+      const executed = await prepared.value.execute();
+
+      if (!executed.ok) throw new Error(msg(executed.error));
+      expect(executed.value.results[0]).toMatchObject({
+        action: 'created',
+        verify: { gate: 'passed', verdict: 'pass' },
+      });
+      expect(verifierCalls).toHaveLength(1);
     } finally {
       await destroyFixtureFleet(f);
     }

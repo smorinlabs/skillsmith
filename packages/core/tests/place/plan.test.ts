@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm, symlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
 import { emptyLedger, setPair } from '../../src/place/ledger.ts';
 import { storeRootOf } from '../../src/place/paths.ts';
-import { LEGACY_ROOT_NOTICE, createPlacementPlan, planFlips } from '../../src/place/plan.ts';
+import {
+  LEGACY_ROOT_NOTICE,
+  createPlacementPlan,
+  planFlips,
+  planFlipsWithRegistry,
+} from '../../src/place/plan.ts';
 import type {
   DevRecord,
   FlipOptions,
@@ -69,6 +75,41 @@ describe('planFlips', () => {
     expect(r.value.preResults).toEqual([]);
   });
 
+  test('default tool routing uses the active lifecycle operation instead of install support', async () => {
+    const claude = toolRegistry.get('claude-code');
+    if (claude === undefined) throw new Error('claude-code fixture adapter is missing');
+    const registry = createToolRegistry([
+      {
+        ...claude,
+        descriptor: {
+          ...claude.descriptor,
+          operations: {
+            ...claude.descriptor.operations,
+            install: {
+              supported: false,
+              scopes: [],
+              remediation: 'fixture intentionally supports dev without install',
+            },
+          },
+        },
+      },
+    ]);
+
+    expect(registry.toolsFor('install')).toEqual([]);
+    expect(registry.toolsFor('dev')).toEqual(['claude-code']);
+
+    const result = await planFlipsWithRegistry(
+      registry,
+      f.env,
+      baseOpts({ targets: ['alpha'], op: 'dev' }),
+      storeRoot,
+      emptyLedger(NOW),
+    );
+
+    if (!result.ok) throw result.error;
+    expect(result.value.pairs.map((pair) => pair.tool)).toEqual(['claude-code']);
+  });
+
   test('path target resolves the same placement as the equivalent name target', async () => {
     const path = join(f.home, '.claude', 'skills', 'alpha');
     const r = await planFlips(f.env, baseOpts({ targets: [path] }), storeRoot, emptyLedger(NOW));
@@ -94,6 +135,42 @@ describe('planFlips', () => {
     expect(r.value.pairs).toHaveLength(1);
     expect(r.value.pairs[0]?.tool).toBe('codex');
     expect(r.value.pairs[0]?.notices).toContain(LEGACY_ROOT_NOTICE);
+  });
+
+  test('a codex duplicate reached by current-root path is refused with the adapter reason', async () => {
+    const path = join(f.home, '.agents', 'skills', 'dup');
+    const r = await planFlips(
+      f.env,
+      baseOpts({ targets: [path], op: 'dev' }),
+      storeRoot,
+      emptyLedger(NOW),
+    );
+    if (!r.ok) throw new Error('expected ok');
+
+    expect(r.value.pairs).toEqual([]);
+    expect(r.value.preResults).toHaveLength(1);
+    expect(r.value.preResults[0]?.action).toBe('refused');
+    expect(r.value.preResults[0]?.reason).toContain('.agents/skills');
+    expect(r.value.preResults[0]?.reason).toContain('.codex/skills');
+  });
+
+  test('dev --source to an absent current path refuses an existing alternate placement', async () => {
+    const path = join(f.home, '.agents', 'skills', 'legacy-only');
+    const r = await planFlips(
+      f.env,
+      baseOpts({ targets: [path], op: 'dev', source: resolve(f.alphaSrc) }),
+      storeRoot,
+      emptyLedger(NOW),
+    );
+    if (!r.ok) throw new Error('expected ok');
+
+    expect(r.value.pairs).toEqual([]);
+    expect(r.value.preResults).toHaveLength(1);
+    expect(r.value.preResults[0]?.action).toBe('refused');
+    expect(r.value.preResults[0]?.placementPath).toBe(
+      join(f.home, '.codex', 'skills', 'legacy-only'),
+    );
+    expect(r.value.preResults[0]?.reason).toContain(LEGACY_ROOT_NOTICE);
   });
 
   test('path outside every known skills root -> err(flip-refused)', async () => {
@@ -628,6 +705,43 @@ const placementRequest = () => ({
 });
 
 describe('createPlacementPlan', () => {
+  test('uses the supplied registry ordering during canonical planning', () => {
+    const reorderedRegistry = createToolRegistry(
+      toolRegistry.adapters.map((adapter) => ({
+        ...adapter,
+        descriptor: {
+          ...adapter.descriptor,
+          order:
+            adapter.descriptor.id === 'codex'
+              ? 1
+              : adapter.descriptor.id === 'claude-code'
+                ? 2
+                : adapter.descriptor.order + 10,
+        },
+      })),
+    );
+    const request = {
+      schemaVersion: 1 as const,
+      command: 'promote' as const,
+      selection: {
+        source: 'explicit-targets' as const,
+        skills: [] as const,
+        tools: ['claude-code', 'codex'] as const,
+        scopes: ['user'] as const,
+      },
+      batchPolicy: 'fail-fast' as const,
+      intents: [],
+    };
+
+    const result = createPlacementPlan(request, plannerSnapshot(), {
+      registry: reorderedRegistry,
+      toolOrder: reorderedRegistry.ids,
+    });
+
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.selection.tools).toEqual(['codex', 'claude-code']);
+  });
+
   test('creates deterministic immutable plans from request and observed snapshot only', () => {
     const request = placementRequest();
     const observed = plannerSnapshot();

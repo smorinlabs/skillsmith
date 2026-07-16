@@ -1,7 +1,12 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import type { PlacementBundle, SkillRootsCtx } from '../agents/adapter-types.ts';
+import type {
+  RegisteredPlacementBundle,
+  SkillRootsCtx,
+  ToolCapabilityScope,
+} from '../agents/adapter-types.ts';
+import type { RelevantCapabilityQueryV1 } from '../agents/capabilities.ts';
 import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
-import { toolRegistry } from '../agents/registry.ts';
+import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts';
 import {
   normalizeSourceIdentity,
   validateManifestName,
@@ -17,6 +22,7 @@ import {
   genericError,
   sourceUnresolvableError,
   toolUnavailableError,
+  unknownToolError,
 } from '../errors.ts';
 import { executeOperationPlan } from '../execution/index.ts';
 import { createContentObservationExecutionPrecondition } from '../execution/preconditions.ts';
@@ -47,15 +53,14 @@ import {
   snapshotToStore,
   sweepStaging,
 } from '../place/store.ts';
-import {
-  FLIP_TOOLS,
-  type FlipTool,
-  type LedgerFile,
-  type OriginRecord,
-  type PairRecord,
-  type PinnedRecord,
-  type Provenance,
-  type SwapPlan,
+import type {
+  FlipTool,
+  LedgerFile,
+  OriginRecord,
+  PairRecord,
+  PinnedRecord,
+  Provenance,
+  SwapPlan,
 } from '../place/types.ts';
 import { createBoundedForceEffect, createOperationExecutionResult } from '../planning/create.ts';
 import type {
@@ -80,7 +85,8 @@ import {
   createContentObservationPreconditionIdV1,
   createStoreSnapshotIdentityV1,
 } from '../state/types.ts';
-import { verifyPlugin } from '../verify/run.ts';
+import { evaluateVerificationGate } from '../verify/gate.ts';
+import { runVerify, verifyPlugin } from '../verify/run.ts';
 import type { ToolVerdict, VerifyReport } from '../verify/types.ts';
 import {
   type AcquireExecutionInput,
@@ -139,9 +145,12 @@ import type {
   UninstallResult,
 } from './types.ts';
 
+const defaultInstallDetect: InstallDeps['detect'] = (env, tool, signal) =>
+  detectTool(env, tool, signal);
+
 export const defaultInstallDeps: Omit<InstallDeps, 'pick' | 'transport'> = {
   verify: verifyPlugin,
-  detect: (env, tool, signal) => detectTool(env, tool, signal),
+  detect: defaultInstallDetect,
 };
 
 export const defaultInstallSourceTransport: InstallSourceTransport = Object.freeze({
@@ -173,35 +182,118 @@ const journalNowOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps
 const txIdOf = (ports: AcquisitionPorts, deps: InstallDeps | UninstallDeps): string =>
   deps.newTxId?.() ?? ports.nextId('acquisition-transaction');
 
-const placementBundleFor = (tool: FlipTool): PlacementBundle => {
-  const placement = toolRegistry.get(tool)?.placement;
+const detectInstallTool = (
+  env: AcquisitionPorts,
+  tool: FlipTool,
+  signal: AbortSignal | undefined,
+  deps: InstallDeps,
+  registry: LifecycleToolRegistry<string>,
+): ReturnType<InstallDeps['detect']> => {
+  if (deps.detect !== defaultInstallDetect) return deps.detect(env, tool, signal);
+  const inventory = registry.get(tool)?.inventory;
+  return inventory === undefined
+    ? Promise.resolve(err(unknownToolError(tool)))
+    : inventory.detect(env, signal);
+};
+
+const placementBundleFor = (
+  registry: LifecycleToolRegistry<string>,
+  tool: FlipTool,
+): RegisteredPlacementBundle => {
+  const placement = registry.get(tool)?.placement;
   if (placement === undefined) throw new Error(`tool registry invariant: ${tool} has no placement`);
   return placement;
 };
 
-const skillRootsFor = (
+const skillRootFactsFor = (
+  registry: LifecycleToolRegistry<string>,
   tool: FlipTool,
   env: AcquisitionPorts,
   scope: InstallScope,
   ctx: SkillRootsCtx,
-): readonly string[] => placementBundleFor(tool).roots(env, scope, ctx);
+): ReturnType<RegisteredPlacementBundle['rootFacts']> =>
+  placementBundleFor(registry, tool).rootFacts(env, scope, ctx);
 
-const primarySkillRootFor = (
+const destinationSkillRootFor = (
+  registry: LifecycleToolRegistry<string>,
   tool: FlipTool,
   env: AcquisitionPorts,
   scope: InstallScope,
   ctx: SkillRootsCtx,
 ): string => {
-  const root = skillRootsFor(tool, env, scope, ctx)[0];
-  if (root === undefined) throw new Error(`tool registry invariant: ${tool} has no ${scope} root`);
-  return root;
+  const destination = skillRootFactsFor(registry, tool, env, scope, ctx).find(
+    ({ role }) => role === 'destination',
+  );
+  if (destination === undefined) {
+    throw new Error(`tool registry invariant: ${tool} has no ${scope} destination root`);
+  }
+  return destination.path;
 };
 
-const installHintFor = (tool: FlipTool): string => {
-  const hint = toolRegistry.get(tool)?.inventory.installHint;
+const resolvePlacementFor = (
+  registry: LifecycleToolRegistry<string>,
+  tool: FlipTool,
+  env: AcquisitionPorts,
+  scope: InstallScope,
+  ctx: SkillRootsCtx,
+  storeRoot: string,
+  skill: string,
+) => placementBundleFor(registry, tool).resolveScoped(env, ctx, storeRoot, skill, scope);
+
+const installHintFor = (registry: LifecycleToolRegistry<string>, tool: FlipTool): string => {
+  const hint = registry.get(tool)?.inventory.installHint;
   if (hint === undefined) throw new Error(`tool registry invariant: ${tool} has no install hint`);
   return hint;
 };
+
+const relevantCapabilityQuery = (
+  tool: string,
+  operation: RelevantCapabilityQueryV1['operation'],
+  scope: ToolCapabilityScope,
+): RelevantCapabilityQueryV1 => Object.freeze({ schemaVersion: 1, tool, operation, scope });
+
+const installCapabilityQueries = (
+  registry: LifecycleToolRegistry<string>,
+  intents: readonly AcquisitionInstallIntentV1[],
+  opts: InstallOptions,
+): readonly RelevantCapabilityQueryV1[] =>
+  Object.freeze(
+    intents.flatMap((intent) => {
+      const queries = [relevantCapabilityQuery(intent.tool, 'install', intent.scope)];
+      if (opts.noVerify) return queries;
+      queries.push(relevantCapabilityQuery(intent.tool, 'verify-static', 'artifact'));
+      if (opts.deep && registry.get(intent.tool)?.verification?.gatePolicy.installDeep === true) {
+        queries.push(relevantCapabilityQuery(intent.tool, 'verify-deep', 'artifact'));
+      }
+      return queries;
+    }),
+  );
+
+const uninstallCapabilityQueries = (
+  prepared: readonly Readonly<{
+    intent: AcquisitionUninstallIntentV1;
+    capabilityScope: ToolCapabilityScope;
+  }>[],
+): readonly RelevantCapabilityQueryV1[] =>
+  Object.freeze(
+    prepared.map(({ intent, capabilityScope }) =>
+      relevantCapabilityQuery(intent.tool, 'uninstall', capabilityScope),
+    ),
+  );
+
+const verificationRegistryFor = (registry: LifecycleToolRegistry<string>) =>
+  Object.freeze({
+    adapters: Object.freeze(
+      registry.ids.flatMap((id) => {
+        const adapter = registry.get(id);
+        return adapter === undefined ? [] : [adapter];
+      }),
+    ),
+    ids: registry.ids,
+    get: (id: string) => registry.get(id),
+    toolsFor: (operation: Parameters<LifecycleToolRegistry<string>['toolsFor']>[0]) =>
+      registry.toolsFor(operation),
+  });
 
 const msg = (e: SkillSmithError): string =>
   redactSensitiveString('message' in e ? e.message : e.code);
@@ -359,7 +451,7 @@ interface Gate {
   notice: string | null;
 }
 
-const summarizeFindings = (tv: ToolVerdict | undefined): string => {
+const summarizeFindings = (tv: ToolVerdict<string> | undefined): string => {
   if (!tv) return 'no verdict produced';
   const findings = tv.modes
     .flatMap((m) => m.findings)
@@ -371,6 +463,7 @@ const summarizeFindings = (tv: ToolVerdict | undefined): string => {
 const runInstallVerifyGate = async (
   env: AcquisitionPorts,
   deps: InstallDeps,
+  registry: LifecycleToolRegistry<string>,
   tool: FlipTool,
   path: string,
   opts: InstallOptions,
@@ -378,7 +471,7 @@ const runInstallVerifyGate = async (
   if (opts.noVerify) {
     return { blocked: null, gate: 'skipped', verdict: null, mode: null, notice: null };
   }
-  const verification = toolRegistry.get(tool)?.verification;
+  const verification = registry.get(tool)?.verification;
   if (verification === undefined) {
     const blocked = genericError(`tool registry invariant: ${tool} has no verifier`);
     return { blocked, gate: 'failed', verdict: 'fail', mode: 'static', notice: null };
@@ -387,18 +480,22 @@ const runInstallVerifyGate = async (
   const mode: 'static' | 'static+deep' = deep ? 'static+deep' : 'static';
   let untrustedVerification: unknown;
   try {
-    untrustedVerification = await deps.verify(env, {
+    const request = {
       path,
       tools: [tool],
       deep,
       strict: opts.strict ?? false,
       ...(opts.signal ? { signal: opts.signal } : {}),
-    });
+    };
+    untrustedVerification =
+      deps.verify === verifyPlugin
+        ? await runVerify(env, request, verificationRegistryFor(registry))
+        : await deps.verify(env, request);
   } catch (error) {
     const blocked = sourceUnresolvableError(`verification failed: ${safeUnknownMessage(error)}`);
     return { blocked, gate: 'failed', verdict: 'fail', mode, notice: null };
   }
-  const vr = safeDependencyResult<VerifyReport>(untrustedVerification);
+  const vr = safeDependencyResult<VerifyReport<string>>(untrustedVerification);
   if (!vr.ok) {
     return {
       blocked: safeError(vr.error),
@@ -411,48 +508,33 @@ const runInstallVerifyGate = async (
 
   const tv = vr.value.tools.find((t) => t.tool === tool);
   const verdict = tv?.verdict ?? vr.value.summary.verdict;
-
-  if (verdict === 'fail') {
-    const reason = `installation blocked: '${path}' failed verification for ${tool}: ${summarizeFindings(tv)}`;
-    return {
-      blocked: flipFailedError(reason),
-      gate: 'failed',
-      verdict: 'fail',
-      mode,
-      notice: null,
-    };
-  }
-  if (verdict === 'warn') {
-    if (opts.strict) {
-      return {
-        blocked: flipFailedError(`verify warnings blocked under --strict for ${tool}`),
-        gate: 'failed',
-        verdict: 'warn',
-        mode,
-        notice: null,
-      };
+  const outcome = evaluateVerificationGate({
+    verdict,
+    strict: opts.strict ?? false,
+    requestedMode: mode,
+  });
+  let blocked: SkillSmithError | null = null;
+  if (outcome.blocked) {
+    if (verdict === 'fail') {
+      blocked = flipFailedError(
+        `installation blocked: '${path}' failed verification for ${tool}: ${summarizeFindings(tv)}`,
+      );
+    } else if (verdict === 'warn') {
+      blocked = flipFailedError(`verify warnings blocked under --strict for ${tool}`);
+    } else {
+      blocked = flipFailedError(`verify gate inconclusive under --strict for ${tool}`);
     }
-    return { blocked: null, gate: 'warned', verdict: 'warn', mode, notice: null };
   }
-  if (verdict === 'inconclusive') {
-    if (opts.strict) {
-      return {
-        blocked: flipFailedError(`verify gate inconclusive under --strict for ${tool}`),
-        gate: 'failed',
-        verdict: 'inconclusive',
-        mode,
-        notice: null,
-      };
-    }
-    return {
-      blocked: null,
-      gate: 'inconclusive',
-      verdict: 'inconclusive',
-      mode,
-      notice: `verify gate was inconclusive for ${tool}; proceeding unverified`,
-    };
-  }
-  return { blocked: null, gate: 'passed', verdict: 'pass', mode, notice: null };
+  return {
+    blocked,
+    gate: outcome.gate,
+    verdict,
+    mode,
+    notice:
+      outcome.gate === 'inconclusive'
+        ? `verify gate was inconclusive for ${tool}; proceeding unverified`
+        : null,
+  };
 };
 
 const ledgerVerifyOf = (gate: Gate['gate']): 'passed' | 'warned' | 'skipped' =>
@@ -841,6 +923,7 @@ const buildOrigin = (
 
 interface PlaceCtx {
   env: AcquisitionPorts;
+  registry: LifecycleToolRegistry<string>;
   deps: InstallDeps;
   opts: InstallOptions;
   ledger: LedgerModel;
@@ -922,7 +1005,7 @@ const placePair = async (
     cwd: p.scope === 'project' ? (p.scopeKey as string) : opts.cwd,
     configuration: opts.configuration,
   };
-  const installRoot = primarySkillRootFor(tool, env, p.scope, rootsCtx);
+  const installRoot = destinationSkillRootFor(p.registry, tool, env, p.scope, rootsCtx);
   const placementPath = join(installRoot, skill);
   const resultVerify =
     gate.gate === 'skipped' ? null : { gate: gate.gate, verdict: gate.verdict, mode: gate.mode };
@@ -985,22 +1068,33 @@ const placePair = async (
         }),
   });
 
+  const currentResolution = await resolvePlacementFor(
+    p.registry,
+    tool,
+    env,
+    p.scope,
+    rootsCtx,
+    p.storeRoot,
+    skill,
+  );
+  if (currentResolution.duplicateReason !== null) {
+    return refuse(currentResolution.duplicateReason);
+  }
+  if (
+    currentResolution.placement.class !== 'absent' &&
+    currentResolution.placement.root !== installRoot
+  ) {
+    const notice =
+      currentResolution.notices.length === 0 ? '' : ` ${currentResolution.notices.join('; ')}`;
+    return refuse(
+      `'${skill}' already exists at ${currentResolution.placement.path}.${notice} Remove it first: skillsmith uninstall ${skill} --tool ${tool}`,
+    );
+  }
+
   try {
     await env.makeDir(installRoot);
   } catch (e) {
     return fail(genericError(`cannot create skills root ${installRoot}: ${errorMessage(e)}`));
-  }
-
-  // D15: secondary legacy-root conflict (read-only detection; --force does NOT override).
-  if (p.scope === 'user') {
-    for (const legacyRoot of skillRootsFor(tool, env, 'user', rootsCtx).slice(1)) {
-      const lp = await classifyPlacement(env, legacyRoot, skill, p.storeRoot);
-      if (lp.class !== 'absent') {
-        return refuse(
-          `'${skill}' already exists in the legacy ${tool} root ${legacyRoot}. Remove it first: skillsmith uninstall ${skill} --tool ${tool}`,
-        );
-      }
-    }
   }
 
   // F5: cross-scope shadowing (project shadows user for this repo).
@@ -1012,11 +1106,22 @@ const placePair = async (
       cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
       configuration: opts.configuration,
     };
-    const otherRoot = primarySkillRootFor(tool, env, otherScope, otherCtx);
-    const op = await classifyPlacement(env, otherRoot, skill, p.storeRoot);
+    const otherResolution = await resolvePlacementFor(
+      p.registry,
+      tool,
+      env,
+      otherScope,
+      otherCtx,
+      p.storeRoot,
+      skill,
+    );
     const hasPair = getPairAt(p.ledger, otherKey, skill, tool) !== null;
-    if (op.class !== 'absent' || hasPair) {
-      const reason = `project-scope skills shadow user-scope skills of the same name for this repo: ${placementPath} vs ${join(otherRoot, skill)}`;
+    if (
+      otherResolution.duplicateReason !== null ||
+      otherResolution.placement.class !== 'absent' ||
+      hasPair
+    ) {
+      const reason = `project-scope skills shadow user-scope skills of the same name for this repo: ${placementPath} vs ${otherResolution.placement.path}`;
       if (!opts.force) return refuse(reason);
       shadowWarning = `proceeding despite shadow (--force): ${reason}`;
     }
@@ -1062,7 +1167,7 @@ const placePair = async (
     return refuse(recoveryRefusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
   }
 
-  const live = await classifyPlacement(env, installRoot, skill, p.storeRoot);
+  const live = currentResolution.placement;
 
   // Does the live placement already materialize THIS resolved store entry?
   let liveKind: 'symlink' | 'copy' | null = null;
@@ -1199,7 +1304,7 @@ const predictPair = async (
     cwd: p.scope === 'project' ? (p.scopeKey as string) : opts.cwd,
     configuration: opts.configuration,
   };
-  const installRoot = primarySkillRootFor(tool, env, p.scope, rootsCtx);
+  const installRoot = destinationSkillRootFor(p.registry, tool, env, p.scope, rootsCtx);
   const placementPath = join(installRoot, skill);
   const { ns, name } = clampStoreNs(spec.identity.repository);
   const expectedStorePath = join(p.storeRoot, ns, `${name}@${sha.slice(0, 12)}`, skill);
@@ -1235,14 +1340,27 @@ const predictPair = async (
     error: flipRefusedError(reason),
   });
 
-  if (p.scope === 'user') {
-    for (const legacyRoot of skillRootsFor(tool, env, 'user', rootsCtx).slice(1)) {
-      if ((await classifyPlacement(env, legacyRoot, skill, p.storeRoot)).class !== 'absent') {
-        return refuse(
-          `'${skill}' already exists in the legacy ${tool} root ${legacyRoot}. Remove it first: skillsmith uninstall ${skill} --tool ${tool}`,
-        );
-      }
-    }
+  const currentResolution = await resolvePlacementFor(
+    p.registry,
+    tool,
+    env,
+    p.scope,
+    rootsCtx,
+    p.storeRoot,
+    skill,
+  );
+  if (currentResolution.duplicateReason !== null) {
+    return refuse(currentResolution.duplicateReason);
+  }
+  if (
+    currentResolution.placement.class !== 'absent' &&
+    currentResolution.placement.root !== installRoot
+  ) {
+    const notice =
+      currentResolution.notices.length === 0 ? '' : ` ${currentResolution.notices.join('; ')}`;
+    return refuse(
+      `'${skill}' already exists at ${currentResolution.placement.path}.${notice} Remove it first: skillsmith uninstall ${skill} --tool ${tool}`,
+    );
   }
 
   const otherScope: InstallScope = p.scope === 'project' ? 'user' : 'project';
@@ -1252,13 +1370,22 @@ const predictPair = async (
       cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
       configuration: opts.configuration,
     };
-    const otherRoot = primarySkillRootFor(tool, env, otherScope, otherCtx);
+    const otherResolution = await resolvePlacementFor(
+      p.registry,
+      tool,
+      env,
+      otherScope,
+      otherCtx,
+      p.storeRoot,
+      skill,
+    );
     const shadowed =
-      (await classifyPlacement(env, otherRoot, skill, p.storeRoot)).class !== 'absent' ||
+      otherResolution.duplicateReason !== null ||
+      otherResolution.placement.class !== 'absent' ||
       getPairAt(p.ledger, otherKey, skill, tool) !== null;
     if (shadowed && !opts.force) {
       return refuse(
-        `project-scope skills shadow user-scope skills of the same name for this repo: ${placementPath} vs ${join(otherRoot, skill)}`,
+        `project-scope skills shadow user-scope skills of the same name for this repo: ${placementPath} vs ${otherResolution.placement.path}`,
       );
     }
   }
@@ -1275,7 +1402,7 @@ const predictPair = async (
     return refuse(recoveryRefusedMessage(existing.journal.op, skill, spec.canonicalInvocation));
   }
 
-  const live = await classifyPlacement(env, installRoot, skill, p.storeRoot);
+  const live = currentResolution.placement;
   if (live.class === 'absent') return { ...base, action: 'installed' };
 
   const matchesResolved =
@@ -1493,20 +1620,31 @@ const buildReport = (
   requested: InstallReport['requested'],
   results: InstallResult[],
   continueOnError = false,
+  registry: LifecycleToolRegistry<string> = toolRegistry,
 ): PlannedInstallReport => {
-  const compatibility = createInstallPlanning(requested, results, continueOnError);
-  const planned = createAcquisitionDiagnosticPlan({
-    schemaVersion: 1,
-    command: 'install',
-    selection: {
-      source: 'explicit-targets',
-      skills: [...new Set(results.flatMap(({ skill }) => (skill === null ? [] : [skill])))],
-      tools: [...new Set(results.flatMap(({ tool }) => (tool === null ? [] : [tool])))],
-      scopes: [requested.scope],
+  const planningContext = { registry, toolOrder: registry.ids };
+  const compatibility = createInstallPlanning(
+    requested,
+    results,
+    continueOnError,
+    null,
+    planningContext,
+  );
+  const planned = createAcquisitionDiagnosticPlan(
+    {
+      schemaVersion: 1,
+      command: 'install',
+      selection: {
+        source: 'explicit-targets',
+        skills: [...new Set(results.flatMap(({ skill }) => (skill === null ? [] : [skill])))],
+        tools: [...new Set(results.flatMap(({ tool }) => (tool === null ? [] : [tool])))],
+        scopes: [requested.scope],
+      },
+      batchPolicy: continueOnError ? 'continue-on-error' : 'fail-fast',
+      diagnostics: compatibility.plan.diagnostics,
     },
-    batchPolicy: continueOnError ? 'continue-on-error' : 'fail-fast',
-    diagnostics: compatibility.plan.diagnostics,
-  });
+    planningContext,
+  );
   if (!planned.ok) throw new Error(planned.error.message);
   return assembleInstallReport(dryRun, requested, results, planned.value, []);
 };
@@ -1529,6 +1667,7 @@ const runInstallInternal = async (
   env: AcquisitionPorts,
   opts: InstallOptions,
   deps: InstallDeps,
+  registry: LifecycleToolRegistry<string>,
 ): Promise<Result<PlannedInstallReport, SkillSmithError>> => {
   const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
@@ -1599,6 +1738,7 @@ const runInstallInternal = async (
         },
         results,
         Boolean(opts.continueOnError),
+        registry,
       ),
     );
   }
@@ -1621,6 +1761,7 @@ const runInstallInternal = async (
         },
         results,
         Boolean(opts.continueOnError),
+        registry,
       ),
     );
   }
@@ -1645,11 +1786,16 @@ const runInstallInternal = async (
   const scopeKey = scope === 'project' ? (projectRoot ?? (await env.realpath(opts.cwd))) : null;
   const explicitScope = opts.scope !== undefined;
 
-  const candidateTools = explicitTools ? [...(opts.tools as readonly FlipTool[])] : [...FLIP_TOOLS];
+  const installTools = registry.toolsFor('install') as readonly FlipTool[];
+  const candidateTools = explicitTools
+    ? [...(opts.tools as readonly FlipTool[])]
+    : [...installTools];
   const detectedTools: FlipTool[] = [];
   const undetectedExplicit: FlipTool[] = [];
   for (const tool of candidateTools) {
-    const d = safeDependencyResult<readonly unknown[]>(await deps.detect(env, tool, opts.signal));
+    const d = safeDependencyResult<readonly unknown[]>(
+      await detectInstallTool(env, tool, opts.signal, deps, registry),
+    );
     if (!d.ok) return d;
     if (!Array.isArray(d.value)) return err(genericError('tool detection failed'));
     if (d.value.length > 0) detectedTools.push(tool);
@@ -1667,7 +1813,7 @@ const runInstallInternal = async (
   const planningRefusals: InstallResult[] = [];
   for (const tool of undetectedExplicit) {
     const e = toolUnavailableError(
-      `${tool} is not detected; install it first: ${installHintFor(tool)}`,
+      `${tool} is not detected; install it first: ${installHintFor(registry, tool)}`,
     );
     for (const { source, requestIndex } of specs) {
       planningRefusals.push({
@@ -1681,15 +1827,17 @@ const runInstallInternal = async (
 
   if (detectedTools.length === 0) {
     if (!explicitTools) {
-      const e = toolUnavailableError(`no supported tool detected (${FLIP_TOOLS.join(', ')})`);
+      const e = toolUnavailableError(`no supported tool detected (${installTools.join(', ')})`);
       const results = specs.map(({ source, requestIndex }) => ({
         ...emptyResult(source, scope, 'refused', requestIndex),
         reason: msg(e),
         error: safeError(e),
       }));
-      return ok(buildReport(false, requested, results, Boolean(opts.continueOnError)));
+      return ok(buildReport(false, requested, results, Boolean(opts.continueOnError), registry));
     }
-    return ok(buildReport(false, requested, planningRefusals, Boolean(opts.continueOnError)));
+    return ok(
+      buildReport(false, requested, planningRefusals, Boolean(opts.continueOnError), registry),
+    );
   }
 
   interface PreparedInstallPairBinding {
@@ -1722,10 +1870,10 @@ const runInstallInternal = async (
     readonly projectRoot: string | null;
     readonly selectedPair: PairRecord | null;
     readonly live: AcquirePlacementFacts;
-    readonly legacy: readonly AcquirePlacementFacts[];
+    readonly alternates: readonly AcquirePlacementFacts[];
     readonly shadow: Readonly<{
       pair: PairRecord | null;
-      live: AcquirePlacementFacts;
+      live: readonly AcquirePlacementFacts[];
     }> | null;
     readonly source: Readonly<{
       canonicalSource: string;
@@ -1759,20 +1907,17 @@ const runInstallInternal = async (
       cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
       configuration: opts.configuration,
     };
-    const installRoot = primarySkillRootFor(tool, env, scope, rootsCtx);
+    const installRoot = destinationSkillRootFor(registry, tool, env, scope, rootsCtx);
     const ledgerResult = await readLedgerState(env, ledgerPath);
     if (!ledgerResult.ok) throw ledgerResult.error;
     const ledger = ledgerModelForMutation(ledgerResult.value, nowOf(env, deps));
     const selectedPair = getPairAt(ledger, scopeKey, preview.skill, tool);
     const live = await acquirePlacementFacts(env, installRoot, preview.skill, storeRoot);
-    const legacy =
-      scope === 'user'
-        ? await Promise.all(
-            skillRootsFor(tool, env, 'user', rootsCtx)
-              .slice(1)
-              .map((root) => acquirePlacementFacts(env, root, preview.skill as string, storeRoot)),
-          )
-        : [];
+    const alternates = await Promise.all(
+      skillRootFactsFor(registry, tool, env, scope, rootsCtx)
+        .filter((fact) => fact.role === 'alternate')
+        .map((fact) => acquirePlacementFacts(env, fact.path, preview.skill as string, storeRoot)),
+    );
     const otherScope: InstallScope = scope === 'project' ? 'user' : 'project';
     const otherKey = otherScope === 'project' ? projectRoot : null;
     let shadow: InstallPreconditionFacts['shadow'] = null;
@@ -1781,10 +1926,13 @@ const runInstallInternal = async (
         cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
         configuration: opts.configuration,
       };
-      const otherRoot = primarySkillRootFor(tool, env, otherScope, otherCtx);
       shadow = {
         pair: structuredClone(getPairAt(ledger, otherKey, preview.skill, tool)),
-        live: await acquirePlacementFacts(env, otherRoot, preview.skill, storeRoot),
+        live: await Promise.all(
+          skillRootFactsFor(registry, tool, env, otherScope, otherCtx).map((fact) =>
+            acquirePlacementFacts(env, fact.path, preview.skill as string, storeRoot),
+          ),
+        ),
       };
     }
     const sourceContent = await acquireContentFacts(env, resolvedSource.materializedDir);
@@ -1794,7 +1942,7 @@ const runInstallInternal = async (
         projectRoot,
         selectedPair: structuredClone(selectedPair),
         live,
-        legacy,
+        alternates,
         shadow,
         source: {
           canonicalSource: spec.canonicalSource,
@@ -1821,6 +1969,7 @@ const runInstallInternal = async (
     const cleanupDirs = new Set<string>();
     const placeCtx: PlaceCtx = {
       env,
+      registry,
       deps,
       opts,
       ledger,
@@ -1906,7 +2055,7 @@ const runInstallInternal = async (
           configuration: opts.configuration,
         };
         const derivedPlacementPath = join(
-          primarySkillRootFor(tool, env, scope, derivedRootsContext),
+          destinationSkillRootFor(registry, tool, env, scope, derivedRootsContext),
           r.skillName,
         );
         if (containsSensitiveMaterial(derivedPlacementPath)) {
@@ -1923,13 +2072,13 @@ const runInstallInternal = async (
           continue;
         }
 
-        const gate = await runInstallVerifyGate(env, deps, tool, r.materializedDir, opts);
+        const gate = await runInstallVerifyGate(env, deps, registry, tool, r.materializedDir, opts);
         if (gate.blocked) {
           const rootsCtx = {
             cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
             configuration: opts.configuration,
           };
-          const installRoot = primarySkillRootFor(tool, env, scope, rootsCtx);
+          const installRoot = destinationSkillRootFor(registry, tool, env, scope, rootsCtx);
           sourceResults.push({
             ...emptyResult(source, scope, 'failed', requestIndex),
             skill: r.skillName,
@@ -2093,28 +2242,30 @@ const runInstallInternal = async (
         placementPath: livePath,
         storeRoot,
       });
-      for (const legacy of expectedFacts.legacy) {
+      for (const alternate of expectedFacts.alternates) {
         addLiveResource({
-          resourceId: acquireStateResourceId('live', [legacy.canonicalPath]),
+          resourceId: acquireStateResourceId('live', [alternate.canonicalPath]),
           skill: seed.preview.skill,
           tool: seed.tool,
-          scope: 'user',
-          projectIdentity: null,
-          placementPath: legacy.canonicalPath,
+          scope,
+          projectIdentity: scope === 'project' ? scopeKey : null,
+          placementPath: alternate.canonicalPath,
           storeRoot,
         });
       }
       if (expectedFacts.shadow !== null) {
         const shadowScope: InstallScope = scope === 'project' ? 'user' : 'project';
-        addLiveResource({
-          resourceId: acquireStateResourceId('live', [expectedFacts.shadow.live.canonicalPath]),
-          skill: seed.preview.skill,
-          tool: seed.tool,
-          scope: shadowScope,
-          projectIdentity: shadowScope === 'project' ? projectRoot : null,
-          placementPath: expectedFacts.shadow.live.canonicalPath,
-          storeRoot,
-        });
+        for (const shadow of expectedFacts.shadow.live) {
+          addLiveResource({
+            resourceId: acquireStateResourceId('live', [shadow.canonicalPath]),
+            skill: seed.preview.skill,
+            tool: seed.tool,
+            scope: shadowScope,
+            projectIdentity: shadowScope === 'project' ? projectRoot : null,
+            placementPath: shadow.canonicalPath,
+            storeRoot,
+          });
+        }
       }
       const storePath = resolve(seed.preview.store.path);
       const storeResourceId = acquireStateResourceId('store', [storePath]);
@@ -2189,9 +2340,16 @@ const runInstallInternal = async (
       results,
       Boolean(opts.continueOnError),
       scopeKey,
+      { registry, toolOrder: registry.ids },
     );
     const snapshotAuthority = await readAcquisitionSnapshotV1({
       env,
+      registry,
+      capabilityQueries: installCapabilityQueries(
+        registry,
+        preparedIntents.map(({ intent }) => intent),
+        opts,
+      ),
       projectContext,
       artifactScope: scope,
       ledgerPath,
@@ -2215,6 +2373,7 @@ const runInstallInternal = async (
         intents: preparedIntents.map(({ intent }) => intent),
       },
       snapshotAuthority.snapshot,
+      { registry, toolOrder: registry.ids },
     );
     if (!boundPlanning.ok) {
       throw new Error(boundPlanning.error.message);
@@ -2587,6 +2746,7 @@ const runInstallInternal = async (
 
     const sweepPlaceCtx: PlaceCtx = {
       env,
+      registry,
       deps,
       opts,
       ledger,
@@ -2635,18 +2795,26 @@ const runInstallInternal = async (
   }
 };
 
-export const runInstall = async (
+export const runInstallWithRegistry = async (
   env: AcquisitionPorts,
   opts: InstallOptions,
-  deps: InstallDeps = { ...defaultInstallDeps },
+  deps: InstallDeps,
+  registry: LifecycleToolRegistry<string>,
 ): Promise<Result<PlannedInstallReport, SkillSmithError>> => {
   try {
-    const result = await runInstallInternal(env, opts, deps);
+    const result = await runInstallInternal(env, opts, deps, registry);
     return result.ok ? result : err(safeError(result.error));
   } catch (error) {
     return err(safeError(error));
   }
 };
+
+export const runInstall = (
+  env: AcquisitionPorts,
+  opts: InstallOptions,
+  deps: InstallDeps = { ...defaultInstallDeps },
+): Promise<Result<PlannedInstallReport, SkillSmithError>> =>
+  runInstallWithRegistry(env, opts, deps, toolRegistry);
 
 // ---------------------------------------------------------------------------------------------
 // uninstall
@@ -2666,6 +2834,7 @@ interface UMatch {
   existing: PairRecord | null;
   notice: string | null; // legacy-root notice
   duplicatePaths?: string[];
+  duplicateReason?: string;
 }
 
 const matchPathOf = (m: UMatch): string | null => {
@@ -2720,6 +2889,7 @@ const uninstallBeforeFromRecord = (
 // legacy). "Found" = a non-absent placement OR a ledger pair (spec's convergent definition).
 const collectUninstallMatches = async (
   env: AcquisitionPorts,
+  registry: LifecycleToolRegistry<string>,
   opts: UninstallOptions,
   ledger: LedgerFile,
   storeRoot: string,
@@ -2736,34 +2906,39 @@ const collectUninstallMatches = async (
         cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
         configuration: opts.configuration,
       };
-      const roots = [...skillRootsFor(tool, env, scope, ctx)];
+      const bundle = placementBundleFor(registry, tool);
+      const roots = bundle.rootFacts(env, scope, ctx).map(({ path }) => path);
       const existing = getPairAt(ledger, scopeKey, name, tool);
-      const placements = await Promise.all(
-        roots.map((root) => classifyPlacement(env, root, name, storeRoot)),
-      );
-      const nonAbsent = placements.filter((p) => p.class !== 'absent');
-      if (nonAbsent.length > 1) {
+      const resolution = await bundle.resolveScoped(env, ctx, storeRoot, name, scope);
+      if (resolution.duplicateReason !== null) {
+        const inventory = await bundle.listScoped(env, ctx, storeRoot, scope);
+        const duplicatePaths = inventory.placements
+          .filter((placement) => placement.skill === name && placement.class !== 'absent')
+          .map((placement) => placement.path);
         matches.push({
           scope,
           scopeKey,
           tool,
           kind: 'duplicate',
-          placement: nonAbsent[0] ?? null,
+          placement: resolution.placement,
           existing,
           notice: null,
-          duplicatePaths: nonAbsent.map((p) => p.path),
+          duplicatePaths,
+          duplicateReason: resolution.duplicateReason,
         });
         continue;
       }
-      const placement = nonAbsent[0] ?? null;
-      if (placement) {
-        const resolution =
-          scope === 'user'
-            ? await placementBundleFor(tool).resolve(env, ctx, storeRoot, name)
-            : null;
-        const notice =
-          resolution?.placement.root === placement.root ? (resolution.notices[0] ?? null) : null;
-        matches.push({ scope, scopeKey, tool, kind: 'live', placement, existing, notice });
+      if (resolution.placement.class !== 'absent') {
+        const notice = resolution.notices.length === 0 ? null : resolution.notices.join('; ');
+        matches.push({
+          scope,
+          scopeKey,
+          tool,
+          kind: 'live',
+          placement: resolution.placement,
+          existing,
+          notice,
+        });
         continue;
       }
       // BF-1(d): a custom-location placement (a `dev --source --dest` create) lives outside every
@@ -2818,6 +2993,7 @@ interface PathTargetMatch {
 // ambiguity concept applies (one path, one owning root); outside every root is a hard refusal.
 const resolveUninstallPathTarget = async (
   env: AcquisitionPorts,
+  registry: LifecycleToolRegistry<string>,
   opts: UninstallOptions,
   target: string,
   projectRoot: string | null,
@@ -2831,29 +3007,38 @@ const resolveUninstallPathTarget = async (
 
   const ctxUser = { cwd: opts.cwd, configuration: opts.configuration };
   const candidates: Omit<PathTargetMatch, 'name'>[] = [];
-  for (const tool of FLIP_TOOLS) {
-    const bundle = placementBundleFor(tool);
-    const resolution = await bundle.resolve(env, ctxUser, storeRoot, name);
-    for (const root of bundle.roots(env, 'user', ctxUser)) {
+  const uninstallTools = registry.toolsFor('uninstall') as readonly FlipTool[];
+  for (const tool of uninstallTools) {
+    const bundle = placementBundleFor(registry, tool);
+    const resolution = await bundle.resolveScoped(env, ctxUser, storeRoot, name, 'user');
+    for (const { path: root } of bundle.rootFacts(env, 'user', ctxUser)) {
       candidates.push({
         scope: 'user',
         scopeKey: null,
         tool,
         root,
-        notice: resolution.placement.root === root ? (resolution.notices[0] ?? null) : null,
+        notice:
+          resolution.placement.root === root && resolution.notices.length > 0
+            ? resolution.notices.join('; ')
+            : null,
       });
     }
   }
   if (projectRoot !== null) {
     const ctxProj = { cwd: projectRoot, configuration: opts.configuration };
-    for (const tool of FLIP_TOOLS) {
-      for (const root of placementBundleFor(tool).roots(env, 'project', ctxProj)) {
+    for (const tool of uninstallTools) {
+      const bundle = placementBundleFor(registry, tool);
+      const resolution = await bundle.resolveScoped(env, ctxProj, storeRoot, name, 'project');
+      for (const { path: root } of bundle.rootFacts(env, 'project', ctxProj)) {
         candidates.push({
           scope: 'project',
           scopeKey: projectRoot,
           tool,
           root,
-          notice: null,
+          notice:
+            resolution.placement.root === root && resolution.notices.length > 0
+              ? resolution.notices.join('; ')
+              : null,
         });
       }
     }
@@ -2970,7 +3155,9 @@ const processUninstallMatch = async (
 
   if (match.kind === 'duplicate') {
     const paths = match.duplicatePaths ?? [];
-    const reason = `found in both ${paths.join(' and ')}; resolve the duplicate first`;
+    const reason =
+      match.duplicateReason ??
+      `found in multiple adapter roots: ${paths.join(', ')}; resolve the duplicate first`;
     return {
       skill: name,
       tool,
@@ -3174,6 +3361,7 @@ const isUninstallPathTarget = (target: string): boolean =>
 // (scope, tool) by dirname match and skips the ambiguity question entirely.
 const processUninstallTarget = async (
   env: AcquisitionPorts,
+  registry: LifecycleToolRegistry<string>,
   ledger: LedgerFile,
   ledgerCtx: { ledger: LedgerModel },
   ledgerPath: string,
@@ -3192,6 +3380,7 @@ const processUninstallTarget = async (
   if (isUninstallPathTarget(target)) {
     const resolved = await resolveUninstallPathTarget(
       env,
+      registry,
       opts,
       target,
       projectRoot,
@@ -3237,6 +3426,7 @@ const processUninstallTarget = async (
 
   const matches = await collectUninstallMatches(
     env,
+    registry,
     opts,
     ledger,
     storeRoot,
@@ -3340,6 +3530,7 @@ const runUninstallInternal = async (
   env: AcquisitionPorts,
   opts: UninstallOptions,
   deps: UninstallDeps,
+  registry: LifecycleToolRegistry<string>,
 ): Promise<Result<PlannedUninstallReport, SkillSmithError>> => {
   const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
@@ -3347,7 +3538,7 @@ const runUninstallInternal = async (
   const explicitTools = opts.tools !== undefined && opts.tools.length > 0;
   const toolsToSearch: FlipTool[] = explicitTools
     ? [...(opts.tools as FlipTool[])]
-    : [...FLIP_TOOLS];
+    : [...(registry.toolsFor('uninstall') as readonly FlipTool[])];
 
   const requested: UninstallReport['requested'] = {
     targets: [...opts.targets],
@@ -3449,6 +3640,7 @@ const runUninstallInternal = async (
         ]
       : await collectUninstallMatches(
           env,
+          registry,
           opts,
           legacyLedgerView(ledger),
           storeRoot,
@@ -3488,6 +3680,7 @@ const runUninstallInternal = async (
       results.push(
         ...(await processUninstallTarget(
           env,
+          registry,
           legacyLedger,
           ledgerCtx,
           ledgerPath,
@@ -3531,12 +3724,16 @@ const runUninstallInternal = async (
       ledgerPath,
       ledgerState,
     );
-    const compatibilityPlanning = createUninstallPlanning(requested, results, projectRoot);
+    const compatibilityPlanning = createUninstallPlanning(requested, results, projectRoot, {
+      registry,
+      toolOrder: registry.ids,
+    });
     const preparedIntents: Array<
       Readonly<{
         seed: UninstallBindingSeed;
         expectedFacts: UninstallPreconditionFacts;
         intent: AcquisitionUninstallIntentV1;
+        capabilityScope: ToolCapabilityScope;
       }>
     > = [];
     const liveResourcesByPath = new Map<string, AcquireLiveSnapshotResourceV1>();
@@ -3560,6 +3757,20 @@ const runUninstallInternal = async (
       }
       const expectedFacts = await observeUninstallFacts(seed);
       const livePath = resolve(seed.preview.placementPath);
+      const rootsCtx = {
+        cwd: seed.match.scopeKey ?? opts.cwd,
+        configuration: opts.configuration,
+      };
+      const placementRoot = seed.match.placement?.root ?? dirname(livePath);
+      const capabilityScope = skillRootFactsFor(
+        registry,
+        seed.match.tool,
+        env,
+        seed.match.scope,
+        rootsCtx,
+      ).some((fact) => fact.path === placementRoot)
+        ? seed.match.scope
+        : 'custom';
       const liveResourceId = acquireStateResourceId('live', [livePath]);
       addLiveResource({
         resourceId: liveResourceId,
@@ -3604,6 +3815,7 @@ const runUninstallInternal = async (
       preparedIntents.push({
         seed,
         expectedFacts,
+        capabilityScope,
         intent: {
           kind: 'remove',
           skill: seed.name,
@@ -3621,6 +3833,8 @@ const runUninstallInternal = async (
     const artifactScope: InstallScope = opts.scope ?? (projectRoot === null ? 'user' : 'project');
     const snapshotAuthority = await readAcquisitionSnapshotV1({
       env,
+      registry,
+      capabilityQueries: uninstallCapabilityQueries(preparedIntents),
       projectContext,
       artifactScope,
       ledgerPath,
@@ -3644,6 +3858,7 @@ const runUninstallInternal = async (
         intents: preparedIntents.map(({ intent }) => intent),
       },
       snapshotAuthority.snapshot,
+      { registry, toolOrder: registry.ids },
     );
     if (!boundPlanning.ok) throw new Error(boundPlanning.error.message);
     const plan = boundPlanning.value.plan;
@@ -3939,15 +4154,23 @@ const runUninstallInternal = async (
   return ok(await executePrepared(settled.value));
 };
 
-export const runUninstall = async (
+export const runUninstallWithRegistry = async (
   env: AcquisitionPorts,
   opts: UninstallOptions,
-  deps: UninstallDeps = { ...defaultUninstallDeps },
+  deps: UninstallDeps,
+  registry: LifecycleToolRegistry<string>,
 ): Promise<Result<PlannedUninstallReport, SkillSmithError>> => {
   try {
-    const result = await runUninstallInternal(env, opts, deps);
+    const result = await runUninstallInternal(env, opts, deps, registry);
     return result.ok ? result : err(safeError(result.error));
   } catch (error) {
     return err(safeError(error));
   }
 };
+
+export const runUninstall = (
+  env: AcquisitionPorts,
+  opts: UninstallOptions,
+  deps: UninstallDeps = { ...defaultUninstallDeps },
+): Promise<Result<PlannedUninstallReport, SkillSmithError>> =>
+  runUninstallWithRegistry(env, opts, deps, toolRegistry);

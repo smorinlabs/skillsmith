@@ -978,16 +978,27 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
 
   describe('family 6 — adapter-provided renderer facts', () => {
     test('EWP-P3B-TS06 characterization: current built-in human facts remain byte-stable', () => {
-      const install = (renderInstallHuman as unknown as AnyFunction)(installReportFor('codex'), 0);
+      const install = (renderInstallHuman as unknown as AnyFunction)(
+        installReportFor('codex'),
+        0,
+        (tool: string, skill: string) =>
+          toolRegistry.get(tool)?.verification?.renderedFacts.installStaticNotice?.(skill) ?? null,
+      );
       expect(String(install)).toContain(
         "codex static checks the manifest only — run 'skillsmith verify alpha --deep'",
       );
       const verify = (renderVerifyHuman as unknown as AnyFunction)(
         verifyReportFor('claude-code'),
         0,
+        (tool: string) =>
+          toolRegistry.get(tool)?.verification?.renderedFacts.deepSkillCoverageSuffix ?? null,
       );
       expect(String(verify)).toContain('skills ✓ (presence)');
-      const flip = (renderFlipHuman as unknown as AnyFunction)(flipReportFor('codex', 'dev'), 0);
+      const flip = (renderFlipHuman as unknown as AnyFunction)(
+        flipReportFor('codex', 'dev'),
+        0,
+        () => 'static',
+      );
       expect(String(flip)).toContain('verify   static: pass');
       expect(String(flip)).not.toContain('verify   deep: pass');
     });
@@ -1536,15 +1547,36 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
 
       const fingerprints = [
         [
-          String((renderInstallHuman as unknown as AnyFunction)(installReportFor('codex'), 0)),
+          String(
+            (renderInstallHuman as unknown as AnyFunction)(
+              installReportFor('codex'),
+              0,
+              (tool: string, skill: string) =>
+                toolRegistry.get(tool)?.verification?.renderedFacts.installStaticNotice?.(skill) ??
+                null,
+            ),
+          ),
           [318, 'd0db4a895e141e616de73706b99e3da1a83a3561b2066d1b93e9164177c04727'],
         ],
         [
-          String((renderVerifyHuman as unknown as AnyFunction)(verifyReportFor('claude-code'), 0)),
+          String(
+            (renderVerifyHuman as unknown as AnyFunction)(
+              verifyReportFor('claude-code'),
+              0,
+              (tool: string) =>
+                toolRegistry.get(tool)?.verification?.renderedFacts.deepSkillCoverageSuffix ?? null,
+            ),
+          ),
           [211, 'ab39a8ffd8977db9e727c5cd5d3da30a08ea0d59c5faff44405ce329f7673ab2'],
         ],
         [
-          String((renderFlipHuman as unknown as AnyFunction)(flipReportFor('codex', 'dev'), 0)),
+          String(
+            (renderFlipHuman as unknown as AnyFunction)(
+              flipReportFor('codex', 'dev'),
+              0,
+              () => 'static',
+            ),
+          ),
           [254, '994df1408aeb017f45fc9f581a80de2989a95aeefe1d8fba5e21afa23552dfe2'],
         ],
         [

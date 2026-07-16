@@ -16,14 +16,17 @@ import {
 } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
+  CurrentMutatorCommand,
   ExecutableOperation,
   OperationDigest,
   OperationImage,
   OperationLocation,
   OperationPlan,
+  OperationPlanInput,
   OperationSelection,
   OperationSource,
   PlanningDiagnostic,
+  PlanningToolContext,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial } from '../safety/redaction.ts';
@@ -43,6 +46,17 @@ import type {
   UninstallReport,
   UninstallResult,
 } from './types.ts';
+
+type AcquisitionObservedStateSnapshotV1 = ObservedStateSnapshotV1<unknown>;
+type AcquisitionPlanningContext = PlanningToolContext<string>;
+
+const createCanonicalAcquisitionPlan = <Command extends CurrentMutatorCommand>(
+  input: OperationPlanInput<Command>,
+  context: AcquisitionPlanningContext | undefined,
+): OperationPlan<Command> =>
+  context === undefined
+    ? createOperationPlan(input)
+    : (createOperationPlan(input, context) as OperationPlan<Command>);
 
 interface AcquisitionPlanRequestCommonV1 {
   readonly schemaVersion: 1;
@@ -112,13 +126,13 @@ const planningError = (error: unknown): SnapshotPlanningErrorV1 =>
     message: error instanceof Error ? error.message : 'acquisition planning failed',
   });
 
-const expectedRevisionIds = (snapshot: ObservedStateSnapshotV1): readonly string[] =>
+const expectedRevisionIds = (snapshot: AcquisitionObservedStateSnapshotV1): readonly string[] =>
   expectedRevisionPreconditionIdsForSnapshotV1(snapshot);
 
 const liveObservationFor = (
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: AcquisitionObservedStateSnapshotV1,
   resourceId: string,
-): ObservedStateSnapshotV1['live'][number] => {
+): AcquisitionObservedStateSnapshotV1['live'][number] => {
   const matches = snapshot.live.filter(
     (observation) =>
       observation.revision.domain === 'live' && observation.revision.resourceId === resourceId,
@@ -126,7 +140,7 @@ const liveObservationFor = (
   if (matches.length !== 1) {
     throw new TypeError('acquisition planning: live resource observation is missing or ambiguous');
   }
-  const observation = matches[0] as ObservedStateSnapshotV1['live'][number];
+  const observation = matches[0] as AcquisitionObservedStateSnapshotV1['live'][number];
   const revision = observation.revision;
   const state = observation.value;
   if (revision.domain !== 'live') {
@@ -152,9 +166,9 @@ const liveObservationFor = (
 };
 
 const storeObservationFor = (
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: AcquisitionObservedStateSnapshotV1,
   resourceId: string,
-): ObservedStateSnapshotV1['store'][number] => {
+): AcquisitionObservedStateSnapshotV1['store'][number] => {
   const matches = snapshot.store.filter(
     (observation) =>
       observation.revision.domain === 'store' && observation.revision.resourceId === resourceId,
@@ -162,7 +176,7 @@ const storeObservationFor = (
   if (matches.length !== 1) {
     throw new TypeError('acquisition planning: store resource observation is missing or ambiguous');
   }
-  const observation = matches[0] as ObservedStateSnapshotV1['store'][number];
+  const observation = matches[0] as AcquisitionObservedStateSnapshotV1['store'][number];
   const revision = observation.revision;
   const state = observation.value;
   if (revision.domain !== 'store') {
@@ -189,7 +203,7 @@ const storeObservationFor = (
 
 const validateLiveSelection = (
   intent: AcquisitionInstallIntentV1 | AcquisitionUninstallIntentV1,
-  observation: ObservedStateSnapshotV1['live'][number],
+  observation: AcquisitionObservedStateSnapshotV1['live'][number],
   state: LivePlacementStateV1 | null,
 ): void => {
   const path =
@@ -218,7 +232,7 @@ interface AcquisitionStoreFactsV1 {
 
 const validateInstallStoreSelection = (
   intent: AcquisitionInstallIntentV1,
-  observation: ObservedStateSnapshotV1['store'][number],
+  observation: AcquisitionObservedStateSnapshotV1['store'][number],
 ): AcquisitionStoreFactsV1 => {
   const state = observation.value;
   const revision = observation.revision;
@@ -245,9 +259,9 @@ const validateInstallStoreSelection = (
 };
 
 const ledgerPairFor = (
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: AcquisitionObservedStateSnapshotV1,
   intent: AcquisitionInstallIntentV1 | AcquisitionUninstallIntentV1,
-  observation: ObservedStateSnapshotV1['live'][number],
+  observation: AcquisitionObservedStateSnapshotV1['live'][number],
   live: LivePlacementStateV1 | null,
 ): LedgerPairV1Dto | null => {
   const ledger = snapshot.ledger.value;
@@ -278,7 +292,7 @@ const ledgerPairFor = (
 
 const liveResourceFor = (
   intent: AcquisitionInstallIntentV1 | AcquisitionUninstallIntentV1,
-  observation: ObservedStateSnapshotV1['live'][number],
+  observation: AcquisitionObservedStateSnapshotV1['live'][number],
 ) => ({
   kind: 'live' as const,
   skill: intent.skill,
@@ -355,7 +369,8 @@ const installAlreadyMatches = (
 const installOperationFor = (
   request: AcquisitionInstallPlanRequestV1,
   intent: AcquisitionInstallIntentV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: AcquisitionObservedStateSnapshotV1,
+  planningContext: AcquisitionPlanningContext | undefined,
 ): ExecutableOperation | null => {
   const sourceContent = createContentObservationIdentityV1(intent.sourceContent);
   if (
@@ -413,16 +428,20 @@ const installOperationFor = (
     scope: intent.scope,
     target: null,
   });
-  const pairId = createOperationPairId({
-    domain: 'skillsmith.operation-pair-identity',
-    schemaVersion: 1,
+  const pairIdentity = {
+    domain: 'skillsmith.operation-pair-identity' as const,
+    schemaVersion: 1 as const,
     groupId,
     tool: intent.tool,
     resource: liveResource,
-  });
-  const operationId = createOperationId({
-    domain: 'skillsmith.operation-identity',
-    schemaVersion: 1,
+  };
+  const pairId =
+    planningContext === undefined
+      ? createOperationPairId(pairIdentity)
+      : createOperationPairId(pairIdentity, planningContext);
+  const operationIdentity = {
+    domain: 'skillsmith.operation-identity' as const,
+    schemaVersion: 1 as const,
     groupId,
     pairId,
     kind: operationKind,
@@ -430,7 +449,11 @@ const installOperationFor = (
     source: intent.source,
     tool: intent.tool,
     scope: intent.scope,
-  });
+  };
+  const operationId =
+    planningContext === undefined
+      ? createOperationId(operationIdentity)
+      : createOperationId(operationIdentity, planningContext);
   return {
     operationId,
     groupId,
@@ -480,7 +503,8 @@ const installOperationFor = (
 const uninstallOperationFor = (
   request: AcquisitionUninstallPlanRequestV1,
   intent: AcquisitionUninstallIntentV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: AcquisitionObservedStateSnapshotV1,
+  planningContext: AcquisitionPlanningContext | undefined,
 ): ExecutableOperation => {
   const liveObservation = liveObservationFor(snapshot, intent.liveResourceId);
   const liveState = liveObservation.value;
@@ -551,16 +575,20 @@ const uninstallOperationFor = (
     scope: intent.scope,
     target: intent.skill,
   });
-  const pairId = createOperationPairId({
-    domain: 'skillsmith.operation-pair-identity',
-    schemaVersion: 1,
+  const pairIdentity = {
+    domain: 'skillsmith.operation-pair-identity' as const,
+    schemaVersion: 1 as const,
     groupId,
     tool: intent.tool,
     resource: liveResource,
-  });
-  const operationId = createOperationId({
-    domain: 'skillsmith.operation-identity',
-    schemaVersion: 1,
+  };
+  const pairId =
+    planningContext === undefined
+      ? createOperationPairId(pairIdentity)
+      : createOperationPairId(pairIdentity, planningContext);
+  const operationIdentity = {
+    domain: 'skillsmith.operation-identity' as const,
+    schemaVersion: 1 as const,
     groupId,
     pairId,
     kind: intent.kind,
@@ -568,7 +596,11 @@ const uninstallOperationFor = (
     source: null,
     tool: intent.tool,
     scope: intent.scope,
-  });
+  };
+  const operationId =
+    planningContext === undefined
+      ? createOperationId(operationIdentity)
+      : createOperationId(operationIdentity, planningContext);
   return {
     operationId,
     groupId,
@@ -624,6 +656,7 @@ const mergeDuplicateAcquisitionOperations = (
 
 export const createAcquisitionDiagnosticPlan = <Command extends 'install' | 'uninstall'>(
   request: AcquisitionDiagnosticPlanRequestV1<Command>,
+  planningContext?: AcquisitionPlanningContext,
 ): Result<OperationPlan<Command>, SnapshotPlanningErrorV1> => {
   try {
     if (
@@ -634,16 +667,19 @@ export const createAcquisitionDiagnosticPlan = <Command extends 'install' | 'uni
       throw new TypeError('acquisition diagnostics planning: unsupported request');
     }
     return ok(
-      createOperationPlan({
-        domain: 'skillsmith.operation-plan',
-        schemaVersion: 1,
-        command: request.command,
-        selection: request.selection,
-        batchPolicy: request.batchPolicy,
-        operations: [],
-        checks: [],
-        diagnostics: request.diagnostics ?? [],
-      }),
+      createCanonicalAcquisitionPlan(
+        {
+          domain: 'skillsmith.operation-plan',
+          schemaVersion: 1,
+          command: request.command,
+          selection: request.selection,
+          batchPolicy: request.batchPolicy,
+          operations: [],
+          checks: [],
+          diagnostics: request.diagnostics ?? [],
+        },
+        planningContext,
+      ),
     );
   } catch (error) {
     return err(planningError(error));
@@ -652,15 +688,18 @@ export const createAcquisitionDiagnosticPlan = <Command extends 'install' | 'uni
 
 export function createAcquisitionPlan(
   request: AcquisitionInstallPlanRequestV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: AcquisitionObservedStateSnapshotV1,
+  planningContext?: AcquisitionPlanningContext,
 ): Result<SnapshotBoundOperationPlanV1<'install'>, SnapshotPlanningErrorV1>;
 export function createAcquisitionPlan(
   request: AcquisitionUninstallPlanRequestV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: AcquisitionObservedStateSnapshotV1,
+  planningContext?: AcquisitionPlanningContext,
 ): Result<SnapshotBoundOperationPlanV1<'uninstall'>, SnapshotPlanningErrorV1>;
 export function createAcquisitionPlan(
   request: AcquisitionPlanRequestV1,
-  snapshot: ObservedStateSnapshotV1,
+  snapshot: AcquisitionObservedStateSnapshotV1,
+  planningContext?: AcquisitionPlanningContext,
 ): Result<SnapshotBoundOperationPlanV1<'install' | 'uninstall'>, SnapshotPlanningErrorV1> {
   try {
     if (
@@ -676,21 +715,24 @@ export function createAcquisitionPlan(
           ...new Set([...operation.preconditionIds, ...expectedRevisionIds(snapshot)]),
         ],
       }));
-      const plan = createOperationPlan({
-        domain: 'skillsmith.operation-plan',
-        schemaVersion: 1,
-        command: request.command,
-        selection: request.selection,
-        batchPolicy: request.batchPolicy,
-        operations: mergeDuplicateAcquisitionOperations([
-          ...compatibilityOperations,
-          ...request.intents
-            .map((intent) => installOperationFor(request, intent, snapshot))
-            .filter((operation): operation is ExecutableOperation => operation !== null),
-        ]),
-        checks: [],
-        diagnostics: request.diagnostics ?? [],
-      });
+      const plan = createCanonicalAcquisitionPlan(
+        {
+          domain: 'skillsmith.operation-plan',
+          schemaVersion: 1,
+          command: request.command,
+          selection: request.selection,
+          batchPolicy: request.batchPolicy,
+          operations: mergeDuplicateAcquisitionOperations([
+            ...compatibilityOperations,
+            ...request.intents
+              .map((intent) => installOperationFor(request, intent, snapshot, planningContext))
+              .filter((operation): operation is ExecutableOperation => operation !== null),
+          ]),
+          checks: [],
+          diagnostics: request.diagnostics ?? [],
+        },
+        planningContext,
+      );
       return ok(bindOperationPlanToSnapshotV1(snapshot, plan));
     }
     const compatibilityOperations = (request.compatibilityOperations ?? []).map((operation) => ({
@@ -699,19 +741,24 @@ export function createAcquisitionPlan(
         ...new Set([...operation.preconditionIds, ...expectedRevisionIds(snapshot)]),
       ],
     }));
-    const plan = createOperationPlan({
-      domain: 'skillsmith.operation-plan',
-      schemaVersion: 1,
-      command: request.command,
-      selection: request.selection,
-      batchPolicy: request.batchPolicy,
-      operations: mergeDuplicateAcquisitionOperations([
-        ...compatibilityOperations,
-        ...request.intents.map((intent) => uninstallOperationFor(request, intent, snapshot)),
-      ]),
-      checks: [],
-      diagnostics: request.diagnostics ?? [],
-    });
+    const plan = createCanonicalAcquisitionPlan(
+      {
+        domain: 'skillsmith.operation-plan',
+        schemaVersion: 1,
+        command: request.command,
+        selection: request.selection,
+        batchPolicy: request.batchPolicy,
+        operations: mergeDuplicateAcquisitionOperations([
+          ...compatibilityOperations,
+          ...request.intents.map((intent) =>
+            uninstallOperationFor(request, intent, snapshot, planningContext),
+          ),
+        ]),
+        checks: [],
+        diagnostics: request.diagnostics ?? [],
+      },
+      planningContext,
+    );
     return ok(bindOperationPlanToSnapshotV1(snapshot, plan));
   } catch (error) {
     return err(planningError(error));
@@ -773,6 +820,7 @@ const closedCompatibilityPlanningText = (value: string | null, fallback: string)
 const compatibilityPlanningDiagnostic = (
   family: 'install' | 'uninstall',
   result: InstallResult | UninstallResult,
+  planningContext: AcquisitionPlanningContext | undefined,
 ): PlanningDiagnostic => {
   const skipped = result.action === 'skipped';
   const noop = result.action === 'noop';
@@ -792,7 +840,7 @@ const compatibilityPlanningDiagnostic = (
   };
   const correlation = { groupId: null, pairId: null, operationId: null };
   const reasonCode = result.error?.code ?? (noop ? 'noop' : skipped ? 'skip' : 'refuse');
-  const diagnosticId = createPlanningDiagnosticId({
+  const diagnosticIdentity = {
     domain: 'skillsmith.planning-diagnostic-identity',
     schemaVersion: 1,
     kind,
@@ -802,7 +850,11 @@ const compatibilityPlanningDiagnostic = (
     correlation,
     reasonCode,
     selectionSource: 'explicit-targets',
-  });
+  } as const;
+  const diagnosticId =
+    planningContext === undefined
+      ? createPlanningDiagnosticId(diagnosticIdentity)
+      : createPlanningDiagnosticId(diagnosticIdentity, planningContext);
   return {
     diagnosticId,
     kind,
@@ -829,6 +881,7 @@ export const createInstallPlanning = (
   results: readonly InstallResult[],
   continueOnError: boolean,
   projectRoot: string | null = null,
+  planningContext?: AcquisitionPlanningContext,
 ): InstallCompatibilityPlanning => {
   const operations: ExecutableOperation[] = [];
   const operationResults = new Map<string, InstallResult>();
@@ -844,7 +897,7 @@ export const createInstallPlanning = (
       result.action === 'refused' ||
       result.action === 'failed'
     ) {
-      const diagnostic = compatibilityPlanningDiagnostic('install', result);
+      const diagnostic = compatibilityPlanningDiagnostic('install', result, planningContext);
       if (!diagnosticIds.has(diagnostic.diagnosticId)) {
         diagnosticIds.add(diagnostic.diagnosticId);
         diagnostics.push(diagnostic);
@@ -874,14 +927,18 @@ export const createInstallPlanning = (
       scope: result.scope,
       target: planningSource,
     });
-    const pairId = createOperationPairId({
+    const pairIdentity = {
       domain: 'skillsmith.operation-pair-identity',
       schemaVersion: 1,
       groupId,
       tool: result.tool,
       resource,
-    });
-    const operationId = createOperationId({
+    } as const;
+    const pairId =
+      planningContext === undefined
+        ? createOperationPairId(pairIdentity)
+        : createOperationPairId(pairIdentity, planningContext);
+    const operationIdentity = {
       domain: 'skillsmith.operation-identity',
       schemaVersion: 1,
       groupId,
@@ -891,7 +948,11 @@ export const createInstallPlanning = (
       source: null,
       tool: result.tool,
       scope: result.scope,
-    });
+    } as const;
+    const operationId =
+      planningContext === undefined
+        ? createOperationId(operationIdentity)
+        : createOperationId(operationIdentity, planningContext);
     if (operationResults.has(operationId)) continue;
     const before =
       result.action === 'installed'
@@ -948,29 +1009,32 @@ export const createInstallPlanning = (
     });
     operationResults.set(operationId, result);
   }
-  const plan = createOperationPlan({
-    domain: 'skillsmith.operation-plan',
-    schemaVersion: 1,
-    command: 'install',
-    selection: {
-      source: 'explicit-targets',
-      targets: [
-        ...new Set(
-          requested.sources.map((source, index) =>
-            closedCompatibilityPlanningText(source, `rejected-source:${index}`),
+  const plan = createCanonicalAcquisitionPlan(
+    {
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'install',
+      selection: {
+        source: 'explicit-targets',
+        targets: [
+          ...new Set(
+            requested.sources.map((source, index) =>
+              closedCompatibilityPlanningText(source, `rejected-source:${index}`),
+            ),
           ),
-        ),
-      ],
-      all: false,
-      tools: requested.tools,
-      scopes: [requested.scope],
-      groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+        ],
+        all: false,
+        tools: requested.tools,
+        scopes: [requested.scope],
+        groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+      },
+      batchPolicy: continueOnError ? 'continue-on-error' : 'fail-fast',
+      operations,
+      checks: [],
+      diagnostics,
     },
-    batchPolicy: continueOnError ? 'continue-on-error' : 'fail-fast',
-    operations,
-    checks: [],
-    diagnostics,
-  }) as OperationPlan<'install'>;
+    planningContext,
+  );
   return { plan, operationResults };
 };
 
@@ -984,6 +1048,7 @@ export const createUninstallPlanning = (
   requested: UninstallReport['requested'],
   results: readonly UninstallResult[],
   projectRoot: string | null,
+  planningContext?: AcquisitionPlanningContext,
 ): UninstallCompatibilityPlanning => {
   const operations: ExecutableOperation[] = [];
   const operationResults = new Map<string, UninstallResult>();
@@ -997,7 +1062,7 @@ export const createUninstallPlanning = (
       result.action === 'noop' ||
       result.action === 'refused'
     ) {
-      const diagnostic = compatibilityPlanningDiagnostic('uninstall', result);
+      const diagnostic = compatibilityPlanningDiagnostic('uninstall', result, planningContext);
       if (!diagnosticIds.has(diagnostic.diagnosticId)) {
         diagnosticIds.add(diagnostic.diagnosticId);
         diagnostics.push(diagnostic);
@@ -1020,14 +1085,18 @@ export const createUninstallPlanning = (
       scope: result.scope,
       target: result.skill,
     });
-    const pairId = createOperationPairId({
+    const pairIdentity = {
       domain: 'skillsmith.operation-pair-identity',
       schemaVersion: 1,
       groupId,
       tool: result.tool,
       resource,
-    });
-    const operationId = createOperationId({
+    } as const;
+    const pairId =
+      planningContext === undefined
+        ? createOperationPairId(pairIdentity)
+        : createOperationPairId(pairIdentity, planningContext);
+    const operationIdentity = {
       domain: 'skillsmith.operation-identity',
       schemaVersion: 1,
       groupId,
@@ -1037,7 +1106,11 @@ export const createUninstallPlanning = (
       source: null,
       tool: result.tool,
       scope: result.scope,
-    });
+    } as const;
+    const operationId =
+      planningContext === undefined
+        ? createOperationId(operationIdentity)
+        : createOperationId(operationIdentity, planningContext);
     if (operationResults.has(operationId)) continue;
     const before = compatibilityPlacementImage(
       result.skill,
@@ -1090,22 +1163,25 @@ export const createUninstallPlanning = (
     ),
   ];
   if (selectedScopes.length === 0 && requested.scope !== null) selectedScopes.push(requested.scope);
-  const plan = createOperationPlan({
-    domain: 'skillsmith.operation-plan',
-    schemaVersion: 1,
-    command: 'uninstall',
-    selection: {
-      source: 'explicit-targets',
-      targets: requested.targets,
-      all: requested.allScopes,
-      tools: requested.tools,
-      scopes: selectedScopes,
-      groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+  const plan = createCanonicalAcquisitionPlan(
+    {
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'uninstall',
+      selection: {
+        source: 'explicit-targets',
+        targets: requested.targets,
+        all: requested.allScopes,
+        tools: requested.tools,
+        scopes: selectedScopes,
+        groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+      },
+      batchPolicy: 'fail-fast',
+      operations,
+      checks: [],
+      diagnostics,
     },
-    batchPolicy: 'fail-fast',
-    operations,
-    checks: [],
-    diagnostics,
-  }) as OperationPlan<'uninstall'>;
+    planningContext,
+  );
   return { plan, operationResults };
 };

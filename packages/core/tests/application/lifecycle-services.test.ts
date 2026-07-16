@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { runInstall } from '../../src/acquire/run.ts';
 import type { InstallReport, UninstallReport } from '../../src/acquire/types.ts';
+import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import {
   LIFECYCLE_APPLICATION_SERVICES,
   createLifecycleApplicationServices,
@@ -21,6 +22,7 @@ import type { prepareRollback } from '../../src/place/run.ts';
 import type { FlipReport } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
 import { err, ok } from '../../src/result.ts';
+import { buildFixtureFleet, destroyFixtureFleet } from '../fixtures/place/fleet.ts';
 
 const ports = {} as RuntimePorts;
 
@@ -191,6 +193,54 @@ describe('lifecycle application services', () => {
     const services: Readonly<Record<string, ApplicationService<CurrentCommandRequest, unknown>>> =
       LIFECYCLE_APPLICATION_SERVICES;
     expect(Object.keys(services)).toEqual(['install', 'uninstall', 'dev', 'promote']);
+  });
+
+  test('default lifecycle runners remain bound to the injected registry', async () => {
+    const f = await buildFixtureFleet();
+    try {
+      const registry = createToolRegistry(
+        toolRegistry.adapters.map((adapter) => {
+          if (adapter.descriptor.id !== 'codex' || adapter.placement === undefined) return adapter;
+          const placement = adapter.placement;
+          return {
+            ...adapter,
+            placement: {
+              ...placement,
+              resolveScoped: async (...args: Parameters<typeof placement.resolveScoped>) => {
+                const resolution = await placement.resolveScoped(...args);
+                return { ...resolution, duplicateReason: 'INJECTED-REGISTRY-PLACEMENT' };
+              },
+            },
+          };
+        }),
+      );
+      const services = createLifecycleApplicationServices({}, registry);
+      const outcome = await services.promote(
+        {
+          arguments: [['beta']],
+          options: { tool: ['codex'], verify: false, dryRun: true },
+        },
+        context({
+          ports: f.env,
+          configuration: f.configuration,
+          invocationCwd: f.home,
+          projectContext: {
+            invocationCwd: f.home,
+            effectiveCwd: f.home,
+            projectRoot: null,
+            projectIdentity: null,
+            projectKind: 'non-git',
+            discoveredConfigPath: null,
+            explicitConfigPath: null,
+          },
+        }),
+      );
+
+      expect(outcome.report.value?.results[0]?.action).toBe('refused');
+      expect(outcome.report.value?.results[0]?.reason).toBe('INJECTED-REGISTRY-PLACEMENT');
+    } finally {
+      await destroyFixtureFleet(f);
+    }
   });
 
   test('install validates selection before context access and preserves capability refusal', async () => {
