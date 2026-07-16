@@ -4926,7 +4926,7 @@
       "phase": "3B",
       "title": "Tool-specific lifecycle behavior behind registered adapter bundles",
       "dependsOn": ["P17-G3B-01"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0007-tool-adapter-registry.md",
@@ -5025,23 +5025,35 @@
         },
         "impacted-green": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3B-05.md#targeted-and-impacted-green"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-05.md#targeted-and-impacted-green",
+            "projects/p17/evidence/P17-G3B-05.md#terminal-full-repository-gate"
+          ]
         },
         "refactor": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3B-05.md#refactor-review"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-05.md#refactor-review",
+            "projects/p17/evidence/P17-G3B-05.md#terminal-compatibility-correction-and-mandatory-architecture-review"
+          ]
         },
         "adversarial-review": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3B-05.md#adversarial-review"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-05.md#adversarial-review",
+            "projects/p17/evidence/P17-G3B-05.md#terminal-compatibility-correction-and-mandatory-architecture-review"
+          ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-05.md#terminal-full-repository-gate",
+            "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off"
+          ]
         }
       },
       "evidence": [
@@ -5052,7 +5064,10 @@
         "projects/p17/evidence/P17-G3B-05.md#minimal-implementation",
         "projects/p17/evidence/P17-G3B-05.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-05.md#refactor-review",
-        "projects/p17/evidence/P17-G3B-05.md#adversarial-review"
+        "projects/p17/evidence/P17-G3B-05.md#adversarial-review",
+        "projects/p17/evidence/P17-G3B-05.md#terminal-compatibility-correction-and-mandatory-architecture-review",
+        "projects/p17/evidence/P17-G3B-05.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off"
       ]
     },
     {
@@ -19894,7 +19909,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-05",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-05",
       "target": null,
@@ -19903,7 +19918,10 @@
         "projects/p17/evidence/P17-G3B-05.md#test-first-evidence",
         "projects/p17/evidence/P17-G3B-05.md#minimal-implementation",
         "projects/p17/evidence/P17-G3B-05.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G3B-05.md#adversarial-review"
+        "projects/p17/evidence/P17-G3B-05.md#adversarial-review",
+        "projects/p17/evidence/P17-G3B-05.md#terminal-compatibility-correction-and-mandatory-architecture-review",
+        "projects/p17/evidence/P17-G3B-05.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -20186,7 +20204,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-05",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-05:tests/ergonomics/phase/EWP-P3B-TS06.test.ts#EWP-P3B-TS06",
       "target": {

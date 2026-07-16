@@ -12,8 +12,8 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 14 | 14 | 6 |
-| phase-task | 65 | 41 | 24 | 0 |
-| phase-test | 61 | 37 | 24 | 0 |
+| phase-task | 65 | 42 | 23 | 0 |
+| phase-test | 61 | 38 | 23 | 0 |
 | command-test | 157 | 52 | 105 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 2 | 14 | 0 |
@@ -28,7 +28,7 @@ Tracked entities: **425** across **45** change groups.
 | 0 | 5 | 28 | 28 | 0 |
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
-| 3 | 8 | 82 | 78 | 0 |
+| 3 | 8 | 82 | 80 | 0 |
 | 4 | 7 | 107 | 0 | 0 |
 | 5 | 5 | 68 | 0 | 0 |
 | 6 | 5 | 39 | 0 | 0 |
@@ -1024,7 +1024,7 @@ Downstream coverage obligations: EWP-WF06, EWP-WF11, EWP-WF13.
 
 ## P17-G3B-05 — Tool-specific lifecycle behavior behind registered adapter bundles
 
-Phase: 3B; status: **reviewed**; dependencies: P17-G3B-01.
+Phase: 3B; status: **signed-off**; dependencies: P17-G3B-01.
 Required-now validations: EWP-P3B-TS06.
 Downstream coverage obligations: none.
 
@@ -1038,13 +1038,13 @@ Downstream coverage obligations: none.
 - [x] P17-G3B-05:impacted-green _(passed)_
 - [x] P17-G3B-05:refactor _(passed)_
 - [x] P17-G3B-05:adversarial-review _(passed)_
-- [ ] P17-G3B-05:traceability-closure _(pending)_
-- [ ] P17-G3B-05:signed-off _(pending)_
+- [x] P17-G3B-05:traceability-closure _(passed)_
+- [x] P17-G3B-05:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-P3B-T06** — Move all tool-specific root, verification policy, placement, legacy-notice, and _(phase-task; reviewed)_
-- [ ] **EWP-P3B-TS06** — Static known-tool-branch ban; generic orchestration through fixture adapters; _(phase-test; passing)_
+- [x] **EWP-P3B-T06** — Move all tool-specific root, verification policy, placement, legacy-notice, and _(phase-task; signed-off)_
+- [x] **EWP-P3B-TS06** — Static known-tool-branch ban; generic orchestration through fixture adapters; _(phase-test; signed-off)_
 
 ## P17-G3B-06 — Operation context and lifecycle events through execution and recovery
 
