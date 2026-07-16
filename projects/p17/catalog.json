@@ -5075,15 +5075,39 @@
       "phase": "3B",
       "title": "Operation context and lifecycle events through execution and recovery",
       "dependsOn": ["P17-G3B-02", "P17-G1-07"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "docs/adr/0009-operation-scoped-observation.md",
+        "docs/architecture.md",
+        "packages/core/src/application/lifecycle-services.ts",
+        "packages/core/src/application/read-services.ts",
+        "packages/core/src/execution/observation.ts",
+        "packages/core/src/execution/types.ts",
+        "packages/core/src/execution/coordinator.ts",
+        "packages/core/src/execution/scheduler.ts",
+        "packages/core/src/acquire/run.ts",
+        "packages/core/src/acquire/execute.ts",
+        "packages/core/src/place/run.ts",
+        "packages/core/src/place/execute.ts",
+        "packages/core/src/place/swap.ts",
+        "packages/core/src/place/recovery.ts",
+        "packages/core/src/place/logical-transactions.ts",
+        "packages/core/src/place/ledger-migration.ts",
+        "packages/core/src/place/ledger-persistence.ts",
+        "packages/core/src/artifacts/ledger-writer.ts",
+        "packages/core/src/doctor/repair.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS07.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": ["EWP-P3B-TS07"],
       "requiredNowValidations": ["EWP-P3B-TS07"],
       "downstreamCoverage": [],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P3B-TS07.test.ts --test-name-pattern EWP-P3B-TS07"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
@@ -5091,8 +5115,8 @@
           "evidence": ["projects/p17/evidence/P17-G3B-06.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-06.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
@@ -5127,7 +5151,11 @@
           "evidence": []
         }
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-06.md#mapping-and-prerequisites"]
+      "evidence": [
+        "projects/p17/plans/P17-G3B-06.md",
+        "projects/p17/evidence/P17-G3B-06.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G3B-06.md#ready-plan"
+      ]
     },
     {
       "id": "P17-G4A-01",
@@ -19995,18 +20023,42 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-06",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-06",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G3B-06.md#ready-plan"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS07"],
       "impactedValidations": ["EWP-P3B-TS07"],
       "affectedContracts": [],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P3B-TS07.test.ts --test-name-pattern EWP-P3B-TS07"
+      ],
+      "ownedFiles": [
+        "docs/adr/0009-operation-scoped-observation.md",
+        "docs/architecture.md",
+        "packages/core/src/application/lifecycle-services.ts",
+        "packages/core/src/application/read-services.ts",
+        "packages/core/src/execution/observation.ts",
+        "packages/core/src/execution/types.ts",
+        "packages/core/src/execution/coordinator.ts",
+        "packages/core/src/execution/scheduler.ts",
+        "packages/core/src/acquire/run.ts",
+        "packages/core/src/acquire/execute.ts",
+        "packages/core/src/place/run.ts",
+        "packages/core/src/place/execute.ts",
+        "packages/core/src/place/swap.ts",
+        "packages/core/src/place/recovery.ts",
+        "packages/core/src/place/logical-transactions.ts",
+        "packages/core/src/place/ledger-migration.ts",
+        "packages/core/src/place/ledger-persistence.ts",
+        "packages/core/src/artifacts/ledger-writer.ts",
+        "packages/core/src/doctor/repair.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS07.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts"
+      ]
     },
     {
       "id": "EWP-P3B-TS01",
