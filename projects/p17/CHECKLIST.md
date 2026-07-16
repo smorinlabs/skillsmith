@@ -1048,7 +1048,7 @@ Downstream coverage obligations: none.
 
 ## P17-G3B-06 — Operation context and lifecycle events through execution and recovery
 
-Phase: 3B; status: **ready**; dependencies: P17-G3B-02, P17-G1-07.
+Phase: 3B; status: **active**; dependencies: P17-G3B-02, P17-G1-07.
 Required-now validations: EWP-P3B-TS07.
 Downstream coverage obligations: none.
 
@@ -1056,7 +1056,7 @@ Downstream coverage obligations: none.
 
 - [x] P17-G3B-06:mapped _(passed)_
 - [x] P17-G3B-06:ready _(passed)_
-- [ ] P17-G3B-06:test-first _(pending)_
+- [x] P17-G3B-06:test-first _(passed)_
 - [ ] P17-G3B-06:minimal-implementation _(pending)_
 - [ ] P17-G3B-06:targeted-green _(pending)_
 - [ ] P17-G3B-06:impacted-green _(pending)_
@@ -1067,8 +1067,8 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
-- [ ] **EWP-P3B-T07** — Propagate OperationContext through planners, adapters, the coordinator, journal, _(phase-task; ready)_
-- [ ] **EWP-P3B-TS07** — Per-operation causal lifecycle sequences for plan/apply/partial failure/ _(phase-test; planned)_
+- [ ] **EWP-P3B-T07** — Propagate OperationContext through planners, adapters, the coordinator, journal, _(phase-task; red)_
+- [ ] **EWP-P3B-TS07** — Per-operation causal lifecycle sequences for plan/apply/partial failure/ _(phase-test; failing)_
 
 ## P17-G4A-01 — Install/uninstall default-save, no-save, ownership, and artifact reporting
 
