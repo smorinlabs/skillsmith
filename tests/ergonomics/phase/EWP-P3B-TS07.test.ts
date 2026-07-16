@@ -5,7 +5,9 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createCliRuntimeAdapter } from '../../../packages/cli/src/runtime/adapter.ts';
 import * as acquireExecution from '../../../packages/core/src/acquire/execute.ts';
+import { createLifecycleApplicationServices } from '../../../packages/core/src/application/lifecycle-services.ts';
 import { runDoctorApplication } from '../../../packages/core/src/application/read-services.ts';
 import type {
   CurrentApplicationContext,
@@ -23,7 +25,7 @@ import { resolveRuntimeConfiguration } from '../../../packages/core/src/config/r
 import type { EffectiveConfig } from '../../../packages/core/src/config/types.ts';
 import * as doctorRepair from '../../../packages/core/src/doctor/repair.ts';
 import type { ScanEnv } from '../../../packages/core/src/env/types.ts';
-import { flipFailedError } from '../../../packages/core/src/errors.ts';
+import { cancelledError, flipFailedError, ledgerError } from '../../../packages/core/src/errors.ts';
 import * as scheduler from '../../../packages/core/src/execution/scheduler.ts';
 import * as publicCore from '../../../packages/core/src/index.ts';
 import {
@@ -800,7 +802,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       expect(Object.isFrozen(OBSERVATION_EVENT_KINDS)).toBeTrue();
     });
 
-    test('EWP-P3B-TS07 red: one private execution observation authority owns deferred events', async () => {
+    test('EWP-P3B-TS07 contract: one private execution observation authority owns deferred events', async () => {
       const authority = await optionalModule(
         'packages/core/src/execution/observation.ts',
         'ewp-p3b-ts07-family-1',
@@ -825,7 +827,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       expect(canonicalPlanningString(plan)).toBe(before);
     });
 
-    test('EWP-P3B-TS07 red: plan.created uses the canonical private plan identity', async () => {
+    test('EWP-P3B-TS07 contract: plan.created uses the canonical private plan identity', async () => {
       const authority = await optionalModule(
         'packages/core/src/execution/observation.ts',
         'ewp-p3b-ts07-family-2',
@@ -852,6 +854,131 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       ]);
       expect(canonicalPlanningString(plan)).toBe(bytes);
     });
+
+    test('EWP-P3B-TS07 contract: acquisition and application emit only completed plans', async () => {
+      const operation = operationFor('acquisition-plan');
+      const plan = planFor([operation]);
+      const explicit = observationFixture();
+      const acquired = await acquireExecution.runAcquisitionWithObservation(
+        async (state) => {
+          acquireExecution.emitAcquisitionPlanCreated(explicit.bundle, plan, state);
+          return { ok: true as const, value: { plan } };
+        },
+        () => ledgerError('fixture acquisition failed'),
+        explicit.bundle,
+      );
+      expect(acquired.ok).toBeTrue();
+      expect(explicit.events).toHaveLength(1);
+      expect(explicit.events[0]).toMatchObject({
+        kind: 'plan.created',
+        planId: `plan:v1:${createHash('sha256')
+          .update(canonicalPlanningString(plan))
+          .digest('hex')}`,
+        operationCount: 1,
+      });
+
+      const emptyPlan = planFor([]);
+      const preview = observationFixture();
+      let installCalls = 0;
+      const services = createLifecycleApplicationServices({
+        install: (async (
+          _env: unknown,
+          _options: unknown,
+          _dependencies: unknown,
+          observation?: ObservationBundle,
+        ) => {
+          installCalls += 1;
+          return acquireExecution.runAcquisitionWithObservation(
+            async () => ({
+              ok: true as const,
+              value: {
+                dryRun: true,
+                requested: {
+                  sources: ['fixture/repo'],
+                  tools: ['codex'],
+                  explicitTools: true,
+                  scope: 'user',
+                  explicitScope: true,
+                  ref: null,
+                  pin: false,
+                  direct: false,
+                  force: false,
+                  verify: 'static',
+                  deep: false,
+                },
+                results: [],
+                summary: {
+                  installed: 0,
+                  updated: 0,
+                  repaired: 0,
+                  noop: 0,
+                  skipped: 0,
+                  refused: 0,
+                  failed: 0,
+                },
+                plan: emptyPlan,
+                executionResults: [],
+              },
+            }),
+            () => ledgerError('fixture application acquisition failed'),
+            observation,
+          );
+        }) as never,
+      });
+      const previewOutcome = await services.install(
+        {
+          arguments: [['fixture/repo']],
+          options: { tool: ['codex'], dryRun: true, verify: true },
+        },
+        doctorApplicationContext(preview.bundle),
+      );
+      expect(previewOutcome.exitClass).toBe('success');
+      expect(previewOutcome.mutation).toMatchObject({ kind: 'preview', planned: 0 });
+      expect(installCalls).toBe(1);
+      expect(preview.events).toHaveLength(1);
+      expect(preview.events[0]).toMatchObject({
+        kind: 'plan.created',
+        operationCount: 0,
+      });
+
+      const refused = observationFixture();
+      const refusalOutcome = await services.install(
+        {
+          arguments: [['fixture/repo']],
+          options: { tool: ['codex'], dryRun: true, yes: true },
+        },
+        doctorApplicationContext(refused.bundle),
+      );
+      expect(refusalOutcome).toMatchObject({ exitClass: 'usage', mutation: { kind: 'none' } });
+      expect(installCalls).toBe(1);
+      expect(refused.events).toEqual([]);
+
+      const failed = observationFixture();
+      const acquisitionFailure = await acquireExecution.runAcquisitionWithObservation(
+        async () => ({ ok: false as const, error: ledgerError('fixture planned failure') }),
+        () => ledgerError('fixture sanitized failure'),
+        failed.bundle,
+      );
+      expect(acquisitionFailure).toEqual({
+        ok: false,
+        error: ledgerError('fixture sanitized failure'),
+      });
+      expect(failed.events).toEqual([]);
+
+      const thrown = observationFixture();
+      const acquisitionThrow = await acquireExecution.runAcquisitionWithObservation(
+        async () => {
+          throw new Error('fixture planning threw');
+        },
+        () => ledgerError('fixture sanitized throw'),
+        thrown.bundle,
+      );
+      expect(acquisitionThrow).toEqual({
+        ok: false,
+        error: ledgerError('fixture sanitized throw'),
+      });
+      expect(thrown.events).toEqual([]);
+    });
   });
 
   describe('family 3 — command to actually-started operation identity', () => {
@@ -875,7 +1002,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       expect(results.map(({ outcome }) => outcome)).toEqual(['cancelled']);
     });
 
-    test('EWP-P3B-TS07 red: observed scheduling derives context only for started bindings', async () => {
+    test('EWP-P3B-TS07 contract: observed scheduling derives context only for started bindings', async () => {
       const observed = asFunction(moduleRecord(scheduler).scheduleOperationPlanObserved);
       expect(observed, 'missing G3B-06 observed scheduler').not.toBeNull();
       if (observed === null) return;
@@ -924,7 +1051,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       ).toEqual(['succeeded', 'failed', 'cancelled', 'rolled-back', 'skipped-after-failure']);
     });
 
-    test('EWP-P3B-TS07 red: observed scheduling emits exact completion outcomes and codes', async () => {
+    test('EWP-P3B-TS07 contract: observed scheduling emits exact completion outcomes and codes', async () => {
       const observed = asFunction(moduleRecord(scheduler).scheduleOperationPlanObserved);
       expect(observed, 'missing G3B-06 observed scheduler outcome mapping').not.toBeNull();
       if (observed === null) return;
@@ -995,6 +1122,90 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
         errorCode: 'cancelled',
       });
     });
+
+    test('EWP-P3B-TS07 contract: continue ordering and thrown cancellation forms stay exact', async () => {
+      const first = operationFor('continue-failure');
+      const second = operationFor('continue-success');
+      const fixture = observationFixture();
+      const continued = await scheduler.scheduleOperationPlanObserved(
+        planFor([first, second], 'continue-on-error'),
+        [
+          bindingFor(first, async () => resultFor(first, 'failed')),
+          bindingFor(second, async () => resultFor(second, 'succeeded')),
+        ] as never,
+        {},
+        fixture.bundle,
+      );
+      expect(continued.map(({ outcome }) => outcome)).toEqual(['failed', 'succeeded']);
+      expect(fixture.events.map(({ kind, operationId }) => [kind, operationId])).toEqual([
+        ['operation.started', first.operationId],
+        ['operation.completed', first.operationId],
+        ['operation.started', second.operationId],
+        ['operation.completed', second.operationId],
+      ]);
+      for (const event of fixture.events) {
+        expect(event).toMatchObject({
+          parentOperationId: 'command:v1:fixture',
+          occurredAt: '1970-01-01T00:00:00.000Z',
+          monotonicMilliseconds: 10,
+        });
+        if (event.kind === 'operation.completed') expect(event.durationMilliseconds).toBe(0);
+      }
+
+      for (const [skill, thrown] of [
+        ['abort-code', Object.freeze({ code: 'ABORT_ERR', message: 'abort code fixture' })],
+        ['abort-name', Object.freeze({ name: 'AbortError', message: 'abort name fixture' })],
+      ] as const) {
+        const operation = operationFor(skill);
+        const observation = observationFixture();
+        await expect(
+          scheduler.scheduleOperationPlanObserved(
+            planFor([operation]),
+            [
+              bindingFor(operation, async () => {
+                throw thrown;
+              }),
+            ] as never,
+            {},
+            observation.bundle,
+          ),
+        ).rejects.toBe(thrown);
+        expect(observation.events).toHaveLength(2);
+        expect(observation.events.at(-1)).toMatchObject({
+          kind: 'operation.completed',
+          outcome: 'cancelled',
+          errorCode: 'cancelled',
+          durationMilliseconds: 0,
+        });
+      }
+
+      const controller = new AbortController();
+      const signalOperation = operationFor('abort-signal');
+      const signalObservation = observationFixture();
+      const signalThrown = Object.freeze({ message: 'signal abort fixture' });
+      await expect(
+        scheduler.scheduleOperationPlanObserved(
+          planFor([signalOperation]),
+          [
+            bindingFor(signalOperation, async () => {
+              controller.abort();
+              throw signalThrown;
+            }),
+          ] as never,
+          { signal: controller.signal },
+          signalObservation.bundle,
+        ),
+      ).rejects.toBe(signalThrown);
+      expect(signalObservation.events).toHaveLength(2);
+      expect(signalObservation.events.at(-1)).toMatchObject({
+        kind: 'operation.completed',
+        outcome: 'cancelled',
+        errorCode: 'cancelled',
+        occurredAt: '1970-01-01T00:00:00.000Z',
+        monotonicMilliseconds: 10,
+        durationMilliseconds: 0,
+      });
+    });
   });
 
   describe('family 5 — durable placement transaction ownership', () => {
@@ -1008,7 +1219,79 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
     });
 
-    test('EWP-P3B-TS07 red: pre-aborted canonical cleanup is cancelled before persistence or mutation', async () => {
+    test('EWP-P3B-TS07 contract: failed durable markers close once and stop later phases', async () => {
+      for (const [label, error, outcome, errorCode] of [
+        [
+          'failure',
+          ledgerError('fixture staged marker persistence failed'),
+          'failure',
+          'ledger-error',
+        ],
+        [
+          'cancellation',
+          cancelledError('fixture staged marker persistence cancelled'),
+          'cancelled',
+          'cancelled',
+        ],
+      ] as const) {
+        const fixture = await buildPromoteSwapFixture();
+        try {
+          const observation = operationObservationFixture(fixture.operation);
+          const persistLedger = fixture.request.effects.persistLedger;
+          let durableLedger = fixture.request.state.ledger;
+          const request: SwapRequest = {
+            ...fixture.request,
+            effects: {
+              ...fixture.request.effects,
+              persistLedger: async (candidate) => {
+                const journal =
+                  candidate.transactions[fixture.transactionId] ??
+                  candidate.history.find(
+                    ({ transactionId }) => transactionId === fixture.transactionId,
+                  );
+                if (journal?.phase === 'staged') {
+                  return { ok: false, error, ledger: durableLedger };
+                }
+                const persisted = await persistLedger(candidate);
+                durableLedger = persisted.ledger;
+                return persisted;
+              },
+            },
+          };
+          const result = await swap.runSwapObserved(request, fixture.plan, observation.bundle);
+          expect(result.ok, `${label} marker result`).toBeFalse();
+          if (result.ok) continue;
+          expect(result.error.code).toBe(errorCode);
+          expect(fixture.phases).toEqual(['prepared']);
+          expect(
+            observation.events
+              .filter(({ kind }) => kind === 'transaction.stage.started')
+              .map(({ stage }) => stage),
+          ).toEqual(['prepared', 'staged']);
+          expect(
+            observation.events
+              .filter(({ kind }) => kind === 'transaction.stage.completed')
+              .map(({ stage, outcome: stageOutcome, errorCode: stageCode }) => ({
+                stage,
+                outcome: stageOutcome,
+                errorCode: stageCode,
+              })),
+          ).toEqual([
+            { stage: 'prepared', outcome: 'success', errorCode: null },
+            { stage: 'staged', outcome, errorCode },
+          ]);
+          expect(
+            observation.events.some(
+              ({ kind }) => kind === 'transaction.committed' || kind === 'transaction.rolled-back',
+            ),
+          ).toBeFalse();
+        } finally {
+          await destroyPromoteSwapFixture(fixture);
+        }
+      }
+    });
+
+    test('EWP-P3B-TS07 contract: pre-aborted canonical cleanup is cancelled before persistence or mutation', async () => {
       const fixture = await buildPromoteSwapFixture();
       try {
         const contentHash = await contentHashOf(fixture.env, fixture.storePath);
@@ -1162,7 +1445,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
     });
 
-    test('EWP-P3B-TS07 red: swap emits one correlated durable stage sequence', async () => {
+    test('EWP-P3B-TS07 contract: swap emits one correlated durable stage sequence', async () => {
       const observed = asFunction(moduleRecord(swap).runSwapObserved);
       expect(observed, 'missing G3B-06 observed swap authority').not.toBeNull();
       if (observed === null) return;
@@ -1493,12 +1776,18 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
             kind: 'recovery.started',
             operationId: acquired.transactionId,
             parentOperationId: committed.intent.operationId,
+            groupId: committed.intent.groupId,
+            pairId: committed.intent.pairId,
+            attempt: committed.context.attempt,
             recoveryKind: 'cleanup',
           },
           {
             kind: 'recovery.completed',
             operationId: acquired.transactionId,
             parentOperationId: committed.intent.operationId,
+            groupId: committed.intent.groupId,
+            pairId: committed.intent.pairId,
+            attempt: committed.context.attempt,
             recoveryKind: 'cleanup',
             outcome: 'success',
           },
@@ -1508,7 +1797,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
     });
 
-    test('EWP-P3B-TS07 red: canonical acquisition cleanup is atomic across update and remove targets', async () => {
+    test('EWP-P3B-TS07 contract: canonical acquisition cleanup is atomic across update and remove targets', async () => {
       const fixture = await buildPromoteSwapFixture();
       try {
         const contentHash = await contentHashOf(fixture.env, fixture.storePath);
@@ -1862,7 +2151,178 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       ).not.toBeNull();
     });
 
-    test('EWP-P3B-TS07 red: recovery begins one atomic logical and physical attempt', async () => {
+    test('EWP-P3B-TS07 contract: rollback resume increments N to N+1 with exact terminal timing', async () => {
+      const controller = new AbortController();
+      let fixture: PromoteSwapFixture | null = null;
+      fixture = await buildPromoteSwapFixture((model) => {
+        if (model.transactions[fixture?.transactionId ?? '']?.phase === 'live') {
+          controller.abort();
+        }
+      });
+      try {
+        const pending = await swap.runSwap(
+          {
+            ...fixture.request,
+            context: {
+              ...fixture.request.context,
+              pauseAt: 'live',
+              signal: controller.signal,
+            },
+          },
+          fixture.plan,
+        );
+        expect(pending.ok).toBeFalse();
+        expect(fixture.phases.at(-1)).toBe('live');
+        const backupPath = join(
+          fixture.plan.skillsRoot,
+          `.skillsmith-backup-alpha-${fixture.transactionId}`,
+        );
+        expect(await fixture.env.pathKind(fixture.placementPath)).toBe('absent');
+        expect(await fixture.env.pathKind(backupPath)).toBe('symlink');
+
+        let injected = false;
+        const failingEnv: RuntimePorts = {
+          ...fixture.env,
+          rename: async (sourcePath, destinationPath) => {
+            if (
+              !injected &&
+              sourcePath === backupPath &&
+              destinationPath === fixture?.placementPath
+            ) {
+              injected = true;
+              throw Object.assign(new Error('fixture rollback restore failed'), { code: 'EIO' });
+            }
+            return fixture?.env.rename(sourcePath, destinationPath);
+          },
+        };
+        const target = { skill: 'alpha' as const, tool: 'claude-code' as const };
+        const failedObservation = operationObservationFixture(fixture.operation);
+        const failed = await placementRecovery.recoverPlacementObserved(
+          {
+            env: failingEnv,
+            ledgerPath: ledgerPathOf(fixture.data),
+            ledger: pending.state.ledger,
+            journalNow: () => '2026-07-16T00:00:01.000Z',
+            newTransactionId: () => 'unused',
+          },
+          'rollback',
+          target,
+          failedObservation.bundle,
+        );
+        expect(failed.ok).toBeFalse();
+        expect(injected).toBeTrue();
+        const failedRecoveryEvents = failedObservation.events.filter(
+          ({ kind }) => kind === 'recovery.started' || kind === 'recovery.completed',
+        );
+        expect(failedRecoveryEvents).toMatchObject([
+          {
+            kind: 'recovery.started',
+            operationId: fixture.transactionId,
+            parentOperationId: fixture.operation.operationId,
+            groupId: fixture.operation.groupId,
+            pairId: fixture.operation.pairId,
+            attempt: 2,
+            recoveryKind: 'rollback',
+          },
+          {
+            kind: 'recovery.completed',
+            operationId: fixture.transactionId,
+            parentOperationId: fixture.operation.operationId,
+            groupId: fixture.operation.groupId,
+            pairId: fixture.operation.pairId,
+            attempt: 2,
+            recoveryKind: 'rollback',
+            outcome: 'failure',
+            errorCode: 'flip-failed',
+          },
+        ]);
+        expect(failedRecoveryEvents).toHaveLength(2);
+        const interruptedRollback = failed.state.ledger.transactions[fixture.transactionId];
+        expect(interruptedRollback).toMatchObject({
+          disposition: 'rollback',
+          phase: 'prepared',
+          context: {
+            parentOperationId: fixture.operation.operationId,
+            command: 'skillsmith-rollback',
+            workflow: 'placement-swap',
+            attempt: 2,
+            startedAt: NOW,
+          },
+        });
+
+        const retryObservation = operationObservationFixture(fixture.operation);
+        const retried = await placementRecovery.recoverPlacementObserved(
+          {
+            env: fixture.env,
+            ledgerPath: ledgerPathOf(fixture.data),
+            ledger: failed.state.ledger,
+            journalNow: () => '2026-07-16T00:00:02.000Z',
+            newTransactionId: () => 'unused',
+          },
+          'rollback',
+          target,
+          retryObservation.bundle,
+        );
+        expect(retried.ok).toBeTrue();
+        const history = retried.state.ledger.history.find(
+          ({ transactionId }) => transactionId === fixture?.transactionId,
+        );
+        expect(history?.context).toMatchObject({
+          parentOperationId: fixture.operation.operationId,
+          command: 'skillsmith-rollback',
+          workflow: 'placement-swap',
+          attempt: 3,
+          startedAt: NOW,
+        });
+        expect(retryObservation.events.map(({ kind }) => kind)).toEqual([
+          'recovery.started',
+          'transaction.stage.started',
+          'transaction.stage.completed',
+          'transaction.rolled-back',
+          'recovery.completed',
+        ]);
+        expect(retryObservation.events).toMatchObject([
+          { kind: 'recovery.started', attempt: 3, monotonicMilliseconds: 22 },
+          { kind: 'transaction.stage.started', stage: 'committed', monotonicMilliseconds: 24 },
+          {
+            kind: 'transaction.stage.completed',
+            stage: 'committed',
+            outcome: 'success',
+            monotonicMilliseconds: 25,
+            durationMilliseconds: 1,
+          },
+          {
+            kind: 'transaction.rolled-back',
+            reasonCode: 'rollback-requested',
+            monotonicMilliseconds: 27,
+            durationMilliseconds: 3,
+          },
+          {
+            kind: 'recovery.completed',
+            outcome: 'success',
+            errorCode: null,
+            monotonicMilliseconds: 28,
+            durationMilliseconds: 6,
+          },
+        ]);
+        for (const event of retryObservation.events) {
+          expect(event).toMatchObject({
+            operationId: fixture.transactionId,
+            parentOperationId: fixture.operation.operationId,
+            groupId: fixture.operation.groupId,
+            pairId: fixture.operation.pairId,
+            attempt: 3,
+            occurredAt: NOW,
+          });
+        }
+        expect(await fixture.env.pathKind(fixture.placementPath)).toBe('symlink');
+        expect(await fixture.env.readLink(fixture.placementPath)).toBe(fixture.sourcePath);
+      } finally {
+        await destroyPromoteSwapFixture(fixture);
+      }
+    });
+
+    test('EWP-P3B-TS07 contract: recovery begins one atomic logical and physical attempt', async () => {
       const beginAttempt = asFunction(
         moduleRecord(logicalTransactions).beginTransactionRecoveryAttempt,
       );
@@ -2072,7 +2532,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
     });
 
-    test('EWP-P3B-TS07 red: exhausted recovery attempts preserve observer parity', async () => {
+    test('EWP-P3B-TS07 contract: exhausted recovery attempts preserve observer parity', async () => {
       const controller = new AbortController();
       let fixture: PromoteSwapFixture | null = null;
       fixture = await buildPromoteSwapFixture((model) => {
@@ -2133,7 +2593,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
     });
 
-    test('EWP-P3B-TS07 red: attempt persistence failure, cancellation, and throws close recovery spans', async () => {
+    test('EWP-P3B-TS07 contract: attempt persistence failure, cancellation, and throws close recovery spans', async () => {
       const pendingFixture = async (): Promise<
         Readonly<{
           fixture: PromoteSwapFixture;
@@ -2395,7 +2855,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       expect(asFunction(moduleRecord(ledgerMigration).ledgerMigrationJournals)).not.toBeNull();
     });
 
-    test('EWP-P3B-TS07 red: migration recovery attempts are durable before pointer cleanup', async () => {
+    test('EWP-P3B-TS07 contract: migration recovery attempts are durable before pointer cleanup', async () => {
       const retryRoot = await mkdtemp(join(tmpdir(), 'skillsmith-p3b-ts07-ledger-retries-'));
       try {
         const path = join(retryRoot, 'placements.json');
@@ -2543,7 +3003,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
     });
 
-    test('EWP-P3B-TS07 red: malformed migration attempts preserve observer parity', async () => {
+    test('EWP-P3B-TS07 contract: malformed migration attempts preserve observer parity', async () => {
       const root = await mkdtemp(join(tmpdir(), 'skillsmith-p3b-ts07-ledger-attempt-parity-'));
       try {
         const path = join(root, 'placements.json');
@@ -2619,7 +3079,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
     });
 
-    test('EWP-P3B-TS07 red: durable cursor and doctor execution have narrow observed seams', async () => {
+    test('EWP-P3B-TS07 contract: durable cursor and doctor execution have narrow observed seams', async () => {
       const writerSource = source('packages/core/src/artifacts/ledger-writer.ts');
       const cursorNotification =
         /readonly\s+([A-Za-z][A-Za-z0-9]*)\?:\s*\(\s*cursor:\s*LedgerMigrationCursor\s*\)\s*=>\s*void/u.exec(
@@ -3036,6 +3496,101 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
         operationCount: 0,
       });
       expect(canonicalPlanningString(doctorRepair.createDoctorRepairPlan([]).plan)).toBe(pureBytes);
+
+      const lockPath = '/doctor-fixture/skills-lock.json';
+      const lockLocation = Object.freeze({ kind: 'machine-bound' as const, path: lockPath });
+      const artifactRevision = ledgerByteRevision(new Uint8Array([1]));
+      const identified = doctorRepair.identifyDoctorFindings([
+        {
+          checkId: 'fixture-lock-repair',
+          severity: 'info',
+          title: 'fixture lock repair',
+          message: 'fixture lock repair is available',
+          repair: {
+            kind: 'write-lock',
+            artifact: 'lock',
+            path: lockPath,
+            before: {
+              state: 'absent',
+              schemaVersion: null,
+              byteRevision: null,
+              semanticRevision: null,
+            },
+            after: {
+              state: 'present',
+              schemaVersion: 1,
+              byteRevision: artifactRevision,
+              semanticRevision: artifactRevision,
+            },
+            targetSource: '{}',
+            beforeImage: {
+              kind: 'absent',
+              resource: { kind: 'lock', location: lockLocation },
+            },
+            afterImage: {
+              kind: 'lock',
+              location: lockLocation,
+              version: 1,
+              canonicalHash: CONTENT_HASH,
+              value: {
+                version: 1,
+                hashSchemaVersion: 1,
+                manifestHash: CONTENT_HASH,
+                skills: [],
+              },
+            },
+          },
+        },
+      ]);
+      const repairPlan = doctorRepair.createDoctorRepairPlan(identified);
+      expect(repairPlan.plan.operations).toHaveLength(1);
+      const repairOperation = repairPlan.plan.operations[0];
+      if (repairOperation === undefined) return;
+      const repairObservation = doctorObservationFixture();
+      const repairContext = doctorApplicationContext(repairObservation.bundle);
+      const repairResults = await doctorRepair.executeDoctorRepairsObserved(
+        {
+          plan: repairPlan.plan,
+          authorizations: repairPlan.authorizations,
+          ports: repairContext.ports,
+          artifactCoordinator: repairContext.artifactCoordinator,
+        },
+        repairObservation.bundle,
+      );
+      expect(repairResults).toMatchObject([
+        {
+          operationId: repairOperation.operationId,
+          outcome: 'failed',
+          error: { code: 'invalid-state' },
+        },
+      ]);
+      expect(repairObservation.events).toHaveLength(2);
+      expect(repairObservation.events).toMatchObject([
+        {
+          kind: 'operation.started',
+          operationId: repairOperation.operationId,
+          parentOperationId: 'command:v1:doctor-fixture',
+          groupId: repairOperation.groupId,
+          pairId: null,
+          attempt: 1,
+          operationKind: 'write-lock',
+          occurredAt: NOW,
+          monotonicMilliseconds: 0,
+        },
+        {
+          kind: 'operation.completed',
+          operationId: repairOperation.operationId,
+          parentOperationId: 'command:v1:doctor-fixture',
+          groupId: repairOperation.groupId,
+          pairId: null,
+          attempt: 1,
+          outcome: 'failure',
+          errorCode: 'invalid-state',
+          occurredAt: NOW,
+          monotonicMilliseconds: 0,
+          durationMilliseconds: 0,
+        },
+      ]);
       expect(source('packages/core/src/place/ledger-migration.ts')).not.toMatch(
         /['"]transaction\.(?:stage\.(?:started|completed)|committed|rolled-back)['"]/u,
       );
@@ -3052,7 +3607,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       );
     });
 
-    test('EWP-P3B-TS07 red: a registered fixture tool observes detection and verification', async () => {
+    test('EWP-P3B-TS07 contract: a registered fixture tool observes detection and verification', async () => {
       const detectObserved = asFunction(moduleRecord(acquireExecution).detectAcquireToolObserved);
       expect(
         detectObserved,
@@ -3208,7 +3763,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
     });
 
-    test('EWP-P3B-TS07 red: observed execution returns identical semantics for hostile observers', async () => {
+    test('EWP-P3B-TS07 contract: observed execution returns identical semantics for hostile observers', async () => {
       const observed = asFunction(moduleRecord(scheduler).scheduleOperationPlanObserved);
       expect(observed, 'missing G3B-06 observer-isolated observed execution path').not.toBeNull();
       if (observed === null) return;
@@ -3281,6 +3836,112 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
         await rm(base, { recursive: true, force: true });
       }
     });
+
+    test('EWP-P3B-TS07 contract: hostile observers preserve runtime bytes and exits', async () => {
+      const run = async (
+        observer: (event: ObserverEvent) => void | PromiseLike<void>,
+        format: 'human' | 'json',
+        executionOutcome: 'succeeded' | 'failed',
+      ) => {
+        const operation = operationFor(`runtime-${executionOutcome}`);
+        const plan = planFor([operation]);
+        const observation = observationFixture(observer);
+        const writes = { stdout: [] as string[], stderr: [] as string[], exits: [] as number[] };
+        const runtime = createCliRuntimeAdapter({
+          applications: {
+            fixture: async (_request, context) => {
+              const bundle = (context as { readonly observation: ObservationBundle }).observation;
+              const results = await scheduler.scheduleOperationPlanObserved(
+                plan,
+                [
+                  bindingFor(operation, async () => resultFor(operation, executionOutcome)),
+                ] as never,
+                {},
+                bundle,
+              );
+              const failed = results[0]?.outcome === 'failed';
+              return {
+                report: { results },
+                diagnostics: failed
+                  ? [{ code: 'fixture-failed', severity: 'error' as const, message: 'failed' }]
+                  : [],
+                exitClass: failed ? ('failure' as const) : ('success' as const),
+                mutation: {
+                  kind: 'none' as const,
+                  planned: 1,
+                  changed: 0,
+                  unchanged: failed ? 0 : 1,
+                  failed: failed ? 1 : 0,
+                },
+                deprecations: [],
+              };
+            },
+          },
+          renderers: {
+            fixture: {
+              human: (outcome) =>
+                outcome.exitClass === 'success'
+                  ? { stdout: 'fixture succeeded\n' }
+                  : { stderr: 'error: fixture failed\n' },
+              json: (outcome) => ({
+                stdout: `${JSON.stringify({ exitClass: outcome.exitClass })}\n`,
+              }),
+            },
+          },
+          io: {
+            stdout: { write: (value) => writes.stdout.push(value) },
+            stderr: { write: (value) => writes.stderr.push(value) },
+            exit: (code) => writes.exits.push(code),
+          },
+        });
+        const execution = await runtime.execute({
+          application: 'fixture',
+          reportKind: 'fixture',
+          request: {},
+          context: { observation: observation.bundle },
+          observation: observation.bundle,
+          format,
+        });
+        return {
+          execution,
+          stdout: writes.stdout.join(''),
+          stderr: writes.stderr.join(''),
+          exits: writes.exits,
+        };
+      };
+
+      const hostileObservers = [
+        () => {
+          throw new Error('runtime observer throw');
+        },
+        () => Promise.reject(new Error('runtime observer rejection')),
+        () => new Promise<void>(() => {}),
+      ] as const;
+      for (const executionOutcome of ['succeeded', 'failed'] as const) {
+        for (const format of ['human', 'json'] as const) {
+          const baseline = await run(() => {}, format, executionOutcome);
+          expect(baseline.execution.exitCode).toBe(executionOutcome === 'succeeded' ? 0 : 1);
+          expect(baseline.exits).toEqual([executionOutcome === 'succeeded' ? 0 : 1]);
+          if (format === 'human') {
+            expect([baseline.stdout, baseline.stderr]).toEqual(
+              executionOutcome === 'succeeded'
+                ? ['fixture succeeded\n', '']
+                : ['', 'error: fixture failed\n'],
+            );
+          } else {
+            expect(baseline.stderr).toBe('');
+            expect(baseline.stdout).toBe(
+              `${JSON.stringify({
+                exitClass: executionOutcome === 'succeeded' ? 'success' : 'failure',
+              })}\n`,
+            );
+          }
+          for (const observer of hostileObservers) {
+            expect(await run(observer, format, executionOutcome)).toEqual(baseline);
+          }
+        }
+      }
+    });
   });
 
   describe('family 10 — compatibility and bounded growth', () => {
@@ -3305,7 +3966,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       );
     });
 
-    test('EWP-P3B-TS07 red: the exact TS11 ownership transition remains private', () => {
+    test('EWP-P3B-TS07 contract: the exact TS11 ownership transition remains private', () => {
       expect(
         present('packages/core/src/execution/observation.ts'),
         'G3B-06 observation ownership transition is incomplete',
