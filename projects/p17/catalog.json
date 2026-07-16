@@ -5127,12 +5127,12 @@
           "evidence": ["projects/p17/evidence/P17-G3B-06.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green"]
         },
         "refactor": {
           "status": "pending",
@@ -5156,7 +5156,8 @@
         "projects/p17/evidence/P17-G3B-06.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G3B-06.md#ready-plan",
         "projects/p17/evidence/P17-G3B-06.md#test-first-evidence",
-        "projects/p17/evidence/P17-G3B-06.md#minimal-implementation"
+        "projects/p17/evidence/P17-G3B-06.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green"
       ]
     },
     {
@@ -20025,13 +20026,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-06",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-06",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G3B-06.md#ready-plan",
-        "projects/p17/evidence/P17-G3B-06.md#test-first-evidence"
+        "projects/p17/evidence/P17-G3B-06.md#test-first-evidence",
+        "projects/p17/evidence/P17-G3B-06.md#minimal-implementation",
+        "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -20294,7 +20297,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-06",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-06:tests/ergonomics/phase/EWP-P3B-TS07.test.ts#EWP-P3B-TS07",
       "target": {
@@ -20303,7 +20306,10 @@
         "selector": "EWP-P3B-TS07",
         "command": "bun test tests/ergonomics/phase/EWP-P3B-TS07.test.ts --test-name-pattern EWP-P3B-TS07"
       },
-      "evidence": ["projects/p17/evidence/P17-G3B-06.md#red-execution-receipt-ewp-p3b-ts07"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3B-06.md#final-green-execution-receipt-ewp-p3b-ts07",
+        "projects/p17/evidence/P17-G3B-06.md#red-execution-receipt-ewp-p3b-ts07"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS07"],

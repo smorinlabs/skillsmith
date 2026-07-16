@@ -1058,8 +1058,8 @@ Downstream coverage obligations: none.
 - [x] P17-G3B-06:ready _(passed)_
 - [x] P17-G3B-06:test-first _(passed)_
 - [x] P17-G3B-06:minimal-implementation _(passed)_
-- [ ] P17-G3B-06:targeted-green _(pending)_
-- [ ] P17-G3B-06:impacted-green _(pending)_
+- [x] P17-G3B-06:targeted-green _(passed)_
+- [x] P17-G3B-06:impacted-green _(passed)_
 - [ ] P17-G3B-06:refactor _(pending)_
 - [ ] P17-G3B-06:adversarial-review _(pending)_
 - [ ] P17-G3B-06:traceability-closure _(pending)_
@@ -1067,8 +1067,8 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
-- [ ] **EWP-P3B-T07** — Propagate OperationContext through planners, adapters, the coordinator, journal, _(phase-task; red)_
-- [ ] **EWP-P3B-TS07** — Per-operation causal lifecycle sequences for plan/apply/partial failure/ _(phase-test; failing)_
+- [ ] **EWP-P3B-T07** — Propagate OperationContext through planners, adapters, the coordinator, journal, _(phase-task; green)_
+- [ ] **EWP-P3B-TS07** — Per-operation causal lifecycle sequences for plan/apply/partial failure/ _(phase-test; passing)_
 
 ## P17-G4A-01 — Install/uninstall default-save, no-save, ownership, and artifact reporting
 
