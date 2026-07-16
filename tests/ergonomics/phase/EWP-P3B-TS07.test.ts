@@ -23,6 +23,7 @@ import { resolveRuntimeConfiguration } from '../../../packages/core/src/config/r
 import type { EffectiveConfig } from '../../../packages/core/src/config/types.ts';
 import * as doctorRepair from '../../../packages/core/src/doctor/repair.ts';
 import type { ScanEnv } from '../../../packages/core/src/env/types.ts';
+import { flipFailedError } from '../../../packages/core/src/errors.ts';
 import * as scheduler from '../../../packages/core/src/execution/scheduler.ts';
 import * as publicCore from '../../../packages/core/src/index.ts';
 import {
@@ -43,6 +44,7 @@ import * as swap from '../../../packages/core/src/place/swap.ts';
 import type {
   DevRecord,
   OriginRecord,
+  PairRecord,
   PinnedRecord,
   SwapPlan,
   SwapRequest,
@@ -1006,6 +1008,160 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       }
     });
 
+    test('EWP-P3B-TS07 red: pre-aborted canonical cleanup is cancelled before persistence or mutation', async () => {
+      const fixture = await buildPromoteSwapFixture();
+      try {
+        const contentHash = await contentHashOf(fixture.env, fixture.storePath);
+        if (!contentHash.ok) throw new Error('cannot hash pre-aborted cleanup fixture store');
+        const digest = contentHash.value as OperationDigest;
+        const baseOperation = operationFor('alpha');
+        if (baseOperation.after.kind !== 'placement') {
+          throw new Error('pre-aborted cleanup fixture operation is not a placement');
+        }
+        const resource = Object.freeze({
+          ...baseOperation.before.resource,
+          location: Object.freeze({
+            kind: 'machine-bound' as const,
+            path: fixture.placementPath,
+          }),
+        });
+        const operation: ExecutableOperation = Object.freeze({
+          ...baseOperation,
+          before: Object.freeze({ kind: 'absent' as const, resource }),
+          after: Object.freeze({
+            ...baseOperation.after,
+            resource,
+            contentHash: digest,
+          }),
+        });
+        const pair: PairRecord = {
+          placementPath: fixture.placementPath,
+          mode: 'pinned',
+          dev: null,
+          pinned: {
+            ...pinnedRecord(fixture.storePath, 'fixture-rev', digest),
+            placement: 'copy',
+          },
+          origin: {
+            source: 'fixture/repo',
+            host: 'example.test',
+            repo: 'fixture/repo',
+            skillPath: 'skills/alpha',
+            refRequested: null,
+            refResolved: 'b'.repeat(40),
+            pin: false,
+            installedAt: NOW,
+          },
+          journal: null,
+        };
+        const transactionId = 'c'.repeat(16);
+        const seeded = await swap.commitRecordOnlyLogicalTransaction(
+          {
+            context: { env: fixture.env, logicalOperation: operation },
+            state: { ledger: canonicalLedger(emptyLedger(NOW)) },
+            effects: {
+              persistLedger: async (candidate) => ({ ok: true, ledger: candidate }),
+              journalNow: () => NOW,
+              newTransactionId: () => transactionId,
+            },
+          },
+          operation,
+          pair,
+          null,
+        );
+        if (!seeded.ok) throw new Error(JSON.stringify(seeded.error));
+        const committed = seeded.state.ledger.history.find(
+          (journal) => journal.transactionId === transactionId,
+        );
+        const terminalPair = seeded.state.ledger.skills.alpha?.tools.codex;
+        expect(committed).toBeDefined();
+        expect(terminalPair).toBeDefined();
+        if (committed === undefined || terminalPair === undefined) return;
+        const backupPath = join(
+          fixture.plan.skillsRoot,
+          `.skillsmith-backup-alpha-${transactionId}`,
+        );
+        const crashLedger: LedgerModel = {
+          ...seeded.state.ledger,
+          skills: {
+            ...seeded.state.ledger.skills,
+            alpha: {
+              tools: {
+                ...seeded.state.ledger.skills.alpha?.tools,
+                codex: {
+                  ...terminalPair,
+                  journal: {
+                    op: 'install',
+                    txId: transactionId,
+                    phase: 'committed',
+                    startedAt: committed.context.startedAt,
+                    completedAt: committed.completedAt,
+                    before: { mode: 'absent' },
+                    stagingPath: join(
+                      fixture.plan.skillsRoot,
+                      `.skillsmith-staging-alpha-${transactionId}`,
+                    ),
+                    backupPath,
+                  },
+                },
+              },
+            },
+          },
+        };
+        expect(ledgerV2Codec.encode(crashLedger).ok).toBeFalse();
+        await fixture.env.copyTree(fixture.storePath, backupPath);
+        const controller = new AbortController();
+        controller.abort();
+        let persistCalls = 0;
+        const request = (): SwapRequest => ({
+          context: { env: fixture.env, signal: controller.signal },
+          state: { ledger: crashLedger },
+          effects: {
+            persistLedger: async (candidate) => {
+              persistCalls += 1;
+              return { ok: true, ledger: candidate };
+            },
+            journalNow: () => NOW,
+            newTransactionId: () => 'unused-cleanup-transaction',
+          },
+        });
+
+        const baseline = await swap.sweepCommittedAcquireJournals(request());
+        const observation = observationFixture();
+        const observed = await swap.sweepCommittedAcquireJournalsObserved(
+          request(),
+          observation.bundle,
+        );
+
+        expect(baseline.ok).toBeFalse();
+        expect(observed.ok).toBeFalse();
+        if (baseline.ok || observed.ok) return;
+        expect(observed.error).toEqual(baseline.error);
+        expect(observed.error.code).toBe('cancelled');
+        expect(observed.state).toEqual(baseline.state);
+        expect(observed.state.ledger).toEqual(crashLedger);
+        expect(persistCalls).toBe(0);
+        expect(await fixture.env.pathKind(backupPath)).toBe('dir');
+        expect(observation.events).toMatchObject([
+          {
+            kind: 'recovery.started',
+            operationId: transactionId,
+            recoveryKind: 'cleanup',
+          },
+          {
+            kind: 'recovery.completed',
+            operationId: transactionId,
+            recoveryKind: 'cleanup',
+            outcome: 'cancelled',
+            errorCode: 'cancelled',
+          },
+        ]);
+        expect(observation.events).toHaveLength(2);
+      } finally {
+        await destroyPromoteSwapFixture(fixture);
+      }
+    });
+
     test('EWP-P3B-TS07 red: swap emits one correlated durable stage sequence', async () => {
       const observed = asFunction(moduleRecord(swap).runSwapObserved);
       expect(observed, 'missing G3B-06 observed swap authority').not.toBeNull();
@@ -1262,20 +1418,6 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
             ...result.state.ledger.skills,
             alpha: {
               tools: {
-                ...result.state.ledger.skills.alpha?.tools,
-                'claude-code': {
-                  ...pair,
-                  journal: {
-                    op: 'install',
-                    txId: acquired.transactionId,
-                    phase: 'committed',
-                    startedAt: committed.context.startedAt,
-                    completedAt: committed.completedAt,
-                    before: { mode: 'absent' },
-                    stagingPath,
-                    backupPath,
-                  },
-                },
                 codex: {
                   ...pair,
                   placementPath: join(acquired.plan.skillsRoot, 'legacy-cleanup'),
@@ -1288,6 +1430,19 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
                     before: { mode: 'absent' },
                     stagingPath: join(acquired.plan.skillsRoot, '.legacy-staging'),
                     backupPath: join(acquired.plan.skillsRoot, '.legacy-backup'),
+                  },
+                },
+                'claude-code': {
+                  ...pair,
+                  journal: {
+                    op: 'install',
+                    txId: acquired.transactionId,
+                    phase: 'committed',
+                    startedAt: committed.context.startedAt,
+                    completedAt: committed.completedAt,
+                    before: { mode: 'absent' },
+                    stagingPath,
+                    backupPath,
                   },
                 },
               },
@@ -1350,6 +1505,348 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
         ]);
       } finally {
         await destroyPromoteSwapFixture(acquired);
+      }
+    });
+
+    test('EWP-P3B-TS07 red: canonical acquisition cleanup is atomic across update and remove targets', async () => {
+      const fixture = await buildPromoteSwapFixture();
+      try {
+        const contentHash = await contentHashOf(fixture.env, fixture.storePath);
+        if (!contentHash.ok) throw new Error('cannot hash canonical cleanup fixture store');
+        const digest = contentHash.value as OperationDigest;
+        const previousDigest = `sha256:${'c'.repeat(64)}` as OperationDigest;
+        const sourceIdentity: OperationSource = Object.freeze({ ...SOURCE, contentHash: digest });
+        const previousSourceIdentity: OperationSource = Object.freeze({
+          ...SOURCE,
+          resolvedSha: 'c'.repeat(40),
+          contentHash: previousDigest,
+        });
+        const origin: OriginRecord = {
+          source: 'fixture/repo',
+          host: 'example.test',
+          repo: 'fixture/repo',
+          skillPath: 'skills/alpha',
+          refRequested: null,
+          refResolved: 'b'.repeat(40),
+          pin: false,
+          installedAt: NOW,
+        };
+        const pairFor = (placementPath: string): PairRecord => ({
+          placementPath,
+          mode: 'pinned',
+          dev: null,
+          pinned: {
+            ...pinnedRecord(fixture.storePath, 'fixture-rev', digest),
+            placement: 'copy',
+          },
+          origin,
+          journal: null,
+        });
+        const operationForCleanup = (
+          kind: 'update' | 'remove',
+          skill: string,
+          tool: 'claude-code' | 'codex',
+          placementPath: string,
+        ): ExecutableOperation => {
+          const resource = Object.freeze({
+            kind: 'live' as const,
+            skill,
+            tool,
+            scope: 'user' as const,
+            projectRoot: null,
+            location: Object.freeze({ kind: 'machine-bound' as const, path: placementPath }),
+          });
+          const groupId = createOperationGroupId({
+            domain: 'skillsmith.operation-group-identity',
+            schemaVersion: 1,
+            command: kind === 'remove' ? 'uninstall' : 'install',
+            skill,
+            source: kind === 'remove' ? null : sourceIdentity,
+            scope: 'user',
+            target: null,
+          });
+          const pairId = createOperationPairId({
+            domain: 'skillsmith.operation-pair-identity',
+            schemaVersion: 1,
+            groupId,
+            tool,
+            resource,
+          });
+          const beforeSource = kind === 'update' ? previousSourceIdentity : sourceIdentity;
+          const beforeDigest = kind === 'update' ? previousDigest : digest;
+          const before: OperationImage = Object.freeze({
+            kind: 'placement',
+            resource,
+            classification: 'pinned',
+            representation: 'copy',
+            linkTarget: null,
+            dangling: false,
+            source: beforeSource,
+            contentHash: beforeDigest,
+          });
+          const after: OperationImage =
+            kind === 'remove'
+              ? Object.freeze({ kind: 'absent' as const, resource })
+              : Object.freeze({ ...before, source: sourceIdentity, contentHash: digest });
+          const operationId = createOperationId({
+            domain: 'skillsmith.operation-identity',
+            schemaVersion: 1,
+            groupId,
+            pairId,
+            kind,
+            skill,
+            source: kind === 'remove' ? null : sourceIdentity,
+            tool,
+            scope: 'user',
+          });
+          return Object.freeze({
+            operationId,
+            groupId,
+            pairId,
+            kind,
+            dependencyMetadata: Object.freeze({
+              domain: 'skillsmith.operation-dependency',
+              schemaVersion: 1,
+              operationIds: Object.freeze([]),
+            }),
+            skill,
+            source: kind === 'remove' ? null : sourceIdentity,
+            tool,
+            scope: 'user',
+            before,
+            after,
+            reason: Object.freeze({
+              code: `${kind}-selected`,
+              message: `fixture ${kind} selected`,
+            }),
+            selectionSource: 'explicit-targets',
+            preconditionIds: Object.freeze([]),
+            requiredCheckIds: Object.freeze([]),
+            reversibility: Object.freeze({ kind: 'none', retentionResourceIds: Object.freeze([]) }),
+            mutates: Object.freeze({ live: true, manifest: false, lock: false, ledger: true }),
+            conflict: null,
+          });
+        };
+
+        const skillsRoot = fixture.plan.skillsRoot;
+        const updatePair = pairFor(join(skillsRoot, 'alpha'));
+        const removePair = pairFor(join(skillsRoot, 'beta'));
+        const updateOperation = operationForCleanup(
+          'update',
+          'alpha',
+          'claude-code',
+          updatePair.placementPath,
+        );
+        const removeOperation = operationForCleanup(
+          'remove',
+          'beta',
+          'codex',
+          removePair.placementPath,
+        );
+        const seedCommitted = async (
+          ledger: LedgerModel,
+          operation: ExecutableOperation,
+          pair: PairRecord,
+          transactionId: string,
+        ): Promise<LedgerModel> => {
+          const request: SwapRequest = {
+            context: { env: fixture.env, logicalOperation: operation },
+            state: { ledger },
+            effects: {
+              persistLedger: async (candidate) => ({ ok: true, ledger: candidate }),
+              journalNow: () => NOW,
+              newTransactionId: () => transactionId,
+            },
+          };
+          const committed = await swap.commitRecordOnlyLogicalTransaction(
+            request,
+            operation,
+            pair,
+            null,
+          );
+          if (!committed.ok) throw new Error(JSON.stringify(committed.error));
+          return committed.state.ledger;
+        };
+
+        const updateTransactionId = 'a'.repeat(16);
+        const removeTransactionId = 'b'.repeat(16);
+        let canonical = canonicalLedger(emptyLedger(NOW));
+        canonical = await seedCommitted(
+          canonical,
+          updateOperation,
+          updatePair,
+          updateTransactionId,
+        );
+        canonical = await seedCommitted(
+          canonical,
+          removeOperation,
+          removePair,
+          removeTransactionId,
+        );
+        const updateHistory = canonical.history.find(
+          ({ transactionId }) => transactionId === updateTransactionId,
+        );
+        const removeHistory = canonical.history.find(
+          ({ transactionId }) => transactionId === removeTransactionId,
+        );
+        const terminalUpdatePair = canonical.skills.alpha?.tools['claude-code'];
+        expect(updateHistory).toBeDefined();
+        expect(removeHistory).toBeDefined();
+        expect(terminalUpdatePair).toBeDefined();
+        expect(canonical.skills.beta).toBeUndefined();
+        if (
+          updateHistory === undefined ||
+          removeHistory === undefined ||
+          terminalUpdatePair === undefined
+        ) {
+          return;
+        }
+        expect(updateHistory.intent.before).not.toEqual(updateHistory.intent.after);
+        const updateBackup = join(skillsRoot, `.skillsmith-backup-alpha-${updateTransactionId}`);
+        const removeBackup = join(skillsRoot, `.skillsmith-backup-beta-${removeTransactionId}`);
+        const updateShadow = {
+          op: 'install' as const,
+          txId: updateTransactionId,
+          phase: 'committed' as const,
+          startedAt: updateHistory.context.startedAt,
+          completedAt: updateHistory.completedAt,
+          before: {
+            mode: 'pinned' as const,
+            storePath: join(fixture.root, 'store', 'previous-alpha'),
+            contentHash: previousDigest,
+            liveKind: 'dir' as const,
+          },
+          stagingPath: join(skillsRoot, `.skillsmith-staging-alpha-${updateTransactionId}`),
+          backupPath: updateBackup,
+        };
+        const removeShadow = {
+          op: 'uninstall' as const,
+          txId: removeTransactionId,
+          phase: 'committed' as const,
+          startedAt: removeHistory.context.startedAt,
+          completedAt: removeHistory.completedAt,
+          before: {
+            mode: 'pinned' as const,
+            storePath: fixture.storePath,
+            contentHash: digest,
+            liveKind: 'dir' as const,
+          },
+          stagingPath: join(skillsRoot, `.skillsmith-staging-beta-${removeTransactionId}`),
+          backupPath: removeBackup,
+        };
+        const crashLedger: LedgerModel = {
+          ...canonical,
+          skills: {
+            ...canonical.skills,
+            alpha: {
+              tools: {
+                ...canonical.skills.alpha?.tools,
+                'claude-code': { ...terminalUpdatePair, journal: updateShadow },
+              },
+            },
+            beta: { tools: { codex: { ...removePair, journal: removeShadow } } },
+          },
+        };
+        expect(ledgerV2Codec.encode(crashLedger).ok).toBeFalse();
+
+        const restoreBackups = async (): Promise<void> => {
+          await Promise.all([
+            fixture.env.copyTree(fixture.storePath, updateBackup),
+            fixture.env.copyTree(fixture.storePath, removeBackup),
+          ]);
+        };
+        const requestFor = (writes: LedgerModel[], failPersistence = false): SwapRequest => ({
+          context: { env: fixture.env },
+          state: { ledger: crashLedger },
+          effects: {
+            persistLedger: async (candidate) => {
+              expect(ledgerV2Codec.encode(candidate).ok).toBeTrue();
+              writes.push(candidate);
+              return failPersistence
+                ? {
+                    ok: false,
+                    error: flipFailedError('fixture terminal cleanup persistence failed'),
+                    ledger: crashLedger,
+                  }
+                : { ok: true, ledger: candidate };
+            },
+            journalNow: () => NOW,
+            newTransactionId: () => 'unused-cleanup-transaction',
+          },
+        });
+
+        await restoreBackups();
+        const failedWrites: LedgerModel[] = [];
+        const failed = await swap.sweepCommittedAcquireJournals(requestFor(failedWrites, true));
+        expect(failed.ok).toBeFalse();
+        expect(failedWrites).toHaveLength(1);
+        expect(failed.state.ledger).toEqual(crashLedger);
+        expect(await fixture.env.pathKind(updateBackup)).toBe('absent');
+        expect(await fixture.env.pathKind(removeBackup)).toBe('absent');
+
+        const baselineWrites: LedgerModel[] = [];
+        const baseline = await swap.sweepCommittedAcquireJournals(requestFor(baselineWrites));
+        if (!baseline.ok) throw new Error(JSON.stringify(baseline.error));
+        expect(baselineWrites).toHaveLength(1);
+        expect(await fixture.env.pathKind(updateBackup)).toBe('absent');
+        expect(await fixture.env.pathKind(removeBackup)).toBe('absent');
+
+        await restoreBackups();
+        const observedWrites: LedgerModel[] = [];
+        const observation = observationFixture();
+        const observed = await swap.sweepCommittedAcquireJournalsObserved(
+          requestFor(observedWrites),
+          observation.bundle,
+        );
+        if (!observed.ok) throw new Error(JSON.stringify(observed.error));
+
+        expect(observedWrites).toHaveLength(1);
+        expect(observed.value).toEqual(baseline.value);
+        expect(observed.state.ledger).toEqual(baseline.state.ledger);
+        expect(observed.state.ledger.skills.alpha?.tools['claude-code']?.journal).toBeNull();
+        expect(observed.state.ledger.skills.beta).toBeUndefined();
+        expect(observed.state.ledger.history).toEqual(canonical.history);
+        expect(ledgerV2Codec.encode(observed.state.ledger).ok).toBeTrue();
+        expect(await fixture.env.pathKind(updateBackup)).toBe('absent');
+        expect(await fixture.env.pathKind(removeBackup)).toBe('absent');
+        expect(observation.events.map(({ kind }) => kind).sort()).toEqual([
+          'recovery.completed',
+          'recovery.completed',
+          'recovery.started',
+          'recovery.started',
+        ]);
+        expect(
+          observation.events
+            .filter(({ kind }) => kind === 'recovery.completed')
+            .map(({ operationId, outcome }) => ({ operationId, outcome })),
+        ).toEqual([
+          { operationId: updateTransactionId, outcome: 'success' },
+          { operationId: removeTransactionId, outcome: 'success' },
+        ]);
+
+        await restoreBackups();
+        const gatewayPath = join(fixture.data, 'canonical-multi-cleanup.json');
+        const gatewayBase = await writeLedger(fixture.env, gatewayPath, canonical);
+        if (!gatewayBase.ok) throw new Error(JSON.stringify(gatewayBase.error));
+        const gatewayResult = await placementRecovery.recoverCommittedAcquirePlacements({
+          env: fixture.env,
+          ledgerPath: gatewayPath,
+          ledger: crashLedger,
+          journalNow: () => NOW,
+          newTransactionId: () => 'unused-cleanup-transaction',
+        });
+        if (!gatewayResult.ok) throw new Error(JSON.stringify(gatewayResult.error));
+        const gatewaySemantic = ledgerSemanticRevision(gatewayResult.state.ledger);
+        const baselineSemantic = ledgerSemanticRevision(baseline.state.ledger);
+        expect(gatewaySemantic.ok).toBeTrue();
+        expect(baselineSemantic.ok).toBeTrue();
+        if (gatewaySemantic.ok && baselineSemantic.ok) {
+          expect(gatewaySemantic.value).toBe(baselineSemantic.value);
+        }
+        expect(await fixture.env.pathKind(updateBackup)).toBe('absent');
+        expect(await fixture.env.pathKind(removeBackup)).toBe('absent');
+      } finally {
+        await destroyPromoteSwapFixture(fixture);
       }
     });
   });

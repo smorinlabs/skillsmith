@@ -4,8 +4,16 @@ import type {
   JournalResourceActualV1Dto,
   LogicalJournalV1Dto,
 } from '../artifacts/journal-types.ts';
-import type { LedgerModel, LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
-import { validateJournalV1DtoShape } from '../artifacts/registry.ts';
+import type {
+  LedgerModel,
+  LedgerPairIdentity,
+  LedgerPairV1Dto,
+} from '../artifacts/ledger-types.ts';
+import {
+  deriveLedgerProjectRegistrations,
+  legacyJournalMatchesLogicalShadow,
+  validateJournalV1DtoShape,
+} from '../artifacts/registry.ts';
 import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
@@ -1689,16 +1697,115 @@ export const rollbackSwapObserved = (
 /** §8.5: finish any committed acquisition journal left by a crash between the committed write and
  *  the terminal write. Walks the user `skills` tree AND every `projects` subtree. Runs at the start
  *  of every locked batch (install, uninstall, promote, dev, rollback). Idempotent. */
-const withoutCommittedAcquireShadow = (
+interface CommittedAcquireTarget {
+  readonly scopeKey: string | null;
+  readonly skill: string;
+  readonly tool: FlipTool;
+  readonly pair: PairRecord;
+  readonly shadow: Journal;
+  readonly logicalJournal: LogicalJournalV1Dto | null;
+  readonly canonicalJournal: LogicalJournalV1Dto | null;
+}
+
+const canonicalAcquireJournal = (
+  journal: LogicalJournalV1Dto | null,
+  identity: LedgerPairIdentity,
+  pair: PairRecord,
+  shadow: Journal,
+): LogicalJournalV1Dto | null => {
+  if (journal?.phase !== 'committed' || journal.disposition !== 'forward') return null;
+  const acquisitionKindMatches =
+    (shadow.op === 'install' &&
+      (journal.intent.kind === 'install' || journal.intent.kind === 'update')) ||
+    (shadow.op === 'uninstall' && journal.intent.kind === 'remove');
+  return acquisitionKindMatches && legacyJournalMatchesLogicalShadow(journal, identity, pair)
+    ? journal
+    : null;
+};
+
+const canonicalCommittedAcquireBase = (
   model: LedgerModel,
-  scopeKey: string | null,
-  skill: string,
-  tool: FlipTool,
+  targets: readonly CommittedAcquireTarget[],
 ): LedgerModel => {
   const candidate = structuredClone(model);
-  const pair = getLedgerPairAt(candidate, scopeKey, skill, tool);
-  if (pair !== null) Reflect.set(pair, 'journal', null);
-  return candidate;
+  for (const target of targets) {
+    const journal = target.canonicalJournal;
+    if (journal === null) continue;
+    const tree =
+      target.scopeKey === null ? candidate.skills : candidate.projects[target.scopeKey]?.skills;
+    const entry = tree?.[target.skill];
+    const pair = entry?.tools[target.tool];
+    if (entry === undefined || pair === undefined) continue;
+    if (journal.intent.kind === 'remove') {
+      Reflect.deleteProperty(entry.tools, target.tool);
+      if (Object.keys(entry.tools).length === 0 && tree !== undefined) {
+        Reflect.deleteProperty(tree, target.skill);
+      }
+      if (target.scopeKey !== null) {
+        const project = candidate.projects[target.scopeKey];
+        if (project !== undefined && Object.keys(project.skills).length === 0) {
+          Reflect.deleteProperty(candidate.projects, target.scopeKey);
+        }
+      }
+    } else {
+      Reflect.set(pair, 'journal', null);
+    }
+  }
+  return {
+    ...candidate,
+    projectRegistrations: deriveLedgerProjectRegistrations(candidate.projects),
+  };
+};
+
+const cleanupCanonicalCommittedAcquire = async (
+  ctx: SwapCtx,
+  plan: SwapPlan,
+  pair: PairRecord,
+  shadow: Journal,
+): Promise<Result<SwapOutcome, SkillSmithError>> => {
+  if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+  const syncedBeforeCleanup = await guardFs(
+    () => ctx.env.fsyncDir(plan.skillsRoot),
+    `cannot fsync ${plan.skillsRoot}`,
+  );
+  if (!syncedBeforeCleanup.ok) return syncedBeforeCleanup;
+
+  if (plan.op === 'install') {
+    if (shadow.before.mode === 'absent') {
+      return ok({ committed: true, backupKept: null, warning: null });
+    }
+    const oldHash = shadow.before.mode === 'pinned' ? shadow.before.contentHash : null;
+    const newHash = plan.install?.contentHash ?? pair.pinned?.contentHash ?? null;
+    const reclaimed = await reclaimBackup(
+      ctx.env,
+      shadow.backupPath,
+      [newHash, oldHash],
+      'replaced',
+    );
+    if (!reclaimed.ok) return reclaimed;
+    const synced = await guardFs(
+      () => ctx.env.fsyncDir(plan.skillsRoot),
+      `cannot fsync ${plan.skillsRoot}`,
+    );
+    return synced.ok ? ok({ committed: true, ...reclaimed.value }) : synced;
+  }
+
+  if (plan.op === 'uninstall') {
+    const reclaimed = await reclaimBackup(
+      ctx.env,
+      shadow.backupPath,
+      [pair.pinned?.contentHash],
+      'uninstalled',
+    );
+    if (!reclaimed.ok) return reclaimed;
+    const synced = await guardFs(
+      () => ctx.env.fsyncDir(plan.skillsRoot),
+      `cannot fsync ${plan.skillsRoot}`,
+    );
+    return synced.ok ? ok({ committed: true, ...reclaimed.value }) : synced;
+  }
+
+  return err(genericError(`cannot clean canonical acquisition journal for ${plan.skill}`));
 };
 
 const sweepCommittedAcquireJournalsInternal = async (
@@ -1707,23 +1814,46 @@ const sweepCommittedAcquireJournalsInternal = async (
   effects: SwapEffects,
   observation?: ObservationBundle,
 ): Promise<Result<string[], SkillSmithError>> => {
-  type Target = { scopeKey: string | null; skill: string; tool: FlipTool };
-  const targets: Target[] = [];
+  const targets: CommittedAcquireTarget[] = [];
+  const model = ledger.current();
 
   const collect = (tree: LedgerModel['skills'], scopeKey: string | null): void => {
     for (const skill of Object.keys(tree)) {
       const entry = tree[skill];
       if (!entry) continue;
       for (const tool of Object.keys(entry.tools) as FlipTool[]) {
-        const j = entry.tools[tool]?.journal;
-        if (j && j.phase === 'committed' && (j.op === 'install' || j.op === 'uninstall')) {
-          targets.push({ scopeKey, skill, tool });
+        const pair = entry.tools[tool];
+        const shadow = pair?.journal;
+        if (
+          pair !== undefined &&
+          shadow !== undefined &&
+          shadow !== null &&
+          shadow.phase === 'committed' &&
+          (shadow.op === 'install' || shadow.op === 'uninstall')
+        ) {
+          const logicalJournal =
+            model.transactions[shadow.txId] ??
+            model.history.find(({ transactionId }) => transactionId === shadow.txId) ??
+            null;
+          targets.push({
+            scopeKey,
+            skill,
+            tool,
+            pair: structuredClone(pair) as PairRecord,
+            shadow: structuredClone(shadow),
+            logicalJournal,
+            canonicalJournal: canonicalAcquireJournal(
+              logicalJournal,
+              { projectRoot: scopeKey, skill, tool },
+              pair,
+              shadow,
+            ),
+          });
         }
       }
     }
   };
 
-  const model = ledger.current();
   collect(model.skills, null);
   if (model.projects) {
     for (const key of Object.keys(model.projects)) {
@@ -1733,14 +1863,96 @@ const sweepCommittedAcquireJournalsInternal = async (
   }
 
   const notes: string[] = [];
+  const canonicalTargets = targets.filter(({ canonicalJournal }) => canonicalJournal !== null);
+  const pendingCanonicalObservations: Array<
+    Readonly<{
+      transactionObservation: ObservationBundle;
+      span: ReturnType<typeof beginRecoveryObservation>;
+    }>
+  > = [];
+  const completeCanonicalObservations = (
+    outcome: ObservationOutcome,
+    errorCode: string | null,
+  ): void => {
+    for (const pending of pendingCanonicalObservations) {
+      completeRecoveryObservation(pending.transactionObservation, pending.span, outcome, errorCode);
+    }
+    pendingCanonicalObservations.length = 0;
+  };
+
+  try {
+    for (const target of canonicalTargets) {
+      const journal = target.canonicalJournal;
+      if (journal === null) continue;
+      const transactionObservation =
+        observation === undefined ? null : createTransactionObservation(observation, journal);
+      if (transactionObservation !== null) {
+        pendingCanonicalObservations.push({
+          transactionObservation,
+          span: beginRecoveryObservation(transactionObservation, 'cleanup'),
+        });
+      }
+      const plan = reconstructPlan(
+        target.pair,
+        target.shadow,
+        target.skill,
+        target.tool,
+        target.scopeKey,
+      );
+      if (!plan.ok) {
+        completeCanonicalObservations(
+          plan.error.code === 'cancelled' ? 'cancelled' : 'failure',
+          plan.error.code,
+        );
+        return plan;
+      }
+      const done = await cleanupCanonicalCommittedAcquire(
+        ctx,
+        plan.value,
+        target.pair,
+        target.shadow,
+      );
+      if (!done.ok) {
+        completeCanonicalObservations(
+          done.error.code === 'cancelled' ? 'cancelled' : 'failure',
+          done.error.code,
+        );
+        return done;
+      }
+      if (done.value.warning) notes.push(done.value.warning);
+    }
+    if (canonicalTargets.length > 0) {
+      const persisted = await ledger.persist(
+        canonicalCommittedAcquireBase(ledger.current(), targets),
+      );
+      if (!persisted.ok) {
+        completeCanonicalObservations(
+          persisted.error.code === 'cancelled' ? 'cancelled' : 'failure',
+          persisted.error.code,
+        );
+        return persisted;
+      }
+      completeCanonicalObservations('success', null);
+    }
+  } catch (error) {
+    const code = safeErrorCode(error);
+    const cancelled =
+      ctx.signal?.aborted === true ||
+      code === 'cancelled' ||
+      code === 'ABORT_ERR' ||
+      code === 'AbortError';
+    completeCanonicalObservations(
+      cancelled ? 'cancelled' : 'failure',
+      cancelled ? 'cancelled' : (code ?? 'recovery-threw'),
+    );
+    throw error;
+  }
+
   for (const t of targets) {
-    const pair = pairAt(ledger.current(), t.scopeKey, t.skill, t.tool);
-    const j = pair?.journal ?? null;
-    if (!pair || !j) continue;
-    const journal =
-      ledger.current().transactions[j.txId] ??
-      ledger.current().history.find(({ transactionId }) => transactionId === j.txId) ??
-      null;
+    if (t.canonicalJournal !== null) continue;
+    const pair = t.pair;
+    const j = t.shadow;
+    const journal = t.logicalJournal;
     const transactionObservation =
       observation === undefined || journal === null
         ? null
@@ -1762,21 +1974,7 @@ const sweepCommittedAcquireJournalsInternal = async (
       return plan;
     }
     try {
-      // A committed forward install/remove history entry deliberately cannot coexist in a settled
-      // schema-v2 model with its compatibility shadow. Recovery may still receive that exact
-      // in-memory crash window, so drive physical cleanup from the shadow while persisting from the
-      // canonical shadow-free base. Legacy-only shadows continue through the ordinary path.
-      const recoveryLedger =
-        journal?.phase === 'committed' &&
-        journal.disposition === 'forward' &&
-        (journal.intent.kind === 'install' || journal.intent.kind === 'remove')
-          ? Object.freeze({
-              current: () =>
-                withoutCommittedAcquireShadow(ledger.current(), t.scopeKey, t.skill, t.tool),
-              persist: ledger.persist,
-            })
-          : ledger;
-      const done = await forward(ctx, recoveryLedger, effects, plan.value, pair);
+      const done = await forward(ctx, ledger, effects, plan.value, pair);
       if (transactionObservation !== null) {
         completeRecoveryObservation(
           transactionObservation,
