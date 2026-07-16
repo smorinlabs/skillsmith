@@ -9,6 +9,7 @@ Records of non-obvious design decisions. Each ADR follows the [Michael Nygard fo
 | [0003](0003-eslint-import-boundaries.md) | Enforce architectural boundaries with ESLint | Accepted |
 | [0004](0004-command-runtime-application-boundary.md) | Declarative commands, one CLI runtime, and public application services | Accepted |
 | [0005](0005-capability-scoped-ports.md) | Capability-scoped ports and one runtime adapter | Accepted |
+| [0006](0006-immutable-observed-state-and-repositories.md) | Immutable observed state, pure planning, and domain repositories | Accepted |
 | [0007](0007-tool-adapter-registry.md) | Validated tool-adapter registry as capability authority | Accepted |
 | [0008](0008-wire-contract-registry.md) | Versioned wire codecs and an immutable contract registry | Accepted |
 | [0009](0009-operation-scoped-observation.md) | Operation-scoped typed observation | Accepted |

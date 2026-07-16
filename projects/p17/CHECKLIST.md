@@ -999,14 +999,14 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD
 
 ## P17-G3B-04 — Immutable snapshots, pure planners, repositories, expected revisions, and extraction
 
-Phase: 3B; status: **mapped**; dependencies: P17-G3B-02.
+Phase: 3B; status: **ready**; dependencies: P17-G3B-02.
 Required-now validations: EWP-P3B-TS05.
 Downstream coverage obligations: EWP-WF06, EWP-WF11, EWP-WF13.
 
 ### Group gates
 
 - [x] P17-G3B-04:mapped _(passed)_
-- [ ] P17-G3B-04:ready _(pending)_
+- [x] P17-G3B-04:ready _(passed)_
 - [ ] P17-G3B-04:test-first _(pending)_
 - [ ] P17-G3B-04:minimal-implementation _(pending)_
 - [ ] P17-G3B-04:targeted-green _(pending)_
@@ -1019,7 +1019,7 @@ Downstream coverage obligations: EWP-WF06, EWP-WF11, EWP-WF13.
 ### Tracked entities
 
 - [ ] **EWP-CF-035** — Separate immutable state snapshots, pure planning, and repository writes _(finding; planned)_
-- [ ] **EWP-P3B-T05** — Add ADR 0006; domain-specific manifest/lock/ledger/live/store repositories; _(phase-task; planned)_
+- [ ] **EWP-P3B-T05** — Add ADR 0006; domain-specific manifest/lock/ledger/live/store repositories; _(phase-task; ready)_
 - [ ] **EWP-P3B-TS05** — Deep-freeze mutation traps, pure planner determinism/property tests, _(phase-test; planned)_
 
 ## P17-G3B-05 — Tool-specific lifecycle behavior behind registered adapter bundles
