@@ -10,10 +10,21 @@ import {
 } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { runInstall, runUninstall, runUninstallWithRegistry } from '../../src/acquire/run.ts';
+import {
+  runInstall,
+  runUninstall,
+  runUninstallWithRegistry,
+  runUninstallWithRegistryObserved,
+} from '../../src/acquire/run.ts';
 import type { InstallDeps, InstallOptions, UninstallDeps } from '../../src/acquire/types.ts';
 import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
+import {
+  type ObservationBundle,
+  type ObserverEvent,
+  createObservationEmitter,
+  createOperationContext,
+} from '../../src/observation/index.ts';
 import {
   getLedgerPairAt as getPairAt,
   legacyLedgerView,
@@ -43,6 +54,69 @@ setDefaultTimeout(60_000);
 
 const NOW = '2026-07-08T00:00:00.000Z';
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
+
+const observationFixture = (): Readonly<{
+  observation: ObservationBundle;
+  events: ObserverEvent[];
+}> => {
+  const events: ObserverEvent[] = [];
+  let monotonicMilliseconds = 0;
+  const context = createOperationContext({
+    operationId: 'command:v1:record-only-stale-uninstall',
+    command: 'skillsmith uninstall factor-scan --tool claude-code',
+    workflow: 'uninstall',
+    clock: {
+      wallNowIso: () => NOW,
+      monotonicMilliseconds: () => monotonicMilliseconds++,
+    },
+    id: { nextId: () => 'unused-operation-id' },
+  });
+  return Object.freeze({
+    observation: Object.freeze({
+      context,
+      emitter: createObservationEmitter({
+        observer: {
+          observe: (event) => {
+            events.push(event);
+          },
+        },
+        toolIds: ['claude-code', 'codex'],
+      }),
+    }),
+    events,
+  });
+};
+
+const expectCorrelatedRecordOnlyTransaction = (
+  events: readonly ObserverEvent[],
+  transactionId: string,
+): void => {
+  const started = events.find((event) => event.kind === 'operation.started');
+  if (started?.kind !== 'operation.started') {
+    throw new Error('record-only stale uninstall operation did not start');
+  }
+  const transactionEvents = events.filter((event) => event.kind.startsWith('transaction.'));
+  expect(transactionEvents).toMatchObject([
+    { kind: 'transaction.stage.started', stage: 'committed' },
+    {
+      kind: 'transaction.stage.completed',
+      stage: 'committed',
+      outcome: 'success',
+      errorCode: null,
+    },
+    { kind: 'transaction.committed' },
+  ]);
+  expect(transactionId).not.toBe(started.operationId);
+  for (const event of transactionEvents) {
+    expect(event).toMatchObject({
+      operationId: transactionId,
+      parentOperationId: started.operationId,
+      groupId: started.groupId,
+      pairId: started.pairId,
+      attempt: 1,
+    });
+  }
+};
 
 const detectBoth: InstallDeps['detect'] = async (_env, tool) =>
   ok([{ path: `/usr/local/bin/${tool}`, version: '1.0.0', installMethod: 'unknown' as const }]);
@@ -469,6 +543,44 @@ describe('runUninstall — absent / stale', () => {
       phase: 'committed',
     });
     expect(Object.keys(ledger.transactions)).toEqual([]);
+  });
+
+  test('observed stale removal emits one correlated record-only transaction', async () => {
+    await installUser();
+    await f.env.removeTree(join(claudeRoot(), 'factor-scan'));
+    const observed = observationFixture();
+
+    const removed = await runUninstallWithRegistryObserved(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+      toolRegistry,
+      observed.observation,
+    );
+    if (!removed.ok) throw new Error(msg(removed.error));
+
+    expect(removed.value.summary).toMatchObject({ removed: 1, failed: 0 });
+    expect(removed.value.results).toMatchObject([
+      {
+        tool: 'claude-code',
+        action: 'removed',
+        reason: 'placement was already gone',
+      },
+    ]);
+    const durable = await led();
+    expect(getPairAt(durable, null, 'factor-scan', 'claude-code')).toBeNull();
+    const committed = durable.history.at(-1);
+    expect(committed).toMatchObject({
+      intent: { kind: 'remove', skill: 'factor-scan', tool: 'claude-code' },
+      phase: 'committed',
+    });
+    if (committed === undefined) throw new Error('record-only removal history is missing');
+    expectCorrelatedRecordOnlyTransaction(observed.events, committed.transactionId);
   });
 });
 

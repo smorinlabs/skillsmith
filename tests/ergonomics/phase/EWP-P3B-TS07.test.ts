@@ -880,49 +880,44 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       const emptyPlan = planFor([]);
       const preview = observationFixture();
       let installCalls = 0;
+      let installArgumentCount = 0;
+      let installReceivedObservation = false;
       const services = createLifecycleApplicationServices({
-        install: (async (
-          _env: unknown,
-          _options: unknown,
-          _dependencies: unknown,
-          observation?: ObservationBundle,
-        ) => {
+        install: (async (...args: unknown[]) => {
           installCalls += 1;
-          return acquireExecution.runAcquisitionWithObservation(
-            async () => ({
-              ok: true as const,
-              value: {
-                dryRun: true,
-                requested: {
-                  sources: ['fixture/repo'],
-                  tools: ['codex'],
-                  explicitTools: true,
-                  scope: 'user',
-                  explicitScope: true,
-                  ref: null,
-                  pin: false,
-                  direct: false,
-                  force: false,
-                  verify: 'static',
-                  deep: false,
-                },
-                results: [],
-                summary: {
-                  installed: 0,
-                  updated: 0,
-                  repaired: 0,
-                  noop: 0,
-                  skipped: 0,
-                  refused: 0,
-                  failed: 0,
-                },
-                plan: emptyPlan,
-                executionResults: [],
+          installArgumentCount = args.length;
+          installReceivedObservation = args.some((argument) => argument === preview.bundle);
+          return {
+            ok: true as const,
+            value: {
+              dryRun: true,
+              requested: {
+                sources: ['fixture/repo'],
+                tools: ['codex'],
+                explicitTools: true,
+                scope: 'user',
+                explicitScope: true,
+                ref: null,
+                pin: false,
+                direct: false,
+                force: false,
+                verify: 'static',
+                deep: false,
               },
-            }),
-            () => ledgerError('fixture application acquisition failed'),
-            observation,
-          );
+              results: [],
+              summary: {
+                installed: 0,
+                updated: 0,
+                repaired: 0,
+                noop: 0,
+                skipped: 0,
+                refused: 0,
+                failed: 0,
+              },
+              plan: emptyPlan,
+              executionResults: [],
+            },
+          };
         }) as never,
       });
       const previewOutcome = await services.install(
@@ -935,6 +930,8 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       expect(previewOutcome.exitClass).toBe('success');
       expect(previewOutcome.mutation).toMatchObject({ kind: 'preview', planned: 0 });
       expect(installCalls).toBe(1);
+      expect(installArgumentCount).toBe(3);
+      expect(installReceivedObservation).toBeFalse();
       expect(preview.events).toHaveLength(1);
       expect(preview.events[0]).toMatchObject({
         kind: 'plan.created',
@@ -2044,8 +2041,13 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
             fixture.env.copyTree(fixture.storePath, removeBackup),
           ]);
         };
-        const requestFor = (writes: LedgerModel[], failPersistence = false): SwapRequest => ({
-          context: { env: fixture.env },
+        const requestFor = (
+          writes: LedgerModel[],
+          failPersistence = false,
+          env = fixture.env,
+          signal?: AbortSignal,
+        ): SwapRequest => ({
+          context: { env, ...(signal === undefined ? {} : { signal }) },
           state: { ledger: crashLedger },
           effects: {
             persistLedger: async (candidate) => {
@@ -2134,6 +2136,41 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
         }
         expect(await fixture.env.pathKind(updateBackup)).toBe('absent');
         expect(await fixture.env.pathKind(removeBackup)).toBe('absent');
+
+        await restoreBackups();
+        const controller = new AbortController();
+        let abortedAfterFirstCleanup = false;
+        const midBatchEnv: RuntimePorts = {
+          ...fixture.env,
+          removeTree: async (path) => {
+            await fixture.env.removeTree(path);
+            if (path === updateBackup) {
+              abortedAfterFirstCleanup = true;
+              controller.abort();
+            }
+          },
+        };
+        const midBatchWrites: LedgerModel[] = [];
+        const midBatchObservation = observationFixture();
+        const midBatch = await swap.sweepCommittedAcquireJournalsObserved(
+          requestFor(midBatchWrites, false, midBatchEnv, controller.signal),
+          midBatchObservation.bundle,
+        );
+        if (!midBatch.ok) throw new Error(JSON.stringify(midBatch.error));
+        expect(abortedAfterFirstCleanup).toBeTrue();
+        expect(controller.signal.aborted).toBeTrue();
+        expect(midBatchWrites).toHaveLength(1);
+        expect(midBatch.state.ledger).toEqual(baseline.state.ledger);
+        expect(await fixture.env.pathKind(updateBackup)).toBe('absent');
+        expect(await fixture.env.pathKind(removeBackup)).toBe('absent');
+        expect(
+          midBatchObservation.events
+            .filter(({ kind }) => kind === 'recovery.completed')
+            .map(({ operationId, outcome }) => ({ operationId, outcome })),
+        ).toEqual([
+          { operationId: updateTransactionId, outcome: 'success' },
+          { operationId: removeTransactionId, outcome: 'success' },
+        ]);
       } finally {
         await destroyPromoteSwapFixture(fixture);
       }
@@ -3835,7 +3872,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       } finally {
         await rm(base, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
 
     test('EWP-P3B-TS07 contract: hostile observers preserve runtime bytes and exits', async () => {
       const run = async (

@@ -302,7 +302,12 @@ const bindUnderLock = async <ToolId extends string>(
           if (binding === null) {
             return fail(`binding ${index} executed before validation completed`);
           }
-          return input.execute(binding, operationObservation);
+          return operationObservation === undefined
+            ? (input as PreparedExecutionBinding<ToolId>).execute(binding)
+            : (input as ObservedPreparedExecutionBinding<ToolId>).execute(
+                binding,
+                operationObservation,
+              );
         },
       },
       index,

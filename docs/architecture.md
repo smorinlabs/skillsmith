@@ -161,6 +161,15 @@ events without influencing results or state. The CLI owns redaction-aware verbos
 The `Logger` interface in `env/logger.ts` remains only as a deprecated 1.x compatibility facade for
 existing scan callers; new domain/application code uses the atomic observation bundle instead.
 
+Mutation lifecycle correlation has exactly three levels: the CLI invocation is the root command
+context, each actually started deterministic plan operation is its child, and each durable
+transaction/recovery attempt uses the journal transaction ID with the plan operation as parent.
+Application/acquisition edges emit completed plans, the scheduler owns operation spans, physical
+swap and canonical writer boundaries own durable transaction stages and terminal events, and
+recovery wrappers own resume/rollback/cleanup spans. These are private source-module seams: pure
+planners, repositories, codecs, public reports, and wire shapes remain observation-free, and
+events never replace journals or structured results as semantic authority.
+
 ## Tool-adapter registry and detection pipeline
 
 The validated `ToolRegistry` is the executable authority for tool identity, order, operation and

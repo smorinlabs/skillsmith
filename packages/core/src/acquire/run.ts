@@ -104,7 +104,7 @@ import {
   executeAcquirePlanWithObservation,
   executeAcquireReplacementWithObservation,
   executeAcquisitionOperationPlan,
-  executeRecordOnlyAcquirePlan,
+  executeRecordOnlyAcquirePlanWithObservation,
   placementBundleFor,
   readAcquisitionSnapshotV1,
   recoverAcquireWithObservation,
@@ -1026,11 +1026,12 @@ const placePair = async (
         flipFailedError('record-only install repair requires logical operation identity'),
       );
     }
-    const persisted = await executeRecordOnlyAcquirePlan(
+    const persisted = await executeRecordOnlyAcquirePlanWithObservation(
       placeExecutionInput(p),
       p.logicalOperation,
       repaired,
       p.scopeKey,
+      p.operationObservation,
     );
     p.ledger = persisted.state.ledger;
     if (!persisted.ok) return fail(persisted.error);
@@ -2927,11 +2928,12 @@ const processUninstallMatch = async (
         placementPath,
       );
     }
-    const persisted = await executeRecordOnlyAcquirePlan(
+    const persisted = await executeRecordOnlyAcquirePlanWithObservation(
       executionInput(),
       logicalOperation,
       ex,
       scopeKey,
+      operationObservation,
     );
     ledgerCtx.ledger = persisted.state.ledger;
     if (!persisted.ok) return failed(persisted.error, placementPath);

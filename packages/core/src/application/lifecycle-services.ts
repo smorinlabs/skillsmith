@@ -1,9 +1,7 @@
 import {
   defaultInstallDeps,
   defaultUninstallDeps,
-  runInstallWithRegistry,
   runInstallWithRegistryObserved,
-  runUninstallWithRegistry,
   runUninstallWithRegistryObserved,
 } from '../acquire/run.ts';
 import type { runInstall, runUninstall } from '../acquire/run.ts';
@@ -18,13 +16,11 @@ import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts'
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { SkillSmithError } from '../errors.ts';
+import { emitOperationPlanCreated } from '../execution/observation.ts';
 import type { ObservationBundle } from '../observation/index.ts';
 import {
-  prepareDevWithRegistry,
   prepareDevWithRegistryObserved,
-  preparePromoteWithRegistry,
   preparePromoteWithRegistryObserved,
-  prepareRollbackWithRegistry,
   prepareRollbackWithRegistryObserved,
 } from '../place/run.ts';
 import type { prepareDev, preparePromote, prepareRollback } from '../place/run.ts';
@@ -81,39 +77,98 @@ type ObservedUninstallDependency = (
 type ObservedPrepareDependency = (
   env: Parameters<typeof prepareDev>[0],
   opts: Parameters<typeof prepareDev>[1],
-  deps: Parameters<typeof prepareDev>[2],
   observation: ObservationBundle,
 ) => ReturnType<typeof prepareDev>;
 type ObservedRollbackDependency = (
   env: Parameters<typeof prepareRollback>[0],
   opts: Parameters<typeof prepareRollback>[1],
-  deps: Parameters<typeof prepareRollback>[2],
   observation: ObservationBundle,
 ) => ReturnType<typeof prepareRollback>;
 
-const defaultDependenciesFor = (registry: LifecycleToolRegistry): LifecycleDependencies => ({
+interface ObservedLifecycleDependencies {
+  readonly resolveContext: typeof resolveProjectContext;
+  readonly install: ObservedInstallDependency;
+  readonly uninstall: ObservedUninstallDependency;
+  readonly prepareDev: ObservedPrepareDependency;
+  readonly preparePromote: ObservedPrepareDependency;
+  readonly prepareRollback: ObservedRollbackDependency;
+}
+
+const defaultDependenciesFor = (
+  registry: LifecycleToolRegistry,
+): ObservedLifecycleDependencies => ({
   resolveContext: resolveProjectContext,
-  install: (env, opts, deps = { ...defaultInstallDeps }, observation?: ObservationBundle) =>
-    observation === undefined
-      ? runInstallWithRegistry(env, opts, deps, registry)
-      : runInstallWithRegistryObserved(env, opts, deps, registry, observation),
-  uninstall: (env, opts, deps = { ...defaultUninstallDeps }, observation?: ObservationBundle) =>
-    observation === undefined
-      ? runUninstallWithRegistry(env, opts, deps, registry)
-      : runUninstallWithRegistryObserved(env, opts, deps, registry, observation),
-  prepareDev: (env, opts, deps, observation?: ObservationBundle) =>
-    observation === undefined
-      ? prepareDevWithRegistry(registry, env, opts, deps)
-      : prepareDevWithRegistryObserved(registry, env, opts, observation, deps),
-  preparePromote: (env, opts, deps, observation?: ObservationBundle) =>
-    observation === undefined
-      ? preparePromoteWithRegistry(registry, env, opts, deps)
-      : preparePromoteWithRegistryObserved(registry, env, opts, observation, deps),
-  prepareRollback: (env, opts, deps, observation?: ObservationBundle) =>
-    observation === undefined
-      ? prepareRollbackWithRegistry(registry, env, opts, deps)
-      : prepareRollbackWithRegistryObserved(registry, env, opts, observation, deps),
+  install: (env, opts, deps, observation) =>
+    runInstallWithRegistryObserved(
+      env,
+      opts,
+      deps ?? { ...defaultInstallDeps },
+      registry,
+      observation,
+    ),
+  uninstall: (env, opts, deps, observation) =>
+    runUninstallWithRegistryObserved(
+      env,
+      opts,
+      deps ?? { ...defaultUninstallDeps },
+      registry,
+      observation,
+    ),
+  prepareDev: (env, opts, observation) =>
+    prepareDevWithRegistryObserved(registry, env, opts, observation),
+  preparePromote: (env, opts, observation) =>
+    preparePromoteWithRegistryObserved(registry, env, opts, observation),
+  prepareRollback: (env, opts, observation) =>
+    prepareRollbackWithRegistryObserved(registry, env, opts, observation),
 });
+
+const observeDependencyPlan = <TReport extends Readonly<{ plan: OperationPlan }>, TError>(
+  result: Result<TReport, TError>,
+  observation: ObservationBundle,
+): Result<TReport, TError> => {
+  if (result.ok) emitOperationPlanCreated(observation, result.value.plan);
+  return result;
+};
+
+const runtimeDependenciesFor = (
+  overrides: Partial<LifecycleDependencies>,
+  registry: LifecycleToolRegistry,
+): ObservedLifecycleDependencies => {
+  const defaults = defaultDependenciesFor(registry);
+  const installOverride = overrides.install;
+  const uninstallOverride = overrides.uninstall;
+  const prepareDevOverride = overrides.prepareDev;
+  const preparePromoteOverride = overrides.preparePromote;
+  const prepareRollbackOverride = overrides.prepareRollback;
+  return {
+    resolveContext: overrides.resolveContext ?? defaults.resolveContext,
+    install:
+      installOverride === undefined
+        ? defaults.install
+        : async (env, opts, deps, observation) =>
+            observeDependencyPlan(await installOverride(env, opts, deps), observation),
+    uninstall:
+      uninstallOverride === undefined
+        ? defaults.uninstall
+        : async (env, opts, deps, observation) =>
+            observeDependencyPlan(await uninstallOverride(env, opts, deps), observation),
+    prepareDev:
+      prepareDevOverride === undefined
+        ? defaults.prepareDev
+        : async (env, opts, observation) =>
+            observeDependencyPlan(await prepareDevOverride(env, opts), observation),
+    preparePromote:
+      preparePromoteOverride === undefined
+        ? defaults.preparePromote
+        : async (env, opts, observation) =>
+            observeDependencyPlan(await preparePromoteOverride(env, opts), observation),
+    prepareRollback:
+      prepareRollbackOverride === undefined
+        ? defaults.prepareRollback
+        : async (env, opts, observation) =>
+            observeDependencyPlan(await prepareRollbackOverride(env, opts), observation),
+  };
+};
 
 type MutationSelectionCapability = Exclude<SelectionCapability, 'read'>;
 
@@ -200,7 +255,7 @@ const domainFailure = <TReport>(
 
 const resolveContext = async (
   context: CurrentApplicationContext,
-  dependencies: LifecycleDependencies,
+  dependencies: Pick<LifecycleDependencies, 'resolveContext'>,
 ): Promise<Result<ProjectContext, SkillSmithError>> => {
   if (context.projectContext !== undefined) return { ok: true, value: context.projectContext };
   const explicitConfigPath =
@@ -423,7 +478,7 @@ export const createLifecycleApplicationServices = (
   overrides: Partial<LifecycleDependencies> = {},
   registry: LifecycleToolRegistry = toolRegistry,
 ) => {
-  const dependencies: LifecycleDependencies = { ...defaultDependenciesFor(registry), ...overrides };
+  const dependencies = runtimeDependenciesFor(overrides, registry);
 
   const install: ApplicationService<CurrentCommandRequest, InstallApplicationReport> = async (
     request,
@@ -454,7 +509,7 @@ export const createLifecycleApplicationServices = (
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('install', project.error, context.signal);
     const pause = context.configuration.journalPause;
-    const result = await (dependencies.install as ObservedInstallDependency)(
+    const result = await dependencies.install(
       context.ports,
       {
         sources,
@@ -521,7 +576,7 @@ export const createLifecycleApplicationServices = (
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('uninstall', project.error, context.signal);
     const pause = context.configuration.journalPause;
-    const result = await (dependencies.uninstall as ObservedUninstallDependency)(
+    const result = await dependencies.uninstall(
       context.ports,
       {
         targets,
@@ -635,18 +690,12 @@ export const createLifecycleApplicationServices = (
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
     const prepared = await (rollback
-      ? (dependencies.prepareRollback as ObservedRollbackDependency)(
+      ? dependencies.prepareRollback(
           context.ports,
           { ...flipOptions, op: 'dev' },
-          undefined,
           context.observation,
         )
-      : (dependencies.prepareDev as ObservedPrepareDependency)(
-          context.ports,
-          flipOptions,
-          undefined,
-          context.observation,
-        ));
+      : dependencies.prepareDev(context.ports, flipOptions, context.observation));
     if (!prepared.ok) return domainFailure('dev', prepared.error, context.signal);
     const missingTarget = explicitBatchTargetFailure(prepared.value.preview, targets.length);
     if (missingTarget !== undefined) {
@@ -736,18 +785,12 @@ export const createLifecycleApplicationServices = (
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
     const prepared = await (rollback
-      ? (dependencies.prepareRollback as ObservedRollbackDependency)(
+      ? dependencies.prepareRollback(
           context.ports,
           { ...flipOptions, op: 'promote' },
-          undefined,
           context.observation,
         )
-      : (dependencies.preparePromote as ObservedPrepareDependency)(
-          context.ports,
-          flipOptions,
-          undefined,
-          context.observation,
-        ));
+      : dependencies.preparePromote(context.ports, flipOptions, context.observation));
     if (!prepared.ok) return domainFailure('promote', prepared.error, context.signal);
     const missingTarget = explicitBatchTargetFailure(prepared.value.preview, targets.length);
     if (missingTarget !== undefined) {

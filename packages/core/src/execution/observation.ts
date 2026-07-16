@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { types as utilTypes } from 'node:util';
 import { safeErrorCode } from '../errors.ts';
 import { createOperationContext } from '../observation/operation-context.ts';
 import type {
@@ -165,11 +166,15 @@ export const operationCompletionForResult = (
 };
 
 const ownStringDataProperty = (value: unknown, key: string): string | null => {
-  if (value === null || typeof value !== 'object') return null;
-  const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  return descriptor !== undefined && 'value' in descriptor && typeof descriptor.value === 'string'
-    ? descriptor.value
-    : null;
+  if (value === null || typeof value !== 'object' || utilTypes.isProxy(value)) return null;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor !== undefined && 'value' in descriptor && typeof descriptor.value === 'string'
+      ? descriptor.value
+      : null;
+  } catch {
+    return null;
+  }
 };
 
 export const isExecutionCancellation = (error: unknown, signal?: AbortSignal): boolean => {

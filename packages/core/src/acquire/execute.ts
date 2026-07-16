@@ -44,6 +44,7 @@ import {
   executePlacementPlans,
   executePlacementPlansObserved,
   executeRecordOnlyPlacementPlan,
+  executeRecordOnlyPlacementPlanWithObservation,
 } from '../place/execute.ts';
 import {
   ledgerMigrationExecutionBinding,
@@ -1050,3 +1051,12 @@ export const executeRecordOnlyAcquirePlan = (
   scopeKey: string | null = null,
 ): Promise<SwapExecutionResult<void>> =>
   executeRecordOnlyPlacementPlan(input, operation, pair, scopeKey);
+
+export const executeRecordOnlyAcquirePlanWithObservation = (
+  input: AcquireExecutionInput,
+  operation: ExecutableOperation,
+  pair: PairRecord,
+  scopeKey: string | null = null,
+  observation?: ObservationBundle,
+): Promise<SwapExecutionResult<void>> =>
+  executeRecordOnlyPlacementPlanWithObservation(input, operation, pair, scopeKey, observation);

@@ -1881,6 +1881,11 @@ const sweepCommittedAcquireJournalsInternal = async (
   };
 
   try {
+    const canonicalCleanupContext =
+      ctx.signal === undefined
+        ? ctx
+        : (({ signal: _signal, ...signalFreeContext }) => signalFreeContext)(ctx);
+    let canonicalCleanupStarted = false;
     for (const target of canonicalTargets) {
       const journal = target.canonicalJournal;
       if (journal === null) continue;
@@ -1906,8 +1911,10 @@ const sweepCommittedAcquireJournalsInternal = async (
         );
         return plan;
       }
+      const cleanupContext = canonicalCleanupStarted ? canonicalCleanupContext : ctx;
+      canonicalCleanupStarted = true;
       const done = await cleanupCanonicalCommittedAcquire(
-        ctx,
+        cleanupContext,
         plan.value,
         target.pair,
         target.shadow,

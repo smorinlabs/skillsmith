@@ -11,13 +11,24 @@ import {
 import { writeFileSync } from 'node:fs';
 import { lstat, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { defaultInstallDeps, runInstall, runInstallWithRegistry } from '../../src/acquire/run.ts';
+import {
+  defaultInstallDeps,
+  runInstall,
+  runInstallWithRegistry,
+  runInstallWithRegistryObserved,
+} from '../../src/acquire/run.ts';
 import { parseSource } from '../../src/acquire/source.ts';
 import type { CandidateSkill, InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
 import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
 import type { ExecResult } from '../../src/env/types.ts';
 import { type SkillSmithError, sourceUnresolvableError } from '../../src/errors.ts';
+import {
+  type ObservationBundle,
+  type ObserverEvent,
+  createObservationEmitter,
+  createOperationContext,
+} from '../../src/observation/index.ts';
 import {
   getLedgerPairAt as getPairAt,
   ledgerModelForMutation,
@@ -46,6 +57,69 @@ setDefaultTimeout(60_000);
 
 const NOW = '2026-07-08T00:00:00.000Z';
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
+
+const observationFixture = (): Readonly<{
+  observation: ObservationBundle;
+  events: ObserverEvent[];
+}> => {
+  const events: ObserverEvent[] = [];
+  let monotonicMilliseconds = 0;
+  const context = createOperationContext({
+    operationId: 'command:v1:record-only-install-repair',
+    command: 'skillsmith install fixture --tool claude-code',
+    workflow: 'install',
+    clock: {
+      wallNowIso: () => NOW,
+      monotonicMilliseconds: () => monotonicMilliseconds++,
+    },
+    id: { nextId: () => 'unused-operation-id' },
+  });
+  return Object.freeze({
+    observation: Object.freeze({
+      context,
+      emitter: createObservationEmitter({
+        observer: {
+          observe: (event) => {
+            events.push(event);
+          },
+        },
+        toolIds: ['claude-code', 'codex'],
+      }),
+    }),
+    events,
+  });
+};
+
+const expectCorrelatedRecordOnlyTransaction = (
+  events: readonly ObserverEvent[],
+  transactionId: string,
+): void => {
+  const started = events.find((event) => event.kind === 'operation.started');
+  if (started?.kind !== 'operation.started') {
+    throw new Error('record-only repair operation did not start');
+  }
+  const transactionEvents = events.filter((event) => event.kind.startsWith('transaction.'));
+  expect(transactionEvents).toMatchObject([
+    { kind: 'transaction.stage.started', stage: 'committed' },
+    {
+      kind: 'transaction.stage.completed',
+      stage: 'committed',
+      outcome: 'success',
+      errorCode: null,
+    },
+    { kind: 'transaction.committed' },
+  ]);
+  expect(transactionId).not.toBe(started.operationId);
+  for (const event of transactionEvents) {
+    expect(event).toMatchObject({
+      operationId: transactionId,
+      parentOperationId: started.operationId,
+      groupId: started.groupId,
+      pairId: started.pairId,
+      attempt: 1,
+    });
+  }
+};
 
 const detectBoth: InstallDeps['detect'] = async (_env, tool) =>
   ok<InstallRecord[]>([
@@ -296,6 +370,43 @@ describe('runInstall — idempotence / update / repair', () => {
     expect(repairs).toHaveLength(2);
     expect(repairs.map((journal) => journal.intent.tool).sort()).toEqual(['claude-code', 'codex']);
     expect(Object.keys(ledger2.transactions)).toEqual([]);
+  });
+
+  test('observed record-only repair emits one correlated committed transaction', async () => {
+    const options = { ...userOpts, tools: ['claude-code'] as const };
+    const installed = await runInstall(f.env, options, makeDeps());
+    if (!installed.ok) throw new Error(msg(installed.error));
+    expect(installed.value.summary.installed).toBe(1);
+
+    const ledger = await led();
+    const withoutClaude = withoutLedgerPairAt(ledger, null, 'factor-scan', 'claude-code');
+    if (!withoutClaude.ok) throw new Error(msg(withoutClaude.error));
+    const written = await writeLedger(f.env, ledgerPathOf(f.data), withoutClaude.value);
+    if (!written.ok) throw new Error(msg(written.error));
+
+    const observed = observationFixture();
+    const repaired = await runInstallWithRegistryObserved(
+      f.env,
+      options,
+      makeDeps(),
+      toolRegistry,
+      observed.observation,
+    );
+    if (!repaired.ok) throw new Error(msg(repaired.error));
+
+    expect(repaired.value.summary).toMatchObject({ repaired: 1, failed: 0 });
+    expect(repaired.value.results).toMatchObject([
+      { tool: 'claude-code', action: 'repaired', placement: 'symlink' },
+    ]);
+    const durable = await led();
+    expect(getPairAt(durable, null, 'factor-scan', 'claude-code')?.journal).toBeNull();
+    const committed = durable.history.at(-1);
+    expect(committed).toMatchObject({
+      intent: { kind: 'repair', skill: 'factor-scan', tool: 'claude-code' },
+      phase: 'committed',
+    });
+    if (committed === undefined) throw new Error('record-only repair history is missing');
+    expectCorrelatedRecordOnlyTransaction(observed.events, committed.transactionId);
   });
 });
 

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { scheduleOperationPlanObserved } from '../../src/execution/scheduler.ts';
 import * as publicCore from '../../src/index.ts';
+import {
+  createObservationEmitter,
+  createOperationContext,
+  noopObserver,
+} from '../../src/observation/index.ts';
 import {
   type CurrentMutatorOperationPlan,
   type ExecutableOperation,
@@ -292,6 +298,32 @@ const bindingFor = (operation: ExecutableOperation, calls: string[]): UnknownRec
   },
 });
 
+const observationBundle = () =>
+  Object.freeze({
+    context: createOperationContext({
+      command: 'skillsmith install',
+      workflow: 'scheduler-test',
+      clock: {
+        wallNowIso: () => '2026-07-16T00:00:00.000Z',
+        monotonicMilliseconds: () => 0,
+      },
+      id: { nextId: () => 'command:v1:scheduler-test' },
+      operationId: 'command:v1:scheduler-test',
+    }),
+    emitter: createObservationEmitter({ observer: noopObserver }),
+  });
+
+const hostileThrownValues = (): readonly unknown[] => {
+  const revoked = Proxy.revocable(Object.create(null) as object, {});
+  revoked.revoke();
+  const trapping = new Proxy(Object.create(null) as object, {
+    getOwnPropertyDescriptor: () => {
+      throw new Error('thrown proxy descriptor trap must not run');
+    },
+  });
+  return Object.freeze([revoked.proxy, trapping]);
+};
+
 describe('G3B-02 operation scheduler', () => {
   test('executes one validated binding per operation and preserves canonical result order', async () => {
     const plan = planFor([operationFor({ skill: 'beta' }), operationFor({ skill: 'alpha' })]);
@@ -397,6 +429,35 @@ describe('G3B-02 operation scheduler', () => {
 
     expect(calls).toEqual(plan.operations.map(({ operationId }) => operationId));
     expect(results.map(({ outcome }) => outcome)).toEqual(['rolled-back', 'succeeded']);
+  });
+
+  test('rethrows revoked and trapping Proxy binding errors unchanged with and without observation', async () => {
+    const operation = operationFor({ skill: 'hostile-thrown-value' });
+    const plan = planFor([operation]);
+    for (const thrown of hostileThrownValues()) {
+      const binding = {
+        ...bindingFor(operation, []),
+        execute: async () => {
+          throw thrown;
+        },
+      };
+
+      let unobserved: unknown;
+      try {
+        await requireScheduler()(plan, [binding]);
+      } catch (error) {
+        unobserved = error;
+      }
+      expect(unobserved).toBe(thrown);
+
+      let observed: unknown;
+      try {
+        await scheduleOperationPlanObserved(plan, [binding] as never, {}, observationBundle());
+      } catch (error) {
+        observed = error;
+      }
+      expect(observed).toBe(thrown);
+    }
   });
 
   test('admits only exact null-pair artifact prerequisite shapes', async () => {

@@ -264,6 +264,7 @@ describe('lifecycle application services', () => {
 
   test('install forwards normalized values and interaction through core domain APIs', async () => {
     let observedOptions: Record<string, unknown> | undefined;
+    let installArguments: readonly unknown[] = [];
     let picked = false;
     const report = installReport();
     const interactive: InteractionPort = {
@@ -277,11 +278,9 @@ describe('lifecycle application services', () => {
       confirm: async () => ({ status: 'resolved', value: true }),
     };
     const services = createLifecycleApplicationServices({
-      install: (async (
-        _env: Parameters<typeof runInstall>[0],
-        options: Parameters<typeof runInstall>[1],
-        deps: Parameters<typeof runInstall>[2],
-      ) => {
+      install: (async (...args: Parameters<typeof runInstall>) => {
+        installArguments = args;
+        const [, options, deps] = args;
         observedOptions = options as unknown as Record<string, unknown>;
         expect(
           await deps?.pick?.([
@@ -310,6 +309,8 @@ describe('lifecycle application services', () => {
     );
 
     expect(picked).toBeTrue();
+    expect(installArguments).toHaveLength(3);
+    expect(installArguments).not.toContain(observation);
     expect(observedOptions).toMatchObject({
       sources: ['owner/repo/skill'],
       tools: ['codex'],
@@ -334,9 +335,11 @@ describe('lifecycle application services', () => {
 
   test('uninstall keeps scope/mode refusals pre-domain and reports dry-run as preview', async () => {
     let calls = 0;
+    let uninstallArguments: readonly unknown[] = [];
     const services = createLifecycleApplicationServices({
-      uninstall: (async () => {
+      uninstall: (async (...args: unknown[]) => {
         calls++;
+        uninstallArguments = args;
         return ok(uninstallReport());
       }) as never,
     });
@@ -359,6 +362,8 @@ describe('lifecycle application services', () => {
       context(),
     );
     expect(calls).toBe(1);
+    expect(uninstallArguments).toHaveLength(3);
+    expect(uninstallArguments).not.toContain(observation);
     expect(preview.exitClass).toBe('success');
     expect(preview.mutation).toEqual({
       kind: 'preview',
@@ -371,6 +376,8 @@ describe('lifecycle application services', () => {
 
   test('dev rollback dispatches to rollback and translates report refusal semantically', async () => {
     let devCalls = 0;
+    let devArguments: readonly unknown[] = [];
+    let rollbackArguments: readonly unknown[] = [];
     let rollbackOptions: Parameters<typeof prepareRollback>[1] | undefined;
     const refused = flipReport('rollback', {
       action: 'refused',
@@ -378,14 +385,19 @@ describe('lifecycle application services', () => {
       error: { code: 'flip-refused', message: 'no prior state' },
     });
     const services = createLifecycleApplicationServices({
-      prepareDev: (async () => {
+      prepareDev: (async (...args: unknown[]) => {
         devCalls++;
-        throw new Error('rollback dispatched to prepareDev');
+        devArguments = args;
+        const report = flipReport('dev');
+        return ok({
+          preview: { ...report, dryRun: true, executionResults: [] },
+          plan: report.plan,
+          execute: async () => ok(report),
+        });
       }) as never,
-      prepareRollback: (async (
-        _env: Parameters<typeof prepareRollback>[0],
-        options: Parameters<typeof prepareRollback>[1],
-      ) => {
+      prepareRollback: (async (...args: Parameters<typeof prepareRollback>) => {
+        rollbackArguments = args;
+        const [, options] = args;
         rollbackOptions = options;
         return ok({
           preview: { ...refused, dryRun: true, executionResults: [] },
@@ -404,24 +416,43 @@ describe('lifecycle application services', () => {
     );
 
     expect(devCalls).toBe(0);
+    expect(rollbackArguments).toHaveLength(2);
+    expect(rollbackArguments).not.toContain(observation);
     expect(rollbackOptions).toMatchObject({ op: 'dev', targets: ['skill'], tools: ['codex'] });
     expect(outcome.exitClass).toBe('usage');
     expect(outcome.diagnostics).toEqual([
       { code: 'skillsmith.flip-refused', severity: 'error', message: 'no prior state' },
     ]);
     expect(outcome.mutation.failed).toBe(1);
+
+    const forward = await services.dev(
+      {
+        arguments: [['skill']],
+        options: { tool: ['codex'], verify: true, dryRun: true },
+      },
+      context(),
+    );
+    expect(forward.exitClass).toBe('success');
+    expect(devCalls).toBe(1);
+    expect(devArguments).toHaveLength(2);
+    expect(devArguments).not.toContain(observation);
   });
 
   test('promote maps top-level domain errors and cancellation without numeric exit policy', async () => {
+    let promoteArguments: readonly unknown[] = [];
     const permissionServices = createLifecycleApplicationServices({
-      preparePromote: (async () =>
-        err({ code: 'permission-denied', message: 'read only', path: '/store' })) as never,
+      preparePromote: (async (...args: unknown[]) => {
+        promoteArguments = args;
+        return err({ code: 'permission-denied', message: 'read only', path: '/store' });
+      }) as never,
     });
     const request = {
       arguments: [['skill']],
       options: { tool: ['codex'], verify: true },
     } as const;
     expect((await permissionServices.promote(request, context())).exitClass).toBe('permission');
+    expect(promoteArguments).toHaveLength(2);
+    expect(promoteArguments).not.toContain(observation);
 
     const controller = new AbortController();
     controller.abort();

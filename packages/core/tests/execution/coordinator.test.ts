@@ -264,7 +264,9 @@ describe('G3B-02 execution coordinator', () => {
         events.push('observe-actual-before');
         return operation.before;
       },
-      execute: async (validated: UnknownRecord) => {
+      execute: async (...args: [UnknownRecord]) => {
+        expect(args).toHaveLength(1);
+        const [validated] = args;
         expect(validated.actualBefore).toEqual(operation.before);
         events.push('execute');
         return createOperationExecutionResult({
