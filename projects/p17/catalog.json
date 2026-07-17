@@ -5075,7 +5075,7 @@
       "phase": "3B",
       "title": "Operation context and lifecycle events through execution and recovery",
       "dependsOn": ["P17-G3B-02", "P17-G1-07"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/adr/0009-operation-scoped-observation.md",
@@ -5141,7 +5141,10 @@
         },
         "impacted-green": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green",
+            "projects/p17/evidence/P17-G3B-06.md#terminal-full-repository-gate"
+          ]
         },
         "refactor": {
           "status": "passed",
@@ -5152,12 +5155,15 @@
           "evidence": ["projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G3B-06.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-06.md#terminal-full-repository-gate",
+            "projects/p17/evidence/P17-G3B-06.md#traceability-and-sign-off"
+          ]
         }
       },
       "evidence": [
@@ -5169,7 +5175,9 @@
         "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-06.md#final-review-ownership-amendment",
         "projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review",
-        "projects/p17/evidence/P17-G3B-06.md#terminal-suite-correction-ownership-amendment"
+        "projects/p17/evidence/P17-G3B-06.md#terminal-suite-correction-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-06.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G3B-06.md#traceability-and-sign-off"
       ]
     },
     {
@@ -20038,7 +20046,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G3B-06",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-06",
       "target": null,
@@ -20048,7 +20056,10 @@
         "projects/p17/evidence/P17-G3B-06.md#minimal-implementation",
         "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-06.md#final-review-ownership-amendment",
-        "projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review"
+        "projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review",
+        "projects/p17/evidence/P17-G3B-06.md#terminal-suite-correction-ownership-amendment",
+        "projects/p17/evidence/P17-G3B-06.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G3B-06.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -20320,7 +20331,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G3B-06",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3B-06:tests/ergonomics/phase/EWP-P3B-TS07.test.ts#EWP-P3B-TS07",
       "target": {
@@ -20331,7 +20342,9 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G3B-06.md#final-green-execution-receipt-ewp-p3b-ts07",
-        "projects/p17/evidence/P17-G3B-06.md#red-execution-receipt-ewp-p3b-ts07"
+        "projects/p17/evidence/P17-G3B-06.md#red-execution-receipt-ewp-p3b-ts07",
+        "projects/p17/evidence/P17-G3B-06.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G3B-06.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
