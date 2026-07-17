@@ -5221,6 +5221,7 @@
         "packages/core/src/acquire/execute.ts",
         "packages/core/src/application/lifecycle-services.ts",
         "packages/core/src/artifacts/coordinator.ts",
+        "packages/core/src/artifacts/lock.ts",
         "packages/core/src/contracts/v1/lifecycle.ts",
         "packages/core/src/contracts/v2/lifecycle.ts",
         "packages/core/src/contracts/v2/index.ts",
@@ -5246,6 +5247,7 @@
         "packages/core/tests/application/lifecycle-services.test.ts",
         "packages/core/tests/artifacts/coordinator.test.ts",
         "packages/core/tests/artifacts/discovery.test.ts",
+        "packages/core/tests/artifacts/lock.test.ts",
         "packages/core/tests/execution/preconditions.test.ts",
         "packages/core/tests/execution/scheduler.test.ts",
         "packages/core/tests/planning/create.test.ts",
@@ -5380,7 +5382,8 @@
         "projects/p17/evidence/P17-G4A-01.md#ready-plan",
         "projects/p17/evidence/P17-G4A-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment",
-        "projects/p17/evidence/P17-G4A-01.md#lease-owned-missing-parent-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#lease-owned-missing-parent-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#pinned-lock-correlation-ownership-amendment"
       ]
     },
     {
