@@ -3723,6 +3723,7 @@
         "packages/core/src/contracts/v3/list.ts",
         "packages/core/src/index.ts",
         "packages/core/src/inventory-control.ts",
+        "packages/core/src/inventory/cancellation.ts",
         "packages/core/src/inventory/collisions.ts",
         "packages/core/src/inventory/index.ts",
         "packages/core/src/inventory/order.ts",
@@ -3859,7 +3860,8 @@
           "evidence": [
             "projects/p17/evidence/P17-G3A-02.md#ready-plan",
             "projects/p17/evidence/P17-G3A-02.md#ready-ownership-amendment",
-            "projects/p17/evidence/P17-G3A-02.md#terminal-full-gate-remediation-ownership-amendment"
+            "projects/p17/evidence/P17-G3A-02.md#terminal-full-gate-remediation-ownership-amendment",
+            "projects/p17/evidence/P17-G3A-02.md#phase-3-ownership-reconciliation"
           ]
         },
         "test-first": {
@@ -3888,11 +3890,17 @@
         },
         "traceability-closure": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3A-02.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3A-02.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G3A-02.md#phase-3-ownership-reconciliation"
+          ]
         },
         "signed-off": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3A-02.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3A-02.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G3A-02.md#phase-3-ownership-reconciliation"
+          ]
         }
       },
       "evidence": [
@@ -3909,7 +3917,8 @@
         "projects/p17/evidence/P17-G3A-02.md#final-targeted-and-static-replay",
         "projects/p17/evidence/P17-G3A-02.md#terminal-full-gate-remediation-ownership-amendment",
         "projects/p17/evidence/P17-G3A-02.md#final-full-repository-gate",
-        "projects/p17/evidence/P17-G3A-02.md#traceability-and-sign-off"
+        "projects/p17/evidence/P17-G3A-02.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G3A-02.md#phase-3-ownership-reconciliation"
       ]
     },
     {
@@ -4899,13 +4908,17 @@
         },
         "traceability-closure": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G3B-04.md#phase-3-plan-amendment-reconciliation"
+          ]
         },
         "signed-off": {
           "status": "passed",
           "evidence": [
             "projects/p17/evidence/P17-G3B-04.md#terminal-full-repository-gate",
-            "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"
+            "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G3B-04.md#phase-3-plan-amendment-reconciliation"
           ]
         }
       },
@@ -4918,7 +4931,8 @@
         "projects/p17/evidence/P17-G3B-04.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-04.md#terminal-correction-and-mandatory-architecture-review",
         "projects/p17/evidence/P17-G3B-04.md#terminal-full-repository-gate",
-        "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"
+        "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G3B-04.md#phase-3-plan-amendment-reconciliation"
       ]
     },
     {
@@ -4981,6 +4995,7 @@
         "packages/core/tests/planning/order.test.ts",
         "packages/core/tests/planning/types.test.ts",
         "packages/core/tests/state/read.test.ts",
+        "packages/core/tests/verify/gate.test.ts",
         "tests/ergonomics/fixtures/p3b-ts06/read-only-adapter.ts",
         "tests/ergonomics/fixtures/p3b-ts06/write-adapter.ts",
         "tests/ergonomics/phase/EWP-P3B-TS06.test.ts"
@@ -5009,7 +5024,10 @@
         },
         "ready": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3B-05.md#ready-plan"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-05.md#ready-plan",
+            "projects/p17/evidence/P17-G3B-05.md#phase-3-ownership-reconciliation"
+          ]
         },
         "test-first": {
           "status": "passed",
@@ -5046,13 +5064,17 @@
         },
         "traceability-closure": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G3B-05.md#phase-3-ownership-reconciliation"
+          ]
         },
         "signed-off": {
           "status": "passed",
           "evidence": [
             "projects/p17/evidence/P17-G3B-05.md#terminal-full-repository-gate",
-            "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off"
+            "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G3B-05.md#phase-3-ownership-reconciliation"
           ]
         }
       },
@@ -5067,7 +5089,8 @@
         "projects/p17/evidence/P17-G3B-05.md#adversarial-review",
         "projects/p17/evidence/P17-G3B-05.md#terminal-compatibility-correction-and-mandatory-architecture-review",
         "projects/p17/evidence/P17-G3B-05.md#terminal-full-repository-gate",
-        "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off"
+        "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G3B-05.md#phase-3-ownership-reconciliation"
       ]
     },
     {
@@ -18810,7 +18833,10 @@
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G3A-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G3A-02.md#traceability-and-sign-off"],
+      "evidence": [
+        "projects/p17/evidence/P17-G3A-02.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G3A-02.md#phase-3-ownership-reconciliation"
+      ],
       "secondaryGroups": [],
       "implements": ["COMMAND:agents", "COMMAND:commands", "COMMAND:list", "P1-01", "P1-03"],
       "validatedBy": [
@@ -18876,6 +18902,7 @@
         "packages/core/src/commands/types.ts",
         "packages/core/src/contracts/v2/commands.ts",
         "packages/core/src/contracts/v3/list.ts",
+        "packages/core/src/inventory/cancellation.ts",
         "packages/core/src/inventory/index.ts",
         "packages/core/src/inventory/order.ts",
         "packages/core/src/inventory/read.ts",
@@ -19863,7 +19890,8 @@
         "projects/p17/evidence/P17-G3B-04.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-04.md#terminal-correction-and-mandatory-architecture-review",
         "projects/p17/evidence/P17-G3B-04.md#terminal-full-repository-gate",
-        "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"
+        "projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G3B-04.md#phase-3-plan-amendment-reconciliation"
       ],
       "secondaryGroups": [],
       "implements": ["EWP-CF-035"],
@@ -19972,7 +20000,8 @@
         "projects/p17/evidence/P17-G3B-05.md#adversarial-review",
         "projects/p17/evidence/P17-G3B-05.md#terminal-compatibility-correction-and-mandatory-architecture-review",
         "projects/p17/evidence/P17-G3B-05.md#terminal-full-repository-gate",
-        "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off"
+        "projects/p17/evidence/P17-G3B-05.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G3B-05.md#phase-3-ownership-reconciliation"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -20035,6 +20064,7 @@
         "packages/core/tests/planning/order.test.ts",
         "packages/core/tests/planning/types.test.ts",
         "packages/core/tests/state/read.test.ts",
+        "packages/core/tests/verify/gate.test.ts",
         "tests/ergonomics/fixtures/p3b-ts06/read-only-adapter.ts",
         "tests/ergonomics/fixtures/p3b-ts06/write-adapter.ts",
         "tests/ergonomics/phase/EWP-P3B-TS06.test.ts"

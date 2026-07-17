@@ -51,6 +51,26 @@ and shared codec types; versioned entry points own their exact DTOs, codecs, and
 Verify codec construction receives a validated tool registry, and the capability mapper projects
 only immutable descriptor facts in canonical operation order.
 
+### Subsequent production evolution
+
+The inventory above records the adoption baseline. Later accepted P17 groups exercised the same
+coexistence and explicit-version rules by adding versions without replacing their predecessors.
+The current production registry, in declared order, is:
+
+```text
+agents@1, agents@2, health@1, health@2, commands@1, commands@2,
+config-get@1, config-list@1, config-set@1, config-unset@1,
+flip@2, flip@3, flip@4, install@1, list@2, list@3, status@1,
+uninstall@1, verify@1, error@1, capability-snapshot@1
+```
+
+The current command mappings select `agents@2`, `commands@2`, `flip@4`, `health@2` for doctor,
+`health@1` for check, and `list@3`; unchanged command families retain their accepted version-1
+mapping. The public versioned entry points now extend through `@skillsmith/core/contracts/v4`.
+This is an evolution of the accepted registry decision, not a replacement: older registered codecs
+remain available for exact compatibility, and every current renderer still resolves its named
+codec through the CLI-owned command mapping.
+
 Persisted artifacts use a second, deliberately distinct abstraction. `ArtifactCodec` operates on
 owned bytes and maps versioned DTOs to immutable semantic models; it is not a `WireCodec`, and
 `artifactContractRegistry` is not the CLI's `WireContractRegistry`. The single production artifact

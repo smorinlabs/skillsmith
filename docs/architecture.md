@@ -215,17 +215,18 @@ freezes supplied codecs and mappings without importing CLI command policy. Domai
 boundary through explicit named mappers; renderer code does not spread domain objects, strip fields,
 or define a second public schema.
 
-The current registry contains `agents@1`, `health@1`, `health@2`, `commands@1`, `config-get@1`,
-`config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`, `install@1`, `list@2`, `uninstall@1`,
-`verify@1`, `status@1`, `error@1`, and
-`capability-snapshot@1`. Each descriptor fixes recursive unknown-field rejection, embedded kind and
-version policy, JSON indentation, terminal framing, and conservative compatibility. Current codecs
-declare no migrations. The `verify` codec derives tool choices from the validated tool registry;
-the capability snapshot projects only descriptor facts and is not yet a final command output.
+The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
+`commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
+`flip@3`, `flip@4`, `install@1`, `list@2`, `list@3`, `status@1`, `uninstall@1`, `verify@1`,
+`error@1`, and `capability-snapshot@1`. Each descriptor fixes recursive unknown-field rejection,
+embedded kind and version policy, JSON indentation, terminal framing, and conservative
+compatibility. Current codecs declare no migrations. The `verify` codec derives tool choices from
+the validated tool registry; the capability snapshot projects only descriptor facts and is not yet
+a final command output.
 
-Consumers import shared types and the builder from `@skillsmith/core/contracts`, V1 DTOs/codecs from
-`@skillsmith/core/contracts/v1`, and V2 DTOs/codecs from `@skillsmith/core/contracts/v2`. See
-[ADR 0008](adr/0008-wire-contract-registry.md) for compatibility and ownership rules.
+Consumers import shared types and the builder from `@skillsmith/core/contracts`, and exact
+DTOs/codecs from the versioned `@skillsmith/core/contracts/v1`, `/v2`, `/v3`, and `/v4` entry
+points. See [ADR 0008](adr/0008-wire-contract-registry.md) for compatibility and ownership rules.
 
 ## Persisted artifact contracts
 
@@ -355,13 +356,21 @@ If you find yourself fighting these rules, that's usually a signal to move code,
 
 1. `cli/src/index.ts` installs the SIGINT handler, builds the program, and asks Commander to parse
    `skillsmith agents [opts]`.
-2. `cli/src/program.ts` validates CLI selection, builds a `ScanEnv` with `defaultScanEnv()`, and
-   passes it to `runAgents`.
-3. `cli/src/commands/agents.ts` validates the programmatic input and calls
-   `detectAll(env, { tools, signal })`.
-4. `core/src/scan/` — orchestrator iterates `listSupportedTools()` (or the filter), delegates to each `Agent.detect(env)`.
-5. Each agent — runs platform-specific scanners (well-known bin dirs, `runVersion`), returns `Result<InstallRecord[], SkillSmithError>`.
-6. Back in the CLI — `output/agents-markdown.ts` or `output/agents-json.ts` renders the inventory; `util/exit-codes.ts` maps any error codes to exit codes.
+2. `cli/src/program.ts` builds Commander from `CURRENT_COMMAND_SPECS`. Its shared action factory
+   creates the normalized request, operation observation, and capability-scoped application
+   context, including runtime ports, resolved configuration, interaction policy, and cancellation.
+3. The shared CLI runtime selects the `agents` entry from `CURRENT_APPLICATION_SERVICES` and calls
+   the public core `runAgentsApplication`. `cli/src/commands/agents.ts` is only a compatibility
+   re-export; it does not own orchestration.
+4. `runAgentsApplication` validates the requested format and tool selection before detection. It
+   selects adapters in `toolRegistry` order and calls each selected adapter's
+   `inventory.detect(context.ports, context.signal)` capability.
+5. The application service returns an immutable `CommandOutcome<AgentsReport>` with ordered
+   detections and a registry-derived capability snapshot; typed observation remains diagnostic and
+   cannot change the result.
+6. The shared runtime snapshots the outcome, renders Markdown through `output/agents-markdown.ts`
+   or canonical `agents@2` JSON through `output/agents-json.ts`, maps the semantic exit class, and
+   emits the final stdout/stderr bytes.
 
 ## Where things live
 
@@ -383,6 +392,9 @@ If you find yourself fighting these rules, that's usually a signal to move code,
 - [ADR 0003 — ESLint import boundaries](adr/0003-eslint-import-boundaries.md)
 - [ADR 0004 — Command runtime and application services](adr/0004-command-runtime-application-boundary.md)
 - [ADR 0005 — Capability-scoped ports](adr/0005-capability-scoped-ports.md)
+- [ADR 0006 — Immutable observed state and repositories](adr/0006-immutable-observed-state-and-repositories.md)
 - [ADR 0007 — Validated tool-adapter registry](adr/0007-tool-adapter-registry.md)
+- [ADR 0008 — Versioned wire codecs](adr/0008-wire-contract-registry.md)
+- [ADR 0009 — Operation-scoped observation](adr/0009-operation-scoped-observation.md)
 - [Release process](releases.md)
 - [CONTRIBUTING](../CONTRIBUTING.md)
