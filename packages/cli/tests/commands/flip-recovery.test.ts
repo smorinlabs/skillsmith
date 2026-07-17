@@ -248,16 +248,16 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
       const f = await buildFixtureFleet();
       try {
         const { livePath, oldTarget, transactionId } = await crashAtInstall(f, 'promote');
-        let interruptBoundary = true;
+        let liveParentFsyncs = 0;
         const boundaryEnv = {
           ...f.env,
           afterLedgerBarrier: async ({ kind }: LedgerWriterBarrier) => {
-            if (interruptBoundary && kind === 'writer-live-parent-fsync') {
-              interruptBoundary = false;
-              throw Object.assign(new Error('injected rollback boundary interruption'), {
-                code: 'cancelled',
-              });
-            }
+            if (kind !== 'writer-live-parent-fsync') return;
+            liveParentFsyncs += 1;
+            if (liveParentFsyncs !== 2) return;
+            throw Object.assign(new Error('injected rollback boundary interruption'), {
+              code: 'cancelled',
+            });
           },
         };
 
@@ -267,6 +267,7 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
           passDeps(),
         );
         if (!interrupted.ok) throw new Error(msg(interrupted.error));
+        expect(liveParentFsyncs).toBe(2);
         expect(interrupted.value.results[0]?.action).not.toBe('rolled-back');
         expect(await kindOf(livePath)).toBe('absent');
 

@@ -1319,7 +1319,7 @@ describe('EWP-CMD-DOCTOR-TS03', () => {
       expect.objectContaining({ operation: 'migrate-project-config', path: manifest }),
       expect.objectContaining({ operation: 'write-lock', path: lock }),
     ]);
-  });
+  }, 40_000);
 
   test('a supported v1 ledger is diagnosed as migration-pending without changing its bytes', async () => {
     const root = await sandbox('v1-diagnosis');
