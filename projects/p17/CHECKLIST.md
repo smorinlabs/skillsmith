@@ -1072,14 +1072,14 @@ Downstream coverage obligations: none.
 
 ## P17-G4A-01 — Install/uninstall default-save, no-save, ownership, and artifact reporting
 
-Phase: 4A; status: **mapped**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05, P17-G3B-06.
+Phase: 4A; status: **ready**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05, P17-G3B-06.
 Required-now validations: EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-UNINSTALL-TS01, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS05, EWP-CMD-UNINSTALL-TS06, EWP-CMD-UNINSTALL-TS07, EWP-P4A-TS01, EWP-WF02, EWP-WF14.
 Downstream coverage obligations: none.
 
 ### Group gates
 
 - [x] P17-G4A-01:mapped _(passed)_
-- [ ] P17-G4A-01:ready _(pending)_
+- [x] P17-G4A-01:ready _(passed)_
 - [ ] P17-G4A-01:test-first _(pending)_
 - [ ] P17-G4A-01:minimal-implementation _(pending)_
 - [ ] P17-G4A-01:targeted-green _(pending)_
@@ -1110,7 +1110,7 @@ Downstream coverage obligations: none.
 - [ ] **EWP-CMD-UNINSTALL-TS05** — no-save, dry-run, force/confirmation independence, noninteractive, _(command-test; planned)_
 - [ ] **EWP-CMD-UNINSTALL-TS06** — store-retention and undo eligibility. _(command-test; planned)_
 - [ ] **EWP-CMD-UNINSTALL-TS07** — partial pair failure, crash/same-op resume, and opposite-op refusal. _(command-test; planned)_
-- [ ] **EWP-P4A-T01** — Integrate install/uninstall default-save, ownership-first destination discovery, _(phase-task; planned)_
+- [ ] **EWP-P4A-T01** — Integrate install/uninstall default-save, ownership-first destination discovery, _(phase-task; ready)_
 - [ ] **EWP-P4A-TS01** — Default-save and no-save operation snapshots covering explicit file, unique _(phase-test; planned)_
 - [ ] **EWP-WF02** — Temporary live-only install _(workflow; planned)_
 - [ ] **P1-09** — Desired-state-first install and uninstall _(recommendation; planned)_

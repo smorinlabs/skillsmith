@@ -411,7 +411,10 @@ Before: two possible owners
 After:  no files or placements changed; exit 2 asks for --file
 ```
 
-Every mutating command names the selected artifact pair in human and JSON output, for example:
+Every saving mutating command names the selected artifact pair in human and JSON output.
+Install/uninstall `--no-save` instead report an explicit null pair, selection `none/no-save`,
+portable state not inspected or changed, and drift `not-evaluated` with a conditional future-apply
+effect; they perform no portable ownership discovery. For example, a saving command reports:
 
 ```text
 Saved desired state:
@@ -2029,8 +2032,8 @@ instead of adding command-specific orchestration.
 #### Phase 4A — Desired-state lifecycle integration
 
 - **EWP-P4A-T01:** Integrate install/uninstall default-save, ownership-first destination discovery,
-  ambiguity refusal, and `--no-save` with the shared coordinator; always report the selected
-  manifest/lock pair.
+  ambiguity refusal, and `--no-save` with the shared coordinator; report the selected manifest/lock
+  pair for saving work and explicit no-pair/no-discovery/not-evaluated facts for `--no-save`.
 - **EWP-P4A-T02:** Implement export classification, merge/update behavior, and writer integration.
 - **EWP-P4A-T03:** Define multi-source/multi-tool partial-success commit semantics for manifest,
   lock, ledger, and live state.
@@ -4481,7 +4484,7 @@ closed Section 13.3.
 | Strict/gates | Strict promotes warning/inconclusive to failure; no-verify explicitly skips and records; deep conflicts no-verify | Export strict promotes nonportable skips; doctor strict promotes warning findings | Section 8.20.1, per-command gate tests |
 | Preview/check | Dry-run is non-mutating and returns 0; check is non-mutating and returns 7 only after successful drift evaluation; both conflict and validate before I/O | Init previews one manifest operation; plan check cannot write out; health check has report-only semantics; saved apply validates exact operations with 0/7 and stale state 3 | EWP-CF-004, EWP-CF-041..043, EWP-OPT-TS10, EWP-CMD-PLAN-TS07/11 |
 | Locked/prune/delete | Locked forbids resolution drift; prune/delete are opt-in destructive selection and fingerprint complete sets | Prune reconciles undeclared selected artifact scope; sync delete reconciles extra destination entries | D-015, EWP-P4B-TS04, EWP-CMD-SYNC-TS06 |
-| Save/no-save | Save changes portable desired state only where contracted; no-save explicitly creates live-only drift | Install/uninstall save by default and opt out; sync is live-only by default and opts into destination save | D-006, D-007, EWP-WF02, EWP-WF10 |
+| Save/no-save | Save changes portable desired state only where contracted; no-save explicitly requests a live-only change whose drift is measured later | Install/uninstall save by default and opt out; sync is live-only by default and opts into destination save | D-006, D-007, EWP-WF02, EWP-WF10 |
 | JSON | Exactly one versioned stdout value with stderr diagnostics; human verbosity never changes schema | Breaking schema increments version; deprecated syntax is structured metadata | EWP-CF-023, EWP-WF15 |
 | Batch | Deterministic groups/pairs, fail-fast default, explicit later-group continuation, nonzero failure preserved | Saved-plan apply rejects continuation; single-group commands omit the flag | EWP-CF-026, EWP-WF13 |
 | Artifact pair | File selects a sibling lock by default; advanced lockfile requires explicit file, is never persisted, and every pair consumer reports/reuses the same explicit context | Init is manifest-only; no-save and unsaved sync reject selectors; saved-plan apply uses its recorded pair | EWP-CF-003, EWP-CF-040, EWP-OPT-TS08, EWP-WF04 |
