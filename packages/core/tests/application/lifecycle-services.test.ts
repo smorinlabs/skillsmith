@@ -57,7 +57,7 @@ const context = (
   globalOptions: {},
   projectContext: {
     invocationCwd: '/invocation',
-    effectiveCwd: '/effective',
+    effectiveCwd: '/project/packages/nested',
     projectRoot: '/project',
     projectIdentity: '/project',
     projectKind: 'git',
@@ -326,7 +326,7 @@ describe('lifecycle application services', () => {
       pin: true,
       noVerify: false,
       continueOnError: true,
-      cwd: '/project',
+      cwd: '/project/packages/nested',
       configuration: resolveRuntimeConfiguration({ HOME: '/home/test' }),
     });
     expect(outcome.exitClass).toBe('success');
@@ -508,8 +508,13 @@ describe('lifecycle application services', () => {
       lockfile: './skillsmith.lock',
       noSave: false,
       continueOnError: true,
+      cwd: '/project/packages/nested',
     });
-    expect(uninstallOptions[1]).toMatchObject({ noSave: true, continueOnError: false });
+    expect(uninstallOptions[1]).toMatchObject({
+      noSave: true,
+      continueOnError: false,
+      cwd: '/project/packages/nested',
+    });
   });
 
   test('uninstall keeps scope/mode refusals pre-domain and reports dry-run as preview', async () => {
