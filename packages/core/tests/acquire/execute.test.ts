@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   type AcquisitionSnapshotAuthorityV1,
   acquisitionRevisionPreconditions,
   acquisitionSnapshotArtifactAuthorityV1,
+  createAcquisitionArtifactExecutionControllerV1,
   createAcquisitionRepositoryLifecycleControllerV1,
   executeAcquirePlans,
   readAcquisitionSnapshotV1,
@@ -13,17 +14,45 @@ import {
   resolveAcquisitionProjectContextV1,
 } from '../../src/acquire/execute.ts';
 import { toolRegistry } from '../../src/agents/registry.ts';
+import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
+import { hashCanonicalInput, hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import {
+  type PortableLockV1,
+  hashPortableLock,
+  serializePortableLock,
+} from '../../src/artifacts/lock.ts';
+import { editManifestBytes } from '../../src/artifacts/manifest-edit.ts';
+import { normalizeManifestDocument, readManifestSource } from '../../src/artifacts/manifest.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
+import type { ResolvedArtifactPair } from '../../src/artifacts/pair.ts';
+import { createLockRepository, createManifestRepository } from '../../src/artifacts/repository.ts';
+import type { NormalizedManifestV1 } from '../../src/artifacts/types.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
+import { withExecutionLockHierarchy } from '../../src/execution/lock-hierarchy.ts';
+import {
+  createExpectedRevisionExecutionPrecondition,
+  validateExecutionPreconditions,
+} from '../../src/execution/preconditions.ts';
+import type { ExecutionPrecondition, PreparedExecutionBinding } from '../../src/execution/types.ts';
 import type { PlacementExecutionInput } from '../../src/place/execute.ts';
 import { emptyLedgerModel } from '../../src/place/ledger.ts';
 import type { PlacementPorts } from '../../src/place/types.ts';
 import { createOperationExecutionResult } from '../../src/planning/create.ts';
-import type { ExecutableOperation, OperationExecutionResult } from '../../src/planning/types.ts';
+import type {
+  CurrentMutatorOperationPlan,
+  ExecutableOperation,
+  OperationExecutionResult,
+  OperationImage,
+} from '../../src/planning/types.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
 import { err, ok } from '../../src/result.ts';
 import { stageLogicalRepositoryEditV1 } from '../../src/state/repositories.ts';
-import { type ExpectedRevisionV1, createExpectedRevisionV1 } from '../../src/state/types.ts';
+import {
+  type ExpectedRevisionV1,
+  createExpectedRevisionV1,
+  isExpectedRevisionV1,
+} from '../../src/state/types.ts';
 
 const ROOT = '/work/repo';
 const CWD = '/work/repo/packages/app';
@@ -878,5 +907,947 @@ describe('acquisition execution boundary', () => {
     expect(later.error?.code).toBe('repository-lifecycle-failed');
     expect(laterCalls).toBe(0);
     expect(fixture.stagedExpected).toHaveLength(1);
+  });
+});
+
+const executionPair = (manifestPath: string, lockPath: string): ResolvedArtifactPair =>
+  Object.freeze({
+    file: Object.freeze({
+      token: null,
+      path: manifestPath,
+      portability: 'machine-bound' as const,
+      portableToken: null,
+    }),
+    lockfile: Object.freeze({
+      token: null,
+      path: lockPath,
+      portability: 'machine-bound' as const,
+      portableToken: null,
+    }),
+    lockfileSource: 'explicit' as const,
+  });
+
+const manifestSnapshotForExecution = (
+  value: NormalizedManifestV1,
+): Extract<OperationImage, { kind: 'manifest' }>['value'] => ({
+  version: 1,
+  defaults:
+    value.defaults === undefined
+      ? null
+      : {
+          tools: value.defaults.tools ?? null,
+          scope: value.defaults.scope ?? null,
+          path: value.defaults.path ?? null,
+        },
+  registry: value.registry === undefined ? null : { default: value.registry.default ?? null },
+  skills: value.skills,
+});
+
+const manifestImageForExecution = (
+  path: string,
+  bytes: Uint8Array,
+): Extract<OperationImage, { kind: 'manifest' }> => {
+  const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const document = readManifestSource(source);
+  if (!document.ok) throw new Error('fixture manifest is unreadable');
+  const normalized = normalizeManifestDocument(document.value);
+  if (!normalized.ok) throw new Error('fixture manifest is not normalizable');
+  const byteHash = hashCanonicalInput('resource', 1, bytes);
+  if (!byteHash.ok) throw new Error('fixture manifest byte hash failed');
+  return Object.freeze({
+    kind: 'manifest' as const,
+    location: Object.freeze({ kind: 'machine-bound' as const, path }),
+    shape: document.value.shape,
+    version: 1 as const,
+    byteHash: byteHash.value as Extract<OperationImage, { kind: 'manifest' }>['byteHash'],
+    semanticHash: hashManifestSemantics(normalized.value) as Extract<
+      OperationImage,
+      { kind: 'manifest' }
+    >['semanticHash'],
+    value: manifestSnapshotForExecution(normalized.value),
+  });
+};
+
+const lockImageForExecution = (
+  path: string,
+  lock: PortableLockV1,
+): Extract<OperationImage, { kind: 'lock' }> => {
+  const canonicalHash = hashPortableLock(lock);
+  if (!canonicalHash.ok) throw new Error('fixture lock hash failed');
+  const value = structuredClone(lock);
+  return Object.freeze({
+    kind: 'lock' as const,
+    location: Object.freeze({ kind: 'machine-bound' as const, path }),
+    version: 1 as const,
+    canonicalHash: canonicalHash.value as Extract<
+      OperationImage,
+      { kind: 'lock' }
+    >['canonicalHash'],
+    value: value as unknown as Extract<OperationImage, { kind: 'lock' }>['value'],
+  });
+};
+
+const absentArtifactImage = (
+  role: 'manifest' | 'lock',
+  path: string,
+): Extract<OperationImage, { kind: 'absent' }> =>
+  Object.freeze({
+    kind: 'absent' as const,
+    resource: Object.freeze({
+      kind: role === 'manifest' ? ('manifest-bytes' as const) : ('lock' as const),
+      location: Object.freeze({ kind: 'machine-bound' as const, path }),
+    }),
+  });
+
+const artifactOperationForExecution = (input: {
+  marker: string;
+  groupMarker: string;
+  kind: 'migrate-project-config' | 'write-manifest' | 'write-lock';
+  before: OperationImage;
+  after: OperationImage;
+  dependencies?: readonly string[];
+}): ExecutableOperation => ({
+  operationId: `operation:v1:${input.marker.repeat(64).slice(0, 64)}`,
+  groupId: `group:v1:${input.groupMarker.repeat(64).slice(0, 64)}`,
+  pairId: null,
+  kind: input.kind,
+  dependencyMetadata: {
+    domain: 'skillsmith.operation-dependency',
+    schemaVersion: 1,
+    operationIds: input.dependencies ?? [],
+  },
+  skill: null,
+  source: null,
+  tool: null,
+  scope: null,
+  before: input.before,
+  after: input.after,
+  reason: { code: 'fixture', message: 'fixture' },
+  selectionSource: 'explicit-targets',
+  preconditionIds: [],
+  requiredCheckIds: [],
+  reversibility: { kind: 'none', retentionResourceIds: [] },
+  mutates:
+    input.kind === 'write-lock'
+      ? { live: false, manifest: false, lock: true, ledger: false }
+      : { live: false, manifest: true, lock: false, ledger: false },
+  conflict: null,
+});
+
+const selectedExecutionAuthority = async (
+  runtime: RuntimePorts,
+  pair: ResolvedArtifactPair,
+): Promise<AcquisitionSnapshotAuthorityV1> => {
+  const manifestRepository = createManifestRepository({
+    resourceId: 'manifest:execution-fixture',
+    path: pair.file.path,
+    ports: runtime,
+  });
+  const lockRepository = createLockRepository({
+    resourceId: 'lock:execution-fixture',
+    path: pair.lockfile.path,
+    ports: runtime,
+  });
+  const manifest = await manifestRepository.observe('manifest:execution-fixture');
+  const lock = await lockRepository.observe('lock:execution-fixture');
+  if (!manifest.ok || !lock.ok) throw new Error('fixture artifact observation failed');
+  return {
+    snapshot: {
+      artifact: Object.freeze({
+        mode: 'selected' as const,
+        pair,
+        manifest: manifest.value,
+        lock: lock.value,
+      }),
+    },
+    repositories: {
+      artifact: Object.freeze({
+        mode: 'selected' as const,
+        manifest: manifestRepository,
+        lock: lockRepository,
+      }),
+    },
+  } as unknown as AcquisitionSnapshotAuthorityV1;
+};
+
+const executePreparedArtifactBinding = (
+  binding: PreparedExecutionBinding,
+  operation: ExecutableOperation,
+) =>
+  binding.execute({
+    operationId: operation.operationId,
+    groupId: operation.groupId,
+    pairId: operation.pairId,
+    actualBefore: operation.before,
+    unstartedForce: null,
+    execute: async () => {
+      throw new Error('fixture validated binding must not be re-entered');
+    },
+  });
+
+const artifactPreconditionForExecution = (
+  authority: AcquisitionSnapshotAuthorityV1,
+  role: 'manifest' | 'lock',
+  operationId: string,
+  trace?: string[],
+): ExecutionPrecondition => {
+  const artifact = authority.snapshot.artifact;
+  const repositories = authority.repositories.artifact;
+  if (artifact.mode !== 'selected' || repositories.mode !== 'selected') {
+    throw new Error('fixture selected authority is missing');
+  }
+  const component = role === 'manifest' ? artifact.manifest : artifact.lock;
+  const path = role === 'manifest' ? artifact.pair.file.path : artifact.pair.lockfile.path;
+  const repository = role === 'manifest' ? repositories.manifest : repositories.lock;
+  return createExpectedRevisionExecutionPrecondition({
+    operationIds: [operationId],
+    resource: Object.freeze({
+      kind: role === 'manifest' ? ('manifest-bytes' as const) : ('lock' as const),
+      location: Object.freeze({ kind: 'machine-bound' as const, path }),
+    }),
+    expectedRevision: component.revision,
+    observeRevision: async () => {
+      trace?.push(`precondition:${role}`);
+      const observed = await repository.observeRevision(component.revision.resourceId);
+      if (!observed.ok) throw observed.error;
+      return observed.value;
+    },
+  });
+};
+
+const artifactPreconditionPlan = (
+  operations: readonly ExecutableOperation[],
+  preconditions: readonly ExecutionPrecondition[],
+): CurrentMutatorOperationPlan =>
+  Object.freeze({
+    domain: 'skillsmith.operation-plan' as const,
+    schemaVersion: 1 as const,
+    command: 'install' as const,
+    selection: Object.freeze({
+      source: 'explicit-targets' as const,
+      tools: Object.freeze([]),
+      scopes: Object.freeze([]),
+    }),
+    batchPolicy: 'fail-fast' as const,
+    operations: Object.freeze(
+      operations.map((operation) =>
+        Object.freeze({
+          ...operation,
+          preconditionIds: Object.freeze(
+            preconditions
+              .filter((precondition) => precondition.operationIds.includes(operation.operationId))
+              .map(({ preconditionId }) => preconditionId),
+          ),
+        }),
+      ),
+    ),
+    checks: Object.freeze([]),
+    diagnostics: Object.freeze([]),
+  });
+
+const executionControllerFixture = async (label: string) => {
+  const root = await mkdtemp(join(tmpdir(), `skillsmith-acquire-controller-${label}-`));
+  const runtime = await defaultRuntimePorts();
+  const pair = executionPair(join(root, 'skillsmith.toml'), join(root, 'skillsmith.lock'));
+  const authority = await selectedExecutionAuthority(runtime, pair);
+  const delegate = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+  const acquisitions: Array<Readonly<{ policy: 'central' | 'compatibility'; target: string }>> = [];
+  const withFileLock: ArtifactCoordinatorPorts['withFileLock'] = async (
+    target,
+    options,
+    operation,
+  ) => {
+    acquisitions.push(Object.freeze({ policy: options.policy, target }));
+    return delegate.withFileLock(target, options, operation);
+  };
+  const artifactCoordinator: ArtifactCoordinatorPorts = Object.freeze({
+    ...delegate,
+    withFileLock,
+  });
+  const ledgerPath = join(root, 'placements.json');
+  const ledgerLocks: string[] = [];
+  const controller = createAcquisitionArtifactExecutionControllerV1({
+    authority,
+    artifactCoordinator,
+    ledgerPath,
+    ledgerLockPort: Object.freeze({
+      withFileLock: async <T>(path: string, operation: () => Promise<T>): Promise<T> => {
+        ledgerLocks.push(path);
+        return operation();
+      },
+    }),
+  });
+  return {
+    root,
+    runtime,
+    pair,
+    authority,
+    artifactCoordinator,
+    controller,
+    acquisitions,
+    ledgerLocks,
+  };
+};
+
+const missingParentExecutionFixture = async (label: string) => {
+  const root = await mkdtemp(join(tmpdir(), `skillsmith-acquire-scaffold-${label}-`));
+  const runtime = await defaultRuntimePorts();
+  const pair = executionPair(
+    join(root, 'portable', 'nested', 'skillsmith.toml'),
+    join(root, 'generated', 'nested', 'skillsmith.lock'),
+  );
+  const authority = await selectedExecutionAuthority(runtime, pair);
+  const delegate = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+  const trace: string[] = [];
+  const withFileLock: ArtifactCoordinatorPorts['withFileLock'] = async (
+    target,
+    options,
+    operation,
+  ) => {
+    trace.push(`lock:${options.policy}:${target}`);
+    try {
+      return await delegate.withFileLock(target, options, operation);
+    } finally {
+      trace.push(`release:${options.policy}:${target}`);
+    }
+  };
+  const artifactCoordinator: ArtifactCoordinatorPorts = Object.freeze({
+    ...delegate,
+    withFileLock,
+    makeDirectoryExclusive: async (path: string, mode: 0o700) => {
+      trace.push(`scaffold:${path}`);
+      return delegate.makeDirectoryExclusive(path, mode);
+    },
+    removeEmptyDirectory: async (path: string) => {
+      trace.push(`cleanup:${path}`);
+      return delegate.removeEmptyDirectory(path);
+    },
+  });
+  const ledgerPath = join(root, 'placements.json');
+  const controller = createAcquisitionArtifactExecutionControllerV1({
+    authority,
+    artifactCoordinator,
+    ledgerPath,
+    ledgerLockPort: Object.freeze({
+      withFileLock: async <T>(path: string, operation: () => Promise<T>): Promise<T> => {
+        trace.push(`ledger:${path}`);
+        return operation();
+      },
+    }),
+  });
+  return { root, runtime, pair, authority, artifactCoordinator, controller, trace };
+};
+
+describe('selected acquisition artifact execution controller', () => {
+  test('refuses equality, ancestor, and sidecar-ancestor topology across all descriptors', async () => {
+    const topologies = [
+      {
+        label: 'member-ancestor',
+        manifest: 'portable',
+        lock: 'portable/state.lock',
+        ledger: 'placements.json',
+      },
+      {
+        label: 'member-sidecar-equal',
+        manifest: 'portable',
+        lock: 'portable.lock',
+        ledger: 'placements.json',
+      },
+      {
+        label: 'member-sidecar-ancestor',
+        manifest: 'portable',
+        lock: 'portable.lock/state',
+        ledger: 'placements.json',
+      },
+      {
+        label: 'ledger-equal',
+        manifest: 'portable.toml',
+        lock: 'portable.lockfile',
+        ledger: 'portable.toml',
+      },
+      {
+        label: 'ledger-ancestor',
+        manifest: 'state/portable.toml',
+        lock: 'portable.lockfile',
+        ledger: 'state',
+      },
+      {
+        label: 'ledger-sidecar-ancestor',
+        manifest: 'state.lock/portable.toml',
+        lock: 'portable.lockfile',
+        ledger: 'state',
+      },
+      {
+        label: 'group-ancestor',
+        manifest: 'coordination/global/portable.toml',
+        lock: 'portable.lockfile',
+        ledger: 'placements.json',
+      },
+      {
+        label: 'group-sidecar-ancestor',
+        manifest: 'coordination/global.lock/portable.toml',
+        lock: 'portable.lockfile',
+        ledger: 'placements.json',
+      },
+    ] as const;
+    for (const topology of topologies) {
+      const root = await mkdtemp(
+        join(tmpdir(), `skillsmith-acquire-controller-${topology.label}-`),
+      );
+      try {
+        const runtime = await defaultRuntimePorts();
+        const artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+          join(root, 'coordination'),
+        );
+        const manifestPath = join(root, topology.manifest);
+        const lockPath = join(root, topology.lock);
+        const ledgerPath = join(root, topology.ledger);
+        const pair = executionPair(manifestPath, lockPath);
+        const authority = await selectedExecutionAuthority(runtime, pair);
+        let ledgerLocks = 0;
+        expect(() =>
+          createAcquisitionArtifactExecutionControllerV1({
+            authority,
+            artifactCoordinator,
+            ledgerPath,
+            ledgerLockPort: Object.freeze({
+              withFileLock: async <T>(_path: string, operation: () => Promise<T>): Promise<T> => {
+                ledgerLocks += 1;
+                return operation();
+              },
+            }),
+          }),
+        ).toThrow('artifact execution descriptor topology is unsafe');
+        expect(ledgerLocks).toBe(0);
+        expect(await runtime.pathKind(manifestPath)).toBe('absent');
+        expect(await runtime.pathKind(lockPath)).toBe('absent');
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test('rejects virtual artifact members presented outside descriptor order', async () => {
+    const fixture = await executionControllerFixture('member-order');
+    try {
+      const group = fixture.controller.locks.find(({ rank }) => rank === 'artifact-group');
+      const members = fixture.controller.locks.filter(({ rank }) => rank === 'artifact-member');
+      if (group === undefined || members.length !== 2) throw new Error('fixture locks are invalid');
+      await expect(
+        fixture.controller.lockPort.withFileLock(group.path, () =>
+          fixture.controller.lockPort.withFileLock(
+            (members[1] as (typeof members)[number]).path,
+            async () => undefined,
+          ),
+        ),
+      ).rejects.toThrow();
+      expect(fixture.acquisitions.filter(({ policy }) => policy === 'central')).toHaveLength(1);
+      expect(fixture.acquisitions.filter(({ policy }) => policy === 'compatibility')).toEqual([]);
+      expect(fixture.ledgerLocks).toEqual([]);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('normalizes only authenticated missing-parent self-change before exact pair commits', async () => {
+    const fixture = await missingParentExecutionFixture('commit');
+    try {
+      const manifestBytes = new TextEncoder().encode('version = 1\nskills = []\n');
+      const manifestAfter = manifestImageForExecution(fixture.pair.file.path, manifestBytes);
+      const targetLock: PortableLockV1 = Object.freeze({
+        version: 1,
+        hashSchemaVersion: 1,
+        manifestHash: manifestAfter.semanticHash as PortableLockV1['manifestHash'],
+        skills: Object.freeze([]),
+      });
+      const lockAfter = lockImageForExecution(fixture.pair.lockfile.path, targetLock);
+      const manifestOperation = artifactOperationForExecution({
+        marker: '3',
+        groupMarker: '3',
+        kind: 'write-manifest',
+        before: absentArtifactImage('manifest', fixture.pair.file.path),
+        after: manifestAfter,
+      });
+      const lockOperation = artifactOperationForExecution({
+        marker: '4',
+        groupMarker: '3',
+        kind: 'write-lock',
+        before: absentArtifactImage('lock', fixture.pair.lockfile.path),
+        after: lockAfter,
+        dependencies: [manifestOperation.operationId],
+      });
+      const manifestBinding = fixture.controller.bind(manifestOperation, {
+        role: 'manifest',
+        action: { kind: 'replace', bytes: manifestBytes },
+      });
+      const lockBinding = fixture.controller.bind(lockOperation, {
+        role: 'lock',
+        action: { kind: 'replace', lock: targetLock },
+      });
+      const rawPreconditions = [
+        artifactPreconditionForExecution(
+          fixture.authority,
+          'manifest',
+          manifestOperation.operationId,
+          fixture.trace,
+        ),
+        artifactPreconditionForExecution(
+          fixture.authority,
+          'lock',
+          lockOperation.operationId,
+          fixture.trace,
+        ),
+      ];
+      const preconditions = fixture.controller.bindPreconditions(rawPreconditions);
+      const preconditionPlan = artifactPreconditionPlan(
+        [manifestOperation, lockOperation],
+        preconditions,
+      );
+
+      const results = await withExecutionLockHierarchy(
+        fixture.controller.lockPort,
+        fixture.controller.locks,
+        async () => {
+          const physical = await rawPreconditions[0]?.observe();
+          expect(physical).not.toEqual(rawPreconditions[0]?.expected);
+          expect(physical).toMatchObject({ state: 'absent', parentKind: 'directory' });
+          await expect(
+            validateExecutionPreconditions(preconditionPlan, preconditions),
+          ).resolves.toBeUndefined();
+          return [
+            await executePreparedArtifactBinding(manifestBinding, manifestOperation),
+            await executePreparedArtifactBinding(lockBinding, lockOperation),
+          ];
+        },
+      );
+
+      expect(results.map(({ outcome }) => outcome)).toEqual(['succeeded', 'succeeded']);
+      expect(await readFile(fixture.pair.file.path)).toEqual(Buffer.from(manifestBytes));
+      const serializedLock = serializePortableLock(targetLock);
+      if (!serializedLock.ok) throw new Error('fixture lock serialization failed');
+      expect(await readFile(fixture.pair.lockfile.path, 'utf8')).toBe(serializedLock.value);
+      expect(await fixture.artifactCoordinator.recovery.discover()).toEqual([]);
+      const central = fixture.trace.findIndex((entry) => entry.startsWith('lock:central:'));
+      const scaffold = fixture.trace.findIndex((entry) => entry.startsWith('scaffold:'));
+      const member = fixture.trace.findIndex((entry) => entry.startsWith('lock:compatibility:'));
+      const ledger = fixture.trace.findIndex((entry) => entry.startsWith('ledger:'));
+      const precondition = fixture.trace.findIndex((entry) => entry.startsWith('precondition:'));
+      expect(central).toBeGreaterThanOrEqual(0);
+      expect(scaffold).toBeGreaterThan(central);
+      expect(member).toBeGreaterThan(scaffold);
+      expect(ledger).toBeGreaterThan(member);
+      expect(precondition).toBeGreaterThan(ledger);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('cleans unconsumed scaffolds after member release and refuses metadata-tampered equivalence', async () => {
+    const fixture = await missingParentExecutionFixture('refusal');
+    try {
+      const raw = artifactPreconditionForExecution(
+        fixture.authority,
+        'manifest',
+        `operation:v1:${'5'.repeat(64)}`,
+      );
+      if (!isExpectedRevisionV1(raw.expected) || raw.expected.state !== 'absent') {
+        throw new Error('fixture expected revision is invalid');
+      }
+      const {
+        absenceDigest: _absenceDigest,
+        revisionDigest: _revisionDigest,
+        ...facts
+      } = raw.expected;
+      const tampered = createExpectedRevisionV1({
+        ...facts,
+        parentKind: 'directory',
+        parentMetadataIdentity: `metadata:v1:${'f'.repeat(64)}`,
+      });
+      if (!tampered.ok) throw new Error('fixture tampered revision is invalid');
+      const [precondition] = fixture.controller.bindPreconditions([
+        Object.freeze({ ...raw, observe: async () => tampered.value }),
+      ]);
+      if (precondition === undefined) throw new Error('fixture precondition is missing');
+      const preconditionPlan = artifactPreconditionPlan(
+        [
+          artifactOperationForExecution({
+            marker: '5',
+            groupMarker: '5',
+            kind: 'write-manifest',
+            before: absentArtifactImage('manifest', fixture.pair.file.path),
+            after: manifestImageForExecution(
+              fixture.pair.file.path,
+              new TextEncoder().encode('version = 1\nskills = []\n'),
+            ),
+          }),
+        ],
+        [precondition],
+      );
+
+      await withExecutionLockHierarchy(
+        fixture.controller.lockPort,
+        fixture.controller.locks,
+        async () => {
+          await expect(
+            validateExecutionPreconditions(preconditionPlan, [precondition]),
+          ).rejects.toMatchObject({ code: 'precondition-state-changed' });
+        },
+      );
+
+      expect(await fixture.runtime.pathKind(join(fixture.root, 'portable'))).toBe('absent');
+      expect(await fixture.runtime.pathKind(join(fixture.root, 'generated'))).toBe('absent');
+      expect(await fixture.runtime.pathKind(fixture.pair.file.path)).toBe('absent');
+      expect(await fixture.runtime.pathKind(fixture.pair.lockfile.path)).toBe('absent');
+      const lastMemberRelease = fixture.trace.reduce(
+        (last, entry, index) => (entry.startsWith('release:compatibility:') ? index : last),
+        -1,
+      );
+      const firstCleanup = fixture.trace.findIndex((entry) => entry.startsWith('cleanup:'));
+      expect(lastMemberRelease).toBeGreaterThanOrEqual(0);
+      expect(firstCleanup).toBeGreaterThan(lastMemberRelease);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('commits manifest then lock under one exact group/member/ledger hierarchy', async () => {
+    const fixture = await executionControllerFixture('sequential');
+    try {
+      const manifestBytes = new TextEncoder().encode(manifest(['alpha']));
+      const manifestAfter = manifestImageForExecution(fixture.pair.file.path, manifestBytes);
+      const contentHash = hashCanonicalInput('source-content', 1, 'alpha content');
+      if (!contentHash.ok) throw new Error('fixture content hash failed');
+      const mutableLockSkill = {
+        name: 'alpha',
+        source: 'github.com/acme/skills//alpha',
+        requestedRef: null,
+        resolvedSha: '3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80',
+        sourcePath: 'alpha',
+        contentHash: contentHash.value,
+      };
+      const targetLock: PortableLockV1 = {
+        version: 1,
+        hashSchemaVersion: 1,
+        manifestHash: manifestAfter.semanticHash as PortableLockV1['manifestHash'],
+        skills: [mutableLockSkill],
+      };
+      const lockAfter = lockImageForExecution(fixture.pair.lockfile.path, targetLock);
+      const manifestOperation = artifactOperationForExecution({
+        marker: 'a',
+        groupMarker: 'a',
+        kind: 'write-manifest',
+        before: absentArtifactImage('manifest', fixture.pair.file.path),
+        after: manifestAfter,
+      });
+      const lockOperation = artifactOperationForExecution({
+        marker: 'b',
+        groupMarker: 'a',
+        kind: 'write-lock',
+        before: absentArtifactImage('lock', fixture.pair.lockfile.path),
+        after: lockAfter,
+        dependencies: [manifestOperation.operationId],
+      });
+      const manifestBinding = fixture.controller.bind(manifestOperation, {
+        role: 'manifest',
+        action: { kind: 'replace', bytes: manifestBytes },
+      });
+      const expectedManifestBytes = new Uint8Array(manifestBytes);
+      manifestBytes[0] = 0;
+      const lockBinding = fixture.controller.bind(lockOperation, {
+        role: 'lock',
+        action: { kind: 'replace', lock: targetLock },
+      });
+      const serializedLock = serializePortableLock(targetLock);
+      if (!serializedLock.ok) throw new Error('fixture lock serialization failed');
+      mutableLockSkill.resolvedSha = '0'.repeat(40);
+
+      const results = await withExecutionLockHierarchy(
+        fixture.controller.lockPort,
+        fixture.controller.locks,
+        async () => [
+          await executePreparedArtifactBinding(manifestBinding, manifestOperation),
+          await executePreparedArtifactBinding(lockBinding, lockOperation),
+        ],
+      );
+
+      expect(results.map(({ outcome }) => outcome)).toEqual(['succeeded', 'succeeded']);
+      expect(fixture.controller.locks).toEqual([
+        {
+          rank: 'artifact-group' as const,
+          key: 'artifact-group',
+          path: join(fixture.artifactCoordinator.coordinationRoot, 'global'),
+        },
+        ...[fixture.pair.file.path, fixture.pair.lockfile.path].sort().map((path, index) => ({
+          rank: 'artifact-member' as const,
+          key: `artifact-member:${index}`,
+          path,
+        })),
+        {
+          rank: 'ledger' as const,
+          key: 'placements-ledger',
+          path: join(fixture.root, 'placements.json'),
+        },
+      ]);
+      expect(fixture.acquisitions.filter(({ policy }) => policy === 'central')).toHaveLength(1);
+      expect(fixture.acquisitions.filter(({ policy }) => policy === 'compatibility')).toEqual(
+        [fixture.pair.file.path, fixture.pair.lockfile.path]
+          .sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))
+          .map((target) => ({ policy: 'compatibility', target })),
+      );
+      expect(fixture.ledgerLocks).toEqual([join(fixture.root, 'placements.json')]);
+      expect(await readFile(fixture.pair.file.path)).toEqual(Buffer.from(expectedManifestBytes));
+      expect(await readFile(fixture.pair.lockfile.path, 'utf8')).toBe(serializedLock.value);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects action-after, state-gap, and same-group dependency mismatches before writes', async () => {
+    const fixture = await executionControllerFixture('bind-refusal');
+    try {
+      const firstBytes = new TextEncoder().encode(manifest(['alpha']));
+      const firstAfter = manifestImageForExecution(fixture.pair.file.path, firstBytes);
+      const wrongBytes = new TextEncoder().encode(`${manifest(['alpha'])}# wrong\n`);
+      const first = artifactOperationForExecution({
+        marker: 'c',
+        groupMarker: 'c',
+        kind: 'write-manifest',
+        before: absentArtifactImage('manifest', fixture.pair.file.path),
+        after: firstAfter,
+      });
+      expect(() =>
+        fixture.controller.bind(first, {
+          role: 'manifest',
+          action: { kind: 'replace', bytes: wrongBytes },
+        }),
+      ).toThrow('manifest replacement differs from planned after image');
+
+      const boundFirst = fixture.controller.bind(first, {
+        role: 'manifest',
+        action: { kind: 'replace', bytes: firstBytes },
+      });
+      expect(boundFirst.operationId).toBe(first.operationId);
+      const gap = artifactOperationForExecution({
+        marker: 'd',
+        groupMarker: 'd',
+        kind: 'write-manifest',
+        before: absentArtifactImage('manifest', fixture.pair.file.path),
+        after: firstAfter,
+      });
+      expect(() =>
+        fixture.controller.bind(gap, {
+          role: 'manifest',
+          action: { kind: 'replace', bytes: firstBytes },
+        }),
+      ).toThrow('artifact operation chain has a state gap');
+
+      const editRequest = {
+        edits: [{ kind: 'set-default' as const, field: 'scope' as const, value: 'user' as const }],
+      };
+      const edited = editManifestBytes(firstBytes, editRequest);
+      if (!edited.ok) throw new Error('fixture manifest edit failed');
+      const missingDependency = artifactOperationForExecution({
+        marker: 'e',
+        groupMarker: 'c',
+        kind: 'write-manifest',
+        before: firstAfter,
+        after: manifestImageForExecution(fixture.pair.file.path, edited.value.bytes),
+      });
+      expect(() =>
+        fixture.controller.bind(missingDependency, {
+          role: 'manifest',
+          action: { kind: 'edit', request: editRequest },
+        }),
+      ).toThrow('same-group artifact chain lacks a direct dependency');
+
+      const lockTarget: PortableLockV1 = Object.freeze({
+        version: 1,
+        hashSchemaVersion: 1,
+        manifestHash: firstAfter.semanticHash as PortableLockV1['manifestHash'],
+        skills: Object.freeze([]),
+      });
+      const lockOperation = artifactOperationForExecution({
+        marker: '7',
+        groupMarker: 'c',
+        kind: 'write-lock',
+        before: absentArtifactImage('lock', fixture.pair.lockfile.path),
+        after: lockImageForExecution(fixture.pair.lockfile.path, lockTarget),
+        dependencies: [first.operationId],
+      });
+      const opaqueRevision = hashCanonicalInput('resource', 1, 'opaque lock bytes');
+      if (!opaqueRevision.ok) throw new Error('fixture opaque revision failed');
+      expect(() =>
+        fixture.controller.bind(lockOperation, {
+          role: 'lock',
+          action: {
+            kind: 'replace-invalid',
+            lock: lockTarget,
+            expectedByteRevision: opaqueRevision.value,
+          },
+        }),
+      ).toThrow('doctor-only lock action is not allowed');
+      expect(fixture.acquisitions).toEqual([]);
+      expect(fixture.ledgerLocks).toEqual([]);
+      expect(await fixture.runtime.pathKind(fixture.pair.file.path)).toBe('absent');
+      expect(await fixture.runtime.pathKind(fixture.pair.lockfile.path)).toBe('absent');
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('fails closed when initial physical state changes after the snapshot', async () => {
+    const fixture = await executionControllerFixture('initial-change');
+    try {
+      const plannedBytes = new TextEncoder().encode('version = 1\nskills = []\n');
+      const operation = artifactOperationForExecution({
+        marker: 'f',
+        groupMarker: 'f',
+        kind: 'write-manifest',
+        before: absentArtifactImage('manifest', fixture.pair.file.path),
+        after: manifestImageForExecution(fixture.pair.file.path, plannedBytes),
+      });
+      const binding = fixture.controller.bind(operation, {
+        role: 'manifest',
+        action: { kind: 'replace', bytes: plannedBytes },
+      });
+      const externalBytes = 'version = 1\nskills = []\n# external\n';
+      await writeFile(fixture.pair.file.path, externalBytes);
+
+      await expect(
+        withExecutionLockHierarchy(fixture.controller.lockPort, fixture.controller.locks, () =>
+          executePreparedArtifactBinding(binding, operation),
+        ),
+      ).rejects.toThrow();
+      expect(await readFile(fixture.pair.file.path, 'utf8')).toBe(externalBytes);
+      expect(await fixture.runtime.pathKind(fixture.pair.lockfile.path)).toBe('absent');
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('does not advance a chained manifest write across an intervening raw edit', async () => {
+    const fixture = await executionControllerFixture('between-step-change');
+    try {
+      const firstBytes = new TextEncoder().encode(manifest(['alpha']));
+      const firstAfter = manifestImageForExecution(fixture.pair.file.path, firstBytes);
+      const editRequest = {
+        edits: [{ kind: 'set-default' as const, field: 'scope' as const, value: 'user' as const }],
+      };
+      const edited = editManifestBytes(firstBytes, editRequest);
+      if (!edited.ok) throw new Error('fixture manifest edit failed');
+      const first = artifactOperationForExecution({
+        marker: '1',
+        groupMarker: '1',
+        kind: 'write-manifest',
+        before: absentArtifactImage('manifest', fixture.pair.file.path),
+        after: firstAfter,
+      });
+      const second = artifactOperationForExecution({
+        marker: '2',
+        groupMarker: '2',
+        kind: 'write-manifest',
+        before: firstAfter,
+        after: manifestImageForExecution(fixture.pair.file.path, edited.value.bytes),
+      });
+      const firstBinding = fixture.controller.bind(first, {
+        role: 'manifest',
+        action: { kind: 'replace', bytes: firstBytes },
+      });
+      const secondBinding = fixture.controller.bind(second, {
+        role: 'manifest',
+        action: { kind: 'edit', request: editRequest },
+      });
+      const externalBytes = 'version = 1\nskills = []\n# between steps\n';
+
+      await expect(
+        withExecutionLockHierarchy(
+          fixture.controller.lockPort,
+          fixture.controller.locks,
+          async () => {
+            expect((await executePreparedArtifactBinding(firstBinding, first)).outcome).toBe(
+              'succeeded',
+            );
+            await writeFile(fixture.pair.file.path, externalBytes);
+            return executePreparedArtifactBinding(secondBinding, second);
+          },
+        ),
+      ).rejects.toThrow();
+      expect(await readFile(fixture.pair.file.path, 'utf8')).toBe(externalBytes);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('gates a new artifact group on the prior group terminal write', async () => {
+    const fixture = await executionControllerFixture('prior-group-gate');
+    try {
+      const manifestBytes = new TextEncoder().encode(manifest(['alpha']));
+      const manifestAfter = manifestImageForExecution(fixture.pair.file.path, manifestBytes);
+      const incompleteLock: PortableLockV1 = Object.freeze({
+        version: 1,
+        hashSchemaVersion: 1,
+        manifestHash: manifestAfter.semanticHash as PortableLockV1['manifestHash'],
+        skills: Object.freeze([]),
+      });
+      const firstManifest = artifactOperationForExecution({
+        marker: '8',
+        groupMarker: '8',
+        kind: 'write-manifest',
+        before: absentArtifactImage('manifest', fixture.pair.file.path),
+        after: manifestAfter,
+      });
+      const firstLock = artifactOperationForExecution({
+        marker: '9',
+        groupMarker: '8',
+        kind: 'write-lock',
+        before: absentArtifactImage('lock', fixture.pair.lockfile.path),
+        after: lockImageForExecution(fixture.pair.lockfile.path, incompleteLock),
+        dependencies: [firstManifest.operationId],
+      });
+      const editRequest = {
+        edits: [{ kind: 'set-default' as const, field: 'scope' as const, value: 'user' as const }],
+      };
+      const edited = editManifestBytes(manifestBytes, editRequest);
+      if (!edited.ok) throw new Error('fixture manifest edit failed');
+      const secondManifest = artifactOperationForExecution({
+        marker: '0',
+        groupMarker: '0',
+        kind: 'write-manifest',
+        before: manifestAfter,
+        after: manifestImageForExecution(fixture.pair.file.path, edited.value.bytes),
+      });
+      const firstManifestBinding = fixture.controller.bind(firstManifest, {
+        role: 'manifest',
+        action: { kind: 'replace', bytes: manifestBytes },
+      });
+      const firstLockBinding = fixture.controller.bind(firstLock, {
+        role: 'lock',
+        action: { kind: 'replace', lock: incompleteLock },
+      });
+      const secondManifestBinding = fixture.controller.bind(secondManifest, {
+        role: 'manifest',
+        action: { kind: 'edit', request: editRequest },
+      });
+
+      await expect(
+        withExecutionLockHierarchy(
+          fixture.controller.lockPort,
+          fixture.controller.locks,
+          async () => {
+            expect(
+              (await executePreparedArtifactBinding(firstManifestBinding, firstManifest)).outcome,
+            ).toBe('succeeded');
+            expect(
+              (await executePreparedArtifactBinding(firstLockBinding, firstLock)).outcome,
+            ).toBe('failed');
+            return executePreparedArtifactBinding(secondManifestBinding, secondManifest);
+          },
+        ),
+      ).rejects.toThrow();
+      expect(await readFile(fixture.pair.file.path)).toEqual(Buffer.from(manifestBytes));
+      expect(await fixture.runtime.pathKind(fixture.pair.lockfile.path)).toBe('absent');
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
   });
 });

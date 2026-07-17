@@ -14,14 +14,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
   ArtifactCoordinatorPorts,
+  ArtifactGroupLockLease,
   ArtifactPairBarrier,
   ArtifactPairRecoveryRecord,
 } from '../../src/artifacts/coordinator-types.ts';
 import {
+  type ArtifactGroupLeaseScaffoldReceipt,
+  authenticateArtifactGroupLeaseScaffold,
   commitArtifactPair,
+  commitArtifactPairWithLease,
+  prepareArtifactGroupLeaseScaffold,
   readCoordinatedArtifactPair,
   recoverArtifactPair,
   updateCoordinatedHumanFile,
+  withArtifactGroupLock,
 } from '../../src/artifacts/coordinator.ts';
 import { hashCanonicalInput, hashManifestSemantics } from '../../src/artifacts/hash.ts';
 import { serializePortableLock } from '../../src/artifacts/lock.ts';
@@ -141,6 +147,943 @@ const interruptedHumanRecovery = async (cursor: 'prepared' | 'staging') => {
 };
 
 describe('artifact coordinator', () => {
+  test('commits sequential manifest and lock mutations under one genuine exact-pair lease', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-lease-sequential-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const manifestPath = join(root, 'portable', 'skillsmith.toml');
+    const lockPath = join(root, 'generated', 'state.lock');
+    await Promise.all([mkdir(join(root, 'portable')), mkdir(join(root, 'generated'))]);
+    const pair = Object.freeze({
+      file: Object.freeze({
+        token: './portable/skillsmith.toml',
+        path: manifestPath,
+        portability: 'portable' as const,
+        portableToken: './portable/skillsmith.toml',
+      }),
+      lockfile: Object.freeze({
+        token: './generated/state.lock',
+        path: lockPath,
+        portability: 'portable' as const,
+        portableToken: './generated/state.lock',
+      }),
+      lockfileSource: 'explicit' as const,
+    });
+    const source = 'version = 1\nskills = []\n';
+    const parsed = readManifestSource(source);
+    if (!parsed.ok) throw new Error('fixture manifest invalid');
+    const normalized = normalizeManifestDocument(parsed.value);
+    if (!normalized.ok) throw new Error('fixture manifest invalid');
+    const targetLock = Object.freeze({
+      version: 1 as const,
+      hashSchemaVersion: 1 as const,
+      manifestHash: hashManifestSemantics(normalized.value),
+      skills: Object.freeze([]),
+    });
+    const serializedLock = serializePortableLock(targetLock);
+    if (!serializedLock.ok) throw new Error('fixture lock invalid');
+    const acquisitions: Array<{ policy: 'central' | 'compatibility'; target: string }> = [];
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      withFileLock: async <T>(
+        target: string,
+        options: Parameters<typeof base.withFileLock<T>>[1],
+        operation: () => Promise<T>,
+      ): Promise<T> => {
+        acquisitions.push({ policy: options.policy, target });
+        return base.withFileLock(target, options, operation);
+      },
+    });
+    let manifestResult: Awaited<ReturnType<typeof commitArtifactPairWithLease>> | null = null;
+    let lockResult: Awaited<ReturnType<typeof commitArtifactPairWithLease>> | null = null;
+
+    await withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+      await lease.acquireCompatibilityTargets([pair.lockfile.path, pair.file.path]);
+      manifestResult = await commitArtifactPairWithLease(lease, {
+        pair,
+        manifest: { kind: 'replace', bytes: new TextEncoder().encode(source) },
+        lock: { kind: 'keep' },
+      });
+      lockResult = await commitArtifactPairWithLease(lease, {
+        pair,
+        manifest: { kind: 'keep' },
+        lock: { kind: 'replace', lock: targetLock },
+      });
+    });
+
+    expect(manifestResult).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+    expect(lockResult).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+    expect(acquisitions.filter(({ policy }) => policy === 'central')).toHaveLength(1);
+    expect(acquisitions.filter(({ policy }) => policy === 'compatibility')).toEqual(
+      [manifestPath, lockPath]
+        .sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))
+        .map((target) => ({ policy: 'compatibility', target })),
+    );
+    expect(await readFile(manifestPath, 'utf8')).toBe(source);
+    expect(await readFile(lockPath, 'utf8')).toBe(serializedLock.value);
+    expect(await base.recovery.discover()).toEqual([]);
+  });
+
+  test('authenticates shared nested scaffold parents only while the exact lease is ready', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-scaffold-shared-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const shared = join(root, 'shared');
+    const nested = join(shared, 'nested');
+    const pair = pairFor(join(nested, 'skillsmith.toml'), join(shared, 'skillsmith.lock'));
+    const events: string[] = [];
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      withFileLock: async <T>(
+        target: string,
+        options: Parameters<typeof base.withFileLock<T>>[1],
+        operation: () => Promise<T>,
+      ): Promise<T> => {
+        const value = await base.withFileLock(target, options, operation);
+        if (options.policy === 'compatibility') events.push(`released:${target}`);
+        return value;
+      },
+      afterBarrier: async (barrier: ArtifactPairBarrier) => {
+        if (barrier.kind === 'mutation-returned' && barrier.cursor === 'provisioning') {
+          events.push(`${barrier.operation}:parent`);
+        }
+      },
+    });
+    let capturedLease: ArtifactGroupLockLease | null = null;
+    let capturedReceipt: ArtifactGroupLeaseScaffoldReceipt | null = null;
+
+    await withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+      capturedLease = lease;
+      const prepared = await prepareArtifactGroupLeaseScaffold(lease, [
+        pair.lockfile.path,
+        pair.file.path,
+      ]);
+      expect(prepared.ok).toBeTrue();
+      if (!prepared.ok) return;
+      capturedReceipt = prepared.value;
+      expect(Object.isFrozen(prepared.value)).toBeTrue();
+      expect(
+        await authenticateArtifactGroupLeaseScaffold(lease, prepared.value, pair.file.path),
+      ).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+
+      await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+      const forged = Object.freeze({}) as ArtifactGroupLeaseScaffoldReceipt;
+      expect(
+        await authenticateArtifactGroupLeaseScaffold(lease, forged, pair.file.path),
+      ).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+      const foreignRoot = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-scaffold-foreign-'));
+      roots.push(foreignRoot);
+      const foreignPorts = await createTestNodeArtifactCoordinatorPorts(
+        join(foreignRoot, 'coordination'),
+      );
+      const foreignPair = pairFor(
+        join(foreignRoot, 'manifest-parent', 'skillsmith.toml'),
+        join(foreignRoot, 'lock-parent', 'skillsmith.lock'),
+      );
+      await withArtifactGroupLock(foreignPorts, foreignPair, undefined, async (foreignLease) => {
+        const foreign = await prepareArtifactGroupLeaseScaffold(foreignLease, [
+          foreignPair.file.path,
+          foreignPair.lockfile.path,
+        ]);
+        if (!foreign.ok) throw foreign.error;
+        expect(
+          await authenticateArtifactGroupLeaseScaffold(lease, foreign.value, pair.file.path),
+        ).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+      });
+      for (const targetPath of [pair.file.path, pair.lockfile.path]) {
+        const authenticated = await authenticateArtifactGroupLeaseScaffold(
+          lease,
+          prepared.value,
+          targetPath,
+        );
+        expect(authenticated.ok).toBeTrue();
+        if (!authenticated.ok || authenticated.value === null) continue;
+        const parentPath = targetPath === pair.file.path ? nested : shared;
+        const parentIdentity = (await base.observe(parentPath)).identity;
+        if (parentIdentity === null) throw new Error('fixture scaffold parent missing');
+        expect(authenticated.value).toEqual({
+          targetPath,
+          parentPath,
+          parentIdentity,
+          parentMode: 0o700,
+        });
+        expect(Object.isFrozen(authenticated.value)).toBeTrue();
+      }
+    });
+
+    expect((await base.observe(shared)).kind).toBe('absent');
+    expect(events.filter((event) => event === 'create-directory-exclusive:parent')).toHaveLength(2);
+    const firstCleanup = events.indexOf('remove-directory:parent');
+    expect(firstCleanup).toBeGreaterThan(-1);
+    expect(
+      events.slice(0, firstCleanup).filter((event) => event.startsWith('released:')),
+    ).toHaveLength(2);
+    if (capturedLease === null || capturedReceipt === null)
+      throw new Error('fixture receipt missing');
+    expect(
+      await authenticateArtifactGroupLeaseScaffold(capturedLease, capturedReceipt, pair.file.path),
+    ).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+  });
+
+  test('never claims EEXIST scaffolds and cleans partial fault and cancellation creates', async () => {
+    const eexistRoot = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-scaffold-eexist-'));
+    roots.push(eexistRoot);
+    const eexistBase = await createTestNodeArtifactCoordinatorPorts(
+      join(eexistRoot, 'coordination'),
+    );
+    const cutoff = join(eexistRoot, 'external');
+    const shared = join(cutoff, 'shared');
+    const eexistPair = pairFor(
+      join(shared, 'nested', 'skillsmith.toml'),
+      join(shared, 'skillsmith.lock'),
+    );
+    let collided = false;
+    const eexistPorts: ArtifactCoordinatorPorts = Object.freeze({
+      ...eexistBase,
+      makeDirectoryExclusive: async (path: string, mode: 0o700) => {
+        if (!collided && path === cutoff) {
+          collided = true;
+          await mkdir(path, { mode });
+        }
+        return eexistBase.makeDirectoryExclusive(path, mode);
+      },
+    });
+    await withArtifactGroupLock(eexistPorts, eexistPair, undefined, async (lease) => {
+      const prepared = await prepareArtifactGroupLeaseScaffold(lease, [
+        eexistPair.file.path,
+        eexistPair.lockfile.path,
+      ]);
+      expect(prepared.ok).toBeTrue();
+      if (!prepared.ok) return;
+      await lease.acquireCompatibilityTargets([eexistPair.file.path, eexistPair.lockfile.path]);
+      expect(
+        await authenticateArtifactGroupLeaseScaffold(lease, prepared.value, eexistPair.file.path),
+      ).toEqual({ ok: true, value: null });
+      expect(
+        await authenticateArtifactGroupLeaseScaffold(
+          lease,
+          prepared.value,
+          eexistPair.lockfile.path,
+        ),
+      ).toEqual({ ok: true, value: null });
+    });
+    expect((await eexistBase.observe(cutoff)).kind).toBe('directory');
+    expect((await eexistBase.observe(shared)).kind).toBe('absent');
+
+    for (const cutoffKind of ['barrier-fault', 'cancel'] as const) {
+      const root = await mkdtemp(join(tmpdir(), `skillsmith-coordinator-scaffold-${cutoffKind}-`));
+      roots.push(root);
+      const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+      const parent = join(root, 'missing');
+      const pair = pairFor(
+        join(parent, 'nested', 'skillsmith.toml'),
+        join(parent, 'skillsmith.lock'),
+      );
+      const controller = new AbortController();
+      let cut = false;
+      const ports: ArtifactCoordinatorPorts = Object.freeze({
+        ...base,
+        afterBarrier: async (barrier: ArtifactPairBarrier) => {
+          if (
+            !cut &&
+            barrier.kind === 'mutation-returned' &&
+            barrier.cursor === 'provisioning' &&
+            barrier.operation === 'create-directory-exclusive'
+          ) {
+            cut = true;
+            if (cutoffKind === 'cancel') controller.abort();
+            else throw Object.assign(new Error('scaffold barrier fault'), { code: 'EIO' });
+          }
+        },
+      });
+      let prepared: Awaited<ReturnType<typeof prepareArtifactGroupLeaseScaffold>> | null = null;
+      await withArtifactGroupLock(ports, pair, controller.signal, async (lease) => {
+        prepared = await prepareArtifactGroupLeaseScaffold(lease, [
+          pair.file.path,
+          pair.lockfile.path,
+        ]);
+      });
+      expect(prepared).toMatchObject({
+        ok: false,
+        error: { reason: cutoffKind === 'cancel' ? 'cancelled' : 'filesystem-failure' },
+      });
+      expect((await base.observe(parent)).kind).toBe('absent');
+    }
+  });
+
+  test('retains the full scaffold after member release failure or cleanup proof loss', async () => {
+    for (const cutoff of [
+      'release-failure',
+      'pre-callback-sidecar',
+      'anchor-mode',
+      'child-replaced',
+      'child-nonempty',
+    ] as const) {
+      const root = await mkdtemp(join(tmpdir(), `skillsmith-coordinator-scaffold-${cutoff}-`));
+      roots.push(root);
+      const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+      const manifestParent = join(root, 'manifest-parent');
+      const lockParent = join(root, 'lock-parent');
+      const pair = pairFor(
+        join(manifestParent, 'skillsmith.toml'),
+        join(lockParent, 'skillsmith.lock'),
+      );
+      let injected = false;
+      const ports: ArtifactCoordinatorPorts = Object.freeze({
+        ...base,
+        withFileLock: async <T>(
+          target: string,
+          options: Parameters<typeof base.withFileLock<T>>[1],
+          operation: () => Promise<T>,
+        ): Promise<T> => {
+          if (
+            cutoff === 'pre-callback-sidecar' &&
+            options.policy === 'compatibility' &&
+            !injected
+          ) {
+            injected = true;
+            await base.makeDirectoryExclusive(`${target}.lock`, 0o700);
+            throw Object.assign(new Error('simulated marker release residue'), { code: 'EIO' });
+          }
+          const value = await base.withFileLock(target, options, operation);
+          if (options.policy !== 'compatibility' || injected) return value;
+          injected = true;
+          if (cutoff === 'release-failure') {
+            throw Object.assign(new Error('simulated member release failure'), { code: 'EIO' });
+          }
+          if (cutoff === 'anchor-mode') {
+            await chmod(root, 0o755);
+            return value;
+          }
+          const releasedParent = join(target, '..');
+          if (cutoff === 'child-replaced') {
+            await rm(releasedParent, { recursive: true });
+            await mkdir(releasedParent, { mode: 0o700 });
+            await chmod(releasedParent, 0o755);
+          } else {
+            await writeFile(join(releasedParent, 'external'), 'external\n');
+          }
+          return value;
+        },
+      });
+      let failure: unknown = null;
+      try {
+        await withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+          const prepared = await prepareArtifactGroupLeaseScaffold(lease, [
+            pair.file.path,
+            pair.lockfile.path,
+          ]);
+          expect(prepared.ok).toBeTrue();
+          await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+        });
+      } catch (error) {
+        failure = error;
+      }
+      if (cutoff === 'release-failure' || cutoff === 'pre-callback-sidecar') {
+        expect(failure).not.toBeNull();
+      } else expect(failure).toBeNull();
+      expect({
+        cutoff,
+        manifest: (await base.observe(manifestParent)).kind,
+        lock: (await base.observe(lockParent)).kind,
+      }).toEqual({ cutoff, manifest: 'directory', lock: 'directory' });
+    }
+  });
+
+  test('cleans unchanged and durable-before scaffolds but retains changed and durable-after state', async () => {
+    for (const cutoff of ['unchanged', 'changed', 'durable-before', 'durable-after'] as const) {
+      const root = await mkdtemp(join(tmpdir(), `skillsmith-coordinator-scaffold-${cutoff}-`));
+      roots.push(root);
+      const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+      const manifestParent = join(root, 'manifest-parent');
+      const lockParent = join(root, 'lock-parent');
+      const pair = pairFor(
+        join(manifestParent, 'skillsmith.toml'),
+        join(lockParent, 'skillsmith.lock'),
+      );
+      const controller = new AbortController();
+      let cut = false;
+      const ports: ArtifactCoordinatorPorts = Object.freeze({
+        ...base,
+        afterBarrier: async (barrier: ArtifactPairBarrier) => {
+          const expectedCursor = cutoff === 'durable-before' ? 'prepared' : 'committed';
+          if (
+            !cut &&
+            (cutoff === 'durable-before' || cutoff === 'durable-after') &&
+            barrier.kind === 'record-durable' &&
+            barrier.cursor === expectedCursor
+          ) {
+            cut = true;
+            controller.abort();
+          }
+        },
+      });
+      let committed: Awaited<ReturnType<typeof commitArtifactPairWithLease>> | null = null;
+      await withArtifactGroupLock(ports, pair, controller.signal, async (lease) => {
+        const prepared = await prepareArtifactGroupLeaseScaffold(lease, [
+          pair.file.path,
+          pair.lockfile.path,
+        ]);
+        expect(prepared.ok).toBeTrue();
+        if (!prepared.ok) return;
+        await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+        committed = await commitArtifactPairWithLease(lease, {
+          pair,
+          manifest:
+            cutoff === 'unchanged'
+              ? { kind: 'keep' }
+              : {
+                  kind: 'replace',
+                  bytes: new TextEncoder().encode('version = 1\nskills = []\n'),
+                },
+          lock: { kind: 'keep' },
+          signal: controller.signal,
+        });
+      });
+
+      if (cutoff === 'unchanged') {
+        expect(committed).toMatchObject({ ok: true, value: { outcome: 'unchanged' } });
+      } else if (cutoff === 'changed') {
+        expect(committed).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+      } else {
+        expect(committed).toMatchObject({
+          ok: false,
+          error: {
+            reason: 'cancelled',
+            durableState: cutoff === 'durable-before' ? 'before' : 'after',
+          },
+        });
+      }
+      const retained = cutoff === 'changed' || cutoff === 'durable-after';
+      expect((await base.observe(manifestParent)).kind).toBe(retained ? 'directory' : 'absent');
+      expect((await base.observe(lockParent)).kind).toBe(retained ? 'directory' : 'absent');
+    }
+  });
+
+  test('rejects unsafe target and sidecar topology before scaffold mutation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-scaffold-topology-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    let mkdirCalls = 0;
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      makeDirectoryExclusive: async (path: string, mode: 0o700) => {
+        mkdirCalls += 1;
+        return base.makeDirectoryExclusive(path, mode);
+      },
+    });
+    const unsafePairs = [
+      pairFor(join(root, 'equal'), join(root, 'equal')),
+      pairFor(join(root, 'ancestor'), join(root, 'ancestor', 'lock')),
+      pairFor(join(root, 'sidecar'), join(root, 'sidecar.lock')),
+      pairFor(join(root, 'nested-sidecar'), join(root, 'nested-sidecar.lock', 'lock')),
+    ];
+    for (const pair of unsafePairs) {
+      await withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+        expect(
+          await prepareArtifactGroupLeaseScaffold(lease, [pair.file.path, pair.lockfile.path]),
+        ).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+      });
+    }
+    expect(mkdirCalls).toBe(0);
+  });
+
+  test('keeps public pair provisioning changed-only for a distinct missing kept peer', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-public-parent-compat-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const missingLockParent = join(root, 'kept-lock-parent');
+    const pair = pairFor(join(root, 'skillsmith.toml'), join(missingLockParent, 'skillsmith.lock'));
+    const created: string[] = [];
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      makeDirectoryExclusive: async (path: string, mode: 0o700) => {
+        created.push(path);
+        return base.makeDirectoryExclusive(path, mode);
+      },
+    });
+
+    await commitArtifactPair(ports, {
+      pair,
+      manifest: {
+        kind: 'replace',
+        bytes: new TextEncoder().encode('version = 1\nskills = []\n'),
+      },
+      lock: { kind: 'keep' },
+    });
+
+    expect(created).not.toContain(missingLockParent);
+    expect((await base.observe(missingLockParent)).kind).toBe('absent');
+  });
+
+  test('closes the lease before draining fire-and-forget preparation and refuses early members', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-scaffold-prepare-race-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const parent = join(root, 'missing');
+    const pair = pairFor(
+      join(parent, 'manifest', 'skillsmith.toml'),
+      join(parent, 'lock', 'skillsmith.lock'),
+    );
+    let enteredResolve!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enteredResolve = resolve;
+    });
+    let resumeResolve!: () => void;
+    const resume = new Promise<void>((resolve) => {
+      resumeResolve = resolve;
+    });
+    let callbackReturnedResolve!: () => void;
+    const callbackReturned = new Promise<void>((resolve) => {
+      callbackReturnedResolve = resolve;
+    });
+    let pausePreparation = false;
+    let paused = false;
+    let compatibilityAcquisitions = 0;
+    let centralReleased = false;
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      observe: async (path: string) => {
+        if (
+          pausePreparation &&
+          !paused &&
+          (path === pair.file.path || path === pair.lockfile.path)
+        ) {
+          paused = true;
+          enteredResolve();
+          await resume;
+        }
+        return base.observe(path);
+      },
+      withFileLock: async <T>(
+        target: string,
+        options: Parameters<typeof base.withFileLock<T>>[1],
+        operation: () => Promise<T>,
+      ): Promise<T> => {
+        if (options.policy === 'compatibility') compatibilityAcquisitions += 1;
+        const value = await base.withFileLock(target, options, operation);
+        if (options.policy === 'central') centralReleased = true;
+        return value;
+      },
+    });
+    let preparation: ReturnType<typeof prepareArtifactGroupLeaseScaffold> | null = null;
+    let retainedAcquire: Promise<unknown> | null = null;
+    const execution = withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+      pausePreparation = true;
+      preparation = prepareArtifactGroupLeaseScaffold(lease, [pair.file.path, pair.lockfile.path]);
+      retainedAcquire = preparation
+        .then(() => lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]))
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+      await entered;
+      let acquisitionFailure: unknown = null;
+      try {
+        await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+      } catch (error) {
+        acquisitionFailure = error;
+      }
+      expect(acquisitionFailure).toMatchObject({ reason: 'invalid-request' });
+      callbackReturnedResolve();
+    });
+
+    await callbackReturned;
+    await Promise.resolve();
+    expect(compatibilityAcquisitions).toBe(0);
+    expect(centralReleased).toBeFalse();
+    resumeResolve();
+    await execution;
+    if (preparation === null) throw new Error('fixture preparation missing');
+    expect(await preparation).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+    if (retainedAcquire === null) throw new Error('fixture retained acquisition missing');
+    expect(await retainedAcquire).toMatchObject({ reason: 'invalid-request' });
+    expect(compatibilityAcquisitions).toBe(0);
+    expect((await base.observe(parent)).kind).toBe('absent');
+    expect(centralReleased).toBeTrue();
+  });
+
+  test('refuses an authentication result whose filesystem await outlives the lease', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-scaffold-auth-race-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const parent = join(root, 'missing');
+    const pair = pairFor(
+      join(parent, 'manifest', 'skillsmith.toml'),
+      join(parent, 'lock', 'skillsmith.lock'),
+    );
+    let enteredResolve!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enteredResolve = resolve;
+    });
+    let resumeResolve!: () => void;
+    const resume = new Promise<void>((resolve) => {
+      resumeResolve = resolve;
+    });
+    let callbackReturnedResolve!: () => void;
+    const callbackReturned = new Promise<void>((resolve) => {
+      callbackReturnedResolve = resolve;
+    });
+    let pauseAuthentication = false;
+    let paused = false;
+    let directParentObservations = 0;
+    const manifestParent = join(parent, 'manifest');
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      observe: async (path: string) => {
+        const snapshot = await base.observe(path);
+        if (pauseAuthentication && path === manifestParent) {
+          directParentObservations += 1;
+          if (!paused && directParentObservations === 2) {
+            paused = true;
+            enteredResolve();
+            await resume;
+          }
+        }
+        return snapshot;
+      },
+    });
+    let authentication: ReturnType<typeof authenticateArtifactGroupLeaseScaffold> | null = null;
+    const execution = withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+      const prepared = await prepareArtifactGroupLeaseScaffold(lease, [
+        pair.file.path,
+        pair.lockfile.path,
+      ]);
+      if (!prepared.ok) throw prepared.error;
+      await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+      pauseAuthentication = true;
+      authentication = authenticateArtifactGroupLeaseScaffold(
+        lease,
+        prepared.value,
+        pair.file.path,
+      );
+      await entered;
+      callbackReturnedResolve();
+    });
+
+    await callbackReturned;
+    await execution;
+    expect((await base.observe(parent)).kind).toBe('absent');
+    resumeResolve();
+    if (authentication === null) throw new Error('fixture authentication missing');
+    expect(await authentication).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-request' },
+    });
+  });
+
+  test('rejects forged, pre-member, wrong-pair, wrong-signal, and expired lease commits', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-lease-invalid-'));
+    roots.push(root);
+    const ports = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const pair = pairFor(join(root, 'skillsmith.toml'), join(root, 'skillsmith.lock'));
+    const request = {
+      pair,
+      manifest: { kind: 'replace' as const, bytes: new TextEncoder().encode('version = 1\n') },
+      lock: { kind: 'keep' as const },
+    };
+    const forged: ArtifactGroupLockLease = Object.freeze({
+      acquireCompatibilityTargets: async () => undefined,
+    });
+    expect(await commitArtifactPairWithLease(forged, request)).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-request' },
+    });
+
+    let captured: ArtifactGroupLockLease | null = null;
+    await withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+      captured = lease;
+      expect(await commitArtifactPairWithLease(lease, request)).toMatchObject({
+        ok: false,
+        error: { reason: 'invalid-request' },
+      });
+      await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+      const wrongPair = Object.freeze({
+        ...pair,
+        lockfile: Object.freeze({ ...pair.lockfile, path: join(root, 'other.lock') }),
+      });
+      expect(
+        await commitArtifactPairWithLease(lease, { ...request, pair: wrongPair }),
+      ).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+      const controller = new AbortController();
+      expect(
+        await commitArtifactPairWithLease(lease, { ...request, signal: controller.signal }),
+      ).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+    });
+    if (captured === null) throw new Error('fixture lease missing');
+    expect(await commitArtifactPairWithLease(captured, request)).toMatchObject({
+      ok: false,
+      error: { reason: 'invalid-request' },
+    });
+    expect((await ports.observe(pair.file.path)).kind).toBe('absent');
+    expect((await ports.observe(pair.lockfile.path)).kind).toBe('absent');
+  });
+
+  test('owns leased pair metadata and honors cancellation before an unchanged lease call', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-lease-owned-pair-'));
+    roots.push(root);
+    const ports = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const mutablePair = {
+      file: {
+        token: './skillsmith.toml' as string | null,
+        path: join(root, 'skillsmith.toml'),
+        portability: 'portable' as const,
+        portableToken: './skillsmith.toml' as string | null,
+      },
+      lockfile: {
+        token: './skillsmith.lock' as string | null,
+        path: join(root, 'skillsmith.lock'),
+        portability: 'portable' as const,
+        portableToken: './skillsmith.lock' as string | null,
+      },
+      lockfileSource: 'sibling' as const,
+    };
+    const controller = new AbortController();
+    await withArtifactGroupLock(ports, mutablePair, controller.signal, async (lease) => {
+      await lease.acquireCompatibilityTargets([mutablePair.file.path, mutablePair.lockfile.path]);
+      mutablePair.file.token = './changed.toml';
+      expect(
+        await commitArtifactPairWithLease(lease, {
+          pair: mutablePair,
+          manifest: { kind: 'keep' },
+          lock: { kind: 'keep' },
+          signal: controller.signal,
+        }),
+      ).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+      mutablePair.file.token = './skillsmith.toml';
+      controller.abort();
+      expect(
+        await commitArtifactPairWithLease(lease, {
+          pair: mutablePair,
+          manifest: { kind: 'keep' },
+          lock: { kind: 'keep' },
+          signal: controller.signal,
+        }),
+      ).toMatchObject({
+        ok: false,
+        error: { reason: 'cancelled', durableState: 'unobserved-before' },
+      });
+    });
+    expect((await ports.observe(mutablePair.file.path)).kind).toBe('absent');
+    expect((await ports.observe(mutablePair.lockfile.path)).kind).toBe('absent');
+  });
+
+  test('rejects a concurrent or nested commit while retaining the held lease until completion', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-lease-concurrent-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const pair = pairFor(join(root, 'skillsmith.toml'), join(root, 'skillsmith.lock'));
+    let enteredResolve!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enteredResolve = resolve;
+    });
+    let releaseResolve!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseResolve = resolve;
+    });
+    let paused = false;
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      afterBarrier: async (barrier: ArtifactPairBarrier) => {
+        if (!paused && barrier.kind === 'record-durable' && barrier.cursor === 'prepared') {
+          paused = true;
+          enteredResolve();
+          await release;
+        }
+      },
+    });
+    const request = {
+      pair,
+      manifest: {
+        kind: 'replace' as const,
+        bytes: new TextEncoder().encode('version = 1\nskills = []\n'),
+      },
+      lock: { kind: 'keep' as const },
+    };
+
+    await withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+      await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+      const first = commitArtifactPairWithLease(lease, request);
+      await entered;
+      expect(await commitArtifactPairWithLease(lease, request)).toMatchObject({
+        ok: false,
+        error: { reason: 'invalid-request' },
+      });
+      releaseResolve();
+      expect(await first).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+    });
+    expect(await readFile(pair.file.path, 'utf8')).toBe('version = 1\nskills = []\n');
+    expect(await base.recovery.discover()).toEqual([]);
+  });
+
+  test('retains recovered state across an unchanged lease call until the next physical commit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-lease-recovered-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const pair = pairFor(join(root, 'skillsmith.toml'), join(root, 'skillsmith.lock'));
+    const source = 'version = 1\nskills = []\n';
+    const parsed = readManifestSource(source);
+    if (!parsed.ok) throw new Error('fixture manifest invalid');
+    const normalized = normalizeManifestDocument(parsed.value);
+    if (!normalized.ok) throw new Error('fixture manifest invalid');
+    let interrupted = false;
+    let blockCatchRecovery = false;
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      recovery: Object.freeze({
+        ...base.recovery,
+        discover: async () => {
+          if (blockCatchRecovery) throw new Error('simulated process death');
+          return base.recovery.discover();
+        },
+      }),
+      afterBarrier: async (barrier: ArtifactPairBarrier) => {
+        if (!interrupted && barrier.kind === 'record-durable' && barrier.cursor === 'prepared') {
+          interrupted = true;
+          blockCatchRecovery = true;
+          throw new Error('hard crash after prepared record');
+        }
+      },
+    });
+    const crashed = await commitArtifactPair(ports, {
+      pair,
+      manifest: { kind: 'replace', bytes: new TextEncoder().encode(source) },
+      lock: {
+        kind: 'replace',
+        lock: Object.freeze({
+          version: 1,
+          hashSchemaVersion: 1,
+          manifestHash: hashManifestSemantics(normalized.value),
+          skills: Object.freeze([]),
+        }),
+      },
+    });
+    expect(crashed.ok).toBeFalse();
+    blockCatchRecovery = false;
+
+    await withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+      await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+      const unchanged = await commitArtifactPairWithLease(lease, {
+        pair,
+        manifest: { kind: 'keep' },
+        lock: { kind: 'keep' },
+      });
+      expect(unchanged).toMatchObject({ ok: true, value: { outcome: 'unchanged' } });
+      const committed = await commitArtifactPairWithLease(lease, {
+        pair,
+        manifest: { kind: 'replace', bytes: new TextEncoder().encode(source) },
+        lock: { kind: 'keep' },
+      });
+      expect(committed).toMatchObject({
+        ok: true,
+        value: { outcome: 'recovered-and-committed' },
+      });
+    });
+    expect(await base.recovery.discover()).toEqual([]);
+  });
+
+  test('recovers and reruns after a durable barrier failure originating inside a lease commit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-lease-crash-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const pair = pairFor(join(root, 'skillsmith.toml'), join(root, 'skillsmith.lock'));
+    const source = 'version = 1\nskills = []\n';
+    let crashed = false;
+    let blockCatchRecovery = false;
+    const crashingPorts: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      recovery: Object.freeze({
+        ...base.recovery,
+        discover: async () => {
+          if (blockCatchRecovery) throw new Error('simulated process death');
+          return base.recovery.discover();
+        },
+      }),
+      afterBarrier: async (barrier: ArtifactPairBarrier) => {
+        if (!crashed && barrier.kind === 'record-durable' && barrier.cursor === 'prepared') {
+          crashed = true;
+          blockCatchRecovery = true;
+          throw new Error('hard crash inside lease commit');
+        }
+      },
+    });
+    let interrupted: Awaited<ReturnType<typeof commitArtifactPairWithLease>> | null = null;
+    await withArtifactGroupLock(crashingPorts, pair, undefined, async (lease) => {
+      await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+      interrupted = await commitArtifactPairWithLease(lease, {
+        pair,
+        manifest: { kind: 'replace', bytes: new TextEncoder().encode(source) },
+        lock: { kind: 'keep' },
+      });
+    });
+    expect(interrupted).toMatchObject({ ok: false });
+    blockCatchRecovery = false;
+    expect(await base.recovery.discover()).toHaveLength(1);
+    expect(await recoverArtifactPair(base, pair, 'rollback')).toEqual({
+      ok: true,
+      value: 'rolled-back',
+    });
+
+    let rerun: Awaited<ReturnType<typeof commitArtifactPairWithLease>> | null = null;
+    await withArtifactGroupLock(base, pair, undefined, async (lease) => {
+      await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+      rerun = await commitArtifactPairWithLease(lease, {
+        pair,
+        manifest: { kind: 'replace', bytes: new TextEncoder().encode(source) },
+        lock: { kind: 'keep' },
+      });
+    });
+    expect(rerun).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+    expect(await readFile(pair.file.path, 'utf8')).toBe(source);
+    expect(await base.recovery.discover()).toEqual([]);
+  });
+
+  test('retains allocated transaction identities across sequential lease commits', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-lease-identities-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const pair = pairFor(join(root, 'skillsmith.toml'), join(root, 'skillsmith.lock'));
+    const source = 'version = 1\nskills = []\n';
+    const parsed = readManifestSource(source);
+    if (!parsed.ok) throw new Error('fixture manifest invalid');
+    const normalized = normalizeManifestDocument(parsed.value);
+    if (!normalized.ok) throw new Error('fixture manifest invalid');
+    const ports: ArtifactCoordinatorPorts = Object.freeze({
+      ...base,
+      nextId: (purpose: Parameters<ArtifactCoordinatorPorts['nextId']>[0]) =>
+        purpose === 'artifact-transaction' ? 'a'.repeat(16) : base.nextId(purpose),
+    });
+
+    await withArtifactGroupLock(ports, pair, undefined, async (lease) => {
+      await lease.acquireCompatibilityTargets([pair.file.path, pair.lockfile.path]);
+      expect(
+        await commitArtifactPairWithLease(lease, {
+          pair,
+          manifest: { kind: 'replace', bytes: new TextEncoder().encode(source) },
+          lock: { kind: 'keep' },
+        }),
+      ).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+      expect(
+        await commitArtifactPairWithLease(lease, {
+          pair,
+          manifest: { kind: 'keep' },
+          lock: {
+            kind: 'replace',
+            lock: Object.freeze({
+              version: 1,
+              hashSchemaVersion: 1,
+              manifestHash: hashManifestSemantics(normalized.value),
+              skills: Object.freeze([]),
+            }),
+          },
+        }),
+      ).toMatchObject({ ok: false, error: { reason: 'filesystem-failure' } });
+    });
+    expect((await base.observe(pair.file.path)).kind).toBe('file');
+    expect((await base.observe(pair.lockfile.path)).kind).toBe('absent');
+    expect(await base.recovery.discover()).toEqual([]);
+  });
+
   test('atomically creates a canonical manifest/lock pair and reads only the full pair', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-pair-'));
     roots.push(root);

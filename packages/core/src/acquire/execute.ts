@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { RegisteredPlacementBundle, SkillRootsCtx } from '../agents/adapter-types.ts';
 import type {
   RelevantCapabilityQueryV1,
@@ -6,6 +6,20 @@ import type {
 } from '../agents/capabilities.ts';
 import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
 import type { LifecycleToolRegistry } from '../agents/registry.ts';
+import type {
+  ArtifactCoordinatorPorts,
+  ArtifactFileRevision,
+  ArtifactGroupLockLease,
+  GeneratedLockAction,
+  HumanManifestAction,
+} from '../artifacts/coordinator-types.ts';
+import {
+  type ArtifactGroupLeaseScaffoldReceipt,
+  authenticateArtifactGroupLeaseScaffold,
+  commitArtifactPairWithLease,
+  prepareArtifactGroupLeaseScaffold,
+  withArtifactGroupLock,
+} from '../artifacts/coordinator.ts';
 import {
   type ArtifactDiscoveryError,
   type ArtifactDiscoveryPorts,
@@ -14,10 +28,17 @@ import {
   discoverArtifactSnapshot,
   selectManifestDestination,
 } from '../artifacts/discovery.ts';
-import { hashCanonicalInput } from '../artifacts/hash.ts';
+import { hashCanonicalInput, hashManifestSemantics } from '../artifacts/hash.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { LedgerWriterPorts } from '../artifacts/ledger-writer.ts';
+import {
+  hashPortableLock,
+  readPortableLockSource,
+  serializePortableLock,
+} from '../artifacts/lock.ts';
+import { editManifestBytes } from '../artifacts/manifest-edit.ts';
+import { normalizeManifestDocument, readManifestSource } from '../artifacts/manifest.ts';
 import {
   type ArtifactPairError,
   type ArtifactPairPorts,
@@ -25,6 +46,7 @@ import {
   resolveArtifactPair,
 } from '../artifacts/pair.ts';
 import { createLockRepository, createManifestRepository } from '../artifacts/repository.ts';
+import type { NormalizedManifestV1 } from '../artifacts/types.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import { type SkillSmithError, flipFailedError, genericError, safeErrorCode } from '../errors.ts';
@@ -45,6 +67,7 @@ import {
 import { createExpectedRevisionExecutionPrecondition } from '../execution/preconditions.ts';
 import type {
   ExecutionCoordinatorRequest,
+  ExecutionLockDescriptor,
   ExecutionPrecondition,
   PreparedExecutionBinding,
   ValidatedExecutionBinding,
@@ -88,6 +111,7 @@ import type {
   SwapPlan,
 } from '../place/types.ts';
 import { createOperationExecutionResult } from '../planning/create.ts';
+import { canonicalPlanningString, comparePlanningText } from '../planning/order.ts';
 import type {
   ExecutableOperation,
   OperationDigest,
@@ -111,6 +135,7 @@ import {
   type ObservedComponentV1,
   type StateDomainV1,
   createContentObservationIdentityV1,
+  createFilesystemMetadataIdentityV1,
   isExpectedRevisionV1,
   sameExpectedRevisionV1,
 } from '../state/types.ts';
@@ -1232,6 +1257,818 @@ export const createAcquireExecutionLockPort = (
         : flipFailedError(`another skillsmith operation is running: ${message(safe)}`);
     },
   });
+
+type AcquisitionArtifactRoleV1 = 'manifest' | 'lock';
+type AcquisitionManifestImageV1 = Extract<OperationImage, { readonly kind: 'manifest' }>;
+type AcquisitionLockImageV1 = Extract<OperationImage, { readonly kind: 'lock' }>;
+
+export type AcquisitionArtifactExecutionActionV1 =
+  | Readonly<{ readonly role: 'manifest'; readonly action: HumanManifestAction }>
+  | Readonly<{ readonly role: 'lock'; readonly action: GeneratedLockAction }>;
+
+export interface AcquisitionArtifactExecutionControllerV1 {
+  readonly locks: readonly ExecutionLockDescriptor[];
+  readonly lockPort: LockPort;
+  bindPreconditions(
+    preconditions: readonly ExecutionPrecondition[],
+  ): readonly ExecutionPrecondition[];
+  bind(
+    operation: ExecutableOperation,
+    action: AcquisitionArtifactExecutionActionV1,
+  ): PreparedExecutionBinding;
+}
+
+const acquisitionArtifactExecutionFail = (message: string): never => {
+  throw new TypeError(`acquisition artifact execution: ${message}`);
+};
+
+const acquisitionArtifactLocation = (path: string) =>
+  Object.freeze({ kind: 'machine-bound' as const, path });
+
+const acquisitionArtifactResource = (role: AcquisitionArtifactRoleV1, path: string) =>
+  role === 'manifest'
+    ? Object.freeze({
+        kind: 'manifest-bytes' as const,
+        location: acquisitionArtifactLocation(path),
+      })
+    : Object.freeze({ kind: 'lock' as const, location: acquisitionArtifactLocation(path) });
+
+const acquisitionManifestSnapshot = (
+  value: NormalizedManifestV1,
+): AcquisitionManifestImageV1['value'] => ({
+  version: 1,
+  defaults:
+    value.defaults === undefined
+      ? null
+      : {
+          tools: value.defaults.tools ?? null,
+          scope: value.defaults.scope ?? null,
+          path: value.defaults.path ?? null,
+        },
+  registry: value.registry === undefined ? null : { default: value.registry.default ?? null },
+  skills: value.skills,
+});
+
+const acquisitionResourceDigest = (bytes: Uint8Array): OperationDigest => {
+  const digest = hashCanonicalInput('resource', 1, bytes);
+  if (!digest.ok) {
+    return acquisitionArtifactExecutionFail('artifact byte digest could not be computed');
+  }
+  return digest.value as OperationDigest;
+};
+
+const acquisitionCoordinatorDigest = (
+  role: AcquisitionArtifactRoleV1,
+  bytes: Uint8Array,
+): string => {
+  const digest = hashCanonicalInput(
+    role === 'manifest' ? 'manifest-bytes' : 'lock-canonical',
+    1,
+    bytes,
+  );
+  if (!digest.ok) {
+    return acquisitionArtifactExecutionFail('coordinator artifact digest could not be computed');
+  }
+  return digest.value;
+};
+
+const ownAcquisitionArtifactAction = (
+  action: AcquisitionArtifactExecutionActionV1,
+): AcquisitionArtifactExecutionActionV1 => {
+  let owned: AcquisitionArtifactExecutionActionV1;
+  try {
+    owned = structuredClone(action);
+  } catch {
+    return acquisitionArtifactExecutionFail('artifact action is not ownable data');
+  }
+  const freeze = (value: unknown, seen = new Set<object>()): void => {
+    if (
+      value === null ||
+      typeof value !== 'object' ||
+      ArrayBuffer.isView(value) ||
+      seen.has(value)
+    ) {
+      return;
+    }
+    seen.add(value);
+    for (const child of Object.values(value)) freeze(child, seen);
+    Object.freeze(value);
+  };
+  freeze(owned);
+  return owned;
+};
+
+const acquisitionManifestImageFromBytes = (
+  path: string,
+  bytes: Uint8Array,
+): AcquisitionManifestImageV1 => {
+  let source: string;
+  try {
+    source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return acquisitionArtifactExecutionFail('manifest bytes are not valid UTF-8');
+  }
+  const document = readManifestSource(source);
+  if (!document.ok) return acquisitionArtifactExecutionFail('manifest bytes are not readable');
+  const normalized = normalizeManifestDocument(document.value);
+  if (!normalized.ok) {
+    return acquisitionArtifactExecutionFail('manifest bytes are not normalizable');
+  }
+  return Object.freeze({
+    kind: 'manifest' as const,
+    location: acquisitionArtifactLocation(path),
+    shape: document.value.shape,
+    version: 1 as const,
+    byteHash: acquisitionResourceDigest(bytes),
+    semanticHash: hashManifestSemantics(normalized.value) as OperationDigest,
+    value: acquisitionManifestSnapshot(normalized.value),
+  });
+};
+
+const acquisitionLockImageFromBytes = (path: string, bytes: Uint8Array): AcquisitionLockImageV1 => {
+  const lock = readPortableLockSource(bytes);
+  if (!lock.ok) return acquisitionArtifactExecutionFail('lock bytes are not canonical');
+  const canonicalHash = hashPortableLock(lock.value);
+  if (!canonicalHash.ok) {
+    return acquisitionArtifactExecutionFail('lock hash could not be computed');
+  }
+  return Object.freeze({
+    kind: 'lock' as const,
+    location: acquisitionArtifactLocation(path),
+    version: 1 as const,
+    canonicalHash: canonicalHash.value as OperationDigest,
+    value: lock.value as unknown as AcquisitionLockImageV1['value'],
+  });
+};
+
+const sameAcquisitionArtifactImage = (left: OperationImage, right: OperationImage): boolean =>
+  canonicalPlanningString(left) === canonicalPlanningString(right);
+
+const isExactAcquisitionScaffoldDelta = (
+  expected: unknown,
+  observed: unknown,
+  role: AcquisitionArtifactRoleV1,
+  resourceId: string,
+  targetPath: string,
+): expected is ExpectedRevisionV1 => {
+  if (
+    !isExpectedRevisionV1(expected) ||
+    !isExpectedRevisionV1(observed) ||
+    expected.domain !== role ||
+    observed.domain !== role ||
+    expected.resourceId !== resourceId ||
+    observed.resourceId !== resourceId ||
+    expected.state !== 'absent' ||
+    observed.state !== 'absent' ||
+    expected.targetIdentity !== targetPath ||
+    observed.targetIdentity !== targetPath ||
+    expected.targetKind !== 'absent' ||
+    observed.targetKind !== 'absent' ||
+    expected.parentIdentity !== dirname(targetPath) ||
+    observed.parentIdentity !== dirname(targetPath) ||
+    expected.parentKind !== 'absent' ||
+    observed.parentKind !== 'directory'
+  ) {
+    return false;
+  }
+  return true;
+};
+
+const acquisitionArtifactImagePath = (image: OperationImage): string | null => {
+  const location =
+    image.kind === 'manifest' || image.kind === 'lock'
+      ? image.location
+      : image.kind === 'absent' &&
+          (image.resource.kind === 'manifest-bytes' || image.resource.kind === 'lock')
+        ? image.resource.location
+        : null;
+  return location?.kind === 'machine-bound' ? location.path : null;
+};
+
+const validateAcquisitionArtifactOperation = (
+  operation: ExecutableOperation,
+  action: AcquisitionArtifactExecutionActionV1,
+  pair: ResolvedArtifactPair,
+): AcquisitionArtifactRoleV1 => {
+  if (
+    operation.pairId !== null ||
+    operation.skill !== null ||
+    operation.source !== null ||
+    operation.tool !== null ||
+    operation.scope !== null
+  ) {
+    acquisitionArtifactExecutionFail('artifact binding identity is invalid');
+  }
+  const role: AcquisitionArtifactRoleV1 =
+    operation.kind === 'migrate-project-config' || operation.kind === 'write-manifest'
+      ? 'manifest'
+      : operation.kind === 'write-lock'
+        ? 'lock'
+        : acquisitionArtifactExecutionFail('operation kind is not an acquisition artifact write');
+  if (action.role !== role) acquisitionArtifactExecutionFail('artifact action role is invalid');
+  const path = role === 'manifest' ? pair.file.path : pair.lockfile.path;
+  if (
+    acquisitionArtifactImagePath(operation.before) !== path ||
+    acquisitionArtifactImagePath(operation.after) !== path
+  ) {
+    acquisitionArtifactExecutionFail('artifact operation path differs from selected authority');
+  }
+
+  if (role === 'manifest') {
+    const manifestAction =
+      action.role === 'manifest'
+        ? action.action
+        : acquisitionArtifactExecutionFail('artifact action role is invalid');
+    if (operation.after.kind !== 'manifest' || operation.after.shape !== 'canonical') {
+      acquisitionArtifactExecutionFail('manifest operation after image is invalid');
+    }
+    if (manifestAction.kind === 'keep') {
+      acquisitionArtifactExecutionFail('manifest operation action cannot be keep');
+    }
+    if (operation.kind === 'migrate-project-config') {
+      if (
+        operation.before.kind !== 'manifest' ||
+        operation.before.shape !== 'legacy' ||
+        manifestAction.kind !== 'edit' ||
+        manifestAction.request.edits.length !== 1 ||
+        manifestAction.request.edits[0]?.kind !== 'migrate-legacy'
+      ) {
+        acquisitionArtifactExecutionFail('manifest migration action is invalid');
+      }
+    } else {
+      const beforeIsAbsent =
+        operation.before.kind === 'absent' && operation.before.resource.kind === 'manifest-bytes';
+      const beforeIsCanonical =
+        operation.before.kind === 'manifest' && operation.before.shape === 'canonical';
+      if (
+        (!beforeIsAbsent && !beforeIsCanonical) ||
+        (beforeIsAbsent && manifestAction.kind !== 'replace') ||
+        (beforeIsCanonical && manifestAction.kind !== 'edit') ||
+        (manifestAction.kind === 'edit' &&
+          manifestAction.request.edits.some(({ kind }) => kind === 'migrate-legacy'))
+      ) {
+        acquisitionArtifactExecutionFail('manifest write action is invalid');
+      }
+    }
+    if (
+      manifestAction.kind === 'replace' &&
+      !sameAcquisitionArtifactImage(
+        acquisitionManifestImageFromBytes(path, manifestAction.bytes),
+        operation.after,
+      )
+    ) {
+      acquisitionArtifactExecutionFail('manifest replacement differs from planned after image');
+    }
+    return role;
+  }
+
+  const lockAction =
+    action.role === 'lock'
+      ? action.action
+      : acquisitionArtifactExecutionFail('artifact action role is invalid');
+  if (
+    operation.after.kind !== 'lock' ||
+    !(
+      (operation.before.kind === 'absent' && operation.before.resource.kind === 'lock') ||
+      operation.before.kind === 'lock'
+    )
+  ) {
+    acquisitionArtifactExecutionFail('lock write action is invalid');
+  }
+  if (lockAction.kind === 'keep' || lockAction.kind === 'remove') {
+    return acquisitionArtifactExecutionFail('lock write action is invalid');
+  }
+  if (lockAction.kind === 'replace-invalid') {
+    return acquisitionArtifactExecutionFail('doctor-only lock action is not allowed');
+  }
+  if (lockAction.kind !== 'replace') {
+    return acquisitionArtifactExecutionFail('acquisition lock action must use normal replace');
+  }
+  const serialized = serializePortableLock(lockAction.lock);
+  if (
+    !serialized.ok ||
+    !sameAcquisitionArtifactImage(
+      acquisitionLockImageFromBytes(path, new TextEncoder().encode(serialized.value)),
+      operation.after,
+    )
+  ) {
+    acquisitionArtifactExecutionFail('lock action differs from planned after image');
+  }
+  return role;
+};
+
+const ownAcquisitionArtifactPair = (pair: ResolvedArtifactPair): ResolvedArtifactPair =>
+  Object.freeze({
+    file: Object.freeze({ ...pair.file }),
+    lockfile: Object.freeze({ ...pair.lockfile }),
+    lockfileSource: pair.lockfileSource,
+  });
+
+const isStrictAcquisitionArtifactAncestor = (ancestor: string, target: string): boolean => {
+  const displacement = relative(ancestor, target);
+  return (
+    displacement !== '' &&
+    displacement !== '..' &&
+    !displacement.startsWith(`..${sep}`) &&
+    !isAbsolute(displacement)
+  );
+};
+
+const acquisitionArtifactResult = (
+  operation: ExecutableOperation,
+  binding: ValidatedExecutionBinding,
+  outcome: 'succeeded' | 'failed' | 'cancelled',
+  actualAfter: OperationImage,
+  reason?: string,
+): OperationExecutionResult =>
+  createOperationExecutionResult({
+    operationId: operation.operationId,
+    outcome,
+    actualBefore: binding.actualBefore,
+    actualAfter,
+    force: binding.unstartedForce,
+    error:
+      outcome === 'failed'
+        ? {
+            code: 'artifact-mutation-failed',
+            message: `portable artifact mutation failed${reason === undefined ? '' : `: ${reason}`}`,
+            remediation: 'Re-read portable state and retry the command.',
+          }
+        : null,
+  });
+
+export const createAcquisitionArtifactExecutionControllerV1 = (input: {
+  readonly authority: AcquisitionSnapshotAuthorityV1;
+  readonly artifactCoordinator: ArtifactCoordinatorPorts;
+  readonly ledgerLockPort: LockPort;
+  readonly ledgerPath: string;
+  readonly signal?: AbortSignal;
+}): AcquisitionArtifactExecutionControllerV1 => {
+  const artifact = input.authority.snapshot.artifact;
+  const repositories = input.authority.repositories.artifact;
+  if (artifact.mode !== 'selected' || repositories.mode !== 'selected') {
+    return acquisitionArtifactExecutionFail('selected artifact authority is required');
+  }
+  const pair = ownAcquisitionArtifactPair(artifact.pair);
+  if (
+    artifact.manifest.revision.domain !== 'manifest' ||
+    artifact.manifest.revision.targetIdentity !== pair.file.path ||
+    artifact.lock.revision.domain !== 'lock' ||
+    artifact.lock.revision.targetIdentity !== pair.lockfile.path
+  ) {
+    acquisitionArtifactExecutionFail('selected artifact snapshot does not match its pair');
+  }
+  const resourceIds = Object.freeze({
+    manifest: artifact.manifest.revision.resourceId,
+    lock: artifact.lock.revision.resourceId,
+  });
+  const groupPath = join(input.artifactCoordinator.coordinationRoot, 'global');
+  const memberPaths = Object.freeze([pair.file.path, pair.lockfile.path].sort(comparePlanningText));
+  const descriptorPaths = [groupPath, ...memberPaths, input.ledgerPath];
+  if (
+    memberPaths[0] === memberPaths[1] ||
+    new Set(descriptorPaths).size !== descriptorPaths.length ||
+    descriptorPaths.some((target, index) =>
+      descriptorPaths.some(
+        (other, otherIndex) =>
+          index !== otherIndex &&
+          (isStrictAcquisitionArtifactAncestor(target, other) ||
+            `${target}.lock` === other ||
+            isStrictAcquisitionArtifactAncestor(`${target}.lock`, other)),
+      ),
+    )
+  ) {
+    acquisitionArtifactExecutionFail('artifact execution descriptor topology is unsafe');
+  }
+  const locks = Object.freeze([
+    Object.freeze({ rank: 'artifact-group' as const, key: 'artifact-group', path: groupPath }),
+    ...memberPaths.map((path, index) =>
+      Object.freeze({
+        rank: 'artifact-member' as const,
+        key: `artifact-member:${index}`,
+        path,
+      }),
+    ),
+    Object.freeze({ rank: 'ledger' as const, key: 'placements-ledger', path: input.ledgerPath }),
+  ] satisfies readonly ExecutionLockDescriptor[]);
+
+  type ActiveLease = {
+    readonly lease: ArtifactGroupLockLease;
+    readonly seenMembers: Set<string>;
+    membersAcquired: boolean;
+    scaffoldReceipt: ArtifactGroupLeaseScaffoldReceipt | null;
+  };
+  let active: ActiveLease | null = null;
+  const requireSignal = (options: Readonly<{ signal?: AbortSignal }> | undefined): void => {
+    if (options?.signal !== input.signal) {
+      acquisitionArtifactExecutionFail('execution lock signal differs from selected authority');
+    }
+  };
+  const lockPort: LockPort = Object.freeze({
+    withFileLock: async <T>(
+      path: string,
+      operation: () => Promise<T>,
+      options?: Readonly<{ signal?: AbortSignal }>,
+    ): Promise<T> => {
+      requireSignal(options);
+      if (path === groupPath) {
+        if (active !== null) acquisitionArtifactExecutionFail('artifact group lock is reentrant');
+        return withArtifactGroupLock(
+          input.artifactCoordinator,
+          pair,
+          input.signal,
+          async (lease) => {
+            const held: ActiveLease = {
+              lease,
+              seenMembers: new Set<string>(),
+              membersAcquired: false,
+              scaffoldReceipt: null,
+            };
+            active = held;
+            try {
+              return await operation();
+            } finally {
+              if (active === held) active = null;
+            }
+          },
+        );
+      }
+      if (memberPaths.includes(path)) {
+        const held = active;
+        if (
+          held === null ||
+          held.seenMembers.has(path) ||
+          path !== memberPaths[held.seenMembers.size]
+        ) {
+          return acquisitionArtifactExecutionFail(
+            'artifact member lock is outside its group lease',
+          );
+        }
+        if (!held.membersAcquired) {
+          const scaffold = await prepareArtifactGroupLeaseScaffold(held.lease, memberPaths);
+          if (!scaffold.ok) throw scaffold.error;
+          held.scaffoldReceipt = scaffold.value;
+          await held.lease.acquireCompatibilityTargets(memberPaths);
+          held.membersAcquired = true;
+        }
+        held.seenMembers.add(path);
+        return operation();
+      }
+      if (path === input.ledgerPath) {
+        const held = active;
+        if (
+          held === null ||
+          !held.membersAcquired ||
+          held.seenMembers.size !== memberPaths.length
+        ) {
+          acquisitionArtifactExecutionFail('ledger lock was requested before artifact members');
+        }
+        return input.ledgerLockPort.withFileLock(path, operation, options);
+      }
+      return acquisitionArtifactExecutionFail('unexpected selected artifact execution lock path');
+    },
+  });
+
+  const observePhysical = async (
+    role: AcquisitionArtifactRoleV1,
+  ): Promise<Readonly<{ image: OperationImage; bytes: Uint8Array | null }>> => {
+    const repository = role === 'manifest' ? repositories.manifest : repositories.lock;
+    const observed = await repository.observe(resourceIds[role]);
+    if (!observed.ok) {
+      return acquisitionArtifactExecutionFail(`${role} repository observation failed`);
+    }
+    const path = role === 'manifest' ? pair.file.path : pair.lockfile.path;
+    const revision = observed.value.revision;
+    if (
+      (role === 'manifest' ? revision.domain !== 'manifest' : revision.domain !== 'lock') ||
+      !('targetIdentity' in revision) ||
+      revision.targetIdentity !== path
+    ) {
+      acquisitionArtifactExecutionFail(`${role} repository authority changed`);
+    }
+    if (revision.state === 'absent') {
+      if (observed.value.value !== null) {
+        acquisitionArtifactExecutionFail(`${role} absent observation has a model`);
+      }
+      return Object.freeze({
+        image: Object.freeze({
+          kind: 'absent' as const,
+          resource: acquisitionArtifactResource(role, path),
+        }),
+        bytes: null,
+      });
+    }
+    if (
+      revision.state !== 'present' ||
+      !('byteRevision' in revision) ||
+      observed.value.value === null
+    ) {
+      return acquisitionArtifactExecutionFail(`${role} present observation is invalid`);
+    }
+    const bytes = await input.artifactCoordinator.readBytes(path);
+    const image =
+      role === 'manifest'
+        ? acquisitionManifestImageFromBytes(path, bytes)
+        : acquisitionLockImageFromBytes(path, bytes);
+    if (
+      acquisitionResourceDigest(bytes) !== revision.byteRevision ||
+      (image.kind === 'manifest'
+        ? revision.semanticRevision !== image.semanticHash ||
+          canonicalPlanningString(
+            acquisitionManifestSnapshot(observed.value.value as NormalizedManifestV1),
+          ) !== canonicalPlanningString(image.value)
+        : revision.semanticRevision !== image.canonicalHash ||
+          canonicalPlanningString(observed.value.value) !== canonicalPlanningString(image.value))
+    ) {
+      acquisitionArtifactExecutionFail(`${role} repository facts are incoherent`);
+    }
+    return Object.freeze({ image, bytes: new Uint8Array(bytes) });
+  };
+
+  const imageFromRevision = (
+    role: AcquisitionArtifactRoleV1,
+    revision: ArtifactFileRevision,
+  ): OperationImage => {
+    const path = role === 'manifest' ? pair.file.path : pair.lockfile.path;
+    if (revision.state === 'absent') {
+      return Object.freeze({
+        kind: 'absent' as const,
+        resource: acquisitionArtifactResource(role, path),
+      });
+    }
+    if (acquisitionCoordinatorDigest(role, revision.bytes) !== revision.digest) {
+      return acquisitionArtifactExecutionFail(`${role} commit revision digest is incoherent`);
+    }
+    return role === 'manifest'
+      ? acquisitionManifestImageFromBytes(path, revision.bytes)
+      : acquisitionLockImageFromBytes(path, revision.bytes);
+  };
+
+  const lastBoundByRole = new Map<AcquisitionArtifactRoleV1, ExecutableOperation>();
+  let lastBoundArtifact: ExecutableOperation | null = null;
+  let currentBoundGroup: string | null = null;
+  let currentGroupGate: ExecutableOperation | null = null;
+  const closedArtifactGroups = new Set<string>();
+  const boundOperationIds = new Set<string>();
+  const successfulOperations = new Set<string>();
+
+  return Object.freeze({
+    locks,
+    lockPort,
+    bindPreconditions: (
+      preconditions: readonly ExecutionPrecondition[],
+    ): readonly ExecutionPrecondition[] =>
+      Object.freeze(
+        preconditions.map((precondition) => {
+          const role =
+            precondition.resource.kind === 'manifest-bytes'
+              ? ('manifest' as const)
+              : precondition.resource.kind === 'lock'
+                ? ('lock' as const)
+                : null;
+          if (role === null) return precondition;
+          const targetPath = role === 'manifest' ? pair.file.path : pair.lockfile.path;
+          const expectedRevision =
+            role === 'manifest' ? artifact.manifest.revision : artifact.lock.revision;
+          if (
+            canonicalPlanningString(precondition.resource) !==
+              canonicalPlanningString(acquisitionArtifactResource(role, targetPath)) ||
+            !isExpectedRevisionV1(precondition.expected) ||
+            !sameExpectedRevisionV1(precondition.expected, expectedRevision)
+          ) {
+            return precondition;
+          }
+          return Object.freeze({
+            ...precondition,
+            observe: async (): Promise<unknown> => {
+              const observed = await precondition.observe();
+              if (
+                isExpectedRevisionV1(observed) &&
+                isExpectedRevisionV1(precondition.expected) &&
+                sameExpectedRevisionV1(observed, precondition.expected)
+              ) {
+                return observed;
+              }
+              if (
+                !isExactAcquisitionScaffoldDelta(
+                  precondition.expected,
+                  observed,
+                  role,
+                  resourceIds[role],
+                  targetPath,
+                )
+              ) {
+                return observed;
+              }
+              const held = active;
+              if (
+                held === null ||
+                !held.membersAcquired ||
+                held.seenMembers.size !== memberPaths.length ||
+                held.scaffoldReceipt === null
+              ) {
+                return observed;
+              }
+              const authenticated = await authenticateArtifactGroupLeaseScaffold(
+                held.lease,
+                held.scaffoldReceipt,
+                targetPath,
+              );
+              if (!authenticated.ok) throw authenticated.error;
+              const proof = authenticated.value;
+              if (
+                proof === null ||
+                proof.targetPath !== targetPath ||
+                proof.parentPath !== dirname(targetPath) ||
+                !isExpectedRevisionV1(observed) ||
+                observed.state !== 'absent'
+              ) {
+                return observed;
+              }
+              const authenticatedParentMetadataIdentity = createFilesystemMetadataIdentityV1(
+                proof.parentPath,
+                {
+                  kind: 'dir',
+                  mode: proof.parentMode,
+                  identity: proof.parentIdentity,
+                  linkCount: null,
+                },
+                'parent',
+              );
+              return observed.parentMetadataIdentity === authenticatedParentMetadataIdentity
+                ? precondition.expected
+                : observed;
+            },
+          });
+        }),
+      ),
+    bind: (
+      operation: ExecutableOperation,
+      action: AcquisitionArtifactExecutionActionV1,
+    ): PreparedExecutionBinding => {
+      if (boundOperationIds.has(operation.operationId)) {
+        acquisitionArtifactExecutionFail('artifact operation was bound more than once');
+      }
+      const ownedAction = ownAcquisitionArtifactAction(action);
+      const role = validateAcquisitionArtifactOperation(operation, ownedAction, pair);
+      const rolePredecessor = lastBoundByRole.get(role) ?? null;
+      if (
+        rolePredecessor !== null &&
+        !sameAcquisitionArtifactImage(rolePredecessor.after, operation.before)
+      ) {
+        acquisitionArtifactExecutionFail('artifact operation chain has a state gap');
+      }
+      if (
+        lastBoundArtifact !== null &&
+        lastBoundArtifact.groupId === operation.groupId &&
+        !operation.dependencyMetadata.operationIds.includes(lastBoundArtifact.operationId)
+      ) {
+        acquisitionArtifactExecutionFail('same-group artifact chain lacks a direct dependency');
+      }
+      const groupChanged = currentBoundGroup !== operation.groupId;
+      if (groupChanged && closedArtifactGroups.has(operation.groupId)) {
+        acquisitionArtifactExecutionFail('artifact operation group is not contiguous');
+      }
+      const priorGroupTerminal = groupChanged ? lastBoundArtifact : currentGroupGate;
+      if (groupChanged) {
+        if (currentBoundGroup !== null) closedArtifactGroups.add(currentBoundGroup);
+        currentBoundGroup = operation.groupId;
+        currentGroupGate = priorGroupTerminal;
+      }
+      boundOperationIds.add(operation.operationId);
+      lastBoundByRole.set(role, operation);
+      lastBoundArtifact = operation;
+      return Object.freeze({
+        operationId: operation.operationId,
+        groupId: operation.groupId,
+        pairId: operation.pairId,
+        unstartedForce: null,
+        observeActualBefore: async () => operation.before,
+        execute: async (binding: ValidatedExecutionBinding): Promise<OperationExecutionResult> => {
+          if (
+            binding.operationId !== operation.operationId ||
+            binding.groupId !== operation.groupId ||
+            binding.pairId !== null ||
+            binding.unstartedForce !== null ||
+            !sameAcquisitionArtifactImage(binding.actualBefore, operation.before)
+          ) {
+            acquisitionArtifactExecutionFail('validated artifact binding is mismatched');
+          }
+          const held = active;
+          if (
+            held === null ||
+            !held.membersAcquired ||
+            held.seenMembers.size !== memberPaths.length
+          ) {
+            return acquisitionArtifactExecutionFail(
+              'artifact binding executed without its active lease',
+            );
+          }
+          if (
+            priorGroupTerminal !== null &&
+            !successfulOperations.has(priorGroupTerminal.operationId)
+          ) {
+            acquisitionArtifactExecutionFail('prior artifact group did not complete successfully');
+          }
+          if (rolePredecessor !== null && !successfulOperations.has(rolePredecessor.operationId)) {
+            acquisitionArtifactExecutionFail('artifact predecessor did not complete successfully');
+          }
+          const before = await observePhysical(role);
+          if (!sameAcquisitionArtifactImage(before.image, operation.before)) {
+            acquisitionArtifactExecutionFail(
+              'physical artifact state differs from planned before image',
+            );
+          }
+          const candidate =
+            role === 'manifest'
+              ? ownedAction.role !== 'manifest'
+                ? acquisitionArtifactExecutionFail('manifest action role changed after binding')
+                : ownedAction.action.kind === 'replace'
+                  ? acquisitionManifestImageFromBytes(pair.file.path, ownedAction.action.bytes)
+                  : ownedAction.action.kind === 'edit' && before.bytes !== null
+                    ? (() => {
+                        const edited = editManifestBytes(before.bytes, ownedAction.action.request);
+                        if (!edited.ok) {
+                          return acquisitionArtifactExecutionFail(
+                            'manifest action could not be applied',
+                          );
+                        }
+                        return acquisitionManifestImageFromBytes(
+                          pair.file.path,
+                          edited.value.bytes,
+                        );
+                      })()
+                    : acquisitionArtifactExecutionFail(
+                        'manifest action no longer matches physical state',
+                      )
+              : ownedAction.role !== 'lock' || ownedAction.action.kind !== 'replace'
+                ? acquisitionArtifactExecutionFail('lock action role changed after binding')
+                : (() => {
+                    const serialized = serializePortableLock(ownedAction.action.lock);
+                    if (!serialized.ok) {
+                      return acquisitionArtifactExecutionFail(
+                        'lock action could not be serialized',
+                      );
+                    }
+                    return acquisitionLockImageFromBytes(
+                      pair.lockfile.path,
+                      new TextEncoder().encode(serialized.value),
+                    );
+                  })();
+          if (!sameAcquisitionArtifactImage(candidate, operation.after)) {
+            acquisitionArtifactExecutionFail('artifact action differs from planned after image');
+          }
+          const committed = await commitArtifactPairWithLease(held.lease, {
+            pair,
+            manifest:
+              role === 'manifest' ? (ownedAction.action as HumanManifestAction) : { kind: 'keep' },
+            lock: role === 'lock' ? (ownedAction.action as GeneratedLockAction) : { kind: 'keep' },
+            ...(input.signal === undefined ? {} : { signal: input.signal }),
+          });
+          if (!committed.ok) {
+            const revision =
+              role === 'manifest' ? committed.error.manifestRevision : committed.error.lockRevision;
+            let actualAfter = operation.before;
+            if (committed.error.durableState === 'after') {
+              if (
+                revision === undefined ||
+                !sameAcquisitionArtifactImage(imageFromRevision(role, revision), operation.after)
+              ) {
+                acquisitionArtifactExecutionFail(
+                  'failed artifact commit has an unprovable after image',
+                );
+              }
+              actualAfter = operation.after;
+            } else if (
+              revision !== undefined &&
+              !sameAcquisitionArtifactImage(imageFromRevision(role, revision), operation.before)
+            ) {
+              acquisitionArtifactExecutionFail(
+                'failed artifact commit has an unprovable before image',
+              );
+            }
+            return acquisitionArtifactResult(
+              operation,
+              binding,
+              committed.error.reason === 'cancelled' ? 'cancelled' : 'failed',
+              actualAfter,
+              committed.error.reason,
+            );
+          }
+          const revision =
+            role === 'manifest' ? committed.value.manifestRevision : committed.value.lockRevision;
+          if (!sameAcquisitionArtifactImage(imageFromRevision(role, revision), operation.after)) {
+            acquisitionArtifactExecutionFail(
+              'artifact commit result differs from planned after image',
+            );
+          }
+          successfulOperations.add(operation.operationId);
+          return acquisitionArtifactResult(operation, binding, 'succeeded', operation.after);
+        },
+      });
+    },
+  });
+};
 
 export const createAcquisitionLedgerMigrationBinding = (
   args: Parameters<typeof ledgerMigrationExecutionBinding>[0],

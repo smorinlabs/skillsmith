@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import {
@@ -181,7 +181,104 @@ interface HeldLocks {
   readonly release: () => void;
   readonly acquired: Promise<void>;
   readonly finished: Promise<void>;
+  readonly releasedSuccessfully: Promise<boolean>;
 }
+
+type ArtifactGroupMemberState = 'unrequested' | 'acquiring' | 'held' | 'failed' | 'released';
+
+declare const artifactGroupLeaseScaffoldReceiptBrand: unique symbol;
+
+export type ArtifactGroupLeaseScaffoldReceipt = Readonly<{
+  readonly [artifactGroupLeaseScaffoldReceiptBrand]: true;
+}>;
+
+interface ArtifactGroupLeaseScaffoldProof {
+  readonly targetPath: string;
+  readonly parentPath: string;
+  readonly parentIdentity: string;
+  readonly parentMode: number;
+}
+
+interface ArtifactGroupScaffoldDirectoryWitness {
+  readonly path: string;
+  readonly identity: string;
+  readonly mode: number;
+  readonly parentPath: string;
+  readonly parentIdentity: string;
+}
+
+interface ArtifactGroupScaffoldTarget {
+  readonly targetPath: string;
+  readonly parentPath: string;
+  readonly anchorPath: string | null;
+  readonly chainPaths: readonly string[];
+  eligible: boolean;
+}
+
+interface ArtifactGroupScaffoldState {
+  readonly leaseState: ArtifactGroupLeaseState;
+  readonly created: ArtifactGroupScaffoldDirectoryWitness[];
+  readonly createdByPath: Map<string, ArtifactGroupScaffoldDirectoryWitness>;
+  readonly anchors: Map<string, ArtifactGroupScaffoldDirectoryWitness>;
+  readonly targets: Map<string, ArtifactGroupScaffoldTarget>;
+  preparation: Promise<Result<ArtifactGroupLeaseScaffoldReceipt, ArtifactMutationError>> | null;
+  status: 'preparing' | 'ready' | 'failed' | 'expired';
+  consumed: boolean;
+  retain: boolean;
+}
+
+interface ArtifactGroupLeaseState {
+  readonly ports: ArtifactCoordinatorPorts;
+  readonly pair: ResolvedArtifactPair;
+  readonly targets: readonly string[];
+  readonly operationId: string;
+  readonly barrier: BarrierEmitter;
+  readonly signal: AbortSignal | undefined;
+  readonly usedIds: Set<string>;
+  active: boolean;
+  memberState: ArtifactGroupMemberState;
+  commitActive: boolean;
+  recoveredPending: boolean;
+  inFlight: Promise<Result<ArtifactPairMutationResult, ArtifactMutationError>> | null;
+  scaffold: ArtifactGroupScaffoldState | null;
+}
+
+const artifactGroupLeaseStates = new WeakMap<ArtifactGroupLockLease, ArtifactGroupLeaseState>();
+const artifactGroupScaffoldReceipts = new WeakMap<
+  ArtifactGroupLeaseScaffoldReceipt,
+  ArtifactGroupScaffoldState
+>();
+
+const samePairPath = (
+  left: ResolvedArtifactPair['file'],
+  right: ResolvedArtifactPair['file'],
+): boolean =>
+  left.token === right.token &&
+  left.path === right.path &&
+  left.portability === right.portability &&
+  left.portableToken === right.portableToken;
+
+const sameArtifactPair = (left: ResolvedArtifactPair, right: ResolvedArtifactPair): boolean =>
+  samePairPath(left.file, right.file) &&
+  samePairPath(left.lockfile, right.lockfile) &&
+  left.lockfileSource === right.lockfileSource;
+
+const ownArtifactPair = (pair: ResolvedArtifactPair): ResolvedArtifactPair =>
+  Object.freeze({
+    file: Object.freeze({
+      token: pair.file.token,
+      path: pair.file.path,
+      portability: pair.file.portability,
+      portableToken: pair.file.portableToken,
+    }),
+    lockfile: Object.freeze({
+      token: pair.lockfile.token,
+      path: pair.lockfile.path,
+      portability: pair.lockfile.portability,
+      portableToken: pair.lockfile.portableToken,
+    }),
+    lockfileSource: pair.lockfileSource,
+  });
 
 const beginHeldLocks = (
   ports: ArtifactCoordinatorPorts,
@@ -201,6 +298,8 @@ const beginHeldLocks = (
     acquiredReject = reject;
   });
   const sorted = canonicalMembers(targets);
+  const noCallbackError = Symbol('no-callback-error');
+  let releasesSucceeded = true;
   const enter = async (index: number): Promise<void> => {
     const target = sorted[index];
     if (target === undefined) {
@@ -208,25 +307,52 @@ const beginHeldLocks = (
       await releasePromise;
       return;
     }
-    await ports.withFileLock(
-      target,
-      {
-        policy: 'compatibility',
-        centralOperationId: operationId,
-        ...(signal === undefined ? {} : { signal }),
-        retryDelaysMs: ARTIFACT_LOCK_RETRY_DELAYS_MS,
-      },
-      async () => {
-        await barrier.emit({ kind: 'lock-acquired', targetClass: 'compatibility' });
-        await enter(index + 1);
-      },
-    );
+    let callbackError: unknown = noCallbackError;
+    let callbackEntered = false;
+    try {
+      await ports.withFileLock(
+        target,
+        {
+          policy: 'compatibility',
+          centralOperationId: operationId,
+          ...(signal === undefined ? {} : { signal }),
+          retryDelaysMs: ARTIFACT_LOCK_RETRY_DELAYS_MS,
+        },
+        async () => {
+          callbackEntered = true;
+          try {
+            await barrier.emit({ kind: 'lock-acquired', targetClass: 'compatibility' });
+            await enter(index + 1);
+          } catch (error) {
+            callbackError = error;
+          }
+        },
+      );
+    } catch (error) {
+      if (callbackEntered) {
+        releasesSucceeded = false;
+      } else {
+        try {
+          if ((await ports.observe(`${target}.lock`)).kind !== 'absent') {
+            releasesSucceeded = false;
+          }
+        } catch {
+          releasesSucceeded = false;
+        }
+      }
+      throw error;
+    }
+    if (callbackError !== noCallbackError) throw callbackError;
   };
   const finished = enter(0).catch((error) => {
     acquiredReject(error);
     throw error;
   });
-  return { acquired, finished, release };
+  const releasedSuccessfully = finished.then(
+    () => true,
+    () => releasesSucceeded,
+  );
+  return { acquired, finished, release, releasedSuccessfully };
 };
 
 const withMembersHeld = async <T>(
@@ -279,22 +405,429 @@ const withCentralHeld = async <T>(
   );
 };
 
+const isStrictArtifactPathAncestor = (ancestor: string, target: string): boolean => {
+  const displacement = relative(ancestor, target);
+  return (
+    displacement !== '' &&
+    displacement !== '..' &&
+    !displacement.startsWith(`..${sep}`) &&
+    !isAbsolute(displacement)
+  );
+};
+
+const artifactGroupTargetTopologyIsSafe = (pair: ResolvedArtifactPair): boolean => {
+  const manifest = pair.file.path;
+  const lock = pair.lockfile.path;
+  if (
+    manifest === lock ||
+    isStrictArtifactPathAncestor(manifest, lock) ||
+    isStrictArtifactPathAncestor(lock, manifest)
+  ) {
+    return false;
+  }
+  const manifestSidecar = `${manifest}.lock`;
+  const lockSidecar = `${lock}.lock`;
+  return !(
+    manifestSidecar === lock ||
+    isStrictArtifactPathAncestor(manifestSidecar, lock) ||
+    lockSidecar === manifest ||
+    isStrictArtifactPathAncestor(lockSidecar, manifest)
+  );
+};
+
+const observeArtifactGroupScaffoldDirectory = async (
+  ports: ArtifactCoordinatorPorts,
+  path: string,
+): Promise<ArtifactGroupScaffoldDirectoryWitness> => {
+  const observed = await ports.observe(path);
+  if (
+    observed.kind !== 'directory' ||
+    observed.identity === null ||
+    observed.mode === null ||
+    observed.parent.state !== 'present' ||
+    observed.parent.path !== dirname(path)
+  ) {
+    throw artifactMutationError('invalid-file-kind', { path });
+  }
+  return Object.freeze({
+    path,
+    identity: observed.identity,
+    mode: observed.mode,
+    parentPath: observed.parent.path,
+    parentIdentity: observed.parent.identity,
+  });
+};
+
+const artifactGroupScaffoldDirectoryStillMatches = async (
+  ports: ArtifactCoordinatorPorts,
+  witness: ArtifactGroupScaffoldDirectoryWitness,
+): Promise<boolean> => {
+  const observed = await ports.observe(witness.path);
+  return (
+    observed.kind === 'directory' &&
+    observed.identity === witness.identity &&
+    observed.mode === witness.mode &&
+    observed.parent.state === 'present' &&
+    observed.parent.path === witness.parentPath &&
+    observed.parent.identity === witness.parentIdentity
+  );
+};
+
+const cleanupArtifactGroupLeaseScaffold = async (
+  scaffold: ArtifactGroupScaffoldState,
+): Promise<void> => {
+  if (scaffold.retain) return;
+  const { ports, barrier } = scaffold.leaseState;
+  for (const witness of [...scaffold.anchors.values(), ...scaffold.created]) {
+    if (!(await artifactGroupScaffoldDirectoryStillMatches(ports, witness))) {
+      scaffold.retain = true;
+      return;
+    }
+  }
+  for (const directory of [...scaffold.created].reverse()) {
+    if (!(await artifactGroupScaffoldDirectoryStillMatches(ports, directory))) {
+      scaffold.retain = true;
+      return;
+    }
+    try {
+      await ports.removeEmptyDirectory(directory.path);
+    } catch (error) {
+      const code = nodeCode(error);
+      if (code === 'ENOENT' || code === 'ENOTEMPTY' || code === 'EEXIST') {
+        scaffold.retain = true;
+        return;
+      }
+      throw error;
+    }
+    await barrier.emit({
+      kind: 'mutation-returned',
+      cursor: 'provisioning',
+      operation: 'remove-directory',
+      object: 'parent',
+    });
+    await ports.fsyncDirectory(directory.parentPath);
+    await barrier.emit({
+      kind: 'mutation-returned',
+      cursor: 'provisioning',
+      operation: 'fsync-directory',
+      object: 'parent',
+    });
+  }
+};
+
+const assertArtifactGroupScaffoldPreparationCurrent = (
+  leaseState: ArtifactGroupLeaseState,
+  scaffold: ArtifactGroupScaffoldState,
+): void => {
+  if (
+    !leaseState.active ||
+    leaseState.scaffold !== scaffold ||
+    leaseState.memberState !== 'unrequested' ||
+    scaffold.status !== 'preparing'
+  ) {
+    throw artifactMutationError('invalid-request');
+  }
+};
+
+export const prepareArtifactGroupLeaseScaffold = async (
+  lease: ArtifactGroupLockLease,
+  memberTargets: readonly string[],
+): Promise<Result<ArtifactGroupLeaseScaffoldReceipt, ArtifactMutationError>> => {
+  const leaseState = artifactGroupLeaseStates.get(lease);
+  if (
+    leaseState === undefined ||
+    !leaseState.active ||
+    leaseState.memberState !== 'unrequested' ||
+    leaseState.commitActive ||
+    leaseState.inFlight !== null ||
+    leaseState.scaffold !== null ||
+    !artifactGroupTargetTopologyIsSafe(leaseState.pair)
+  ) {
+    return err(artifactMutationError('invalid-request'));
+  }
+  const targets = canonicalMembers(memberTargets);
+  if (
+    targets.length !== leaseState.targets.length ||
+    targets.some((target, index) => target !== leaseState.targets[index])
+  ) {
+    return err(artifactMutationError('invalid-request'));
+  }
+  if (leaseState.signal?.aborted) return err(cancellation('unobserved-before'));
+
+  const receipt = Object.freeze({}) as ArtifactGroupLeaseScaffoldReceipt;
+  const scaffold: ArtifactGroupScaffoldState = {
+    leaseState,
+    created: [],
+    createdByPath: new Map(),
+    anchors: new Map(),
+    targets: new Map(),
+    preparation: null,
+    status: 'preparing',
+    consumed: false,
+    retain: false,
+  };
+  leaseState.scaffold = scaffold;
+  artifactGroupScaffoldReceipts.set(receipt, scaffold);
+
+  const preparation = (async (): Promise<
+    Result<ArtifactGroupLeaseScaffoldReceipt, ArtifactMutationError>
+  > => {
+    try {
+      const candidates = new Set<string>();
+      const knownDirectories = new Map<string, ArtifactGroupScaffoldDirectoryWitness>();
+      for (const targetPath of leaseState.targets) {
+        const observed = await leaseState.ports.observe(targetPath);
+        if (observed.kind !== 'absent' && observed.kind !== 'file') {
+          throw artifactMutationError('invalid-file-kind', { path: targetPath });
+        }
+        if (observed.parent.state === 'present') {
+          scaffold.targets.set(targetPath, {
+            targetPath,
+            parentPath: dirname(targetPath),
+            anchorPath: null,
+            chainPaths: Object.freeze([]),
+            eligible: false,
+          });
+          continue;
+        }
+
+        const anchor = await observeArtifactGroupScaffoldDirectory(
+          leaseState.ports,
+          observed.parent.nearestExistingPath,
+        );
+        if (anchor.identity !== observed.parent.nearestExistingIdentity) {
+          throw artifactMutationError('external-writer-conflict', {
+            path: observed.parent.nearestExistingPath,
+          });
+        }
+        const priorAnchor = scaffold.anchors.get(anchor.path);
+        if (
+          priorAnchor !== undefined &&
+          (priorAnchor.identity !== anchor.identity || priorAnchor.mode !== anchor.mode)
+        ) {
+          throw artifactMutationError('external-writer-conflict', { path: anchor.path });
+        }
+        scaffold.anchors.set(anchor.path, priorAnchor ?? anchor);
+        knownDirectories.set(anchor.path, priorAnchor ?? anchor);
+
+        const chainPaths: string[] = [];
+        let cursor = anchor.path;
+        for (const segment of observed.parent.missingSegments) {
+          cursor = join(cursor, segment);
+          chainPaths.push(cursor);
+          candidates.add(cursor);
+        }
+        scaffold.targets.set(targetPath, {
+          targetPath,
+          parentPath: dirname(targetPath),
+          anchorPath: anchor.path,
+          chainPaths: Object.freeze(chainPaths),
+          eligible: observed.kind === 'absent',
+        });
+      }
+
+      const orderedCandidates = [...candidates].sort((left, right) => {
+        const leftDepth = left.split(sep).length;
+        const rightDepth = right.split(sep).length;
+        return leftDepth === rightDepth ? compareUtf8(left, right) : leftDepth - rightDepth;
+      });
+      for (const path of orderedCandidates) {
+        if (leaseState.signal?.aborted) throw cancellation('unobserved-before');
+        assertArtifactGroupScaffoldPreparationCurrent(leaseState, scaffold);
+        const parentPath = dirname(path);
+        const parent = knownDirectories.get(parentPath);
+        if (
+          parent === undefined ||
+          !(await artifactGroupScaffoldDirectoryStillMatches(leaseState.ports, parent))
+        ) {
+          throw artifactMutationError('external-writer-conflict', { path: parentPath });
+        }
+        assertArtifactGroupScaffoldPreparationCurrent(leaseState, scaffold);
+        try {
+          await leaseState.ports.makeDirectoryExclusive(path, 0o700);
+        } catch (error) {
+          if (nodeCode(error) !== 'EEXIST') throw error;
+          const existing = await observeArtifactGroupScaffoldDirectory(leaseState.ports, path);
+          if (existing.parentPath !== parent.path || existing.parentIdentity !== parent.identity) {
+            throw artifactMutationError('external-writer-conflict', { path });
+          }
+          knownDirectories.set(path, existing);
+          for (const target of scaffold.targets.values()) {
+            if (target.chainPaths.includes(path)) target.eligible = false;
+          }
+          assertArtifactGroupScaffoldPreparationCurrent(leaseState, scaffold);
+          continue;
+        }
+
+        const created = await observeArtifactGroupScaffoldDirectory(leaseState.ports, path);
+        scaffold.created.push(created);
+        scaffold.createdByPath.set(path, created);
+        knownDirectories.set(path, created);
+        assertArtifactGroupScaffoldPreparationCurrent(leaseState, scaffold);
+        if (
+          created.mode !== 0o700 ||
+          created.parentPath !== parent.path ||
+          created.parentIdentity !== parent.identity
+        ) {
+          throw artifactMutationError('external-writer-conflict', { path });
+        }
+        await leaseState.barrier.emit({
+          kind: 'mutation-returned',
+          cursor: 'provisioning',
+          operation: 'create-directory-exclusive',
+          object: 'parent',
+        });
+        assertArtifactGroupScaffoldPreparationCurrent(leaseState, scaffold);
+        await leaseState.ports.fsyncDirectory(parentPath);
+        assertArtifactGroupScaffoldPreparationCurrent(leaseState, scaffold);
+        await leaseState.barrier.emit({
+          kind: 'mutation-returned',
+          cursor: 'provisioning',
+          operation: 'fsync-directory',
+          object: 'parent',
+        });
+      }
+
+      for (const target of scaffold.targets.values()) {
+        if ((await leaseState.ports.observe(target.targetPath)).kind !== 'absent') {
+          target.eligible = false;
+        }
+      }
+      if (leaseState.signal?.aborted) throw cancellation('unobserved-before');
+      assertArtifactGroupScaffoldPreparationCurrent(leaseState, scaffold);
+      scaffold.status = 'ready';
+      return ok(receipt);
+    } catch (error) {
+      if (scaffold.status === 'preparing') scaffold.status = 'failed';
+      return err(asResultError(error));
+    }
+  })();
+  scaffold.preparation = preparation;
+  return preparation;
+};
+
+const artifactGroupScaffoldAuthenticationIsCurrent = (
+  leaseState: ArtifactGroupLeaseState,
+  scaffold: ArtifactGroupScaffoldState,
+): boolean =>
+  leaseState.scaffold === scaffold &&
+  leaseState.active &&
+  leaseState.memberState === 'held' &&
+  !leaseState.commitActive &&
+  leaseState.inFlight === null &&
+  scaffold.status === 'ready' &&
+  !scaffold.consumed &&
+  !scaffold.retain;
+
+export const authenticateArtifactGroupLeaseScaffold = async (
+  lease: ArtifactGroupLockLease,
+  receipt: ArtifactGroupLeaseScaffoldReceipt,
+  targetPath: string,
+): Promise<Result<ArtifactGroupLeaseScaffoldProof | null, ArtifactMutationError>> => {
+  const leaseState = artifactGroupLeaseStates.get(lease);
+  const scaffold = artifactGroupScaffoldReceipts.get(receipt);
+  const target = scaffold?.targets.get(targetPath);
+  if (
+    leaseState === undefined ||
+    scaffold === undefined ||
+    scaffold.leaseState !== leaseState ||
+    !artifactGroupScaffoldAuthenticationIsCurrent(leaseState, scaffold) ||
+    target === undefined ||
+    !leaseState.targets.includes(targetPath)
+  ) {
+    return err(artifactMutationError('invalid-request'));
+  }
+  if (!target.eligible || target.anchorPath === null) return ok(null);
+  const directParent = scaffold.createdByPath.get(target.parentPath);
+  const anchor = scaffold.anchors.get(target.anchorPath);
+  if (directParent === undefined || anchor === undefined) return ok(null);
+
+  try {
+    if (!(await artifactGroupScaffoldDirectoryStillMatches(leaseState.ports, anchor))) {
+      if (!artifactGroupScaffoldAuthenticationIsCurrent(leaseState, scaffold)) {
+        return err(artifactMutationError('invalid-request'));
+      }
+      return ok(null);
+    }
+    for (const path of target.chainPaths) {
+      const created = scaffold.createdByPath.get(path);
+      if (
+        created === undefined ||
+        created.mode !== 0o700 ||
+        !(await artifactGroupScaffoldDirectoryStillMatches(leaseState.ports, created))
+      ) {
+        if (!artifactGroupScaffoldAuthenticationIsCurrent(leaseState, scaffold)) {
+          return err(artifactMutationError('invalid-request'));
+        }
+        return ok(null);
+      }
+    }
+    const observedTarget = await leaseState.ports.observe(targetPath);
+    if (
+      observedTarget.kind !== 'absent' ||
+      observedTarget.parent.state !== 'present' ||
+      observedTarget.parent.path !== target.parentPath ||
+      observedTarget.parent.identity !== directParent.identity
+    ) {
+      if (!artifactGroupScaffoldAuthenticationIsCurrent(leaseState, scaffold)) {
+        return err(artifactMutationError('invalid-request'));
+      }
+      return ok(null);
+    }
+    const currentParent = await leaseState.ports.observe(target.parentPath);
+    if (
+      currentParent.kind !== 'directory' ||
+      currentParent.identity !== directParent.identity ||
+      currentParent.mode !== 0o700 ||
+      currentParent.parent.state !== 'present' ||
+      currentParent.parent.path !== directParent.parentPath ||
+      currentParent.parent.identity !== directParent.parentIdentity
+    ) {
+      if (!artifactGroupScaffoldAuthenticationIsCurrent(leaseState, scaffold)) {
+        return err(artifactMutationError('invalid-request'));
+      }
+      return ok(null);
+    }
+    if (!artifactGroupScaffoldAuthenticationIsCurrent(leaseState, scaffold)) {
+      return err(artifactMutationError('invalid-request'));
+    }
+    return ok(
+      Object.freeze({
+        targetPath,
+        parentPath: target.parentPath,
+        parentIdentity: currentParent.identity,
+        parentMode: currentParent.mode,
+      }) as ArtifactGroupLeaseScaffoldProof,
+    );
+  } catch (error) {
+    return err(asResultError(error));
+  }
+};
+
 export const withArtifactGroupLock = async <T>(
   ports: ArtifactCoordinatorPorts,
   pair: ResolvedArtifactPair,
   signal: AbortSignal | undefined,
   operation: (lease: ArtifactGroupLockLease) => Promise<T>,
 ): Promise<T> => {
-  const targets = canonicalMembers([pair.file.path, pair.lockfile.path]);
+  const ownedPair = ownArtifactPair(pair);
+  const targets = canonicalMembers([ownedPair.file.path, ownedPair.lockfile.path]);
   targets.forEach(validatePath);
   try {
     return await withCentralHeld(ports, signal, async (operationId, barrier) => {
-      await resolveOverlaps(ports, targets, operationId, barrier, signal);
+      const recovered = await resolveOverlaps(ports, targets, operationId, barrier, signal);
       let held: HeldLocks | null = null;
-      let called = false;
       const lease: ArtifactGroupLockLease = Object.freeze({
         acquireCompatibilityTargets: async (requested: readonly string[]) => {
-          if (called) throw artifactMutationError('invalid-request');
+          const state = artifactGroupLeaseStates.get(lease);
+          if (
+            state === undefined ||
+            !state.active ||
+            state.memberState !== 'unrequested' ||
+            (state.scaffold !== null && state.scaffold.status !== 'ready')
+          ) {
+            throw artifactMutationError('invalid-request');
+          }
           const members = canonicalMembers(requested);
           if (
             members.length === 0 ||
@@ -302,19 +835,69 @@ export const withArtifactGroupLock = async <T>(
             members.length !== targets.length
           )
             throw artifactMutationError('invalid-request');
-          called = true;
-          held = beginHeldLocks(ports, members, operationId, signal, barrier);
-          await held.acquired;
+          state.memberState = 'acquiring';
+          try {
+            held = beginHeldLocks(ports, members, operationId, signal, barrier);
+            await held.acquired;
+            state.memberState = 'held';
+          } catch (error) {
+            state.memberState = 'failed';
+            throw error;
+          }
         },
       });
-      try {
-        return await operation(lease);
-      } finally {
-        if (held !== null) {
-          (held as HeldLocks).release();
-          await (held as HeldLocks).finished;
+      const state: ArtifactGroupLeaseState = {
+        ports,
+        pair: ownedPair,
+        targets,
+        operationId,
+        barrier,
+        signal,
+        usedIds: new Set<string>(),
+        active: true,
+        memberState: 'unrequested',
+        commitActive: false,
+        recoveredPending: recovered,
+        inFlight: null,
+        scaffold: null,
+      };
+      artifactGroupLeaseStates.set(lease, state);
+      const outcome = await operation(lease).then(
+        (value) => Object.freeze({ ok: true as const, value }),
+        (error: unknown) => Object.freeze({ ok: false as const, error }),
+      );
+      state.active = false;
+      const preparingScaffold = state.scaffold;
+      if (preparingScaffold !== null) preparingScaffold.status = 'expired';
+      if (preparingScaffold !== null && preparingScaffold.preparation !== null) {
+        await preparingScaffold.preparation;
+      }
+      if (state.inFlight !== null) await state.inFlight;
+      const scaffold = state.scaffold;
+      let heldFailure: unknown = null;
+      let membersReleasedSuccessfully = true;
+      if (held !== null) {
+        (held as HeldLocks).release();
+        heldFailure = await (held as HeldLocks).finished.then(
+          () => null,
+          (error) => error,
+        );
+        membersReleasedSuccessfully = await (held as HeldLocks).releasedSuccessfully;
+      }
+      let cleanupFailure: unknown = null;
+      if (membersReleasedSuccessfully) {
+        state.memberState = 'released';
+        if (scaffold !== null) {
+          cleanupFailure = await cleanupArtifactGroupLeaseScaffold(scaffold).then(
+            () => null,
+            (error) => error,
+          );
         }
       }
+      if (heldFailure !== null) throw heldFailure;
+      if (cleanupFailure !== null) throw cleanupFailure;
+      if (!outcome.ok) throw outcome.error;
+      return outcome.value;
     });
   } catch (error) {
     if (nodeCode(error) === 'ABORT_ERR') throw cancellation('unobserved-before');
@@ -2335,18 +2918,19 @@ const commitRoles = async (
   roles: readonly DesiredRole[],
   barrier: BarrierEmitter,
   usedIds: Set<string>,
+  observeAllParents: boolean,
   signal?: AbortSignal,
 ): Promise<PairRevisions> => {
   const changed = roles.filter((entry) => entry.changed);
   const transactionId = allocateId(ports, 'artifact-transaction', usedIds);
   const parentIdentities = new Map<string, string>();
   const ownership = new Map<string, string>();
-  for (const role of changed) {
+  for (const role of observeAllParents ? roles : changed) {
     const observed = await ports.observe(role.path);
     if (observed.parent.state !== 'present')
       throw artifactMutationError('external-writer-conflict');
     parentIdentities.set(dirname(role.path), observed.parent.identity);
-    if (!ownership.has(dirname(role.path))) {
+    if (role.changed && !ownership.has(dirname(role.path))) {
       ownership.set(dirname(role.path), allocateId(ports, 'artifact-ownership', usedIds));
     }
   }
@@ -2493,105 +3077,199 @@ const asResultError = (error: unknown): ArtifactMutationError => {
   return nodeErrorToArtifactMutationError(error);
 };
 
+const commitArtifactPairWithinAuthority = async (
+  ports: ArtifactCoordinatorPorts,
+  request: ArtifactPairMutationRequest,
+  paths: readonly string[],
+  operationId: string,
+  barrier: BarrierEmitter,
+  usedIds: Set<string>,
+  recovered: boolean,
+  membersAlreadyHeld: boolean,
+): Promise<Result<ArtifactPairMutationResult, ArtifactMutationError>> => {
+  const allowOpaqueLock =
+    request.lock.kind === 'replace-invalid' || request.lock.kind === 'replace-exact';
+  const provisional = await observeArtifactPair(
+    ports,
+    request.pair.file.path,
+    request.pair.lockfile.path,
+    { allowOpaqueLock },
+  );
+  if ('code' in provisional) throw provisional;
+  validateLockPrecondition(provisional, request, 'provisional');
+  const provisionalRoles = makeDesiredRoles(request, provisional);
+  if (membersAlreadyHeld && request.signal?.aborted) throw cancellation('unobserved-before');
+  if (provisionalRoles.every((role) => !role.changed)) {
+    return ok(
+      Object.freeze({
+        outcome: 'unchanged' as const,
+        externalBytesReplayed: false,
+        manifestRevision: copyArtifactFileRevision(provisional.manifest),
+        lockRevision: copyArtifactFileRevision(provisional.lock),
+      }),
+    );
+  }
+  for (const role of provisionalRoles.filter((entry) => entry.changed)) {
+    await provisionParent(ports, role.before, barrier);
+  }
+  if (request.signal?.aborted) throw cancellation('unobserved-before');
+
+  const commitFresh = async (): Promise<
+    Result<ArtifactPairMutationResult, ArtifactMutationError>
+  > => {
+    const fresh = await observeArtifactPair(
+      ports,
+      request.pair.file.path,
+      request.pair.lockfile.path,
+      { allowOpaqueLock },
+    );
+    if ('code' in fresh) {
+      if (
+        fresh.reason === 'invalid-lock' ||
+        fresh.reason === 'artifact-alias' ||
+        (fresh.reason === 'invalid-file-kind' && fresh.path === request.pair.lockfile.path)
+      ) {
+        throw artifactMutationError('external-writer-conflict', { role: 'lock' });
+      }
+      throw fresh;
+    }
+    validateLockPrecondition(fresh, request, 'fresh');
+    const replay = classifyFreshSnapshot(provisional, fresh, provisionalRoles);
+    if (replay.convergedToDesired) {
+      return ok(
+        Object.freeze({
+          outcome: 'unchanged' as const,
+          externalBytesReplayed: false,
+          manifestRevision: copyArtifactFileRevision(fresh.manifest),
+          lockRevision: copyArtifactFileRevision(fresh.lock),
+        }),
+      );
+    }
+    const roles = makeDesiredRoles(request, fresh);
+    assertStableDesiredPlan(provisionalRoles, roles);
+    if (roles.every((role) => !role.changed)) {
+      return ok(
+        Object.freeze({
+          outcome: 'unchanged' as const,
+          externalBytesReplayed: replay.replayedManifestBytes,
+          manifestRevision: copyArtifactFileRevision(fresh.manifest),
+          lockRevision: copyArtifactFileRevision(fresh.lock),
+        }),
+      );
+    }
+    if (request.signal?.aborted) throw cancellation('before', fresh);
+    const final = await commitRoles(
+      ports,
+      { manifest: request.pair.file.path, lock: request.pair.lockfile.path },
+      paths,
+      roles,
+      barrier,
+      usedIds,
+      membersAlreadyHeld,
+      request.signal,
+    );
+    return ok(
+      Object.freeze({
+        outcome: recovered ? ('recovered-and-committed' as const) : ('committed' as const),
+        externalBytesReplayed: replay.replayedManifestBytes,
+        manifestRevision: copyArtifactFileRevision(final.manifest),
+        lockRevision: copyArtifactFileRevision(final.lock),
+      }),
+    );
+  };
+
+  return membersAlreadyHeld
+    ? commitFresh()
+    : withMembersHeld(ports, paths, operationId, request.signal, barrier, commitFresh);
+};
+
 export const commitArtifactPair = async (
   ports: ArtifactCoordinatorPorts,
   request: ArtifactPairMutationRequest,
 ): Promise<Result<ArtifactPairMutationResult, ArtifactMutationError>> => {
   try {
-    const allowOpaqueLock =
-      request.lock.kind === 'replace-invalid' || request.lock.kind === 'replace-exact';
     const paths = canonicalMembers([request.pair.file.path, request.pair.lockfile.path]);
     paths.forEach(validatePath);
     const usedIds = new Set<string>();
     return await withCentralHeld(ports, request.signal, async (operationId, barrier) => {
       const recovered = await resolveOverlaps(ports, paths, operationId, barrier, request.signal);
-      const provisional = await observeArtifactPair(
+      return commitArtifactPairWithinAuthority(
         ports,
-        request.pair.file.path,
-        request.pair.lockfile.path,
-        { allowOpaqueLock },
+        request,
+        paths,
+        operationId,
+        barrier,
+        usedIds,
+        recovered,
+        false,
       );
-      if ('code' in provisional) throw provisional;
-      validateLockPrecondition(provisional, request, 'provisional');
-      const provisionalRoles = makeDesiredRoles(request, provisional);
-      if (provisionalRoles.every((role) => !role.changed)) {
-        return ok(
-          Object.freeze({
-            outcome: 'unchanged' as const,
-            externalBytesReplayed: false,
-            manifestRevision: copyArtifactFileRevision(provisional.manifest),
-            lockRevision: copyArtifactFileRevision(provisional.lock),
-          }),
-        );
-      }
-      for (const role of provisionalRoles.filter((entry) => entry.changed)) {
-        await provisionParent(ports, role.before, barrier);
-      }
-      if (request.signal?.aborted) throw cancellation('unobserved-before');
-      return withMembersHeld(ports, paths, operationId, request.signal, barrier, async () => {
-        const fresh = await observeArtifactPair(
-          ports,
-          request.pair.file.path,
-          request.pair.lockfile.path,
-          { allowOpaqueLock },
-        );
-        if ('code' in fresh) {
-          if (
-            fresh.reason === 'invalid-lock' ||
-            fresh.reason === 'artifact-alias' ||
-            (fresh.reason === 'invalid-file-kind' && fresh.path === request.pair.lockfile.path)
-          ) {
-            throw artifactMutationError('external-writer-conflict', { role: 'lock' });
-          }
-          throw fresh;
-        }
-        validateLockPrecondition(fresh, request, 'fresh');
-        const replay = classifyFreshSnapshot(provisional, fresh, provisionalRoles);
-        if (replay.convergedToDesired) {
-          return ok(
-            Object.freeze({
-              outcome: 'unchanged' as const,
-              externalBytesReplayed: false,
-              manifestRevision: copyArtifactFileRevision(fresh.manifest),
-              lockRevision: copyArtifactFileRevision(fresh.lock),
-            }),
-          );
-        }
-        const roles = makeDesiredRoles(request, fresh);
-        assertStableDesiredPlan(provisionalRoles, roles);
-        if (roles.every((role) => !role.changed)) {
-          return ok(
-            Object.freeze({
-              outcome: 'unchanged' as const,
-              externalBytesReplayed: replay.replayedManifestBytes,
-              manifestRevision: copyArtifactFileRevision(fresh.manifest),
-              lockRevision: copyArtifactFileRevision(fresh.lock),
-            }),
-          );
-        }
-        if (request.signal?.aborted) throw cancellation('before', fresh);
-        const final = await commitRoles(
-          ports,
-          { manifest: request.pair.file.path, lock: request.pair.lockfile.path },
-          paths,
-          roles,
-          barrier,
-          usedIds,
-          request.signal,
-        );
-        return ok(
-          Object.freeze({
-            outcome: recovered ? ('recovered-and-committed' as const) : ('committed' as const),
-            externalBytesReplayed: replay.replayedManifestBytes,
-            manifestRevision: copyArtifactFileRevision(final.manifest),
-            lockRevision: copyArtifactFileRevision(final.lock),
-          }),
-        );
-      });
     });
   } catch (error) {
     return err(asResultError(error));
   }
+};
+
+export const commitArtifactPairWithLease = async (
+  lease: ArtifactGroupLockLease,
+  request: ArtifactPairMutationRequest,
+): Promise<Result<ArtifactPairMutationResult, ArtifactMutationError>> => {
+  const state = artifactGroupLeaseStates.get(lease);
+  if (
+    state === undefined ||
+    !state.active ||
+    state.memberState !== 'held' ||
+    state.commitActive ||
+    state.inFlight !== null ||
+    request.signal !== state.signal ||
+    !sameArtifactPair(request.pair, state.pair)
+  ) {
+    return err(artifactMutationError('invalid-request'));
+  }
+  if (state.signal?.aborted) return err(cancellation('unobserved-before'));
+  const paths = canonicalMembers([request.pair.file.path, request.pair.lockfile.path]);
+  if (
+    paths.length !== state.targets.length ||
+    paths.some((path, index) => path !== state.targets[index])
+  ) {
+    return err(artifactMutationError('invalid-request'));
+  }
+
+  if (state.scaffold !== null) state.scaffold.consumed = true;
+  state.commitActive = true;
+  const execution = (async () => {
+    try {
+      const result = await commitArtifactPairWithinAuthority(
+        state.ports,
+        request,
+        state.targets,
+        state.operationId,
+        state.barrier,
+        state.usedIds,
+        state.recoveredPending,
+        true,
+      );
+      if (
+        (result.ok && result.value.outcome !== 'unchanged') ||
+        (!result.ok && result.error.durableState === 'after')
+      ) {
+        state.recoveredPending = false;
+        if (state.scaffold !== null) state.scaffold.retain = true;
+      }
+      return result;
+    } catch (error) {
+      const mapped = asResultError(error);
+      if (mapped.durableState === 'after') {
+        state.recoveredPending = false;
+        if (state.scaffold !== null) state.scaffold.retain = true;
+      }
+      return err(mapped);
+    } finally {
+      state.commitActive = false;
+      state.inFlight = null;
+    }
+  })();
+  state.inFlight = execution;
+  return execution;
 };
 
 export const readCoordinatedArtifactPair = async (
@@ -2719,6 +3397,7 @@ export const updateCoordinatedHumanFile = async (
             Object.freeze([role]),
             barrier,
             usedIds,
+            false,
             request.signal,
           );
           return ok(Object.freeze({ outcome: 'committed' as const, revision: final.manifest }));
