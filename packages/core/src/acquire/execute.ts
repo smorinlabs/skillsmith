@@ -116,7 +116,6 @@ import {
 import type {
   AcquisitionArtifactSelection,
   AcquisitionPorts,
-  AcquisitionSaveMode,
   InstallDeps,
   InstallOptions,
   InstallScope,
@@ -126,9 +125,9 @@ import type {
 
 export type AcquireExecutionInput = PlacementExecutionInput;
 
-export type AcquisitionArtifactDestinationPortsV1 = ArtifactDiscoveryPorts & ArtifactPairPorts;
+type AcquisitionArtifactDestinationPortsV1 = ArtifactDiscoveryPorts & ArtifactPairPorts;
 
-export interface ResolveAcquisitionArtifactDestinationInputV1 {
+interface ResolveAcquisitionArtifactDestinationInputV1 {
   readonly ports: AcquisitionArtifactDestinationPortsV1;
   readonly projectContext: ProjectContext;
   readonly names: readonly string[];
@@ -143,16 +142,36 @@ type SelectedAcquisitionArtifactSelection = Extract<
   AcquisitionArtifactSelection,
   Readonly<{ outcome: 'selected' }>
 >;
-type NoneAcquisitionArtifactSelection = Extract<
-  AcquisitionArtifactSelection,
-  Readonly<{ outcome: 'none' }>
->;
 type RefusedAcquisitionArtifactSelection = Extract<
   AcquisitionArtifactSelection,
   Readonly<{ outcome: 'refused' }>
 >;
 
-export type AcquisitionArtifactDestinationResolutionV1 =
+type LiveOnlyAcquisitionArtifactSelection = Readonly<{
+  outcome: 'none';
+  reason: 'no-save';
+}>;
+type DesiredStateNoneAcquisitionArtifactSelection = Readonly<{
+  outcome: 'none';
+  reason: 'no-owner' | 'pre-resolution-failure';
+}>;
+type AcquisitionArtifactDestinationRefusalCauseV1 =
+  | Readonly<{
+      kind: 'discovery';
+      code: ArtifactDiscoveryError['code'];
+      message: string;
+      exitClass: ArtifactDiscoveryError['exitClass'];
+      paths?: readonly string[];
+    }>
+  | Readonly<{
+      kind: 'pair';
+      code: ArtifactPairError['code'];
+      message: string;
+      exitClass: ArtifactPairError['exitClass'];
+      paths?: readonly string[];
+    }>;
+
+type AcquisitionArtifactDestinationResolutionV1 =
   | Readonly<{
       outcome: 'selected';
       saveMode: 'desired-state';
@@ -161,37 +180,71 @@ export type AcquisitionArtifactDestinationResolutionV1 =
     }>
   | Readonly<{
       outcome: 'none';
-      saveMode: AcquisitionSaveMode;
+      saveMode: 'live-only';
       pair: null;
-      selection: NoneAcquisitionArtifactSelection;
+      selection: LiveOnlyAcquisitionArtifactSelection;
+    }>
+  | Readonly<{
+      outcome: 'none';
+      saveMode: 'desired-state';
+      pair: null;
+      selection: DesiredStateNoneAcquisitionArtifactSelection;
     }>
   | Readonly<{
       outcome: 'refused';
       saveMode: 'desired-state';
       pair: null;
       selection: RefusedAcquisitionArtifactSelection;
+      cause: AcquisitionArtifactDestinationRefusalCauseV1;
     }>;
 
-const noArtifactDestination = (
-  saveMode: AcquisitionSaveMode,
-  reason: NoneAcquisitionArtifactSelection['reason'],
+const liveOnlyArtifactDestination = (): AcquisitionArtifactDestinationResolutionV1 =>
+  Object.freeze({
+    outcome: 'none' as const,
+    saveMode: 'live-only' as const,
+    pair: null,
+    selection: Object.freeze({ outcome: 'none' as const, reason: 'no-save' as const }),
+  });
+
+const desiredStateWithoutArtifact = (
+  reason: DesiredStateNoneAcquisitionArtifactSelection['reason'],
 ): AcquisitionArtifactDestinationResolutionV1 =>
   Object.freeze({
     outcome: 'none' as const,
-    saveMode,
+    saveMode: 'desired-state' as const,
     pair: null,
     selection: Object.freeze({ outcome: 'none' as const, reason }),
   });
 
-const refusalCandidates = (paths: readonly string[] | undefined): string[] => {
-  const candidates = [...new Set(paths ?? [])];
-  Object.freeze(candidates);
-  return candidates;
-};
+const refusalCandidates = (paths: readonly string[] | undefined): string[] => [
+  ...new Set(paths ?? []),
+];
+
+const frozenCausePaths = (paths: readonly string[]): readonly string[] => Object.freeze([...paths]);
+
+const discoveryCause = (
+  error: ArtifactDiscoveryError,
+): AcquisitionArtifactDestinationRefusalCauseV1 =>
+  Object.freeze({
+    kind: 'discovery' as const,
+    code: error.code,
+    message: error.message,
+    exitClass: error.exitClass,
+    ...(error.paths === undefined ? {} : { paths: frozenCausePaths(error.paths) }),
+  });
+
+const pairCause = (error: ArtifactPairError): AcquisitionArtifactDestinationRefusalCauseV1 =>
+  Object.freeze({
+    kind: 'pair' as const,
+    code: error.code,
+    message: error.message,
+    exitClass: error.exitClass,
+    ...(error.paths === undefined ? {} : { paths: frozenCausePaths(error.paths) }),
+  });
 
 const refusedArtifactDestination = (
   reason: RefusedAcquisitionArtifactSelection['reason'],
-  paths?: readonly string[],
+  cause: AcquisitionArtifactDestinationRefusalCauseV1,
 ): AcquisitionArtifactDestinationResolutionV1 =>
   Object.freeze({
     outcome: 'refused' as const,
@@ -200,8 +253,9 @@ const refusedArtifactDestination = (
     selection: Object.freeze({
       outcome: 'refused' as const,
       reason,
-      candidates: refusalCandidates(paths),
+      candidates: refusalCandidates(cause.paths),
     }),
+    cause,
   });
 
 const discoveryRefusal = (
@@ -213,7 +267,7 @@ const discoveryRefusal = (
       : error.code === 'manifest-owner-split'
         ? 'split-owner'
         : 'invalid-candidate',
-    error.paths,
+    discoveryCause(error),
   );
 
 const pairRefusal = (error: ArtifactPairError): AcquisitionArtifactDestinationResolutionV1 =>
@@ -221,8 +275,16 @@ const pairRefusal = (error: ArtifactPairError): AcquisitionArtifactDestinationRe
     error.code === 'artifact-selector-nonportable' || error.code === 'artifact-selector-escape'
       ? 'nonportable-path'
       : 'invalid-candidate',
-    error.paths,
+    pairCause(error),
   );
+
+const automaticUserLegacyError = (path: string): ArtifactDiscoveryError =>
+  Object.freeze({
+    code: 'manifest-candidate-invalid' as const,
+    exitClass: 'state' as const,
+    message: `automatic user manifest candidate cannot use the project-only legacy migration: ${path}`,
+    paths: Object.freeze([path]),
+  });
 
 const selectedByForDestination = (
   snapshot: ArtifactDiscoverySnapshot,
@@ -255,14 +317,14 @@ const selectedByForDestination = (
 export const resolveAcquisitionArtifactDestinationV1 = async (
   input: ResolveAcquisitionArtifactDestinationInputV1,
 ): Promise<AcquisitionArtifactDestinationResolutionV1> => {
-  if (input.noSave === true) return noArtifactDestination('live-only', 'no-save');
+  if (input.noSave === true) return liveOnlyArtifactDestination();
 
   if (
     input.names.length === 0 ||
     input.names.some((name) => name.length === 0) ||
     new Set(input.names).size !== input.names.length
   ) {
-    return noArtifactDestination('desired-state', 'pre-resolution-failure');
+    return desiredStateWithoutArtifact('pre-resolution-failure');
   }
 
   const discovered = await discoverArtifactSnapshot(input.ports, input.projectContext, {
@@ -270,6 +332,16 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
     ...(input.scope === 'project' ? { explicitProjectScope: true } : {}),
   });
   if (!discovered.ok) return discoveryRefusal(discovered.error);
+
+  const automaticUserLegacy =
+    input.file === undefined
+      ? discovered.value.candidates.find(
+          (candidate) => candidate.role === 'user' && candidate.shape === 'legacy',
+        )
+      : undefined;
+  if (automaticUserLegacy !== undefined) {
+    return discoveryRefusal(automaticUserLegacyError(automaticUserLegacy.path));
+  }
 
   const destination = selectManifestDestination(discovered.value, {
     names: input.names,
@@ -282,7 +354,7 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
   const explicitAbsentRemove =
     input.mode === 'remove' && destination.value.kind === 'absent' && input.file !== undefined;
   if (destination.value.kind === 'absent' && !explicitAbsentRemove) {
-    return noArtifactDestination('desired-state', 'no-owner');
+    return desiredStateWithoutArtifact('no-owner');
   }
 
   const pair = await resolveArtifactPair(

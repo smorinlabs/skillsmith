@@ -111,6 +111,19 @@ const resolveDestination = (
     ...input,
   });
 
+const expectNoneTypeCorrelation = (
+  result: Awaited<ReturnType<typeof resolveAcquisitionArtifactDestinationV1>>,
+): void => {
+  if (result.outcome !== 'none') throw new Error('expected an acquisition none result');
+  if (result.saveMode === 'live-only') {
+    const reason: 'no-save' = result.selection.reason;
+    expect(reason).toBe('no-save');
+    return;
+  }
+  const reason: 'no-owner' | 'pre-resolution-failure' = result.selection.reason;
+  expect(['no-owner', 'pre-resolution-failure']).toContain(reason);
+};
+
 describe('acquisition artifact destination resolution', () => {
   test('returns live-only none before reading any portable port', async () => {
     let accesses = 0;
@@ -137,10 +150,11 @@ describe('acquisition artifact destination resolution', () => {
     expect(accesses).toBe(0);
     expect(Object.isFrozen(result)).toBeTrue();
     expect(Object.isFrozen(result.selection)).toBeTrue();
+    expectNoneTypeCorrelation(result);
   });
 
   test('returns pre-resolution none for empty or duplicate raw resolved names without discovery', async () => {
-    for (const names of [[], ['factor-scan', 'factor-scan']] as const) {
+    for (const names of [[], [''], ['factor-scan', 'factor-scan']] as const) {
       const ports = new DestinationPorts();
       const result = await resolveDestination(ports, { names });
       expect(result).toEqual({
@@ -150,6 +164,7 @@ describe('acquisition artifact destination resolution', () => {
         selection: { outcome: 'none', reason: 'pre-resolution-failure' },
       });
       expect(ports.calls).toEqual({ pathKind: [], readText: [], realpath: [] });
+      expectNoneTypeCorrelation(result);
     }
   });
 
@@ -186,7 +201,38 @@ describe('acquisition artifact destination resolution', () => {
       saveMode: 'desired-state',
       pair: null,
       selection: { outcome: 'refused', reason: 'invalid-candidate', candidates: [] },
+      cause: {
+        kind: 'pair',
+        code: 'artifact-lockfile-requires-file',
+        exitClass: 'usage',
+        message: '--lockfile requires an explicit --file selector',
+      },
     });
+  });
+
+  test('preserves exact nonportable pair failure while keeping the public selection coarse', async () => {
+    const foreignFile = 'C:\\portable\\team.toml';
+    const result = await resolveDestination(new DestinationPorts(), { file: foreignFile });
+    expect(result).toEqual({
+      outcome: 'refused',
+      saveMode: 'desired-state',
+      pair: null,
+      selection: {
+        outcome: 'refused',
+        reason: 'nonportable-path',
+        candidates: [foreignFile],
+      },
+      cause: {
+        kind: 'pair',
+        code: 'artifact-selector-nonportable',
+        exitClass: 'usage',
+        message: `artifact selector uses a foreign absolute-path form: ${foreignFile}`,
+        paths: [foreignFile],
+      },
+    });
+    if (result.outcome !== 'refused') throw new Error('expected nonportable refusal');
+    expect(Object.isFrozen(result.cause)).toBeTrue();
+    expect(Object.isFrozen(result.cause.paths)).toBeTrue();
   });
 
   test('selects a unique owner before scope defaults and identifies new user/project declarations', async () => {
@@ -257,6 +303,55 @@ describe('acquisition artifact destination resolution', () => {
       pair: { file: { path: PROJECT_MANIFEST } },
       selection: { outcome: 'selected', selectedBy: 'legacy-project-migration' },
     });
+
+    const rootLegacy = await resolveDestination(
+      new DestinationPorts({
+        [NESTED_MANIFEST]: { kind: 'file', text: manifest(['other']) },
+        [PROJECT_MANIFEST]: { kind: 'file', text: 'tool = "codex"\nscope = "project"\n' },
+      }),
+      {},
+      projectContext(NESTED_MANIFEST),
+    );
+    expect(rootLegacy).toMatchObject({
+      outcome: 'selected',
+      pair: { file: { path: PROJECT_MANIFEST } },
+      selection: { outcome: 'selected', selectedBy: 'legacy-project-migration' },
+    });
+  });
+
+  test('fails closed on automatic user legacy while preserving explicit-file precedence', async () => {
+    const legacyUser = 'tool = "codex"\nscope = "user"\n';
+    const automatic = await resolveDestination(
+      new DestinationPorts({ [USER_MANIFEST]: { kind: 'file', text: legacyUser } }),
+      { scope: 'user' },
+    );
+    expect(automatic).toEqual({
+      outcome: 'refused',
+      saveMode: 'desired-state',
+      pair: null,
+      selection: {
+        outcome: 'refused',
+        reason: 'invalid-candidate',
+        candidates: [USER_MANIFEST],
+      },
+      cause: {
+        kind: 'discovery',
+        code: 'manifest-candidate-invalid',
+        exitClass: 'state',
+        message: `automatic user manifest candidate cannot use the project-only legacy migration: ${USER_MANIFEST}`,
+        paths: [USER_MANIFEST],
+      },
+    });
+
+    const explicit = await resolveDestination(
+      new DestinationPorts({ [USER_MANIFEST]: { kind: 'file', text: legacyUser } }),
+      { scope: 'user', file: '../../state/team.toml' },
+    );
+    expect(explicit).toMatchObject({
+      outcome: 'selected',
+      pair: { file: { path: '/work/repo/state/team.toml' } },
+      selection: { outcome: 'selected', selectedBy: 'explicit-file' },
+    });
   });
 
   test('returns typed ambiguous, split, and invalid-candidate refusals', async () => {
@@ -277,7 +372,23 @@ describe('acquisition artifact destination resolution', () => {
         reason: 'ambiguous-owner',
         candidates: [PROJECT_MANIFEST, USER_MANIFEST],
       },
+      cause: {
+        kind: 'discovery',
+        code: 'manifest-owner-ambiguous',
+        exitClass: 'usage',
+        message: `declaration 'factor-scan' has multiple manifest owners: ${PROJECT_MANIFEST}, ${USER_MANIFEST}`,
+        paths: [PROJECT_MANIFEST, USER_MANIFEST],
+      },
     });
+    if (ambiguous.outcome !== 'refused') throw new Error('expected ambiguous refusal');
+    expect(Object.isFrozen(ambiguous)).toBeTrue();
+    expect(Object.isFrozen(ambiguous.selection)).toBeTrue();
+    expect(Object.isFrozen(ambiguous.cause)).toBeTrue();
+    expect(Object.isFrozen(ambiguous.cause.paths)).toBeTrue();
+    const mutableCandidates: string[] = ambiguous.selection.candidates;
+    expect(Object.isFrozen(mutableCandidates)).toBeFalse();
+    mutableCandidates.push('/work/extra-owner.toml');
+    expect(ambiguous.selection.candidates).toHaveLength(3);
 
     const split = await resolveDestination(
       new DestinationPorts({
