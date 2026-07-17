@@ -117,24 +117,26 @@
         "P17-G3B-05",
         "P17-G3B-06"
       ],
-      "status": "active",
+      "status": "approved",
       "entry": {
         "status": "passed",
         "evidence": ["projects/p17/evidence/phase-3.md#entry-gate-2026-07-14"]
       },
       "review": {
-        "status": "pending",
-        "evidence": [],
-        "reviewer": null
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/phase-3.md#whole-phase-adversarial-review-2026-07-16"],
+        "reviewer": "/root/phase3_whole_review"
       },
       "approval": {
-        "status": "pending",
-        "evidence": [],
-        "approvedBy": null
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/standing-authorization.md"],
+        "approvedBy": "user-standing-authorization-2026-07-12"
       },
       "exit": {
-        "status": "pending",
-        "evidence": []
+        "status": "passed",
+        "evidence": [
+          "projects/p17/evidence/phase-3.md#standing-approval-and-phase-3-exit-2026-07-16"
+        ]
       }
     },
     {
