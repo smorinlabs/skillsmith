@@ -183,6 +183,7 @@ export interface AcquisitionUninstallIntentV1 {
   readonly projectRoot: OperationLocation | null;
   readonly liveResourceId: string;
   readonly storeResourceId: string | null;
+  readonly force: boolean;
 }
 
 const relevantCapabilityQuery = (
@@ -846,6 +847,40 @@ const uninstallOperationFor = (
   }
   const liveResource = liveResourceFor(intent, liveObservation);
   const beforeSource = operationSourceFromLedgerPairV1(ledgerPair, liveState);
+  const pinned = ledgerPair?.pinned ?? null;
+  const pinnedCopyModified =
+    pinned !== null &&
+    (pinned.placement ?? 'copy') === 'copy' &&
+    liveState?.representation === 'directory' &&
+    liveState.contentRevision !== pinned.contentHash;
+  const conflict: BoundedConflict | null =
+    !intent.force || liveState === null
+      ? null
+      : ledgerPair === null
+        ? {
+            class: 'unmanaged-target',
+            normal: 'refuse',
+            forced: 'backup-and-replace',
+            target: liveResource,
+            backup: 'required',
+          }
+        : ledgerPair.mode === 'dev'
+          ? {
+              class: 'source-changed',
+              normal: 'refuse',
+              forced: 'replace',
+              target: liveResource,
+              backup: 'none',
+            }
+          : pinnedCopyModified
+            ? {
+                class: 'modified-managed-target',
+                normal: 'refuse',
+                forced: 'backup-and-replace',
+                target: liveResource,
+                backup: 'required',
+              }
+            : null;
   const before =
     liveState === null && ledgerPair !== null
       ? ({
@@ -930,7 +965,7 @@ const uninstallOperationFor = (
     requiredCheckIds: [],
     reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
     mutates: { live: true, manifest: false, lock: false, ledger: true },
-    conflict: null,
+    conflict,
   };
 };
 
@@ -1101,6 +1136,83 @@ const validateInstallGroupPortableIntent = (
   }
 };
 
+const validateUninstallGroupPortableIntent = (
+  request: AcquisitionUninstallPlanRequestV1,
+  groupId: string,
+  manifestBefore: ManifestImageV1 | AbsentManifestImageV1,
+  lockBefore: LockImageV1 | AbsentLockImageV1,
+  manifestAfter: ManifestImageV1,
+  lockAfter: LockImageV1,
+): void => {
+  const intents = request.intents.filter(
+    (intent) => createOperationGroupId(uninstallGroupIdentityFor(request, intent)) === groupId,
+  );
+  const seed = intents[0];
+  if (manifestBefore.kind !== 'manifest' || seed === undefined) {
+    throw new TypeError('acquisition planning: uninstall group lacks declared portable intent');
+  }
+  const selectedTools = new Set(intents.map(({ tool }) => tool));
+  const declarations = manifestBefore.value.skills.filter(({ name }) => name === seed.skill);
+  const declaration = declarations[0];
+  if (
+    declarations.length !== 1 ||
+    declaration === undefined ||
+    declaration.scope !== seed.scope ||
+    selectedTools.size === 0 ||
+    new Set(declaration.tools).size !== declaration.tools.length ||
+    [...selectedTools].some((tool) => !declaration.tools.includes(tool))
+  ) {
+    throw new TypeError('acquisition planning: uninstall group differs from declared intent');
+  }
+
+  const remainingTools = declaration.tools.filter((tool) => !selectedTools.has(tool));
+  const beforeModel = manifestModelFromImage(manifestBefore.value);
+  const declarationIndex = beforeModel.skills.findIndex(({ name }) => name === seed.skill);
+  const expectedSkills = [...beforeModel.skills];
+  if (remainingTools.length === 0) {
+    expectedSkills.splice(declarationIndex, 1);
+  } else {
+    expectedSkills[declarationIndex] = { ...declaration, tools: remainingTools };
+  }
+  const expectedManifest: NormalizedManifestV1 = { ...beforeModel, skills: expectedSkills };
+  if (
+    canonicalPlanningString(manifestModelFromImage(manifestAfter.value)) !==
+    canonicalPlanningString(expectedManifest)
+  ) {
+    throw new TypeError('acquisition planning: uninstall manifest transition is not exact');
+  }
+
+  let expectedLock: LockImageV1['value'];
+  if (lockBefore.kind === 'lock') {
+    if (!portablePairIsCurrent(manifestBefore, lockBefore)) {
+      throw new TypeError('acquisition planning: uninstall group requires current portable state');
+    }
+    expectedLock = {
+      ...lockBefore.value,
+      manifestHash: manifestAfter.semanticHash,
+      skills:
+        remainingTools.length === 0
+          ? lockBefore.value.skills.filter(({ name }) => name !== seed.skill)
+          : lockBefore.value.skills,
+    };
+  } else {
+    if (expectedManifest.skills.length !== 0 || remainingTools.length !== 0) {
+      throw new TypeError(
+        'acquisition planning: uninstall group cannot create unrelated lock state',
+      );
+    }
+    expectedLock = {
+      version: 1,
+      hashSchemaVersion: 1,
+      manifestHash: manifestAfter.semanticHash,
+      skills: [],
+    };
+  }
+  if (canonicalPlanningString(lockAfter.value) !== canonicalPlanningString(expectedLock)) {
+    throw new TypeError('acquisition planning: uninstall lock transition is not exact');
+  }
+};
+
 const validateUnchangedInstallGroups = (
   request: AcquisitionInstallPlanRequestV1,
   unchangedGroupIds: readonly string[],
@@ -1124,6 +1236,11 @@ const createArtifactTransitionOperations = (
     throw new TypeError('acquisition planning: artifact transitions require a selected pair');
   }
   const expectedGroups = expectedAcquisitionGroupIds(request);
+  if (request.command === 'uninstall' && transition.groups.length > 1) {
+    throw new TypeError(
+      'acquisition planning: saving uninstall requires exactly one declaration group',
+    );
+  }
   const groups = transition.groups.map((group) => ({
     ...group,
     groupId: createOperationGroupId(group.groupIdentity),
@@ -1228,6 +1345,16 @@ const createArtifactTransitionOperations = (
     }
     if (!portablePairIsCurrent(group.manifestAfter, group.lockAfter)) {
       throw new TypeError('acquisition planning: artifact transition pair is incoherent');
+    }
+    if (request.command === 'uninstall') {
+      validateUninstallGroupPortableIntent(
+        request,
+        group.groupId,
+        currentManifest,
+        currentLock,
+        group.manifestAfter,
+        group.lockAfter,
+      );
     }
     if (
       group.manifestAfter.shape !== 'canonical' ||

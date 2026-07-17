@@ -166,6 +166,8 @@ import type {
   AcquisitionPorts,
   CurrentInstallReport,
   CurrentInstallResult,
+  CurrentUninstallReport,
+  CurrentUninstallResult,
   InstallAction,
   InstallDeps,
   InstallOptions,
@@ -3481,8 +3483,9 @@ const processUninstallMatch = async (
   const placement = match.placement as Placement;
   const placementPath = placement.path;
   if (existing) {
+    const existingPinned = existing.pinned ?? null;
     // `!= null` distinguishes an omitted raw pin from a retained pin that force must protect.
-    if (existing.mode === 'dev' && existing.pinned != null && !opts.force) {
+    if (existing.mode === 'dev' && existingPinned !== null && !opts.force) {
       const reason = `'${name}' (${tool}) is in dev mode — a live symlink into a working checkout. Run 'skillsmith promote ${name}' to pin it first, or 'skillsmith dev --rollback ${name}' to restore the pinned copy, or pass --force to remove the symlink — the checkout itself is never touched.`;
       return {
         skill: name,
@@ -3496,6 +3499,30 @@ const processUninstallMatch = async (
         backupKept: null,
         error: flipRefusedError(reason),
       };
+    }
+    if (
+      existing.mode === 'pinned' &&
+      existingPinned !== null &&
+      (existingPinned.placement ?? 'copy') === 'copy' &&
+      placement.class === 'pinned'
+    ) {
+      const observedHash = await contentHashOf(env, placementPath);
+      if (!observedHash.ok) return failed(observedHash.error, placementPath);
+      if (observedHash.value !== existingPinned.contentHash && !opts.force) {
+        const reason = `'${name}' (${tool}) is a modified managed copy; pass --force to preserve a backup and remove it`;
+        return {
+          skill: name,
+          tool,
+          scope,
+          placementPath,
+          action: 'refused',
+          reason,
+          before: uninstallBeforeFromRecord(existing.mode, existingPinned, existing.dev),
+          storeRetained: existingPinned.storePath,
+          backupKept: null,
+          error: flipRefusedError(reason),
+        };
+      }
     }
     const before = uninstallBeforeFromRecord(existing.mode, existing.pinned, existing.dev);
     const storeRetained = existing.pinned?.storePath ?? null;
@@ -3673,7 +3700,9 @@ const processUninstallTarget = async (
       dryRun,
       null,
     );
-    if (dryRun && preview.action === 'removed') bind?.(preview, name, match);
+    if (dryRun && (preview.action === 'removed' || preview.action === 'refused')) {
+      bind?.(preview, name, match);
+    }
     return [preview];
   }
   const matches = await collectUninstallMatches(
@@ -3716,52 +3745,319 @@ const processUninstallTarget = async (
       dryRun,
       null,
     );
-    if (dryRun && preview.action === 'removed') bind?.(preview, target.name, match);
+    if (dryRun && (preview.action === 'removed' || preview.action === 'refused')) {
+      bind?.(preview, target.name, match);
+    }
     results.push(preview);
   }
   return results;
 };
 
-const uninstallSummary = (results: readonly UninstallResult[]): UninstallReport['summary'] => {
-  const summary = { removed: 0, noop: 0, refused: 0, failed: 0 };
+type ProjectedUninstallResult = Omit<UninstallResult, 'action'> &
+  Readonly<{ action: UninstallAction | 'skipped' }>;
+const uninstallSummary = (
+  results: readonly ProjectedUninstallResult[],
+): UninstallReport['summary'] & Readonly<{ skipped: number }> => {
+  const summary = { removed: 0, noop: 0, skipped: 0, refused: 0, failed: 0 };
   for (const result of results) summary[result.action]++;
   return summary;
+};
+
+type UninstallArtifactResolution = Awaited<
+  ReturnType<typeof resolveAcquisitionArtifactDestinationV1>
+>;
+interface UninstallReportAssemblyContext {
+  readonly artifact?: UninstallArtifactResolution;
+  readonly groupByResult?: ReadonlyMap<string, string>;
+  readonly requestIndices?: readonly number[];
+}
+const uninstallResultFactKey = (
+  result: Pick<UninstallResult, 'skill' | 'tool' | 'scope' | 'placementPath'>,
+): string => JSON.stringify([result.skill, result.tool, result.scope, result.placementPath]);
+const currentUninstallArtifactEffects = (
+  plan: OperationPlan<'uninstall'>,
+  executionResults: readonly OperationExecutionResult[],
+  results: readonly ProjectedUninstallResult[],
+  groupByResult: ReadonlyMap<string, string>,
+  dryRun: boolean,
+): CurrentUninstallReport['artifactEffects'] => {
+  const executionById = new Map(
+    executionResults.map((execution) => [execution.operationId, execution]),
+  );
+  const groupIds = [
+    ...new Set(
+      plan.operations
+        .filter(
+          ({ kind }) =>
+            kind === 'migrate-project-config' || kind === 'write-manifest' || kind === 'write-lock',
+        )
+        .map(({ groupId }) => groupId),
+    ),
+  ].sort();
+  return groupIds.map((groupId) => {
+    const operations = plan.operations.filter((operation) => operation.groupId === groupId);
+    const migration = operations.find(({ kind }) => kind === 'migrate-project-config');
+    const manifest = operations.find(({ kind }) => kind === 'write-manifest');
+    const lock = operations.find(({ kind }) => kind === 'write-lock');
+    const executions = [migration, manifest, lock].flatMap((operation) => {
+      if (operation === undefined) return [];
+      const execution = executionById.get(operation.operationId);
+      return execution === undefined ? [] : [execution];
+    });
+    const failed = executions.find(
+      ({ outcome }) => outcome !== 'succeeded' && outcome !== 'skipped-after-failure',
+    );
+    const skipped = executions.find(({ outcome }) => outcome === 'skipped-after-failure');
+    const retained = !dryRun && (failed !== undefined || skipped !== undefined);
+    const manifestAfter =
+      manifest?.after.kind === 'manifest' ? manifest.after.value.skills : undefined;
+    const lockAfter = lock?.after.kind === 'lock' ? lock.after.value.skills : undefined;
+    const skill =
+      results.find((result) => groupByResult.get(uninstallResultFactKey(result)) === groupId)
+        ?.skill ??
+      manifest?.skill ??
+      lock?.skill ??
+      null;
+    return {
+      groupId,
+      skill,
+      manifestAction:
+        manifest === undefined
+          ? 'keep'
+          : retained
+            ? 'retain'
+            : manifestAfter?.some(({ name }) => name === skill)
+              ? 'update'
+              : 'remove-declaration',
+      lockAction:
+        lock === undefined
+          ? 'keep'
+          : retained
+            ? 'retain'
+            : lockAfter?.some(({ name }) => name === skill)
+              ? 'update'
+              : 'remove-entry',
+      migration:
+        migration === undefined
+          ? 'none'
+          : dryRun
+            ? 'planned'
+            : executionById.get(migration.operationId)?.outcome === 'succeeded'
+              ? 'applied'
+              : 'failed',
+      outcome: dryRun
+        ? 'planned'
+        : (failed?.outcome ??
+          skipped?.outcome ??
+          (executions.length === 0 ? 'not-run' : 'succeeded')),
+      reason:
+        failed?.error?.message ??
+        (retained ? 'incomplete uninstall retained portable intent' : null),
+    };
+  });
 };
 
 const assembleUninstallReport = (
   dryRun: boolean,
   requested: UninstallReport['requested'],
-  results: UninstallResult[],
+  results: ProjectedUninstallResult[],
   plan: OperationPlan<'uninstall'>,
   executionResults: readonly OperationExecutionResult[],
-): PlannedUninstallReport => ({
-  dryRun,
-  requested,
-  results,
-  summary: uninstallSummary(results),
-  plan,
-  executionResults,
-});
+  context: UninstallReportAssemblyContext = {},
+): PlannedUninstallReport => {
+  const artifact =
+    context.artifact ??
+    ({
+      outcome: 'none',
+      saveMode: 'desired-state',
+      pair: null,
+      selection: { outcome: 'none', reason: 'pre-resolution-failure' },
+    } as const);
+  const groupByResult = context.groupByResult ?? new Map<string, string>();
+  const executionById = new Map(
+    executionResults.map((execution) => [execution.operationId, execution]),
+  );
+  const currentResults: CurrentUninstallResult[] = results.map((result, resultIndex) => {
+    const requestIndex = context.requestIndices?.[resultIndex] ?? resultIndex;
+    const groupId = groupByResult.get(uninstallResultFactKey(result)) ?? null;
+    const operation =
+      groupId === null
+        ? undefined
+        : plan.operations.find(
+            (candidate) =>
+              candidate.groupId === groupId &&
+              candidate.tool === result.tool &&
+              candidate.skill === result.skill &&
+              candidate.pairId !== null,
+          );
+    const execution =
+      operation === undefined ? undefined : executionById.get(operation.operationId);
+    const artifactOperations =
+      groupId === null
+        ? []
+        : plan.operations.filter(
+            (candidate) =>
+              candidate.groupId === groupId &&
+              (candidate.kind === 'migrate-project-config' ||
+                candidate.kind === 'write-manifest' ||
+                candidate.kind === 'write-lock'),
+          );
+    const artifactDurable =
+      artifact.outcome === 'selected' &&
+      artifactOperations.length > 0 &&
+      (dryRun ||
+        artifactOperations.every(
+          (candidate) => executionById.get(candidate.operationId)?.outcome === 'succeeded',
+        ));
+    const executionOutcome = dryRun
+      ? null
+      : (execution?.outcome ??
+        (result.action === 'noop' && artifactDurable ? ('succeeded' as const) : null));
+    const liveRemovalSucceeded =
+      result.action === 'removed' && (dryRun || executionOutcome === 'succeeded');
+    const drift: CurrentUninstallResult['drift'] =
+      artifact.saveMode === 'live-only' || artifact.outcome !== 'selected'
+        ? {
+            status: 'not-evaluated',
+            futureApply: 'depends-on-selected-manifest',
+            reason: null,
+          }
+        : artifactDurable
+          ? { status: 'in-sync', futureApply: 'none', reason: null }
+          : liveRemovalSucceeded
+            ? {
+                status: 'desired-without-live',
+                futureApply: 'restore-live',
+                reason: 'portable intent was retained after an incomplete uninstall',
+              }
+            : {
+                status: 'in-sync',
+                futureApply: 'none',
+                reason: result.reason,
+              };
+    return {
+      ...result,
+      requestIndex,
+      groupId,
+      pairId: operation?.pairId ?? null,
+      executionOutcome,
+      drift,
+      force: (execution?.force ??
+        (result.tool === null
+          ? createBoundedForceEffect({
+              supported: false,
+              requested: false,
+              conflict: null,
+            })
+          : operation === undefined
+            ? createBoundedForceEffect({
+                supported: true,
+                requested: requested.force,
+                conflict: null,
+              })
+            : createInstallForceEffect(
+                operation,
+                requested.force,
+                execution?.outcome === 'succeeded',
+              ))) as CurrentUninstallResult['force'],
+    };
+  });
+  let artifactEffects =
+    artifact.saveMode === 'live-only' || artifact.outcome !== 'selected'
+      ? []
+      : currentUninstallArtifactEffects(plan, executionResults, results, groupByResult, dryRun);
+  if (
+    artifact.outcome === 'selected' &&
+    artifactEffects.length === 0 &&
+    results.length > 0 &&
+    !results.some(({ reason }) => reason?.includes('deferred to G4A-04') === true)
+  ) {
+    artifactEffects = [...new Set(results.map(({ skill }) => skill))].map((skill) => ({
+      groupId: null,
+      skill,
+      manifestAction: 'not-write' as const,
+      lockAction: 'not-write' as const,
+      migration: 'none' as const,
+      outcome: 'not-run' as const,
+      reason: 'selected artifact pair contains no writable requested declaration',
+    }));
+  }
+  const legacySummary = uninstallSummary(currentResults);
+  const desiredState = {
+    changed: artifactEffects.filter(
+      ({ manifestAction, lockAction, outcome }) =>
+        (outcome === 'planned' || outcome === 'succeeded') &&
+        (manifestAction === 'update' ||
+          manifestAction === 'remove-declaration' ||
+          lockAction === 'update' ||
+          lockAction === 'remove-entry'),
+    ).length,
+    unchanged: artifactEffects.filter(
+      ({ manifestAction, lockAction }) => manifestAction === 'keep' && lockAction === 'keep',
+    ).length,
+    retained: artifactEffects.filter(
+      ({ manifestAction, lockAction }) => manifestAction === 'retain' || lockAction === 'retain',
+    ).length,
+    notWritten:
+      artifact.saveMode === 'live-only'
+        ? currentResults.length
+        : artifactEffects.filter(
+            ({ manifestAction, lockAction }) =>
+              manifestAction === 'not-write' || lockAction === 'not-write',
+          ).length,
+    failed: artifactEffects.filter(
+      ({ outcome }) =>
+        outcome !== 'planned' &&
+        outcome !== 'succeeded' &&
+        outcome !== 'not-run' &&
+        outcome !== 'skipped-after-failure',
+    ).length,
+  };
+  return {
+    reportVersion: 2,
+    dryRun,
+    saveMode: artifact.saveMode,
+    artifactPair:
+      artifact.outcome === 'selected'
+        ? {
+            manifestPath: artifact.pair.file.path,
+            lockPath: artifact.pair.lockfile.path,
+            lockSource: artifact.pair.lockfileSource,
+          }
+        : null,
+    artifactSelection: artifact.selection,
+    artifactEffects,
+    requested: { ...requested, batchPolicy: plan.batchPolicy },
+    results: currentResults,
+    summary: { ...legacySummary, desiredState },
+    plan,
+    executionResults,
+  } as unknown as PlannedUninstallReport;
+};
 
 const createUninstallExecutionResult = (
   operation: ExecutableOperation,
-  result: UninstallResult | undefined,
+  result: ProjectedUninstallResult | undefined,
   requested: UninstallReport['requested'],
 ): OperationExecutionResult => {
   const cancelled = result?.reason === 'interrupted';
+  const skippedAfterFailure = result?.action === 'skipped' && result.reason === 'fail-fast';
   const succeeded = result?.action === 'removed';
   const common = {
     operationId: operation.operationId,
     actualBefore: operation.before,
     actualAfter: succeeded ? operation.after : operation.before,
-    force: createBoundedForceEffect({
-      supported: true,
-      requested: requested.force,
-      conflict: null,
-    }),
+    force: createInstallForceEffect(operation, requested.force, succeeded),
   } as const;
   if (cancelled) {
     return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
+  }
+  if (skippedAfterFailure) {
+    return createOperationExecutionResult({
+      ...common,
+      outcome: 'skipped-after-failure',
+      error: null,
+    });
   }
   if (!succeeded) {
     return createOperationExecutionResult({
@@ -3865,11 +4161,43 @@ const runUninstallInternal = async (
       registry,
       toolOrder: registry.ids,
     }).plan;
-    return ok(assembleUninstallReport(Boolean(opts.dryRun), requested, results, plan, []));
+    return ok(
+      assembleUninstallReport(Boolean(opts.dryRun), requested, results, plan, [], {
+        artifact: artifactResolution,
+      }),
+    );
+  }
+  const requestedDeclarationNames =
+    artifactResolution.outcome === 'selected'
+      ? [
+          ...new Set(
+            normalizedTargets
+              .map(({ name }) => name)
+              .filter((name) => artifactResolution.declaredNames.includes(name)),
+          ),
+        ]
+      : [];
+  if (requestedDeclarationNames.length > 1) {
+    const reason = 'multiple saving declaration groups are deferred to G4A-04';
+    const results = normalizedTargets.map(({ name }) => ({
+      ...emptyUninstallResult(name, null, null, 'refused' as const),
+      reason,
+      error: flipRefusedError(reason),
+    }));
+    const plan = createUninstallPlanning(planningRequested, results, projectRoot, {
+      registry,
+      toolOrder: registry.ids,
+    }).plan;
+    return ok(
+      assembleUninstallReport(Boolean(opts.dryRun), requested, results, plan, [], {
+        artifact: artifactResolution,
+      }),
+    );
   }
   interface PreparedUninstallPairBinding {
     readonly kind: 'pair';
     readonly preview: UninstallResult;
+    readonly reportPreviews: readonly UninstallResult[];
     readonly actualBefore: OperationImage;
     readonly liveResourceId: string;
     observe(): Promise<UninstallPreconditionFacts>;
@@ -3883,15 +4211,25 @@ const runUninstallInternal = async (
     readonly expectedState: Extract<LedgerReadState, { readonly state: 'present' }>;
     onMigrated(model: LedgerModel): void;
   }
-  type PreparedUninstallBinding = PreparedUninstallPairBinding | PreparedUninstallMigrationBinding;
+  interface PreparedUninstallArtifactBinding {
+    readonly kind: 'artifact';
+    readonly action: AcquisitionArtifactExecutionActionV1;
+  }
+  type PreparedUninstallBinding =
+    | PreparedUninstallPairBinding
+    | PreparedUninstallMigrationBinding
+    | PreparedUninstallArtifactBinding;
   interface PreparedUninstallBatch {
     readonly preview: PlannedUninstallReport;
+    readonly legacyPreviewResults: readonly UninstallResult[];
+    readonly requestIndices: readonly number[];
     readonly bindings: ReadonlyMap<string, PreparedUninstallBinding>;
     readonly preconditions: readonly ExecutionPrecondition[];
     readonly snapshotAuthority: AcquisitionSnapshotAuthorityV1;
     readonly expectedRevisions: readonly ExpectedRevisionV1[];
     readonly snapshotId: `snapshot:v1:${string}`;
     readonly artifactResolution: typeof artifactResolution;
+    readonly groupByResult: ReadonlyMap<string, string>;
   }
   interface UninstallPreconditionFacts {
     readonly projectRoot: string | null;
@@ -3918,6 +4256,215 @@ const runUninstallInternal = async (
       operationObservation?: ObservationBundle,
     ): Promise<UninstallResult>;
   }
+  interface PreparedUninstallIntent {
+    readonly seed: UninstallBindingSeed;
+    readonly expectedFacts: UninstallPreconditionFacts;
+    readonly intent: AcquisitionUninstallIntentV1;
+    readonly capabilityScope: ToolCapabilityScope;
+  }
+  interface PreparedUninstallArtifactPlanning {
+    readonly transition: AcquisitionArtifactTransitionEnvelopeV1 | undefined;
+    readonly actions: ReadonlyMap<string, AcquisitionArtifactExecutionActionV1>;
+  }
+  const artifactBindingKey = (groupId: string, kind: ExecutableOperation['kind']): string =>
+    `${groupId}:${kind}`;
+  const prepareUninstallArtifactPlanning = async (
+    snapshotAuthority: AcquisitionSnapshotAuthorityV1,
+    prepared: readonly PreparedUninstallIntent[],
+  ): Promise<PreparedUninstallArtifactPlanning> => {
+    const artifact = snapshotAuthority.snapshot.artifact;
+    if (artifact.mode === 'none') {
+      return Object.freeze({ transition: undefined, actions: new Map() });
+    }
+    if (
+      artifact.manifest.revision.state === 'absent' ||
+      artifact.manifest.value === null ||
+      prepared.length === 0
+    ) {
+      return Object.freeze({ transition: undefined, actions: new Map() });
+    }
+    const manifestModel = artifact.manifest.value;
+    const declarations = manifestModel.skills.filter(({ name }) =>
+      prepared.some(({ intent }) => intent.skill === name),
+    );
+    if (declarations.length === 0) {
+      return Object.freeze({ transition: undefined, actions: new Map() });
+    }
+    if (declarations.length > 1) {
+      throw new Error('selected uninstall artifact has multiple requested declarations');
+    }
+    const declaration = declarations[0];
+    if (declaration === undefined) {
+      return Object.freeze({ transition: undefined, actions: new Map() });
+    }
+    const declaredPrepared = prepared.filter(
+      ({ intent }) =>
+        intent.skill === declaration.name &&
+        intent.scope === declaration.scope &&
+        declaration.tools.includes(intent.tool),
+    );
+    const seed = declaredPrepared[0];
+    if (seed === undefined) {
+      return Object.freeze({ transition: undefined, actions: new Map() });
+    }
+    const groupIdentity = {
+      domain: 'skillsmith.operation-group-identity' as const,
+      schemaVersion: 1 as const,
+      command: 'uninstall' as const,
+      skill: seed.intent.skill,
+      source: null,
+      scope: seed.intent.scope,
+      target: seed.intent.skill,
+    };
+    const groupId = createOperationGroupId(groupIdentity);
+    const unchangedGroups = [
+      ...new Map(
+        prepared
+          .map(({ intent }) => ({
+            domain: 'skillsmith.operation-group-identity' as const,
+            schemaVersion: 1 as const,
+            command: 'uninstall' as const,
+            skill: intent.skill,
+            source: null,
+            scope: intent.scope,
+            target: intent.skill,
+          }))
+          .filter((identity) => createOperationGroupId(identity) !== groupId)
+          .map((identity) => [createOperationGroupId(identity), identity]),
+      ).values(),
+    ];
+    const manifestPath = artifact.pair.file.path;
+    const lockPath = artifact.pair.lockfile.path;
+    let manifestBytes: Uint8Array<ArrayBufferLike> = new Uint8Array(
+      await env.readBytes(manifestPath),
+    );
+    const initialManifest = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
+    const selectedTools = new Set(declaredPrepared.map(({ intent }) => intent.tool));
+    const remainingTools = declaration.tools.filter((tool) => !selectedTools.has(tool));
+    const declarationIndex = manifestModel.skills.findIndex(
+      ({ name }) => name === declaration.name,
+    );
+    const nextSkills = [...manifestModel.skills];
+    if (remainingTools.length === 0) {
+      nextSkills.splice(declarationIndex, 1);
+    } else {
+      nextSkills[declarationIndex] = Object.freeze({
+        ...declaration,
+        tools: Object.freeze(remainingTools),
+      });
+    }
+    const nextManifest: NormalizedManifestV1 = Object.freeze({
+      ...manifestModel,
+      skills: Object.freeze(nextSkills),
+    });
+    const actions = new Map<string, AcquisitionArtifactExecutionActionV1>();
+    let migrationAfter:
+      | AcquisitionArtifactTransitionEnvelopeV1['groups'][number]['migrationAfter']
+      | undefined;
+    if (initialManifest.kind === 'manifest' && initialManifest.shape === 'legacy') {
+      const request = Object.freeze({
+        edits: Object.freeze([{ kind: 'migrate-legacy' as const }]),
+      });
+      const migrated = editManifestBytes(manifestBytes, request);
+      if (!migrated.ok) throw migrated.error;
+      manifestBytes = migrated.value.bytes;
+      migrationAfter = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
+      actions.set(
+        artifactBindingKey(groupId, 'migrate-project-config'),
+        Object.freeze({
+          role: 'manifest' as const,
+          action: Object.freeze({ kind: 'edit' as const, request }),
+        }),
+      );
+    }
+    const manifestRequest: ManifestEditRequest = Object.freeze({
+      edits: Object.freeze([
+        remainingTools.length === 0
+          ? ({ kind: 'remove-skill', name: declaration.name } as const)
+          : ({
+              kind: 'set-skill-field',
+              name: declaration.name,
+              field: 'tools',
+              value: Object.freeze(remainingTools),
+            } as const),
+      ]),
+    });
+    const editedManifest = editManifestBytes(manifestBytes, manifestRequest);
+    if (!editedManifest.ok) throw editedManifest.error;
+    manifestBytes = editedManifest.value.bytes;
+    const manifestAfter = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
+    actions.set(
+      artifactBindingKey(groupId, 'write-manifest'),
+      Object.freeze({
+        role: 'manifest' as const,
+        action: Object.freeze({ kind: 'edit' as const, request: manifestRequest }),
+      }),
+    );
+
+    let initialLock: AcquisitionArtifactTransitionEnvelopeV1['initial']['lock'];
+    let lockModel: PortableLockV1;
+    if (artifact.lock.revision.state === 'absent') {
+      initialLock = Object.freeze({
+        kind: 'absent' as const,
+        resource: Object.freeze({
+          kind: 'lock' as const,
+          location: Object.freeze({ kind: 'machine-bound' as const, path: lockPath }),
+        }),
+      });
+      lockModel = Object.freeze({
+        version: 1 as const,
+        hashSchemaVersion: HASH_SCHEMA_VERSION,
+        manifestHash: hashManifestSemantics(manifestModel),
+        skills: Object.freeze([]),
+      });
+    } else {
+      const lockBytes = new Uint8Array(await env.readBytes(lockPath));
+      initialLock = acquisitionLockImageFromBytesV1(lockPath, lockBytes);
+      if (artifact.lock.value === null) {
+        throw new Error('selected uninstall lock model is missing');
+      }
+      lockModel = artifact.lock.value;
+    }
+    const targetLock: PortableLockV1 = Object.freeze({
+      ...lockModel,
+      version: 1 as const,
+      hashSchemaVersion: HASH_SCHEMA_VERSION,
+      manifestHash: hashManifestSemantics(nextManifest),
+      skills: Object.freeze(
+        remainingTools.length === 0
+          ? lockModel.skills.filter(({ name }) => name !== declaration.name)
+          : [...lockModel.skills],
+      ),
+    });
+    const serializedLock = serializePortableLock(targetLock);
+    if (!serializedLock.ok) throw new Error('uninstall portable lock could not be serialized');
+    const lockAfter = acquisitionLockImageFromBytesV1(
+      lockPath,
+      new TextEncoder().encode(serializedLock.value),
+    );
+    actions.set(
+      artifactBindingKey(groupId, 'write-lock'),
+      Object.freeze({
+        role: 'lock' as const,
+        action: Object.freeze({ kind: 'replace' as const, lock: targetLock }),
+      }),
+    );
+    return Object.freeze({
+      transition: Object.freeze({
+        initial: Object.freeze({ manifest: initialManifest, lock: initialLock }),
+        groups: Object.freeze([
+          Object.freeze({
+            groupIdentity,
+            ...(migrationAfter === undefined ? {} : { migrationAfter }),
+            manifestAfter: manifestAfter as Extract<OperationImage, { readonly kind: 'manifest' }>,
+            lockAfter,
+          }),
+        ]),
+        unchangedGroups: Object.freeze(unchangedGroups),
+      }),
+      actions,
+    });
+  };
 
   const observeUninstallFacts = async (
     seed: UninstallBindingSeed,
@@ -3980,48 +4527,152 @@ const runUninstallInternal = async (
     const legacyLedger = legacyLedgerView(ledger);
     const ledgerCtx = { ledger };
     const results: UninstallResult[] = [];
+    const requestIndexByResult = new Map<UninstallResult, number>();
+    const resultsByTarget = new Map<NormalizedUninstallTarget, UninstallResult[]>();
     const candidateBindings = new Map<UninstallResult, UninstallBindingSeed>();
-    for (const target of normalizedTargets) {
-      results.push(
-        ...(await processUninstallTarget(
-          env,
-          registry,
-          legacyLedger,
-          ledgerCtx,
-          ledgerPath,
-          storeRoot,
-          opts,
-          deps,
-          target,
-          projectRoot,
-          scopesToSearch,
-          toolsToSearch,
-          explicitTools,
-          scopeKeyFor,
-          true,
-          (preview, name, match) => {
-            candidateBindings.set(preview, {
-              preview,
-              target,
-              name,
-              match,
-              execute: (operation, operationObservation) =>
-                processUninstallMatch(
-                  env,
-                  ledgerCtx,
-                  ledgerPath,
-                  opts,
-                  deps,
-                  name,
-                  match,
-                  false,
-                  operation,
-                  operationObservation,
-                ),
-            });
-          },
-        )),
+    let selectedManifest: NormalizedManifestV1 | null = null;
+    if (
+      artifactResolution.outcome === 'selected' &&
+      (await env.pathKind(artifactResolution.pair.file.path)) !== 'absent'
+    ) {
+      const decoded = manifestV1Codec.decode(
+        new Uint8Array(await env.readBytes(artifactResolution.pair.file.path)),
       );
+      if (!decoded.ok) throw decoded.error;
+      selectedManifest = decoded.value.model;
+    }
+    for (const [requestIndex, target] of normalizedTargets.entries()) {
+      const targetResults = await processUninstallTarget(
+        env,
+        registry,
+        legacyLedger,
+        ledgerCtx,
+        ledgerPath,
+        storeRoot,
+        opts,
+        deps,
+        target,
+        projectRoot,
+        scopesToSearch,
+        toolsToSearch,
+        explicitTools,
+        scopeKeyFor,
+        true,
+        (preview, name, match) => {
+          candidateBindings.set(preview, {
+            preview,
+            target,
+            name,
+            match,
+            execute: (operation, operationObservation) =>
+              processUninstallMatch(
+                env,
+                ledgerCtx,
+                ledgerPath,
+                opts,
+                deps,
+                name,
+                match,
+                false,
+                operation,
+                operationObservation,
+              ),
+          });
+        },
+      );
+      resultsByTarget.set(target, targetResults);
+      for (const result of targetResults) {
+        results.push(result);
+        requestIndexByResult.set(result, requestIndex);
+      }
+    }
+    if (selectedManifest !== null) {
+      for (const target of normalizedTargets) {
+        const declaration = selectedManifest.skills.find(({ name }) => name === target.name);
+        if (declaration === undefined || !scopesToSearch.includes(declaration.scope)) continue;
+        const targetResults = resultsByTarget.get(target) ?? [];
+        if (
+          targetResults.some(
+            (result) =>
+              result.skill === target.name && result.tool === null && result.action === 'refused',
+          )
+        ) {
+          continue;
+        }
+        const selectedTools = declaration.tools.filter((tool): tool is FlipTool =>
+          toolsToSearch.includes(tool as FlipTool),
+        );
+        const alreadyPrepared = new Set(
+          [...candidateBindings.values()]
+            .filter((seed) => seed.target === target)
+            .map((seed) => JSON.stringify([seed.match.scope, seed.match.tool])),
+        );
+        const synthesized: UninstallResult[] = [];
+        for (const tool of selectedTools) {
+          const scope = declaration.scope;
+          if (alreadyPrepared.has(JSON.stringify([scope, tool]))) continue;
+          const scopeKey = await scopeKeyFor(scope);
+          const rootsContext = {
+            cwd: scopeKey ?? opts.cwd,
+            configuration: opts.configuration,
+          };
+          const root =
+            declaration.path === null
+              ? destinationSkillRootFor(registry, tool, env, scope, rootsContext)
+              : declaration.path.startsWith('~/')
+                ? resolve(env.homeDir, declaration.path.slice(2))
+                : declaration.path.startsWith('./')
+                  ? resolve(scopeKey ?? opts.cwd, declaration.path.slice(2))
+                  : resolve(rootsContext.cwd, declaration.path);
+          const placementPath = join(root, target.name);
+          const preview: UninstallResult = {
+            skill: target.name,
+            tool,
+            scope,
+            placementPath,
+            action: 'noop',
+            reason: 'placement was already absent; portable intent will be removed',
+            before: null,
+            storeRetained: null,
+            backupKept: null,
+          };
+          const match: UMatch = {
+            scope,
+            scopeKey,
+            tool,
+            kind: 'stale',
+            placement: null,
+            existing: null,
+            notice: null,
+          };
+          candidateBindings.set(preview, {
+            preview,
+            target,
+            name: target.name,
+            match,
+            execute: async () => {
+              throw new Error('artifact-only uninstall binding cannot execute live state');
+            },
+          });
+          synthesized.push(preview);
+        }
+        if (synthesized.length > 0) {
+          resultsByTarget.set(
+            target,
+            targetResults
+              .filter((result) => result.tool !== null || result.action !== 'noop')
+              .concat(synthesized),
+          );
+        }
+      }
+    }
+    results.length = 0;
+    requestIndexByResult.clear();
+    for (const [requestIndex, target] of normalizedTargets.entries()) {
+      for (const result of resultsByTarget.get(target) ?? []) {
+        results.push(result);
+        requestIndexByResult.set(result, requestIndex);
+      }
     }
     const migration = prepareLedgerMigration(
       env,
@@ -4034,14 +4685,7 @@ const runUninstallInternal = async (
       registry,
       toolOrder: registry.ids,
     });
-    const preparedIntents: Array<
-      Readonly<{
-        seed: UninstallBindingSeed;
-        expectedFacts: UninstallPreconditionFacts;
-        intent: AcquisitionUninstallIntentV1;
-        capabilityScope: ToolCapabilityScope;
-      }>
-    > = [];
+    const preparedIntents: PreparedUninstallIntent[] = [];
     const liveResourcesByPath = new Map<string, AcquireLiveSnapshotResourceV1>();
     const storeResourcesByPath = new Map<string, AcquireStoreSnapshotResourceV1>();
     const addLiveResource = (resource: AcquireLiveSnapshotResourceV1): void => {
@@ -4133,6 +4777,7 @@ const runUninstallInternal = async (
               : null,
           liveResourceId,
           storeResourceId,
+          force: Boolean(opts.force),
         },
       });
     }
@@ -4147,6 +4792,10 @@ const runUninstallInternal = async (
       storeResources: [...storeResourcesByPath.values()],
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     });
+    const artifactPlanning = await prepareUninstallArtifactPlanning(
+      snapshotAuthority,
+      preparedIntents,
+    );
     const boundPlanning = createAcquisitionPlan(
       {
         schemaVersion: 1,
@@ -4157,22 +4806,46 @@ const runUninstallInternal = async (
           tools: [...new Set(preparedIntents.map(({ intent }) => intent.tool))],
           scopes: [...new Set(preparedIntents.map(({ intent }) => intent.scope))],
         },
-        batchPolicy: 'continue-on-error',
+        batchPolicy: opts.continueOnError ? 'continue-on-error' : 'fail-fast',
         diagnostics: compatibilityPlanning.plan.diagnostics,
         compatibilityOperations: migration === null ? [] : [migration.operation],
         intents: preparedIntents.map(({ intent }) => intent),
+        ...(artifactPlanning.transition === undefined
+          ? {}
+          : { artifactTransition: artifactPlanning.transition }),
       },
       snapshotAuthority.snapshot,
       { registry, toolOrder: registry.ids },
     );
     if (!boundPlanning.ok) throw new Error(boundPlanning.error.message);
     const plan = boundPlanning.value.plan;
+    const groupByResult = new Map<string, string>();
+    for (const item of preparedIntents) {
+      const groupId = createOperationGroupId({
+        domain: 'skillsmith.operation-group-identity',
+        schemaVersion: 1,
+        command: 'uninstall',
+        skill: item.intent.skill,
+        source: null,
+        scope: item.intent.scope,
+        target: item.intent.skill,
+      });
+      groupByResult.set(uninstallResultFactKey(item.seed.preview), groupId);
+    }
     const canonicalOperations = plan.operations.filter(
       (operation) =>
         migration === null || operation.operationId !== migration.operation.operationId,
     );
+    const artifactOperations = canonicalOperations.filter(
+      ({ kind }) =>
+        kind === 'migrate-project-config' || kind === 'write-manifest' || kind === 'write-lock',
+    );
+    const liveOperations = canonicalOperations.filter(
+      ({ kind }) =>
+        kind !== 'migrate-project-config' && kind !== 'write-manifest' && kind !== 'write-lock',
+    );
     const operationByLivePath = new Map<string, ExecutableOperation>();
-    for (const operation of canonicalOperations) {
+    for (const operation of liveOperations) {
       if (
         (operation.before.kind !== 'absent' && operation.before.kind !== 'placement') ||
         operation.before.resource.kind !== 'live' ||
@@ -4187,12 +4860,33 @@ const runUninstallInternal = async (
     const preconditions: ExecutionPrecondition[] = [
       ...acquisitionRevisionPreconditions(snapshotAuthority, plan.operations),
     ];
+    const preparedByOperationId = new Map<string, PreparedUninstallIntent[]>();
     for (const prepared of preparedIntents) {
       const operation = operationByLivePath.get(
         resolve(prepared.seed.preview.placementPath as string),
       );
-      if (operation === undefined)
+      if (operation === undefined) {
+        if (
+          prepared.expectedFacts.live.placement.class === 'absent' &&
+          prepared.expectedFacts.selectedPair === null
+        ) {
+          continue;
+        }
         throw new Error('prepared uninstall operation binding is missing');
+      }
+      const operationIntents = preparedByOperationId.get(operation.operationId);
+      if (operationIntents === undefined) {
+        preparedByOperationId.set(operation.operationId, [prepared]);
+      } else {
+        operationIntents.push(prepared);
+      }
+    }
+    for (const [operationId, operationIntents] of preparedByOperationId) {
+      const operation = liveOperations.find((candidate) => candidate.operationId === operationId);
+      const prepared = operationIntents[0];
+      if (operation === undefined || prepared === undefined) {
+        throw new Error('prepared uninstall operation binding is missing');
+      }
       const resource =
         operation.before.kind === 'absent' || operation.before.kind === 'placement'
           ? operation.before.resource
@@ -4208,12 +4902,22 @@ const runUninstallInternal = async (
       preparedBindings.set(operation.operationId, {
         kind: 'pair',
         preview: prepared.seed.preview,
+        reportPreviews: Object.freeze(operationIntents.map(({ seed }) => seed.preview)),
         actualBefore,
         liveResourceId: prepared.intent.liveResourceId,
         observe: () => observeUninstallFacts(prepared.seed),
         execute: (logicalOperation, operationObservation) =>
           prepared.seed.execute(logicalOperation, operationObservation),
       });
+    }
+    for (const operation of artifactOperations) {
+      const action = artifactPlanning.actions.get(
+        artifactBindingKey(operation.groupId, operation.kind),
+      );
+      if (action === undefined) {
+        throw new Error('prepared uninstall artifact action is missing');
+      }
+      preparedBindings.set(operation.operationId, { kind: 'artifact', action });
     }
     if (migration !== null) {
       preconditions.unshift(migration.precondition);
@@ -4239,35 +4943,68 @@ const runUninstallInternal = async (
     ) {
       throw new Error('prepared uninstall plan has no exact execution binding');
     }
-    const preview = assembleUninstallReport(true, requested, results, plan, []);
+    const preview = assembleUninstallReport(true, requested, results, plan, [], {
+      artifact: artifactResolution,
+      groupByResult,
+      requestIndices: results.map((result) => requestIndexByResult.get(result) ?? 0),
+    });
     emitAcquisitionPlanCreated(observation, plan, planObservation);
     deps.observePreparedPlan?.(plan);
     return {
       preview,
+      legacyPreviewResults: Object.freeze(results),
+      requestIndices: Object.freeze(results.map((result) => requestIndexByResult.get(result) ?? 0)),
       bindings,
       preconditions: Object.freeze(preconditions),
       snapshotAuthority,
       expectedRevisions: boundPlanning.value.expectedRevisions,
       snapshotId: boundPlanning.value.snapshotId,
       artifactResolution,
+      groupByResult,
     };
   };
 
   const executePrepared = async (
     prepared: PreparedUninstallBatch,
   ): Promise<PlannedUninstallReport> => {
-    const actualByPreview = new Map<UninstallResult, UninstallResult>();
-    const actualByOperation = new Map<string, UninstallResult>();
+    const actualByPreview = new Map<UninstallResult, ProjectedUninstallResult>();
+    const actualByOperation = new Map<string, ProjectedUninstallResult>();
+    const projectActual = (
+      binding: PreparedUninstallPairBinding,
+      actual: ProjectedUninstallResult,
+    ): void => {
+      for (const preview of binding.reportPreviews) {
+        actualByPreview.set(preview, { ...actual });
+      }
+    };
     const lifecycle = createAcquisitionRepositoryLifecycleControllerV1({
       authority: prepared.snapshotAuthority,
       snapshotId: prepared.snapshotId,
       expectedRevisions: prepared.expectedRevisions,
     });
+    const ledgerLockPort = createAcquireExecutionLockPort(env, ledgerPath, safeError, msg);
+    const artifactController =
+      prepared.snapshotAuthority.snapshot.artifact.mode === 'selected'
+        ? createAcquisitionArtifactExecutionControllerV1({
+            authority: prepared.snapshotAuthority,
+            artifactCoordinator:
+              deps.artifactCoordinator ?? (await createNodeArtifactCoordinatorPorts()),
+            ledgerLockPort,
+            ledgerPath,
+            ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+          })
+        : null;
     const schedulerBindings: PreparedExecutionBinding[] = prepared.preview.plan.operations.map(
       (operation) => {
         const binding = prepared.bindings.get(operation.operationId);
         if (binding === undefined)
           throw new Error('prepared uninstall operation binding is missing');
+        if (binding.kind === 'artifact') {
+          if (artifactController === null) {
+            throw new Error('prepared uninstall artifact controller is missing');
+          }
+          return artifactController.bind(operation, binding.action);
+        }
         if (binding.kind === 'migrate-ledger') {
           return lifecycle.bind(
             operation,
@@ -4292,11 +5029,7 @@ const runUninstallInternal = async (
             operationId: operation.operationId,
             groupId: operation.groupId,
             pairId: operation.pairId,
-            unstartedForce: createBoundedForceEffect({
-              supported: true,
-              requested: requested.force,
-              conflict: null,
-            }),
+            unstartedForce: createInstallForceEffect(operation, requested.force),
             observeActualBefore: async (): Promise<OperationImage> => {
               const facts = await binding.observe();
               const resource =
@@ -4307,7 +5040,10 @@ const runUninstallInternal = async (
                 throw new Error('prepared uninstall actual-before resource is not live');
               }
               compatibilityBefore = acquireActualBefore(resource, facts.live, facts.selectedPair);
-              return operation.before;
+              return canonicalPlanningString(compatibilityBefore) ===
+                canonicalPlanningString(binding.actualBefore)
+                ? operation.before
+                : compatibilityBefore;
             },
             execute: async (
               _validatedBinding: ValidatedExecutionBinding,
@@ -4319,7 +5055,7 @@ const runUninstallInternal = async (
                   : { ...operation, before: compatibilityBefore },
                 operationObservation,
               );
-              actualByPreview.set(binding.preview, actual);
+              projectActual(binding, actual);
               actualByOperation.set(operation.operationId, actual);
               return createUninstallExecutionResult(operation, actual, requested);
             },
@@ -4334,9 +5070,15 @@ const runUninstallInternal = async (
         {
           plan: prepared.preview.plan as CurrentMutatorOperationPlan,
           bindings: schedulerBindings,
-          preconditions: prepared.preconditions,
-          locks: [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }],
-          lockPort: createAcquireExecutionLockPort(env, ledgerPath, safeError, msg),
+          preconditions:
+            artifactController === null
+              ? prepared.preconditions
+              : artifactController.bindPreconditions(prepared.preconditions),
+          locks:
+            artifactController === null
+              ? [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }]
+              : artifactController.locks,
+          lockPort: artifactController === null ? ledgerLockPort : artifactController.lockPort,
           ...(opts.signal === undefined ? {} : { signal: opts.signal }),
         },
         observation,
@@ -4348,36 +5090,38 @@ const runUninstallInternal = async (
         const binding = prepared.bindings.get(operation.operationId);
         if (binding === undefined)
           throw new Error('prepared uninstall operation binding is missing');
-        if (binding.kind === 'migrate-ledger') continue;
+        if (binding.kind !== 'pair') continue;
         const actual: UninstallResult = {
           ...binding.preview,
           action: 'refused',
           reason,
           error: flipRefusedError(reason),
         };
-        actualByPreview.set(binding.preview, actual);
+        projectActual(binding, actual);
         actualByOperation.set(operation.operationId, actual);
       }
-      executionResults = prepared.preview.plan.operations.map((operation) =>
-        operation.pairId === null
-          ? createOperationExecutionResult({
-              operationId: operation.operationId,
-              outcome: 'failed',
-              actualBefore: operation.before,
-              actualAfter: operation.before,
-              force: null,
-              error: {
-                code: 'flip-refused',
-                message: 'prepared ledger migration source changed before execution',
-                remediation: 'Re-run the command to prepare the current ledger state.',
-              },
-            })
-          : createUninstallExecutionResult(
-              operation,
-              actualByOperation.get(operation.operationId),
-              requested,
-            ),
-      );
+      executionResults = prepared.preview.plan.operations.map((operation) => {
+        const binding = prepared.bindings.get(operation.operationId);
+        if (binding?.kind === 'pair') {
+          return createUninstallExecutionResult(
+            operation,
+            actualByOperation.get(operation.operationId),
+            requested,
+          );
+        }
+        return createOperationExecutionResult({
+          operationId: operation.operationId,
+          outcome: 'failed',
+          actualBefore: operation.before,
+          actualAfter: operation.before,
+          force: null,
+          error: {
+            code: 'precondition-state-changed',
+            message: reason,
+            remediation: 'Re-read portable and placement state, then retry.',
+          },
+        });
+      });
     }
     for (const [index, operation] of prepared.preview.plan.operations.entries()) {
       if (actualByOperation.has(operation.operationId)) continue;
@@ -4386,25 +5130,31 @@ const runUninstallInternal = async (
       if (binding === undefined || execution === undefined) {
         throw new Error('prepared uninstall result projection is missing');
       }
-      if (binding.kind === 'migrate-ledger') continue;
+      if (binding.kind !== 'pair') continue;
       const actual =
-        execution.outcome === 'cancelled'
+        execution.outcome === 'skipped-after-failure'
           ? {
               ...binding.preview,
-              action: 'failed' as const,
-              reason: 'interrupted',
-              error: genericError('operation interrupted'),
+              action: 'skipped' as const,
+              reason: 'fail-fast',
             }
-          : {
-              ...binding.preview,
-              action: 'failed' as const,
-              reason: 'ledger migration failed before placement execution',
-              error: genericError('ledger migration failed before placement execution'),
-            };
-      actualByPreview.set(binding.preview, actual);
+          : execution.outcome === 'cancelled'
+            ? {
+                ...binding.preview,
+                action: 'skipped' as const,
+                reason: 'interrupted',
+                error: cancelledError('interrupted'),
+              }
+            : {
+                ...binding.preview,
+                action: 'failed' as const,
+                reason: 'a prerequisite operation failed before placement execution',
+                error: genericError('a prerequisite operation failed before placement execution'),
+              };
+      projectActual(binding, actual);
       actualByOperation.set(operation.operationId, actual);
     }
-    const results = prepared.preview.results.map(
+    const results = prepared.legacyPreviewResults.map(
       (previewResult) => actualByPreview.get(previewResult) ?? previewResult,
     );
     return assembleUninstallReport(
@@ -4413,6 +5163,11 @@ const runUninstallInternal = async (
       results,
       prepared.preview.plan,
       executionResults,
+      {
+        artifact: prepared.artifactResolution,
+        groupByResult: prepared.groupByResult,
+        requestIndices: prepared.requestIndices,
+      },
     );
   };
 

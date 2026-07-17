@@ -198,6 +198,11 @@ name: dup
   const env: RuntimePorts = {
     ...defaultEnv,
     homeDir: home,
+    xdg: {
+      config: join(home, '.config'),
+      data: join(home, '.local', 'share'),
+      cache: join(home, '.cache'),
+    },
   };
 
   const fleet: FixtureFleet = {

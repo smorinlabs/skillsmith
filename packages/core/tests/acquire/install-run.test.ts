@@ -893,10 +893,14 @@ describe('runInstall — batch semantics', () => {
     expect(attemptedStagingRoots).toEqual(['claude-code', 'codex']);
     expect(first.value.results.find(({ tool }) => tool === 'claude-code')?.action).toBe('failed');
     expect(first.value.results.find(({ tool }) => tool === 'codex')?.action).toBe('installed');
-    expect(first.value.executionResults.map(({ outcome }) => outcome)).toEqual([
-      'failed',
-      'succeeded',
-    ]);
+    const placementOperationIds = new Set(
+      operations.filter(({ pairId }) => pairId !== null).map(({ operationId }) => operationId),
+    );
+    expect(
+      first.value.executionResults
+        .filter(({ operationId }) => placementOperationIds.has(operationId))
+        .map(({ outcome }) => outcome),
+    ).toEqual(['failed', 'succeeded']);
 
     const partialLedger = await led();
     expect(getPairAt(partialLedger, null, 'factor-scan', 'claude-code')?.journal?.phase).toBe(
@@ -2145,10 +2149,14 @@ describe('runInstall — dry run', () => {
       reason: 'interrupted',
       error: { code: 'cancelled' },
     });
-    expect(started.value.executionResults[0]).toMatchObject({ outcome: 'cancelled' });
-    expect(started.value.executionResults[0]?.actualAfter).toEqual(
-      started.value.executionResults[0]?.actualBefore,
+    const startedPlacement = started.value.plan.operations.find(
+      ({ kind, pairId }) => kind === 'install' && pairId !== null,
     );
+    const startedExecution = started.value.executionResults.find(
+      ({ operationId }) => operationId === startedPlacement?.operationId,
+    );
+    expect(startedExecution).toMatchObject({ outcome: 'cancelled' });
+    expect(startedExecution?.actualAfter).toEqual(startedExecution?.actualBefore);
     expect(await f.env.pathKind(livePath)).toBe('absent');
     expect(getPairAt(await led(), null, 'factor-scan', 'claude-code')?.journal?.phase).toBe(
       'prepared',
@@ -2161,10 +2169,14 @@ describe('runInstall — dry run', () => {
       reason: 'interrupted',
       error: { code: 'cancelled' },
     });
-    expect(recovery.value.executionResults[0]).toMatchObject({ outcome: 'cancelled' });
-    expect(recovery.value.executionResults[0]?.actualAfter).toEqual(
-      recovery.value.executionResults[0]?.actualBefore,
+    const recoveryPlacement = recovery.value.plan.operations.find(
+      ({ kind, pairId }) => kind === 'install' && pairId !== null,
     );
+    const recoveryExecution = recovery.value.executionResults.find(
+      ({ operationId }) => operationId === recoveryPlacement?.operationId,
+    );
+    expect(recoveryExecution).toMatchObject({ outcome: 'cancelled' });
+    expect(recoveryExecution?.actualAfter).toEqual(recoveryExecution?.actualBefore);
     expect(await f.env.pathKind(livePath)).toBe('absent');
     expect(getPairAt(await led(), null, 'factor-scan', 'claude-code')?.journal?.phase).toBe(
       'staged',
@@ -2235,8 +2247,10 @@ describe('runInstall — dry run', () => {
 
     expect(preparedKinds[0]).toBe('migrate-ledger');
     expect(result.value.plan.operations[0]?.kind).toBe('migrate-ledger');
+    const postMigration = result.value.plan.operations.slice(1);
+    expect(postMigration.some(({ pairId }) => pairId === null)).toBe(true);
     expect(
-      result.value.plan.operations.slice(1).every((operation) => operation.pairId !== null),
+      postMigration.filter(({ kind }) => kind === 'install').every(({ pairId }) => pairId !== null),
     ).toBe(true);
     expect(await f.env.readText(ledgerPath)).toBe(source);
   });

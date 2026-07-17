@@ -206,6 +206,7 @@ type AcquisitionArtifactDestinationResolutionV1 =
       saveMode: 'desired-state';
       pair: ResolvedArtifactPair;
       selection: SelectedAcquisitionArtifactSelection;
+      declaredNames: readonly string[];
     }>
   | Readonly<{
       outcome: 'none';
@@ -417,6 +418,15 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
     outcome: 'selected' as const,
     saveMode: 'desired-state' as const,
     pair: pair.value,
+    declaredNames: Object.freeze(
+      destination.value.path === null
+        ? []
+        : [
+            ...(discovered.value.candidates.find(
+              (candidate) => candidate.path === destination.value.path,
+            )?.declaredNames ?? []),
+          ],
+    ),
     selection: Object.freeze({
       outcome: 'selected' as const,
       selectedBy: selectedByForDestination(discovered.value, destination.value),

@@ -327,6 +327,8 @@ export interface PlannedUninstallReport extends UninstallReport {
 export interface UninstallDeps {
   now?: () => string;
   newTxId?: () => string;
+  /** Source-internal execution authority supplied by application composition. */
+  readonly artifactCoordinator?: ArtifactCoordinatorPorts;
   /** Test/embedding observation seam; called after exact bindings exist and before any binding runs. */
   readonly observePreparedPlan?: (plan: OperationPlan<'uninstall'>) => void;
 }

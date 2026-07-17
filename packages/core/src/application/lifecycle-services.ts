@@ -10,6 +10,7 @@ import type {
   InstallDeps,
   InstallReport,
   InstallScope,
+  UninstallDeps,
   UninstallReport,
 } from '../acquire/types.ts';
 import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts';
@@ -25,6 +26,7 @@ import {
 } from '../place/run.ts';
 import type { prepareDev, preparePromote, prepareRollback } from '../place/run.ts';
 import type { FlipReport, FlipTool } from '../place/types.ts';
+import { canonicalPlanningString } from '../planning/order.ts';
 import type { OperationPlan } from '../planning/types.ts';
 import type { Result } from '../result.ts';
 import { validateSelectionRequest } from '../selection/resolve.ts';
@@ -400,6 +402,61 @@ const authorizeBulkPlan = async (
       };
 };
 
+const uninstallApprovalRequirement = (
+  plan: OperationPlan<'uninstall'>,
+): Readonly<{ required: boolean; groupCount: number; backupAndReplace: boolean }> => {
+  const otherwisePermittedGroups = new Set(
+    plan.operations
+      .filter((operation) => operation.kind !== 'migrate-ledger')
+      .map((operation) => operation.groupId),
+  );
+  const backupAndReplace = plan.operations.some(
+    (operation) => operation.conflict?.forced === 'backup-and-replace',
+  );
+  return {
+    required: otherwisePermittedGroups.size > 1 || backupAndReplace,
+    groupCount: otherwisePermittedGroups.size,
+    backupAndReplace,
+  };
+};
+
+const authorizeUninstallPlan = async (
+  plan: OperationPlan<'uninstall'>,
+  interaction: InteractionPort,
+): Promise<BulkApproval> => {
+  const requirement = uninstallApprovalRequirement(plan);
+  if (!requirement.required) return { ok: true };
+  const backupSummary = requirement.backupAndReplace ? ' including backup-and-replace' : '';
+  const resolution = await interaction.confirm({
+    id: 'uninstall.approval',
+    message: `Confirm uninstall of ${requirement.groupCount} groups (${plan.operations.length} operations)${backupSummary}?`,
+  });
+  if (resolution.status === 'cancelled') {
+    return {
+      ok: false,
+      exitClass: 'cancelled',
+      code: 'approval-cancelled',
+      message: 'uninstall confirmation was cancelled',
+    };
+  }
+  if (resolution.status === 'refused') {
+    return {
+      ok: false,
+      exitClass: 'usage',
+      code: 'approval-required',
+      message: `uninstall requires approval or confirmation: ${resolution.reason}`,
+    };
+  }
+  return resolution.value
+    ? { ok: true }
+    : {
+        ok: false,
+        exitClass: 'usage',
+        code: 'approval-refused',
+        message: 'uninstall was not approved',
+      };
+};
+
 const interactiveInstallDeps = (
   interaction: InteractionPort,
   options: Readonly<Record<string, unknown>>,
@@ -657,27 +714,61 @@ export const createLifecycleApplicationServices = (
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('uninstall', project.error, context.signal);
     const pause = context.configuration.journalPause;
+    const dryRun = bool(options, 'dryRun');
+    const force = bool(options, 'force');
+    const allScopes = bool(options, 'allScopes');
+    const uninstallOptions = {
+      targets,
+      ...(selection.value.tools.length === 0
+        ? {}
+        : { tools: selection.value.tools as readonly FlipTool[] }),
+      ...(scope.value === null ? {} : { scope: scope.value }),
+      allScopes,
+      ...(file === undefined ? {} : { file }),
+      ...(lockfile === undefined ? {} : { lockfile }),
+      noSave,
+      continueOnError: bool(options, 'continueOnError'),
+      force,
+      dryRun,
+      cwd: project.value.effectiveCwd,
+      configuration: context.configuration,
+      ...(pause === undefined ? {} : { testPauseAt: pause }),
+      ...(context.signal === undefined ? {} : { signal: context.signal }),
+    };
+    const uninstallDeps: UninstallDeps = {
+      ...defaultUninstallDeps,
+      artifactCoordinator: context.artifactCoordinator,
+    };
+    let previewPlan: OperationPlan<'uninstall'> | null = null;
+    if (!dryRun && (force || targets.length > 1 || allScopes)) {
+      const preview = await dependencies.uninstall(
+        context.ports,
+        { ...uninstallOptions, dryRun: true },
+        uninstallDeps,
+        context.observation,
+      );
+      if (!preview.ok) return domainFailure('uninstall', preview.error, context.signal);
+      previewPlan = preview.value.plan;
+      const approval = await authorizeUninstallPlan(preview.value.plan, context.interaction);
+      if (!approval.ok) {
+        return refusal('uninstall', approval.exitClass, approval.code, approval.message);
+      }
+    }
+    const executionDeps: UninstallDeps =
+      previewPlan === null
+        ? uninstallDeps
+        : {
+            ...uninstallDeps,
+            observePreparedPlan: (plan) => {
+              if (canonicalPlanningString(plan) !== canonicalPlanningString(previewPlan)) {
+                throw new Error('prepared uninstall plan changed after approval preflight');
+              }
+            },
+          };
     const result = await dependencies.uninstall(
       context.ports,
-      {
-        targets,
-        ...(selection.value.tools.length === 0
-          ? {}
-          : { tools: selection.value.tools as readonly FlipTool[] }),
-        ...(scope.value === null ? {} : { scope: scope.value }),
-        allScopes: bool(options, 'allScopes'),
-        ...(file === undefined ? {} : { file }),
-        ...(lockfile === undefined ? {} : { lockfile }),
-        noSave,
-        continueOnError: bool(options, 'continueOnError'),
-        force: bool(options, 'force'),
-        dryRun: bool(options, 'dryRun'),
-        cwd: project.value.effectiveCwd,
-        configuration: context.configuration,
-        ...(pause === undefined ? {} : { testPauseAt: pause }),
-        ...(context.signal === undefined ? {} : { signal: context.signal }),
-      },
-      { ...defaultUninstallDeps },
+      uninstallOptions,
+      executionDeps,
       context.observation,
     );
     if (!result.ok) return domainFailure('uninstall', result.error, context.signal);

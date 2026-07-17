@@ -9,10 +9,14 @@ import {
   createUninstallPlanning,
 } from '../../src/acquire/plan.ts';
 import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
-import { hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import { type ArtifactDigest, hashManifestSemantics } from '../../src/artifacts/hash.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
 import { type PortableLockV1, hashPortableLock } from '../../src/artifacts/lock.ts';
-import type { NormalizedManifestV1 } from '../../src/artifacts/types.ts';
+import type {
+  NormalizedManifestDeclaration,
+  NormalizedManifestV1,
+} from '../../src/artifacts/types.ts';
+import type { OperationLockSnapshot } from '../../src/planning/types.ts';
 import {
   type ExpectedRevisionV1,
   type LivePlacementStateV1,
@@ -376,6 +380,188 @@ const artifactTransitionForInstall = (
       },
     ],
   } as unknown as NonNullable<AcquisitionInstallPlanRequestV1['artifactTransition']>;
+};
+
+const portableDeclaration = (
+  name: string,
+  tools: readonly ('claude-code' | 'codex')[],
+): NormalizedManifestDeclaration => ({
+  name,
+  source: { host: 'example.test', repository: 'fixture/repo', path: `skills/${name}` },
+  ref: null,
+  tools,
+  scope: 'user',
+  placement: 'symlink',
+  path: null,
+});
+
+const portableLockForManifest = (manifest: NormalizedManifestV1): PortableLockV1 => ({
+  version: 1,
+  hashSchemaVersion: 1,
+  manifestHash: hashManifestSemantics(manifest),
+  skills: manifest.skills.map((declaration) => ({
+    name: declaration.name,
+    source: `example.test/fixture/repo//skills/${declaration.name}`,
+    requestedRef: null,
+    resolvedSha: 'c'.repeat(40),
+    sourcePath: `skills/${declaration.name}`,
+    contentHash: `sha256:${HEX.a}` as ArtifactDigest,
+  })),
+});
+
+const manifestImage = (manifest: NormalizedManifestV1, byteHex: string) => ({
+  kind: 'manifest' as const,
+  location: { kind: 'machine-bound' as const, path: '/fixture/manifest' },
+  shape: 'canonical' as const,
+  version: 1 as const,
+  byteHash: `sha256:${byteHex}` as `sha256:${string}`,
+  semanticHash: hashManifestSemantics(manifest) as `sha256:${string}`,
+  value: {
+    version: 1 as const,
+    defaults:
+      manifest.defaults === undefined
+        ? null
+        : {
+            tools: manifest.defaults.tools ?? null,
+            scope: manifest.defaults.scope ?? null,
+            path: manifest.defaults.path ?? null,
+          },
+    registry:
+      manifest.registry === undefined ? null : { default: manifest.registry.default ?? null },
+    skills: manifest.skills,
+  },
+});
+
+const lockImage = (lock: PortableLockV1) => {
+  const hashed = hashPortableLock(lock);
+  if (!hashed.ok) throw new Error(hashed.error.message);
+  return {
+    kind: 'lock' as const,
+    location: { kind: 'machine-bound' as const, path: '/fixture/lock' },
+    version: 1 as const,
+    canonicalHash: hashed.value as `sha256:${string}`,
+    value: lock as unknown as OperationLockSnapshot,
+  };
+};
+
+const uninstallIntent = (
+  name: string,
+  tool: 'claude-code' | 'codex',
+  force = false,
+): AcquisitionUninstallPlanRequestV1['intents'][number] => ({
+  kind: 'remove',
+  skill: name,
+  tool,
+  scope: 'user',
+  projectRoot: null,
+  liveResourceId: `live-resource-${name}-${tool}`,
+  storeResourceId: null,
+  force,
+});
+
+const uninstallGroup = (
+  intent: AcquisitionUninstallPlanRequestV1['intents'][number],
+  afterManifest: NormalizedManifestV1,
+  afterLock = portableLockForManifest(afterManifest),
+) => ({
+  groupIdentity: {
+    domain: 'skillsmith.operation-group-identity' as const,
+    schemaVersion: 1 as const,
+    command: 'uninstall' as const,
+    skill: intent.skill,
+    source: null,
+    scope: intent.scope,
+    target: intent.skill,
+  },
+  manifestAfter: manifestImage(afterManifest, HEX.b),
+  lockAfter: lockImage(afterLock),
+});
+
+const savingUninstallCase = (
+  beforeManifest: NormalizedManifestV1,
+  intents: readonly AcquisitionUninstallPlanRequestV1['intents'][number][],
+  groups: AcquisitionUninstallPlanRequestV1['artifactTransition'] extends infer _Transition
+    ? NonNullable<AcquisitionUninstallPlanRequestV1['artifactTransition']>['groups']
+    : never,
+): Readonly<{
+  input: AcquisitionUninstallPlanRequestV1;
+  observed: AcquisitionObservedStateSnapshotV1;
+}> => {
+  const beforeLock = portableLockForManifest(beforeManifest);
+  const beforeLockHash = hashPortableLock(beforeLock);
+  if (!beforeLockHash.ok) throw new Error(beforeLockHash.error.message);
+  return {
+    input: {
+      schemaVersion: 1,
+      command: 'uninstall',
+      selection: {
+        source: 'explicit-targets',
+        skills: [...new Set(intents.map(({ skill }) => skill))],
+        tools: [...new Set(intents.map(({ tool }) => tool))],
+        scopes: ['user'],
+      },
+      batchPolicy: 'fail-fast',
+      intents,
+      artifactTransition: {
+        initial: {
+          manifest: manifestImage(beforeManifest, HEX.a),
+          lock: lockImage(beforeLock),
+        },
+        groups,
+      },
+    },
+    observed: snapshot(HEX.a, HEX.b, {
+      artifact: {
+        mode: 'selected',
+        pair: {
+          file: {
+            token: null,
+            path: '/fixture/manifest',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfile: {
+            token: null,
+            path: '/fixture/lock',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfileSource: 'explicit',
+        },
+        manifest: {
+          revision: presentArtifactRevision(
+            'manifest',
+            'manifest:/fixture',
+            '/fixture/manifest',
+            `sha256:${HEX.a}`,
+            hashManifestSemantics(beforeManifest),
+          ),
+          value: beforeManifest,
+        },
+        lock: {
+          revision: presentArtifactRevision(
+            'lock',
+            'lock:/fixture',
+            '/fixture/lock',
+            beforeLockHash.value,
+            beforeLockHash.value,
+          ),
+          value: beforeLock,
+        },
+      },
+      live: intents.map((intent, index) => ({
+        revision: revision(
+          'live',
+          intent.liveResourceId,
+          index % 2 === 0 ? HEX.c : HEX.d,
+          `/fixture/live/${intent.skill}-${intent.tool}`,
+        ),
+        value: null,
+      })),
+      store: [],
+      ledger: { revision: revision('ledger', 'ledger:user', HEX.c), value: null },
+    }),
+  };
 };
 
 const expectDeepFrozen = (value: unknown, seen = new Set<object>()): void => {
@@ -1778,6 +1964,7 @@ describe('createAcquisitionPlan', () => {
           projectRoot: null,
           liveResourceId: 'live-resource-alpha',
           storeResourceId: null,
+          force: false,
         },
       ],
     };
@@ -1990,6 +2177,273 @@ describe('createAcquisitionPlan', () => {
       'write-manifest',
       'write-lock',
     ]);
+  });
+
+  test('accepts exact partial and final uninstall declaration transitions', () => {
+    const beta = portableDeclaration('beta', ['codex']);
+    const partialBefore: NormalizedManifestV1 = {
+      version: 1,
+      defaults: { scope: 'user' },
+      registry: { default: 'example.test' },
+      skills: [portableDeclaration('alpha', ['claude-code', 'codex']), beta],
+    };
+    const partialAfter: NormalizedManifestV1 = {
+      ...partialBefore,
+      skills: [portableDeclaration('alpha', ['codex']), beta],
+    };
+    const partialIntent = uninstallIntent('alpha', 'claude-code');
+    const partial = savingUninstallCase(
+      partialBefore,
+      [partialIntent],
+      [uninstallGroup(partialIntent, partialAfter)],
+    );
+    const partialPlan = createAcquisitionPlan(partial.input, partial.observed);
+    expect(partialPlan.ok).toBeTrue();
+    if (!partialPlan.ok) throw new Error(partialPlan.error.message);
+    expect(partialPlan.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'write-manifest',
+      'write-lock',
+    ]);
+
+    const finalBefore: NormalizedManifestV1 = {
+      ...partialBefore,
+      skills: [portableDeclaration('alpha', ['codex']), beta],
+    };
+    const finalAfter: NormalizedManifestV1 = { ...partialBefore, skills: [beta] };
+    const finalIntent = uninstallIntent('alpha', 'codex');
+    const final = savingUninstallCase(
+      finalBefore,
+      [finalIntent],
+      [uninstallGroup(finalIntent, finalAfter)],
+    );
+    const finalPlan = createAcquisitionPlan(final.input, final.observed);
+    expect(finalPlan.ok).toBeTrue();
+    if (!finalPlan.ok) throw new Error(finalPlan.error.message);
+    expect(finalPlan.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'write-manifest',
+      'write-lock',
+    ]);
+  });
+
+  test('rejects wrong-tool, unrelated-manifest, and unrelated-lock uninstall transitions', () => {
+    const beta = portableDeclaration('beta', ['codex']);
+    const before: NormalizedManifestV1 = {
+      version: 1,
+      skills: [portableDeclaration('alpha', ['claude-code', 'codex']), beta],
+    };
+    const intent = uninstallIntent('alpha', 'claude-code');
+    const wrongToolAfter: NormalizedManifestV1 = {
+      version: 1,
+      skills: [portableDeclaration('alpha', ['claude-code']), beta],
+    };
+    const wrongTool = savingUninstallCase(
+      before,
+      [intent],
+      [uninstallGroup(intent, wrongToolAfter)],
+    );
+    expect(createAcquisitionPlan(wrongTool.input, wrongTool.observed)).toMatchObject({
+      ok: false,
+      error: { message: 'acquisition planning: uninstall manifest transition is not exact' },
+    });
+
+    const exactAfter: NormalizedManifestV1 = {
+      version: 1,
+      skills: [portableDeclaration('alpha', ['codex']), beta],
+    };
+    const changedBeta = { ...beta, placement: 'copy' as const };
+    const unrelatedManifest: NormalizedManifestV1 = {
+      version: 1,
+      skills: [portableDeclaration('alpha', ['codex']), changedBeta],
+    };
+    const unrelated = savingUninstallCase(
+      before,
+      [intent],
+      [uninstallGroup(intent, unrelatedManifest)],
+    );
+    expect(createAcquisitionPlan(unrelated.input, unrelated.observed)).toMatchObject({
+      ok: false,
+      error: { message: 'acquisition planning: uninstall manifest transition is not exact' },
+    });
+
+    const changedLock = portableLockForManifest(exactAfter);
+    const unrelatedLock: PortableLockV1 = {
+      ...changedLock,
+      skills: changedLock.skills.map((entry) =>
+        entry.name === 'beta'
+          ? { ...entry, contentHash: `sha256:${HEX.b}` as ArtifactDigest }
+          : entry,
+      ),
+    };
+    const lockCase = savingUninstallCase(
+      before,
+      [intent],
+      [uninstallGroup(intent, exactAfter, unrelatedLock)],
+    );
+    expect(createAcquisitionPlan(lockCase.input, lockCase.observed)).toMatchObject({
+      ok: false,
+      error: { message: 'acquisition planning: uninstall lock transition is not exact' },
+    });
+  });
+
+  test('rejects more than one saving uninstall declaration group', () => {
+    const alpha = portableDeclaration('alpha', ['codex']);
+    const beta = portableDeclaration('beta', ['codex']);
+    const before: NormalizedManifestV1 = { version: 1, skills: [alpha, beta] };
+    const afterAlpha: NormalizedManifestV1 = { version: 1, skills: [beta] };
+    const afterBoth: NormalizedManifestV1 = { version: 1, skills: [] };
+    const alphaIntent = uninstallIntent('alpha', 'codex');
+    const betaIntent = uninstallIntent('beta', 'codex');
+    const selected = savingUninstallCase(
+      before,
+      [alphaIntent, betaIntent],
+      [uninstallGroup(alphaIntent, afterAlpha), uninstallGroup(betaIntent, afterBoth)],
+    );
+    expect(createAcquisitionPlan(selected.input, selected.observed)).toMatchObject({
+      ok: false,
+      error: {
+        message: 'acquisition planning: saving uninstall requires exactly one declaration group',
+      },
+    });
+  });
+
+  test('classifies only exact forced uninstall conflicts', () => {
+    const requestFor = (
+      intent: AcquisitionUninstallPlanRequestV1['intents'][number],
+    ): AcquisitionUninstallPlanRequestV1 => ({
+      schemaVersion: 1,
+      command: 'uninstall',
+      selection: {
+        source: 'explicit-targets',
+        skills: [intent.skill],
+        tools: [intent.tool],
+        scopes: [intent.scope],
+      },
+      batchPolicy: 'fail-fast',
+      intents: [intent],
+    });
+    const live = (
+      representation: LivePlacementStateV1['representation'],
+      placementClass: LivePlacementStateV1['placementClass'],
+      contentRevision: string | null,
+    ): LivePlacementStateV1 => ({
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      representation,
+      path: '/fixture/live/alpha',
+      realpath: representation === 'symlink' ? '/fixture/source/alpha' : '/fixture/live/alpha',
+      linkTarget: representation === 'symlink' ? '/fixture/source/alpha' : null,
+      dangling: false,
+      placementClass,
+      skillFile: 'valid',
+      brokenReason: null,
+      contentRevision,
+    });
+    const pinnedPair = (contentHash: string): LedgerPairV1Dto => ({
+      placementPath: '/fixture/live/alpha',
+      mode: 'pinned',
+      dev: null,
+      pinned: {
+        storePath: '/fixture/store/alpha',
+        rev: 'c'.repeat(12),
+        gitSha: 'c'.repeat(40),
+        dirty: false,
+        contentHash,
+        snapshotAt: '2026-07-16T00:00:00.000Z',
+        verify: 'passed',
+        placement: 'copy',
+      },
+      journal: null,
+    });
+    const devPair: LedgerPairV1Dto = {
+      placementPath: '/fixture/live/alpha',
+      mode: 'dev',
+      dev: {
+        sourcePath: '/fixture/source/alpha',
+        resolvedPath: '/fixture/source/alpha',
+        repoRoot: '/fixture',
+        sourceRelPath: 'source/alpha',
+        remote: null,
+        recordedAt: '2026-07-16T00:00:00.000Z',
+      },
+      pinned: null,
+      journal: null,
+    };
+    const planConflict = (
+      intent: AcquisitionUninstallPlanRequestV1['intents'][number],
+      state: LivePlacementStateV1,
+      pair: LedgerPairV1Dto | null,
+    ) => {
+      const planned = createAcquisitionPlan(
+        requestFor(intent),
+        snapshot(HEX.a, HEX.b, {
+          live: [
+            {
+              revision: presentLiveRevision(intent.liveResourceId, state, HEX.d),
+              value: state,
+            },
+          ],
+          ledger:
+            pair === null
+              ? { revision: revision('ledger', 'ledger:user', HEX.c), value: null }
+              : { revision: presentLedgerRevision(HEX.c), value: ledgerWithAlphaPair(pair) },
+        }),
+      );
+      if (!planned.ok) throw new Error(planned.error.message);
+      return planned.value.plan.operations[0]?.conflict;
+    };
+
+    const unmanaged = uninstallIntent('alpha', 'codex', true);
+    expect(planConflict(unmanaged, live('directory', 'pinned', `sha256:${HEX.a}`), null)).toEqual({
+      class: 'unmanaged-target',
+      normal: 'refuse',
+      forced: 'backup-and-replace',
+      target: expect.objectContaining({ kind: 'live', skill: 'alpha', tool: 'codex' }),
+      backup: 'required',
+    });
+
+    const modifiedIntent = {
+      ...uninstallIntent('alpha', 'codex', true),
+      storeResourceId: 'store-resource-alpha',
+    };
+    expect(
+      planConflict(
+        modifiedIntent,
+        live('directory', 'pinned', `sha256:${HEX.b}`),
+        pinnedPair(`sha256:${HEX.a}`),
+      ),
+    ).toEqual({
+      class: 'modified-managed-target',
+      normal: 'refuse',
+      forced: 'backup-and-replace',
+      target: expect.objectContaining({ kind: 'live', skill: 'alpha', tool: 'codex' }),
+      backup: 'required',
+    });
+
+    const devIntent = uninstallIntent('alpha', 'codex', true);
+    expect(planConflict(devIntent, live('symlink', 'dev', `sha256:${HEX.a}`), devPair)).toEqual({
+      class: 'source-changed',
+      normal: 'refuse',
+      forced: 'replace',
+      target: expect.objectContaining({ kind: 'live', skill: 'alpha', tool: 'codex' }),
+      backup: 'none',
+    });
+
+    expect(
+      planConflict(
+        { ...unmanaged, force: false },
+        live('directory', 'pinned', `sha256:${HEX.a}`),
+        null,
+      ),
+    ).toBeNull();
+    expect(
+      planConflict(
+        modifiedIntent,
+        live('directory', 'pinned', `sha256:${HEX.a}`),
+        pinnedPair(`sha256:${HEX.a}`),
+      ),
+    ).toBeNull();
   });
 
   test('fails closed for incoherent live, store, and ledger components supplied directly', () => {
