@@ -4,6 +4,7 @@ export type {
   CurrentInstallResult,
   CurrentUninstallReport,
   CurrentUninstallResult,
+  CurrentUninstallAction,
   InstallAction,
   InstallDeps,
   InstallOptions,

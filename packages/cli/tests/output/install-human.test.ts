@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import type { InstallReport, UninstallReport, VerifyReport } from '@skillsmith/core';
+import type {
+  CurrentInstallReport,
+  CurrentUninstallReport,
+  InstallReport,
+  UninstallReport,
+  VerifyReport,
+} from '@skillsmith/core';
 import { Command } from 'commander';
-import { CURRENT_RENDERER_REPORTS } from '../../../../tests/ergonomics/fixtures/p1-ts10/reports.ts';
+import {
+  CURRENT_RENDERER_REPORTS,
+  REPORT_FIXTURES,
+} from '../../../../tests/ergonomics/fixtures/p1-ts10/reports.ts';
 import { renderInstallHuman, renderUninstallHuman } from '../../src/output/install-human.ts';
 import type { RuntimeOutcome } from '../../src/runtime/adapter.ts';
 import { createCurrentRendererRegistry } from '../../src/runtime/current-renderers.ts';
@@ -432,11 +441,47 @@ describe('current renderer adapter facts', () => {
   };
 
   test('injects the registered install static notice', () => {
-    const rendered = stdout(
-      renderer('install').human(successOutcome(CURRENT_RENDERER_REPORTS.install)),
-    );
+    const fixture = REPORT_FIXTURES.currentInstall;
+    const value = {
+      ...fixture,
+      results: fixture.results.map((result) => ({
+        ...result,
+        verify: { gate: 'passed' as const, verdict: 'pass' as const, mode: 'static' as const },
+      })),
+    } satisfies CurrentInstallReport;
+    const rendered = stdout(renderer('install').human(successOutcome({ value })));
     expect(rendered).toContain(
       "codex static checks the manifest only — run 'skillsmith verify fixture-skill --deep'",
+    );
+    expect(rendered).toContain('Saved desired state:');
+    expect(rendered).toContain('/fixture/project/skills.toml');
+    expect(rendered).toContain('fixture-skill: manifest update, lock update, succeeded');
+  });
+
+  test('renders dry-run and no-save desired-state consequences without duplicating skipped stderr', () => {
+    const dryRun = {
+      ...REPORT_FIXTURES.currentInstall,
+      dryRun: true,
+      artifactEffects: REPORT_FIXTURES.currentInstall.artifactEffects.map((effect) => ({
+        ...effect,
+        outcome: 'planned' as const,
+      })),
+    } satisfies CurrentInstallReport;
+    const dryRunOutput = stdout(renderer('install').human(successOutcome({ value: dryRun })));
+    expect(dryRunOutput).toContain('Would save desired state:');
+    expect(dryRunOutput).not.toContain('Saved desired state:');
+
+    const noSave = REPORT_FIXTURES.currentUninstall satisfies CurrentUninstallReport;
+    const rendered = renderer('uninstall').human(successOutcome({ value: noSave }));
+    const renderedStdout = stdout(rendered);
+    expect(renderedStdout).toContain(
+      'Portable desired state: not inspected or changed (--no-save)',
+    );
+    expect(renderedStdout).toContain('A later apply follows whichever manifest is selected then.');
+    expect(renderedStdout).toContain('skipped after an earlier group failed');
+    expect(renderedStdout).toContain('1 removed, 1 skipped.  Exit code: 0');
+    expect(typeof rendered === 'string' ? '' : (rendered.stderr ?? '')).not.toContain(
+      'later-skill',
     );
   });
 

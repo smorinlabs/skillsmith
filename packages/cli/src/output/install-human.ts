@@ -1,8 +1,9 @@
 import type {
+  CurrentInstallReport,
+  CurrentUninstallReport,
   InstallAction,
   InstallReport,
   InstallResult,
-  UninstallAction,
   UninstallReport,
   UninstallResult,
 } from '@skillsmith/core';
@@ -93,7 +94,7 @@ const INSTALL_BUCKET_LABEL: Record<InstallAction, string> = {
  *  shadowing, legacy-root, local-path guidance) are written to stderr by the command action,
  *  not here — this renderer covers the per-source/per-tool report and the summary line. */
 export const renderInstallHuman = (
-  report: InstallReport,
+  report: InstallReport | CurrentInstallReport,
   exitCode: number,
   staticNoticeFor: InstallStaticNoticeResolver = noInstallStaticNotice,
 ): string => {
@@ -160,6 +161,7 @@ export const renderInstallHuman = (
     .filter((b) => report.summary[b] > 0)
     .map((b) => `${report.summary[b]} ${INSTALL_BUCKET_LABEL[b]}`);
   const summaryLine = `${parts.length > 0 ? parts.join(', ') : 'nothing to do'}.  Exit code: ${exitCode}`;
+  if (report.reportVersion === 2) lines.push(...renderDesiredState(report));
   lines.push(summaryLine);
 
   return `${lines.join('\n')}\n`;
@@ -169,7 +171,10 @@ export const renderInstallHuman = (
 // uninstall
 // ---------------------------------------------------------------------------------------------
 
-const renderUninstallToolBlock = (r: UninstallResult): string[] => {
+type RenderableUninstallResult = UninstallResult | CurrentUninstallReport['results'][number];
+type RenderableUninstallAction = CurrentUninstallReport['results'][number]['action'];
+
+const renderUninstallToolBlock = (r: RenderableUninstallResult): string[] => {
   const lines: string[] = [];
   const tool = r.tool ?? 'unknown';
   lines.push(`${tool.padEnd(12)} ${r.placementPath ?? '(no placement resolved)'}`);
@@ -182,6 +187,10 @@ const renderUninstallToolBlock = (r: UninstallResult): string[] => {
     lines.push(`  ${r.reason ?? 'placement was already gone'}`);
     return lines;
   }
+  if (r.action === 'skipped') {
+    lines.push(`  skipped  ${r.reason ?? 'after an earlier group failed'}`);
+    return lines;
+  }
 
   const removeLine = `  ${padLabel('remove')}${placementLabel(r.before?.placement ?? null)}`;
   lines.push(`${padToCol(removeLine, PLACE_COL)}removed`);
@@ -192,18 +201,44 @@ const renderUninstallToolBlock = (r: UninstallResult): string[] => {
   return lines;
 };
 
-const UNINSTALL_BUCKET_LABEL: Record<UninstallAction, string> = {
+const UNINSTALL_BUCKET_LABEL: Record<RenderableUninstallAction, string> = {
   removed: 'removed',
   noop: 'not installed',
+  skipped: 'skipped',
   refused: 'refused',
   failed: 'failed',
 };
 
+const renderDesiredState = (report: CurrentInstallReport | CurrentUninstallReport): string[] => {
+  if (report.saveMode === 'live-only') {
+    return [
+      'Portable desired state: not inspected or changed (--no-save)',
+      '  A later apply follows whichever manifest is selected then.',
+    ];
+  }
+  if (report.artifactPair === null || report.artifactSelection.outcome !== 'selected') return [];
+  const lines = [
+    report.dryRun ? 'Would save desired state:' : 'Saved desired state:',
+    `  ${report.artifactPair.manifestPath}`,
+    `  ${report.artifactPair.lockPath}`,
+  ];
+  for (const effect of report.artifactEffects) {
+    const subject = effect.skill ?? effect.groupId ?? 'selected group';
+    lines.push(
+      `  ${subject}: manifest ${effect.manifestAction}, lock ${effect.lockAction}, ${effect.outcome}`,
+    );
+  }
+  return lines;
+};
+
 /** Human-readable render of a `skillsmith.uninstall` report (mockups in
  *  `research/commands/uninstall.md`). Same stderr/stdout split as `renderInstallHuman`. */
-export const renderUninstallHuman = (report: UninstallReport, exitCode: number): string => {
+export const renderUninstallHuman = (
+  report: UninstallReport | CurrentUninstallReport,
+  exitCode: number,
+): string => {
   const lines: string[] = [];
-  const bySkill = new Map<string, UninstallResult[]>();
+  const bySkill = new Map<string, RenderableUninstallResult[]>();
   for (const r of report.results) {
     const list = bySkill.get(r.skill) ?? [];
     list.push(r);
@@ -228,11 +263,19 @@ export const renderUninstallHuman = (report: UninstallReport, exitCode: number):
     lines.push('');
   }
 
-  const buckets: UninstallAction[] = ['removed', 'noop', 'refused', 'failed'];
+  const buckets: RenderableUninstallAction[] = ['removed', 'noop', 'skipped', 'refused', 'failed'];
   const parts = buckets
-    .filter((b) => report.summary[b] > 0)
-    .map((b) => `${report.summary[b]} ${UNINSTALL_BUCKET_LABEL[b]}`);
+    .map((bucket) => ({
+      bucket,
+      count:
+        bucket === 'skipped'
+          ? report.results.filter(({ action }) => action === 'skipped').length
+          : report.summary[bucket],
+    }))
+    .filter(({ count }) => count > 0)
+    .map(({ bucket, count }) => `${count} ${UNINSTALL_BUCKET_LABEL[bucket]}`);
   const summaryLine = `${parts.length > 0 ? parts.join(', ') : 'nothing to do'}.  Exit code: ${exitCode}`;
+  if (report.reportVersion === 2) lines.push(...renderDesiredState(report));
   lines.push(summaryLine);
 
   return `${lines.join('\n')}\n`;

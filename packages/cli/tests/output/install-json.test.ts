@@ -130,6 +130,18 @@ const uninstallReport: UninstallReport = {
   summary: { removed: 1, noop: 0, refused: 0, failed: 0 },
 };
 
+const renderInstallV1Json = (report: InstallReport): string => {
+  const encoded = installV1Codec.encode(toInstallV1Dto(report));
+  if (!encoded.ok) throw new Error(encoded.error.message);
+  return encoded.value;
+};
+
+const renderUninstallV1Json = (report: UninstallReport): string => {
+  const encoded = uninstallV1Codec.encode(toUninstallV1Dto(report));
+  if (!encoded.ok) throw new Error(encoded.error.message);
+  return encoded.value;
+};
+
 const CURRENT_SOURCE = 'https://alice:supersecret@example.com/owner/repo/skill';
 const CURRENT_MANIFEST = '/tmp/token=preserve-manifest.toml';
 const CURRENT_LOCK = '/tmp/token=preserve-lock.lock';
@@ -330,17 +342,17 @@ const currentUninstallReport: CurrentUninstallReport = {
 
 describe('renderInstallJson', () => {
   test('matches the committed golden (parse-compare, formatting-proof)', () => {
-    const rendered = renderInstallJson(installReport);
+    const rendered = renderInstallV1Json(installReport);
     expect(JSON.parse(rendered)).toEqual(JSON.parse(installGoldenText));
   });
 
-  test('validates against InstallJsonSchema', () => {
-    const rendered = renderInstallJson(installReport);
-    expect(() => InstallJsonSchema.parse(JSON.parse(rendered))).not.toThrow();
+  test('validates against the frozen install@1 codec', () => {
+    const rendered = renderInstallV1Json(installReport);
+    expect(installV1Codec.validate(JSON.parse(rendered)).ok).toBeTrue();
   });
 
   test('top-level field set is exact; kind and schemaVersion are correct', () => {
-    const rendered = JSON.parse(renderInstallJson(installReport)) as Record<string, unknown>;
+    const rendered = JSON.parse(renderInstallV1Json(installReport)) as Record<string, unknown>;
     expect(Object.keys(rendered).sort()).toEqual(
       ['schemaVersion', 'kind', 'dryRun', 'requested', 'results', 'summary'].sort(),
     );
@@ -358,7 +370,7 @@ describe('renderInstallJson', () => {
         } as InstallReport['results'][number],
       ],
     };
-    const rendered = JSON.parse(renderInstallJson(withError)) as {
+    const rendered = JSON.parse(renderInstallV1Json(withError)) as {
       results: Record<string, unknown>[];
     };
     for (const r of rendered.results) expect('error' in r).toBe(false);
@@ -372,7 +384,7 @@ describe('renderInstallJson', () => {
         requestIndex,
       })),
     };
-    const rendered = JSON.parse(renderInstallJson(withRequestIndex)) as {
+    const rendered = JSON.parse(renderInstallV1Json(withRequestIndex)) as {
       results: Record<string, unknown>[];
     };
     for (const result of rendered.results) expect('requestIndex' in result).toBeFalse();
@@ -383,14 +395,14 @@ describe('renderInstallJson', () => {
       ...installReport,
       results: [{ ...installReport.results[0], action: 'flipped' }],
     } as unknown as InstallReport;
-    expect(() => renderInstallJson(bad)).toThrow();
+    expect(() => renderInstallV1Json(bad)).toThrow();
   });
 
   test('schema rejects a wrong `kind`', () => {
-    const rendered = JSON.parse(renderInstallJson(installReport));
+    const rendered = JSON.parse(renderInstallV1Json(installReport));
     rendered.kind = 'skillsmith.uninstall';
-    expect(() => InstallJsonSchema.parse(rendered)).toThrow();
-    expect(() => UninstallJsonSchema.parse(rendered)).toThrow();
+    expect(installV1Codec.validate(rendered).ok).toBeFalse();
+    expect(uninstallV1Codec.validate(rendered).ok).toBeFalse();
   });
 
   test('a source-level failure (skill/tool null) round-trips with a candidates list', () => {
@@ -425,7 +437,7 @@ describe('renderInstallJson', () => {
         failed: 0,
       },
     };
-    const rendered = JSON.parse(renderInstallJson(ambiguous));
+    const rendered = JSON.parse(renderInstallV1Json(ambiguous));
     expect(rendered.results[0].skill).toBeNull();
     expect(rendered.results[0].tool).toBeNull();
     expect(rendered.results[0].candidates).toHaveLength(2);
@@ -434,17 +446,17 @@ describe('renderInstallJson', () => {
 
 describe('renderUninstallJson', () => {
   test('matches the committed golden (parse-compare, formatting-proof)', () => {
-    const rendered = renderUninstallJson(uninstallReport);
+    const rendered = renderUninstallV1Json(uninstallReport);
     expect(JSON.parse(rendered)).toEqual(JSON.parse(uninstallGoldenText));
   });
 
-  test('validates against UninstallJsonSchema', () => {
-    const rendered = renderUninstallJson(uninstallReport);
-    expect(() => UninstallJsonSchema.parse(JSON.parse(rendered))).not.toThrow();
+  test('validates against the frozen uninstall@1 codec', () => {
+    const rendered = renderUninstallV1Json(uninstallReport);
+    expect(uninstallV1Codec.validate(JSON.parse(rendered)).ok).toBeTrue();
   });
 
   test('top-level field set is exact; kind and schemaVersion are correct', () => {
-    const rendered = JSON.parse(renderUninstallJson(uninstallReport)) as Record<string, unknown>;
+    const rendered = JSON.parse(renderUninstallV1Json(uninstallReport)) as Record<string, unknown>;
     expect(Object.keys(rendered).sort()).toEqual(
       ['schemaVersion', 'kind', 'dryRun', 'requested', 'results', 'summary'].sort(),
     );
@@ -462,7 +474,7 @@ describe('renderUninstallJson', () => {
         } as UninstallReport['results'][number],
       ],
     };
-    const rendered = JSON.parse(renderUninstallJson(withError)) as {
+    const rendered = JSON.parse(renderUninstallV1Json(withError)) as {
       results: Record<string, unknown>[];
     };
     for (const r of rendered.results) expect('error' in r).toBe(false);
@@ -473,14 +485,14 @@ describe('renderUninstallJson', () => {
       ...uninstallReport,
       results: [{ ...uninstallReport.results[0], action: 'installed' }],
     } as unknown as UninstallReport;
-    expect(() => renderUninstallJson(bad)).toThrow();
+    expect(() => renderUninstallV1Json(bad)).toThrow();
   });
 
   test('schema rejects a wrong `kind`', () => {
-    const rendered = JSON.parse(renderUninstallJson(uninstallReport));
+    const rendered = JSON.parse(renderUninstallV1Json(uninstallReport));
     rendered.kind = 'skillsmith.install';
-    expect(() => UninstallJsonSchema.parse(rendered)).toThrow();
-    expect(() => InstallJsonSchema.parse(rendered)).toThrow();
+    expect(uninstallV1Codec.validate(rendered).ok).toBeFalse();
+    expect(installV1Codec.validate(rendered).ok).toBeFalse();
   });
 
   // U2 ambiguity carry-forward: `tool: null` alone must not collapse into a "not installed"
@@ -504,7 +516,7 @@ describe('renderUninstallJson', () => {
       ],
       summary: { removed: 0, noop: 0, refused: 1, failed: 0 },
     };
-    const rendered = JSON.parse(renderUninstallJson(ambiguous));
+    const rendered = JSON.parse(renderUninstallV1Json(ambiguous));
     expect(rendered.results[0].action).toBe('refused');
     expect(rendered.results[0].tool).toBeNull();
     expect(rendered.results[0].scope).toBeNull();
@@ -528,13 +540,22 @@ describe('renderUninstallJson', () => {
       ],
       summary: { removed: 0, noop: 1, refused: 0, failed: 0 },
     };
-    const rendered = JSON.parse(renderUninstallJson(notInstalled));
+    const rendered = JSON.parse(renderUninstallV1Json(notInstalled));
     expect(rendered.results[0].action).toBe('noop');
     expect(rendered.results[0].tool).toBeNull();
   });
 });
 
 describe('G4A-01 additive lifecycle v2 wire contracts', () => {
+  test('current output schemas accept v2 and reject the opposite lifecycle kind', () => {
+    const install = toInstallV2Dto(currentInstallReport);
+    const uninstall = toUninstallV2Dto(currentUninstallReport);
+    expect(() => InstallJsonSchema.parse(install)).not.toThrow();
+    expect(() => UninstallJsonSchema.parse(uninstall)).not.toThrow();
+    expect(() => InstallJsonSchema.parse(uninstall)).toThrow();
+    expect(() => UninstallJsonSchema.parse(install)).toThrow();
+  });
+
   test('maps and round-trips every current install field without plan/error leakage', () => {
     const hostileResult = {
       ...(currentInstallReport.results[0] as CurrentInstallReport['results'][number]),
@@ -750,7 +771,7 @@ describe('G4A-01 additive lifecycle v2 wire contracts', () => {
     }
   });
 
-  test('registers both @2 codecs while intentionally retaining current renderers on @1', () => {
+  test('registers both generations and advances only current renderers to @2', () => {
     expect(currentWireContractRegistry.get('install', 2)?.descriptor).toEqual(
       installV2Codec.descriptor,
     );
@@ -760,29 +781,35 @@ describe('G4A-01 additive lifecycle v2 wire contracts', () => {
     expect(currentWireCommandMappings).toContainEqual({
       commandPath: 'skillsmith install',
       contractId: 'install',
-      version: 1,
+      version: 2,
     });
     expect(currentWireCommandMappings).toContainEqual({
       commandPath: 'skillsmith uninstall',
       contractId: 'uninstall',
-      version: 1,
+      version: 2,
     });
-    expect(currentWireCodecs.install.descriptor).toEqual(installV1Codec.descriptor);
-    expect(currentWireCodecs.uninstall.descriptor).toEqual(uninstallV1Codec.descriptor);
-    expect(renderInstallJson(installReport)).toBe(
+    expect(currentWireCodecs.install.descriptor).toEqual(installV2Codec.descriptor);
+    expect(currentWireCodecs.uninstall.descriptor).toEqual(uninstallV2Codec.descriptor);
+    expect(renderInstallV1Json(installReport)).toBe(
       (() => {
         const encoded = installV1Codec.encode(toInstallV1Dto(installReport));
         if (!encoded.ok) throw new Error(encoded.error.message);
         return encoded.value;
       })(),
     );
-    expect(renderUninstallJson(uninstallReport)).toBe(
+    expect(renderUninstallV1Json(uninstallReport)).toBe(
       (() => {
         const encoded = uninstallV1Codec.encode(toUninstallV1Dto(uninstallReport));
         if (!encoded.ok) throw new Error(encoded.error.message);
         return encoded.value;
       })(),
     );
+    const currentInstall = installV2Codec.encode(toInstallV2Dto(currentInstallReport));
+    if (!currentInstall.ok) throw new Error(currentInstall.error.message);
+    expect(renderInstallJson(currentInstallReport)).toBe(currentInstall.value);
+    const currentUninstall = uninstallV2Codec.encode(toUninstallV2Dto(currentUninstallReport));
+    if (!currentUninstall.ok) throw new Error(currentUninstall.error.message);
+    expect(renderUninstallJson(currentUninstallReport)).toBe(currentUninstall.value);
   });
 
   test('declares no implicit migration and refuses either report generation at the wrong mapper', () => {
@@ -807,8 +834,8 @@ describe('G4A-01 additive lifecycle v2 wire contracts', () => {
     expect(() => toUninstallV2Dto(uninstallReport as unknown as CurrentUninstallReport)).toThrow(
       'reportVersion 2',
     );
-    expect(() => renderInstallJson(currentInstallReport as unknown as InstallReport)).toThrow(
-      'reportVersion 1',
+    expect(() => renderInstallJson(installReport as unknown as CurrentInstallReport)).toThrow(
+      'reportVersion 2',
     );
   });
 

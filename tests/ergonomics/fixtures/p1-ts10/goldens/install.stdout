@@ -1,10 +1,31 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "skillsmith.install",
   "dryRun": false,
+  "saveMode": "desired-state",
+  "artifactPair": {
+    "manifestPath": "/fixture/project/skills.toml",
+    "lockPath": "/fixture/project/skills.lock",
+    "lockSource": "sibling"
+  },
+  "artifactSelection": {
+    "outcome": "selected",
+    "selectedBy": "selected-project-owner"
+  },
+  "artifactEffects": [
+    {
+      "groupId": "group:v1:fixture-install",
+      "skill": "fixture-skill",
+      "manifestAction": "update",
+      "lockAction": "update",
+      "migration": "none",
+      "outcome": "succeeded",
+      "reason": null
+    }
+  ],
   "requested": {
     "sources": [
-      "fixture/repository//skills/fixture-skill"
+      "https://github.com/fixture/repository//skills/fixture-skill"
     ],
     "tools": [
       "codex"
@@ -17,11 +38,13 @@
     "direct": false,
     "force": false,
     "verify": "static",
-    "deep": false
+    "deep": false,
+    "batchPolicy": "fail-fast",
+    "path": "./skills"
   },
   "results": [
     {
-      "source": "fixture/repository//skills/fixture-skill",
+      "source": "https://github.com/fixture/repository//skills/fixture-skill",
       "skill": "fixture-skill",
       "tool": "codex",
       "scope": "project",
@@ -29,26 +52,28 @@
       "action": "installed",
       "reason": null,
       "placement": "symlink",
-      "store": {
-        "path": "/fixture/store/fixture-skill",
-        "rev": "main",
-        "gitSha": "1111111111111111111111111111111111111111",
-        "reused": false
+      "store": null,
+      "origin": null,
+      "verify": null,
+      "candidates": null,
+      "requestIndex": 0,
+      "groupId": "group:v1:fixture-install",
+      "pairId": "pair:v1:fixture-codex-project",
+      "executionOutcome": "succeeded",
+      "drift": {
+        "status": "in-sync",
+        "futureApply": "none",
+        "reason": null
       },
-      "origin": {
-        "host": "github.com",
-        "repo": "fixture/repository",
-        "skillPath": "skills/fixture-skill",
-        "refRequested": "main",
-        "refResolved": "1111111111111111111111111111111111111111",
-        "pin": true
-      },
-      "verify": {
-        "gate": "passed",
-        "verdict": "pass",
-        "mode": "static"
-      },
-      "candidates": null
+      "force": {
+        "requested": false,
+        "applied": false,
+        "conflictType": null,
+        "target": null,
+        "normalBehavior": null,
+        "forcedBehavior": null,
+        "backup": null
+      }
     }
   ],
   "summary": {
@@ -58,6 +83,13 @@
     "noop": 0,
     "skipped": 0,
     "refused": 0,
-    "failed": 0
+    "failed": 0,
+    "desiredState": {
+      "changed": 1,
+      "unchanged": 0,
+      "retained": 0,
+      "notWritten": 0,
+      "failed": 0
+    }
   }
 }

@@ -41,11 +41,11 @@ export const currentWireCommandMappings = Object.freeze([
   mapping('skillsmith config unset', 'config-unset', 1),
   mapping('skillsmith dev', 'flip', 4),
   mapping('skillsmith doctor', 'health', 2),
-  mapping('skillsmith install', 'install', 1),
+  mapping('skillsmith install', 'install', 2),
   mapping('skillsmith list', 'list', 3),
   mapping('skillsmith promote', 'flip', 4),
   mapping('skillsmith status', 'status', 1),
-  mapping('skillsmith uninstall', 'uninstall', 1),
+  mapping('skillsmith uninstall', 'uninstall', 2),
   mapping('skillsmith verify', 'verify', 1),
 ]);
 
@@ -131,10 +131,10 @@ export const currentWireCodecs = Object.freeze({
   configUnset: boundCodec('skillsmith config unset', configUnsetV1Codec),
   dev: boundCodec('skillsmith dev', flipV4Codec),
   doctor: boundCodec('skillsmith doctor', healthV2Codec),
-  install: boundCodec('skillsmith install', installV1Codec),
+  install: boundCodec('skillsmith install', installV2Codec),
   list: boundCodec('skillsmith list', listV3Codec),
   promote: boundCodec('skillsmith promote', flipV4Codec),
   status: boundCodec('skillsmith status', statusV1Codec),
-  uninstall: boundCodec('skillsmith uninstall', uninstallV1Codec),
+  uninstall: boundCodec('skillsmith uninstall', uninstallV2Codec),
   verify: boundCodec('skillsmith verify', verifyV1Codec),
 });

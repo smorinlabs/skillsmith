@@ -729,10 +729,10 @@ export const CURRENT_RENDERER_REPORTS = {
   configSet: REPORT_FIXTURES.configSet,
   configUnset: REPORT_FIXTURES.configUnset,
   flip: { value: REPORT_FIXTURES.flip },
-  install: { value: REPORT_FIXTURES.install },
+  install: { value: REPORT_FIXTURES.currentInstall },
   list: REPORT_FIXTURES.list,
   status: { result: STATUS_V1_DTO_FIXTURE },
-  uninstall: { value: REPORT_FIXTURES.uninstall },
+  uninstall: { value: REPORT_FIXTURES.currentUninstall },
   verify: { result: REPORT_FIXTURES.verify },
 } as const;
 
@@ -1061,7 +1061,9 @@ export const CURRENT_JSON_GOLDENS = {
   agents: `${JSON.stringify(AGENTS_V2_DTO, null, 2)}\n`,
   commands: `${JSON.stringify(COMMANDS_V2_DTO, null, 2)}\n`,
   flip: JSON.stringify(FLIP_V4_DTO, null, 2),
+  install: CURRENT_LIFECYCLE_V2_GOLDENS.install,
   list: `${JSON.stringify(LIST_V3_DTO, null, 2)}\n`,
+  uninstall: CURRENT_LIFECYCLE_V2_GOLDENS.uninstall,
 } as const;
 
 export const GOLDEN_TERMINAL_LF = {

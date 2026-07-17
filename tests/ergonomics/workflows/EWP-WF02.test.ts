@@ -201,12 +201,11 @@ describe('EWP-WF02', () => {
       expect(placement).toMatchObject({
         ledger: { state: 'present' },
         live: { state: 'present' },
-        classification: 'pinned',
+        classification: 'store-linked',
       });
       const factCodes = [...records(entry.facts), ...records(placement.facts)].map(
         (fact) => fact.code,
       );
-      expect(factCodes).toContain('live-only');
       expect(factCodes).toContain('live-undeclared');
       expect(await pathKind(manifestPath)).toBe('absent');
       expect(await pathKind(lockPath)).toBe('absent');

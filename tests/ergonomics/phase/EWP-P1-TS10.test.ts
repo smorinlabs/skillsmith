@@ -79,11 +79,11 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith config unset', 'config-unset', 1],
   ['skillsmith dev', 'flip', 4],
   ['skillsmith doctor', 'health', 2],
-  ['skillsmith install', 'install', 1],
+  ['skillsmith install', 'install', 2],
   ['skillsmith list', 'list', 3],
   ['skillsmith promote', 'flip', 4],
   ['skillsmith status', 'status', 1],
-  ['skillsmith uninstall', 'uninstall', 1],
+  ['skillsmith uninstall', 'uninstall', 2],
   ['skillsmith verify', 'verify', 1],
 ] as const;
 
@@ -626,8 +626,8 @@ describe('EWP-P1-TS10', () => {
     }
     expect(registry.latest('install')?.descriptor.version).toBe(2);
     expect(registry.latest('uninstall')?.descriptor.version).toBe(2);
-    expect(registry.forCommand('skillsmith install')?.descriptor.version).toBe(1);
-    expect(registry.forCommand('skillsmith uninstall')?.descriptor.version).toBe(1);
+    expect(registry.forCommand('skillsmith install')?.descriptor.version).toBe(2);
+    expect(registry.forCommand('skillsmith uninstall')?.descriptor.version).toBe(2);
     expect(Object.isFrozen(registry.codecs)).toBeTrue();
     expect(Object.isFrozen(registry.commandMappings)).toBeTrue();
     for (const mapping of registry.commandMappings) {
@@ -1563,13 +1563,13 @@ describe('EWP-P1-TS10', () => {
       readonly value: UnknownRecord;
       readonly path: readonly (string | number)[];
     }> = [];
-    const top = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    const top = JSON.parse(HISTORICAL_JSON_GOLDENS.install) as UnknownRecord;
     top.unexpected = true;
     unknownCases.push({ value: top, path: ['unexpected'] });
-    const nested = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    const nested = JSON.parse(HISTORICAL_JSON_GOLDENS.install) as UnknownRecord;
     (nested.requested as UnknownRecord).unexpected = true;
     unknownCases.push({ value: nested, path: ['requested', 'unexpected'] });
-    const deep = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    const deep = JSON.parse(HISTORICAL_JSON_GOLDENS.install) as UnknownRecord;
     const firstResult = (deep.results as UnknownRecord[])[0];
     if (firstResult !== undefined) (firstResult.store as UnknownRecord).unexpected = true;
     unknownCases.push({ value: deep, path: ['results', 0, 'store', 'unexpected'] });
@@ -1578,12 +1578,12 @@ describe('EWP-P1-TS10', () => {
       expectWireFailure(result, 'invalid-shape', 'install', 1, fixture.path);
     }
 
-    const wrongKind = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    const wrongKind = JSON.parse(HISTORICAL_JSON_GOLDENS.install) as UnknownRecord;
     wrongKind.kind = 'skillsmith.other';
     expectWireFailure(install.decode(JSON.stringify(wrongKind)), 'invalid-shape', 'install', 1, [
       'kind',
     ]);
-    const wrongInstallVersion = JSON.parse(CURRENT_JSON_GOLDENS.install) as UnknownRecord;
+    const wrongInstallVersion = JSON.parse(HISTORICAL_JSON_GOLDENS.install) as UnknownRecord;
     for (const version of [0, 2]) {
       wrongInstallVersion.schemaVersion = version;
       expectWireFailure(
@@ -1679,8 +1679,8 @@ describe('EWP-P1-TS10', () => {
     expect(configList.validate({ scope: 'custom' }).ok).toBeFalse();
 
     const lifecycleCases = [
-      [install, CURRENT_JSON_GOLDENS.install],
-      [uninstall, CURRENT_JSON_GOLDENS.uninstall],
+      [install, HISTORICAL_JSON_GOLDENS.install],
+      [uninstall, HISTORICAL_JSON_GOLDENS.uninstall],
       [flip, HISTORICAL_JSON_GOLDENS.flip],
     ] as const;
     for (const [codec, bytes] of lifecycleCases) {
@@ -1710,8 +1710,8 @@ describe('EWP-P1-TS10', () => {
       }
     }
     for (const [codec, bytes] of [
-      [install, CURRENT_JSON_GOLDENS.install],
-      [uninstall, CURRENT_JSON_GOLDENS.uninstall],
+      [install, HISTORICAL_JSON_GOLDENS.install],
+      [uninstall, HISTORICAL_JSON_GOLDENS.uninstall],
     ] as const) {
       const baseDto = JSON.parse(bytes) as UnknownRecord;
       const resultRows = baseDto.results as UnknownRecord[];
@@ -1902,7 +1902,7 @@ describe('EWP-P1-TS10', () => {
 
     expect(registry.get('config-get', 99)).toBeUndefined();
     expect(registry.latest('config-get')?.descriptor.version).toBe(1);
-    const dto = resultValue(install.decode(CURRENT_JSON_GOLDENS.install));
+    const dto = resultValue(install.decode(HISTORICAL_JSON_GOLDENS.install));
     const invalidDto = { ...(dto as UnknownRecord), unexpected: true };
     let invalidEncode: WireResult | undefined;
     expect(() => {
@@ -1911,7 +1911,7 @@ describe('EWP-P1-TS10', () => {
     expectWireFailure(invalidEncode ?? { ok: true }, 'invalid-shape', 'install', 1, ['unexpected']);
     const encoded = resultValue(install.encode(dto));
     expect(encoded).toBe(resultValue(install.encode(dto)));
-    expect(encoded).toBe(CURRENT_JSON_GOLDENS.install);
+    expect(encoded).toBe(HISTORICAL_JSON_GOLDENS.install);
     (dto as UnknownRecord).unexpectedAfterFirstEncode = true;
     expectWireFailure(install.encode(dto), 'invalid-shape', 'install', 1, [
       'unexpectedAfterFirstEncode',
@@ -2024,7 +2024,7 @@ describe('EWP-P1-TS10', () => {
         mapper: v1.toInstallV1Dto,
         codec: v1.installV1Codec,
         args: [hostileInstall],
-        bytes: CURRENT_JSON_GOLDENS.install,
+        bytes: HISTORICAL_JSON_GOLDENS.install,
       },
       {
         name: 'install@2',
@@ -2045,7 +2045,7 @@ describe('EWP-P1-TS10', () => {
         mapper: v1.toUninstallV1Dto,
         codec: v1.uninstallV1Codec,
         args: [hostileUninstall],
-        bytes: CURRENT_JSON_GOLDENS.uninstall,
+        bytes: HISTORICAL_JSON_GOLDENS.uninstall,
       },
       {
         name: 'uninstall@2',
@@ -2218,11 +2218,13 @@ describe('EWP-P1-TS10', () => {
       ['flip', 2, HISTORICAL_JSON_GOLDENS.flip],
       ['flip', 3, HISTORICAL_FLIP_V3_GOLDEN],
       ['flip', 4, CURRENT_JSON_GOLDENS.flip],
-      ['install', 1, CURRENT_JSON_GOLDENS.install],
+      ['install', 1, HISTORICAL_JSON_GOLDENS.install],
+      ['install', 2, CURRENT_JSON_GOLDENS.install],
       ['list', 2, HISTORICAL_JSON_GOLDENS.list],
       ['list', 3, CURRENT_JSON_GOLDENS.list],
       ['status', 1, CURRENT_JSON_GOLDENS.status],
-      ['uninstall', 1, CURRENT_JSON_GOLDENS.uninstall],
+      ['uninstall', 1, HISTORICAL_JSON_GOLDENS.uninstall],
+      ['uninstall', 2, CURRENT_JSON_GOLDENS.uninstall],
       ['verify', 1, CURRENT_JSON_GOLDENS.verify],
       ['error', 1, CURRENT_JSON_GOLDENS.error],
     ] as const;

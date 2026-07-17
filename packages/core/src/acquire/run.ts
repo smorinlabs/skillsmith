@@ -16,13 +16,13 @@ import {
   hashPortableLock,
   serializePortableLock,
 } from '../artifacts/lock.ts';
-import { manifestV1Codec } from '../artifacts/manifest-codec.ts';
 import {
   type ManifestEdit,
   type ManifestEditRequest,
   editManifestBytes,
 } from '../artifacts/manifest-edit.ts';
 import { createNodeArtifactCoordinatorPorts } from '../artifacts/node-coordinator.ts';
+import { artifactContractRegistry } from '../artifacts/registry.ts';
 import type { NormalizedManifestDeclaration, NormalizedManifestV1 } from '../artifacts/types.ts';
 import {
   type SkillSmithError,
@@ -1170,7 +1170,7 @@ const assembleInstallReport = (
     summary: { ...legacySummary, desiredState },
     plan,
     executionResults,
-  } as unknown as PlannedInstallReport;
+  };
 };
 const createInstallDiagnosticReport = (
   dryRun: boolean,
@@ -1766,7 +1766,11 @@ const runInstallInternal = async (
       if (edits.length > 0) {
         const targetManifest = manifestWithDeclaration(manifestModel, desired);
         if (manifestBytes === null) {
-          const encoded = manifestV1Codec.encode(targetManifest);
+          const manifestCodec = artifactContractRegistry.get('manifest', 1);
+          if (manifestCodec === undefined) {
+            throw new Error('manifest artifact codec 1 is unavailable');
+          }
+          const encoded = manifestCodec.encode(targetManifest);
           if (!encoded.ok) throw new Error(encoded.error.message);
           manifestBytes = encoded.value;
           manifestAction = Object.freeze({
@@ -2228,7 +2232,7 @@ const runInstallInternal = async (
           spec,
           resolved: r,
           tool,
-          execution: 'selected',
+          execution: preview.action === 'failed' ? 'desired-only' : 'selected',
           execute: async (): Promise<InstallResult> => {
             if (snap === null && snapErr === null) {
               const { ns, name } = clampStoreNs(spec.identity.repository);
@@ -3654,6 +3658,7 @@ const processUninstallTarget = async (
   scopesToSearch: readonly InstallScope[],
   toolsToSearch: readonly FlipTool[],
   explicitTools: boolean,
+  allowImplicitMultipleTools: boolean,
   scopeKeyFor: (scope: InstallScope) => Promise<string | null>,
   dryRun: boolean,
   bind?: (preview: UninstallResult, name: string, match: UMatch) => void,
@@ -3723,6 +3728,20 @@ const processUninstallTarget = async (
       .map((m) => `${m.scope} (${m.tool} at ${matchPathOf(m) ?? '<unknown>'})`)
       .join(', ');
     const reason = `'${target.input}' is installed in multiple scopes: ${list}; disambiguate with --scope, --tool, or --all-scopes`;
+    return [
+      {
+        ...emptyUninstallResult(target.name, null, null, 'refused'),
+        reason,
+        error: flipRefusedError(reason),
+      },
+    ];
+  }
+  const distinctTools = new Set(matches.map((match) => match.tool));
+  if (distinctTools.size > 1 && !explicitTools && !allowImplicitMultipleTools) {
+    const list = matches
+      .map((match) => `${match.tool} (${match.scope} at ${matchPathOf(match) ?? '<unknown>'})`)
+      .join(', ');
+    const reason = `'${target.input}' is installed for multiple tools: ${list}; disambiguate with --tool`;
     return [
       {
         ...emptyUninstallResult(target.name, null, null, 'refused'),
@@ -4032,7 +4051,7 @@ const assembleUninstallReport = (
     summary: { ...legacySummary, desiredState },
     plan,
     executionResults,
-  } as unknown as PlannedUninstallReport;
+  };
 };
 
 const createUninstallExecutionResult = (
@@ -4284,11 +4303,122 @@ const runUninstallInternal = async (
       return Object.freeze({ transition: undefined, actions: new Map() });
     }
     const manifestModel = artifact.manifest.value;
+    const manifestPath = artifact.pair.file.path;
+    const lockPath = artifact.pair.lockfile.path;
+    let manifestBytes: Uint8Array<ArrayBufferLike> = new Uint8Array(
+      await env.readBytes(manifestPath),
+    );
+    const initialManifest = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
     const declarations = manifestModel.skills.filter(({ name }) =>
       prepared.some(({ intent }) => intent.skill === name),
     );
     if (declarations.length === 0) {
-      return Object.freeze({ transition: undefined, actions: new Map() });
+      if (initialManifest.kind !== 'manifest' || initialManifest.shape !== 'legacy') {
+        return Object.freeze({ transition: undefined, actions: new Map() });
+      }
+      const grouped = new Map<
+        string,
+        {
+          readonly groupIdentity: {
+            readonly domain: 'skillsmith.operation-group-identity';
+            readonly schemaVersion: 1;
+            readonly command: 'uninstall';
+            readonly skill: string;
+            readonly source: null;
+            readonly scope: InstallScope;
+            readonly target: string;
+          };
+        }
+      >();
+      for (const { intent } of prepared) {
+        const groupIdentity = {
+          domain: 'skillsmith.operation-group-identity' as const,
+          schemaVersion: 1 as const,
+          command: 'uninstall' as const,
+          skill: intent.skill,
+          source: null,
+          scope: intent.scope,
+          target: intent.skill,
+        };
+        grouped.set(createOperationGroupId(groupIdentity), { groupIdentity });
+      }
+      const legacyGroups = [...grouped.entries()].sort(([left], [right]) =>
+        left < right ? -1 : left > right ? 1 : 0,
+      );
+      const selectedGroup = legacyGroups[0];
+      if (selectedGroup === undefined) {
+        return Object.freeze({ transition: undefined, actions: new Map() });
+      }
+      const [groupId, { groupIdentity }] = selectedGroup;
+      const migrationRequest = Object.freeze({
+        edits: Object.freeze([{ kind: 'migrate-legacy' as const }]),
+      });
+      const migrated = editManifestBytes(manifestBytes, migrationRequest);
+      if (!migrated.ok) throw migrated.error;
+      manifestBytes = migrated.value.bytes;
+      const migrationAfter = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
+      if (migrationAfter.kind !== 'manifest') {
+        throw new Error('legacy uninstall migration did not produce a manifest image');
+      }
+      const actions = new Map<string, AcquisitionArtifactExecutionActionV1>();
+      actions.set(
+        artifactBindingKey(groupId, 'migrate-project-config'),
+        Object.freeze({
+          role: 'manifest' as const,
+          action: Object.freeze({ kind: 'edit' as const, request: migrationRequest }),
+        }),
+      );
+      let initialLock: AcquisitionArtifactTransitionEnvelopeV1['initial']['lock'];
+      if (artifact.lock.revision.state === 'absent') {
+        initialLock = Object.freeze({
+          kind: 'absent' as const,
+          resource: Object.freeze({
+            kind: 'lock' as const,
+            location: Object.freeze({ kind: 'machine-bound' as const, path: lockPath }),
+          }),
+        });
+      } else {
+        initialLock = acquisitionLockImageFromBytesV1(
+          lockPath,
+          new Uint8Array(await env.readBytes(lockPath)),
+        );
+      }
+      const targetLock: PortableLockV1 = Object.freeze({
+        version: 1 as const,
+        hashSchemaVersion: HASH_SCHEMA_VERSION,
+        manifestHash: migrationAfter.semanticHash as ArtifactDigest,
+        skills: Object.freeze([]),
+      });
+      const serializedLock = serializePortableLock(targetLock);
+      if (!serializedLock.ok) throw new Error('legacy uninstall lock could not be serialized');
+      const lockAfter = acquisitionLockImageFromBytesV1(
+        lockPath,
+        new TextEncoder().encode(serializedLock.value),
+      );
+      actions.set(
+        artifactBindingKey(groupId, 'write-lock'),
+        Object.freeze({
+          role: 'lock' as const,
+          action: Object.freeze({ kind: 'replace' as const, lock: targetLock }),
+        }),
+      );
+      return Object.freeze({
+        transition: Object.freeze({
+          initial: Object.freeze({ manifest: initialManifest, lock: initialLock }),
+          groups: Object.freeze([
+            Object.freeze({
+              groupIdentity,
+              migrationAfter,
+              manifestAfter: migrationAfter,
+              lockAfter,
+            }),
+          ]),
+          unchangedGroups: Object.freeze(
+            legacyGroups.slice(1).map(([, { groupIdentity: unchanged }]) => unchanged),
+          ),
+        }),
+        actions,
+      });
     }
     if (declarations.length > 1) {
       throw new Error('selected uninstall artifact has multiple requested declarations');
@@ -4333,12 +4463,6 @@ const runUninstallInternal = async (
           .map((identity) => [createOperationGroupId(identity), identity]),
       ).values(),
     ];
-    const manifestPath = artifact.pair.file.path;
-    const lockPath = artifact.pair.lockfile.path;
-    let manifestBytes: Uint8Array<ArrayBufferLike> = new Uint8Array(
-      await env.readBytes(manifestPath),
-    );
-    const initialManifest = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
     const selectedTools = new Set(declaredPrepared.map(({ intent }) => intent.tool));
     const remainingTools = declaration.tools.filter((tool) => !selectedTools.has(tool));
     const declarationIndex = manifestModel.skills.findIndex(
@@ -4535,11 +4659,13 @@ const runUninstallInternal = async (
       artifactResolution.outcome === 'selected' &&
       (await env.pathKind(artifactResolution.pair.file.path)) !== 'absent'
     ) {
-      const decoded = manifestV1Codec.decode(
+      const manifestCodec = artifactContractRegistry.get('manifest', 1);
+      if (manifestCodec === undefined) throw new Error('manifest artifact codec 1 is unavailable');
+      const decoded = manifestCodec.decode(
         new Uint8Array(await env.readBytes(artifactResolution.pair.file.path)),
       );
       if (!decoded.ok) throw decoded.error;
-      selectedManifest = decoded.value.model;
+      selectedManifest = decoded.value.model as NormalizedManifestV1;
     }
     for (const [requestIndex, target] of normalizedTargets.entries()) {
       const targetResults = await processUninstallTarget(
@@ -4556,6 +4682,7 @@ const runUninstallInternal = async (
         scopesToSearch,
         toolsToSearch,
         explicitTools,
+        selectedManifest?.skills.some(({ name }) => name === target.name) === true,
         scopeKeyFor,
         true,
         (preview, name, match) => {

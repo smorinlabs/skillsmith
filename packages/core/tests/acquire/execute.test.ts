@@ -362,6 +362,19 @@ describe('acquisition artifact destination resolution', () => {
       pair: { file: { path: PROJECT_MANIFEST } },
       selection: { outcome: 'selected', selectedBy: 'legacy-project-migration' },
     });
+
+    const removal = await resolveDestination(
+      new DestinationPorts({
+        [PROJECT_MANIFEST]: { kind: 'file', text: 'tool = "codex"\nscope = "project"\n' },
+      }),
+      { mode: 'remove' },
+      projectContext(PROJECT_MANIFEST),
+    );
+    expect(removal).toMatchObject({
+      outcome: 'selected',
+      pair: { file: { path: PROJECT_MANIFEST } },
+      selection: { outcome: 'selected', selectedBy: 'legacy-project-migration' },
+    });
   });
 
   test('fails closed on automatic user legacy while preserving explicit-file precedence', async () => {

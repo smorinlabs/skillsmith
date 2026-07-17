@@ -221,7 +221,7 @@ export type CurrentInstallReport = Omit<
     summary: InstallReport['summary'] & Readonly<{ desiredState: AcquisitionDesiredStateSummary }>;
   }>;
 
-export interface PlannedInstallReport extends InstallReport {
+export interface PlannedInstallReport extends CurrentInstallReport {
   readonly plan: OperationPlan<'install'>;
   readonly executionResults: readonly OperationExecutionResult[];
 }
@@ -319,7 +319,7 @@ export type CurrentUninstallReport = Omit<
       Readonly<{ desiredState: AcquisitionDesiredStateSummary }>;
   }>;
 
-export interface PlannedUninstallReport extends UninstallReport {
+export interface PlannedUninstallReport extends CurrentUninstallReport {
   readonly plan: OperationPlan<'uninstall'>;
   readonly executionResults: readonly OperationExecutionResult[];
 }

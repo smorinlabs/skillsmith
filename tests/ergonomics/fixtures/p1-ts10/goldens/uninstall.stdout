@@ -1,10 +1,28 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "skillsmith.uninstall",
-  "dryRun": false,
+  "dryRun": true,
+  "saveMode": "live-only",
+  "artifactPair": null,
+  "artifactSelection": {
+    "outcome": "none",
+    "reason": "no-save"
+  },
+  "artifactEffects": [
+    {
+      "groupId": "group:v1:fixture-uninstall",
+      "skill": "fixture-skill",
+      "manifestAction": "not-write",
+      "lockAction": "not-write",
+      "migration": "none",
+      "outcome": "planned",
+      "reason": null
+    }
+  ],
   "requested": {
     "targets": [
-      "fixture-skill"
+      "fixture-skill",
+      "later-skill"
     ],
     "tools": [
       "codex"
@@ -12,7 +30,8 @@
     "explicitTools": true,
     "scope": "project",
     "allScopes": false,
-    "force": false
+    "force": true,
+    "batchPolicy": "fail-fast"
   },
   "results": [
     {
@@ -22,20 +41,72 @@
       "placementPath": "/fixture/project/skills/fixture-skill",
       "action": "removed",
       "reason": null,
-      "before": {
-        "mode": "pinned",
-        "placement": "symlink",
-        "storePath": "/fixture/store/fixture-skill",
-        "symlinkTarget": "/fixture/store/fixture-skill"
+      "before": null,
+      "storeRetained": null,
+      "backupKept": null,
+      "requestIndex": 0,
+      "groupId": "group:v1:fixture-uninstall",
+      "pairId": "pair:v1:fixture-codex-project",
+      "executionOutcome": "succeeded",
+      "drift": {
+        "status": "not-evaluated",
+        "futureApply": "depends-on-selected-manifest",
+        "reason": null
       },
-      "storeRetained": "/fixture/store/fixture-skill",
-      "backupKept": null
+      "force": {
+        "requested": true,
+        "applied": false,
+        "conflictType": "source-changed",
+        "target": {
+          "kind": "store",
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "normalBehavior": "refuse",
+        "forcedBehavior": "replace",
+        "backup": "none"
+      }
+    },
+    {
+      "skill": "later-skill",
+      "tool": "codex",
+      "scope": "project",
+      "placementPath": null,
+      "action": "skipped",
+      "reason": "skipped after an earlier group failed",
+      "before": null,
+      "storeRetained": null,
+      "backupKept": null,
+      "requestIndex": 1,
+      "groupId": "group:v1:fixture-uninstall-later",
+      "pairId": "pair:v1:fixture-codex-project",
+      "executionOutcome": "skipped-after-failure",
+      "drift": {
+        "status": "not-evaluated",
+        "futureApply": "depends-on-selected-manifest",
+        "reason": null
+      },
+      "force": {
+        "requested": false,
+        "applied": false,
+        "conflictType": null,
+        "target": null,
+        "normalBehavior": null,
+        "forcedBehavior": null,
+        "backup": null
+      }
     }
   ],
   "summary": {
     "removed": 1,
     "noop": 0,
     "refused": 0,
-    "failed": 0
+    "failed": 0,
+    "desiredState": {
+      "changed": 0,
+      "unchanged": 0,
+      "retained": 0,
+      "notWritten": 2,
+      "failed": 0
+    }
   }
 }

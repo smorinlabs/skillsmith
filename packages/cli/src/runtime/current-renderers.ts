@@ -7,16 +7,16 @@ import {
   type ConfigListReport,
   type ConfigSetReport,
   type ConfigUnsetReport,
+  type CurrentInstallReport,
+  type CurrentUninstallReport,
   type DevApplicationReport,
   type FlipReport,
   type HealthReport,
   type InstallApplicationReport,
-  type InstallReport,
   type ListReport,
   type PromoteApplicationReport,
   type StatusApplicationReport,
   type UninstallApplicationReport,
-  type UninstallReport,
   type VerifyApplicationReport,
   type VersionReport,
   getConfigValue,
@@ -145,7 +145,7 @@ const itemLine = (level: 'error' | 'warning', label: string, reason: string): st
   return level === 'error' ? rendered : rendered.replace(/^error:/, 'warning:');
 };
 
-const installStderr = (value: InstallReport): string =>
+const installStderr = (value: CurrentInstallReport): string =>
   value.results
     .map((item) => {
       const label = item.skill ? `${item.skill}${item.tool ? ` (${item.tool})` : ''}` : item.source;
@@ -161,13 +161,14 @@ const installStderr = (value: InstallReport): string =>
     })
     .join('');
 
-const uninstallStderr = (value: UninstallReport): string =>
+const uninstallStderr = (value: CurrentUninstallReport): string =>
   value.results
     .map((item) => {
       const label = `${item.skill}${item.tool ? ` (${item.tool})` : ''}`;
       if (item.action === 'refused' || item.action === 'failed') {
         return itemLine('error', label, item.reason ?? item.action);
       }
+      if (item.action === 'skipped') return '';
       return item.action !== 'noop' && item.reason ? itemLine('warning', label, item.reason) : '';
     })
     .join('');

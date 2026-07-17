@@ -103,6 +103,7 @@ export type {
   CurrentInstallResult,
   CurrentUninstallReport,
   CurrentUninstallResult,
+  CurrentUninstallAction,
   Deprecation,
   DetectionPorts,
   DetectOptions,

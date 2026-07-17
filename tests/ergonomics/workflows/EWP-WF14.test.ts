@@ -393,12 +393,27 @@ describe('EWP-WF14', () => {
       const manifestPath = join(workspace.repository, 'team.toml');
       const lockPath = join(workspace.repository, 'team.lock');
       await Promise.all([
-        writeFile(manifestPath, declaration('review', 'project')),
         writeFile(workspace.projectManifest, declaration('review', 'project')),
         writeFile(workspace.projectLock, '# project lock sentinel\n'),
         writeFile(workspace.userManifest, declaration('review', 'user')),
         writeFile(workspace.userLock, '# user lock sentinel\n'),
       ]);
+      const seed = await runCli(
+        [
+          'install',
+          `${remote.multiSource}//plugins/web/skills/review`,
+          '--tool',
+          'claude-code',
+          '--project',
+          '--file',
+          '../../team.toml',
+          '--no-verify',
+          '--json',
+        ],
+        workspace.cwd,
+        workspace.env,
+      );
+      expect(seed.exitCode, `${seed.stdout}${seed.stderr}`).toBe(0);
       const before = await snapshot([
         workspace.projectManifest,
         workspace.projectLock,
@@ -409,7 +424,6 @@ describe('EWP-WF14', () => {
         await expectPathBytes(
           [
             [manifestPath, declaration('review', 'project')],
-            [lockPath, null],
             [workspace.projectManifest, declaration('review', 'project')],
             [workspace.projectLock, '# project lock sentinel\n'],
             [workspace.userManifest, declaration('review', 'user')],
@@ -417,12 +431,13 @@ describe('EWP-WF14', () => {
           ],
           'explicit-owner fixture characterization',
         );
+        expect(await readMaybe(lockPath)).not.toBeNull();
         const product = await runCli(
           installArgs(['--user', '--file', '../../team.toml']),
           workspace.cwd,
           workspace.env,
         );
-        expect(product.exitCode, product.stderr).toBe(0);
+        expect(product.exitCode, `${product.stdout}${product.stderr}`).toBe(0);
         const report = requireJson(product, 'explicit project file');
         expectSelectedPair(report, manifestPath, lockPath, 'sibling', 'explicit-file');
         const manifest = await readMaybe(manifestPath);

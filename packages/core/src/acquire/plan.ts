@@ -1213,6 +1213,26 @@ const validateUninstallGroupPortableIntent = (
   }
 };
 
+const validateLegacyUninstallMigrationIntent = (
+  request: AcquisitionUninstallPlanRequestV1,
+  groupId: string,
+  manifestAfter: ManifestImageV1,
+  lockAfter: LockImageV1,
+): void => {
+  const intents = request.intents.filter(
+    (intent) => createOperationGroupId(uninstallGroupIdentityFor(request, intent)) === groupId,
+  );
+  if (
+    intents.length === 0 ||
+    manifestAfter.shape !== 'canonical' ||
+    manifestAfter.value.skills.length !== 0 ||
+    lockAfter.value.skills.length !== 0 ||
+    lockAfter.value.manifestHash !== manifestAfter.semanticHash
+  ) {
+    throw new TypeError('acquisition planning: legacy uninstall migration is incoherent');
+  }
+};
+
 const validateUnchangedInstallGroups = (
   request: AcquisitionInstallPlanRequestV1,
   unchangedGroupIds: readonly string[],
@@ -1340,21 +1360,35 @@ const createArtifactTransitionOperations = (
       currentManifest.semanticHash !== group.manifestAfter.semanticHash ||
       canonicalPlanningString(currentManifest.value) !==
         canonicalPlanningString(group.manifestAfter.value);
-    if (!manifestChanged && request.command !== 'install') {
+    const legacyUninstallMigration =
+      request.command === 'uninstall' &&
+      migrationId !== null &&
+      !manifestChanged &&
+      groupLive.length > 0;
+    if (!manifestChanged && request.command !== 'install' && !legacyUninstallMigration) {
       throw new TypeError('acquisition planning: uninstall transition requires a manifest write');
     }
     if (!portablePairIsCurrent(group.manifestAfter, group.lockAfter)) {
       throw new TypeError('acquisition planning: artifact transition pair is incoherent');
     }
     if (request.command === 'uninstall') {
-      validateUninstallGroupPortableIntent(
-        request,
-        group.groupId,
-        currentManifest,
-        currentLock,
-        group.manifestAfter,
-        group.lockAfter,
-      );
+      if (legacyUninstallMigration) {
+        validateLegacyUninstallMigrationIntent(
+          request,
+          group.groupId,
+          group.manifestAfter,
+          group.lockAfter,
+        );
+      } else {
+        validateUninstallGroupPortableIntent(
+          request,
+          group.groupId,
+          currentManifest,
+          currentLock,
+          group.manifestAfter,
+          group.lockAfter,
+        );
+      }
     }
     if (
       group.manifestAfter.shape !== 'canonical' ||
@@ -1398,7 +1432,13 @@ const createArtifactTransitionOperations = (
       'write-lock',
       currentLock,
       group.lockAfter,
-      manifest === null ? (migrationId === null ? [] : [migrationId]) : [manifest.operationId],
+      manifest === null
+        ? request.command === 'uninstall' && legacyUninstallMigration
+          ? [migrationId as string, ...groupLive.map(({ operationId }) => operationId)]
+          : migrationId === null
+            ? []
+            : [migrationId]
+        : [manifest.operationId],
       sourcePreconditionIds,
       snapshot,
       planningContext,

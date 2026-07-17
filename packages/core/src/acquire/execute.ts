@@ -393,9 +393,30 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
   });
   if (!destination.ok) return discoveryRefusal(destination.error);
 
+  const legacyProjectRemoval =
+    input.mode === 'remove' &&
+    input.scope === 'project' &&
+    input.file === undefined &&
+    destination.value.kind === 'absent' &&
+    discovered.value.projectRootManifest !== null
+      ? discovered.value.candidates.find(
+          (candidate) =>
+            candidate.path === discovered.value.projectRootManifest && candidate.shape === 'legacy',
+        )
+      : undefined;
+  const resolvedDestination: ManifestDestination =
+    legacyProjectRemoval === undefined
+      ? destination.value
+      : Object.freeze({
+          kind: 'existing' as const,
+          role: legacyProjectRemoval.role,
+          path: legacyProjectRemoval.path,
+          names: destination.value.names,
+        });
+
   const explicitAbsentRemove =
-    input.mode === 'remove' && destination.value.kind === 'absent' && input.file !== undefined;
-  if (destination.value.kind === 'absent' && !explicitAbsentRemove) {
+    input.mode === 'remove' && resolvedDestination.kind === 'absent' && input.file !== undefined;
+  if (resolvedDestination.kind === 'absent' && !explicitAbsentRemove) {
     return desiredStateWithoutArtifact('no-owner');
   }
 
@@ -404,7 +425,7 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
     input.projectContext,
     input.file === undefined
       ? {
-          discoveredFile: destination.value.path,
+          discoveredFile: resolvedDestination.path,
           ...(input.lockfile === undefined ? {} : { lockfile: input.lockfile }),
         }
       : {
@@ -419,17 +440,17 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
     saveMode: 'desired-state' as const,
     pair: pair.value,
     declaredNames: Object.freeze(
-      destination.value.path === null
+      resolvedDestination.path === null
         ? []
         : [
             ...(discovered.value.candidates.find(
-              (candidate) => candidate.path === destination.value.path,
+              (candidate) => candidate.path === resolvedDestination.path,
             )?.declaredNames ?? []),
           ],
     ),
     selection: Object.freeze({
       outcome: 'selected' as const,
-      selectedBy: selectedByForDestination(discovered.value, destination.value),
+      selectedBy: selectedByForDestination(discovered.value, resolvedDestination),
     }),
   });
 };

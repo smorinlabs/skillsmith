@@ -7,11 +7,11 @@ import {
 import type { runInstall, runUninstall } from '../acquire/run.ts';
 import type {
   CandidateSkill,
+  CurrentInstallReport,
+  CurrentUninstallReport,
   InstallDeps,
-  InstallReport,
   InstallScope,
   UninstallDeps,
-  UninstallReport,
 } from '../acquire/types.ts';
 import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts';
 import { resolveProjectContext } from '../context/project.ts';
@@ -50,8 +50,8 @@ export interface LifecycleApplicationReport<TReport> {
   readonly value: TReport | null;
 }
 
-export type InstallApplicationReport = LifecycleApplicationReport<InstallReport>;
-export type UninstallApplicationReport = LifecycleApplicationReport<UninstallReport>;
+export type InstallApplicationReport = LifecycleApplicationReport<CurrentInstallReport>;
+export type UninstallApplicationReport = LifecycleApplicationReport<CurrentUninstallReport>;
 export type DevApplicationReport = LifecycleApplicationReport<FlipReport>;
 export type PromoteApplicationReport = LifecycleApplicationReport<FlipReport>;
 
@@ -404,14 +404,28 @@ const authorizeBulkPlan = async (
 
 const uninstallApprovalRequirement = (
   plan: OperationPlan<'uninstall'>,
+  results: CurrentUninstallReport['results'],
 ): Readonly<{ required: boolean; groupCount: number; backupAndReplace: boolean }> => {
+  const reportedGroups = new Set(
+    results.flatMap((result) => (result.groupId === null ? [] : [result.groupId])),
+  );
+  const permittedGroups = new Set(
+    results.flatMap((result) =>
+      result.groupId !== null && (result.action === 'removed' || result.action === 'noop')
+        ? [result.groupId]
+        : [],
+    ),
+  );
+  const otherwisePermitted = (operation: OperationPlan<'uninstall'>['operations'][number]) =>
+    !reportedGroups.has(operation.groupId) || permittedGroups.has(operation.groupId);
   const otherwisePermittedGroups = new Set(
     plan.operations
-      .filter((operation) => operation.kind !== 'migrate-ledger')
+      .filter((operation) => operation.kind !== 'migrate-ledger' && otherwisePermitted(operation))
       .map((operation) => operation.groupId),
   );
   const backupAndReplace = plan.operations.some(
-    (operation) => operation.conflict?.forced === 'backup-and-replace',
+    (operation) =>
+      otherwisePermitted(operation) && operation.conflict?.forced === 'backup-and-replace',
   );
   return {
     required: otherwisePermittedGroups.size > 1 || backupAndReplace,
@@ -422,9 +436,10 @@ const uninstallApprovalRequirement = (
 
 const authorizeUninstallPlan = async (
   plan: OperationPlan<'uninstall'>,
+  results: CurrentUninstallReport['results'],
   interaction: InteractionPort,
 ): Promise<BulkApproval> => {
-  const requirement = uninstallApprovalRequirement(plan);
+  const requirement = uninstallApprovalRequirement(plan, results);
   if (!requirement.required) return { ok: true };
   const backupSummary = requirement.backupAndReplace ? ' including backup-and-replace' : '';
   const resolution = await interaction.confirm({
@@ -484,7 +499,7 @@ const interactiveInstallDeps = (
   return deps;
 };
 
-const reportOutcome = <TReport extends InstallReport | UninstallReport | FlipReport>(
+const reportOutcome = <TReport extends CurrentInstallReport | CurrentUninstallReport | FlipReport>(
   command: LifecycleApplicationReport<TReport>['command'],
   report: TReport,
   errors: readonly SkillSmithError[],
@@ -500,7 +515,7 @@ const reportOutcome = <TReport extends InstallReport | UninstallReport | FlipRep
   deprecations: [],
 });
 
-const installMutation = (report: InstallReport): MutationSummary => ({
+const installMutation = (report: CurrentInstallReport): MutationSummary => ({
   kind: report.dryRun ? 'preview' : 'applied',
   planned: report.results.length,
   changed: report.summary.installed + report.summary.updated + report.summary.repaired,
@@ -508,7 +523,7 @@ const installMutation = (report: InstallReport): MutationSummary => ({
   failed: report.summary.refused + report.summary.failed,
 });
 
-const uninstallMutation = (report: UninstallReport): MutationSummary => ({
+const uninstallMutation = (report: CurrentUninstallReport): MutationSummary => ({
   kind: report.dryRun ? 'preview' : 'applied',
   planned: report.results.length,
   changed: report.summary.removed,
@@ -749,7 +764,11 @@ export const createLifecycleApplicationServices = (
       );
       if (!preview.ok) return domainFailure('uninstall', preview.error, context.signal);
       previewPlan = preview.value.plan;
-      const approval = await authorizeUninstallPlan(preview.value.plan, context.interaction);
+      const approval = await authorizeUninstallPlan(
+        preview.value.plan,
+        preview.value.results,
+        context.interaction,
+      );
       if (!approval.ok) {
         return refusal('uninstall', approval.exitClass, approval.code, approval.message);
       }

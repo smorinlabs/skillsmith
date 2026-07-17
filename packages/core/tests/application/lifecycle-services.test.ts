@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { runInstall } from '../../src/acquire/run.ts';
 import type {
-  InstallReport,
+  CurrentInstallReport,
+  CurrentUninstallReport,
   PlannedUninstallReport,
   UninstallDeps,
-  UninstallReport,
 } from '../../src/acquire/types.ts';
 import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import {
@@ -72,8 +72,23 @@ const context = (
   ...overrides,
 });
 
-const installReport = (action: 'installed' | 'noop' = 'installed'): InstallReport => ({
+const noConflict = {
+  requested: false,
+  applied: false,
+  conflictType: null,
+  target: null,
+  normalBehavior: null,
+  forcedBehavior: null,
+  backup: null,
+} as const;
+
+const installReport = (action: 'installed' | 'noop' = 'installed'): CurrentInstallReport => ({
+  reportVersion: 2,
   dryRun: false,
+  saveMode: 'live-only',
+  artifactPair: null,
+  artifactSelection: { outcome: 'none', reason: 'no-save' },
+  artifactEffects: [],
   requested: {
     sources: ['owner/repo/skill'],
     tools: ['codex'],
@@ -86,6 +101,8 @@ const installReport = (action: 'installed' | 'noop' = 'installed'): InstallRepor
     force: false,
     verify: 'static',
     deep: false,
+    batchPolicy: 'fail-fast',
+    path: null,
   },
   results: [
     {
@@ -101,6 +118,16 @@ const installReport = (action: 'installed' | 'noop' = 'installed'): InstallRepor
       origin: null,
       verify: null,
       candidates: null,
+      requestIndex: 0,
+      groupId: 'group:install:skill',
+      pairId: 'pair:codex:project',
+      executionOutcome: action === 'installed' ? 'succeeded' : null,
+      drift: {
+        status: 'not-evaluated',
+        futureApply: 'depends-on-selected-manifest',
+        reason: null,
+      },
+      force: noConflict,
     },
   ],
   summary: {
@@ -111,11 +138,17 @@ const installReport = (action: 'installed' | 'noop' = 'installed'): InstallRepor
     skipped: 0,
     refused: 0,
     failed: 0,
+    desiredState: { changed: 0, unchanged: 0, retained: 0, notWritten: 1, failed: 0 },
   },
 });
 
-const uninstallReport = (dryRun = true): UninstallReport => ({
+const uninstallReport = (dryRun = true): CurrentUninstallReport => ({
+  reportVersion: 2,
   dryRun,
+  saveMode: 'live-only',
+  artifactPair: null,
+  artifactSelection: { outcome: 'none', reason: 'no-save' },
+  artifactEffects: [],
   requested: {
     targets: ['skill'],
     tools: ['codex'],
@@ -123,6 +156,7 @@ const uninstallReport = (dryRun = true): UninstallReport => ({
     scope: null,
     allScopes: false,
     force: false,
+    batchPolicy: 'fail-fast',
   },
   results: [
     {
@@ -135,9 +169,25 @@ const uninstallReport = (dryRun = true): UninstallReport => ({
       before: null,
       storeRetained: null,
       backupKept: null,
+      requestIndex: 0,
+      groupId: 'group:uninstall:skill',
+      pairId: 'pair:codex:project',
+      executionOutcome: dryRun ? null : 'succeeded',
+      drift: {
+        status: 'not-evaluated',
+        futureApply: 'depends-on-selected-manifest',
+        reason: null,
+      },
+      force: noConflict,
     },
   ],
-  summary: { removed: 1, noop: 0, refused: 0, failed: 0 },
+  summary: {
+    removed: 1,
+    noop: 0,
+    refused: 0,
+    failed: 0,
+    desiredState: { changed: 0, unchanged: 0, retained: 0, notWritten: 1, failed: 0 },
+  },
 });
 
 const plannedUninstallReport = ({
@@ -158,7 +208,7 @@ const plannedUninstallReport = ({
       ? {
           results: [
             {
-              ...(base.results[0] as UninstallReport['results'][number]),
+              ...(base.results[0] as CurrentUninstallReport['results'][number]),
               action: 'refused' as const,
               reason: 'multiple saving declaration groups are deferred to G4A-04',
               error: {
@@ -167,7 +217,7 @@ const plannedUninstallReport = ({
               },
             },
           ],
-          summary: { removed: 0, noop: 0, refused: 1, failed: 0 },
+          summary: { ...base.summary, removed: 0, refused: 1 },
         }
       : {}),
     plan: {

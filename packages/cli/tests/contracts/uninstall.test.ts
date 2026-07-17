@@ -437,7 +437,7 @@ describe('G4A-01 uninstall command contract', () => {
     ]);
     await seedManaged(fleet, ['claude-code'], { scope: 'user' });
     const ambiguous = await runCli(['uninstall', 'factor-scan', '--tool', 'claude-code', '--json'], { selected: fleet, cwd: uninstallCwd });
-    const all = await runCli(['uninstall', 'factor-scan', '--tool', 'claude-code', '--all-scopes', '--json'], { selected: fleet, cwd: uninstallCwd });
+    const all = await runCli(['uninstall', 'factor-scan', '--tool', 'claude-code', '--all-scopes', '--yes', '--json'], { selected: fleet, cwd: uninstallCwd });
     await seedManaged(fleet, ['claude-code', 'codex'], { scope: 'user' });
     const toolAmbiguous = await runCli(['uninstall', 'factor-scan', '--user', '--json'], { selected: fleet });
 
