@@ -5210,7 +5210,7 @@
       "phase": "4A",
       "title": "Install/uninstall default-save, no-save, ownership, and artifact reporting",
       "dependsOn": ["P17-G3B-03", "P17-G3B-04", "P17-G3B-05", "P17-G3B-06"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -5341,8 +5341,8 @@
           "evidence": ["projects/p17/evidence/P17-G4A-01.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-01.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -5376,7 +5376,8 @@
       "evidence": [
         "projects/p17/plans/P17-G4A-01.md",
         "projects/p17/evidence/P17-G4A-01.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G4A-01.md#ready-plan"
+        "projects/p17/evidence/P17-G4A-01.md#ready-plan",
+        "projects/p17/evidence/P17-G4A-01.md#test-first-evidence"
       ]
     },
     {
@@ -13917,11 +13918,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/install.test.ts",
+        "selector": "EWP-CMD-INSTALL-TS01",
+        "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS01"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INSTALL-TS01"],
@@ -13945,8 +13953,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS01"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/install.test.ts"]
     },
     {
       "id": "EWP-CMD-INSTALL-TS02",
@@ -13954,11 +13964,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/install.test.ts",
+        "selector": "EWP-CMD-INSTALL-TS02",
+        "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS02"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INSTALL-TS02"],
@@ -13982,8 +13999,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/install.test.ts"]
     },
     {
       "id": "EWP-CMD-INSTALL-TS03",
@@ -13991,11 +14010,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/install.test.ts",
+        "selector": "EWP-CMD-INSTALL-TS03",
+        "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS03"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INSTALL-TS03"],
@@ -14019,8 +14045,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/install.test.ts"]
     },
     {
       "id": "EWP-CMD-INSTALL-TS04",
@@ -14028,11 +14056,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/install.test.ts",
+        "selector": "EWP-CMD-INSTALL-TS04",
+        "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS04"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts04"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INSTALL-TS04"],
@@ -14056,8 +14091,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS04"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/install.test.ts"]
     },
     {
       "id": "EWP-CMD-INSTALL-TS05",
@@ -14065,11 +14102,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/install.test.ts",
+        "selector": "EWP-CMD-INSTALL-TS05",
+        "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS05"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INSTALL-TS05"],
@@ -14093,8 +14137,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS05"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/install.test.ts"]
     },
     {
       "id": "EWP-CMD-INSTALL-TS06",
@@ -14102,11 +14148,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/install.test.ts",
+        "selector": "EWP-CMD-INSTALL-TS06",
+        "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS06"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts06"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INSTALL-TS06"],
@@ -14130,8 +14183,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS06"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/install.test.ts"]
     },
     {
       "id": "EWP-CMD-INSTALL-TS07",
@@ -14139,11 +14194,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/install.test.ts",
+        "selector": "EWP-CMD-INSTALL-TS07",
+        "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS07"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts07"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INSTALL-TS07"],
@@ -14167,8 +14229,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS07"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/install.test.ts"]
     },
     {
       "id": "EWP-CMD-INSTALL-TS08",
@@ -14176,11 +14240,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS08",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/install.test.ts",
+        "selector": "EWP-CMD-INSTALL-TS08",
+        "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS08"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts08"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INSTALL-TS08"],
@@ -14204,8 +14275,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS08"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/install.test.ts"]
     },
     {
       "id": "EWP-CMD-LIST-TS01",
@@ -16102,11 +16175,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/uninstall.test.ts",
+        "selector": "EWP-CMD-UNINSTALL-TS01",
+        "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS01"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNINSTALL-TS01"],
@@ -16130,8 +16210,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS01"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/uninstall.test.ts"]
     },
     {
       "id": "EWP-CMD-UNINSTALL-TS02",
@@ -16139,11 +16221,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/uninstall.test.ts",
+        "selector": "EWP-CMD-UNINSTALL-TS02",
+        "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS02"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNINSTALL-TS02"],
@@ -16167,8 +16256,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/uninstall.test.ts"]
     },
     {
       "id": "EWP-CMD-UNINSTALL-TS03",
@@ -16176,11 +16267,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/uninstall.test.ts",
+        "selector": "EWP-CMD-UNINSTALL-TS03",
+        "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNINSTALL-TS03"],
@@ -16204,8 +16302,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/uninstall.test.ts"]
     },
     {
       "id": "EWP-CMD-UNINSTALL-TS04",
@@ -16213,11 +16313,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/uninstall.test.ts",
+        "selector": "EWP-CMD-UNINSTALL-TS04",
+        "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS04"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts04"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNINSTALL-TS04"],
@@ -16241,8 +16348,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS04"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/uninstall.test.ts"]
     },
     {
       "id": "EWP-CMD-UNINSTALL-TS05",
@@ -16250,11 +16359,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/uninstall.test.ts",
+        "selector": "EWP-CMD-UNINSTALL-TS05",
+        "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS05"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNINSTALL-TS05"],
@@ -16278,8 +16394,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS05"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/uninstall.test.ts"]
     },
     {
       "id": "EWP-CMD-UNINSTALL-TS06",
@@ -16287,11 +16405,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/uninstall.test.ts",
+        "selector": "EWP-CMD-UNINSTALL-TS06",
+        "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS06"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts06"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNINSTALL-TS06"],
@@ -16315,8 +16440,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS06"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/uninstall.test.ts"]
     },
     {
       "id": "EWP-CMD-UNINSTALL-TS07",
@@ -16324,11 +16451,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/uninstall.test.ts",
+        "selector": "EWP-CMD-UNINSTALL-TS07",
+        "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS07"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts07"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNINSTALL-TS07"],
@@ -16352,8 +16486,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS07"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/uninstall.test.ts"]
     },
     {
       "id": "EWP-CMD-UPDATE-TS01",
@@ -20450,11 +20586,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-01",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G4A-01.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#ready-plan",
+        "projects/p17/evidence/P17-G4A-01.md#test-first-evidence"
+      ],
       "secondaryGroups": [],
       "implements": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
       "validatedBy": [
@@ -20675,11 +20814,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:tests/ergonomics/phase/EWP-P4A-TS01.test.ts#EWP-P4A-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P4A-TS01.test.ts",
+        "selector": "EWP-P4A-TS01",
+        "command": "bun test tests/ergonomics/phase/EWP-P4A-TS01.test.ts --test-name-pattern EWP-P4A-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-p4a-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4A-TS01"],
@@ -20703,8 +20847,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P4A-TS01.test.ts --test-name-pattern EWP-P4A-TS01"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P4A-TS01.test.ts"]
     },
     {
       "id": "EWP-P4A-TS02",
@@ -22060,11 +22206,16 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:tests/ergonomics/workflows/EWP-WF02.test.ts#EWP-WF02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF02.test.ts",
+        "selector": "EWP-WF02",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF02.test.ts --test-name-pattern EWP-WF02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-wf02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-WF02"],
@@ -22088,8 +22239,10 @@
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF02.test.ts --test-name-pattern EWP-WF02"
+      ],
+      "ownedFiles": ["tests/ergonomics/workflows/EWP-WF02.test.ts"]
     },
     {
       "id": "EWP-WF03",
