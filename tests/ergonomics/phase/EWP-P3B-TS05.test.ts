@@ -384,6 +384,7 @@ const snapshotFixture = () => {
   return Object.freeze({
     schemaVersion: 1 as const,
     snapshotId: `snapshot:v1:${HEX.a}`,
+    artifact: Object.freeze({ mode: 'none' as const }),
     project: Object.freeze({
       revision: semanticRevision('project', 'project:/fixture', projectValue),
       value: projectValue,

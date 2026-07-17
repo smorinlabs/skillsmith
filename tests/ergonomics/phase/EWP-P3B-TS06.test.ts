@@ -234,7 +234,26 @@ const lifecycleSources = Object.freeze([
 ]);
 
 const installReportFor = (tool: string) => ({
+  reportVersion: 2,
   dryRun: false,
+  saveMode: 'desired-state',
+  artifactPair: {
+    manifestPath: '/fixture/project/skillsmith.toml',
+    lockPath: '/fixture/project/skillsmith.lock',
+    lockSource: 'sibling',
+  },
+  artifactSelection: { outcome: 'selected', selectedBy: 'selected-project-owner' },
+  artifactEffects: [
+    {
+      groupId: 'group:fixture-install',
+      skill: 'alpha',
+      manifestAction: 'update',
+      lockAction: 'update',
+      migration: 'none',
+      outcome: 'succeeded',
+      reason: null,
+    },
+  ],
   requested: {
     sources: ['fixture/repo/alpha'],
     tools: [tool],
@@ -247,6 +266,8 @@ const installReportFor = (tool: string) => ({
     force: false,
     verify: 'static',
     deep: false,
+    batchPolicy: 'fail-fast',
+    path: null,
   },
   results: [
     {
@@ -262,6 +283,20 @@ const installReportFor = (tool: string) => ({
       origin: null,
       verify: { gate: 'passed', verdict: 'pass', mode: 'static' },
       candidates: null,
+      requestIndex: 0,
+      groupId: 'group:fixture-install',
+      pairId: 'pair:fixture-install',
+      executionOutcome: 'succeeded',
+      drift: { status: 'in-sync', futureApply: 'none', reason: null },
+      force: {
+        requested: false,
+        applied: false,
+        conflictType: null,
+        target: null,
+        normalBehavior: null,
+        forcedBehavior: null,
+        backup: null,
+      },
     },
   ],
   summary: {
@@ -272,6 +307,7 @@ const installReportFor = (tool: string) => ({
     skipped: 0,
     refused: 0,
     failed: 0,
+    desiredState: { changed: 1, unchanged: 0, retained: 0, notWritten: 0, failed: 0 },
   },
 });
 
@@ -1556,7 +1592,7 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
                 null,
             ),
           ),
-          [318, 'd0db4a895e141e616de73706b99e3da1a83a3561b2066d1b93e9164177c04727'],
+          [458, 'd240207fa8b4ad6eeac64ff06d54afebb187a0642215e0e506f635c3d5fc2953'],
         ],
         [
           String(
@@ -1581,7 +1617,7 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
         ],
         [
           String((renderInstallJson as unknown as AnyFunction)(installReportFor('codex'))),
-          [967, '40f9506b84c3a29a7dcddb89650c23b444811b3e4359c809017e0aedd7ba7ee4'],
+          [2166, '8f81336266b524761d8a74ff4428300d5c9827e630ac6b493a57e53c52edd714'],
         ],
         [
           String(
@@ -1602,8 +1638,8 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
       }
 
       for (const [key, id, version] of [
-        ['install', 'install', 1],
-        ['uninstall', 'uninstall', 1],
+        ['install', 'install', 2],
+        ['uninstall', 'uninstall', 2],
         ['verify', 'verify', 1],
         ['dev', 'flip', 4],
         ['promote', 'flip', 4],
