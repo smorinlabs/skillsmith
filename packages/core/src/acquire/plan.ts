@@ -5,9 +5,9 @@ import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import type { SupportedTool } from '../agents/types.ts';
 import { hashManifestSemantics } from '../artifacts/hash.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
-import { type PortableLockV1, correlatePortableLock, hashPortableLock } from '../artifacts/lock.ts';
+import { type PortableLockV1, hashPortableLock } from '../artifacts/lock.ts';
 import type { ResolvedArtifactPair } from '../artifacts/pair.ts';
-import type { NormalizedManifestV1 } from '../artifacts/types.ts';
+import type { NormalizedManifestDeclaration, NormalizedManifestV1 } from '../artifacts/types.ts';
 import type { ProjectContext } from '../context/types.ts';
 import {
   type SnapshotBoundOperationPlanV1,
@@ -22,6 +22,7 @@ import {
 } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
+  BoundedConflict,
   CurrentMutatorCommand,
   ExecutableOperation,
   OperationDigest,
@@ -146,6 +147,7 @@ export interface AcquisitionDiagnosticPlanRequestV1<
 
 export interface AcquisitionInstallIntentV1 {
   readonly kind: 'install';
+  readonly execution?: 'selected' | 'desired-only';
   readonly skill: string;
   readonly tool: SupportedTool;
   readonly scope: 'user' | 'project';
@@ -156,6 +158,11 @@ export interface AcquisitionInstallIntentV1 {
   readonly sourceContent: ContentObservationIdentityV1;
   readonly sourcePreconditionId: `precondition:v1:${string}`;
   readonly source: OperationSource;
+  /** Exact portable-only fields that are not otherwise carried by the placement intent. */
+  readonly declaration?: Readonly<{
+    readonly ref: NormalizedManifestDeclaration['ref'];
+    readonly path: NormalizedManifestDeclaration['path'];
+  }>;
   readonly placement: Readonly<{
     classification: 'pinned';
     representation: 'symlink' | 'copy';
@@ -659,6 +666,7 @@ const installOperationFor = (
   snapshot: AcquisitionObservedStateSnapshotV1,
   planningContext: AcquisitionPlanningContext | undefined,
 ): ExecutableOperation | null => {
+  if (intent.execution === 'desired-only') return null;
   const sourceContent = createContentObservationIdentityV1(intent.sourceContent);
   if (
     intent.sourcePreconditionId !== createContentObservationPreconditionIdV1(sourceContent) ||
@@ -691,6 +699,26 @@ const installOperationFor = (
     return null;
   }
   const liveResource = liveResourceFor(intent, liveObservation);
+  const conflict: BoundedConflict | null =
+    intent.force && liveState !== null
+      ? ledgerPair === null
+        ? {
+            class: 'unmanaged-target',
+            normal: 'refuse',
+            forced: 'backup-and-replace',
+            target: liveResource,
+            backup: 'required',
+          }
+        : beforeSource !== null && !sameOperationSource(beforeSource, intent.source)
+          ? {
+              class: 'source-changed',
+              normal: 'refuse',
+              forced: 'replace',
+              target: liveResource,
+              backup: 'none',
+            }
+          : null
+      : null;
   const desiredRepresentationMatches =
     liveState !== null &&
     liveState.brokenReason === null &&
@@ -775,7 +803,7 @@ const installOperationFor = (
     requiredCheckIds: [],
     reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
     mutates: { live: true, manifest: false, lock: false, ledger: true },
-    conflict: null,
+    conflict,
   };
 };
 
@@ -983,56 +1011,104 @@ const expectedAcquisitionGroupIds = (request: AcquisitionPlanRequestV1): Readonl
         ),
   );
 
+const portableSourceToken = (
+  source: Extract<OperationSource, { readonly kind: 'portable' }>['identity'],
+): string => `${source.host}/${source.repository}${source.path === null ? '' : `//${source.path}`}`;
+
+const portablePairIsCurrent = (manifest: ManifestImageV1, lock: LockImageV1): boolean => {
+  if (lock.value.manifestHash !== manifest.semanticHash) return false;
+  const declarations = new Map(
+    manifest.value.skills.map((declaration) => [declaration.name, declaration]),
+  );
+  const lockedSkills = new Map(lock.value.skills.map((locked) => [locked.name, locked]));
+  if (
+    declarations.size !== manifest.value.skills.length ||
+    lockedSkills.size !== lock.value.skills.length ||
+    declarations.size !== lockedSkills.size
+  ) {
+    return false;
+  }
+  return [...declarations].every(([name, declaration]) => {
+    const locked = lockedSkills.get(name);
+    return (
+      locked !== undefined &&
+      locked.source === portableSourceToken(declaration.source) &&
+      (locked.requestedRef === declaration.ref || locked.resolvedSha === declaration.ref) &&
+      locked.sourcePath === (declaration.source.path ?? '.')
+    );
+  });
+};
+
+const validateInstallGroupPortableIntent = (
+  request: AcquisitionInstallPlanRequestV1,
+  groupId: string,
+  manifest: ManifestImageV1 | AbsentManifestImageV1,
+  lock: LockImageV1 | AbsentLockImageV1,
+): void => {
+  if (
+    manifest.kind !== 'manifest' ||
+    lock.kind !== 'lock' ||
+    !portablePairIsCurrent(manifest, lock)
+  ) {
+    throw new TypeError('acquisition planning: install group requires current portable state');
+  }
+  const intents = request.intents.filter(
+    (intent) => createOperationGroupId(installGroupIdentityFor(request, intent)) === groupId,
+  );
+  const seed = intents[0];
+  if (
+    seed === undefined ||
+    seed.source.kind !== 'portable' ||
+    seed.declaration === undefined ||
+    intents.some(
+      (intent) =>
+        intent.source.kind !== 'portable' ||
+        intent.declaration === undefined ||
+        canonicalPlanningString(intent.declaration) !== canonicalPlanningString(seed.declaration) ||
+        intent.placement.representation !== seed.placement.representation,
+    )
+  ) {
+    throw new TypeError('acquisition planning: install group lacks complete portable intent');
+  }
+  const declarations = manifest.value.skills.filter(({ name }) => name === seed.skill);
+  const lockedSkills = lock.value.skills.filter(({ name }) => name === seed.skill);
+  const declaration = declarations[0];
+  const locked = lockedSkills[0];
+  const requestedTools = new Set(intents.map(({ tool }) => tool));
+  if (
+    declarations.length !== 1 ||
+    lockedSkills.length !== 1 ||
+    declaration === undefined ||
+    locked === undefined ||
+    requestedTools.size === 0 ||
+    canonicalPlanningString(declaration.source) !== canonicalPlanningString(seed.source.identity) ||
+    declaration.ref !== seed.declaration.ref ||
+    declaration.scope !== seed.scope ||
+    declaration.placement !== seed.placement.representation ||
+    declaration.path !== seed.declaration.path ||
+    declaration.tools.length !== requestedTools.size ||
+    new Set(declaration.tools).size !== declaration.tools.length ||
+    declaration.tools.some((tool) => !requestedTools.has(tool)) ||
+    locked.source !== portableSourceToken(seed.source.identity) ||
+    locked.requestedRef !== seed.source.requestedRef ||
+    locked.resolvedSha !== seed.source.resolvedSha ||
+    locked.sourcePath !== seed.source.sourcePath ||
+    locked.contentHash !== seed.source.contentHash
+  ) {
+    throw new TypeError(
+      'acquisition planning: install group differs from complete portable intent',
+    );
+  }
+};
+
 const validateUnchangedInstallGroups = (
   request: AcquisitionInstallPlanRequestV1,
   unchangedGroupIds: readonly string[],
   manifest: ManifestImageV1 | AbsentManifestImageV1,
   lock: LockImageV1 | AbsentLockImageV1,
 ): void => {
-  if (unchangedGroupIds.length === 0) return;
-  if (
-    manifest.kind !== 'manifest' ||
-    lock.kind !== 'lock' ||
-    correlatePortableLock(
-      manifestModelFromImage(manifest.value),
-      lock.value as unknown as PortableLockV1,
-    ).state !== 'current'
-  ) {
-    throw new TypeError(
-      'acquisition planning: unchanged install groups require current portable state',
-    );
-  }
   for (const groupId of unchangedGroupIds) {
-    const intents = request.intents.filter(
-      (intent) => createOperationGroupId(installGroupIdentityFor(request, intent)) === groupId,
-    );
-    const seed = intents[0];
-    if (seed === undefined || seed.source.kind !== 'portable') {
-      throw new TypeError('acquisition planning: unchanged install group lacks a portable source');
-    }
-    const declaration = manifest.value.skills.find(({ name }) => name === seed.skill);
-    const locked = lock.value.skills.find(({ name }) => name === seed.skill);
-    const requestedTools = new Set(intents.map(({ tool }) => tool));
-    const refMatches =
-      declaration?.ref === seed.source.requestedRef || declaration?.ref === seed.source.resolvedSha;
-    if (
-      declaration === undefined ||
-      locked === undefined ||
-      !refMatches ||
-      canonicalPlanningString(declaration.source) !==
-        canonicalPlanningString(seed.source.identity) ||
-      declaration.scope !== seed.scope ||
-      declaration.placement !== seed.placement.representation ||
-      declaration.tools.length !== requestedTools.size ||
-      declaration.tools.some((tool) => !requestedTools.has(tool)) ||
-      locked.resolvedSha !== seed.source.resolvedSha ||
-      locked.sourcePath !== seed.source.sourcePath ||
-      locked.contentHash !== seed.source.contentHash
-    ) {
-      throw new TypeError(
-        'acquisition planning: unchanged install group differs from portable state',
-      );
-    }
+    validateInstallGroupPortableIntent(request, groupId, manifest, lock);
   }
 };
 
@@ -1140,20 +1216,25 @@ const createArtifactTransitionOperations = (
     requireArtifactLocation(group.lockAfter, lockLocation);
     validateManifestImage(group.manifestAfter);
     validateLockImage(group.lockAfter);
-    if (
-      correlatePortableLock(
-        manifestModelFromImage(group.manifestAfter.value),
-        group.lockAfter.value as unknown as PortableLockV1,
-      ).state !== 'current'
-    ) {
+    const manifestChanged =
+      canonicalPlanningString(currentManifest) !== canonicalPlanningString(group.manifestAfter);
+    const manifestSemanticsChanged =
+      currentManifest.kind !== 'manifest' ||
+      currentManifest.semanticHash !== group.manifestAfter.semanticHash ||
+      canonicalPlanningString(currentManifest.value) !==
+        canonicalPlanningString(group.manifestAfter.value);
+    if (!manifestChanged && request.command !== 'install') {
+      throw new TypeError('acquisition planning: uninstall transition requires a manifest write');
+    }
+    if (!portablePairIsCurrent(group.manifestAfter, group.lockAfter)) {
       throw new TypeError('acquisition planning: artifact transition pair is incoherent');
     }
     if (
       group.manifestAfter.shape !== 'canonical' ||
       (currentManifest.kind === 'manifest' && currentManifest.shape !== 'canonical') ||
-      canonicalPlanningString(currentManifest) === canonicalPlanningString(group.manifestAfter)
+      (manifestChanged && !manifestSemanticsChanged)
     ) {
-      throw new TypeError('acquisition planning: manifest write transition is invalid or a noop');
+      throw new TypeError('acquisition planning: manifest write transition is invalid');
     }
     if (
       group.lockAfter.value.manifestHash !== group.manifestAfter.semanticHash ||
@@ -1171,29 +1252,32 @@ const createArtifactTransitionOperations = (
           : migrationId === null
             ? []
             : [migrationId];
-    const manifest = artifactOperationFor(
-      request,
-      group.groupId,
-      'write-manifest',
-      currentManifest,
-      group.manifestAfter,
-      manifestDependencies,
-      sourcePreconditionIds,
-      snapshot,
-      planningContext,
-    );
+    const manifest = !manifestChanged
+      ? null
+      : artifactOperationFor(
+          request,
+          group.groupId,
+          'write-manifest',
+          currentManifest,
+          group.manifestAfter,
+          manifestDependencies,
+          sourcePreconditionIds,
+          snapshot,
+          planningContext,
+        );
     const lock = artifactOperationFor(
       request,
       group.groupId,
       'write-lock',
       currentLock,
       group.lockAfter,
-      [manifest.operationId],
+      manifest === null ? (migrationId === null ? [] : [migrationId]) : [manifest.operationId],
       sourcePreconditionIds,
       snapshot,
       planningContext,
     );
-    artifacts.push(manifest, lock);
+    if (manifest !== null) artifacts.push(manifest);
+    artifacts.push(lock);
     const dependencies =
       request.command === 'install'
         ? [lock.operationId]
@@ -1205,6 +1289,9 @@ const createArtifactTransitionOperations = (
     );
     currentManifest = group.manifestAfter;
     currentLock = group.lockAfter;
+    if (request.command === 'install') {
+      validateInstallGroupPortableIntent(request, group.groupId, currentManifest, currentLock);
+    }
   }
   if (request.command === 'install') {
     validateUnchangedInstallGroups(request, unchangedGroupIds, currentManifest, currentLock);

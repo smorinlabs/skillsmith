@@ -785,6 +785,42 @@ manifest_hash = "${fixture.manifestHash}"
     expect(Object.isFrozen(staleRelationship)).toBeTrue();
   });
 
+  test('correlates a pinned manifest SHA while retaining the requested lock ref', () => {
+    const fixture = unwrap(readPortableLockSource(fixtureBytes));
+    const current = readCandidate({
+      ...fixture,
+      manifestHash: hashManifestSemantics(manifest),
+    });
+    const lint = current.skills.find(({ name }) => name === 'lint');
+    if (lint === undefined) throw new Error('missing lint lock fixture');
+    const pinnedManifest = {
+      ...manifest,
+      skills: manifest.skills.map((declaration) =>
+        declaration.name === 'lint' ? { ...declaration, ref: lint.resolvedSha } : declaration,
+      ),
+    };
+    const pinnedLock = readCandidate({
+      ...current,
+      manifestHash: hashManifestSemantics(pinnedManifest),
+    });
+    expect(correlatePortableLock(pinnedManifest, pinnedLock)).toEqual({ state: 'current' });
+
+    const unrelatedManifest = {
+      ...pinnedManifest,
+      skills: pinnedManifest.skills.map((declaration) =>
+        declaration.name === 'lint' ? { ...declaration, ref: 'feature/unrelated' } : declaration,
+      ),
+    };
+    const unrelatedLock = readCandidate({
+      ...pinnedLock,
+      manifestHash: hashManifestSemantics(unrelatedManifest),
+    });
+    expect(correlatePortableLock(unrelatedManifest, unrelatedLock)).toEqual({
+      state: 'stale',
+      facts: [{ reason: 'requested-ref-mismatch', name: 'lint', field: 'requested_ref' }],
+    });
+  });
+
   test('ranks every relationship fact and applies incomplete precedence over all staleness', () => {
     const fixture = unwrap(readPortableLockSource(fixtureBytes));
     const lint = fixture.skills[0] as PortableLockSkillV1;

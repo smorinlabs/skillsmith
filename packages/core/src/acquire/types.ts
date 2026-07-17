@@ -1,4 +1,5 @@
 import type { InstallRecord } from '../agents/types.ts';
+import type { ArtifactCoordinatorPorts } from '../artifacts/coordinator-types.ts';
 import type { CanonicalSourceIdentity } from '../artifacts/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { FlipTool, JournalPhase, PlacementPorts } from '../place/types.ts';
@@ -235,6 +236,8 @@ export interface InstallDeps {
   now?: () => string;
   newTxId?: () => string; // 8-hex
   pick?: (candidates: readonly CandidateSkill[]) => Promise<CandidateSkill | null>;
+  /** Source-internal execution authority supplied by application composition. */
+  readonly artifactCoordinator?: ArtifactCoordinatorPorts;
   readonly transport?: InstallSourceTransport;
   /** Test/embedding observation seam; called after exact bindings exist and before any binding runs. */
   readonly observePreparedPlan?: (plan: OperationPlan<'install'>) => void;

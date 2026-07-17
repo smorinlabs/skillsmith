@@ -266,6 +266,9 @@ describe('lifecycle application services', () => {
     let observedOptions: Record<string, unknown> | undefined;
     let installArguments: readonly unknown[] = [];
     let picked = false;
+    const artifactCoordinator = Object.freeze({
+      fixture: 'install-artifact-coordinator',
+    }) as unknown as CurrentApplicationContext['artifactCoordinator'];
     const report = installReport();
     const interactive: InteractionPort = {
       mode: 'interactive',
@@ -282,6 +285,7 @@ describe('lifecycle application services', () => {
         installArguments = args;
         const [, options, deps] = args;
         observedOptions = options as unknown as Record<string, unknown>;
+        expect(deps?.artifactCoordinator).toBe(artifactCoordinator);
         expect(
           await deps?.pick?.([
             { name: 'skill', path: 'skills/skill' },
@@ -308,7 +312,11 @@ describe('lifecycle application services', () => {
           prompt: true,
         },
       },
-      context({ interaction: interactive, signal: AbortSignal.timeout(10_000) }),
+      context({
+        artifactCoordinator,
+        interaction: interactive,
+        signal: AbortSignal.timeout(10_000),
+      }),
     );
 
     expect(picked).toBeTrue();

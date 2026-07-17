@@ -668,7 +668,7 @@ export const correlatePortableLock = (
     if (skill.source !== projectLockSource(declaration.source)) {
       facts.push({ reason: 'source-mismatch', name, field: 'source' });
     }
-    if (skill.requestedRef !== declaration.ref) {
+    if (skill.requestedRef !== declaration.ref && skill.resolvedSha !== declaration.ref) {
       facts.push({ reason: 'requested-ref-mismatch', name, field: 'requested_ref' });
     }
     if (skill.sourcePath !== (declaration.source.path ?? '.')) {

@@ -2,8 +2,28 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { ToolCapabilityScope } from '../agents/adapter-types.ts';
 import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
 import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts';
+import type { GeneratedLockAction, HumanManifestAction } from '../artifacts/coordinator-types.ts';
+import {
+  type ArtifactDigest,
+  HASH_SCHEMA_VERSION,
+  hashManifestSemantics,
+} from '../artifacts/hash.ts';
 import { validateRequestedRef } from '../artifacts/identity.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
+import {
+  type PortableLockSkillV1,
+  type PortableLockV1,
+  hashPortableLock,
+  serializePortableLock,
+} from '../artifacts/lock.ts';
+import { manifestV1Codec } from '../artifacts/manifest-codec.ts';
+import {
+  type ManifestEdit,
+  type ManifestEditRequest,
+  editManifestBytes,
+} from '../artifacts/manifest-edit.ts';
+import { createNodeArtifactCoordinatorPorts } from '../artifacts/node-coordinator.ts';
+import type { NormalizedManifestDeclaration, NormalizedManifestV1 } from '../artifacts/types.ts';
 import {
   type SkillSmithError,
   cancelledError,
@@ -49,7 +69,12 @@ import type {
   Provenance,
   SwapPlan,
 } from '../place/types.ts';
-import { createBoundedForceEffect, createOperationExecutionResult } from '../planning/create.ts';
+import {
+  createBoundedForceEffect,
+  createOperationExecutionResult,
+  createOperationGroupId,
+} from '../planning/create.ts';
+import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   CurrentMutatorOperationPlan,
   ExecutableOperation,
@@ -76,6 +101,7 @@ import {
   type AcquireLiveSnapshotResourceV1,
   type AcquirePlacementFacts,
   type AcquireStoreSnapshotResourceV1,
+  type AcquisitionArtifactExecutionActionV1,
   type AcquisitionPlanObservationState,
   type AcquisitionSnapshotAuthorityV1,
   acquireActualBefore,
@@ -83,11 +109,14 @@ import {
   acquireContentObservationIdentity,
   acquirePlacementFacts,
   acquireStateResourceId,
+  acquisitionLockImageFromBytesV1,
+  acquisitionManifestImageFromBytesV1,
   acquisitionPreconditionStateChanged,
   acquisitionRevisionPreconditions,
   acquisitionSnapshotArtifactAuthorityV1,
   createAcquireExecutionInput,
   createAcquireExecutionLockPort,
+  createAcquisitionArtifactExecutionControllerV1,
   createAcquisitionLedgerMigrationBinding,
   createAcquisitionOriginRecord,
   createAcquisitionPinnedRecord,
@@ -112,6 +141,7 @@ import {
 } from './execute.ts';
 import { sweepFetchOrphans } from './fetch.ts';
 import {
+  type AcquisitionArtifactTransitionEnvelopeV1,
   type AcquisitionInstallIntentV1,
   type AcquisitionUninstallIntentV1,
   createAcquisitionDiagnosticPlan,
@@ -134,6 +164,8 @@ export { defaultInstallSourceTransport } from './resolve.ts';
 import { parseSource } from './source.ts';
 import type {
   AcquisitionPorts,
+  CurrentInstallReport,
+  CurrentInstallResult,
   InstallAction,
   InstallDeps,
   InstallOptions,
@@ -336,11 +368,49 @@ interface PlaceCtx {
   scope: InstallScope;
   scopeKey: string | null;
   projectRoot: string | null;
+  installRootFor(tool: FlipTool): string;
   logicalOperation: ExecutableOperation | null;
   operationObservation: ObservationBundle | undefined;
 }
 const placeExecutionInput = (p: PlaceCtx): AcquireExecutionInput =>
   executionInputOf(p.env, p.ledgerPath, p.ledger, p.deps, p.opts, p.logicalOperation);
+const resolveSelectedInstallPlacement = async (p: PlaceCtx, tool: FlipTool, skill: string) => {
+  const roots = {
+    cwd: p.scope === 'project' ? (p.scopeKey as string) : p.opts.cwd,
+    configuration: p.opts.configuration,
+  };
+  const adapterResolution = await resolvePlacementFor(
+    p.registry,
+    tool,
+    p.env,
+    p.scope,
+    roots,
+    p.storeRoot,
+    skill,
+  );
+  if (p.opts.path === undefined) return adapterResolution;
+  const selected = await classifyPlacement(p.env, p.installRootFor(tool), skill, p.storeRoot);
+  if (adapterResolution.duplicateReason !== null) return adapterResolution;
+  if (
+    selected.class !== 'absent' &&
+    adapterResolution.placement.class !== 'absent' &&
+    adapterResolution.placement.path !== selected.path
+  ) {
+    return {
+      ...adapterResolution,
+      placement: selected,
+      duplicateReason: `'${skill}' exists at both ${selected.path} and ${adapterResolution.placement.path}`,
+    };
+  }
+  if (
+    selected.class !== 'absent' ||
+    adapterResolution.placement.class === 'absent' ||
+    adapterResolution.placement.path === selected.path
+  ) {
+    return { ...adapterResolution, placement: selected };
+  }
+  return adapterResolution;
+};
 // dir→dir routing: the swap engine rejects a same-kind copy-over-copy replace, so a copy re-install
 // over a real dir is routed as two kind changes (dir→store-symlink, then store-symlink→dir). Every
 // other transition (symlink→symlink re-pin, dir→symlink, symlink→dir) is a single swap the engine
@@ -381,11 +451,7 @@ const placePair = async (
   const skill = resolved.skillName;
   const sha = resolved.sha;
   const build: 'symlink' | 'copy' = opts.direct ? 'copy' : 'symlink';
-  const rootsCtx = {
-    cwd: p.scope === 'project' ? (p.scopeKey as string) : opts.cwd,
-    configuration: opts.configuration,
-  };
-  const installRoot = destinationSkillRootFor(p.registry, tool, env, p.scope, rootsCtx);
+  const installRoot = p.installRootFor(tool);
   const placementPath = join(installRoot, skill);
   const resultVerify =
     gate.gate === 'skipped' ? null : { gate: gate.gate, verdict: gate.verdict, mode: gate.mode };
@@ -446,15 +512,7 @@ const placePair = async (
           error: safeError(e),
         }),
   });
-  const currentResolution = await resolvePlacementFor(
-    p.registry,
-    tool,
-    env,
-    p.scope,
-    rootsCtx,
-    p.storeRoot,
-    skill,
-  );
+  const currentResolution = await resolveSelectedInstallPlacement(p, tool, skill);
   if (currentResolution.duplicateReason !== null) {
     return refuse(currentResolution.duplicateReason);
   }
@@ -678,21 +736,17 @@ const placePair = async (
 // ---------------------------------------------------------------------------------------------
 // dry-run prediction (read-only)
 // ---------------------------------------------------------------------------------------------
-const predictPair = async (
+const desiredInstallPreview = (
   p: PlaceCtx,
   spec: SourceSpec,
   resolved: ResolvedSourceMaterialization,
   tool: FlipTool,
-): Promise<InstallResult> => {
-  const { env, opts } = p;
+): InstallResult => {
+  const { opts } = p;
   const skill = resolved.skillName;
   const sha = resolved.sha;
   const build: 'symlink' | 'copy' = opts.direct ? 'copy' : 'symlink';
-  const rootsCtx = {
-    cwd: p.scope === 'project' ? (p.scopeKey as string) : opts.cwd,
-    configuration: opts.configuration,
-  };
-  const installRoot = destinationSkillRootFor(p.registry, tool, env, p.scope, rootsCtx);
+  const installRoot = p.installRootFor(tool);
   const placementPath = join(installRoot, skill);
   const { ns, name } = clampStoreNs(spec.identity.repository);
   const expectedStorePath = join(p.storeRoot, ns, `${name}@${sha.slice(0, 12)}`, skill);
@@ -717,6 +771,24 @@ const predictPair = async (
     verify: null,
     candidates: null,
   };
+  return base;
+};
+const predictPair = async (
+  p: PlaceCtx,
+  spec: SourceSpec,
+  resolved: ResolvedSourceMaterialization,
+  tool: FlipTool,
+): Promise<InstallResult> => {
+  const { env, opts } = p;
+  const skill = resolved.skillName;
+  const sha = resolved.sha;
+  const base = desiredInstallPreview(p, spec, resolved, tool);
+  const installRoot = p.installRootFor(tool);
+  const placementPath = base.placementPath;
+  const expectedStorePath = base.store?.path;
+  if (placementPath === null || expectedStorePath === undefined) {
+    throw new Error('install desired preview placement facts are missing');
+  }
   const refuse = (reason: string): InstallResult => ({
     ...base,
     action: 'refused',
@@ -726,15 +798,7 @@ const predictPair = async (
     origin: null,
     error: flipRefusedError(reason),
   });
-  const currentResolution = await resolvePlacementFor(
-    p.registry,
-    tool,
-    env,
-    p.scope,
-    rootsCtx,
-    p.storeRoot,
-    skill,
-  );
+  const currentResolution = await resolveSelectedInstallPlacement(p, tool, skill);
   if (currentResolution.duplicateReason !== null) {
     return refuse(currentResolution.duplicateReason);
   }
@@ -810,6 +874,23 @@ const predictPair = async (
 // ---------------------------------------------------------------------------------------------
 const closedPlanningText = (value: string | null, fallback: string): string =>
   value !== null && value.length > 0 && !containsSensitiveMaterial(value) ? value : fallback;
+const createInstallForceEffect = (
+  operation: ExecutableOperation,
+  requested: boolean,
+  applied = false,
+) =>
+  !requested || operation.conflict === null
+    ? createBoundedForceEffect({
+        supported: true,
+        requested,
+        conflict: null,
+      })
+    : createBoundedForceEffect({
+        supported: true,
+        requested: true,
+        applied,
+        conflict: operation.conflict,
+      });
 const createInstallExecutionResult = (
   operation: ExecutableOperation,
   result: InstallResult | undefined,
@@ -827,11 +908,7 @@ const createInstallExecutionResult = (
     operationId: operation.operationId,
     actualBefore,
     actualAfter,
-    force: createBoundedForceEffect({
-      supported: true,
-      requested: requested.force,
-      conflict: null,
-    }),
+    force: createInstallForceEffect(operation, requested.force, succeeded),
   } as const;
   if (cancelled) {
     return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
@@ -869,26 +946,237 @@ const installSummary = (results: readonly InstallResult[]): InstallReport['summa
   for (const result of results) summary[result.action]++;
   return summary;
 };
+type InstallArtifactResolution = Awaited<
+  ReturnType<typeof resolveAcquisitionArtifactDestinationV1>
+>;
+interface InstallReportAssemblyContext {
+  readonly artifact?: InstallArtifactResolution;
+  readonly path?: string;
+  readonly groupByResult?: ReadonlyMap<string, string>;
+}
+const installResultFactKey = (
+  result: Pick<InstallResult, 'requestIndex' | 'skill' | 'tool' | 'scope'>,
+): string => JSON.stringify([result.requestIndex ?? null, result.skill, result.tool, result.scope]);
+const currentInstallArtifactEffects = (
+  plan: OperationPlan<'install'>,
+  executionResults: readonly OperationExecutionResult[],
+  results: readonly InstallResult[],
+  groupByResult: ReadonlyMap<string, string>,
+  dryRun: boolean,
+): CurrentInstallReport['artifactEffects'] => {
+  const executionById = new Map(
+    executionResults.map((execution) => [execution.operationId, execution]),
+  );
+  const groupIds = [
+    ...new Set([
+      ...groupByResult.values(),
+      ...plan.operations
+        .filter(
+          ({ kind }) =>
+            kind === 'migrate-project-config' || kind === 'write-manifest' || kind === 'write-lock',
+        )
+        .map(({ groupId }) => groupId),
+    ]),
+  ].sort();
+  return groupIds.map((groupId) => {
+    const operations = plan.operations.filter((operation) => operation.groupId === groupId);
+    const migration = operations.find(({ kind }) => kind === 'migrate-project-config');
+    const manifest = operations.find(({ kind }) => kind === 'write-manifest');
+    const lock = operations.find(({ kind }) => kind === 'write-lock');
+    const executions = [migration, manifest, lock].flatMap((operation) => {
+      if (operation === undefined) return [];
+      const execution = executionById.get(operation.operationId);
+      return execution === undefined ? [] : [execution];
+    });
+    const failed = executions.find(
+      ({ outcome }) => outcome !== 'succeeded' && outcome !== 'skipped-after-failure',
+    );
+    const skipped = executions.find(({ outcome }) => outcome === 'skipped-after-failure');
+    const skill =
+      results.find((result) => groupByResult.get(installResultFactKey(result)) === groupId)
+        ?.skill ?? null;
+    return {
+      groupId,
+      skill,
+      manifestAction:
+        manifest === undefined ? 'keep' : manifest.before.kind === 'absent' ? 'create' : 'update',
+      lockAction: lock === undefined ? 'keep' : lock.before.kind === 'absent' ? 'create' : 'update',
+      migration:
+        migration === undefined
+          ? 'none'
+          : dryRun
+            ? 'planned'
+            : executionById.get(migration.operationId)?.outcome === 'succeeded'
+              ? 'applied'
+              : 'failed',
+      outcome: dryRun
+        ? 'planned'
+        : (failed?.outcome ??
+          skipped?.outcome ??
+          (executions.length === 0 ? 'succeeded' : 'succeeded')),
+      reason: failed?.error?.message ?? null,
+    };
+  });
+};
 const assembleInstallReport = (
   dryRun: boolean,
   requested: InstallReport['requested'],
   results: InstallResult[],
   plan: OperationPlan<'install'>,
   executionResults: readonly OperationExecutionResult[],
-): PlannedInstallReport => ({
-  dryRun,
-  requested,
-  results,
-  summary: installSummary(results),
-  plan,
-  executionResults,
-});
+  context: InstallReportAssemblyContext = {},
+): PlannedInstallReport => {
+  const artifact =
+    context.artifact ??
+    ({
+      outcome: 'none',
+      saveMode: 'desired-state',
+      pair: null,
+      selection: { outcome: 'none', reason: 'pre-resolution-failure' },
+    } as const);
+  const groupByResult = context.groupByResult ?? new Map<string, string>();
+  const executionById = new Map(
+    executionResults.map((execution) => [execution.operationId, execution]),
+  );
+  const currentResults: CurrentInstallResult[] = results.map((result, requestIndex) => {
+    const groupId = groupByResult.get(installResultFactKey(result)) ?? null;
+    const operation =
+      groupId === null
+        ? undefined
+        : plan.operations.find(
+            (candidate) =>
+              candidate.groupId === groupId &&
+              candidate.tool === result.tool &&
+              candidate.skill === result.skill &&
+              candidate.pairId !== null,
+          );
+    const execution =
+      operation === undefined ? undefined : executionById.get(operation.operationId);
+    const artifactOperations =
+      groupId === null
+        ? []
+        : plan.operations.filter(
+            (candidate) =>
+              candidate.groupId === groupId &&
+              (candidate.kind === 'migrate-project-config' ||
+                candidate.kind === 'write-manifest' ||
+                candidate.kind === 'write-lock'),
+          );
+    const artifactDurable =
+      artifact.saveMode === 'desired-state' &&
+      (dryRun ||
+        artifactOperations.every(
+          (candidate) => executionById.get(candidate.operationId)?.outcome === 'succeeded',
+        ));
+    const executionOutcome = dryRun
+      ? null
+      : (execution?.outcome ?? (result.action === 'noop' && artifactDurable ? 'succeeded' : null));
+    const dryRunWouldSucceed =
+      dryRun &&
+      (result.action === 'installed' ||
+        result.action === 'updated' ||
+        result.action === 'repaired' ||
+        result.action === 'noop');
+    const drift: CurrentInstallResult['drift'] =
+      artifact.saveMode === 'live-only'
+        ? {
+            status: 'not-evaluated',
+            futureApply: 'depends-on-selected-manifest',
+            reason: null,
+          }
+        : executionOutcome === 'succeeded' || dryRunWouldSucceed
+          ? { status: 'in-sync', futureApply: 'none', reason: null }
+          : artifactDurable
+            ? {
+                status: 'desired-without-live',
+                futureApply: 'restore-live',
+                reason: result.reason ?? 'selected live placement did not complete',
+              }
+            : {
+                status: 'not-evaluated',
+                futureApply: 'restore-live',
+                reason: result.reason ?? 'portable intent did not complete',
+              };
+    return {
+      ...result,
+      requestIndex: result.requestIndex ?? requestIndex,
+      groupId,
+      pairId: operation?.pairId ?? null,
+      executionOutcome,
+      drift,
+      force: (execution?.force ??
+        (result.tool === null
+          ? createBoundedForceEffect({
+              supported: false,
+              requested: false,
+              conflict: null,
+            })
+          : operation === undefined
+            ? createBoundedForceEffect({
+                supported: true,
+                requested: requested.force,
+                conflict: null,
+              })
+            : createInstallForceEffect(
+                operation,
+                requested.force,
+              ))) as CurrentInstallResult['force'],
+    };
+  });
+  const artifactEffects =
+    artifact.saveMode === 'live-only'
+      ? []
+      : currentInstallArtifactEffects(plan, executionResults, results, groupByResult, dryRun);
+  const legacySummary = installSummary(results);
+  const desiredState = {
+    changed: artifactEffects.filter(
+      ({ manifestAction, lockAction }) =>
+        manifestAction === 'create' ||
+        manifestAction === 'update' ||
+        lockAction === 'create' ||
+        lockAction === 'update',
+    ).length,
+    unchanged: artifactEffects.filter(
+      ({ manifestAction, lockAction }) => manifestAction === 'keep' && lockAction === 'keep',
+    ).length,
+    retained: 0,
+    notWritten: artifact.saveMode === 'live-only' ? currentResults.length : 0,
+    failed: artifactEffects.filter(
+      ({ outcome }) => outcome !== 'planned' && outcome !== 'succeeded' && outcome !== 'not-run',
+    ).length,
+  };
+  return {
+    reportVersion: 2,
+    dryRun,
+    saveMode: artifact.saveMode,
+    artifactPair:
+      artifact.outcome === 'selected'
+        ? {
+            manifestPath: artifact.pair.file.path,
+            lockPath: artifact.pair.lockfile.path,
+            lockSource: artifact.pair.lockfileSource,
+          }
+        : null,
+    artifactSelection: artifact.selection,
+    artifactEffects,
+    requested: {
+      ...requested,
+      batchPolicy: plan.batchPolicy,
+      path: context.path ?? null,
+    },
+    results: currentResults,
+    summary: { ...legacySummary, desiredState },
+    plan,
+    executionResults,
+  } as unknown as PlannedInstallReport;
+};
 const createInstallDiagnosticReport = (
   dryRun: boolean,
   requested: InstallReport['requested'],
   results: InstallResult[],
   continueOnError: boolean,
   registry: LifecycleToolRegistry<string>,
+  reportContext: InstallReportAssemblyContext = {},
 ): PlannedInstallReport => {
   const planningContext = { registry, toolOrder: registry.ids };
   const compatibility = createInstallPlanning(
@@ -914,7 +1202,7 @@ const createInstallDiagnosticReport = (
     planningContext,
   );
   if (!planned.ok) throw new Error(planned.error.message);
-  return assembleInstallReport(dryRun, requested, results, planned.value, []);
+  return assembleInstallReport(dryRun, requested, results, planned.value, [], reportContext);
 };
 const rejectedSourceLabel = (input: string): string => {
   const safe = redactSensitiveString(input);
@@ -974,6 +1262,22 @@ const runInstallInternal = async (
     verify: (opts.noVerify ? 'skipped' : 'static') as 'static' | 'skipped',
     deep: Boolean(opts.deep),
   };
+  const earlyReportContext: InstallReportAssemblyContext = {
+    ...(opts.noSave
+      ? {
+          artifact: Object.freeze({
+            outcome: 'none' as const,
+            saveMode: 'live-only' as const,
+            pair: null,
+            selection: Object.freeze({
+              outcome: 'none' as const,
+              reason: 'no-save' as const,
+            }),
+          }) as InstallArtifactResolution,
+        }
+      : {}),
+    ...(opts.path === undefined ? {} : { path: opts.path }),
+  };
   const anyParseFail = parsed.some((x) => !x.res.ok);
   if (anyParseFail) {
     // Resolution 3: whole invocation refuses before any I/O.
@@ -1003,6 +1307,7 @@ const runInstallInternal = async (
         results,
         Boolean(opts.continueOnError),
         registry,
+        earlyReportContext,
       ),
     );
   }
@@ -1025,6 +1330,7 @@ const runInstallInternal = async (
         results,
         Boolean(opts.continueOnError),
         registry,
+        earlyReportContext,
       ),
     );
   }
@@ -1046,6 +1352,19 @@ const runInstallInternal = async (
   const scope: InstallScope = opts.scope ?? (projectRoot ? 'project' : 'user');
   const scopeKey = scope === 'project' ? (projectRoot ?? (await env.realpath(opts.cwd))) : null;
   const explicitScope = opts.scope !== undefined;
+  const selectedInstallRootFor = (tool: FlipTool, roots: { cwd: string }): string => {
+    if (opts.path === undefined) {
+      return destinationSkillRootFor(registry, tool, env, scope, {
+        cwd: roots.cwd,
+        configuration: opts.configuration,
+      });
+    }
+    if (opts.path.startsWith('~/')) return resolve(env.homeDir, opts.path.slice(2));
+    if (opts.path.startsWith('./')) {
+      return resolve(scope === 'project' ? (scopeKey as string) : roots.cwd, opts.path.slice(2));
+    }
+    return isAbsolute(opts.path) ? resolve(opts.path) : resolve(roots.cwd, opts.path);
+  };
   const installTools = registry.toolsFor('install') as readonly FlipTool[];
   const candidateTools = explicitTools
     ? [...(opts.tools as readonly FlipTool[])]
@@ -1105,6 +1424,7 @@ const runInstallInternal = async (
           results,
           Boolean(opts.continueOnError),
           registry,
+          earlyReportContext,
         ),
       );
     }
@@ -1115,6 +1435,7 @@ const runInstallInternal = async (
         planningRefusals,
         Boolean(opts.continueOnError),
         registry,
+        earlyReportContext,
       ),
     );
   }
@@ -1136,14 +1457,24 @@ const runInstallInternal = async (
     readonly expectedState: Extract<LedgerReadState, { readonly state: 'present' }>;
     onMigrated(model: LedgerModel): void;
   }
-  type PreparedInstallBinding = PreparedInstallPairBinding | PreparedInstallMigrationBinding;
+  interface PreparedInstallArtifactBinding {
+    readonly kind: 'artifact';
+    readonly action: AcquisitionArtifactExecutionActionV1;
+  }
+  type PreparedInstallBinding =
+    | PreparedInstallPairBinding
+    | PreparedInstallMigrationBinding
+    | PreparedInstallArtifactBinding;
   interface PreparedInstallBatch {
     readonly preview: PlannedInstallReport;
+    readonly legacyPreviewResults: readonly InstallResult[];
     readonly bindings: ReadonlyMap<string, PreparedInstallBinding>;
     readonly preconditions: readonly ExecutionPrecondition[];
     readonly snapshotAuthority: AcquisitionSnapshotAuthorityV1;
     readonly expectedRevisions: readonly ExpectedRevisionV1[];
     readonly snapshotId: `snapshot:v1:${string}`;
+    readonly artifactResolution: InstallArtifactResolution;
+    readonly groupByResult: ReadonlyMap<string, string>;
   }
   type PreparedInstallOutcome = PreparedInstallBatch | Readonly<{ terminal: PlannedInstallReport }>;
   interface InstallPreconditionFacts {
@@ -1169,10 +1500,22 @@ const runInstallInternal = async (
   }
   interface InstallBindingSeed {
     readonly preview: InstallResult;
+    readonly reportPreviews: readonly InstallResult[];
+    readonly requestIndex: number;
     readonly spec: SourceSpec;
     readonly resolved: ResolvedSourceMaterialization;
     readonly tool: FlipTool;
+    readonly execution: 'selected' | 'desired-only';
     execute(): Promise<InstallResult>;
+  }
+  interface PreparedInstallIntent {
+    readonly seed: InstallBindingSeed;
+    readonly expectedFacts: InstallPreconditionFacts;
+    readonly intent: AcquisitionInstallIntentV1;
+  }
+  interface PreparedInstallArtifactPlanning {
+    readonly transition: AcquisitionArtifactTransitionEnvelopeV1 | undefined;
+    readonly actions: ReadonlyMap<string, AcquisitionArtifactExecutionActionV1>;
   }
   type InstallVerificationGate = Awaited<ReturnType<typeof runInstallVerifyGate>>;
   interface InstallResolutionAuthority {
@@ -1183,6 +1526,317 @@ const runInstallInternal = async (
     cleanup(): Promise<void>;
   }
   const gateKey = (requestIndex: number, tool: FlipTool): string => `${requestIndex}:${tool}`;
+  const artifactBindingKey = (groupId: string, kind: ExecutableOperation['kind']): string =>
+    `${groupId}:${kind}`;
+  const portableSourceToken = (declaration: NormalizedManifestDeclaration): string =>
+    `${declaration.source.host}/${declaration.source.repository}${
+      declaration.source.path === null ? '' : `//${declaration.source.path}`
+    }`;
+  const samePortableValue = (left: unknown, right: unknown): boolean =>
+    canonicalPlanningString(left) === canonicalPlanningString(right);
+  const manifestEditsForDeclaration = (
+    current: NormalizedManifestDeclaration | undefined,
+    desired: NormalizedManifestDeclaration,
+  ): readonly ManifestEdit[] => {
+    if (current === undefined) return [{ kind: 'add-skill', declaration: desired }];
+    const edits: ManifestEdit[] = [];
+    if (!samePortableValue(current.source, desired.source)) {
+      edits.push({
+        kind: 'set-skill-field',
+        name: desired.name,
+        field: 'source',
+        value: portableSourceToken(desired),
+      });
+    }
+    for (const field of ['ref', 'path'] as const) {
+      if (current[field] === desired[field]) continue;
+      if (desired[field] === null) {
+        edits.push({ kind: 'unset-skill-field', name: desired.name, field });
+      } else {
+        edits.push({
+          kind: 'set-skill-field',
+          name: desired.name,
+          field,
+          value: desired[field],
+        });
+      }
+    }
+    if (!samePortableValue(current.tools, desired.tools)) {
+      edits.push({
+        kind: 'set-skill-field',
+        name: desired.name,
+        field: 'tools',
+        value: desired.tools,
+      });
+    }
+    for (const field of ['scope', 'placement'] as const) {
+      if (current[field] === desired[field]) continue;
+      edits.push({
+        kind: 'set-skill-field',
+        name: desired.name,
+        field,
+        value: desired[field],
+      } as ManifestEdit);
+    }
+    return edits;
+  };
+  const manifestWithDeclaration = (
+    manifest: NormalizedManifestV1,
+    declaration: NormalizedManifestDeclaration,
+  ): NormalizedManifestV1 => {
+    const index = manifest.skills.findIndex(({ name }) => name === declaration.name);
+    const skills = [...manifest.skills];
+    if (index < 0) skills.push(declaration);
+    else skills[index] = declaration;
+    return Object.freeze({ ...manifest, skills: Object.freeze(skills) });
+  };
+  const lockWithEntry = (
+    lock: PortableLockV1,
+    manifest: NormalizedManifestV1,
+    entry: PortableLockSkillV1,
+  ): PortableLockV1 =>
+    Object.freeze({
+      version: 1,
+      hashSchemaVersion: HASH_SCHEMA_VERSION,
+      manifestHash: hashManifestSemantics(manifest),
+      skills: Object.freeze(
+        [...lock.skills.filter(({ name }) => name !== entry.name), entry].sort((left, right) =>
+          left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+        ),
+      ),
+    });
+  const prepareInstallArtifactPlanning = async (
+    snapshotAuthority: AcquisitionSnapshotAuthorityV1,
+    prepared: readonly PreparedInstallIntent[],
+  ): Promise<PreparedInstallArtifactPlanning> => {
+    const artifact = snapshotAuthority.snapshot.artifact;
+    if (artifact.mode === 'none') {
+      return Object.freeze({ transition: undefined, actions: new Map() });
+    }
+    if (prepared.length === 0) {
+      throw new Error('selected install artifact has no complete intent');
+    }
+    const manifestPath = artifact.pair.file.path;
+    const lockPath = artifact.pair.lockfile.path;
+    let manifestBytes: Uint8Array | null;
+    let manifestImage: AcquisitionArtifactTransitionEnvelopeV1['initial']['manifest'];
+    let manifestModel: NormalizedManifestV1;
+    if (artifact.manifest.revision.state === 'absent') {
+      manifestBytes = null;
+      manifestImage = Object.freeze({
+        kind: 'absent' as const,
+        resource: Object.freeze({
+          kind: 'manifest-bytes' as const,
+          location: Object.freeze({ kind: 'machine-bound' as const, path: manifestPath }),
+        }),
+      });
+      manifestModel = Object.freeze({ version: 1 as const, skills: Object.freeze([]) });
+    } else {
+      manifestBytes = new Uint8Array(await env.readBytes(manifestPath));
+      manifestImage = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
+      if (artifact.manifest.value === null) {
+        throw new Error('selected install manifest model is missing');
+      }
+      manifestModel = artifact.manifest.value;
+    }
+    let lockImage: AcquisitionArtifactTransitionEnvelopeV1['initial']['lock'];
+    let lockModel: PortableLockV1;
+    if (artifact.lock.revision.state === 'absent') {
+      lockImage = Object.freeze({
+        kind: 'absent' as const,
+        resource: Object.freeze({
+          kind: 'lock' as const,
+          location: Object.freeze({ kind: 'machine-bound' as const, path: lockPath }),
+        }),
+      });
+      lockModel = Object.freeze({
+        version: 1 as const,
+        hashSchemaVersion: HASH_SCHEMA_VERSION,
+        manifestHash: hashManifestSemantics(manifestModel),
+        skills: Object.freeze([]),
+      });
+    } else {
+      const lockBytes = new Uint8Array(await env.readBytes(lockPath));
+      lockImage = acquisitionLockImageFromBytesV1(lockPath, lockBytes);
+      if (artifact.lock.value === null) {
+        throw new Error('selected install lock model is missing');
+      }
+      lockModel = artifact.lock.value;
+    }
+    const initialManifestImage = manifestImage;
+    const initialLockImage = lockImage;
+
+    const grouped = new Map<
+      string,
+      Readonly<{
+        groupId: string;
+        groupIdentity: AcquisitionArtifactTransitionEnvelopeV1['groups'][number]['groupIdentity'];
+        intents: PreparedInstallIntent[];
+      }>
+    >();
+    for (const item of prepared) {
+      const groupIdentity = {
+        domain: 'skillsmith.operation-group-identity' as const,
+        schemaVersion: 1 as const,
+        command: 'install' as const,
+        skill: item.intent.skill,
+        source: item.intent.source,
+        scope: item.intent.scope,
+        target: null,
+      };
+      const groupId = createOperationGroupId(groupIdentity);
+      const existing = grouped.get(groupId);
+      if (existing === undefined) {
+        grouped.set(groupId, { groupId, groupIdentity, intents: [item] });
+      } else {
+        existing.intents.push(item);
+      }
+    }
+    const groups = [...grouped.values()].sort((left, right) =>
+      left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0,
+    );
+    const transitionGroups: AcquisitionArtifactTransitionEnvelopeV1['groups'][number][] = [];
+    const unchangedGroups: AcquisitionArtifactTransitionEnvelopeV1['unchangedGroups'] extends
+      | readonly (infer Identity)[]
+      | undefined
+      ? Identity[]
+      : never = [];
+    const actions = new Map<string, AcquisitionArtifactExecutionActionV1>();
+    let migrationPending = manifestImage.kind === 'manifest' && manifestImage.shape === 'legacy';
+
+    for (const group of groups) {
+      const first = group.intents[0];
+      if (
+        first === undefined ||
+        first.intent.source.kind !== 'portable' ||
+        first.intent.declaration === undefined
+      ) {
+        throw new Error('install artifact group lacks a portable source');
+      }
+      const tools = registry.ids.filter((tool) =>
+        group.intents.some(({ intent }) => intent.tool === tool),
+      ) as NormalizedManifestDeclaration['tools'];
+      const desired: NormalizedManifestDeclaration = Object.freeze({
+        name: first.intent.skill,
+        source: first.intent.source.identity,
+        ref: first.intent.declaration.ref,
+        tools: Object.freeze(tools),
+        scope: first.intent.scope,
+        placement: first.intent.placement.representation,
+        path: first.intent.declaration.path,
+      });
+      const desiredLockEntry: PortableLockSkillV1 = Object.freeze({
+        name: desired.name,
+        source: portableSourceToken(desired),
+        requestedRef: first.intent.source.requestedRef,
+        resolvedSha: first.intent.source.resolvedSha,
+        sourcePath: first.intent.source.sourcePath,
+        contentHash: first.intent.source.contentHash as ArtifactDigest,
+      });
+      let migrationAfter:
+        | AcquisitionArtifactTransitionEnvelopeV1['groups'][number]['migrationAfter']
+        | undefined;
+      if (migrationPending) {
+        if (manifestBytes === null) throw new Error('legacy manifest bytes are missing');
+        const request = Object.freeze({
+          edits: Object.freeze([{ kind: 'migrate-legacy' as const }]),
+        });
+        const migrated = editManifestBytes(manifestBytes, request);
+        if (!migrated.ok) throw migrated.error;
+        manifestBytes = migrated.value.bytes;
+        migrationAfter = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
+        actions.set(
+          artifactBindingKey(group.groupId, 'migrate-project-config'),
+          Object.freeze({
+            role: 'manifest' as const,
+            action: Object.freeze({ kind: 'edit' as const, request }),
+          }),
+        );
+        manifestImage = migrationAfter;
+        migrationPending = false;
+      }
+      const edits = manifestEditsForDeclaration(
+        manifestModel.skills.find(({ name }) => name === desired.name),
+        desired,
+      );
+      let manifestAction: HumanManifestAction | null = null;
+      let manifestAfter = manifestImage;
+      if (edits.length > 0) {
+        const targetManifest = manifestWithDeclaration(manifestModel, desired);
+        if (manifestBytes === null) {
+          const encoded = manifestV1Codec.encode(targetManifest);
+          if (!encoded.ok) throw new Error(encoded.error.message);
+          manifestBytes = encoded.value;
+          manifestAction = Object.freeze({
+            kind: 'replace' as const,
+            bytes: new Uint8Array(manifestBytes),
+          });
+        } else {
+          const request: ManifestEditRequest = Object.freeze({ edits: Object.freeze([...edits]) });
+          const edited = editManifestBytes(manifestBytes, request);
+          if (!edited.ok) throw edited.error;
+          manifestBytes = edited.value.bytes;
+          manifestAction = Object.freeze({ kind: 'edit' as const, request });
+        }
+        manifestModel = targetManifest;
+        manifestAfter = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
+      }
+      const targetLock = lockWithEntry(lockModel, manifestModel, desiredLockEntry);
+      const currentLockHash = hashPortableLock(lockModel);
+      const targetLockHash = hashPortableLock(targetLock);
+      if (!currentLockHash.ok || !targetLockHash.ok) {
+        throw new Error('install portable lock could not be hashed');
+      }
+      const lockChanged = currentLockHash.value !== targetLockHash.value;
+      if (manifestAction === null && !lockChanged && migrationAfter === undefined) {
+        unchangedGroups.push(group.groupIdentity);
+        continue;
+      }
+      if (!lockChanged) {
+        throw new Error('install manifest transition did not produce a correlated lock change');
+      }
+      const serializedLock = serializePortableLock(targetLock);
+      if (!serializedLock.ok) throw new Error('install portable lock could not be serialized');
+      const lockAfter = acquisitionLockImageFromBytesV1(
+        lockPath,
+        new TextEncoder().encode(serializedLock.value),
+      );
+      transitionGroups.push({
+        groupIdentity: group.groupIdentity,
+        ...(migrationAfter === undefined ? {} : { migrationAfter }),
+        manifestAfter: manifestAfter as Extract<OperationImage, { readonly kind: 'manifest' }>,
+        lockAfter,
+      });
+      if (manifestAction !== null) {
+        actions.set(
+          artifactBindingKey(group.groupId, 'write-manifest'),
+          Object.freeze({ role: 'manifest' as const, action: manifestAction }),
+        );
+      }
+      const lockAction: GeneratedLockAction = Object.freeze({
+        kind: 'replace' as const,
+        lock: targetLock,
+      });
+      actions.set(
+        artifactBindingKey(group.groupId, 'write-lock'),
+        Object.freeze({ role: 'lock' as const, action: lockAction }),
+      );
+      manifestImage = manifestAfter;
+      lockImage = lockAfter;
+      lockModel = targetLock;
+    }
+    return Object.freeze({
+      transition: Object.freeze({
+        initial: Object.freeze({
+          manifest: initialManifestImage,
+          lock: initialLockImage,
+        }),
+        groups: Object.freeze(transitionGroups),
+        unchangedGroups: Object.freeze(unchangedGroups),
+      }),
+      actions,
+    });
+  };
   const observeInstallState = async (
     seed: InstallBindingSeed,
   ): Promise<Readonly<{ ledger: LedgerModel; facts: InstallPreconditionFacts }>> => {
@@ -1194,7 +1848,7 @@ const runInstallInternal = async (
       cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
       configuration: opts.configuration,
     };
-    const installRoot = destinationSkillRootFor(registry, tool, env, scope, rootsCtx);
+    const installRoot = selectedInstallRootFor(tool, rootsCtx);
     const ledgerResult = await readLedgerState(env, ledgerPath);
     if (!ledgerResult.ok) throw ledgerResult.error;
     const ledger = ledgerModelForMutation(ledgerResult.value, nowOf(env, deps));
@@ -1301,10 +1955,7 @@ const runInstallInternal = async (
             cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
             configuration: opts.configuration,
           };
-          const placementPath = join(
-            destinationSkillRootFor(registry, tool, env, scope, roots),
-            r.skillName,
-          );
+          const placementPath = join(selectedInstallRootFor(tool, roots), r.skillName);
           if (containsSensitiveMaterial(placementPath)) {
             sourceFailed = true;
             continue;
@@ -1335,6 +1986,7 @@ const runInstallInternal = async (
         ...(opts.file === undefined ? {} : { file: opts.file }),
         ...(opts.lockfile === undefined ? {} : { lockfile: opts.lockfile }),
         ...(opts.noSave === undefined ? {} : { noSave: opts.noSave }),
+        ...(opts.path === undefined ? {} : { path: opts.path }),
       });
       return Object.freeze({
         sources,
@@ -1376,6 +2028,10 @@ const runInstallInternal = async (
       scope,
       scopeKey,
       projectRoot,
+      installRootFor: (tool) =>
+        selectedInstallRootFor(tool, {
+          cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
+        }),
       logicalOperation: null,
       operationObservation: undefined,
     };
@@ -1488,7 +2144,7 @@ const runInstallInternal = async (
           configuration: opts.configuration,
         };
         const derivedPlacementPath = join(
-          destinationSkillRootFor(registry, tool, env, scope, derivedRootsContext),
+          selectedInstallRootFor(tool, derivedRootsContext),
           r.skillName,
         );
         if (containsSensitiveMaterial(derivedPlacementPath)) {
@@ -1515,19 +2171,25 @@ const runInstallInternal = async (
           continue;
         }
         if (gate.blocked) {
-          const rootsCtx = {
-            cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
-            configuration: opts.configuration,
-          };
-          const installRoot = destinationSkillRootFor(registry, tool, env, scope, rootsCtx);
-          sourceResults.push({
+          const blocked: InstallResult = {
             ...emptyResult(source, scope, 'failed', requestIndex),
             skill: r.skillName,
             tool,
-            placementPath: join(installRoot, r.skillName),
+            placementPath: derivedPlacementPath,
             reason: msg(gate.blocked),
             verify: { gate: gate.gate, verdict: gate.verdict, mode: gate.mode },
             error: safeError(gate.blocked),
+          };
+          sourceResults.push(blocked);
+          candidateBindings.set(blocked, {
+            preview: desiredInstallPreview(placeCtx, spec, r, tool),
+            reportPreviews: [blocked],
+            requestIndex,
+            spec,
+            resolved: r,
+            tool,
+            execution: 'desired-only',
+            execute: async () => blocked,
           });
           continue;
         }
@@ -1557,19 +2219,14 @@ const runInstallInternal = async (
           }
         }
         sourceResults.push(preview);
-        if (
-          preview.action !== 'installed' &&
-          preview.action !== 'updated' &&
-          preview.action !== 'repaired' &&
-          preview.action !== 'noop'
-        ) {
-          continue;
-        }
         candidateBindings.set(preview, {
-          preview,
+          preview: desiredInstallPreview(placeCtx, spec, r, tool),
+          reportPreviews: [preview],
+          requestIndex,
           spec,
           resolved: r,
           tool,
+          execution: 'selected',
           execute: async (): Promise<InstallResult> => {
             if (snap === null && snapErr === null) {
               const { ns, name } = clampStoreNs(spec.identity.repository);
@@ -1630,16 +2287,14 @@ const runInstallInternal = async (
           results,
           Boolean(opts.continueOnError),
           registry,
+          {
+            artifact: resolution.artifact,
+            ...(opts.path === undefined ? {} : { path: opts.path }),
+          },
         ),
       };
     }
-    const preparedIntents: Array<
-      Readonly<{
-        seed: InstallBindingSeed;
-        expectedFacts: InstallPreconditionFacts;
-        intent: AcquisitionInstallIntentV1;
-      }>
-    > = [];
+    const preparedIntents: PreparedInstallIntent[] = [];
     const liveResourcesByPath = new Map<string, AcquireLiveSnapshotResourceV1>();
     const storeResourcesByPath = new Map<string, AcquireStoreSnapshotResourceV1>();
     const addLiveResource = (resource: AcquireLiveSnapshotResourceV1): void => {
@@ -1664,7 +2319,7 @@ const runInstallInternal = async (
         throw new Error('prepared install intent requires an executable result');
       }
       const expectedFacts = (await observeInstallState(seed)).facts;
-      const requestIndex = seed.preview.requestIndex;
+      const requestIndex = seed.requestIndex;
       if (!Number.isSafeInteger(requestIndex) || (requestIndex as number) < 0) {
         throw new Error('prepared install request occurrence is invalid');
       }
@@ -1737,6 +2392,7 @@ const runInstallInternal = async (
         expectedFacts,
         intent: {
           kind: 'install',
+          execution: seed.execution,
           skill: seed.preview.skill,
           tool: seed.tool,
           scope,
@@ -1761,6 +2417,14 @@ const runInstallInternal = async (
             sourcePath: seed.resolved.skillPath.length === 0 ? '.' : seed.resolved.skillPath,
             contentHash: sourceContent.contentRevision,
           },
+          ...(opts.noSave
+            ? {}
+            : {
+                declaration: {
+                  ref: opts.pin ? seed.resolved.sha : seed.spec.ref,
+                  path: opts.path ?? null,
+                },
+              }),
           placement: {
             classification: 'pinned',
             representation: opts.direct ? 'copy' : 'symlink',
@@ -1776,6 +2440,21 @@ const runInstallInternal = async (
           },
         },
       });
+    }
+    if (preparedIntents.length === 0) {
+      return {
+        terminal: createInstallDiagnosticReport(
+          Boolean(opts.dryRun),
+          requested,
+          results,
+          Boolean(opts.continueOnError),
+          registry,
+          {
+            artifact: resolution.artifact,
+            ...(opts.path === undefined ? {} : { path: opts.path }),
+          },
+        ),
+      };
     }
     const migration = prepareLedgerMigration(
       env,
@@ -1806,6 +2485,10 @@ const runInstallInternal = async (
       storeResources: [...storeResourcesByPath.values()],
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     });
+    const artifactPlanning = await prepareInstallArtifactPlanning(
+      snapshotAuthority,
+      preparedIntents,
+    );
     const boundPlanning = createAcquisitionPlan(
       {
         schemaVersion: 1,
@@ -1820,6 +2503,9 @@ const runInstallInternal = async (
         diagnostics: compatibilityPlanning.plan.diagnostics,
         compatibilityOperations: migration === null ? [] : [migration.operation],
         intents: preparedIntents.map(({ intent }) => intent),
+        ...(artifactPlanning.transition === undefined
+          ? {}
+          : { artifactTransition: artifactPlanning.transition }),
       },
       snapshotAuthority.snapshot,
       { registry, toolOrder: registry.ids },
@@ -1828,12 +2514,39 @@ const runInstallInternal = async (
       throw new Error(boundPlanning.error.message);
     }
     const plan = boundPlanning.value.plan;
+    const groupByResult = new Map<string, string>();
+    for (const item of preparedIntents) {
+      const groupId = createOperationGroupId({
+        domain: 'skillsmith.operation-group-identity',
+        schemaVersion: 1,
+        command: 'install',
+        skill: item.intent.skill,
+        source: item.intent.source,
+        scope: item.intent.scope,
+        target: null,
+      });
+      for (const reportPreview of item.seed.reportPreviews) {
+        groupByResult.set(installResultFactKey(reportPreview), groupId);
+      }
+    }
     const canonicalOperations = plan.operations.filter(
       (operation) =>
         migration === null || operation.operationId !== migration.operation.operationId,
     );
+    const artifactOperations = canonicalOperations.filter(
+      (operation) =>
+        operation.kind === 'migrate-project-config' ||
+        operation.kind === 'write-manifest' ||
+        operation.kind === 'write-lock',
+    );
+    const liveOperations = canonicalOperations.filter(
+      (operation) =>
+        operation.kind !== 'migrate-project-config' &&
+        operation.kind !== 'write-manifest' &&
+        operation.kind !== 'write-lock',
+    );
     const operationByLivePath = new Map<string, ExecutableOperation>();
-    for (const operation of canonicalOperations) {
+    for (const operation of liveOperations) {
       if (operation.before.kind !== 'absent' && operation.before.kind !== 'placement') {
         throw new Error('acquisition install operation does not target live state');
       }
@@ -1851,7 +2564,7 @@ const runInstallInternal = async (
     for (const prepared of preparedIntents) {
       const placementPath = resolve(prepared.seed.preview.placementPath as string);
       const operation = operationByLivePath.get(placementPath);
-      const action: InstallAction =
+      const plannedAction: InstallAction =
         operation === undefined
           ? 'noop'
           : operation.kind === 'install'
@@ -1859,15 +2572,28 @@ const runInstallInternal = async (
             : operation.kind === 'update'
               ? 'updated'
               : 'repaired';
+      const reportPreview = prepared.seed.reportPreviews[0] ?? prepared.seed.preview;
+      const preserveRefusal =
+        reportPreview.action === 'refused' ||
+        reportPreview.action === 'failed' ||
+        reportPreview.action === 'skipped';
       const canonicalPreview = {
-        ...prepared.seed.preview,
-        action,
+        ...(preserveRefusal ? reportPreview : prepared.seed.preview),
+        action: preserveRefusal ? reportPreview.action : plannedAction,
         reason:
-          operation === undefined
+          !preserveRefusal && operation === undefined
             ? `already installed at ${prepared.seed.resolved.sha.slice(0, 12)}`
-            : prepared.seed.preview.reason,
+            : reportPreview.reason,
       };
       canonicalPreviewByOriginal.set(prepared.seed.preview, canonicalPreview);
+      for (const occurrence of prepared.seed.reportPreviews) {
+        canonicalPreviewByOriginal.set(occurrence, {
+          ...canonicalPreview,
+          ...(occurrence.requestIndex === undefined
+            ? {}
+            : { requestIndex: occurrence.requestIndex }),
+        });
+      }
       if (operation !== undefined) {
         const operationIntents = preparedIntentsByOperationId.get(operation.operationId);
         if (operationIntents === undefined) {
@@ -1892,7 +2618,32 @@ const runInstallInternal = async (
         seed: InstallBindingSeed;
       }>
     >();
-    for (const operation of canonicalOperations) {
+    for (const prepared of preparedIntents) {
+      const currentGroup = sourcePreconditionGroups.get(prepared.intent.sourcePreconditionId);
+      if (currentGroup === undefined) {
+        sourcePreconditionGroups.set(prepared.intent.sourcePreconditionId, {
+          expectedContent: prepared.intent.sourceContent,
+          operations: [],
+          seed: prepared.seed,
+        });
+      } else if (
+        JSON.stringify(currentGroup.expectedContent) !==
+          JSON.stringify(prepared.intent.sourceContent) ||
+        currentGroup.seed.resolved.materializedDir !== prepared.seed.resolved.materializedDir
+      ) {
+        throw new Error('acquisition source precondition identity collision');
+      }
+    }
+    for (const operation of artifactOperations) {
+      const action = artifactPlanning.actions.get(
+        artifactBindingKey(operation.groupId, operation.kind),
+      );
+      if (action === undefined) {
+        throw new Error('prepared install artifact action is missing');
+      }
+      preparedBindings.set(operation.operationId, { kind: 'artifact', action });
+    }
+    for (const operation of liveOperations) {
       const operationIntents = preparedIntentsByOperationId.get(operation.operationId);
       if (operationIntents === undefined || operationIntents[0] === undefined) {
         throw new Error('prepared install operation binding is missing');
@@ -1901,19 +2652,11 @@ const runInstallInternal = async (
       for (const occurrence of operationIntents) {
         const currentGroup = sourcePreconditionGroups.get(occurrence.intent.sourcePreconditionId);
         if (currentGroup === undefined) {
-          sourcePreconditionGroups.set(occurrence.intent.sourcePreconditionId, {
-            expectedContent: occurrence.intent.sourceContent,
-            operations: [operation],
-            seed: occurrence.seed,
-          });
-        } else {
-          if (
-            JSON.stringify(currentGroup.expectedContent) !==
-              JSON.stringify(occurrence.intent.sourceContent) ||
-            currentGroup.seed.resolved.materializedDir !== occurrence.seed.resolved.materializedDir
-          ) {
-            throw new Error('acquisition source precondition identity collision');
-          }
+          throw new Error('acquisition source precondition group is missing');
+        }
+        if (
+          !currentGroup.operations.some(({ operationId }) => operationId === operation.operationId)
+        ) {
           currentGroup.operations.push(operation);
         }
       }
@@ -1936,8 +2679,10 @@ const runInstallInternal = async (
       preparedBindings.set(operation.operationId, {
         kind: 'pair',
         preview: canonicalPreview,
-        reportPreviews: operationIntents.map(
-          ({ seed }) => canonicalPreviewByOriginal.get(seed.preview) ?? seed.preview,
+        reportPreviews: operationIntents.flatMap(({ seed }) =>
+          seed.reportPreviews.map(
+            (reportPreview) => canonicalPreviewByOriginal.get(reportPreview) ?? reportPreview,
+          ),
         ),
         actualBefore,
         liveResourceId: prepared.intent.liveResourceId,
@@ -1961,7 +2706,18 @@ const runInstallInternal = async (
         },
       });
     }
+    for (const operation of artifactOperations) {
+      for (const [preconditionId, group] of sourcePreconditionGroups) {
+        if (
+          operation.preconditionIds.includes(preconditionId) &&
+          !group.operations.some(({ operationId }) => operationId === operation.operationId)
+        ) {
+          group.operations.push(operation);
+        }
+      }
+    }
     for (const group of sourcePreconditionGroups.values()) {
+      if (group.operations.length === 0) continue;
       preconditions.push(
         createContentObservationExecutionPrecondition({
           operationIds: group.operations.map(({ operationId }) => operationId),
@@ -2004,16 +2760,23 @@ const runInstallInternal = async (
     ) {
       throw new Error('prepared install plan has no exact execution binding');
     }
-    const preview = assembleInstallReport(true, requested, canonicalResults, plan, []);
+    const preview = assembleInstallReport(true, requested, canonicalResults, plan, [], {
+      artifact: resolution.artifact,
+      ...(opts.path === undefined ? {} : { path: opts.path }),
+      groupByResult,
+    });
     emitAcquisitionPlanCreated(observation, plan, planObservation);
     deps.observePreparedPlan?.(plan);
     return {
       preview,
+      legacyPreviewResults: Object.freeze(canonicalResults),
       bindings,
       preconditions: Object.freeze(preconditions),
       snapshotAuthority,
       expectedRevisions: boundPlanning.value.expectedRevisions,
       snapshotId: boundPlanning.value.snapshotId,
+      artifactResolution: resolution.artifact,
+      groupByResult,
     };
   };
   const executePrepared = async (prepared: PreparedInstallBatch): Promise<PlannedInstallReport> => {
@@ -2032,10 +2795,28 @@ const runInstallInternal = async (
       snapshotId: prepared.snapshotId,
       expectedRevisions: prepared.expectedRevisions,
     });
+    const ledgerLockPort = createAcquireExecutionLockPort(env, ledgerPath, safeError, msg);
+    const artifactController =
+      prepared.snapshotAuthority.snapshot.artifact.mode === 'selected'
+        ? createAcquisitionArtifactExecutionControllerV1({
+            authority: prepared.snapshotAuthority,
+            artifactCoordinator:
+              deps.artifactCoordinator ?? (await createNodeArtifactCoordinatorPorts()),
+            ledgerLockPort,
+            ledgerPath,
+            ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+          })
+        : null;
     const schedulerBindings: PreparedExecutionBinding[] = prepared.preview.plan.operations.map(
       (operation) => {
         const binding = prepared.bindings.get(operation.operationId);
         if (binding === undefined) throw new Error('prepared install operation binding is missing');
+        if (binding.kind === 'artifact') {
+          if (artifactController === null) {
+            throw new Error('prepared install artifact controller is missing');
+          }
+          return artifactController.bind(operation, binding.action);
+        }
         if (binding.kind === 'migrate-ledger') {
           return lifecycle.bind(
             operation,
@@ -2060,11 +2841,7 @@ const runInstallInternal = async (
             operationId: operation.operationId,
             groupId: operation.groupId,
             pairId: operation.pairId,
-            unstartedForce: createBoundedForceEffect({
-              supported: true,
-              requested: requested.force,
-              conflict: null,
-            }),
+            unstartedForce: createInstallForceEffect(operation, requested.force),
             observeActualBefore: async (): Promise<OperationImage> => {
               const facts = await binding.observe();
               const resource =
@@ -2109,9 +2886,15 @@ const runInstallInternal = async (
         {
           plan: prepared.preview.plan as CurrentMutatorOperationPlan,
           bindings: schedulerBindings,
-          preconditions: prepared.preconditions,
-          locks: [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }],
-          lockPort: createAcquireExecutionLockPort(env, ledgerPath, safeError, msg),
+          preconditions:
+            artifactController === null
+              ? prepared.preconditions
+              : artifactController.bindPreconditions(prepared.preconditions),
+          locks:
+            artifactController === null
+              ? [{ rank: 'ledger', key: 'placements-ledger', path: ledgerPath }]
+              : artifactController.locks,
+          lockPort: artifactController === null ? ledgerLockPort : artifactController.lockPort,
           ...(opts.signal === undefined ? {} : { signal: opts.signal }),
         },
         observation,
@@ -2122,7 +2905,7 @@ const runInstallInternal = async (
       for (const operation of prepared.preview.plan.operations) {
         const binding = prepared.bindings.get(operation.operationId);
         if (binding === undefined) throw new Error('prepared install operation binding is missing');
-        if (binding.kind === 'migrate-ledger') continue;
+        if (binding.kind !== 'pair') continue;
         const actual: InstallResult = {
           ...binding.preview,
           action: 'refused',
@@ -2133,13 +2916,28 @@ const runInstallInternal = async (
         projectActual(binding, actual);
         actualByOperation.set(operation.operationId, actual);
       }
-      executionResults = prepared.preview.plan.operations.map((operation) =>
-        createInstallExecutionResult(
-          operation,
-          actualByOperation.get(operation.operationId),
-          requested,
-        ),
-      );
+      executionResults = prepared.preview.plan.operations.map((operation) => {
+        const binding = prepared.bindings.get(operation.operationId);
+        if (binding?.kind === 'pair') {
+          return createInstallExecutionResult(
+            operation,
+            actualByOperation.get(operation.operationId),
+            requested,
+          );
+        }
+        return createOperationExecutionResult({
+          operationId: operation.operationId,
+          outcome: 'failed',
+          actualBefore: operation.before,
+          actualAfter: operation.before,
+          force: null,
+          error: {
+            code: 'precondition-state-changed',
+            message: reason,
+            remediation: 'Re-read portable and placement state, then retry.',
+          },
+        });
+      });
     }
     for (const [index, operation] of prepared.preview.plan.operations.entries()) {
       if (actualByOperation.has(operation.operationId)) continue;
@@ -2148,7 +2946,7 @@ const runInstallInternal = async (
       if (binding === undefined || execution === undefined) {
         throw new Error('prepared install result projection is missing');
       }
-      if (binding.kind === 'migrate-ledger') continue;
+      if (binding.kind !== 'pair') continue;
       if (execution.outcome === 'skipped-after-failure') {
         const actual = {
           ...binding.preview,
@@ -2170,7 +2968,7 @@ const runInstallInternal = async (
         actualByOperation.set(operation.operationId, actual);
       }
     }
-    const results = prepared.preview.results.map(
+    const results = prepared.legacyPreviewResults.map(
       (previewResult) => actualByPreview.get(previewResult) ?? previewResult,
     );
     return assembleInstallReport(
@@ -2179,6 +2977,11 @@ const runInstallInternal = async (
       results,
       prepared.preview.plan,
       executionResults,
+      {
+        artifact: prepared.artifactResolution,
+        ...(opts.path === undefined ? {} : { path: opts.path }),
+        groupByResult: prepared.groupByResult,
+      },
     );
   };
   // ---- dry-run: no lock, no writes ----
@@ -2220,6 +3023,10 @@ const runInstallInternal = async (
       scope,
       scopeKey,
       projectRoot,
+      installRootFor: (tool) =>
+        selectedInstallRootFor(tool, {
+          cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
+        }),
       logicalOperation: null,
       operationObservation: undefined,
     };

@@ -266,6 +266,7 @@ const request = () => {
           sourcePath: 'skills/alpha',
           contentHash: `sha256:${HEX.a}` as const,
         },
+        declaration: { ref: null, path: null },
         placement: {
           classification: 'pinned' as const,
           representation: 'copy' as const,
@@ -285,7 +286,7 @@ const request = () => {
 };
 
 const artifactTransitionForInstall = (
-  input: ReturnType<typeof request>,
+  input: AcquisitionInstallPlanRequestV1,
   tools: readonly ('claude-code' | 'codex')[],
 ) => {
   const intent = input.intents[0];
@@ -296,7 +297,7 @@ const artifactTransitionForInstall = (
       {
         name: intent.skill,
         source: intent.source.identity,
-        ref: intent.source.requestedRef,
+        ref: intent.declaration?.ref ?? intent.source.requestedRef,
         tools,
         scope: intent.scope,
         placement: intent.placement.representation,
@@ -552,6 +553,27 @@ describe('createAcquisitionPlan', () => {
       ),
     ).toBeTrue();
     expectDeepFrozen(first.value);
+  });
+
+  test('keeps the requested ref in the lock when a pinned declaration stores the resolved SHA', () => {
+    const base = request();
+    const intent = base.intents[0];
+    if (intent === undefined || intent.source.kind !== 'portable') {
+      throw new Error('missing pinned intent fixture');
+    }
+    const pinnedIntent = {
+      ...intent,
+      source: { ...intent.source, requestedRef: 'main' },
+      declaration: { ref: intent.source.resolvedSha, path: null },
+    };
+    const input: AcquisitionInstallPlanRequestV1 = { ...base, intents: [pinnedIntent] };
+    const transition = artifactTransitionForInstall(input, ['codex']);
+    const result = createAcquisitionPlan({ ...input, artifactTransition: transition }, snapshot());
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    const group = transition.groups[0];
+    expect(group?.manifestAfter.value.skills[0]?.ref).toBe(intent.source.resolvedSha);
+    expect(group?.lockAfter.value.skills[0]?.requestedRef).toBe('main');
   });
 
   test('allows a saving transition for only the changed declaration group', () => {
@@ -813,6 +835,316 @@ describe('createAcquisitionPlan', () => {
       snapshot(),
     );
     expect(absent.ok).toBeFalse();
+  });
+
+  test('plans a lock-only repair without rewriting an exact canonical manifest', () => {
+    const input = request();
+    const transition = artifactTransitionForInstall(input, ['codex']);
+    const group = transition.groups[0];
+    if (group === undefined) throw new Error('missing lock-only transition fixture');
+    const observed = snapshot(HEX.a, HEX.b, {
+      artifact: {
+        mode: 'selected',
+        pair: {
+          file: {
+            token: null,
+            path: '/fixture/manifest',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfile: {
+            token: null,
+            path: '/fixture/lock',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfileSource: 'explicit',
+        },
+        manifest: {
+          revision: presentArtifactRevision(
+            'manifest',
+            'manifest:/fixture',
+            '/fixture/manifest',
+            group.manifestAfter.byteHash,
+            group.manifestAfter.semanticHash,
+          ),
+          value: { version: 1, skills: group.manifestAfter.value.skills },
+        },
+        lock: { revision: revision('lock', 'lock:/fixture', HEX.b), value: null },
+      },
+    });
+    const result = createAcquisitionPlan(
+      {
+        ...input,
+        artifactTransition: {
+          initial: { manifest: group.manifestAfter, lock: transition.initial.lock },
+          groups: [group],
+        },
+      },
+      observed,
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations.map(({ kind }) => kind)).toEqual(['write-lock', 'install']);
+    const [lock, placement] = result.value.plan.operations;
+    if (lock === undefined || placement === undefined) {
+      throw new Error('missing lock-only operation chain');
+    }
+    expect(lock.dependencyMetadata.operationIds).toEqual([]);
+    expect(placement.dependencyMetadata.operationIds).toEqual([lock.operationId]);
+    expect(lock.before.kind).toBe('absent');
+    expect(lock.after).toEqual(group.lockAfter);
+
+    const formattingOnlyRewrite = createAcquisitionPlan(
+      {
+        ...input,
+        artifactTransition: {
+          initial: { manifest: group.manifestAfter, lock: transition.initial.lock },
+          groups: [
+            {
+              ...group,
+              manifestAfter: { ...group.manifestAfter, byteHash: `sha256:${HEX.d}` },
+            },
+          ],
+        },
+      },
+      observed,
+    );
+    expect(formattingOnlyRewrite.ok).toBeFalse();
+  });
+
+  test('validates changed install groups against complete declaration and resolution intent', () => {
+    const input = request();
+    const transition = artifactTransitionForInstall(input, ['codex']);
+    const group = transition.groups[0];
+    if (group === undefined) throw new Error('missing changed transition fixture');
+    const mismatchedManifestValue = {
+      ...group.manifestAfter.value,
+      skills: group.manifestAfter.value.skills.map((declaration) => ({
+        ...declaration,
+        placement: 'symlink' as const,
+      })),
+    };
+    const mismatchedManifestHash = hashManifestSemantics({
+      version: 1,
+      skills: mismatchedManifestValue.skills,
+    });
+    const manifestMismatchLock = {
+      ...group.lockAfter.value,
+      manifestHash: mismatchedManifestHash as `sha256:${string}`,
+    };
+    const manifestMismatchLockHash = hashPortableLock(
+      manifestMismatchLock as unknown as PortableLockV1,
+    );
+    if (!manifestMismatchLockHash.ok) throw new Error(manifestMismatchLockHash.error.message);
+    const manifestMismatch = createAcquisitionPlan(
+      {
+        ...input,
+        artifactTransition: {
+          ...transition,
+          groups: [
+            {
+              ...group,
+              manifestAfter: {
+                ...group.manifestAfter,
+                semanticHash: mismatchedManifestHash as `sha256:${string}`,
+                value: mismatchedManifestValue,
+              },
+              lockAfter: {
+                ...group.lockAfter,
+                canonicalHash: manifestMismatchLockHash.value as `sha256:${string}`,
+                value: manifestMismatchLock,
+              },
+            },
+          ],
+        },
+      },
+      snapshot(),
+    );
+    expect(manifestMismatch.ok).toBeFalse();
+
+    const resolutionMismatchLock = {
+      ...group.lockAfter.value,
+      skills: group.lockAfter.value.skills.map((locked) => ({
+        ...locked,
+        contentHash: `sha256:${HEX.d}` as const,
+      })),
+    };
+    const resolutionMismatchHash = hashPortableLock(
+      resolutionMismatchLock as unknown as PortableLockV1,
+    );
+    if (!resolutionMismatchHash.ok) throw new Error(resolutionMismatchHash.error.message);
+    const resolutionMismatch = createAcquisitionPlan(
+      {
+        ...input,
+        artifactTransition: {
+          ...transition,
+          groups: [
+            {
+              ...group,
+              lockAfter: {
+                ...group.lockAfter,
+                canonicalHash: resolutionMismatchHash.value as `sha256:${string}`,
+                value: resolutionMismatchLock,
+              },
+            },
+          ],
+        },
+      },
+      snapshot(),
+    );
+    expect(resolutionMismatch.ok).toBeFalse();
+  });
+
+  test('requires exact complete intent for unchanged groups but not non-saving plans', () => {
+    const input = request();
+    const intent = input.intents[0];
+    if (intent === undefined) throw new Error('missing complete intent fixture');
+    const { declaration: _declaration, ...withoutDeclaration } = intent;
+    const nonSaving = createAcquisitionPlan(
+      { ...input, intents: [withoutDeclaration] },
+      snapshot(),
+    );
+    expect(nonSaving.ok).toBeTrue();
+
+    const transition = artifactTransitionForInstall(input, ['codex']);
+    const group = transition.groups[0];
+    if (group === undefined) throw new Error('missing unchanged transition fixture');
+    const alternateManifestValue = {
+      ...group.manifestAfter.value,
+      skills: group.manifestAfter.value.skills.map((entry) => ({
+        ...entry,
+        ref: intent.source.kind === 'portable' ? intent.source.resolvedSha : null,
+      })),
+    };
+    const alternateManifestHash = hashManifestSemantics({
+      version: 1,
+      skills: alternateManifestValue.skills,
+    });
+    const alternateLock = {
+      ...group.lockAfter.value,
+      manifestHash: alternateManifestHash as `sha256:${string}`,
+      skills: group.lockAfter.value.skills.map((entry) => ({
+        ...entry,
+        requestedRef: intent.source.kind === 'portable' ? intent.source.resolvedSha : null,
+      })),
+    };
+    const alternateLockHash = hashPortableLock(alternateLock as unknown as PortableLockV1);
+    if (!alternateLockHash.ok) throw new Error(alternateLockHash.error.message);
+    const manifestImage = {
+      ...group.manifestAfter,
+      semanticHash: alternateManifestHash as `sha256:${string}`,
+      value: alternateManifestValue,
+    };
+    const lockImage = {
+      ...group.lockAfter,
+      canonicalHash: alternateLockHash.value as `sha256:${string}`,
+      value: alternateLock,
+    };
+    const observed = snapshot(HEX.a, HEX.b, {
+      artifact: {
+        mode: 'selected',
+        pair: {
+          file: {
+            token: null,
+            path: '/fixture/manifest',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfile: {
+            token: null,
+            path: '/fixture/lock',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfileSource: 'explicit',
+        },
+        manifest: {
+          revision: presentArtifactRevision(
+            'manifest',
+            'manifest:/fixture',
+            '/fixture/manifest',
+            manifestImage.byteHash,
+            manifestImage.semanticHash,
+          ),
+          value: { version: 1, skills: manifestImage.value.skills },
+        },
+        lock: {
+          revision: presentArtifactRevision(
+            'lock',
+            'lock:/fixture',
+            '/fixture/lock',
+            lockImage.canonicalHash,
+            lockImage.canonicalHash,
+          ),
+          value: alternateLock as unknown as PortableLockV1,
+        },
+      },
+    });
+    const exactPairButWrongIntent = createAcquisitionPlan(
+      {
+        ...input,
+        artifactTransition: {
+          initial: { manifest: manifestImage, lock: lockImage },
+          groups: [],
+          unchangedGroups: [group.groupIdentity],
+        },
+      },
+      observed,
+    );
+    expect(exactPairButWrongIntent.ok).toBeFalse();
+    const missingProjection = createAcquisitionPlan(
+      {
+        ...input,
+        intents: [withoutDeclaration],
+        artifactTransition: {
+          initial: { manifest: group.manifestAfter, lock: group.lockAfter },
+          groups: [],
+          unchangedGroups: [group.groupIdentity],
+        },
+      },
+      snapshot(HEX.a, HEX.b, {
+        artifact: {
+          mode: 'selected',
+          pair: {
+            file: {
+              token: null,
+              path: '/fixture/manifest',
+              portability: 'machine-bound',
+              portableToken: null,
+            },
+            lockfile: {
+              token: null,
+              path: '/fixture/lock',
+              portability: 'machine-bound',
+              portableToken: null,
+            },
+            lockfileSource: 'explicit',
+          },
+          manifest: {
+            revision: presentArtifactRevision(
+              'manifest',
+              'manifest:/fixture',
+              '/fixture/manifest',
+              group.manifestAfter.byteHash,
+              group.manifestAfter.semanticHash,
+            ),
+            value: { version: 1, skills: group.manifestAfter.value.skills },
+          },
+          lock: {
+            revision: presentArtifactRevision(
+              'lock',
+              'lock:/fixture',
+              '/fixture/lock',
+              group.lockAfter.canonicalHash,
+              group.lockAfter.canonicalHash,
+            ),
+            value: group.lockAfter.value as PortableLockV1,
+          },
+        },
+      }),
+    );
+    expect(missingProjection.ok).toBeFalse();
   });
 
   test('chains an exact legacy migration before manifest, lock, and install', () => {
@@ -1161,6 +1493,112 @@ describe('createAcquisitionPlan', () => {
         contentHash: `sha256:${HEX.c}`,
       },
       contentHash: `sha256:${HEX.c}`,
+    });
+  });
+
+  test('classifies only exercised forced install conflicts from exact managed and unmanaged facts', () => {
+    const base = request();
+    const intent = base.intents[0];
+    if (intent === undefined) throw new Error('missing install intent');
+    const forced: AcquisitionInstallPlanRequestV1 = {
+      ...base,
+      intents: [{ ...intent, force: true }],
+    };
+    const live = (contentRevision: `sha256:${string}`): LivePlacementStateV1 => ({
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      representation: 'directory',
+      path: '/fixture/live/alpha',
+      realpath: '/fixture/live/alpha',
+      linkTarget: null,
+      dangling: false,
+      placementClass: 'pinned',
+      skillFile: 'valid',
+      brokenReason: null,
+      contentRevision,
+    });
+    const unmanagedLive = live(`sha256:${HEX.a}`);
+    const unmanaged = createAcquisitionPlan(
+      forced,
+      snapshot(HEX.a, HEX.b, {
+        live: [
+          {
+            revision: presentLiveRevision('live-resource-alpha', unmanagedLive, HEX.d),
+            value: unmanagedLive,
+          },
+        ],
+      }),
+    );
+    expect(unmanaged.ok).toBeTrue();
+    if (!unmanaged.ok) throw new Error(unmanaged.error.message);
+    expect(unmanaged.value.plan.operations[0]?.conflict).toEqual({
+      class: 'unmanaged-target',
+      normal: 'refuse',
+      forced: 'backup-and-replace',
+      target: expect.objectContaining({
+        kind: 'live',
+        skill: 'alpha',
+        tool: 'codex',
+      }),
+      backup: 'required',
+    });
+
+    const managedLive = live(`sha256:${HEX.c}`);
+    const priorPair: LedgerPairV1Dto = {
+      placementPath: managedLive.path,
+      mode: 'pinned',
+      dev: null,
+      pinned: {
+        storePath: '/fixture/store/old-alpha',
+        rev: 'd'.repeat(40),
+        gitSha: 'd'.repeat(40),
+        dirty: false,
+        contentHash: `sha256:${HEX.c}`,
+        snapshotAt: '2026-07-16T00:00:00.000Z',
+        verify: 'passed',
+        placement: 'copy',
+      },
+      origin: {
+        source: 'example.test/fixture/repo//skills/alpha@old',
+        host: 'example.test',
+        repo: 'fixture/repo',
+        skillPath: 'skills/alpha',
+        refRequested: 'old',
+        refResolved: 'd'.repeat(40),
+        pin: true,
+        installedAt: '2026-07-16T00:00:00.000Z',
+      },
+      journal: null,
+    };
+    const sourceChanged = createAcquisitionPlan(
+      forced,
+      snapshot(HEX.a, HEX.b, {
+        live: [
+          {
+            revision: presentLiveRevision('live-resource-alpha', managedLive, HEX.d),
+            value: managedLive,
+          },
+        ],
+        ledger: {
+          revision: presentLedgerRevision(HEX.c),
+          value: ledgerWithAlphaPair(priorPair),
+        },
+      }),
+    );
+    expect(sourceChanged.ok).toBeTrue();
+    if (!sourceChanged.ok) throw new Error(sourceChanged.error.message);
+    expect(sourceChanged.value.plan.operations[0]?.conflict).toEqual({
+      class: 'source-changed',
+      normal: 'refuse',
+      forced: 'replace',
+      target: expect.objectContaining({
+        kind: 'live',
+        skill: 'alpha',
+        tool: 'codex',
+      }),
+      backup: 'none',
     });
   });
 

@@ -947,12 +947,21 @@ const reclaimBackup = async (
     }
     return ok({
       backupKept: backupPath,
-      warning: `kept backup ${backupPath}: the ${label} copy was edited in place (hash mismatch)`,
+      warning:
+        acceptable.length === 0
+          ? `kept backup ${backupPath}: no trusted before-image authorizes removal`
+          : `kept backup ${backupPath}: the ${label} copy was edited in place (hash mismatch)`,
     });
   } catch (e) {
     return err(mapFsErr(e, `cannot reclaim backup ${backupPath}`));
   }
 };
+
+const trustedInstallBackupHashes = (
+  before: Journal['before'],
+  newHash: string | null,
+): readonly (string | null)[] =>
+  before.mode === 'pinned' && before.contentHash !== null ? [newHash, before.contentHash] : [];
 
 // P5: write-ahead commit (durable committed journal) THEN reclaim the backup. Committing first
 // keeps the C5 rollback valid — the backup is the only physical copy of the old state and must
@@ -1062,9 +1071,13 @@ const commit = async (
     );
     if (!committed.ok) return committed;
 
-    const oldHash = j.before.mode === 'pinned' ? j.before.contentHash : null;
     const newHash = plan.install?.contentHash ?? pair.pinned?.contentHash ?? null;
-    const reclaimed = await reclaimBackup(env, j.backupPath, [newHash, oldHash], 'replaced');
+    const reclaimed = await reclaimBackup(
+      env,
+      j.backupPath,
+      trustedInstallBackupHashes(j.before, newHash),
+      'replaced',
+    );
     if (!reclaimed.ok) return reclaimed;
     const synced = await guardFs(
       () => env.fsyncDir(plan.skillsRoot),
@@ -1774,12 +1787,11 @@ const cleanupCanonicalCommittedAcquire = async (
     if (shadow.before.mode === 'absent') {
       return ok({ committed: true, backupKept: null, warning: null });
     }
-    const oldHash = shadow.before.mode === 'pinned' ? shadow.before.contentHash : null;
     const newHash = plan.install?.contentHash ?? pair.pinned?.contentHash ?? null;
     const reclaimed = await reclaimBackup(
       ctx.env,
       shadow.backupPath,
-      [newHash, oldHash],
+      trustedInstallBackupHashes(shadow.before, newHash),
       'replaced',
     );
     if (!reclaimed.ok) return reclaimed;

@@ -403,8 +403,9 @@ const authorizeBulkPlan = async (
 const interactiveInstallDeps = (
   interaction: InteractionPort,
   options: Readonly<Record<string, unknown>>,
+  artifactCoordinator: CurrentApplicationContext['artifactCoordinator'],
 ) => {
-  const deps: InstallDeps = { ...defaultInstallDeps };
+  const deps: InstallDeps = { ...defaultInstallDeps, artifactCoordinator };
   if (
     interaction.mode === 'interactive' &&
     !bool(options, 'json') &&
@@ -586,7 +587,7 @@ export const createLifecycleApplicationServices = (
         ...(pause === undefined ? {} : { testPauseAt: pause }),
         ...(context.signal === undefined ? {} : { signal: context.signal }),
       },
-      interactiveInstallDeps(context.interaction, options),
+      interactiveInstallDeps(context.interaction, options, context.artifactCoordinator),
       context.observation,
     );
     if (!result.ok) return domainFailure('install', result.error, context.signal);

@@ -250,6 +250,53 @@ describe('runSwap — promote / demote happy paths', () => {
     expect(await f.env.pathKind(placementPath)).toBe('symlink');
     expect(await f.env.pathKind(r.value.backupKept as string)).toBe('dir');
   });
+
+  test('install replacement retains an unmanaged directory backup even when its bytes match the incoming artifact', async () => {
+    const skillsRoot = join(f.home, '.claude', 'skills');
+    const placementPath = join(skillsRoot, 'copied');
+    const provenance = await resolveProvenance(f.env, placementPath);
+    if (!provenance.ok) throw new Error(msg(provenance.error));
+    const snapshot = await snapshotToStore(f.env, {
+      sourceDir: placementPath,
+      skill: 'copied',
+      storeRoot: storeRootOf(f.data),
+      provenance: provenance.value,
+      txId: 'seed0002',
+    });
+    if (!snapshot.ok) throw new Error(msg(snapshot.error));
+    const ledger = emptyLedger(NOW);
+    const r = await runSwap(makeCtx(f.env, ledgerPathOf(f.data), canonicalLedger(ledger)), {
+      op: 'install',
+      skill: 'copied',
+      tool: 'claude-code',
+      skillsRoot,
+      placementPath,
+      install: {
+        build: 'symlink',
+        storePath: snapshot.value.storePath,
+        contentHash: snapshot.value.contentHash,
+        pinned: pinnedOf(snapshot.value.storePath, snapshot.value.rev, snapshot.value.contentHash),
+        origin: {
+          source: 'fixture/unmanaged-copy',
+          host: 'local.skillsmith.invalid',
+          repo: 'fixture/unmanaged-copy',
+          skillPath: 'copied',
+          refRequested: null,
+          refResolved: 'a'.repeat(40),
+          pin: false,
+          installedAt: NOW,
+        },
+        adoptedDev: null,
+      },
+    });
+    if (!r.ok) throw new Error(msg(r.error));
+    expect(r.value.backupKept).not.toBeNull();
+    expect(r.value.warning).toContain('no trusted before-image authorizes removal');
+    expect(await f.env.pathKind(r.value.backupKept as string)).toBe('dir');
+    const backupHash = await contentHashOf(f.env, r.value.backupKept as string);
+    if (!backupHash.ok) throw new Error(msg(backupHash.error));
+    expect(backupHash.value).toBe(snapshot.value.contentHash);
+  });
 });
 
 describe('runSwap / rollbackSwap — guards and abort', () => {

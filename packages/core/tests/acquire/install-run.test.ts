@@ -21,6 +21,9 @@ import { parseSource } from '../../src/acquire/source.ts';
 import type { CandidateSkill, InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
 import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
+import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
+import { manifestV1Codec } from '../../src/artifacts/manifest-codec.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import type { ExecResult } from '../../src/env/types.ts';
 import { type SkillSmithError, sourceUnresolvableError } from '../../src/errors.ts';
 import {
@@ -162,6 +165,7 @@ const passVerify: InstallDeps['verify'] = async (_env, opts) => {
 };
 
 let installCounter = 0;
+let artifactCoordinator: ArtifactCoordinatorPorts;
 const makeDeps = (over: Partial<InstallDeps> = {}): InstallDeps => {
   const start = installCounter++;
   let n = 0;
@@ -169,6 +173,7 @@ const makeDeps = (over: Partial<InstallDeps> = {}): InstallDeps => {
     verify: passVerify,
     detect: detectBoth,
     transport: fixture.transport,
+    artifactCoordinator,
     now: () => NOW,
     newTxId: () => (0x10000000 + start * 1000 + n++).toString(16).slice(-8),
     ...over,
@@ -189,6 +194,9 @@ let fsLabel: string;
 let userOpts: InstallOptions;
 beforeEach(async () => {
   f = await buildFixtureFleet();
+  artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+    join(f.base, 'artifact-coordination'),
+  );
   fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
   const parsed = parseSource(fsSource);
   if (!parsed.ok) throw new Error(msg(parsed.error));
@@ -281,6 +289,69 @@ describe('runInstall — fresh install', () => {
     expect(r1?.placement).toBe('copy');
     expect(await f.env.pathKind(join(claudeDir, 'SKILL.md'))).toBe('file');
   });
+
+  test('a project-relative custom path owns the reported and actual placement', async () => {
+    const file = join(f.project, 'custom-path.toml');
+    const lockfile = join(f.project, 'custom-path.lock');
+    const customPath = join(f.projectReal, 'custom', 'skills', 'factor-scan');
+    const standardPath = join(f.projectReal, '.claude', 'skills', 'factor-scan');
+    const result = await runInstall(
+      f.env,
+      {
+        ...userOpts,
+        cwd: f.project,
+        scope: 'project',
+        tools: ['claude-code'],
+        path: './custom/skills',
+        file,
+        lockfile,
+      },
+      makeDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.results).toMatchObject([
+      { action: 'installed', placementPath: customPath },
+    ]);
+    expect(await f.env.pathKind(customPath)).toBe('symlink');
+    expect(await f.env.pathKind(standardPath)).toBe('absent');
+    expect(
+      result.value.plan.operations.filter(({ pairId }) => pairId !== null).map(({ kind }) => kind),
+    ).toEqual(['install']);
+  });
+
+  test('a standard-root collision refuses a selected custom path without changing either slot', async () => {
+    const file = join(f.project, 'custom-collision.toml');
+    const lockfile = join(f.project, 'custom-collision.lock');
+    const customPath = join(f.projectReal, 'custom', 'skills', 'factor-scan');
+    const standardPath = join(f.projectReal, '.claude', 'skills', 'factor-scan');
+    const standardSkill = join(standardPath, 'SKILL.md');
+    const original = '---\nname: factor-scan\n---\n\n# locally managed\n';
+    await f.env.makeDir(standardPath);
+    await f.env.writeTextFile(standardSkill, original);
+
+    const result = await runInstall(
+      f.env,
+      {
+        ...userOpts,
+        cwd: f.project,
+        scope: 'project',
+        tools: ['claude-code'],
+        path: './custom/skills',
+        file,
+        lockfile,
+      },
+      makeDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.results).toMatchObject([
+      { action: 'refused', placementPath: customPath, error: { code: 'flip-refused' } },
+    ]);
+    expect(result.value.results[0]?.reason).toContain(standardPath);
+    expect(await f.env.readText(standardSkill)).toBe(original);
+    expect(await f.env.pathKind(customPath)).toBe('absent');
+  });
 });
 
 describe('runInstall — idempotence / update / repair', () => {
@@ -297,6 +368,40 @@ describe('runInstall — idempotence / update / repair', () => {
     const r3 = await runInstall(f.env, { ...userOpts, force: true }, makeDeps());
     if (!r3.ok) throw new Error(msg(r3.error));
     expect(r3.value.summary.updated).toBe(2);
+  });
+
+  test('an exact one-tool rerun is zero-op and a missing lock repairs without touching exact live state', async () => {
+    const file = join(f.base, 'exact-state.toml');
+    const lockfile = join(f.base, 'exact-state.lock');
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const options = {
+      ...userOpts,
+      tools: ['claude-code'] as const,
+      file,
+      lockfile,
+    };
+    const installed = await runInstall(f.env, options, makeDeps());
+    if (!installed.ok) throw new Error(msg(installed.error));
+    expect(installed.value.results[0]?.action).toBe('installed');
+    const manifestBytes = await f.env.readText(file);
+    const lockBytes = await f.env.readText(lockfile);
+    const liveTarget = await readlink(livePath);
+
+    const exact = await runInstall(f.env, options, makeDeps());
+    if (!exact.ok) throw new Error(msg(exact.error));
+    expect(exact.value.results[0]?.action).toBe('noop');
+    expect(exact.value.plan.operations).toEqual([]);
+    expect(exact.value.executionResults).toEqual([]);
+
+    await f.env.removeTree(lockfile);
+    const repaired = await runInstall(f.env, options, makeDeps());
+    if (!repaired.ok) throw new Error(msg(repaired.error));
+    expect(repaired.value.results[0]?.action).toBe('noop');
+    expect(repaired.value.plan.operations.map(({ kind }) => kind)).toEqual(['write-lock']);
+    expect(repaired.value.executionResults).toMatchObject([{ outcome: 'succeeded' }]);
+    expect(await f.env.readText(file)).toBe(manifestBytes);
+    expect(await f.env.readText(lockfile)).toBe(lockBytes);
+    expect(await readlink(livePath)).toBe(liveTarget);
   });
 
   test('--ref v1.0.0 --force → updated at the tag rev (deliberate downgrade)', async () => {
@@ -656,6 +761,57 @@ describe('runInstall — batch semantics', () => {
     expect(await fetchDirs()).toEqual([]);
   });
 
+  test('an invalid source preserves the no-save current report context without artifact discovery', async () => {
+    let runtimeReads = 0;
+    const env: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        runtimeReads++;
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        runtimeReads++;
+        return f.env.readText(path);
+      },
+      readBytes: async (path) => {
+        runtimeReads++;
+        return f.env.readBytes(path);
+      },
+      readFileMetadata: async (path) => {
+        runtimeReads++;
+        return f.env.readFileMetadata(path);
+      },
+      realpath: async (path) => {
+        runtimeReads++;
+        return f.env.realpath(path);
+      },
+    };
+    const result = await runInstall(
+      env,
+      {
+        sources: ['onepart'],
+        cwd: f.base,
+        configuration: f.configuration,
+        noSave: true,
+      },
+      makeDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value).toMatchObject({
+      reportVersion: 2,
+      saveMode: 'live-only',
+      artifactPair: null,
+      artifactSelection: { outcome: 'none', reason: 'no-save' },
+      results: [{ action: 'refused', error: { code: 'flip-refused' } }],
+      plan: { operations: [] },
+      executionResults: [],
+    });
+    expect(runtimeReads).toBe(0);
+    expect(await f.env.pathKind(ledgerPathOf(f.data))).toBe('absent');
+    expect(await fetchDirs()).toEqual([]);
+  });
+
   test('[valid, bad-fetch] → first installs, second failed exit-5 class', async () => {
     const bad = `${fixture.multiSource}//not/a/skill`;
     const badLabel = parseSource(bad);
@@ -757,6 +913,46 @@ describe('runInstall — batch semantics', () => {
     const settledLedger = await led();
     expect(getPairAt(settledLedger, null, 'factor-scan', 'claude-code')?.journal).toBeNull();
     expect(getPairAt(settledLedger, null, 'factor-scan', 'codex')?.journal).toBeNull();
+  });
+
+  test('a mixed two-tool verification gate persists complete intent and executes only the passing live pair', async () => {
+    const file = join(f.base, 'mixed-gate.toml');
+    const lockfile = join(f.base, 'mixed-gate.lock');
+    const verify: InstallDeps['verify'] = async (env, options) =>
+      options.tools?.[0] === 'codex'
+        ? err(sourceUnresolvableError('synthetic codex verification gate failure'))
+        : passVerify(env, options);
+    const result = await runInstall(
+      f.env,
+      {
+        ...userOpts,
+        tools: ['claude-code', 'codex'],
+        file,
+        lockfile,
+      },
+      makeDeps({ verify }),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    const manifest = manifestV1Codec.decode(await f.env.readBytes(file));
+    if (!manifest.ok) throw new Error(manifest.error.message);
+    expect(manifest.value.model.skills).toMatchObject([
+      { name: 'factor-scan', tools: ['claude-code', 'codex'] },
+    ]);
+    expect(result.value.results).toMatchObject([
+      { tool: 'claude-code', action: 'installed' },
+      { tool: 'codex', action: 'failed' },
+    ]);
+    const liveOperations = result.value.plan.operations.filter(({ pairId }) => pairId !== null);
+    expect(liveOperations).toHaveLength(1);
+    expect(liveOperations[0]).toMatchObject({ kind: 'install' });
+    expect(
+      result.value.executionResults.filter(({ operationId }) =>
+        liveOperations.some((operation) => operation.operationId === operationId),
+      ),
+    ).toMatchObject([{ outcome: 'succeeded' }]);
+    expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('symlink');
+    expect(await f.env.pathKind(join(agentsRoot(), 'factor-scan'))).toBe('absent');
   });
 
   test('an unsafe override ref never enters requested.ref and does not relabel a valid source', async () => {
@@ -1731,7 +1927,10 @@ describe('runInstall — dry run', () => {
       preview.value.plan.operations.map(({ operationId }) => operationId),
     );
     expect([...invokedOperationIds].sort()).toEqual(
-      executed.value.plan.operations.map(({ operationId }) => operationId).sort(),
+      executed.value.plan.operations
+        .filter(({ pairId }) => pairId !== null)
+        .map(({ operationId }) => operationId)
+        .sort(),
     );
     expect(executed.value.executionResults.map(({ operationId }) => operationId)).toEqual(
       executed.value.plan.operations.map(({ operationId }) => operationId),
@@ -1993,7 +2192,18 @@ describe('runInstall — dry run', () => {
       command: 'install',
     });
     expect(Object.isFrozen(r.value.plan)).toBe(true);
-    expect(r.value.plan.operations).toHaveLength(r.value.results.length);
+    expect(r.value.plan.operations.filter(({ pairId }) => pairId !== null)).toHaveLength(
+      r.value.results.length,
+    );
+    const artifactKinds = r.value.plan.operations
+      .filter(({ pairId }) => pairId === null)
+      .map(({ kind }) => kind);
+    const pairKinds = r.value.plan.operations
+      .filter(({ pairId }) => pairId !== null)
+      .map(({ kind }) => kind);
+    expect(artifactKinds.length).toBeGreaterThan(0);
+    expect(artifactKinds.at(-1)).toBe('write-lock');
+    expect(pairKinds).toEqual(['install', 'install']);
     expect(r.value.executionResults).toEqual([]);
     // no placements, no ledger file, fetch cleaned
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('absent');

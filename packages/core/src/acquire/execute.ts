@@ -29,6 +29,7 @@ import {
   selectManifestDestination,
 } from '../artifacts/discovery.ts';
 import { hashCanonicalInput, hashManifestSemantics } from '../artifacts/hash.ts';
+import { normalizePortablePath } from '../artifacts/identity.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { LedgerWriterPorts } from '../artifacts/ledger-writer.ts';
@@ -163,6 +164,7 @@ interface ResolveAcquisitionArtifactDestinationInputV1 {
   readonly file?: string;
   readonly lockfile?: string;
   readonly noSave?: boolean;
+  readonly path?: string;
 }
 
 type SelectedAcquisitionArtifactSelection = Extract<
@@ -345,6 +347,18 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
   input: ResolveAcquisitionArtifactDestinationInputV1,
 ): Promise<AcquisitionArtifactDestinationResolutionV1> => {
   if (input.noSave === true) return liveOnlyArtifactDestination();
+
+  if (
+    input.path !== undefined &&
+    !normalizePortablePath(input.path, input.scope, 'install.path').ok
+  ) {
+    return pairRefusal({
+      code: 'artifact-selector-nonportable',
+      exitClass: 'usage',
+      message: `install path must be a portable ${input.scope === 'project' ? './project-relative' : '~/home-relative'} path; use --no-save for a machine-bound destination`,
+      paths: Object.freeze([input.path]),
+    });
+  }
 
   if (
     input.names.length === 0 ||
@@ -1358,7 +1372,7 @@ const ownAcquisitionArtifactAction = (
   return owned;
 };
 
-const acquisitionManifestImageFromBytes = (
+export const acquisitionManifestImageFromBytesV1 = (
   path: string,
   bytes: Uint8Array,
 ): AcquisitionManifestImageV1 => {
@@ -1385,7 +1399,10 @@ const acquisitionManifestImageFromBytes = (
   });
 };
 
-const acquisitionLockImageFromBytes = (path: string, bytes: Uint8Array): AcquisitionLockImageV1 => {
+export const acquisitionLockImageFromBytesV1 = (
+  path: string,
+  bytes: Uint8Array,
+): AcquisitionLockImageV1 => {
   const lock = readPortableLockSource(bytes);
   if (!lock.ok) return acquisitionArtifactExecutionFail('lock bytes are not canonical');
   const canonicalHash = hashPortableLock(lock.value);
@@ -1513,7 +1530,7 @@ const validateAcquisitionArtifactOperation = (
     if (
       manifestAction.kind === 'replace' &&
       !sameAcquisitionArtifactImage(
-        acquisitionManifestImageFromBytes(path, manifestAction.bytes),
+        acquisitionManifestImageFromBytesV1(path, manifestAction.bytes),
         operation.after,
       )
     ) {
@@ -1548,7 +1565,7 @@ const validateAcquisitionArtifactOperation = (
   if (
     !serialized.ok ||
     !sameAcquisitionArtifactImage(
-      acquisitionLockImageFromBytes(path, new TextEncoder().encode(serialized.value)),
+      acquisitionLockImageFromBytesV1(path, new TextEncoder().encode(serialized.value)),
       operation.after,
     )
   ) {
@@ -1673,7 +1690,9 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
       requireSignal(options);
       if (path === groupPath) {
         if (active !== null) acquisitionArtifactExecutionFail('artifact group lock is reentrant');
-        return withArtifactGroupLock(
+        let operationFailed = false;
+        let operationError: unknown;
+        const value = await withArtifactGroupLock<T | undefined>(
           input.artifactCoordinator,
           pair,
           input.signal,
@@ -1686,12 +1705,20 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
             };
             active = held;
             try {
-              return await operation();
+              try {
+                return await operation();
+              } catch (error) {
+                operationFailed = true;
+                operationError = error;
+                return undefined;
+              }
             } finally {
               if (active === held) active = null;
             }
           },
         );
+        if (operationFailed) throw operationError;
+        return value as T;
       }
       if (memberPaths.includes(path)) {
         const held = active;
@@ -1768,8 +1795,8 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
     const bytes = await input.artifactCoordinator.readBytes(path);
     const image =
       role === 'manifest'
-        ? acquisitionManifestImageFromBytes(path, bytes)
-        : acquisitionLockImageFromBytes(path, bytes);
+        ? acquisitionManifestImageFromBytesV1(path, bytes)
+        : acquisitionLockImageFromBytesV1(path, bytes);
     if (
       acquisitionResourceDigest(bytes) !== revision.byteRevision ||
       (image.kind === 'manifest'
@@ -1800,8 +1827,8 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
       return acquisitionArtifactExecutionFail(`${role} commit revision digest is incoherent`);
     }
     return role === 'manifest'
-      ? acquisitionManifestImageFromBytes(path, revision.bytes)
-      : acquisitionLockImageFromBytes(path, revision.bytes);
+      ? acquisitionManifestImageFromBytesV1(path, revision.bytes)
+      : acquisitionLockImageFromBytesV1(path, revision.bytes);
   };
 
   const lastBoundByRole = new Map<AcquisitionArtifactRoleV1, ExecutableOperation>();
@@ -1984,7 +2011,7 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
               ? ownedAction.role !== 'manifest'
                 ? acquisitionArtifactExecutionFail('manifest action role changed after binding')
                 : ownedAction.action.kind === 'replace'
-                  ? acquisitionManifestImageFromBytes(pair.file.path, ownedAction.action.bytes)
+                  ? acquisitionManifestImageFromBytesV1(pair.file.path, ownedAction.action.bytes)
                   : ownedAction.action.kind === 'edit' && before.bytes !== null
                     ? (() => {
                         const edited = editManifestBytes(before.bytes, ownedAction.action.request);
@@ -1993,7 +2020,7 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
                             'manifest action could not be applied',
                           );
                         }
-                        return acquisitionManifestImageFromBytes(
+                        return acquisitionManifestImageFromBytesV1(
                           pair.file.path,
                           edited.value.bytes,
                         );
@@ -2010,7 +2037,7 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
                         'lock action could not be serialized',
                       );
                     }
-                    return acquisitionLockImageFromBytes(
+                    return acquisitionLockImageFromBytesV1(
                       pair.lockfile.path,
                       new TextEncoder().encode(serialized.value),
                     );
