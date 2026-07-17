@@ -220,9 +220,9 @@ const led = async () => {
   return r.value.model;
 };
 
-const installUser = async (opts: Partial<InstallOptions> = {}) => {
+const installUser = async (opts: Partial<InstallOptions> = {}, env: RuntimePorts = f.env) => {
   const r = await runInstall(
-    f.env,
+    env,
     {
       sources: [fsSource],
       tools: ['claude-code'],
@@ -235,6 +235,18 @@ const installUser = async (opts: Partial<InstallOptions> = {}) => {
   if (!r.ok) throw new Error(msg(r.error));
   return r.value;
 };
+const portableManifest = (names: readonly string[]): string =>
+  `${[
+    'version = 1',
+    '[defaults]',
+    'scope = "project"',
+    'tools = ["claude-code"]',
+    ...names.flatMap((name) => [
+      '[[skills]]',
+      `name = "${name}"`,
+      `source = "github.com/acme/skills//${name}"`,
+    ]),
+  ].join('\n')}\n`;
 
 describe('runUninstall — managed store-symlink removal', () => {
   test('placement gone, pair deleted, store entry retained, before.placement is symlink', async () => {
@@ -614,6 +626,183 @@ describe('runUninstall — legacy root', () => {
     expect(await f.env.pathKind(join(legacyRoot(), 'legacy-only'))).toBe('absent');
     // checkout (alphaSrc, the dev symlink's target) untouched
     expect(await f.env.pathKind(join(f.alphaSrc, 'SKILL.md'))).toBe('file');
+  });
+});
+
+describe('runUninstall — artifact destination preflight', () => {
+  test('normalizes and deduplicates names once while preserving raw target order', async () => {
+    const configRoot = join(f.home, '.config');
+    const userManifest = join(configRoot, 'skillsmith', 'skillsmith.toml');
+    const projectManifest = join(f.project, 'skillsmith.toml');
+    await f.env.makeDir(join(configRoot, 'skillsmith'));
+    await f.env.writeTextFile(userManifest, portableManifest(['z-last', 'a-first']));
+    await f.env.writeTextFile(projectManifest, portableManifest(['z-last', 'a-first']));
+    const targets = ['z-last', join(claudeRoot(), 'a-first'), 'a-first', 'z-last'];
+    const observed = { artifacts: 0, ledger: 0, sweep: 0, live: 0, writes: 0 };
+    const env: RuntimePorts = {
+      ...f.env,
+      xdg: {
+        config: configRoot,
+        data: join(f.home, '.local', 'share'),
+        cache: join(f.home, '.cache'),
+      },
+      pathKind: async (path) => {
+        if (path === ledgerPathOf(f.data)) observed.ledger++;
+        if (path === join(f.data, '.fetch') || path === join(f.data, 'store', '.staging')) {
+          observed.sweep++;
+        }
+        if (path.startsWith(`${claudeRoot()}/`)) observed.live++;
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        if (path === userManifest || path === projectManifest) observed.artifacts++;
+        return f.env.readText(path);
+      },
+      writeTextFile: async (...args) => {
+        observed.writes++;
+        return f.env.writeTextFile(...args);
+      },
+      removeTree: async (...args) => {
+        observed.writes++;
+        return f.env.removeTree(...args);
+      },
+    };
+    const result = await runUninstall(
+      env,
+      { targets, cwd: f.project, configuration: f.configuration },
+      uninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.requested.targets).toEqual(targets);
+    expect(result.value.results.map(({ skill }) => skill)).toEqual([
+      'z-last',
+      'a-first',
+      'a-first',
+      'z-last',
+    ]);
+    expect(result.value.results[0]?.reason).toContain("declaration 'z-last'");
+    expect(result.value.results.every(({ error }) => error?.code === 'flip-refused')).toBeTrue();
+    expect(result.value.plan.operations).toHaveLength(0);
+    expect(observed).toEqual({ artifacts: 2, ledger: 0, sweep: 0, live: 0, writes: 0 });
+  });
+
+  test('invalid artifact state refuses before ledger, sweep, or live access', async () => {
+    const file = join(f.project, 'invalid-skillsmith.toml');
+    await f.env.writeTextFile(file, 'not valid toml = [');
+    const observed = { artifacts: 0, ledger: 0, sweep: 0, live: 0, writes: 0 };
+    const env: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === ledgerPathOf(f.data)) observed.ledger++;
+        if (path === join(f.data, '.fetch') || path === join(f.data, 'store', '.staging')) {
+          observed.sweep++;
+        }
+        if (path.startsWith(`${claudeRoot()}/`)) observed.live++;
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        if (path === file) observed.artifacts++;
+        return f.env.readText(path);
+      },
+      writeTextFile: async (...args) => {
+        observed.writes++;
+        return f.env.writeTextFile(...args);
+      },
+      removeTree: async (...args) => {
+        observed.writes++;
+        return f.env.removeTree(...args);
+      },
+    };
+    const result = await runUninstall(
+      env,
+      { targets: ['ghost'], file, cwd: f.project, configuration: f.configuration },
+      uninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.requested.targets).toEqual(['ghost']);
+    expect(result.value.results[0]).toMatchObject({ skill: 'ghost', action: 'refused' });
+    expect(result.value.results[0]?.error?.code).toBe('config-error');
+    expect(result.value.plan.operations).toHaveLength(0);
+    expect(observed).toEqual({ artifacts: 1, ledger: 0, sweep: 0, live: 0, writes: 0 });
+  });
+
+  test('empty derived target names refuse before artifact or ledger access in both save modes', async () => {
+    const observed = { artifact: 0, ledger: 0, sweep: 0, live: 0 };
+    const env: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === ledgerPathOf(f.data)) observed.ledger++;
+        if (path === join(f.data, '.fetch') || path === join(f.data, 'store', '.staging')) {
+          observed.sweep++;
+        }
+        if (path.startsWith(`${claudeRoot()}/`)) observed.live++;
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        observed.artifact++;
+        return f.env.readText(path);
+      },
+    };
+    for (const noSave of [undefined, true] as const) {
+      const result = await runUninstall(
+        env,
+        {
+          targets: [''],
+          cwd: f.project,
+          configuration: f.configuration,
+          ...(noSave === undefined ? {} : { noSave }),
+        },
+        uninstallDeps(),
+      );
+      if (!result.ok) throw new Error(msg(result.error));
+      expect(result.value.requested.targets).toEqual(['']);
+      expect(result.value.results[0]).toMatchObject({ action: 'refused' });
+      expect(result.value.results[0]?.error?.code).toBe('flip-refused');
+      expect(result.value.plan.operations).toHaveLength(0);
+    }
+    expect(observed).toEqual({ artifact: 0, ledger: 0, sweep: 0, live: 0 });
+  });
+
+  test('no-save performs no artifact discovery during destination preflight', async () => {
+    const configRoot = join(f.home, '.config');
+    const userManifest = join(configRoot, 'skillsmith', 'skillsmith.toml');
+    const hermeticEnv: RuntimePorts = {
+      ...f.env,
+      xdg: {
+        config: configRoot,
+        data: join(f.home, '.local', 'share'),
+        cache: join(f.home, '.cache'),
+      },
+    };
+    await installUser({ noSave: true }, hermeticEnv);
+    let ledgerObserved = false;
+    let preflightArtifactReads = 0;
+    const env: RuntimePorts = {
+      ...hermeticEnv,
+      pathKind: async (path) => {
+        if (path === ledgerPathOf(f.data)) ledgerObserved = true;
+        if (path === userManifest && !ledgerObserved) preflightArtifactReads++;
+        return hermeticEnv.pathKind(path);
+      },
+      readText: async (path) => {
+        if (path === userManifest && !ledgerObserved) preflightArtifactReads++;
+        return hermeticEnv.readText(path);
+      },
+    };
+    const result = await runUninstall(
+      env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        noSave: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.results[0]?.action).toBe('removed');
+    expect(preflightArtifactReads).toBe(0);
   });
 });
 

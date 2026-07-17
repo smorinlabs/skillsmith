@@ -2299,15 +2299,7 @@ export const runInstall = (
 ): Promise<Result<PlannedInstallReport, SkillSmithError>> =>
   runInstallWithRegistry(env, opts, deps, toolRegistry);
 
-// ---------------------------------------------------------------------------------------------
-// uninstall
-// ---------------------------------------------------------------------------------------------
-
 export const defaultUninstallDeps: UninstallDeps = {};
-
-// A resolved (skill, tool, scope) candidate for removal. 'stale' = ledger pair with no live
-// placement anywhere; 'duplicate' = codex current+legacy both non-absent (unresolvable without
-// disambiguation, mirrors place/plan.ts's resolveCodex).
 interface UMatch {
   scope: InstallScope;
   scopeKey: string | null;
@@ -2346,9 +2338,6 @@ const notInstalledResult = (skill: string): UninstallResult => ({
   ...emptyUninstallResult(skill, null, null, 'noop'),
   reason: `'${skill}' is not installed anywhere skillsmith manages`,
 });
-// D12: before.placement/storePath come straight off the ledger record; symlinkTarget is populated
-// only for dev (the recorded dev source) or a store-linked pinned record (a plain 'copy' placement
-// has no symlink to report) — per the brief, "symlinkTarget for dev/store-linked".
 const uninstallBeforeFromRecord = (
   mode: 'dev' | 'pinned',
   pinned: PinnedRecord | null | undefined,
@@ -2364,9 +2353,6 @@ const uninstallBeforeFromRecord = (
         ? pinned.storePath
         : null,
 });
-// Search-set resolution for a NAME target (U2): every (scope, tool) in the requested search set,
-// each classified against every root that tool owns at that scope (codex/user owns two: current +
-// legacy). "Found" = a non-absent placement OR a ledger pair (spec's convergent definition).
 const collectUninstallMatches = async (
   env: AcquisitionPorts,
   registry: LifecycleToolRegistry<string>,
@@ -2421,10 +2407,7 @@ const collectUninstallMatches = async (
         });
         continue;
       }
-      // BF-1(d): a custom-location placement (a `dev --source --dest` create) lives outside every
-      // standard root, so the scan above finds nothing — but the ledger records exactly where it is.
-      // Classify at the recorded placementPath so uninstall REMOVES the live symlink, not just the
-      // record (a 'stale' match would orphan the symlink).
+      // Ledger-recorded custom placements may live outside every standard adapter root.
       if (existing?.placementPath) {
         const recordedRoot = dirname(existing.placementPath);
         if (!roots.includes(recordedRoot)) {
@@ -2466,22 +2449,24 @@ interface PathTargetMatch {
   root: string;
   notice: string | null;
 }
-// A path target (contains '/', or absolute) resolves to exactly one (tool, scope, root) by
-// dirname match — claude-code user/project, codex current user/project, codex legacy. No
-// ambiguity concept applies (one path, one owning root); outside every root is a hard refusal.
+type NormalizedUninstallTarget = Readonly<
+  { input: string; name: string } & (
+    | { kind: 'name'; resolvedPath: null }
+    | { kind: 'path'; resolvedPath: string }
+  )
+>;
 const resolveUninstallPathTarget = async (
   env: AcquisitionPorts,
   registry: LifecycleToolRegistry<string>,
   opts: UninstallOptions,
-  target: string,
+  target: Extract<NormalizedUninstallTarget, { readonly kind: 'path' }>,
   projectRoot: string | null,
   storeRoot: string,
   toolsToSearch: readonly FlipTool[],
   explicitTools: boolean,
 ): Promise<Result<PathTargetMatch, SkillSmithError>> => {
-  const resolved = resolve(opts.cwd, target);
-  const parent = dirname(resolved);
-  const name = basename(resolved);
+  const parent = dirname(target.resolvedPath);
+  const name = target.name;
   const ctxUser = { cwd: opts.cwd, configuration: opts.configuration };
   const candidates: Omit<PathTargetMatch, 'name'>[] = [];
   const uninstallTools = registry.toolsFor('uninstall') as readonly FlipTool[];
@@ -2523,29 +2508,24 @@ const resolveUninstallPathTarget = async (
   const match = candidates.find((c) => c.root === parent);
   if (!match) {
     const roots = candidates.map((c) => c.root).join(', ');
-    return err(flipRefusedError(`'${target}' is outside every known skills root (${roots})`));
+    return err(flipRefusedError(`'${target.input}' is outside every known skills root (${roots})`));
   }
   if (opts.scope !== undefined && opts.scope !== match.scope) {
     return err(
       flipRefusedError(
-        `'${target}' resolves to ${match.scope} scope, which is not the requested --scope`,
+        `'${target.input}' resolves to ${match.scope} scope, which is not the requested --scope`,
       ),
     );
   }
   if (explicitTools && !toolsToSearch.includes(match.tool)) {
     return err(
       flipRefusedError(
-        `'${target}' resolves to ${match.tool}, which is not in the requested --tool set`,
+        `'${target.input}' resolves to ${match.tool}, which is not in the requested --tool set`,
       ),
     );
   }
   return ok({ name, ...match });
 };
-// Decide + (unless dry-run) execute the removal for one resolved (skill, tool, scope) match.
-// Refusals happen before any journal write; a managed removal drives the already-recorded pair
-// through the engine's 'uninstall' swap directly, an unmanaged --force removal first synthesizes
-// a minimal PairRecord so the SAME engine path (backup rename, hash-guarded reclaim, terminal
-// pair deletion) applies uniformly — the engine never deletes a store entry either way.
 const processUninstallMatch = async (
   env: AcquisitionPorts,
   ledgerCtx: { ledger: LedgerModel },
@@ -2575,10 +2555,6 @@ const processUninstallMatch = async (
     backupKept: null,
     error: safeError(e),
   });
-  // Constraint #6: an uncommitted journal on the pair refuses every op except a same-op re-run
-  // (which resumes it to completion) — checked first, ahead of the stale-pair shortcut and the
-  // dev/unmanaged gates below, since a crash window can leave the live placement absent or in an
-  // unexpected class regardless of what this match's own classification found.
   if (existing?.journal && existing.journal.phase !== 'committed') {
     const placementPath = existing.placementPath;
     const before = uninstallBeforeFromRecord(existing.mode, existing.pinned, existing.dev);
@@ -2694,16 +2670,10 @@ const processUninstallMatch = async (
       backupKept: null,
     };
   }
-  // match.kind === 'live'
   const placement = match.placement as Placement;
   const placementPath = placement.path;
   if (existing) {
-    // P13: a dev-mode pair with a RETAINED pin (installed/promoted then demoted) still refuses
-    // without --force — the pin is precious and promote/dev --rollback can restore it. A dev-CREATED
-    // pair (`dev --source`, no pinned record) has nothing to restore, so uninstall removes just the
-    // symlink + ledger record (the checkout is never touched).
-    // BF-2: `!= null` (not `!== null`) so a RAW dev-only record whose `pinned` key is OMITTED
-    // (undefined, not explicit null) is not mistaken for a retained pin and made to demand --force.
+    // `!= null` distinguishes an omitted raw pin from a retained pin that force must protect.
     if (existing.mode === 'dev' && existing.pinned != null && !opts.force) {
       const reason = `'${name}' (${tool}) is in dev mode — a live symlink into a working checkout. Run 'skillsmith promote ${name}' to pin it first, or 'skillsmith dev --rollback ${name}' to restore the pinned copy, or pass --force to remove the symlink — the checkout itself is never touched.`;
       return {
@@ -2761,7 +2731,6 @@ const processUninstallMatch = async (
       backupKept: swapRes.value.backupKept,
     };
   }
-  // unmanaged (no ledger pair)
   if (!opts.force) {
     const reason = `'${name}' (${tool}) has no skillsmith record; pass --force to remove it anyway`;
     return {
@@ -2836,9 +2805,6 @@ const processUninstallMatch = async (
 };
 const isUninstallPathTarget = (target: string): boolean =>
   target.includes('/') || isAbsolute(target);
-// Resolve one CLI target (name or path) to zero or more UninstallResults. A name target searches
-// the whole (scope x tool) search set and applies U2 ambiguity; a path target pins exactly one
-// (scope, tool) by dirname match and skips the ambiguity question entirely.
 const processUninstallTarget = async (
   env: AcquisitionPorts,
   registry: LifecycleToolRegistry<string>,
@@ -2848,7 +2814,7 @@ const processUninstallTarget = async (
   storeRoot: string,
   opts: UninstallOptions,
   deps: UninstallDeps,
-  target: string,
+  target: NormalizedUninstallTarget,
   projectRoot: string | null,
   scopesToSearch: readonly InstallScope[],
   toolsToSearch: readonly FlipTool[],
@@ -2857,7 +2823,7 @@ const processUninstallTarget = async (
   dryRun: boolean,
   bind?: (preview: UninstallResult, name: string, match: UMatch) => void,
 ): Promise<UninstallResult[]> => {
-  if (isUninstallPathTarget(target)) {
+  if (target.kind === 'path') {
     const resolved = await resolveUninstallPathTarget(
       env,
       registry,
@@ -2869,10 +2835,9 @@ const processUninstallTarget = async (
       explicitTools,
     );
     if (!resolved.ok) {
-      const name = basename(resolve(opts.cwd, target));
       return [
         {
-          ...emptyUninstallResult(name, null, null, 'refused'),
+          ...emptyUninstallResult(target.name, null, null, 'refused'),
           reason: msg(resolved.error),
           error: safeError(resolved.error),
         },
@@ -2909,21 +2874,21 @@ const processUninstallTarget = async (
     opts,
     ledger,
     storeRoot,
-    target,
+    target.name,
     scopesToSearch,
     toolsToSearch,
     scopeKeyFor,
   );
-  if (matches.length === 0) return [notInstalledResult(target)];
+  if (matches.length === 0) return [notInstalledResult(target.name)];
   const distinctScopes = new Set(matches.map((m) => m.scope));
   if (distinctScopes.size > 1 && opts.scope === undefined && !opts.allScopes) {
     const list = matches
       .map((m) => `${m.scope} (${m.tool} at ${matchPathOf(m) ?? '<unknown>'})`)
       .join(', ');
-    const reason = `'${target}' is installed in multiple scopes: ${list}; disambiguate with --scope, --tool, or --all-scopes`;
+    const reason = `'${target.input}' is installed in multiple scopes: ${list}; disambiguate with --scope, --tool, or --all-scopes`;
     return [
       {
-        ...emptyUninstallResult(target, null, null, 'refused'),
+        ...emptyUninstallResult(target.name, null, null, 'refused'),
         reason,
         error: flipRefusedError(reason),
       },
@@ -2938,12 +2903,12 @@ const processUninstallTarget = async (
       ledgerPath,
       opts,
       deps,
-      target,
+      target.name,
       match,
       dryRun,
       null,
     );
-    if (dryRun && preview.action === 'removed') bind?.(preview, target, match);
+    if (dryRun && preview.action === 'removed') bind?.(preview, target.name, match);
     results.push(preview);
   }
   return results;
@@ -3028,10 +2993,11 @@ const runUninstallInternal = async (
     allScopes: Boolean(opts.allScopes),
     force: Boolean(opts.force),
   };
-
-  // U2 search set: user scope + the current project's scope (Task 7 phase-1 rule) unless --scope
-  // restricts to one. --all-scopes doesn't change the search set (both are already searched) — it
-  // only changes the ambiguity POLICY below (act on every match instead of refusing).
+  const planningTargets = [...new Set(requested.targets)].filter((target) => target.length > 0);
+  const planningRequested = {
+    ...requested,
+    targets: planningTargets.length === 0 ? ['[unresolved target]'] : planningTargets,
+  };
   const projectContext = await resolveAcquisitionProjectContextV1({
     env,
     cwd: opts.cwd,
@@ -3044,7 +3010,55 @@ const runUninstallInternal = async (
     opts.scope !== undefined ? [opts.scope] : projectRoot !== null ? ['user', 'project'] : ['user'];
   const scopeKeyFor = async (scope: InstallScope): Promise<string | null> =>
     scope === 'project' ? (projectRoot ?? (await env.realpath(opts.cwd))) : null;
-
+  const normalizedTargets: readonly NormalizedUninstallTarget[] = opts.targets.map((input) => {
+    if (!isUninstallPathTarget(input))
+      return { input, kind: 'name', name: input, resolvedPath: null };
+    const resolvedPath = resolve(projectContext.effectiveCwd, input);
+    return { input, kind: 'path', name: basename(resolvedPath), resolvedPath };
+  });
+  const artifactResolution = await resolveAcquisitionArtifactDestinationV1({
+    ports: env,
+    projectContext,
+    names: [...new Set(normalizedTargets.map(({ name }) => name))],
+    scope: opts.scope ?? (projectRoot === null ? 'user' : 'project'),
+    mode: 'remove',
+    ...(opts.file === undefined ? {} : { file: opts.file }),
+    ...(opts.lockfile === undefined ? {} : { lockfile: opts.lockfile }),
+    ...(opts.noSave === undefined ? {} : { noSave: opts.noSave }),
+  });
+  const preResolutionFailure =
+    normalizedTargets.length === 0 ||
+    normalizedTargets.some(({ name }) => name.length === 0) ||
+    (artifactResolution.outcome === 'none' &&
+      artifactResolution.saveMode === 'desired-state' &&
+      artifactResolution.selection.reason === 'pre-resolution-failure');
+  if (artifactResolution.outcome === 'refused' || preResolutionFailure) {
+    const reason =
+      artifactResolution.outcome === 'refused'
+        ? artifactResolution.cause.message
+        : 'uninstall targets must resolve to nonempty declaration names';
+    const error =
+      artifactResolution.outcome !== 'refused' || artifactResolution.cause.exitClass === 'usage'
+        ? flipRefusedError(reason)
+        : configError(reason);
+    const results = (normalizedTargets.length === 0 ? [{ name: '' }] : normalizedTargets).map(
+      ({ name }) => ({
+        ...emptyUninstallResult(
+          name.length === 0 ? '[unresolved target]' : name,
+          null,
+          null,
+          'refused' as const,
+        ),
+        reason,
+        error,
+      }),
+    );
+    const plan = createUninstallPlanning(planningRequested, results, projectRoot, {
+      registry,
+      toolOrder: registry.ids,
+    }).plan;
+    return ok(assembleUninstallReport(Boolean(opts.dryRun), requested, results, plan, []));
+  }
   interface PreparedUninstallPairBinding {
     readonly kind: 'pair';
     readonly preview: UninstallResult;
@@ -3069,6 +3083,7 @@ const runUninstallInternal = async (
     readonly snapshotAuthority: AcquisitionSnapshotAuthorityV1;
     readonly expectedRevisions: readonly ExpectedRevisionV1[];
     readonly snapshotId: `snapshot:v1:${string}`;
+    readonly artifactResolution: typeof artifactResolution;
   }
   interface UninstallPreconditionFacts {
     readonly projectRoot: string | null;
@@ -3087,7 +3102,7 @@ const runUninstallInternal = async (
   }
   interface UninstallBindingSeed {
     readonly preview: UninstallResult;
-    readonly target: string;
+    readonly target: NormalizedUninstallTarget;
     readonly name: string;
     readonly match: UMatch;
     execute(
@@ -3107,34 +3122,30 @@ const runUninstallInternal = async (
     const selectedPair = getPairAt(ledger, seed.match.scopeKey, seed.name, seed.match.tool);
     const live = await acquirePlacementFacts(env, dirname(expectedPath), seed.name, storeRoot);
     const storePath = selectedPair?.pinned?.storePath ?? null;
-    const selectionMatches = isUninstallPathTarget(seed.target)
-      ? [
-          {
-            scope: seed.match.scope,
-            scopeKey: seed.match.scopeKey,
-            tool: seed.match.tool,
-            kind:
-              live.placement.class === 'absent'
-                ? selectedPair === null
-                  ? ('stale' as const)
-                  : ('stale' as const)
-                : ('live' as const),
-            placement: live.placement.class === 'absent' ? null : live.placement,
-            existing: selectedPair,
-            notice: seed.match.notice,
-          } satisfies UMatch,
-        ]
-      : await collectUninstallMatches(
-          env,
-          registry,
-          opts,
-          legacyLedgerView(ledger),
-          storeRoot,
-          seed.target,
-          scopesToSearch,
-          toolsToSearch,
-          scopeKeyFor,
-        );
+    const selectionMatches =
+      seed.target.kind === 'path'
+        ? [
+            {
+              scope: seed.match.scope,
+              scopeKey: seed.match.scopeKey,
+              tool: seed.match.tool,
+              kind: live.placement.class === 'absent' ? ('stale' as const) : ('live' as const),
+              placement: live.placement.class === 'absent' ? null : live.placement,
+              existing: selectedPair,
+              notice: seed.match.notice,
+            } satisfies UMatch,
+          ]
+        : await collectUninstallMatches(
+            env,
+            registry,
+            opts,
+            legacyLedgerView(ledger),
+            storeRoot,
+            seed.target.name,
+            scopesToSearch,
+            toolsToSearch,
+            scopeKeyFor,
+          );
     return {
       projectRoot,
       selectedPair: structuredClone(selectedPair),
@@ -3162,7 +3173,7 @@ const runUninstallInternal = async (
     const ledgerCtx = { ledger };
     const results: UninstallResult[] = [];
     const candidateBindings = new Map<UninstallResult, UninstallBindingSeed>();
-    for (const target of opts.targets) {
+    for (const target of normalizedTargets) {
       results.push(
         ...(await processUninstallTarget(
           env,
@@ -3211,7 +3222,7 @@ const runUninstallInternal = async (
       ledgerPath,
       ledgerState,
     );
-    const compatibilityPlanning = createUninstallPlanning(requested, results, projectRoot, {
+    const compatibilityPlanning = createUninstallPlanning(planningRequested, results, projectRoot, {
       registry,
       toolOrder: registry.ids,
     });
@@ -3431,6 +3442,7 @@ const runUninstallInternal = async (
       snapshotAuthority,
       expectedRevisions: boundPlanning.value.expectedRevisions,
       snapshotId: boundPlanning.value.snapshotId,
+      artifactResolution,
     };
   };
 
@@ -3597,7 +3609,6 @@ const runUninstallInternal = async (
     );
   };
 
-  // Uninstall needs no binary detection and no fetch/verify — dry-run only needs a ledger read.
   if (opts.dryRun) {
     const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
