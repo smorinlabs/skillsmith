@@ -1177,37 +1177,198 @@ describe('runInstall — post-transport safety boundary', () => {
     expect(proxyReads).toBe(0);
   });
 
-  test('preserves duplicate order with stable numeric request identity', async () => {
-    const r = await runInstall(
+  test('resolves and verifies once before artifact refusal, without sweep or mutation', async () => {
+    const file = join(f.base, 'invalid-skillsmith.toml');
+    await f.env.writeTextFile(file, 'not valid toml = [');
+    const events: string[] = [];
+    const writes: string[] = [];
+    let fetchCleanups = 0;
+    const staging = join(f.data, 'store', '.staging');
+    const fetchRoot = join(f.data, '.fetch');
+    const ledgerPath = ledgerPathOf(f.data);
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === ledgerPath) events.push('ledger');
+        if (path === staging) events.push('sweep-staging');
+        if (path === fetchRoot) events.push('sweep-fetch');
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        if (path === file) events.push('artifact');
+        return f.env.readText(path);
+      },
+      writeTextFile: async (path, text) => {
+        if (!path.includes('/.fetch/')) writes.push(path);
+        return f.env.writeTextFile(path, text);
+      },
+      makeSymlink: async (target, path) => {
+        writes.push(path);
+        return f.env.makeSymlink(target, path);
+      },
+      copyTree: async (from, to) => {
+        writes.push(to);
+        return f.env.copyTree(from, to);
+      },
+      removeTree: async (path) => {
+        if (path.startsWith(`${fetchRoot}/`)) fetchCleanups++;
+        return f.env.removeTree(path);
+      },
+    };
+    const baseMaterialize = fixture.transport.materializeSkill;
+    const result = await runInstall(
+      executionEnv,
+      { ...userOpts, tools: ['claude-code'], file },
+      makeDeps({
+        transport: {
+          ...fixture.transport,
+          materializeSkill: async (...args) => {
+            const materialized = await baseMaterialize(...args);
+            events.push('materialize');
+            return materialized;
+          },
+        },
+        verify: async (...args) => {
+          events.push('verify');
+          return passVerify(...args);
+        },
+      }),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(events).toEqual(['ledger', 'materialize', 'verify', 'artifact']);
+    expect(result.value.results.map(({ action }) => action)).toEqual(['refused']);
+    expect(result.value.results[0]?.error?.code).toBe('config-error');
+    expect(result.value.plan.operations).toHaveLength(0);
+    expect(writes).toEqual([]);
+    expect(fetchCleanups).toBe(1);
+    expect(await fetchDirs()).toEqual([]);
+    expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('absent');
+  });
+
+  test('an abort after verification stops before sweep, recovery, snapshot, or mutation', async () => {
+    const controller = new AbortController();
+    const fetchRoot = join(f.data, '.fetch');
+    let sweeps = 0;
+    let fetchCleanups = 0;
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === fetchRoot || path === join(f.data, 'store', '.staging')) sweeps++;
+        return f.env.pathKind(path);
+      },
+      removeTree: async (path) => {
+        if (path.startsWith(`${fetchRoot}/`)) fetchCleanups++;
+        return f.env.removeTree(path);
+      },
+    };
+    const result = await runInstall(
+      executionEnv,
+      {
+        ...userOpts,
+        tools: ['claude-code'],
+        noSave: true,
+        signal: controller.signal,
+      },
+      makeDeps({
+        verify: async (...args) => {
+          const verified = await passVerify(...args);
+          controller.abort();
+          return verified;
+        },
+      }),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.results).toMatchObject([{ action: 'skipped', reason: 'interrupted' }]);
+    expect(result.value.plan.operations).toHaveLength(0);
+    expect({ sweeps, fetchCleanups }).toEqual({ sweeps: 0, fetchCleanups: 1 });
+    expect(await f.env.pathKind(ledgerPathOf(f.data))).toBe('absent');
+    expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('absent');
+    expect(await fetchDirs()).toEqual([]);
+  });
+
+  test('duplicate resolved names refuse before artifact discovery, sweep, or mutation', async () => {
+    const file = join(f.base, 'must-not-be-read.toml');
+    let artifactReads = 0;
+    let materializations = 0;
+    let sweeps = 0;
+    let ledgerReads = 0;
+    let fetchCleanups = 0;
+    const writes: string[] = [];
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === ledgerPathOf(f.data)) ledgerReads++;
+        if (path === file) artifactReads++;
+        if (path === join(f.data, '.fetch') || path === join(f.data, 'store', '.staging')) sweeps++;
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        if (path === file) artifactReads++;
+        return f.env.readText(path);
+      },
+      writeTextFile: async (path, text) => {
+        if (!path.includes('/.fetch/')) writes.push(path);
+        return f.env.writeTextFile(path, text);
+      },
+      removeTree: async (path) => {
+        if (path.startsWith(`${join(f.data, '.fetch')}/`)) fetchCleanups++;
+        return f.env.removeTree(path);
+      },
+    };
+    const baseMaterialize = fixture.transport.materializeSkill;
+    const result = await runInstall(
+      executionEnv,
+      { ...userOpts, sources: [fsSource, fsSource], tools: ['claude-code'], file, force: true },
+      makeDeps({
+        transport: {
+          ...fixture.transport,
+          materializeSkill: async (...args) => {
+            const materialized = await baseMaterialize(...args);
+            if (materialized.ok) materializations++;
+            return materialized;
+          },
+        },
+      }),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.requested.sources).toEqual([fsLabel, fsLabel]);
+    expect(result.value.results.map(({ requestIndex, action }) => [requestIndex, action])).toEqual([
+      [0, 'refused'],
+      [1, 'refused'],
+    ]);
+    expect({ artifactReads, materializations, sweeps, ledgerReads, writes }).toEqual({
+      artifactReads: 0,
+      materializations: 2,
+      sweeps: 0,
+      ledgerReads: 1,
+      writes: [],
+    });
+    expect(result.value.plan.operations).toHaveLength(0);
+    expect(result.value.results.every(({ error }) => error?.code === 'flip-refused')).toBeTrue();
+    expect(fetchCleanups).toBe(2);
+    expect(await f.env.pathKind(ledgerPathOf(f.data))).toBe('absent');
+    expect(await fetchDirs()).toEqual([]);
+  });
+
+  test('no-save duplicate occurrences preserve stable request identity', async () => {
+    const result = await runInstall(
       f.env,
-      { ...userOpts, sources: [fsSource, fsSource], dryRun: true },
+      { ...userOpts, sources: [fsSource, fsSource], noSave: true, dryRun: true },
       makeDeps(),
     );
-    if (!r.ok) throw new Error(msg(r.error));
-    expect(r.value.requested.sources).toEqual([fsLabel, fsLabel]);
-    expect(r.value.results.map(({ requestIndex }) => requestIndex)).toEqual([0, 0, 1, 1]);
-    expect(r.value.results.every(({ source }) => source === fsLabel)).toBeTrue();
-    expect(r.value.plan.operations).toHaveLength(2);
-    for (const operation of r.value.plan.operations) {
-      expect(operation.preconditionIds).toHaveLength(11);
-      expect(new Set(operation.preconditionIds).size).toBe(11);
-    }
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.requested.sources).toEqual([fsLabel, fsLabel]);
+    expect(result.value.results.map(({ requestIndex }) => requestIndex)).toEqual([0, 0, 1, 1]);
+    expect(result.value.results.every(({ source }) => source === fsLabel)).toBeTrue();
+    expect(result.value.plan.operations).toHaveLength(2);
   });
 
   for (const driftOccurrence of [0, 1] as const) {
-    test(`binds duplicate source occurrence ${driftOccurrence} to its exact materialized path`, async () => {
+    test(`no-save duplicate occurrence ${driftOccurrence} binds its exact materialized path`, async () => {
       const materialized: string[] = [];
       let prepared = false;
       const targetWrites: string[] = [];
       const baseMaterialize = fixture.transport.materializeSkill;
-      const transport: NonNullable<InstallDeps['transport']> = {
-        ...fixture.transport,
-        materializeSkill: async (env, fetchDir, skillPath, signal) => {
-          const result = await baseMaterialize(env, fetchDir, skillPath, signal);
-          if (result.ok) materialized.push(result.value);
-          return result;
-        },
-      };
       const executionEnv: RuntimePorts = {
         ...f.env,
         readBytes: async (path) => {
@@ -1223,19 +1384,19 @@ describe('runInstall — post-transport safety boundary', () => {
         },
         writeTextFile: async (path, text) => {
           if (prepared && !path.includes('/.fetch/')) targetWrites.push(`write:${path}`);
-          await f.env.writeTextFile(path, text);
+          return f.env.writeTextFile(path, text);
         },
         makeSymlink: async (target, path) => {
           if (prepared) targetWrites.push(`symlink:${path}`);
-          await f.env.makeSymlink(target, path);
+          return f.env.makeSymlink(target, path);
         },
         rename: async (from, to) => {
           if (prepared && !from.includes('/.fetch/')) targetWrites.push(`rename:${from}->${to}`);
-          await f.env.rename(from, to);
+          return f.env.rename(from, to);
         },
         copyTree: async (from, to) => {
           if (prepared) targetWrites.push(`copy:${from}->${to}`);
-          await f.env.copyTree(from, to);
+          return f.env.copyTree(from, to);
         },
       };
       const result = await runInstall(
@@ -1244,16 +1405,23 @@ describe('runInstall — post-transport safety boundary', () => {
           ...userOpts,
           sources: [fsSource, fsSource],
           tools: ['claude-code'],
+          noSave: true,
         },
         makeDeps({
-          transport,
+          transport: {
+            ...fixture.transport,
+            materializeSkill: async (env, fetchDir, skillPath, signal) => {
+              const resolved = await baseMaterialize(env, fetchDir, skillPath, signal);
+              if (resolved.ok) materialized.push(resolved.value);
+              return resolved;
+            },
+          },
           observePreparedPlan: () => {
             prepared = true;
           },
         }),
       );
       if (!result.ok) throw new Error(msg(result.error));
-
       expect(new Set(materialized).size).toBe(2);
       expect(result.value.results.map(({ action }) => action)).toEqual(['refused', 'refused']);
       expect(targetWrites).toEqual([]);
@@ -1781,11 +1949,47 @@ describe('runInstall — dry run', () => {
         skills: {},
       }),
     );
+    const calls = { resolveRef: 0, fetchRepo: 0, listSkills: 0, materializeSkill: 0, verify: 0 };
+    const transport: NonNullable<InstallDeps['transport']> = {
+      resolveRef: async (...args) => {
+        calls.resolveRef++;
+        return fixture.transport.resolveRef(...args);
+      },
+      fetchRepo: async (...args) => {
+        calls.fetchRepo++;
+        return fixture.transport.fetchRepo(...args);
+      },
+      listSkills: async (...args) => {
+        calls.listSkills++;
+        return fixture.transport.listSkills(...args);
+      },
+      materializeSkill: async (...args) => {
+        calls.materializeSkill++;
+        return fixture.transport.materializeSkill(...args);
+      },
+    };
 
-    const result = await runInstall(f.env, userOpts, makeDeps());
+    const result = await runInstall(
+      f.env,
+      userOpts,
+      makeDeps({
+        transport,
+        verify: async (...args) => {
+          calls.verify++;
+          return passVerify(...args);
+        },
+      }),
+    );
     if (!result.ok) throw new Error(msg(result.error));
     expect(result.value.plan.operations[0]?.kind).toBe('migrate-ledger');
     expect(result.value.summary.installed).toBe(2);
+    expect(calls).toEqual({
+      resolveRef: 1,
+      fetchRepo: 1,
+      listSkills: 1,
+      materializeSkill: 1,
+      verify: 2,
+    });
 
     const state = await readLedgerState(f.env, ledgerPath);
     if (!state.ok || state.value.state !== 'present') {

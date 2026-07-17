@@ -7,6 +7,7 @@ import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts'
 import {
   type SkillSmithError,
   cancelledError,
+  configError,
   errorMessage,
   flipFailedError,
   flipRefusedError,
@@ -101,6 +102,7 @@ import {
   readAcquisitionSnapshotV1,
   recoverAcquireWithObservation,
   recoverCommittedAcquireJournalsWithObservation,
+  resolveAcquisitionArtifactDestinationV1,
   resolveAcquisitionProjectContextV1,
   resolvePlacementFor,
   runAcquisitionWithObservation,
@@ -120,6 +122,7 @@ import {
 } from './plan.ts';
 import { recoveryRefusedMessage } from './recovery.ts';
 import {
+  type ResolveRemoteSourceOutcome,
   type ResolvedSourceMaterialization,
   resolveRemoteSource,
   safeDependencyResult,
@@ -1140,8 +1143,8 @@ const runInstallInternal = async (
     readonly snapshotAuthority: AcquisitionSnapshotAuthorityV1;
     readonly expectedRevisions: readonly ExpectedRevisionV1[];
     readonly snapshotId: `snapshot:v1:${string}`;
-    cleanup(): Promise<void>;
   }
+  type PreparedInstallOutcome = PreparedInstallBatch | Readonly<{ terminal: PlannedInstallReport }>;
   interface InstallPreconditionFacts {
     readonly projectRoot: string | null;
     readonly selectedPair: PairRecord | null;
@@ -1170,6 +1173,15 @@ const runInstallInternal = async (
     readonly tool: FlipTool;
     execute(): Promise<InstallResult>;
   }
+  type InstallVerificationGate = Awaited<ReturnType<typeof runInstallVerifyGate>>;
+  interface InstallResolutionAuthority {
+    readonly sources: ReadonlyMap<number, ResolveRemoteSourceOutcome>;
+    readonly gates: ReadonlyMap<string, InstallVerificationGate>;
+    readonly duplicateNames: readonly string[];
+    readonly artifact: Awaited<ReturnType<typeof resolveAcquisitionArtifactDestinationV1>>;
+    cleanup(): Promise<void>;
+  }
+  const gateKey = (requestIndex: number, tool: FlipTool): string => `${requestIndex}:${tool}`;
   const observeInstallState = async (
     seed: InstallBindingSeed,
   ): Promise<Readonly<{ ledger: LedgerModel; facts: InstallPreconditionFacts }>> => {
@@ -1232,14 +1244,126 @@ const runInstallInternal = async (
       },
     };
   };
-  // Resolve and verify the whole selection into immutable work before any store/placement binding
-  // can run. Fetch materialization remains inside the existing outer lock for normal execution.
-  const prepareAll = async (ledgerState: LedgerReadState): Promise<PreparedInstallBatch> => {
+  const resolveAll = async (ledgerState: LedgerReadState): Promise<InstallResolutionAuthority> => {
+    const ledger = legacyLedgerView(ledgerModelForMutation(ledgerState, nowOf(env, deps)));
+    const sources = new Map<number, ResolveRemoteSourceOutcome>();
+    const gates = new Map<string, InstallVerificationGate>();
+    const cleanupDirs = new Set<string>();
+    let cleaned = false;
+    const cleanup = async (): Promise<void> => {
+      if (cleaned) return;
+      cleaned = true;
+      for (const dir of cleanupDirs) await env.removeTree(dir).catch(() => {});
+    };
+    try {
+      const names: string[] = [];
+      for (const { spec, requestIndex } of specs) {
+        if (opts.signal?.aborted) break;
+        const outcome = await resolveRemoteSource({
+          ports: env,
+          source: spec,
+          ...(deps.transport === undefined ? {} : { transport: deps.transport }),
+          ledger,
+          scopeKey,
+          storeRoot,
+          ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+          ...(deps.pick === undefined ? {} : { pick: deps.pick }),
+          createFetchDirectory: () => join(dataDir, '.fetch', txIdOf(env, deps)),
+        });
+        if (outcome.cleanupDirectory !== null) cleanupDirs.add(outcome.cleanupDirectory);
+        const resolved =
+          outcome.kind === 'resolved'
+            ? Object.freeze({
+                ...outcome,
+                materialization: Object.freeze({ ...outcome.materialization }),
+              })
+            : outcome;
+        sources.set(requestIndex, resolved);
+        if (resolved.kind !== 'resolved') {
+          if (!opts.continueOnError) break;
+          continue;
+        }
+        const r = resolved.materialization;
+        if (
+          [dataDir, storeRoot, r.materializedDir, r.skillName, r.skillPath].some(
+            containsSensitiveMaterial,
+          )
+        ) {
+          if (!opts.continueOnError) break;
+          continue;
+        }
+        names.push(r.skillName);
+        let sourceFailed = false;
+        for (const tool of detectedTools) {
+          if (opts.signal?.aborted) continue;
+          const roots = {
+            cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
+            configuration: opts.configuration,
+          };
+          const placementPath = join(
+            destinationSkillRootFor(registry, tool, env, scope, roots),
+            r.skillName,
+          );
+          if (containsSensitiveMaterial(placementPath)) {
+            sourceFailed = true;
+            continue;
+          }
+          const gate = await runInstallVerifyGate(
+            env,
+            deps,
+            registry,
+            tool,
+            r.materializedDir,
+            opts,
+            observation,
+          );
+          gates.set(gateKey(requestIndex, tool), gate);
+          if (gate.blocked) sourceFailed = true;
+        }
+        if (sourceFailed && !opts.continueOnError) break;
+      }
+      const duplicateNames = [
+        ...new Set(names.filter((name, index) => names.indexOf(name) !== index)),
+      ];
+      const artifact = await resolveAcquisitionArtifactDestinationV1({
+        ports: env,
+        projectContext,
+        names,
+        scope,
+        mode: 'save',
+        ...(opts.file === undefined ? {} : { file: opts.file }),
+        ...(opts.lockfile === undefined ? {} : { lockfile: opts.lockfile }),
+        ...(opts.noSave === undefined ? {} : { noSave: opts.noSave }),
+      });
+      return Object.freeze({
+        sources,
+        gates,
+        duplicateNames: Object.freeze(duplicateNames),
+        artifact,
+        cleanup,
+      });
+    } catch (error) {
+      await cleanup();
+      throw error;
+    }
+  };
+  const artifactBlocksBinding = (resolution: InstallResolutionAuthority): boolean =>
+    resolution.artifact.outcome === 'refused' ||
+    (resolution.artifact.saveMode === 'desired-state' && resolution.duplicateNames.length > 0);
+  const artifactStopsRecovery = (resolution: InstallResolutionAuthority): boolean =>
+    opts.signal?.aborted === true ||
+    resolution.artifact.outcome === 'refused' ||
+    ![...resolution.gates.values()].some((gate) => gate.blocked === null) ||
+    (resolution.artifact.outcome === 'none' &&
+      resolution.artifact.saveMode === 'desired-state' &&
+      resolution.artifact.selection.reason === 'pre-resolution-failure');
+  const prepareAll = async (
+    ledgerState: LedgerReadState,
+    resolution: InstallResolutionAuthority,
+  ): Promise<PreparedInstallOutcome> => {
     const ledger = ledgerModelForMutation(ledgerState, nowOf(env, deps));
-    const legacyLedger = legacyLedgerView(ledger);
     const results: InstallResult[] = [...planningRefusals];
     const candidateBindings = new Map<InstallResult, InstallBindingSeed>();
-    const cleanupDirs = new Set<string>();
     const placeCtx: PlaceCtx = {
       env,
       registry,
@@ -1270,18 +1394,8 @@ const runInstallInternal = async (
         });
         continue;
       }
-      const resolved = await resolveRemoteSource({
-        ports: env,
-        source: spec,
-        ...(deps.transport === undefined ? {} : { transport: deps.transport }),
-        ledger: legacyLedger,
-        scopeKey,
-        storeRoot,
-        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-        ...(deps.pick === undefined ? {} : { pick: deps.pick }),
-        createFetchDirectory: () => join(dataDir, '.fetch', txIdOf(env, deps)),
-      });
-      if (resolved.cleanupDirectory !== null) cleanupDirs.add(resolved.cleanupDirectory);
+      const resolved = resolution.sources.get(requestIndex);
+      if (resolved === undefined) throw new Error('install source resolution is missing');
       if (resolved.kind === 'source-failure') {
         results.push({
           ...emptyResult(spec.canonicalInvocation, scope, 'failed', requestIndex),
@@ -1332,6 +1446,28 @@ const runInstallInternal = async (
         if (!opts.continueOnError) planningFailFast = true;
         continue;
       }
+      if (artifactBlocksBinding(resolution)) {
+        const refusal = resolution.artifact.outcome === 'refused' ? resolution.artifact : undefined;
+        const reason =
+          refusal === undefined
+            ? `multiple resolved sources declare duplicate skill names: ${resolution.duplicateNames.join(', ')}`
+            : refusal.cause.message;
+        const error =
+          refusal === undefined || refusal.cause.exitClass === 'usage'
+            ? flipRefusedError(reason)
+            : configError(reason);
+        for (const tool of detectedTools) {
+          results.push({
+            ...emptyResult(source, scope, 'refused', requestIndex),
+            skill: r.skillName,
+            tool,
+            reason,
+            candidates: refusal === undefined ? null : [...refusal.selection.candidates],
+            error,
+          });
+        }
+        continue;
+      }
       const sourceResults: InstallResult[] = [];
       let snap: SnapshotResult | null = null;
       let snapErr: SkillSmithError | null = null;
@@ -1367,15 +1503,16 @@ const runInstallInternal = async (
           });
           continue;
         }
-        const gate = await runInstallVerifyGate(
-          env,
-          deps,
-          registry,
-          tool,
-          r.materializedDir,
-          opts,
-          observation,
-        );
+        const gate = resolution.gates.get(gateKey(requestIndex, tool));
+        if (gate === undefined) {
+          sourceResults.push({
+            ...emptyResult(source, scope, 'skipped', requestIndex),
+            skill: r.skillName,
+            tool,
+            reason: 'interrupted',
+          });
+          continue;
+        }
         if (gate.blocked) {
           const rootsCtx = {
             cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
@@ -1483,6 +1620,17 @@ const runInstallInternal = async (
       if (!opts.continueOnError && sourceResults.some((x) => x.error)) {
         planningFailFast = true;
       }
+    }
+    if (artifactStopsRecovery(resolution)) {
+      return {
+        terminal: createInstallDiagnosticReport(
+          Boolean(opts.dryRun),
+          requested,
+          results,
+          Boolean(opts.continueOnError),
+          registry,
+        ),
+      };
     }
     const preparedIntents: Array<
       Readonly<{
@@ -1865,9 +2013,6 @@ const runInstallInternal = async (
       snapshotAuthority,
       expectedRevisions: boundPlanning.value.expectedRevisions,
       snapshotId: boundPlanning.value.snapshotId,
-      cleanup: async (): Promise<void> => {
-        for (const dir of cleanupDirs) await env.removeTree(dir).catch(() => {});
-      },
     };
   };
   const executePrepared = async (prepared: PreparedInstallBatch): Promise<PlannedInstallReport> => {
@@ -2039,18 +2184,28 @@ const runInstallInternal = async (
   if (opts.dryRun) {
     const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
-    const prepared = await prepareAll(ledgerRes.value);
-    await prepared.cleanup();
-    return ok(prepared.preview);
+    let resolution: InstallResolutionAuthority | undefined;
+    try {
+      resolution = await resolveAll(ledgerRes.value);
+      const prepared = await prepareAll(ledgerRes.value, resolution);
+      return ok('terminal' in prepared ? prepared.terminal : prepared.preview);
+    } finally {
+      await resolution?.cleanup();
+    }
   }
   // ---- Phase 2: compatibility recovery/preparation, followed by final coordinator validation ----
-  const prepareLocked = async (): Promise<Result<PreparedInstallBatch, SkillSmithError>> => {
-    await sweepStaging(env, storeRoot);
-    await sweepFetchOrphans(env, dataDir);
+  let resolution: InstallResolutionAuthority | undefined;
+  const prepareLocked = async (): Promise<Result<PreparedInstallOutcome, SkillSmithError>> => {
     const ledgerRes = await readLedgerState(env, ledgerPath);
     if (!ledgerRes.ok) return err(safeError(ledgerRes.error));
+    resolution = await resolveAll(ledgerRes.value);
+    if (artifactStopsRecovery(resolution)) {
+      return ok(await prepareAll(ledgerRes.value, resolution));
+    }
+    await sweepStaging(env, storeRoot);
+    await sweepFetchOrphans(env, dataDir);
     if (ledgerRes.value.state === 'present' && ledgerRes.value.sourceVersion === 1) {
-      return ok(await prepareAll(ledgerRes.value));
+      return ok(await prepareAll(ledgerRes.value, resolution));
     }
     const ledger = ledgerModelForMutation(ledgerRes.value, nowOf(env, deps));
     const sweepPlaceCtx: PlaceCtx = {
@@ -2080,30 +2235,30 @@ const runInstallInternal = async (
     }
     const current = await readLedgerState(env, ledgerPath);
     if (!current.ok) return err(safeError(current.error));
-    return ok(await prepareAll(current.value));
+    return ok(await prepareAll(current.value, resolution));
   };
   const completed = Symbol('install-prepare-lock-completed');
-  let preparedResult: Result<PreparedInstallBatch, SkillSmithError> | undefined;
-  const locked = await withLedgerLock(
-    env,
-    ledgerPath,
-    async (): Promise<typeof completed> => {
-      preparedResult = await prepareLocked();
-      return completed;
-    },
-    opts.signal === undefined ? undefined : { signal: opts.signal },
-  );
-
-  if (!locked.ok) return err(safeError(locked.error));
-  const settled = preparedResult;
-  if (locked.value !== completed || settled === undefined) {
-    return err(genericError('operation failed'));
-  }
-  if (!settled.ok) return err(safeError(settled.error));
+  let preparedResult: Result<PreparedInstallOutcome, SkillSmithError> | undefined;
   try {
+    const locked = await withLedgerLock(
+      env,
+      ledgerPath,
+      async (): Promise<typeof completed> => {
+        preparedResult = await prepareLocked();
+        return completed;
+      },
+      opts.signal === undefined ? undefined : { signal: opts.signal },
+    );
+    if (!locked.ok) return err(safeError(locked.error));
+    const settled = preparedResult;
+    if (locked.value !== completed || settled === undefined) {
+      return err(genericError('operation failed'));
+    }
+    if (!settled.ok) return err(safeError(settled.error));
+    if ('terminal' in settled.value) return ok(settled.value.terminal);
     return ok(await executePrepared(settled.value));
   } finally {
-    await settled.value.cleanup();
+    await resolution?.cleanup();
   }
 };
 
