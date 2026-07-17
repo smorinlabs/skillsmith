@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { createAcquisitionPlan } from '../../src/acquire/plan.ts';
+import {
+  type AcquisitionObservedStateSnapshotV1,
+  createAcquisitionPlan,
+} from '../../src/acquire/plan.ts';
 import { executeOperationPlan } from '../../src/execution/coordinator.ts';
 import {
   createContentObservationExecutionPrecondition,
@@ -21,7 +24,6 @@ import {
 } from '../../src/planning/index.ts';
 import {
   type ExpectedRevisionV1,
-  type ObservedStateSnapshotV1,
   createContentObservationIdentityV1,
   createContentObservationPreconditionIdV1,
   createExpectedRevisionV1,
@@ -209,7 +211,7 @@ const semanticExpectedRevision = (
     semanticRevision: `sha256:${REVISION_HEX.b}`,
   });
 
-const observedSnapshot = (): ObservedStateSnapshotV1 => {
+const observedSnapshot = (): AcquisitionObservedStateSnapshotV1 => {
   const contentRevision = `sha256:${REVISION_HEX.a}` as const;
   const resourceId = 'store:alpha';
   const path = '/fixture/store/alpha';
@@ -221,13 +223,35 @@ const observedSnapshot = (): ObservedStateSnapshotV1 => {
       revision: semanticExpectedRevision('project', 'project:fixture'),
       value: {} as never,
     },
-    manifest: {
-      revision: absentExpectedRevision('manifest', 'manifest:fixture', '/fixture/skillsmith.toml'),
-      value: null,
-    },
-    lock: {
-      revision: absentExpectedRevision('lock', 'lock:fixture', '/fixture/skillsmith.lock'),
-      value: null,
+    artifact: {
+      mode: 'selected',
+      pair: {
+        file: {
+          token: null,
+          path: '/fixture/skillsmith.toml',
+          portability: 'machine-bound',
+          portableToken: null,
+        },
+        lockfile: {
+          token: null,
+          path: '/fixture/skillsmith.lock',
+          portability: 'machine-bound',
+          portableToken: null,
+        },
+        lockfileSource: 'sibling',
+      },
+      manifest: {
+        revision: absentExpectedRevision(
+          'manifest',
+          'manifest:fixture',
+          '/fixture/skillsmith.toml',
+        ),
+        value: null,
+      },
+      lock: {
+        revision: absentExpectedRevision('lock', 'lock:fixture', '/fixture/skillsmith.lock'),
+        value: null,
+      },
     },
     ledger: {
       revision: absentExpectedRevision('ledger', 'ledger:fixture', '/fixture/placements.json'),

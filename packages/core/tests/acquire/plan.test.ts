@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   type AcquisitionInstallPlanRequestV1,
+  type AcquisitionObservedStateSnapshotV1,
   createAcquisitionDiagnosticPlan,
   createAcquisitionPlan,
   createInstallPlanning,
@@ -11,10 +12,10 @@ import type { LedgerModel, LedgerPairV1Dto } from '../../src/artifacts/ledger-ty
 import {
   type ExpectedRevisionV1,
   type LivePlacementStateV1,
-  type ObservedStateSnapshotV1,
   type StoreStateV1,
   createContentObservationIdentityV1,
   createContentObservationPreconditionIdV1,
+  createExpectedRevisionPreconditionIdV1,
   createExpectedRevisionV1,
   createStoreSnapshotIdentityV1,
 } from '../../src/state/types.ts';
@@ -145,22 +146,40 @@ const storeState = (resourceId: string, name: string, contentRevision = `sha256:
 };
 
 interface SnapshotOverrides {
-  readonly live?: ObservedStateSnapshotV1['live'];
-  readonly store?: ObservedStateSnapshotV1['store'];
-  readonly ledger?: ObservedStateSnapshotV1['ledger'];
+  readonly live?: AcquisitionObservedStateSnapshotV1['live'];
+  readonly store?: AcquisitionObservedStateSnapshotV1['store'];
+  readonly ledger?: AcquisitionObservedStateSnapshotV1['ledger'];
 }
 
 const snapshot = (
   snapshotHex = HEX.a,
   capabilityHex = HEX.b,
   overrides: SnapshotOverrides = {},
-): ObservedStateSnapshotV1 =>
+): AcquisitionObservedStateSnapshotV1 =>
   ({
     schemaVersion: 1,
     snapshotId: `snapshot:v1:${snapshotHex}`,
     project: { revision: revision('project', 'project:/fixture', HEX.a), value: {} },
-    manifest: { revision: revision('manifest', 'manifest:/fixture', HEX.a), value: null },
-    lock: { revision: revision('lock', 'lock:/fixture', HEX.b), value: null },
+    artifact: {
+      mode: 'selected',
+      pair: {
+        file: {
+          token: null,
+          path: '/fixture/manifest',
+          portability: 'machine-bound',
+          portableToken: null,
+        },
+        lockfile: {
+          token: null,
+          path: '/fixture/lock',
+          portability: 'machine-bound',
+          portableToken: null,
+        },
+        lockfileSource: 'explicit',
+      },
+      manifest: { revision: revision('manifest', 'manifest:/fixture', HEX.a), value: null },
+      lock: { revision: revision('lock', 'lock:/fixture', HEX.b), value: null },
+    },
     ledger: overrides.ledger ?? {
       revision: revision('ledger', 'ledger:user', HEX.c),
       value: null,
@@ -176,7 +195,7 @@ const snapshot = (
       revision: revision('capabilities', 'capabilities:fixture', capabilityHex),
       value: {},
     },
-  }) as unknown as ObservedStateSnapshotV1;
+  }) as unknown as AcquisitionObservedStateSnapshotV1;
 
 const request = () => {
   const sourceContent = createContentObservationIdentityV1({
@@ -303,6 +322,31 @@ describe('createAcquisitionPlan', () => {
     expectDeepFrozen(first.value);
   });
 
+  test('omits all portable artifact authority from a nonempty owner-free plan', () => {
+    const selected = snapshot();
+    const observed: AcquisitionObservedStateSnapshotV1 = {
+      ...selected,
+      artifact: { mode: 'none' },
+    };
+    const planned = createAcquisitionPlan(request(), observed);
+    expect(planned.ok).toBeTrue();
+    if (!planned.ok) throw new Error(planned.error.message);
+    expect(planned.value.plan.operations.length).toBeGreaterThan(0);
+    expect(planned.value.expectedRevisions.map(({ domain }) => domain)).not.toContain('manifest');
+    expect(planned.value.expectedRevisions.map(({ domain }) => domain)).not.toContain('lock');
+    const operation = planned.value.plan.operations[0];
+    expect(operation?.mutates.manifest).toBeFalse();
+    expect(operation?.mutates.lock).toBeFalse();
+    const artifactRevisionIds = new Set<string>(
+      [
+        ...(selected.artifact.mode === 'selected'
+          ? [selected.artifact.manifest.revision, selected.artifact.lock.revision]
+          : []),
+      ].map(createExpectedRevisionPreconditionIdV1),
+    );
+    expect(operation?.preconditionIds.some((id) => artifactRevisionIds.has(id))).toBeFalse();
+  });
+
   test('keeps semantic operation identity independent of snapshot identity and unrelated revisions', () => {
     const first = createAcquisitionPlan(request(), snapshot(HEX.a, HEX.b));
     const second = createAcquisitionPlan(request(), snapshot(HEX.c, HEX.d));
@@ -355,7 +399,7 @@ describe('createAcquisitionPlan', () => {
           value: null,
         },
         { revision: revision('live', 'live-resource-alpha', HEX.d), value: null },
-      ] as ObservedStateSnapshotV1['live'],
+      ] as AcquisitionObservedStateSnapshotV1['live'],
       store: [
         storeState('store-resource-beta-nonconventional', 'beta'),
         storeState('store-resource-alpha', 'alpha'),

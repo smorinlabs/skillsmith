@@ -1,4 +1,4 @@
-import { join, parse, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { RegisteredPlacementBundle, SkillRootsCtx } from '../agents/adapter-types.ts';
 import type {
   RelevantCapabilityQueryV1,
@@ -13,7 +13,6 @@ import {
   type ManifestDestination,
   discoverArtifactSnapshot,
   selectManifestDestination,
-  selectReadableArtifactContext,
 } from '../artifacts/discovery.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
@@ -109,10 +108,13 @@ import {
 import {
   type ContentObservationIdentityV1,
   type ExpectedRevisionV1,
-  type ObservedStateSnapshotV1,
+  type ObservedComponentV1,
+  type StateDomainV1,
   createContentObservationIdentityV1,
+  isExpectedRevisionV1,
   sameExpectedRevisionV1,
 } from '../state/types.ts';
+import type { AcquisitionObservedStateSnapshotV1 } from './plan.ts';
 import type {
   AcquisitionArtifactSelection,
   AcquisitionPorts,
@@ -381,6 +383,22 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
       selectedBy: selectedByForDestination(discovered.value, destination.value),
     }),
   });
+};
+
+export type AcquisitionSnapshotArtifactAuthorityV1 =
+  | Readonly<{ mode: 'selected'; pair: ResolvedArtifactPair }>
+  | Readonly<{ mode: 'none' }>;
+
+export const acquisitionSnapshotArtifactAuthorityV1 = (
+  resolution: AcquisitionArtifactDestinationResolutionV1,
+): AcquisitionSnapshotArtifactAuthorityV1 => {
+  if (resolution.outcome === 'selected') {
+    return Object.freeze({ mode: 'selected' as const, pair: resolution.pair });
+  }
+  if (resolution.outcome === 'none' && resolution.selection.reason !== 'pre-resolution-failure') {
+    return Object.freeze({ mode: 'none' as const });
+  }
+  throw new Error('acquisition snapshot requires selected or artifact-free snapshot authority');
 };
 
 export const detectAcquireTool = (
@@ -736,12 +754,26 @@ export interface AcquireLiveSnapshotResourceV1 extends LivePlacementResourceV1 {
   readonly scope: InstallScope;
 }
 
+type AcquisitionCommonSnapshotRepositoriesV1 = Pick<
+  ObservedStateRepositoriesV1<RelevantCapabilitySnapshotV1>,
+  'project' | 'ledger' | 'live' | 'store' | 'capabilities'
+>;
+
+type AcquisitionArtifactSnapshotRepositoriesV1 =
+  | Readonly<{
+      mode: 'selected';
+      manifest: ObservedStateRepositoriesV1['manifest'];
+      lock: ObservedStateRepositoriesV1['lock'];
+    }>
+  | Readonly<{ mode: 'none' }>;
+
+export type AcquisitionSnapshotRepositoriesV1 = AcquisitionCommonSnapshotRepositoriesV1 &
+  Readonly<{ artifact: AcquisitionArtifactSnapshotRepositoriesV1 }>;
+
 export interface AcquisitionSnapshotAuthorityV1 {
-  readonly snapshot: ObservedStateSnapshotV1<RelevantCapabilitySnapshotV1>;
-  readonly repositories: ObservedStateRepositoriesV1<RelevantCapabilitySnapshotV1>;
+  readonly snapshot: AcquisitionObservedStateSnapshotV1<RelevantCapabilitySnapshotV1>;
+  readonly repositories: AcquisitionSnapshotRepositoriesV1;
   readonly projectContext: ProjectContext;
-  readonly manifestPath: string;
-  readonly lockPath: string;
   readonly ledgerResourceId: string;
   readonly liveResources: ReadonlyMap<string, AcquireLiveSnapshotResourceV1>;
   readonly storeResources: ReadonlyMap<string, AcquireStoreSnapshotResourceV1>;
@@ -758,11 +790,6 @@ export const acquireStateResourceId = (
   );
   if (!hashed.ok) throw new Error('acquire state resource identity invariant failed');
   return `acquire-${domain}:v1:${hashed.value.slice('sha256:'.length)}`;
-};
-
-const siblingLockPath = (manifestPath: string): string => {
-  const parts = parse(manifestPath);
-  return join(parts.dir, `${parts.name}.lock`);
 };
 
 const sameProjectContext = (left: ProjectContext, right: ProjectContext): boolean =>
@@ -789,12 +816,131 @@ export const resolveAcquisitionProjectContextV1 = async (input: {
   return resolved.value;
 };
 
+type AcquisitionCommonSnapshotDomainV1 = Extract<
+  StateDomainV1,
+  'project' | 'ledger' | 'live' | 'store' | 'capabilities'
+>;
+
+interface AcquisitionCommonSnapshotDescriptorV1 {
+  readonly domain: AcquisitionCommonSnapshotDomainV1;
+  readonly resourceId: string;
+}
+
+const acquisitionCommonRepository = (
+  repositories: AcquisitionCommonSnapshotRepositoriesV1,
+  domain: AcquisitionCommonSnapshotDomainV1,
+) => {
+  if (domain === 'project') return repositories.project;
+  if (domain === 'ledger') return repositories.ledger;
+  if (domain === 'live') return repositories.live;
+  if (domain === 'store') return repositories.store;
+  return repositories.capabilities;
+};
+
+const acquisitionSnapshotId = (
+  descriptors: readonly Readonly<{ domain: StateDomainV1; resourceId: string }>[],
+  observations: readonly ObservedComponentV1<unknown>[],
+): `snapshot:v1:${string}` => {
+  const vector = descriptors.map((descriptor, index) => {
+    const revision = observations[index]?.revision;
+    if (revision === undefined) throw new Error('acquisition snapshot vector invariant failed');
+    return [descriptor.domain, descriptor.resourceId, revision.state, revision.revisionDigest];
+  });
+  const hashed = hashCanonicalInput(
+    'resource',
+    1,
+    JSON.stringify(['skillsmith-acquisition-state-snapshot', 1, ['artifact', 'none'], vector]),
+  );
+  if (!hashed.ok) throw new Error('acquisition snapshot identity invariant failed');
+  return `snapshot:v1:${hashed.value.slice('sha256:'.length)}`;
+};
+
+const readArtifactFreeAcquisitionSnapshotV1 = async (input: {
+  readonly repositories: AcquisitionCommonSnapshotRepositoriesV1;
+  readonly projectResourceId: string;
+  readonly ledgerResourceId: string;
+  readonly liveResourceIds: readonly string[];
+  readonly storeResourceIds: readonly string[];
+  readonly capabilitiesResourceId: string;
+}): Promise<AcquisitionObservedStateSnapshotV1<RelevantCapabilitySnapshotV1>> => {
+  const live = [...input.liveResourceIds].sort();
+  const store = [...input.storeResourceIds].sort();
+  const descriptors: readonly AcquisitionCommonSnapshotDescriptorV1[] = Object.freeze([
+    { domain: 'project', resourceId: input.projectResourceId },
+    { domain: 'ledger', resourceId: input.ledgerResourceId },
+    ...live.map((resourceId) => ({ domain: 'live' as const, resourceId })),
+    ...store.map((resourceId) => ({ domain: 'store' as const, resourceId })),
+    { domain: 'capabilities', resourceId: input.capabilitiesResourceId },
+  ]);
+  if (
+    descriptors.some(({ resourceId }) => resourceId.length === 0) ||
+    new Set(descriptors.map(({ resourceId }) => resourceId)).size !== descriptors.length
+  ) {
+    throw new Error('acquisition snapshot resource identity is invalid');
+  }
+
+  const observations: ObservedComponentV1<unknown>[] = [];
+  for (const descriptor of descriptors) {
+    const observed = await acquisitionCommonRepository(
+      input.repositories,
+      descriptor.domain,
+    ).observe(descriptor.resourceId);
+    if (!observed.ok) throw observed.error;
+    observations.push(observed.value);
+  }
+  for (const [index, descriptor] of descriptors.entries()) {
+    const observed = observations[index];
+    const revision = await acquisitionCommonRepository(
+      input.repositories,
+      descriptor.domain,
+    ).observeRevision(descriptor.resourceId);
+    if (
+      observed === undefined ||
+      !revision.ok ||
+      !isExpectedRevisionV1(observed.revision) ||
+      !isExpectedRevisionV1(revision.value) ||
+      observed.revision.domain !== descriptor.domain ||
+      observed.revision.resourceId !== descriptor.resourceId ||
+      revision.value.domain !== descriptor.domain ||
+      revision.value.resourceId !== descriptor.resourceId ||
+      (observed.revision.state === 'absent') !== (observed.value === null) ||
+      !sameExpectedRevisionV1(observed.revision, revision.value)
+    ) {
+      if (!revision.ok) throw revision.error;
+      throw new Error('acquisition snapshot observation changed or is invalid');
+    }
+  }
+
+  const liveStart = 2;
+  const storeStart = liveStart + live.length;
+  const capabilitiesIndex = storeStart + store.length;
+  return Object.freeze({
+    schemaVersion: 1,
+    snapshotId: acquisitionSnapshotId(descriptors, observations),
+    project: observations[0] as AcquisitionObservedStateSnapshotV1['project'],
+    artifact: Object.freeze({ mode: 'none' as const }),
+    ledger: observations[1] as AcquisitionObservedStateSnapshotV1['ledger'],
+    live: Object.freeze(
+      observations.slice(liveStart, storeStart) as AcquisitionObservedStateSnapshotV1['live'],
+    ),
+    store: Object.freeze(
+      observations.slice(
+        storeStart,
+        capabilitiesIndex,
+      ) as AcquisitionObservedStateSnapshotV1['store'],
+    ),
+    capabilities: observations[
+      capabilitiesIndex
+    ] as AcquisitionObservedStateSnapshotV1<RelevantCapabilitySnapshotV1>['capabilities'],
+  });
+};
+
 export const readAcquisitionSnapshotV1 = async (input: {
   readonly env: PlacementPorts;
   readonly registry: LifecycleToolRegistry<string>;
   readonly capabilityQueries: readonly RelevantCapabilityQueryV1[];
   readonly projectContext: ProjectContext;
-  readonly artifactScope: InstallScope;
+  readonly artifact: AcquisitionSnapshotArtifactAuthorityV1;
   readonly ledgerPath: string;
   readonly liveResources: readonly AcquireLiveSnapshotResourceV1[];
   readonly storeResources: readonly AcquireStoreSnapshotResourceV1[];
@@ -807,20 +953,10 @@ export const readAcquisitionSnapshotV1 = async (input: {
       : { explicitConfigPath: input.projectContext.explicitConfigPath }),
   } as const;
   const initialProject = input.projectContext;
-  const artifactSelection = selectReadableArtifactContext({ xdg: input.env.xdg }, initialProject, {
-    scope: input.artifactScope,
-  });
-  if (artifactSelection.state !== 'selected') {
-    throw new Error('acquisition snapshot requires a portable artifact context');
-  }
-  const manifestPath = resolve(artifactSelection.file);
-  const lockPath = siblingLockPath(manifestPath);
   const projectResourceId = acquireStateResourceId('project', [
     initialProject.invocationCwd,
     initialProject.effectiveCwd,
   ]);
-  const manifestResourceId = acquireStateResourceId('manifest', [manifestPath]);
-  const lockResourceId = acquireStateResourceId('lock', [lockPath]);
   const ledgerResourceId = acquireStateResourceId('ledger', [resolve(input.ledgerPath)]);
   const capabilities = createRelevantCapabilityStateReaderV1(
     input.registry,
@@ -836,21 +972,11 @@ export const readAcquisitionSnapshotV1 = async (input: {
     ledgerWriterPorts === undefined
       ? input.env
       : { ...input.env, readFileMetadata: ledgerWriterPorts.readFileMetadata };
-  const repositories = {
+  const commonRepositories = {
     project: createProjectStateReaderV1({
       resourceId: projectResourceId,
       ports: input.env,
       context: projectOptions,
-    }),
-    manifest: createManifestRepository({
-      resourceId: manifestResourceId,
-      path: manifestPath,
-      ports: stateReadPorts,
-    }),
-    lock: createLockRepository({
-      resourceId: lockResourceId,
-      path: lockPath,
-      ports: stateReadPorts,
     }),
     ledger: createLedgerRepository({
       resourceId: ledgerResourceId,
@@ -869,33 +995,81 @@ export const readAcquisitionSnapshotV1 = async (input: {
       ports: stateReadPorts,
     }),
     capabilities,
-  } satisfies ObservedStateRepositoriesV1<RelevantCapabilitySnapshotV1>;
-  const observed = await readObservedStateSnapshotV1(
-    {
+  } satisfies AcquisitionCommonSnapshotRepositoriesV1;
+  const liveResourceIds = input.liveResources.map(({ resourceId }) => resourceId);
+  const storeResourceIds = input.storeResources.map(({ resource }) => resource.resourceId);
+  let snapshot: AcquisitionObservedStateSnapshotV1<RelevantCapabilitySnapshotV1>;
+  let repositories: AcquisitionSnapshotRepositoriesV1;
+  if (input.artifact.mode === 'selected') {
+    const pair = input.artifact.pair;
+    const manifestResourceId = acquireStateResourceId('manifest', [pair.file.path]);
+    const lockResourceId = acquireStateResourceId('lock', [pair.lockfile.path]);
+    const manifest = createManifestRepository({
+      resourceId: manifestResourceId,
+      path: pair.file.path,
+      ports: stateReadPorts,
+    });
+    const lock = createLockRepository({
+      resourceId: lockResourceId,
+      path: pair.lockfile.path,
+      ports: stateReadPorts,
+    });
+    const selectedRepositories = {
+      ...commonRepositories,
+      manifest,
+      lock,
+    } satisfies ObservedStateRepositoriesV1<RelevantCapabilitySnapshotV1>;
+    const observed = await readObservedStateSnapshotV1(
+      {
+        schemaVersion: 1,
+        projectResourceId,
+        manifestResourceId,
+        lockResourceId,
+        ledgerResourceId,
+        liveResourceIds,
+        storeResourceIds,
+        capabilitiesResourceId,
+      },
+      selectedRepositories,
+    );
+    if (!observed.ok) throw observed.error;
+    snapshot = Object.freeze({
       schemaVersion: 1,
+      snapshotId: observed.value.snapshotId,
+      project: observed.value.project,
+      artifact: Object.freeze({
+        mode: 'selected' as const,
+        pair,
+        manifest: observed.value.manifest,
+        lock: observed.value.lock,
+      }),
+      ledger: observed.value.ledger,
+      live: observed.value.live,
+      store: observed.value.store,
+      capabilities: observed.value.capabilities,
+    });
+    repositories = { ...commonRepositories, artifact: { mode: 'selected', manifest, lock } };
+  } else {
+    snapshot = await readArtifactFreeAcquisitionSnapshotV1({
+      repositories: commonRepositories,
       projectResourceId,
-      manifestResourceId,
-      lockResourceId,
       ledgerResourceId,
-      liveResourceIds: input.liveResources.map(({ resourceId }) => resourceId),
-      storeResourceIds: input.storeResources.map(({ resource }) => resource.resourceId),
+      liveResourceIds,
+      storeResourceIds,
       capabilitiesResourceId,
-    },
-    repositories,
-  );
-  if (!observed.ok) throw observed.error;
+    });
+    repositories = { ...commonRepositories, artifact: { mode: 'none' } };
+  }
   if (
-    observed.value.project.value === null ||
-    !sameProjectContext(initialProject, observed.value.project.value)
+    snapshot.project.value === null ||
+    !sameProjectContext(initialProject, snapshot.project.value)
   ) {
     throw new Error('acquisition project context changed during snapshot observation');
   }
   return Object.freeze({
-    snapshot: observed.value,
+    snapshot,
     repositories,
-    projectContext: observed.value.project.value,
-    manifestPath,
-    lockPath,
+    projectContext: snapshot.project.value,
     ledgerResourceId,
     liveResources: new Map(input.liveResources.map((resource) => [resource.resourceId, resource])),
     storeResources: new Map(
@@ -917,13 +1091,24 @@ const acquisitionRevisionResource = (
     return { kind: 'project-context', root: projectLocation };
   }
   if (revision.domain === 'manifest') {
+    const artifact = authority.snapshot.artifact;
+    if (artifact.mode !== 'selected') {
+      throw new Error('acquisition manifest revision has no selected artifact authority');
+    }
     return {
       kind: 'manifest-bytes',
-      location: { kind: 'machine-bound', path: authority.manifestPath },
+      location: { kind: 'machine-bound', path: artifact.pair.file.path },
     };
   }
   if (revision.domain === 'lock') {
-    return { kind: 'lock', location: { kind: 'machine-bound', path: authority.lockPath } };
+    const artifact = authority.snapshot.artifact;
+    if (artifact.mode !== 'selected') {
+      throw new Error('acquisition lock revision has no selected artifact authority');
+    }
+    return {
+      kind: 'lock',
+      location: { kind: 'machine-bound', path: artifact.pair.lockfile.path },
+    };
   }
   if (revision.domain === 'ledger') {
     return {
@@ -957,11 +1142,14 @@ export const acquisitionRevisionPreconditions = (
 ): readonly ExecutionPrecondition[] => {
   if (operations.length === 0) return Object.freeze([]);
   const operationIds = operations.map(({ operationId }) => operationId);
+  const artifactRevisions =
+    authority.snapshot.artifact.mode === 'selected'
+      ? [authority.snapshot.artifact.manifest.revision, authority.snapshot.artifact.lock.revision]
+      : [];
   return Object.freeze(
     [
       authority.snapshot.project.revision,
-      authority.snapshot.manifest.revision,
-      authority.snapshot.lock.revision,
+      ...artifactRevisions,
       authority.snapshot.ledger.revision,
       ...authority.snapshot.live.map(({ revision }) => revision),
       ...authority.snapshot.store.map(({ revision }) => revision),
@@ -972,9 +1160,17 @@ export const acquisitionRevisionPreconditions = (
         resource: acquisitionRevisionResource(authority, expectedRevision),
         expectedRevision,
         observeRevision: async () => {
-          const observed = await authority.repositories[expectedRevision.domain].observeRevision(
-            expectedRevision.resourceId,
-          );
+          const artifact = authority.repositories.artifact;
+          const repository =
+            expectedRevision.domain === 'manifest' || expectedRevision.domain === 'lock'
+              ? artifact.mode === 'selected'
+                ? artifact[expectedRevision.domain]
+                : undefined
+              : authority.repositories[expectedRevision.domain];
+          if (repository === undefined) {
+            throw new Error('acquisition artifact revision repository is missing');
+          }
+          const observed = await repository.observeRevision(expectedRevision.resourceId);
           if (!observed.ok) throw observed.error;
           return observed.value;
         },

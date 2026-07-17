@@ -763,9 +763,17 @@ describe('runUninstall — artifact destination preflight', () => {
     expect(observed).toEqual({ artifact: 0, ledger: 0, sweep: 0, live: 0 });
   });
 
-  test('no-save performs no artifact discovery during destination preflight', async () => {
+  test('no-save performs no portable artifact I/O for the whole invocation', async () => {
     const configRoot = join(f.home, '.config');
     const userManifest = join(configRoot, 'skillsmith', 'skillsmith.toml');
+    const artifactPaths = new Set([
+      userManifest,
+      join(configRoot, 'skillsmith', 'skillsmith.lock'),
+      join(f.base, 'skillsmith.toml'),
+      join(f.base, 'skillsmith.lock'),
+      join(f.project, 'skillsmith.toml'),
+      join(f.project, 'skillsmith.lock'),
+    ]);
     const hermeticEnv: RuntimePorts = {
       ...f.env,
       xdg: {
@@ -775,18 +783,28 @@ describe('runUninstall — artifact destination preflight', () => {
       },
     };
     await installUser({ noSave: true }, hermeticEnv);
-    let ledgerObserved = false;
-    let preflightArtifactReads = 0;
+    let artifactReads = 0;
     const env: RuntimePorts = {
       ...hermeticEnv,
       pathKind: async (path) => {
-        if (path === ledgerPathOf(f.data)) ledgerObserved = true;
-        if (path === userManifest && !ledgerObserved) preflightArtifactReads++;
+        if (artifactPaths.has(path)) artifactReads++;
         return hermeticEnv.pathKind(path);
       },
       readText: async (path) => {
-        if (path === userManifest && !ledgerObserved) preflightArtifactReads++;
+        if (artifactPaths.has(path)) artifactReads++;
         return hermeticEnv.readText(path);
+      },
+      readBytes: async (path) => {
+        if (artifactPaths.has(path)) artifactReads++;
+        return hermeticEnv.readBytes(path);
+      },
+      readFileMetadata: async (path) => {
+        if (artifactPaths.has(path)) artifactReads++;
+        return hermeticEnv.readFileMetadata(path);
+      },
+      realpath: async (path) => {
+        if (artifactPaths.has(path)) artifactReads++;
+        return hermeticEnv.realpath(path);
       },
     };
     const result = await runUninstall(
@@ -802,7 +820,7 @@ describe('runUninstall — artifact destination preflight', () => {
     );
     if (!result.ok) throw new Error(msg(result.error));
     expect(result.value.results[0]?.action).toBe('removed');
-    expect(preflightArtifactReads).toBe(0);
+    expect(artifactReads).toBe(0);
   });
 });
 
@@ -1062,8 +1080,8 @@ describe('runUninstall — dry run', () => {
     expect(Object.isFrozen(previewPlan)).toBeTrue();
     expect(preview.value.executionResults).toEqual([]);
     for (const operation of preview.value.plan.operations) {
-      expect(operation.preconditionIds).toHaveLength(7);
-      expect(new Set(operation.preconditionIds).size).toBe(7);
+      expect(operation.preconditionIds).toHaveLength(5);
+      expect(new Set(operation.preconditionIds).size).toBe(5);
       expect(
         operation.preconditionIds.every((id) => /^precondition:v1:[0-9a-f]{64}$/.test(id)),
       ).toBeTrue();

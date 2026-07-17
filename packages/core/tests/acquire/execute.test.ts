@@ -1,16 +1,26 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   type AcquisitionSnapshotAuthorityV1,
+  acquisitionRevisionPreconditions,
+  acquisitionSnapshotArtifactAuthorityV1,
   createAcquisitionRepositoryLifecycleControllerV1,
   executeAcquirePlans,
+  readAcquisitionSnapshotV1,
   resolveAcquisitionArtifactDestinationV1,
+  resolveAcquisitionProjectContextV1,
 } from '../../src/acquire/execute.ts';
+import { toolRegistry } from '../../src/agents/registry.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
 import type { PlacementExecutionInput } from '../../src/place/execute.ts';
 import { emptyLedgerModel } from '../../src/place/ledger.ts';
 import type { PlacementPorts } from '../../src/place/types.ts';
 import { createOperationExecutionResult } from '../../src/planning/create.ts';
 import type { ExecutableOperation, OperationExecutionResult } from '../../src/planning/types.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import { err, ok } from '../../src/result.ts';
 import { stageLogicalRepositoryEditV1 } from '../../src/state/repositories.ts';
 import { type ExpectedRevisionV1, createExpectedRevisionV1 } from '../../src/state/types.ts';
@@ -165,6 +175,9 @@ describe('acquisition artifact destination resolution', () => {
       });
       expect(ports.calls).toEqual({ pathKind: [], readText: [], realpath: [] });
       expectNoneTypeCorrelation(result);
+      expect(() => acquisitionSnapshotArtifactAuthorityV1(result)).toThrow(
+        /artifact-free snapshot authority/u,
+      );
     }
   });
 
@@ -231,6 +244,9 @@ describe('acquisition artifact destination resolution', () => {
       },
     });
     if (result.outcome !== 'refused') throw new Error('expected nonportable refusal');
+    expect(() => acquisitionSnapshotArtifactAuthorityV1(result)).toThrow(
+      /artifact-free snapshot authority/u,
+    );
     expect(Object.isFrozen(result.cause)).toBeTrue();
     expect(Object.isFrozen(result.cause.paths)).toBeTrue();
   });
@@ -509,6 +525,199 @@ const operation = (marker: string): ExecutableOperation => {
     conflict: null,
   };
 };
+
+describe('acquisition snapshot artifact authority', () => {
+  test('observes an exact non-sibling pair and omits artifact-free state deterministically', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-acquire-snapshot-'));
+    try {
+      const base = await defaultRuntimePorts();
+      const xdg = {
+        config: join(root, 'config'),
+        data: join(root, 'data'),
+        cache: join(root, 'cache'),
+      };
+      const cwd = join(root, 'work');
+      const manifestPath = join(root, 'portable', 'team.toml');
+      const lockPath = join(root, 'locks', 'team.state.lock');
+      const siblingLockPath = join(root, 'portable', 'team.lock');
+      const ledgerPath = join(root, 'data', 'placements.json');
+      await Promise.all([
+        mkdir(cwd, { recursive: true }),
+        mkdir(join(root, 'portable'), { recursive: true }),
+        mkdir(join(root, 'locks'), { recursive: true }),
+        mkdir(xdg.config, { recursive: true }),
+        mkdir(xdg.data, { recursive: true }),
+        mkdir(xdg.cache, { recursive: true }),
+      ]);
+      const artifactPaths = new Set([
+        manifestPath,
+        lockPath,
+        siblingLockPath,
+        join(cwd, 'skillsmith.toml'),
+        join(cwd, 'skillsmith.lock'),
+        join(xdg.config, 'skillsmith', 'skillsmith.toml'),
+        join(xdg.config, 'skillsmith', 'skillsmith.lock'),
+      ]);
+      const artifactTouches: string[] = [];
+      const count = (path: string): void => {
+        if (artifactPaths.has(path)) artifactTouches.push(path);
+      };
+      const env: RuntimePorts = {
+        ...base,
+        xdg,
+        pathKind: async (path) => {
+          count(path);
+          return base.pathKind(path);
+        },
+        realpath: async (path) => {
+          count(path);
+          return base.realpath(path);
+        },
+        readBytes: async (path) => {
+          count(path);
+          return base.readBytes(path);
+        },
+        readFileMetadata: async (path) => {
+          count(path);
+          return base.readFileMetadata(path);
+        },
+      };
+      const context = await resolveAcquisitionProjectContextV1({ env, cwd });
+      const selectedResolution = await resolveAcquisitionArtifactDestinationV1({
+        ports: env,
+        projectContext: context,
+        names: ['alpha'],
+        scope: 'project',
+        mode: 'remove',
+        file: manifestPath,
+        lockfile: lockPath,
+      });
+      if (selectedResolution.outcome !== 'selected') throw new Error('expected selected pair');
+      artifactTouches.length = 0;
+      const common = {
+        env,
+        registry: toolRegistry,
+        capabilityQueries: [],
+        projectContext: context,
+        ledgerPath,
+        liveResources: [
+          {
+            resourceId: 'live:zeta',
+            skill: 'zeta',
+            tool: 'codex' as const,
+            scope: 'project' as const,
+            projectIdentity: context.projectIdentity,
+            placementPath: join(root, 'live', 'zeta'),
+            storeRoot: join(root, 'store'),
+          },
+          {
+            resourceId: 'live:alpha',
+            skill: 'alpha',
+            tool: 'codex' as const,
+            scope: 'project' as const,
+            projectIdentity: context.projectIdentity,
+            placementPath: join(root, 'live', 'alpha'),
+            storeRoot: join(root, 'store'),
+          },
+        ],
+        storeResources: [
+          {
+            resource: { resourceId: 'store:zeta', storePath: join(root, 'store', 'zeta') },
+            contentHash: `sha256:${'a'.repeat(64)}` as const,
+          },
+          {
+            resource: { resourceId: 'store:alpha', storePath: join(root, 'store', 'alpha') },
+            contentHash: `sha256:${'b'.repeat(64)}` as const,
+          },
+        ],
+      };
+      const selected = await readAcquisitionSnapshotV1({
+        ...common,
+        artifact: acquisitionSnapshotArtifactAuthorityV1(selectedResolution),
+      });
+      expect(selected.snapshot.artifact.mode).toBe('selected');
+      if (selected.snapshot.artifact.mode !== 'selected') throw new Error('missing selected pair');
+      expect(selected.snapshot.artifact.pair).toBe(selectedResolution.pair);
+      const manifestRevision = selected.snapshot.artifact.manifest.revision;
+      const lockRevision = selected.snapshot.artifact.lock.revision;
+      if (manifestRevision.domain !== 'manifest' || lockRevision.domain !== 'lock') {
+        throw new Error('artifact revision domains are incoherent');
+      }
+      expect(manifestRevision.targetIdentity).toBe(manifestPath);
+      expect(lockRevision.targetIdentity).toBe(lockPath);
+      const selectedAgain = await readAcquisitionSnapshotV1({
+        ...common,
+        artifact: acquisitionSnapshotArtifactAuthorityV1(selectedResolution),
+      });
+      expect(selected.snapshot.snapshotId).toBe(selectedAgain.snapshot.snapshotId);
+      expect(artifactTouches).toContain(manifestPath);
+      expect(artifactTouches).toContain(lockPath);
+      expect(artifactTouches).not.toContain(siblingLockPath);
+      const resources = acquisitionRevisionPreconditions(selected, [operation('f')]).map(
+        ({ resource }) => resource,
+      );
+      expect(resources).toContainEqual({
+        kind: 'manifest-bytes',
+        location: { kind: 'machine-bound', path: manifestPath },
+      });
+      expect(resources).toContainEqual({
+        kind: 'lock',
+        location: { kind: 'machine-bound', path: lockPath },
+      });
+
+      const noneResolution = await resolveAcquisitionArtifactDestinationV1({
+        ports: env,
+        projectContext: context,
+        names: ['alpha'],
+        scope: 'project',
+        mode: 'remove',
+      });
+      if (noneResolution.outcome !== 'none') throw new Error('expected owner-free authority');
+      artifactTouches.length = 0;
+      const none = await readAcquisitionSnapshotV1({
+        ...common,
+        artifact: acquisitionSnapshotArtifactAuthorityV1(noneResolution),
+      });
+      const reversed = await readAcquisitionSnapshotV1({
+        ...common,
+        artifact: acquisitionSnapshotArtifactAuthorityV1(noneResolution),
+        liveResources: [...common.liveResources].reverse(),
+        storeResources: [...common.storeResources].reverse(),
+      });
+      const noSaveResolution = await resolveAcquisitionArtifactDestinationV1({
+        ports: env,
+        projectContext: context,
+        names: ['alpha'],
+        scope: 'project',
+        mode: 'remove',
+        noSave: true,
+        file: manifestPath,
+        lockfile: lockPath,
+      });
+      if (noSaveResolution.outcome !== 'none') throw new Error('expected no-save authority');
+      const noSave = await readAcquisitionSnapshotV1({
+        ...common,
+        artifact: acquisitionSnapshotArtifactAuthorityV1(noSaveResolution),
+      });
+      expect(none.snapshot.artifact).toEqual({ mode: 'none' });
+      expect(none.repositories.artifact).toEqual({ mode: 'none' });
+      expect(none.snapshot.snapshotId).toBe(reversed.snapshot.snapshotId);
+      expect(none.snapshot.snapshotId).toBe(noSave.snapshot.snapshotId);
+      expect(noSave.snapshot.artifact).toEqual({ mode: 'none' });
+      expect(none.snapshot.snapshotId).not.toBe(selected.snapshot.snapshotId);
+      expect(artifactTouches).toEqual([]);
+      expect(
+        acquisitionRevisionPreconditions(none, [operation('e')]).some(
+          ({ expected }) =>
+            (expected as ExpectedRevisionV1).domain === 'manifest' ||
+            (expected as ExpectedRevisionV1).domain === 'lock',
+        ),
+      ).toBeFalse();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
 
 const resultFor = (
   operation: ExecutableOperation,

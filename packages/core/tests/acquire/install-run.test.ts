@@ -1363,6 +1363,99 @@ describe('runInstall — post-transport safety boundary', () => {
     expect(result.value.plan.operations).toHaveLength(2);
   });
 
+  test('threads an exact explicit non-sibling artifact pair into snapshot observation', async () => {
+    const file = join(f.base, 'portable', 'team.toml');
+    const lockfile = join(f.base, 'locks', 'team.state.lock');
+    const sibling = join(f.base, 'portable', 'team.lock');
+    await f.env.makeDir(join(f.base, 'portable'));
+    await f.env.makeDir(join(f.base, 'locks'));
+    const observations = { file: 0, lockfile: 0, sibling: 0 };
+    const count = (path: string, snapshotOnly: boolean): void => {
+      if (snapshotOnly && path === file) observations.file++;
+      if (snapshotOnly && path === lockfile) observations.lockfile++;
+      if (path === sibling) observations.sibling++;
+    };
+    const env: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        count(path, false);
+        return f.env.pathKind(path);
+      },
+      realpath: async (path) => {
+        count(path, false);
+        return f.env.realpath(path);
+      },
+      readBytes: async (path) => {
+        count(path, true);
+        return f.env.readBytes(path);
+      },
+      readFileMetadata: async (path) => {
+        count(path, true);
+        return f.env.readFileMetadata(path);
+      },
+    };
+    const result = await runInstall(
+      env,
+      { ...userOpts, tools: ['claude-code'], file, lockfile, dryRun: true },
+      makeDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.results[0]?.action).toBe('installed');
+    expect(observations.file).toBeGreaterThan(0);
+    expect(observations.lockfile).toBeGreaterThan(0);
+    expect(observations.sibling).toBe(0);
+  });
+
+  test('no-save performs no portable artifact I/O for the whole install invocation', async () => {
+    const file = join(f.base, 'portable', 'must-not-read.toml');
+    const lockfile = join(f.base, 'locks', 'must-not-read.lock');
+    const artifactPaths = new Set([
+      file,
+      lockfile,
+      join(f.env.xdg.config, 'skillsmith', 'skillsmith.toml'),
+      join(f.env.xdg.config, 'skillsmith', 'skillsmith.lock'),
+      join(f.base, 'skillsmith.toml'),
+      join(f.base, 'skillsmith.lock'),
+      join(f.project, 'skillsmith.toml'),
+      join(f.project, 'skillsmith.lock'),
+    ]);
+    let artifactReads = 0;
+    const count = (path: string): void => {
+      if (artifactPaths.has(path)) artifactReads++;
+    };
+    const env: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        count(path);
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        count(path);
+        return f.env.readText(path);
+      },
+      realpath: async (path) => {
+        count(path);
+        return f.env.realpath(path);
+      },
+      readBytes: async (path) => {
+        count(path);
+        return f.env.readBytes(path);
+      },
+      readFileMetadata: async (path) => {
+        count(path);
+        return f.env.readFileMetadata(path);
+      },
+    };
+    const result = await runInstall(
+      env,
+      { ...userOpts, tools: ['claude-code'], file, lockfile, noSave: true, dryRun: true },
+      makeDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.results[0]?.action).toBe('installed');
+    expect(artifactReads).toBe(0);
+  });
+
   for (const driftOccurrence of [0, 1] as const) {
     test(`no-save duplicate occurrence ${driftOccurrence} binds its exact materialized path`, async () => {
       const materialized: string[] = [];

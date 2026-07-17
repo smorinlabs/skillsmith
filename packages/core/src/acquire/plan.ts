@@ -3,17 +3,19 @@ import type { ToolCapabilityScope } from '../agents/adapter-types.ts';
 import type { RelevantCapabilityQueryV1 } from '../agents/capabilities.ts';
 import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import type { SupportedTool } from '../agents/types.ts';
-import type { LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
+import type { LedgerModel, LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
+import type { PortableLockV1 } from '../artifacts/lock.ts';
+import type { ResolvedArtifactPair } from '../artifacts/pair.ts';
+import type { NormalizedManifestV1 } from '../artifacts/types.ts';
+import type { ProjectContext } from '../context/types.ts';
 import {
   type SnapshotBoundOperationPlanV1,
   type SnapshotPlanningErrorV1,
-  bindOperationPlanToSnapshotV1,
   createOperationGroupId,
   createOperationId,
   createOperationPairId,
   createOperationPlan,
   createPlanningDiagnosticId,
-  expectedRevisionPreconditionIdsForSnapshotV1,
   operationImageFromLiveStateV1,
   operationSourceFromLedgerPairV1,
 } from '../planning/create.ts';
@@ -35,11 +37,13 @@ import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import {
   type ContentObservationIdentityV1,
+  type ExpectedRevisionV1,
   type LivePlacementStateV1,
-  type ObservedStateSnapshotV1,
+  type ObservedComponentV1,
   type StoreStateV1,
   createContentObservationIdentityV1,
   createContentObservationPreconditionIdV1,
+  createExpectedRevisionPreconditionIdV1,
   createStoreSnapshotIdentityV1,
 } from '../state/types.ts';
 import type {
@@ -50,7 +54,26 @@ import type {
   UninstallResult,
 } from './types.ts';
 
-type AcquisitionObservedStateSnapshotV1 = ObservedStateSnapshotV1<unknown>;
+export type AcquisitionArtifactSnapshotV1 =
+  | Readonly<{
+      mode: 'selected';
+      pair: ResolvedArtifactPair;
+      manifest: ObservedComponentV1<NormalizedManifestV1>;
+      lock: ObservedComponentV1<PortableLockV1>;
+    }>
+  | Readonly<{ mode: 'none' }>;
+
+export interface AcquisitionObservedStateSnapshotV1<CapabilityModel = unknown> {
+  readonly schemaVersion: 1;
+  readonly snapshotId: `snapshot:v1:${string}`;
+  readonly project: ObservedComponentV1<ProjectContext>;
+  readonly artifact: AcquisitionArtifactSnapshotV1;
+  readonly ledger: ObservedComponentV1<LedgerModel>;
+  readonly live: readonly ObservedComponentV1<LivePlacementStateV1>[];
+  readonly store: readonly ObservedComponentV1<StoreStateV1>[];
+  readonly capabilities: ObservedComponentV1<CapabilityModel>;
+}
+
 type AcquisitionPlanningContext = PlanningToolContext<string>;
 
 const createCanonicalAcquisitionPlan = <Command extends CurrentMutatorCommand>(
@@ -164,8 +187,50 @@ const planningError = (error: unknown): SnapshotPlanningErrorV1 =>
     message: error instanceof Error ? error.message : 'acquisition planning failed',
   });
 
+const compareRevisionIdentity = (left: ExpectedRevisionV1, right: ExpectedRevisionV1): number => {
+  const leftKey = `${left.domain}\u0000${left.resourceId}\u0000${left.revisionDigest}`;
+  const rightKey = `${right.domain}\u0000${right.resourceId}\u0000${right.revisionDigest}`;
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+};
+
+const acquisitionExpectedRevisions = (
+  snapshot: AcquisitionObservedStateSnapshotV1,
+): readonly ExpectedRevisionV1[] => {
+  const artifact =
+    snapshot.artifact.mode === 'selected'
+      ? [snapshot.artifact.manifest.revision, snapshot.artifact.lock.revision]
+      : [];
+  return Object.freeze(
+    [
+      snapshot.project.revision,
+      ...artifact,
+      snapshot.ledger.revision,
+      ...snapshot.live.map(({ revision }) => revision),
+      ...snapshot.store.map(({ revision }) => revision),
+      snapshot.capabilities.revision,
+    ]
+      .map((revision) => Object.freeze(structuredClone(revision)))
+      .sort(compareRevisionIdentity),
+  );
+};
+
 const expectedRevisionIds = (snapshot: AcquisitionObservedStateSnapshotV1): readonly string[] =>
-  expectedRevisionPreconditionIdsForSnapshotV1(snapshot);
+  Object.freeze(
+    acquisitionExpectedRevisions(snapshot).map((revision) =>
+      createExpectedRevisionPreconditionIdV1(revision),
+    ),
+  );
+
+const bindAcquisitionPlanToSnapshotV1 = <Command extends CurrentMutatorCommand>(
+  snapshot: AcquisitionObservedStateSnapshotV1,
+  plan: OperationPlan<Command>,
+): SnapshotBoundOperationPlanV1<Command> =>
+  Object.freeze({
+    schemaVersion: 1,
+    snapshotId: snapshot.snapshotId,
+    expectedRevisions: acquisitionExpectedRevisions(snapshot),
+    plan,
+  });
 
 const liveObservationFor = (
   snapshot: AcquisitionObservedStateSnapshotV1,
@@ -771,7 +836,7 @@ export function createAcquisitionPlan(
         },
         planningContext,
       );
-      return ok(bindOperationPlanToSnapshotV1(snapshot, plan));
+      return ok(bindAcquisitionPlanToSnapshotV1(snapshot, plan));
     }
     const compatibilityOperations = (request.compatibilityOperations ?? []).map((operation) => ({
       ...operation,
@@ -797,7 +862,7 @@ export function createAcquisitionPlan(
       },
       planningContext,
     );
-    return ok(bindOperationPlanToSnapshotV1(snapshot, plan));
+    return ok(bindAcquisitionPlanToSnapshotV1(snapshot, plan));
   } catch (error) {
     return err(planningError(error));
   }

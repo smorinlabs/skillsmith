@@ -85,6 +85,7 @@ import {
   acquireStateResourceId,
   acquisitionPreconditionStateChanged,
   acquisitionRevisionPreconditions,
+  acquisitionSnapshotArtifactAuthorityV1,
   createAcquireExecutionInput,
   createAcquireExecutionLockPort,
   createAcquisitionLedgerMigrationBinding,
@@ -1799,7 +1800,7 @@ const runInstallInternal = async (
         opts,
       ),
       projectContext,
-      artifactScope: scope,
+      artifact: acquisitionSnapshotArtifactAuthorityV1(resolution.artifact),
       ledgerPath,
       liveResources: [...liveResourcesByPath.values()],
       storeResources: [...storeResourcesByPath.values()],
@@ -3328,13 +3329,12 @@ const runUninstallInternal = async (
         },
       });
     }
-    const artifactScope: InstallScope = opts.scope ?? (projectRoot === null ? 'user' : 'project');
     const snapshotAuthority = await readAcquisitionSnapshotV1({
       env,
       registry,
       capabilityQueries: createUninstallCapabilityQueries(preparedIntents),
       projectContext,
-      artifactScope,
+      artifact: acquisitionSnapshotArtifactAuthorityV1(artifactResolution),
       ledgerPath,
       liveResources: [...liveResourcesByPath.values()],
       storeResources: [...storeResourcesByPath.values()],
