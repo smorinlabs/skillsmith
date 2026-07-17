@@ -5210,7 +5210,7 @@
       "phase": "4A",
       "title": "Install/uninstall default-save, no-save, ownership, and artifact reporting",
       "dependsOn": ["P17-G3B-03", "P17-G3B-04", "P17-G3B-05", "P17-G3B-06"],
-      "status": "planned",
+      "status": "mapped",
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
@@ -5231,7 +5231,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02",
         "EWP-WF14"
       ],
@@ -5252,7 +5251,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02",
         "EWP-WF14"
       ],
@@ -5262,8 +5260,8 @@
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-01.md#mapping-and-prerequisites"]
         },
         "ready": {
           "status": "pending",
@@ -5302,7 +5300,7 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": ["projects/p17/evidence/P17-G4A-01.md#mapping-and-prerequisites"]
     },
     {
       "id": "P17-G4A-02",
@@ -6207,9 +6205,9 @@
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
-      "impactedValidations": ["EWP-P6-TS01"],
+      "impactedValidations": ["EWP-P6-TS01", "EWP-WF01"],
       "requiredNowValidations": ["EWP-P6-TS01"],
-      "downstreamCoverage": [],
+      "downstreamCoverage": ["EWP-WF01"],
       "testCommands": [],
       "implementers": [],
       "reviewer": null,
@@ -6300,7 +6298,6 @@
         "EWP-P1-TS05",
         "EWP-P6-TS04",
         "EWP-P6-TS05",
-        "EWP-WF01",
         "EWP-WF05",
         "EWP-WF15",
         "EWP-WF16"
@@ -6308,7 +6305,8 @@
       "downstreamCoverage": [
         "EWP-CMD-COMPLETION-TS01",
         "EWP-CMD-COMPLETION-TS03",
-        "EWP-CMD-COMPLETION-TS05"
+        "EWP-CMD-COMPLETION-TS05",
+        "EWP-WF01"
       ],
       "testCommands": [],
       "implementers": [],
@@ -6383,10 +6381,9 @@
         "EWP-CMD-COMPLETION-TS04",
         "EWP-CMD-COMPLETION-TS05",
         "EWP-CMD-COMPLETION-TS06",
-        "EWP-P6-TS02",
-        "EWP-WF01"
+        "EWP-P6-TS02"
       ],
-      "downstreamCoverage": [],
+      "downstreamCoverage": ["EWP-WF01"],
       "testCommands": [],
       "implementers": [],
       "reviewer": null,
@@ -6443,9 +6440,9 @@
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
-      "impactedValidations": ["EWP-P6-TS03"],
+      "impactedValidations": ["EWP-P6-TS03", "EWP-WF01"],
       "requiredNowValidations": ["EWP-P6-TS03"],
-      "downstreamCoverage": [],
+      "downstreamCoverage": ["EWP-WF01"],
       "testCommands": [],
       "implementers": [],
       "reviewer": null,
@@ -6502,8 +6499,8 @@
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
-      "impactedValidations": ["EWP-P6-TS06"],
-      "requiredNowValidations": ["EWP-P6-TS06"],
+      "impactedValidations": ["EWP-P6-TS06", "EWP-WF01"],
+      "requiredNowValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "downstreamCoverage": [],
       "testCommands": [],
       "implementers": [],
@@ -7216,7 +7213,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "impactedValidations": [
@@ -7236,7 +7232,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -7559,7 +7554,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "impactedValidations": [
@@ -7579,7 +7573,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -7941,7 +7934,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "impactedValidations": [
@@ -7961,7 +7953,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -8350,8 +8341,8 @@
       "evidence": [],
       "secondaryGroups": [],
       "implements": [],
-      "validatedBy": ["EWP-P6-TS06"],
-      "impactedValidations": ["EWP-P6-TS06"],
+      "validatedBy": ["EWP-P6-TS06", "EWP-WF01"],
+      "impactedValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "affectedContracts": ["D-016"],
       "testCommands": [],
       "ownedFiles": []
@@ -8645,7 +8636,7 @@
       "plannedTarget": "coverage:P17-G1-05",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G1-05.md#traceability-and-sign-off"],
-      "secondaryGroups": ["P17-G3A-02", "P17-G4A-01"],
+      "secondaryGroups": ["P17-G3A-02", "P17-G6-04"],
       "implements": [],
       "validatedBy": ["EWP-CMD-AGENTS-TS03", "EWP-CMD-VERIFY-TS02", "EWP-WF01"],
       "impactedValidations": ["EWP-CMD-AGENTS-TS03", "EWP-CMD-VERIFY-TS02", "EWP-WF01"],
@@ -8897,7 +8888,7 @@
       "plannedTarget": "coverage:P17-G6-02B",
       "target": null,
       "evidence": [],
-      "secondaryGroups": ["P17-G4A-01"],
+      "secondaryGroups": ["P17-G6-04"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-COMPLETION-TS01",
@@ -10329,7 +10320,7 @@
       "plannedTarget": "coverage:P17-G6-02A",
       "target": null,
       "evidence": [],
-      "secondaryGroups": ["P17-G6-02B", "P17-G4A-01", "P17-G5-03", "P17-G1-02A"],
+      "secondaryGroups": ["P17-G6-02B", "P17-G6-04", "P17-G5-03", "P17-G1-02A"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-COMPLETION-TS01",
@@ -10437,7 +10428,7 @@
       "plannedTarget": "coverage:P17-G1-05",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G1-05.md#traceability-and-sign-off"],
-      "secondaryGroups": ["P17-G3A-02", "P17-G3B-05", "P17-G4A-01", "P17-G5-03", "P17-G4B-02"],
+      "secondaryGroups": ["P17-G3A-02", "P17-G3B-05", "P17-G6-04", "P17-G5-03", "P17-G4B-02"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-AGENTS-TS03",
@@ -13874,7 +13865,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -13912,7 +13902,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -13950,7 +13939,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -13988,7 +13976,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -14026,7 +14013,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -14064,7 +14050,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -14102,7 +14087,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -14140,7 +14124,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -16067,7 +16050,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -16105,7 +16087,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -16143,7 +16124,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -16181,7 +16161,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -16219,7 +16198,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -16257,7 +16235,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -16295,7 +16272,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -20421,7 +20397,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "impactedValidations": [
@@ -20441,7 +20416,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -20576,7 +20550,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -21619,10 +21592,10 @@
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G6-04"],
       "implements": ["P1-12"],
-      "validatedBy": ["EWP-P6-TS01"],
-      "impactedValidations": ["EWP-P6-TS01"],
+      "validatedBy": ["EWP-P6-TS01", "EWP-WF01"],
+      "impactedValidations": ["EWP-P6-TS01", "EWP-WF01"],
       "affectedContracts": ["P1-12"],
       "testCommands": [],
       "ownedFiles": []
@@ -21737,10 +21710,10 @@
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G6-04"],
       "implements": ["P2-08"],
-      "validatedBy": ["EWP-P6-TS03"],
-      "impactedValidations": ["EWP-P6-TS03"],
+      "validatedBy": ["EWP-P6-TS03", "EWP-WF01"],
+      "impactedValidations": ["EWP-P6-TS03", "EWP-WF01"],
       "affectedContracts": ["P2-08"],
       "testCommands": [],
       "ownedFiles": []
@@ -21758,8 +21731,8 @@
       "evidence": [],
       "secondaryGroups": [],
       "implements": ["D-016"],
-      "validatedBy": ["EWP-P6-TS06"],
-      "impactedValidations": ["EWP-P6-TS06"],
+      "validatedBy": ["EWP-P6-TS06", "EWP-WF01"],
+      "impactedValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "affectedContracts": ["D-016"],
       "testCommands": [],
       "ownedFiles": []
@@ -21907,7 +21880,7 @@
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS06"],
-      "impactedValidations": ["EWP-P6-TS06"],
+      "impactedValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "affectedContracts": ["D-016"],
       "testCommands": [],
       "ownedFiles": []
@@ -21917,36 +21890,17 @@
       "title": "First installation and orientation",
       "kind": "workflow",
       "stateModel": "validation",
-      "primaryGroup": "P17-G4A-01",
+      "primaryGroup": "P17-G6-04",
       "status": "planned",
-      "tier": "required-pr",
-      "plannedTarget": "planned:P17-G4A-01:tests/ergonomics/workflows/EWP-WF01.test.ts#EWP-WF01",
+      "tier": "release",
+      "plannedTarget": "planned:P17-G6-04:tests/ergonomics/workflows/EWP-WF01.test.ts#EWP-WF01",
       "target": null,
       "evidence": [],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-WF01"],
-      "impactedValidations": [
-        "EWP-CMD-INSTALL-TS01",
-        "EWP-CMD-INSTALL-TS02",
-        "EWP-CMD-INSTALL-TS03",
-        "EWP-CMD-INSTALL-TS04",
-        "EWP-CMD-INSTALL-TS05",
-        "EWP-CMD-INSTALL-TS06",
-        "EWP-CMD-INSTALL-TS07",
-        "EWP-CMD-INSTALL-TS08",
-        "EWP-CMD-UNINSTALL-TS01",
-        "EWP-CMD-UNINSTALL-TS02",
-        "EWP-CMD-UNINSTALL-TS03",
-        "EWP-CMD-UNINSTALL-TS04",
-        "EWP-CMD-UNINSTALL-TS05",
-        "EWP-CMD-UNINSTALL-TS06",
-        "EWP-CMD-UNINSTALL-TS07",
-        "EWP-P4A-TS01",
-        "EWP-WF01",
-        "EWP-WF02"
-      ],
-      "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
+      "impactedValidations": ["EWP-P6-TS06", "EWP-WF01"],
+      "affectedContracts": ["D-016"],
       "testCommands": [],
       "ownedFiles": []
     },
@@ -21981,7 +21935,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -23094,7 +23047,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "impactedValidations": [
@@ -23114,7 +23066,6 @@
         "EWP-CMD-UNINSTALL-TS06",
         "EWP-CMD-UNINSTALL-TS07",
         "EWP-P4A-TS01",
-        "EWP-WF01",
         "EWP-WF02"
       ],
       "affectedContracts": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],

@@ -29,9 +29,9 @@ Tracked entities: **425** across **45** change groups.
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
-| 4 | 7 | 107 | 0 | 0 |
+| 4 | 7 | 106 | 0 | 0 |
 | 5 | 5 | 68 | 0 | 0 |
-| 6 | 5 | 39 | 0 | 0 |
+| 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
 ### Phase gates
@@ -255,7 +255,7 @@ Tracked entities: **425** across **45** change groups.
 
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
-| EWP-WF01 | P17-G4A-01 | planned | required-pr |
+| EWP-WF01 | P17-G6-04 | planned | release |
 | EWP-WF02 | P17-G4A-01 | planned | required-pr |
 | EWP-WF03 | P17-G4A-03 | planned | required-pr |
 | EWP-WF04 | P17-G4A-02 | planned | required-pr |
@@ -1072,13 +1072,13 @@ Downstream coverage obligations: none.
 
 ## P17-G4A-01 — Install/uninstall default-save, no-save, ownership, and artifact reporting
 
-Phase: 4A; status: **planned**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05, P17-G3B-06.
-Required-now validations: EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-UNINSTALL-TS01, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS05, EWP-CMD-UNINSTALL-TS06, EWP-CMD-UNINSTALL-TS07, EWP-P4A-TS01, EWP-WF01, EWP-WF02, EWP-WF14.
+Phase: 4A; status: **mapped**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05, P17-G3B-06.
+Required-now validations: EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-UNINSTALL-TS01, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS05, EWP-CMD-UNINSTALL-TS06, EWP-CMD-UNINSTALL-TS07, EWP-P4A-TS01, EWP-WF02, EWP-WF14.
 Downstream coverage obligations: none.
 
 ### Group gates
 
-- [ ] P17-G4A-01:mapped _(pending)_
+- [x] P17-G4A-01:mapped _(passed)_
 - [ ] P17-G4A-01:ready _(pending)_
 - [ ] P17-G4A-01:test-first _(pending)_
 - [ ] P17-G4A-01:minimal-implementation _(pending)_
@@ -1112,7 +1112,6 @@ Downstream coverage obligations: none.
 - [ ] **EWP-CMD-UNINSTALL-TS07** — partial pair failure, crash/same-op resume, and opposite-op refusal. _(command-test; planned)_
 - [ ] **EWP-P4A-T01** — Integrate install/uninstall default-save, ownership-first destination discovery, _(phase-task; planned)_
 - [ ] **EWP-P4A-TS01** — Default-save and no-save operation snapshots covering explicit file, unique _(phase-test; planned)_
-- [ ] **EWP-WF01** — First installation and orientation _(workflow; planned)_
 - [ ] **EWP-WF02** — Temporary live-only install _(workflow; planned)_
 - [ ] **P1-09** — Desired-state-first install and uninstall _(recommendation; planned)_
 
@@ -1513,7 +1512,7 @@ Downstream coverage obligations: none.
 
 Phase: 6; status: **planned**; dependencies: P17-G5-04, P17-G5-05.
 Required-now validations: EWP-P6-TS01.
-Downstream coverage obligations: none.
+Downstream coverage obligations: EWP-WF01.
 
 ### Group gates
 
@@ -1538,8 +1537,8 @@ Downstream coverage obligations: none.
 ## P17-G6-02A — Shared command metadata, five-group help, progressive options, workflows, and generated docs
 
 Phase: 6; status: **planned**; dependencies: P17-G5-04, P17-G5-05.
-Required-now validations: EWP-CMD-HELP-TS01, EWP-CMD-HELP-TS02, EWP-CMD-HELP-TS03, EWP-CMD-HELP-TS04, EWP-CMD-HELP-TS05, EWP-CMD-HELP-TS06, EWP-CMD-HELP-TS07, EWP-OPT-TS05, EWP-OPT-TS07, EWP-P1-TS05, EWP-P6-TS04, EWP-P6-TS05, EWP-WF01, EWP-WF05, EWP-WF15, EWP-WF16.
-Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS05.
+Required-now validations: EWP-CMD-HELP-TS01, EWP-CMD-HELP-TS02, EWP-CMD-HELP-TS03, EWP-CMD-HELP-TS04, EWP-CMD-HELP-TS05, EWP-CMD-HELP-TS06, EWP-CMD-HELP-TS07, EWP-OPT-TS05, EWP-OPT-TS07, EWP-P1-TS05, EWP-P6-TS04, EWP-P6-TS05, EWP-WF05, EWP-WF15, EWP-WF16.
+Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS05, EWP-WF01.
 
 ### Group gates
 
@@ -1577,8 +1576,8 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 ## P17-G6-02B — Bash/zsh/fish completion generation and nested completion contracts
 
 Phase: 6; status: **planned**; dependencies: P17-G6-02A.
-Required-now validations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS02, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS04, EWP-CMD-COMPLETION-TS05, EWP-CMD-COMPLETION-TS06, EWP-P6-TS02, EWP-WF01.
-Downstream coverage obligations: none.
+Required-now validations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS02, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS04, EWP-CMD-COMPLETION-TS05, EWP-CMD-COMPLETION-TS06, EWP-P6-TS02.
+Downstream coverage obligations: EWP-WF01.
 
 ### Group gates
 
@@ -1611,7 +1610,7 @@ Downstream coverage obligations: none.
 
 Phase: 6; status: **planned**; dependencies: P17-G5-04, P17-G5-05.
 Required-now validations: EWP-P6-TS03.
-Downstream coverage obligations: none.
+Downstream coverage obligations: EWP-WF01.
 
 ### Group gates
 
@@ -1636,7 +1635,7 @@ Downstream coverage obligations: none.
 ## P17-G6-04 — Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence
 
 Phase: 6; status: **planned**; dependencies: P17-G6-01, P17-G6-02A, P17-G6-02B, P17-G6-03.
-Required-now validations: EWP-P6-TS06.
+Required-now validations: EWP-P6-TS06, EWP-WF01.
 Downstream coverage obligations: none.
 
 ### Group gates
@@ -1657,6 +1656,7 @@ Downstream coverage obligations: none.
 - [ ] **D-016** — Complete core workflow before 1.0 _(decision; planned)_
 - [ ] **EWP-P6-T07** — Add ADR 0010, make `just check` the canonical PR gate and `just release-check` the _(phase-task; planned)_
 - [ ] **EWP-P6-TS06** — Local/CI recipe parity; exact-SHA publication refusal; four-target builds and _(phase-test; planned)_
+- [ ] **EWP-WF01** — First installation and orientation _(workflow; planned)_
 
 ## P17-G7-01 — Explicitly deferred P3 specifications/projects; not required for P17 or 1.0
 

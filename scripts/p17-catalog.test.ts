@@ -314,6 +314,35 @@ describe('P17 immutable catalog and traceability baseline', () => {
     );
   });
 
+  test('schedules the complete WF01 workflow at the dependency-complete Phase-6 boundary', () => {
+    const catalog = fixture();
+    const wf01 = required(
+      catalog.entities.find((item) => item.id === 'EWP-WF01'),
+      'missing EWP-WF01',
+    );
+    const distribution = required(
+      catalog.entities.find((item) => item.id === 'EWP-P6-T02'),
+      'missing EWP-P6-T02',
+    );
+    const documentation = required(
+      catalog.entities.find((item) => item.id === 'EWP-P6-T06'),
+      'missing EWP-P6-T06',
+    );
+
+    expect(wf01.primaryGroup).toBe('P17-G6-04');
+    expect(wf01.tier).toBe('release');
+    expect(group(catalog, 'P17-G4A-01').impactedValidations).not.toContain('EWP-WF01');
+    expect(group(catalog, 'P17-G6-01').downstreamCoverage).toContain('EWP-WF01');
+    expect(group(catalog, 'P17-G6-02A').downstreamCoverage).toContain('EWP-WF01');
+    expect(group(catalog, 'P17-G6-02B').downstreamCoverage).toContain('EWP-WF01');
+    expect(group(catalog, 'P17-G6-03').downstreamCoverage).toContain('EWP-WF01');
+    expect(group(catalog, 'P17-G6-04').requiredNowValidations).toContain('EWP-WF01');
+    expect(distribution.validatedBy).toContain('EWP-WF01');
+    expect(distribution.secondaryGroups).toContain('P17-G6-04');
+    expect(documentation.validatedBy).toContain('EWP-WF01');
+    expect(documentation.secondaryGroups).toContain('P17-G6-04');
+  });
+
   test('separates required-now validation from immutable downstream coverage', () => {
     const catalog = fixture();
     const phase0 = group(catalog, 'P17-G0-05');

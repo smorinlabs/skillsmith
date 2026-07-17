@@ -451,7 +451,7 @@ findingGroups.forEach((group, index) =>
 );
 
 const workflowGroups = [
-  'G4A-01',
+  'G6-04',
   'G4A-01',
   'G4A-03',
   'G4A-02',
@@ -606,6 +606,10 @@ const G3B03_VALIDATIONS = [
 ] as const;
 
 const explicitValidationOwnership: Record<string, string[]> = {
+  // The full first-installation workflow closes only after distribution, generated help/docs, and
+  // completion are all available. Earlier Phase-6 contributors retain it as downstream coverage.
+  'EWP-P6-T02': ['EWP-P6-TS01', 'EWP-WF01'],
+  'EWP-P6-T06': ['EWP-P6-TS03', 'EWP-WF01'],
   // G3B-02 adds a fifth execution outcome and must replay the signed exhaustive current-action
   // matrix as well as its new scheduler selector.
   'EWP-P3B-T02': ['EWP-P3B-TS01', 'EWP-P3B-TS03'],
@@ -756,6 +760,8 @@ const explicitValidationOwnership: Record<string, string[]> = {
 };
 
 const explicitContractOwnership: Record<string, string[]> = {
+  // WF01 is the dependency-complete Phase-6 release/orientation integration workflow.
+  'EWP-WF01': ['D-016'],
   'EWP-WF05': [
     'COMMAND:dev',
     'COMMAND:promote',
