@@ -5227,6 +5227,7 @@
         "packages/core/src/contracts/v2/index.ts",
         "packages/core/src/contracts/v2/index.d.ts",
         "packages/core/src/index.ts",
+        "packages/core/src/place/swap.ts",
         "packages/core/src/planning/create.ts",
         "packages/core/src/planning/order.ts",
         "packages/core/src/public-types.ts",
@@ -5250,6 +5251,7 @@
         "packages/core/tests/artifacts/lock.test.ts",
         "packages/core/tests/execution/preconditions.test.ts",
         "packages/core/tests/execution/scheduler.test.ts",
+        "packages/core/tests/place/swap.test.ts",
         "packages/core/tests/planning/create.test.ts",
         "packages/core/tests/planning/order.test.ts",
         "packages/cli/tests/output/install-json.test.ts",
@@ -5383,7 +5385,8 @@
         "projects/p17/evidence/P17-G4A-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment",
         "projects/p17/evidence/P17-G4A-01.md#lease-owned-missing-parent-amendment",
-        "projects/p17/evidence/P17-G4A-01.md#pinned-lock-correlation-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#pinned-lock-correlation-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#unmanaged-replacement-backup-ownership-amendment"
       ]
     },
     {
@@ -20600,7 +20603,8 @@
         "projects/p17/evidence/P17-G4A-01.md#ready-plan",
         "projects/p17/evidence/P17-G4A-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment",
-        "projects/p17/evidence/P17-G4A-01.md#lease-owned-missing-parent-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#lease-owned-missing-parent-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#unmanaged-replacement-backup-ownership-amendment"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
