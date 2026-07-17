@@ -5104,7 +5104,10 @@
         "packages/core/tests/execution/scheduler.test.ts",
         "packages/core/tests/place/recovery.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS07.test.ts",
-        "tests/ergonomics/phase/EWP-P1-TS11.test.ts"
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS03.test.ts",
+        "packages/cli/tests/commands/flip-recovery.test.ts",
+        "packages/cli/tests/contracts/doctor.test.ts"
       ],
       "integrationOwner": "root-codex-goal",
       "impactedValidations": ["EWP-P3B-TS07"],
@@ -5165,7 +5168,8 @@
         "projects/p17/evidence/P17-G3B-06.md#minimal-implementation",
         "projects/p17/evidence/P17-G3B-06.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G3B-06.md#final-review-ownership-amendment",
-        "projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review"
+        "projects/p17/evidence/P17-G3B-06.md#refactor-and-adversarial-review",
+        "projects/p17/evidence/P17-G3B-06.md#terminal-suite-correction-ownership-amendment"
       ]
     },
     {
@@ -20081,7 +20085,10 @@
         "packages/core/tests/execution/scheduler.test.ts",
         "packages/core/tests/place/recovery.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS07.test.ts",
-        "tests/ergonomics/phase/EWP-P1-TS11.test.ts"
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS03.test.ts",
+        "packages/cli/tests/commands/flip-recovery.test.ts",
+        "packages/cli/tests/contracts/doctor.test.ts"
       ]
     },
     {
