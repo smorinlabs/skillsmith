@@ -2,11 +2,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { ToolCapabilityScope } from '../agents/adapter-types.ts';
 import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
 import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts';
-import {
-  normalizeSourceIdentity,
-  validateManifestName,
-  validateRequestedRef,
-} from '../artifacts/identity.ts';
+import { validateRequestedRef } from '../artifacts/identity.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import {
   type SkillSmithError,
@@ -62,11 +58,7 @@ import type {
   OperationPlan,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
-import {
-  containsSensitiveMaterial,
-  redactSensitiveString,
-  redactSensitiveValue,
-} from '../safety/redaction.ts';
+import { containsSensitiveMaterial, redactSensitiveString } from '../safety/redaction.ts';
 import { detectTool } from '../scan/index.ts';
 import {
   type ContentObservationIdentityV1,
@@ -115,13 +107,7 @@ import {
   skillRootFactsFor,
   verificationRegistryFor,
 } from './execute.ts';
-import {
-  fetchRepo,
-  lsTreeSkills,
-  resolveRefViaLsRemote,
-  sparseCheckoutSkill,
-  sweepFetchOrphans,
-} from './fetch.ts';
+import { sweepFetchOrphans } from './fetch.ts';
 import {
   type AcquisitionInstallIntentV1,
   type AcquisitionUninstallIntentV1,
@@ -133,18 +119,23 @@ import {
   createUninstallPlanning,
 } from './plan.ts';
 import { recoveryRefusedMessage } from './recovery.ts';
-import { matchCandidates, selectSkill } from './resolve.ts';
+import {
+  type ResolvedSourceMaterialization,
+  resolveRemoteSource,
+  safeDependencyResult,
+  safeError,
+  safeUnknownMessage,
+} from './resolve.ts';
+export { defaultInstallSourceTransport } from './resolve.ts';
 import { parseSource } from './source.ts';
 import type {
   AcquisitionPorts,
-  CandidateSkill,
   InstallAction,
   InstallDeps,
   InstallOptions,
   InstallReport,
   InstallResult,
   InstallScope,
-  InstallSourceTransport,
   PlannedInstallReport,
   PlannedUninstallReport,
   SourceSpec,
@@ -160,12 +151,6 @@ export const defaultInstallDeps: Omit<InstallDeps, 'pick' | 'transport'> = {
   verify: verifyPlugin,
   detect: defaultInstallDetect,
 };
-export const defaultInstallSourceTransport: InstallSourceTransport = Object.freeze({
-  resolveRef: resolveRefViaLsRemote,
-  fetchRepo,
-  listSkills: lsTreeSkills,
-  materializeSkill: sparseCheckoutSkill,
-});
 type AcquireLedger = LedgerFile | LedgerModel;
 const getPairAt = (
   ledger: AcquireLedger,
@@ -208,103 +193,6 @@ const installHintFor = (registry: LifecycleToolRegistry<string>, tool: FlipTool)
 };
 const msg = (e: SkillSmithError): string =>
   redactSensitiveString('message' in e ? e.message : e.code);
-const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
-  'generic',
-  'invalid-argument',
-  'unknown-tool',
-  'config-error',
-  'skill-parse-error',
-  'placement-not-found',
-  'source-unresolvable',
-  'ledger-error',
-  'permission-denied',
-  'flip-refused',
-  'flip-failed',
-  'tool-unavailable',
-  'cancelled',
-]);
-const safeError = (error: unknown): SkillSmithError => {
-  const redacted = redactSensitiveValue(error);
-  if (
-    redacted !== null &&
-    typeof redacted === 'object' &&
-    'code' in redacted &&
-    typeof redacted.code === 'string' &&
-    SKILLSMITH_ERROR_CODES.has(redacted.code as SkillSmithError['code'])
-  ) {
-    return redacted as SkillSmithError;
-  }
-  return genericError('operation failed');
-};
-type SafeTransportResult =
-  | { readonly kind: 'ok'; readonly value: unknown }
-  | { readonly kind: 'error'; readonly error: SkillSmithError }
-  | { readonly kind: 'invalid' };
-const dataRecord = (value: unknown): Readonly<Record<string, unknown>> | null =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Readonly<Record<string, unknown>>)
-    : null;
-const ownDataValue = (value: Readonly<Record<string, unknown>>, key: string): unknown => {
-  const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  return descriptor && 'value' in descriptor ? descriptor.value : undefined;
-};
-const hasExactOwnKeys = (
-  value: Readonly<Record<string, unknown>>,
-  expected: readonly string[],
-): boolean => {
-  const keys = Reflect.ownKeys(value);
-  return (
-    keys.length === expected.length &&
-    keys.every((key) => typeof key === 'string' && expected.includes(key))
-  );
-};
-const safeTransportResult = (input: unknown): SafeTransportResult => {
-  const copied = dataRecord(redactSensitiveValue(input));
-  if (copied === null) return { kind: 'invalid' };
-  const okValue = ownDataValue(copied, 'ok');
-  if (okValue === true) {
-    if (!hasExactOwnKeys(copied, ['ok', 'value'])) return { kind: 'invalid' };
-    const descriptor = Object.getOwnPropertyDescriptor(copied, 'value');
-    return descriptor && 'value' in descriptor
-      ? { kind: 'ok', value: descriptor.value }
-      : { kind: 'invalid' };
-  }
-  if (okValue === false) {
-    if (!hasExactOwnKeys(copied, ['ok', 'error'])) return { kind: 'invalid' };
-    const descriptor = Object.getOwnPropertyDescriptor(copied, 'error');
-    return descriptor && 'value' in descriptor
-      ? { kind: 'error', error: safeError(descriptor.value) }
-      : { kind: 'invalid' };
-  }
-  return { kind: 'invalid' };
-};
-/**
- * The acquisition entry points accept injectable ports, so even values statically typed as a
- * Result are untrusted at the public boundary. Copy the envelope without invoking accessors or
- * proxy traps and redact every error payload before it can escape.
- */
-const safeDependencyResult = <T>(input: unknown): Result<T, SkillSmithError> => {
-  const safe = safeTransportResult(input);
-  if (safe.kind === 'ok') return ok(safe.value as T);
-  if (safe.kind === 'error') return err(safe.error);
-  return err(genericError('operation failed'));
-};
-const safeUnknownMessage = (error: unknown): string => {
-  const redacted = redactSensitiveValue(error);
-  if (typeof redacted === 'string') return redacted;
-  if (redacted !== null && typeof redacted === 'object') {
-    const descriptor = Object.getOwnPropertyDescriptor(redacted, 'message');
-    if (descriptor && 'value' in descriptor && typeof descriptor.value === 'string') {
-      return descriptor.value;
-    }
-  }
-  return 'operation failed';
-};
-const lastSegment = (repoPath: string): string =>
-  repoPath
-    .split('/')
-    .filter((s) => s.length > 0)
-    .pop() ?? repoPath;
 const selectorLabel = (spec: SourceSpec): string => {
   if (spec.selector.kind === 'path') return spec.selector.path;
   if (spec.selector.kind === 'name') return spec.selector.name;
@@ -431,331 +319,6 @@ const runInstallVerifyGate = async (
   };
 };
 // ---------------------------------------------------------------------------------------------
-// source resolution and remote acquisition (once per source)
-// ---------------------------------------------------------------------------------------------
-interface Resolved {
-  sha: string;
-  skillName: string;
-  skillPath: string; // repo-relative git tree path ('' for a root skill)
-  materializedDir: string; // fetched skill dir OR store entry (verify + snapshot source)
-  fetchDir: string | null; // for cleanup (null when elided)
-}
-type ResolveOutcome =
-  | { kind: 'resolved'; r: Resolved }
-  | { kind: 'result'; result: InstallResult; fetchDir: string | null };
-const sourcePathIsValid = (path: string): boolean => {
-  if (path === '') return true;
-  const normalized = normalizeSourceIdentity(
-    `https://fixture.invalid/acme/repository//${path}`,
-    'install.candidate.path',
-  );
-  return normalized.ok && normalized.value.path === path;
-};
-// Elision (F-fetch): a full-SHA-resolvable ref whose skill path is known without a tree scan and
-// whose store entry already exists — skip the clone entirely (restricted to //path or a
-// ledger-recorded origin so R2's never-guess is not bypassed).
-const tryElide = async (
-  env: AcquisitionPorts,
-  transport: InstallSourceTransport,
-  spec: SourceSpec,
-  storeRoot: string,
-  ledger: LedgerFile,
-  scopeKey: string | null,
-  signal: AbortSignal | undefined,
-): Promise<Resolved | null> => {
-  let rawProbe: unknown;
-  try {
-    rawProbe = await transport.resolveRef(env, spec.cloneUrl, spec.ref, signal);
-  } catch {
-    return null;
-  }
-  const probe = safeTransportResult(rawProbe);
-  if (probe.kind !== 'ok' || (probe.value !== null && typeof probe.value !== 'string')) return null;
-  if (probe.value === null) return null;
-  const sha = probe.value;
-  if (!/^[0-9a-f]{40}$/u.test(sha) || containsSensitiveMaterial(sha)) return null;
-  let name: string | null = null;
-  let path: string | null = null;
-  if (spec.selector.kind === 'path') {
-    path = spec.selector.path;
-    name = basename(spec.selector.path);
-  } else {
-    // a ledger origin matching (repo, refResolved=SHA) that pins skillPath + skill name
-    const tree = scopeKey === null ? ledger.skills : (ledger.projects?.[scopeKey]?.skills ?? {});
-    const matches: { name: string; path: string }[] = [];
-    for (const skill of Object.keys(tree)) {
-      const tools = tree[skill]?.tools ?? {};
-      for (const tool of Object.keys(tools) as FlipTool[]) {
-        const origin = tools[tool]?.origin;
-        if (origin && origin.repo === spec.identity.repository && origin.refResolved === sha) {
-          if (spec.selector.kind === 'name' && skill !== spec.selector.name) continue;
-          matches.push({ name: skill, path: origin.skillPath });
-        }
-      }
-    }
-    const unique = matches.filter(
-      (m, i) => matches.findIndex((x) => x.name === m.name && x.path === m.path) === i,
-    );
-    if (unique.length === 1 && unique[0]) {
-      if (
-        validateManifestName(unique[0].name, 'install.skill.name').ok &&
-        sourcePathIsValid(unique[0].path) &&
-        !containsSensitiveMaterial(unique[0].name) &&
-        !containsSensitiveMaterial(unique[0].path)
-      ) {
-        name = unique[0].name;
-        path = unique[0].path;
-      }
-    }
-  }
-  if (name === null || path === null) return null;
-  if (
-    !validateManifestName(name, 'install.skill.name').ok ||
-    !sourcePathIsValid(path) ||
-    containsSensitiveMaterial(name) ||
-    containsSensitiveMaterial(path)
-  ) {
-    return null;
-  }
-  const { ns, name: nsName } = clampStoreNs(spec.identity.repository);
-  const storeEntry = join(storeRoot, ns, `${nsName}@${sha.slice(0, 12)}`, name);
-  if ((await env.pathKind(storeEntry)) === 'absent') return null;
-  return { sha, skillName: name, skillPath: path, materializedDir: storeEntry, fetchDir: null };
-};
-const resolveSource = async (
-  env: AcquisitionPorts,
-  deps: InstallDeps,
-  spec: SourceSpec,
-  scope: InstallScope,
-  scopeKey: string | null,
-  storeRoot: string,
-  dataDir: string,
-  ledger: LedgerFile,
-  opts: InstallOptions,
-): Promise<ResolveOutcome> => {
-  const transport = deps.transport ?? defaultInstallSourceTransport;
-  const elided = await tryElide(env, transport, spec, storeRoot, ledger, scopeKey, opts.signal);
-  if (elided) return { kind: 'resolved', r: elided };
-  const fetchDir = join(dataDir, '.fetch', txIdOf(env, deps));
-  let rawFetchResult: unknown;
-  try {
-    rawFetchResult = await transport.fetchRepo(env, {
-      cloneUrl: spec.cloneUrl,
-      ref: spec.ref,
-      fetchDir,
-      ...(opts.signal ? { signal: opts.signal } : {}),
-    });
-  } catch (error) {
-    rawFetchResult = err(
-      sourceUnresolvableError(`source transport failed: ${safeUnknownMessage(error)}`),
-    );
-  }
-  const fr = safeTransportResult(rawFetchResult);
-  if (fr.kind !== 'ok') {
-    const error =
-      fr.kind === 'error'
-        ? fr.error
-        : sourceUnresolvableError('source transport returned invalid result metadata');
-    const result = {
-      ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
-      reason: msg(error),
-      error,
-    };
-    return { kind: 'result', result, fetchDir };
-  }
-  const fetchValue = dataRecord(fr.value);
-  if (fetchValue !== null && !hasExactOwnKeys(fetchValue, ['sha'])) {
-    const error = sourceUnresolvableError('source transport returned invalid result metadata');
-    return {
-      kind: 'result',
-      result: {
-        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
-        reason: msg(error),
-        error,
-      },
-      fetchDir,
-    };
-  }
-  const sha = fetchValue === null ? undefined : ownDataValue(fetchValue, 'sha');
-  if (typeof sha !== 'string') {
-    const error = sourceUnresolvableError('source transport returned invalid result metadata');
-    return {
-      kind: 'result',
-      result: {
-        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
-        reason: msg(error),
-        error,
-      },
-      fetchDir,
-    };
-  }
-  if (!/^[0-9a-f]{40}$/u.test(sha) || containsSensitiveMaterial(sha)) {
-    const error = sourceUnresolvableError('remote source produced invalid ref metadata');
-    return {
-      kind: 'result',
-      result: {
-        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
-        reason: msg(error),
-        error,
-      },
-      fetchDir,
-    };
-  }
-  let rawListResult: unknown;
-  try {
-    rawListResult = await transport.listSkills(env, fetchDir, opts.signal);
-  } catch (error) {
-    rawListResult = err(
-      sourceUnresolvableError(`source listing failed: ${safeUnknownMessage(error)}`),
-    );
-  }
-  const lst = safeTransportResult(rawListResult);
-  if (lst.kind !== 'ok') {
-    const error =
-      lst.kind === 'error'
-        ? lst.error
-        : sourceUnresolvableError('source transport returned invalid candidate metadata');
-    const result = {
-      ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
-      reason: msg(error),
-      error,
-    };
-    return { kind: 'result', result, fetchDir };
-  }
-  const candidateFailure = (): ResolveOutcome => {
-    const error = sourceUnresolvableError(
-      'remote source produced invalid or sensitive skill metadata',
-    );
-    return {
-      kind: 'result',
-      result: {
-        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
-        reason: msg(error),
-        error,
-      },
-      fetchDir,
-    };
-  };
-  const listValue = dataRecord(lst.value);
-  if (listValue !== null && !hasExactOwnKeys(listValue, ['candidates', 'scanned'])) {
-    return candidateFailure();
-  }
-  const candidateValues = listValue === null ? undefined : ownDataValue(listValue, 'candidates');
-  const scanned = listValue === null ? undefined : ownDataValue(listValue, 'scanned');
-  if (
-    !Array.isArray(candidateValues) ||
-    typeof scanned !== 'number' ||
-    !Number.isSafeInteger(scanned) ||
-    scanned < 0 ||
-    scanned !== candidateValues.length
-  ) {
-    return candidateFailure();
-  }
-  const candidates: CandidateSkill[] = [];
-  for (const candidateValue of candidateValues) {
-    const candidate = dataRecord(candidateValue);
-    if (candidate !== null && !hasExactOwnKeys(candidate, ['path', 'name'])) {
-      return candidateFailure();
-    }
-    const path = candidate === null ? undefined : ownDataValue(candidate, 'path');
-    const candidateName = candidate === null ? undefined : ownDataValue(candidate, 'name');
-    if (typeof path !== 'string' || typeof candidateName !== 'string') {
-      return candidateFailure();
-    }
-    const name = path === '' ? lastSegment(spec.identity.repository) : candidateName;
-    if (
-      !sourcePathIsValid(path) ||
-      !validateManifestName(name, 'install.candidate.name').ok ||
-      containsSensitiveMaterial(path) ||
-      containsSensitiveMaterial(name)
-    ) {
-      return candidateFailure();
-    }
-    candidates.push(Object.freeze({ path, name }));
-  }
-  const matches = matchCandidates(candidates, spec.selector);
-  const selection = await selectSkill(matches, scanned, deps.pick);
-  if (selection.kind === 'none') {
-    const e = {
-      code: 'source-unresolvable' as const,
-      message: `'${selectorLabel(spec)}' matched no skills in ${spec.identity.repository} @ ${sha.slice(0, 12)}: searched ${selection.searched} SKILL.md directories`,
-    };
-    return {
-      kind: 'result',
-      result: {
-        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
-        reason: e.message,
-        error: e,
-      },
-      fetchDir,
-    };
-  }
-  if (selection.kind === 'ambiguous') {
-    const cands = selection.candidates.map((m) => `${spec.identity.repository}//${m.path}`);
-    if (cands.some(containsSensitiveMaterial)) return candidateFailure();
-    const reason = `'${selectorLabel(spec)}' matches ${selection.candidates.length} skills — re-run with one of the exact paths above`;
-    return {
-      kind: 'result',
-      result: {
-        ...emptyResult(spec.canonicalInvocation, scope, 'refused'),
-        reason,
-        candidates: cands,
-        error: flipRefusedError(reason),
-      },
-      fetchDir,
-    };
-  }
-  const skillPath = selection.skill.path;
-  const skillName = skillPath === '' ? lastSegment(spec.identity.repository) : selection.skill.name;
-  if (
-    !sourcePathIsValid(skillPath) ||
-    !validateManifestName(skillName, 'install.skill.name').ok ||
-    containsSensitiveMaterial(skillPath) ||
-    containsSensitiveMaterial(skillName)
-  ) {
-    return candidateFailure();
-  }
-  let rawMaterializeResult: unknown;
-  try {
-    rawMaterializeResult = await transport.materializeSkill(env, fetchDir, skillPath, opts.signal);
-  } catch (error) {
-    rawMaterializeResult = err(
-      sourceUnresolvableError(`source materialization failed: ${safeUnknownMessage(error)}`),
-    );
-  }
-  const co = safeTransportResult(rawMaterializeResult);
-  if (co.kind !== 'ok') {
-    const error =
-      co.kind === 'error'
-        ? co.error
-        : sourceUnresolvableError('source transport returned invalid materialization metadata');
-    const result = {
-      ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
-      reason: msg(error),
-      error,
-    };
-    return { kind: 'result', result, fetchDir };
-  }
-  if (typeof co.value !== 'string' || containsSensitiveMaterial(co.value)) {
-    const error = sourceUnresolvableError(
-      'source transport returned invalid materialization metadata',
-    );
-    return {
-      kind: 'result',
-      result: {
-        ...emptyResult(spec.canonicalInvocation, scope, 'failed'),
-        reason: msg(error),
-        error,
-      },
-      fetchDir,
-    };
-  }
-  return {
-    kind: 'resolved',
-    r: { sha, skillName, skillPath, materializedDir: co.value, fetchDir },
-  };
-};
-// ---------------------------------------------------------------------------------------------
 // placement (per tool, scope)
 // ---------------------------------------------------------------------------------------------
 interface PlaceCtx {
@@ -804,7 +367,7 @@ const replaceSwap = async (
 const placePair = async (
   p: PlaceCtx,
   spec: SourceSpec,
-  resolved: Resolved,
+  resolved: ResolvedSourceMaterialization,
   tool: FlipTool,
   snap: SnapshotResult,
   gate: Gate,
@@ -1114,7 +677,7 @@ const placePair = async (
 const predictPair = async (
   p: PlaceCtx,
   spec: SourceSpec,
-  resolved: Resolved,
+  resolved: ResolvedSourceMaterialization,
   tool: FlipTool,
 ): Promise<InstallResult> => {
   const { env, opts } = p;
@@ -1603,7 +1166,7 @@ const runInstallInternal = async (
   interface InstallBindingSeed {
     readonly preview: InstallResult;
     readonly spec: SourceSpec;
-    readonly resolved: Resolved;
+    readonly resolved: ResolvedSourceMaterialization;
     readonly tool: FlipTool;
     execute(): Promise<InstallResult>;
   }
@@ -1707,25 +1270,52 @@ const runInstallInternal = async (
         });
         continue;
       }
-      const resolved = await resolveSource(
-        env,
-        deps,
-        spec,
-        scope,
+      const resolved = await resolveRemoteSource({
+        ports: env,
+        source: spec,
+        ...(deps.transport === undefined ? {} : { transport: deps.transport }),
+        ledger: legacyLedger,
         scopeKey,
         storeRoot,
-        dataDir,
-        legacyLedger,
-        opts,
-      );
-      if (resolved.kind === 'result') {
-        results.push({ ...resolved.result, requestIndex });
-        if (resolved.fetchDir) cleanupDirs.add(resolved.fetchDir);
-        if (resolved.result.error && !opts.continueOnError) planningFailFast = true;
+        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+        ...(deps.pick === undefined ? {} : { pick: deps.pick }),
+        createFetchDirectory: () => join(dataDir, '.fetch', txIdOf(env, deps)),
+      });
+      if (resolved.cleanupDirectory !== null) cleanupDirs.add(resolved.cleanupDirectory);
+      if (resolved.kind === 'source-failure') {
+        results.push({
+          ...emptyResult(spec.canonicalInvocation, scope, 'failed', requestIndex),
+          reason: msg(resolved.error),
+          error: resolved.error,
+        });
+        if (!opts.continueOnError) planningFailFast = true;
         continue;
       }
-      const r = resolved.r;
-      if (r.fetchDir) cleanupDirs.add(r.fetchDir);
+      if (resolved.kind === 'no-match') {
+        const error = {
+          code: 'source-unresolvable' as const,
+          message: `'${selectorLabel(spec)}' matched no skills in ${spec.identity.repository} @ ${resolved.resolvedSha.slice(0, 12)}: searched ${resolved.searched} SKILL.md directories`,
+        };
+        results.push({
+          ...emptyResult(spec.canonicalInvocation, scope, 'failed', requestIndex),
+          reason: error.message,
+          error,
+        });
+        if (!opts.continueOnError) planningFailFast = true;
+        continue;
+      }
+      if (resolved.kind === 'ambiguous') {
+        const reason = `'${selectorLabel(spec)}' matches ${resolved.candidates.length} skills — re-run with one of the exact paths above`;
+        results.push({
+          ...emptyResult(spec.canonicalInvocation, scope, 'refused', requestIndex),
+          reason,
+          candidates: [...resolved.candidates],
+          error: flipRefusedError(reason),
+        });
+        if (!opts.continueOnError) planningFailFast = true;
+        continue;
+      }
+      const r = resolved.materialization;
       if (
         [dataDir, storeRoot, r.materializedDir, r.skillName, r.skillPath].some(
           containsSensitiveMaterial,
