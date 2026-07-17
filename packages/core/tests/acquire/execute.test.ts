@@ -3,7 +3,9 @@ import {
   type AcquisitionSnapshotAuthorityV1,
   createAcquisitionRepositoryLifecycleControllerV1,
   executeAcquirePlans,
+  resolveAcquisitionArtifactDestinationV1,
 } from '../../src/acquire/execute.ts';
+import type { ProjectContext } from '../../src/context/types.ts';
 import type { PlacementExecutionInput } from '../../src/place/execute.ts';
 import { emptyLedgerModel } from '../../src/place/ledger.ts';
 import type { PlacementPorts } from '../../src/place/types.ts';
@@ -12,6 +14,335 @@ import type { ExecutableOperation, OperationExecutionResult } from '../../src/pl
 import { err, ok } from '../../src/result.ts';
 import { stageLogicalRepositoryEditV1 } from '../../src/state/repositories.ts';
 import { type ExpectedRevisionV1, createExpectedRevisionV1 } from '../../src/state/types.ts';
+
+const ROOT = '/work/repo';
+const CWD = '/work/repo/packages/app';
+const NESTED_MANIFEST = '/work/repo/packages/app/skillsmith.toml';
+const PROJECT_MANIFEST = '/work/repo/skillsmith.toml';
+const USER_MANIFEST = '/home/user/.config/skillsmith/skillsmith.toml';
+
+const projectContext = (discoveredConfigPath: string | null = null): ProjectContext =>
+  Object.freeze({
+    invocationCwd: CWD,
+    effectiveCwd: CWD,
+    projectRoot: ROOT,
+    projectIdentity: ROOT,
+    projectKind: 'git',
+    discoveredConfigPath,
+    explicitConfigPath: null,
+  });
+
+const manifest = (names: readonly string[], scope: 'project' | 'user' = 'project'): string =>
+  `${[
+    'version = 1',
+    '[defaults]',
+    `scope = "${scope}"`,
+    'tools = ["codex"]',
+    ...names.flatMap((name) => [
+      '[[skills]]',
+      `name = "${name}"`,
+      `source = "github.com/acme/skills//${name}"`,
+    ]),
+  ].join('\n')}\n`;
+
+class DestinationPorts {
+  readonly xdg = Object.freeze({
+    config: '/home/user/.config',
+    data: '/home/user/.local/share',
+    cache: '/home/user/.cache',
+  });
+  readonly calls = {
+    pathKind: [] as string[],
+    readText: [] as string[],
+    realpath: [] as string[],
+  };
+  readonly entries = new Map<
+    string,
+    Readonly<{ kind: 'file' | 'dir' | 'symlink'; text?: string; realpath?: string }>
+  >([
+    [ROOT, { kind: 'dir' }],
+    ['/home/user/.config/skillsmith', { kind: 'dir' }],
+  ]);
+
+  constructor(
+    entries: Readonly<
+      Record<
+        string,
+        Readonly<{ kind: 'file' | 'dir' | 'symlink'; text?: string; realpath?: string }>
+      >
+    > = {},
+  ) {
+    for (const [path, entry] of Object.entries(entries)) this.entries.set(path, entry);
+  }
+
+  async pathKind(path: string): Promise<'absent' | 'file' | 'dir' | 'symlink'> {
+    this.calls.pathKind.push(path);
+    return this.entries.get(path)?.kind ?? 'absent';
+  }
+
+  async readText(path: string): Promise<string> {
+    this.calls.readText.push(path);
+    const entry = this.entries.get(path);
+    if (entry?.kind !== 'file' || entry.text === undefined) {
+      throw new Error(`unexpected destination manifest read: ${path}`);
+    }
+    return entry.text;
+  }
+
+  async realpath(path: string): Promise<string> {
+    this.calls.realpath.push(path);
+    return this.entries.get(path)?.realpath ?? path;
+  }
+}
+
+const resolveDestination = (
+  ports: DestinationPorts,
+  input: Partial<
+    Omit<Parameters<typeof resolveAcquisitionArtifactDestinationV1>[0], 'ports' | 'projectContext'>
+  > = {},
+  context: ProjectContext = projectContext(),
+) =>
+  resolveAcquisitionArtifactDestinationV1({
+    ports,
+    projectContext: context,
+    names: ['factor-scan'],
+    scope: 'project',
+    mode: 'save',
+    ...input,
+  });
+
+describe('acquisition artifact destination resolution', () => {
+  test('returns live-only none before reading any portable port', async () => {
+    let accesses = 0;
+    const ports = new Proxy({} as DestinationPorts, {
+      get() {
+        accesses += 1;
+        throw new Error('no-save accessed a portable port');
+      },
+    });
+
+    const result = await resolveDestination(ports, {
+      names: [],
+      noSave: true,
+      file: '../../state/team.toml',
+      lockfile: '../../state/team.lock',
+    });
+
+    expect(result).toEqual({
+      outcome: 'none',
+      saveMode: 'live-only',
+      pair: null,
+      selection: { outcome: 'none', reason: 'no-save' },
+    });
+    expect(accesses).toBe(0);
+    expect(Object.isFrozen(result)).toBeTrue();
+    expect(Object.isFrozen(result.selection)).toBeTrue();
+  });
+
+  test('returns pre-resolution none for empty or duplicate raw resolved names without discovery', async () => {
+    for (const names of [[], ['factor-scan', 'factor-scan']] as const) {
+      const ports = new DestinationPorts();
+      const result = await resolveDestination(ports, { names });
+      expect(result).toEqual({
+        outcome: 'none',
+        saveMode: 'desired-state',
+        pair: null,
+        selection: { outcome: 'none', reason: 'pre-resolution-failure' },
+      });
+      expect(ports.calls).toEqual({ pathKind: [], readText: [], realpath: [] });
+    }
+  });
+
+  test('resolves one exact explicit pair with either its sibling or explicit lock', async () => {
+    for (const explicitLock of [false, true]) {
+      const ports = new DestinationPorts();
+      const result = await resolveDestination(ports, {
+        file: '../../state/team.toml',
+        ...(explicitLock ? { lockfile: '../../portable/team.state.lock' } : {}),
+      });
+      expect(result).toMatchObject({
+        outcome: 'selected',
+        saveMode: 'desired-state',
+        pair: {
+          file: { path: '/work/repo/state/team.toml' },
+          lockfile: {
+            path: explicitLock
+              ? '/work/repo/portable/team.state.lock'
+              : '/work/repo/state/team.lock',
+          },
+          lockfileSource: explicitLock ? 'explicit' : 'sibling',
+        },
+        selection: { outcome: 'selected', selectedBy: 'explicit-file' },
+      });
+    }
+  });
+
+  test('does not discard a lockfile-only selector when the explicit file is missing', async () => {
+    const result = await resolveDestination(new DestinationPorts(), {
+      lockfile: '../../portable/team.state.lock',
+    });
+    expect(result).toEqual({
+      outcome: 'refused',
+      saveMode: 'desired-state',
+      pair: null,
+      selection: { outcome: 'refused', reason: 'invalid-candidate', candidates: [] },
+    });
+  });
+
+  test('selects a unique owner before scope defaults and identifies new user/project declarations', async () => {
+    const projectOwnerPorts = new DestinationPorts({
+      [PROJECT_MANIFEST]: { kind: 'file', text: manifest(['factor-scan']) },
+    });
+    const projectOwner = await resolveDestination(
+      projectOwnerPorts,
+      { scope: 'user' },
+      projectContext(PROJECT_MANIFEST),
+    );
+    expect(projectOwner).toMatchObject({
+      outcome: 'selected',
+      pair: { file: { path: PROJECT_MANIFEST } },
+      selection: { outcome: 'selected', selectedBy: 'selected-project-owner' },
+    });
+
+    const rootOwner = await resolveDestination(
+      new DestinationPorts({
+        [NESTED_MANIFEST]: { kind: 'file', text: manifest(['other']) },
+        [PROJECT_MANIFEST]: { kind: 'file', text: manifest(['factor-scan']) },
+      }),
+      {},
+      projectContext(NESTED_MANIFEST),
+    );
+    expect(rootOwner).toMatchObject({
+      outcome: 'selected',
+      pair: { file: { path: PROJECT_MANIFEST } },
+      selection: { outcome: 'selected', selectedBy: 'project-root-owner' },
+    });
+
+    const userOwner = await resolveDestination(
+      new DestinationPorts({
+        [PROJECT_MANIFEST]: { kind: 'file', text: manifest(['other']) },
+        [USER_MANIFEST]: { kind: 'file', text: manifest(['factor-scan'], 'user') },
+      }),
+      {},
+      projectContext(PROJECT_MANIFEST),
+    );
+    expect(userOwner).toMatchObject({
+      outcome: 'selected',
+      pair: { file: { path: USER_MANIFEST } },
+      selection: { outcome: 'selected', selectedBy: 'user-owner' },
+    });
+
+    const newUser = await resolveDestination(new DestinationPorts(), { scope: 'user' });
+    expect(newUser).toMatchObject({
+      outcome: 'selected',
+      pair: { file: { path: USER_MANIFEST } },
+      selection: { outcome: 'selected', selectedBy: 'new-user' },
+    });
+
+    const newProject = await resolveDestination(new DestinationPorts());
+    expect(newProject).toMatchObject({
+      outcome: 'selected',
+      pair: { file: { path: PROJECT_MANIFEST } },
+      selection: { outcome: 'selected', selectedBy: 'new-project' },
+    });
+  });
+
+  test('derives legacy-project-migration from the selected discovery candidate', async () => {
+    const ports = new DestinationPorts({
+      [PROJECT_MANIFEST]: { kind: 'file', text: 'tool = "codex"\nscope = "project"\n' },
+    });
+    const result = await resolveDestination(ports, {}, projectContext(PROJECT_MANIFEST));
+    expect(result).toMatchObject({
+      outcome: 'selected',
+      pair: { file: { path: PROJECT_MANIFEST } },
+      selection: { outcome: 'selected', selectedBy: 'legacy-project-migration' },
+    });
+  });
+
+  test('returns typed ambiguous, split, and invalid-candidate refusals', async () => {
+    const ambiguous = await resolveDestination(
+      new DestinationPorts({
+        [PROJECT_MANIFEST]: { kind: 'file', text: manifest(['factor-scan']) },
+        [USER_MANIFEST]: { kind: 'file', text: manifest(['factor-scan'], 'user') },
+      }),
+      {},
+      projectContext(PROJECT_MANIFEST),
+    );
+    expect(ambiguous).toEqual({
+      outcome: 'refused',
+      saveMode: 'desired-state',
+      pair: null,
+      selection: {
+        outcome: 'refused',
+        reason: 'ambiguous-owner',
+        candidates: [PROJECT_MANIFEST, USER_MANIFEST],
+      },
+    });
+
+    const split = await resolveDestination(
+      new DestinationPorts({
+        [PROJECT_MANIFEST]: { kind: 'file', text: manifest(['alpha']) },
+        [USER_MANIFEST]: { kind: 'file', text: manifest(['beta'], 'user') },
+      }),
+      { names: ['alpha', 'beta'] },
+      projectContext(PROJECT_MANIFEST),
+    );
+    expect(split).toMatchObject({
+      outcome: 'refused',
+      pair: null,
+      selection: {
+        outcome: 'refused',
+        reason: 'split-owner',
+        candidates: [PROJECT_MANIFEST, USER_MANIFEST],
+      },
+    });
+
+    const invalid = await resolveDestination(
+      new DestinationPorts({
+        [PROJECT_MANIFEST]: { kind: 'file', text: 'version = 1\ntool = "codex"\n' },
+      }),
+      {},
+      projectContext(PROJECT_MANIFEST),
+    );
+    expect(invalid).toMatchObject({
+      outcome: 'refused',
+      pair: null,
+      selection: {
+        outcome: 'refused',
+        reason: 'invalid-candidate',
+        candidates: [PROJECT_MANIFEST],
+      },
+    });
+  });
+
+  test('preserves an exact explicit absent remove pair and gives automatic absence no owner', async () => {
+    const explicitPorts = new DestinationPorts();
+    const explicit = await resolveDestination(explicitPorts, {
+      mode: 'remove',
+      file: '../../state/team.toml',
+      lockfile: '../../portable/team.state.lock',
+    });
+    expect(explicit).toMatchObject({
+      outcome: 'selected',
+      pair: {
+        file: { path: '/work/repo/state/team.toml' },
+        lockfile: { path: '/work/repo/portable/team.state.lock' },
+        lockfileSource: 'explicit',
+      },
+      selection: { outcome: 'selected', selectedBy: 'explicit-file' },
+    });
+
+    const automaticPorts = new DestinationPorts();
+    const automatic = await resolveDestination(automaticPorts, { mode: 'remove' });
+    expect(automatic).toEqual({
+      outcome: 'none',
+      saveMode: 'desired-state',
+      pair: null,
+      selection: { outcome: 'none', reason: 'no-owner' },
+    });
+    expect(automaticPorts.calls.realpath).toEqual([]);
+  });
+});
 
 const absentLedgerRevision = (resourceId: string, marker: string): ExpectedRevisionV1 => {
   const revision = createExpectedRevisionV1({
