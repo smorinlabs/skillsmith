@@ -5379,7 +5379,8 @@
         "projects/p17/evidence/P17-G4A-01.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G4A-01.md#ready-plan",
         "projects/p17/evidence/P17-G4A-01.md#test-first-evidence",
-        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#lease-owned-missing-parent-amendment"
       ]
     },
     {
@@ -20595,7 +20596,8 @@
       "evidence": [
         "projects/p17/evidence/P17-G4A-01.md#ready-plan",
         "projects/p17/evidence/P17-G4A-01.md#test-first-evidence",
-        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#lease-owned-missing-parent-amendment"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
