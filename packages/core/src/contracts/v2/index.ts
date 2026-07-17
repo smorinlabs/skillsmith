@@ -8,6 +8,13 @@ export { listV2Codec, toListV2Dto } from './list.ts';
 export type { ListV2Dto } from './list.ts';
 export { healthV2Codec, toHealthV2Dto } from './health.ts';
 export type { HealthV2Dto } from './health.ts';
+export {
+  installV2Codec,
+  toInstallV2Dto,
+  toUninstallV2Dto,
+  uninstallV2Codec,
+} from './lifecycle.ts';
+export type { InstallV2Dto, UninstallV2Dto } from './lifecycle.ts';
 export type { LedgerMigrationV1ToV2, LedgerV2Dto } from '../../artifacts/ledger-types.ts';
 export {
   fromLedgerV2Dto,

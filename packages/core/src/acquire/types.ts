@@ -3,7 +3,12 @@ import type { CanonicalSourceIdentity } from '../artifacts/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { FlipTool, JournalPhase, PlacementPorts } from '../place/types.ts';
 import type { InstallAction, UninstallAction } from '../planning/legacy-action.ts';
-import type { OperationExecutionResult, OperationPlan } from '../planning/types.ts';
+import type {
+  BoundedForceEffect,
+  OperationExecutionResult,
+  OperationPlan,
+} from '../planning/types.ts';
+import type { OperationExecutionOutcome } from '../planning/vocabulary.ts';
 import type { DetectionPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import type { Result } from '../result.ts';
 
@@ -35,6 +40,89 @@ export type Selection =
   | { kind: 'none'; searched: number }; // caller: exit-5 source-unresolvable
 
 export type InstallScope = 'user' | 'project';
+
+export type AcquisitionSaveMode = 'desired-state' | 'live-only';
+
+export interface AcquisitionArtifactPair {
+  readonly manifestPath: string;
+  readonly lockPath: string;
+  readonly lockSource: 'sibling' | 'explicit';
+}
+
+export type AcquisitionArtifactSelection =
+  | Readonly<{
+      outcome: 'selected';
+      selectedBy:
+        | 'explicit-file'
+        | 'selected-project-owner'
+        | 'project-root-owner'
+        | 'user-owner'
+        | 'new-project'
+        | 'new-user'
+        | 'legacy-project-migration';
+    }>
+  | Readonly<{
+      outcome: 'none';
+      reason: 'no-save' | 'no-owner' | 'pre-resolution-failure';
+    }>
+  | Readonly<{
+      outcome: 'refused';
+      reason: 'ambiguous-owner' | 'split-owner' | 'invalid-candidate' | 'nonportable-path';
+      candidates: string[];
+    }>;
+
+export interface AcquisitionArtifactEffect {
+  readonly groupId: string | null;
+  readonly skill: string | null;
+  readonly manifestAction:
+    | 'create'
+    | 'update'
+    | 'remove-declaration'
+    | 'retain'
+    | 'keep'
+    | 'not-write';
+  readonly lockAction: 'create' | 'update' | 'remove-entry' | 'retain' | 'keep' | 'not-write';
+  readonly migration: 'none' | 'planned' | 'applied' | 'failed' | 'rolled-back';
+  readonly outcome: OperationExecutionOutcome | 'planned' | 'not-run';
+  readonly reason: string | null;
+}
+
+export interface AcquisitionDrift {
+  readonly status: 'in-sync' | 'desired-without-live' | 'live-without-desired' | 'not-evaluated';
+  readonly futureApply:
+    | 'none'
+    | 'restore-live'
+    | 'replace-live'
+    | 'prune-may-remove-live'
+    | 'depends-on-selected-manifest';
+  readonly reason: string | null;
+}
+
+export interface AcquisitionDesiredStateSummary {
+  readonly changed: number;
+  readonly unchanged: number;
+  readonly retained: number;
+  readonly notWritten: number;
+  readonly failed: number;
+}
+
+interface CurrentAcquisitionPlacementFacts {
+  readonly requestIndex: number;
+  readonly groupId: string | null;
+  readonly pairId: string | null;
+  readonly executionOutcome: OperationExecutionOutcome | null;
+  readonly drift: AcquisitionDrift;
+  readonly force: BoundedForceEffect<FlipTool>;
+}
+
+interface CurrentAcquisitionReportFacts {
+  readonly reportVersion: 2;
+  readonly saveMode: AcquisitionSaveMode;
+  readonly artifactPair: AcquisitionArtifactPair | null;
+  readonly artifactSelection: AcquisitionArtifactSelection;
+  readonly artifactEffects: AcquisitionArtifactEffect[];
+}
+
 export interface InstallOptions {
   sources: readonly string[];
   tools?: readonly FlipTool[]; // explicit --tool list; undefined = all DETECTED tools
@@ -87,6 +175,7 @@ export interface InstallResult {
 }
 
 export interface InstallReport {
+  readonly reportVersion?: 1;
   readonly dryRun: boolean;
   readonly requested: {
     sources: string[];
@@ -112,6 +201,24 @@ export interface InstallReport {
     failed: number;
   };
 }
+
+export type CurrentInstallResult = Omit<InstallResult, 'requestIndex'> &
+  CurrentAcquisitionPlacementFacts;
+
+export type CurrentInstallReport = Omit<
+  InstallReport,
+  'reportVersion' | 'requested' | 'results' | 'summary'
+> &
+  CurrentAcquisitionReportFacts &
+  Readonly<{
+    requested: InstallReport['requested'] &
+      Readonly<{
+        batchPolicy: 'fail-fast' | 'continue-on-error';
+        path: string | null;
+      }>;
+    results: CurrentInstallResult[];
+    summary: InstallReport['summary'] & Readonly<{ desiredState: AcquisitionDesiredStateSummary }>;
+  }>;
 
 export interface PlannedInstallReport extends InstallReport {
   readonly plan: OperationPlan<'install'>;
@@ -176,6 +283,7 @@ export interface UninstallResult {
 }
 
 export interface UninstallReport {
+  readonly reportVersion?: 1;
   readonly dryRun: boolean;
   readonly requested: {
     targets: string[];
@@ -188,6 +296,25 @@ export interface UninstallReport {
   readonly results: UninstallResult[];
   readonly summary: { removed: number; noop: number; refused: number; failed: number };
 }
+
+export type CurrentUninstallAction = UninstallAction | 'skipped';
+
+export type CurrentUninstallResult = Omit<UninstallResult, 'action'> &
+  CurrentAcquisitionPlacementFacts &
+  Readonly<{ action: CurrentUninstallAction }>;
+
+export type CurrentUninstallReport = Omit<
+  UninstallReport,
+  'reportVersion' | 'requested' | 'results' | 'summary'
+> &
+  CurrentAcquisitionReportFacts &
+  Readonly<{
+    requested: UninstallReport['requested'] &
+      Readonly<{ batchPolicy: 'fail-fast' | 'continue-on-error' }>;
+    results: CurrentUninstallResult[];
+    summary: UninstallReport['summary'] &
+      Readonly<{ desiredState: AcquisitionDesiredStateSummary }>;
+  }>;
 
 export interface PlannedUninstallReport extends UninstallReport {
   readonly plan: OperationPlan<'uninstall'>;

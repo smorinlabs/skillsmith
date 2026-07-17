@@ -53,17 +53,23 @@ import {
   type CommandsV2Dto,
   type FlipV2Dto,
   type HealthV2Dto,
+  type InstallV2Dto,
   type ListV2Dto,
+  type UninstallV2Dto,
   agentsV2Codec,
   commandsV2Codec,
   flipV2Codec,
   healthV2Codec,
+  installV2Codec,
   listV2Codec,
   toAgentsV2Dto,
   toCommandsV2Dto,
   toFlipV2Dto,
   toHealthV2Dto,
+  toInstallV2Dto,
   toListV2Dto,
+  toUninstallV2Dto,
+  uninstallV2Codec,
 } from '@skillsmith/core/contracts/v2';
 import {
   type FlipV3Dto,
@@ -82,6 +88,10 @@ import type { FlipV2Dto as ForbiddenV2FromRoot } from '@skillsmith/core/contract
 import type { FlipV2Dto as ForbiddenFlipDtoFromV1 } from '@skillsmith/core/contracts/v1';
 // @ts-expect-error v1 entry point must expose no v2 DTOs
 import type { ListV2Dto as ForbiddenListDtoFromV1 } from '@skillsmith/core/contracts/v1';
+// @ts-expect-error v1 entry point must expose no v2 DTOs
+import type { InstallV2Dto as ForbiddenInstallV2DtoFromV1 } from '@skillsmith/core/contracts/v1';
+// @ts-expect-error v1 entry point must expose no v2 DTOs
+import type { UninstallV2Dto as ForbiddenUninstallV2DtoFromV1 } from '@skillsmith/core/contracts/v1';
 // @ts-expect-error v2 entry point must expose no v1 DTOs
 import type { AgentsV1Dto as ForbiddenAgentsDtoFromV2 } from '@skillsmith/core/contracts/v2';
 // @ts-expect-error v2 entry point must expose no v1 DTOs
@@ -186,8 +196,12 @@ type _V2RuntimeClosure = Assert<
     | 'toFlipV2Dto'
     | 'healthV2Codec'
     | 'toHealthV2Dto'
+    | 'installV2Codec'
+    | 'toInstallV2Dto'
     | 'listV2Codec'
     | 'toListV2Dto'
+    | 'uninstallV2Codec'
+    | 'toUninstallV2Dto'
     | 'ledgerV2Codec'
     | 'toLedgerV2Dto'
     | 'fromLedgerV2Dto'
@@ -352,7 +366,9 @@ const capabilityCodec: WireCodec<'capability-snapshot', 1, CapabilitySnapshotV1D
   capabilitySnapshotV1Codec;
 const flipCodec: WireCodec<'flip', 2, FlipV2Dto> = flipV2Codec;
 const healthV2Binding: WireCodec<'health', 2, HealthV2Dto> = healthV2Codec;
+const installV2Binding: WireCodec<'install', 2, InstallV2Dto> = installV2Codec;
 const listCodec: WireCodec<'list', 2, ListV2Dto> = listV2Codec;
+const uninstallV2Binding: WireCodec<'uninstall', 2, UninstallV2Dto> = uninstallV2Codec;
 const agentsV2Binding: WireCodec<'agents', 2, AgentsV2Dto> = agentsV2Codec;
 const commandsV2Binding: WireCodec<'commands', 2, CommandsV2Dto> = commandsV2Codec;
 const flipV3Binding: WireCodec<'flip', 3, FlipV3Dto> = flipV3Codec;
@@ -377,7 +393,9 @@ type _CapabilityMapperReturn = Assert<
 >;
 type _FlipMapperReturn = Assert<Equal<ReturnType<typeof toFlipV2Dto>, FlipV2Dto>>;
 type _HealthV2MapperReturn = Assert<Equal<ReturnType<typeof toHealthV2Dto>, HealthV2Dto>>;
+type _InstallV2MapperReturn = Assert<Equal<ReturnType<typeof toInstallV2Dto>, InstallV2Dto>>;
 type _ListMapperReturn = Assert<Equal<ReturnType<typeof toListV2Dto>, ListV2Dto>>;
+type _UninstallV2MapperReturn = Assert<Equal<ReturnType<typeof toUninstallV2Dto>, UninstallV2Dto>>;
 type _AgentsV2MapperReturn = Assert<Equal<ReturnType<typeof toAgentsV2Dto>, AgentsV2Dto>>;
 type _CommandsV2MapperReturn = Assert<Equal<ReturnType<typeof toCommandsV2Dto>, CommandsV2Dto>>;
 type _FlipV3MapperReturn = Assert<Equal<ReturnType<typeof toFlipV3Dto>, FlipV3Dto>>;
@@ -405,6 +423,8 @@ export type VersionClosureCanaries = [
   ForbiddenV2FromRoot,
   ForbiddenFlipDtoFromV1,
   ForbiddenListDtoFromV1,
+  ForbiddenInstallV2DtoFromV1,
+  ForbiddenUninstallV2DtoFromV1,
   ForbiddenAgentsDtoFromV2,
   ForbiddenCapabilityDtoFromV2,
   ForbiddenCommandsDtoFromV2,
@@ -435,7 +455,9 @@ void [
   verifyCodec,
   capabilityCodec,
   healthV2Binding,
+  installV2Binding,
   listCodec,
+  uninstallV2Binding,
   agentsV2Binding,
   commandsV2Binding,
   flipV3Binding,
@@ -455,7 +477,9 @@ void [
   toCapabilitySnapshotV1Dto,
   toFlipV2Dto,
   toHealthV2Dto,
+  toInstallV2Dto,
   toListV2Dto,
+  toUninstallV2Dto,
   toAgentsV2Dto,
   toCommandsV2Dto,
   toFlipV3Dto,
@@ -480,5 +504,7 @@ export type PublicWireCompileContract = {
   readonly error: ErrorV1Dto;
   readonly capability: CapabilitySnapshotV1Dto;
   readonly flip: FlipV2Dto;
+  readonly installV2: InstallV2Dto;
   readonly list: ListV2Dto;
+  readonly uninstallV2: UninstallV2Dto;
 };

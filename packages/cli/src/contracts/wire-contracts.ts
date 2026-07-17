@@ -20,7 +20,9 @@ import {
   commandsV2Codec,
   flipV2Codec,
   healthV2Codec,
+  installV2Codec,
   listV2Codec,
+  uninstallV2Codec,
 } from '@skillsmith/core/contracts/v2';
 import { flipV3Codec, listV3Codec } from '@skillsmith/core/contracts/v3';
 import { flipV4Codec } from '@skillsmith/core/contracts/v4';
@@ -88,10 +90,12 @@ export const currentWireContractRegistry = createWireContractRegistry(
     flipV3Codec,
     flipV4Codec,
     installV1Codec,
+    installV2Codec,
     listV2Codec,
     listV3Codec,
     statusV1Codec,
     uninstallV1Codec,
+    uninstallV2Codec,
     verifyV1Codec,
     errorV1Codec,
     capabilitySnapshotV1Codec,

@@ -1,3 +1,4 @@
+import { types as utilTypes } from 'node:util';
 import { z } from 'zod';
 import type {
   InstallReport,
@@ -149,6 +150,20 @@ const UninstallV1Schema = z
 export type InstallV1Dto = z.infer<typeof InstallV1Schema>;
 export type UninstallV1Dto = z.infer<typeof UninstallV1Schema>;
 
+const assertLegacyReportVersion = (report: InstallReport | UninstallReport): void => {
+  let current: object | null = report;
+  while (current !== null) {
+    if (utilTypes.isProxy(current)) {
+      throw new TypeError('v1 lifecycle mappers require a non-proxy legacy report chain');
+    }
+    const version = Object.getOwnPropertyDescriptor(current, 'reportVersion');
+    if (version !== undefined && (!('value' in version) || version.value !== 1)) {
+      throw new TypeError('v1 lifecycle mappers accept only reportVersion 1');
+    }
+    current = Object.getPrototypeOf(current);
+  }
+};
+
 const toInstallResultV1Dto = (source: InstallResult): InstallV1Dto['results'][number] => ({
   source: source.source,
   skill: source.skill,
@@ -189,34 +204,37 @@ const toInstallResultV1Dto = (source: InstallResult): InstallV1Dto['results'][nu
   candidates: source.candidates === null ? null : Array.from(source.candidates),
 });
 
-export const toInstallV1Dto = (report: InstallReport): InstallV1Dto => ({
-  schemaVersion: 1,
-  kind: 'skillsmith.install',
-  dryRun: report.dryRun,
-  requested: {
-    sources: Array.from(report.requested.sources),
-    tools: Array.from(report.requested.tools),
-    explicitTools: report.requested.explicitTools,
-    scope: report.requested.scope,
-    explicitScope: report.requested.explicitScope,
-    ref: report.requested.ref,
-    pin: report.requested.pin,
-    direct: report.requested.direct,
-    force: report.requested.force,
-    verify: report.requested.verify,
-    deep: report.requested.deep,
-  },
-  results: report.results.map(toInstallResultV1Dto),
-  summary: {
-    installed: report.summary.installed,
-    updated: report.summary.updated,
-    repaired: report.summary.repaired,
-    noop: report.summary.noop,
-    skipped: report.summary.skipped,
-    refused: report.summary.refused,
-    failed: report.summary.failed,
-  },
-});
+export const toInstallV1Dto = (report: InstallReport): InstallV1Dto => {
+  assertLegacyReportVersion(report);
+  return {
+    schemaVersion: 1,
+    kind: 'skillsmith.install',
+    dryRun: report.dryRun,
+    requested: {
+      sources: Array.from(report.requested.sources),
+      tools: Array.from(report.requested.tools),
+      explicitTools: report.requested.explicitTools,
+      scope: report.requested.scope,
+      explicitScope: report.requested.explicitScope,
+      ref: report.requested.ref,
+      pin: report.requested.pin,
+      direct: report.requested.direct,
+      force: report.requested.force,
+      verify: report.requested.verify,
+      deep: report.requested.deep,
+    },
+    results: report.results.map(toInstallResultV1Dto),
+    summary: {
+      installed: report.summary.installed,
+      updated: report.summary.updated,
+      repaired: report.summary.repaired,
+      noop: report.summary.noop,
+      skipped: report.summary.skipped,
+      refused: report.summary.refused,
+      failed: report.summary.failed,
+    },
+  };
+};
 
 const toUninstallResultV1Dto = (source: UninstallResult): UninstallV1Dto['results'][number] => ({
   skill: source.skill,
@@ -238,26 +256,29 @@ const toUninstallResultV1Dto = (source: UninstallResult): UninstallV1Dto['result
   backupKept: source.backupKept,
 });
 
-export const toUninstallV1Dto = (report: UninstallReport): UninstallV1Dto => ({
-  schemaVersion: 1,
-  kind: 'skillsmith.uninstall',
-  dryRun: report.dryRun,
-  requested: {
-    targets: Array.from(report.requested.targets),
-    tools: Array.from(report.requested.tools),
-    explicitTools: report.requested.explicitTools,
-    scope: report.requested.scope,
-    allScopes: report.requested.allScopes,
-    force: report.requested.force,
-  },
-  results: report.results.map(toUninstallResultV1Dto),
-  summary: {
-    removed: report.summary.removed,
-    noop: report.summary.noop,
-    refused: report.summary.refused,
-    failed: report.summary.failed,
-  },
-});
+export const toUninstallV1Dto = (report: UninstallReport): UninstallV1Dto => {
+  assertLegacyReportVersion(report);
+  return {
+    schemaVersion: 1,
+    kind: 'skillsmith.uninstall',
+    dryRun: report.dryRun,
+    requested: {
+      targets: Array.from(report.requested.targets),
+      tools: Array.from(report.requested.tools),
+      explicitTools: report.requested.explicitTools,
+      scope: report.requested.scope,
+      allScopes: report.requested.allScopes,
+      force: report.requested.force,
+    },
+    results: report.results.map(toUninstallResultV1Dto),
+    summary: {
+      removed: report.summary.removed,
+      noop: report.summary.noop,
+      refused: report.summary.refused,
+      failed: report.summary.failed,
+    },
+  };
+};
 
 export const installV1Codec = createJsonWireCodec(
   {

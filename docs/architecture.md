@@ -217,12 +217,14 @@ or define a second public schema.
 
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
 `commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
-`flip@3`, `flip@4`, `install@1`, `list@2`, `list@3`, `status@1`, `uninstall@1`, `verify@1`,
-`error@1`, and `capability-snapshot@1`. Each descriptor fixes recursive unknown-field rejection,
-embedded kind and version policy, JSON indentation, terminal framing, and conservative
-compatibility. Current codecs declare no migrations. The `verify` codec derives tool choices from
-the validated tool registry; the capability snapshot projects only descriptor facts and is not yet
-a final command output.
+`flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
+`uninstall@2`, `verify@1`, `error@1`, and `capability-snapshot@1`. Each descriptor fixes recursive
+unknown-field rejection, embedded kind and version policy, JSON indentation, terminal framing, and
+conservative compatibility. Current codecs declare no migrations. Lifecycle v2 contracts are
+registered for exact desired-state reports while the live install/uninstall command mappings remain
+on v1 until their producers and renderers advance atomically. The `verify` codec derives tool
+choices from the validated tool registry; the capability snapshot projects only descriptor facts
+and is not yet a final command output.
 
 Consumers import shared types and the builder from `@skillsmith/core/contracts`, and exact
 DTOs/codecs from the versioned `@skillsmith/core/contracts/v1`, `/v2`, `/v3`, and `/v4` entry

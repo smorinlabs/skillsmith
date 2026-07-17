@@ -2,6 +2,8 @@ import type {
   AgentsReport,
   ArtifactDigest,
   CommandsReport,
+  CurrentInstallReport,
+  CurrentUninstallReport,
   Deprecation,
   DoctorRunResult,
   FlipReport,
@@ -81,6 +83,238 @@ export interface FlipV2Dto {
     rolledBack: number;
     created: number;
     adopted: number;
+  };
+}
+
+type LifecycleLocationV2Dto =
+  | { kind: 'portable'; token: string }
+  | { kind: 'machine-bound'; path: string };
+
+type LifecycleResourceIdentityV2Dto =
+  | { kind: 'manifest-bytes'; location: LifecycleLocationV2Dto }
+  | { kind: 'lock'; location: LifecycleLocationV2Dto }
+  | { kind: 'ledger'; projectRoot: LifecycleLocationV2Dto | null }
+  | { kind: 'ledger-schema'; projectRoot: LifecycleLocationV2Dto | null }
+  | {
+      kind: 'live';
+      skill: string;
+      tool: ToolId;
+      scope: 'user' | 'project';
+      projectRoot: LifecycleLocationV2Dto | null;
+      location: LifecycleLocationV2Dto;
+    }
+  | { kind: 'store'; contentHash: string }
+  | { kind: 'project-context'; root: LifecycleLocationV2Dto };
+
+type LifecycleForceV2Dto =
+  | {
+      requested: boolean;
+      applied: false;
+      conflictType: null;
+      target: null;
+      normalBehavior: null;
+      forcedBehavior: null;
+      backup: null;
+    }
+  | {
+      requested: true;
+      applied: boolean;
+      conflictType: 'unmanaged-target' | 'modified-managed-target' | 'destination-exists';
+      target: LifecycleResourceIdentityV2Dto;
+      normalBehavior: 'refuse';
+      forcedBehavior: 'backup-and-replace';
+      backup: 'required';
+    }
+  | {
+      requested: true;
+      applied: boolean;
+      conflictType: 'source-changed';
+      target: LifecycleResourceIdentityV2Dto;
+      normalBehavior: 'refuse';
+      forcedBehavior: 'replace';
+      backup: 'none';
+    };
+
+type LifecycleArtifactPairV2Dto = {
+  manifestPath: string;
+  lockPath: string;
+  lockSource: 'sibling' | 'explicit';
+} | null;
+
+type LifecycleArtifactSelectionV2Dto =
+  | {
+      outcome: 'selected';
+      selectedBy:
+        | 'explicit-file'
+        | 'selected-project-owner'
+        | 'project-root-owner'
+        | 'user-owner'
+        | 'new-project'
+        | 'new-user'
+        | 'legacy-project-migration';
+    }
+  | { outcome: 'none'; reason: 'no-save' | 'no-owner' | 'pre-resolution-failure' }
+  | {
+      outcome: 'refused';
+      reason: 'ambiguous-owner' | 'split-owner' | 'invalid-candidate' | 'nonportable-path';
+      candidates: string[];
+    };
+
+type LifecycleArtifactEffectV2Dto = {
+  groupId: string | null;
+  skill: string | null;
+  manifestAction: 'create' | 'update' | 'remove-declaration' | 'retain' | 'keep' | 'not-write';
+  lockAction: 'create' | 'update' | 'remove-entry' | 'retain' | 'keep' | 'not-write';
+  migration: 'none' | 'planned' | 'applied' | 'failed' | 'rolled-back';
+  outcome:
+    | 'planned'
+    | 'succeeded'
+    | 'failed'
+    | 'cancelled'
+    | 'rolled-back'
+    | 'skipped-after-failure'
+    | 'not-run';
+  reason: string | null;
+};
+
+type LifecycleDriftV2Dto = {
+  status: 'in-sync' | 'desired-without-live' | 'live-without-desired' | 'not-evaluated';
+  futureApply:
+    | 'none'
+    | 'restore-live'
+    | 'replace-live'
+    | 'prune-may-remove-live'
+    | 'depends-on-selected-manifest';
+  reason: string | null;
+};
+
+type LifecycleExecutionOutcomeV2Dto =
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'rolled-back'
+  | 'skipped-after-failure'
+  | null;
+
+type LifecycleDesiredStateSummaryV2Dto = {
+  changed: number;
+  unchanged: number;
+  retained: number;
+  notWritten: number;
+  failed: number;
+};
+
+export interface InstallV2Dto {
+  schemaVersion: 2;
+  kind: 'skillsmith.install';
+  dryRun: boolean;
+  saveMode: 'desired-state' | 'live-only';
+  artifactPair: LifecycleArtifactPairV2Dto;
+  artifactSelection: LifecycleArtifactSelectionV2Dto;
+  artifactEffects: LifecycleArtifactEffectV2Dto[];
+  requested: {
+    sources: string[];
+    tools: ToolId[];
+    explicitTools: boolean;
+    scope: 'user' | 'project';
+    explicitScope: boolean;
+    ref: string | null;
+    pin: boolean;
+    direct: boolean;
+    force: boolean;
+    verify: 'static' | 'skipped';
+    deep: boolean;
+    batchPolicy: 'fail-fast' | 'continue-on-error';
+    path: string | null;
+  };
+  results: Array<{
+    source: string;
+    skill: string | null;
+    tool: ToolId | null;
+    scope: 'user' | 'project';
+    placementPath: string | null;
+    action: 'installed' | 'updated' | 'repaired' | 'noop' | 'skipped' | 'refused' | 'failed';
+    reason: string | null;
+    placement: 'symlink' | 'copy' | null;
+    store: { path: string; rev: string; gitSha: string; reused: boolean } | null;
+    origin: {
+      host: string;
+      repo: string;
+      skillPath: string;
+      refRequested: string | null;
+      refResolved: string;
+      pin: boolean;
+    } | null;
+    verify: {
+      gate: 'passed' | 'warned' | 'failed' | 'skipped' | 'inconclusive';
+      verdict: 'pass' | 'warn' | 'fail' | 'inconclusive' | null;
+      mode: 'static' | 'static+deep' | null;
+    } | null;
+    candidates: string[] | null;
+    requestIndex: number;
+    groupId: string | null;
+    pairId: string | null;
+    executionOutcome: LifecycleExecutionOutcomeV2Dto;
+    drift: LifecycleDriftV2Dto;
+    force: LifecycleForceV2Dto;
+  }>;
+  summary: {
+    installed: number;
+    updated: number;
+    repaired: number;
+    noop: number;
+    skipped: number;
+    refused: number;
+    failed: number;
+    desiredState: LifecycleDesiredStateSummaryV2Dto;
+  };
+}
+
+export interface UninstallV2Dto {
+  schemaVersion: 2;
+  kind: 'skillsmith.uninstall';
+  dryRun: boolean;
+  saveMode: 'desired-state' | 'live-only';
+  artifactPair: LifecycleArtifactPairV2Dto;
+  artifactSelection: LifecycleArtifactSelectionV2Dto;
+  artifactEffects: LifecycleArtifactEffectV2Dto[];
+  requested: {
+    targets: string[];
+    tools: ToolId[];
+    explicitTools: boolean;
+    scope: 'user' | 'project' | null;
+    allScopes: boolean;
+    force: boolean;
+    batchPolicy: 'fail-fast' | 'continue-on-error';
+  };
+  results: Array<{
+    skill: string;
+    tool: ToolId | null;
+    scope: 'user' | 'project' | null;
+    placementPath: string | null;
+    action: 'removed' | 'noop' | 'skipped' | 'refused' | 'failed';
+    reason: string | null;
+    before: {
+      mode: 'dev' | 'pinned';
+      placement: 'symlink' | 'copy' | null;
+      storePath: string | null;
+      symlinkTarget: string | null;
+    } | null;
+    storeRetained: string | null;
+    backupKept: string | null;
+    requestIndex: number;
+    groupId: string | null;
+    pairId: string | null;
+    executionOutcome: LifecycleExecutionOutcomeV2Dto;
+    drift: LifecycleDriftV2Dto;
+    force: LifecycleForceV2Dto;
+  }>;
+  summary: {
+    removed: number;
+    noop: number;
+    refused: number;
+    failed: number;
+    desiredState: LifecycleDesiredStateSummaryV2Dto;
   };
 }
 
@@ -285,6 +519,10 @@ export declare const toHealthV2Dto: (
   report: DoctorRunResult,
   deprecations?: readonly Deprecation[],
 ) => HealthV2Dto;
+export declare const installV2Codec: WireCodec<'install', 2, InstallV2Dto>;
+export declare const uninstallV2Codec: WireCodec<'uninstall', 2, UninstallV2Dto>;
+export declare const toInstallV2Dto: (report: CurrentInstallReport) => InstallV2Dto;
+export declare const toUninstallV2Dto: (report: CurrentUninstallReport) => UninstallV2Dto;
 export declare const ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel>;
 export declare const toLedgerV2Dto: (model: LedgerModel) => Result<LedgerV2Dto, ArtifactCodecError>;
 export declare const fromLedgerV2Dto: (dto: LedgerV2Dto) => Result<LedgerModel, ArtifactCodecError>;

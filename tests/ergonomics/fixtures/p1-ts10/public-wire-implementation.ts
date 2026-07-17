@@ -32,6 +32,8 @@ type DtoDeclarationClosure = [
   Assert<Equal<publicV2.ListV2Dto, implementationV2.ListV2Dto>>,
   Assert<Equal<publicV2.AgentsV2Dto, implementationV2.AgentsV2Dto>>,
   Assert<Equal<publicV2.CommandsV2Dto, implementationV2.CommandsV2Dto>>,
+  Assert<Equal<publicV2.InstallV2Dto, implementationV2.InstallV2Dto>>,
+  Assert<Equal<publicV2.UninstallV2Dto, implementationV2.UninstallV2Dto>>,
   Assert<Equal<publicV3.ListV3Dto, implementationV3.ListV3Dto>>,
 ];
 
@@ -43,6 +45,8 @@ const v2Bindings: typeof publicV2 = implementationV2;
 const v3Bindings: typeof publicV3 = implementationV3;
 
 const dtoDeclarationClosure: DtoDeclarationClosure = [
+  true,
+  true,
   true,
   true,
   true,

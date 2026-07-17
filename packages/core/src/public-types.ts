@@ -1,5 +1,9 @@
 export type {
   CandidateSkill,
+  CurrentInstallReport,
+  CurrentInstallResult,
+  CurrentUninstallReport,
+  CurrentUninstallResult,
   InstallAction,
   InstallDeps,
   InstallOptions,

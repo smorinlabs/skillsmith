@@ -39,6 +39,7 @@ import {
 import { writeFixtureAdapter } from '../fixtures/p1-ts09/write-adapter.ts';
 import {
   CURRENT_JSON_GOLDENS,
+  CURRENT_LIFECYCLE_V2_GOLDENS,
   CURRENT_RENDERER_REPORTS,
   GOLDEN_TERMINAL_LF,
   HISTORICAL_FLIP_V3_GOLDEN,
@@ -101,10 +102,12 @@ const EXPECTED_CODECS = [
   ['flip', 3],
   ['flip', 4],
   ['install', 1],
+  ['install', 2],
   ['list', 2],
   ['list', 3],
   ['status', 1],
   ['uninstall', 1],
+  ['uninstall', 2],
   ['verify', 1],
   ['error', 1],
   ['capability-snapshot', 1],
@@ -170,6 +173,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     indent: 2,
     terminalLf: false,
   },
+  'install@2': {
+    wireKind: 'skillsmith.install',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: false,
+  },
   'list@2': { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: false },
   'list@3': {
     wireKind: 'skillsmith.list',
@@ -184,6 +193,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     terminalLf: true,
   },
   'uninstall@1': {
+    wireKind: 'skillsmith.uninstall',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: false,
+  },
+  'uninstall@2': {
     wireKind: 'skillsmith.uninstall',
     embeddedVersion: 'schemaVersion',
     indent: 2,
@@ -284,12 +299,16 @@ const V2_RUNTIME_EXPORTS = [
   'commandsV2Codec',
   'flipV2Codec',
   'healthV2Codec',
+  'installV2Codec',
   'listV2Codec',
+  'uninstallV2Codec',
   'toAgentsV2Dto',
   'toCommandsV2Dto',
   'toFlipV2Dto',
   'toHealthV2Dto',
+  'toInstallV2Dto',
   'toListV2Dto',
+  'toUninstallV2Dto',
   'ledgerV2Codec',
   'toLedgerV2Dto',
   'fromLedgerV2Dto',
@@ -605,6 +624,10 @@ describe('EWP-P1-TS10', () => {
         `${commandPath} renderer does not use its mapped codec`,
       ).toBe(registry.forCommand(commandPath));
     }
+    expect(registry.latest('install')?.descriptor.version).toBe(2);
+    expect(registry.latest('uninstall')?.descriptor.version).toBe(2);
+    expect(registry.forCommand('skillsmith install')?.descriptor.version).toBe(1);
+    expect(registry.forCommand('skillsmith uninstall')?.descriptor.version).toBe(1);
     expect(Object.isFrozen(registry.codecs)).toBeTrue();
     expect(Object.isFrozen(registry.commandMappings)).toBeTrue();
     for (const mapping of registry.commandMappings) {
@@ -1920,8 +1943,10 @@ describe('EWP-P1-TS10', () => {
     expect(v4, 'missing v4 codecs and mappers').not.toBeNull();
     if (v1 === null || v2 === null || v3 === null || v4 === null) return;
     const hostileInstall = hostileLifecycleReport(REPORT_FIXTURES.install);
+    const hostileCurrentInstall = hostileLifecycleReport(REPORT_FIXTURES.currentInstall);
     const hostileStatus = addHostileFields(REPORT_FIXTURES.status);
     const hostileUninstall = hostileLifecycleReport(REPORT_FIXTURES.uninstall);
+    const hostileCurrentUninstall = hostileLifecycleReport(REPORT_FIXTURES.currentUninstall);
     const hostileFlip = hostileLifecycleReport(REPORT_FIXTURES.flip);
     const capabilityBytes = JSON.stringify(expectedCapabilitySnapshot(), null, 2);
     const cases: ReadonlyArray<{
@@ -2002,6 +2027,13 @@ describe('EWP-P1-TS10', () => {
         bytes: CURRENT_JSON_GOLDENS.install,
       },
       {
+        name: 'install@2',
+        mapper: v2.toInstallV2Dto,
+        codec: v2.installV2Codec,
+        args: [hostileCurrentInstall],
+        bytes: CURRENT_LIFECYCLE_V2_GOLDENS.install,
+      },
+      {
         name: 'status@1',
         mapper: v1.toStatusV1Dto,
         codec: v1.statusV1Codec,
@@ -2014,6 +2046,13 @@ describe('EWP-P1-TS10', () => {
         codec: v1.uninstallV1Codec,
         args: [hostileUninstall],
         bytes: CURRENT_JSON_GOLDENS.uninstall,
+      },
+      {
+        name: 'uninstall@2',
+        mapper: v2.toUninstallV2Dto,
+        codec: v2.uninstallV2Codec,
+        args: [hostileCurrentUninstall],
+        bytes: CURRENT_LIFECYCLE_V2_GOLDENS.uninstall,
       },
       {
         name: 'verify@1',
@@ -2104,10 +2143,18 @@ describe('EWP-P1-TS10', () => {
       expect(serializedDto, `${fixture.name} leaked hostile secret`).not.toMatch(/"secret"\s*:/);
       if (
         fixture.name === 'install@1' ||
+        fixture.name === 'install@2' ||
         fixture.name === 'uninstall@1' ||
+        fixture.name === 'uninstall@2' ||
         fixture.name === 'flip@2'
       ) {
         expect(serializedDto, `${fixture.name} leaked lifecycle error`).not.toMatch(/"error"\s*:/);
+      }
+      if (fixture.name === 'install@2' || fixture.name === 'uninstall@2') {
+        expect(dto, `${fixture.name} leaked domain report version`).not.toHaveProperty(
+          'reportVersion',
+        );
+        expect(dto, `${fixture.name} leaked operation plan`).not.toHaveProperty('plan');
       }
       if (fixture.name === 'flip@3' || fixture.name === 'flip@4') {
         expect(

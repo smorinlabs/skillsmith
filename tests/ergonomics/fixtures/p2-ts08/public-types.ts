@@ -13,7 +13,12 @@ import type {
   ArtifactReadEnvelope,
   ArtifactRepositoryError,
   CommandsReport,
+  CurrentInstallReport,
+  CurrentInstallResult,
+  CurrentUninstallReport,
+  CurrentUninstallResult,
   FlipReport,
+  InstallReport,
   LedgerModel,
   ListReport,
   LogicalJournalV1,
@@ -21,6 +26,7 @@ import type {
   PortableLockV1,
   ProjectConfigMigration,
   SavedPlanV1,
+  UninstallReport,
 } from '@skillsmith/core';
 import type {
   ArtifactCodec,
@@ -62,17 +68,23 @@ import {
   agentsV2Codec,
   commandsV2Codec,
   fromLedgerV2Dto,
+  installV2Codec,
   ledgerV2Codec,
   migrateLedgerV1DtoToV2Dto,
   toAgentsV2Dto,
   toCommandsV2Dto,
+  toInstallV2Dto,
   toLedgerV2Dto,
+  toUninstallV2Dto,
+  uninstallV2Codec,
 } from '@skillsmith/core/contracts/v2';
 import type {
   AgentsV2Dto,
   CommandsV2Dto,
+  InstallV2Dto,
   LedgerMigrationV1ToV2,
   LedgerV2Dto,
+  UninstallV2Dto,
 } from '@skillsmith/core/contracts/v2';
 import { flipV3Codec, listV3Codec, toFlipV3Dto, toListV3Dto } from '@skillsmith/core/contracts/v3';
 import type { FlipV3Dto, ListV3Dto } from '@skillsmith/core/contracts/v3';
@@ -146,10 +158,14 @@ type _V2RuntimeClosed = Assert<
     | 'commandsV2Codec'
     | 'flipV2Codec'
     | 'healthV2Codec'
+    | 'installV2Codec'
     | 'listV2Codec'
+    | 'uninstallV2Codec'
     | 'toFlipV2Dto'
     | 'toHealthV2Dto'
+    | 'toInstallV2Dto'
     | 'toListV2Dto'
+    | 'toUninstallV2Dto'
     | 'ledgerV2Codec'
     | 'toLedgerV2Dto'
     | 'fromLedgerV2Dto'
@@ -160,6 +176,23 @@ type _V2RuntimeClosed = Assert<
 >;
 type _V3RuntimeClosed = Assert<
   Equal<keyof V3Runtime, 'flipV3Codec' | 'listV3Codec' | 'toFlipV3Dto' | 'toListV3Dto'>
+>;
+
+type _CurrentInstallResultExport = Assert<
+  Equal<CurrentInstallReport['results'][number], CurrentInstallResult>
+>;
+type _CurrentUninstallResultExport = Assert<
+  Equal<CurrentUninstallReport['results'][number], CurrentUninstallResult>
+>;
+type _CurrentInstallVersion = Assert<Equal<CurrentInstallReport['reportVersion'], 2>>;
+type _CurrentUninstallVersion = Assert<Equal<CurrentUninstallReport['reportVersion'], 2>>;
+type _LegacyInstallVersion = Assert<Equal<InstallReport['reportVersion'], 1 | undefined>>;
+type _LegacyUninstallVersion = Assert<Equal<UninstallReport['reportVersion'], 1 | undefined>>;
+type _CurrentInstallIsNotLegacy = Assert<
+  Equal<CurrentInstallReport extends InstallReport ? true : false, false>
+>;
+type _CurrentUninstallIsNotLegacy = Assert<
+  Equal<CurrentUninstallReport extends UninstallReport ? true : false, false>
 >;
 
 type Descriptor = ArtifactCodecDescriptor<'manifest', 1>;
@@ -234,6 +267,36 @@ type _PlanRoot = Assert<
 >;
 type _LedgerV1Root = Assert<
   Equal<keyof LedgerV1Dto, 'schemaVersion' | 'kind' | 'updatedAt' | 'skills' | 'projects'>
+>;
+type _InstallV2Root = Assert<
+  Equal<
+    keyof InstallV2Dto,
+    | 'schemaVersion'
+    | 'kind'
+    | 'dryRun'
+    | 'saveMode'
+    | 'artifactPair'
+    | 'artifactSelection'
+    | 'artifactEffects'
+    | 'requested'
+    | 'results'
+    | 'summary'
+  >
+>;
+type _UninstallV2Root = Assert<
+  Equal<
+    keyof UninstallV2Dto,
+    | 'schemaVersion'
+    | 'kind'
+    | 'dryRun'
+    | 'saveMode'
+    | 'artifactPair'
+    | 'artifactSelection'
+    | 'artifactEffects'
+    | 'requested'
+    | 'results'
+    | 'summary'
+  >
 >;
 type _LedgerV2Root = Assert<
   Equal<
@@ -439,6 +502,8 @@ const _journalCodec: ArtifactCodec<'journal', 1, JournalV1Dto, LogicalJournalV1>
 const _statusCodec: WireCodec<'status', 1, StatusV1Dto> = statusV1Codec;
 const _agentsV2Codec: WireCodec<'agents', 2, AgentsV2Dto> = agentsV2Codec;
 const _commandsV2Codec: WireCodec<'commands', 2, CommandsV2Dto> = commandsV2Codec;
+const _installV2Codec: WireCodec<'install', 2, InstallV2Dto> = installV2Codec;
+const _uninstallV2Codec: WireCodec<'uninstall', 2, UninstallV2Dto> = uninstallV2Codec;
 const _flipV3Codec: WireCodec<'flip', 3, FlipV3Dto> = flipV3Codec;
 const _listV3Codec: WireCodec<'list', 3, ListV3Dto> = listV3Codec;
 
@@ -468,6 +533,8 @@ const _journalReverse: (value: JournalV1Dto) => Result<LogicalJournalV1, Artifac
 type _StatusMapperReturn = Assert<Equal<ReturnType<typeof toStatusV1Dto>, StatusV1Dto>>;
 const _agentsV2Mapper: (value: AgentsReport) => AgentsV2Dto = toAgentsV2Dto;
 const _commandsV2Mapper: (value: CommandsReport) => CommandsV2Dto = toCommandsV2Dto;
+const _installV2Mapper: (value: CurrentInstallReport) => InstallV2Dto = toInstallV2Dto;
+const _uninstallV2Mapper: (value: CurrentUninstallReport) => UninstallV2Dto = toUninstallV2Dto;
 const _flipV3Mapper: (value: FlipReport) => FlipV3Dto = toFlipV3Dto;
 const _listV3Mapper: (value: ListReport) => ListV3Dto = toListV3Dto;
 const _ledgerMigration: (value: LedgerV1Dto) => Result<LedgerV2Dto, ArtifactCodecError> =
@@ -496,6 +563,8 @@ void [
   _statusCodec,
   _agentsV2Codec,
   _commandsV2Codec,
+  _installV2Codec,
+  _uninstallV2Codec,
   _flipV3Codec,
   _listV3Codec,
   _manifestMapper,
@@ -512,6 +581,8 @@ void [
   _journalReverse,
   _agentsV2Mapper,
   _commandsV2Mapper,
+  _installV2Mapper,
+  _uninstallV2Mapper,
   _flipV3Mapper,
   _listV3Mapper,
   _ledgerMigration,
