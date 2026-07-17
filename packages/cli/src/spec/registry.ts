@@ -458,6 +458,18 @@ const scopeRelations = (
   },
 ];
 
+const singularOption = (command: string, option: string): OptionRelationSpec => ({
+  id: `${command}.${option}.single`.replaceAll(' ', '.').replaceAll('--', ''),
+  command,
+  kind: 'cardinality',
+  subject: 'option-occurrences',
+  whenOption: option,
+  option,
+  maximum: 1,
+  label: `${option} may only be specified once`,
+  description: `${option} may only be specified once`,
+});
+
 /**
  * Materialize the required current relation contract.
  *
@@ -540,7 +552,24 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   conflicts('skillsmith verify', '--static', '--deep'),
   conflicts('skillsmith install', '--deep', '--no-verify'),
   conflicts('skillsmith install', '--yes', '--dry-run'),
+  conflicts('skillsmith install', '--no-save', '--file'),
+  conflicts('skillsmith install', '--no-save', '--lockfile'),
+  {
+    id: 'skillsmith.install.lockfile.requires.file',
+    command: 'skillsmith install',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  conflicts('skillsmith install', '--scope', '--user'),
+  conflicts('skillsmith install', '--scope', '--project'),
   ...scopeRelations('skillsmith install', ['user', 'project']),
+  singularOption('skillsmith install', '--scope'),
+  singularOption('skillsmith install', '--file'),
+  singularOption('skillsmith install', '--lockfile'),
+  singularOption('skillsmith install', '--ref'),
+  singularOption('skillsmith install', '--path'),
   {
     id: 'skillsmith.install.ref.exactly-one-source',
     command: 'skillsmith install',
@@ -551,7 +580,32 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
     label: '--ref requires exactly one source target',
     description: '--ref requires exactly one source target',
   },
+  {
+    id: 'skillsmith.install.path.exactly-one-source',
+    command: 'skillsmith install',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--path',
+    exact: 1,
+    label: '--path requires exactly one source target',
+    description: '--path requires exactly one source target',
+  },
+  conflicts('skillsmith uninstall', '--no-save', '--file'),
+  conflicts('skillsmith uninstall', '--no-save', '--lockfile'),
+  {
+    id: 'skillsmith.uninstall.lockfile.requires.file',
+    command: 'skillsmith uninstall',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  conflicts('skillsmith uninstall', '--scope', '--user'),
+  conflicts('skillsmith uninstall', '--scope', '--project'),
   ...scopeRelations('skillsmith uninstall', ['user', 'project']),
+  singularOption('skillsmith uninstall', '--scope'),
+  singularOption('skillsmith uninstall', '--file'),
+  singularOption('skillsmith uninstall', '--lockfile'),
   conflicts('skillsmith uninstall', '--all-scopes', '--scope'),
   conflicts('skillsmith uninstall', '--all-scopes', '--user'),
   conflicts('skillsmith uninstall', '--all-scopes', '--project'),

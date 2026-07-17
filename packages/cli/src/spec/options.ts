@@ -114,12 +114,24 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith install:--deep': 'Run static and deep verification before placement',
   'skillsmith install:--continue-on-error': 'Keep going after per-source failures',
   'skillsmith install:--dry-run': 'Print the resolved plan without changing anything',
+  'skillsmith install:--file': 'Use an explicit desired-state manifest',
+  'skillsmith install:--lockfile': 'Use an explicit lockfile (requires --file)',
+  'skillsmith install:--no-save':
+    'Change live placement without inspecting or changing portable desired state',
+  'skillsmith install:--path':
+    'Use a custom placement directory for one source and one effective tool',
   'skillsmith install:--yes': 'Accepted no-op; ambiguity still requires an explicit choice',
   'skillsmith uninstall:--tool': 'Restrict removal to tools; repeatable',
   'skillsmith uninstall:--scope': 'Restrict removal to user or project scope',
   'skillsmith uninstall:--all-scopes': 'Remove from user scope and the current project',
+  'skillsmith uninstall:--continue-on-error':
+    'Continue with later independent declaration groups after a failure',
   'skillsmith uninstall:--force': 'Remove dev-mode or unmanaged placements too',
   'skillsmith uninstall:--dry-run': 'Print removals without executing them',
+  'skillsmith uninstall:--file': 'Use an explicit desired-state manifest',
+  'skillsmith uninstall:--lockfile': 'Use an explicit lockfile (requires --file)',
+  'skillsmith uninstall:--no-save':
+    'Change live placement without inspecting or changing portable desired state',
   'skillsmith uninstall:--yes': 'Accepted no-op; uninstall never prompts',
   'skillsmith dev:--all': 'Demote every pinned placement with a recorded dev source',
   'skillsmith dev:--tool': 'Restrict to tools; repeatable',

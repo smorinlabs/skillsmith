@@ -296,9 +296,12 @@ describe('lifecycle application services', () => {
       {
         arguments: [['owner/repo/skill']],
         options: {
-          tool: ['codex'],
+          tool: ['codex', 'codex'],
           project: true,
           ref: 'v1',
+          file: './skillsmith.toml',
+          lockfile: './skillsmith.lock',
+          path: './custom/skills',
           pin: true,
           verify: true,
           continueOnError: true,
@@ -316,6 +319,10 @@ describe('lifecycle application services', () => {
       tools: ['codex'],
       scope: 'project',
       ref: 'v1',
+      file: './skillsmith.toml',
+      lockfile: './skillsmith.lock',
+      noSave: false,
+      path: './custom/skills',
       pin: true,
       noVerify: false,
       continueOnError: true,
@@ -331,6 +338,178 @@ describe('lifecycle application services', () => {
       unchanged: 0,
       failed: 0,
     });
+  });
+
+  test('install and uninstall reject additive option conflicts before context access', async () => {
+    let installCalls = 0;
+    let uninstallCalls = 0;
+    const services = createLifecycleApplicationServices({
+      install: (async () => {
+        installCalls++;
+        return ok(installReport());
+      }) as never,
+      uninstall: (async () => {
+        uninstallCalls++;
+        return ok(uninstallReport());
+      }) as never,
+    });
+    const poisoned = new Proxy({} as CurrentApplicationContext, {
+      get: (_target, property) => {
+        throw new Error(`unexpected context access: ${String(property)}`);
+      },
+    });
+
+    const installCases = [
+      {
+        request: {
+          arguments: [['owner/repo/skill']],
+          options: { save: false, file: './skillsmith.toml' },
+        },
+        code: 'save-conflict',
+        message: '--no-save cannot be combined with --file',
+      },
+      {
+        request: {
+          arguments: [['owner/repo/skill']],
+          options: { save: false, lockfile: './skillsmith.lock' },
+        },
+        code: 'save-conflict',
+        message: '--no-save cannot be combined with --lockfile',
+      },
+      {
+        request: {
+          arguments: [['owner/repo/skill']],
+          options: { lockfile: './skillsmith.lock' },
+        },
+        code: 'artifact-lockfile-requires-file',
+        message: '--lockfile requires --file',
+      },
+      {
+        request: {
+          arguments: [['owner/repo/one', 'owner/repo/two']],
+          options: { path: './custom/skills' },
+        },
+        code: 'path-source',
+        message: '--path is only valid with exactly one source',
+      },
+      {
+        request: {
+          arguments: [['owner/repo/skill']],
+          options: {
+            path: './custom/skills',
+            tool: ['codex', 'codex', 'claude-code'],
+          },
+        },
+        code: 'path-tool',
+        message: '--path requires at most one explicit --tool (got 2)',
+      },
+      {
+        request: {
+          arguments: [['owner/repo/skill']],
+          options: { scope: 'project', project: true },
+        },
+        code: 'scope',
+        message: '--scope=project conflicts with --project',
+      },
+    ] as const;
+    for (const fixture of installCases) {
+      const outcome = await services.install(fixture.request, poisoned);
+      expect(outcome.exitClass).toBe('usage');
+      expect(outcome.diagnostics[0]?.code).toBe(fixture.code);
+      expect(outcome.diagnostics[0]?.message).toBe(fixture.message);
+    }
+
+    const uninstallCases = [
+      {
+        request: {
+          arguments: [['skill']],
+          options: { save: false, file: './skillsmith.toml' },
+        },
+        code: 'save-conflict',
+        message: '--no-save cannot be combined with --file',
+      },
+      {
+        request: {
+          arguments: [['skill']],
+          options: { save: false, lockfile: './skillsmith.lock' },
+        },
+        code: 'save-conflict',
+        message: '--no-save cannot be combined with --lockfile',
+      },
+      {
+        request: {
+          arguments: [['skill']],
+          options: { lockfile: './skillsmith.lock' },
+        },
+        code: 'artifact-lockfile-requires-file',
+        message: '--lockfile requires --file',
+      },
+      {
+        request: {
+          arguments: [['skill']],
+          options: { scope: 'user', user: true },
+        },
+        code: 'scope',
+        message: '--scope=user conflicts with --user',
+      },
+    ] as const;
+    for (const fixture of uninstallCases) {
+      const outcome = await services.uninstall(fixture.request, poisoned);
+      expect(outcome.exitClass).toBe('usage');
+      expect(outcome.diagnostics[0]?.code).toBe(fixture.code);
+      expect(outcome.diagnostics[0]?.message).toBe(fixture.message);
+    }
+
+    expect(installCalls).toBe(0);
+    expect(uninstallCalls).toBe(0);
+  });
+
+  test('negated Commander save and additive uninstall values reach the domain options', async () => {
+    let installOptions: Record<string, unknown> | undefined;
+    const uninstallOptions: Record<string, unknown>[] = [];
+    const services = createLifecycleApplicationServices({
+      install: (async (...args: Parameters<typeof runInstall>) => {
+        installOptions = args[1] as unknown as Record<string, unknown>;
+        return ok(installReport());
+      }) as never,
+      uninstall: (async (...args: unknown[]) => {
+        uninstallOptions.push(args[1] as Record<string, unknown>);
+        return ok(uninstallReport());
+      }) as never,
+    });
+
+    await services.install(
+      {
+        arguments: [['owner/repo/skill']],
+        options: { save: false, path: './custom/skills', tool: ['codex', 'codex'] },
+      },
+      context(),
+    );
+    await services.uninstall(
+      {
+        arguments: [['skill']],
+        options: {
+          file: './skillsmith.toml',
+          lockfile: './skillsmith.lock',
+          continueOnError: true,
+        },
+      },
+      context(),
+    );
+    await services.uninstall({ arguments: [['skill']], options: { save: false } }, context());
+
+    expect(installOptions).toMatchObject({
+      tools: ['codex'],
+      noSave: true,
+      path: './custom/skills',
+    });
+    expect(uninstallOptions[0]).toMatchObject({
+      file: './skillsmith.toml',
+      lockfile: './skillsmith.lock',
+      noSave: false,
+      continueOnError: true,
+    });
+    expect(uninstallOptions[1]).toMatchObject({ noSave: true, continueOnError: false });
   });
 
   test('uninstall keeps scope/mode refusals pre-domain and reports dry-run as preview', async () => {

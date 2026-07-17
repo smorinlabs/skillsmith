@@ -269,6 +269,7 @@ const resolveContext = async (
 
 const scopeFlags = (
   options: Readonly<Record<string, unknown>>,
+  exclusiveForms = false,
 ):
   | { readonly ok: true; readonly value: InstallScope | null }
   | {
@@ -292,7 +293,11 @@ const scopeFlags = (
     return { ok: false, message: `unknown scope '${explicit}'`, exitClass: 'usage' };
   }
   const selected = explicit ?? shorthand[0];
-  if (explicit !== undefined && shorthand[0] !== undefined && explicit !== shorthand[0]) {
+  if (
+    explicit !== undefined &&
+    shorthand[0] !== undefined &&
+    (exclusiveForms || explicit !== shorthand[0])
+  ) {
     return {
       ok: false,
       message: `--scope=${explicit} conflicts with --${shorthand[0]}`,
@@ -496,6 +501,50 @@ export const createLifecycleApplicationServices = (
       );
     const mode = validateMode(options);
     if (!mode.ok) return refusal('install', 'usage', 'mode-conflict', mode.message);
+    const file = optionalString(options, 'file');
+    const lockfile = optionalString(options, 'lockfile');
+    const noSave = !bool(options, 'save', true);
+    const path = optionalString(options, 'path');
+    if (noSave && file !== undefined) {
+      return refusal(
+        'install',
+        'usage',
+        'save-conflict',
+        '--no-save cannot be combined with --file',
+      );
+    }
+    if (noSave && lockfile !== undefined) {
+      return refusal(
+        'install',
+        'usage',
+        'save-conflict',
+        '--no-save cannot be combined with --lockfile',
+      );
+    }
+    if (lockfile !== undefined && file === undefined) {
+      return refusal(
+        'install',
+        'usage',
+        'artifact-lockfile-requires-file',
+        '--lockfile requires --file',
+      );
+    }
+    if (path !== undefined && sources.length !== 1) {
+      return refusal(
+        'install',
+        'usage',
+        'path-source',
+        '--path is only valid with exactly one source',
+      );
+    }
+    if (path !== undefined && selection.value.tools.length > 1) {
+      return refusal(
+        'install',
+        'usage',
+        'path-tool',
+        `--path requires at most one explicit --tool (got ${selection.value.tools.length})`,
+      );
+    }
     if (bool(options, 'deep') && !bool(options, 'verify', true)) {
       return refusal(
         'install',
@@ -504,7 +553,7 @@ export const createLifecycleApplicationServices = (
         '--deep and --no-verify contradict each other: --deep opts into a deeper verify gate, --no-verify skips the gate entirely',
       );
     }
-    const scope = scopeFlags(options);
+    const scope = scopeFlags(options, true);
     if (!scope.ok) return refusal('install', scope.exitClass, 'scope', scope.message);
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('install', project.error, context.signal);
@@ -520,6 +569,10 @@ export const createLifecycleApplicationServices = (
         ...(optionalString(options, 'ref') === undefined
           ? {}
           : { ref: optionalString(options, 'ref') as string }),
+        ...(file === undefined ? {} : { file }),
+        ...(lockfile === undefined ? {} : { lockfile }),
+        noSave,
+        ...(path === undefined ? {} : { path }),
         pin: bool(options, 'pin'),
         direct: bool(options, 'direct'),
         force: bool(options, 'force'),
@@ -563,7 +616,34 @@ export const createLifecycleApplicationServices = (
       );
     const mode = validateMode(options);
     if (!mode.ok) return refusal('uninstall', 'usage', 'mode-conflict', mode.message);
-    const scope = scopeFlags(options);
+    const file = optionalString(options, 'file');
+    const lockfile = optionalString(options, 'lockfile');
+    const noSave = !bool(options, 'save', true);
+    if (noSave && file !== undefined) {
+      return refusal(
+        'uninstall',
+        'usage',
+        'save-conflict',
+        '--no-save cannot be combined with --file',
+      );
+    }
+    if (noSave && lockfile !== undefined) {
+      return refusal(
+        'uninstall',
+        'usage',
+        'save-conflict',
+        '--no-save cannot be combined with --lockfile',
+      );
+    }
+    if (lockfile !== undefined && file === undefined) {
+      return refusal(
+        'uninstall',
+        'usage',
+        'artifact-lockfile-requires-file',
+        '--lockfile requires --file',
+      );
+    }
+    const scope = scopeFlags(options, true);
     if (!scope.ok) return refusal('uninstall', scope.exitClass, 'scope', scope.message);
     if (bool(options, 'allScopes') && scope.value !== null) {
       return refusal(
@@ -585,6 +665,10 @@ export const createLifecycleApplicationServices = (
           : { tools: selection.value.tools as readonly FlipTool[] }),
         ...(scope.value === null ? {} : { scope: scope.value }),
         allScopes: bool(options, 'allScopes'),
+        ...(file === undefined ? {} : { file }),
+        ...(lockfile === undefined ? {} : { lockfile }),
+        noSave,
+        continueOnError: bool(options, 'continueOnError'),
         force: bool(options, 'force'),
         dryRun: bool(options, 'dryRun'),
         cwd: project.value.projectRoot ?? project.value.effectiveCwd,

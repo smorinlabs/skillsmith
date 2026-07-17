@@ -2391,6 +2391,28 @@
     }
   },
   {
+    "key": "option:skillsmith install:--file <path>",
+    "disposition": "N",
+    "phase": "P17-G4A-01",
+    "validationOwner": "EWP-CMD-INSTALL-TS01",
+    "option": {
+      "flags": "--file <path>",
+      "short": null,
+      "long": "--file",
+      "attributeName": "file",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
     "key": "option:skillsmith install:--json",
     "disposition": "K",
     "phase": "P17-G4A-01",
@@ -2409,6 +2431,50 @@
       "defaultSource": "literal",
       "repeatable": false,
       "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith install:--lockfile <path>",
+    "disposition": "N",
+    "phase": "P17-G4A-01",
+    "validationOwner": "EWP-CMD-INSTALL-TS01",
+    "option": {
+      "flags": "--lockfile <path>",
+      "short": null,
+      "long": "--lockfile",
+      "attributeName": "lockfile",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith install:--no-save",
+    "disposition": "N",
+    "phase": "P17-G4A-01",
+    "validationOwner": "EWP-CMD-INSTALL-TS01",
+    "option": {
+      "flags": "--no-save",
+      "short": null,
+      "long": "--no-save",
+      "attributeName": "save",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": true,
       "hidden": false
     }
   },
@@ -2580,6 +2646,28 @@
       "optionalValue": false,
       "variadic": false,
       "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith install:-p, --path <dir>",
+    "disposition": "N",
+    "phase": "P17-G4A-01",
+    "validationOwner": "EWP-CMD-INSTALL-TS01",
+    "option": {
+      "flags": "-p, --path <dir>",
+      "short": "-p",
+      "long": "--path",
+      "attributeName": "path",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
       "choices": [],
       "defaultValue": "null",
       "defaultSource": "none",
@@ -3739,6 +3827,28 @@
     }
   },
   {
+    "key": "option:skillsmith uninstall:--continue-on-error",
+    "disposition": "N",
+    "phase": "P17-G4A-01",
+    "validationOwner": "EWP-CMD-UNINSTALL-TS01",
+    "option": {
+      "flags": "--continue-on-error",
+      "short": null,
+      "long": "--continue-on-error",
+      "attributeName": "continueOnError",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
     "key": "option:skillsmith uninstall:--dry-run",
     "disposition": "K",
     "phase": "P17-G4A-01",
@@ -3755,6 +3865,28 @@
       "choices": [],
       "defaultValue": "false",
       "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith uninstall:--file <path>",
+    "disposition": "N",
+    "phase": "P17-G4A-01",
+    "validationOwner": "EWP-CMD-UNINSTALL-TS01",
+    "option": {
+      "flags": "--file <path>",
+      "short": null,
+      "long": "--file",
+      "attributeName": "file",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
       "repeatable": false,
       "negated": false,
       "hidden": false
@@ -3779,6 +3911,50 @@
       "defaultSource": "literal",
       "repeatable": false,
       "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith uninstall:--lockfile <path>",
+    "disposition": "N",
+    "phase": "P17-G4A-01",
+    "validationOwner": "EWP-CMD-UNINSTALL-TS01",
+    "option": {
+      "flags": "--lockfile <path>",
+      "short": null,
+      "long": "--lockfile",
+      "attributeName": "lockfile",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith uninstall:--no-save",
+    "disposition": "N",
+    "phase": "P17-G4A-01",
+    "validationOwner": "EWP-CMD-UNINSTALL-TS01",
+    "option": {
+      "flags": "--no-save",
+      "short": null,
+      "long": "--no-save",
+      "attributeName": "save",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": true,
       "hidden": false
     }
   },

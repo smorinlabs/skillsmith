@@ -40,6 +40,10 @@ export interface InstallOptions {
   tools?: readonly FlipTool[]; // explicit --tool list; undefined = all DETECTED tools
   scope?: InstallScope; // undefined = project inside a git work tree, else user
   ref?: string; // --ref; only valid with exactly one source
+  file?: string;
+  lockfile?: string;
+  noSave?: boolean;
+  path?: string;
   pin?: boolean;
   direct?: boolean;
   force?: boolean;
@@ -141,6 +145,10 @@ export interface UninstallOptions {
   tools?: readonly FlipTool[]; // restrict; undefined = every tool where the skill is found
   scope?: InstallScope; // restrict to one scope
   allScopes?: boolean; // user scope AND the current project's scope
+  file?: string;
+  lockfile?: string;
+  noSave?: boolean;
+  continueOnError?: boolean;
   force?: boolean;
   dryRun?: boolean;
   cwd: string;

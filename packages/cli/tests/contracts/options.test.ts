@@ -49,7 +49,9 @@ const runHermeticCli = async (
 };
 
 interface CommandSpecOptionContract {
+  readonly flags: string;
   readonly long: string;
+  readonly short: string | null;
   readonly attributeName: string;
   readonly valueShape: 'boolean' | 'required' | 'optional';
   readonly knownValues: readonly string[];
@@ -634,19 +636,17 @@ describe('EWP-OPT-TS03', () => {
     expect(api.validateCurrentOptionRelations()).toEqual([]);
   });
 
-  test('scope consistency allows agreement and rejects disagreement before application setup', async () => {
+  test('scope consistency retains read agreement while lifecycle forms are exclusive', async () => {
     const api = await requireOptionContractApi();
-    const commands = [
+    const agreementCommands = [
       ['skillsmith list', ['user', 'project', 'system', 'managed']],
       ['skillsmith commands', ['user', 'project']],
       ['skillsmith doctor', ['user', 'project', 'system']],
       ['skillsmith check', ['user', 'project', 'system']],
       ['skillsmith status', ['system', 'user', 'project', 'managed']],
-      ['skillsmith install', ['user', 'project']],
-      ['skillsmith uninstall', ['user', 'project']],
     ] as const;
 
-    for (const [command, scopes] of commands) {
+    for (const [command, scopes] of agreementCommands) {
       const [selected, other] = scopes;
       if (selected === undefined || other === undefined) throw new Error(`${command} fixture gap`);
       expect(
@@ -663,6 +663,23 @@ describe('EWP-OPT-TS03', () => {
       ).toBeFalse();
       expect(
         api.validateOptionInvocation(command, [`--${selected}`, `--${other}`]).ok,
+        `${command} multiple scope shorthands`,
+      ).toBeFalse();
+    }
+
+    for (const command of ['skillsmith install', 'skillsmith uninstall'] as const) {
+      for (const scope of ['user', 'project'] as const) {
+        expect(
+          api.validateOptionInvocation(command, ['--scope', scope, `--${scope}`]).ok,
+          `${command} equivalent mixed scope forms`,
+        ).toBeFalse();
+        expect(
+          api.validateOptionInvocation(command, [`--${scope}`, `-s${scope}`]).ok,
+          `${command} equivalent attached mixed scope forms`,
+        ).toBeFalse();
+      }
+      expect(
+        api.validateOptionInvocation(command, ['--user', '--project']).ok,
         `${command} multiple scope shorthands`,
       ).toBeFalse();
     }
@@ -710,9 +727,11 @@ describe('EWP-OPT-TS03', () => {
         const result = await runHermeticCli(args, process.cwd(), env);
         expect(result.code, args[0]).toBe(2);
         expect(result.stderr, args[0]).toBe('');
-        expect(JSON.parse(result.stdout).message, args[0]).toContain(
-          '--scope project cannot be combined with --user',
-        );
+        const expected =
+          args[0] === 'install' || args[0] === 'uninstall'
+            ? '--scope cannot be combined with --user'
+            : '--scope project cannot be combined with --user';
+        expect(JSON.parse(result.stdout).message, args[0]).toContain(expected);
       }
     } finally {
       await rm(configRoot, { recursive: true, force: true });
@@ -784,8 +803,17 @@ describe('EWP-OPT-TS03', () => {
       ['skillsmith verify', ['--static', '--deep']],
       ['skillsmith install', ['source', '--deep', '--no-verify']],
       ['skillsmith install', ['one', 'two', '--ref', 'main']],
+      ['skillsmith install', ['one', 'two', '--path', './skills']],
+      ['skillsmith install', ['source', '--no-save', '--file', 'skillsmith.toml']],
+      ['skillsmith install', ['source', '--no-save', '--lockfile', 'skillsmith.lock']],
+      ['skillsmith install', ['source', '--lockfile', 'skillsmith.lock']],
+      ['skillsmith install', ['source', '--scope', 'user', '--user']],
       ['skillsmith install', ['source', '--scope', 'user', '--project']],
       ['skillsmith install', ['source', '--yes', '--dry-run']],
+      ['skillsmith uninstall', ['skill', '--no-save', '--file', 'skillsmith.toml']],
+      ['skillsmith uninstall', ['skill', '--no-save', '--lockfile', 'skillsmith.lock']],
+      ['skillsmith uninstall', ['skill', '--lockfile', 'skillsmith.lock']],
+      ['skillsmith uninstall', ['skill', '--scope', 'project', '--project']],
       ['skillsmith uninstall', ['skill', '--all-scopes', '--project']],
       ['skillsmith uninstall', ['skill', '--yes', '--dry-run']],
       ['skillsmith dev', ['target', '--all']],
@@ -815,6 +843,12 @@ describe('EWP-OPT-TS03', () => {
       ['skillsmith check', ['--report-only'], ['--exit-code']],
       ['skillsmith verify', ['--static'], ['--deep']],
       ['skillsmith install', ['source', '--deep'], ['--no-verify']],
+      ['skillsmith install', ['source', '--no-save'], ['--file', 'skillsmith.toml']],
+      ['skillsmith install', ['source', '--no-save'], ['--lockfile', 'skillsmith.lock']],
+      ['skillsmith install', ['source', '--scope', 'user'], ['--user']],
+      ['skillsmith uninstall', ['skill', '--no-save'], ['--file', 'skillsmith.toml']],
+      ['skillsmith uninstall', ['skill', '--no-save'], ['--lockfile', 'skillsmith.lock']],
+      ['skillsmith uninstall', ['skill', '--scope', 'project'], ['--project']],
     ] as const) {
       for (const args of [
         [...left, ...right],
@@ -826,6 +860,46 @@ describe('EWP-OPT-TS03', () => {
         ).toBeFalse();
       }
     }
+  });
+
+  test('lifecycle singular options and path source cardinality are registry-owned', async () => {
+    const api = await requireOptionContractApi();
+    const repeated = [
+      ['skillsmith install', ['source', '--file', 'one.toml', '--file', 'two.toml']],
+      [
+        'skillsmith install',
+        ['source', '--file', 'state.toml', '--lockfile', 'one.lock', '--lockfile', 'two.lock'],
+      ],
+      ['skillsmith install', ['source', '--ref', 'one', '--ref', 'two']],
+      ['skillsmith install', ['source', '--path', './one', '--path', './two']],
+      ['skillsmith install', ['source', '--scope', 'user', '--scope', 'user']],
+      ['skillsmith uninstall', ['skill', '--file', 'one.toml', '--file', 'two.toml']],
+      [
+        'skillsmith uninstall',
+        ['skill', '--file', 'state.toml', '--lockfile', 'one.lock', '--lockfile', 'two.lock'],
+      ],
+      ['skillsmith uninstall', ['skill', '--scope', 'project', '--scope', 'project']],
+    ] as const;
+
+    for (const [command, args] of repeated) {
+      const result = api.validateOptionInvocation(command, args);
+      expect(result.ok, `${command} ${args.join(' ')}`).toBeFalse();
+      if (result.ok) throw new Error(`repeated singular option passed: ${command}`);
+      expect(result.error.message).toContain('may only be specified once');
+    }
+
+    expect(
+      api.validateOptionInvocation('skillsmith install', [
+        'source',
+        '--path',
+        './skills',
+        '--tool',
+        'codex',
+        '--tool',
+        'codex',
+      ]),
+      'duplicate tools remain valid for downstream registry-order deduplication',
+    ).toEqual({ ok: true });
   });
 
   test('observed live parser gaps fail with the intended relation instead of continuing', async () => {
@@ -902,18 +976,146 @@ describe('EWP-OPT-TS04', () => {
       program.commands
         .find((candidate) => candidate.name() === 'uninstall')
         ?.options.some((option) => option.long === '--continue-on-error'),
-      'uninstall retains its G4A-01-owned public scheduler option',
-    ).toBeFalse();
+      'uninstall exposes its G4A-01-owned public scheduler option',
+    ).toBeTrue();
   });
 
-  test('G3B-02 adds exactly two long-only boolean scheduler options with false defaults', async () => {
+  test('G4A-01 adds exactly eight approved lifecycle options with semantic defaults', async () => {
+    const api = await requireOptionContractApi();
+    const expected = [
+      {
+        path: 'skillsmith install',
+        flags: '--file <path>',
+        long: '--file',
+        short: null,
+        attributeName: 'file',
+        valueShape: 'required',
+        negated: false,
+        flagDefault: undefined,
+        parsedDefault: undefined,
+      },
+      {
+        path: 'skillsmith install',
+        flags: '--lockfile <path>',
+        long: '--lockfile',
+        short: null,
+        attributeName: 'lockfile',
+        valueShape: 'required',
+        negated: false,
+        flagDefault: undefined,
+        parsedDefault: undefined,
+      },
+      {
+        path: 'skillsmith install',
+        flags: '--no-save',
+        long: '--no-save',
+        short: null,
+        attributeName: 'save',
+        valueShape: 'boolean',
+        negated: true,
+        flagDefault: false,
+        parsedDefault: true,
+      },
+      {
+        path: 'skillsmith install',
+        flags: '-p, --path <dir>',
+        long: '--path',
+        short: '-p',
+        attributeName: 'path',
+        valueShape: 'required',
+        negated: false,
+        flagDefault: undefined,
+        parsedDefault: undefined,
+      },
+      {
+        path: 'skillsmith uninstall',
+        flags: '--continue-on-error',
+        long: '--continue-on-error',
+        short: null,
+        attributeName: 'continueOnError',
+        valueShape: 'boolean',
+        negated: false,
+        flagDefault: false,
+        parsedDefault: false,
+      },
+      {
+        path: 'skillsmith uninstall',
+        flags: '--file <path>',
+        long: '--file',
+        short: null,
+        attributeName: 'file',
+        valueShape: 'required',
+        negated: false,
+        flagDefault: undefined,
+        parsedDefault: undefined,
+      },
+      {
+        path: 'skillsmith uninstall',
+        flags: '--lockfile <path>',
+        long: '--lockfile',
+        short: null,
+        attributeName: 'lockfile',
+        valueShape: 'required',
+        negated: false,
+        flagDefault: undefined,
+        parsedDefault: undefined,
+      },
+      {
+        path: 'skillsmith uninstall',
+        flags: '--no-save',
+        long: '--no-save',
+        short: null,
+        attributeName: 'save',
+        valueShape: 'boolean',
+        negated: true,
+        flagDefault: false,
+        parsedDefault: true,
+      },
+    ] as const;
+
+    const program = buildProgram();
+    for (const row of expected) {
+      const spec = api.CURRENT_COMMAND_SPECS.find((candidate) => candidate.path === row.path);
+      const option = spec?.options.find((candidate) => candidate.long === row.long);
+      expect(option, `${row.path} ${row.long}`).toMatchObject({
+        flags: row.flags,
+        long: row.long,
+        short: row.short,
+        attributeName: row.attributeName,
+        valueShape: row.valueShape,
+        repeatable: false,
+        negated: row.negated,
+        flagDefault: row.flagDefault,
+        parsedDefault: row.parsedDefault,
+      });
+      const command = program.commands.find(
+        (candidate) => `skillsmith ${candidate.name()}` === row.path,
+      );
+      const live = command?.options.filter((candidate) => candidate.long === row.long);
+      expect(live, `${row.path} ${row.long} live count`).toHaveLength(1);
+      expect(live?.[0]?.flags, `${row.path} ${row.long} live flags`).toBe(row.flags);
+    }
+
+    const approved = new Set(expected.map(({ path, long }) => `${path}:${long}`));
+    const delta = api.CURRENT_COMMAND_SPECS.flatMap((spec) =>
+      spec.options
+        .filter((option) => approved.has(`${spec.path}:${option.long}`))
+        .map((option) => `${spec.path}:${option.flags}`),
+    );
+    expect(delta).toEqual(expected.map(({ path, flags }) => `${path}:${flags}`));
+    expect(api.CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0)).toBe(
+      179,
+    );
+  });
+
+  test('G3B-02 scheduler options retain their long-only boolean shape and false defaults', async () => {
     const api = await requireOptionContractApi();
     const findings: string[] = [];
     const inventory = api.CURRENT_COMMAND_SPECS.reduce(
       (count, spec) => count + spec.options.length,
       0,
     );
-    if (inventory !== 171) findings.push(`option inventory is ${inventory}, expected 171`);
+    if (inventory !== 179) findings.push(`option inventory is ${inventory}, expected 179`);
 
     const program = buildProgram();
     for (const commandName of ['dev', 'promote'] as const) {
@@ -949,13 +1151,6 @@ describe('EWP-OPT-TS04', () => {
     if (install?.options.filter((option) => option.long === '--continue-on-error').length !== 1) {
       findings.push('skillsmith install lost its existing --continue-on-error option');
     }
-    const uninstall = api.CURRENT_COMMAND_SPECS.find(
-      (candidate) => candidate.path === 'skillsmith uninstall',
-    );
-    if (uninstall?.options.some((option) => option.long === '--continue-on-error')) {
-      findings.push('skillsmith uninstall exposed its G4A-01-owned option early');
-    }
-
     expect(findings).toEqual([]);
   });
 
