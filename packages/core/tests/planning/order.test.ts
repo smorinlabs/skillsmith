@@ -118,7 +118,7 @@ describe('planning canonical order', () => {
   test('orders null-pair artifact prerequisites in dependency order', () => {
     const artifact = (
       operationId: string,
-      kind: 'migrate-ledger' | 'migrate-project-config' | 'write-lock',
+      kind: 'migrate-ledger' | 'migrate-project-config' | 'write-manifest' | 'write-lock',
     ): ExecutableOperation =>
       ({
         ...operation(operationId, 'user', 'artifact', 'codex', 'repair'),
@@ -133,11 +133,12 @@ describe('planning canonical order', () => {
     expect(
       [
         artifact('lock', 'write-lock'),
+        artifact('manifest', 'write-manifest'),
         artifact('project', 'migrate-project-config'),
         artifact('ledger', 'migrate-ledger'),
       ]
         .sort(compareExecutableOperations)
         .map(({ operationId }) => operationId),
-    ).toEqual(['ledger', 'project', 'lock']);
+    ).toEqual(['ledger', 'project', 'manifest', 'lock']);
   });
 });

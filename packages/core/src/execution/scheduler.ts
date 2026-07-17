@@ -40,16 +40,17 @@ const exactBindingKeys = Object.freeze([
   'unstartedForce',
 ]);
 
-const ARTIFACT_PREREQUISITE_KINDS = Object.freeze([
+const ARTIFACT_OPERATION_KINDS = Object.freeze([
   'migrate-ledger',
   'migrate-project-config',
+  'write-manifest',
   'write-lock',
 ] as const);
 
-type ArtifactPrerequisiteKind = (typeof ARTIFACT_PREREQUISITE_KINDS)[number];
+type ArtifactPrerequisiteKind = (typeof ARTIFACT_OPERATION_KINDS)[number];
 
 const isArtifactPrerequisiteKind = (kind: string): kind is ArtifactPrerequisiteKind =>
-  ARTIFACT_PREREQUISITE_KINDS.some((candidate) => candidate === kind);
+  ARTIFACT_OPERATION_KINDS.some((candidate) => candidate === kind);
 
 const sameLocation = (left: unknown, right: unknown): boolean =>
   canonicalPlanningString(left) === canonicalPlanningString(right);
@@ -74,7 +75,21 @@ const validArtifactImages = (
       before.shape === 'legacy' &&
       after.kind === 'manifest' &&
       after.shape === 'canonical' &&
-      sameLocation(before.location, after.location)
+      sameLocation(before.location, after.location) &&
+      before.semanticHash === after.semanticHash &&
+      sameLocation(before.value, after.value)
+    );
+  }
+  if (kind === 'write-manifest') {
+    return (
+      after.kind === 'manifest' &&
+      after.shape === 'canonical' &&
+      ((before.kind === 'absent' &&
+        before.resource.kind === 'manifest-bytes' &&
+        sameLocation(before.resource.location, after.location)) ||
+        (before.kind === 'manifest' &&
+          before.shape === 'canonical' &&
+          sameLocation(before.location, after.location)))
     );
   }
   return (
@@ -110,7 +125,9 @@ const validateArtifactPrerequisite = (operation: ExecutableOperation<string>): v
       ? { live: false, manifest: false, lock: false, ledger: true }
       : kind === 'migrate-project-config'
         ? { live: false, manifest: true, lock: false, ledger: false }
-        : { live: false, manifest: false, lock: true, ledger: false };
+        : kind === 'write-manifest'
+          ? { live: false, manifest: true, lock: false, ledger: false }
+          : { live: false, manifest: false, lock: true, ledger: false };
   if (
     !sameLocation(operation.mutates, expectedMutations) ||
     !validArtifactImages(kind, operation.before, operation.after)
@@ -125,11 +142,29 @@ export const validateExecutionPlanShape = <ToolId extends string = SupportedTool
   const pairs = new Map<string, number>();
   const closedGroups = new Set<string>();
   const groupOperationCounts = new Map<string, number>();
-  const artifactGroups = new Set<string>();
   let currentGroup: string | null = null;
+  const operationsById = new Map(
+    plan.operations.map((operation) => [operation.operationId, operation]),
+  );
+  if (operationsById.size !== plan.operations.length) fail('operation IDs must be unique');
+  const operationIndex = new Map(
+    plan.operations.map((operation, index) => [operation.operationId, index]),
+  );
   for (const operation of plan.operations) {
-    if (operation.dependencyMetadata.operationIds.length > 0) {
-      fail(`operation ${operation.operationId} dependency metadata must be empty in this slice`);
+    for (const dependencyId of operation.dependencyMetadata.operationIds) {
+      const dependency = operationsById.get(dependencyId);
+      if (dependency === undefined) {
+        fail(`operation ${operation.operationId} has a dangling dependency`);
+      }
+      if ((dependency as ExecutableOperation<ToolId>).groupId !== operation.groupId) {
+        fail(`operation ${operation.operationId} has a cross-group dependency`);
+      }
+      if (
+        (operationIndex.get(dependencyId) as number) >=
+        (operationIndex.get(operation.operationId) as number)
+      ) {
+        fail(`operation ${operation.operationId} dependency order is not topological`);
+      }
     }
     if (operation.groupId !== currentGroup) {
       if (closedGroups.has(operation.groupId)) {
@@ -142,16 +177,17 @@ export const validateExecutionPlanShape = <ToolId extends string = SupportedTool
     groupOperationCounts.set(operation.groupId, groupCount + 1);
     if (operation.pairId === null) {
       validateArtifactPrerequisite(operation);
-      if (artifactGroups.has(operation.groupId) || groupCount !== 0) {
-        fail(`artifact prerequisite ${operation.operationId} must be the unique group prefix`);
-      }
-      artifactGroups.add(operation.groupId);
     } else {
       pairs.set(operation.pairId, (pairs.get(operation.pairId) ?? 0) + 1);
     }
   }
   for (const [pairId, count] of pairs) {
     if (count !== 1) fail(`pair ${pairId} must contain exactly one operation`);
+  }
+  for (const operation of plan.operations) {
+    if (operation.kind === 'migrate-ledger' && groupOperationCounts.get(operation.groupId) !== 1) {
+      fail(`ledger migration ${operation.operationId} must be a singleton group`);
+    }
   }
   if (String(plan.command) === 'doctor') {
     if (plan.batchPolicy !== 'continue-on-error') {
@@ -314,6 +350,7 @@ export const scheduleValidatedOperationPlan = async <ToolId extends string = Sup
   observation?: ObservationBundle,
 ): Promise<readonly OperationExecutionResult<ToolId>[]> => {
   const results: OperationExecutionResult<ToolId>[] = [];
+  const resultByOperationId = new Map<string, OperationExecutionResult<ToolId>>();
   let cursor = 0;
   let stopAfterFailure = false;
 
@@ -365,31 +402,33 @@ export const scheduleValidatedOperationPlan = async <ToolId extends string = Sup
         cancelled = true;
         break;
       }
+      const operation = plan.operations[index] as ExecutableOperation<ToolId>;
+      const dependenciesSucceeded = operation.dependencyMetadata.operationIds.every(
+        (operationId) => resultByOperationId.get(operationId)?.outcome === 'succeeded',
+      );
+      if (!dependenciesSucceeded) {
+        const skipped = unstartedResult(
+          bindings[index] as ValidatedExecutionBinding<ToolId>,
+          'skipped-after-failure',
+          context,
+        );
+        results.push(skipped);
+        resultByOperationId.set(operation.operationId, skipped);
+        continue;
+      }
       const result = await executeBinding(
         bindings[index] as ValidatedExecutionBinding<ToolId>,
-        plan.operations[index] as ExecutableOperation<ToolId>,
+        operation,
         context,
         observation,
         options.signal,
       );
       results.push(result);
+      resultByOperationId.set(operation.operationId, result);
       if (result.outcome === 'failed') {
         groupFailed = true;
-        const operation = plan.operations[index] as ExecutableOperation<ToolId>;
-        if (operation.pairId === null) {
-          for (let remaining = index + 1; remaining < groupEnd; remaining += 1) {
-            results.push(
-              unstartedResult(
-                bindings[remaining] as ValidatedExecutionBinding<ToolId>,
-                'skipped-after-failure',
-                context,
-              ),
-            );
-          }
-          if (operation.kind === 'migrate-ledger' && plan.command !== 'doctor') {
-            stopAfterFailure = true;
-          }
-          break;
+        if (operation.kind === 'migrate-ledger' && plan.command !== 'doctor') {
+          stopAfterFailure = true;
         }
       }
       if (result.outcome === 'cancelled') {

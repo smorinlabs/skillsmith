@@ -2,13 +2,17 @@ import { describe, expect, test } from 'bun:test';
 import {
   type AcquisitionInstallPlanRequestV1,
   type AcquisitionObservedStateSnapshotV1,
+  type AcquisitionUninstallPlanRequestV1,
   createAcquisitionDiagnosticPlan,
   createAcquisitionPlan,
   createInstallPlanning,
   createUninstallPlanning,
 } from '../../src/acquire/plan.ts';
 import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
+import { hashManifestSemantics } from '../../src/artifacts/hash.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
+import { type PortableLockV1, hashPortableLock } from '../../src/artifacts/lock.ts';
+import type { NormalizedManifestV1 } from '../../src/artifacts/types.ts';
 import {
   type ExpectedRevisionV1,
   type LivePlacementStateV1,
@@ -116,6 +120,28 @@ const presentLedgerRevision = (hex: string) =>
     semanticRevision: `sha256:${hex}`,
   });
 
+const presentArtifactRevision = (
+  domain: 'manifest' | 'lock',
+  resourceId: string,
+  path: string,
+  byteRevision: string,
+  semanticRevision: string,
+) =>
+  canonicalRevision({
+    schemaVersion: 1 as const,
+    domain,
+    resourceId,
+    state: 'present' as const,
+    targetIdentity: path,
+    targetKind: 'file' as const,
+    targetMetadataIdentity: `metadata:v1:${HEX.a}`,
+    parentIdentity: '/fixture',
+    parentKind: 'directory' as const,
+    parentMetadataIdentity: `metadata:v1:${HEX.b}`,
+    byteRevision,
+    semanticRevision,
+  });
+
 const ledgerWithAlphaPair = (pair: LedgerPairV1Dto): LedgerModel => ({
   updatedAt: '2026-07-16T00:00:00.000Z',
   skills: { alpha: { tools: { codex: pair } } },
@@ -146,6 +172,7 @@ const storeState = (resourceId: string, name: string, contentRevision = `sha256:
 };
 
 interface SnapshotOverrides {
+  readonly artifact?: AcquisitionObservedStateSnapshotV1['artifact'];
   readonly live?: AcquisitionObservedStateSnapshotV1['live'];
   readonly store?: AcquisitionObservedStateSnapshotV1['store'];
   readonly ledger?: AcquisitionObservedStateSnapshotV1['ledger'];
@@ -160,7 +187,7 @@ const snapshot = (
     schemaVersion: 1,
     snapshotId: `snapshot:v1:${snapshotHex}`,
     project: { revision: revision('project', 'project:/fixture', HEX.a), value: {} },
-    artifact: {
+    artifact: overrides.artifact ?? {
       mode: 'selected',
       pair: {
         file: {
@@ -257,6 +284,99 @@ const request = () => {
   };
 };
 
+const artifactTransitionForInstall = (
+  input: ReturnType<typeof request>,
+  tools: readonly ('claude-code' | 'codex')[],
+) => {
+  const intent = input.intents[0];
+  if (intent === undefined || intent.source.kind !== 'portable') throw new Error('missing intent');
+  const manifest: NormalizedManifestV1 = {
+    version: 1,
+    skills: [
+      {
+        name: intent.skill,
+        source: intent.source.identity,
+        ref: intent.source.requestedRef,
+        tools,
+        scope: intent.scope,
+        placement: intent.placement.representation,
+        path: null,
+      },
+    ],
+  };
+  const manifestValue = {
+    version: 1 as const,
+    defaults: null,
+    registry: null,
+    skills: manifest.skills,
+  };
+  const semanticHash = hashManifestSemantics(manifest);
+  const lockValue = {
+    version: 1 as const,
+    hashSchemaVersion: 1 as const,
+    manifestHash: semanticHash,
+    skills: [
+      {
+        name: intent.skill,
+        source: 'example.test/fixture/repo//skills/alpha',
+        requestedRef: intent.source.requestedRef,
+        resolvedSha: intent.source.resolvedSha,
+        sourcePath: intent.source.sourcePath,
+        contentHash: intent.source.contentHash,
+      },
+    ],
+  };
+  const lockHash = hashPortableLock(lockValue as unknown as PortableLockV1);
+  if (!lockHash.ok) throw new Error(lockHash.error.message);
+  return {
+    initial: {
+      manifest: {
+        kind: 'absent' as const,
+        resource: {
+          kind: 'manifest-bytes' as const,
+          location: { kind: 'machine-bound' as const, path: '/fixture/manifest' },
+        },
+      },
+      lock: {
+        kind: 'absent' as const,
+        resource: {
+          kind: 'lock' as const,
+          location: { kind: 'machine-bound' as const, path: '/fixture/lock' },
+        },
+      },
+    },
+    groups: [
+      {
+        groupIdentity: {
+          domain: 'skillsmith.operation-group-identity' as const,
+          schemaVersion: 1 as const,
+          command: 'install' as const,
+          skill: intent.skill,
+          source: intent.source,
+          scope: intent.scope,
+          target: null,
+        },
+        manifestAfter: {
+          kind: 'manifest' as const,
+          location: { kind: 'machine-bound' as const, path: '/fixture/manifest' },
+          shape: 'canonical' as const,
+          version: 1 as const,
+          byteHash: `sha256:${HEX.c}` as const,
+          semanticHash,
+          value: manifestValue,
+        },
+        lockAfter: {
+          kind: 'lock' as const,
+          location: { kind: 'machine-bound' as const, path: '/fixture/lock' },
+          version: 1 as const,
+          canonicalHash: lockHash.value,
+          value: lockValue,
+        },
+      },
+    ],
+  } as unknown as NonNullable<AcquisitionInstallPlanRequestV1['artifactTransition']>;
+};
+
 const expectDeepFrozen = (value: unknown, seen = new Set<object>()): void => {
   if (value === null || typeof value !== 'object' || seen.has(value)) return;
   seen.add(value);
@@ -345,6 +465,527 @@ describe('createAcquisitionPlan', () => {
       ].map(createExpectedRevisionPreconditionIdV1),
     );
     expect(operation?.preconditionIds.some((id) => artifactRevisionIds.has(id))).toBeFalse();
+    const withTransition = createAcquisitionPlan(
+      {
+        ...request(),
+        artifactTransition: artifactTransitionForInstall(request(), ['codex']),
+      },
+      observed,
+    );
+    expect(withTransition.ok).toBeFalse();
+  });
+
+  test('plans exact selected manifest and lock transitions before every install placement', () => {
+    const base = request();
+    const codex = base.intents[0];
+    if (codex === undefined) throw new Error('missing codex intent');
+    const claude = {
+      ...structuredClone(codex),
+      tool: 'claude-code' as const,
+      liveResourceId: 'live-resource-alpha-claude',
+      placement: {
+        ...codex.placement,
+        location: { kind: 'portable' as const, token: 'skills/user/claude-code/alpha' },
+      },
+    };
+    const input = {
+      ...base,
+      selection: { ...base.selection, tools: ['codex', 'claude-code'] as const },
+      intents: [codex, claude],
+      artifactTransition: artifactTransitionForInstall(base, ['claude-code', 'codex'] as const),
+    };
+    const observed = snapshot(HEX.a, HEX.b, {
+      live: [
+        { revision: revision('live', 'live-resource-alpha', HEX.d), value: null },
+        { revision: revision('live', 'live-resource-alpha-claude', HEX.c), value: null },
+      ],
+    });
+    const inputBefore = structuredClone(input);
+    const observedBefore = structuredClone(observed);
+    const first = createAcquisitionPlan(input, observed);
+    const second = createAcquisitionPlan(
+      { ...input, intents: [...input.intents].reverse() },
+      observed,
+    );
+    expect(first.ok).toBeTrue();
+    expect(second.ok).toBeTrue();
+    if (!first.ok || !second.ok) throw new Error('expected selected artifact plan');
+    expect(first.value.plan).toEqual(second.value.plan);
+    expect(input).toEqual(inputBefore);
+    expect(observed).toEqual(observedBefore);
+    expect(first.value.plan.operations.map(({ kind, tool }) => [kind, tool])).toEqual([
+      ['write-manifest', null],
+      ['write-lock', null],
+      ['install', 'claude-code'],
+      ['install', 'codex'],
+    ]);
+    const [manifest, lock, ...placements] = first.value.plan.operations;
+    expect(manifest).toMatchObject({
+      pairId: null,
+      skill: null,
+      source: null,
+      tool: null,
+      scope: null,
+      before: {
+        kind: 'absent',
+        resource: {
+          kind: 'manifest-bytes',
+          location: { kind: 'machine-bound', path: '/fixture/manifest' },
+        },
+      },
+      after: {
+        kind: 'manifest',
+        location: { kind: 'machine-bound', path: '/fixture/manifest' },
+      },
+      mutates: { live: false, manifest: true, lock: false, ledger: false },
+      reversibility: { kind: 'none', retentionResourceIds: [] },
+      conflict: null,
+    });
+    if (manifest === undefined || lock === undefined)
+      throw new Error('missing artifact operations');
+    expect(lock.dependencyMetadata.operationIds).toEqual([manifest.operationId]);
+    expect(manifest.preconditionIds).toContain(codex.sourcePreconditionId);
+    expect(lock.preconditionIds).toContain(codex.sourcePreconditionId);
+    expect(
+      placements.every(({ dependencyMetadata }) =>
+        dependencyMetadata.operationIds.includes(lock?.operationId ?? ''),
+      ),
+    ).toBeTrue();
+    expectDeepFrozen(first.value);
+  });
+
+  test('allows a saving transition for only the changed declaration group', () => {
+    const base = request();
+    const alpha = base.intents[0];
+    if (alpha === undefined) throw new Error('missing alpha intent');
+    const betaContent = createContentObservationIdentityV1({
+      ...alpha.sourceContent,
+      resourceId: 'materialized-source-beta',
+      targetIdentity: '/fixture/fetch/beta',
+    });
+    const beta = {
+      ...structuredClone(alpha),
+      skill: 'beta',
+      liveResourceId: 'live-resource-beta',
+      storeResourceId: 'store-resource-beta',
+      sourceContent: betaContent,
+      sourcePreconditionId: createContentObservationPreconditionIdV1(betaContent),
+      source: {
+        ...alpha.source,
+        identity: { ...alpha.source.identity, path: 'skills/beta' },
+        sourcePath: 'skills/beta',
+      },
+      placement: {
+        ...alpha.placement,
+        location: { kind: 'portable' as const, token: 'skills/user/codex/beta' },
+      },
+      store: {
+        ...alpha.store,
+        location: { kind: 'portable' as const, token: 'store/fixture/beta' },
+        snapshotIdentity: createStoreSnapshotIdentityV1('store-resource-beta', `sha256:${HEX.a}`),
+      },
+    };
+    const transition = artifactTransitionForInstall(base, ['codex']);
+    const changed = transition.groups[0];
+    if (changed === undefined) throw new Error('missing changed transition');
+    const manifestValue = {
+      ...changed.manifestAfter.value,
+      skills: [
+        ...changed.manifestAfter.value.skills,
+        {
+          name: beta.skill,
+          source: beta.source.identity,
+          ref: beta.source.requestedRef,
+          tools: [beta.tool],
+          scope: beta.scope,
+          placement: beta.placement.representation,
+          path: null,
+        },
+      ],
+    };
+    const manifestHash = hashManifestSemantics({
+      version: 1,
+      skills: manifestValue.skills,
+    });
+    const lockValue = {
+      ...changed.lockAfter.value,
+      manifestHash: manifestHash as `sha256:${string}`,
+      skills: [
+        ...changed.lockAfter.value.skills,
+        {
+          name: beta.skill,
+          source: 'example.test/fixture/repo//skills/beta',
+          requestedRef: beta.source.requestedRef,
+          resolvedSha: beta.source.resolvedSha,
+          sourcePath: beta.source.sourcePath,
+          contentHash: beta.source.contentHash,
+        },
+      ],
+    };
+    const lockHash = hashPortableLock(lockValue as unknown as PortableLockV1);
+    if (!lockHash.ok) throw new Error(lockHash.error.message);
+    const betaGroupIdentity = {
+      domain: 'skillsmith.operation-group-identity' as const,
+      schemaVersion: 1 as const,
+      command: 'install' as const,
+      skill: beta.skill,
+      source: beta.source,
+      scope: beta.scope,
+      target: null,
+    };
+    const artifactTransition = {
+      ...transition,
+      unchangedGroups: [betaGroupIdentity],
+      groups: [
+        {
+          ...changed,
+          manifestAfter: {
+            ...changed.manifestAfter,
+            semanticHash: manifestHash as `sha256:${string}`,
+            value: manifestValue,
+          },
+          lockAfter: {
+            ...changed.lockAfter,
+            canonicalHash: lockHash.value,
+            value: lockValue,
+          },
+        },
+      ],
+    } as unknown as NonNullable<AcquisitionInstallPlanRequestV1['artifactTransition']>;
+    const observed = snapshot(HEX.a, HEX.b, {
+      live: [
+        { revision: revision('live', 'live-resource-alpha', HEX.d), value: null },
+        { revision: revision('live', 'live-resource-beta', HEX.c), value: null },
+      ],
+      store: [
+        storeState('store-resource-alpha', 'alpha'),
+        storeState('store-resource-beta', 'beta'),
+      ],
+    });
+    const commonInput = {
+      ...base,
+      selection: { ...base.selection, skills: ['alpha', 'beta'] },
+      intents: [alpha, beta],
+    };
+    const omitted = createAcquisitionPlan(
+      { ...commonInput, artifactTransition: { ...artifactTransition, unchangedGroups: [] } },
+      observed,
+    );
+    expect(omitted.ok).toBeFalse();
+    const result = createAcquisitionPlan(
+      {
+        ...commonInput,
+        artifactTransition,
+      },
+      observed,
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    const lock = result.value.plan.operations.find(({ kind }) => kind === 'write-lock');
+    const alphaPlacement = result.value.plan.operations.find(
+      ({ skill, pairId }) => skill === 'alpha' && pairId !== null,
+    );
+    const betaPlacement = result.value.plan.operations.find(
+      ({ skill, pairId }) => skill === 'beta' && pairId !== null,
+    );
+    if (lock === undefined || alphaPlacement === undefined || betaPlacement === undefined) {
+      throw new Error('missing mixed transition operations');
+    }
+    expect(alphaPlacement.dependencyMetadata.operationIds).toEqual([lock.operationId]);
+    expect(betaPlacement.dependencyMetadata.operationIds).toEqual([]);
+
+    const extraToolManifest = {
+      ...manifestValue,
+      skills: manifestValue.skills.map((skill) =>
+        skill.name === beta.skill
+          ? { ...skill, tools: ['claude-code' as const, 'codex' as const] }
+          : skill,
+      ),
+    };
+    const extraToolManifestHash = hashManifestSemantics({
+      version: 1,
+      skills: extraToolManifest.skills,
+    });
+    const extraToolLock = {
+      ...lockValue,
+      manifestHash: extraToolManifestHash as `sha256:${string}`,
+    };
+    const extraToolLockHash = hashPortableLock(extraToolLock as unknown as PortableLockV1);
+    if (!extraToolLockHash.ok) throw new Error(extraToolLockHash.error.message);
+    const changedTransition = artifactTransition.groups[0];
+    if (changedTransition === undefined) throw new Error('missing changed transition');
+    const extraTool = createAcquisitionPlan(
+      {
+        ...commonInput,
+        artifactTransition: {
+          ...artifactTransition,
+          groups: [
+            {
+              ...changedTransition,
+              manifestAfter: {
+                ...changedTransition.manifestAfter,
+                semanticHash: extraToolManifestHash as `sha256:${string}`,
+                value: extraToolManifest,
+              },
+              lockAfter: {
+                ...changedTransition.lockAfter,
+                canonicalHash: extraToolLockHash.value as `sha256:${string}`,
+                value: extraToolLock,
+              },
+            },
+          ],
+        },
+      },
+      observed,
+    );
+    expect(extraTool.ok).toBeFalse();
+  });
+
+  test('accepts an explicitly unchanged saving group only against current portable state', () => {
+    const input = request();
+    const transition = artifactTransitionForInstall(input, ['codex']);
+    const group = transition.groups[0];
+    if (group === undefined) throw new Error('missing unchanged transition fixture');
+    const observed = snapshot(HEX.a, HEX.b, {
+      artifact: {
+        mode: 'selected',
+        pair: {
+          file: {
+            token: null,
+            path: '/fixture/manifest',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfile: {
+            token: null,
+            path: '/fixture/lock',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfileSource: 'explicit',
+        },
+        manifest: {
+          revision: presentArtifactRevision(
+            'manifest',
+            'manifest:/fixture',
+            '/fixture/manifest',
+            group.manifestAfter.byteHash,
+            group.manifestAfter.semanticHash,
+          ),
+          value: { version: 1, skills: group.manifestAfter.value.skills },
+        },
+        lock: {
+          revision: presentArtifactRevision(
+            'lock',
+            'lock:/fixture',
+            '/fixture/lock',
+            group.lockAfter.canonicalHash,
+            group.lockAfter.canonicalHash,
+          ),
+          value: group.lockAfter.value as PortableLockV1,
+        },
+      },
+    });
+    const unchanged = createAcquisitionPlan(
+      {
+        ...input,
+        artifactTransition: {
+          initial: { manifest: group.manifestAfter, lock: group.lockAfter },
+          groups: [],
+          unchangedGroups: [group.groupIdentity],
+        },
+      },
+      observed,
+    );
+    expect(unchanged.ok).toBeTrue();
+    if (!unchanged.ok) throw new Error(unchanged.error.message);
+    expect(unchanged.value.plan.operations.map(({ kind }) => kind)).toEqual(['install']);
+
+    const absent = createAcquisitionPlan(
+      {
+        ...input,
+        artifactTransition: {
+          initial: transition.initial,
+          groups: [],
+          unchangedGroups: [group.groupIdentity],
+        },
+      },
+      snapshot(),
+    );
+    expect(absent.ok).toBeFalse();
+  });
+
+  test('chains an exact legacy migration before manifest, lock, and install', () => {
+    const input = request();
+    const transition = artifactTransitionForInstall(input, ['codex']);
+    const group = transition.groups[0];
+    if (group === undefined) throw new Error('missing artifact transition group');
+    const emptyManifest: NormalizedManifestV1 = { version: 1, skills: [] };
+    const emptyValue = { version: 1 as const, defaults: null, registry: null, skills: [] };
+    const semanticHash = hashManifestSemantics(emptyManifest);
+    const legacy = {
+      kind: 'manifest' as const,
+      location: { kind: 'machine-bound' as const, path: '/fixture/manifest' },
+      shape: 'legacy' as const,
+      version: 1 as const,
+      byteHash: `sha256:${HEX.a}` as const,
+      semanticHash: semanticHash as `sha256:${string}`,
+      value: emptyValue,
+    };
+    const canonical = {
+      ...legacy,
+      shape: 'canonical' as const,
+      byteHash: `sha256:${HEX.b}` as const,
+    };
+    const requestWithTransition: AcquisitionInstallPlanRequestV1 = {
+      ...input,
+      artifactTransition: {
+        initial: { manifest: legacy, lock: transition.initial.lock },
+        groups: [{ ...group, migrationAfter: canonical }],
+      },
+    };
+    const observed = snapshot(HEX.a, HEX.b, {
+      artifact: {
+        mode: 'selected',
+        pair: {
+          file: {
+            token: null,
+            path: '/fixture/manifest',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfile: {
+            token: null,
+            path: '/fixture/lock',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfileSource: 'explicit',
+        },
+        manifest: {
+          revision: presentArtifactRevision(
+            'manifest',
+            'manifest:/fixture',
+            '/fixture/manifest',
+            legacy.byteHash,
+            legacy.semanticHash,
+          ),
+          value: emptyManifest,
+        },
+        lock: { revision: revision('lock', 'lock:/fixture', HEX.b), value: null },
+      },
+    });
+    const result = createAcquisitionPlan(requestWithTransition, observed);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'migrate-project-config',
+      'write-manifest',
+      'write-lock',
+      'install',
+    ]);
+    const [migration, manifest, lock, placement] = result.value.plan.operations;
+    if (
+      migration === undefined ||
+      manifest === undefined ||
+      lock === undefined ||
+      placement === undefined
+    ) {
+      throw new Error('missing migration chain');
+    }
+    expect(manifest.dependencyMetadata.operationIds).toEqual([migration.operationId]);
+    expect(lock.dependencyMetadata.operationIds).toEqual([manifest.operationId]);
+    expect(placement.dependencyMetadata.operationIds).toEqual([lock.operationId]);
+  });
+
+  test('rejects an incoherent after pair while allowing stale initial lock state', () => {
+    const input = request();
+    const transition = artifactTransitionForInstall(input, ['codex']);
+    const group = transition.groups[0];
+    if (group === undefined) throw new Error('missing transition group');
+    const incoherentLock = {
+      ...group.lockAfter.value,
+      skills: [],
+    };
+    const incoherentHash = hashPortableLock(incoherentLock as unknown as PortableLockV1);
+    if (!incoherentHash.ok) throw new Error(incoherentHash.error.message);
+    const incoherent = createAcquisitionPlan(
+      {
+        ...input,
+        artifactTransition: {
+          ...transition,
+          groups: [
+            {
+              ...group,
+              lockAfter: {
+                ...group.lockAfter,
+                canonicalHash: incoherentHash.value as `sha256:${string}`,
+                value: incoherentLock,
+              },
+            },
+          ],
+        },
+      },
+      snapshot(),
+    );
+    expect(incoherent.ok).toBeFalse();
+
+    const emptyManifestHash = hashManifestSemantics({ version: 1, skills: [] });
+    const staleLock = {
+      version: 1 as const,
+      hashSchemaVersion: 1 as const,
+      manifestHash: emptyManifestHash as `sha256:${string}`,
+      skills: [
+        ...group.lockAfter.value.skills,
+        {
+          name: 'stale',
+          source: 'example.test/fixture/repo//skills/stale',
+          requestedRef: null,
+          resolvedSha: 'd'.repeat(40),
+          sourcePath: 'skills/stale',
+          contentHash: `sha256:${HEX.d}` as const,
+        },
+      ],
+    };
+    const staleHash = hashPortableLock(staleLock as unknown as PortableLockV1);
+    if (!staleHash.ok) throw new Error(staleHash.error.message);
+    const selected = snapshot();
+    if (selected.artifact.mode !== 'selected') throw new Error('missing selected artifact');
+    const staleInitial = createAcquisitionPlan(
+      {
+        ...input,
+        artifactTransition: {
+          ...transition,
+          initial: {
+            ...transition.initial,
+            lock: {
+              kind: 'lock',
+              location: { kind: 'machine-bound', path: '/fixture/lock' },
+              version: 1,
+              canonicalHash: staleHash.value as `sha256:${string}`,
+              value: staleLock,
+            },
+          },
+        },
+      },
+      {
+        ...selected,
+        artifact: {
+          ...selected.artifact,
+          lock: {
+            revision: presentArtifactRevision(
+              'lock',
+              'lock:/fixture',
+              '/fixture/lock',
+              staleHash.value,
+              staleHash.value,
+            ),
+            value: staleLock as unknown as PortableLockV1,
+          },
+        },
+      },
+    );
+    expect(staleInitial.ok).toBeTrue();
   });
 
   test('keeps semantic operation identity independent of snapshot identity and unrelated revisions', () => {
@@ -740,6 +1381,177 @@ describe('createAcquisitionPlan', () => {
     expect(first.value.plan.operations[0]?.preconditionIds).toHaveLength(
       first.value.expectedRevisions.length,
     );
+
+    const beforeManifest: NormalizedManifestV1 = {
+      version: 1,
+      skills: [
+        {
+          name: 'alpha',
+          source: { host: 'example.test', repository: 'fixture/repo', path: 'skills/alpha' },
+          ref: null,
+          tools: ['codex'],
+          scope: 'user',
+          placement: 'symlink',
+          path: null,
+        },
+      ],
+    };
+    const afterManifest: NormalizedManifestV1 = { version: 1, skills: [] };
+    const beforeManifestHash = hashManifestSemantics(beforeManifest);
+    const afterManifestHash = hashManifestSemantics(afterManifest);
+    const beforeLock = {
+      version: 1 as const,
+      hashSchemaVersion: 1 as const,
+      manifestHash: beforeManifestHash,
+      skills: [
+        {
+          name: 'alpha',
+          source: 'example.test/fixture/repo//skills/alpha',
+          requestedRef: null,
+          resolvedSha: 'c'.repeat(40),
+          sourcePath: 'skills/alpha',
+          contentHash: beforeManifestHash,
+        },
+      ],
+    };
+    const afterLock = {
+      version: 1 as const,
+      hashSchemaVersion: 1 as const,
+      manifestHash: afterManifestHash,
+      skills: [],
+    };
+    const beforeLockHash = hashPortableLock(beforeLock as unknown as PortableLockV1);
+    const afterLockHash = hashPortableLock(afterLock as unknown as PortableLockV1);
+    if (!beforeLockHash.ok || !afterLockHash.ok) throw new Error('invalid lock fixtures');
+    const selectedObserved: AcquisitionObservedStateSnapshotV1 = {
+      ...observed,
+      artifact: {
+        mode: 'selected',
+        pair: {
+          file: {
+            token: null,
+            path: '/fixture/manifest',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfile: {
+            token: null,
+            path: '/fixture/lock',
+            portability: 'machine-bound',
+            portableToken: null,
+          },
+          lockfileSource: 'explicit',
+        },
+        manifest: {
+          revision: presentArtifactRevision(
+            'manifest',
+            'manifest:/fixture',
+            '/fixture/manifest',
+            `sha256:${HEX.a}`,
+            beforeManifestHash,
+          ),
+          value: beforeManifest,
+        },
+        lock: {
+          revision: presentArtifactRevision(
+            'lock',
+            'lock:/fixture',
+            '/fixture/lock',
+            beforeLockHash.value,
+            beforeLockHash.value,
+          ),
+          value: beforeLock as unknown as PortableLockV1,
+        },
+      },
+    };
+    const savingInput: AcquisitionUninstallPlanRequestV1 = {
+      ...input,
+      artifactTransition: {
+        initial: {
+          manifest: {
+            kind: 'manifest' as const,
+            location: { kind: 'machine-bound' as const, path: '/fixture/manifest' },
+            shape: 'canonical' as const,
+            version: 1 as const,
+            byteHash: `sha256:${HEX.a}` as const,
+            semanticHash: beforeManifestHash as `sha256:${string}`,
+            value: {
+              version: 1 as const,
+              defaults: null,
+              registry: null,
+              skills: beforeManifest.skills,
+            },
+          },
+          lock: {
+            kind: 'lock' as const,
+            location: { kind: 'machine-bound' as const, path: '/fixture/lock' },
+            version: 1 as const,
+            canonicalHash: beforeLockHash.value as `sha256:${string}`,
+            value: beforeLock,
+          },
+        },
+        groups: [
+          {
+            groupIdentity: {
+              domain: 'skillsmith.operation-group-identity' as const,
+              schemaVersion: 1 as const,
+              command: 'uninstall' as const,
+              skill: 'alpha',
+              source: null,
+              scope: 'user' as const,
+              target: 'alpha',
+            },
+            manifestAfter: {
+              kind: 'manifest' as const,
+              location: { kind: 'machine-bound' as const, path: '/fixture/manifest' },
+              shape: 'canonical' as const,
+              version: 1 as const,
+              byteHash: `sha256:${HEX.b}` as const,
+              semanticHash: afterManifestHash as `sha256:${string}`,
+              value: { version: 1 as const, defaults: null, registry: null, skills: [] },
+            },
+            lockAfter: {
+              kind: 'lock' as const,
+              location: { kind: 'machine-bound' as const, path: '/fixture/lock' },
+              version: 1 as const,
+              canonicalHash: afterLockHash.value as `sha256:${string}`,
+              value: afterLock,
+            },
+          },
+        ],
+      } as unknown as NonNullable<AcquisitionUninstallPlanRequestV1['artifactTransition']>,
+    };
+    const saving = createAcquisitionPlan(savingInput, selectedObserved);
+    expect(saving.ok).toBeTrue();
+    if (!saving.ok) throw new Error(saving.error.message);
+    expect(saving.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'remove',
+      'write-manifest',
+      'write-lock',
+    ]);
+    const [removal, manifest, lock] = saving.value.plan.operations;
+    if (removal === undefined || manifest === undefined || lock === undefined) {
+      throw new Error('missing uninstall artifact chain');
+    }
+    expect(manifest.dependencyMetadata.operationIds).toEqual([removal.operationId]);
+    expect(lock.dependencyMetadata.operationIds).toEqual([manifest.operationId]);
+
+    const artifactOnly = createAcquisitionPlan(savingInput, {
+      ...selectedObserved,
+      ledger: { revision: revision('ledger', 'ledger:user', HEX.c), value: null },
+      live: [
+        {
+          revision: revision('live', 'live-resource-alpha', HEX.d, '/fixture/live/alpha'),
+          value: null,
+        },
+      ],
+    });
+    expect(artifactOnly.ok).toBeTrue();
+    if (!artifactOnly.ok) throw new Error(artifactOnly.error.message);
+    expect(artifactOnly.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'write-manifest',
+      'write-lock',
+    ]);
   });
 
   test('fails closed for incoherent live, store, and ledger components supplied directly', () => {
@@ -884,6 +1696,7 @@ describe('createAcquisitionPlan', () => {
     const result = createAcquisitionPlan(
       {
         ...first,
+        artifactTransition: artifactTransitionForInstall(first, ['codex']),
         intents: [
           firstIntent,
           {
@@ -897,11 +1710,10 @@ describe('createAcquisitionPlan', () => {
     );
     expect(result.ok).toBeTrue();
     if (!result.ok) return;
-    expect(result.value.plan.operations).toHaveLength(1);
-    expect(result.value.plan.operations[0]?.preconditionIds).toContain(
-      firstIntent.sourcePreconditionId,
-    );
-    expect(result.value.plan.operations[0]?.preconditionIds).toContain(
+    expect(result.value.plan.operations).toHaveLength(3);
+    const placement = result.value.plan.operations.find(({ pairId }) => pairId !== null);
+    expect(placement?.preconditionIds).toContain(firstIntent.sourcePreconditionId);
+    expect(placement?.preconditionIds).toContain(
       createContentObservationPreconditionIdV1(secondContent),
     );
     expect(firstIntent.sourcePreconditionId).not.toBe(
@@ -927,6 +1739,15 @@ describe('createAcquisitionPlan', () => {
     expect(planned.value.operations).toEqual([]);
     expect(planned.value.checks).toEqual([]);
     expect(planned.value.diagnostics).toEqual([]);
+    const withExecutionAuthority = createAcquisitionDiagnosticPlan({
+      schemaVersion: 1,
+      command: 'install',
+      selection: { source: 'explicit-targets', skills: [], tools: [], scopes: ['user'] },
+      batchPolicy: 'fail-fast',
+      diagnostics: [],
+      artifactTransition: {} as never,
+    });
+    expect(withExecutionAuthority.ok).toBeFalse();
   });
 });
 

@@ -12,10 +12,10 @@ import type {
 import { createExpectedRevisionPreconditionIdV1 } from '../state/types.ts';
 import {
   canonicalPlanningString,
-  compareExecutableOperations,
   comparePlanChecks,
   comparePlanningDiagnostics,
   comparePlanningText,
+  orderExecutableOperationsTopologically,
   resolvePlanningToolContext,
   sortPlanningScopes,
   sortPlanningStrings,
@@ -1411,11 +1411,11 @@ export function createOperationPlan(
       fail('$plan doctor repairs must continue across independent artifact failures');
     }
   }
-  operations.sort((left, right) => compareExecutableOperations(left, right, context));
+  const orderedOperations = orderExecutableOperationsTopologically(operations, context);
   const operationIndex = new Map(
-    operations.map((operation, index) => [operation.operationId, index]),
+    orderedOperations.map((operation, index) => [operation.operationId, index]),
   );
-  const canonicalOperations = operations.map((operation) => {
+  const canonicalOperations = orderedOperations.map((operation) => {
     const dependencies = [...operation.dependencyMetadata.operationIds];
     dependencies.sort(
       (left, right) =>
@@ -1423,15 +1423,6 @@ export function createOperationPlan(
           (operationIndex.get(right) ?? Number.POSITIVE_INFINITY) ||
         comparePlanningText(left, right),
     );
-    for (const dependency of dependencies) {
-      const dependencyIndex = operationIndex.get(dependency);
-      if (dependencyIndex === undefined) {
-        fail(`operation ${operation.operationId} has a dangling dependency`);
-      }
-      if ((dependencyIndex as number) >= (operationIndex.get(operation.operationId) ?? -1)) {
-        fail(`operation ${operation.operationId} has a forward or cyclic dependency`);
-      }
-    }
     return {
       ...operation,
       dependencyMetadata: {
@@ -1457,7 +1448,7 @@ export function createOperationPlan(
     }
   }
   const checkIds = new Set(checks.map((check) => check.checkId));
-  for (const operation of operations) {
+  for (const operation of orderedOperations) {
     for (const checkId of operation.requiredCheckIds) {
       if (!checkIds.has(checkId))
         fail(`operation ${operation.operationId} requires an unknown check`);

@@ -6,6 +6,7 @@ import {
   createOperationContext,
   noopObserver,
 } from '../../src/observation/index.ts';
+import type { ObserverEvent } from '../../src/observation/index.ts';
 import {
   type CurrentMutatorOperationPlan,
   type ExecutableOperation,
@@ -134,8 +135,9 @@ const operationFor = (input: {
 };
 
 const artifactOperationFor = (input: {
-  readonly kind: 'migrate-ledger' | 'migrate-project-config' | 'write-lock';
+  readonly kind: 'migrate-ledger' | 'migrate-project-config' | 'write-manifest' | 'write-lock';
   readonly groupId?: string;
+  readonly dependencies?: readonly string[];
 }): ExecutableOperation => {
   const groupId =
     input.groupId ??
@@ -186,7 +188,9 @@ const artifactOperationFor = (input: {
             semanticHash: CONTENT_HASH,
             value: manifest,
           }
-        : { kind: 'absent', resource: { kind: 'lock', location } };
+        : input.kind === 'write-manifest'
+          ? { kind: 'absent', resource: { kind: 'manifest-bytes', location: manifestLocation } }
+          : { kind: 'absent', resource: { kind: 'lock', location } };
   const after: OperationImage =
     input.kind === 'migrate-ledger'
       ? {
@@ -206,18 +210,28 @@ const artifactOperationFor = (input: {
             semanticHash: CONTENT_HASH,
             value: manifest,
           }
-        : {
-            kind: 'lock',
-            location,
-            version: 1,
-            canonicalHash: OTHER_HASH,
-            value: {
+        : input.kind === 'write-manifest'
+          ? {
+              kind: 'manifest',
+              location: manifestLocation,
+              shape: 'canonical',
               version: 1,
-              hashSchemaVersion: 1,
-              manifestHash: CONTENT_HASH,
-              skills: [],
-            },
-          };
+              byteHash: OTHER_HASH,
+              semanticHash: CONTENT_HASH,
+              value: manifest,
+            }
+          : {
+              kind: 'lock',
+              location,
+              version: 1,
+              canonicalHash: OTHER_HASH,
+              value: {
+                version: 1,
+                hashSchemaVersion: 1,
+                manifestHash: CONTENT_HASH,
+                skills: [],
+              },
+            };
   return {
     operationId,
     groupId,
@@ -226,7 +240,7 @@ const artifactOperationFor = (input: {
     dependencyMetadata: {
       domain: 'skillsmith.operation-dependency',
       schemaVersion: 1,
-      operationIds: [],
+      operationIds: input.dependencies ?? [],
     },
     skill: null,
     source: null,
@@ -242,7 +256,7 @@ const artifactOperationFor = (input: {
     mutates:
       input.kind === 'migrate-ledger'
         ? { live: false, manifest: false, lock: false, ledger: true }
-        : input.kind === 'migrate-project-config'
+        : input.kind === 'migrate-project-config' || input.kind === 'write-manifest'
           ? { live: false, manifest: true, lock: false, ledger: false }
           : { live: false, manifest: false, lock: true, ledger: false },
     conflict: null,
@@ -272,8 +286,12 @@ const structuralPlanFor = (
 ): CurrentMutatorOperationPlan => {
   const live = operations.find((operation) => operation.pairId !== null);
   if (live === undefined) throw new Error('scheduler fixture requires one pair-bound operation');
+  const dependencyFreeLive = {
+    ...live,
+    dependencyMetadata: { ...live.dependencyMetadata, operationIds: [] },
+  };
   return Object.freeze({
-    ...planFor([live]),
+    ...planFor([dependencyFreeLive]),
     batchPolicy,
     operations: Object.freeze([...operations]),
   });
@@ -298,7 +316,7 @@ const bindingFor = (operation: ExecutableOperation, calls: string[]): UnknownRec
   },
 });
 
-const observationBundle = () =>
+const observationBundle = (events?: ObserverEvent[]) =>
   Object.freeze({
     context: createOperationContext({
       command: 'skillsmith install',
@@ -310,7 +328,16 @@ const observationBundle = () =>
       id: { nextId: () => 'command:v1:scheduler-test' },
       operationId: 'command:v1:scheduler-test',
     }),
-    emitter: createObservationEmitter({ observer: noopObserver }),
+    emitter: createObservationEmitter({
+      observer:
+        events === undefined
+          ? noopObserver
+          : {
+              observe: (event) => {
+                events.push(event);
+              },
+            },
+    }),
   });
 
 const hostileThrownValues = (): readonly unknown[] => {
@@ -364,7 +391,7 @@ describe('G3B-02 operation scheduler', () => {
     }
   });
 
-  test('refuses multi-operation pairs and dependency-bearing plans before work', async () => {
+  test('refuses multi-operation pairs before work', async () => {
     const first = operationFor({ skill: 'alpha', kind: 'install' });
     const samePair = operationFor({
       skill: 'alpha',
@@ -373,18 +400,6 @@ describe('G3B-02 operation scheduler', () => {
       pairId: first.pairId as string,
     });
     const multiPairPlan = planFor([first, samePair]);
-    const independentPlan = planFor([
-      operationFor({ skill: 'gamma', kind: 'install' }),
-      operationFor({ skill: 'beta', kind: 'install' }),
-    ]);
-    const dependencyRoot = independentPlan.operations[0] as ExecutableOperation;
-    const dependent = structuredClone(
-      independentPlan.operations[1] as ExecutableOperation,
-    ) as ExecutableOperation;
-    (dependent.dependencyMetadata as unknown as { operationIds: string[] }).operationIds = [
-      dependencyRoot.operationId,
-    ];
-    const dependencyPlan = planFor([dependent, dependencyRoot]);
     const scheduleOperationPlan = requireScheduler();
 
     const multiPairCalls: string[] = [];
@@ -395,15 +410,88 @@ describe('G3B-02 operation scheduler', () => {
       ),
     ).rejects.toThrow(/pair.*exactly one|multi-operation pair|singleton/i);
     expect(multiPairCalls).toEqual([]);
+  });
 
-    const dependencyCalls: string[] = [];
-    await expect(
-      scheduleOperationPlan(
-        dependencyPlan,
-        dependencyPlan.operations.map((operation) => bindingFor(operation, dependencyCalls)),
-      ),
-    ).rejects.toThrow(/dependency.*empty|dependency-bearing|unsupported dependenc/i);
-    expect(dependencyCalls).toEqual([]);
+  test('runs only exact-succeeded dependents and continues independent work in the group', async () => {
+    for (const rootOutcome of ['failed', 'rolled-back'] as const) {
+      const root = operationFor({ skill: `alpha-${rootOutcome}` });
+      const dependent = operationFor({
+        skill: `alpha-dependent-${rootOutcome}`,
+        groupId: root.groupId,
+        dependencies: [root.operationId],
+      });
+      const independent = operationFor({
+        skill: `alpha-independent-${rootOutcome}`,
+        groupId: root.groupId,
+      });
+      const plan = structuralPlanFor([root, dependent, independent], 'continue-on-error');
+      const calls: string[] = [];
+      const events: ObserverEvent[] = [];
+      const results = await scheduleOperationPlanObserved(
+        plan,
+        plan.operations.map((operation) => ({
+          ...bindingFor(operation, []),
+          execute: async () => {
+            calls.push(operation.operationId);
+            const isRoot = operation.operationId === root.operationId;
+            const outcome = isRoot ? rootOutcome : 'succeeded';
+            return createOperationExecutionResult({
+              operationId: operation.operationId,
+              outcome,
+              actualBefore: operation.before,
+              actualAfter: isRoot ? operation.before : operation.after,
+              force: null,
+              error:
+                outcome === 'failed'
+                  ? { code: 'fixture-failed', message: 'Fixture failed.', remediation: 'Retry.' }
+                  : null,
+            });
+          },
+        })) as never,
+        {},
+        observationBundle(events),
+      );
+      expect(calls).toEqual([root.operationId, independent.operationId]);
+      expect(results.map(({ outcome }) => outcome)).toEqual([
+        rootOutcome,
+        'skipped-after-failure',
+        'succeeded',
+      ]);
+      expect(events.some(({ operationId }) => operationId === dependent.operationId)).toBeFalse();
+      expect(
+        events
+          .filter(({ kind }) => kind === 'operation.started')
+          .map(({ operationId }) => operationId),
+      ).toEqual([root.operationId, independent.operationId]);
+    }
+  });
+
+  test('executes manifest, lock, and placement dependencies in order', async () => {
+    const placementSeed = operationFor({ skill: 'alpha' });
+    const manifest = artifactOperationFor({
+      kind: 'write-manifest',
+      groupId: placementSeed.groupId,
+    });
+    const lock = artifactOperationFor({
+      kind: 'write-lock',
+      groupId: placementSeed.groupId,
+      dependencies: [manifest.operationId],
+    });
+    const placement = {
+      ...placementSeed,
+      dependencyMetadata: {
+        ...placementSeed.dependencyMetadata,
+        operationIds: [lock.operationId],
+      },
+    };
+    const plan = structuralPlanFor([manifest, lock, placement], 'fail-fast');
+    const calls: string[] = [];
+    const results = await requireScheduler()(
+      plan,
+      plan.operations.map((operation) => bindingFor(operation, calls)),
+    );
+    expect(calls).toEqual(plan.operations.map(({ operationId }) => operationId));
+    expect(results.every(({ outcome }) => outcome === 'succeeded')).toBeTrue();
   });
 
   test('does not treat a truthful rolled-back result as a fail-fast group failure', async () => {
@@ -429,6 +517,40 @@ describe('G3B-02 operation scheduler', () => {
 
     expect(calls).toEqual(plan.operations.map(({ operationId }) => operationId));
     expect(results.map(({ outcome }) => outcome)).toEqual(['rolled-back', 'succeeded']);
+  });
+
+  test('marks every remaining operation cancelled without starting or observing it', async () => {
+    const plan = planFor([operationFor({ skill: 'beta' }), operationFor({ skill: 'alpha' })]);
+    const controller = new AbortController();
+    const calls: string[] = [];
+    const events: ObserverEvent[] = [];
+    const results = await scheduleOperationPlanObserved(
+      plan,
+      plan.operations.map((operation, index) => ({
+        ...bindingFor(operation, []),
+        execute: async () => {
+          calls.push(operation.operationId);
+          if (index === 0) controller.abort();
+          return createOperationExecutionResult({
+            operationId: operation.operationId,
+            outcome: index === 0 ? 'cancelled' : 'succeeded',
+            actualBefore: operation.before,
+            actualAfter: index === 0 ? operation.before : operation.after,
+            force: null,
+            error: null,
+          });
+        },
+      })) as never,
+      { signal: controller.signal },
+      observationBundle(events),
+    );
+    const firstOperation = plan.operations[0];
+    if (firstOperation === undefined) throw new Error('missing first operation');
+    expect(calls).toEqual([firstOperation.operationId]);
+    expect(results.map(({ outcome }) => outcome)).toEqual(['cancelled', 'cancelled']);
+    expect(events.some(({ operationId }) => operationId === plan.operations[1]?.operationId)).toBe(
+      false,
+    );
   });
 
   test('rethrows revoked and trapping Proxy binding errors unchanged with and without observation', async () => {
@@ -487,6 +609,27 @@ describe('G3B-02 operation scheduler', () => {
       ),
     ).rejects.toThrow(/artifact.*mutation|null-pair.*shape/i);
     expect(malformedCalls).toEqual([]);
+
+    const manifestWrite = artifactOperationFor({
+      kind: 'write-manifest',
+      groupId: live.groupId,
+    });
+    const legacyWrite = {
+      ...manifestWrite,
+      after:
+        manifestWrite.after.kind === 'manifest'
+          ? { ...manifestWrite.after, shape: 'legacy' as const }
+          : manifestWrite.after,
+    };
+    const legacyPlan = structuralPlanFor([legacyWrite, live], 'fail-fast');
+    const legacyCalls: string[] = [];
+    await expect(
+      scheduleOperationPlan(
+        legacyPlan,
+        legacyPlan.operations.map((operation) => bindingFor(operation, legacyCalls)),
+      ),
+    ).rejects.toThrow(/artifact.*mutation|null-pair.*shape/i);
+    expect(legacyCalls).toEqual([]);
   });
 
   test('gates global ledger migration and same-group artifact failures', async () => {
@@ -523,8 +666,15 @@ describe('G3B-02 operation scheduler', () => {
       'skipped-after-failure',
     ]);
 
-    const sameGroupAlpha = operationFor({ skill: 'alpha' });
-    const lock = artifactOperationFor({ kind: 'write-lock', groupId: sameGroupAlpha.groupId });
+    const sameGroupAlphaSeed = operationFor({ skill: 'alpha' });
+    const lock = artifactOperationFor({ kind: 'write-lock', groupId: sameGroupAlphaSeed.groupId });
+    const sameGroupAlpha = {
+      ...sameGroupAlphaSeed,
+      dependencyMetadata: {
+        ...sameGroupAlphaSeed.dependencyMetadata,
+        operationIds: [lock.operationId],
+      },
+    };
     const independent = operationFor({ skill: 'beta' });
     const groupPlan = structuralPlanFor([lock, sameGroupAlpha, independent], 'continue-on-error');
     const groupCalls: string[] = [];

@@ -80,7 +80,8 @@ const operationKindOrder = new Map<string, number>(
 const artifactPrerequisiteOrder = new Map<string, number>([
   ['migrate-ledger', 0],
   ['migrate-project-config', 1],
-  ['write-lock', 2],
+  ['write-manifest', 2],
+  ['write-lock', 3],
 ]);
 
 const rank = (value: string | null, order: ReadonlyMap<string, number>): number =>
@@ -126,6 +127,73 @@ export const compareExecutableOperations = <ToolId extends string = string>(
     rank(left.kind, operationKindOrder) - rank(right.kind, operationKindOrder) ||
     comparePlanningText(left.operationId, right.operationId)
   );
+};
+
+/** Deterministic Kahn ordering: dependencies decide readiness, the canonical comparator breaks ties. */
+export const orderExecutableOperationsTopologically = <ToolId extends string = string>(
+  operations: readonly ExecutableOperation<ToolId>[],
+  context?: ToolOrderContext<ToolId>,
+): ExecutableOperation<ToolId>[] => {
+  const byId = new Map(operations.map((operation) => [operation.operationId, operation]));
+  if (byId.size !== operations.length) planningContextFail('operation IDs must be unique');
+  const remainingDependencies = new Map<string, number>();
+  const dependents = new Map<string, ExecutableOperation<ToolId>[]>();
+  for (const operation of operations) {
+    const dependencies = operation.dependencyMetadata.operationIds;
+    remainingDependencies.set(operation.operationId, dependencies.length);
+    for (const dependencyId of dependencies) {
+      if (dependencyId === operation.operationId) {
+        planningContextFail(`operation ${operation.operationId} has a self dependency`);
+      }
+      const dependency = byId.get(dependencyId);
+      if (dependency === undefined) {
+        planningContextFail(`operation ${operation.operationId} has a dangling dependency`);
+      }
+      if ((dependency as ExecutableOperation<ToolId>).groupId !== operation.groupId) {
+        planningContextFail(`operation ${operation.operationId} has a cross-group dependency`);
+      }
+      const current = dependents.get(dependencyId) ?? [];
+      current.push(operation);
+      dependents.set(dependencyId, current);
+    }
+  }
+  const ordered: ExecutableOperation<ToolId>[] = [];
+  const groups = new Map<string, ExecutableOperation<ToolId>[]>();
+  for (const operation of operations) {
+    const group = groups.get(operation.groupId) ?? [];
+    group.push(operation);
+    groups.set(operation.groupId, group);
+  }
+  const canonicalGroups = [...groups.values()]
+    .map((operationsInGroup) => ({
+      operations: operationsInGroup,
+      representative: [...operationsInGroup].sort((left, right) =>
+        compareExecutableOperations(left, right, context),
+      )[0] as ExecutableOperation<ToolId>,
+    }))
+    .sort((left, right) =>
+      compareExecutableOperations(left.representative, right.representative, context),
+    );
+  for (const { operations: group } of canonicalGroups) {
+    const ready = group.filter(
+      (operation) => remainingDependencies.get(operation.operationId) === 0,
+    );
+    const groupStart = ordered.length;
+    while (ready.length > 0) {
+      ready.sort((left, right) => compareExecutableOperations(left, right, context));
+      const operation = ready.shift() as ExecutableOperation<ToolId>;
+      ordered.push(operation);
+      for (const dependent of dependents.get(operation.operationId) ?? []) {
+        const remaining = (remainingDependencies.get(dependent.operationId) as number) - 1;
+        remainingDependencies.set(dependent.operationId, remaining);
+        if (remaining === 0) ready.push(dependent);
+      }
+    }
+    if (ordered.length - groupStart !== group.length) {
+      planningContextFail('operation dependencies are cyclic');
+    }
+  }
+  return ordered;
 };
 
 export const comparePlanChecks = <ToolId extends string = string>(

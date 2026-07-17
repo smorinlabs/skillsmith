@@ -3,8 +3,9 @@ import type { ToolCapabilityScope } from '../agents/adapter-types.ts';
 import type { RelevantCapabilityQueryV1 } from '../agents/capabilities.ts';
 import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import type { SupportedTool } from '../agents/types.ts';
+import { hashManifestSemantics } from '../artifacts/hash.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
-import type { PortableLockV1 } from '../artifacts/lock.ts';
+import { type PortableLockV1, correlatePortableLock, hashPortableLock } from '../artifacts/lock.ts';
 import type { ResolvedArtifactPair } from '../artifacts/pair.ts';
 import type { NormalizedManifestV1 } from '../artifacts/types.ts';
 import type { ProjectContext } from '../context/types.ts';
@@ -24,10 +25,13 @@ import type {
   CurrentMutatorCommand,
   ExecutableOperation,
   OperationDigest,
+  OperationGroupIdentity,
   OperationImage,
   OperationLocation,
+  OperationManifestSnapshot,
   OperationPlan,
   OperationPlanInput,
+  OperationResourceIdentity,
   OperationSelection,
   OperationSource,
   PlanningDiagnostic,
@@ -90,6 +94,34 @@ interface AcquisitionPlanRequestCommonV1 {
   readonly batchPolicy: 'fail-fast' | 'continue-on-error';
   readonly diagnostics?: readonly PlanningDiagnostic[];
   readonly compatibilityOperations?: readonly ExecutableOperation[];
+  readonly artifactTransition?: AcquisitionArtifactTransitionEnvelopeV1;
+}
+
+type ManifestImageV1 = Extract<OperationImage, { readonly kind: 'manifest' }>;
+type LockImageV1 = Extract<OperationImage, { readonly kind: 'lock' }>;
+type AbsentManifestImageV1 = Readonly<{
+  kind: 'absent';
+  resource: Extract<OperationResourceIdentity, { readonly kind: 'manifest-bytes' }>;
+}>;
+type AbsentLockImageV1 = Readonly<{
+  kind: 'absent';
+  resource: Extract<OperationResourceIdentity, { readonly kind: 'lock' }>;
+}>;
+
+export interface AcquisitionArtifactTransitionGroupV1 {
+  readonly groupIdentity: OperationGroupIdentity;
+  readonly migrationAfter?: ManifestImageV1;
+  readonly manifestAfter: ManifestImageV1;
+  readonly lockAfter: LockImageV1;
+}
+
+export interface AcquisitionArtifactTransitionEnvelopeV1 {
+  readonly initial: Readonly<{
+    readonly manifest: ManifestImageV1 | AbsentManifestImageV1;
+    readonly lock: LockImageV1 | AbsentLockImageV1;
+  }>;
+  readonly groups: readonly AcquisitionArtifactTransitionGroupV1[];
+  readonly unchangedGroups?: readonly OperationGroupIdentity[];
 }
 
 export interface AcquisitionInstallPlanRequestV1 extends AcquisitionPlanRequestCommonV1 {
@@ -231,6 +263,158 @@ const bindAcquisitionPlanToSnapshotV1 = <Command extends CurrentMutatorCommand>(
     expectedRevisions: acquisitionExpectedRevisions(snapshot),
     plan,
   });
+
+const installGroupIdentityFor = (
+  request: AcquisitionInstallPlanRequestV1,
+  intent: AcquisitionInstallIntentV1,
+): OperationGroupIdentity => ({
+  domain: 'skillsmith.operation-group-identity',
+  schemaVersion: 1,
+  command: request.command,
+  skill: intent.skill,
+  source: intent.source,
+  scope: intent.scope,
+  target: null,
+});
+
+const uninstallGroupIdentityFor = (
+  request: AcquisitionUninstallPlanRequestV1,
+  intent: AcquisitionUninstallIntentV1,
+): OperationGroupIdentity => ({
+  domain: 'skillsmith.operation-group-identity',
+  schemaVersion: 1,
+  command: request.command,
+  skill: intent.skill,
+  source: null,
+  scope: intent.scope,
+  target: intent.skill,
+});
+
+const manifestModelFromImage = (value: OperationManifestSnapshot): NormalizedManifestV1 => ({
+  version: 1,
+  ...(value.defaults === null
+    ? {}
+    : {
+        defaults: {
+          ...(value.defaults.tools === null ? {} : { tools: value.defaults.tools }),
+          ...(value.defaults.scope === null ? {} : { scope: value.defaults.scope }),
+          ...(value.defaults.path === null ? {} : { path: value.defaults.path }),
+        },
+      }),
+  ...(value.registry === null || value.registry.default === null
+    ? {}
+    : { registry: { default: value.registry.default } }),
+  skills: value.skills,
+});
+
+const operationManifestSnapshot = (value: NormalizedManifestV1): OperationManifestSnapshot => ({
+  version: 1,
+  defaults:
+    value.defaults === undefined
+      ? null
+      : {
+          tools: value.defaults.tools ?? null,
+          scope: value.defaults.scope ?? null,
+          path: value.defaults.path ?? null,
+        },
+  registry: value.registry === undefined ? null : { default: value.registry.default ?? null },
+  skills: value.skills,
+});
+
+const artifactLocation = (path: string): OperationLocation => ({
+  kind: 'machine-bound',
+  path,
+});
+
+const imageLocation = (
+  image: ManifestImageV1 | LockImageV1 | AbsentManifestImageV1 | AbsentLockImageV1,
+): OperationLocation => (image.kind === 'absent' ? image.resource.location : image.location);
+
+const requireArtifactLocation = (
+  image: ManifestImageV1 | LockImageV1 | AbsentManifestImageV1 | AbsentLockImageV1,
+  expected: OperationLocation,
+): void => {
+  if (canonicalPlanningString(imageLocation(image)) !== canonicalPlanningString(expected)) {
+    throw new TypeError(
+      'acquisition planning: artifact transition location differs from selected pair',
+    );
+  }
+};
+
+const validateManifestImage = (image: ManifestImageV1): void => {
+  if (image.semanticHash !== hashManifestSemantics(manifestModelFromImage(image.value))) {
+    throw new TypeError('acquisition planning: manifest transition semantic hash is incoherent');
+  }
+};
+
+const validateLockImage = (image: LockImageV1): void => {
+  const hashed = hashPortableLock(image.value as unknown as PortableLockV1);
+  if (!hashed.ok || hashed.value !== image.canonicalHash) {
+    throw new TypeError('acquisition planning: lock transition canonical hash is incoherent');
+  }
+};
+
+const validateInitialArtifactImage = (
+  image: ManifestImageV1 | AbsentManifestImageV1,
+  observation: ObservedComponentV1<NormalizedManifestV1>,
+): void => {
+  const location = imageLocation(image);
+  const targetIdentity = location.kind === 'machine-bound' ? location.path : null;
+  if (image.kind === 'absent') {
+    if (
+      observation.revision.domain !== 'manifest' ||
+      observation.revision.state !== 'absent' ||
+      observation.revision.targetIdentity !== targetIdentity ||
+      observation.value !== null
+    ) {
+      throw new TypeError('acquisition planning: manifest transition before image is stale');
+    }
+    return;
+  }
+  validateManifestImage(image);
+  if (
+    observation.revision.domain !== 'manifest' ||
+    observation.revision.state !== 'present' ||
+    observation.revision.targetIdentity !== targetIdentity ||
+    observation.value === null ||
+    observation.revision.byteRevision !== image.byteHash ||
+    observation.revision.semanticRevision !== image.semanticHash ||
+    canonicalPlanningString(operationManifestSnapshot(observation.value)) !==
+      canonicalPlanningString(image.value)
+  ) {
+    throw new TypeError('acquisition planning: manifest transition before image is stale');
+  }
+};
+
+const validateInitialLockImage = (
+  image: LockImageV1 | AbsentLockImageV1,
+  observation: ObservedComponentV1<PortableLockV1>,
+): void => {
+  const location = imageLocation(image);
+  const targetIdentity = location.kind === 'machine-bound' ? location.path : null;
+  if (image.kind === 'absent') {
+    if (
+      observation.revision.domain !== 'lock' ||
+      observation.revision.state !== 'absent' ||
+      observation.revision.targetIdentity !== targetIdentity ||
+      observation.value !== null
+    ) {
+      throw new TypeError('acquisition planning: lock transition before image is stale');
+    }
+    return;
+  }
+  validateLockImage(image);
+  if (
+    observation.revision.domain !== 'lock' ||
+    observation.revision.state !== 'present' ||
+    observation.revision.targetIdentity !== targetIdentity ||
+    observation.value === null ||
+    observation.revision.semanticRevision !== image.canonicalHash ||
+    canonicalPlanningString(observation.value) !== canonicalPlanningString(image.value)
+  ) {
+    throw new TypeError('acquisition planning: lock transition before image is stale');
+  }
+};
 
 const liveObservationFor = (
   snapshot: AcquisitionObservedStateSnapshotV1,
@@ -522,15 +706,7 @@ const installOperationFor = (
       : liveState.brokenReason !== null || (ledgerPair === null && desiredRepresentationMatches)
         ? 'repair'
         : 'update';
-  const groupId = createOperationGroupId({
-    domain: 'skillsmith.operation-group-identity',
-    schemaVersion: 1,
-    command: request.command,
-    skill: intent.skill,
-    source: intent.source,
-    scope: intent.scope,
-    target: null,
-  });
+  const groupId = createOperationGroupId(installGroupIdentityFor(request, intent));
   const pairIdentity = {
     domain: 'skillsmith.operation-pair-identity' as const,
     schemaVersion: 1 as const,
@@ -608,12 +784,17 @@ const uninstallOperationFor = (
   intent: AcquisitionUninstallIntentV1,
   snapshot: AcquisitionObservedStateSnapshotV1,
   planningContext: AcquisitionPlanningContext | undefined,
-): ExecutableOperation => {
+): ExecutableOperation | null => {
   const liveObservation = liveObservationFor(snapshot, intent.liveResourceId);
   const liveState = liveObservation.value;
   validateLiveSelection(intent, liveObservation, liveState);
   const ledgerPair = ledgerPairFor(snapshot, intent, liveObservation, liveState);
   if (liveState === null && ledgerPair === null) {
+    const groupId = createOperationGroupId(uninstallGroupIdentityFor(request, intent));
+    const ownsArtifactOnlyRemoval = request.artifactTransition?.groups.some(
+      ({ groupIdentity }) => createOperationGroupId(groupIdentity) === groupId,
+    );
+    if (ownsArtifactOnlyRemoval) return null;
     throw new TypeError('acquisition planning: uninstall intent has no live or ledger state');
   }
   if (ledgerPair?.pinned != null) {
@@ -669,15 +850,7 @@ const uninstallOperationFor = (
           managed: ledgerPair !== null,
           source: beforeSource,
         });
-  const groupId = createOperationGroupId({
-    domain: 'skillsmith.operation-group-identity',
-    schemaVersion: 1,
-    command: request.command,
-    skill: intent.skill,
-    source: null,
-    scope: intent.scope,
-    target: intent.skill,
-  });
+  const groupId = createOperationGroupId(uninstallGroupIdentityFor(request, intent));
   const pairIdentity = {
     domain: 'skillsmith.operation-pair-identity' as const,
     schemaVersion: 1 as const,
@@ -733,6 +906,312 @@ const uninstallOperationFor = (
   };
 };
 
+const artifactOperationFor = (
+  request: AcquisitionPlanRequestV1,
+  groupId: string,
+  kind: 'migrate-project-config' | 'write-manifest' | 'write-lock',
+  before: OperationImage,
+  after: OperationImage,
+  dependencies: readonly string[],
+  additionalPreconditionIds: readonly string[],
+  snapshot: AcquisitionObservedStateSnapshotV1,
+  planningContext: AcquisitionPlanningContext | undefined,
+): ExecutableOperation => {
+  const identity = {
+    domain: 'skillsmith.operation-identity' as const,
+    schemaVersion: 1 as const,
+    groupId,
+    pairId: null,
+    kind,
+    skill: null,
+    source: null,
+    tool: null,
+    scope: null,
+  };
+  const operationId =
+    planningContext === undefined
+      ? createOperationId(identity)
+      : createOperationId(identity, planningContext);
+  return {
+    operationId,
+    groupId,
+    pairId: null,
+    kind,
+    dependencyMetadata: {
+      domain: 'skillsmith.operation-dependency',
+      schemaVersion: 1,
+      operationIds: dependencies,
+    },
+    skill: null,
+    source: null,
+    tool: null,
+    scope: null,
+    before,
+    after,
+    reason: { code: `${kind}-required`, message: `${kind} is required for desired state.` },
+    selectionSource: request.selection.source,
+    preconditionIds: [...expectedRevisionIds(snapshot), ...additionalPreconditionIds],
+    requiredCheckIds: [],
+    reversibility: { kind: 'none', retentionResourceIds: [] },
+    mutates:
+      kind === 'write-lock'
+        ? { live: false, manifest: false, lock: true, ledger: false }
+        : { live: false, manifest: true, lock: false, ledger: false },
+    conflict: null,
+  };
+};
+
+const withDependencies = (
+  operation: ExecutableOperation,
+  dependencies: readonly string[],
+): ExecutableOperation => ({
+  ...operation,
+  dependencyMetadata: {
+    ...operation.dependencyMetadata,
+    operationIds: [...new Set([...operation.dependencyMetadata.operationIds, ...dependencies])],
+  },
+});
+
+const expectedAcquisitionGroupIds = (request: AcquisitionPlanRequestV1): ReadonlySet<string> =>
+  new Set(
+    request.command === 'install'
+      ? request.intents.map((intent) =>
+          createOperationGroupId(installGroupIdentityFor(request, intent)),
+        )
+      : request.intents.map((intent) =>
+          createOperationGroupId(uninstallGroupIdentityFor(request, intent)),
+        ),
+  );
+
+const validateUnchangedInstallGroups = (
+  request: AcquisitionInstallPlanRequestV1,
+  unchangedGroupIds: readonly string[],
+  manifest: ManifestImageV1 | AbsentManifestImageV1,
+  lock: LockImageV1 | AbsentLockImageV1,
+): void => {
+  if (unchangedGroupIds.length === 0) return;
+  if (
+    manifest.kind !== 'manifest' ||
+    lock.kind !== 'lock' ||
+    correlatePortableLock(
+      manifestModelFromImage(manifest.value),
+      lock.value as unknown as PortableLockV1,
+    ).state !== 'current'
+  ) {
+    throw new TypeError(
+      'acquisition planning: unchanged install groups require current portable state',
+    );
+  }
+  for (const groupId of unchangedGroupIds) {
+    const intents = request.intents.filter(
+      (intent) => createOperationGroupId(installGroupIdentityFor(request, intent)) === groupId,
+    );
+    const seed = intents[0];
+    if (seed === undefined || seed.source.kind !== 'portable') {
+      throw new TypeError('acquisition planning: unchanged install group lacks a portable source');
+    }
+    const declaration = manifest.value.skills.find(({ name }) => name === seed.skill);
+    const locked = lock.value.skills.find(({ name }) => name === seed.skill);
+    const requestedTools = new Set(intents.map(({ tool }) => tool));
+    const refMatches =
+      declaration?.ref === seed.source.requestedRef || declaration?.ref === seed.source.resolvedSha;
+    if (
+      declaration === undefined ||
+      locked === undefined ||
+      !refMatches ||
+      canonicalPlanningString(declaration.source) !==
+        canonicalPlanningString(seed.source.identity) ||
+      declaration.scope !== seed.scope ||
+      declaration.placement !== seed.placement.representation ||
+      declaration.tools.length !== requestedTools.size ||
+      declaration.tools.some((tool) => !requestedTools.has(tool)) ||
+      locked.resolvedSha !== seed.source.resolvedSha ||
+      locked.sourcePath !== seed.source.sourcePath ||
+      locked.contentHash !== seed.source.contentHash
+    ) {
+      throw new TypeError(
+        'acquisition planning: unchanged install group differs from portable state',
+      );
+    }
+  }
+};
+
+const createArtifactTransitionOperations = (
+  request: AcquisitionPlanRequestV1,
+  snapshot: AcquisitionObservedStateSnapshotV1,
+  liveOperations: readonly ExecutableOperation[],
+  planningContext: AcquisitionPlanningContext | undefined,
+): readonly ExecutableOperation[] => {
+  const transition = request.artifactTransition;
+  if (transition === undefined) return liveOperations;
+  if (snapshot.artifact.mode !== 'selected') {
+    throw new TypeError('acquisition planning: artifact transitions require a selected pair');
+  }
+  const expectedGroups = expectedAcquisitionGroupIds(request);
+  const groups = transition.groups.map((group) => ({
+    ...group,
+    groupId: createOperationGroupId(group.groupIdentity),
+  }));
+  const suppliedGroups = new Set(groups.map(({ groupId }) => groupId));
+  const unchangedGroupIds = (transition.unchangedGroups ?? []).map((identity) =>
+    createOperationGroupId(identity),
+  );
+  const unchangedGroups = new Set(unchangedGroupIds);
+  const accountedGroups = new Set([...suppliedGroups, ...unchangedGroups]);
+  if (
+    suppliedGroups.size !== groups.length ||
+    unchangedGroups.size !== unchangedGroupIds.length ||
+    [...suppliedGroups].some((groupId) => unchangedGroups.has(groupId)) ||
+    accountedGroups.size !== expectedGroups.size ||
+    [...accountedGroups].some((groupId) => !expectedGroups.has(groupId))
+  ) {
+    throw new TypeError('acquisition planning: artifact transition groups differ from intents');
+  }
+  if (groups.filter(({ migrationAfter }) => migrationAfter !== undefined).length > 1) {
+    throw new TypeError('acquisition planning: selected pair has multiple manifest migrations');
+  }
+  groups.sort(
+    (left, right) =>
+      Number(left.migrationAfter === undefined) - Number(right.migrationAfter === undefined) ||
+      (left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0),
+  );
+  const manifestLocation = artifactLocation(snapshot.artifact.pair.file.path);
+  const lockLocation = artifactLocation(snapshot.artifact.pair.lockfile.path);
+  requireArtifactLocation(transition.initial.manifest, manifestLocation);
+  requireArtifactLocation(transition.initial.lock, lockLocation);
+  validateInitialArtifactImage(transition.initial.manifest, snapshot.artifact.manifest);
+  validateInitialLockImage(transition.initial.lock, snapshot.artifact.lock);
+  let currentManifest = transition.initial.manifest;
+  let currentLock = transition.initial.lock;
+  const artifacts: ExecutableOperation[] = [];
+  let updatedLive = [...liveOperations];
+  for (const group of groups) {
+    const groupLive = [
+      ...new Map(
+        liveOperations
+          .filter((operation) => operation.groupId === group.groupId)
+          .map((operation) => [operation.operationId, operation]),
+      ).values(),
+    ];
+    const sourcePreconditionIds =
+      request.command === 'install'
+        ? [
+            ...new Set(
+              request.intents
+                .filter(
+                  (intent) =>
+                    createOperationGroupId(installGroupIdentityFor(request, intent)) ===
+                    group.groupId,
+                )
+                .map(({ sourcePreconditionId }) => sourcePreconditionId),
+            ),
+          ]
+        : [];
+    let migrationId: string | null = null;
+    if (group.migrationAfter !== undefined) {
+      requireArtifactLocation(group.migrationAfter, manifestLocation);
+      validateManifestImage(group.migrationAfter);
+      if (
+        currentManifest.kind !== 'manifest' ||
+        currentManifest.shape !== 'legacy' ||
+        group.migrationAfter.shape !== 'canonical' ||
+        currentManifest.semanticHash !== group.migrationAfter.semanticHash ||
+        canonicalPlanningString(currentManifest.value) !==
+          canonicalPlanningString(group.migrationAfter.value)
+      ) {
+        throw new TypeError('acquisition planning: manifest migration transition is incoherent');
+      }
+      const migration = artifactOperationFor(
+        request,
+        group.groupId,
+        'migrate-project-config',
+        currentManifest,
+        group.migrationAfter,
+        [],
+        sourcePreconditionIds,
+        snapshot,
+        planningContext,
+      );
+      artifacts.push(migration);
+      migrationId = migration.operationId;
+      currentManifest = group.migrationAfter;
+    }
+    requireArtifactLocation(group.manifestAfter, manifestLocation);
+    requireArtifactLocation(group.lockAfter, lockLocation);
+    validateManifestImage(group.manifestAfter);
+    validateLockImage(group.lockAfter);
+    if (
+      correlatePortableLock(
+        manifestModelFromImage(group.manifestAfter.value),
+        group.lockAfter.value as unknown as PortableLockV1,
+      ).state !== 'current'
+    ) {
+      throw new TypeError('acquisition planning: artifact transition pair is incoherent');
+    }
+    if (
+      group.manifestAfter.shape !== 'canonical' ||
+      (currentManifest.kind === 'manifest' && currentManifest.shape !== 'canonical') ||
+      canonicalPlanningString(currentManifest) === canonicalPlanningString(group.manifestAfter)
+    ) {
+      throw new TypeError('acquisition planning: manifest write transition is invalid or a noop');
+    }
+    if (
+      group.lockAfter.value.manifestHash !== group.manifestAfter.semanticHash ||
+      canonicalPlanningString(currentLock) === canonicalPlanningString(group.lockAfter)
+    ) {
+      throw new TypeError('acquisition planning: lock write transition is invalid or a noop');
+    }
+    const manifestDependencies =
+      request.command === 'install'
+        ? migrationId === null
+          ? []
+          : [migrationId]
+        : groupLive.length > 0
+          ? groupLive.map(({ operationId }) => operationId)
+          : migrationId === null
+            ? []
+            : [migrationId];
+    const manifest = artifactOperationFor(
+      request,
+      group.groupId,
+      'write-manifest',
+      currentManifest,
+      group.manifestAfter,
+      manifestDependencies,
+      sourcePreconditionIds,
+      snapshot,
+      planningContext,
+    );
+    const lock = artifactOperationFor(
+      request,
+      group.groupId,
+      'write-lock',
+      currentLock,
+      group.lockAfter,
+      [manifest.operationId],
+      sourcePreconditionIds,
+      snapshot,
+      planningContext,
+    );
+    artifacts.push(manifest, lock);
+    const dependencies =
+      request.command === 'install'
+        ? [lock.operationId]
+        : migrationId === null
+          ? []
+          : [migrationId];
+    updatedLive = updatedLive.map((live) =>
+      live.groupId === group.groupId ? withDependencies(live, dependencies) : live,
+    );
+    currentManifest = group.manifestAfter;
+    currentLock = group.lockAfter;
+  }
+  if (request.command === 'install') {
+    validateUnchangedInstallGroups(request, unchangedGroupIds, currentManifest, currentLock);
+  }
+  return [...artifacts, ...updatedLive];
+};
+
 const mergeDuplicateAcquisitionOperations = (
   operations: readonly ExecutableOperation[],
 ): readonly ExecutableOperation[] => {
@@ -765,6 +1244,7 @@ export const createAcquisitionDiagnosticPlan = <Command extends 'install' | 'uni
     if (
       request.schemaVersion !== 1 ||
       (request.command !== 'install' && request.command !== 'uninstall') ||
+      request.artifactTransition !== undefined ||
       (request.compatibilityOperations?.length ?? 0) !== 0
     ) {
       throw new TypeError('acquisition diagnostics planning: unsupported request');
@@ -818,6 +1298,9 @@ export function createAcquisitionPlan(
           ...new Set([...operation.preconditionIds, ...expectedRevisionIds(snapshot)]),
         ],
       }));
+      const liveOperations = request.intents
+        .map((intent) => installOperationFor(request, intent, snapshot, planningContext))
+        .filter((operation): operation is ExecutableOperation => operation !== null);
       const plan = createCanonicalAcquisitionPlan(
         {
           domain: 'skillsmith.operation-plan',
@@ -827,9 +1310,12 @@ export function createAcquisitionPlan(
           batchPolicy: request.batchPolicy,
           operations: mergeDuplicateAcquisitionOperations([
             ...compatibilityOperations,
-            ...request.intents
-              .map((intent) => installOperationFor(request, intent, snapshot, planningContext))
-              .filter((operation): operation is ExecutableOperation => operation !== null),
+            ...createArtifactTransitionOperations(
+              request,
+              snapshot,
+              liveOperations,
+              planningContext,
+            ),
           ]),
           checks: [],
           diagnostics: request.diagnostics ?? [],
@@ -844,6 +1330,9 @@ export function createAcquisitionPlan(
         ...new Set([...operation.preconditionIds, ...expectedRevisionIds(snapshot)]),
       ],
     }));
+    const liveOperations = request.intents
+      .map((intent) => uninstallOperationFor(request, intent, snapshot, planningContext))
+      .filter((operation): operation is ExecutableOperation => operation !== null);
     const plan = createCanonicalAcquisitionPlan(
       {
         domain: 'skillsmith.operation-plan',
@@ -853,9 +1342,7 @@ export function createAcquisitionPlan(
         batchPolicy: request.batchPolicy,
         operations: mergeDuplicateAcquisitionOperations([
           ...compatibilityOperations,
-          ...request.intents.map((intent) =>
-            uninstallOperationFor(request, intent, snapshot, planningContext),
-          ),
+          ...createArtifactTransitionOperations(request, snapshot, liveOperations, planningContext),
         ]),
         checks: [],
         diagnostics: request.diagnostics ?? [],

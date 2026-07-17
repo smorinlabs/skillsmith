@@ -88,7 +88,7 @@ const identityFor = (kind: ExecutableOperationKind): OperationIdentity => ({
 });
 
 const operationFor = (
-  kind: 'install' | 'repair' = 'install',
+  kind: ExecutableOperationKind = 'install',
   dependencies: readonly string[] = [],
 ): ExecutableOperation => ({
   operationId: createOperationId(identityFor(kind)),
@@ -358,6 +358,114 @@ describe('planning constructors', () => {
     mutableInput.selection.skills?.push('caller-mutation');
     expect(plan.selection.skills).toEqual(['alpha']);
     expect(() => (plan.operations as ExecutableOperation[]).push(install)).toThrow(TypeError);
+  });
+
+  test('uses dependency topology before the semantic comparator and rejects invalid graphs', () => {
+    const install = operationFor('install');
+    const repair = operationFor('repair');
+    const update = operationFor('update');
+    const installAfterRepair = {
+      ...install,
+      dependencyMetadata: {
+        ...install.dependencyMetadata,
+        operationIds: [repair.operationId, update.operationId],
+      },
+    };
+    const first = createOperationPlan(planFor([installAfterRepair, repair, update]));
+    const second = createOperationPlan(planFor([update, installAfterRepair, repair]));
+    expect(first.operations.map(({ kind }) => kind)).toEqual(['update', 'repair', 'install']);
+    expect(second.operations).toEqual(first.operations);
+    expect(first.operations[2]?.dependencyMetadata.operationIds).toEqual([
+      update.operationId,
+      repair.operationId,
+    ]);
+
+    const secondGroup = structuredClone(operationFor('repair'));
+    const secondGroupId = createOperationGroupId(groupIdentityFor(SOURCE, 'beta'));
+    (secondGroup as unknown as { groupId: string }).groupId = secondGroupId;
+    (secondGroup as unknown as { operationId: string }).operationId = createOperationId({
+      ...identityFor('repair'),
+      groupId: secondGroupId,
+    });
+    const crossGroup = {
+      ...install,
+      dependencyMetadata: {
+        ...install.dependencyMetadata,
+        operationIds: [secondGroup.operationId],
+      },
+    };
+    expect(() => createOperationPlan(planFor([crossGroup, secondGroup]))).toThrow(/cross-group/i);
+
+    const cyclicInstall = {
+      ...install,
+      dependencyMetadata: {
+        ...install.dependencyMetadata,
+        operationIds: [repair.operationId],
+      },
+    };
+    const cyclicRepair = {
+      ...repair,
+      dependencyMetadata: {
+        ...repair.dependencyMetadata,
+        operationIds: [install.operationId],
+      },
+    };
+    expect(() => createOperationPlan(planFor([cyclicInstall, cyclicRepair]))).toThrow(/cyclic/i);
+
+    const selfDependent = {
+      ...install,
+      dependencyMetadata: {
+        ...install.dependencyMetadata,
+        operationIds: [install.operationId],
+      },
+    };
+    expect(() => createOperationPlan(planFor([selfDependent]))).toThrow(/self dependency/i);
+
+    const groupA = operationFor('install');
+    const groupBId = createOperationGroupId(groupIdentityFor(SOURCE, 'beta'));
+    const groupB = {
+      ...operationFor('repair'),
+      groupId: groupBId,
+      operationId: createOperationId({ ...identityFor('repair'), groupId: groupBId }),
+    };
+    const artifactFor = (live: ExecutableOperation): ExecutableOperation => {
+      const identity = {
+        domain: 'skillsmith.operation-identity' as const,
+        schemaVersion: 1 as const,
+        groupId: live.groupId,
+        pairId: null,
+        kind: 'write-manifest' as const,
+        skill: null,
+        source: null,
+        tool: null,
+        scope: null,
+      };
+      return {
+        ...live,
+        operationId: createOperationId(identity),
+        pairId: null,
+        kind: 'write-manifest',
+        skill: null,
+        source: null,
+        tool: null,
+        scope: null,
+      };
+    };
+    const artifactA = artifactFor(groupA);
+    const artifactB = artifactFor(groupB);
+    const dependentA = {
+      ...groupA,
+      dependencyMetadata: { ...groupA.dependencyMetadata, operationIds: [artifactA.operationId] },
+    };
+    const dependentB = {
+      ...groupB,
+      dependencyMetadata: { ...groupB.dependencyMetadata, operationIds: [artifactB.operationId] },
+    };
+    const grouped = createOperationPlan(planFor([dependentB, artifactA, dependentA, artifactB]));
+    expect(grouped.operations.map(({ groupId }) => groupId)).toSatisfy((groupIds: string[]) => {
+      const transitions = groupIds.filter((groupId, index) => groupIds[index - 1] !== groupId);
+      return transitions.length === 2 && new Set(groupIds).size === 2;
+    });
   });
 
   test('preserves unary Array.map constructors without accepting numeric contexts', () => {
