@@ -5246,6 +5246,7 @@
         "packages/core/tests/application/lifecycle-services.test.ts",
         "packages/core/tests/artifacts/coordinator.test.ts",
         "packages/core/tests/artifacts/discovery.test.ts",
+        "packages/core/tests/execution/preconditions.test.ts",
         "packages/core/tests/execution/scheduler.test.ts",
         "packages/core/tests/planning/create.test.ts",
         "packages/core/tests/planning/order.test.ts",
@@ -5377,7 +5378,8 @@
         "projects/p17/plans/P17-G4A-01.md",
         "projects/p17/evidence/P17-G4A-01.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G4A-01.md#ready-plan",
-        "projects/p17/evidence/P17-G4A-01.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4A-01.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment"
       ]
     },
     {
@@ -20592,7 +20594,8 @@
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4A-01.md#ready-plan",
-        "projects/p17/evidence/P17-G4A-01.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4A-01.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -20689,6 +20692,7 @@
         "packages/core/tests/application/lifecycle-services.test.ts",
         "packages/core/tests/artifacts/coordinator.test.ts",
         "packages/core/tests/artifacts/discovery.test.ts",
+        "packages/core/tests/execution/preconditions.test.ts",
         "packages/core/tests/execution/scheduler.test.ts",
         "packages/core/tests/planning/create.test.ts",
         "packages/core/tests/planning/order.test.ts",
