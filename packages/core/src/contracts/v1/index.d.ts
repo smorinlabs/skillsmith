@@ -444,6 +444,7 @@ export interface ExportV1Dto {
           | 'dirty-git'
           | 'incomplete-provenance'
           | 'invalid-content'
+          | 'invalid-path'
           | 'invalid-source'
           | 'live-content-mismatch'
           | 'non-git-dev'
@@ -457,6 +458,7 @@ export interface ExportV1Dto {
           | 'dirty-git'
           | 'incomplete-provenance'
           | 'invalid-content'
+          | 'invalid-path'
           | 'invalid-source'
           | 'live-content-mismatch'
           | 'non-git-dev'
@@ -464,6 +466,18 @@ export interface ExportV1Dto {
           | 'stale-ledger'
           | 'unmanaged'
           | 'unsupported-scope';
+      }
+    | {
+        name: string;
+        tools: ConfigToolId[];
+        scope: ConfigScope;
+        classification: 'conflict';
+        action: 'conflict';
+        reason:
+          | 'custom-path-conflict'
+          | 'duplicate-selected-placement'
+          | 'existing-declaration-conflict'
+          | 'selected-candidate-conflict';
       }
   >;
   effects: Array<{
