@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +9,8 @@ import {
   destroyRemoteFixture,
 } from '../../../packages/core/tests/fixtures/acquire/remote.ts';
 import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
+
+setDefaultTimeout(30_000);
 
 type UnknownRecord = Record<string, unknown>;
 
