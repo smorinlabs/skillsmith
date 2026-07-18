@@ -343,6 +343,61 @@ describe('P17 immutable catalog and traceability baseline', () => {
     expect(documentation.secondaryGroups).toContain('P17-G6-04');
   });
 
+  test('schedules WF03 and WF04 at the dependency-complete Phase-4B boundary', () => {
+    const catalog = fixture();
+    const wf03 = required(
+      catalog.entities.find((item) => item.id === 'EWP-WF03'),
+      'missing EWP-WF03',
+    );
+    const wf04 = required(
+      catalog.entities.find((item) => item.id === 'EWP-WF04'),
+      'missing EWP-WF04',
+    );
+    const init = required(
+      catalog.entities.find((item) => item.id === 'COMMAND:init'),
+      'missing COMMAND:init',
+    );
+    const exportCommand = required(
+      catalog.entities.find((item) => item.id === 'COMMAND:export'),
+      'missing COMMAND:export',
+    );
+
+    expect(wf03.primaryGroup).toBe('P17-G4B-03');
+    expect(wf04.primaryGroup).toBe('P17-G4B-03');
+    expect(wf03.affectedContracts).toEqual(['COMMAND:init', 'EWP-CF-041', 'P1-05']);
+    expect(wf04.affectedContracts).toEqual(['COMMAND:export', 'D-005', 'EWP-CF-011', 'P1-06']);
+    expect(wf03.secondaryGroups).toContain('P17-G4A-03');
+    expect(wf04.secondaryGroups).toContain('P17-G4A-02');
+
+    expect(group(catalog, 'P17-G4A-03').requiredNowValidations).not.toContain('EWP-WF03');
+    expect(group(catalog, 'P17-G4A-03').downstreamCoverage).toContain('EWP-WF03');
+    expect(group(catalog, 'P17-G4A-02').requiredNowValidations).not.toContain('EWP-WF04');
+    expect(group(catalog, 'P17-G4A-02').downstreamCoverage).toContain('EWP-WF04');
+    expect(group(catalog, 'P17-G4B-03').requiredNowValidations).toEqual(
+      expect.arrayContaining(['EWP-WF03', 'EWP-WF04']),
+    );
+    expect(init.validatedBy).toContain('EWP-WF03');
+    expect(init.secondaryGroups).toContain('P17-G4B-03');
+    expect(exportCommand.validatedBy).toContain('EWP-WF04');
+    expect(exportCommand.secondaryGroups).toContain('P17-G4B-03');
+    for (const id of ['D-005', 'EWP-CF-011', 'EWP-P4A-T02', 'P1-06']) {
+      const entity = required(
+        catalog.entities.find((item) => item.id === id),
+        `missing ${id}`,
+      );
+      expect(entity.validatedBy).toContain('EWP-WF04');
+      expect(entity.secondaryGroups).toContain('P17-G4B-03');
+    }
+    for (const id of ['EWP-CF-041', 'EWP-P4A-T04', 'P1-05']) {
+      const entity = required(
+        catalog.entities.find((item) => item.id === id),
+        `missing ${id}`,
+      );
+      expect(entity.validatedBy).toContain('EWP-WF03');
+      expect(entity.secondaryGroups).toContain('P17-G4B-03');
+    }
+  });
+
   test('separates required-now validation from immutable downstream coverage', () => {
     const catalog = fixture();
     const phase0 = group(catalog, 'P17-G0-05');

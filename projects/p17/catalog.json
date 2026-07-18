@@ -5449,10 +5449,9 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
-      "downstreamCoverage": [],
+      "downstreamCoverage": ["EWP-WF04"],
       "testCommands": [],
       "implementers": [],
       "reviewer": null,
@@ -5531,10 +5530,9 @@
         "EWP-OPT-TS03",
         "EWP-OPT-TS04",
         "EWP-P2-TS05",
-        "EWP-P4A-TS04",
-        "EWP-WF03"
+        "EWP-P4A-TS04"
       ],
-      "downstreamCoverage": ["EWP-OPT-TS05"],
+      "downstreamCoverage": ["EWP-OPT-TS05", "EWP-WF03"],
       "testCommands": [],
       "implementers": [],
       "reviewer": null,
@@ -5860,8 +5858,50 @@
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
-      "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06"],
-      "requiredNowValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06"],
+      "impactedValidations": [
+        "EWP-CMD-EXPORT-TS01",
+        "EWP-CMD-EXPORT-TS02",
+        "EWP-CMD-EXPORT-TS03",
+        "EWP-CMD-EXPORT-TS04",
+        "EWP-CMD-EXPORT-TS05",
+        "EWP-CMD-EXPORT-TS06",
+        "EWP-CMD-EXPORT-TS07",
+        "EWP-CMD-EXPORT-TS08",
+        "EWP-CMD-EXPORT-TS09",
+        "EWP-CMD-INIT-TS01",
+        "EWP-CMD-INIT-TS02",
+        "EWP-CMD-INIT-TS03",
+        "EWP-CMD-INIT-TS04",
+        "EWP-CMD-INIT-TS05",
+        "EWP-P4A-TS03",
+        "EWP-P4A-TS04",
+        "EWP-P4B-TS05",
+        "EWP-P4B-TS06",
+        "EWP-WF03",
+        "EWP-WF04"
+      ],
+      "requiredNowValidations": [
+        "EWP-CMD-EXPORT-TS01",
+        "EWP-CMD-EXPORT-TS02",
+        "EWP-CMD-EXPORT-TS03",
+        "EWP-CMD-EXPORT-TS04",
+        "EWP-CMD-EXPORT-TS05",
+        "EWP-CMD-EXPORT-TS06",
+        "EWP-CMD-EXPORT-TS07",
+        "EWP-CMD-EXPORT-TS08",
+        "EWP-CMD-EXPORT-TS09",
+        "EWP-CMD-INIT-TS01",
+        "EWP-CMD-INIT-TS02",
+        "EWP-CMD-INIT-TS03",
+        "EWP-CMD-INIT-TS04",
+        "EWP-CMD-INIT-TS05",
+        "EWP-P4A-TS03",
+        "EWP-P4A-TS04",
+        "EWP-P4B-TS05",
+        "EWP-P4B-TS06",
+        "EWP-WF03",
+        "EWP-WF04"
+      ],
       "downstreamCoverage": [],
       "testCommands": [],
       "implementers": [],
@@ -7145,7 +7185,7 @@
       "plannedTarget": "surface:export",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-EXPORT-TS01",
@@ -7274,7 +7314,7 @@
       "plannedTarget": "surface:init",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-INIT-TS01",
@@ -7986,7 +8026,7 @@
       "plannedTarget": "coverage:P17-G4A-02",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-EXPORT-TS01",
@@ -8436,8 +8476,8 @@
       "evidence": [],
       "secondaryGroups": [],
       "implements": [],
-      "validatedBy": ["EWP-P4B-TS05", "EWP-P4B-TS06"],
-      "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06"],
+      "validatedBy": ["EWP-P4B-TS05", "EWP-P4B-TS06", "EWP-WF03", "EWP-WF04"],
+      "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06", "EWP-WF03", "EWP-WF04"],
       "affectedContracts": ["D-015"],
       "testCommands": [],
       "ownedFiles": []
@@ -8486,8 +8526,7 @@
         "P17-G4A-02",
         "P17-G4B-01",
         "P17-G4B-02",
-        "P17-G4B-03",
-        "P17-G4A-03"
+        "P17-G4B-03"
       ],
       "implements": [],
       "validatedBy": [
@@ -8889,7 +8928,7 @@
       "plannedTarget": "coverage:P17-G4A-02",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-EXPORT-TS05",
@@ -8919,7 +8958,7 @@
       "plannedTarget": "coverage:P17-G2-03",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G2-03.md#traceability-and-sign-off"],
-      "secondaryGroups": ["P17-G4A-03", "P17-G4A-02"],
+      "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": ["EWP-P2-TS04", "EWP-WF03", "EWP-WF04"],
       "impactedValidations": ["EWP-P2-TS04", "EWP-WF03", "EWP-WF04"],
@@ -9159,7 +9198,7 @@
       "plannedTarget": "coverage:P17-G2-01",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G2-01.md#traceability-and-sign-off"],
-      "secondaryGroups": ["P17-G4A-02"],
+      "secondaryGroups": ["P17-G4A-02", "P17-G4B-03"],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS05", "EWP-P2-TS01", "EWP-WF04"],
       "impactedValidations": ["EWP-CMD-EXPORT-TS05", "EWP-P2-TS01", "EWP-WF04"],
@@ -9750,7 +9789,7 @@
         "P17-G5-02",
         "P17-G2-01",
         "P17-G2-03",
-        "P17-G4A-03"
+        "P17-G4B-03"
       ],
       "implements": [],
       "validatedBy": [
@@ -9863,6 +9902,7 @@
         "P17-G4A-01",
         "P17-G4B-01",
         "P17-G5-01",
+        "P17-G4B-03",
         "P17-G1-01",
         "P17-G6-02A"
       ],
@@ -10062,7 +10102,7 @@
         "P17-G4A-02",
         "P17-G4A-01",
         "P17-G4B-01",
-        "P17-G4A-03",
+        "P17-G4B-03",
         "P17-G1-02A"
       ],
       "implements": [],
@@ -10650,7 +10690,8 @@
         "P17-G5-01",
         "P17-G5-02",
         "P17-G5-05",
-        "P17-G0-02"
+        "P17-G0-02",
+        "P17-G4B-03"
       ],
       "implements": [],
       "validatedBy": [
@@ -10716,7 +10757,7 @@
       "plannedTarget": "coverage:P17-G4A-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": ["P17-G1-03", "P17-G1-02A", "P17-G6-02A", "P17-G2-04"],
+      "secondaryGroups": ["P17-G1-03", "P17-G1-02A", "P17-G6-02A", "P17-G2-04", "P17-G4B-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-INIT-TS01",
@@ -13095,8 +13136,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -13126,8 +13166,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -13157,8 +13196,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -13188,8 +13226,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -13219,8 +13256,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -13250,8 +13286,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -13281,8 +13316,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -13312,8 +13346,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -13343,8 +13376,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -13834,8 +13866,7 @@
         "EWP-CMD-INIT-TS03",
         "EWP-CMD-INIT-TS04",
         "EWP-CMD-INIT-TS05",
-        "EWP-P4A-TS04",
-        "EWP-WF03"
+        "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
       "testCommands": [],
@@ -13861,8 +13892,7 @@
         "EWP-CMD-INIT-TS03",
         "EWP-CMD-INIT-TS04",
         "EWP-CMD-INIT-TS05",
-        "EWP-P4A-TS04",
-        "EWP-WF03"
+        "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
       "testCommands": [],
@@ -13888,8 +13918,7 @@
         "EWP-CMD-INIT-TS03",
         "EWP-CMD-INIT-TS04",
         "EWP-CMD-INIT-TS05",
-        "EWP-P4A-TS04",
-        "EWP-WF03"
+        "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
       "testCommands": [],
@@ -13915,8 +13944,7 @@
         "EWP-CMD-INIT-TS03",
         "EWP-CMD-INIT-TS04",
         "EWP-CMD-INIT-TS05",
-        "EWP-P4A-TS04",
-        "EWP-WF03"
+        "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
       "testCommands": [],
@@ -13942,8 +13970,7 @@
         "EWP-CMD-INIT-TS03",
         "EWP-CMD-INIT-TS04",
         "EWP-CMD-INIT-TS05",
-        "EWP-P4A-TS04",
-        "EWP-WF03"
+        "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
       "testCommands": [],
@@ -20800,7 +20827,7 @@
       "plannedTarget": "planned:P17-G4A-02",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "validatedBy": [
         "EWP-CMD-EXPORT-TS01",
@@ -20862,7 +20889,7 @@
       "plannedTarget": "planned:P17-G4A-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:init", "EWP-CF-041", "P1-05"],
       "validatedBy": [
         "EWP-CMD-INIT-TS01",
@@ -20976,8 +21003,7 @@
         "EWP-CMD-EXPORT-TS07",
         "EWP-CMD-EXPORT-TS08",
         "EWP-CMD-EXPORT-TS09",
-        "EWP-P4A-TS03",
-        "EWP-WF04"
+        "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "testCommands": [],
@@ -21003,8 +21029,7 @@
         "EWP-CMD-INIT-TS03",
         "EWP-CMD-INIT-TS04",
         "EWP-CMD-INIT-TS05",
-        "EWP-P4A-TS04",
-        "EWP-WF03"
+        "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
       "testCommands": [],
@@ -21279,8 +21304,8 @@
       "evidence": [],
       "secondaryGroups": [],
       "implements": ["D-015"],
-      "validatedBy": ["EWP-P4B-TS05", "EWP-P4B-TS06"],
-      "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06"],
+      "validatedBy": ["EWP-P4B-TS05", "EWP-P4B-TS06", "EWP-WF03", "EWP-WF04"],
+      "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06", "EWP-WF03", "EWP-WF04"],
       "affectedContracts": ["D-015"],
       "testCommands": [],
       "ownedFiles": []
@@ -21456,7 +21481,7 @@
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS05"],
-      "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06"],
+      "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06", "EWP-WF03", "EWP-WF04"],
       "affectedContracts": ["D-015"],
       "testCommands": [],
       "ownedFiles": []
@@ -21475,7 +21500,7 @@
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS06"],
-      "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06"],
+      "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06", "EWP-WF03", "EWP-WF04"],
       "affectedContracts": ["D-015"],
       "testCommands": [],
       "ownedFiles": []
@@ -22333,13 +22358,13 @@
       "title": "Reproducible project bootstrap",
       "kind": "workflow",
       "stateModel": "validation",
-      "primaryGroup": "P17-G4A-03",
+      "primaryGroup": "P17-G4B-03",
       "status": "planned",
       "tier": "required-pr",
-      "plannedTarget": "planned:P17-G4A-03:tests/ergonomics/workflows/EWP-WF03.test.ts#EWP-WF03",
+      "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF03.test.ts#EWP-WF03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4A-03"],
       "implements": [],
       "validatedBy": ["EWP-WF03"],
       "impactedValidations": [
@@ -22360,13 +22385,13 @@
       "title": "Existing-fleet export and restore",
       "kind": "workflow",
       "stateModel": "validation",
-      "primaryGroup": "P17-G4A-02",
+      "primaryGroup": "P17-G4B-03",
       "status": "planned",
       "tier": "required-pr",
-      "plannedTarget": "planned:P17-G4A-02:tests/ergonomics/workflows/EWP-WF04.test.ts#EWP-WF04",
+      "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF04.test.ts#EWP-WF04",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4A-02"],
       "implements": [],
       "validatedBy": ["EWP-WF04"],
       "impactedValidations": [
@@ -23213,7 +23238,7 @@
       "plannedTarget": "coverage:P17-G4A-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-INIT-TS01",
@@ -23249,7 +23274,7 @@
       "plannedTarget": "coverage:P17-G4A-02",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-EXPORT-TS01",

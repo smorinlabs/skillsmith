@@ -2068,6 +2068,17 @@ instead of adding command-specific orchestration.
   matrix; cross-machine refusal/reproduction guidance; nested secret-canary scans through partial
   failure, debug, saved output, and crash residue.
 
+**Dependency-complete workflow ownership amendment (2026-07-18, user-approved):** Phase 4A keeps
+the command-level `init` and `export` acceptance work, but EWP-WF03 and EWP-WF04 have primary
+validation ownership in the final Phase 4B lock/reproduction group. Both workflows invoke `plan`
+and `apply`, and their terminal assertions require clean-clone, cross-platform, or cross-machine
+reproduction, so they cannot truthfully pass before the Phase 4B planner and executor exist.
+P17-G4A-03 retains EWP-WF03 and P17-G4A-02 retains EWP-WF04 as immutable downstream coverage;
+P17-G4B-03 runs both as required-now dependency-complete workflows after P17-G4B-02. This corrects
+validation scheduling only: it changes no command behavior, entity count, execution-group
+dependency, or product scope, and it preserves the workflows' earlier command, decision, finding,
+task, and recommendation traceability. The user explicitly approved this correction on 2026-07-18.
+
 **Entry:** Phase 3B transaction primitives pass against every existing mutator. **Exit:** init,
 imperative default-save, export, plan, and apply share one operation set and coordinator; all Phase
 4 holistic workflows pass without command-specific transaction engines.

@@ -453,8 +453,8 @@ findingGroups.forEach((group, index) =>
 const workflowGroups = [
   'G6-04',
   'G4A-01',
-  'G4A-03',
-  'G4A-02',
+  'G4B-03',
+  'G4B-03',
   'G5-03',
   'G4B-01',
   'G4B-02',
@@ -605,6 +605,30 @@ const G3B03_VALIDATIONS = [
   'EWP-WF11',
 ] as const;
 
+const G4A02_VALIDATIONS = [
+  'EWP-CMD-EXPORT-TS01',
+  'EWP-CMD-EXPORT-TS02',
+  'EWP-CMD-EXPORT-TS03',
+  'EWP-CMD-EXPORT-TS04',
+  'EWP-CMD-EXPORT-TS05',
+  'EWP-CMD-EXPORT-TS06',
+  'EWP-CMD-EXPORT-TS07',
+  'EWP-CMD-EXPORT-TS08',
+  'EWP-CMD-EXPORT-TS09',
+  'EWP-P4A-TS03',
+  'EWP-WF04',
+] as const;
+
+const G4A03_VALIDATIONS = [
+  'EWP-CMD-INIT-TS01',
+  'EWP-CMD-INIT-TS02',
+  'EWP-CMD-INIT-TS03',
+  'EWP-CMD-INIT-TS04',
+  'EWP-CMD-INIT-TS05',
+  'EWP-P4A-TS04',
+  'EWP-WF03',
+] as const;
+
 const explicitValidationOwnership: Record<string, string[]> = {
   // The full first-installation workflow closes only after distribution, generated help/docs, and
   // completion are all available. Earlier Phase-6 contributors retain it as downstream coverage.
@@ -619,6 +643,17 @@ const explicitValidationOwnership: Record<string, string[]> = {
   'D-010': [...G3B03_VALIDATIONS],
   'EWP-P3B-T04': [...G3B03_VALIDATIONS],
   'P2-07': [...G3B03_VALIDATIONS],
+  // WF03/WF04 close only after plan/apply and reproduction exist in G4B-03. Preserve each
+  // Phase-4A command slice's end-to-end obligation as downstream coverage.
+  'COMMAND:export': [...G4A02_VALIDATIONS],
+  'D-005': [...G4A02_VALIDATIONS],
+  'EWP-P4A-T02': [...G4A02_VALIDATIONS],
+  'P1-06': [...G4A02_VALIDATIONS],
+  'EWP-WF04': [...G4A02_VALIDATIONS],
+  'COMMAND:init': [...G4A03_VALIDATIONS],
+  'EWP-P4A-T04': [...G4A03_VALIDATIONS],
+  'P1-05': [...G4A03_VALIDATIONS],
+  'EWP-WF03': [...G4A03_VALIDATIONS],
   'COMMAND:dev': [
     'EWP-CMD-DEV-TS01',
     'EWP-CMD-DEV-TS02',
@@ -762,6 +797,9 @@ const explicitValidationOwnership: Record<string, string[]> = {
 const explicitContractOwnership: Record<string, string[]> = {
   // WF01 is the dependency-complete Phase-6 release/orientation integration workflow.
   'EWP-WF01': ['D-016'],
+  // Dependency-complete ownership must not replace the earlier command-slice relationships.
+  'EWP-WF03': ['COMMAND:init', 'EWP-CF-041', 'P1-05'],
+  'EWP-WF04': ['COMMAND:export', 'D-005', 'EWP-CF-011', 'P1-06'],
   'EWP-WF05': [
     'COMMAND:dev',
     'COMMAND:promote',

@@ -257,8 +257,8 @@ Tracked entities: **425** across **45** change groups.
 |---|---|---|---|
 | EWP-WF01 | P17-G6-04 | planned | release |
 | EWP-WF02 | P17-G4A-01 | signed-off | required-pr |
-| EWP-WF03 | P17-G4A-03 | planned | required-pr |
-| EWP-WF04 | P17-G4A-02 | planned | required-pr |
+| EWP-WF03 | P17-G4B-03 | planned | required-pr |
+| EWP-WF04 | P17-G4B-03 | planned | required-pr |
 | EWP-WF05 | P17-G5-03 | planned | required-pr |
 | EWP-WF06 | P17-G4B-01 | planned | required-pr |
 | EWP-WF07 | P17-G4B-02 | planned | required-pr |
@@ -1118,8 +1118,8 @@ Downstream coverage obligations: none.
 ## P17-G4A-02 — Export classification, safe merge, portable intent, and writer integration
 
 Phase: 4A; status: **planned**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05.
-Required-now validations: EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-P4A-TS03, EWP-WF04.
-Downstream coverage obligations: none.
+Required-now validations: EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-P4A-TS03.
+Downstream coverage obligations: EWP-WF04.
 
 ### Group gates
 
@@ -1150,14 +1150,13 @@ Downstream coverage obligations: none.
 - [ ] **EWP-CMD-EXPORT-TS09** — clean-machine locked round trip using canonical credential-free identity _(command-test; planned)_
 - [ ] **EWP-P4A-T02** — Implement export classification, merge/update behavior, and writer integration. _(phase-task; planned)_
 - [ ] **EWP-P4A-TS03** — Export portable/nonportable and existing-file classification matrix. _(phase-test; planned)_
-- [ ] **EWP-WF04** — Existing-fleet export and restore _(workflow; planned)_
 - [ ] **P1-06** — `export` _(recommendation; planned)_
 
 ## P17-G4A-03 — Planned init registration with preview/execution identity and manifest-only effects
 
 Phase: 4A; status: **planned**; dependencies: P17-G2-04, P17-G3B-03, P17-G3B-04.
-Required-now validations: EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-OPT-TS03, EWP-OPT-TS04, EWP-P2-TS05, EWP-P4A-TS04, EWP-WF03.
-Downstream coverage obligations: EWP-OPT-TS05.
+Required-now validations: EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-OPT-TS03, EWP-OPT-TS04, EWP-P2-TS05, EWP-P4A-TS04.
+Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
 ### Group gates
 
@@ -1183,7 +1182,6 @@ Downstream coverage obligations: EWP-OPT-TS05.
 - [ ] **EWP-CMD-INIT-TS05** — human/JSON/help/completion output and immediate parse/plan compatibility. _(command-test; planned)_
 - [ ] **EWP-P4A-T04** — Register and implement init through the shared application service/planner using _(phase-task; planned)_
 - [ ] **EWP-P4A-TS04** — Init dry-run/execution operation equality; absent/legacy/existing/force/noop/ _(phase-test; planned)_
-- [ ] **EWP-WF03** — Reproducible project bootstrap _(workflow; planned)_
 - [ ] **P1-05** — `init` _(recommendation; planned)_
 
 ## P17-G4A-04 — Multi-source/tool partial-success, crash, and commit-boundary semantics
@@ -1307,7 +1305,7 @@ Downstream coverage obligations: none.
 ## P17-G4B-03 — Lock update policy, cross-machine reproduction, crash recovery, and secret safety
 
 Phase: 4B; status: **planned**; dependencies: P17-G4B-02.
-Required-now validations: EWP-P4B-TS05, EWP-P4B-TS06.
+Required-now validations: EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-P4A-TS03, EWP-P4A-TS04, EWP-P4B-TS05, EWP-P4B-TS06, EWP-WF03, EWP-WF04.
 Downstream coverage obligations: none.
 
 ### Group gates
@@ -1329,6 +1327,8 @@ Downstream coverage obligations: none.
 - [ ] **EWP-P4B-T05** — Lockfile resolution/update policy and commit points. _(phase-task; planned)_
 - [ ] **EWP-P4B-TS05** — Crash/recovery at every manifest/lock/ledger/live commit boundary. _(phase-test; planned)_
 - [ ] **EWP-P4B-TS06** — Machine-A export -> machine-B locked plan/apply reproduction. _(phase-test; planned)_
+- [ ] **EWP-WF03** — Reproducible project bootstrap _(workflow; planned)_
+- [ ] **EWP-WF04** — Existing-fleet export and restore _(workflow; planned)_
 
 ## P17-G5-01 — Direct sync endpoints, selection, save/delete semantics, and operation equivalence
 
