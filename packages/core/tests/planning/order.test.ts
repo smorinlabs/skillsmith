@@ -9,6 +9,7 @@ import {
   comparePlanningDiagnostics,
   comparePlanningText,
 } from '../../src/planning/index.ts';
+import { orderExecutableOperationsTopologically } from '../../src/planning/order.ts';
 
 const operation = <ToolId extends string>(
   operationId: string,
@@ -140,5 +141,54 @@ describe('planning canonical order', () => {
         .sort(compareExecutableOperations)
         .map(({ operationId }) => operationId),
     ).toEqual(['ledger', 'project', 'manifest', 'lock']);
+  });
+
+  test('orders only a complete cross-group artifact-prefix barrier', () => {
+    const dependencyMetadata = (operationIds: readonly string[]) => ({
+      domain: 'skillsmith.operation-dependency' as const,
+      schemaVersion: 1 as const,
+      operationIds,
+    });
+    const alphaSeed = operation('alpha-live', 'user', 'alpha', 'codex', 'install');
+    const prefix = {
+      ...alphaSeed,
+      operationId: 'alpha-lock',
+      pairId: null,
+      scope: null,
+      skill: null,
+      source: null,
+      tool: null,
+      kind: 'write-lock',
+      dependencyMetadata: dependencyMetadata([]),
+    } as unknown as ExecutableOperation;
+    const alpha = {
+      ...alphaSeed,
+      dependencyMetadata: dependencyMetadata([prefix.operationId]),
+    } as ExecutableOperation;
+    const beta = {
+      ...operation('beta-live', 'user', 'beta', 'codex', 'install'),
+      dependencyMetadata: dependencyMetadata([prefix.operationId]),
+    } as ExecutableOperation;
+    expect(
+      orderExecutableOperationsTopologically([beta, alpha, prefix]).map(
+        ({ operationId }) => operationId,
+      ),
+    ).toEqual(['alpha-lock', 'alpha-live', 'beta-live']);
+
+    const partialBeta = {
+      ...beta,
+      operationId: 'beta-second',
+      dependencyMetadata: dependencyMetadata([]),
+    };
+    expect(() =>
+      orderExecutableOperationsTopologically([prefix, alpha, beta, partialBeta]),
+    ).toThrow(/does not fully depend on one artifact prefix/i);
+    const arbitrary = {
+      ...beta,
+      dependencyMetadata: dependencyMetadata([alpha.operationId]),
+    };
+    expect(() => orderExecutableOperationsTopologically([prefix, alpha, arbitrary])).toThrow(
+      /invalid cross-group artifact-prefix dependency/i,
+    );
   });
 });

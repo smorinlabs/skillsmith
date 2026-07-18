@@ -900,7 +900,7 @@ describe('createAcquisitionPlan', () => {
       throw new Error('missing mixed transition operations');
     }
     expect(alphaPlacement.dependencyMetadata.operationIds).toEqual([lock.operationId]);
-    expect(betaPlacement.dependencyMetadata.operationIds).toEqual([]);
+    expect(betaPlacement.dependencyMetadata.operationIds).toEqual([lock.operationId]);
 
     const extraToolManifest = {
       ...manifestValue,
@@ -2285,7 +2285,7 @@ describe('createAcquisitionPlan', () => {
     });
   });
 
-  test('rejects more than one saving uninstall declaration group', () => {
+  test('chains cumulative saving uninstall declaration groups through the prior lock terminal', () => {
     const alpha = portableDeclaration('alpha', ['codex']);
     const beta = portableDeclaration('beta', ['codex']);
     const before: NormalizedManifestV1 = { version: 1, skills: [alpha, beta] };
@@ -2298,12 +2298,25 @@ describe('createAcquisitionPlan', () => {
       [alphaIntent, betaIntent],
       [uninstallGroup(alphaIntent, afterAlpha), uninstallGroup(betaIntent, afterBoth)],
     );
-    expect(createAcquisitionPlan(selected.input, selected.observed)).toMatchObject({
-      ok: false,
-      error: {
-        message: 'acquisition planning: saving uninstall requires exactly one declaration group',
-      },
-    });
+    const result = createAcquisitionPlan(selected.input, selected.observed);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'write-manifest',
+      'write-lock',
+      'write-manifest',
+      'write-lock',
+    ]);
+    const groups = [...new Set(result.value.plan.operations.map(({ groupId }) => groupId))];
+    const first = result.value.plan.operations.filter(({ groupId }) => groupId === groups[0]);
+    const second = result.value.plan.operations.filter(({ groupId }) => groupId === groups[1]);
+    const prefix = first.find(({ kind }) => kind === 'write-lock');
+    if (prefix === undefined) throw new Error('missing first uninstall lock terminal');
+    expect(
+      second.every(({ dependencyMetadata }) =>
+        dependencyMetadata.operationIds.includes(prefix.operationId),
+      ),
+    ).toBeTrue();
   });
 
   test('classifies only exact forced uninstall conflicts', () => {

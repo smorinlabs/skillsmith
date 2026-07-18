@@ -699,6 +699,17 @@ describe('runInstall — tool detection', () => {
         { tool: 'claude-code', action: 'installed' },
       ]);
     }
+    const groups = [...new Set(result.value.plan.operations.map(({ groupId }) => groupId))];
+    expect(groups).toHaveLength(2);
+    const firstGroup = result.value.plan.operations.filter(({ groupId }) => groupId === groups[0]);
+    const secondGroup = result.value.plan.operations.filter(({ groupId }) => groupId === groups[1]);
+    const prefix = firstGroup.find(({ kind }) => kind === 'write-lock');
+    if (prefix === undefined) throw new Error('missing first saving install lock terminal');
+    expect(
+      secondGroup.every(({ dependencyMetadata }) =>
+        dependencyMetadata.operationIds.includes(prefix.operationId),
+      ),
+    ).toBeTrue();
     const manifest = manifestV1Codec.decode(await f.env.readBytes(file));
     if (!manifest.ok) throw new Error(manifest.error.message);
     expect(

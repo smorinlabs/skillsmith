@@ -1,7 +1,11 @@
 import type { SupportedTool } from '../agents/types.ts';
 import type { ObservationBundle } from '../observation/types.ts';
 import { createOperationExecutionResult } from '../planning/create.ts';
-import { canonicalPlanningString, resolvePlanningToolContext } from '../planning/order.ts';
+import {
+  artifactPrefixDependencyError,
+  canonicalPlanningString,
+  resolvePlanningToolContext,
+} from '../planning/order.ts';
 import type {
   CurrentMutatorCommand,
   ExecutableOperation,
@@ -171,14 +175,19 @@ export const validateExecutionPlanShape = <ToolId extends string = SupportedTool
   const operationIndex = new Map(
     plan.operations.map((operation, index) => [operation.operationId, index]),
   );
+  const operationGroups = new Map<string, ExecutableOperation<ToolId>[]>();
+  for (const operation of plan.operations) {
+    const group = operationGroups.get(operation.groupId) ?? [];
+    group.push(operation);
+    operationGroups.set(operation.groupId, group);
+  }
+  const prefixError = artifactPrefixDependencyError([...operationGroups.values()]);
+  if (prefixError !== null) fail(prefixError);
   for (const operation of plan.operations) {
     for (const dependencyId of operation.dependencyMetadata.operationIds) {
       const dependency = operationsById.get(dependencyId);
       if (dependency === undefined) {
         fail(`operation ${operation.operationId} has a dangling dependency`);
-      }
-      if ((dependency as ExecutableOperation<ToolId>).groupId !== operation.groupId) {
-        fail(`operation ${operation.operationId} has a cross-group dependency`);
       }
       if (
         (operationIndex.get(dependencyId) as number) >=

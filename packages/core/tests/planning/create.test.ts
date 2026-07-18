@@ -430,13 +430,16 @@ describe('planning constructors', () => {
       groupId: groupBId,
       operationId: createOperationId({ ...identityFor('repair'), groupId: groupBId }),
     };
-    const artifactFor = (live: ExecutableOperation): ExecutableOperation => {
+    const artifactFor = (
+      live: ExecutableOperation,
+      kind: 'write-manifest' | 'write-lock' = 'write-manifest',
+    ): ExecutableOperation => {
       const identity = {
         domain: 'skillsmith.operation-identity' as const,
         schemaVersion: 1 as const,
         groupId: live.groupId,
         pairId: null,
-        kind: 'write-manifest' as const,
+        kind,
         skill: null,
         source: null,
         tool: null,
@@ -446,7 +449,7 @@ describe('planning constructors', () => {
         ...live,
         operationId: createOperationId(identity),
         pairId: null,
-        kind: 'write-manifest',
+        kind,
         skill: null,
         source: null,
         tool: null,
@@ -468,6 +471,33 @@ describe('planning constructors', () => {
       const transitions = groupIds.filter((groupId, index) => groupIds[index - 1] !== groupId);
       return transitions.length === 2 && new Set(groupIds).size === 2;
     });
+
+    const prefix = artifactFor(groupA, 'write-lock');
+    const prefixedA = {
+      ...groupA,
+      dependencyMetadata: {
+        ...groupA.dependencyMetadata,
+        operationIds: [prefix.operationId],
+      },
+    };
+    const prefixedB = {
+      ...groupB,
+      dependencyMetadata: {
+        ...groupB.dependencyMetadata,
+        operationIds: [prefix.operationId],
+      },
+    };
+    const collisionLane = createOperationPlan(planFor([prefixedB, prefixedA, prefix]));
+    expect(collisionLane.operations.map(({ operationId }) => operationId)).toEqual([
+      prefix.operationId,
+      prefixedA.operationId,
+      prefixedB.operationId,
+    ]);
+
+    const partialB = artifactFor(groupB);
+    expect(() => createOperationPlan(planFor([prefix, prefixedA, prefixedB, partialB]))).toThrow(
+      /does not fully depend on one artifact prefix/i,
+    );
   });
 
   test('preserves unary Array.map constructors without accepting numeric contexts', () => {

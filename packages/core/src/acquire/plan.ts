@@ -133,6 +133,8 @@ export interface AcquisitionInstallPlanRequestV1 extends AcquisitionPlanRequestC
 export interface AcquisitionUninstallPlanRequestV1 extends AcquisitionPlanRequestCommonV1 {
   readonly command: 'uninstall';
   readonly intents: readonly AcquisitionUninstallIntentV1[];
+  /** Internal fresh-snapshot recovery intents; never encoded or exposed as placement work. */
+  readonly artifactRecoveries?: readonly AcquisitionUninstallArtifactRecoveryIntentV1[];
 }
 
 export type AcquisitionPlanRequestV1 =
@@ -184,6 +186,13 @@ export interface AcquisitionUninstallIntentV1 {
   readonly liveResourceId: string;
   readonly storeResourceId: string | null;
   readonly force: boolean;
+}
+
+interface AcquisitionUninstallArtifactRecoveryIntentV1 {
+  readonly kind: 'artifact-only-lock-repair';
+  readonly skill: string;
+  readonly scope: 'user' | 'project';
+  readonly mode: 'reduced' | 'removed';
 }
 
 const relevantCapabilityQuery = (
@@ -1041,9 +1050,22 @@ const expectedAcquisitionGroupIds = (request: AcquisitionPlanRequestV1): Readonl
       ? request.intents.map((intent) =>
           createOperationGroupId(installGroupIdentityFor(request, intent)),
         )
-      : request.intents.map((intent) =>
-          createOperationGroupId(uninstallGroupIdentityFor(request, intent)),
-        ),
+      : [
+          ...request.intents.map((intent) =>
+            createOperationGroupId(uninstallGroupIdentityFor(request, intent)),
+          ),
+          ...(request.artifactRecoveries ?? []).map((recovery) =>
+            createOperationGroupId({
+              domain: 'skillsmith.operation-group-identity',
+              schemaVersion: 1,
+              command: 'uninstall',
+              skill: recovery.skill,
+              source: null,
+              scope: recovery.scope,
+              target: recovery.skill,
+            }),
+          ),
+        ],
   );
 
 const portableSourceToken = (
@@ -1213,6 +1235,69 @@ const validateUninstallGroupPortableIntent = (
   }
 };
 
+const artifactRecoveryForGroup = (
+  request: AcquisitionUninstallPlanRequestV1,
+  groupId: string,
+): AcquisitionUninstallArtifactRecoveryIntentV1 | null => {
+  const recoveries = (request.artifactRecoveries ?? []).filter(
+    (recovery) =>
+      createOperationGroupId({
+        domain: 'skillsmith.operation-group-identity',
+        schemaVersion: 1,
+        command: 'uninstall',
+        skill: recovery.skill,
+        source: null,
+        scope: recovery.scope,
+        target: recovery.skill,
+      }) === groupId,
+  );
+  if (recoveries.length > 1) {
+    throw new TypeError('acquisition planning: artifact recovery group is ambiguous');
+  }
+  return recoveries[0] ?? null;
+};
+
+const validateUninstallArtifactRecovery = (
+  request: AcquisitionUninstallPlanRequestV1,
+  groupId: string,
+  manifestBefore: ManifestImageV1 | AbsentManifestImageV1,
+  lockBefore: LockImageV1 | AbsentLockImageV1,
+  manifestAfter: ManifestImageV1,
+  lockAfter: LockImageV1,
+): void => {
+  const recovery = artifactRecoveryForGroup(request, groupId);
+  const ordinaryIntents = request.intents.filter(
+    (intent) => createOperationGroupId(uninstallGroupIdentityFor(request, intent)) === groupId,
+  );
+  if (
+    recovery === null ||
+    ordinaryIntents.length !== 0 ||
+    manifestBefore.kind !== 'manifest' ||
+    manifestBefore.shape !== 'canonical' ||
+    lockBefore.kind !== 'lock' ||
+    canonicalPlanningString(manifestBefore) !== canonicalPlanningString(manifestAfter) ||
+    lockBefore.value.skills.filter(({ name }) => name === recovery.skill).length !== 1
+  ) {
+    throw new TypeError('acquisition planning: artifact-only uninstall recovery is incoherent');
+  }
+  const expectedLock: LockImageV1['value'] = {
+    ...lockBefore.value,
+    manifestHash: manifestAfter.semanticHash,
+    skills:
+      recovery.mode === 'removed'
+        ? lockBefore.value.skills.filter(({ name }) => name !== recovery.skill)
+        : lockBefore.value.skills,
+  };
+  if (
+    (recovery.mode === 'removed') !==
+      !manifestBefore.value.skills.some(({ name }) => name === recovery.skill) ||
+    canonicalPlanningString(lockAfter.value) !== canonicalPlanningString(expectedLock) ||
+    !portablePairIsCurrent(manifestAfter, lockAfter)
+  ) {
+    throw new TypeError('acquisition planning: artifact-only lock repair is not exact');
+  }
+};
+
 const validateLegacyUninstallMigrationIntent = (
   request: AcquisitionUninstallPlanRequestV1,
   groupId: string,
@@ -1256,11 +1341,6 @@ const createArtifactTransitionOperations = (
     throw new TypeError('acquisition planning: artifact transitions require a selected pair');
   }
   const expectedGroups = expectedAcquisitionGroupIds(request);
-  if (request.command === 'uninstall' && transition.groups.length > 1) {
-    throw new TypeError(
-      'acquisition planning: saving uninstall requires exactly one declaration group',
-    );
-  }
   const groups = transition.groups.map((group) => ({
     ...group,
     groupId: createOperationGroupId(group.groupIdentity),
@@ -1283,11 +1363,16 @@ const createArtifactTransitionOperations = (
   if (groups.filter(({ migrationAfter }) => migrationAfter !== undefined).length > 1) {
     throw new TypeError('acquisition planning: selected pair has multiple manifest migrations');
   }
-  groups.sort(
-    (left, right) =>
-      Number(left.migrationAfter === undefined) - Number(right.migrationAfter === undefined) ||
-      (left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0),
-  );
+  groups.sort((left, right) => {
+    const leftRecovery =
+      request.command === 'uninstall' && artifactRecoveryForGroup(request, left.groupId) !== null;
+    const rightRecovery =
+      request.command === 'uninstall' && artifactRecoveryForGroup(request, right.groupId) !== null;
+    return (
+      Number(rightRecovery) - Number(leftRecovery) ||
+      (left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0)
+    );
+  });
   const manifestLocation = artifactLocation(snapshot.artifact.pair.file.path);
   const lockLocation = artifactLocation(snapshot.artifact.pair.lockfile.path);
   requireArtifactLocation(transition.initial.manifest, manifestLocation);
@@ -1298,7 +1383,9 @@ const createArtifactTransitionOperations = (
   let currentLock = transition.initial.lock;
   const artifacts: ExecutableOperation[] = [];
   let updatedLive = [...liveOperations];
+  let artifactPrefixId: string | null = null;
   for (const group of groups) {
+    const prefixDependencies = artifactPrefixId === null ? [] : [artifactPrefixId];
     const groupLive = [
       ...new Map(
         liveOperations
@@ -1340,7 +1427,7 @@ const createArtifactTransitionOperations = (
         'migrate-project-config',
         currentManifest,
         group.migrationAfter,
-        [],
+        prefixDependencies,
         sourcePreconditionIds,
         snapshot,
         planningContext,
@@ -1365,14 +1452,33 @@ const createArtifactTransitionOperations = (
       migrationId !== null &&
       !manifestChanged &&
       groupLive.length > 0;
-    if (!manifestChanged && request.command !== 'install' && !legacyUninstallMigration) {
+    const artifactOnlyRecovery =
+      request.command === 'uninstall' && artifactRecoveryForGroup(request, group.groupId) !== null;
+    if (
+      !manifestChanged &&
+      request.command !== 'install' &&
+      !legacyUninstallMigration &&
+      !artifactOnlyRecovery
+    ) {
       throw new TypeError('acquisition planning: uninstall transition requires a manifest write');
     }
     if (!portablePairIsCurrent(group.manifestAfter, group.lockAfter)) {
       throw new TypeError('acquisition planning: artifact transition pair is incoherent');
     }
     if (request.command === 'uninstall') {
-      if (legacyUninstallMigration) {
+      if (artifactOnlyRecovery) {
+        if (migrationId !== null || groupLive.length !== 0) {
+          throw new TypeError('acquisition planning: artifact-only recovery cannot own live work');
+        }
+        validateUninstallArtifactRecovery(
+          request,
+          group.groupId,
+          currentManifest,
+          currentLock,
+          group.manifestAfter,
+          group.lockAfter,
+        );
+      } else if (legacyUninstallMigration) {
         validateLegacyUninstallMigrationIntent(
           request,
           group.groupId,
@@ -1406,13 +1512,13 @@ const createArtifactTransitionOperations = (
     const manifestDependencies =
       request.command === 'install'
         ? migrationId === null
-          ? []
-          : [migrationId]
+          ? prefixDependencies
+          : [migrationId, ...prefixDependencies]
         : groupLive.length > 0
-          ? groupLive.map(({ operationId }) => operationId)
+          ? [...groupLive.map(({ operationId }) => operationId), ...prefixDependencies]
           : migrationId === null
-            ? []
-            : [migrationId];
+            ? prefixDependencies
+            : [migrationId, ...prefixDependencies];
     const manifest = !manifestChanged
       ? null
       : artifactOperationFor(
@@ -1434,11 +1540,15 @@ const createArtifactTransitionOperations = (
       group.lockAfter,
       manifest === null
         ? request.command === 'uninstall' && legacyUninstallMigration
-          ? [migrationId as string, ...groupLive.map(({ operationId }) => operationId)]
+          ? [
+              migrationId as string,
+              ...groupLive.map(({ operationId }) => operationId),
+              ...prefixDependencies,
+            ]
           : migrationId === null
-            ? []
-            : [migrationId]
-        : [manifest.operationId],
+            ? prefixDependencies
+            : [migrationId, ...prefixDependencies]
+        : [manifest.operationId, ...prefixDependencies],
       sourcePreconditionIds,
       snapshot,
       planningContext,
@@ -1447,21 +1557,29 @@ const createArtifactTransitionOperations = (
     artifacts.push(lock);
     const dependencies =
       request.command === 'install'
-        ? [lock.operationId]
+        ? [lock.operationId, ...prefixDependencies]
         : migrationId === null
-          ? []
-          : [migrationId];
+          ? prefixDependencies
+          : [migrationId, ...prefixDependencies];
     updatedLive = updatedLive.map((live) =>
       live.groupId === group.groupId ? withDependencies(live, dependencies) : live,
     );
     currentManifest = group.manifestAfter;
     currentLock = group.lockAfter;
+    artifactPrefixId = lock.operationId;
     if (request.command === 'install') {
       validateInstallGroupPortableIntent(request, group.groupId, currentManifest, currentLock);
     }
   }
   if (request.command === 'install') {
     validateUnchangedInstallGroups(request, unchangedGroupIds, currentManifest, currentLock);
+    if (artifactPrefixId !== null) {
+      updatedLive = updatedLive.map((live) =>
+        unchangedGroups.has(live.groupId)
+          ? withDependencies(live, [artifactPrefixId as string])
+          : live,
+      );
+    }
   }
   return [...artifacts, ...updatedLive];
 };

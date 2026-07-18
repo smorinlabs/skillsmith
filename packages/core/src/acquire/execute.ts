@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import type { RegisteredPlacementBundle, SkillRootsCtx } from '../agents/adapter-types.ts';
 import type {
   RelevantCapabilityQueryV1,
@@ -22,6 +22,7 @@ import {
   type ArtifactDiscoveryError,
   type ArtifactDiscoveryPorts,
   type ArtifactDiscoverySnapshot,
+  type ManifestCandidate,
   type ManifestDestination,
   discoverArtifactSnapshot,
   selectManifestDestination,
@@ -37,7 +38,7 @@ import { normalizePortablePath } from '../artifacts/identity.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { LedgerWriterPorts } from '../artifacts/ledger-writer.ts';
-import { serializePortableLock } from '../artifacts/lock.ts';
+import { readPortableLockSource, serializePortableLock } from '../artifacts/lock.ts';
 import {
   type ArtifactPairError,
   type ArtifactPairPorts,
@@ -313,6 +314,7 @@ const automaticUserLegacyError = (path: string): ArtifactDiscoveryError =>
 const selectedByForDestination = (
   snapshot: ArtifactDiscoverySnapshot,
   destination: ManifestDestination,
+  recoveryOwner = false,
 ): SelectedAcquisitionArtifactSelection['selectedBy'] => {
   if (
     destination.role === 'explicit' ||
@@ -329,12 +331,156 @@ const selectedByForDestination = (
   const ownsRequestedName =
     selectedCandidate !== undefined &&
     destination.names.some((name) => selectedCandidate.declaredNames.includes(name));
-  if (ownsRequestedName) {
+  if (ownsRequestedName || recoveryOwner) {
     if (destination.role === 'selected-project') return 'selected-project-owner';
     if (destination.role === 'project-root') return 'project-root-owner';
     if (destination.role === 'user') return 'user-owner';
   }
   return destination.role === 'user' ? 'new-user' : 'new-project';
+};
+
+const siblingLockPathForManifest = (file: string): string => {
+  const parts = parse(file);
+  return join(parts.dir, `${parts.name}.lock`);
+};
+
+const handoffDiscoveryError = (
+  code: Extract<
+    ArtifactDiscoveryError['code'],
+    | 'manifest-candidate-invalid'
+    | 'manifest-candidate-unreadable'
+    | 'manifest-owner-ambiguous'
+    | 'manifest-owner-split'
+  >,
+  exitClass: ArtifactDiscoveryError['exitClass'],
+  message: string,
+  paths: readonly string[],
+): ArtifactDiscoveryError =>
+  Object.freeze({ code, exitClass, message, paths: Object.freeze([...new Set(paths)]) });
+
+const selectRemoveDestinationWithLockHandoffs = async (
+  ports: AcquisitionArtifactDestinationPortsV1,
+  snapshot: ArtifactDiscoverySnapshot,
+  names: readonly string[],
+  ordinary: ManifestDestination,
+): Promise<
+  Result<
+    Readonly<{ destination: ManifestDestination; recoveryOwner: boolean }>,
+    ArtifactDiscoveryError
+  >
+> => {
+  const candidates = snapshot.candidates.filter(
+    (candidate) => candidate.role !== 'explicit' && candidate.shape === 'canonical',
+  );
+  const recoveryOwnersByName = new Map<string, ManifestCandidate[]>();
+  for (const candidate of candidates) {
+    const absentNames = names.filter((name) => !candidate.declaredNames.includes(name));
+    if (absentNames.length === 0) continue;
+    const lockPath = siblingLockPathForManifest(candidate.path);
+    let kind: Awaited<ReturnType<typeof ports.pathKind>>;
+    try {
+      kind = await ports.pathKind(lockPath);
+    } catch {
+      return err(
+        handoffDiscoveryError(
+          'manifest-candidate-unreadable',
+          'state',
+          'cannot inspect sibling lock handoff candidate',
+          [lockPath],
+        ),
+      );
+    }
+    if (kind === 'absent') continue;
+    if (kind !== 'file') {
+      return err(
+        handoffDiscoveryError(
+          'manifest-candidate-invalid',
+          'state',
+          'sibling lock handoff candidate is not a canonical file',
+          [lockPath],
+        ),
+      );
+    }
+    let source: string;
+    try {
+      source = await ports.readText(lockPath);
+    } catch {
+      return err(
+        handoffDiscoveryError(
+          'manifest-candidate-unreadable',
+          'state',
+          'cannot read sibling lock handoff candidate',
+          [lockPath],
+        ),
+      );
+    }
+    const decoded = readPortableLockSource(new TextEncoder().encode(source));
+    if (!decoded.ok) {
+      return err(
+        handoffDiscoveryError(
+          'manifest-candidate-invalid',
+          'state',
+          'sibling lock handoff candidate is not canonical',
+          [lockPath],
+        ),
+      );
+    }
+    for (const name of absentNames) {
+      if (!decoded.value.skills.some((skill) => skill.name === name)) continue;
+      const owners = recoveryOwnersByName.get(name) ?? [];
+      owners.push(candidate);
+      recoveryOwnersByName.set(name, owners);
+    }
+  }
+
+  const ownerByName = new Map<string, ManifestCandidate>();
+  for (const name of names) {
+    const normalOwners = snapshot.candidates.filter(
+      (candidate) => candidate.role !== 'explicit' && candidate.declaredNames.includes(name),
+    );
+    const owners = [...normalOwners, ...(recoveryOwnersByName.get(name) ?? [])];
+    const ownerPaths = [...new Set(owners.map(({ path }) => path))];
+    if (ownerPaths.length > 1) {
+      return err(
+        handoffDiscoveryError(
+          'manifest-owner-ambiguous',
+          'usage',
+          `declaration '${name}' has multiple manifest or lock-handoff owners: ${ownerPaths.join(', ')}`,
+          ownerPaths,
+        ),
+      );
+    }
+    const owner = owners.find(({ path }) => path === ownerPaths[0]);
+    if (owner !== undefined) ownerByName.set(name, owner);
+  }
+  const ownerPaths = [...new Set([...ownerByName.values()].map(({ path }) => path))];
+  if (ownerPaths.length > 1) {
+    return err(
+      handoffDiscoveryError(
+        'manifest-owner-split',
+        'usage',
+        `one request cannot mutate declarations owned by different manifest/lock pairs: ${ownerPaths.join(', ')}`,
+        ownerPaths,
+      ),
+    );
+  }
+  const owner = [...ownerByName.values()].find(({ path }) => path === ownerPaths[0]);
+  if (owner === undefined)
+    return ok(Object.freeze({ destination: ordinary, recoveryOwner: false }));
+  return ok(
+    Object.freeze({
+      destination: Object.freeze({
+        kind: 'existing' as const,
+        role: owner.role,
+        path: owner.path,
+        names: Object.freeze([...new Set(names)]),
+      }),
+      recoveryOwner:
+        recoveryOwnersByName
+          .get(names.find((name) => ownerByName.get(name)?.path === owner.path) ?? '')
+          ?.some(({ path }) => path === owner.path) === true,
+    }),
+  );
 };
 
 /** Resolve one acquisition destination without introducing a second discovery or pair authority. */
@@ -386,12 +532,22 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
     ...(input.file === undefined ? {} : { explicitFile: input.file }),
   });
   if (!destination.ok) return discoveryRefusal(destination.error);
+  const handoffDestination =
+    input.mode === 'remove' && input.file === undefined
+      ? await selectRemoveDestinationWithLockHandoffs(
+          input.ports,
+          discovered.value,
+          input.names,
+          destination.value,
+        )
+      : ok(Object.freeze({ destination: destination.value, recoveryOwner: false }));
+  if (!handoffDestination.ok) return discoveryRefusal(handoffDestination.error);
 
   const legacyProjectRemoval =
     input.mode === 'remove' &&
     input.scope === 'project' &&
     input.file === undefined &&
-    destination.value.kind === 'absent' &&
+    handoffDestination.value.destination.kind === 'absent' &&
     discovered.value.projectRootManifest !== null
       ? discovered.value.candidates.find(
           (candidate) =>
@@ -400,12 +556,12 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
       : undefined;
   const resolvedDestination: ManifestDestination =
     legacyProjectRemoval === undefined
-      ? destination.value
+      ? handoffDestination.value.destination
       : Object.freeze({
           kind: 'existing' as const,
           role: legacyProjectRemoval.role,
           path: legacyProjectRemoval.path,
-          names: destination.value.names,
+          names: handoffDestination.value.destination.names,
         });
 
   const explicitAbsentRemove =
@@ -444,7 +600,11 @@ export const resolveAcquisitionArtifactDestinationV1 = async (
     ),
     selection: Object.freeze({
       outcome: 'selected' as const,
-      selectedBy: selectedByForDestination(discovered.value, resolvedDestination),
+      selectedBy: selectedByForDestination(
+        discovered.value,
+        resolvedDestination,
+        handoffDestination.value.recoveryOwner,
+      ),
     }),
   });
 };
@@ -1811,6 +1971,15 @@ const createAcquisitionArtifactExecutionCompatibilityControllerV1 = (input: {
       }
       const priorGroupTerminal = groupChanged ? lastBoundArtifact : currentGroupGate;
       if (groupChanged) {
+        if (
+          priorGroupTerminal !== null &&
+          (priorGroupTerminal.kind !== 'write-lock' ||
+            !operation.dependencyMetadata.operationIds.includes(priorGroupTerminal.operationId))
+        ) {
+          acquisitionArtifactExecutionFail(
+            'new artifact group lacks its explicit prior lock-prefix dependency',
+          );
+        }
         if (currentBoundGroup !== null) closedArtifactGroups.add(currentBoundGroup);
         currentBoundGroup = operation.groupId;
         currentGroupGate = priorGroupTerminal;

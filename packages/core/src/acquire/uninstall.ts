@@ -7,12 +7,17 @@ import {
   HASH_SCHEMA_VERSION,
   hashManifestSemantics,
 } from '../artifacts/hash.ts';
+import { normalizeSourceIdentity } from '../artifacts/identity.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
-import { type PortableLockV1, serializePortableLock } from '../artifacts/lock.ts';
+import {
+  type PortableLockV1,
+  correlatePortableLock,
+  serializePortableLock,
+} from '../artifacts/lock.ts';
 import { type ManifestEditRequest, editManifestBytes } from '../artifacts/manifest-edit.ts';
 import { createNodeArtifactCoordinatorPorts } from '../artifacts/node-coordinator.ts';
 import { artifactContractRegistry } from '../artifacts/registry.ts';
-import type { NormalizedManifestV1 } from '../artifacts/types.ts';
+import type { NormalizedManifestDeclaration, NormalizedManifestV1 } from '../artifacts/types.ts';
 import {
   type SkillSmithError,
   cancelledError,
@@ -1240,34 +1245,6 @@ const runUninstallInternal = async (
       }),
     );
   }
-  const requestedDeclarationNames =
-    artifactResolution.outcome === 'selected'
-      ? [
-          ...new Set(
-            normalizedTargets
-              .map(({ name }) => name)
-              .filter((name) => artifactResolution.declaredNames.includes(name)),
-          ),
-        ]
-      : [];
-  if (requestedDeclarationNames.length > 1) {
-    const reason = 'multiple saving declaration groups are deferred to G4A-04';
-    const results = normalizedTargets.map(({ name }) => ({
-      ...emptyUninstallResult(name, null, null, 'refused' as const),
-      reason,
-      error: flipRefusedError(reason),
-    }));
-    const plan = createUninstallPlanning(planningRequested, results, projectRoot, {
-      registry,
-      toolOrder: registry.ids,
-    }).plan;
-    return ok(
-      assembleUninstallReport(Boolean(opts.dryRun), requested, results, plan, [], {
-        artifact: artifactResolution,
-        artifactFallback: 'none',
-      }),
-    );
-  }
   interface PreparedUninstallPairBinding {
     readonly kind: 'pair';
     readonly preview: UninstallResult;
@@ -1336,6 +1313,24 @@ const runUninstallInternal = async (
     readonly intent: AcquisitionUninstallIntentV1;
     readonly capabilityScope: ToolCapabilityScope;
   }
+  interface PreparedArtifactOnlyRecovery {
+    readonly target: NormalizedUninstallTarget;
+    readonly skill: string;
+    readonly scope: InstallScope;
+    readonly declaration: NormalizedManifestDeclaration;
+    readonly mode: 'reduced' | 'removed';
+    readonly selectedTools: readonly FlipTool[];
+    readonly groupIdentity: {
+      readonly domain: 'skillsmith.operation-group-identity';
+      readonly schemaVersion: 1;
+      readonly command: 'uninstall';
+      readonly skill: string;
+      readonly source: null;
+      readonly scope: InstallScope;
+      readonly target: string;
+    };
+    readonly liveResourceIds: readonly string[];
+  }
   interface PreparedUninstallArtifactPlanning {
     readonly transition: AcquisitionArtifactTransitionEnvelopeV1 | undefined;
     readonly actions: ReadonlyMap<string, AcquisitionArtifactExecutionActionV1>;
@@ -1345,6 +1340,7 @@ const runUninstallInternal = async (
   const prepareUninstallArtifactPlanning = async (
     snapshotAuthority: AcquisitionSnapshotAuthorityV1,
     prepared: readonly PreparedUninstallIntent[],
+    recoveries: readonly PreparedArtifactOnlyRecovery[],
   ): Promise<PreparedUninstallArtifactPlanning> => {
     const artifact = snapshotAuthority.snapshot.artifact;
     if (artifact.mode === 'none') {
@@ -1353,11 +1349,11 @@ const runUninstallInternal = async (
     if (
       artifact.manifest.revision.state === 'absent' ||
       artifact.manifest.value === null ||
-      prepared.length === 0
+      (prepared.length === 0 && recoveries.length === 0)
     ) {
       return Object.freeze({ transition: undefined, actions: new Map() });
     }
-    const manifestModel = artifact.manifest.value;
+    let manifestModel = artifact.manifest.value;
     const manifestPath = artifact.pair.file.path;
     const lockPath = artifact.pair.lockfile.path;
     let manifestBytes: Uint8Array<ArrayBufferLike> = new Uint8Array(
@@ -1367,7 +1363,7 @@ const runUninstallInternal = async (
     const declarations = manifestModel.skills.filter(({ name }) =>
       prepared.some(({ intent }) => intent.skill === name),
     );
-    if (declarations.length === 0) {
+    if (declarations.length === 0 && recoveries.length === 0) {
       if (initialManifest.kind !== 'manifest' || initialManifest.shape !== 'legacy') {
         return Object.freeze({ transition: undefined, actions: new Map() });
       }
@@ -1475,111 +1471,6 @@ const runUninstallInternal = async (
         actions,
       });
     }
-    if (declarations.length > 1) {
-      throw new Error('selected uninstall artifact has multiple requested declarations');
-    }
-    const declaration = declarations[0];
-    if (declaration === undefined) {
-      return Object.freeze({ transition: undefined, actions: new Map() });
-    }
-    const declaredPrepared = prepared.filter(
-      ({ intent }) =>
-        intent.skill === declaration.name &&
-        intent.scope === declaration.scope &&
-        declaration.tools.includes(intent.tool),
-    );
-    const seed = declaredPrepared[0];
-    if (seed === undefined) {
-      return Object.freeze({ transition: undefined, actions: new Map() });
-    }
-    const groupIdentity = {
-      domain: 'skillsmith.operation-group-identity' as const,
-      schemaVersion: 1 as const,
-      command: 'uninstall' as const,
-      skill: seed.intent.skill,
-      source: null,
-      scope: seed.intent.scope,
-      target: seed.intent.skill,
-    };
-    const groupId = createOperationGroupId(groupIdentity);
-    const unchangedGroups = [
-      ...new Map(
-        prepared
-          .map(({ intent }) => ({
-            domain: 'skillsmith.operation-group-identity' as const,
-            schemaVersion: 1 as const,
-            command: 'uninstall' as const,
-            skill: intent.skill,
-            source: null,
-            scope: intent.scope,
-            target: intent.skill,
-          }))
-          .filter((identity) => createOperationGroupId(identity) !== groupId)
-          .map((identity) => [createOperationGroupId(identity), identity]),
-      ).values(),
-    ];
-    const selectedTools = new Set(declaredPrepared.map(({ intent }) => intent.tool));
-    const remainingTools = declaration.tools.filter((tool) => !selectedTools.has(tool));
-    const declarationIndex = manifestModel.skills.findIndex(
-      ({ name }) => name === declaration.name,
-    );
-    const nextSkills = [...manifestModel.skills];
-    if (remainingTools.length === 0) {
-      nextSkills.splice(declarationIndex, 1);
-    } else {
-      nextSkills[declarationIndex] = Object.freeze({
-        ...declaration,
-        tools: Object.freeze(remainingTools),
-      });
-    }
-    const nextManifest: NormalizedManifestV1 = Object.freeze({
-      ...manifestModel,
-      skills: Object.freeze(nextSkills),
-    });
-    const actions = new Map<string, AcquisitionArtifactExecutionActionV1>();
-    let migrationAfter:
-      | AcquisitionArtifactTransitionEnvelopeV1['groups'][number]['migrationAfter']
-      | undefined;
-    if (initialManifest.kind === 'manifest' && initialManifest.shape === 'legacy') {
-      const request = Object.freeze({
-        edits: Object.freeze([{ kind: 'migrate-legacy' as const }]),
-      });
-      const migrated = editManifestBytes(manifestBytes, request);
-      if (!migrated.ok) throw migrated.error;
-      manifestBytes = migrated.value.bytes;
-      migrationAfter = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
-      actions.set(
-        artifactBindingKey(groupId, 'migrate-project-config'),
-        Object.freeze({
-          role: 'manifest' as const,
-          action: Object.freeze({ kind: 'edit' as const, request }),
-        }),
-      );
-    }
-    const manifestRequest: ManifestEditRequest = Object.freeze({
-      edits: Object.freeze([
-        remainingTools.length === 0
-          ? ({ kind: 'remove-skill', name: declaration.name } as const)
-          : ({
-              kind: 'set-skill-field',
-              name: declaration.name,
-              field: 'tools',
-              value: Object.freeze(remainingTools),
-            } as const),
-      ]),
-    });
-    const editedManifest = editManifestBytes(manifestBytes, manifestRequest);
-    if (!editedManifest.ok) throw editedManifest.error;
-    manifestBytes = editedManifest.value.bytes;
-    const manifestAfter = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
-    actions.set(
-      artifactBindingKey(groupId, 'write-manifest'),
-      Object.freeze({
-        role: 'manifest' as const,
-        action: Object.freeze({ kind: 'edit' as const, request: manifestRequest }),
-      }),
-    );
-
     let initialLock: AcquisitionArtifactTransitionEnvelopeV1['initial']['lock'];
     let lockModel: PortableLockV1;
     if (artifact.lock.revision.state === 'absent') {
@@ -1604,41 +1495,236 @@ const runUninstallInternal = async (
       }
       lockModel = artifact.lock.value;
     }
-    const targetLock: PortableLockV1 = Object.freeze({
-      ...lockModel,
-      version: 1 as const,
-      hashSchemaVersion: HASH_SCHEMA_VERSION,
-      manifestHash: hashManifestSemantics(nextManifest),
-      skills: Object.freeze(
-        remainingTools.length === 0
-          ? lockModel.skills.filter(({ name }) => name !== declaration.name)
-          : [...lockModel.skills],
-      ),
-    });
-    const serializedLock = serializePortableLock(targetLock);
-    if (!serializedLock.ok) throw new Error('uninstall portable lock could not be serialized');
-    const lockAfter = acquisitionLockImageFromBytesV1(
-      lockPath,
-      new TextEncoder().encode(serializedLock.value),
-    );
-    actions.set(
-      artifactBindingKey(groupId, 'write-lock'),
-      Object.freeze({
-        role: 'lock' as const,
-        action: Object.freeze({ kind: 'replace' as const, lock: targetLock }),
-      }),
-    );
+    const grouped = declarations
+      .flatMap((declaration) => {
+        const declaredPrepared = prepared.filter(
+          ({ intent }) =>
+            intent.skill === declaration.name &&
+            intent.scope === declaration.scope &&
+            declaration.tools.includes(intent.tool),
+        );
+        const seed = declaredPrepared[0];
+        if (seed === undefined) return [];
+        const groupIdentity = {
+          domain: 'skillsmith.operation-group-identity' as const,
+          schemaVersion: 1 as const,
+          command: 'uninstall' as const,
+          skill: seed.intent.skill,
+          source: null,
+          scope: seed.intent.scope,
+          target: seed.intent.skill,
+        };
+        return [
+          {
+            declaration,
+            declaredPrepared,
+            groupIdentity,
+            groupId: createOperationGroupId(groupIdentity),
+          },
+        ];
+      })
+      .sort((left, right) =>
+        left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0,
+      );
+    if (grouped.length === 0 && recoveries.length === 0) {
+      return Object.freeze({ transition: undefined, actions: new Map() });
+    }
+    const changedGroupIds = new Set(grouped.map(({ groupId }) => groupId));
+    const unchangedGroups = [
+      ...new Map(
+        prepared
+          .map(({ intent }) => ({
+            domain: 'skillsmith.operation-group-identity' as const,
+            schemaVersion: 1 as const,
+            command: 'uninstall' as const,
+            skill: intent.skill,
+            source: null,
+            scope: intent.scope,
+            target: intent.skill,
+          }))
+          .filter((identity) => !changedGroupIds.has(createOperationGroupId(identity)))
+          .map((identity) => [createOperationGroupId(identity), identity]),
+      ).values(),
+    ];
+    const actions = new Map<string, AcquisitionArtifactExecutionActionV1>();
+    const transitionGroups: AcquisitionArtifactTransitionEnvelopeV1['groups'][number][] = [];
+    let migrationPending =
+      initialManifest.kind === 'manifest' && initialManifest.shape === 'legacy';
+    if (recoveries.length > 1 || (recoveries.length > 0 && migrationPending)) {
+      throw new Error('selected uninstall artifact recovery is ambiguous');
+    }
+    for (const recovery of recoveries) {
+      if (initialManifest.kind !== 'manifest' || initialManifest.shape !== 'canonical') {
+        throw new Error('artifact-only uninstall recovery requires a canonical manifest');
+      }
+      const relationship = correlatePortableLock(manifestModel, lockModel);
+      const expectedFactCount = recovery.mode === 'removed' ? 2 : 1;
+      if (
+        relationship.state !== 'stale' ||
+        relationship.facts.length !== expectedFactCount ||
+        (recovery.mode === 'removed' &&
+          !relationship.facts.some(
+            (fact) => fact.reason === 'extra-entry' && fact.name === recovery.skill,
+          )) ||
+        !relationship.facts.some((fact) => fact.reason === 'manifest-hash-mismatch')
+      ) {
+        throw new Error('artifact-only uninstall recovery has unrelated lock drift');
+      }
+      const currentIndex = manifestModel.skills.findIndex(({ name }) => name === recovery.skill);
+      const reconstructedSkills = [...manifestModel.skills];
+      if (recovery.mode === 'removed') {
+        reconstructedSkills.push(recovery.declaration);
+      } else if (currentIndex >= 0) {
+        reconstructedSkills[currentIndex] = recovery.declaration;
+      } else {
+        throw new Error('reduced artifact-only recovery lost its current declaration');
+      }
+      const reconstructedManifest: NormalizedManifestV1 = Object.freeze({
+        ...manifestModel,
+        skills: Object.freeze(reconstructedSkills),
+      });
+      if (
+        hashManifestSemantics(reconstructedManifest) !== lockModel.manifestHash ||
+        correlatePortableLock(reconstructedManifest, lockModel).state !== 'current'
+      ) {
+        throw new Error('artifact-only uninstall recovery could not prove its prior declaration');
+      }
+      const targetLock: PortableLockV1 = Object.freeze({
+        ...lockModel,
+        manifestHash: initialManifest.semanticHash as ArtifactDigest,
+        skills: Object.freeze(
+          recovery.mode === 'removed'
+            ? lockModel.skills.filter(({ name }) => name !== recovery.skill)
+            : [...lockModel.skills],
+        ),
+      });
+      const serializedLock = serializePortableLock(targetLock);
+      if (!serializedLock.ok) throw new Error('uninstall recovery lock could not be serialized');
+      const lockAfter = acquisitionLockImageFromBytesV1(
+        lockPath,
+        new TextEncoder().encode(serializedLock.value),
+      );
+      const groupId = createOperationGroupId(recovery.groupIdentity);
+      actions.set(
+        artifactBindingKey(groupId, 'write-lock'),
+        Object.freeze({
+          role: 'lock' as const,
+          action: Object.freeze({ kind: 'replace' as const, lock: targetLock }),
+        }),
+      );
+      transitionGroups.push(
+        Object.freeze({
+          groupIdentity: recovery.groupIdentity,
+          manifestAfter: initialManifest,
+          lockAfter,
+        }),
+      );
+      lockModel = targetLock;
+    }
+    for (const group of grouped) {
+      let migrationAfter:
+        | AcquisitionArtifactTransitionEnvelopeV1['groups'][number]['migrationAfter']
+        | undefined;
+      if (migrationPending) {
+        const request = Object.freeze({
+          edits: Object.freeze([{ kind: 'migrate-legacy' as const }]),
+        });
+        const migrated = editManifestBytes(manifestBytes, request);
+        if (!migrated.ok) throw migrated.error;
+        manifestBytes = migrated.value.bytes;
+        migrationAfter = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
+        actions.set(
+          artifactBindingKey(group.groupId, 'migrate-project-config'),
+          Object.freeze({
+            role: 'manifest' as const,
+            action: Object.freeze({ kind: 'edit' as const, request }),
+          }),
+        );
+        migrationPending = false;
+      }
+      const selectedTools = new Set(group.declaredPrepared.map(({ intent }) => intent.tool));
+      const remainingTools = group.declaration.tools.filter((tool) => !selectedTools.has(tool));
+      const declarationIndex = manifestModel.skills.findIndex(
+        ({ name }) => name === group.declaration.name,
+      );
+      if (declarationIndex < 0) {
+        throw new Error('selected uninstall declaration prefix is missing');
+      }
+      const nextSkills = [...manifestModel.skills];
+      if (remainingTools.length === 0) {
+        nextSkills.splice(declarationIndex, 1);
+      } else {
+        nextSkills[declarationIndex] = Object.freeze({
+          ...group.declaration,
+          tools: Object.freeze(remainingTools),
+        });
+      }
+      const nextManifest: NormalizedManifestV1 = Object.freeze({
+        ...manifestModel,
+        skills: Object.freeze(nextSkills),
+      });
+      const manifestRequest: ManifestEditRequest = Object.freeze({
+        edits: Object.freeze([
+          remainingTools.length === 0
+            ? ({ kind: 'remove-skill', name: group.declaration.name } as const)
+            : ({
+                kind: 'set-skill-field',
+                name: group.declaration.name,
+                field: 'tools',
+                value: Object.freeze(remainingTools),
+              } as const),
+        ]),
+      });
+      const editedManifest = editManifestBytes(manifestBytes, manifestRequest);
+      if (!editedManifest.ok) throw editedManifest.error;
+      manifestBytes = editedManifest.value.bytes;
+      const manifestAfter = acquisitionManifestImageFromBytesV1(manifestPath, manifestBytes);
+      actions.set(
+        artifactBindingKey(group.groupId, 'write-manifest'),
+        Object.freeze({
+          role: 'manifest' as const,
+          action: Object.freeze({ kind: 'edit' as const, request: manifestRequest }),
+        }),
+      );
+      const targetLock: PortableLockV1 = Object.freeze({
+        ...lockModel,
+        version: 1 as const,
+        hashSchemaVersion: HASH_SCHEMA_VERSION,
+        manifestHash: hashManifestSemantics(nextManifest),
+        skills: Object.freeze(
+          remainingTools.length === 0
+            ? lockModel.skills.filter(({ name }) => name !== group.declaration.name)
+            : [...lockModel.skills],
+        ),
+      });
+      const serializedLock = serializePortableLock(targetLock);
+      if (!serializedLock.ok) throw new Error('uninstall portable lock could not be serialized');
+      const lockAfter = acquisitionLockImageFromBytesV1(
+        lockPath,
+        new TextEncoder().encode(serializedLock.value),
+      );
+      actions.set(
+        artifactBindingKey(group.groupId, 'write-lock'),
+        Object.freeze({
+          role: 'lock' as const,
+          action: Object.freeze({ kind: 'replace' as const, lock: targetLock }),
+        }),
+      );
+      transitionGroups.push(
+        Object.freeze({
+          groupIdentity: group.groupIdentity,
+          ...(migrationAfter === undefined ? {} : { migrationAfter }),
+          manifestAfter: manifestAfter as Extract<OperationImage, { readonly kind: 'manifest' }>,
+          lockAfter,
+        }),
+      );
+      manifestModel = nextManifest;
+      lockModel = targetLock;
+    }
     return Object.freeze({
       transition: Object.freeze({
         initial: Object.freeze({ manifest: initialManifest, lock: initialLock }),
-        groups: Object.freeze([
-          Object.freeze({
-            groupIdentity,
-            ...(migrationAfter === undefined ? {} : { migrationAfter }),
-            manifestAfter: manifestAfter as Extract<OperationImage, { readonly kind: 'manifest' }>,
-            lockAfter,
-          }),
-        ]),
+        groups: Object.freeze(transitionGroups),
         unchangedGroups: Object.freeze(unchangedGroups),
       }),
       actions,
@@ -1710,6 +1796,7 @@ const runUninstallInternal = async (
     const resultsByTarget = new Map<NormalizedUninstallTarget, UninstallResult[]>();
     const candidateBindings = new Map<UninstallResult, UninstallBindingSeed>();
     let selectedManifest: NormalizedManifestV1 | null = null;
+    let selectedLock: PortableLockV1 | null = null;
     if (
       artifactResolution.outcome === 'selected' &&
       (await env.pathKind(artifactResolution.pair.file.path)) !== 'absent'
@@ -1721,6 +1808,15 @@ const runUninstallInternal = async (
       );
       if (!decoded.ok) throw decoded.error;
       selectedManifest = decoded.value.model as NormalizedManifestV1;
+      if ((await env.pathKind(artifactResolution.pair.lockfile.path)) !== 'absent') {
+        const lockCodec = artifactContractRegistry.get('lock', 1);
+        if (lockCodec === undefined) throw new Error('lock artifact codec 1 is unavailable');
+        const decodedLock = lockCodec.decode(
+          new Uint8Array(await env.readBytes(artifactResolution.pair.lockfile.path)),
+        );
+        if (!decodedLock.ok) throw decodedLock.error;
+        selectedLock = decodedLock.value.model as PortableLockV1;
+      }
     }
     for (const [requestIndex, target] of normalizedTargets.entries()) {
       const targetResults = await processUninstallTarget(
@@ -1863,10 +1959,6 @@ const runUninstallInternal = async (
       ledgerPath,
       ledgerState,
     );
-    const compatibilityPlanning = createUninstallPlanning(planningRequested, results, projectRoot, {
-      registry,
-      toolOrder: registry.ids,
-    });
     const preparedIntents: PreparedUninstallIntent[] = [];
     const liveResourcesByPath = new Map<string, AcquireLiveSnapshotResourceV1>();
     const storeResourcesByPath = new Map<string, AcquireStoreSnapshotResourceV1>();
@@ -1883,6 +1975,210 @@ const runUninstallInternal = async (
       }
       liveResourcesByPath.set(resource.placementPath, existing ?? resource);
     };
+    const recoveryCandidates: PreparedArtifactOnlyRecovery[] = [];
+    if (selectedManifest !== null && selectedLock !== null) {
+      const relationship = correlatePortableLock(selectedManifest, selectedLock);
+      for (const target of normalizedTargets) {
+        const currentDeclaration = selectedManifest.skills.find(({ name }) => name === target.name);
+        const locked = selectedLock.skills.filter(({ name }) => name === target.name);
+        if (locked.length === 0) continue;
+        const removedHandoffShape =
+          currentDeclaration === undefined &&
+          locked.length === 1 &&
+          relationship.state === 'stale' &&
+          relationship.facts.length === 2 &&
+          relationship.facts.some(
+            (fact) => fact.reason === 'extra-entry' && fact.name === target.name,
+          ) &&
+          relationship.facts.some((fact) => fact.reason === 'manifest-hash-mismatch');
+        const boundedTools = [...new Set(toolsToSearch)].sort();
+        const reducedSelectedTools =
+          currentDeclaration !== undefined && explicitTools
+            ? boundedTools.filter((tool) => !currentDeclaration.tools.includes(tool))
+            : [];
+        const reducedHandoffShape =
+          currentDeclaration !== undefined &&
+          reducedSelectedTools.length === boundedTools.length &&
+          reducedSelectedTools.length > 0 &&
+          locked.length === 1 &&
+          relationship.state === 'stale' &&
+          relationship.facts.length === 1 &&
+          relationship.facts[0]?.reason === 'manifest-hash-mismatch';
+        if (!removedHandoffShape && !reducedHandoffShape) {
+          if (
+            currentDeclaration !== undefined &&
+            (reducedSelectedTools.length === 0 || relationship.state === 'current')
+          ) {
+            continue;
+          }
+        }
+        const lockedSkill = locked[0];
+        const source =
+          lockedSkill === undefined
+            ? null
+            : normalizeSourceIdentity(lockedSkill.source, 'skills[].source');
+        const toolSets: readonly (readonly FlipTool[])[] = explicitTools
+          ? [boundedTools]
+          : boundedTools.length > 8
+            ? []
+            : Array.from({ length: 2 ** boundedTools.length - 1 }, (_unused, index) =>
+                boundedTools.filter((_tool, toolIndex) => ((index + 1) & (1 << toolIndex)) !== 0),
+              );
+        const refs =
+          lockedSkill === undefined
+            ? []
+            : [...new Set([lockedSkill.requestedRef, lockedSkill.resolvedSha])];
+        const matches = new Map<
+          string,
+          Readonly<{
+            declaration: NormalizedManifestDeclaration;
+            mode: 'reduced' | 'removed';
+            selectedTools: readonly FlipTool[];
+          }>
+        >();
+        if (
+          removedHandoffShape &&
+          lockedSkill !== undefined &&
+          source !== null &&
+          source.ok &&
+          lockedSkill.sourcePath === (source.value.path ?? '.')
+        ) {
+          for (const scope of scopesToSearch) {
+            for (const tools of toolSets) {
+              for (const placement of ['symlink', 'copy'] as const) {
+                for (const ref of refs) {
+                  const declaration: NormalizedManifestDeclaration = Object.freeze({
+                    name: target.name,
+                    source: source.value,
+                    ref,
+                    tools: Object.freeze([...tools]),
+                    scope,
+                    placement,
+                    path: null,
+                  });
+                  const reconstructed: NormalizedManifestV1 = Object.freeze({
+                    ...selectedManifest,
+                    skills: Object.freeze([...selectedManifest.skills, declaration]),
+                  });
+                  if (
+                    hashManifestSemantics(reconstructed) === selectedLock.manifestHash &&
+                    correlatePortableLock(reconstructed, selectedLock).state === 'current'
+                  ) {
+                    matches.set(canonicalPlanningString(declaration), {
+                      declaration,
+                      mode: 'removed',
+                      selectedTools: Object.freeze([...(tools as readonly FlipTool[])]),
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+        if (reducedHandoffShape && currentDeclaration !== undefined) {
+          const declaration: NormalizedManifestDeclaration = Object.freeze({
+            ...currentDeclaration,
+            tools: Object.freeze([...currentDeclaration.tools, ...reducedSelectedTools]),
+          });
+          const declarationIndex = selectedManifest.skills.indexOf(currentDeclaration);
+          const reconstructedSkills = [...selectedManifest.skills];
+          reconstructedSkills[declarationIndex] = declaration;
+          const reconstructed: NormalizedManifestV1 = Object.freeze({
+            ...selectedManifest,
+            skills: Object.freeze(reconstructedSkills),
+          });
+          if (
+            hashManifestSemantics(reconstructed) === selectedLock.manifestHash &&
+            correlatePortableLock(reconstructed, selectedLock).state === 'current'
+          ) {
+            matches.set(canonicalPlanningString(declaration), {
+              declaration,
+              mode: 'reduced',
+              selectedTools: Object.freeze(reducedSelectedTools),
+            });
+          }
+        }
+        const match = matches.size === 1 ? [...matches.values()][0] : undefined;
+        if (match === undefined) {
+          const reason = 'portable lock handoff could not be reconstructed uniquely';
+          resultsByTarget.set(target, [
+            {
+              ...emptyUninstallResult(target.name, null, null, 'refused'),
+              reason,
+              error: flipRefusedError(reason),
+            },
+          ]);
+          continue;
+        }
+        const { declaration, mode, selectedTools } = match;
+        const scopeKey = await scopeKeyFor(declaration.scope);
+        const rootsContext = {
+          cwd: scopeKey ?? opts.cwd,
+          configuration: opts.configuration,
+        };
+        const liveResourceIds: string[] = [];
+        let terminallyAbsent = true;
+        for (const tool of selectedTools) {
+          const root = destinationSkillRootFor(
+            registry,
+            tool,
+            env,
+            declaration.scope,
+            rootsContext,
+          );
+          const placementPath = resolve(root, target.name);
+          const liveResourceId = acquireStateResourceId('live', [placementPath]);
+          liveResourceIds.push(liveResourceId);
+          terminallyAbsent &&= getPairAt(legacyLedger, scopeKey, target.name, tool) === null;
+          addLiveResource({
+            resourceId: liveResourceId,
+            skill: target.name,
+            tool,
+            scope: declaration.scope,
+            projectIdentity: declaration.scope === 'project' ? scopeKey : null,
+            placementPath,
+            storeRoot,
+          });
+        }
+        if (!terminallyAbsent) {
+          const reason = 'portable lock handoff still has managed placement state';
+          resultsByTarget.set(target, [
+            {
+              ...emptyUninstallResult(target.name, null, null, 'refused'),
+              reason,
+              error: flipRefusedError(reason),
+            },
+          ]);
+          continue;
+        }
+        const groupIdentity = {
+          domain: 'skillsmith.operation-group-identity' as const,
+          schemaVersion: 1 as const,
+          command: 'uninstall' as const,
+          skill: target.name,
+          source: null,
+          scope: declaration.scope,
+          target: target.name,
+        };
+        const groupId = createOperationGroupId(groupIdentity);
+        if (
+          !recoveryCandidates.some(
+            (candidate) => createOperationGroupId(candidate.groupIdentity) === groupId,
+          )
+        ) {
+          recoveryCandidates.push({
+            target,
+            skill: target.name,
+            scope: declaration.scope,
+            declaration,
+            mode,
+            selectedTools,
+            groupIdentity,
+            liveResourceIds: Object.freeze(liveResourceIds),
+          });
+        }
+      }
+    }
     for (const seed of candidateBindings.values()) {
       if (seed.preview.placementPath === null) {
         throw new Error('prepared uninstall intent requires a live path');
@@ -1974,9 +2270,43 @@ const runUninstallInternal = async (
       storeResources: [...storeResourcesByPath.values()],
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     });
+    const artifactRecoveries: PreparedArtifactOnlyRecovery[] = [];
+    for (const recovery of recoveryCandidates) {
+      const terminallyAbsent = recovery.liveResourceIds.every((resourceId) => {
+        const observations = snapshotAuthority.snapshot.live.filter(
+          ({ revision }) => revision.domain === 'live' && revision.resourceId === resourceId,
+        );
+        return observations.length === 1 && observations[0]?.value === null;
+      });
+      if (terminallyAbsent) {
+        artifactRecoveries.push(recovery);
+        continue;
+      }
+      const reason = 'portable lock handoff still has live placement state';
+      resultsByTarget.set(recovery.target, [
+        {
+          ...emptyUninstallResult(recovery.skill, null, null, 'refused'),
+          reason,
+          error: flipRefusedError(reason),
+        },
+      ]);
+    }
+    results.length = 0;
+    requestIndexByResult.clear();
+    for (const [requestIndex, target] of normalizedTargets.entries()) {
+      for (const result of resultsByTarget.get(target) ?? []) {
+        results.push(result);
+        requestIndexByResult.set(result, requestIndex);
+      }
+    }
+    const compatibilityPlanning = createUninstallPlanning(planningRequested, results, projectRoot, {
+      registry,
+      toolOrder: registry.ids,
+    });
     const artifactPlanning = await prepareUninstallArtifactPlanning(
       snapshotAuthority,
       preparedIntents,
+      artifactRecoveries,
     );
     const boundPlanning = createAcquisitionPlan(
       {
@@ -1992,6 +2322,16 @@ const runUninstallInternal = async (
         diagnostics: compatibilityPlanning.plan.diagnostics,
         compatibilityOperations: migration === null ? [] : [migration.operation],
         intents: preparedIntents.map(({ intent }) => intent),
+        ...(artifactRecoveries.length === 0
+          ? {}
+          : {
+              artifactRecoveries: artifactRecoveries.map(({ skill, scope, mode }) => ({
+                kind: 'artifact-only-lock-repair' as const,
+                skill,
+                scope,
+                mode,
+              })),
+            }),
         ...(artifactPlanning.transition === undefined
           ? {}
           : { artifactTransition: artifactPlanning.transition }),
@@ -2013,6 +2353,14 @@ const runUninstallInternal = async (
         target: item.intent.skill,
       });
       groupByResult.set(uninstallResultFactKey(item.seed.preview), groupId);
+    }
+    for (const recovery of artifactRecoveries) {
+      const recoveryGroupId = createOperationGroupId(recovery.groupIdentity);
+      for (const recoveryResult of results.filter(
+        ({ skill, tool }) => skill === recovery.skill && tool === null,
+      )) {
+        groupByResult.set(uninstallResultFactKey(recoveryResult), recoveryGroupId);
+      }
     }
     const canonicalOperations = plan.operations.filter(
       (operation) =>

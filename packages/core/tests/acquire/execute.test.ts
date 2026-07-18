@@ -511,6 +511,66 @@ describe('acquisition artifact destination resolution', () => {
     });
     expect(automaticPorts.calls.realpath).toEqual([]);
   });
+
+  test('selects one bounded sibling-lock handoff owner and refuses a split normal/recovery pair', async () => {
+    const currentProject = manifest(['other']);
+    const priorProject = manifest(['factor-scan', 'other']);
+    const document = readManifestSource(priorProject);
+    if (!document.ok) throw new Error(document.error.message);
+    const normalized = normalizeManifestDocument(document.value);
+    if (!normalized.ok) throw new Error(normalized.error.message);
+    const lock = serializePortableLock({
+      version: 1,
+      hashSchemaVersion: 1,
+      manifestHash: hashManifestSemantics(normalized.value),
+      skills: normalized.value.skills.map((skill) => ({
+        name: skill.name,
+        source: `${skill.source.host}/${skill.source.repository}//${skill.source.path}`,
+        requestedRef: skill.ref,
+        resolvedSha: 'a'.repeat(40),
+        sourcePath: skill.source.path ?? '.',
+        contentHash: `sha256:${'b'.repeat(64)}` as PortableLockV1['skills'][number]['contentHash'],
+      })),
+    });
+    if (!lock.ok) throw new Error(lock.error.message);
+    const projectLock = '/work/repo/skillsmith.lock';
+    const selected = await resolveDestination(
+      new DestinationPorts({
+        [PROJECT_MANIFEST]: { kind: 'file', text: currentProject },
+        [projectLock]: { kind: 'file', text: lock.value },
+      }),
+      { mode: 'remove' },
+      projectContext(PROJECT_MANIFEST),
+    );
+    expect(selected).toMatchObject({
+      outcome: 'selected',
+      pair: {
+        file: { path: PROJECT_MANIFEST },
+        lockfile: { path: projectLock },
+      },
+      selection: { outcome: 'selected', selectedBy: 'selected-project-owner' },
+      declaredNames: ['other'],
+    });
+
+    const split = await resolveDestination(
+      new DestinationPorts({
+        [PROJECT_MANIFEST]: { kind: 'file', text: currentProject },
+        [projectLock]: { kind: 'file', text: lock.value },
+        [USER_MANIFEST]: { kind: 'file', text: manifest(['beta'], 'user') },
+      }),
+      { mode: 'remove', names: ['factor-scan', 'beta'] },
+      projectContext(PROJECT_MANIFEST),
+    );
+    expect(split).toMatchObject({
+      outcome: 'refused',
+      selection: {
+        outcome: 'refused',
+        reason: 'split-owner',
+        candidates: [PROJECT_MANIFEST, USER_MANIFEST],
+      },
+      cause: { kind: 'discovery', code: 'manifest-owner-split' },
+    });
+  });
 });
 
 const absentLedgerRevision = (resourceId: string, marker: string): ExpectedRevisionV1 => {
@@ -1757,10 +1817,11 @@ describe('selected acquisition artifact execution controller', () => {
       });
       const second = artifactOperationForExecution({
         marker: '2',
-        groupMarker: '2',
+        groupMarker: '1',
         kind: 'write-manifest',
         before: firstAfter,
         after: manifestImageForExecution(fixture.pair.file.path, edited.value.bytes),
+        dependencies: [first.operationId],
       });
       const firstBinding = fixture.controller.bind(first, {
         role: 'manifest',
@@ -1791,7 +1852,7 @@ describe('selected acquisition artifact execution controller', () => {
     }
   });
 
-  test('gates a new artifact group on the prior group terminal write', async () => {
+  test('verifies the explicit prior lock-prefix dependency before its defensive success gate', async () => {
     const fixture = await executionControllerFixture('prior-group-gate');
     try {
       const manifestBytes = new TextEncoder().encode(manifest(['alpha']));
@@ -1828,6 +1889,7 @@ describe('selected acquisition artifact execution controller', () => {
         kind: 'write-manifest',
         before: manifestAfter,
         after: manifestImageForExecution(fixture.pair.file.path, edited.value.bytes),
+        dependencies: [firstLock.operationId],
       });
       const firstManifestBinding = fixture.controller.bind(firstManifest, {
         role: 'manifest',
@@ -1837,6 +1899,15 @@ describe('selected acquisition artifact execution controller', () => {
         role: 'lock',
         action: { kind: 'replace', lock: incompleteLock },
       });
+      expect(() =>
+        fixture.controller.bind(
+          {
+            ...secondManifest,
+            dependencyMetadata: { ...secondManifest.dependencyMetadata, operationIds: [] },
+          },
+          { role: 'manifest', action: { kind: 'edit', request: editRequest } },
+        ),
+      ).toThrow('new artifact group lacks its explicit prior lock-prefix dependency');
       const secondManifestBinding = fixture.controller.bind(secondManifest, {
         role: 'manifest',
         action: { kind: 'edit', request: editRequest },

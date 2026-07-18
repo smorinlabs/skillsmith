@@ -616,7 +616,7 @@ describe('runUninstall — G4A-01 step10 desired-state integration', () => {
     });
   });
 
-  test('G4A-01 step10 multiple saving declarations refuse with zero operations and writes', async () => {
+  test('G4A-04 multiple saving declarations commit cumulative exact pairs behind one barrier', async () => {
     const root = join(f.base, 'step10-multiple-declarations');
     const manifestPath = join(root, 'skillsmith.toml');
     const lockPath = join(root, 'skillsmith.lock');
@@ -676,14 +676,29 @@ placement = "symlink"
     if (!result.ok) throw new Error(msg(result.error));
 
     expect(result.value.dryRun).toBeFalse();
-    expect(result.value.plan.operations).toEqual([]);
+    expect(result.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'remove',
+      'write-manifest',
+      'write-lock',
+      'write-manifest',
+      'write-lock',
+    ]);
     expect(result.value.results).toHaveLength(2);
-    expect(result.value.results.every(({ action }) => action === 'refused')).toBeTrue();
-    expect(result.value.results[0]?.reason).toContain('deferred to G4A-04');
-    expect(result.value.artifactEffects).toEqual([]);
-    expect(result.value.summary.desiredState.notWritten).toBe(0);
-    expect(await f.env.readText(manifestPath)).toBe(manifest);
-    expect(await f.env.readText(lockPath)).toBe(serialized.value);
+    expect(result.value.results.map(({ action }) => action)).toEqual(['removed', 'noop']);
+    expect(result.value.artifactEffects).toHaveLength(2);
+    expect(result.value.summary.desiredState.changed).toBe(2);
+    const groups = [...new Set(result.value.plan.operations.map(({ groupId }) => groupId))];
+    const first = result.value.plan.operations.filter(({ groupId }) => groupId === groups[0]);
+    const second = result.value.plan.operations.filter(({ groupId }) => groupId === groups[1]);
+    const prefix = first.find(({ kind }) => kind === 'write-lock');
+    if (prefix === undefined) throw new Error('missing first uninstall lock terminal');
+    expect(
+      second.every(({ dependencyMetadata }) =>
+        dependencyMetadata.operationIds.includes(prefix.operationId),
+      ),
+    ).toBeTrue();
+    expect(await f.env.readText(manifestPath)).not.toContain('[[skills]]');
+    expect(await f.env.readText(lockPath)).not.toContain('[[skills]]');
   });
 
   test('G4A-01 step10 duplicate declared-only occurrences retain request indices', async () => {

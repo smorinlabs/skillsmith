@@ -751,6 +751,58 @@ describe('G3B-02 operation scheduler', () => {
       'skipped-after-failure',
       'succeeded',
     ]);
+
+    const prefixAlphaSeed = operationFor({ skill: 'alpha' });
+    const prefixLock = artifactOperationFor({
+      kind: 'write-lock',
+      groupId: prefixAlphaSeed.groupId,
+    });
+    const prefixAlpha = {
+      ...prefixAlphaSeed,
+      dependencyMetadata: {
+        ...prefixAlphaSeed.dependencyMetadata,
+        operationIds: [prefixLock.operationId],
+      },
+    };
+    const prefixedBetaSeed = operationFor({ skill: 'beta' });
+    const prefixedBeta = {
+      ...prefixedBetaSeed,
+      dependencyMetadata: {
+        ...prefixedBetaSeed.dependencyMetadata,
+        operationIds: [prefixLock.operationId],
+      },
+    };
+    const collisionPlan = structuralPlanFor(
+      [prefixLock, prefixAlpha, prefixedBeta],
+      'continue-on-error',
+    );
+    const collisionCalls: string[] = [];
+    const collisionResults = await scheduleOperationPlan(
+      collisionPlan,
+      collisionPlan.operations.map((operation) => ({
+        ...bindingFor(operation, []),
+        execute: async () => {
+          collisionCalls.push(operation.operationId);
+          const failed = operation.operationId === prefixLock.operationId;
+          return createOperationExecutionResult({
+            operationId: operation.operationId,
+            outcome: failed ? 'failed' : 'succeeded',
+            actualBefore: operation.before,
+            actualAfter: failed ? operation.before : operation.after,
+            force: null,
+            error: failed
+              ? { code: 'fixture-failed', message: 'Fixture failed.', remediation: 'Retry.' }
+              : null,
+          });
+        },
+      })),
+    );
+    expect(collisionCalls).toEqual([prefixLock.operationId]);
+    expect(collisionResults.map(({ outcome }) => outcome)).toEqual([
+      'failed',
+      'skipped-after-failure',
+      'skipped-after-failure',
+    ]);
   });
 
   test('continues independent doctor artifact repairs after ledger migration failure', async () => {

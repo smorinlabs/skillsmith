@@ -256,26 +256,26 @@ const plannedUninstallReport = ({
   dryRun = true,
   groups = ['group:uninstall:one'],
   backupAndReplace = false,
-  refused = false,
+  stateRefused = false,
 }: Readonly<{
   dryRun?: boolean;
   groups?: readonly string[];
   backupAndReplace?: boolean;
-  refused?: boolean;
+  stateRefused?: boolean;
 }> = {}): PlannedUninstallReport => {
   const base = uninstallReport(dryRun);
   return {
     ...base,
-    ...(refused
+    ...(stateRefused
       ? {
           results: [
             {
               ...(base.results[0] as CurrentUninstallReport['results'][number]),
               action: 'refused' as const,
-              reason: 'multiple saving declaration groups are deferred to G4A-04',
+              reason: 'portable artifact ownership is ambiguous',
               error: {
                 code: 'flip-refused' as const,
-                message: 'multiple saving declaration groups are deferred to G4A-04',
+                message: 'portable artifact ownership is ambiguous',
               },
             },
           ],
@@ -296,7 +296,7 @@ const plannedUninstallReport = ({
         groupIds: [...groups],
       },
       batchPolicy: 'fail-fast',
-      operations: refused
+      operations: stateRefused
         ? []
         : groups.map(
             (groupId, index) =>
@@ -952,7 +952,7 @@ describe('lifecycle application services', () => {
     expect(outcome.mutation.kind).toBe('preview');
   });
 
-  test('uninstall multi-declaration domain refusal never prompts and remains non-dry', async () => {
+  test('uninstall stateful domain refusal never prompts and remains non-dry', async () => {
     const dryRunCalls: unknown[] = [];
     const services = createLifecycleApplicationServices({
       uninstall: (async (...args: unknown[]) => {
@@ -962,7 +962,7 @@ describe('lifecycle application services', () => {
           plannedUninstallReport({
             dryRun: options.dryRun === true,
             groups: [],
-            refused: true,
+            stateRefused: true,
           }),
         );
       }) as never,

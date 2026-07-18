@@ -129,6 +129,57 @@ export const compareExecutableOperations = <ToolId extends string = string>(
   );
 };
 
+/**
+ * Return the first invalid external dependency shape. The only admitted cross-group edge is one
+ * earlier artifact-prefix write-lock named by every operation in the dependent group.
+ */
+export const artifactPrefixDependencyError = <ToolId extends string = string>(
+  groups: readonly (readonly ExecutableOperation<ToolId>[])[],
+): string | null => {
+  const operations = groups.flat();
+  const byId = new Map(operations.map((operation) => [operation.operationId, operation]));
+  for (const group of groups) {
+    const groupId = group[0]?.groupId;
+    if (groupId === undefined || group.some((operation) => operation.groupId !== groupId)) {
+      return 'operation groups are malformed';
+    }
+    const externalIds = new Set<string>();
+    for (const operation of group) {
+      for (const dependencyId of operation.dependencyMetadata.operationIds) {
+        const dependency = byId.get(dependencyId);
+        if (dependency === undefined) continue;
+        if (dependency.groupId !== groupId) externalIds.add(dependencyId);
+      }
+    }
+    if (externalIds.size === 0) continue;
+    if (externalIds.size !== 1) {
+      return `operation group ${groupId} has multiple cross-group dependencies`;
+    }
+    const [prefixId] = externalIds;
+    const prefix = prefixId === undefined ? undefined : byId.get(prefixId);
+    if (
+      prefix === undefined ||
+      prefix.groupId === groupId ||
+      prefix.kind !== 'write-lock' ||
+      prefix.pairId !== null
+    ) {
+      return `operation group ${groupId} has an invalid cross-group artifact-prefix dependency`;
+    }
+    const prefixGroup = groups.find((candidate) => candidate[0]?.groupId === prefix.groupId) ?? [];
+    if (
+      prefixGroup.filter(
+        (operation) => operation.kind === 'write-lock' && operation.pairId === null,
+      ).length !== 1 ||
+      group.some(
+        (operation) => !operation.dependencyMetadata.operationIds.includes(prefix.operationId),
+      )
+    ) {
+      return `operation group ${groupId} does not fully depend on one artifact prefix`;
+    }
+  }
+  return null;
+};
+
 /** Deterministic Kahn ordering: dependencies decide readiness, the canonical comparator breaks ties. */
 export const orderExecutableOperationsTopologically = <ToolId extends string = string>(
   operations: readonly ExecutableOperation<ToolId>[],
@@ -138,9 +189,15 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
   if (byId.size !== operations.length) planningContextFail('operation IDs must be unique');
   const remainingDependencies = new Map<string, number>();
   const dependents = new Map<string, ExecutableOperation<ToolId>[]>();
+  const groups = new Map<string, ExecutableOperation<ToolId>[]>();
+  for (const operation of operations) {
+    const group = groups.get(operation.groupId) ?? [];
+    group.push(operation);
+    groups.set(operation.groupId, group);
+  }
   for (const operation of operations) {
     const dependencies = operation.dependencyMetadata.operationIds;
-    remainingDependencies.set(operation.operationId, dependencies.length);
+    let internalDependencies = 0;
     for (const dependencyId of dependencies) {
       if (dependencyId === operation.operationId) {
         planningContextFail(`operation ${operation.operationId} has a self dependency`);
@@ -149,20 +206,14 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
       if (dependency === undefined) {
         planningContextFail(`operation ${operation.operationId} has a dangling dependency`);
       }
-      if ((dependency as ExecutableOperation<ToolId>).groupId !== operation.groupId) {
-        planningContextFail(`operation ${operation.operationId} has a cross-group dependency`);
+      if ((dependency as ExecutableOperation<ToolId>).groupId === operation.groupId) {
+        internalDependencies += 1;
+        const current = dependents.get(dependencyId) ?? [];
+        current.push(operation);
+        dependents.set(dependencyId, current);
       }
-      const current = dependents.get(dependencyId) ?? [];
-      current.push(operation);
-      dependents.set(dependencyId, current);
     }
-  }
-  const ordered: ExecutableOperation<ToolId>[] = [];
-  const groups = new Map<string, ExecutableOperation<ToolId>[]>();
-  for (const operation of operations) {
-    const group = groups.get(operation.groupId) ?? [];
-    group.push(operation);
-    groups.set(operation.groupId, group);
+    remainingDependencies.set(operation.operationId, internalDependencies);
   }
   const canonicalGroups = [...groups.values()]
     .map((operationsInGroup) => ({
@@ -174,7 +225,43 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
     .sort((left, right) =>
       compareExecutableOperations(left.representative, right.representative, context),
     );
-  for (const { operations: group } of canonicalGroups) {
+  const prefixError = artifactPrefixDependencyError(
+    canonicalGroups.map(({ operations: group }) => group),
+  );
+  if (prefixError !== null) planningContextFail(prefixError);
+  const groupById = new Map(canonicalGroups.map((group) => [group.representative.groupId, group]));
+  const remainingGroupDependencies = new Map(
+    canonicalGroups.map(({ representative }) => [representative.groupId, 0]),
+  );
+  const dependentGroups = new Map<string, typeof canonicalGroups>();
+  for (const selected of canonicalGroups) {
+    const external = selected.operations
+      .flatMap((operation) => operation.dependencyMetadata.operationIds)
+      .map((dependencyId) => byId.get(dependencyId))
+      .find(
+        (dependency) =>
+          dependency !== undefined && dependency.groupId !== selected.representative.groupId,
+      );
+    if (external === undefined) continue;
+    remainingGroupDependencies.set(selected.representative.groupId, 1);
+    const current = dependentGroups.get(external.groupId) ?? [];
+    current.push(selected);
+    dependentGroups.set(external.groupId, current);
+  }
+  const readyGroups = canonicalGroups.filter(
+    ({ representative }) => remainingGroupDependencies.get(representative.groupId) === 0,
+  );
+  const ordered: ExecutableOperation<ToolId>[] = [];
+  let orderedGroupCount = 0;
+  while (readyGroups.length > 0) {
+    readyGroups.sort((left, right) =>
+      compareExecutableOperations(left.representative, right.representative, context),
+    );
+    const selected = readyGroups.shift() as (typeof canonicalGroups)[number];
+    if (!groupById.has(selected.representative.groupId)) {
+      planningContextFail('operation group ordering is invalid');
+    }
+    const group = selected.operations;
     const ready = group.filter(
       (operation) => remainingDependencies.get(operation.operationId) === 0,
     );
@@ -192,6 +279,16 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
     if (ordered.length - groupStart !== group.length) {
       planningContextFail('operation dependencies are cyclic');
     }
+    orderedGroupCount += 1;
+    for (const dependent of dependentGroups.get(selected.representative.groupId) ?? []) {
+      const remaining =
+        (remainingGroupDependencies.get(dependent.representative.groupId) as number) - 1;
+      remainingGroupDependencies.set(dependent.representative.groupId, remaining);
+      if (remaining === 0) readyGroups.push(dependent);
+    }
+  }
+  if (orderedGroupCount !== canonicalGroups.length) {
+    planningContextFail('operation group dependencies are cyclic');
   }
   return ordered;
 };

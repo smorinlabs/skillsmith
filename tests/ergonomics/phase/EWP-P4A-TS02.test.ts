@@ -280,8 +280,14 @@ describe('EWP-P4A-TS02', () => {
 
     await seedCrashBoundary(root, 'manifest', afterManifest, afterLock);
     expect(await readPair(root)).toEqual([afterManifest, beforeLock]);
-    const repaired = await runDeclaredUninstall(selected, root, ['portable-alpha']);
+    const duplicateTargets = ['portable-alpha', 'portable-alpha'] as const;
+    const preview = await runDeclaredUninstall(selected, root, duplicateTargets, { dryRun: true });
+    expect(preview.plan.operations.map(({ kind }) => kind)).toEqual(['write-lock']);
+    expect(await readPair(root)).toEqual([afterManifest, beforeLock]);
+    const repaired = await runDeclaredUninstall(selected, root, duplicateTargets);
+    expect(repaired.plan).toEqual(preview.plan);
     expect(repaired.plan.operations.map(({ kind }) => kind)).toEqual(['write-lock']);
+    expect(repaired.results).toHaveLength(2);
     expect(repaired.results.every(({ action }) => action === 'noop')).toBeTrue();
     expect(await readPair(root)).toEqual([afterManifest, afterLock]);
 
@@ -303,6 +309,73 @@ describe('EWP-P4A-TS02', () => {
     expect(refused.plan.operations).toEqual([]);
     expect(refused.results.every(({ action }) => action === 'refused')).toBeTrue();
     expect(await readPair(unrelatedRoot)).toEqual([afterManifest, unrelatedLock]);
+  });
+
+  test('finds the same exact handoff through the bounded automatic sibling owner', async () => {
+    const selected = await fleet();
+    const root = join(selected.env.xdg.config, 'skillsmith');
+    await mkdir(root, { recursive: true });
+    const beforeManifest = manifestSource(['portable-alpha', 'retained-gamma']);
+    const beforeLock = lockSourceFor(beforeManifest, selected.headSha);
+    const afterManifest = manifestSource(['retained-gamma']);
+    const afterLock = lockSourceFor(afterManifest, selected.headSha);
+    await Promise.all([
+      writeFile(join(root, 'skillsmith.toml'), beforeManifest),
+      writeFile(join(root, 'skillsmith.lock'), beforeLock),
+    ]);
+    await seedCrashBoundary(root, 'manifest', afterManifest, afterLock);
+
+    const result = await runUninstall(
+      selected.env,
+      {
+        targets: ['portable-alpha'],
+        tools: ['claude-code'],
+        scope: 'user',
+        cwd: selected.base,
+        configuration: selected.configuration,
+      },
+      await depsFor(selected, 'automatic-sibling-handoff'),
+    );
+    if (!result.ok)
+      throw new Error('message' in result.error ? result.error.message : result.error.code);
+    const repaired = reportOf(result.value);
+    expect(repaired.artifactSelection).toEqual({
+      outcome: 'selected',
+      selectedBy: 'user-owner',
+    });
+    expect(repaired.plan.operations.map(({ kind }) => kind)).toEqual(['write-lock']);
+    expect(await readPair(root)).toEqual([afterManifest, afterLock]);
+  });
+
+  test('repairs an exact selected-tool reduction without removing the retained lock entry', async () => {
+    const selected = await fleet();
+    const root = join(selected.base, 'reduced-declaration-handoff');
+    await mkdir(root, { recursive: true });
+    const alphaSingle = [
+      'name = "portable-alpha"',
+      'source = "fixture.invalid/acme/skills//skills/portable-alpha"',
+      'tools = ["claude-code"]',
+    ].join('\n');
+    const beforeManifest = manifestSource(['portable-alpha', 'retained-gamma']).replace(
+      alphaSingle,
+      alphaSingle.replace('tools = ["claude-code"]', 'tools = ["claude-code", "codex"]'),
+    );
+    const afterManifest = beforeManifest.replace(
+      'tools = ["claude-code", "codex"]',
+      'tools = ["codex"]',
+    );
+    const beforeLock = lockSourceFor(beforeManifest, selected.headSha);
+    const afterLock = lockSourceFor(afterManifest, selected.headSha);
+    await Promise.all([
+      writeFile(join(root, 'skillsmith.toml'), beforeManifest),
+      writeFile(join(root, 'skillsmith.lock'), beforeLock),
+    ]);
+    await seedCrashBoundary(root, 'manifest', afterManifest, afterLock);
+
+    const repaired = await runDeclaredUninstall(selected, root, ['portable-alpha']);
+    expect(repaired.plan.operations.map(({ kind }) => kind)).toEqual(['write-lock']);
+    expect(await readPair(root)).toEqual([afterManifest, afterLock]);
+    expect(afterLock).toContain('name = "portable-alpha"');
   });
 
   test('a lock-terminal crash is already converged and pre-start cancellation is zero-write', async () => {
