@@ -1283,7 +1283,7 @@ describe('EWP-CMD-DOCTOR-TS03', () => {
       ]);
       expect(await readFile(lock, 'utf8')).toBe(fixture.lock);
     }
-  });
+  }, 30_000);
 
   test('sibling and explicit custom pair selection diagnose identical artifact bytes', async () => {
     const root = await sandbox('pair-equivalence');

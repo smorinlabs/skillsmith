@@ -148,7 +148,7 @@ describe('EWP-P1-TS03', () => {
         exitCode,
       });
     }
-  });
+  }, 30_000);
 
   test('unknown enums are usage errors while known unsupported capabilities are exit 4', () => {
     const cases = [

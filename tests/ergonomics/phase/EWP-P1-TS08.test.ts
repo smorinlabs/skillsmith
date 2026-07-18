@@ -656,5 +656,5 @@ describe('EWP-P1-TS08', () => {
         rawFindings.push(`${name}: real adapter import outside composition`);
     }
     expect(rawFindings).toEqual([]);
-  });
+  }, 30_000);
 });

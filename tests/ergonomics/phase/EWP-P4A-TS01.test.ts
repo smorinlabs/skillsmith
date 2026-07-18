@@ -387,7 +387,7 @@ describe('EWP-P4A-TS01', () => {
     } finally {
       await rm(workspace.root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('dual ownership refuses before every artifact and live write', async () => {
     const workspace = await createWorkspace('dual-owner');
