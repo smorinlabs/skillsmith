@@ -247,6 +247,60 @@ describe('resolveEffectiveConfig compatibility notices', () => {
     }
   });
 
+  test('uses a caller-bound target existence snapshot instead of a fresh filesystem probe', async () => {
+    const path = '/repo/skillsmith.toml';
+
+    const disappeared = fixture({});
+    const retained = await resolveEffectiveConfig(runtimePorts(disappeared.env), context(path), {
+      configuration: resolveRuntimeConfiguration({}),
+      fileExists: async (candidate) => candidate === path,
+      readFile: async (candidate) =>
+        candidate === path ? 'tool = "codex"\n' : disappeared.env.readText(candidate),
+    });
+    expect(retained.ok).toBeTrue();
+    if (retained.ok) expect(retained.value.layers.project).toEqual({ tool: 'codex' });
+
+    const appeared = fixture({ [path]: 'tool = "claude-code"\n' });
+    let targetReads = 0;
+    const omitted = await resolveEffectiveConfig(runtimePorts(appeared.env), context(path), {
+      configuration: resolveRuntimeConfiguration({}),
+      fileExists: async (candidate) => candidate !== path && appeared.env.fileExists(candidate),
+      readFile: async (candidate) => {
+        if (candidate === path) targetReads += 1;
+        return appeared.env.readText(candidate);
+      },
+    });
+    expect(omitted.ok).toBeTrue();
+    if (omitted.ok) expect(omitted.value.layers.project).toEqual({});
+    expect(targetReads).toBe(0);
+  });
+
+  test('omits a parseable but migration-unsafe automatic target and retains explicit authority', async () => {
+    const path = '/repo/skillsmith.toml';
+    const source = `# Authorization: Bearer ${'x'.repeat(32)}\ntool = "kilo-code"\n`;
+    const files = { [path]: source };
+    const { env } = fixture(files);
+    const automatic = await resolveEffectiveConfig(runtimePorts(env), context(path), {
+      configuration: resolveRuntimeConfiguration({}),
+      automaticProjectTargetPath: path,
+      automaticProjectTargetEligible: false,
+      readFile: async () => source,
+      fileExists: async (candidate) => candidate === path,
+    });
+    expect(automatic.ok).toBeTrue();
+    if (automatic.ok) expect(automatic.value.layers.project).toEqual({});
+
+    const explicit = await resolveEffectiveConfig(runtimePorts(env), context(path, path), {
+      configuration: resolveRuntimeConfiguration({}),
+      automaticProjectTargetPath: path,
+      automaticProjectTargetEligible: false,
+      readFile: async () => source,
+      fileExists: async (candidate) => candidate === path,
+    });
+    expect(explicit.ok).toBeTrue();
+    if (explicit.ok) expect(explicit.value.layers['explicit-file']).toEqual({ tool: 'kilo-code' });
+  });
+
   test('drops an unsafe registry environment value before effective precedence', async () => {
     const { env } = fixture({});
     const result = await resolveEffectiveConfig(runtimePorts(env), context(null), {

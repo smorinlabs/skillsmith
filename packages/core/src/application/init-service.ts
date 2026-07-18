@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { type BuiltInToolId, SUPPORTED_TOOLS } from '../agents/registry.ts';
 import { normalizeRegistryIdentity } from '../artifacts/identity.ts';
-import { planInitManifest } from '../artifacts/init.ts';
+import { isInitConfigSnapshotEligible, planInitManifest } from '../artifacts/init.ts';
 import { resolveArtifactPair, resolveExplicitArtifactPairLexically } from '../artifacts/pair.ts';
 import { resolveEffectiveConfig } from '../config/effective.ts';
 import type { EffectiveConfig } from '../config/types.ts';
@@ -250,6 +250,12 @@ export const runInitApplication: ApplicationService<
       ? await resolveEffectiveConfig(context.ports, project.value, {
           configuration: context.configuration,
           automaticProjectTargetPath: selection.manifestPath,
+          automaticProjectTargetEligible:
+            observed.value.state === 'file' && isInitConfigSnapshotEligible(observed.value.bytes),
+          fileExists: async (path: string) =>
+            path === selection.manifestPath
+              ? observed.value.state === 'file'
+              : context.ports.fileExists(path),
           ...(observed.value.state === 'file'
             ? {
                 readFile: async (path: string) =>
@@ -385,9 +391,13 @@ export const runInitApplication: ApplicationService<
     classification: classification.value,
     observed: observed.value,
   });
+  let durableExecutionFailure: InitFailure | null = null;
   if (!dryRun) {
     const execution = await executePreparedInit(context, prepared);
-    if (!execution.ok) return fail(execution.error);
+    if (!execution.ok) {
+      if (execution.error.durableState !== 'after') return fail(execution.error);
+      durableExecutionFailure = execution.error;
+    }
   }
   const conflict = prepared.plan.operations[0]?.conflict ?? null;
   const force =
@@ -418,11 +428,20 @@ export const runInitApplication: ApplicationService<
     effects: reportEffects(prepared.result.action, prepared.result.operationId, dryRun),
     summary: Object.freeze({ changed, unchanged: changed === 0 ? 1 : 0 }),
   });
-  const diagnostic: Diagnostic[] = [];
+  const diagnostic: Diagnostic[] =
+    durableExecutionFailure === null
+      ? []
+      : [
+          Object.freeze({
+            code: durableExecutionFailure.code,
+            severity: 'error' as const,
+            message: durableExecutionFailure.message,
+          }),
+        ];
   return {
     report,
     diagnostics: diagnostic,
-    exitClass: 'success',
+    exitClass: durableExecutionFailure?.exitClass ?? 'success',
     mutation: {
       kind: dryRun ? 'preview' : changed === 0 ? 'none' : 'applied',
       planned: changed,

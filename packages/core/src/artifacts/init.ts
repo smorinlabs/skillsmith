@@ -5,7 +5,7 @@ import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import { type ArtifactDigest, hashManifestBytes, hashManifestSemantics } from './hash.ts';
 import { renderHumanTomlString, renderHumanTomlStringArray, scanHumanToml } from './human-toml.ts';
 import { normalizePortablePath, normalizeRegistryIdentity } from './identity.ts';
-import { migrateLegacyManifestBytes } from './legacy-migration.ts';
+import { type LegacyManifestMigration, migrateLegacyManifestBytes } from './legacy-migration.ts';
 import {
   classifyManifestSource,
   normalizeManifestDocument,
@@ -559,6 +559,47 @@ const hasFutureVersion = (bytes: Uint8Array): boolean => {
   return Number.isSafeInteger(version) && version > 1;
 };
 
+type InitConfigSnapshot =
+  | Readonly<{
+      shape: 'canonical';
+      manifest: NormalizedManifestV1;
+    }>
+  | Readonly<{
+      shape: 'legacy';
+      manifest: NormalizedManifestV1;
+      migration: LegacyManifestMigration;
+    }>;
+
+const inspectKnownInitConfigSnapshot = (
+  bytes: Uint8Array,
+  source: string,
+  shape: 'canonical' | 'legacy',
+): InitConfigSnapshot | null => {
+  const document = readManifestSource(source);
+  if (!document.ok) return null;
+  const normalized = normalizeManifestDocument(document.value);
+  if (!normalized.ok) return null;
+  if (shape === 'canonical') {
+    return Object.freeze({ shape, manifest: normalized.value });
+  }
+  const migration = migrateLegacyManifestBytes(bytes);
+  if (!migration.ok || containsSensitiveMaterial(migration.value.source)) return null;
+  return Object.freeze({ shape, manifest: normalized.value, migration: migration.value });
+};
+
+const inspectInitConfigSnapshot = (bytes: Uint8Array): InitConfigSnapshot | null => {
+  const source = decodeCurrent(bytes);
+  if (source === null || hasFutureVersion(bytes)) return null;
+  const shape = classifyManifestSource(source);
+  return shape === 'canonical' || shape === 'legacy'
+    ? inspectKnownInitConfigSnapshot(bytes, source, shape)
+    : null;
+};
+
+/** Whether one already-owned init snapshot may participate as an automatic config layer. */
+export const isInitConfigSnapshotEligible = (bytes: Uint8Array): boolean =>
+  inspectInitConfigSnapshot(bytes) !== null;
+
 const beforeImage = (
   bytes: Uint8Array,
   shape: ManifestShape,
@@ -632,27 +673,25 @@ const planInitManifestResult = (
     if (shape === 'future') return err(refusal('future-manifest', { shape }));
 
     if (shape === 'legacy' && source !== null) {
-      const document = readManifestSource(source);
-      const normalized = document.ok ? normalizeManifestDocument(document.value) : document;
-      const migration = migrateLegacyManifestBytes(bytes);
-      if (!migration.ok || !normalized.ok || containsSensitiveMaterial(migration.value.source)) {
+      const inspected = inspectKnownInitConfigSnapshot(bytes, source, shape);
+      if (inspected === null || inspected.shape !== 'legacy') {
         return err(refusal('unsafe-legacy-migration', { shape }));
       }
       for (const field of request.value.requireMatch) {
         if (
           !equalIntentValue(
-            intentValue(normalized.value, field),
+            intentValue(inspected.manifest, field),
             skeletonIntentValue(request.value.skeleton, field),
           )
         ) {
           return err(refusal('legacy-intent-conflict', { shape }));
         }
       }
-      const before = beforeImage(bytes, shape, migration.value.beforeSemanticHash);
+      const before = beforeImage(bytes, shape, inspected.migration.beforeSemanticHash);
       const after = Object.freeze({
-        source: migration.value.source,
-        byteHash: hashManifestBytes(migration.value.source),
-        semanticHash: migration.value.afterSemanticHash,
+        source: inspected.migration.source,
+        byteHash: hashManifestBytes(inspected.migration.source),
+        semanticHash: inspected.migration.afterSemanticHash,
         shape: 'canonical' as const,
       });
       return ok(
@@ -667,15 +706,12 @@ const planInitManifestResult = (
     let semanticHash: ArtifactDigest | null = null;
     let semanticallyEqual = false;
     if (shape === 'canonical' && source !== null) {
-      const document = readManifestSource(source);
-      if (document.ok) {
-        const normalized = normalizeManifestDocument(document.value);
-        if (normalized.ok) {
-          semanticHash = hashManifestSemantics(normalized.value);
-          semanticallyEqual =
-            JSON.stringify(projectManifestSemantics(normalized.value)) ===
-            JSON.stringify(projectManifestSemantics(canonical.value.manifest));
-        }
+      const inspected = inspectKnownInitConfigSnapshot(bytes, source, shape);
+      if (inspected !== null && inspected.shape === 'canonical') {
+        semanticHash = hashManifestSemantics(inspected.manifest);
+        semanticallyEqual =
+          JSON.stringify(projectManifestSemantics(inspected.manifest)) ===
+          JSON.stringify(projectManifestSemantics(canonical.value.manifest));
       }
     }
     const before = beforeImage(bytes, shape, semanticHash);

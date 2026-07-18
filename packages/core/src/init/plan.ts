@@ -37,11 +37,13 @@ const resourceDigest = (bytes: Uint8Array): ArtifactDigest => {
 
 export const initObservationFacts = (observed: InitObservedManifest): unknown =>
   observed.state === 'absent'
-    ? Object.freeze({ state: 'absent' as const })
+    ? Object.freeze({ state: 'absent' as const, parent: observed.parent })
     : Object.freeze({
         state: 'file' as const,
         resourceDigest: observed.resourceDigest,
         mode: observed.mode,
+        identity: observed.identity,
+        parent: observed.parent,
       });
 
 const beforeOperationImage = (

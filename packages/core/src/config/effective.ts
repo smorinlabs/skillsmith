@@ -18,8 +18,10 @@ export interface ResolveEffectiveConfigOptions {
   readonly cli?: Config;
   readonly configuration: ResolvedRuntimeConfiguration;
   readonly readFile?: (path: string) => Promise<string>;
+  readonly fileExists?: (path: string) => Promise<boolean>;
   /** Init-only bounded exclusion: an invalid automatic project layer remains classifier input. */
   readonly automaticProjectTargetPath?: string;
+  readonly automaticProjectTargetEligible?: boolean;
 }
 
 const ORDER = [
@@ -38,12 +40,12 @@ interface LoadedLayer {
 }
 
 const loadLayer = async (
-  env: InventoryReadPorts,
   path: string | null,
   readFile: (path: string) => Promise<string>,
+  fileExists: (path: string) => Promise<boolean>,
   projectDocument: boolean,
 ): Promise<Result<LoadedLayer, SkillSmithError>> => {
-  if (path === null || !(await env.fileExists(path))) return ok({ config: {} });
+  if (path === null || !(await fileExists(path))) return ok({ config: {} });
   let source: string;
   try {
     source = await readFile(path);
@@ -72,6 +74,7 @@ export const resolveEffectiveConfig = async (
     ...(context.explicitConfigPath ? { 'explicit-file': context.explicitConfigPath } : {}),
   };
   const underlyingRead = options.readFile ?? env.readText;
+  const fileExists = options.fileExists ?? env.fileExists;
   const reads = new Map<string, Promise<string>>();
   const readFile = (path: string): Promise<string> => {
     let pending = reads.get(path);
@@ -86,21 +89,23 @@ export const resolveEffectiveConfig = async (
     if (path === null) return Promise.resolve(ok({ config: {} }));
     let pending = projectLoads.get(path);
     if (pending === undefined) {
-      pending = loadLayer(env, path, readFile, true);
+      pending = loadLayer(path, readFile, fileExists, true);
       projectLoads.set(path, pending);
     }
     return pending;
   };
   const [system, user, loadedProject, explicitFile] = await Promise.all([
-    loadLayer(env, paths.system, readFile, false),
-    loadLayer(env, paths.user, readFile, false),
+    loadLayer(paths.system, readFile, fileExists, false),
+    loadLayer(paths.user, readFile, fileExists, false),
     loadProjectLayer(paths.project ?? null),
     loadProjectLayer(paths['explicit-file'] ?? null),
   ]);
-  const project =
-    !loadedProject.ok &&
+  const automaticProjectCollision =
     paths.project === options.automaticProjectTargetPath &&
-    paths['explicit-file'] !== options.automaticProjectTargetPath
+    paths['explicit-file'] !== options.automaticProjectTargetPath;
+  const project =
+    automaticProjectCollision &&
+    (options.automaticProjectTargetEligible === false || !loadedProject.ok)
       ? ok<LoadedLayer>({ config: {} })
       : loadedProject;
   if (!system.ok) return system;

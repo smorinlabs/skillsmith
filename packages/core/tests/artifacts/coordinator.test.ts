@@ -1740,6 +1740,30 @@ source = "github.com/acme/tools//skills/review"
       expect(new Uint8Array(await readFile(path))).toEqual(before);
     }
 
+    let proxyTraps = 0;
+    const proxyAuthorization = new Proxy(
+      { expectedResourceDigest: digest.value },
+      {
+        getPrototypeOf: () => {
+          proxyTraps += 1;
+          throw new Error('authorization prototype trap');
+        },
+        ownKeys: () => {
+          proxyTraps += 1;
+          throw new Error('authorization key trap');
+        },
+      },
+    );
+    const proxy = await updateCoordinatedHumanFile(ports, {
+      path,
+      opaqueManifestBackup: proxyAuthorization,
+      edit: () =>
+        ok({ bytes: new TextEncoder().encode('version = 1\n'), changed: true, mode: 0o600 }),
+    });
+    expect(proxy).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+    expect(proxyTraps).toBe(0);
+    expect(new Uint8Array(await readFile(path))).toEqual(before);
+
     const stale = await updateCoordinatedHumanFile(ports, {
       path,
       opaqueManifestBackup: {

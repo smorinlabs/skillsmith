@@ -1,6 +1,8 @@
 import { isAbsolute, join, normalize, parse } from 'node:path';
 import { z } from 'zod';
+import { normalizePortablePath, normalizeRegistryIdentity } from '../../artifacts/identity.ts';
 import type { InitReport } from '../../init/types.ts';
+import { containsSensitiveMaterial } from '../../safety/redaction.ts';
 import { createJsonWireCodec } from '../codec.ts';
 
 const WritableToolSchema = z.enum(['claude-code', 'codex']);
@@ -235,6 +237,25 @@ const InitV1Schema = z
       value.artifactSelection.selectedBy === 'explicit-file'
         ? value.requested.file === value.artifactSelection.manifestPath
         : value.requested.file === null;
+    const explicitScopeSelectionValid =
+      !value.requested.explicitScope ||
+      value.artifactSelection.selectedBy === 'explicit-file' ||
+      value.artifactSelection.selectedBy === value.requested.scope;
+    const portablePathValid =
+      value.defaults.path === null ||
+      (value.defaults.scope !== null &&
+        !containsSensitiveMaterial(value.defaults.path) &&
+        normalizePortablePath(value.defaults.path, value.defaults.scope, 'defaults.path').ok);
+    const normalizedRegistry =
+      value.defaults.registryDefault === null
+        ? null
+        : normalizeRegistryIdentity(value.defaults.registryDefault, {}, 'registry.default');
+    const registryDefaultValid =
+      value.defaults.registryDefault === null ||
+      (!containsSensitiveMaterial(value.defaults.registryDefault) &&
+        normalizedRegistry !== null &&
+        normalizedRegistry.ok &&
+        normalizedRegistry.value === value.defaults.registryDefault);
     const manifestParts = parse(value.artifactSelection.manifestPath);
     const expectedLockPath = join(manifestParts.dir, `${manifestParts.name}.lock`);
     const replacement = value.result.action === 'replace-manifest';
@@ -257,6 +278,9 @@ const InitV1Schema = z
       !toolsEqual ||
       !toolSourceValid ||
       !selectedFileValid ||
+      !explicitScopeSelectionValid ||
+      !portablePathValid ||
+      !registryDefaultValid ||
       value.artifactSelection.lockPath !== expectedLockPath ||
       !forceValid;
     if (invalid)

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { ArtifactDigest, InitReport } from '@skillsmith/core';
 import { initV1Codec, toInitV1Dto } from '@skillsmith/core/contracts/v1';
+import { planInitManifest } from '../../../core/src/artifacts/init.ts';
+import { prepareInitOperationPlan } from '../../../core/src/init/plan.ts';
 import { renderInitHuman } from '../../src/output/init-human.ts';
 import { renderInitJson } from '../../src/output/init-json.ts';
 
@@ -127,6 +129,32 @@ describe('init output', () => {
       },
       {
         ...value,
+        requested: {
+          ...value.requested,
+          scope: 'user',
+          explicitScope: true,
+          file: null,
+        },
+        defaults: { ...value.defaults, scope: 'user' },
+        artifactSelection: { ...value.artifactSelection, selectedBy: 'project' },
+      },
+      {
+        ...value,
+        defaults: { ...value.defaults, path: '/absolute' },
+      },
+      {
+        ...value,
+        defaults: { ...value.defaults, registryDefault: 'https://fixture.invalid/team' },
+      },
+      {
+        ...value,
+        defaults: {
+          ...value.defaults,
+          registryDefault: `fixture.invalid/ghp_${'1'.repeat(36)}`,
+        },
+      },
+      {
+        ...value,
         artifactSelection: { ...value.artifactSelection, lockPath: '/work/not-a-sibling.lock' },
       },
       {
@@ -170,5 +198,78 @@ describe('init output', () => {
     expect(renderInitHuman(report)).toBe(
       `Init: create-manifest (planned)\nManifest: /work/skillsmith.toml\nLock: /work/skillsmith.lock (not written)\nBefore: absent\nAfter: canonical; bytes ${digest('a')}; semantics ${digest('b')}\nForce: requested no; applied no; conflict none; backup none\n`,
     );
+  });
+
+  test('known fixture hashes prove producer domains and init@1 field placement', () => {
+    const classification = planInitManifest({
+      skeleton: {},
+      current: { state: 'absent' },
+      legacyIntent: { requireMatch: [] },
+      force: false,
+    });
+    expect(classification.ok).toBeTrue();
+    if (!classification.ok) return;
+    const prepared = prepareInitOperationPlan({
+      request: {
+        tools: [],
+        explicitTools: false,
+        toolSource: 'none',
+        scope: null,
+        explicitScope: false,
+        file: '/work/skillsmith.toml',
+        force: false,
+      },
+      dryRun: true,
+      defaults: { tools: null, scope: null, path: null, registryDefault: null },
+      selection: report.artifactSelection,
+      skeleton: {},
+      classification: classification.value,
+      observed: {
+        state: 'absent',
+        parent: { state: 'present', path: '/work', identity: 'fixture-parent' },
+      },
+    });
+    const manifestBytes = 'sha256:f59632b3a21636f59c5f3f93b747c27663df80cb2a9bc9c4f7a1f19803c6049b';
+    const manifestSemantics =
+      'sha256:cd8e75a20fadb8a5e7a05138f382a0abb5d31f405f315180b8bfec3e597d4229';
+    const resourceBytes = 'sha256:ade706565a80a020dff9d8cbbf44fe4e595a7ee14a1879784fb95f69a58c472b';
+    expect(classification.value.after).toMatchObject({
+      source: 'version = 1\n',
+      byteHash: manifestBytes,
+      semanticHash: manifestSemantics,
+    });
+    expect(prepared.result.after).toMatchObject({
+      byteHash: manifestBytes,
+      semanticHash: manifestSemantics,
+    });
+    const operation = prepared.plan.operations[0];
+    expect(operation?.after).toMatchObject({
+      kind: 'manifest',
+      byteHash: resourceBytes,
+      semanticHash: manifestSemantics,
+    });
+
+    const operationId = prepared.result.operationId;
+    expect(operationId).not.toBeNull();
+    if (operationId === null) return;
+    const producerReport: InitReport = Object.freeze({
+      ...report,
+      requested: prepared.request,
+      defaults: prepared.defaults,
+      artifactSelection: prepared.selection,
+      result: prepared.result,
+      effects: Object.freeze([
+        Object.freeze({ role: 'manifest', action: 'create', operationId, outcome: 'planned' }),
+        report.effects[1],
+        report.effects[2],
+        report.effects[3],
+      ]) as InitReport['effects'],
+    });
+    const dto = toInitV1Dto(producerReport);
+    expect(dto.result.after).toMatchObject({
+      byteHash: manifestBytes,
+      semanticHash: manifestSemantics,
+    });
+    expect(initV1Codec.validate(dto).ok).toBeTrue();
   });
 });

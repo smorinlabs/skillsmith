@@ -3346,19 +3346,18 @@ export const updateCoordinatedHumanFile = async (
     const opaqueAuthorization = request.opaqueManifestBackup;
     let opaqueDigest: ArtifactDigest | undefined;
     if (opaqueAuthorization !== undefined) {
-      const prototype =
-        typeof opaqueAuthorization === 'object' && opaqueAuthorization !== null
-          ? Object.getPrototypeOf(opaqueAuthorization)
-          : null;
-      const descriptors: { readonly expectedResourceDigest?: PropertyDescriptor } =
-        typeof opaqueAuthorization === 'object' && opaqueAuthorization !== null
-          ? Object.getOwnPropertyDescriptors(opaqueAuthorization)
-          : {};
-      const digestDescriptor = descriptors.expectedResourceDigest;
       if (
         typeof opaqueAuthorization !== 'object' ||
         opaqueAuthorization === null ||
-        utilTypes.isProxy(opaqueAuthorization) ||
+        utilTypes.isProxy(opaqueAuthorization)
+      ) {
+        throw artifactMutationError('invalid-request', { role: 'manifest' });
+      }
+      const prototype = Object.getPrototypeOf(opaqueAuthorization);
+      const descriptors: { readonly expectedResourceDigest?: PropertyDescriptor } =
+        Object.getOwnPropertyDescriptors(opaqueAuthorization);
+      const digestDescriptor = descriptors.expectedResourceDigest;
+      if (
         (prototype !== Object.prototype && prototype !== null) ||
         Reflect.ownKeys(opaqueAuthorization).length !== 1 ||
         digestDescriptor === undefined ||

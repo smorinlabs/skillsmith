@@ -527,6 +527,8 @@ describe('G3B-02 execution coordinator', () => {
         bytes,
         resourceDigest: hashInitResourceBytes(bytes),
         mode: 0o600,
+        identity: 'fixture-inode',
+        parent: { state: 'present', path: '/work', identity: 'fixture-parent' },
       },
     });
     const operation = prepared.plan.operations[0] as ExecutableOperation;

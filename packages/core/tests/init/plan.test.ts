@@ -29,6 +29,7 @@ const selection: InitArtifactSelection = Object.freeze({
   lockPath: '/work/skillsmith.lock',
   lockSource: 'sibling',
 });
+const parent = Object.freeze({ state: 'present' as const, path: '/work', identity: 'parent' });
 
 const classify = (bytes: Uint8Array | null, force: boolean) => {
   const result = planInitManifest({
@@ -57,6 +58,8 @@ describe('init operation plan', () => {
         bytes,
         resourceDigest: hashInitResourceBytes(bytes),
         mode: 0o640,
+        identity: 'opaque-inode',
+        parent,
       },
     });
     const operation = prepared.plan.operations[0];
@@ -91,7 +94,7 @@ describe('init operation plan', () => {
       selection,
       skeleton: {},
       classification: classify(null, false),
-      observed: { state: 'absent' },
+      observed: { state: 'absent', parent },
     });
     expect(create.plan.operations).toHaveLength(1);
     expect(create.plan.operations[0]?.conflict).toBeNull();
@@ -109,6 +112,8 @@ describe('init operation plan', () => {
         bytes,
         resourceDigest: hashInitResourceBytes(bytes),
         mode: 0o600,
+        identity: 'canonical-inode',
+        parent,
       },
     });
     expect(noop.result).toMatchObject({ action: 'noop', operationId: null, after: null });

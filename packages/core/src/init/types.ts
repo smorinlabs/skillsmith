@@ -1,4 +1,5 @@
 import type { BuiltInToolId } from '../agents/registry.ts';
+import type { ArtifactParentRevision } from '../artifacts/coordinator-types.ts';
 import type { ArtifactDigest } from '../artifacts/hash.ts';
 import type { InitManifestOperationInput, InitManifestSkeletonInput } from '../artifacts/init.ts';
 import type { ManifestScope, ManifestShape } from '../artifacts/types.ts';
@@ -86,15 +87,18 @@ export interface InitFailure {
   readonly code: string;
   readonly message: string;
   readonly exitClass: 'failure' | 'usage' | 'state' | 'capability' | 'permission' | 'cancelled';
+  readonly durableState?: 'before' | 'after';
 }
 
 export type InitObservedManifest =
-  | Readonly<{ state: 'absent' }>
+  | Readonly<{ state: 'absent'; parent: ArtifactParentRevision }>
   | Readonly<{
       state: 'file';
       bytes: Uint8Array;
       resourceDigest: ArtifactDigest;
       mode: number;
+      identity: string;
+      parent: ArtifactParentRevision;
     }>;
 
 export interface PreparedInitPlan {

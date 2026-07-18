@@ -35,13 +35,20 @@ const forceEffect = (requested: boolean, conflict: BoundedConflict | null, appli
     : createBoundedForceEffect({ supported: true, requested: true, applied, conflict });
 
 export const observeInitManifest = async (
-  context: Pick<CurrentApplicationContext, 'artifactCoordinator'>,
+  context: Pick<CurrentApplicationContext, 'artifactCoordinator' | 'signal'>,
   path: string,
 ): Promise<Result<InitObservedManifest, InitFailure>> => {
   try {
     const metadata = await context.artifactCoordinator.observe(path);
-    if (metadata.kind === 'absent') return ok(Object.freeze({ state: 'absent' as const }));
-    if (metadata.kind !== 'file' || metadata.mode === null || metadata.linkCount !== 1) {
+    if (metadata.kind === 'absent') {
+      return ok(Object.freeze({ state: 'absent' as const, parent: metadata.parent }));
+    }
+    if (
+      metadata.kind !== 'file' ||
+      metadata.mode === null ||
+      metadata.identity === null ||
+      metadata.linkCount !== 1
+    ) {
       return err(
         Object.freeze({
           code: 'init-invalid-file-kind',
@@ -57,14 +64,33 @@ export const observeInitManifest = async (
         bytes: new Uint8Array(bytes),
         resourceDigest: hashInitResourceBytes(bytes),
         mode: metadata.mode,
+        identity: metadata.identity,
+        parent: metadata.parent,
       }),
     );
-  } catch {
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+    const cancelled = context.signal?.aborted || code === 'ABORT_ERR';
+    const permission = code === 'EACCES' || code === 'EPERM';
+    const changed = code === 'ENOENT' || code === 'ESTALE';
     return err(
       Object.freeze({
-        code: 'init-observation-failed',
+        code: cancelled
+          ? 'init-cancelled'
+          : permission
+            ? 'init-observation-permission'
+            : changed
+              ? 'init-observation-changed'
+              : 'init-observation-failed',
         message: 'selected init manifest could not be observed',
-        exitClass: 'permission' as const,
+        exitClass: cancelled
+          ? ('cancelled' as const)
+          : permission
+            ? ('permission' as const)
+            : changed
+              ? ('state' as const)
+              : ('failure' as const),
       }),
     );
   }
@@ -92,8 +118,41 @@ const imageForRevision = (
   return artifactManifestImageFromBytesV1(path, revision.bytes);
 };
 
-const failure = (code: string, exitClass: InitFailure['exitClass']): InitFailure =>
-  Object.freeze({ code, message: 'init manifest execution failed', exitClass });
+const revisionFacts = (revision: ArtifactFileRevision): unknown =>
+  revision.state === 'absent'
+    ? Object.freeze({ state: 'absent' as const, parent: revision.parent })
+    : Object.freeze({
+        state: 'file' as const,
+        resourceDigest: revision.digest,
+        mode: revision.mode,
+        identity: revision.identity,
+        parent: revision.parent,
+      });
+
+const revisionMatchesObserved = (
+  revision: ArtifactFileRevision,
+  observed: InitObservedManifest,
+  allowProvisionedParent: boolean,
+): boolean =>
+  canonicalPlanningString(revisionFacts(revision)) ===
+    canonicalPlanningString(initObservationFacts(observed)) ||
+  (observed.state === 'absent' &&
+    revision.state === 'absent' &&
+    observed.parent.state === 'missing' &&
+    revision.parent.state === 'present' &&
+    allowProvisionedParent);
+
+const failure = (
+  code: string,
+  exitClass: InitFailure['exitClass'],
+  durableState?: InitFailure['durableState'],
+): InitFailure =>
+  Object.freeze({
+    code,
+    message: 'init manifest execution failed',
+    exitClass,
+    ...(durableState === undefined ? {} : { durableState }),
+  });
 
 export const executePreparedInit = async (
   context: CurrentApplicationContext,
@@ -124,6 +183,15 @@ export const executePreparedInit = async (
 
   const observeActualBefore = async (): Promise<OperationImage> => {
     const observed = await observeForExecution();
+    if (
+      canonicalPlanningString(initObservationFacts(observed)) !==
+      canonicalPlanningString(initObservationFacts(prepared.observed))
+    ) {
+      throw Object.freeze({
+        code: 'precondition-state-changed',
+        message: 'init manifest identity changed before execution binding',
+      });
+    }
     if (observed.state === 'absent') {
       return Object.freeze({
         kind: 'absent' as const,
@@ -143,6 +211,8 @@ export const executePreparedInit = async (
 
   const conflict = operation.conflict;
   const unstartedForce = forceEffect(prepared.request.force, conflict, false);
+  let cancellationDurableState: InitFailure['durableState'];
+  let editInvocations = 0;
   const binding: PreparedExecutionBinding = Object.freeze({
     operationId: operation.operationId,
     groupId: operation.groupId,
@@ -153,14 +223,19 @@ export const executePreparedInit = async (
       const committed = await updateCoordinatedHumanFile(context.artifactCoordinator, {
         path: prepared.selection.manifestPath,
         ...(context.signal === undefined ? {} : { signal: context.signal }),
-        ...(operation.before.kind === 'opaque-manifest'
+        ...(conflict !== null && prepared.observed.state === 'file'
           ? {
               opaqueManifestBackup: {
-                expectedResourceDigest: operation.before.byteHash as ArtifactDigest,
+                expectedResourceDigest: prepared.observed.resourceDigest as ArtifactDigest,
               },
             }
           : {}),
         edit: (revision) => {
+          const allowProvisionedParent = editInvocations > 0;
+          editInvocations += 1;
+          if (!revisionMatchesObserved(revision, prepared.observed, allowProvisionedParent)) {
+            return err(artifactMutationError('external-writer-conflict'));
+          }
           let actual: OperationImage;
           try {
             actual = imageForRevision(operation, revision);
@@ -199,12 +274,16 @@ export const executePreparedInit = async (
       if (!committed.ok) {
         const cancelled = committed.error.reason === 'cancelled';
         const permission = committed.error.reason === 'permission-denied';
+        const durableAfter = cancelled && committed.error.durableState === 'after';
+        if (cancelled) cancellationDurableState = durableAfter ? 'after' : 'before';
         return createOperationExecutionResult({
           operationId: operation.operationId,
           outcome: cancelled ? 'cancelled' : 'failed',
           actualBefore: validated.actualBefore,
-          actualAfter: validated.actualBefore,
-          force: unstartedForce,
+          actualAfter: durableAfter ? operation.after : validated.actualBefore,
+          force: durableAfter
+            ? forceEffect(prepared.request.force, conflict, conflict !== null)
+            : unstartedForce,
           error: cancelled
             ? null
             : {
@@ -241,7 +320,9 @@ export const executePreparedInit = async (
     );
     const result = results[0];
     if (result?.outcome === 'succeeded') return ok('succeeded');
-    if (result?.outcome === 'cancelled') return err(failure('init-cancelled', 'cancelled'));
+    if (result?.outcome === 'cancelled') {
+      return err(failure('init-cancelled', 'cancelled', cancellationDurableState ?? 'before'));
+    }
     const code = result?.error?.code ?? 'init-execution';
     return err(
       failure(
@@ -266,6 +347,7 @@ export const executePreparedInit = async (
           ? 'init-cancelled'
           : 'init-precondition-changed',
         code === 'cancelled' || context.signal?.aborted ? 'cancelled' : 'state',
+        code === 'cancelled' || context.signal?.aborted ? 'before' : undefined,
       ),
     );
   }

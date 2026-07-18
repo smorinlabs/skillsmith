@@ -882,6 +882,8 @@ describe('planning constructors', () => {
         bytes,
         resourceDigest: hashInitResourceBytes(bytes),
         mode: 0o600,
+        identity: 'fixture-inode',
+        parent: { state: 'present', path: '/work', identity: 'fixture-parent' },
       },
     });
     expect(prepared.plan.command).toBe('init');
