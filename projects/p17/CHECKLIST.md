@@ -115,7 +115,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:export | P17-G4A-02 | signed-off | required-pr |
 | COMMAND:gc | P17-G5-04 | planned | required-pr |
 | COMMAND:help | P17-G6-02A | planned | required-pr |
-| COMMAND:init | P17-G4A-03 | planned | required-pr |
+| COMMAND:init | P17-G4A-03 | validated | required-pr |
 | COMMAND:install | P17-G4A-01 | signed-off | required-pr |
 | COMMAND:list | P17-G3A-02 | signed-off | required-pr |
 | COMMAND:plan | P17-G4B-01 | planned | required-pr |
@@ -144,7 +144,7 @@ Tracked entities: **425** across **45** change groups.
 | P1-02 | P17-G3A-01 | signed-off | required-pr |
 | P1-03 | P17-G3A-02 | signed-off | required-pr |
 | P1-04 | P17-G5-05 | planned | required-pr |
-| P1-05 | P17-G4A-03 | planned | required-pr |
+| P1-05 | P17-G4A-03 | validated | required-pr |
 | P1-06 | P17-G4A-02 | signed-off | required-pr |
 | P1-07 | P17-G4B-01 | planned | required-pr |
 | P1-08 | P17-G4B-02 | planned | required-pr |
@@ -211,7 +211,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-038 | P17-G1-07 | signed-off | required-pr |
 | EWP-CF-039 | P17-G0-05 | signed-off | required-pr |
 | EWP-CF-040 | P17-G2-01 | signed-off | required-pr |
-| EWP-CF-041 | P17-G4A-03 | planned | required-pr |
+| EWP-CF-041 | P17-G4A-03 | validated | required-pr |
 | EWP-CF-042 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-043 | P17-G1-02A | signed-off | required-pr |
 
@@ -1164,25 +1164,25 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 - [x] P17-G4A-03:ready _(passed)_
 - [x] P17-G4A-03:test-first _(passed)_
 - [x] P17-G4A-03:minimal-implementation _(passed)_
-- [ ] P17-G4A-03:targeted-green _(pending)_
-- [ ] P17-G4A-03:impacted-green _(pending)_
-- [ ] P17-G4A-03:refactor _(pending)_
+- [x] P17-G4A-03:targeted-green _(passed)_
+- [x] P17-G4A-03:impacted-green _(passed)_
+- [x] P17-G4A-03:refactor _(passed)_
 - [ ] P17-G4A-03:adversarial-review _(pending)_
 - [ ] P17-G4A-03:traceability-closure _(pending)_
 - [ ] P17-G4A-03:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:init** — Declarative — How do I create or migrate the desired-state file? _(command; planned)_
-- [ ] **EWP-CF-041** — Put init execution behind the shared planner and make it previewable _(finding; planned)_
-- [ ] **EWP-CMD-INIT-TS01** — default canonical manifest content at shared Git project root when in a _(command-test; failing)_
-- [ ] **EWP-CMD-INIT-TS02** — explicit file/scope/tool/default selections, including `--scope user` _(command-test; failing)_
-- [ ] **EWP-CMD-INIT-TS03** — existing file refusal and force replacement limited to the exact manifest, _(command-test; failing)_
-- [ ] **EWP-CMD-INIT-TS04** — dry-run/execution operation equality, atomic write/SIGINT/concurrent-writer _(command-test; failing)_
-- [ ] **EWP-CMD-INIT-TS05** — human/JSON/help/completion output and immediate parse/plan compatibility. _(command-test; failing)_
-- [ ] **EWP-P4A-T04** — Register and implement init through the shared application service/planner using _(phase-task; red)_
-- [ ] **EWP-P4A-TS04** — Init dry-run/execution operation equality; absent/legacy/existing/force/noop/ _(phase-test; failing)_
-- [ ] **P1-05** — `init` _(recommendation; planned)_
+- [ ] **COMMAND:init** — Declarative — How do I create or migrate the desired-state file? _(command; validated)_
+- [ ] **EWP-CF-041** — Put init execution behind the shared planner and make it previewable _(finding; validated)_
+- [ ] **EWP-CMD-INIT-TS01** — default canonical manifest content at shared Git project root when in a _(command-test; passing)_
+- [ ] **EWP-CMD-INIT-TS02** — explicit file/scope/tool/default selections, including `--scope user` _(command-test; passing)_
+- [ ] **EWP-CMD-INIT-TS03** — existing file refusal and force replacement limited to the exact manifest, _(command-test; passing)_
+- [ ] **EWP-CMD-INIT-TS04** — dry-run/execution operation equality, atomic write/SIGINT/concurrent-writer _(command-test; passing)_
+- [ ] **EWP-CMD-INIT-TS05** — human/JSON/help/completion output and immediate parse/plan compatibility. _(command-test; passing)_
+- [ ] **EWP-P4A-T04** — Register and implement init through the shared application service/planner using _(phase-task; green)_
+- [ ] **EWP-P4A-TS04** — Init dry-run/execution operation equality; absent/legacy/existing/force/noop/ _(phase-test; passing)_
+- [ ] **P1-05** — `init` _(recommendation; validated)_
 
 ## P17-G4A-04 — Multi-source/tool partial-success, crash, and commit-boundary semantics
 
