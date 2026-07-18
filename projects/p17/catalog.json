@@ -5422,9 +5422,10 @@
       "phase": "4A",
       "title": "Export classification, safe merge, portable intent, and writer integration",
       "dependsOn": ["P17-G3B-03", "P17-G3B-04", "P17-G3B-05"],
-      "status": "reviewed",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
+        "README.md",
         "docs/architecture.md",
         "packages/core/src/export/types.ts",
         "packages/core/src/export/observe.ts",
@@ -5463,6 +5464,7 @@
         "packages/core/tests/application/current-services.test.ts",
         "packages/core/tests/artifacts/execution.test.ts",
         "packages/core/tests/acquire/execute.test.ts",
+        "packages/core/tests/place/execute.test.ts",
         "packages/core/tests/place/ledger-migration.test.ts",
         "packages/core/tests/planning/create.test.ts",
         "packages/core/tests/ports/default.test.ts",
@@ -5473,6 +5475,8 @@
         "packages/cli/tests/contracts/options.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS06.test.ts",
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
@@ -5521,7 +5525,7 @@
         "bun test tests/ergonomics/phase/EWP-P4A-TS03.test.ts --test-name-pattern EWP-P4A-TS03"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g4a02_final_adversarial",
+      "reviewer": null,
       "gates": {
         "mapped": {
           "status": "passed",
@@ -5552,8 +5556,8 @@
           "evidence": ["projects/p17/evidence/P17-G4A-02.md#refactor"]
         },
         "adversarial-review": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4A-02.md#adversarial-review"]
+          "status": "pending",
+          "evidence": []
         },
         "traceability-closure": {
           "status": "pending",
@@ -5573,7 +5577,8 @@
         "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-02.md#refactor",
         "projects/p17/evidence/P17-G4A-02.md#independent-adversarial-ownership-amendment",
-        "projects/p17/evidence/P17-G4A-02.md#adversarial-review"
+        "projects/p17/evidence/P17-G4A-02.md#adversarial-review",
+        "projects/p17/evidence/P17-G4A-02.md#terminal-full-repository-ownership-amendment"
       ]
     },
     {
@@ -20998,7 +21003,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-02",
-      "status": "reviewed",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02",
       "target": null,
@@ -21009,7 +21014,8 @@
         "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-02.md#refactor",
         "projects/p17/evidence/P17-G4A-02.md#independent-adversarial-ownership-amendment",
-        "projects/p17/evidence/P17-G4A-02.md#adversarial-review"
+        "projects/p17/evidence/P17-G4A-02.md#adversarial-review",
+        "projects/p17/evidence/P17-G4A-02.md#terminal-full-repository-ownership-amendment"
       ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
@@ -21053,6 +21059,7 @@
         "bun test tests/ergonomics/phase/EWP-P4A-TS03.test.ts --test-name-pattern EWP-P4A-TS03"
       ],
       "ownedFiles": [
+        "README.md",
         "docs/architecture.md",
         "packages/core/src/export/types.ts",
         "packages/core/src/export/observe.ts",
@@ -21091,6 +21098,7 @@
         "packages/core/tests/application/current-services.test.ts",
         "packages/core/tests/artifacts/execution.test.ts",
         "packages/core/tests/acquire/execute.test.ts",
+        "packages/core/tests/place/execute.test.ts",
         "packages/core/tests/place/ledger-migration.test.ts",
         "packages/core/tests/planning/create.test.ts",
         "packages/core/tests/ports/default.test.ts",
@@ -21101,6 +21109,8 @@
         "packages/cli/tests/contracts/options.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS06.test.ts",
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
