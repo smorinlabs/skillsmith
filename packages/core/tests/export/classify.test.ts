@@ -63,9 +63,11 @@ const observation = (entries: readonly SkillInventoryEntry[]): ExportObservation
 
 const managedObservation = (
   input: {
+    readonly name?: string;
     readonly path?: string;
     readonly defaultLocation?: boolean;
     readonly source?: string;
+    readonly requestedRef?: string;
     readonly liveContentHash?: ArtifactDigest;
   } = {},
 ): ExportObservation => {
@@ -73,6 +75,7 @@ const managedObservation = (
   const path = input.path ?? '/home/fixture/.claude/skills/alpha';
   const candidate = Object.freeze({
     ...entry('user'),
+    name: input.name ?? 'alpha',
     path,
     realpath: path,
     root: '/home/fixture/.claude/skills',
@@ -98,7 +101,7 @@ const managedObservation = (
       host: 'github.com',
       repo: 'acme/skills',
       skillPath: 'alpha',
-      refRequested: 'main',
+      refRequested: input.requestedRef ?? 'main',
       refResolved: 'a'.repeat(40),
       pin: false,
       installedAt: '2026-07-18T00:00:00.000Z',
@@ -200,6 +203,24 @@ describe('export classification', () => {
     expect(mismatch.ok && mismatch.value.results[0]).toMatchObject({
       action: 'skipped',
       reason: 'live-content-mismatch',
+    });
+  });
+
+  test('sanitizes invalid manifest names and requested refs before candidate creation', () => {
+    const invalidName = classifyExport(managedObservation({ name: 'bad name' }));
+    expect(invalidName.ok && invalidName.value.portable).toEqual([]);
+    expect(invalidName.ok && invalidName.value.results[0]).toMatchObject({
+      name: 'invalid-name',
+      action: 'skipped',
+      reason: 'invalid-source',
+    });
+
+    const invalidRef = classifyExport(managedObservation({ requestedRef: 'bad ref' }));
+    expect(invalidRef.ok && invalidRef.value.portable).toEqual([]);
+    expect(invalidRef.ok && invalidRef.value.results[0]).toMatchObject({
+      name: 'alpha',
+      action: 'skipped',
+      reason: 'invalid-source',
     });
   });
 });

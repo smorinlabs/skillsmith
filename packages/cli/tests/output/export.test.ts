@@ -34,7 +34,20 @@ const report: ExportReport = Object.freeze({
       reason: 'dirty-git',
     }),
   ]),
-  effects: Object.freeze([]),
+  effects: Object.freeze([
+    Object.freeze({
+      role: 'ledger' as const,
+      action: 'not-written' as const,
+      operationId: null,
+      outcome: 'not-run' as const,
+    }),
+    Object.freeze({
+      role: 'manifest' as const,
+      action: 'create' as const,
+      operationId: 'operation-manifest',
+      outcome: 'planned' as const,
+    }),
+  ]),
   summary: Object.freeze({
     observed: 1,
     portable: 0,
@@ -59,7 +72,9 @@ describe('export output', () => {
   test('human output shows selected pair and every skipped result', () => {
     expect(renderExportHuman(report)).toBe(
       'would export /selected/skillsmith.toml + /selected/skillsmith.lock\n' +
-        'skip alpha: dirty-git\n',
+        'skip alpha: dirty-git\n' +
+        'ledger: not-written (not-run)\n' +
+        'manifest: create (planned) [operation-manifest]\n',
     );
   });
 
@@ -69,6 +84,11 @@ describe('export output', () => {
         ...report,
         artifactSelection: { outcome: 'refused', reason: 'export-existing-conflict' },
       }),
-    ).toBe('export refused: export-existing-conflict\nskip alpha: dirty-git\n');
+    ).toBe(
+      'export refused: export-existing-conflict\n' +
+        'skip alpha: dirty-git\n' +
+        'ledger: not-written (not-run)\n' +
+        'manifest: create (planned) [operation-manifest]\n',
+    );
   });
 });

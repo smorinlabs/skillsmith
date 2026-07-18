@@ -129,6 +129,29 @@ describe('defaultRuntimePorts', () => {
     expect(isPortError(received)).toBeFalse();
   });
 
+  test('normalizes real lock contention to the closed conflict code', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-lock-contention-'));
+    const target = join(root, 'state');
+    let invoked = false;
+    try {
+      await ports.withFileLock(target, async () => {
+        await expect(
+          ports.withFileLock(target, async () => {
+            invoked = true;
+          }),
+        ).rejects.toMatchObject({
+          capability: 'lock',
+          operation: 'withFileLock',
+          code: 'conflict',
+        });
+      });
+      expect(invoked).toBeFalse();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('rejects a pre-aborted lock request without invoking the callback', async () => {
     const ports = await defaultRuntimePorts();
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-lock-cancelled-'));

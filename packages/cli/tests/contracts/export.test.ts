@@ -356,16 +356,29 @@ describe('G4A-02 export command contract', () => {
       '--dry-run',
       '--json',
     ]);
-    await seedManaged(['claude-code'], 'project');
+    await mkdir(join(fleet.env.xdg.config, 'skillsmith'), { recursive: true });
+    await writeFile(join(fleet.env.xdg.config, 'skillsmith', 'config.toml'), 'tool = "codex"\n');
+    await seedManaged(['claude-code', 'codex'], 'project');
     const report = requireJson(
-      await runCli(['export', '--tool', 'claude-code', '--json'], fleet.project),
+      await runCli(['export', '--json'], fleet.project),
       0,
       'bare project export',
     );
     expect(report.requested).toMatchObject({
+      tools: ['codex'],
+      explicitTools: false,
       scope: 'project',
       explicitScope: false,
     });
+    expect(records(report.results).length).toBeGreaterThan(0);
+    expect(
+      records(report.results).every(
+        (row) =>
+          Array.isArray(row.tools) &&
+          row.tools.includes('codex') &&
+          !row.tools.includes('claude-code'),
+      ),
+    ).toBeTrue();
     expect(report.artifactSelection).toMatchObject({
       outcome: 'selected',
       selectedBy: 'project',
@@ -599,6 +612,20 @@ describe('G4A-02 export command contract', () => {
     expect(records(cancelled.effects).some((effect) => effect.outcome === 'cancelled')).toBeTrue();
     expect(await readMaybe(cancelledPaths.manifest)).toBeNull();
     expect(await readMaybe(cancelledPaths.lock)).toBeNull();
+
+    const contendedPaths = exportPaths('contended');
+    let contendedProduct: CliProduct | null = null;
+    await fleet.env.withFileLock(ledgerPathOf(fleet.data), async () => {
+      contendedProduct = await runCli(exportArgs(contendedPaths));
+    });
+    if (contendedProduct === null) throw new Error('contended export product was unavailable');
+    const contended = requireJson(contendedProduct, 3, 'ledger lock contention');
+    expect(contended).toMatchObject({
+      kind: 'skillsmith.export',
+      artifactSelection: { outcome: 'refused', reason: 'export-lock-contention' },
+    });
+    expect(await readMaybe(contendedPaths.manifest)).toBeNull();
+    expect(await readMaybe(contendedPaths.lock)).toBeNull();
   });
 
   test('EWP-CMD-EXPORT-TS08 local and credential canaries never cross the portable boundary', async () => {

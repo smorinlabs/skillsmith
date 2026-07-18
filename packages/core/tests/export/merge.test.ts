@@ -127,6 +127,15 @@ describe('portable export merge', () => {
     ).toMatchObject({ ok: false, error: { code: 'export-custom-path-conflict' } });
   });
 
+  test('force refuses a mixed default-path and custom-path multi-tool group', () => {
+    expect(
+      mergePortableCandidates(
+        [candidate('claude-code'), candidate('codex', { path: '~/portable/alpha' })],
+        true,
+      ),
+    ).toMatchObject({ ok: false, error: { code: 'export-custom-path-conflict' } });
+  });
+
   test('preserves a compatible human ref while refreshing only exact lock facts', () => {
     const manifest: NormalizedManifestV1 = Object.freeze({
       version: 1,
