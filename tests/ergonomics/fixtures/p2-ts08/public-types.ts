@@ -43,12 +43,14 @@ import {
   fromLockV1Dto,
   fromManifestV1Dto,
   fromSavedPlanV1Dto,
+  initV1Codec,
   journalV1Codec,
   ledgerV1Codec,
   lockV1Codec,
   manifestV1Codec,
   savedPlanV1Codec,
   statusV1Codec,
+  toInitV1Dto,
   toJournalV1Dto,
   toLedgerV1Dto,
   toLockV1Dto,
@@ -57,6 +59,7 @@ import {
   type toStatusV1Dto,
 } from '@skillsmith/core/contracts/v1';
 import type {
+  InitV1Dto,
   JournalV1Dto,
   LedgerV1Dto,
   LockV1Dto,
@@ -118,6 +121,7 @@ type _V1RuntimeClosed = Assert<
     | 'errorV1Codec'
     | 'exportV1Codec'
     | 'healthV1Codec'
+    | 'initV1Codec'
     | 'installV1Codec'
     | 'statusV1Codec'
     | 'toAgentsV1Dto'
@@ -130,6 +134,7 @@ type _V1RuntimeClosed = Assert<
     | 'toErrorV1Dto'
     | 'toExportV1Dto'
     | 'toHealthV1Dto'
+    | 'toInitV1Dto'
     | 'toInstallV1Dto'
     | 'toStatusV1Dto'
     | 'toUninstallV1Dto'
@@ -502,6 +507,7 @@ const _ledgerV1Codec: ArtifactCodec<'ledger', 1, LedgerV1Dto, LedgerModel> = led
 const _ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel> = ledgerV2Codec;
 const _journalCodec: ArtifactCodec<'journal', 1, JournalV1Dto, LogicalJournalV1> = journalV1Codec;
 const _statusCodec: WireCodec<'status', 1, StatusV1Dto> = statusV1Codec;
+const _initV1Codec: WireCodec<'init', 1, InitV1Dto> = initV1Codec;
 const _agentsV2Codec: WireCodec<'agents', 2, AgentsV2Dto> = agentsV2Codec;
 const _commandsV2Codec: WireCodec<'commands', 2, CommandsV2Dto> = commandsV2Codec;
 const _installV2Codec: WireCodec<'install', 2, InstallV2Dto> = installV2Codec;
@@ -533,6 +539,7 @@ const _journalMapper: (value: LogicalJournalV1) => Result<JournalV1Dto, Artifact
 const _journalReverse: (value: JournalV1Dto) => Result<LogicalJournalV1, ArtifactCodecError> =
   fromJournalV1Dto;
 type _StatusMapperReturn = Assert<Equal<ReturnType<typeof toStatusV1Dto>, StatusV1Dto>>;
+const _initV1Mapper: (value: Parameters<typeof toInitV1Dto>[0]) => InitV1Dto = toInitV1Dto;
 const _agentsV2Mapper: (value: AgentsReport) => AgentsV2Dto = toAgentsV2Dto;
 const _commandsV2Mapper: (value: CommandsReport) => CommandsV2Dto = toCommandsV2Dto;
 const _installV2Mapper: (value: CurrentInstallReport) => InstallV2Dto = toInstallV2Dto;
@@ -563,6 +570,7 @@ void [
   _ledgerV2Codec,
   _journalCodec,
   _statusCodec,
+  _initV1Codec,
   _agentsV2Codec,
   _commandsV2Codec,
   _installV2Codec,
@@ -581,6 +589,7 @@ void [
   _ledgerV2Reverse,
   _journalMapper,
   _journalReverse,
+  _initV1Mapper,
   _agentsV2Mapper,
   _commandsV2Mapper,
   _installV2Mapper,

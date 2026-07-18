@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { runInitApplication } from '../../../core/src/application/init-service.ts';
@@ -47,6 +57,7 @@ interface InitFixture {
   readonly config: string;
   readonly data: string;
   readonly cache: string;
+  readonly bin: string;
 }
 
 const fixtures: string[] = [];
@@ -63,10 +74,14 @@ const fixture = async (): Promise<InitFixture> => {
   const config = join(root, 'xdg', 'config');
   const data = join(root, 'xdg', 'data');
   const cache = join(root, 'xdg', 'cache');
+  const bin = join(root, 'bin');
   await Promise.all(
-    [cwd, home, config, data, cache].map((path) => mkdir(path, { recursive: true })),
+    [cwd, home, config, data, cache, bin].map((path) => mkdir(path, { recursive: true })),
   );
-  return { root, cwd, home, config, data, cache };
+  const git = Bun.which('git');
+  if (git === null) throw new Error('init contract fixture requires git');
+  await Promise.all([symlink(process.execPath, join(bin, 'bun')), symlink(git, join(bin, 'git'))]);
+  return { root, cwd, home, config, data, cache, bin };
 };
 
 const runCli = async (
@@ -74,7 +89,7 @@ const runCli = async (
   args: readonly string[],
   cwd = value.cwd,
 ): Promise<CliProduct> => {
-  const process = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
+  const child = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
     cwd,
     env: hermeticGitEnv({
       ...processEnvWithoutConfig(),
@@ -85,6 +100,7 @@ const runCli = async (
       SKILLSMITH_HOME: join(value.data, 'skillsmith'),
       CLAUDE_CONFIG_DIR: join(value.home, '.claude'),
       CODEX_HOME: join(value.home, '.codex'),
+      PATH: value.bin,
       CI: '1',
       NO_COLOR: '1',
     }),
@@ -92,11 +108,11 @@ const runCli = async (
     stdout: 'pipe',
     stderr: 'pipe',
   });
-  const exitCode = await process.exited;
+  const exitCode = await child.exited;
   return {
     exitCode,
-    stdout: await new Response(process.stdout).text(),
-    stderr: await new Response(process.stderr).text(),
+    stdout: await new Response(child.stdout).text(),
+    stderr: await new Response(child.stderr).text(),
   };
 };
 

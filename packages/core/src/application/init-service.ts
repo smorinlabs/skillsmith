@@ -1,5 +1,10 @@
 import { join } from 'node:path';
-import { type BuiltInToolId, SUPPORTED_TOOLS } from '../agents/registry.ts';
+import {
+  type BuiltInToolId,
+  type PlacementToolId,
+  SUPPORTED_TOOLS,
+  toolRegistry,
+} from '../agents/registry.ts';
 import { normalizeRegistryIdentity } from '../artifacts/identity.ts';
 import { isInitConfigSnapshotEligible, planInitManifest } from '../artifacts/init.ts';
 import { resolveArtifactPair, resolveExplicitArtifactPairLexically } from '../artifacts/pair.ts';
@@ -30,7 +35,9 @@ import type {
   Diagnostic,
 } from './types.ts';
 
-const WRITABLE_TOOLS = Object.freeze(['claude-code', 'codex'] as const);
+const WRITABLE_TOOLS = Object.freeze([
+  ...toolRegistry.toolsFor('plan'),
+]) as readonly PlacementToolId[];
 const writable = new Set<string>(WRITABLE_TOOLS);
 
 export type InitApplicationReport = InitReport | null;
@@ -291,13 +298,6 @@ export const runInitApplication: ApplicationService<
     } else {
       const detected: BuiltInToolId[] = [];
       for (const tool of WRITABLE_TOOLS) {
-        const configuredRoot =
-          tool === 'claude-code'
-            ? context.configuration.claudeConfigDir
-            : context.configuration.codexHome;
-        if (configuredRoot !== undefined && !(await context.ports.fileExists(configuredRoot))) {
-          continue;
-        }
         const result = await detectTool(context.ports, tool, context.signal);
         if (!result.ok) return fail(diagnosticForDetection(tool));
         if (result.value.length > 0) detected.push(tool);

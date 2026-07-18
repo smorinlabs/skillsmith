@@ -1,27 +1,31 @@
 import { isAbsolute, join, normalize, parse } from 'node:path';
 import { z } from 'zod';
+import { type PlacementToolId, toolRegistry } from '../../agents/registry.ts';
 import { normalizePortablePath, normalizeRegistryIdentity } from '../../artifacts/identity.ts';
 import type { InitReport } from '../../init/types.ts';
 import { containsSensitiveMaterial } from '../../safety/redaction.ts';
 import { createJsonWireCodec } from '../codec.ts';
 
-const WritableToolSchema = z.enum(['claude-code', 'codex']);
-const writableToolOrder = new Map([
-  ['claude-code', 0],
-  ['codex', 1],
-] as const);
+const writableTools = Object.freeze([
+  ...toolRegistry.toolsFor('plan'),
+]) as readonly PlacementToolId[];
+const WritableToolSchema = z.enum(
+  writableTools as readonly [PlacementToolId, ...PlacementToolId[]],
+);
+const writableToolOrder = new Map(writableTools.map((tool, index) => [tool, index] as const));
 const WritableToolsSchema = z
   .array(WritableToolSchema)
-  .max(2)
+  .max(writableTools.length)
   .refine(
     (tools) =>
       new Set(tools).size === tools.length &&
-      tools.every(
-        (tool, index) =>
-          index === 0 ||
-          (writableToolOrder.get(tools[index - 1] ?? 'claude-code') ?? -1) <
-            (writableToolOrder.get(tool) ?? -1),
-      ),
+      tools.every((tool, index) => {
+        const previous = tools[index - 1];
+        return (
+          previous === undefined ||
+          (writableToolOrder.get(previous) ?? -1) < (writableToolOrder.get(tool) ?? -1)
+        );
+      }),
     'init tools must be unique and in registry order',
   );
 const DefaultToolsSchema = WritableToolsSchema.refine(
