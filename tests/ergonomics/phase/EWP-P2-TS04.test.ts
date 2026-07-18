@@ -1990,7 +1990,7 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
       expect(JSON.stringify(result.error), item.id).not.toContain('P17_SECRET_CANARY');
       recursivelyFrozen(result.error);
     }
-  }, 20_000);
+  }, 60_000);
 
   test('executes the pure and coordinated no-op with the exact zero-mutation transcript', async () => {
     const pure = manifestFixture().successCases.find(

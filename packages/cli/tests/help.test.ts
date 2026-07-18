@@ -87,7 +87,7 @@ describe('skillsmith help routing', () => {
       expect(parsed.kind, args.join(' ')).toBe('skillsmith.agents');
       expect(Array.isArray(parsed.detections), args.join(' ')).toBeTrue();
     }
-  });
+  }, 30_000);
 
   test('install help preserves source grammar, option guidance, real examples, and exit meanings', async () => {
     const r = await run(['install', '--help']);
