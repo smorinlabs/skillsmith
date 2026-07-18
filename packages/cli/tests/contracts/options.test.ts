@@ -963,6 +963,11 @@ describe('EWP-OPT-TS04', () => {
       for (const option of ['--dry-run', '--yes', '--no-prompt', '--json']) {
         expect(options.has(option)).toBeTrue();
       }
+      if (commandName === 'install' || commandName === 'uninstall') {
+        const approval = command.options.find((option) => option.long === '--yes');
+        expect(approval?.description).toContain('Approve');
+        expect(approval?.description).not.toContain('no-op');
+      }
       expect(Object.hasOwn(NON_MUTATING_MODE_POLICIES, commandName)).toBeTrue();
     }
     for (const commandName of ['dev', 'promote'] as const) {

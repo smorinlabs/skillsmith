@@ -120,7 +120,8 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
     'Change live placement without inspecting or changing portable desired state',
   'skillsmith install:--path':
     'Use a custom placement directory for one source and one effective tool',
-  'skillsmith install:--yes': 'Accepted no-op; ambiguity still requires an explicit choice',
+  'skillsmith install:--yes':
+    'Approve a multi-group or backup-and-replace install plan without prompting',
   'skillsmith uninstall:--tool': 'Restrict removal to tools; repeatable',
   'skillsmith uninstall:--scope': 'Restrict removal to user or project scope',
   'skillsmith uninstall:--all-scopes': 'Remove from user scope and the current project',
@@ -132,7 +133,8 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith uninstall:--lockfile': 'Use an explicit lockfile (requires --file)',
   'skillsmith uninstall:--no-save':
     'Change live placement without inspecting or changing portable desired state',
-  'skillsmith uninstall:--yes': 'Accepted no-op; uninstall never prompts',
+  'skillsmith uninstall:--yes':
+    'Approve a multi-group or backup-and-replace uninstall plan without prompting',
   'skillsmith dev:--all': 'Demote every pinned placement with a recorded dev source',
   'skillsmith dev:--tool': 'Restrict to tools; repeatable',
   'skillsmith dev:--scope': 'Restrict selection to user or current-project placements',

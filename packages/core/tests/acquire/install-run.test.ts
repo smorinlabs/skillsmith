@@ -701,7 +701,9 @@ describe('runInstall — tool detection', () => {
     }
     const manifest = manifestV1Codec.decode(await f.env.readBytes(file));
     if (!manifest.ok) throw new Error(manifest.error.message);
-    expect(manifest.value.model.skills).toMatchObject([
+    expect(
+      [...manifest.value.model.skills].sort((left, right) => left.name.localeCompare(right.name)),
+    ).toMatchObject([
       { name: 'factor-scan', tools: ['claude-code', 'codex'] },
       { name: 'lint', tools: ['claude-code', 'codex'] },
     ]);
