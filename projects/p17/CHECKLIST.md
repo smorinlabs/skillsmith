@@ -1186,7 +1186,7 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
 ## P17-G4A-04 — Multi-source/tool partial-success, crash, and commit-boundary semantics
 
-Phase: 4A; status: **ready**; dependencies: P17-G4A-01, P17-G4A-02, P17-G4A-03.
+Phase: 4A; status: **active**; dependencies: P17-G4A-01, P17-G4A-02, P17-G4A-03.
 Required-now validations: EWP-CMD-INSTALL-TS08, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS06, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS07, EWP-P3B-TS03, EWP-P3B-TS05, EWP-P4A-TS02.
 Downstream coverage obligations: EWP-WF13.
 
@@ -1194,7 +1194,7 @@ Downstream coverage obligations: EWP-WF13.
 
 - [x] P17-G4A-04:mapped _(passed)_
 - [x] P17-G4A-04:ready _(passed)_
-- [ ] P17-G4A-04:test-first _(pending)_
+- [x] P17-G4A-04:test-first _(passed)_
 - [ ] P17-G4A-04:minimal-implementation _(pending)_
 - [ ] P17-G4A-04:targeted-green _(pending)_
 - [ ] P17-G4A-04:impacted-green _(pending)_
@@ -1205,8 +1205,8 @@ Downstream coverage obligations: EWP-WF13.
 
 ### Tracked entities
 
-- [ ] **EWP-P4A-T03** — Define multi-source/multi-tool partial-success commit semantics for manifest, _(phase-task; ready)_
-- [ ] **EWP-P4A-TS02** — Manifest/lock/live/ledger crash and partial-failure matrix. _(phase-test; planned)_
+- [ ] **EWP-P4A-T03** — Define multi-source/multi-tool partial-success commit semantics for manifest, _(phase-task; red)_
+- [ ] **EWP-P4A-TS02** — Manifest/lock/live/ledger crash and partial-failure matrix. _(phase-test; failing)_
 
 ## P17-G4B-01 — Desired/current planner, prune selection, renderers, check exits, and idempotence
 
