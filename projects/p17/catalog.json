@@ -5354,12 +5354,12 @@
           "evidence": ["projects/p17/evidence/P17-G4A-01.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green"]
         },
         "refactor": {
           "status": "pending",
@@ -5391,7 +5391,8 @@
         "projects/p17/evidence/P17-G4A-01.md#terminal-uninstall-runner-extraction-amendment",
         "projects/p17/evidence/P17-G4A-01.md#terminal-signed-compatibility-fixture-amendment",
         "projects/p17/evidence/P17-G4A-01.md#terminal-full-suite-structural-compatibility-amendment",
-        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation"
+        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green"
       ]
     },
     {
@@ -13932,7 +13933,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS01",
       "target": {
@@ -13942,6 +13943,7 @@
         "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS01"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-install-ts01",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts01"
       ],
       "secondaryGroups": [],
@@ -13978,7 +13980,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS02",
       "target": {
@@ -13988,6 +13990,7 @@
         "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS02"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-install-ts02",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts02"
       ],
       "secondaryGroups": [],
@@ -14024,7 +14027,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS03",
       "target": {
@@ -14034,6 +14037,7 @@
         "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS03"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-install-ts03",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts03"
       ],
       "secondaryGroups": [],
@@ -14070,7 +14074,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS04",
       "target": {
@@ -14080,6 +14084,7 @@
         "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS04"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-install-ts04",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts04"
       ],
       "secondaryGroups": [],
@@ -14116,7 +14121,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS05",
       "target": {
@@ -14126,6 +14131,7 @@
         "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS05"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-install-ts05",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts05"
       ],
       "secondaryGroups": [],
@@ -14162,7 +14168,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS06",
       "target": {
@@ -14172,6 +14178,7 @@
         "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS06"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-install-ts06",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts06"
       ],
       "secondaryGroups": [],
@@ -14208,7 +14215,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS07",
       "target": {
@@ -14218,6 +14225,7 @@
         "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS07"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-install-ts07",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts07"
       ],
       "secondaryGroups": [],
@@ -14254,7 +14262,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS08",
       "target": {
@@ -14264,6 +14272,7 @@
         "command": "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS08"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-install-ts08",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-install-ts08"
       ],
       "secondaryGroups": [],
@@ -16189,7 +16198,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS01",
       "target": {
@@ -16199,6 +16208,7 @@
         "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS01"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-uninstall-ts01",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts01"
       ],
       "secondaryGroups": [],
@@ -16235,7 +16245,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS02",
       "target": {
@@ -16245,6 +16255,7 @@
         "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS02"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-uninstall-ts02",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts02"
       ],
       "secondaryGroups": [],
@@ -16281,7 +16292,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS03",
       "target": {
@@ -16291,6 +16302,7 @@
         "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-uninstall-ts03",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts03"
       ],
       "secondaryGroups": [],
@@ -16327,7 +16339,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS04",
       "target": {
@@ -16337,6 +16349,7 @@
         "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS04"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-uninstall-ts04",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts04"
       ],
       "secondaryGroups": [],
@@ -16373,7 +16386,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS05",
       "target": {
@@ -16383,6 +16396,7 @@
         "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS05"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-uninstall-ts05",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts05"
       ],
       "secondaryGroups": [],
@@ -16419,7 +16433,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS06",
       "target": {
@@ -16429,6 +16443,7 @@
         "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS06"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-uninstall-ts06",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts06"
       ],
       "secondaryGroups": [],
@@ -16465,7 +16480,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS07",
       "target": {
@@ -16475,6 +16490,7 @@
         "command": "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS07"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-cmd-uninstall-ts07",
         "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-cmd-uninstall-ts07"
       ],
       "secondaryGroups": [],
@@ -20600,7 +20616,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-01",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01",
       "target": null,
@@ -20609,7 +20625,9 @@
         "projects/p17/evidence/P17-G4A-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G4A-01.md#minimal-implementation-ownership-amendment",
         "projects/p17/evidence/P17-G4A-01.md#lease-owned-missing-parent-amendment",
-        "projects/p17/evidence/P17-G4A-01.md#unmanaged-replacement-backup-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#unmanaged-replacement-backup-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -20832,7 +20850,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:tests/ergonomics/phase/EWP-P4A-TS01.test.ts#EWP-P4A-TS01",
       "target": {
@@ -20841,7 +20859,10 @@
         "selector": "EWP-P4A-TS01",
         "command": "bun test tests/ergonomics/phase/EWP-P4A-TS01.test.ts --test-name-pattern EWP-P4A-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-p4a-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-p4a-ts01",
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-p4a-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4A-TS01"],
@@ -22224,7 +22245,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:tests/ergonomics/workflows/EWP-WF02.test.ts#EWP-WF02",
       "target": {
@@ -22233,7 +22254,10 @@
         "selector": "EWP-WF02",
         "command": "bun test tests/ergonomics/workflows/EWP-WF02.test.ts --test-name-pattern EWP-WF02"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-wf02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-01.md#green-execution-receipt-ewp-wf02",
+        "projects/p17/evidence/P17-G4A-01.md#red-execution-receipt-ewp-wf02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-WF02"],

@@ -256,7 +256,7 @@ Tracked entities: **425** across **45** change groups.
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
 | EWP-WF01 | P17-G6-04 | planned | release |
-| EWP-WF02 | P17-G4A-01 | failing | required-pr |
+| EWP-WF02 | P17-G4A-01 | passing | required-pr |
 | EWP-WF03 | P17-G4A-03 | planned | required-pr |
 | EWP-WF04 | P17-G4A-02 | planned | required-pr |
 | EWP-WF05 | P17-G5-03 | planned | required-pr |
@@ -1082,8 +1082,8 @@ Downstream coverage obligations: none.
 - [x] P17-G4A-01:ready _(passed)_
 - [x] P17-G4A-01:test-first _(passed)_
 - [x] P17-G4A-01:minimal-implementation _(passed)_
-- [ ] P17-G4A-01:targeted-green _(pending)_
-- [ ] P17-G4A-01:impacted-green _(pending)_
+- [x] P17-G4A-01:targeted-green _(passed)_
+- [x] P17-G4A-01:impacted-green _(passed)_
 - [ ] P17-G4A-01:refactor _(pending)_
 - [ ] P17-G4A-01:adversarial-review _(pending)_
 - [ ] P17-G4A-01:traceability-closure _(pending)_
@@ -1095,24 +1095,24 @@ Downstream coverage obligations: none.
 - [ ] **COMMAND:uninstall** — Manage — How do I remove a skill and its desired-state declaration? _(command; planned)_
 - [ ] **D-006** — Desired-state-first install and uninstall _(decision; planned)_
 - [ ] **EWP-CF-020** — Define imperative-to-declarative option translation _(finding; planned)_
-- [ ] **EWP-CMD-INSTALL-TS01** — source grammar and ambiguity picker/noninteractive refusal, including _(command-test; failing)_
-- [ ] **EWP-CMD-INSTALL-TS02** — auto/explicit tool detection and capability validation. _(command-test; failing)_
-- [ ] **EWP-CMD-INSTALL-TS03** — scope/default/shadowing, shared project-root/ledger identity, and _(command-test; failing)_
-- [ ] **EWP-CMD-INSTALL-TS04** — static/deep/strict/no-verify gate matrix. _(command-test; failing)_
-- [ ] **EWP-CMD-INSTALL-TS05** — symlink/direct/ref/force/noop/update/repair actions plus pin rewriting _(command-test; failing)_
-- [ ] **EWP-CMD-INSTALL-TS06** — explicit-file/unique-owner/new-by-scope destination precedence, _(command-test; failing)_
-- [ ] **EWP-CMD-INSTALL-TS07** — no-save, dry-run, JSON, quiet, verbose, and error output contracts; _(command-test; failing)_
-- [ ] **EWP-CMD-INSTALL-TS08** — source-group fail-fast/continue, truthful partial results, SIGINT, and _(command-test; failing)_
-- [ ] **EWP-CMD-UNINSTALL-TS01** — name/path resolution and not-installed idempotence. _(command-test; failing)_
-- [ ] **EWP-CMD-UNINSTALL-TS02** — tool/scope/all-scopes ambiguity and selection plus project identity _(command-test; failing)_
-- [ ] **EWP-CMD-UNINSTALL-TS03** — managed/dev/unmanaged/edited-copy bounded force and backup safety, _(command-test; failing)_
-- [ ] **EWP-CMD-UNINSTALL-TS04** — explicit or unique declaration-owner selection, dual-owner zero-write _(command-test; failing)_
-- [ ] **EWP-CMD-UNINSTALL-TS05** — no-save, dry-run, force/confirmation independence, noninteractive, _(command-test; failing)_
-- [ ] **EWP-CMD-UNINSTALL-TS06** — store-retention and undo eligibility. _(command-test; failing)_
-- [ ] **EWP-CMD-UNINSTALL-TS07** — partial pair failure, crash/same-op resume, and opposite-op refusal. _(command-test; failing)_
-- [ ] **EWP-P4A-T01** — Integrate install/uninstall default-save, ownership-first destination discovery, _(phase-task; red)_
-- [ ] **EWP-P4A-TS01** — Default-save and no-save operation snapshots covering explicit file, unique _(phase-test; failing)_
-- [ ] **EWP-WF02** — Temporary live-only install _(workflow; failing)_
+- [ ] **EWP-CMD-INSTALL-TS01** — source grammar and ambiguity picker/noninteractive refusal, including _(command-test; passing)_
+- [ ] **EWP-CMD-INSTALL-TS02** — auto/explicit tool detection and capability validation. _(command-test; passing)_
+- [ ] **EWP-CMD-INSTALL-TS03** — scope/default/shadowing, shared project-root/ledger identity, and _(command-test; passing)_
+- [ ] **EWP-CMD-INSTALL-TS04** — static/deep/strict/no-verify gate matrix. _(command-test; passing)_
+- [ ] **EWP-CMD-INSTALL-TS05** — symlink/direct/ref/force/noop/update/repair actions plus pin rewriting _(command-test; passing)_
+- [ ] **EWP-CMD-INSTALL-TS06** — explicit-file/unique-owner/new-by-scope destination precedence, _(command-test; passing)_
+- [ ] **EWP-CMD-INSTALL-TS07** — no-save, dry-run, JSON, quiet, verbose, and error output contracts; _(command-test; passing)_
+- [ ] **EWP-CMD-INSTALL-TS08** — source-group fail-fast/continue, truthful partial results, SIGINT, and _(command-test; passing)_
+- [ ] **EWP-CMD-UNINSTALL-TS01** — name/path resolution and not-installed idempotence. _(command-test; passing)_
+- [ ] **EWP-CMD-UNINSTALL-TS02** — tool/scope/all-scopes ambiguity and selection plus project identity _(command-test; passing)_
+- [ ] **EWP-CMD-UNINSTALL-TS03** — managed/dev/unmanaged/edited-copy bounded force and backup safety, _(command-test; passing)_
+- [ ] **EWP-CMD-UNINSTALL-TS04** — explicit or unique declaration-owner selection, dual-owner zero-write _(command-test; passing)_
+- [ ] **EWP-CMD-UNINSTALL-TS05** — no-save, dry-run, force/confirmation independence, noninteractive, _(command-test; passing)_
+- [ ] **EWP-CMD-UNINSTALL-TS06** — store-retention and undo eligibility. _(command-test; passing)_
+- [ ] **EWP-CMD-UNINSTALL-TS07** — partial pair failure, crash/same-op resume, and opposite-op refusal. _(command-test; passing)_
+- [ ] **EWP-P4A-T01** — Integrate install/uninstall default-save, ownership-first destination discovery, _(phase-task; green)_
+- [ ] **EWP-P4A-TS01** — Default-save and no-save operation snapshots covering explicit file, unique _(phase-test; passing)_
+- [ ] **EWP-WF02** — Temporary live-only install _(workflow; passing)_
 - [ ] **P1-09** — Desired-state-first install and uninstall _(recommendation; planned)_
 
 ## P17-G4A-02 — Export classification, safe merge, portable intent, and writer integration
