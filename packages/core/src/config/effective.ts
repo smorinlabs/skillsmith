@@ -18,6 +18,8 @@ export interface ResolveEffectiveConfigOptions {
   readonly cli?: Config;
   readonly configuration: ResolvedRuntimeConfiguration;
   readonly readFile?: (path: string) => Promise<string>;
+  /** Init-only bounded exclusion: an invalid automatic project layer remains classifier input. */
+  readonly automaticProjectTargetPath?: string;
 }
 
 const ORDER = [
@@ -89,12 +91,18 @@ export const resolveEffectiveConfig = async (
     }
     return pending;
   };
-  const [system, user, project, explicitFile] = await Promise.all([
+  const [system, user, loadedProject, explicitFile] = await Promise.all([
     loadLayer(env, paths.system, readFile, false),
     loadLayer(env, paths.user, readFile, false),
     loadProjectLayer(paths.project ?? null),
     loadProjectLayer(paths['explicit-file'] ?? null),
   ]);
+  const project =
+    !loadedProject.ok &&
+    paths.project === options.automaticProjectTargetPath &&
+    paths['explicit-file'] !== options.automaticProjectTargetPath
+      ? ok<LoadedLayer>({ config: {} })
+      : loadedProject;
   if (!system.ok) return system;
   if (!user.ok) return user;
   if (!project.ok) return project;

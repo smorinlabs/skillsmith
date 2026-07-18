@@ -42,6 +42,8 @@ import {
   hashSourceContentV1,
   INIT_MANIFEST_OPERATION_KINDS,
   planInitManifest,
+  prepareInitOperationPlan,
+  runInitApplication,
   projectSourceContent,
   readPortableLockSource,
   readStatus,
@@ -61,6 +63,8 @@ import type {
   InitManifestOperationInput,
   InitManifestRequest,
   InitManifestRefusal,
+  InitReport,
+  InitRequest,
   Logger,
   PortableLockRelationship,
   PortableLockV1,
@@ -103,14 +107,18 @@ target locks, and private durable forward/rollback recovery. The coordinator doe
 HTTP, process, placement, store, ledger, or general runtime authority. Config saving uses the same
 one-file mechanics while retaining its existing public operation.
 
-`planInitManifest` is the pure input beneath future init orchestration. It validates an
+`planInitManifest` is the pure input beneath init orchestration. It validates an
 already-resolved skeleton request plus an absent/present manifest snapshot and returns one frozen,
 path-free `create-manifest | replace-manifest | migrate-project-config | noop` input or a fixed
 refusal. Canonical declaration-empty bytes and their byte/semantic hashes are constructed together;
 before images contain hashes and shape only, never raw source bytes. Legacy project conversion is
 one internal range-preserving authority shared by init, manifest editing, and project-config edits.
-This API does not discover destinations, register a CLI command, read or write files, acquire locks,
-or execute the returned input.
+The `runInitApplication` service resolves the selected project/XDG/explicit destination and bounded
+writable-tool defaults, projects the pure result through `prepareInitOperationPlan`, and executes
+the single manifest operation through the shared scheduler and artifact coordinator. Init never
+writes the sibling lock, live roots, store, or ledger. Force authorizes only exact replacement of
+the selected manifest; future state remains a refusal. The pure API itself still performs no
+discovery, locking, or persistence.
 
 Remote acquisition exposes only canonical, credential-free source DTOs. Literal arguments,
 userinfo, query strings, fragments, and local/foreign path spellings are rejected before transport
@@ -131,9 +139,12 @@ Versioned wire contracts use dedicated entry points so DTO authority does not mi
 import { createWireContractRegistry } from '@skillsmith/core/contracts';
 import {
   agentsV1Codec,
+  initV1Codec,
   statusV1Codec,
+  type InitV1Dto,
   type StatusV1Dto,
   toAgentsV1Dto,
+  toInitV1Dto,
   toStatusV1Dto,
 } from '@skillsmith/core/contracts/v1';
 import {
@@ -148,7 +159,7 @@ import { listV3Codec, toListV3Dto } from '@skillsmith/core/contracts/v3';
 ```
 
 The current codec IDs are `agents`, `health`, `commands`, `config-get`, `config-list`, `config-set`,
-`config-unset`, `flip`, `install`, `list`, `status`, `uninstall`, `verify`, `error`, and
+`config-unset`, `flip`, `init`, `install`, `list`, `status`, `uninstall`, `verify`, `error`, and
 `capability-snapshot`. Codecs recursively reject unknown object fields, validate before encoding,
 preserve their declared JSON framing, and return sanitized `Result` errors rather than throwing for
 untrusted input. Explicit `to*Dto` mappers keep domain-only fields out of public wire shapes. See

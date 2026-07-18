@@ -1,4 +1,5 @@
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { types as utilTypes } from 'node:util';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import {
@@ -33,6 +34,7 @@ import {
   sameArtifactRevision,
 } from './file-state.ts';
 import {
+  type ArtifactDigest,
   HASH_SCHEMA_VERSION,
   hashCanonicalInput,
   hashManifestBytes,
@@ -65,6 +67,7 @@ type DesiredRole = {
   readonly afterMode: number | null;
   readonly changed: boolean;
   readonly opaqueBefore: boolean;
+  readonly opaqueManifestBackup: boolean;
 };
 
 const compareUtf8 = (left: string, right: string): number =>
@@ -1150,6 +1153,7 @@ const makeDesiredRoles = (
         !equalBytes(currentLock, lockBytes) ||
         (lockMode !== null && snapshot.lock.state === 'file' && snapshot.lock.mode !== lockMode),
       opaqueBefore: request.lock.kind === 'replace-invalid',
+      opaqueManifestBackup: false,
     }),
     Object.freeze({
       role: 'manifest' as const,
@@ -1164,6 +1168,7 @@ const makeDesiredRoles = (
           snapshot.manifest.state === 'file' &&
           snapshot.manifest.mode !== manifest.mode),
       opaqueBefore: false,
+      opaqueManifestBackup: false,
     }),
   ]);
 };
@@ -1288,7 +1293,7 @@ const recordFor = (
   );
   const objects: ArtifactRecoveryObject[] = [];
   for (const role of roles.filter((entry) => entry.changed)) {
-    if (role.before.state === 'file') {
+    if (role.before.state === 'file' && !role.opaqueManifestBackup) {
       validateCandidateBytes(role.before.bytes, role.role);
     }
     const directory = directoryByParent.get(dirname(role.path)) as ArtifactRecoveryDirectory;
@@ -3338,6 +3343,33 @@ export const updateCoordinatedHumanFile = async (
 ): Promise<Result<CoordinatedHumanFileResult, ArtifactMutationError>> => {
   try {
     validatePath(request.path);
+    const opaqueAuthorization = request.opaqueManifestBackup;
+    let opaqueDigest: ArtifactDigest | undefined;
+    if (opaqueAuthorization !== undefined) {
+      const prototype =
+        typeof opaqueAuthorization === 'object' && opaqueAuthorization !== null
+          ? Object.getPrototypeOf(opaqueAuthorization)
+          : null;
+      const descriptors: { readonly expectedResourceDigest?: PropertyDescriptor } =
+        typeof opaqueAuthorization === 'object' && opaqueAuthorization !== null
+          ? Object.getOwnPropertyDescriptors(opaqueAuthorization)
+          : {};
+      const digestDescriptor = descriptors.expectedResourceDigest;
+      if (
+        typeof opaqueAuthorization !== 'object' ||
+        opaqueAuthorization === null ||
+        utilTypes.isProxy(opaqueAuthorization) ||
+        (prototype !== Object.prototype && prototype !== null) ||
+        Reflect.ownKeys(opaqueAuthorization).length !== 1 ||
+        digestDescriptor === undefined ||
+        !('value' in digestDescriptor) ||
+        typeof digestDescriptor.value !== 'string' ||
+        !/^sha256:[0-9a-f]{64}$/u.test(digestDescriptor.value)
+      ) {
+        throw artifactMutationError('invalid-request', { role: 'manifest' });
+      }
+      opaqueDigest = digestDescriptor.value as ArtifactDigest;
+    }
     const usedIds = new Set<string>();
     return await withCentralHeld(ports, request.signal, async (operationId, barrier) => {
       await resolveOverlaps(ports, [request.path], operationId, barrier, request.signal);
@@ -3380,6 +3412,12 @@ export const updateCoordinatedHumanFile = async (
           ) {
             return ok(Object.freeze({ outcome: 'unchanged' as const, revision: fresh }));
           }
+          if (
+            opaqueDigest !== undefined &&
+            (fresh.state !== 'file' || fresh.digest !== opaqueDigest)
+          ) {
+            return err(artifactMutationError('external-writer-conflict'));
+          }
           const role: DesiredRole = Object.freeze({
             role: 'manifest',
             digestKind: 'resource',
@@ -3389,6 +3427,7 @@ export const updateCoordinatedHumanFile = async (
             afterMode: finalEdit.mode,
             changed: true,
             opaqueBefore: false,
+            opaqueManifestBackup: opaqueDigest !== undefined,
           });
           const final = await commitRoles(
             ports,

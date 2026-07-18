@@ -89,7 +89,8 @@ const validArtifactImages = (
         sameLocation(before.resource.location, after.location)) ||
         (before.kind === 'manifest' &&
           before.shape === 'canonical' &&
-          sameLocation(before.location, after.location)))
+          sameLocation(before.location, after.location)) ||
+        (before.kind === 'opaque-manifest' && sameLocation(before.location, after.location)))
     );
   }
   return (
@@ -101,7 +102,10 @@ const validArtifactImages = (
   );
 };
 
-const validateArtifactPrerequisite = (operation: ExecutableOperation<string>): void => {
+const validateArtifactPrerequisite = (
+  command: CurrentMutatorCommand,
+  operation: ExecutableOperation<string>,
+): void => {
   const kind: ArtifactPrerequisiteKind = isArtifactPrerequisiteKind(operation.kind)
     ? operation.kind
     : fail(`null-pair operation ${operation.operationId} has an unsupported kind`);
@@ -115,10 +119,27 @@ const validateArtifactPrerequisite = (operation: ExecutableOperation<string>): v
   }
   if (
     operation.reversibility.kind !== 'none' ||
-    operation.reversibility.retentionResourceIds.length !== 0 ||
-    operation.conflict !== null
+    operation.reversibility.retentionResourceIds.length !== 0
   ) {
-    fail(`artifact prerequisite ${operation.operationId} must be non-reversible and conflict-free`);
+    fail(`artifact prerequisite ${operation.operationId} must be non-reversible`);
+  }
+  const initReplacement =
+    command === 'init' &&
+    kind === 'write-manifest' &&
+    operation.before.kind !== 'absent' &&
+    operation.conflict?.class === 'destination-exists' &&
+    operation.conflict.normal === 'refuse' &&
+    operation.conflict.forced === 'backup-and-replace' &&
+    operation.conflict.backup === 'required' &&
+    operation.conflict.target.kind === 'manifest-bytes' &&
+    sameLocation(
+      operation.conflict.target.location,
+      operation.before.kind === 'manifest' || operation.before.kind === 'opaque-manifest'
+        ? operation.before.location
+        : null,
+    );
+  if (operation.conflict !== null && !initReplacement) {
+    fail(`artifact prerequisite ${operation.operationId} has an invalid conflict`);
   }
   const expectedMutations =
     kind === 'migrate-ledger'
@@ -176,7 +197,7 @@ export const validateExecutionPlanShape = <ToolId extends string = SupportedTool
     const groupCount = groupOperationCounts.get(operation.groupId) ?? 0;
     groupOperationCounts.set(operation.groupId, groupCount + 1);
     if (operation.pairId === null) {
-      validateArtifactPrerequisite(operation);
+      validateArtifactPrerequisite(plan.command, operation);
     } else {
       pairs.set(operation.pairId, (pairs.get(operation.pairId) ?? 0) + 1);
     }

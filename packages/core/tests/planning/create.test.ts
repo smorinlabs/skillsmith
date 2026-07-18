@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { planInitManifest } from '../../src/artifacts/init.ts';
+import { hashInitResourceBytes, prepareInitOperationPlan } from '../../src/init/plan.ts';
 import {
   type ExecutableOperation,
   type ExecutableOperationKind,
@@ -842,5 +844,54 @@ describe('planning constructors', () => {
       selection: { source: 'bounded-default', outcome: 'filter-noop' },
       operations: [],
     });
+  });
+
+  test('admits init and keeps opaque manifests confined to write before-images', () => {
+    const bytes = Uint8Array.from([0xff, 0xfe]);
+    const classification = planInitManifest({
+      skeleton: {},
+      current: { state: 'present', bytes },
+      legacyIntent: { requireMatch: [] },
+      force: true,
+    });
+    expect(classification.ok).toBeTrue();
+    if (!classification.ok) return;
+    const prepared = prepareInitOperationPlan({
+      request: {
+        tools: [],
+        explicitTools: false,
+        toolSource: 'none',
+        scope: null,
+        explicitScope: false,
+        file: '/work/skillsmith.toml',
+        force: true,
+      },
+      dryRun: true,
+      defaults: { tools: null, scope: null, path: null, registryDefault: null },
+      selection: {
+        outcome: 'selected',
+        selectedBy: 'explicit-file',
+        manifestPath: '/work/skillsmith.toml',
+        lockPath: '/work/skillsmith.lock',
+        lockSource: 'sibling',
+      },
+      skeleton: {},
+      classification: classification.value,
+      observed: {
+        state: 'file',
+        bytes,
+        resourceDigest: hashInitResourceBytes(bytes),
+        mode: 0o600,
+      },
+    });
+    expect(prepared.plan.command).toBe('init');
+    expect(prepared.plan.operations[0]?.before.kind).toBe('opaque-manifest');
+    const operation = prepared.plan.operations[0] as ExecutableOperation;
+    expect(() =>
+      createOperationPlan({
+        ...prepared.plan,
+        operations: [{ ...operation, after: operation.before }],
+      }),
+    ).toThrow(/opaque manifest outside a write-manifest before-image/i);
   });
 });

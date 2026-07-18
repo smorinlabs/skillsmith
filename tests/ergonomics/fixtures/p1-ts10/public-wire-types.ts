@@ -16,6 +16,7 @@ import {
   type ConfigUnsetV1Dto,
   type ErrorV1Dto,
   type HealthV1Dto,
+  type InitV1Dto,
   type InstallV1Dto,
   type StatusV1Dto,
   type UninstallV1Dto,
@@ -30,6 +31,7 @@ import {
   createVerifyV1Codec,
   errorV1Codec,
   healthV1Codec,
+  initV1Codec,
   installV1Codec,
   statusV1Codec,
   toAgentsV1Dto,
@@ -41,6 +43,7 @@ import {
   toConfigUnsetV1Dto,
   toErrorV1Dto,
   toHealthV1Dto,
+  toInitV1Dto,
   toInstallV1Dto,
   toStatusV1Dto,
   toUninstallV1Dto,
@@ -118,6 +121,8 @@ import type { UninstallV1Dto as ForbiddenUninstallDtoFromV2 } from '@skillsmith/
 import type { VerifyV1Dto as ForbiddenVerifyDtoFromV2 } from '@skillsmith/core/contracts/v2';
 // @ts-expect-error v2 entry point must expose no v1 DTOs
 import type { StatusV1Dto as ForbiddenStatusDtoFromV2 } from '@skillsmith/core/contracts/v2';
+// @ts-expect-error v2 entry point must expose no v1 DTOs
+import type { InitV1Dto as ForbiddenInitDtoFromV2 } from '@skillsmith/core/contracts/v2';
 // @ts-expect-error v2 entry point must expose no v3 DTOs
 import type { ListV3Dto as ForbiddenListDtoFromV2 } from '@skillsmith/core/contracts/v2';
 // @ts-expect-error v3 entry point must expose no v2 DTOs
@@ -157,6 +162,8 @@ type _V1RuntimeClosure = Assert<
     | 'toConfigUnsetV1Dto'
     | 'installV1Codec'
     | 'toInstallV1Dto'
+    | 'initV1Codec'
+    | 'toInitV1Dto'
     | 'statusV1Codec'
     | 'toStatusV1Dto'
     | 'uninstallV1Codec'
@@ -360,6 +367,7 @@ const configListCodec: WireCodec<'config-list', 1, ConfigListV1Dto> = configList
 const configSetCodec: WireCodec<'config-set', 1, ConfigSetV1Dto> = configSetV1Codec;
 const configUnsetCodec: WireCodec<'config-unset', 1, ConfigUnsetV1Dto> = configUnsetV1Codec;
 const installCodec: WireCodec<'install', 1, InstallV1Dto> = installV1Codec;
+const initCodec: WireCodec<'init', 1, InitV1Dto> = initV1Codec;
 const statusCodec: WireCodec<'status', 1, StatusV1Dto> = statusV1Codec;
 const uninstallCodec: WireCodec<'uninstall', 1, UninstallV1Dto> = uninstallV1Codec;
 const verifyCodec: WireCodec<'verify', 1, VerifyV1Dto> = verifyV1Codec;
@@ -386,6 +394,7 @@ type _ConfigUnsetMapperReturn = Assert<
   Equal<ReturnType<typeof toConfigUnsetV1Dto>, ConfigUnsetV1Dto>
 >;
 type _InstallMapperReturn = Assert<Equal<ReturnType<typeof toInstallV1Dto>, InstallV1Dto>>;
+type _InitMapperReturn = Assert<Equal<ReturnType<typeof toInitV1Dto>, InitV1Dto>>;
 type _StatusMapperReturn = Assert<Equal<ReturnType<typeof toStatusV1Dto>, StatusV1Dto>>;
 type _UninstallMapperReturn = Assert<Equal<ReturnType<typeof toUninstallV1Dto>, UninstallV1Dto>>;
 type _VerifyMapperReturn = Assert<Equal<ReturnType<typeof toVerifyV1Dto>, VerifyV1Dto>>;
@@ -438,6 +447,7 @@ export type VersionClosureCanaries = [
   ForbiddenHealthDtoFromV2,
   ForbiddenInstallDtoFromV2,
   ForbiddenStatusDtoFromV2,
+  ForbiddenInitDtoFromV2,
   ForbiddenUninstallDtoFromV2,
   ForbiddenVerifyDtoFromV2,
   ForbiddenAgentsDtoFromV3,
@@ -452,6 +462,7 @@ void [
   configSetCodec,
   configUnsetCodec,
   installCodec,
+  initCodec,
   statusCodec,
   uninstallCodec,
   verifyCodec,
@@ -472,6 +483,7 @@ void [
   toConfigSetV1Dto,
   toConfigUnsetV1Dto,
   toInstallV1Dto,
+  toInitV1Dto,
   toStatusV1Dto,
   toUninstallV1Dto,
   toVerifyV1Dto,
@@ -500,6 +512,7 @@ export type PublicWireCompileContract = {
   readonly configSet: ConfigSetV1Dto;
   readonly configUnset: ConfigUnsetV1Dto;
   readonly install: InstallV1Dto;
+  readonly init: InitV1Dto;
   readonly status: StatusV1Dto;
   readonly uninstall: UninstallV1Dto;
   readonly verify: VerifyV1Dto;

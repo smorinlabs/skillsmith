@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { planInitManifest } from '../../src/artifacts/init.ts';
 import {
   type DurabilityDispositionV1,
   type DurabilityReceiptV1,
@@ -8,6 +9,7 @@ import {
   executeRepositoryLifecycleV1,
 } from '../../src/execution/coordinator.ts';
 import * as publicCore from '../../src/index.ts';
+import { hashInitResourceBytes, prepareInitOperationPlan } from '../../src/init/plan.ts';
 import {
   type ExecutableOperation,
   type OperationDigest,
@@ -487,6 +489,98 @@ describe('G3B-02 execution coordinator', () => {
 
     expect(events).toEqual(['execute']);
     expect(results.map((result) => result.outcome)).toEqual(['succeeded']);
+  });
+
+  test('maps an opaque init before-image to its exact manifest-bytes resource', async () => {
+    const bytes = Uint8Array.from([0xff, 0xfe]);
+    const classification = planInitManifest({
+      skeleton: {},
+      current: { state: 'present', bytes },
+      legacyIntent: { requireMatch: [] },
+      force: true,
+    });
+    expect(classification.ok).toBeTrue();
+    if (!classification.ok) return;
+    const prepared = prepareInitOperationPlan({
+      request: {
+        tools: [],
+        explicitTools: false,
+        toolSource: 'none',
+        scope: null,
+        explicitScope: false,
+        file: '/work/skillsmith.toml',
+        force: true,
+      },
+      dryRun: false,
+      defaults: { tools: null, scope: null, path: null, registryDefault: null },
+      selection: {
+        outcome: 'selected',
+        selectedBy: 'explicit-file',
+        manifestPath: '/work/skillsmith.toml',
+        lockPath: '/work/skillsmith.lock',
+        lockSource: 'sibling',
+      },
+      skeleton: {},
+      classification: classification.value,
+      observed: {
+        state: 'file',
+        bytes,
+        resourceDigest: hashInitResourceBytes(bytes),
+        mode: 0o600,
+      },
+    });
+    const operation = prepared.plan.operations[0] as ExecutableOperation;
+    const createExecutionPrecondition = requireFactory<CreateExecutionPrecondition>(
+      'createExecutionPrecondition',
+    );
+    const expected = { state: 'file', digest: hashInitResourceBytes(bytes) };
+    const precondition = createExecutionPrecondition({
+      operationIds: [operation.operationId],
+      resource: {
+        kind: 'manifest-bytes',
+        location: { kind: 'machine-bound', path: '/work/skillsmith.toml' },
+      },
+      expected,
+      observe: async () => expected,
+    });
+    const plan = {
+      ...prepared.plan,
+      operations: [{ ...operation, preconditionIds: [String(precondition.preconditionId)] }],
+    };
+    const executeOperationPlan = requireFactory<ExecuteOperationPlan>('executeOperationPlan');
+    const results = await executeOperationPlan({
+      plan: plan as unknown as UnknownRecord,
+      bindings: [
+        {
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: null,
+          unstartedForce: {
+            requested: true,
+            applied: false,
+            conflictType: 'destination-exists',
+            target: operation.conflict?.target,
+            normalBehavior: 'refuse',
+            forcedBehavior: 'backup-and-replace',
+            backup: 'required',
+          },
+          observeActualBefore: async () => operation.before,
+          execute: async () =>
+            createOperationExecutionResult({
+              operationId: operation.operationId,
+              outcome: 'succeeded',
+              actualBefore: operation.before,
+              actualAfter: operation.after,
+              force: null,
+              error: null,
+            }),
+        },
+      ],
+      preconditions: [precondition],
+      locks: [],
+      lockPort: { withFileLock: async (_path, callback) => callback() },
+    });
+    expect(results[0]).toMatchObject({ outcome: 'succeeded' });
   });
 });
 

@@ -632,6 +632,53 @@ describe('G3B-02 operation scheduler', () => {
     expect(legacyCalls).toEqual([]);
   });
 
+  test('admits the exact init opaque replacement conflict and no other command', async () => {
+    const seed = artifactOperationFor({ kind: 'write-manifest' });
+    const machineLocation = { kind: 'machine-bound' as const, path: '/work/skillsmith.toml' };
+    const operation: ExecutableOperation = {
+      ...seed,
+      before: {
+        kind: 'opaque-manifest',
+        location: machineLocation,
+        shape: 'malformed',
+        byteHash: CONTENT_HASH,
+      },
+      after:
+        seed.after.kind === 'manifest' ? { ...seed.after, location: machineLocation } : seed.after,
+      conflict: {
+        class: 'destination-exists',
+        normal: 'refuse',
+        forced: 'backup-and-replace',
+        target: { kind: 'manifest-bytes', location: machineLocation },
+        backup: 'required',
+      },
+    };
+    const initPlan = createOperationPlan({
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'init',
+      selection: {
+        source: 'bounded-default',
+        skills: [],
+        tools: [],
+        scopes: [],
+      },
+      batchPolicy: 'fail-fast',
+      operations: [operation],
+      checks: [],
+      diagnostics: [],
+    });
+    const calls: string[] = [];
+    const results = await requireScheduler()(initPlan, [bindingFor(operation, calls)]);
+    expect(results[0]?.outcome).toBe('succeeded');
+    expect(calls).toEqual([operation.operationId]);
+
+    const exportPlan = { ...initPlan, command: 'export' as const };
+    await expect(requireScheduler()(exportPlan, [bindingFor(operation, [])])).rejects.toThrow(
+      /invalid conflict/i,
+    );
+  });
+
   test('gates global ledger migration and same-group artifact failures', async () => {
     const scheduleOperationPlan = requireScheduler();
     const alpha = operationFor({ skill: 'alpha' });

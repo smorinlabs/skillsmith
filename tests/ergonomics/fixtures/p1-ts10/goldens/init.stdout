@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.init",
+  "reportVersion": 1,
+  "dryRun": true,
+  "requested": {
+    "tools": [
+      "codex"
+    ],
+    "explicitTools": true,
+    "toolSource": "explicit",
+    "scope": "project",
+    "explicitScope": true,
+    "file": "/fixture/project/skillsmith.toml",
+    "force": false
+  },
+  "defaults": {
+    "tools": [
+      "codex"
+    ],
+    "scope": "project",
+    "path": null,
+    "registryDefault": null
+  },
+  "artifactSelection": {
+    "outcome": "selected",
+    "selectedBy": "explicit-file",
+    "manifestPath": "/fixture/project/skillsmith.toml",
+    "lockPath": "/fixture/project/skillsmith.lock",
+    "lockSource": "sibling"
+  },
+  "result": {
+    "action": "create-manifest",
+    "operationId": "operation:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "before": {
+      "state": "absent",
+      "shape": null,
+      "byteHash": null,
+      "semanticHash": null
+    },
+    "after": {
+      "state": "canonical",
+      "byteHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "semanticHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "force": {
+    "requested": false,
+    "applied": false,
+    "conflictType": null,
+    "target": null,
+    "normalBehavior": null,
+    "forcedBehavior": null,
+    "backup": null
+  },
+  "effects": [
+    {
+      "role": "manifest",
+      "action": "create",
+      "operationId": "operation:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "outcome": "planned"
+    },
+    {
+      "role": "lock",
+      "action": "not-written",
+      "operationId": null,
+      "outcome": "not-run"
+    },
+    {
+      "role": "live",
+      "action": "not-written",
+      "operationId": null,
+      "outcome": "not-run"
+    },
+    {
+      "role": "ledger",
+      "action": "not-written",
+      "operationId": null,
+      "outcome": "not-run"
+    }
+  ],
+  "summary": {
+    "changed": 1,
+    "unchanged": 0
+  }
+}

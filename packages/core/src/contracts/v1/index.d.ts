@@ -9,6 +9,7 @@ import type {
   ConfigUnsetReport,
   Deprecation,
   ExportReport,
+  InitReport,
   InstallReport,
   LedgerModel,
   LogicalJournalV1,
@@ -497,6 +498,136 @@ export interface ExportV1Dto {
 }
 export declare const exportV1Codec: WireCodec<'export', 1, ExportV1Dto>;
 export declare const toExportV1Dto: (report: ExportReport) => ExportV1Dto;
+
+type InitAbsentBeforeV1Dto = {
+  state: 'absent';
+  shape: null;
+  byteHash: null;
+  semanticHash: null;
+};
+type InitCanonicalBeforeV1Dto = {
+  state: 'present';
+  shape: 'canonical';
+  byteHash: string;
+  semanticHash: string;
+};
+type InitReplaceBeforeV1Dto =
+  | {
+      state: 'present';
+      shape: 'canonical';
+      byteHash: string;
+      semanticHash: string | null;
+    }
+  | {
+      state: 'present';
+      shape: 'mixed' | 'empty' | 'malformed' | 'unknown';
+      byteHash: string;
+      semanticHash: null;
+    };
+type InitLegacyBeforeV1Dto = {
+  state: 'present';
+  shape: 'legacy';
+  byteHash: string;
+  semanticHash: string;
+};
+type InitAfterV1Dto = {
+  state: 'canonical';
+  byteHash: string;
+  semanticHash: string;
+};
+type InitResultV1Dto =
+  | {
+      action: 'create-manifest';
+      operationId: string;
+      before: InitAbsentBeforeV1Dto;
+      after: InitAfterV1Dto;
+    }
+  | {
+      action: 'replace-manifest';
+      operationId: string;
+      before: InitReplaceBeforeV1Dto;
+      after: InitAfterV1Dto;
+    }
+  | {
+      action: 'migrate-project-config';
+      operationId: string;
+      before: InitLegacyBeforeV1Dto;
+      after: InitAfterV1Dto;
+    }
+  | {
+      action: 'noop';
+      operationId: null;
+      before: InitCanonicalBeforeV1Dto;
+      after: null;
+    };
+type InitResourceV1Dto = {
+  kind: 'manifest-bytes';
+  location: { kind: 'machine-bound'; path: string };
+};
+type InitForceV1Dto =
+  | {
+      requested: boolean;
+      applied: false;
+      conflictType: null;
+      target: null;
+      normalBehavior: null;
+      forcedBehavior: null;
+      backup: null;
+    }
+  | {
+      requested: true;
+      applied: boolean;
+      conflictType: 'destination-exists';
+      target: InitResourceV1Dto;
+      normalBehavior: 'refuse';
+      forcedBehavior: 'backup-and-replace';
+      backup: 'required';
+    };
+
+export interface InitV1Dto {
+  schemaVersion: 1;
+  kind: 'skillsmith.init';
+  reportVersion: 1;
+  dryRun: boolean;
+  requested: {
+    tools: ToolId[];
+    explicitTools: boolean;
+    toolSource: 'explicit' | 'config' | 'detected' | 'none';
+    scope: Scope | null;
+    explicitScope: boolean;
+    file: string | null;
+    force: boolean;
+  };
+  defaults: {
+    tools: ToolId[] | null;
+    scope: Scope | null;
+    path: string | null;
+    registryDefault: string | null;
+  };
+  artifactSelection: {
+    outcome: 'selected';
+    selectedBy: 'explicit-file' | 'project' | 'user';
+    manifestPath: string;
+    lockPath: string;
+    lockSource: 'sibling';
+  };
+  result: InitResultV1Dto;
+  force: InitForceV1Dto;
+  effects: [
+    {
+      role: 'manifest';
+      action: 'create' | 'replace' | 'migrate' | 'unchanged';
+      operationId: string | null;
+      outcome: 'planned' | 'succeeded' | 'not-run';
+    },
+    { role: 'lock'; action: 'not-written'; operationId: null; outcome: 'not-run' },
+    { role: 'live'; action: 'not-written'; operationId: null; outcome: 'not-run' },
+    { role: 'ledger'; action: 'not-written'; operationId: null; outcome: 'not-run' },
+  ];
+  summary: { changed: 0 | 1; unchanged: 0 | 1 };
+}
+export declare const initV1Codec: WireCodec<'init', 1, InitV1Dto>;
+export declare const toInitV1Dto: (report: InitReport) => InitV1Dto;
 
 type DeepMutable<T> = T extends Readonly<ArtifactDigest>
   ? ArtifactDigest

@@ -315,6 +315,9 @@ export interface CoordinatedHumanFileEdit {
 export interface CoordinatedHumanFileRequest {
   readonly path: string;
   readonly signal?: AbortSignal;
+  readonly opaqueManifestBackup?: Readonly<{
+    readonly expectedResourceDigest: ArtifactDigest;
+  }>;
   readonly edit: (
     current: ArtifactFileRevision,
   ) => Result<CoordinatedHumanFileEdit, ArtifactMutationError>;

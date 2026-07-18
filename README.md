@@ -5,8 +5,8 @@
 Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill discovery
 and management across Claude Code, Codex, Kilo Code, and opencode.
 
-**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `version`, `completion`, and `help` are implemented.
-**P17 target:** desired-state `init`, `plan`, `apply`, narrow `sync`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
+**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `init`, `version`, `completion`, and `help` are implemented.
+**P17 target:** desired-state `plan`, `apply`, narrow `sync`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
 
 ## Example output
 
@@ -80,6 +80,8 @@ skillsmith config list                  # show effective configuration and sourc
 skillsmith check --report-only          # report CI checks without failing on findings
 skillsmith verify . --static            # statically verify a plugin or bare skill directory
 skillsmith status --tool codex --user   # correlate desired, locked, ledger, and live state
+skillsmith init --dry-run               # preview creation of the selected manifest
+skillsmith init --tool codex --project  # create project defaults without a lock or live import
 skillsmith install owner/repo           # acquire a skill from a git host
 skillsmith uninstall my-skill --tool claude-code --user --dry-run
 skillsmith dev my-skill --tool claude-code --dry-run
@@ -96,6 +98,13 @@ and live skill roots without running verification or writing recovery state. Use
 `--tool`, one scope flag, or skill/path targets to narrow the report; `--file` and optional
 `--lockfile` select an explicit portable pair. Human output is the default, `--json` emits strict
 `status@1`, and `--check` exits nonzero when the selected state contains drift.
+
+`init` creates one declaration-empty canonical manifest. It selects the Git root when available and
+otherwise the XDG user configuration path; `--file`, `--user`, or `--project` select it explicitly.
+Claude Code and Codex defaults may be repeated with `--tool`. Existing canonical-equivalent state
+is a noop, exact legacy project configuration is migrated losslessly, and other existing state
+requires `--force`; future schemas are never downgraded. The sibling lock, live roots, store, and
+placement ledger are not written. `--dry-run` and strict `--json` expose the same operation identity.
 
 ## Supported tools
 

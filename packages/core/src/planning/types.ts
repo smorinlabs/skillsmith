@@ -14,7 +14,8 @@ export type CurrentMutatorCommand =
   | 'dev'
   | 'promote'
   | 'doctor'
-  | 'export';
+  | 'export'
+  | 'init';
 export type OperationScope = 'user' | 'project';
 
 export interface PlanningToolRegistry<ToolId extends string = SupportedTool> {
@@ -114,6 +115,13 @@ export type OperationImage<ToolId extends string = SupportedTool> =
       byteHash: OperationDigest;
       semanticHash: OperationDigest;
       value: OperationManifestSnapshot;
+    }>
+  | Readonly<{
+      /** Runtime-only init before-image. Persisted saved-plan v1 deliberately excludes it. */
+      kind: 'opaque-manifest';
+      location: Extract<OperationLocation, { kind: 'machine-bound' }>;
+      shape: 'canonical' | 'mixed' | 'empty' | 'malformed' | 'unknown';
+      byteHash: OperationDigest;
     }>
   | Readonly<{
       kind: 'lock';

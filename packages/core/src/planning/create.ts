@@ -63,6 +63,7 @@ const currentMutatorCommands = new Set<string>([
   'promote',
   'doctor',
   'export',
+  'init',
 ]);
 
 const fail = (message: string): never => {
@@ -626,6 +627,25 @@ const validateImage = (
     validateManifestSnapshot(image.value, `${path}.value`);
     return;
   }
+  if (image.kind === 'opaque-manifest') {
+    exactKeys(
+      image,
+      ['kind', 'location', 'shape', 'byteHash'],
+      ['kind', 'location', 'shape', 'byteHash'],
+      path,
+    );
+    validateLocation(image.location, `${path}.location`);
+    if (record(image.location, `${path}.location`).kind !== 'machine-bound') {
+      fail(`${path}.location must be machine-bound`);
+    }
+    literal(
+      image.shape,
+      new Set(['canonical', 'mixed', 'empty', 'malformed', 'unknown']),
+      `${path}.shape`,
+    );
+    validateDigest(image.byteHash, `${path}.byteHash`);
+    return;
+  }
   if (image.kind === 'lock') {
     exactKeys(
       image,
@@ -923,6 +943,14 @@ const validateOperation = (
     literal(operation.scope, new Set(['user', 'project']), `${path}.scope`);
   validateImage(operation.before, `${path}.before`, context);
   validateImage(operation.after, `${path}.after`, context);
+  const beforeImage = operation.before as OperationImage<string>;
+  const afterImage = operation.after as OperationImage<string>;
+  if (
+    afterImage.kind === 'opaque-manifest' ||
+    (beforeImage.kind === 'opaque-manifest' && operation.kind !== 'write-manifest')
+  ) {
+    fail(`${path} uses an opaque manifest outside a write-manifest before-image`);
+  }
   validateReason(operation.reason, `${path}.reason`);
   literal(operation.selectionSource, selectionSources, `${path}.selectionSource`);
   const preconditionIds = stringArray(operation.preconditionIds, `${path}.preconditionIds`);

@@ -1109,7 +1109,7 @@ describe('EWP-OPT-TS04', () => {
     );
     expect(delta).toEqual(expected.map(({ path, flags }) => `${path}:${flags}`));
     expect(api.CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0)).toBe(
-      192,
+      201,
     );
   });
 
@@ -1120,7 +1120,7 @@ describe('EWP-OPT-TS04', () => {
       (count, spec) => count + spec.options.length,
       0,
     );
-    if (inventory !== 192) findings.push(`option inventory is ${inventory}, expected 192`);
+    if (inventory !== 201) findings.push(`option inventory is ${inventory}, expected 201`);
 
     const program = buildProgram();
     for (const commandName of ['dev', 'promote'] as const) {

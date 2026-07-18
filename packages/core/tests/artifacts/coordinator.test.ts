@@ -1710,6 +1710,114 @@ source = "github.com/acme/tools//skills/review"
     ).toEqual([]);
   });
 
+  test('admits only an exact resource-digest opaque manifest backup authorization', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-opaque-manifest-'));
+    roots.push(root);
+    const ports = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const path = join(root, 'skillsmith.toml');
+    const canary = 'sk-P17_OPAQUE_BACKUP_CANARY_123456789';
+    const before = Uint8Array.from([0xff, 0xfe, ...new TextEncoder().encode(canary)]);
+    await writeFile(path, before);
+    const digest = hashCanonicalInput('resource', 1, before);
+    expect(digest.ok).toBeTrue();
+    if (!digest.ok) return;
+
+    for (const opaqueManifestBackup of [
+      true,
+      { expectedResourceDigest: 'not-a-digest' },
+      {
+        expectedResourceDigest: digest.value,
+        extra: true,
+      },
+    ]) {
+      const invalid = await updateCoordinatedHumanFile(ports, {
+        path,
+        opaqueManifestBackup: opaqueManifestBackup as never,
+        edit: () =>
+          ok({ bytes: new TextEncoder().encode('version = 1\n'), changed: true, mode: 0o600 }),
+      });
+      expect(invalid).toMatchObject({ ok: false, error: { reason: 'invalid-request' } });
+      expect(new Uint8Array(await readFile(path))).toEqual(before);
+    }
+
+    const stale = await updateCoordinatedHumanFile(ports, {
+      path,
+      opaqueManifestBackup: {
+        expectedResourceDigest: `sha256:${'0'.repeat(64)}` as never,
+      },
+      edit: () =>
+        ok({ bytes: new TextEncoder().encode('version = 1\n'), changed: true, mode: 0o600 }),
+    });
+    expect(stale).toMatchObject({ ok: false, error: { reason: 'external-writer-conflict' } });
+    expect(new Uint8Array(await readFile(path))).toEqual(before);
+
+    const result = await updateCoordinatedHumanFile(ports, {
+      path,
+      opaqueManifestBackup: { expectedResourceDigest: digest.value },
+      edit: () =>
+        ok({ bytes: new TextEncoder().encode('version = 1\n'), changed: true, mode: 0o600 }),
+    });
+    expect(result).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+    expect(await readFile(path, 'utf8')).toBe('version = 1\n');
+    expect(JSON.stringify(result)).not.toContain(canary);
+    expect(await ports.recovery.discover()).toEqual([]);
+  });
+
+  test('recovers an opaque manifest after its exact old bytes become a durable backup', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-opaque-recovery-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const path = join(root, 'skillsmith.toml');
+    const canary = 'sk-P17_OPAQUE_RECOVERY_CANARY_123456789';
+    const before = Uint8Array.from([0xff, 0xfe, ...new TextEncoder().encode(canary)]);
+    const desired = new TextEncoder().encode('version = 1\n');
+    await writeFile(path, before, { mode: 0o640 });
+    const digest = hashCanonicalInput('resource', 1, before);
+    expect(digest.ok).toBeTrue();
+    if (!digest.ok) return;
+
+    let blockCatchRecovery = false;
+    let interrupted = false;
+    const ports = Object.freeze({
+      ...base,
+      recovery: Object.freeze({
+        ...base.recovery,
+        discover: async () => {
+          if (blockCatchRecovery) throw new Error('simulated process death');
+          return base.recovery.discover();
+        },
+      }),
+      afterBarrier: async (barrier: ArtifactPairBarrier) => {
+        if (
+          !interrupted &&
+          barrier.kind === 'record-durable' &&
+          barrier.cursor === 'manifest-install'
+        ) {
+          interrupted = true;
+          blockCatchRecovery = true;
+          throw new Error('hard crash after opaque manifest backup');
+        }
+      },
+    });
+    const request = {
+      path,
+      opaqueManifestBackup: { expectedResourceDigest: digest.value },
+      edit: () => ok({ bytes: desired, changed: true as const, mode: 0o640 }),
+    };
+    const first = await updateCoordinatedHumanFile(ports, request);
+    expect(first.ok).toBeFalse();
+    expect(interrupted).toBeTrue();
+    expect(JSON.stringify(first)).not.toContain(canary);
+
+    blockCatchRecovery = false;
+    const resumed = await updateCoordinatedHumanFile(base, request);
+    expect(resumed.ok).toBeTrue();
+    expect(new Uint8Array(await readFile(path))).toEqual(desired);
+    expect((await base.observe(path)).mode).toBe(0o640);
+    expect(await base.recovery.discover()).toEqual([]);
+    expect(JSON.stringify(resumed)).not.toContain(canary);
+  });
+
   test('advances a durable staging candidate after an exclusive-directory collision', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-collision-'));
     roots.push(root);

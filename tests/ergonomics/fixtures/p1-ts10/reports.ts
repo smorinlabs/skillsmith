@@ -1,6 +1,7 @@
 import type { StatusV1Dto } from '../../../../packages/core/src/contracts/v1/index.ts';
 import type {
   AgentsReport,
+  ArtifactDigest,
   CommandsReport,
   ConfigGetReport,
   ConfigListReport,
@@ -11,6 +12,7 @@ import type {
   ExportReport,
   FlipReport,
   HealthReport,
+  InitReport,
   InstallRecord,
   InstallReport,
   ListReport,
@@ -713,6 +715,65 @@ export const EXPORT_REPORT_FIXTURE = {
   },
 } satisfies ExportReport;
 
+const initDigest = (character: string) => `sha256:${character.repeat(64)}` as ArtifactDigest;
+const INIT_OPERATION_ID = `operation:v1:${'c'.repeat(64)}`;
+
+export const INIT_REPORT_FIXTURE = {
+  schemaVersion: 1,
+  kind: 'skillsmith.init',
+  reportVersion: 1,
+  dryRun: true,
+  requested: {
+    tools: ['codex'],
+    explicitTools: true,
+    toolSource: 'explicit',
+    scope: 'project',
+    explicitScope: true,
+    file: '/fixture/project/skillsmith.toml',
+    force: false,
+  },
+  defaults: {
+    tools: ['codex'],
+    scope: 'project',
+    path: null,
+    registryDefault: null,
+  },
+  artifactSelection: {
+    outcome: 'selected',
+    selectedBy: 'explicit-file',
+    manifestPath: '/fixture/project/skillsmith.toml',
+    lockPath: '/fixture/project/skillsmith.lock',
+    lockSource: 'sibling',
+  },
+  result: {
+    action: 'create-manifest',
+    operationId: INIT_OPERATION_ID,
+    before: { state: 'absent', shape: null, byteHash: null, semanticHash: null },
+    after: { state: 'canonical', byteHash: initDigest('a'), semanticHash: initDigest('b') },
+  },
+  force: {
+    requested: false,
+    applied: false,
+    conflictType: null,
+    target: null,
+    normalBehavior: null,
+    forcedBehavior: null,
+    backup: null,
+  },
+  effects: [
+    {
+      role: 'manifest',
+      action: 'create',
+      operationId: INIT_OPERATION_ID,
+      outcome: 'planned',
+    },
+    { role: 'lock', action: 'not-written', operationId: null, outcome: 'not-run' },
+    { role: 'live', action: 'not-written', operationId: null, outcome: 'not-run' },
+    { role: 'ledger', action: 'not-written', operationId: null, outcome: 'not-run' },
+  ],
+  summary: { changed: 1, unchanged: 0 },
+} satisfies InitReport;
+
 export const STATUS_V1_DTO_FIXTURE = statusV1Golden as unknown as StatusV1Dto;
 
 export const STATUS_REPORT_FIXTURE = {
@@ -746,6 +807,7 @@ export const REPORT_FIXTURES = {
   verify: VERIFY_REPORT_FIXTURE,
   error: ERROR_FIXTURE,
   export: EXPORT_REPORT_FIXTURE,
+  init: INIT_REPORT_FIXTURE,
 } as const;
 
 /** Report values in the shape consumed by the shared current renderer registry. */
@@ -766,6 +828,7 @@ export const CURRENT_RENDERER_REPORTS = {
   uninstall: { value: REPORT_FIXTURES.currentUninstall },
   verify: { result: REPORT_FIXTURES.verify },
   export: REPORT_FIXTURES.export,
+  init: REPORT_FIXTURES.init,
 } as const;
 
 /**
@@ -1097,6 +1160,7 @@ export const CURRENT_JSON_GOLDENS = {
   list: `${JSON.stringify(LIST_V3_DTO, null, 2)}\n`,
   uninstall: CURRENT_LIFECYCLE_V2_GOLDENS.uninstall,
   export: `${JSON.stringify(EXPORT_REPORT_FIXTURE, null, 2)}\n`,
+  init: `${JSON.stringify(INIT_REPORT_FIXTURE, null, 2)}\n`,
 } as const;
 
 export const GOLDEN_TERMINAL_LF = {
@@ -1117,4 +1181,5 @@ export const GOLDEN_TERMINAL_LF = {
   verify: false,
   error: true,
   export: true,
+  init: true,
 } as const;

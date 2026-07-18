@@ -62,6 +62,7 @@ const EXPECTED_PATHS = [
   'skillsmith dev',
   'skillsmith doctor',
   'skillsmith export',
+  'skillsmith init',
   'skillsmith install',
   'skillsmith list',
   'skillsmith promote',
@@ -81,6 +82,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith dev', 'flip', 4],
   ['skillsmith doctor', 'health', 2],
   ['skillsmith export', 'export', 1],
+  ['skillsmith init', 'init', 1],
   ['skillsmith install', 'install', 2],
   ['skillsmith list', 'list', 3],
   ['skillsmith promote', 'flip', 4],
@@ -104,6 +106,7 @@ const EXPECTED_CODECS = [
   ['flip', 3],
   ['flip', 4],
   ['install', 1],
+  ['init', 1],
   ['install', 2],
   ['list', 2],
   ['list', 3],
@@ -176,6 +179,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     indent: 2,
     terminalLf: false,
   },
+  'init@1': {
+    wireKind: 'skillsmith.init',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
   'install@2': {
     wireKind: 'skillsmith.install',
     embeddedVersion: 'schemaVersion',
@@ -246,6 +255,7 @@ const GOLDEN_FILES = {
   verify: 'verify.stdout',
   error: 'error.stdout',
   export: 'export.stdout',
+  init: 'init.stdout',
 } as const;
 
 const DESCRIPTOR_KEYS = [
@@ -272,6 +282,7 @@ const V1_RUNTIME_EXPORTS = [
   'errorV1Codec',
   'exportV1Codec',
   'healthV1Codec',
+  'initV1Codec',
   'installV1Codec',
   'toAgentsV1Dto',
   'toCapabilitySnapshotV1Dto',
@@ -283,6 +294,7 @@ const V1_RUNTIME_EXPORTS = [
   'toErrorV1Dto',
   'toExportV1Dto',
   'toHealthV1Dto',
+  'toInitV1Dto',
   'toInstallV1Dto',
   'statusV1Codec',
   'toStatusV1Dto',
@@ -522,6 +534,7 @@ const renderedCurrentBytes = (): CurrentBytes => {
     uninstall: render('uninstall', CURRENT_RENDERER_REPORTS.uninstall),
     verify: render('verify', CURRENT_RENDERER_REPORTS.verify),
     export: render('export', CURRENT_RENDERER_REPORTS.export),
+    init: render('init', CURRENT_RENDERER_REPORTS.init),
     error: renderCliError(REPORT_FIXTURES.error, 'json'),
   };
 };
@@ -582,7 +595,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the sixteen live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the seventeen live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -591,7 +604,7 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(16);
+    expect(new Set(paths).size).toBe(17);
     for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
@@ -625,6 +638,7 @@ describe('EWP-P1-TS10', () => {
       ['doctor', 'skillsmith doctor'],
       ['export', 'skillsmith export'],
       ['install', 'skillsmith install'],
+      ['init', 'skillsmith init'],
       ['list', 'skillsmith list'],
       ['promote', 'skillsmith promote'],
       ['status', 'skillsmith status'],
@@ -1962,6 +1976,7 @@ describe('EWP-P1-TS10', () => {
     const hostileUninstall = hostileLifecycleReport(REPORT_FIXTURES.uninstall);
     const hostileCurrentUninstall = hostileLifecycleReport(REPORT_FIXTURES.currentUninstall);
     const hostileFlip = hostileLifecycleReport(REPORT_FIXTURES.flip);
+    const hostileInit = addHostileFields(REPORT_FIXTURES.init);
     const capabilityBytes = JSON.stringify(expectedCapabilitySnapshot(), null, 2);
     const cases: ReadonlyArray<{
       readonly name: string;
@@ -2088,6 +2103,13 @@ describe('EWP-P1-TS10', () => {
         codec: v1.exportV1Codec,
         args: [REPORT_FIXTURES.export],
         bytes: CURRENT_JSON_GOLDENS.export,
+      },
+      {
+        name: 'init@1',
+        mapper: v1.toInitV1Dto,
+        codec: v1.initV1Codec,
+        args: [hostileInit],
+        bytes: CURRENT_JSON_GOLDENS.init,
       },
       {
         name: 'capability-snapshot@1',
@@ -2249,6 +2271,7 @@ describe('EWP-P1-TS10', () => {
       ['verify', 1, CURRENT_JSON_GOLDENS.verify],
       ['error', 1, CURRENT_JSON_GOLDENS.error],
       ['export', 1, CURRENT_JSON_GOLDENS.export],
+      ['init', 1, CURRENT_JSON_GOLDENS.init],
     ] as const;
     for (const [id, version, bytes] of fixtures) {
       const codec = registry.get(id, version);

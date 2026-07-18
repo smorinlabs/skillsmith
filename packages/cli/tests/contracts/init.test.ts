@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
@@ -120,6 +120,37 @@ describe('EWP-CMD-INIT-TS01', () => {
     expect(product.stdout).toContain(manifest);
     expect(product.stdout).toContain(lock);
   });
+
+  test('nested Git cwd selects the shared root and exact legacy bytes migrate without a lock', async () => {
+    const value = await fixture();
+    const repository = join(value.root, 'repo');
+    const nested = join(repository, 'a', 'b');
+    await mkdir(nested, { recursive: true });
+    const git = Bun.spawnSync(['git', 'init', '--quiet', repository], {
+      env: hermeticGitEnv(processEnvWithoutConfig()),
+    });
+    expect(git.exitCode).toBe(0);
+    const manifest = join(repository, 'skillsmith.toml');
+    const lock = join(repository, 'skillsmith.lock');
+    const created = await runCli(value, ['init'], nested);
+    expect(created.exitCode, created.stderr).toBe(0);
+    expect(await readFile(manifest, 'utf8')).toBe('version = 1\n');
+    expect(await readMaybe(lock)).toBeNull();
+
+    await writeFile(manifest, '# retained\ntool = "codex"\nscope = "project"\n');
+    const migrated = json(
+      await runCli(value, ['init', '--file', manifest, '--json'], nested),
+      0,
+      'legacy init migration',
+    );
+    expect(migrated.result).toMatchObject({
+      action: 'migrate-project-config',
+      before: { shape: 'legacy' },
+      after: { state: 'canonical' },
+    });
+    expect(await readFile(manifest, 'utf8')).toContain('# retained\nversion = 1');
+    expect(await readMaybe(lock)).toBeNull();
+  });
 });
 
 describe('EWP-CMD-INIT-TS02', () => {
@@ -163,6 +194,87 @@ describe('EWP-CMD-INIT-TS02', () => {
     });
     expect(await readMaybe(manifest)).toBeNull();
   });
+
+  test('explicit user scope selects XDG and a configured read-only tool refuses as capability', async () => {
+    const value = await fixture();
+    const manifest = join(value.config, 'skillsmith', 'skillsmith.toml');
+    const user = json(
+      await runCli(value, ['init', '--scope', 'user', '--tool', 'claude-code', '--json']),
+      0,
+      'explicit user init',
+    );
+    expect(user).toMatchObject({
+      requested: { scope: 'user', explicitScope: true, tools: ['claude-code'] },
+      artifactSelection: { selectedBy: 'user', manifestPath: manifest },
+    });
+    expect(await readFile(manifest, 'utf8')).toContain('scope = "user"');
+
+    const configured = join(value.config, 'skillsmith', 'config.toml');
+    await mkdir(join(value.config, 'skillsmith'), { recursive: true });
+    await writeFile(configured, 'tool = "kilo-code"\n');
+    const denied = json(
+      await runCli(value, ['init', '--file', join(value.cwd, 'denied.toml'), '--json']),
+      4,
+      'configured read-only init tool',
+    );
+    expect(denied).toMatchObject({ kind: 'error', code: 'capability', exitCode: 4 });
+  });
+
+  test('effective writable defaults remain separate from an explicit artifact destination', async () => {
+    const value = await fixture();
+    const configured = join(value.config, 'skillsmith', 'config.toml');
+    const manifest = join(value.cwd, 'configured.toml');
+    await mkdir(join(value.config, 'skillsmith'), { recursive: true });
+    await writeFile(
+      configured,
+      'tool = "codex"\nscope = "project"\npath = "./team-skills"\n[registry]\ndefault = "registry.example/team"\n',
+    );
+
+    const report = json(
+      await runCli(value, ['init', '--file', manifest, '--dry-run', '--json']),
+      0,
+      'configured init defaults',
+    );
+    expect(report).toMatchObject({
+      requested: {
+        tools: ['codex'],
+        explicitTools: false,
+        toolSource: 'config',
+        scope: 'project',
+        explicitScope: false,
+        file: manifest,
+      },
+      defaults: {
+        tools: ['codex'],
+        scope: 'project',
+        path: './team-skills',
+        registryDefault: 'registry.example/team',
+      },
+      artifactSelection: { selectedBy: 'explicit-file', manifestPath: manifest },
+    });
+    expect(await readMaybe(manifest)).toBeNull();
+
+    await writeFile(configured, 'tool = "codex"\nscope = "project"\npath = "team-skills"\n');
+    const invalidPath = json(
+      await runCli(value, ['init', '--file', manifest, '--dry-run', '--json']),
+      2,
+      'nonportable configured init path',
+    );
+    expect(invalidPath).toMatchObject({ kind: 'error', code: 'init-invalid-request' });
+    expect(await readMaybe(manifest)).toBeNull();
+
+    await writeFile(
+      configured,
+      'tool = "codex"\nscope = "project"\n[registry]\ndefault = "https://fixture.invalid/team"\n',
+    );
+    const invalidRegistry = json(
+      await runCli(value, ['init', '--file', manifest, '--dry-run', '--json']),
+      3,
+      'noncanonical configured init registry',
+    );
+    expect(invalidRegistry).toMatchObject({ kind: 'error', code: 'init-configuration' });
+    expect(await readMaybe(manifest)).toBeNull();
+  });
 });
 
 describe('EWP-CMD-INIT-TS03', () => {
@@ -197,6 +309,91 @@ describe('EWP-CMD-INIT-TS03', () => {
     expect(await readFile(lock, 'utf8')).toBe('lock-canary\n');
     expect(await readFile(live, 'utf8')).toBe('live-canary\n');
     expect(await readFile(ledger, 'utf8')).toBe('ledger-canary\n');
+  });
+
+  test('force never downgrades future state and safely replaces exact non-UTF8 bytes', async () => {
+    const value = await fixture();
+    const future = join(value.cwd, 'future.toml');
+    await writeFile(future, 'version = 2\n');
+    const refused = json(
+      await runCli(value, ['init', '--file', future, '--force', '--json']),
+      3,
+      'future init refusal',
+    );
+    expect(refused).toMatchObject({ kind: 'error', code: 'init-future-manifest', exitCode: 3 });
+    expect(await readFile(future, 'utf8')).toBe('version = 2\n');
+
+    const malformed = join(value.cwd, 'malformed.toml');
+    const canary = 'P17_OPAQUE_CREDENTIAL_CANARY';
+    await writeFile(malformed, Uint8Array.from([0xff, 0xfe, ...new TextEncoder().encode(canary)]));
+    await chmod(malformed, 0o640);
+    const replaced = await runCli(value, ['init', '--file', malformed, '--force', '--json']);
+    const report = json(replaced, 0, 'opaque init replacement');
+    expect(report.result).toMatchObject({
+      action: 'replace-manifest',
+      before: { shape: 'malformed', semanticHash: null },
+    });
+    expect(`${replaced.stdout}${replaced.stderr}`).not.toContain(canary);
+    expect(await readFile(malformed, 'utf8')).toBe('version = 1\n');
+    expect((await stat(malformed)).mode & 0o777).toBe(0o640);
+  });
+
+  test('canonical equality is a zero-write noop and reports force as unused', async () => {
+    const value = await fixture();
+    const manifest = join(value.cwd, 'same.toml');
+    await writeFile(manifest, 'version = 1\n');
+    await chmod(manifest, 0o644);
+    const before = await stat(manifest);
+    const report = json(
+      await runCli(value, ['init', '--file', manifest, '--force', '--json']),
+      0,
+      'init noop',
+    );
+    expect(report).toMatchObject({
+      result: { action: 'noop', operationId: null, after: null },
+      force: { requested: true, applied: false, conflictType: null },
+      summary: { changed: 0, unchanged: 1 },
+    });
+    const after = await stat(manifest);
+    expect(after.ino).toBe(before.ino);
+    expect(after.mode & 0o777).toBe(0o644);
+  });
+
+  test('automatic invalid project state stays classifier-owned while explicit config stays authoritative', async () => {
+    const value = await fixture();
+    const git = Bun.spawnSync(['git', 'init', '--quiet', value.cwd], {
+      env: hermeticGitEnv(processEnvWithoutConfig()),
+    });
+    expect(git.exitCode).toBe(0);
+    const manifest = join(value.cwd, 'skillsmith.toml');
+    await writeFile(manifest, 'unknown = true\n');
+
+    const replaced = json(
+      await runCli(value, ['init', '--force', '--json']),
+      0,
+      'automatic invalid project replacement',
+    );
+    expect(replaced).toMatchObject({
+      artifactSelection: { selectedBy: 'project', manifestPath: manifest },
+      result: { action: 'replace-manifest', before: { shape: 'unknown' } },
+    });
+
+    await writeFile(manifest, 'version = 2\n');
+    const future = json(
+      await runCli(value, ['init', '--force', '--json']),
+      3,
+      'automatic future refusal',
+    );
+    expect(future).toMatchObject({ kind: 'error', code: 'init-future-manifest' });
+    expect(await readFile(manifest, 'utf8')).toBe('version = 2\n');
+
+    const explicit = json(
+      await runCli(value, ['--config', manifest, 'init', '--file', manifest, '--force', '--json']),
+      3,
+      'same-path explicit config refusal',
+    );
+    expect(explicit).toMatchObject({ kind: 'error', code: 'init-configuration' });
+    expect(await readFile(manifest, 'utf8')).toBe('version = 2\n');
   });
 });
 
@@ -245,5 +442,17 @@ describe('EWP-CMD-INIT-TS05', () => {
       'init unsupported mutation tool',
     );
     expect(unsupported).toMatchObject({ kind: 'error', code: 'capability', exitCode: 4 });
+  });
+
+  test('singular selectors and scope sugar conflicts fail through shared JSON usage errors', async () => {
+    const value = await fixture();
+    for (const args of [
+      ['init', '--file', 'a.toml', '--file', 'b.toml', '--json'],
+      ['init', '--scope', 'user', '--user', '--json'],
+      ['init', '--project', '--user', '--json'],
+    ]) {
+      const result = json(await runCli(value, args), 2, args.join(' '));
+      expect(result).toMatchObject({ kind: 'error', exitCode: 2 });
+    }
   });
 });

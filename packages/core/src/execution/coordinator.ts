@@ -168,6 +168,9 @@ const resourceForImage = <ToolId extends string>(
 ): OperationResourceIdentity<ToolId> => {
   if (image.kind === 'absent' || image.kind === 'placement') return image.resource;
   if (image.kind === 'manifest') return { kind: 'manifest-bytes', location: image.location };
+  if (image.kind === 'opaque-manifest') {
+    return { kind: 'manifest-bytes', location: image.location };
+  }
   if (image.kind === 'lock') return { kind: 'lock', location: image.location };
   return { kind: 'ledger', projectRoot: image.projectRoot };
 };

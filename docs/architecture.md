@@ -96,6 +96,16 @@ the projected immutable paths, selection provenance, and focused read capabiliti
 then maps the report field by field to `status@1`, recursively redacts it, and reparses it through the
 strict codec before either human or JSON presentation.
 
+`runInitApplication` is the bounded manifest bootstrap service. It validates writable-tool and
+scope selection before context reads, resolves exactly one Git-root, XDG-user, or explicit manifest
+destination, and owns one byte snapshot across effective configuration, pure classification,
+planning, and execution. A create, replacement, or exact lossless legacy migration becomes one
+`OperationPlan<'init'>` operation executed by the shared precondition coordinator and scheduler.
+The one-member artifact coordinator retains its normal staging, fsync, rollback, and recovery
+protocol; a narrow resource-digest authorization permits opaque old manifest bytes to be backed up
+without relaxing candidate validation. Noop, refusal, and dry-run acquire no mutation authority.
+Sibling locks, live placements, stores, and ledgers stay outside the service's write capability.
+
 ## Result-based error handling
 
 Every fallible function in core returns `Result<T, SkillSmithError>`:
@@ -218,7 +228,7 @@ or define a second public schema.
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
 `commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
 `flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
-`uninstall@2`, `verify@1`, `error@1`, and `capability-snapshot@1`. Each descriptor fixes recursive
+`init@1`, `uninstall@2`, `verify@1`, `error@1`, and `capability-snapshot@1`. Each descriptor fixes recursive
 unknown-field rejection, embedded kind and version policy, JSON indentation, terminal framing, and
 conservative compatibility. Current codecs declare no migrations. Lifecycle v2 contracts are
 registered for exact desired-state reports while the live install/uninstall command mappings remain
@@ -317,8 +327,13 @@ manifest, classifies existing bytes with future-schema and force precedence, and
 path-free create/replace/migrate/noop input or fixed refusal. Before images expose only exact and
 semantic hashes plus shape. The range-based legacy conversion is a single internal leaf reused by
 init planning, manifest edits, and project-config edits, so comments, line endings, quote class, and
-semantic identity follow one rule. Destination discovery, CLI policy, locking, persistence, and
-execution remain later application/planner responsibilities.
+semantic identity follow one rule. The application layer resolves destination and defaults, then
+projects the result into the shared in-memory operation algebra. Parsed canonical and legacy state
+uses the normal manifest image; force-replaceable invalid state uses a runtime-only,
+machine-bound `opaque-manifest` before-image carrying only shape and resource digest. That image is
+excluded from saved-plan v1 and accepted only for init manifest replacement. Execution reobserves
+the exact resource revision and delegates installation and recovery to the one-member artifact
+coordinator without replanning or exposing old bytes.
 
 Pair writes take an account-stable global lock and the complete sorted set of compatibility target
 locks, reobserve file and parent identities at the last responsible moment, and use exclusive

@@ -17,6 +17,7 @@ const ALLOWED_SCOPES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith config unset': ['user', 'project', 'system'],
   'skillsmith install': ['user', 'project'],
   'skillsmith export': KNOWN_SCOPES,
+  'skillsmith init': ['user', 'project'],
   'skillsmith uninstall': ['user', 'project'],
   'skillsmith dev': ['user', 'project'],
   'skillsmith promote': ['user', 'project'],
@@ -111,6 +112,14 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith export:--force': 'Resolve only bounded selected declaration conflicts',
   'skillsmith export:--dry-run': 'Preview artifact effects without locking or writing',
   'skillsmith export:--json': 'Emit the strict export@1 report',
+  'skillsmith init:--file': 'Initialize one explicit desired-state manifest',
+  'skillsmith init:--tool': 'Persist a writable tool default; repeatable',
+  'skillsmith init:--scope': 'Persist user or project scope and select its default destination',
+  'skillsmith init:--user': 'Initialize the user manifest and persist user scope',
+  'skillsmith init:--project': 'Initialize the current project manifest and persist project scope',
+  'skillsmith init:--force': 'Back up and replace only the selected existing manifest',
+  'skillsmith init:--dry-run': 'Preview the exact manifest operation without writing',
+  'skillsmith init:--json': 'Emit the strict init@1 report',
   'skillsmith verify:--tool': 'Restrict to tools; repeatable; default: all detected',
   'skillsmith verify:--static': 'Run static verification only; this is the default',
   'skillsmith verify:--deep': 'Also run isolated session-backed load verification',
@@ -275,6 +284,20 @@ export const optionsForPath = (path: string): readonly CommandOptionSpec[] => {
       '--force',
       '--dry-run',
       '--json',
+    ];
+    return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
+  }
+  if (path === 'skillsmith init') {
+    const order = [
+      '--file',
+      '--tool',
+      '--scope',
+      '--user',
+      '--project',
+      '--force',
+      '--dry-run',
+      '--json',
+      '--help',
     ];
     return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
   }

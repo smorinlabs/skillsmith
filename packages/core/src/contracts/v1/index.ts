@@ -29,6 +29,8 @@ export type { HealthV1Dto } from './health.ts';
 export { healthV1Codec, toHealthV1Dto } from './health.ts';
 export type { ExportV1Dto } from './export.ts';
 export { exportV1Codec, toExportV1Dto } from './export.ts';
+export type { InitV1Dto } from './init.ts';
+export { initV1Codec, toInitV1Dto } from './init.ts';
 export type { InstallV1Dto, UninstallV1Dto } from './lifecycle.ts';
 export {
   installV1Codec,

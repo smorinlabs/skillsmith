@@ -13,6 +13,7 @@ import {
   type ExportReport,
   type FlipReport,
   type HealthReport,
+  type InitReport,
   type InstallApplicationReport,
   type ListReport,
   type PromoteApplicationReport,
@@ -44,6 +45,8 @@ import { renderExportHuman } from '../output/export-human.ts';
 import { renderExportJson } from '../output/export-json.ts';
 import { renderFlipHuman } from '../output/flip-human.ts';
 import { renderFlipJson } from '../output/flip-json.ts';
+import { renderInitHuman } from '../output/init-human.ts';
+import { renderInitJson } from '../output/init-json.ts';
 import {
   type InstallStaticNoticeResolver,
   renderInstallHuman,
@@ -429,6 +432,16 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
           : withDiagnostics(outcome, renderExportJson(value));
       },
     },
+    init: guarded<InitReport | null>(
+      (value, outcome) =>
+        value === null
+          ? (errorOutput(outcome, 'human') ?? '')
+          : withDiagnostics(outcome, renderInitHuman(value)),
+      (value, outcome) =>
+        value === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : withDiagnostics(outcome, renderInitJson(value as InitReport, currentWireCodecs.init)),
+    ),
     install: lifecycleRenderer<NonNullable<InstallApplicationReport['value']>>(
       (value, outcome) =>
         renderInstallHuman(value, exitCodeForClass(outcome.exitClass), currentInstallStaticNotice),

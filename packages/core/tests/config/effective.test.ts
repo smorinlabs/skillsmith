@@ -149,6 +149,30 @@ describe('resolveEffectiveConfig compatibility notices', () => {
     expect(writes()).toBe(0);
   });
 
+  test('omits only an invalid automatic init target while explicit config remains authoritative', async () => {
+    const projectPath = '/repo/skillsmith.toml';
+    const files: Record<string, string> = { [projectPath]: 'unknown = true\n' };
+    const { env } = fixture(files);
+    const automatic = await resolveEffectiveConfig(runtimePorts(env), context(projectPath), {
+      configuration: resolveRuntimeConfiguration({}),
+      automaticProjectTargetPath: projectPath,
+      readFile: async (path) => files[path] ?? '',
+    });
+    expect(automatic.ok).toBeTrue();
+    if (automatic.ok) expect(automatic.value.layers.project).toEqual({});
+
+    const explicit = await resolveEffectiveConfig(
+      runtimePorts(env),
+      context(projectPath, projectPath),
+      {
+        configuration: resolveRuntimeConfiguration({}),
+        automaticProjectTargetPath: projectPath,
+        readFile: async (path) => files[path] ?? '',
+      },
+    );
+    expect(explicit.ok).toBeFalse();
+  });
+
   test('replaces scalar and plural tool selections by layer and reports effective and shadowed sources', async () => {
     const projectPath = '/repo/skillsmith.toml';
     const explicitPath = '/repo/team.toml';

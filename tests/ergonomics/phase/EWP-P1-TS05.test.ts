@@ -64,7 +64,7 @@ describe('EWP-P1-TS05', () => {
 
     expect(markdownTokens(today).sort()).toEqual(all);
     expect(markdownTokens(target).sort()).toEqual(
-      ['apply', 'gc', 'init', 'plan', 'sync', 'undo', 'update'].sort(),
+      ['apply', 'gc', 'plan', 'sync', 'undo', 'update'].sort(),
     );
     for (const future of markdownTokens(target)) {
       expect(today).not.toContain(`\`${future}\``);
