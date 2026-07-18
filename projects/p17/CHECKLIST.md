@@ -1154,7 +1154,7 @@ Downstream coverage obligations: EWP-WF04.
 
 ## P17-G4A-03 — Planned init registration with preview/execution identity and manifest-only effects
 
-Phase: 4A; status: **reviewed**; dependencies: P17-G2-04, P17-G3B-03, P17-G3B-04.
+Phase: 4A; status: **active**; dependencies: P17-G2-04, P17-G3B-03, P17-G3B-04.
 Required-now validations: EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-OPT-TS03, EWP-OPT-TS04, EWP-P2-TS05, EWP-P4A-TS04.
 Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
@@ -1167,7 +1167,7 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 - [x] P17-G4A-03:targeted-green _(passed)_
 - [x] P17-G4A-03:impacted-green _(passed)_
 - [x] P17-G4A-03:refactor _(passed)_
-- [x] P17-G4A-03:adversarial-review _(passed)_
+- [ ] P17-G4A-03:adversarial-review _(pending)_
 - [ ] P17-G4A-03:traceability-closure _(pending)_
 - [ ] P17-G4A-03:signed-off _(pending)_
 

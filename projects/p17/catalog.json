@@ -5602,7 +5602,7 @@
       "phase": "4A",
       "title": "Planned init registration with preview/execution identity and manifest-only effects",
       "dependsOn": ["P17-G2-04", "P17-G3B-03", "P17-G3B-04"],
-      "status": "reviewed",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -5655,6 +5655,7 @@
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS01.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS06.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS07.test.ts",
@@ -5701,7 +5702,7 @@
         "bun test tests/ergonomics/phase/EWP-P4A-TS04.test.ts --test-name-pattern EWP-P4A-TS04"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g4a03_adversarial_review",
+      "reviewer": null,
       "gates": {
         "mapped": {
           "status": "passed",
@@ -5732,8 +5733,8 @@
           "evidence": ["projects/p17/evidence/P17-G4A-03.md#refactor"]
         },
         "adversarial-review": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4A-03.md#independent-adversarial-review"]
+          "status": "pending",
+          "evidence": []
         },
         "traceability-closure": {
           "status": "pending",
@@ -5753,7 +5754,8 @@
         "projects/p17/evidence/P17-G4A-03.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-03.md#refactor",
         "projects/p17/evidence/P17-G4A-03.md#adversarial-correction-and-reopened-green",
-        "projects/p17/evidence/P17-G4A-03.md#independent-adversarial-review"
+        "projects/p17/evidence/P17-G4A-03.md#independent-adversarial-review",
+        "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-ownership-and-architecture-amendment"
       ]
     },
     {
@@ -21317,7 +21319,8 @@
         "projects/p17/evidence/P17-G4A-03.md#test-first-evidence",
         "projects/p17/evidence/P17-G4A-03.md#minimal-implementation",
         "projects/p17/evidence/P17-G4A-03.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4A-03.md#refactor"
+        "projects/p17/evidence/P17-G4A-03.md#refactor",
+        "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-ownership-and-architecture-amendment"
       ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:init", "EWP-CF-041", "P1-05"],
@@ -21402,6 +21405,7 @@
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS01.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS06.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS07.test.ts",
