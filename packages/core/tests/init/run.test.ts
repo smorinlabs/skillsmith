@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { CurrentApplicationContext } from '../../src/application/types.ts';
 import { hashCanonicalInput } from '../../src/artifacts/hash.ts';
-import { observeInitManifest } from '../../src/init/run.ts';
+import { planInitManifest } from '../../src/artifacts/init.ts';
+import { prepareInitOperationPlan } from '../../src/init/plan.ts';
+import { executePreparedInit, observeInitManifest } from '../../src/init/run.ts';
+import type { InitArtifactSelection, InitDefaults, InitRequest } from '../../src/init/types.ts';
 
 describe('init runtime observation', () => {
   test('owns ordinary bytes in the resource digest domain without parsing them', async () => {
@@ -40,5 +43,62 @@ describe('init runtime observation', () => {
       error: { code: 'init-invalid-file-kind', exitClass: 'state' },
     });
     expect(reads).toBe(0);
+  });
+
+  test('preserves an execution observation permission failure through shared preconditions', async () => {
+    const path = '/work/skillsmith.toml';
+    const request: InitRequest = Object.freeze({
+      tools: Object.freeze([]),
+      explicitTools: false,
+      toolSource: 'none',
+      scope: null,
+      explicitScope: false,
+      file: path,
+      force: false,
+    });
+    const defaults: InitDefaults = Object.freeze({
+      tools: null,
+      scope: null,
+      path: null,
+      registryDefault: null,
+    });
+    const selection: InitArtifactSelection = Object.freeze({
+      outcome: 'selected',
+      selectedBy: 'explicit-file',
+      manifestPath: path,
+      lockPath: '/work/skillsmith.lock',
+      lockSource: 'sibling',
+    });
+    const classification = planInitManifest({
+      skeleton: {},
+      current: { state: 'absent' },
+      legacyIntent: { requireMatch: [] },
+      force: false,
+    });
+    expect(classification.ok).toBeTrue();
+    if (!classification.ok) return;
+    const prepared = prepareInitOperationPlan({
+      request,
+      dryRun: false,
+      defaults,
+      selection,
+      skeleton: {},
+      classification: classification.value,
+      observed: { state: 'absent' },
+    });
+    const context = {
+      artifactCoordinator: {
+        observe: async () => {
+          throw new Error('EACCES');
+        },
+      },
+      ports: {},
+      observation: {},
+    } as unknown as CurrentApplicationContext;
+
+    expect(await executePreparedInit(context, prepared)).toMatchObject({
+      ok: false,
+      error: { code: 'init-observation-failed', exitClass: 'permission' },
+    });
   });
 });

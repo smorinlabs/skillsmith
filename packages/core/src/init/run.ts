@@ -102,10 +102,15 @@ export const executePreparedInit = async (
   const operation = prepared.plan.operations[0];
   if (operation === undefined) return ok('succeeded');
   const afterBytes = encoder.encode(prepared.classification.after?.source ?? '');
-  const observeFacts = async () => {
+  const executionObservation: { failure: InitFailure | null } = { failure: null };
+  const observeForExecution = async (): Promise<InitObservedManifest> => {
     const observed = await observeInitManifest(context, prepared.selection.manifestPath);
-    if (!observed.ok) throw new Error(observed.error.code);
-    return initObservationFacts(observed.value);
+    if (observed.ok) return observed.value;
+    executionObservation.failure = observed.error;
+    throw new Error(observed.error.code);
+  };
+  const observeFacts = async () => {
+    return initObservationFacts(await observeForExecution());
   };
   const precondition = createExecutionPrecondition({
     operationIds: [operation.operationId],
@@ -118,9 +123,8 @@ export const executePreparedInit = async (
   }
 
   const observeActualBefore = async (): Promise<OperationImage> => {
-    const observed = await observeInitManifest(context, prepared.selection.manifestPath);
-    if (!observed.ok) throw new Error(observed.error.code);
-    if (observed.value.state === 'absent') {
+    const observed = await observeForExecution();
+    if (observed.state === 'absent') {
       return Object.freeze({
         kind: 'absent' as const,
         resource: resource(prepared.selection.manifestPath),
@@ -131,10 +135,10 @@ export const executePreparedInit = async (
         kind: 'opaque-manifest' as const,
         location: location(prepared.selection.manifestPath),
         shape: operation.before.shape,
-        byteHash: observed.value.resourceDigest as OperationDigest,
+        byteHash: observed.resourceDigest as OperationDigest,
       });
     }
-    return artifactManifestImageFromBytesV1(prepared.selection.manifestPath, observed.value.bytes);
+    return artifactManifestImageFromBytesV1(prepared.selection.manifestPath, observed.bytes);
   };
 
   const conflict = operation.conflict;
@@ -252,6 +256,10 @@ export const executePreparedInit = async (
   } catch (error) {
     const code =
       typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+    const observationFailure = executionObservation.failure;
+    if (code !== 'cancelled' && !context.signal?.aborted && observationFailure !== null) {
+      return err(failure(observationFailure.code, observationFailure.exitClass));
+    }
     return err(
       failure(
         code === 'cancelled' || context.signal?.aborted
