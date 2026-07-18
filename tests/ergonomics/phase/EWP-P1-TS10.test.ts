@@ -61,6 +61,7 @@ const EXPECTED_PATHS = [
   'skillsmith config unset',
   'skillsmith dev',
   'skillsmith doctor',
+  'skillsmith export',
   'skillsmith install',
   'skillsmith list',
   'skillsmith promote',
@@ -79,6 +80,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith config unset', 'config-unset', 1],
   ['skillsmith dev', 'flip', 4],
   ['skillsmith doctor', 'health', 2],
+  ['skillsmith export', 'export', 1],
   ['skillsmith install', 'install', 2],
   ['skillsmith list', 'list', 3],
   ['skillsmith promote', 'flip', 4],
@@ -110,6 +112,7 @@ const EXPECTED_CODECS = [
   ['uninstall', 2],
   ['verify', 1],
   ['error', 1],
+  ['export', 1],
   ['capability-snapshot', 1],
 ] as const;
 
@@ -211,6 +214,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     terminalLf: false,
   },
   'error@1': { wireKind: 'error', embeddedVersion: 'schemaVersion', indent: 0, terminalLf: true },
+  'export@1': {
+    wireKind: 'skillsmith.export',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
   'capability-snapshot@1': {
     wireKind: 'skillsmith.capabilities',
     embeddedVersion: 'schemaVersion',
@@ -236,6 +245,7 @@ const GOLDEN_FILES = {
   uninstall: 'uninstall.stdout',
   verify: 'verify.stdout',
   error: 'error.stdout',
+  export: 'export.stdout',
 } as const;
 
 const DESCRIPTOR_KEYS = [
@@ -260,6 +270,7 @@ const V1_RUNTIME_EXPORTS = [
   'configUnsetV1Codec',
   'createVerifyV1Codec',
   'errorV1Codec',
+  'exportV1Codec',
   'healthV1Codec',
   'installV1Codec',
   'toAgentsV1Dto',
@@ -270,6 +281,7 @@ const V1_RUNTIME_EXPORTS = [
   'toConfigSetV1Dto',
   'toConfigUnsetV1Dto',
   'toErrorV1Dto',
+  'toExportV1Dto',
   'toHealthV1Dto',
   'toInstallV1Dto',
   'statusV1Codec',
@@ -509,6 +521,7 @@ const renderedCurrentBytes = (): CurrentBytes => {
     status: render('status', CURRENT_RENDERER_REPORTS.status),
     uninstall: render('uninstall', CURRENT_RENDERER_REPORTS.uninstall),
     verify: render('verify', CURRENT_RENDERER_REPORTS.verify),
+    export: render('export', CURRENT_RENDERER_REPORTS.export),
     error: renderCliError(REPORT_FIXTURES.error, 'json'),
   };
 };
@@ -569,7 +582,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the fifteen live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the sixteen live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -578,7 +591,7 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(15);
+    expect(new Set(paths).size).toBe(16);
     for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
@@ -610,6 +623,7 @@ describe('EWP-P1-TS10', () => {
       ['configUnset', 'skillsmith config unset'],
       ['dev', 'skillsmith dev'],
       ['doctor', 'skillsmith doctor'],
+      ['export', 'skillsmith export'],
       ['install', 'skillsmith install'],
       ['list', 'skillsmith list'],
       ['promote', 'skillsmith promote'],
@@ -2069,6 +2083,13 @@ describe('EWP-P1-TS10', () => {
         bytes: CURRENT_JSON_GOLDENS.error,
       },
       {
+        name: 'export@1',
+        mapper: v1.toExportV1Dto,
+        codec: v1.exportV1Codec,
+        args: [REPORT_FIXTURES.export],
+        bytes: CURRENT_JSON_GOLDENS.export,
+      },
+      {
         name: 'capability-snapshot@1',
         mapper: v1.toCapabilitySnapshotV1Dto,
         codec: v1.capabilitySnapshotV1Codec,
@@ -2227,6 +2248,7 @@ describe('EWP-P1-TS10', () => {
       ['uninstall', 2, CURRENT_JSON_GOLDENS.uninstall],
       ['verify', 1, CURRENT_JSON_GOLDENS.verify],
       ['error', 1, CURRENT_JSON_GOLDENS.error],
+      ['export', 1, CURRENT_JSON_GOLDENS.export],
     ] as const;
     for (const [id, version, bytes] of fixtures) {
       const codec = registry.get(id, version);

@@ -85,9 +85,13 @@ const reportOf = (
   effects: ExportReport['effects'],
   changed: number,
   unchanged: number,
+  observed = results.length,
 ): ExportReport => {
-  const portable = results.filter((result) => result.action !== 'skipped').length;
-  const skipped = results.length - portable;
+  const portable = results.filter(
+    (result) => result.action !== 'skipped' && result.action !== 'conflict',
+  ).length;
+  const skipped = results.filter((result) => result.action === 'skipped').length;
+  const conflicts = results.filter((result) => result.action === 'conflict').length;
   return Object.freeze({
     schemaVersion: 1,
     kind: 'skillsmith.export',
@@ -105,10 +109,10 @@ const reportOf = (
     results: Object.freeze(results),
     effects: Object.freeze(effects),
     summary: Object.freeze({
-      observed: results.length,
+      observed,
       portable,
       skipped,
-      conflicts: 0,
+      conflicts,
       changed,
       unchanged,
     }),
@@ -119,6 +123,7 @@ const failedReport = (
   request: ExportRequest,
   failure: ExportFailure,
   results: readonly ExportResult[] = [],
+  observed = results.length,
 ): ExportReport =>
   reportOf(
     request,
@@ -127,6 +132,7 @@ const failedReport = (
     failure.effects ?? [],
     0,
     0,
+    observed,
   );
 
 const resolvePair = async (
@@ -252,7 +258,7 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
       deprecations: [],
     };
   }
-  const classified = await classifyExport(context, observed.value);
+  const classified = classifyExport(observed.value);
   if (!classified.ok) {
     return {
       report: failedReport(request, classified.error),
@@ -262,10 +268,20 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
       deprecations: [],
     };
   }
-  const merged = mergePortableCandidates(classified.value.portable);
+  const merged = mergePortableCandidates(classified.value.portable, request.force);
   if (!merged.ok) {
+    const conflictResults = merged.error.conflicts ?? [];
+    const conflictedNames = new Set(conflictResults.map(({ name }) => name));
     return {
-      report: failedReport(request, merged.error, classified.value.results),
+      report: failedReport(
+        request,
+        merged.error,
+        Object.freeze([
+          ...classified.value.results.filter(({ name }) => !conflictedNames.has(name)),
+          ...conflictResults,
+        ]),
+        classified.value.results.length,
+      ),
       diagnostics: [failureDiagnostic(merged.error)],
       exitClass: merged.error.exitClass,
       mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
@@ -273,7 +289,7 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
     };
   }
   const skippedResults = classified.value.results.filter((result) => result.action === 'skipped');
-  const portableResults: ExportResult[] = merged.value.map((candidate) =>
+  let portableResults: ExportResult[] = merged.value.map((candidate) =>
     Object.freeze({ ...candidate, action: 'add' as const, reason: null }),
   );
   const results = Object.freeze([...portableResults, ...skippedResults]);
@@ -294,6 +310,7 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
         [],
         0,
         0,
+        classified.value.results.length,
       ),
       diagnostics,
       exitClass: 'failure',
@@ -308,7 +325,8 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
         Object.freeze({
           outcome: 'none',
           reason:
-            observed.value.inventory.selection.outcome === 'filter-noop'
+            observed.value.inventory.selection.outcome === 'filter-noop' ||
+            (request.explicitTools && observed.value.entries.length === 0)
               ? 'filter-noop'
               : 'no-portable-candidates',
         }),
@@ -316,6 +334,7 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
         [],
         0,
         0,
+        classified.value.results.length,
       ),
       diagnostics,
       exitClass: 'success',
@@ -326,18 +345,37 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
 
   const prepared = prepareExportArtifacts(observed.value, merged.value);
   if (!prepared.ok) {
+    const conflictResults = prepared.error.conflicts ?? [];
+    const conflictedNames = new Set(conflictResults.map(({ name }) => name));
     return {
-      report: failedReport(request, prepared.error, results),
+      report: failedReport(
+        request,
+        prepared.error,
+        Object.freeze([
+          ...results.filter(({ name }) => !conflictedNames.has(name)),
+          ...conflictResults,
+        ]),
+        classified.value.results.length,
+      ),
       diagnostics: [...diagnostics, failureDiagnostic(prepared.error)],
       exitClass: prepared.error.exitClass,
       mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
       deprecations: [],
     };
   }
+  portableResults = prepared.value.candidates.map((candidate) =>
+    Object.freeze({
+      ...candidate,
+      action: prepared.value.candidateActions[candidate.name] ?? ('unchanged' as const),
+      reason: null,
+    }),
+  );
+  const finalResults = Object.freeze([...portableResults, ...skippedResults]);
   const effects = request.dryRun
     ? {
         ok: true as const,
         value: previewExportEffects(
+          observed.value,
           prepared.value,
           prepareExportLedgerMigration(context, observed.value, prepared.value),
         ),
@@ -350,24 +388,24 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
       );
   if (!effects.ok) {
     return {
-      report: failedReport(request, effects.error, results),
+      report: failedReport(request, effects.error, finalResults, classified.value.results.length),
       diagnostics: [...diagnostics, failureDiagnostic(effects.error)],
       exitClass: effects.error.exitClass,
       mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 1 },
       deprecations: [],
     };
   }
-  const changed =
-    prepared.value.manifestChanged || prepared.value.lockChanged ? merged.value.length : 0;
-  const unchanged = changed === 0 ? merged.value.length : 0;
+  const changed = portableResults.filter((result) => result.action !== 'unchanged').length;
+  const unchanged = portableResults.length - changed;
   return {
     report: reportOf(
       request,
       selectionReport(pairResult.pair, pairResult.selectedBy),
-      results,
+      finalResults,
       effects.value,
       changed,
       unchanged,
+      classified.value.results.length,
     ),
     diagnostics,
     exitClass: 'success',

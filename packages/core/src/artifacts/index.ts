@@ -16,6 +16,7 @@ export type {
 } from './init.ts';
 export * from './lock.ts';
 export * from './manifest.ts';
+export * from './execution.ts';
 export {
   commitArtifactPair,
   readCoordinatedArtifactPair,

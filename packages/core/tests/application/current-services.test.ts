@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   type ApplicationService,
   COMMAND_EXIT_CLASSES,
+  CURRENT_APPLICATION_SERVICES,
   type CurrentApplicationContext,
   NO_MUTATION,
   VERSION,
@@ -53,5 +54,12 @@ describe('current application-service foundation', () => {
       failed: 0,
     });
     expect(Object.isFrozen(NO_MUTATION)).toBeTrue();
+  });
+
+  test('the current application registry activates export exactly once', () => {
+    expect(Object.keys(CURRENT_APPLICATION_SERVICES).filter((name) => name === 'export')).toEqual([
+      'export',
+    ]);
+    expect(typeof CURRENT_APPLICATION_SERVICES.export).toBe('function');
   });
 });

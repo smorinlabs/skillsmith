@@ -410,13 +410,21 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     export: {
       human: (outcome) => {
         const value = report<ExportReport>(outcome);
-        return value.artifactSelection.outcome === 'refused'
-          ? (errorOutput(outcome, 'human') ?? '')
-          : withDiagnostics(outcome, renderExportHuman(value));
+        if (value.artifactSelection.outcome !== 'refused') {
+          return withDiagnostics(outcome, renderExportHuman(value));
+        }
+        const failure = errorOutput(outcome, 'human');
+        if (value.results.length === 0 && value.effects.length === 0) return failure ?? '';
+        return {
+          stdout: renderExportHuman(value),
+          ...(failure?.stderr === undefined ? {} : { stderr: failure.stderr }),
+        };
       },
       json: (outcome) => {
         const value = report<ExportReport>(outcome);
-        return value.artifactSelection.outcome === 'refused'
+        return value.artifactSelection.outcome === 'refused' &&
+          value.results.length === 0 &&
+          value.effects.length === 0
           ? (errorOutput(outcome, 'json') ?? '')
           : withDiagnostics(outcome, renderExportJson(value));
       },

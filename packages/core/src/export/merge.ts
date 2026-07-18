@@ -1,12 +1,16 @@
 import { SUPPORTED_TOOLS } from '../agents/registry.ts';
 import { hashManifestSemantics } from '../artifacts/hash.ts';
-import { type PortableLockV1, serializePortableLock } from '../artifacts/lock.ts';
-import { manifestV1Codec } from '../artifacts/manifest-codec.ts';
+import {
+  type PortableLockV1,
+  correlatePortableLock,
+  serializePortableLock,
+} from '../artifacts/lock.ts';
 import { type ManifestEdit, editManifestBytes } from '../artifacts/manifest-edit.ts';
+import { artifactContractRegistry } from '../artifacts/registry.ts';
 import type { NormalizedManifestDeclaration, NormalizedManifestV1 } from '../artifacts/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import type { ExportObservation } from './observe.ts';
-import type { ExportFailure, PortableExportCandidate } from './types.ts';
+import type { ExportFailure, ExportResult, PortableExportCandidate } from './types.ts';
 
 const compareTools = (left: string, right: string): number =>
   SUPPORTED_TOOLS.indexOf(left as (typeof SUPPORTED_TOOLS)[number]) -
@@ -53,11 +57,37 @@ const lockEntryOf = (candidate: PortableExportCandidate) =>
     contentHash: candidate.contentHash,
   });
 
-const failure = (code: string, message: string, exitClass: ExportFailure['exitClass']) =>
-  err<ExportFailure>(Object.freeze({ code, message, exitClass }));
+const failure = (
+  code: string,
+  message: string,
+  exitClass: ExportFailure['exitClass'],
+  conflicts: readonly ExportResult[] = [],
+) =>
+  err<ExportFailure>(
+    Object.freeze({
+      code,
+      message,
+      exitClass,
+      ...(conflicts.length === 0 ? {} : { conflicts: Object.freeze(conflicts) }),
+    }),
+  );
+
+const conflictResult = (
+  candidate: PortableExportCandidate,
+  reason: Extract<ExportResult, { action: 'conflict' }>['reason'],
+): Extract<ExportResult, { action: 'conflict' }> =>
+  Object.freeze({
+    name: candidate.name,
+    tools: Object.freeze([...candidate.tools]),
+    scope: candidate.scope,
+    classification: 'conflict',
+    action: 'conflict',
+    reason,
+  });
 
 export const mergePortableCandidates = (
   candidates: readonly PortableExportCandidate[],
+  force = false,
 ): Result<readonly PortableExportCandidate[], ExportFailure> => {
   const groups = new Map<string, PortableExportCandidate[]>();
   for (const candidate of candidates) {
@@ -68,22 +98,44 @@ export const mergePortableCandidates = (
   const merged: PortableExportCandidate[] = [];
   for (const [name, group] of groups) {
     const first = group[0] as PortableExportCandidate;
-    if (group.some((candidate) => !sameCandidate(first, candidate))) {
+    const flattenedTools = group.flatMap((candidate) => candidate.tools);
+    if (new Set(flattenedTools).size !== flattenedTools.length) {
+      return failure(
+        'export-duplicate-selected-placement',
+        `portable candidates contain a duplicate selected placement for ${name}`,
+        'usage',
+        group.map((candidate) => conflictResult(candidate, 'duplicate-selected-placement')),
+      );
+    }
+    const tools = [...new Set(group.flatMap((candidate) => candidate.tools))].sort(compareTools);
+    const incompatible = group.some((candidate) => !sameCandidate(first, candidate));
+    if (incompatible && !force) {
+      return failure(
+        'export-selected-conflict',
+        `portable candidates conflict for ${name}`,
+        'usage',
+        group.map((candidate) => conflictResult(candidate, 'selected-candidate-conflict')),
+      );
+    }
+    const authoritative = incompatible
+      ? [...group].sort((left, right) => compareTools(left.tools[0] ?? '', right.tools[0] ?? ''))[0]
+      : first;
+    if (authoritative === undefined) {
       return failure(
         'export-selected-conflict',
         `portable candidates conflict for ${name}`,
         'usage',
       );
     }
-    const tools = [...new Set(group.flatMap((candidate) => candidate.tools))].sort(compareTools);
-    if (first.path !== null && tools.length > 1) {
+    if (authoritative.path !== null && tools.length > 1) {
       return failure(
         'export-custom-path-conflict',
         `custom-path declaration cannot merge tools for ${name}`,
         'usage',
+        group.map((candidate) => conflictResult(candidate, 'custom-path-conflict')),
       );
     }
-    merged.push(Object.freeze({ ...first, tools: Object.freeze(tools) }));
+    merged.push(Object.freeze({ ...authoritative, tools: Object.freeze(tools) }));
   }
   return ok(Object.freeze(merged.sort((left, right) => left.name.localeCompare(right.name))));
 };
@@ -97,6 +149,28 @@ const sameDeclaration = (
   declaration.scope === candidate.scope &&
   declaration.placement === candidate.placement &&
   declaration.path === candidate.path;
+
+const sameDeclarationExceptRef = (
+  declaration: NormalizedManifestDeclaration,
+  candidate: PortableExportCandidate,
+): boolean =>
+  sameSource(declaration.source, candidate.source) &&
+  declaration.scope === candidate.scope &&
+  declaration.placement === candidate.placement &&
+  declaration.path === candidate.path;
+
+const preserveRequestedRefs = (
+  manifest: NormalizedManifestV1,
+  candidates: readonly PortableExportCandidate[],
+): readonly PortableExportCandidate[] =>
+  Object.freeze(
+    candidates.map((candidate) => {
+      const existing = manifest.skills.find(({ name }) => name === candidate.name);
+      return existing !== undefined && sameDeclarationExceptRef(existing, candidate)
+        ? Object.freeze({ ...candidate, requestedRef: existing.ref })
+        : candidate;
+    }),
+  );
 
 const candidateEdits = (
   manifest: NormalizedManifestV1,
@@ -117,6 +191,7 @@ const candidateEdits = (
           'export-existing-conflict',
           `existing declaration conflicts for ${candidate.name}`,
           'usage',
+          [conflictResult(candidate, 'existing-declaration-conflict')],
         );
       }
       edits.push(
@@ -156,11 +231,13 @@ const candidateEdits = (
       );
     }
     const tools = [...new Set([...existing.tools, ...candidate.tools])].sort(compareTools);
-    if (existing.path !== null && tools.length > 1) {
+    const resultingPath = sameDeclaration(existing, candidate) ? existing.path : candidate.path;
+    if (resultingPath !== null && tools.length > 1) {
       return failure(
         'export-custom-path-conflict',
         `custom-path declaration cannot merge tools for ${candidate.name}`,
         'usage',
+        [conflictResult(candidate, 'custom-path-conflict')],
       );
     }
     if (tools.join('\0') !== existing.tools.join('\0')) {
@@ -176,6 +253,9 @@ const candidateEdits = (
 };
 
 export interface PreparedExportArtifacts {
+  readonly candidates: readonly PortableExportCandidate[];
+  readonly candidateActions: Readonly<Record<string, 'add' | 'merge' | 'refresh' | 'unchanged'>>;
+  readonly manifestEdits: readonly ManifestEdit[];
   readonly manifest: NormalizedManifestV1;
   readonly manifestBytes: Uint8Array;
   readonly manifestChanged: boolean;
@@ -193,17 +273,29 @@ export const prepareExportArtifacts = (
   observation: ExportObservation,
   rawCandidates: readonly PortableExportCandidate[],
 ): Result<PreparedExportArtifacts, ExportFailure> => {
-  const merged = mergePortableCandidates(rawCandidates);
+  const merged = mergePortableCandidates(rawCandidates, observation.request.force);
   if (!merged.ok) return merged;
   if (merged.value.length === 0) {
     return failure('export-no-portable', 'no portable candidates survived', 'failure');
+  }
+  const manifestCodec = artifactContractRegistry.get('manifest', 1);
+  if (manifestCodec === undefined) {
+    return failure('export-manifest-codec', 'manifest codec is unavailable', 'failure');
   }
 
   const beforeManifest =
     observation.manifest?.state === 'present'
       ? observation.manifest.model
       : Object.freeze({ version: 1 as const, skills: Object.freeze([]) });
-  const edits = candidateEdits(beforeManifest, merged.value, observation.request.force);
+  if (
+    observation.lock?.state === 'present' &&
+    (observation.manifest?.state !== 'present' ||
+      correlatePortableLock(beforeManifest, observation.lock.model).state !== 'current')
+  ) {
+    return failure('export-invalid-lock', 'existing portable lock is not current', 'state');
+  }
+  const candidates = preserveRequestedRefs(beforeManifest, merged.value);
+  const edits = candidateEdits(beforeManifest, candidates, observation.request.force);
   if (!edits.ok) return edits;
   const migrationEdit: readonly ManifestEdit[] =
     observation.manifest?.state === 'present' && observation.manifest.sourceVersion === 'legacy'
@@ -226,26 +318,26 @@ export const prepareExportArtifacts = (
       if (!edited.ok) {
         return failure('export-manifest-edit', edited.error.message, 'state');
       }
-      const decoded = manifestV1Codec.decode(edited.value.bytes);
+      const decoded = manifestCodec.decode(edited.value.bytes);
       if (!decoded.ok)
         return failure('export-manifest-edit', 'edited manifest is invalid', 'state');
-      manifest = decoded.value.model;
+      manifest = decoded.value.model as NormalizedManifestV1;
       manifestBytes = edited.value.bytes;
       manifestChanged = edited.value.changed || edited.value.migrated;
     }
   } else {
     manifest = Object.freeze({
       version: 1 as const,
-      skills: Object.freeze(merged.value.map(declarationOf)),
+      skills: Object.freeze(candidates.map(declarationOf)),
     });
-    const encoded = manifestV1Codec.encode(manifest);
+    const encoded = manifestCodec.encode(manifest);
     if (!encoded.ok)
       return failure('export-manifest-encode', 'manifest encoding failed', 'failure');
     manifestBytes = encoded.value;
     manifestChanged = true;
   }
 
-  const candidateByName = new Map(merged.value.map((candidate) => [candidate.name, candidate]));
+  const candidateByName = new Map(candidates.map((candidate) => [candidate.name, candidate]));
   const existingLockByName = new Map(
     observation.lock?.state === 'present'
       ? observation.lock.model.skills.map((entry) => [entry.name, entry] as const)
@@ -284,9 +376,39 @@ export const prepareExportArtifacts = (
       : new Uint8Array();
   const lockChanged =
     observation.lock?.state !== 'present' || !equalBytes(beforeLockBytes, lockBytes);
+  const candidateActions = Object.freeze(
+    Object.fromEntries(
+      candidates.map((candidate) => {
+        const existing = beforeManifest.skills.find(({ name }) => name === candidate.name);
+        if (existing === undefined) return [candidate.name, 'add'] as const;
+        const tools = [...new Set([...existing.tools, ...candidate.tools])].sort(compareTools);
+        if (
+          !sameDeclaration(existing, candidate) ||
+          tools.join('\0') !== existing.tools.join('\0')
+        ) {
+          return [candidate.name, 'merge'] as const;
+        }
+        const prior = existingLockByName.get(candidate.name);
+        return [
+          candidate.name,
+          prior === undefined ||
+          prior.source !== candidate.sourceText ||
+          prior.requestedRef !== candidate.requestedRef ||
+          prior.resolvedSha !== candidate.resolvedSha ||
+          prior.sourcePath !== candidate.sourcePath ||
+          prior.contentHash !== candidate.contentHash
+            ? 'refresh'
+            : 'unchanged',
+        ] as const;
+      }),
+    ),
+  );
 
   return ok(
     Object.freeze({
+      candidates,
+      candidateActions,
+      manifestEdits: edits.value,
       manifest,
       manifestBytes,
       manifestChanged,

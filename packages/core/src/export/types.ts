@@ -13,6 +13,7 @@ export type ExportSkipReason =
   | 'dirty-git'
   | 'incomplete-provenance'
   | 'invalid-content'
+  | 'invalid-path'
   | 'invalid-source'
   | 'live-content-mismatch'
   | 'non-git-dev'
@@ -49,6 +50,18 @@ export type ExportResult =
       readonly classification: ExportSkipReason;
       readonly action: 'skipped';
       readonly reason: ExportSkipReason;
+    }>
+  | Readonly<{
+      readonly name: string;
+      readonly tools: readonly BuiltInToolId[];
+      readonly scope: ExportSourceScope;
+      readonly classification: 'conflict';
+      readonly action: 'conflict';
+      readonly reason:
+        | 'custom-path-conflict'
+        | 'duplicate-selected-placement'
+        | 'existing-declaration-conflict'
+        | 'selected-candidate-conflict';
     }>;
 
 export interface ExportEffect {
@@ -113,4 +126,5 @@ export interface ExportFailure {
   readonly message: string;
   readonly exitClass: 'failure' | 'usage' | 'state' | 'capability' | 'permission' | 'cancelled';
   readonly effects?: readonly ExportEffect[];
+  readonly conflicts?: readonly ExportResult[];
 }

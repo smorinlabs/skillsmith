@@ -395,7 +395,92 @@ export declare const toCapabilitySnapshotV1Dto: (
   source: Pick<ToolRegistry, 'adapters'>,
 ) => CapabilitySnapshotV1Dto;
 
-export type ExportV1Dto = DeepMutable<ExportReport>;
+export interface ExportV1Dto {
+  schemaVersion: 1;
+  kind: 'skillsmith.export';
+  reportVersion: 1;
+  dryRun: boolean;
+  requested: {
+    tools: ConfigToolId[];
+    explicitTools: boolean;
+    scope: ConfigScope;
+    explicitScope: boolean;
+    strict: boolean;
+    force: boolean;
+  };
+  artifactSelection:
+    | {
+        outcome: 'selected';
+        selectedBy: 'explicit-file' | 'project' | 'user';
+        manifestPath: string;
+        lockPath: string;
+        lockSource: 'sibling' | 'explicit';
+      }
+    | { outcome: 'none'; reason: 'no-portable-candidates' | 'filter-noop' }
+    | { outcome: 'refused'; reason: string };
+  results: Array<
+    | {
+        name: string;
+        tools: ConfigToolId[];
+        scope: Scope;
+        source: { host: string; repository: string; path: string | null };
+        sourceText: string;
+        requestedRef: string | null;
+        resolvedSha: string;
+        sourcePath: string;
+        contentHash: string;
+        placement: 'symlink' | 'copy';
+        path: string | null;
+        classification: 'portable-managed' | 'portable-dev';
+        action: 'add' | 'merge' | 'refresh' | 'unchanged';
+        reason: null;
+      }
+    | {
+        name: string;
+        tools: ConfigToolId[];
+        scope: ConfigScope;
+        classification:
+          | 'ambiguous'
+          | 'dirty-git'
+          | 'incomplete-provenance'
+          | 'invalid-content'
+          | 'invalid-source'
+          | 'live-content-mismatch'
+          | 'non-git-dev'
+          | 'pending-journal'
+          | 'stale-ledger'
+          | 'unmanaged'
+          | 'unsupported-scope';
+        action: 'skipped';
+        reason:
+          | 'ambiguous'
+          | 'dirty-git'
+          | 'incomplete-provenance'
+          | 'invalid-content'
+          | 'invalid-source'
+          | 'live-content-mismatch'
+          | 'non-git-dev'
+          | 'pending-journal'
+          | 'stale-ledger'
+          | 'unmanaged'
+          | 'unsupported-scope';
+      }
+  >;
+  effects: Array<{
+    role: 'ledger' | 'manifest' | 'lock';
+    action: 'create' | 'migrate' | 'update' | 'refresh' | 'unchanged' | 'not-written';
+    operationId: string | null;
+    outcome: 'planned' | 'succeeded' | 'failed' | 'cancelled' | 'not-run';
+  }>;
+  summary: {
+    observed: number;
+    portable: number;
+    skipped: number;
+    conflicts: number;
+    changed: number;
+    unchanged: number;
+  };
+}
 export declare const exportV1Codec: WireCodec<'export', 1, ExportV1Dto>;
 export declare const toExportV1Dto: (report: ExportReport) => ExportV1Dto;
 

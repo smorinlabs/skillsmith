@@ -8,7 +8,7 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InstallDeps, InstallRecord } from '@skillsmith/core';
@@ -112,6 +112,7 @@ const installDeps = (): InstallDeps => {
 const seedManaged = async (
   tools: readonly ('claude-code' | 'codex')[] = ['claude-code'],
   scope: 'user' | 'project' = 'user',
+  placementRoot?: string,
 ): Promise<void> => {
   for (const tool of tools) {
     const result = await runInstall(
@@ -124,12 +125,20 @@ const seedManaged = async (
         noVerify: true,
         cwd: scope === 'project' ? fleet.project : fleet.base,
         configuration: fleet.configuration,
+        ...(placementRoot === undefined ? {} : { path: placementRoot }),
       },
       installDeps(),
     );
     expect(result.ok, result.ok ? undefined : JSON.stringify(result.error)).toBeTrue();
     if (!result.ok) throw new Error('could not seed a managed export fixture');
-    expect(result.value.results.every((row) => row.action === 'installed')).toBeTrue();
+    expect(
+      result.value.results.every((row) =>
+        placementRoot === undefined
+          ? row.action === 'installed'
+          : row.action === 'installed' || row.action === 'repaired' || row.action === 'noop',
+      ),
+      JSON.stringify(result.value.results),
+    ).toBeTrue();
   }
 };
 
@@ -333,6 +342,7 @@ describe('G4A-02 export command contract', () => {
     const spec = CURRENT_COMMAND_SPECS.find((candidate) => candidate.path === 'skillsmith export');
     expect(spec, 'export must be activated in the sole command registry').toBeDefined();
     expect(spec?.options.map((option) => option.long)).toEqual([
+      '--help',
       '--file',
       '--lockfile',
       '--tool',
@@ -362,6 +372,60 @@ describe('G4A-02 export command contract', () => {
       manifestPath: join(fleet.projectReal, 'skillsmith.toml'),
       lockPath: join(fleet.projectReal, 'skillsmith.lock'),
     });
+
+    const customRoot = join(fleet.home, 'portable', 'custom-skills');
+    await seedManaged(['claude-code'], 'user', customRoot);
+    const customPaths = exportPaths('custom-path');
+    const custom = requireJson(await runCli(exportArgs(customPaths)), 0, 'custom user path');
+    expect(records(custom.results).find((row) => row.name === 'factor-scan')).toMatchObject({
+      path: '~/portable/custom-skills',
+      tools: ['claude-code'],
+    });
+    expect(await readMaybe(customPaths.manifest)).toContain('path = "~/portable/custom-skills"');
+
+    const scopeConflict = requireJson(
+      await runCli(['export', '--user', '--project', '--json']),
+      2,
+      'equivalent scope conflict',
+    );
+    expect(scopeConflict).toMatchObject({ kind: 'error', exitCode: 2 });
+
+    const grammarPaths = exportPaths('grammar-refusal');
+    requireJson(
+      await runCli(['export', '--user', '--lockfile', grammarPaths.lock, '--json']),
+      2,
+      'lockfile without file',
+    );
+    requireJson(
+      await runCli([
+        'export',
+        '--user',
+        '--file',
+        grammarPaths.manifest,
+        '--file',
+        `${grammarPaths.manifest}.other`,
+        '--json',
+      ]),
+      2,
+      'repeated singular file',
+    );
+    expect(await readMaybe(grammarPaths.manifest)).toBeNull();
+
+    await destroyFixtureFleet(fleet);
+    fleet = await buildFixtureFleet();
+    const readableNoop = requireJson(
+      await runCli(['export', '--user', '--tool', 'kilo-code', '--tool', 'kilo-code', '--json']),
+      0,
+      'readable tool dedup noop',
+    );
+    expect(readableNoop.requested).toMatchObject({
+      tools: ['kilo-code'],
+      explicitTools: true,
+    });
+    expect(readableNoop.artifactSelection).toMatchObject({
+      outcome: 'none',
+      reason: 'no-portable-candidates',
+    });
   });
 
   test('EWP-CMD-EXPORT-TS05 compatible default-path tools merge without weakening conflicts', async () => {
@@ -375,6 +439,34 @@ describe('G4A-02 export command contract', () => {
     expect(row?.tools).toEqual(['claude-code', 'codex']);
     const manifest = await readMaybe(paths.manifest);
     expect(manifest).toContain('tools = ["claude-code", "codex"]');
+
+    await destroyFixtureFleet(fleet);
+    fleet = await buildFixtureFleet();
+    const customRoot = join(fleet.home, 'portable', 'shared');
+    await seedManaged(['claude-code', 'codex'], 'user', customRoot);
+    const conflictPaths = exportPaths('custom-conflict');
+    const customArgs = exportArgs(conflictPaths).flatMap((value) =>
+      value === 'claude-code' ? ['claude-code', '--tool', 'codex'] : [value],
+    );
+    const conflict = requireJson(await runCli(customArgs), 2, 'custom-path tool conflict');
+    expect(
+      records(conflict.results).some((row) => row.action === 'conflict'),
+      JSON.stringify(conflict),
+    ).toBeTrue();
+    expect(conflict.summary).toMatchObject({ portable: 0, conflicts: 2 });
+    expect(Number((conflict.summary as UnknownRecord).observed)).toBe(
+      Number((conflict.summary as UnknownRecord).skipped) + 2,
+    );
+    expect(await readMaybe(conflictPaths.manifest)).toBeNull();
+    expect(await readMaybe(conflictPaths.lock)).toBeNull();
+
+    const forced = requireJson(
+      await runCli([...customArgs, '--force']),
+      2,
+      'forced custom-path tool conflict',
+    );
+    expect(records(forced.results).some((row) => row.action === 'conflict')).toBeTrue();
+    expect(await readMaybe(conflictPaths.manifest)).toBeNull();
   });
 
   test('EWP-CMD-EXPORT-TS06 pair creation and unchanged rerun are lossless and byte-identical', async () => {
@@ -387,6 +479,38 @@ describe('G4A-02 export command contract', () => {
     const report = requireJson(await runCli(exportArgs(paths)), 0, 'unchanged export');
     expect(report.summary).toMatchObject({ changed: 0, unchanged: 1 });
     expect([await readMaybe(paths.manifest), await readMaybe(paths.lock)]).toEqual([...first]);
+
+    const legacyPaths = exportPaths('legacy-project');
+    const legacySource = '# retained heading\ntool = "codex" # retained default\nscope = "user"\n';
+    await mkdir(join(fleet.base, 'exports', 'legacy-project'), { recursive: true });
+    await writeFile(legacyPaths.manifest, legacySource);
+    const legacyPreview = requireJson(
+      await runCli(exportArgs(legacyPaths, ['--dry-run'])),
+      0,
+      'legacy project preview',
+    );
+    expect(records(legacyPreview.effects)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'manifest', action: 'migrate', outcome: 'planned' }),
+        expect.objectContaining({ role: 'manifest', action: 'update', outcome: 'planned' }),
+        expect.objectContaining({ role: 'lock', action: 'create', outcome: 'planned' }),
+      ]),
+    );
+    expect(await readMaybe(legacyPaths.manifest)).toBe(legacySource);
+    requireJson(await runCli(exportArgs(legacyPaths)), 0, 'legacy project execution');
+    const migratedSource = await readMaybe(legacyPaths.manifest);
+    expect(migratedSource).toContain('# retained heading\nversion = 1');
+    expect(migratedSource).toContain('factor-scan');
+    expect(await readMaybe(legacyPaths.lock)).toContain('factor-scan');
+
+    const incompletePaths = exportPaths('incomplete-lock');
+    await mkdir(join(fleet.base, 'exports', 'incomplete-lock'), { recursive: true });
+    const incompleteManifest =
+      'version = 1\n\n[[skills]]\nname = "retained"\nsource = "github.com/acme/retained//skill"\ntools = ["codex"]\nscope = "user"\nplacement = "symlink"\n';
+    await writeFile(incompletePaths.manifest, incompleteManifest);
+    requireJson(await runCli(exportArgs(incompletePaths)), 3, 'incomplete lock refusal');
+    expect(await readMaybe(incompletePaths.manifest)).toBe(incompleteManifest);
+    expect(await readMaybe(incompletePaths.lock)).toBeNull();
   });
 
   test('EWP-CMD-EXPORT-TS07 dry-run and execution expose equal effects and exact failure classes', async () => {
@@ -401,10 +525,80 @@ describe('G4A-02 export command contract', () => {
     expect(await readMaybe(paths.lock)).toBeNull();
 
     const execution = requireJson(await runCli(exportArgs(paths)), 0, 'export execution');
-    expect(records(preview.effects).map(({ role, action }) => ({ role, action }))).toEqual(
-      records(execution.effects).map(({ role, action }) => ({ role, action })),
+    expect(
+      records(preview.effects).map(({ role, action, operationId }) => ({
+        role,
+        action,
+        operationId,
+      })),
+    ).toEqual(
+      records(execution.effects).map(({ role, action, operationId }) => ({
+        role,
+        action,
+        operationId,
+      })),
     );
-    expect(records(execution.effects).every((effect) => effect.outcome === 'succeeded')).toBeTrue();
+    expect(
+      records(execution.effects).every(
+        (effect) =>
+          effect.outcome === 'succeeded' ||
+          (effect.role === 'ledger' &&
+            effect.action === 'not-written' &&
+            effect.outcome === 'not-run'),
+      ),
+    ).toBeTrue();
+
+    const blockedDirectory = join(fleet.base, 'blocked-export');
+    await mkdir(blockedDirectory, { recursive: true });
+    await chmod(blockedDirectory, 0o500);
+    try {
+      const blockedPaths = {
+        manifest: join(blockedDirectory, 'skillsmith.toml'),
+        lock: join(blockedDirectory, 'skillsmith.lock'),
+      };
+      const denied = requireJson(
+        await runCli(exportArgs(blockedPaths)),
+        6,
+        'artifact permission denial',
+      );
+      expect(denied.artifactSelection).toMatchObject({
+        outcome: 'refused',
+        reason: 'export-permission-denied',
+      });
+      expect(records(denied.effects).some((effect) => effect.outcome === 'failed')).toBeTrue();
+      expect(await readMaybe(blockedPaths.manifest)).toBeNull();
+      expect(await readMaybe(blockedPaths.lock)).toBeNull();
+    } finally {
+      await chmod(blockedDirectory, 0o700);
+    }
+
+    const cancelledPaths = exportPaths('cancelled');
+    let cancelledProduct: CliProduct | null = null;
+    await fleet.env.withFileLock(ledgerPathOf(fleet.data), async () => {
+      const child = Bun.spawn(['bun', CLI_ENTRYPOINT, ...exportArgs(cancelledPaths)], {
+        cwd: fleet.base,
+        env: hermeticGitEnv(cliEnv()),
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      await Bun.sleep(800);
+      child.kill('SIGINT');
+      cancelledProduct = {
+        exitCode: await child.exited,
+        stdout: await new Response(child.stdout).text(),
+        stderr: await new Response(child.stderr).text(),
+      };
+    });
+    if (cancelledProduct === null) throw new Error('cancelled export product was unavailable');
+    const cancelled = requireJson(cancelledProduct, 130, 'artifact cancellation');
+    expect(cancelled).toMatchObject({
+      kind: 'skillsmith.export',
+      artifactSelection: { outcome: 'refused' },
+    });
+    expect(records(cancelled.effects).some((effect) => effect.outcome === 'cancelled')).toBeTrue();
+    expect(await readMaybe(cancelledPaths.manifest)).toBeNull();
+    expect(await readMaybe(cancelledPaths.lock)).toBeNull();
   });
 
   test('EWP-CMD-EXPORT-TS08 local and credential canaries never cross the portable boundary', async () => {

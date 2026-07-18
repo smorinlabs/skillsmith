@@ -129,6 +129,7 @@ const EXPECTED_WIRE_IDENTITIES = [
   'uninstall@2',
   'verify@1',
   'error@1',
+  'export@1',
   'capability-snapshot@1',
 ] as const;
 const EXPECTED_FUZZ_IDS = [
@@ -215,6 +216,7 @@ const V1_RUNTIME_EXPORTS = [
   'configUnsetV1Codec',
   'createVerifyV1Codec',
   'errorV1Codec',
+  'exportV1Codec',
   'healthV1Codec',
   'installV1Codec',
   'statusV1Codec',
@@ -226,6 +228,7 @@ const V1_RUNTIME_EXPORTS = [
   'toConfigSetV1Dto',
   'toConfigUnsetV1Dto',
   'toErrorV1Dto',
+  'toExportV1Dto',
   'toHealthV1Dto',
   'toInstallV1Dto',
   'toStatusV1Dto',
@@ -2003,6 +2006,7 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
         [v2.listV2Codec, wireRegistry.get('list', 2)],
         [v3.listV3Codec, wireRegistry.get('list', 3)],
         [v1.statusV1Codec, wireRegistry.get('status', 1)],
+        [v1.exportV1Codec, wireRegistry.get('export', 1)],
       ] as const;
       for (const [versioned, registered] of wireIdentities) {
         expect(versioned, 'versioned wire facade export is absent').toBeDefined();

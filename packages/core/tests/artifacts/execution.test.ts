@@ -1,0 +1,117 @@
+import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
+import { withArtifactPairExecutionAuthority } from '../../src/artifacts/execution.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
+import type { ResolvedArtifactPair } from '../../src/artifacts/pair.ts';
+
+const pairOf = (manifestPath: string, lockPath: string): ResolvedArtifactPair =>
+  Object.freeze({
+    file: Object.freeze({
+      token: null,
+      path: manifestPath,
+      portability: 'machine-bound' as const,
+      portableToken: null,
+    }),
+    lockfile: Object.freeze({
+      token: null,
+      path: lockPath,
+      portability: 'machine-bound' as const,
+      portableToken: null,
+    }),
+    lockfileSource: 'explicit' as const,
+  });
+
+describe('artifact pair execution authority', () => {
+  test('holds group then exact members then ledger and cleans unused scaffolding', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-artifact-execution-'));
+    try {
+      const pair = pairOf(
+        join(root, 'portable', 'nested', 'skillsmith.toml'),
+        join(root, 'generated', 'nested', 'skillsmith.lock'),
+      );
+      const delegate = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+      const trace: string[] = [];
+      const withFileLock: ArtifactCoordinatorPorts['withFileLock'] = async (
+        target,
+        options,
+        operation,
+      ) => {
+        trace.push(`lock:${options.policy}:${target}`);
+        try {
+          return await delegate.withFileLock(target, options, operation);
+        } finally {
+          trace.push(`release:${options.policy}:${target}`);
+        }
+      };
+      const coordinator: ArtifactCoordinatorPorts = Object.freeze({ ...delegate, withFileLock });
+      const ledgerPath = join(root, 'state', 'placements.json');
+      const value = await withArtifactPairExecutionAuthority(
+        {
+          artifactCoordinator: coordinator,
+          lockPort: Object.freeze({
+            withFileLock: async <T>(path: string, operation: () => Promise<T>): Promise<T> => {
+              trace.push(`lock:ledger:${path}`);
+              try {
+                return await operation();
+              } finally {
+                trace.push(`release:ledger:${path}`);
+              }
+            },
+          }),
+          pair,
+          ledgerPath,
+        },
+        async () => {
+          trace.push('operation');
+          return 'held';
+        },
+      );
+
+      expect(value).toBe('held');
+      const central = trace.findIndex((item) => item.startsWith('lock:central:'));
+      const members = trace
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => item.startsWith('lock:compatibility:'))
+        .map(({ index }) => index);
+      const ledger = trace.indexOf(`lock:ledger:${ledgerPath}`);
+      const operation = trace.indexOf('operation');
+      expect(central).toBeGreaterThanOrEqual(0);
+      expect(members).toHaveLength(2);
+      expect(members.every((index) => index > central && index < ledger)).toBeTrue();
+      expect(ledger).toBeLessThan(operation);
+      expect(trace.indexOf(`release:ledger:${ledgerPath}`)).toBeGreaterThan(operation);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('refuses descriptor alias and ancestor topology before taking any lock', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-artifact-topology-'));
+    try {
+      const coordinator = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+      let locks = 0;
+      await expect(
+        withArtifactPairExecutionAuthority(
+          {
+            artifactCoordinator: coordinator,
+            lockPort: Object.freeze({
+              withFileLock: async <T>(_path: string, operation: () => Promise<T>): Promise<T> => {
+                locks += 1;
+                return operation();
+              },
+            }),
+            pair: pairOf(join(root, 'portable'), join(root, 'portable', 'skillsmith.lock')),
+            ledgerPath: join(root, 'placements.json'),
+          },
+          async () => undefined,
+        ),
+      ).rejects.toThrow('lock topology is unsafe');
+      expect(locks).toBe(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

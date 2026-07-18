@@ -820,4 +820,27 @@ describe('planning constructors', () => {
     });
     expect(Object.isFrozen(force.target)).toBeTrue();
   });
+
+  test('admits export as a current mutator for an exact filter-noop plan', () => {
+    const plan = createOperationPlan({
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'export',
+      selection: {
+        source: 'bounded-default',
+        outcome: 'filter-noop',
+        tools: [],
+        scopes: [],
+      },
+      batchPolicy: 'fail-fast',
+      operations: [],
+      checks: [],
+      diagnostics: [],
+    });
+    expect(plan).toMatchObject({
+      command: 'export',
+      selection: { source: 'bounded-default', outcome: 'filter-noop' },
+      operations: [],
+    });
+  });
 });

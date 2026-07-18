@@ -1,11 +1,11 @@
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { BuiltInToolId } from '../agents/registry.ts';
-import type { CurrentApplicationContext } from '../application/types.ts';
-import { normalizeSourceIdentity } from '../artifacts/identity.ts';
+import { normalizePortablePath, normalizeSourceIdentity } from '../artifacts/identity.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
 import type { SkillInventoryEntry } from '../inventory/types.ts';
-import { contentHashOf } from '../place/store.ts';
 import { type Result, err, ok } from '../result.ts';
-import type { ExportObservation } from './observe.ts';
+import { containsSensitiveMaterial } from '../safety/redaction.ts';
+import type { ExportEntryObservation, ExportObservation } from './observe.ts';
 import type {
   ExportFailure,
   ExportResult,
@@ -19,21 +19,6 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 const sourceText = (source: PortableExportCandidate['source']): string =>
   `${source.host}/${source.repository}${source.path === null ? '' : `//${source.path}`}`;
 
-const pairFor = (
-  ledger: LedgerModel,
-  entry: SkillInventoryEntry,
-  projectRoot: string | null,
-): LedgerPairV1Dto | null => {
-  const skills =
-    entry.scope === 'user'
-      ? ledger.skills
-      : entry.scope === 'project' && projectRoot !== null
-        ? ledger.projects[projectRoot]?.skills
-        : undefined;
-  const pair = skills?.[entry.name]?.tools[entry.tool];
-  return pair !== undefined && pair.placementPath === entry.path ? pair : null;
-};
-
 const skipped = (entry: SkillInventoryEntry, reason: ExportSkipReason): ExportResult =>
   Object.freeze({
     name: entry.name,
@@ -44,19 +29,59 @@ const skipped = (entry: SkillInventoryEntry, reason: ExportSkipReason): ExportRe
     reason,
   });
 
-const contentHash = async (
-  context: CurrentApplicationContext,
-  path: string,
-): Promise<string | null> => {
-  const hashed = await contentHashOf(context.ports, path);
-  return hashed.ok ? hashed.value : null;
+const sameSource = (
+  left: PortableExportCandidate['source'],
+  right: PortableExportCandidate['source'],
+): boolean =>
+  left.host === right.host && left.repository === right.repository && left.path === right.path;
+
+const containedBy = (root: string, target: string): boolean => {
+  const displacement = relative(root, target);
+  return (
+    displacement === '' ||
+    (!displacement.startsWith(`..${sep}`) && displacement !== '..' && !isAbsolute(displacement))
+  );
 };
 
-const portableManaged = async (
-  context: CurrentApplicationContext,
-  entry: SkillInventoryEntry,
+const portablePlacementPath = (
+  observation: ExportObservation,
+  fact: ExportEntryObservation,
+): string | null | ExportSkipReason => {
+  if (fact.defaultLocation) return null;
+  if (fact.entry.scope !== 'user' && fact.entry.scope !== 'project') return 'invalid-path';
+  const scope = fact.entry.scope;
+  const root = dirname(fact.entry.path);
+  const base = scope === 'user' ? observation.homeDir : observation.sourceProjectRoot;
+  if (base === null || !containedBy(resolve(base), resolve(root))) return 'invalid-path';
+  const displacement = relative(resolve(base), resolve(root)).replaceAll('\\', '/');
+  if (displacement.length === 0) return 'invalid-path';
+  const token = `${scope === 'project' ? './' : '~/'}${displacement}`;
+  const normalized = normalizePortablePath(token, scope, 'export.path');
+  return normalized.ok && !containsSensitiveMaterial(normalized.value)
+    ? normalized.value
+    : 'invalid-path';
+};
+
+const candidateStringsAreSafe = (candidate: PortableExportCandidate): boolean =>
+  [
+    candidate.name,
+    candidate.source.host,
+    candidate.source.repository,
+    candidate.source.path ?? '',
+    candidate.sourceText,
+    candidate.requestedRef ?? '',
+    candidate.resolvedSha,
+    candidate.sourcePath,
+    candidate.contentHash,
+    candidate.path ?? '',
+  ].every((value) => !containsSensitiveMaterial(value));
+
+const portableManaged = (
+  observation: ExportObservation,
+  fact: ExportEntryObservation,
   pair: LedgerPairV1Dto,
-): Promise<PortableExportCandidate | ExportSkipReason> => {
+): PortableExportCandidate | ExportSkipReason => {
+  const { entry } = fact;
   const origin = pair.origin;
   const pinned = pair.pinned;
   if (
@@ -64,18 +89,31 @@ const portableManaged = async (
     origin === undefined ||
     pinned == null ||
     pair.journal != null ||
+    pinned.dirty ||
     !SHA1.test(origin.refResolved) ||
-    !DIGEST.test(pinned.contentHash)
+    !DIGEST.test(pinned.contentHash) ||
+    (pinned.gitSha !== null && pinned.gitSha !== origin.refResolved) ||
+    entry.placement === 'unknown' ||
+    (pinned.placement !== undefined && pinned.placement !== entry.placement) ||
+    (entry.placement === 'symlink' && resolve(entry.realpath) !== resolve(pinned.storePath))
   ) {
     return pair.journal == null ? 'incomplete-provenance' : 'pending-journal';
   }
   const normalized = normalizeSourceIdentity(origin.source);
-  if (!normalized.ok) return 'invalid-source';
-  const liveHash = await contentHash(context, entry.realpath);
-  if (liveHash === null) return 'invalid-content';
-  if (liveHash !== pinned.contentHash) return 'live-content-mismatch';
+  if (
+    !normalized.ok ||
+    normalized.value.host !== origin.host ||
+    normalized.value.repository !== origin.repo ||
+    (normalized.value.path ?? '.') !== origin.skillPath
+  ) {
+    return 'invalid-source';
+  }
+  if (fact.liveContentHash === null) return 'invalid-content';
+  if (fact.liveContentHash !== pinned.contentHash) return 'live-content-mismatch';
+  const path = portablePlacementPath(observation, fact);
+  if (typeof path === 'string' && path === 'invalid-path') return path;
   const source = Object.freeze(normalized.value);
-  return Object.freeze({
+  const candidate = Object.freeze({
     name: entry.name,
     tools: Object.freeze([entry.tool as BuiltInToolId]),
     scope: entry.scope as 'user' | 'project',
@@ -85,17 +123,19 @@ const portableManaged = async (
     resolvedSha: origin.refResolved,
     sourcePath: origin.skillPath,
     contentHash: pinned.contentHash as PortableExportCandidate['contentHash'],
-    placement: pinned.placement ?? (entry.placement === 'copy' ? 'copy' : 'symlink'),
-    path: null,
-    classification: 'portable-managed',
+    placement: entry.placement,
+    path,
+    classification: 'portable-managed' as const,
   });
+  return candidateStringsAreSafe(candidate) ? candidate : 'invalid-source';
 };
 
-const portableDev = async (
-  context: CurrentApplicationContext,
-  entry: SkillInventoryEntry,
+const portableDev = (
+  observation: ExportObservation,
+  fact: ExportEntryObservation,
   pair: LedgerPairV1Dto,
-): Promise<PortableExportCandidate | ExportSkipReason> => {
+): PortableExportCandidate | ExportSkipReason => {
+  const { entry } = fact;
   const dev = pair.dev;
   if (
     pair.mode !== 'dev' ||
@@ -103,27 +143,37 @@ const portableDev = async (
     pair.journal != null ||
     dev.repoRoot === null ||
     dev.sourceRelPath === null ||
-    dev.remote === null
+    dev.remote === null ||
+    entry.placement === 'unknown'
   ) {
     return pair.journal == null ? 'non-git-dev' : 'pending-journal';
   }
-  let inspected: Awaited<ReturnType<CurrentApplicationContext['ports']['git']['inspectWorktree']>>;
-  try {
-    inspected = await context.ports.git.inspectWorktree({
-      repositoryRoot: dev.repoRoot,
-      ...(context.signal === undefined ? {} : { signal: context.signal }),
-    });
-  } catch {
-    return 'non-git-dev';
-  }
+  const inspected = fact.git;
+  if (inspected === null) return 'non-git-dev';
   if (inspected.dirtySummary !== null) return 'dirty-git';
-  if (!SHA1.test(inspected.headSha) || inspected.remoteUrl === null) return 'incomplete-provenance';
+  if (
+    !SHA1.test(inspected.headSha) ||
+    inspected.remoteUrl === null ||
+    resolve(inspected.repositoryRoot) !== resolve(dev.repoRoot) ||
+    resolve(dev.resolvedPath) !== resolve(entry.realpath)
+  ) {
+    return 'incomplete-provenance';
+  }
   const normalized = normalizeSourceIdentity(`${inspected.remoteUrl}//${dev.sourceRelPath}`);
-  if (!normalized.ok) return 'invalid-source';
-  const liveHash = await contentHash(context, entry.realpath);
-  if (liveHash === null) return 'invalid-content';
+  const recorded = normalizeSourceIdentity(`${dev.remote}//${dev.sourceRelPath}`);
+  if (!normalized.ok || !recorded.ok || !sameSource(normalized.value, recorded.value)) {
+    return 'invalid-source';
+  }
+  const sourceRelative = relative(resolve(dev.repoRoot), resolve(entry.realpath)).replaceAll(
+    '\\',
+    '/',
+  );
+  if (sourceRelative !== dev.sourceRelPath) return 'incomplete-provenance';
+  if (fact.liveContentHash === null) return 'invalid-content';
+  const path = portablePlacementPath(observation, fact);
+  if (typeof path === 'string' && path === 'invalid-path') return path;
   const source = Object.freeze(normalized.value);
-  return Object.freeze({
+  const candidate = Object.freeze({
     name: entry.name,
     tools: Object.freeze([entry.tool as BuiltInToolId]),
     scope: entry.scope as 'user' | 'project',
@@ -132,11 +182,24 @@ const portableDev = async (
     requestedRef: inspected.headSha,
     resolvedSha: inspected.headSha,
     sourcePath: dev.sourceRelPath,
-    contentHash: liveHash as PortableExportCandidate['contentHash'],
-    placement: entry.placement === 'copy' ? 'copy' : 'symlink',
-    path: null,
-    classification: 'portable-dev',
+    contentHash: fact.liveContentHash,
+    placement: entry.placement,
+    path,
+    classification: 'portable-dev' as const,
   });
+  return candidateStringsAreSafe(candidate) ? candidate : 'invalid-source';
+};
+
+const hasPendingLegacyJournal = (ledger: LedgerModel): boolean => {
+  const collections = [
+    ledger.skills,
+    ...Object.values(ledger.projects).map(({ skills }) => skills),
+  ];
+  return collections.some((skills) =>
+    Object.values(skills).some(({ tools }) =>
+      Object.values(tools).some((pair) => pair?.journal != null),
+    ),
+  );
 };
 
 export interface ClassifiedExport {
@@ -144,18 +207,18 @@ export interface ClassifiedExport {
   readonly results: readonly ExportResult[];
 }
 
-export const classifyExport = async (
-  context: CurrentApplicationContext,
+export const classifyExport = (
   observation: ExportObservation,
-): Promise<Result<ClassifiedExport, ExportFailure>> => {
+): Result<ClassifiedExport, ExportFailure> => {
   if (
     observation.ledger.state === 'present' &&
-    Object.keys(observation.ledger.model.transactions).length > 0
+    (Object.keys(observation.ledger.model.transactions).length > 0 ||
+      hasPendingLegacyJournal(observation.ledger.model))
   ) {
     return err(
       Object.freeze({
         code: 'export-pending-ledger-transaction',
-        message: 'placements ledger has a pending transaction',
+        message: 'placements ledger has pending recovery state',
         exitClass: 'state' as const,
       }),
     );
@@ -163,7 +226,8 @@ export const classifyExport = async (
 
   const portable: PortableExportCandidate[] = [];
   const results: ExportResult[] = [];
-  for (const entry of observation.inventory.entries) {
+  for (const fact of observation.entries) {
+    const { entry } = fact;
     if (entry.scope !== 'user' && entry.scope !== 'project') {
       results.push(skipped(entry, 'unsupported-scope'));
       continue;
@@ -176,15 +240,15 @@ export const classifyExport = async (
       results.push(skipped(entry, 'stale-ledger'));
       continue;
     }
-    const pair = pairFor(observation.ledger.model, entry, observation.project.projectRoot);
+    const pair = fact.ledgerPair;
     if (pair === null) {
       results.push(skipped(entry, entry.mode === 'unmanaged' ? 'unmanaged' : 'stale-ledger'));
       continue;
     }
     const candidate =
       pair.mode === 'pinned'
-        ? await portableManaged(context, entry, pair)
-        : await portableDev(context, entry, pair);
+        ? portableManaged(observation, fact, pair)
+        : portableDev(observation, fact, pair);
     if (typeof candidate === 'string') {
       results.push(skipped(entry, candidate));
       continue;

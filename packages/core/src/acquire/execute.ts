@@ -8,7 +8,6 @@ import { type Placement, classifyPlacement } from '../agents/placement-shared.ts
 import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import type {
   ArtifactCoordinatorPorts,
-  ArtifactFileRevision,
   ArtifactGroupLockLease,
   GeneratedLockAction,
   HumanManifestAction,
@@ -16,7 +15,6 @@ import type {
 import {
   type ArtifactGroupLeaseScaffoldReceipt,
   authenticateArtifactGroupLeaseScaffold,
-  commitArtifactPairWithLease,
   prepareArtifactGroupLeaseScaffold,
   withArtifactGroupLock,
 } from '../artifacts/coordinator.ts';
@@ -28,18 +26,18 @@ import {
   discoverArtifactSnapshot,
   selectManifestDestination,
 } from '../artifacts/discovery.ts';
-import { hashCanonicalInput, hashManifestSemantics } from '../artifacts/hash.ts';
+import {
+  type ArtifactPairExecutionActionV1,
+  artifactLockImageFromBytesV1,
+  artifactManifestImageFromBytesV1,
+  createArtifactPairOperationControllerV1,
+} from '../artifacts/execution.ts';
+import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { normalizePortablePath } from '../artifacts/identity.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { LedgerWriterPorts } from '../artifacts/ledger-writer.ts';
-import {
-  hashPortableLock,
-  readPortableLockSource,
-  serializePortableLock,
-} from '../artifacts/lock.ts';
-import { editManifestBytes } from '../artifacts/manifest-edit.ts';
-import { normalizeManifestDocument, readManifestSource } from '../artifacts/manifest.ts';
+import { serializePortableLock } from '../artifacts/lock.ts';
 import {
   type ArtifactPairError,
   type ArtifactPairPorts,
@@ -47,7 +45,6 @@ import {
   resolveArtifactPair,
 } from '../artifacts/pair.ts';
 import { createLockRepository, createManifestRepository } from '../artifacts/repository.ts';
-import type { NormalizedManifestV1 } from '../artifacts/types.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import { type SkillSmithError, flipFailedError, genericError, safeErrorCode } from '../errors.ts';
@@ -1301,9 +1298,6 @@ export const createAcquireExecutionLockPort = (
   });
 
 type AcquisitionArtifactRoleV1 = 'manifest' | 'lock';
-type AcquisitionManifestImageV1 = Extract<OperationImage, { readonly kind: 'manifest' }>;
-type AcquisitionLockImageV1 = Extract<OperationImage, { readonly kind: 'lock' }>;
-
 export type AcquisitionArtifactExecutionActionV1 =
   | Readonly<{ readonly role: 'manifest'; readonly action: HumanManifestAction }>
   | Readonly<{ readonly role: 'lock'; readonly action: GeneratedLockAction }>;
@@ -1335,45 +1329,6 @@ const acquisitionArtifactResource = (role: AcquisitionArtifactRoleV1, path: stri
       })
     : Object.freeze({ kind: 'lock' as const, location: acquisitionArtifactLocation(path) });
 
-const acquisitionManifestSnapshot = (
-  value: NormalizedManifestV1,
-): AcquisitionManifestImageV1['value'] => ({
-  version: 1,
-  defaults:
-    value.defaults === undefined
-      ? null
-      : {
-          tools: value.defaults.tools ?? null,
-          scope: value.defaults.scope ?? null,
-          path: value.defaults.path ?? null,
-        },
-  registry: value.registry === undefined ? null : { default: value.registry.default ?? null },
-  skills: value.skills,
-});
-
-const acquisitionResourceDigest = (bytes: Uint8Array): OperationDigest => {
-  const digest = hashCanonicalInput('resource', 1, bytes);
-  if (!digest.ok) {
-    return acquisitionArtifactExecutionFail('artifact byte digest could not be computed');
-  }
-  return digest.value as OperationDigest;
-};
-
-const acquisitionCoordinatorDigest = (
-  role: AcquisitionArtifactRoleV1,
-  bytes: Uint8Array,
-): string => {
-  const digest = hashCanonicalInput(
-    role === 'manifest' ? 'manifest-bytes' : 'lock-canonical',
-    1,
-    bytes,
-  );
-  if (!digest.ok) {
-    return acquisitionArtifactExecutionFail('coordinator artifact digest could not be computed');
-  }
-  return digest.value;
-};
-
 const ownAcquisitionArtifactAction = (
   action: AcquisitionArtifactExecutionActionV1,
 ): AcquisitionArtifactExecutionActionV1 => {
@@ -1400,51 +1355,11 @@ const ownAcquisitionArtifactAction = (
   return owned;
 };
 
-export const acquisitionManifestImageFromBytesV1 = (
-  path: string,
-  bytes: Uint8Array,
-): AcquisitionManifestImageV1 => {
-  let source: string;
-  try {
-    source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    return acquisitionArtifactExecutionFail('manifest bytes are not valid UTF-8');
-  }
-  const document = readManifestSource(source);
-  if (!document.ok) return acquisitionArtifactExecutionFail('manifest bytes are not readable');
-  const normalized = normalizeManifestDocument(document.value);
-  if (!normalized.ok) {
-    return acquisitionArtifactExecutionFail('manifest bytes are not normalizable');
-  }
-  return Object.freeze({
-    kind: 'manifest' as const,
-    location: acquisitionArtifactLocation(path),
-    shape: document.value.shape,
-    version: 1 as const,
-    byteHash: acquisitionResourceDigest(bytes),
-    semanticHash: hashManifestSemantics(normalized.value) as OperationDigest,
-    value: acquisitionManifestSnapshot(normalized.value),
-  });
-};
+/** @deprecated Compatibility alias; artifact image ownership is pair-controller neutral. */
+export const acquisitionManifestImageFromBytesV1 = artifactManifestImageFromBytesV1;
 
-export const acquisitionLockImageFromBytesV1 = (
-  path: string,
-  bytes: Uint8Array,
-): AcquisitionLockImageV1 => {
-  const lock = readPortableLockSource(bytes);
-  if (!lock.ok) return acquisitionArtifactExecutionFail('lock bytes are not canonical');
-  const canonicalHash = hashPortableLock(lock.value);
-  if (!canonicalHash.ok) {
-    return acquisitionArtifactExecutionFail('lock hash could not be computed');
-  }
-  return Object.freeze({
-    kind: 'lock' as const,
-    location: acquisitionArtifactLocation(path),
-    version: 1 as const,
-    canonicalHash: canonicalHash.value as OperationDigest,
-    value: lock.value as unknown as AcquisitionLockImageV1['value'],
-  });
-};
+/** @deprecated Compatibility alias; artifact image ownership is pair-controller neutral. */
+export const acquisitionLockImageFromBytesV1 = artifactLockImageFromBytesV1;
 
 const sameAcquisitionArtifactImage = (left: OperationImage, right: OperationImage): boolean =>
   canonicalPlanningString(left) === canonicalPlanningString(right);
@@ -1619,30 +1534,7 @@ const isStrictAcquisitionArtifactAncestor = (ancestor: string, target: string): 
   );
 };
 
-const acquisitionArtifactResult = (
-  operation: ExecutableOperation,
-  binding: ValidatedExecutionBinding,
-  outcome: 'succeeded' | 'failed' | 'cancelled',
-  actualAfter: OperationImage,
-  reason?: string,
-): OperationExecutionResult =>
-  createOperationExecutionResult({
-    operationId: operation.operationId,
-    outcome,
-    actualBefore: binding.actualBefore,
-    actualAfter,
-    force: binding.unstartedForce,
-    error:
-      outcome === 'failed'
-        ? {
-            code: 'artifact-mutation-failed',
-            message: `portable artifact mutation failed${reason === undefined ? '' : `: ${reason}`}`,
-            remediation: 'Re-read portable state and retry the command.',
-          }
-        : null,
-  });
-
-export const createAcquisitionArtifactExecutionControllerV1 = (input: {
+const createAcquisitionArtifactExecutionCompatibilityControllerV1 = (input: {
   readonly authority: AcquisitionSnapshotAuthorityV1;
   readonly artifactCoordinator: ArtifactCoordinatorPorts;
   readonly ledgerLockPort: LockPort;
@@ -1784,81 +1676,6 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
     },
   });
 
-  const observePhysical = async (
-    role: AcquisitionArtifactRoleV1,
-  ): Promise<Readonly<{ image: OperationImage; bytes: Uint8Array | null }>> => {
-    const repository = role === 'manifest' ? repositories.manifest : repositories.lock;
-    const observed = await repository.observe(resourceIds[role]);
-    if (!observed.ok) {
-      return acquisitionArtifactExecutionFail(`${role} repository observation failed`);
-    }
-    const path = role === 'manifest' ? pair.file.path : pair.lockfile.path;
-    const revision = observed.value.revision;
-    if (
-      (role === 'manifest' ? revision.domain !== 'manifest' : revision.domain !== 'lock') ||
-      !('targetIdentity' in revision) ||
-      revision.targetIdentity !== path
-    ) {
-      acquisitionArtifactExecutionFail(`${role} repository authority changed`);
-    }
-    if (revision.state === 'absent') {
-      if (observed.value.value !== null) {
-        acquisitionArtifactExecutionFail(`${role} absent observation has a model`);
-      }
-      return Object.freeze({
-        image: Object.freeze({
-          kind: 'absent' as const,
-          resource: acquisitionArtifactResource(role, path),
-        }),
-        bytes: null,
-      });
-    }
-    if (
-      revision.state !== 'present' ||
-      !('byteRevision' in revision) ||
-      observed.value.value === null
-    ) {
-      return acquisitionArtifactExecutionFail(`${role} present observation is invalid`);
-    }
-    const bytes = await input.artifactCoordinator.readBytes(path);
-    const image =
-      role === 'manifest'
-        ? acquisitionManifestImageFromBytesV1(path, bytes)
-        : acquisitionLockImageFromBytesV1(path, bytes);
-    if (
-      acquisitionResourceDigest(bytes) !== revision.byteRevision ||
-      (image.kind === 'manifest'
-        ? revision.semanticRevision !== image.semanticHash ||
-          canonicalPlanningString(
-            acquisitionManifestSnapshot(observed.value.value as NormalizedManifestV1),
-          ) !== canonicalPlanningString(image.value)
-        : revision.semanticRevision !== image.canonicalHash ||
-          canonicalPlanningString(observed.value.value) !== canonicalPlanningString(image.value))
-    ) {
-      acquisitionArtifactExecutionFail(`${role} repository facts are incoherent`);
-    }
-    return Object.freeze({ image, bytes: new Uint8Array(bytes) });
-  };
-
-  const imageFromRevision = (
-    role: AcquisitionArtifactRoleV1,
-    revision: ArtifactFileRevision,
-  ): OperationImage => {
-    const path = role === 'manifest' ? pair.file.path : pair.lockfile.path;
-    if (revision.state === 'absent') {
-      return Object.freeze({
-        kind: 'absent' as const,
-        resource: acquisitionArtifactResource(role, path),
-      });
-    }
-    if (acquisitionCoordinatorDigest(role, revision.bytes) !== revision.digest) {
-      return acquisitionArtifactExecutionFail(`${role} commit revision digest is incoherent`);
-    }
-    return role === 'manifest'
-      ? acquisitionManifestImageFromBytesV1(path, revision.bytes)
-      : acquisitionLockImageFromBytesV1(path, revision.bytes);
-  };
-
   const lastBoundByRole = new Map<AcquisitionArtifactRoleV1, ExecutableOperation>();
   let lastBoundArtifact: ExecutableOperation | null = null;
   let currentBoundGroup: string | null = null;
@@ -1866,6 +1683,14 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
   const closedArtifactGroups = new Set<string>();
   const boundOperationIds = new Set<string>();
   const successfulOperations = new Set<string>();
+  const sharedDescriptors: Array<
+    Readonly<{
+      operation: ExecutableOperation;
+      action: ArtifactPairExecutionActionV1;
+    }>
+  > = [];
+  let sharedLease: ArtifactGroupLockLease | null = null;
+  let sharedBindings = new Map<string, PreparedExecutionBinding>();
 
   return Object.freeze({
     locks,
@@ -1993,6 +1818,7 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
       boundOperationIds.add(operation.operationId);
       lastBoundByRole.set(role, operation);
       lastBoundArtifact = operation;
+      sharedDescriptors.push(Object.freeze({ operation, action: ownedAction }));
       return Object.freeze({
         operationId: operation.operationId,
         groupId: operation.groupId,
@@ -2028,102 +1854,37 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
           if (rolePredecessor !== null && !successfulOperations.has(rolePredecessor.operationId)) {
             acquisitionArtifactExecutionFail('artifact predecessor did not complete successfully');
           }
-          const before = await observePhysical(role);
-          if (!sameAcquisitionArtifactImage(before.image, operation.before)) {
-            acquisitionArtifactExecutionFail(
-              'physical artifact state differs from planned before image',
+          if (sharedLease !== held.lease) {
+            const shared = createArtifactPairOperationControllerV1({
+              lease: held.lease,
+              artifactCoordinator: input.artifactCoordinator,
+              pair,
+              ...(input.signal === undefined ? {} : { signal: input.signal }),
+            });
+            sharedBindings = new Map(
+              sharedDescriptors.map(({ operation: selected, action: selectedAction }) => {
+                const prepared = shared.bind(selected, selectedAction);
+                return [prepared.operationId, prepared] as const;
+              }),
             );
+            sharedLease = held.lease;
           }
-          const candidate =
-            role === 'manifest'
-              ? ownedAction.role !== 'manifest'
-                ? acquisitionArtifactExecutionFail('manifest action role changed after binding')
-                : ownedAction.action.kind === 'replace'
-                  ? acquisitionManifestImageFromBytesV1(pair.file.path, ownedAction.action.bytes)
-                  : ownedAction.action.kind === 'edit' && before.bytes !== null
-                    ? (() => {
-                        const edited = editManifestBytes(before.bytes, ownedAction.action.request);
-                        if (!edited.ok) {
-                          return acquisitionArtifactExecutionFail(
-                            'manifest action could not be applied',
-                          );
-                        }
-                        return acquisitionManifestImageFromBytesV1(
-                          pair.file.path,
-                          edited.value.bytes,
-                        );
-                      })()
-                    : acquisitionArtifactExecutionFail(
-                        'manifest action no longer matches physical state',
-                      )
-              : ownedAction.role !== 'lock' || ownedAction.action.kind !== 'replace'
-                ? acquisitionArtifactExecutionFail('lock action role changed after binding')
-                : (() => {
-                    const serialized = serializePortableLock(ownedAction.action.lock);
-                    if (!serialized.ok) {
-                      return acquisitionArtifactExecutionFail(
-                        'lock action could not be serialized',
-                      );
-                    }
-                    return acquisitionLockImageFromBytesV1(
-                      pair.lockfile.path,
-                      new TextEncoder().encode(serialized.value),
-                    );
-                  })();
-          if (!sameAcquisitionArtifactImage(candidate, operation.after)) {
-            acquisitionArtifactExecutionFail('artifact action differs from planned after image');
+          const sharedBinding = sharedBindings.get(operation.operationId);
+          if (sharedBinding === undefined) {
+            return acquisitionArtifactExecutionFail('shared artifact binding is missing');
           }
-          const committed = await commitArtifactPairWithLease(held.lease, {
-            pair,
-            manifest:
-              role === 'manifest' ? (ownedAction.action as HumanManifestAction) : { kind: 'keep' },
-            lock: role === 'lock' ? (ownedAction.action as GeneratedLockAction) : { kind: 'keep' },
-            ...(input.signal === undefined ? {} : { signal: input.signal }),
-          });
-          if (!committed.ok) {
-            const revision =
-              role === 'manifest' ? committed.error.manifestRevision : committed.error.lockRevision;
-            let actualAfter = operation.before;
-            if (committed.error.durableState === 'after') {
-              if (
-                revision === undefined ||
-                !sameAcquisitionArtifactImage(imageFromRevision(role, revision), operation.after)
-              ) {
-                acquisitionArtifactExecutionFail(
-                  'failed artifact commit has an unprovable after image',
-                );
-              }
-              actualAfter = operation.after;
-            } else if (
-              revision !== undefined &&
-              !sameAcquisitionArtifactImage(imageFromRevision(role, revision), operation.before)
-            ) {
-              acquisitionArtifactExecutionFail(
-                'failed artifact commit has an unprovable before image',
-              );
-            }
-            return acquisitionArtifactResult(
-              operation,
-              binding,
-              committed.error.reason === 'cancelled' ? 'cancelled' : 'failed',
-              actualAfter,
-              committed.error.reason,
-            );
-          }
-          const revision =
-            role === 'manifest' ? committed.value.manifestRevision : committed.value.lockRevision;
-          if (!sameAcquisitionArtifactImage(imageFromRevision(role, revision), operation.after)) {
-            acquisitionArtifactExecutionFail(
-              'artifact commit result differs from planned after image',
-            );
-          }
-          successfulOperations.add(operation.operationId);
-          return acquisitionArtifactResult(operation, binding, 'succeeded', operation.after);
+          const result = await sharedBinding.execute(binding);
+          if (result.outcome === 'succeeded') successfulOperations.add(operation.operationId);
+          return result;
         },
       });
     },
   });
 };
+
+/** @deprecated Compatibility alias; physical pair execution is artifact-domain neutral. */
+export const createAcquisitionArtifactExecutionControllerV1 =
+  createAcquisitionArtifactExecutionCompatibilityControllerV1;
 
 /** @deprecated Compatibility alias; ledger migration binding authority is command-neutral. */
 export const createAcquisitionLedgerMigrationBinding = createLedgerMigrationExecutionBinding;

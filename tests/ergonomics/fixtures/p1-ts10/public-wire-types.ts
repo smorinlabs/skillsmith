@@ -166,6 +166,8 @@ type _V1RuntimeClosure = Assert<
     | 'toVerifyV1Dto'
     | 'errorV1Codec'
     | 'toErrorV1Dto'
+    | 'exportV1Codec'
+    | 'toExportV1Dto'
     | 'capabilitySnapshotV1Codec'
     | 'toCapabilitySnapshotV1Dto'
     | 'manifestV1Codec'

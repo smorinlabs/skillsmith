@@ -5,6 +5,13 @@ import { join } from 'node:path';
 import type { InstallDeps, InstallRecord } from '@skillsmith/core';
 import { ok, runInstall } from '@skillsmith/core';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
+import { ledgerV1Codec } from '../../../packages/core/src/artifacts/ledger-codec.ts';
+import type {
+  LedgerSkillsV1Dto,
+  LedgerV1Dto,
+} from '../../../packages/core/src/artifacts/ledger-types.ts';
+import { readLedgerState } from '../../../packages/core/src/place/ledger.ts';
+import { ledgerPathOf } from '../../../packages/core/src/place/paths.ts';
 import {
   type RemoteFixture,
   buildRemoteFixture,
@@ -92,6 +99,35 @@ const seedManaged = async (fleet: FixtureFleet): Promise<void> => {
   }
 };
 
+const downgradeLedgerToV1 = async (fleet: FixtureFleet): Promise<void> => {
+  const path = ledgerPathOf(fleet.data);
+  const current = await readLedgerState(fleet.env, path);
+  if (!current.ok || current.value.state !== 'present') {
+    throw new Error('phase export ledger fixture was unavailable');
+  }
+  const dto: LedgerV1Dto = {
+    schemaVersion: 1,
+    kind: 'skillsmith.placements',
+    updatedAt: current.value.model.updatedAt,
+    skills: current.value.model.skills as LedgerSkillsV1Dto,
+    ...(Object.keys(current.value.model.projects).length === 0
+      ? {}
+      : {
+          projects: Object.fromEntries(
+            Object.entries(current.value.model.projects).map(([projectRoot, project]) => [
+              projectRoot,
+              { skills: project.skills as LedgerSkillsV1Dto },
+            ]),
+          ),
+        }),
+  };
+  const model = ledgerV1Codec.fromDto(dto);
+  if (!model.ok) throw new Error('phase export v1 fixture was invalid');
+  const encoded = ledgerV1Codec.encode(model.value);
+  if (!encoded.ok) throw new Error('phase export v1 fixture could not be encoded');
+  await writeFile(path, encoded.value);
+};
+
 const runCli = async (fleet: FixtureFleet, args: readonly string[]): Promise<CliProduct> => {
   const process = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
     cwd: fleet.base,
@@ -168,6 +204,7 @@ describe('EWP-P4A-TS03', () => {
       expect(devSeed.exitCode, devSeed.stderr).toBe(0);
       expect(await readMaybe(manifest)).toBeNull();
       expect(await readMaybe(lock)).toBeNull();
+      await downgradeLedgerToV1(fleet);
 
       const first = json(await runCli(fleet, args), 0, 'phase export matrix');
       const rows = records(first.results);
@@ -179,12 +216,43 @@ describe('EWP-P4A-TS03', () => {
         classification: 'portable-dev',
       });
       expect(rows.some((row) => row.classification === 'unmanaged')).toBeTrue();
+      expect(records(first.effects)).toContainEqual(
+        expect.objectContaining({ role: 'ledger', action: 'migrate', outcome: 'succeeded' }),
+      );
+      const migratedLedger = await readLedgerState(fleet.env, ledgerPathOf(fleet.data));
+      expect(migratedLedger.ok && migratedLedger.value.sourceVersion).toBe(2);
       const firstBytes = [await readMaybe(manifest), await readMaybe(lock)] as const;
       expect(firstBytes.every((value) => value !== null)).toBeTrue();
 
       const rerun = json(await runCli(fleet, args), 0, 'phase unchanged rerun');
       expect(rerun.summary).toMatchObject({ changed: 0 });
       expect([await readMaybe(manifest), await readMaybe(lock)]).toEqual(firstBytes);
+
+      for (const scope of ['system', 'managed'] as const) {
+        const scopeManifest = join(root, scope, 'skillsmith.toml');
+        const scopeLock = join(root, scope, 'skillsmith.lock');
+        const scoped = json(
+          await runCli(fleet, [
+            'export',
+            `--${scope}`,
+            '--tool',
+            'claude-code',
+            '--file',
+            scopeManifest,
+            '--lockfile',
+            scopeLock,
+            '--json',
+          ]),
+          0,
+          `phase ${scope} nonrepresentable scope`,
+        );
+        expect(scoped.requested).toMatchObject({ scope });
+        expect(
+          records(scoped.results).every((row) => row.classification === 'unsupported-scope'),
+        ).toBeTrue();
+        expect(await readMaybe(scopeManifest)).toBeNull();
+        expect(await readMaybe(scopeLock)).toBeNull();
+      }
 
       await fleet.makeCheckoutDirty();
       const strictBefore = [await readMaybe(manifest), await readMaybe(lock)] as const;

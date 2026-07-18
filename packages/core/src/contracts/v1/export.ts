@@ -37,6 +37,7 @@ const SkipReasonSchema = z.enum([
   'dirty-git',
   'incomplete-provenance',
   'invalid-content',
+  'invalid-path',
   'invalid-source',
   'live-content-mismatch',
   'non-git-dev',
@@ -54,6 +55,22 @@ const SkippedResultSchema = z
     classification: SkipReasonSchema,
     action: z.literal('skipped'),
     reason: SkipReasonSchema,
+  })
+  .strict();
+
+const ConflictResultSchema = z
+  .object({
+    name: z.string(),
+    tools: z.array(ToolSchema),
+    scope: ScopeSchema,
+    classification: z.literal('conflict'),
+    action: z.literal('conflict'),
+    reason: z.enum([
+      'custom-path-conflict',
+      'duplicate-selected-placement',
+      'existing-declaration-conflict',
+      'selected-candidate-conflict',
+    ]),
   })
   .strict();
 
@@ -93,7 +110,7 @@ const ExportV1Schema = z
       })
       .strict(),
     artifactSelection: ArtifactSelectionSchema,
-    results: z.array(z.union([PortableResultSchema, SkippedResultSchema])),
+    results: z.array(z.union([PortableResultSchema, SkippedResultSchema, ConflictResultSchema])),
     effects: z.array(
       z
         .object({
@@ -119,32 +136,44 @@ const ExportV1Schema = z
 
 export type ExportV1Dto = z.infer<typeof ExportV1Schema>;
 
-const toExportResultV1Dto = (result: ExportResult): ExportV1Dto['results'][number] =>
-  result.action === 'skipped'
-    ? {
-        name: result.name,
-        tools: Array.from(result.tools),
-        scope: result.scope,
-        classification: result.classification,
-        action: result.action,
-        reason: result.reason,
-      }
-    : {
-        name: result.name,
-        tools: Array.from(result.tools),
-        scope: result.scope,
-        source: { ...result.source },
-        sourceText: result.sourceText,
-        requestedRef: result.requestedRef,
-        resolvedSha: result.resolvedSha,
-        sourcePath: result.sourcePath,
-        contentHash: result.contentHash,
-        placement: result.placement,
-        path: result.path,
-        classification: result.classification,
-        action: result.action,
-        reason: result.reason,
-      };
+const toExportResultV1Dto = (result: ExportResult): ExportV1Dto['results'][number] => {
+  if (result.action === 'skipped') {
+    return {
+      name: result.name,
+      tools: Array.from(result.tools),
+      scope: result.scope,
+      classification: result.classification,
+      action: result.action,
+      reason: result.reason,
+    };
+  }
+  if (result.action === 'conflict') {
+    return {
+      name: result.name,
+      tools: Array.from(result.tools),
+      scope: result.scope,
+      classification: result.classification,
+      action: result.action,
+      reason: result.reason,
+    };
+  }
+  return {
+    name: result.name,
+    tools: Array.from(result.tools),
+    scope: result.scope,
+    source: { ...result.source },
+    sourceText: result.sourceText,
+    requestedRef: result.requestedRef,
+    resolvedSha: result.resolvedSha,
+    sourcePath: result.sourcePath,
+    contentHash: result.contentHash,
+    placement: result.placement,
+    path: result.path,
+    classification: result.classification,
+    action: result.action,
+    reason: result.reason,
+  };
+};
 
 export const toExportV1Dto = (report: ExportReport): ExportV1Dto => ({
   schemaVersion: 1,
@@ -172,7 +201,7 @@ export const exportV1Codec = createJsonWireCodec(
     wireKind: 'skillsmith.export',
     embeddedVersion: 'schemaVersion',
     unknownFields: 'reject-recursive',
-    formatting: { indent: 2, terminalLf: false },
+    formatting: { indent: 2, terminalLf: true },
     migrations: [],
     compatibility: 'conservative',
   } as const,

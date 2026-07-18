@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.export",
+  "reportVersion": 1,
+  "dryRun": true,
+  "requested": {
+    "tools": [
+      "claude-code"
+    ],
+    "explicitTools": true,
+    "scope": "user",
+    "explicitScope": true,
+    "strict": false,
+    "force": false
+  },
+  "artifactSelection": {
+    "outcome": "none",
+    "reason": "no-portable-candidates"
+  },
+  "results": [],
+  "effects": [],
+  "summary": {
+    "observed": 0,
+    "portable": 0,
+    "skipped": 0,
+    "conflicts": 0,
+    "changed": 0,
+    "unchanged": 0
+  }
+}

@@ -2463,6 +2463,28 @@
     }
   },
   {
+    "key": "option:skillsmith export:-h, --help",
+    "disposition": "N",
+    "phase": "P17-G4A-02",
+    "validationOwner": "EWP-CMD-EXPORT-TS04",
+    "option": {
+      "flags": "-h, --help",
+      "short": "-h",
+      "long": "--help",
+      "attributeName": "help",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
     "key": "option:skillsmith export:-s, --scope <scope>",
     "disposition": "N",
     "phase": "P17-G4A-02",

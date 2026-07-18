@@ -8,6 +8,7 @@ import type {
   ConfigUnsetReport,
   CurrentInstallReport,
   CurrentUninstallReport,
+  ExportReport,
   FlipReport,
   HealthReport,
   InstallRecord,
@@ -683,6 +684,35 @@ export const ERROR_FIXTURE = {
   exitCode: 7,
 } as const;
 
+export const EXPORT_REPORT_FIXTURE = {
+  schemaVersion: 1,
+  kind: 'skillsmith.export',
+  reportVersion: 1,
+  dryRun: true,
+  requested: {
+    tools: ['claude-code'],
+    explicitTools: true,
+    scope: 'user',
+    explicitScope: true,
+    strict: false,
+    force: false,
+  },
+  artifactSelection: {
+    outcome: 'none',
+    reason: 'no-portable-candidates',
+  },
+  results: [],
+  effects: [],
+  summary: {
+    observed: 0,
+    portable: 0,
+    skipped: 0,
+    conflicts: 0,
+    changed: 0,
+    unchanged: 0,
+  },
+} satisfies ExportReport;
+
 export const STATUS_V1_DTO_FIXTURE = statusV1Golden as unknown as StatusV1Dto;
 
 export const STATUS_REPORT_FIXTURE = {
@@ -715,6 +745,7 @@ export const REPORT_FIXTURES = {
   currentUninstall: CURRENT_UNINSTALL_REPORT_FIXTURE,
   verify: VERIFY_REPORT_FIXTURE,
   error: ERROR_FIXTURE,
+  export: EXPORT_REPORT_FIXTURE,
 } as const;
 
 /** Report values in the shape consumed by the shared current renderer registry. */
@@ -734,6 +765,7 @@ export const CURRENT_RENDERER_REPORTS = {
   status: { result: STATUS_V1_DTO_FIXTURE },
   uninstall: { value: REPORT_FIXTURES.currentUninstall },
   verify: { result: REPORT_FIXTURES.verify },
+  export: REPORT_FIXTURES.export,
 } as const;
 
 /**
@@ -1064,6 +1096,7 @@ export const CURRENT_JSON_GOLDENS = {
   install: CURRENT_LIFECYCLE_V2_GOLDENS.install,
   list: `${JSON.stringify(LIST_V3_DTO, null, 2)}\n`,
   uninstall: CURRENT_LIFECYCLE_V2_GOLDENS.uninstall,
+  export: `${JSON.stringify(EXPORT_REPORT_FIXTURE, null, 2)}\n`,
 } as const;
 
 export const GOLDEN_TERMINAL_LF = {
@@ -1083,4 +1116,5 @@ export const GOLDEN_TERMINAL_LF = {
   uninstall: false,
   verify: false,
   error: true,
+  export: true,
 } as const;
