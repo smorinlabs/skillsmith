@@ -108,6 +108,14 @@ export const mergePortableCandidates = (
       );
     }
     const tools = [...new Set(group.flatMap((candidate) => candidate.tools))].sort(compareTools);
+    if (tools.length > 1 && group.some((candidate) => candidate.path !== null)) {
+      return failure(
+        'export-custom-path-conflict',
+        `custom-path declaration cannot merge tools for ${name}`,
+        'usage',
+        group.map((candidate) => conflictResult(candidate, 'custom-path-conflict')),
+      );
+    }
     const incompatible = group.some((candidate) => !sameCandidate(first, candidate));
     if (incompatible && !force) {
       return failure(
@@ -125,14 +133,6 @@ export const mergePortableCandidates = (
         'export-selected-conflict',
         `portable candidates conflict for ${name}`,
         'usage',
-      );
-    }
-    if (authoritative.path !== null && tools.length > 1) {
-      return failure(
-        'export-custom-path-conflict',
-        `custom-path declaration cannot merge tools for ${name}`,
-        'usage',
-        group.map((candidate) => conflictResult(candidate, 'custom-path-conflict')),
       );
     }
     merged.push(Object.freeze({ ...authoritative, tools: Object.freeze(tools) }));

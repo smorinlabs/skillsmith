@@ -20,6 +20,7 @@ import {
   prepareArtifactGroupLeaseScaffold,
   withArtifactGroupLock,
 } from './coordinator.ts';
+import { artifactMutationError, ownDataErrorCode } from './file-state.ts';
 import { hashCanonicalInput, hashManifestSemantics } from './hash.ts';
 import { hashPortableLock, readPortableLockSource, serializePortableLock } from './lock.ts';
 import { editManifestBytes } from './manifest-edit.ts';
@@ -83,11 +84,21 @@ export const withArtifactPairExecutionAuthority = async <T>(
       const scaffold = await prepareArtifactGroupLeaseScaffold(lease, members);
       if (!scaffold.ok) throw scaffold.error;
       await lease.acquireCompatibilityTargets(members);
-      return input.lockPort.withFileLock(
-        input.ledgerPath,
-        () => operation(lease),
-        input.signal === undefined ? undefined : { signal: input.signal },
-      );
+      try {
+        return await input.lockPort.withFileLock(
+          input.ledgerPath,
+          () => operation(lease),
+          input.signal === undefined ? undefined : { signal: input.signal },
+        );
+      } catch (error) {
+        const code = ownDataErrorCode(error);
+        if (code === 'permission') throw artifactMutationError('permission-denied');
+        if (code === 'cancelled') throw artifactMutationError('cancelled');
+        if (code === 'conflict' || code === 'timeout') {
+          throw artifactMutationError('lock-contention');
+        }
+        throw error;
+      }
     },
   );
 };

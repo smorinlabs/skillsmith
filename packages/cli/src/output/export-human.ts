@@ -20,5 +20,12 @@ export const renderExportHuman = (report: ExportReport): string => {
           : `${result.action} ${result.name} (${result.tools.join(', ')})`,
     );
   }
+  for (const effect of report.effects) {
+    lines.push(
+      `${effect.role}: ${effect.action} (${effect.outcome})${
+        effect.operationId === null ? '' : ` [${effect.operationId}]`
+      }`,
+    );
+  }
   return `${lines.join('\n')}\n`;
 };

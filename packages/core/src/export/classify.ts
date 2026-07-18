@@ -1,6 +1,11 @@
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { BuiltInToolId } from '../agents/registry.ts';
-import { normalizePortablePath, normalizeSourceIdentity } from '../artifacts/identity.ts';
+import {
+  normalizePortablePath,
+  normalizeSourceIdentity,
+  validateManifestName,
+  validateRequestedRef,
+} from '../artifacts/identity.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
 import type { SkillInventoryEntry } from '../inventory/types.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -21,7 +26,7 @@ const sourceText = (source: PortableExportCandidate['source']): string =>
 
 const skipped = (entry: SkillInventoryEntry, reason: ExportSkipReason): ExportResult =>
   Object.freeze({
-    name: entry.name,
+    name: validateManifestName(entry.name, 'export.result.name').ok ? entry.name : 'invalid-name',
     tools: Object.freeze([entry.tool as BuiltInToolId]),
     scope: entry.scope,
     classification: reason,
@@ -85,6 +90,14 @@ const portableManaged = (
   const origin = pair.origin;
   const pinned = pair.pinned;
   if (
+    !validateManifestName(entry.name, 'export.candidate.name').ok ||
+    (origin?.refRequested !== null &&
+      origin?.refRequested !== undefined &&
+      !validateRequestedRef(origin.refRequested, 'export.candidate.ref').ok)
+  ) {
+    return 'invalid-source';
+  }
+  if (
     pair.mode !== 'pinned' ||
     origin === undefined ||
     pinned == null ||
@@ -137,6 +150,7 @@ const portableDev = (
 ): PortableExportCandidate | ExportSkipReason => {
   const { entry } = fact;
   const dev = pair.dev;
+  if (!validateManifestName(entry.name, 'export.candidate.name').ok) return 'invalid-source';
   if (
     pair.mode !== 'dev' ||
     dev === null ||

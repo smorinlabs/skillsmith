@@ -59,7 +59,7 @@ const codeFrom = (value: unknown): PortErrorCode => {
   const name = typeof value.name === 'string' ? value.name : '';
   if (code === 'ENOENT') return 'not-found';
   if (code === 'EACCES' || code === 'EPERM') return 'permission';
-  if (code === 'EEXIST' || code === 'ENOTEMPTY') return 'conflict';
+  if (code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'ELOCKED') return 'conflict';
   if (code === 'ETIMEDOUT' || code === 'TIMEOUT' || name === 'TimeoutError') return 'timeout';
   if (code === 'ABORT_ERR' || code === 'AbortError' || name === 'AbortError') return 'cancelled';
   if (code === 'EINVAL') return 'invalid';

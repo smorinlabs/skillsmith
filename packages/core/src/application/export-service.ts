@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { type BuiltInToolId, SUPPORTED_TOOLS } from '../agents/registry.ts';
 import { type ResolvedArtifactPair, resolveArtifactPair } from '../artifacts/pair.ts';
+import { resolveEffectiveConfig } from '../config/effective.ts';
+import type { EffectiveConfig } from '../config/types.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import {
@@ -17,6 +19,7 @@ import {
   prepareExportLedgerMigration,
   previewExportEffects,
 } from '../export/index.ts';
+import { exitClassForApplicationError } from './exit-policy.ts';
 import type {
   ApplicationService,
   CurrentApplicationContext,
@@ -38,6 +41,15 @@ const selectedTools = (request: CurrentCommandRequest): readonly BuiltInToolId[]
   const raw = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
   if (!raw.every((tool): tool is string => typeof tool === 'string' && isTool(tool))) return null;
   const selected = new Set(raw);
+  return Object.freeze(SUPPORTED_TOOLS.filter((tool) => selected.has(tool)));
+};
+
+const configuredTools = (config: EffectiveConfig): readonly BuiltInToolId[] => {
+  const configured =
+    config.toolSelection?.tools ??
+    config.value.tools ??
+    (config.value.tool === undefined ? [] : [config.value.tool]);
+  const selected = new Set(configured);
   return Object.freeze(SUPPORTED_TOOLS.filter((tool) => selected.has(tool)));
 };
 
@@ -199,12 +211,12 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
     };
   }
 
+  const explicitConfigPath =
+    context.globalOptions.config ?? context.configuration.explicitConfigPath;
   const project = await resolveProjectContext(context.ports, {
     invocationCwd: context.invocationCwd,
     ...(context.globalOptions.cd === undefined ? {} : { cd: context.globalOptions.cd }),
-    ...(context.globalOptions.config === undefined
-      ? {}
-      : { explicitConfigPath: context.globalOptions.config }),
+    ...(explicitConfigPath === undefined ? {} : { explicitConfigPath }),
   });
   if (!project.ok) {
     const failure: ExportFailure = Object.freeze({
@@ -222,8 +234,45 @@ export const runExportApplication: ApplicationService<CurrentCommandRequest, Exp
   }
 
   const scope = scopeOption ?? (project.value.projectRoot === null ? 'user' : 'project');
+  let toolsForRequest = tools;
+  if (tools.length === 0) {
+    const configuration =
+      context.effectiveConfig === undefined
+        ? await resolveEffectiveConfig(context.ports, project.value, {
+            configuration: context.configuration,
+          })
+        : ({ ok: true, value: context.effectiveConfig } as const);
+    if (!configuration.ok) {
+      const configuredExit = exitClassForApplicationError(configuration.error, context.signal);
+      const exitClass: ExportFailure['exitClass'] =
+        configuredExit === 'permission' ||
+        configuredExit === 'cancelled' ||
+        configuredExit === 'state'
+          ? configuredExit
+          : 'failure';
+      const failure: ExportFailure = Object.freeze({
+        code: 'export-configuration',
+        message: 'effective export tool configuration could not be resolved',
+        exitClass,
+      });
+      const failedRequest: ExportRequest = Object.freeze({
+        ...placeholderRequest,
+        scope,
+        explicitScope: scopeOption !== null,
+      });
+      return {
+        report: failedReport(failedRequest, failure),
+        diagnostics: [failureDiagnostic(failure)],
+        exitClass: failure.exitClass,
+        mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+        deprecations: [],
+      };
+    }
+    const effective = configuredTools(configuration.value);
+    toolsForRequest = effective.length === 0 ? SUPPORTED_TOOLS : effective;
+  }
   const request: ExportRequest = Object.freeze({
-    tools: tools.length === 0 ? SUPPORTED_TOOLS : tools,
+    tools: toolsForRequest,
     explicitTools: tools.length > 0,
     scope,
     explicitScope: scopeOption !== null,
