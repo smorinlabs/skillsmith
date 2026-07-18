@@ -1240,6 +1240,22 @@ Export emits only canonical credential-free source identity and portable path to
 store, ledger, dev, or authentication data warn-and-skip by default and fail under strict; force
 cannot make them portable.
 
+**Approved 2026-07-18 export-default amendment.** Bare `skillsmith export` selects exactly one
+effective writable live scope: the current project scope when a project context exists, otherwise
+user scope. Its automatic output pair follows that same scope: the discovered/current project
+manifest with its sibling lock, or the XDG user manifest with its sibling lock. An explicit
+`--file` selects only the output artifact and never rebases live scope or project identity.
+
+All four readable scope spellings remain accepted. Explicit system or managed selection reads only
+that scope but cannot be represented as portable manifest scope: those observations warn and skip
+by default, make the invocation fail without writes under `--strict`, and are never silently
+remapped to user or project. If no portable observation remains, export creates no empty pair.
+Kilo Code and OpenCode remain valid readable export inputs; their lack of live mutation support is
+not itself an export capability error. A known tool fails with exit 4 only when its required
+inventory/read capability is unavailable. This amendment resolves source-scope and automatic-pair
+defaults only; it adds no command, option, entity, dependency, workflow, or cross-machine consumer
+behavior.
+
 ### 8.13 `plan`
 
 Options: singular `--file`, optional paired-path override `--lockfile`, tool/scope filters, locked,

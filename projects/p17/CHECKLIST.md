@@ -1117,14 +1117,14 @@ Downstream coverage obligations: none.
 
 ## P17-G4A-02 — Export classification, safe merge, portable intent, and writer integration
 
-Phase: 4A; status: **planned**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05.
+Phase: 4A; status: **ready**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05.
 Required-now validations: EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-P4A-TS03.
 Downstream coverage obligations: EWP-WF04.
 
 ### Group gates
 
-- [ ] P17-G4A-02:mapped _(pending)_
-- [ ] P17-G4A-02:ready _(pending)_
+- [x] P17-G4A-02:mapped _(passed)_
+- [x] P17-G4A-02:ready _(passed)_
 - [ ] P17-G4A-02:test-first _(pending)_
 - [ ] P17-G4A-02:minimal-implementation _(pending)_
 - [ ] P17-G4A-02:targeted-green _(pending)_
@@ -1148,7 +1148,7 @@ Downstream coverage obligations: EWP-WF04.
 - [ ] **EWP-CMD-EXPORT-TS07** — dry-run/JSON/no-write behavior including migration preview and blocked _(command-test; planned)_
 - [ ] **EWP-CMD-EXPORT-TS08** — absolute-path/secret scrub and portable schema gate; placement/path uses _(command-test; planned)_
 - [ ] **EWP-CMD-EXPORT-TS09** — clean-machine locked round trip using canonical credential-free identity _(command-test; planned)_
-- [ ] **EWP-P4A-T02** — Implement export classification, merge/update behavior, and writer integration. _(phase-task; planned)_
+- [ ] **EWP-P4A-T02** — Implement export classification, merge/update behavior, and writer integration. _(phase-task; ready)_
 - [ ] **EWP-P4A-TS03** — Export portable/nonportable and existing-file classification matrix. _(phase-test; planned)_
 - [ ] **P1-06** — `export` _(recommendation; planned)_
 
