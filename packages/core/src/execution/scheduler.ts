@@ -182,7 +182,9 @@ export const validateExecutionPlanShape = <ToolId extends string = SupportedTool
     }
   }
   for (const [pairId, count] of pairs) {
-    if (count !== 1) fail(`one operation per pair is required; pair ${pairId} contains ${count}`);
+    if (count !== 1) {
+      fail(`multi-operation pair ${pairId} is invalid; one operation per pair is required`);
+    }
   }
   for (const operation of plan.operations) {
     if (operation.kind === 'migrate-ledger' && groupOperationCounts.get(operation.groupId) !== 1) {

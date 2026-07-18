@@ -365,7 +365,12 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
     ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
     expect(
       mutateFile('projects/p17/EXECUTION.md', (text) =>
-        text.replace('Phase 3 is `active`', 'Phase 3 is `planned`'),
+        text.replace('Phase 3 is `approved`', 'Phase 3 is `planned`'),
+      ),
+    ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
+    expect(
+      mutateFile('projects/p17/EXECUTION.md', (text) =>
+        text.replace('Phase 4 is `active`', 'Phase 4 is `planned`'),
       ),
     ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
     expect(

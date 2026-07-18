@@ -537,6 +537,7 @@ describe('EWP-P1-TS08', () => {
     const allow = new Set([
       // Parses injected timestamps for journal canonicalization; neither module reads now.
       'packages/core/src/acquire/run.ts',
+      'packages/core/src/acquire/uninstall.ts',
       'packages/core/src/place/execute.ts',
       'packages/core/src/place/run.ts',
       'packages/core/src/place/ledger-migration.ts',
