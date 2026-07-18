@@ -26,6 +26,7 @@ import {
 } from '../../../core/src/artifacts/manifest.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
 import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
+import { wellKnownBinDirs } from '../../../core/src/detect/scanners.ts';
 import { validateExecutionPlanShape } from '../../../core/src/execution/scheduler.ts';
 import { prepareInitOperationPlan } from '../../../core/src/init/plan.ts';
 import { executePreparedInit, observeInitManifest } from '../../../core/src/init/run.ts';
@@ -58,6 +59,9 @@ interface InitFixture {
   readonly data: string;
   readonly cache: string;
   readonly bin: string;
+  readonly detectionPreload: string;
+  readonly detectionTrace: string;
+  readonly blockedDetectionPaths: readonly string[];
 }
 
 const fixtures: string[] = [];
@@ -75,13 +79,54 @@ const fixture = async (): Promise<InitFixture> => {
   const data = join(root, 'xdg', 'data');
   const cache = join(root, 'xdg', 'cache');
   const bin = join(root, 'bin');
+  const detectionPreload = join(root, 'detection-preload.ts');
+  const detectionTrace = join(root, 'detection-trace.txt');
   await Promise.all(
     [cwd, home, config, data, cache, bin].map((path) => mkdir(path, { recursive: true })),
   );
   const git = Bun.which('git');
   if (git === null) throw new Error('init contract fixture requires git');
   await Promise.all([symlink(process.execPath, join(bin, 'bun')), symlink(git, join(bin, 'git'))]);
-  return { root, cwd, home, config, data, cache, bin };
+  const externalDetectionDirs = wellKnownBinDirs({
+    homeDir: home,
+    executableSearchPath: [bin],
+  } as unknown as Parameters<typeof wellKnownBinDirs>[0]).filter(
+    (path) => path !== root && !path.startsWith(`${root}/`),
+  );
+  const blockedDetectionPaths = externalDetectionDirs.flatMap((path) => [
+    join(path, 'claude'),
+    join(path, 'codex'),
+  ]);
+  await writeFile(
+    detectionPreload,
+    `import { mock } from 'bun:test';
+import * as fs from 'node:fs/promises';
+const blocked = new Set(${JSON.stringify(blockedDetectionPaths)});
+const trace = ${JSON.stringify(detectionTrace)};
+const originalStat = fs.stat;
+const stat = async (path, options) => {
+  const value = String(path);
+  if (blocked.has(value)) {
+    await fs.appendFile(trace, value + '\\n');
+    throw Object.assign(new Error('fixture-owned absent binary'), { code: 'ENOENT' });
+  }
+  return options === undefined ? originalStat(path) : originalStat(path, options);
+};
+mock.module('node:fs/promises', () => ({ ...fs, stat }));
+`,
+  );
+  return {
+    root,
+    cwd,
+    home,
+    config,
+    data,
+    cache,
+    bin,
+    detectionPreload,
+    detectionTrace,
+    blockedDetectionPaths,
+  };
 };
 
 const runCli = async (
@@ -89,7 +134,7 @@ const runCli = async (
   args: readonly string[],
   cwd = value.cwd,
 ): Promise<CliProduct> => {
-  const child = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
+  const child = Bun.spawn(['bun', '--preload', value.detectionPreload, CLI_ENTRYPOINT, ...args], {
     cwd,
     env: hermeticGitEnv({
       ...processEnvWithoutConfig(),
@@ -403,6 +448,9 @@ describe('EWP-CMD-INIT-TS02', () => {
       result: { action: 'create-manifest' },
     });
     expect(await readMaybe(empty)).toBeNull();
+    expect(new Set((await readFile(value.detectionTrace, 'utf8')).trim().split('\n'))).toEqual(
+      new Set(value.blockedDetectionPaths),
+    );
   });
 
   test('same-path explicit config reuses one canonical or legacy snapshot', async () => {
