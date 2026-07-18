@@ -5276,7 +5276,10 @@
         "tests/ergonomics/fixtures/p1-ts10/goldens/uninstall.stdout",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
-        "tests/ergonomics/fixtures/p2-ts08/public-types.ts"
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
+        "scripts/check-p17-package-output.test.ts",
+        "packages/cli/tests/help.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS04.test.ts"
       ],
       "integrationOwner": "root-codex-goal",
       "impactedValidations": [
@@ -5402,7 +5405,8 @@
         "projects/p17/evidence/P17-G4A-01.md#independent-review-correction-evidence",
         "projects/p17/evidence/P17-G4A-01.md#refactor",
         "projects/p17/evidence/P17-G4A-01.md#adversarial-review",
-        "projects/p17/evidence/P17-G4A-01.md#traceability-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#traceability-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#terminal-load-budget-ownership-amendment"
       ]
     },
     {
@@ -20641,7 +20645,8 @@
         "projects/p17/evidence/P17-G4A-01.md#independent-review-correction-evidence",
         "projects/p17/evidence/P17-G4A-01.md#refactor",
         "projects/p17/evidence/P17-G4A-01.md#adversarial-review",
-        "projects/p17/evidence/P17-G4A-01.md#traceability-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#traceability-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#terminal-load-budget-ownership-amendment"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -20768,7 +20773,10 @@
         "tests/ergonomics/fixtures/p1-ts10/goldens/uninstall.stdout",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
-        "tests/ergonomics/fixtures/p2-ts08/public-types.ts"
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
+        "scripts/check-p17-package-output.test.ts",
+        "packages/cli/tests/help.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS04.test.ts"
       ]
     },
     {
