@@ -5436,10 +5436,12 @@
         "packages/core/src/application/export-service.ts",
         "packages/core/src/application/current-services.ts",
         "packages/core/src/artifacts/execution.ts",
+        "packages/core/src/artifacts/index.ts",
         "packages/core/src/acquire/execute.ts",
         "packages/core/src/place/ledger-migration.ts",
         "packages/core/src/planning/types.ts",
         "packages/core/src/planning/create.ts",
+        "packages/core/src/ports/errors.ts",
         "packages/core/src/contracts/v1/export.ts",
         "packages/core/src/contracts/v1/index.ts",
         "packages/core/src/contracts/v1/index.d.ts",
@@ -5463,6 +5465,7 @@
         "packages/core/tests/acquire/execute.test.ts",
         "packages/core/tests/place/ledger-migration.test.ts",
         "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/ports/default.test.ts",
         "packages/core/tests/public-api.test.ts",
         "packages/cli/tests/output/export.test.ts",
         "packages/cli/tests/contracts/export.test.ts",
@@ -5475,7 +5478,8 @@
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
         "tests/ergonomics/fixtures/p1-ts10/goldens/export.stdout",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
-        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts"
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts"
       ],
       "integrationOwner": "root-codex-goal",
       "impactedValidations": [
@@ -5567,7 +5571,8 @@
         "projects/p17/evidence/P17-G4A-02.md#test-first-evidence",
         "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4A-02.md#refactor"
+        "projects/p17/evidence/P17-G4A-02.md#refactor",
+        "projects/p17/evidence/P17-G4A-02.md#independent-adversarial-ownership-amendment"
       ]
     },
     {
@@ -21001,7 +21006,8 @@
         "projects/p17/evidence/P17-G4A-02.md#test-first-evidence",
         "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4A-02.md#refactor"
+        "projects/p17/evidence/P17-G4A-02.md#refactor",
+        "projects/p17/evidence/P17-G4A-02.md#independent-adversarial-ownership-amendment"
       ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
@@ -21056,10 +21062,12 @@
         "packages/core/src/application/export-service.ts",
         "packages/core/src/application/current-services.ts",
         "packages/core/src/artifacts/execution.ts",
+        "packages/core/src/artifacts/index.ts",
         "packages/core/src/acquire/execute.ts",
         "packages/core/src/place/ledger-migration.ts",
         "packages/core/src/planning/types.ts",
         "packages/core/src/planning/create.ts",
+        "packages/core/src/ports/errors.ts",
         "packages/core/src/contracts/v1/export.ts",
         "packages/core/src/contracts/v1/index.ts",
         "packages/core/src/contracts/v1/index.d.ts",
@@ -21083,6 +21091,7 @@
         "packages/core/tests/acquire/execute.test.ts",
         "packages/core/tests/place/ledger-migration.test.ts",
         "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/ports/default.test.ts",
         "packages/core/tests/public-api.test.ts",
         "packages/cli/tests/output/export.test.ts",
         "packages/cli/tests/contracts/export.test.ts",
@@ -21095,7 +21104,8 @@
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
         "tests/ergonomics/fixtures/p1-ts10/goldens/export.stdout",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
-        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts"
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts"
       ]
     },
     {
