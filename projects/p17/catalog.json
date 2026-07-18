@@ -5532,20 +5532,20 @@
           "evidence": ["projects/p17/evidence/P17-G4A-02.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-02.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-02.md#refactor"]
         },
         "adversarial-review": {
           "status": "pending",
@@ -5564,7 +5564,10 @@
         "projects/p17/plans/P17-G4A-02.md",
         "projects/p17/evidence/P17-G4A-02.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G4A-02.md#ready-plan",
-        "projects/p17/evidence/P17-G4A-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4A-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-02.md#refactor"
       ]
     },
     {
@@ -7248,11 +7251,14 @@
       "title": "Declarative — How do I capture the current fleet as portable desired state?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "surface:export",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [
@@ -8089,11 +8095,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4A-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [
@@ -8991,11 +9000,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4A-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [
@@ -13186,7 +13198,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS01",
       "target": {
@@ -13195,7 +13207,10 @@
         "selector": "EWP-CMD-EXPORT-TS01",
         "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-cmd-export-ts01",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS01"],
@@ -13223,7 +13238,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS02",
       "target": {
@@ -13232,7 +13247,10 @@
         "selector": "EWP-CMD-EXPORT-TS02",
         "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-cmd-export-ts02",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS02"],
@@ -13260,7 +13278,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS03",
       "target": {
@@ -13269,7 +13287,10 @@
         "selector": "EWP-CMD-EXPORT-TS03",
         "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-cmd-export-ts03",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS03"],
@@ -13297,7 +13318,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS04",
       "target": {
@@ -13306,7 +13327,10 @@
         "selector": "EWP-CMD-EXPORT-TS04",
         "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS04"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts04"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-cmd-export-ts04",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts04"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS04"],
@@ -13334,7 +13358,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS05",
       "target": {
@@ -13343,7 +13367,10 @@
         "selector": "EWP-CMD-EXPORT-TS05",
         "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-cmd-export-ts05",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS05"],
@@ -13371,7 +13398,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS06",
       "target": {
@@ -13380,7 +13407,10 @@
         "selector": "EWP-CMD-EXPORT-TS06",
         "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS06"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts06"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-cmd-export-ts06",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts06"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS06"],
@@ -13408,7 +13438,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS07",
       "target": {
@@ -13417,7 +13447,10 @@
         "selector": "EWP-CMD-EXPORT-TS07",
         "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS07"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts07"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-cmd-export-ts07",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts07"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS07"],
@@ -13445,7 +13478,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS08",
       "target": {
@@ -13454,7 +13487,10 @@
         "selector": "EWP-CMD-EXPORT-TS08",
         "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS08"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts08"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-cmd-export-ts08",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts08"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS08"],
@@ -13482,7 +13518,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS09",
       "target": {
@@ -13491,7 +13527,10 @@
         "selector": "EWP-CMD-EXPORT-TS09",
         "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS09"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts09"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-cmd-export-ts09",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts09"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS09"],
@@ -20953,13 +20992,16 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-02",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4A-02.md#ready-plan",
-        "projects/p17/evidence/P17-G4A-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4A-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-02.md#refactor"
       ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
@@ -21182,7 +21224,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:tests/ergonomics/phase/EWP-P4A-TS03.test.ts#EWP-P4A-TS03",
       "target": {
@@ -21191,7 +21233,10 @@
         "selector": "EWP-P4A-TS03",
         "command": "bun test tests/ergonomics/phase/EWP-P4A-TS03.test.ts --test-name-pattern EWP-P4A-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-p4a-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#final-green-execution-receipt-ewp-p4a-ts03",
+        "projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-p4a-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4A-TS03"],
@@ -23473,11 +23518,14 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4A-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
       "validatedBy": [

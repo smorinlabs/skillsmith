@@ -112,7 +112,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:config | P17-G2-01 | signed-off | required-pr |
 | COMMAND:dev | P17-G3B-01 | signed-off | required-pr |
 | COMMAND:doctor | P17-G3B-03 | signed-off | required-pr |
-| COMMAND:export | P17-G4A-02 | planned | required-pr |
+| COMMAND:export | P17-G4A-02 | validated | required-pr |
 | COMMAND:gc | P17-G5-04 | planned | required-pr |
 | COMMAND:help | P17-G6-02A | planned | required-pr |
 | COMMAND:init | P17-G4A-03 | planned | required-pr |
@@ -145,7 +145,7 @@ Tracked entities: **425** across **45** change groups.
 | P1-03 | P17-G3A-02 | signed-off | required-pr |
 | P1-04 | P17-G5-05 | planned | required-pr |
 | P1-05 | P17-G4A-03 | planned | required-pr |
-| P1-06 | P17-G4A-02 | planned | required-pr |
+| P1-06 | P17-G4A-02 | validated | required-pr |
 | P1-07 | P17-G4B-01 | planned | required-pr |
 | P1-08 | P17-G4B-02 | planned | required-pr |
 | P1-09 | P17-G4A-01 | signed-off | required-pr |
@@ -181,7 +181,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-008 | P17-G5-02 | planned | required-pr |
 | EWP-CF-009 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-010 | P17-G0-02 | signed-off | required-pr |
-| EWP-CF-011 | P17-G4A-02 | planned | required-pr |
+| EWP-CF-011 | P17-G4A-02 | validated | required-pr |
 | EWP-CF-012 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-013 | P17-G6-02A | planned | required-pr |
 | EWP-CF-014 | P17-G6-02B | planned | supported-platform |
@@ -223,7 +223,7 @@ Tracked entities: **425** across **45** change groups.
 | D-002 | P17-G4B-02 | planned | required-pr |
 | D-003 | P17-G2-01 | signed-off | required-pr |
 | D-004 | P17-G2-02 | signed-off | required-pr |
-| D-005 | P17-G4A-02 | planned | required-pr |
+| D-005 | P17-G4A-02 | validated | required-pr |
 | D-006 | P17-G4A-01 | signed-off | required-pr |
 | D-007 | P17-G5-01 | planned | required-pr |
 | D-008 | P17-G3A-01 | signed-off | required-pr |
@@ -1126,31 +1126,31 @@ Downstream coverage obligations: EWP-WF04.
 - [x] P17-G4A-02:mapped _(passed)_
 - [x] P17-G4A-02:ready _(passed)_
 - [x] P17-G4A-02:test-first _(passed)_
-- [ ] P17-G4A-02:minimal-implementation _(pending)_
-- [ ] P17-G4A-02:targeted-green _(pending)_
-- [ ] P17-G4A-02:impacted-green _(pending)_
-- [ ] P17-G4A-02:refactor _(pending)_
+- [x] P17-G4A-02:minimal-implementation _(passed)_
+- [x] P17-G4A-02:targeted-green _(passed)_
+- [x] P17-G4A-02:impacted-green _(passed)_
+- [x] P17-G4A-02:refactor _(passed)_
 - [ ] P17-G4A-02:adversarial-review _(pending)_
 - [ ] P17-G4A-02:traceability-closure _(pending)_
 - [ ] P17-G4A-02:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:export** — Declarative — How do I capture the current fleet as portable desired state? _(command; planned)_
-- [ ] **D-005** — Dedicated fleet export _(decision; planned)_
-- [ ] **EWP-CF-011** — Make export merge idempotently without taking whole-file ownership _(finding; planned)_
-- [ ] **EWP-CMD-EXPORT-TS01** — managed remote install exports exact origin/resolution. _(command-test; failing)_
-- [ ] **EWP-CMD-EXPORT-TS02** — clean Git dev placement converts to portable identity. _(command-test; failing)_
-- [ ] **EWP-CMD-EXPORT-TS03** — dirty/non-Git/unmanaged classification and strict behavior. _(command-test; failing)_
-- [ ] **EWP-CMD-EXPORT-TS04** — tool/scope/project/custom-path selection. _(command-test; failing)_
-- [ ] **EWP-CMD-EXPORT-TS05** — compatible same-name cross-tool merge, incompatible _(command-test; failing)_
-- [ ] **EWP-CMD-EXPORT-TS06** — safe merge preserves requested refs, comments/order, defaults, unselected _(command-test; failing)_
-- [ ] **EWP-CMD-EXPORT-TS07** — dry-run/JSON/no-write behavior including migration preview and blocked _(command-test; failing)_
-- [ ] **EWP-CMD-EXPORT-TS08** — absolute-path/secret scrub and portable schema gate; placement/path uses _(command-test; failing)_
-- [ ] **EWP-CMD-EXPORT-TS09** — clean-machine locked round trip using canonical credential-free identity _(command-test; failing)_
-- [ ] **EWP-P4A-T02** — Implement export classification, merge/update behavior, and writer integration. _(phase-task; red)_
-- [ ] **EWP-P4A-TS03** — Export portable/nonportable and existing-file classification matrix. _(phase-test; failing)_
-- [ ] **P1-06** — `export` _(recommendation; planned)_
+- [ ] **COMMAND:export** — Declarative — How do I capture the current fleet as portable desired state? _(command; validated)_
+- [ ] **D-005** — Dedicated fleet export _(decision; validated)_
+- [ ] **EWP-CF-011** — Make export merge idempotently without taking whole-file ownership _(finding; validated)_
+- [ ] **EWP-CMD-EXPORT-TS01** — managed remote install exports exact origin/resolution. _(command-test; passing)_
+- [ ] **EWP-CMD-EXPORT-TS02** — clean Git dev placement converts to portable identity. _(command-test; passing)_
+- [ ] **EWP-CMD-EXPORT-TS03** — dirty/non-Git/unmanaged classification and strict behavior. _(command-test; passing)_
+- [ ] **EWP-CMD-EXPORT-TS04** — tool/scope/project/custom-path selection. _(command-test; passing)_
+- [ ] **EWP-CMD-EXPORT-TS05** — compatible same-name cross-tool merge, incompatible _(command-test; passing)_
+- [ ] **EWP-CMD-EXPORT-TS06** — safe merge preserves requested refs, comments/order, defaults, unselected _(command-test; passing)_
+- [ ] **EWP-CMD-EXPORT-TS07** — dry-run/JSON/no-write behavior including migration preview and blocked _(command-test; passing)_
+- [ ] **EWP-CMD-EXPORT-TS08** — absolute-path/secret scrub and portable schema gate; placement/path uses _(command-test; passing)_
+- [ ] **EWP-CMD-EXPORT-TS09** — clean-machine locked round trip using canonical credential-free identity _(command-test; passing)_
+- [ ] **EWP-P4A-T02** — Implement export classification, merge/update behavior, and writer integration. _(phase-task; green)_
+- [ ] **EWP-P4A-TS03** — Export portable/nonportable and existing-file classification matrix. _(phase-test; passing)_
+- [ ] **P1-06** — `export` _(recommendation; validated)_
 
 ## P17-G4A-03 — Planned init registration with preview/execution identity and manifest-only effects
 
