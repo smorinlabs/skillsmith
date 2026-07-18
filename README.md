@@ -5,8 +5,8 @@
 Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill discovery
 and management across Claude Code, Codex, Kilo Code, and opencode.
 
-**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `version`, `completion`, and `help` are implemented.
-**P17 target:** desired-state `init`, `export`, `plan`, `apply`, narrow `sync`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
+**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `version`, `completion`, and `help` are implemented.
+**P17 target:** desired-state `init`, `plan`, `apply`, narrow `sync`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
 
 ## Example output
 

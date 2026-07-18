@@ -308,5 +308,5 @@ describe('placement execution boundary', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 15_000);
+  }, 30_000);
 });

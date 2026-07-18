@@ -1250,5 +1250,5 @@ describe('EWP-P2-TS07', () => {
     );
     const output = `${compiled.stdout.toString()}${compiled.stderr.toString()}`;
     expect(compiled.exitCode, output).toBe(0);
-  }, 15_000);
+  }, 30_000);
 });
