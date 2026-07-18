@@ -1372,25 +1372,27 @@ const runInstallInternal = async (
   }
   const requested: InstallReport['requested'] = {
     ...requestedBase,
-    tools: detectedTools,
+    tools: explicitTools ? candidateTools : detectedTools,
     scope,
     explicitScope,
   };
-  // Planning refusals: explicitly named but undetected tools → exit-4 per source.
-  const planningRefusals: InstallResult[] = [];
-  for (const tool of undetectedExplicit) {
+  const unavailableToolResult = (
+    source: string,
+    requestIndex: number,
+    tool: FlipTool,
+    skill: string | null = null,
+  ): InstallResult => {
     const e = toolUnavailableError(
       `${tool} is not detected; install it first: ${installHintFor(registry, tool)}`,
     );
-    for (const { source, requestIndex } of specs) {
-      planningRefusals.push({
-        ...emptyResult(source, scope, 'refused', requestIndex),
-        tool,
-        reason: msg(e),
-        error: safeError(e),
-      });
-    }
-  }
+    return {
+      ...emptyResult(source, scope, 'refused', requestIndex),
+      skill,
+      tool,
+      reason: msg(e),
+      error: safeError(e),
+    };
+  };
   if (detectedTools.length === 0) {
     if (!explicitTools) {
       const e = toolUnavailableError(`no supported tool detected (${installTools.join(', ')})`);
@@ -1410,6 +1412,9 @@ const runInstallInternal = async (
         ),
       );
     }
+    const planningRefusals = specs.flatMap(({ source, requestIndex }) =>
+      undetectedExplicit.map((tool) => unavailableToolResult(source, requestIndex, tool)),
+    );
     return ok(
       createInstallDiagnosticReport(
         false,
@@ -2001,7 +2006,7 @@ const runInstallInternal = async (
     resolution: InstallResolutionAuthority,
   ): Promise<PreparedInstallOutcome> => {
     const ledger = ledgerModelForMutation(ledgerState, nowOf(env, deps));
-    const results: InstallResult[] = [...planningRefusals];
+    const results: InstallResult[] = [];
     const candidateBindings = new Map<InstallResult, InstallBindingSeed>();
     const placeCtx: PlaceCtx = {
       env,
@@ -2089,6 +2094,9 @@ const runInstallInternal = async (
         if (!opts.continueOnError) planningFailFast = true;
         continue;
       }
+      const unavailableResults = undetectedExplicit.map((tool) =>
+        unavailableToolResult(source, requestIndex, tool, r.skillName),
+      );
       if (artifactBlocksBinding(resolution)) {
         const refusal = resolution.artifact.outcome === 'refused' ? resolution.artifact : undefined;
         const reason =
@@ -2099,6 +2107,7 @@ const runInstallInternal = async (
           refusal === undefined || refusal.cause.exitClass === 'usage'
             ? flipRefusedError(reason)
             : configError(reason);
+        results.push(...unavailableResults);
         for (const tool of detectedTools) {
           results.push({
             ...emptyResult(source, scope, 'refused', requestIndex),
@@ -2111,7 +2120,22 @@ const runInstallInternal = async (
         }
         continue;
       }
-      const sourceResults: InstallResult[] = [];
+      const sourceResults: InstallResult[] = [...unavailableResults];
+      for (const unavailable of unavailableResults) {
+        if (unavailable.tool === null) {
+          throw new Error('explicit unavailable tool result is missing its tool');
+        }
+        candidateBindings.set(unavailable, {
+          preview: desiredInstallPreview(placeCtx, spec, r, unavailable.tool),
+          reportPreviews: [unavailable],
+          requestIndex,
+          spec,
+          resolved: r,
+          tool: unavailable.tool,
+          execution: 'desired-only',
+          execute: async () => unavailable,
+        });
+      }
       let snap: SnapshotResult | null = null;
       let snapErr: SkillSmithError | null = null;
       let snapConsumed = false;

@@ -402,22 +402,20 @@ const authorizeBulkPlan = async (
       };
 };
 
-const uninstallApprovalRequirement = (
-  plan: OperationPlan<'uninstall'>,
-  results: CurrentUninstallReport['results'],
-): Readonly<{ required: boolean; groupCount: number; backupAndReplace: boolean }> => {
-  const reportedGroups = new Set(
-    results.flatMap((result) => (result.groupId === null ? [] : [result.groupId])),
-  );
-  const permittedGroups = new Set(
-    results.flatMap((result) =>
-      result.groupId !== null && (result.action === 'removed' || result.action === 'noop')
-        ? [result.groupId]
-        : [],
-    ),
-  );
-  const otherwisePermitted = (operation: OperationPlan<'uninstall'>['operations'][number]) =>
-    !reportedGroups.has(operation.groupId) || permittedGroups.has(operation.groupId);
+type LifecycleApprovalRequirement = Readonly<{
+  required: boolean;
+  groupCount: number;
+  backupAndReplace: boolean;
+}>;
+
+const lifecycleApprovalRequirement = (
+  plan: OperationPlan<'install' | 'uninstall'>,
+  reportedGroups: ReadonlySet<string>,
+  permittedGroups: ReadonlySet<string>,
+): LifecycleApprovalRequirement => {
+  const otherwisePermitted = (
+    operation: OperationPlan<'install' | 'uninstall'>['operations'][number],
+  ) => !reportedGroups.has(operation.groupId) || permittedGroups.has(operation.groupId);
   const otherwisePermittedGroups = new Set(
     plan.operations
       .filter((operation) => operation.kind !== 'migrate-ledger' && otherwisePermitted(operation))
@@ -434,24 +432,59 @@ const uninstallApprovalRequirement = (
   };
 };
 
-const authorizeUninstallPlan = async (
+const installApprovalRequirement = (
+  plan: OperationPlan<'install'>,
+  results: CurrentInstallReport['results'],
+): LifecycleApprovalRequirement => {
+  const reportedGroups = new Set(
+    results.flatMap((result) => (result.groupId === null ? [] : [result.groupId])),
+  );
+  const permittedGroups = new Set(
+    results.flatMap((result) =>
+      result.groupId !== null &&
+      ['installed', 'updated', 'repaired', 'noop'].includes(result.action)
+        ? [result.groupId]
+        : [],
+    ),
+  );
+  return lifecycleApprovalRequirement(plan, reportedGroups, permittedGroups);
+};
+
+const uninstallApprovalRequirement = (
   plan: OperationPlan<'uninstall'>,
   results: CurrentUninstallReport['results'],
+): LifecycleApprovalRequirement => {
+  const reportedGroups = new Set(
+    results.flatMap((result) => (result.groupId === null ? [] : [result.groupId])),
+  );
+  const permittedGroups = new Set(
+    results.flatMap((result) =>
+      result.groupId !== null && (result.action === 'removed' || result.action === 'noop')
+        ? [result.groupId]
+        : [],
+    ),
+  );
+  return lifecycleApprovalRequirement(plan, reportedGroups, permittedGroups);
+};
+
+const authorizeLifecyclePlan = async (
+  command: 'install' | 'uninstall',
+  operationCount: number,
+  requirement: LifecycleApprovalRequirement,
   interaction: InteractionPort,
 ): Promise<BulkApproval> => {
-  const requirement = uninstallApprovalRequirement(plan, results);
   if (!requirement.required) return { ok: true };
   const backupSummary = requirement.backupAndReplace ? ' including backup-and-replace' : '';
   const resolution = await interaction.confirm({
-    id: 'uninstall.approval',
-    message: `Confirm uninstall of ${requirement.groupCount} groups (${plan.operations.length} operations)${backupSummary}?`,
+    id: `${command}.approval`,
+    message: `Confirm ${command} of ${requirement.groupCount} groups (${operationCount} operations)${backupSummary}?`,
   });
   if (resolution.status === 'cancelled') {
     return {
       ok: false,
       exitClass: 'cancelled',
       code: 'approval-cancelled',
-      message: 'uninstall confirmation was cancelled',
+      message: `${command} confirmation was cancelled`,
     };
   }
   if (resolution.status === 'refused') {
@@ -459,7 +492,7 @@ const authorizeUninstallPlan = async (
       ok: false,
       exitClass: 'usage',
       code: 'approval-required',
-      message: `uninstall requires approval or confirmation: ${resolution.reason}`,
+      message: `${command} requires approval or confirmation: ${resolution.reason}`,
     };
   }
   return resolution.value
@@ -468,9 +501,33 @@ const authorizeUninstallPlan = async (
         ok: false,
         exitClass: 'usage',
         code: 'approval-refused',
-        message: 'uninstall was not approved',
+        message: `${command} was not approved`,
       };
 };
+
+const authorizeInstallPlan = (
+  plan: OperationPlan<'install'>,
+  results: CurrentInstallReport['results'],
+  interaction: InteractionPort,
+): Promise<BulkApproval> =>
+  authorizeLifecyclePlan(
+    'install',
+    plan.operations.length,
+    installApprovalRequirement(plan, results),
+    interaction,
+  );
+
+const authorizeUninstallPlan = (
+  plan: OperationPlan<'uninstall'>,
+  results: CurrentUninstallReport['results'],
+  interaction: InteractionPort,
+): Promise<BulkApproval> =>
+  authorizeLifecyclePlan(
+    'uninstall',
+    plan.operations.length,
+    uninstallApprovalRequirement(plan, results),
+    interaction,
+  );
 
 const interactiveInstallDeps = (
   interaction: InteractionPort,
@@ -631,35 +688,96 @@ export const createLifecycleApplicationServices = (
     const project = await resolveContext(context, dependencies);
     if (!project.ok) return domainFailure('install', project.error, context.signal);
     const pause = context.configuration.journalPause;
+    const dryRun = bool(options, 'dryRun');
+    const force = bool(options, 'force');
+    const installOptions = {
+      sources,
+      ...(selection.value.tools.length === 0
+        ? {}
+        : { tools: selection.value.tools as readonly FlipTool[] }),
+      ...(scope.value === null ? {} : { scope: scope.value }),
+      ...(optionalString(options, 'ref') === undefined
+        ? {}
+        : { ref: optionalString(options, 'ref') as string }),
+      ...(file === undefined ? {} : { file }),
+      ...(lockfile === undefined ? {} : { lockfile }),
+      noSave,
+      ...(path === undefined ? {} : { path }),
+      pin: bool(options, 'pin'),
+      direct: bool(options, 'direct'),
+      force,
+      strict: bool(options, 'strict'),
+      noVerify: !bool(options, 'verify', true),
+      deep: bool(options, 'deep'),
+      continueOnError: bool(options, 'continueOnError'),
+      dryRun,
+      cwd: project.value.effectiveCwd,
+      configuration: context.configuration,
+      ...(pause === undefined ? {} : { testPauseAt: pause }),
+      ...(context.signal === undefined ? {} : { signal: context.signal }),
+    };
+    const installDeps = interactiveInstallDeps(
+      context.interaction,
+      options,
+      context.artifactCoordinator,
+    );
+    let executionDeps = installDeps;
+    if (!dryRun && (force || sources.length > 1)) {
+      const previewChoices: (CandidateSkill | null)[] = [];
+      const previewDeps: InstallDeps =
+        installDeps.pick === undefined
+          ? installDeps
+          : {
+              ...installDeps,
+              pick: async (candidates) => {
+                const choice = await installDeps.pick?.(candidates);
+                previewChoices.push(choice ?? null);
+                return choice ?? null;
+              },
+            };
+      const preview = await dependencies.install(
+        context.ports,
+        { ...installOptions, dryRun: true },
+        previewDeps,
+        context.observation,
+      );
+      if (!preview.ok) return domainFailure('install', preview.error, context.signal);
+      const approval = await authorizeInstallPlan(
+        preview.value.plan,
+        preview.value.results,
+        context.interaction,
+      );
+      if (!approval.ok) {
+        return refusal('install', approval.exitClass, approval.code, approval.message);
+      }
+      let choiceIndex = 0;
+      executionDeps = {
+        ...installDeps,
+        ...(installDeps.pick === undefined
+          ? {}
+          : {
+              pick: async (candidates: readonly CandidateSkill[]) => {
+                const approved = previewChoices[choiceIndex++] ?? null;
+                if (approved === null) return null;
+                return (
+                  candidates.find(
+                    (candidate) =>
+                      candidate.path === approved.path && candidate.name === approved.name,
+                  ) ?? null
+                );
+              },
+            }),
+        observePreparedPlan: (plan) => {
+          if (canonicalPlanningString(plan) !== canonicalPlanningString(preview.value.plan)) {
+            throw new Error('prepared install plan changed after approval preflight');
+          }
+        },
+      };
+    }
     const result = await dependencies.install(
       context.ports,
-      {
-        sources,
-        ...(selection.value.tools.length === 0
-          ? {}
-          : { tools: selection.value.tools as readonly FlipTool[] }),
-        ...(scope.value === null ? {} : { scope: scope.value }),
-        ...(optionalString(options, 'ref') === undefined
-          ? {}
-          : { ref: optionalString(options, 'ref') as string }),
-        ...(file === undefined ? {} : { file }),
-        ...(lockfile === undefined ? {} : { lockfile }),
-        noSave,
-        ...(path === undefined ? {} : { path }),
-        pin: bool(options, 'pin'),
-        direct: bool(options, 'direct'),
-        force: bool(options, 'force'),
-        strict: bool(options, 'strict'),
-        noVerify: !bool(options, 'verify', true),
-        deep: bool(options, 'deep'),
-        continueOnError: bool(options, 'continueOnError'),
-        dryRun: bool(options, 'dryRun'),
-        cwd: project.value.effectiveCwd,
-        configuration: context.configuration,
-        ...(pause === undefined ? {} : { testPauseAt: pause }),
-        ...(context.signal === undefined ? {} : { signal: context.signal }),
-      },
-      interactiveInstallDeps(context.interaction, options, context.artifactCoordinator),
+      installOptions,
+      executionDeps,
       context.observation,
     );
     if (!result.ok) return domainFailure('install', result.error, context.signal);

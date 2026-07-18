@@ -851,6 +851,7 @@ interface UninstallReportAssemblyContext {
   readonly artifact?: UninstallArtifactResolution;
   readonly groupByResult?: ReadonlyMap<string, string>;
   readonly requestIndices?: readonly number[];
+  readonly artifactFallback?: 'not-written' | 'none';
 }
 const uninstallResultFactKey = (
   result: Pick<UninstallResult, 'skill' | 'tool' | 'scope' | 'placementPath'>,
@@ -1051,7 +1052,7 @@ const assembleUninstallReport = (
     artifact.outcome === 'selected' &&
     artifactEffects.length === 0 &&
     results.length > 0 &&
-    !results.some(({ reason }) => reason?.includes('deferred to G4A-04') === true)
+    context.artifactFallback !== 'none'
   ) {
     artifactEffects = [...new Set(results.map(({ skill }) => skill))].map((skill) => ({
       groupId: null,
@@ -1121,8 +1122,6 @@ const createUninstallExecutionResult = (
   result: ProjectedUninstallResult | undefined,
   requested: UninstallReport['requested'],
 ): OperationExecutionResult => {
-  const cancelled = result?.reason === 'interrupted';
-  const skippedAfterFailure = result?.action === 'skipped' && result.reason === 'fail-fast';
   const succeeded = result?.action === 'removed';
   const common = {
     operationId: operation.operationId,
@@ -1130,15 +1129,8 @@ const createUninstallExecutionResult = (
     actualAfter: succeeded ? operation.after : operation.before,
     force: createInstallForceEffect(operation, requested.force, succeeded),
   } as const;
-  if (cancelled) {
-    return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
-  }
-  if (skippedAfterFailure) {
-    return createOperationExecutionResult({
-      ...common,
-      outcome: 'skipped-after-failure',
-      error: null,
-    });
+  if (result?.action === 'skipped') {
+    throw new Error('scheduler-owned uninstall outcome entered a pair execution binding');
   }
   if (!succeeded) {
     return createOperationExecutionResult({
@@ -1272,6 +1264,7 @@ const runUninstallInternal = async (
     return ok(
       assembleUninstallReport(Boolean(opts.dryRun), requested, results, plan, [], {
         artifact: artifactResolution,
+        artifactFallback: 'none',
       }),
     );
   }

@@ -485,6 +485,41 @@ describe('current renderer adapter facts', () => {
     );
   });
 
+  test('does not claim selected desired state was saved when structured effects were not written', () => {
+    const notWritten = {
+      ...REPORT_FIXTURES.currentInstall,
+      artifactEffects: REPORT_FIXTURES.currentInstall.artifactEffects.map((effect) => ({
+        ...effect,
+        manifestAction: 'not-write' as const,
+        lockAction: 'not-write' as const,
+        outcome: 'not-run' as const,
+        reason: 'selected declaration was absent',
+      })),
+    } satisfies CurrentInstallReport;
+    const rendered = stdout(renderer('install').human(successOutcome({ value: notWritten })));
+
+    expect(rendered).not.toContain('Saved desired state:');
+    expect(rendered).not.toContain('Would save desired state:');
+    expect(rendered).toContain('Desired state was not written:');
+    expect(rendered).toContain('manifest not-write, lock not-write, not-run');
+  });
+
+  test('does not claim selected desired state was saved when an artifact operation failed', () => {
+    const failed = {
+      ...REPORT_FIXTURES.currentInstall,
+      artifactEffects: REPORT_FIXTURES.currentInstall.artifactEffects.map((effect) => ({
+        ...effect,
+        outcome: 'failed' as const,
+        reason: 'synthetic artifact write failure',
+      })),
+    } satisfies CurrentInstallReport;
+    const rendered = stdout(renderer('install').human(successOutcome({ value: failed })));
+
+    expect(rendered).not.toContain('Saved desired state:');
+    expect(rendered).toContain('Desired state write did not complete:');
+    expect(rendered).toContain('synthetic artifact write failure');
+  });
+
   test('injects the registered deep-coverage suffix', () => {
     const fixture = CURRENT_RENDERER_REPORTS.verify.result;
     const value = {

@@ -680,6 +680,8 @@ placement = "symlink"
     expect(result.value.results).toHaveLength(2);
     expect(result.value.results.every(({ action }) => action === 'refused')).toBeTrue();
     expect(result.value.results[0]?.reason).toContain('deferred to G4A-04');
+    expect(result.value.artifactEffects).toEqual([]);
+    expect(result.value.summary.desiredState.notWritten).toBe(0);
     expect(await f.env.readText(manifestPath)).toBe(manifest);
     expect(await f.env.readText(lockPath)).toBe(serialized.value);
   });

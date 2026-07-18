@@ -631,6 +631,81 @@ describe('runInstall — tool detection', () => {
     expect(r.value.results[0]?.tool).toBe('claude-code');
     expect(r.value.results[0]?.action).toBe('installed');
   });
+
+  test('mixed explicit detection preserves complete intent and fail-fast skips later source groups', async () => {
+    const file = join(f.base, 'mixed-detection-fail-fast.toml');
+    const lockfile = join(f.base, 'mixed-detection-fail-fast.lock');
+    const detect: InstallDeps['detect'] = async (_env, tool) =>
+      tool === 'claude-code'
+        ? ok<InstallRecord[]>([{ path: '/x', version: '1', installMethod: 'unknown' }])
+        : ok<InstallRecord[]>([]);
+    const result = await runInstall(
+      f.env,
+      {
+        sources: [fsSource, fixture.singleSource],
+        tools: ['claude-code', 'codex'],
+        file,
+        lockfile,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      makeDeps({ detect }),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.requested.tools).toEqual(['claude-code', 'codex']);
+    expect(result.value.results.filter(({ requestIndex }) => requestIndex === 0)).toMatchObject([
+      { tool: 'codex', action: 'refused', error: { code: 'tool-unavailable' } },
+      { tool: 'claude-code', action: 'installed' },
+    ]);
+    expect(result.value.results.filter(({ requestIndex }) => requestIndex === 1)).toMatchObject([
+      { tool: null, action: 'skipped', reason: 'fail-fast' },
+    ]);
+    const manifest = manifestV1Codec.decode(await f.env.readBytes(file));
+    if (!manifest.ok) throw new Error(manifest.error.message);
+    expect(manifest.value.model.skills).toMatchObject([
+      { name: 'factor-scan', tools: ['claude-code', 'codex'] },
+    ]);
+  });
+
+  test('mixed explicit detection with continue-on-error saves complete intent for every source group', async () => {
+    const file = join(f.base, 'mixed-detection-continue.toml');
+    const lockfile = join(f.base, 'mixed-detection-continue.lock');
+    const detect: InstallDeps['detect'] = async (_env, tool) =>
+      tool === 'claude-code'
+        ? ok<InstallRecord[]>([{ path: '/x', version: '1', installMethod: 'unknown' }])
+        : ok<InstallRecord[]>([]);
+    const result = await runInstall(
+      f.env,
+      {
+        sources: [fsSource, fixture.singleSource],
+        tools: ['claude-code', 'codex'],
+        file,
+        lockfile,
+        continueOnError: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      makeDeps({ detect }),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.requested.tools).toEqual(['claude-code', 'codex']);
+    for (const requestIndex of [0, 1]) {
+      expect(
+        result.value.results.filter((result) => result.requestIndex === requestIndex),
+      ).toMatchObject([
+        { tool: 'codex', action: 'refused', error: { code: 'tool-unavailable' } },
+        { tool: 'claude-code', action: 'installed' },
+      ]);
+    }
+    const manifest = manifestV1Codec.decode(await f.env.readBytes(file));
+    if (!manifest.ok) throw new Error(manifest.error.message);
+    expect(manifest.value.model.skills).toMatchObject([
+      { name: 'factor-scan', tools: ['claude-code', 'codex'] },
+      { name: 'lint', tools: ['claude-code', 'codex'] },
+    ]);
+  });
 });
 
 describe('runInstall — injected lifecycle registry', () => {

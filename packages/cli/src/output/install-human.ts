@@ -217,15 +217,35 @@ const renderDesiredState = (report: CurrentInstallReport | CurrentUninstallRepor
     ];
   }
   if (report.artifactPair === null || report.artifactSelection.outcome !== 'selected') return [];
+  const hasWritableEffect = report.artifactEffects.some(
+    ({ manifestAction, lockAction }) =>
+      manifestAction !== 'not-write' || lockAction !== 'not-write',
+  );
+  const writeFailed = report.artifactEffects.some(
+    ({ outcome }) => outcome !== 'planned' && outcome !== 'succeeded' && outcome !== 'not-run',
+  );
+  const writeCompleted =
+    hasWritableEffect &&
+    report.artifactEffects.length > 0 &&
+    report.artifactEffects.every(({ outcome }) =>
+      report.dryRun ? outcome === 'planned' : outcome === 'succeeded',
+    );
+  const heading = writeCompleted
+    ? report.dryRun
+      ? 'Would save desired state:'
+      : 'Saved desired state:'
+    : writeFailed
+      ? 'Desired state write did not complete:'
+      : 'Desired state was not written:';
   const lines = [
-    report.dryRun ? 'Would save desired state:' : 'Saved desired state:',
+    heading,
     `  ${report.artifactPair.manifestPath}`,
     `  ${report.artifactPair.lockPath}`,
   ];
   for (const effect of report.artifactEffects) {
     const subject = effect.skill ?? effect.groupId ?? 'selected group';
     lines.push(
-      `  ${subject}: manifest ${effect.manifestAction}, lock ${effect.lockAction}, ${effect.outcome}`,
+      `  ${subject}: manifest ${effect.manifestAction}, lock ${effect.lockAction}, ${effect.outcome}${effect.reason === null ? '' : ` — ${effect.reason}`}`,
     );
   }
   return lines;

@@ -3,6 +3,8 @@ import type { runInstall } from '../../src/acquire/run.ts';
 import type {
   CurrentInstallReport,
   CurrentUninstallReport,
+  InstallDeps,
+  PlannedInstallReport,
   PlannedUninstallReport,
   UninstallDeps,
 } from '../../src/acquire/types.ts';
@@ -141,6 +143,66 @@ const installReport = (action: 'installed' | 'noop' = 'installed'): CurrentInsta
     desiredState: { changed: 0, unchanged: 0, retained: 0, notWritten: 1, failed: 0 },
   },
 });
+
+const plannedInstallReport = ({
+  dryRun = true,
+  groups = ['group:install:one'],
+  backupAndReplace = false,
+}: Readonly<{
+  dryRun?: boolean;
+  groups?: readonly string[];
+  backupAndReplace?: boolean;
+}> = {}): PlannedInstallReport => {
+  const base = installReport();
+  const results = groups.map((groupId, index) => ({
+    ...(base.results[0] as CurrentInstallReport['results'][number]),
+    source: `owner/repo/skill-${index}`,
+    skill: `skill-${index}`,
+    requestIndex: index,
+    groupId,
+    pairId: `pair:codex:project:${index}`,
+    executionOutcome: dryRun ? null : ('succeeded' as const),
+  }));
+  return {
+    ...base,
+    dryRun,
+    requested: {
+      ...base.requested,
+      sources: results.map(({ source }) => source),
+      force: backupAndReplace,
+    },
+    results,
+    summary: { ...base.summary, installed: results.length },
+    plan: {
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'install',
+      selection: {
+        source: 'explicit-targets',
+        outcome: 'selected',
+        targets: results.map(({ source }) => source),
+        all: false,
+        tools: ['codex'],
+        scopes: ['project'],
+        groupIds: [...groups],
+      },
+      batchPolicy: 'fail-fast',
+      operations: groups.map(
+        (groupId, index) =>
+          ({
+            operationId: `operation:install:${index}`,
+            groupId,
+            kind: 'install',
+            conflict:
+              backupAndReplace && index === 0 ? { forced: 'backup-and-replace' as const } : null,
+          }) as never,
+      ),
+      checks: [],
+      diagnostics: [],
+    },
+    executionResults: [],
+  };
+};
 
 const uninstallReport = (dryRun = true): CurrentUninstallReport => ({
   reportVersion: 2,
@@ -643,6 +705,114 @@ describe('lifecycle application services', () => {
       continueOnError: false,
       cwd: '/project/packages/nested',
     });
+  });
+
+  test('install force preview refuses backup-and-replace without approval or mutation', async () => {
+    let calls = 0;
+    const services = createLifecycleApplicationServices({
+      install: (async (...args: unknown[]) => {
+        calls++;
+        expect(args[1]).toMatchObject({ force: true, dryRun: true });
+        return ok(plannedInstallReport({ backupAndReplace: true }));
+      }) as never,
+    });
+
+    const outcome = await services.install(
+      {
+        arguments: [['owner/repo/skill']],
+        options: { tool: ['codex'], force: true },
+      },
+      context(),
+    );
+
+    expect(calls).toBe(1);
+    expect(outcome.exitClass).toBe('usage');
+    expect(outcome.diagnostics).toEqual([
+      {
+        code: 'approval-required',
+        severity: 'error',
+        message: 'install requires approval or confirmation: noninteractive',
+      },
+    ]);
+    expect(outcome.mutation).toEqual({
+      kind: 'none',
+      planned: 0,
+      changed: 0,
+      unchanged: 0,
+      failed: 0,
+    });
+  });
+
+  test('install approved multi-group preview executes the exact approved plan', async () => {
+    const calls: Readonly<Record<string, unknown>>[] = [];
+    let confirmations = 0;
+    const artifactCoordinator = Object.freeze({
+      fixture: 'approved-install-artifact-coordinator',
+    }) as unknown as CurrentApplicationContext['artifactCoordinator'];
+    const services = createLifecycleApplicationServices({
+      install: (async (...args: unknown[]) => {
+        const options = args[1] as Readonly<Record<string, unknown>>;
+        const deps = args[2] as InstallDeps;
+        calls.push(options);
+        expect(deps.artifactCoordinator).toBe(artifactCoordinator);
+        const report = plannedInstallReport({
+          dryRun: options.dryRun === true,
+          groups: ['group:install:one', 'group:install:two'],
+        });
+        if (options.dryRun !== true) deps.observePreparedPlan?.(report.plan);
+        return ok(report);
+      }) as never,
+    });
+    const interaction: InteractionPort = {
+      mode: 'noninteractive',
+      choose: noninteractive.choose,
+      confirm: async () => {
+        confirmations++;
+        return { status: 'resolved', value: true };
+      },
+    };
+
+    const outcome = await services.install(
+      {
+        arguments: [['owner/repo/one', 'owner/repo/two']],
+        options: { tool: ['codex'], yes: true },
+      },
+      context({ artifactCoordinator, interaction }),
+    );
+
+    expect(calls.map(({ dryRun }) => dryRun)).toEqual([true, false]);
+    expect(confirmations).toBe(1);
+    expect(outcome.exitClass).toBe('success');
+    expect(outcome.report.value?.dryRun).toBeFalse();
+  });
+
+  test('install dry-run never asks for approval even when force preview needs backup', async () => {
+    let calls = 0;
+    const services = createLifecycleApplicationServices({
+      install: (async (...args: unknown[]) => {
+        calls++;
+        expect(args[1]).toMatchObject({ force: true, dryRun: true });
+        return ok(plannedInstallReport({ backupAndReplace: true }));
+      }) as never,
+    });
+    const interaction: InteractionPort = {
+      ...noninteractive,
+      confirm: async () => {
+        throw new Error('dry-run must not prompt');
+      },
+    };
+
+    const outcome = await services.install(
+      {
+        arguments: [['owner/repo/skill']],
+        options: { tool: ['codex'], force: true, dryRun: true },
+      },
+      context({ interaction }),
+    );
+
+    expect(calls).toBe(1);
+    expect(outcome.exitClass).toBe('success');
+    expect(outcome.mutation.kind).toBe('preview');
   });
 
   test('uninstall forwards artifact coordination and keeps one managed group prompt-free', async () => {
