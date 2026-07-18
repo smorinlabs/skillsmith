@@ -1081,7 +1081,7 @@ Downstream coverage obligations: none.
 - [x] P17-G4A-01:mapped _(passed)_
 - [x] P17-G4A-01:ready _(passed)_
 - [x] P17-G4A-01:test-first _(passed)_
-- [ ] P17-G4A-01:minimal-implementation _(pending)_
+- [x] P17-G4A-01:minimal-implementation _(passed)_
 - [ ] P17-G4A-01:targeted-green _(pending)_
 - [ ] P17-G4A-01:impacted-green _(pending)_
 - [ ] P17-G4A-01:refactor _(pending)_

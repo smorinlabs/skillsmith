@@ -5350,8 +5350,8 @@
           "evidence": ["projects/p17/evidence/P17-G4A-01.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-01.md#minimal-implementation"]
         },
         "targeted-green": {
           "status": "pending",
@@ -5390,7 +5390,8 @@
         "projects/p17/evidence/P17-G4A-01.md#single-pair-multi-declaration-uninstall-boundary-amendment",
         "projects/p17/evidence/P17-G4A-01.md#terminal-uninstall-runner-extraction-amendment",
         "projects/p17/evidence/P17-G4A-01.md#terminal-signed-compatibility-fixture-amendment",
-        "projects/p17/evidence/P17-G4A-01.md#terminal-full-suite-structural-compatibility-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#terminal-full-suite-structural-compatibility-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#minimal-implementation"
       ]
     },
     {
