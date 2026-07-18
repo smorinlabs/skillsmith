@@ -5662,7 +5662,8 @@
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
         "tests/ergonomics/fixtures/p1-ts10/goldens/init.stdout",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
-        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts"
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts"
       ],
       "integrationOwner": "root-codex-goal",
       "impactedValidations": [
@@ -21412,7 +21413,8 @@
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
         "tests/ergonomics/fixtures/p1-ts10/goldens/init.stdout",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
-        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts"
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts"
       ]
     },
     {
