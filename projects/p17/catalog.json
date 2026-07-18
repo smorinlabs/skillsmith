@@ -5602,7 +5602,7 @@
       "phase": "4A",
       "title": "Planned init registration with preview/execution identity and manifest-only effects",
       "dependsOn": ["P17-G2-04", "P17-G3B-03", "P17-G3B-04"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -5712,8 +5712,8 @@
           "evidence": ["projects/p17/evidence/P17-G4A-03.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -5747,7 +5747,8 @@
       "evidence": [
         "projects/p17/plans/P17-G4A-03.md",
         "projects/p17/evidence/P17-G4A-03.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G4A-03.md#ready-plan"
+        "projects/p17/evidence/P17-G4A-03.md#ready-plan",
+        "projects/p17/evidence/P17-G4A-03.md#test-first-evidence"
       ]
     },
     {
@@ -14124,11 +14125,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/init.test.ts",
+        "selector": "EWP-CMD-INIT-TS01",
+        "command": "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-03.md#red-execution-receipt-ewp-cmd-init-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INIT-TS01"],
@@ -14141,8 +14147,10 @@
         "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS01"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/init.test.ts"]
     },
     {
       "id": "EWP-CMD-INIT-TS02",
@@ -14150,11 +14158,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/init.test.ts",
+        "selector": "EWP-CMD-INIT-TS02",
+        "command": "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-03.md#red-execution-receipt-ewp-cmd-init-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INIT-TS02"],
@@ -14167,8 +14180,10 @@
         "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/init.test.ts"]
     },
     {
       "id": "EWP-CMD-INIT-TS03",
@@ -14176,11 +14191,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/init.test.ts",
+        "selector": "EWP-CMD-INIT-TS03",
+        "command": "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-03.md#red-execution-receipt-ewp-cmd-init-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INIT-TS03"],
@@ -14193,8 +14213,10 @@
         "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/init.test.ts"]
     },
     {
       "id": "EWP-CMD-INIT-TS04",
@@ -14202,11 +14224,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/init.test.ts",
+        "selector": "EWP-CMD-INIT-TS04",
+        "command": "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-03.md#red-execution-receipt-ewp-cmd-init-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INIT-TS04"],
@@ -14219,8 +14246,10 @@
         "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS04"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/init.test.ts"]
     },
     {
       "id": "EWP-CMD-INIT-TS05",
@@ -14228,11 +14257,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/init.test.ts",
+        "selector": "EWP-CMD-INIT-TS05",
+        "command": "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-03.md#red-execution-receipt-ewp-cmd-init-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-INIT-TS05"],
@@ -14245,8 +14279,10 @@
         "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS05"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/init.test.ts"]
     },
     {
       "id": "EWP-CMD-INSTALL-TS01",
@@ -21246,11 +21282,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-03",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G4A-03.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-03.md#ready-plan",
+        "projects/p17/evidence/P17-G4A-03.md#test-first-evidence"
+      ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:init", "EWP-CF-041", "P1-05"],
       "validatedBy": [
@@ -21455,11 +21494,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:tests/ergonomics/phase/EWP-P4A-TS04.test.ts#EWP-P4A-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P4A-TS04.test.ts",
+        "selector": "EWP-P4A-TS04",
+        "command": "bun test tests/ergonomics/phase/EWP-P4A-TS04.test.ts --test-name-pattern EWP-P4A-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-03.md#red-execution-receipt-ewp-p4a-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4A-TS04"],
@@ -21472,8 +21516,10 @@
         "EWP-P4A-TS04"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P4A-TS04.test.ts --test-name-pattern EWP-P4A-TS04"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P4A-TS04.test.ts"]
     },
     {
       "id": "EWP-P4B-T01",

@@ -1154,7 +1154,7 @@ Downstream coverage obligations: EWP-WF04.
 
 ## P17-G4A-03 — Planned init registration with preview/execution identity and manifest-only effects
 
-Phase: 4A; status: **ready**; dependencies: P17-G2-04, P17-G3B-03, P17-G3B-04.
+Phase: 4A; status: **active**; dependencies: P17-G2-04, P17-G3B-03, P17-G3B-04.
 Required-now validations: EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-OPT-TS03, EWP-OPT-TS04, EWP-P2-TS05, EWP-P4A-TS04.
 Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
@@ -1162,7 +1162,7 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
 - [x] P17-G4A-03:mapped _(passed)_
 - [x] P17-G4A-03:ready _(passed)_
-- [ ] P17-G4A-03:test-first _(pending)_
+- [x] P17-G4A-03:test-first _(passed)_
 - [ ] P17-G4A-03:minimal-implementation _(pending)_
 - [ ] P17-G4A-03:targeted-green _(pending)_
 - [ ] P17-G4A-03:impacted-green _(pending)_
@@ -1175,13 +1175,13 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
 - [ ] **COMMAND:init** — Declarative — How do I create or migrate the desired-state file? _(command; planned)_
 - [ ] **EWP-CF-041** — Put init execution behind the shared planner and make it previewable _(finding; planned)_
-- [ ] **EWP-CMD-INIT-TS01** — default canonical manifest content at shared Git project root when in a _(command-test; planned)_
-- [ ] **EWP-CMD-INIT-TS02** — explicit file/scope/tool/default selections, including `--scope user` _(command-test; planned)_
-- [ ] **EWP-CMD-INIT-TS03** — existing file refusal and force replacement limited to the exact manifest, _(command-test; planned)_
-- [ ] **EWP-CMD-INIT-TS04** — dry-run/execution operation equality, atomic write/SIGINT/concurrent-writer _(command-test; planned)_
-- [ ] **EWP-CMD-INIT-TS05** — human/JSON/help/completion output and immediate parse/plan compatibility. _(command-test; planned)_
-- [ ] **EWP-P4A-T04** — Register and implement init through the shared application service/planner using _(phase-task; ready)_
-- [ ] **EWP-P4A-TS04** — Init dry-run/execution operation equality; absent/legacy/existing/force/noop/ _(phase-test; planned)_
+- [ ] **EWP-CMD-INIT-TS01** — default canonical manifest content at shared Git project root when in a _(command-test; failing)_
+- [ ] **EWP-CMD-INIT-TS02** — explicit file/scope/tool/default selections, including `--scope user` _(command-test; failing)_
+- [ ] **EWP-CMD-INIT-TS03** — existing file refusal and force replacement limited to the exact manifest, _(command-test; failing)_
+- [ ] **EWP-CMD-INIT-TS04** — dry-run/execution operation equality, atomic write/SIGINT/concurrent-writer _(command-test; failing)_
+- [ ] **EWP-CMD-INIT-TS05** — human/JSON/help/completion output and immediate parse/plan compatibility. _(command-test; failing)_
+- [ ] **EWP-P4A-T04** — Register and implement init through the shared application service/planner using _(phase-task; red)_
+- [ ] **EWP-P4A-TS04** — Init dry-run/execution operation equality; absent/legacy/existing/force/noop/ _(phase-test; failing)_
 - [ ] **P1-05** — `init` _(recommendation; planned)_
 
 ## P17-G4A-04 — Multi-source/tool partial-success, crash, and commit-boundary semantics
