@@ -10,6 +10,7 @@ import {
   type CurrentInstallReport,
   type CurrentUninstallReport,
   type DevApplicationReport,
+  type ExportReport,
   type FlipReport,
   type HealthReport,
   type InstallApplicationReport,
@@ -39,6 +40,8 @@ import { renderCommandsJson } from '../output/commands-json.ts';
 import { renderDoctorHuman } from '../output/doctor-human.ts';
 import { renderDoctorJson } from '../output/doctor-json.ts';
 import { renderCliError } from '../output/error-boundary.ts';
+import { renderExportHuman } from '../output/export-human.ts';
+import { renderExportJson } from '../output/export-json.ts';
 import { renderFlipHuman } from '../output/flip-human.ts';
 import { renderFlipJson } from '../output/flip-json.ts';
 import {
@@ -404,6 +407,20 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
           ? (errorOutput(outcome, 'json') ?? '')
           : renderVerifyJson(value.result),
     ),
+    export: {
+      human: (outcome) => {
+        const value = report<ExportReport>(outcome);
+        return value.artifactSelection.outcome === 'refused'
+          ? (errorOutput(outcome, 'human') ?? '')
+          : withDiagnostics(outcome, renderExportHuman(value));
+      },
+      json: (outcome) => {
+        const value = report<ExportReport>(outcome);
+        return value.artifactSelection.outcome === 'refused'
+          ? (errorOutput(outcome, 'json') ?? '')
+          : withDiagnostics(outcome, renderExportJson(value));
+      },
+    },
     install: lifecycleRenderer<NonNullable<InstallApplicationReport['value']>>(
       (value, outcome) =>
         renderInstallHuman(value, exitCodeForClass(outcome.exitClass), currentInstallStaticNotice),

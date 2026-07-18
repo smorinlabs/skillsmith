@@ -83,10 +83,7 @@ import {
   executeRecordOnlyPlacementPlan,
   executeRecordOnlyPlacementPlanWithObservation,
 } from '../place/execute.ts';
-import {
-  ledgerMigrationExecutionBinding,
-  ledgerMigrationExecutionBindingObserved,
-} from '../place/ledger-migration.ts';
+import { createLedgerMigrationExecutionBinding } from '../place/ledger-migration.ts';
 import { readLedgerState } from '../place/ledger.ts';
 import {
   type LivePlacementResourceV1,
@@ -2128,21 +2125,8 @@ export const createAcquisitionArtifactExecutionControllerV1 = (input: {
   });
 };
 
-export const createAcquisitionLedgerMigrationBinding = (
-  args: Parameters<typeof ledgerMigrationExecutionBinding>[0],
-): PreparedExecutionBinding => {
-  const binding = ledgerMigrationExecutionBinding(args);
-  return Object.freeze({
-    ...binding,
-    execute: (
-      validated: ValidatedExecutionBinding,
-      observation?: ObservationBundle,
-    ): Promise<OperationExecutionResult> =>
-      observation === undefined
-        ? binding.execute(validated)
-        : ledgerMigrationExecutionBindingObserved(args, observation).execute(validated),
-  });
-};
+/** @deprecated Compatibility alias; ledger migration binding authority is command-neutral. */
+export const createAcquisitionLedgerMigrationBinding = createLedgerMigrationExecutionBinding;
 
 export const executeAcquisitionOperationPlan = (
   request: ExecutionCoordinatorRequest,

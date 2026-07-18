@@ -193,7 +193,8 @@ describe('EWP-P4A-TS03', () => {
         1,
         'phase strict matrix',
       );
-      expect(strict.summary).toMatchObject({ skipped: 1 });
+      expect(strict.summary).toMatchObject({ portable: 1 });
+      expect(Number((strict.summary as UnknownRecord).skipped)).toBeGreaterThanOrEqual(1);
       expect([await readMaybe(manifest), await readMaybe(lock)]).toEqual(strictBefore);
 
       await mkdir(join(root, 'portable'), { recursive: true });

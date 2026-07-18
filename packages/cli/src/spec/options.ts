@@ -16,6 +16,7 @@ const ALLOWED_SCOPES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith config list': ['user', 'project', 'system'],
   'skillsmith config unset': ['user', 'project', 'system'],
   'skillsmith install': ['user', 'project'],
+  'skillsmith export': KNOWN_SCOPES,
   'skillsmith uninstall': ['user', 'project'],
   'skillsmith dev': ['user', 'project'],
   'skillsmith promote': ['user', 'project'],
@@ -97,6 +98,19 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith status:--file': 'Read desired state from an explicit manifest',
   'skillsmith status:--lockfile': 'Read an explicit lockfile (requires --file)',
   'skillsmith status:--check': 'Exit 7 when the selected status product contains drift',
+  'skillsmith export:--file': 'Write one explicit portable manifest',
+  'skillsmith export:--lockfile': 'Write one explicit lockfile (requires --file)',
+  'skillsmith export:--tool': 'Read one tool inventory; repeatable',
+  'skillsmith export:--scope':
+    'Read one scope; default: project in project context, otherwise user',
+  'skillsmith export:--user': 'Read user placements and select the user pair',
+  'skillsmith export:--project': 'Read current-project placements and select the project pair',
+  'skillsmith export:--system': 'Read system placements as nonportable observations',
+  'skillsmith export:--managed': 'Read policy-managed placements as nonportable observations',
+  'skillsmith export:--strict': 'Fail without writes when any selected observation is nonportable',
+  'skillsmith export:--force': 'Resolve only bounded selected declaration conflicts',
+  'skillsmith export:--dry-run': 'Preview artifact effects without locking or writing',
+  'skillsmith export:--json': 'Emit the strict export@1 report',
   'skillsmith verify:--tool': 'Restrict to tools; repeatable; default: all detected',
   'skillsmith verify:--static': 'Run static verification only; this is the default',
   'skillsmith verify:--deep': 'Also run isolated session-backed load verification',
@@ -243,6 +257,23 @@ export const optionsForPath = (path: string): readonly CommandOptionSpec[] => {
       '--project',
       '--managed',
       '--check',
+      '--json',
+    ];
+    return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
+  }
+  if (path === 'skillsmith export') {
+    const order = [
+      '--file',
+      '--lockfile',
+      '--tool',
+      '--scope',
+      '--user',
+      '--project',
+      '--system',
+      '--managed',
+      '--strict',
+      '--force',
+      '--dry-run',
       '--json',
     ];
     return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));

@@ -16,7 +16,11 @@ import {
   createTransactionObservation,
   emitTransactionCommitted,
 } from '../execution/observation.ts';
-import type { ExecutionPrecondition, PreparedExecutionBinding } from '../execution/types.ts';
+import type {
+  ExecutionPrecondition,
+  PreparedExecutionBinding,
+  ValidatedExecutionBinding,
+} from '../execution/types.ts';
 import type { ObservationBundle, TransactionStage } from '../observation/index.ts';
 import {
   createOperationExecutionResult,
@@ -40,7 +44,7 @@ import type { PlacementPorts } from './types.ts';
 
 const ledgerV2Codec = resolveLedgerArtifactCodec(2);
 
-export type LedgerMigrationCommand = 'install' | 'uninstall' | 'promote' | 'dev';
+export type LedgerMigrationCommand = 'install' | 'uninstall' | 'promote' | 'dev' | 'export';
 
 export interface PreparedLedgerMigration {
   readonly operation: ExecutableOperation;
@@ -513,3 +517,20 @@ export const ledgerMigrationExecutionBindingObserved = (
   args: Parameters<typeof ledgerMigrationExecutionBindingInternal>[0],
   observation: ObservationBundle,
 ): PreparedExecutionBinding => ledgerMigrationExecutionBindingInternal(args, observation);
+
+/** Shared binding used by every command that may make the canonical v1-to-v2 migration visible. */
+export const createLedgerMigrationExecutionBinding = (
+  args: Parameters<typeof ledgerMigrationExecutionBinding>[0],
+): PreparedExecutionBinding => {
+  const binding = ledgerMigrationExecutionBinding(args);
+  return Object.freeze({
+    ...binding,
+    execute: (
+      validated: ValidatedExecutionBinding,
+      observation?: ObservationBundle,
+    ): Promise<OperationExecutionResult> =>
+      observation === undefined
+        ? binding.execute(validated)
+        : ledgerMigrationExecutionBindingObserved(args, observation).execute(validated),
+  });
+};

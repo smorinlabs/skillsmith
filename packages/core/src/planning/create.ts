@@ -62,6 +62,7 @@ const currentMutatorCommands = new Set<string>([
   'dev',
   'promote',
   'doctor',
+  'export',
 ]);
 
 const fail = (message: string): never => {

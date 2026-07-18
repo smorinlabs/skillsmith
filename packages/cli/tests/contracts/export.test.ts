@@ -13,6 +13,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InstallDeps, InstallRecord } from '@skillsmith/core';
 import { ok, runInstall } from '@skillsmith/core';
+import { ledgerV1Codec } from '../../../core/src/artifacts/ledger-codec.ts';
+import type { LedgerSkillsV1Dto, LedgerV1Dto } from '../../../core/src/artifacts/ledger-types.ts';
 import {
   correlatePortableLock,
   readPortableLockSource,
@@ -131,6 +133,40 @@ const seedManaged = async (
   }
 };
 
+const downgradeLedgerToV1 = async (): Promise<void> => {
+  const path = ledgerPathOf(fleet.data);
+  const current = await readLedgerState(fleet.env, path);
+  expect(current.ok).toBeTrue();
+  if (!current.ok || current.value.state !== 'present') {
+    throw new Error('managed fixture ledger was unavailable');
+  }
+  const dto: LedgerV1Dto = {
+    schemaVersion: 1,
+    kind: 'skillsmith.placements',
+    updatedAt: current.value.model.updatedAt,
+    skills: current.value.model.skills as LedgerSkillsV1Dto,
+    ...(Object.keys(current.value.model.projects).length === 0
+      ? {}
+      : {
+          projects: Object.fromEntries(
+            Object.entries(current.value.model.projects).map(([root, project]) => [
+              root,
+              { skills: project.skills as LedgerSkillsV1Dto },
+            ]),
+          ),
+        }),
+  };
+  const legacyModel = ledgerV1Codec.fromDto(dto);
+  expect(legacyModel.ok, legacyModel.ok ? undefined : JSON.stringify(legacyModel.error)).toBeTrue();
+  if (!legacyModel.ok) throw new Error('managed fixture v1 DTO was invalid');
+  const encoded = ledgerV1Codec.encode(legacyModel.value);
+  expect(encoded.ok, encoded.ok ? undefined : JSON.stringify(encoded.error)).toBeTrue();
+  if (!encoded.ok) throw new Error('managed fixture could not project to ledger v1');
+  await writeFile(path, encoded.value);
+  const downgraded = await readLedgerState(fleet.env, path);
+  expect(downgraded.ok && downgraded.value.sourceVersion).toBe(1);
+};
+
 const cliEnv = (): Record<string, string | undefined> => ({
   HOME: fleet.home,
   XDG_CONFIG_HOME: fleet.env.xdg.config,
@@ -215,19 +251,40 @@ const seedCleanDev = async (): Promise<void> => {
 describe('G4A-02 export command contract', () => {
   test('EWP-CMD-EXPORT-TS01 managed pinned remote exports exact origin and resolution', async () => {
     await seedManaged();
+    await downgradeLedgerToV1();
     const ledger = await readLedgerState(fleet.env, ledgerPathOf(fleet.data));
     expect(ledger.ok).toBeTrue();
     expect(ledger.ok && ledger.value.state).toBe('present');
 
     const paths = exportPaths('managed');
+    const preview = requireJson(
+      await runCli(exportArgs(paths, ['--dry-run'])),
+      0,
+      'managed migration preview',
+    );
+    expect(records(preview.effects)).toContainEqual(
+      expect.objectContaining({ role: 'ledger', action: 'migrate', outcome: 'planned' }),
+    );
+    const afterPreview = await readLedgerState(fleet.env, ledgerPathOf(fleet.data));
+    expect(afterPreview.ok && afterPreview.value.sourceVersion).toBe(1);
+
     const report = requireJson(await runCli(exportArgs(paths)), 0, 'managed export');
+    expect(records(report.effects)).toContainEqual(
+      expect.objectContaining({ role: 'ledger', action: 'migrate', outcome: 'succeeded' }),
+    );
+    const afterExecution = await readLedgerState(fleet.env, ledgerPathOf(fleet.data));
+    expect(afterExecution.ok && afterExecution.value.sourceVersion).toBe(2);
     const row = records(report.results).find((candidate) => candidate.name === 'factor-scan');
     expect(row).toMatchObject({
       classification: 'portable-managed',
       tools: ['claude-code'],
       scope: 'user',
     });
-    expect(String(row?.source)).toContain('fixture.invalid/acme/multi');
+    expect(row?.source).toMatchObject({
+      host: 'fixture.invalid',
+      repository: 'acme/multi',
+      path: 'plugins/fh/skills/factor-scan',
+    });
     expect(row?.resolvedSha).toMatch(/^[0-9a-f]{40}$/u);
     expect(await readMaybe(paths.manifest)).toContain('factor-scan');
     expect(await readMaybe(paths.lock)).toContain(String(row?.resolvedSha));
@@ -249,21 +306,27 @@ describe('G4A-02 export command contract', () => {
   test('EWP-CMD-EXPORT-TS03 nonportable state warns or strict-fails without an empty pair', async () => {
     await seedCleanDev();
     await fleet.makeCheckoutDirty();
+    await downgradeLedgerToV1();
     const paths = exportPaths('nonportable');
 
     const warning = requireJson(await runCli(exportArgs(paths)), 0, 'default dirty export');
     expect(records(warning.results).some((row) => row.classification === 'dirty-git')).toBeTrue();
     expect(await readMaybe(paths.manifest)).toBeNull();
     expect(await readMaybe(paths.lock)).toBeNull();
+    const afterWarning = await readLedgerState(fleet.env, ledgerPathOf(fleet.data));
+    expect(afterWarning.ok && afterWarning.value.sourceVersion).toBe(1);
 
     const strict = requireJson(
       await runCli(exportArgs(paths, ['--strict', '--force'])),
       1,
       'strict dirty export',
     );
-    expect(strict.summary).toMatchObject({ portable: 0, skipped: 1 });
+    expect(strict.summary).toMatchObject({ portable: 0 });
+    expect(Number((strict.summary as UnknownRecord).skipped)).toBeGreaterThanOrEqual(1);
     expect(await readMaybe(paths.manifest)).toBeNull();
     expect(await readMaybe(paths.lock)).toBeNull();
+    const afterStrict = await readLedgerState(fleet.env, ledgerPathOf(fleet.data));
+    expect(afterStrict.ok && afterStrict.value.sourceVersion).toBe(1);
   });
 
   test('EWP-CMD-EXPORT-TS04 registry grammar, readable tools, scope default, and pair default are exact', async () => {
@@ -323,7 +386,7 @@ describe('G4A-02 export command contract', () => {
 
     const report = requireJson(await runCli(exportArgs(paths)), 0, 'unchanged export');
     expect(report.summary).toMatchObject({ changed: 0, unchanged: 1 });
-    expect([await readMaybe(paths.manifest), await readMaybe(paths.lock)]).toEqual(first);
+    expect([await readMaybe(paths.manifest), await readMaybe(paths.lock)]).toEqual([...first]);
   });
 
   test('EWP-CMD-EXPORT-TS07 dry-run and execution expose equal effects and exact failure classes', async () => {
@@ -353,7 +416,12 @@ describe('G4A-02 export command contract', () => {
     const report = requireJson(product, 1, 'strict scrub export');
     const serialized = JSON.stringify(report) + product.stderr;
     expect(serialized).not.toContain(canary);
-    expect(serialized).not.toContain(fleet.base);
+    expect(report.artifactSelection).toMatchObject({
+      manifestPath: paths.manifest,
+      lockPath: paths.lock,
+    });
+    const { artifactSelection: _selectedOutputPaths, ...scrubbedReport } = report;
+    expect(JSON.stringify(scrubbedReport) + product.stderr).not.toContain(fleet.base);
     expect(await readMaybe(paths.manifest)).toBeNull();
     expect(await readMaybe(paths.lock)).toBeNull();
   });

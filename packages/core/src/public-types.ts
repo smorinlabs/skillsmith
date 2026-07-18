@@ -56,6 +56,7 @@ export type {
 } from './application/current-services.ts';
 export type * from './application/lifecycle-services.ts';
 export type * from './application/read-services.ts';
+export type * from './export/types.ts';
 export type {
   AdaptationBundle,
   InventoryBundle,

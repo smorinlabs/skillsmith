@@ -8,7 +8,13 @@ import type {
 
 export type OperationId = string;
 export type OperationDigest = `sha256:${string}`;
-export type CurrentMutatorCommand = 'install' | 'uninstall' | 'dev' | 'promote' | 'doctor';
+export type CurrentMutatorCommand =
+  | 'install'
+  | 'uninstall'
+  | 'dev'
+  | 'promote'
+  | 'doctor'
+  | 'export';
 export type OperationScope = 'user' | 'project';
 
 export interface PlanningToolRegistry<ToolId extends string = SupportedTool> {

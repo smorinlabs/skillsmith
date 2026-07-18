@@ -10,10 +10,12 @@ export {
   defaultArtifactCoordinatorPorts,
   runCompletionApplication,
   runConfigHelpApplication,
+  runExportApplication,
   runHelpApplication,
   runRootHelpApplication,
   runVersionApplication,
 } from './application/current-services.ts';
+export * from './export/index.ts';
 export * from './application/lifecycle-services.ts';
 export * from './application/read-services.ts';
 export { COMMAND_EXIT_CLASSES, NO_MUTATION } from './application/types.ts';

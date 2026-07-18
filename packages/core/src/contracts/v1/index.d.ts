@@ -8,6 +8,7 @@ import type {
   ConfigSetReport,
   ConfigUnsetReport,
   Deprecation,
+  ExportReport,
   InstallReport,
   LedgerModel,
   LogicalJournalV1,
@@ -393,6 +394,10 @@ export declare const capabilitySnapshotV1Codec: WireCodec<
 export declare const toCapabilitySnapshotV1Dto: (
   source: Pick<ToolRegistry, 'adapters'>,
 ) => CapabilitySnapshotV1Dto;
+
+export type ExportV1Dto = DeepMutable<ExportReport>;
+export declare const exportV1Codec: WireCodec<'export', 1, ExportV1Dto>;
+export declare const toExportV1Dto: (report: ExportReport) => ExportV1Dto;
 
 type DeepMutable<T> = T extends Readonly<ArtifactDigest>
   ? ArtifactDigest
