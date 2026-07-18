@@ -5602,7 +5602,7 @@
       "phase": "4A",
       "title": "Planned init registration with preview/execution identity and manifest-only effects",
       "dependsOn": ["P17-G2-04", "P17-G3B-03", "P17-G3B-04"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -5738,12 +5738,15 @@
           "evidence": ["projects/p17/evidence/P17-G4A-03.md#terminal-adversarial-f23-correction"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-gate",
+            "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off"
+          ]
         }
       },
       "evidence": [
@@ -5756,7 +5759,10 @@
         "projects/p17/evidence/P17-G4A-03.md#refactor",
         "projects/p17/evidence/P17-G4A-03.md#adversarial-correction-and-reopened-green",
         "projects/p17/evidence/P17-G4A-03.md#independent-adversarial-review",
-        "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-ownership-and-architecture-amendment"
+        "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-ownership-and-architecture-amendment",
+        "projects/p17/evidence/P17-G4A-03.md#terminal-adversarial-f23-correction",
+        "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off"
       ]
     },
     {
@@ -7492,13 +7498,14 @@
       "title": "Declarative — How do I create or migrate the desired-state file?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-03",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:init",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4A-03.md#minimal-implementation",
-        "projects/p17/evidence/P17-G4A-03.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G4A-03.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off"
       ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": [],
@@ -10946,13 +10953,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-03",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4A-03",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4A-03.md#minimal-implementation",
-        "projects/p17/evidence/P17-G4A-03.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G4A-03.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off"
       ],
       "secondaryGroups": ["P17-G1-03", "P17-G1-02A", "P17-G6-02A", "P17-G2-04", "P17-G4B-03"],
       "implements": [],
@@ -14139,7 +14147,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS01",
       "target": {
@@ -14175,7 +14183,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS02",
       "target": {
@@ -14211,7 +14219,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS03",
       "target": {
@@ -14247,7 +14255,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS04",
       "target": {
@@ -14283,7 +14291,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:packages/cli/tests/contracts/init.test.ts#EWP-CMD-INIT-TS05",
       "target": {
@@ -21311,7 +21319,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-03",
-      "status": "green",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03",
       "target": null,
@@ -21321,7 +21329,10 @@
         "projects/p17/evidence/P17-G4A-03.md#minimal-implementation",
         "projects/p17/evidence/P17-G4A-03.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-03.md#refactor",
-        "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-ownership-and-architecture-amendment"
+        "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-ownership-and-architecture-amendment",
+        "projects/p17/evidence/P17-G4A-03.md#terminal-adversarial-f23-correction",
+        "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off"
       ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:init", "EWP-CF-041", "P1-05"],
@@ -21529,7 +21540,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-03:tests/ergonomics/phase/EWP-P4A-TS04.test.ts#EWP-P4A-TS04",
       "target": {
@@ -23757,13 +23768,14 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-03",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4A-03",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4A-03.md#minimal-implementation",
-        "projects/p17/evidence/P17-G4A-03.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G4A-03.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off"
       ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": [],

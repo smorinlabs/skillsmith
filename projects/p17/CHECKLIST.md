@@ -11,14 +11,14 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 16 | 12 | 6 |
-| phase-task | 65 | 45 | 20 | 0 |
-| phase-test | 61 | 41 | 20 | 0 |
-| command-test | 157 | 76 | 81 | 0 |
+| recommendation | 34 | 17 | 11 | 6 |
+| phase-task | 65 | 46 | 19 | 0 |
+| phase-test | 61 | 42 | 19 | 0 |
+| command-test | 157 | 81 | 76 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 3 | 13 | 0 |
-| command | 23 | 14 | 9 | 0 |
-| finding | 43 | 34 | 9 | 0 |
+| command | 23 | 15 | 8 | 0 |
+| finding | 43 | 35 | 8 | 0 |
 | decision | 16 | 7 | 8 | 1 |
 
 ### Phases
@@ -29,7 +29,7 @@ Tracked entities: **425** across **45** change groups.
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
-| 4 | 7 | 106 | 38 | 0 |
+| 4 | 7 | 106 | 48 | 0 |
 | 5 | 5 | 68 | 0 | 0 |
 | 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
@@ -115,7 +115,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:export | P17-G4A-02 | signed-off | required-pr |
 | COMMAND:gc | P17-G5-04 | planned | required-pr |
 | COMMAND:help | P17-G6-02A | planned | required-pr |
-| COMMAND:init | P17-G4A-03 | validated | required-pr |
+| COMMAND:init | P17-G4A-03 | signed-off | required-pr |
 | COMMAND:install | P17-G4A-01 | signed-off | required-pr |
 | COMMAND:list | P17-G3A-02 | signed-off | required-pr |
 | COMMAND:plan | P17-G4B-01 | planned | required-pr |
@@ -144,7 +144,7 @@ Tracked entities: **425** across **45** change groups.
 | P1-02 | P17-G3A-01 | signed-off | required-pr |
 | P1-03 | P17-G3A-02 | signed-off | required-pr |
 | P1-04 | P17-G5-05 | planned | required-pr |
-| P1-05 | P17-G4A-03 | validated | required-pr |
+| P1-05 | P17-G4A-03 | signed-off | required-pr |
 | P1-06 | P17-G4A-02 | signed-off | required-pr |
 | P1-07 | P17-G4B-01 | planned | required-pr |
 | P1-08 | P17-G4B-02 | planned | required-pr |
@@ -211,7 +211,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-038 | P17-G1-07 | signed-off | required-pr |
 | EWP-CF-039 | P17-G0-05 | signed-off | required-pr |
 | EWP-CF-040 | P17-G2-01 | signed-off | required-pr |
-| EWP-CF-041 | P17-G4A-03 | validated | required-pr |
+| EWP-CF-041 | P17-G4A-03 | signed-off | required-pr |
 | EWP-CF-042 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-043 | P17-G1-02A | signed-off | required-pr |
 
@@ -1154,7 +1154,7 @@ Downstream coverage obligations: EWP-WF04.
 
 ## P17-G4A-03 — Planned init registration with preview/execution identity and manifest-only effects
 
-Phase: 4A; status: **reviewed**; dependencies: P17-G2-04, P17-G3B-03, P17-G3B-04.
+Phase: 4A; status: **signed-off**; dependencies: P17-G2-04, P17-G3B-03, P17-G3B-04.
 Required-now validations: EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-OPT-TS03, EWP-OPT-TS04, EWP-P2-TS05, EWP-P4A-TS04.
 Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
@@ -1168,21 +1168,21 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 - [x] P17-G4A-03:impacted-green _(passed)_
 - [x] P17-G4A-03:refactor _(passed)_
 - [x] P17-G4A-03:adversarial-review _(passed)_
-- [ ] P17-G4A-03:traceability-closure _(pending)_
-- [ ] P17-G4A-03:signed-off _(pending)_
+- [x] P17-G4A-03:traceability-closure _(passed)_
+- [x] P17-G4A-03:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:init** — Declarative — How do I create or migrate the desired-state file? _(command; validated)_
-- [ ] **EWP-CF-041** — Put init execution behind the shared planner and make it previewable _(finding; validated)_
-- [ ] **EWP-CMD-INIT-TS01** — default canonical manifest content at shared Git project root when in a _(command-test; passing)_
-- [ ] **EWP-CMD-INIT-TS02** — explicit file/scope/tool/default selections, including `--scope user` _(command-test; passing)_
-- [ ] **EWP-CMD-INIT-TS03** — existing file refusal and force replacement limited to the exact manifest, _(command-test; passing)_
-- [ ] **EWP-CMD-INIT-TS04** — dry-run/execution operation equality, atomic write/SIGINT/concurrent-writer _(command-test; passing)_
-- [ ] **EWP-CMD-INIT-TS05** — human/JSON/help/completion output and immediate parse/plan compatibility. _(command-test; passing)_
-- [ ] **EWP-P4A-T04** — Register and implement init through the shared application service/planner using _(phase-task; green)_
-- [ ] **EWP-P4A-TS04** — Init dry-run/execution operation equality; absent/legacy/existing/force/noop/ _(phase-test; passing)_
-- [ ] **P1-05** — `init` _(recommendation; validated)_
+- [x] **COMMAND:init** — Declarative — How do I create or migrate the desired-state file? _(command; signed-off)_
+- [x] **EWP-CF-041** — Put init execution behind the shared planner and make it previewable _(finding; signed-off)_
+- [x] **EWP-CMD-INIT-TS01** — default canonical manifest content at shared Git project root when in a _(command-test; signed-off)_
+- [x] **EWP-CMD-INIT-TS02** — explicit file/scope/tool/default selections, including `--scope user` _(command-test; signed-off)_
+- [x] **EWP-CMD-INIT-TS03** — existing file refusal and force replacement limited to the exact manifest, _(command-test; signed-off)_
+- [x] **EWP-CMD-INIT-TS04** — dry-run/execution operation equality, atomic write/SIGINT/concurrent-writer _(command-test; signed-off)_
+- [x] **EWP-CMD-INIT-TS05** — human/JSON/help/completion output and immediate parse/plan compatibility. _(command-test; signed-off)_
+- [x] **EWP-P4A-T04** — Register and implement init through the shared application service/planner using _(phase-task; signed-off)_
+- [x] **EWP-P4A-TS04** — Init dry-run/execution operation equality; absent/legacy/existing/force/noop/ _(phase-test; signed-off)_
+- [x] **P1-05** — `init` _(recommendation; signed-off)_
 
 ## P17-G4A-04 — Multi-source/tool partial-success, crash, and commit-boundary semantics
 
