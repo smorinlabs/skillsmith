@@ -5210,7 +5210,7 @@
       "phase": "4A",
       "title": "Install/uninstall default-save, no-save, ownership, and artifact reporting",
       "dependsOn": ["P17-G3B-03", "P17-G3B-04", "P17-G3B-05", "P17-G3B-06"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -5368,7 +5368,10 @@
         },
         "impacted-green": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green"]
+          "evidence": [
+            "projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green",
+            "projects/p17/evidence/P17-G4A-01.md#terminal-full-repository-gate"
+          ]
         },
         "refactor": {
           "status": "passed",
@@ -5379,12 +5382,15 @@
           "evidence": ["projects/p17/evidence/P17-G4A-01.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-01.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4A-01.md#terminal-full-repository-gate",
+            "projects/p17/evidence/P17-G4A-01.md#traceability-and-sign-off"
+          ]
         }
       },
       "evidence": [
@@ -5406,7 +5412,9 @@
         "projects/p17/evidence/P17-G4A-01.md#refactor",
         "projects/p17/evidence/P17-G4A-01.md#adversarial-review",
         "projects/p17/evidence/P17-G4A-01.md#traceability-ownership-amendment",
-        "projects/p17/evidence/P17-G4A-01.md#terminal-load-budget-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#terminal-load-budget-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G4A-01.md#traceability-and-sign-off"
       ]
     },
     {
@@ -7296,11 +7304,11 @@
       "title": "Manage — How do I acquire and persist a remote skill?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:install",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G4A-01.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -7637,11 +7645,11 @@
       "title": "Manage — How do I remove a skill and its desired-state declaration?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:uninstall",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G4A-01.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -8017,11 +8025,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4A-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G4A-01.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -9166,11 +9174,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4A-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G4A-01.md#traceability-and-sign-off"],
       "secondaryGroups": ["P17-G1-01"],
       "implements": [],
       "validatedBy": [
@@ -13947,7 +13955,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS01",
       "target": {
@@ -13994,7 +14002,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS02",
       "target": {
@@ -14041,7 +14049,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS03",
       "target": {
@@ -14088,7 +14096,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS04",
       "target": {
@@ -14135,7 +14143,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS05",
       "target": {
@@ -14182,7 +14190,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS06",
       "target": {
@@ -14229,7 +14237,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS07",
       "target": {
@@ -14276,7 +14284,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/install.test.ts#EWP-CMD-INSTALL-TS08",
       "target": {
@@ -16212,7 +16220,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS01",
       "target": {
@@ -16259,7 +16267,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS02",
       "target": {
@@ -16306,7 +16314,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS03",
       "target": {
@@ -16353,7 +16361,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS04",
       "target": {
@@ -16400,7 +16408,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS05",
       "target": {
@@ -16447,7 +16455,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS06",
       "target": {
@@ -16494,7 +16502,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:packages/cli/tests/contracts/uninstall.test.ts#EWP-CMD-UNINSTALL-TS07",
       "target": {
@@ -20630,7 +20638,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-01",
-      "status": "green",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01",
       "target": null,
@@ -20646,7 +20654,9 @@
         "projects/p17/evidence/P17-G4A-01.md#refactor",
         "projects/p17/evidence/P17-G4A-01.md#adversarial-review",
         "projects/p17/evidence/P17-G4A-01.md#traceability-ownership-amendment",
-        "projects/p17/evidence/P17-G4A-01.md#terminal-load-budget-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-01.md#terminal-load-budget-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-01.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G4A-01.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:install", "COMMAND:uninstall", "D-006", "EWP-CF-020", "P1-09"],
@@ -20882,7 +20892,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:tests/ergonomics/phase/EWP-P4A-TS01.test.ts#EWP-P4A-TS01",
       "target": {
@@ -22277,7 +22287,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-01:tests/ergonomics/workflows/EWP-WF02.test.ts#EWP-WF02",
       "target": {
@@ -23400,11 +23410,11 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4A-01",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4A-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G4A-01.md#traceability-and-sign-off"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
