@@ -5422,7 +5422,7 @@
       "phase": "4A",
       "title": "Export classification, safe merge, portable intent, and writer integration",
       "dependsOn": ["P17-G3B-03", "P17-G3B-04", "P17-G3B-05"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -5521,7 +5521,7 @@
         "bun test tests/ergonomics/phase/EWP-P4A-TS03.test.ts --test-name-pattern EWP-P4A-TS03"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g4a02_final_adversarial",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -5552,8 +5552,8 @@
           "evidence": ["projects/p17/evidence/P17-G4A-02.md#refactor"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-02.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -5572,7 +5572,8 @@
         "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-02.md#refactor",
-        "projects/p17/evidence/P17-G4A-02.md#independent-adversarial-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-02.md#independent-adversarial-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-02.md#adversarial-review"
       ]
     },
     {
@@ -20997,7 +20998,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-02",
-      "status": "green",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02",
       "target": null,
@@ -21007,7 +21008,8 @@
         "projects/p17/evidence/P17-G4A-02.md#minimal-implementation",
         "projects/p17/evidence/P17-G4A-02.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-02.md#refactor",
-        "projects/p17/evidence/P17-G4A-02.md#independent-adversarial-ownership-amendment"
+        "projects/p17/evidence/P17-G4A-02.md#independent-adversarial-ownership-amendment",
+        "projects/p17/evidence/P17-G4A-02.md#adversarial-review"
       ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
