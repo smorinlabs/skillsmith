@@ -1163,7 +1163,7 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 - [x] P17-G4A-03:mapped _(passed)_
 - [x] P17-G4A-03:ready _(passed)_
 - [x] P17-G4A-03:test-first _(passed)_
-- [ ] P17-G4A-03:minimal-implementation _(pending)_
+- [x] P17-G4A-03:minimal-implementation _(passed)_
 - [ ] P17-G4A-03:targeted-green _(pending)_
 - [ ] P17-G4A-03:impacted-green _(pending)_
 - [ ] P17-G4A-03:refactor _(pending)_
