@@ -5842,20 +5842,20 @@
           "evidence": ["projects/p17/evidence/P17-G4A-04.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-04.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-04.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-04.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-04.md#refactor"]
         },
         "adversarial-review": {
           "status": "pending",
@@ -5874,7 +5874,10 @@
         "projects/p17/plans/P17-G4A-04.md",
         "projects/p17/evidence/P17-G4A-04.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G4A-04.md#ready-plan",
-        "projects/p17/evidence/P17-G4A-04.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4A-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4A-04.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-04.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-04.md#refactor"
       ]
     },
     {
@@ -21380,14 +21383,17 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-04",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-04",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4A-04.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G4A-04.md#ready-plan",
-        "projects/p17/evidence/P17-G4A-04.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4A-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4A-04.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4A-04.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-04.md#refactor"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -21594,7 +21600,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-04",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-04:tests/ergonomics/phase/EWP-P4A-TS02.test.ts#EWP-P4A-TS02",
       "target": {
@@ -21603,7 +21609,10 @@
         "selector": "EWP-P4A-TS02",
         "command": "bun test tests/ergonomics/phase/EWP-P4A-TS02.test.ts --test-name-pattern EWP-P4A-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G4A-04.md#red-execution-receipt-ewp-p4a-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-04.md#final-green-execution-receipt-ewp-p4a-ts02",
+        "projects/p17/evidence/P17-G4A-04.md#red-execution-receipt-ewp-p4a-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4A-TS02"],

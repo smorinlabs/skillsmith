@@ -1195,18 +1195,18 @@ Downstream coverage obligations: EWP-WF13.
 - [x] P17-G4A-04:mapped _(passed)_
 - [x] P17-G4A-04:ready _(passed)_
 - [x] P17-G4A-04:test-first _(passed)_
-- [ ] P17-G4A-04:minimal-implementation _(pending)_
-- [ ] P17-G4A-04:targeted-green _(pending)_
-- [ ] P17-G4A-04:impacted-green _(pending)_
-- [ ] P17-G4A-04:refactor _(pending)_
+- [x] P17-G4A-04:minimal-implementation _(passed)_
+- [x] P17-G4A-04:targeted-green _(passed)_
+- [x] P17-G4A-04:impacted-green _(passed)_
+- [x] P17-G4A-04:refactor _(passed)_
 - [ ] P17-G4A-04:adversarial-review _(pending)_
 - [ ] P17-G4A-04:traceability-closure _(pending)_
 - [ ] P17-G4A-04:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **EWP-P4A-T03** — Define multi-source/multi-tool partial-success commit semantics for manifest, _(phase-task; red)_
-- [ ] **EWP-P4A-TS02** — Manifest/lock/live/ledger crash and partial-failure matrix. _(phase-test; failing)_
+- [ ] **EWP-P4A-T03** — Define multi-source/multi-tool partial-success commit semantics for manifest, _(phase-task; green)_
+- [ ] **EWP-P4A-TS02** — Manifest/lock/live/ledger crash and partial-failure matrix. _(phase-test; passing)_
 
 ## P17-G4B-01 — Desired/current planner, prune selection, renderers, check exits, and idempotence
 
