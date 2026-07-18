@@ -5362,8 +5362,8 @@
           "evidence": ["projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-01.md#refactor"]
         },
         "adversarial-review": {
           "status": "pending",
@@ -5392,7 +5392,9 @@
         "projects/p17/evidence/P17-G4A-01.md#terminal-signed-compatibility-fixture-amendment",
         "projects/p17/evidence/P17-G4A-01.md#terminal-full-suite-structural-compatibility-amendment",
         "projects/p17/evidence/P17-G4A-01.md#minimal-implementation",
-        "projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-01.md#independent-review-correction-evidence",
+        "projects/p17/evidence/P17-G4A-01.md#refactor"
       ]
     },
     {
