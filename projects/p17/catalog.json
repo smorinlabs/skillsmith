@@ -5770,24 +5770,72 @@
       "phase": "4A",
       "title": "Multi-source/tool partial-success, crash, and commit-boundary semantics",
       "dependsOn": ["P17-G4A-01", "P17-G4A-02", "P17-G4A-03"],
-      "status": "planned",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
-      "impactedValidations": ["EWP-P4A-TS02", "EWP-WF13"],
-      "requiredNowValidations": ["EWP-P4A-TS02", "EWP-WF13"],
-      "downstreamCoverage": [],
-      "testCommands": [],
-      "implementers": [],
+      "ownedFiles": [
+        "packages/core/src/acquire/plan.ts",
+        "packages/core/src/acquire/uninstall.ts",
+        "packages/core/src/acquire/execute.ts",
+        "packages/core/src/planning/order.ts",
+        "packages/core/src/execution/scheduler.ts",
+        "packages/core/tests/acquire/plan.test.ts",
+        "packages/core/tests/acquire/execute.test.ts",
+        "packages/core/tests/acquire/install-run.test.ts",
+        "packages/core/tests/acquire/uninstall-run.test.ts",
+        "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/planning/order.test.ts",
+        "packages/core/tests/execution/scheduler.test.ts",
+        "packages/core/tests/application/lifecycle-services.test.ts",
+        "packages/cli/tests/contracts/uninstall.test.ts",
+        "tests/ergonomics/phase/EWP-P4A-TS02.test.ts",
+        "tests/ergonomics/fixtures/p4a-ts02/cases.ts",
+        "tests/ergonomics/fixtures/p4a-ts02/crash-child.ts",
+        "scripts/p17-catalog.ts",
+        "scripts/p17-catalog.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
+      "impactedValidations": [
+        "EWP-CMD-INSTALL-TS08",
+        "EWP-CMD-PROMOTE-TS04",
+        "EWP-CMD-PROMOTE-TS06",
+        "EWP-CMD-UNINSTALL-TS04",
+        "EWP-CMD-UNINSTALL-TS07",
+        "EWP-P3B-TS03",
+        "EWP-P3B-TS05",
+        "EWP-P4A-TS02",
+        "EWP-WF13"
+      ],
+      "requiredNowValidations": [
+        "EWP-CMD-INSTALL-TS08",
+        "EWP-CMD-PROMOTE-TS04",
+        "EWP-CMD-PROMOTE-TS06",
+        "EWP-CMD-UNINSTALL-TS04",
+        "EWP-CMD-UNINSTALL-TS07",
+        "EWP-P3B-TS03",
+        "EWP-P3B-TS05",
+        "EWP-P4A-TS02"
+      ],
+      "downstreamCoverage": ["EWP-WF13"],
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P4A-TS02.test.ts --test-name-pattern EWP-P4A-TS02",
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS08",
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS04",
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS07",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS03.test.ts --test-name-pattern EWP-P3B-TS03",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS05.test.ts --test-name-pattern EWP-P3B-TS05",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS04",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS06"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-04.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-04.md#ready-plan"]
         },
         "test-first": {
           "status": "pending",
@@ -5822,7 +5870,11 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": [
+        "projects/p17/plans/P17-G4A-04.md",
+        "projects/p17/evidence/P17-G4A-04.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G4A-04.md#ready-plan"
+      ]
     },
     {
       "id": "P17-G4B-01",
@@ -5955,6 +6007,7 @@
         "EWP-P4B-TS07",
         "EWP-WF07",
         "EWP-WF08",
+        "EWP-WF13",
         "EWP-WF15"
       ],
       "requiredNowValidations": [
@@ -5986,7 +6039,7 @@
         "EWP-WF08",
         "EWP-WF15"
       ],
-      "downstreamCoverage": [],
+      "downstreamCoverage": ["EWP-WF13"],
       "testCommands": [],
       "implementers": [],
       "reviewer": null,
@@ -6156,7 +6209,8 @@
         "EWP-CMD-SYNC-TS09",
         "EWP-CMD-SYNC-TS10",
         "EWP-P5-TS01",
-        "EWP-WF10"
+        "EWP-WF10",
+        "EWP-WF13"
       ],
       "requiredNowValidations": [
         "EWP-CMD-SYNC-TS01",
@@ -6172,7 +6226,7 @@
         "EWP-P5-TS01",
         "EWP-WF10"
       ],
-      "downstreamCoverage": [],
+      "downstreamCoverage": ["EWP-WF13"],
       "testCommands": [],
       "implementers": [],
       "reviewer": null,
@@ -6242,7 +6296,8 @@
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
         "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-WF09",
+        "EWP-WF13"
       ],
       "requiredNowValidations": [
         "EWP-CMD-INSTALL-TS05",
@@ -6259,7 +6314,7 @@
         "EWP-P5-TS02",
         "EWP-WF09"
       ],
-      "downstreamCoverage": [],
+      "downstreamCoverage": ["EWP-WF13"],
       "testCommands": [],
       "implementers": [],
       "reviewer": null,
@@ -6486,8 +6541,32 @@
       "owner": "root-goal",
       "ownedFiles": [],
       "integrationOwner": null,
-      "impactedValidations": ["EWP-OPT-TS08", "EWP-P5-TS05"],
-      "requiredNowValidations": ["EWP-OPT-TS08", "EWP-P5-TS05"],
+      "impactedValidations": [
+        "EWP-CMD-APPLY-TS09",
+        "EWP-CMD-APPLY-TS11",
+        "EWP-CMD-APPLY-TS13",
+        "EWP-CMD-SYNC-TS09",
+        "EWP-CMD-UPDATE-TS06",
+        "EWP-CMD-UPDATE-TS08",
+        "EWP-CMD-UPDATE-TS09",
+        "EWP-OPT-TS08",
+        "EWP-P4A-TS02",
+        "EWP-P5-TS05",
+        "EWP-WF13"
+      ],
+      "requiredNowValidations": [
+        "EWP-CMD-APPLY-TS09",
+        "EWP-CMD-APPLY-TS11",
+        "EWP-CMD-APPLY-TS13",
+        "EWP-CMD-SYNC-TS09",
+        "EWP-CMD-UPDATE-TS06",
+        "EWP-CMD-UPDATE-TS08",
+        "EWP-CMD-UPDATE-TS09",
+        "EWP-OPT-TS08",
+        "EWP-P4A-TS02",
+        "EWP-P5-TS05",
+        "EWP-WF13"
+      ],
       "downstreamCoverage": [],
       "testCommands": [],
       "implementers": [],
@@ -8723,7 +8802,8 @@
         "P17-G4A-02",
         "P17-G4B-01",
         "P17-G4B-02",
-        "P17-G4B-03"
+        "P17-G4B-03",
+        "P17-G5-05"
       ],
       "implements": [],
       "validatedBy": [
@@ -8911,7 +8991,7 @@
         "projects/p17/evidence/P17-G3B-02.md#adversarial-review",
         "projects/p17/evidence/P17-G3B-02.md#traceability-and-sign-off"
       ],
-      "secondaryGroups": ["P17-G4A-01", "P17-G4A-04"],
+      "secondaryGroups": ["P17-G4A-01", "P17-G4A-04", "P17-G5-05"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-INSTALL-TS08",
@@ -9794,8 +9874,7 @@
         "P17-G5-03",
         "P17-G5-02",
         "P17-G1-02A",
-        "P17-G5-05",
-        "P17-G4A-04"
+        "P17-G5-05"
       ],
       "implements": [],
       "validatedBy": [
@@ -10764,7 +10843,7 @@
       "plannedTarget": "coverage:P17-G3B-04",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G3B-04.md#traceability-and-sign-off"],
-      "secondaryGroups": ["P17-G4B-01", "P17-G5-03", "P17-G4A-04"],
+      "secondaryGroups": ["P17-G4B-01", "P17-G5-03", "P17-G5-05"],
       "implements": [],
       "validatedBy": ["EWP-P3B-TS05", "EWP-WF06", "EWP-WF11", "EWP-WF13"],
       "impactedValidations": ["EWP-P3B-TS05", "EWP-WF06", "EWP-WF11", "EWP-WF13"],
@@ -21300,18 +21379,50 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-04",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-04",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-04.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G4A-04.md#ready-plan"
+      ],
       "secondaryGroups": [],
       "implements": [],
-      "validatedBy": ["EWP-P4A-TS02", "EWP-WF13"],
-      "impactedValidations": ["EWP-P4A-TS02", "EWP-WF13"],
+      "validatedBy": ["EWP-P4A-TS02"],
+      "impactedValidations": ["EWP-P4A-TS02"],
       "affectedContracts": [],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P4A-TS02.test.ts --test-name-pattern EWP-P4A-TS02",
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS08",
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS04",
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS07",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS03.test.ts --test-name-pattern EWP-P3B-TS03",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS05.test.ts --test-name-pattern EWP-P3B-TS05",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS04",
+        "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS06"
+      ],
+      "ownedFiles": [
+        "packages/core/src/acquire/plan.ts",
+        "packages/core/src/acquire/uninstall.ts",
+        "packages/core/src/acquire/execute.ts",
+        "packages/core/src/planning/order.ts",
+        "packages/core/src/execution/scheduler.ts",
+        "packages/core/tests/acquire/plan.test.ts",
+        "packages/core/tests/acquire/execute.test.ts",
+        "packages/core/tests/acquire/install-run.test.ts",
+        "packages/core/tests/acquire/uninstall-run.test.ts",
+        "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/planning/order.test.ts",
+        "packages/core/tests/execution/scheduler.test.ts",
+        "packages/core/tests/application/lifecycle-services.test.ts",
+        "packages/cli/tests/contracts/uninstall.test.ts",
+        "tests/ergonomics/phase/EWP-P4A-TS02.test.ts",
+        "tests/ergonomics/fixtures/p4a-ts02/cases.ts",
+        "tests/ergonomics/fixtures/p4a-ts02/crash-child.ts",
+        "scripts/p17-catalog.ts",
+        "scripts/p17-catalog.test.ts"
+      ]
     },
     {
       "id": "EWP-P4A-T04",
@@ -21489,7 +21600,7 @@
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4A-TS02"],
-      "impactedValidations": ["EWP-P4A-TS02", "EWP-WF13"],
+      "impactedValidations": ["EWP-P4A-TS02"],
       "affectedContracts": [],
       "testCommands": [],
       "ownedFiles": []
@@ -23250,17 +23361,27 @@
       "title": "Multi-tool partial failure",
       "kind": "workflow",
       "stateModel": "validation",
-      "primaryGroup": "P17-G4A-04",
+      "primaryGroup": "P17-G5-05",
       "status": "planned",
       "tier": "required-pr",
-      "plannedTarget": "planned:P17-G4A-04:tests/ergonomics/workflows/EWP-WF13.test.ts#EWP-WF13",
+      "plannedTarget": "planned:P17-G5-05:tests/ergonomics/workflows/EWP-WF13.test.ts#EWP-WF13",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G4A-04", "P17-G4B-02", "P17-G5-01", "P17-G5-02"],
       "implements": [],
       "validatedBy": ["EWP-WF13"],
-      "impactedValidations": ["EWP-P4A-TS02", "EWP-WF13"],
-      "affectedContracts": [],
+      "impactedValidations": [
+        "EWP-P4A-TS02",
+        "EWP-CMD-APPLY-TS09",
+        "EWP-CMD-APPLY-TS11",
+        "EWP-CMD-APPLY-TS13",
+        "EWP-CMD-SYNC-TS09",
+        "EWP-CMD-UPDATE-TS06",
+        "EWP-CMD-UPDATE-TS08",
+        "EWP-CMD-UPDATE-TS09",
+        "EWP-WF13"
+      ],
+      "affectedContracts": ["P1-04"],
       "testCommands": [],
       "ownedFiles": []
     },

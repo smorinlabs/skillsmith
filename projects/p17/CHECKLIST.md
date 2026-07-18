@@ -29,8 +29,8 @@ Tracked entities: **425** across **45** change groups.
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
-| 4 | 7 | 106 | 48 | 0 |
-| 5 | 5 | 68 | 0 | 0 |
+| 4 | 7 | 105 | 48 | 0 |
+| 5 | 5 | 69 | 0 | 0 |
 | 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
@@ -267,7 +267,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF10 | P17-G5-01 | planned | required-pr |
 | EWP-WF11 | P17-G5-03 | planned | required-pr |
 | EWP-WF12 | P17-G5-04 | planned | required-pr |
-| EWP-WF13 | P17-G4A-04 | planned | required-pr |
+| EWP-WF13 | P17-G5-05 | planned | required-pr |
 | EWP-WF14 | P17-G1-01 | signed-off | required-pr |
 | EWP-WF15 | P17-G1-02A | signed-off | required-pr |
 | EWP-WF16 | P17-G6-02A | planned | required-pr |
@@ -1186,14 +1186,14 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
 ## P17-G4A-04 — Multi-source/tool partial-success, crash, and commit-boundary semantics
 
-Phase: 4A; status: **planned**; dependencies: P17-G4A-01, P17-G4A-02, P17-G4A-03.
-Required-now validations: EWP-P4A-TS02, EWP-WF13.
-Downstream coverage obligations: none.
+Phase: 4A; status: **ready**; dependencies: P17-G4A-01, P17-G4A-02, P17-G4A-03.
+Required-now validations: EWP-CMD-INSTALL-TS08, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS06, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS07, EWP-P3B-TS03, EWP-P3B-TS05, EWP-P4A-TS02.
+Downstream coverage obligations: EWP-WF13.
 
 ### Group gates
 
-- [ ] P17-G4A-04:mapped _(pending)_
-- [ ] P17-G4A-04:ready _(pending)_
+- [x] P17-G4A-04:mapped _(passed)_
+- [x] P17-G4A-04:ready _(passed)_
 - [ ] P17-G4A-04:test-first _(pending)_
 - [ ] P17-G4A-04:minimal-implementation _(pending)_
 - [ ] P17-G4A-04:targeted-green _(pending)_
@@ -1205,9 +1205,8 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
-- [ ] **EWP-P4A-T03** — Define multi-source/multi-tool partial-success commit semantics for manifest, _(phase-task; planned)_
+- [ ] **EWP-P4A-T03** — Define multi-source/multi-tool partial-success commit semantics for manifest, _(phase-task; ready)_
 - [ ] **EWP-P4A-TS02** — Manifest/lock/live/ledger crash and partial-failure matrix. _(phase-test; planned)_
-- [ ] **EWP-WF13** — Multi-tool partial failure _(workflow; planned)_
 
 ## P17-G4B-01 — Desired/current planner, prune selection, renderers, check exits, and idempotence
 
@@ -1257,7 +1256,7 @@ Downstream coverage obligations: none.
 
 Phase: 4B; status: **planned**; dependencies: P17-G4B-01.
 Required-now validations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-OPT-TS09, EWP-P4B-TS03, EWP-P4B-TS07, EWP-WF07, EWP-WF08, EWP-WF15.
-Downstream coverage obligations: none.
+Downstream coverage obligations: EWP-WF13.
 
 ### Group gates
 
@@ -1334,7 +1333,7 @@ Downstream coverage obligations: none.
 
 Phase: 5; status: **planned**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-SYNC-TS01, EWP-CMD-SYNC-TS02, EWP-CMD-SYNC-TS03, EWP-CMD-SYNC-TS04, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-SYNC-TS09, EWP-CMD-SYNC-TS10, EWP-P5-TS01, EWP-WF10.
-Downstream coverage obligations: none.
+Downstream coverage obligations: EWP-WF13.
 
 ### Group gates
 
@@ -1373,7 +1372,7 @@ Downstream coverage obligations: none.
 
 Phase: 5; status: **planned**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-INSTALL-TS05, EWP-CMD-UPDATE-TS01, EWP-CMD-UPDATE-TS02, EWP-CMD-UPDATE-TS03, EWP-CMD-UPDATE-TS04, EWP-CMD-UPDATE-TS05, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-CMD-UPDATE-TS10, EWP-P5-TS02, EWP-WF09.
-Downstream coverage obligations: none.
+Downstream coverage obligations: EWP-WF13.
 
 ### Group gates
 
@@ -1486,7 +1485,7 @@ Downstream coverage obligations: none.
 ## P17-G5-05 — Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure
 
 Phase: 5; status: **planned**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
-Required-now validations: EWP-OPT-TS08, EWP-P5-TS05.
+Required-now validations: EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS13, EWP-CMD-SYNC-TS09, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-OPT-TS08, EWP-P4A-TS02, EWP-P5-TS05, EWP-WF13.
 Downstream coverage obligations: none.
 
 ### Group gates
@@ -1506,6 +1505,7 @@ Downstream coverage obligations: none.
 
 - [ ] **EWP-OPT-TS08** — Assert sibling lock derivation plus the uniform advanced lockfile override on _(option-gate; planned)_
 - [ ] **EWP-P5-TS05** — Bulk confirmation/noninteractive safety plus fail-fast/continue scheduling _(phase-test; planned)_
+- [ ] **EWP-WF13** — Multi-tool partial failure _(workflow; planned)_
 - [ ] **P1-04** — Safe bulk mutation _(recommendation; planned)_
 
 ## P17-G6-01 — Native assets, checksums, Homebrew/npm distribution, and clean installs

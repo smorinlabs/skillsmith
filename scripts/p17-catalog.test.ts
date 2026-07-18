@@ -398,6 +398,47 @@ describe('P17 immutable catalog and traceability baseline', () => {
     }
   });
 
+  test('schedules WF13 at its dependency-complete boundary with an exact G4A-04 partition', () => {
+    const catalog = fixture();
+    const wf13 = required(
+      catalog.entities.find((item) => item.id === 'EWP-WF13'),
+      'missing EWP-WF13',
+    );
+    const g4a04 = group(catalog, 'P17-G4A-04');
+
+    expect(wf13.primaryGroup).toBe('P17-G5-05');
+    expect(wf13.plannedTarget).toBe(
+      'planned:P17-G5-05:tests/ergonomics/workflows/EWP-WF13.test.ts#EWP-WF13',
+    );
+    expect(wf13.secondaryGroups).toEqual(['P17-G4A-04', 'P17-G4B-02', 'P17-G5-01', 'P17-G5-02']);
+    expect(g4a04.impactedValidations).toEqual([
+      'EWP-CMD-INSTALL-TS08',
+      'EWP-CMD-PROMOTE-TS04',
+      'EWP-CMD-PROMOTE-TS06',
+      'EWP-CMD-UNINSTALL-TS04',
+      'EWP-CMD-UNINSTALL-TS07',
+      'EWP-P3B-TS03',
+      'EWP-P3B-TS05',
+      'EWP-P4A-TS02',
+      'EWP-WF13',
+    ]);
+    expect(g4a04.requiredNowValidations).toEqual([
+      'EWP-CMD-INSTALL-TS08',
+      'EWP-CMD-PROMOTE-TS04',
+      'EWP-CMD-PROMOTE-TS06',
+      'EWP-CMD-UNINSTALL-TS04',
+      'EWP-CMD-UNINSTALL-TS07',
+      'EWP-P3B-TS03',
+      'EWP-P3B-TS05',
+      'EWP-P4A-TS02',
+    ]);
+    expect(g4a04.downstreamCoverage).toEqual(['EWP-WF13']);
+    expect(group(catalog, 'P17-G4B-02').downstreamCoverage).toContain('EWP-WF13');
+    expect(group(catalog, 'P17-G5-01').downstreamCoverage).toContain('EWP-WF13');
+    expect(group(catalog, 'P17-G5-02').downstreamCoverage).toContain('EWP-WF13');
+    expect(group(catalog, 'P17-G5-05').requiredNowValidations).toContain('EWP-WF13');
+  });
+
   test('separates required-now validation from immutable downstream coverage', () => {
     const catalog = fixture();
     const phase0 = group(catalog, 'P17-G0-05');

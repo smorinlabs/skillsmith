@@ -2504,6 +2504,11 @@ neither policy hides the original failure. Each successful pair advances immutab
 failed pairs preserve their expected revisions and rerun from a fresh snapshot without shared
 in-place ledger mutation.
 
+**Execution ownership schedule:** G4A-04 owns the current Phase-4A foundation in EWP-P4A-TS02.
+Apply rows remain in G4B-02, sync rows remain in G5-01, and update rows remain in G5-02. The full
+EWP-WF13 workflow executes and signs in G5-05 after those dependencies. This note changes execution
+ownership only; the matrix and assertions above remain unchanged.
+
 ### EWP-WF14 Scope/shadowing and custom paths
 
 **Commands:**

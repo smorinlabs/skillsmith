@@ -463,7 +463,7 @@ const workflowGroups = [
   'G5-01',
   'G5-03',
   'G5-04',
-  'G4A-04',
+  'G5-05',
   'G1-01',
   'G1-02A',
   'G6-02A',
@@ -792,6 +792,39 @@ const explicitValidationOwnership: Record<string, string[]> = {
     'EWP-CMD-CONFIG-TS04',
     'EWP-WF14',
   ],
+  // WF13 is dependency-complete only after its apply, sync, and update rows exist. Keep the
+  // current Phase-4A foundation explicit without pulling earlier install/promote selectors into
+  // the future workflow entity's ownership relation.
+  'EWP-WF13': [
+    'EWP-P4A-TS02',
+    'EWP-CMD-APPLY-TS09',
+    'EWP-CMD-APPLY-TS11',
+    'EWP-CMD-APPLY-TS13',
+    'EWP-CMD-SYNC-TS09',
+    'EWP-CMD-UPDATE-TS06',
+    'EWP-CMD-UPDATE-TS08',
+    'EWP-CMD-UPDATE-TS09',
+    'EWP-WF13',
+  ],
+};
+
+const explicitGroupValidationOwnership: Record<string, string[]> = {
+  // G4A-04 must prove its new foundation plus every already-signed selector whose behavior it
+  // changes. WF13 remains a downstream obligation until its dependency-complete G5-05 owner.
+  'P17-G4A-04': [
+    'EWP-P4A-TS02',
+    'EWP-CMD-INSTALL-TS08',
+    'EWP-CMD-UNINSTALL-TS04',
+    'EWP-CMD-UNINSTALL-TS07',
+    'EWP-P3B-TS03',
+    'EWP-P3B-TS05',
+    'EWP-CMD-PROMOTE-TS04',
+    'EWP-CMD-PROMOTE-TS06',
+    'EWP-WF13',
+  ],
+  'P17-G4B-02': ['EWP-WF13'],
+  'P17-G5-01': ['EWP-WF13'],
+  'P17-G5-02': ['EWP-WF13'],
 };
 
 const explicitContractOwnership: Record<string, string[]> = {
@@ -1103,6 +1136,7 @@ function initialize(): Catalog {
       ...new Set([
         ...(primary.length > 0 ? primary : (validationsByPhase.get(phaseId) ?? [])),
         ...traced,
+        ...(explicitGroupValidationOwnership[group.id] ?? []),
       ]),
     ].sort();
     const availableGroups = dependencyClosure(group.id);
