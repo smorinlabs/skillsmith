@@ -1117,7 +1117,7 @@ Downstream coverage obligations: none.
 
 ## P17-G4A-02 — Export classification, safe merge, portable intent, and writer integration
 
-Phase: 4A; status: **ready**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05.
+Phase: 4A; status: **active**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05.
 Required-now validations: EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-P4A-TS03.
 Downstream coverage obligations: EWP-WF04.
 
@@ -1125,7 +1125,7 @@ Downstream coverage obligations: EWP-WF04.
 
 - [x] P17-G4A-02:mapped _(passed)_
 - [x] P17-G4A-02:ready _(passed)_
-- [ ] P17-G4A-02:test-first _(pending)_
+- [x] P17-G4A-02:test-first _(passed)_
 - [ ] P17-G4A-02:minimal-implementation _(pending)_
 - [ ] P17-G4A-02:targeted-green _(pending)_
 - [ ] P17-G4A-02:impacted-green _(pending)_
@@ -1139,17 +1139,17 @@ Downstream coverage obligations: EWP-WF04.
 - [ ] **COMMAND:export** — Declarative — How do I capture the current fleet as portable desired state? _(command; planned)_
 - [ ] **D-005** — Dedicated fleet export _(decision; planned)_
 - [ ] **EWP-CF-011** — Make export merge idempotently without taking whole-file ownership _(finding; planned)_
-- [ ] **EWP-CMD-EXPORT-TS01** — managed remote install exports exact origin/resolution. _(command-test; planned)_
-- [ ] **EWP-CMD-EXPORT-TS02** — clean Git dev placement converts to portable identity. _(command-test; planned)_
-- [ ] **EWP-CMD-EXPORT-TS03** — dirty/non-Git/unmanaged classification and strict behavior. _(command-test; planned)_
-- [ ] **EWP-CMD-EXPORT-TS04** — tool/scope/project/custom-path selection. _(command-test; planned)_
-- [ ] **EWP-CMD-EXPORT-TS05** — compatible same-name cross-tool merge, incompatible _(command-test; planned)_
-- [ ] **EWP-CMD-EXPORT-TS06** — safe merge preserves requested refs, comments/order, defaults, unselected _(command-test; planned)_
-- [ ] **EWP-CMD-EXPORT-TS07** — dry-run/JSON/no-write behavior including migration preview and blocked _(command-test; planned)_
-- [ ] **EWP-CMD-EXPORT-TS08** — absolute-path/secret scrub and portable schema gate; placement/path uses _(command-test; planned)_
-- [ ] **EWP-CMD-EXPORT-TS09** — clean-machine locked round trip using canonical credential-free identity _(command-test; planned)_
-- [ ] **EWP-P4A-T02** — Implement export classification, merge/update behavior, and writer integration. _(phase-task; ready)_
-- [ ] **EWP-P4A-TS03** — Export portable/nonportable and existing-file classification matrix. _(phase-test; planned)_
+- [ ] **EWP-CMD-EXPORT-TS01** — managed remote install exports exact origin/resolution. _(command-test; failing)_
+- [ ] **EWP-CMD-EXPORT-TS02** — clean Git dev placement converts to portable identity. _(command-test; failing)_
+- [ ] **EWP-CMD-EXPORT-TS03** — dirty/non-Git/unmanaged classification and strict behavior. _(command-test; failing)_
+- [ ] **EWP-CMD-EXPORT-TS04** — tool/scope/project/custom-path selection. _(command-test; failing)_
+- [ ] **EWP-CMD-EXPORT-TS05** — compatible same-name cross-tool merge, incompatible _(command-test; failing)_
+- [ ] **EWP-CMD-EXPORT-TS06** — safe merge preserves requested refs, comments/order, defaults, unselected _(command-test; failing)_
+- [ ] **EWP-CMD-EXPORT-TS07** — dry-run/JSON/no-write behavior including migration preview and blocked _(command-test; failing)_
+- [ ] **EWP-CMD-EXPORT-TS08** — absolute-path/secret scrub and portable schema gate; placement/path uses _(command-test; failing)_
+- [ ] **EWP-CMD-EXPORT-TS09** — clean-machine locked round trip using canonical credential-free identity _(command-test; failing)_
+- [ ] **EWP-P4A-T02** — Implement export classification, merge/update behavior, and writer integration. _(phase-task; red)_
+- [ ] **EWP-P4A-TS03** — Export portable/nonportable and existing-file classification matrix. _(phase-test; failing)_
 - [ ] **P1-06** — `export` _(recommendation; planned)_
 
 ## P17-G4A-03 — Planned init registration with preview/execution identity and manifest-only effects

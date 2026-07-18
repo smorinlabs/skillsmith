@@ -5422,7 +5422,7 @@
       "phase": "4A",
       "title": "Export classification, safe merge, portable intent, and writer integration",
       "dependsOn": ["P17-G3B-03", "P17-G3B-04", "P17-G3B-05"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -5528,8 +5528,8 @@
           "evidence": ["projects/p17/evidence/P17-G4A-02.md#ready-plan"]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-02.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -5563,7 +5563,8 @@
       "evidence": [
         "projects/p17/plans/P17-G4A-02.md",
         "projects/p17/evidence/P17-G4A-02.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G4A-02.md#ready-plan"
+        "projects/p17/evidence/P17-G4A-02.md#ready-plan",
+        "projects/p17/evidence/P17-G4A-02.md#test-first-evidence"
       ]
     },
     {
@@ -13185,11 +13186,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/export.test.ts",
+        "selector": "EWP-CMD-EXPORT-TS01",
+        "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS01"],
@@ -13206,8 +13212,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS01"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/export.test.ts"]
     },
     {
       "id": "EWP-CMD-EXPORT-TS02",
@@ -13215,11 +13223,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/export.test.ts",
+        "selector": "EWP-CMD-EXPORT-TS02",
+        "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS02"],
@@ -13236,8 +13249,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/export.test.ts"]
     },
     {
       "id": "EWP-CMD-EXPORT-TS03",
@@ -13245,11 +13260,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/export.test.ts",
+        "selector": "EWP-CMD-EXPORT-TS03",
+        "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS03"],
@@ -13266,8 +13286,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/export.test.ts"]
     },
     {
       "id": "EWP-CMD-EXPORT-TS04",
@@ -13275,11 +13297,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/export.test.ts",
+        "selector": "EWP-CMD-EXPORT-TS04",
+        "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS04"],
@@ -13296,8 +13323,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS04"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/export.test.ts"]
     },
     {
       "id": "EWP-CMD-EXPORT-TS05",
@@ -13305,11 +13334,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/export.test.ts",
+        "selector": "EWP-CMD-EXPORT-TS05",
+        "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS05"],
@@ -13326,8 +13360,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS05"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/export.test.ts"]
     },
     {
       "id": "EWP-CMD-EXPORT-TS06",
@@ -13335,11 +13371,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/export.test.ts",
+        "selector": "EWP-CMD-EXPORT-TS06",
+        "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS06"],
@@ -13356,8 +13397,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS06"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/export.test.ts"]
     },
     {
       "id": "EWP-CMD-EXPORT-TS07",
@@ -13365,11 +13408,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/export.test.ts",
+        "selector": "EWP-CMD-EXPORT-TS07",
+        "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS07"],
@@ -13386,8 +13434,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS07"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/export.test.ts"]
     },
     {
       "id": "EWP-CMD-EXPORT-TS08",
@@ -13395,11 +13445,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS08",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/export.test.ts",
+        "selector": "EWP-CMD-EXPORT-TS08",
+        "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS08"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts08"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS08"],
@@ -13416,8 +13471,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS08"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/export.test.ts"]
     },
     {
       "id": "EWP-CMD-EXPORT-TS09",
@@ -13425,11 +13482,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:packages/cli/tests/contracts/export.test.ts#EWP-CMD-EXPORT-TS09",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/export.test.ts",
+        "selector": "EWP-CMD-EXPORT-TS09",
+        "command": "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS09"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-cmd-export-ts09"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-EXPORT-TS09"],
@@ -13446,8 +13508,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS09"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/export.test.ts"]
     },
     {
       "id": "EWP-CMD-GC-TS01",
@@ -20889,11 +20953,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-02",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G4A-02.md#ready-plan"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4A-02.md#ready-plan",
+        "projects/p17/evidence/P17-G4A-02.md#test-first-evidence"
+      ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
       "validatedBy": [
@@ -21115,11 +21182,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-02",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-02:tests/ergonomics/phase/EWP-P4A-TS03.test.ts#EWP-P4A-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P4A-TS03.test.ts",
+        "selector": "EWP-P4A-TS03",
+        "command": "bun test tests/ergonomics/phase/EWP-P4A-TS03.test.ts --test-name-pattern EWP-P4A-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4A-02.md#red-execution-receipt-ewp-p4a-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4A-TS03"],
@@ -21136,8 +21208,10 @@
         "EWP-P4A-TS03"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P4A-TS03.test.ts --test-name-pattern EWP-P4A-TS03"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P4A-TS03.test.ts"]
     },
     {
       "id": "EWP-P4A-TS04",
