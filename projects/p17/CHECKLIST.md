@@ -11,15 +11,15 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 15 | 13 | 6 |
-| phase-task | 65 | 44 | 21 | 0 |
-| phase-test | 61 | 40 | 21 | 0 |
-| command-test | 157 | 67 | 90 | 0 |
+| recommendation | 34 | 16 | 12 | 6 |
+| phase-task | 65 | 45 | 20 | 0 |
+| phase-test | 61 | 41 | 20 | 0 |
+| command-test | 157 | 76 | 81 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 3 | 13 | 0 |
-| command | 23 | 13 | 10 | 0 |
-| finding | 43 | 33 | 10 | 0 |
-| decision | 16 | 6 | 9 | 1 |
+| command | 23 | 14 | 9 | 0 |
+| finding | 43 | 34 | 9 | 0 |
+| decision | 16 | 7 | 8 | 1 |
 
 ### Phases
 
@@ -29,7 +29,7 @@ Tracked entities: **425** across **45** change groups.
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
-| 4 | 7 | 106 | 23 | 0 |
+| 4 | 7 | 106 | 38 | 0 |
 | 5 | 5 | 68 | 0 | 0 |
 | 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
@@ -112,7 +112,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:config | P17-G2-01 | signed-off | required-pr |
 | COMMAND:dev | P17-G3B-01 | signed-off | required-pr |
 | COMMAND:doctor | P17-G3B-03 | signed-off | required-pr |
-| COMMAND:export | P17-G4A-02 | validated | required-pr |
+| COMMAND:export | P17-G4A-02 | signed-off | required-pr |
 | COMMAND:gc | P17-G5-04 | planned | required-pr |
 | COMMAND:help | P17-G6-02A | planned | required-pr |
 | COMMAND:init | P17-G4A-03 | planned | required-pr |
@@ -145,7 +145,7 @@ Tracked entities: **425** across **45** change groups.
 | P1-03 | P17-G3A-02 | signed-off | required-pr |
 | P1-04 | P17-G5-05 | planned | required-pr |
 | P1-05 | P17-G4A-03 | planned | required-pr |
-| P1-06 | P17-G4A-02 | validated | required-pr |
+| P1-06 | P17-G4A-02 | signed-off | required-pr |
 | P1-07 | P17-G4B-01 | planned | required-pr |
 | P1-08 | P17-G4B-02 | planned | required-pr |
 | P1-09 | P17-G4A-01 | signed-off | required-pr |
@@ -181,7 +181,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-008 | P17-G5-02 | planned | required-pr |
 | EWP-CF-009 | P17-G4B-02 | planned | required-pr |
 | EWP-CF-010 | P17-G0-02 | signed-off | required-pr |
-| EWP-CF-011 | P17-G4A-02 | validated | required-pr |
+| EWP-CF-011 | P17-G4A-02 | signed-off | required-pr |
 | EWP-CF-012 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-013 | P17-G6-02A | planned | required-pr |
 | EWP-CF-014 | P17-G6-02B | planned | supported-platform |
@@ -223,7 +223,7 @@ Tracked entities: **425** across **45** change groups.
 | D-002 | P17-G4B-02 | planned | required-pr |
 | D-003 | P17-G2-01 | signed-off | required-pr |
 | D-004 | P17-G2-02 | signed-off | required-pr |
-| D-005 | P17-G4A-02 | validated | required-pr |
+| D-005 | P17-G4A-02 | signed-off | required-pr |
 | D-006 | P17-G4A-01 | signed-off | required-pr |
 | D-007 | P17-G5-01 | planned | required-pr |
 | D-008 | P17-G3A-01 | signed-off | required-pr |
@@ -1117,7 +1117,7 @@ Downstream coverage obligations: none.
 
 ## P17-G4A-02 — Export classification, safe merge, portable intent, and writer integration
 
-Phase: 4A; status: **active**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05.
+Phase: 4A; status: **signed-off**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05.
 Required-now validations: EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-P4A-TS03.
 Downstream coverage obligations: EWP-WF04.
 
@@ -1130,27 +1130,27 @@ Downstream coverage obligations: EWP-WF04.
 - [x] P17-G4A-02:targeted-green _(passed)_
 - [x] P17-G4A-02:impacted-green _(passed)_
 - [x] P17-G4A-02:refactor _(passed)_
-- [ ] P17-G4A-02:adversarial-review _(pending)_
-- [ ] P17-G4A-02:traceability-closure _(pending)_
-- [ ] P17-G4A-02:signed-off _(pending)_
+- [x] P17-G4A-02:adversarial-review _(passed)_
+- [x] P17-G4A-02:traceability-closure _(passed)_
+- [x] P17-G4A-02:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:export** — Declarative — How do I capture the current fleet as portable desired state? _(command; validated)_
-- [ ] **D-005** — Dedicated fleet export _(decision; validated)_
-- [ ] **EWP-CF-011** — Make export merge idempotently without taking whole-file ownership _(finding; validated)_
-- [ ] **EWP-CMD-EXPORT-TS01** — managed remote install exports exact origin/resolution. _(command-test; passing)_
-- [ ] **EWP-CMD-EXPORT-TS02** — clean Git dev placement converts to portable identity. _(command-test; passing)_
-- [ ] **EWP-CMD-EXPORT-TS03** — dirty/non-Git/unmanaged classification and strict behavior. _(command-test; passing)_
-- [ ] **EWP-CMD-EXPORT-TS04** — tool/scope/project/custom-path selection. _(command-test; passing)_
-- [ ] **EWP-CMD-EXPORT-TS05** — compatible same-name cross-tool merge, incompatible _(command-test; passing)_
-- [ ] **EWP-CMD-EXPORT-TS06** — safe merge preserves requested refs, comments/order, defaults, unselected _(command-test; passing)_
-- [ ] **EWP-CMD-EXPORT-TS07** — dry-run/JSON/no-write behavior including migration preview and blocked _(command-test; passing)_
-- [ ] **EWP-CMD-EXPORT-TS08** — absolute-path/secret scrub and portable schema gate; placement/path uses _(command-test; passing)_
-- [ ] **EWP-CMD-EXPORT-TS09** — clean-machine locked round trip using canonical credential-free identity _(command-test; passing)_
-- [ ] **EWP-P4A-T02** — Implement export classification, merge/update behavior, and writer integration. _(phase-task; green)_
-- [ ] **EWP-P4A-TS03** — Export portable/nonportable and existing-file classification matrix. _(phase-test; passing)_
-- [ ] **P1-06** — `export` _(recommendation; validated)_
+- [x] **COMMAND:export** — Declarative — How do I capture the current fleet as portable desired state? _(command; signed-off)_
+- [x] **D-005** — Dedicated fleet export _(decision; signed-off)_
+- [x] **EWP-CF-011** — Make export merge idempotently without taking whole-file ownership _(finding; signed-off)_
+- [x] **EWP-CMD-EXPORT-TS01** — managed remote install exports exact origin/resolution. _(command-test; signed-off)_
+- [x] **EWP-CMD-EXPORT-TS02** — clean Git dev placement converts to portable identity. _(command-test; signed-off)_
+- [x] **EWP-CMD-EXPORT-TS03** — dirty/non-Git/unmanaged classification and strict behavior. _(command-test; signed-off)_
+- [x] **EWP-CMD-EXPORT-TS04** — tool/scope/project/custom-path selection. _(command-test; signed-off)_
+- [x] **EWP-CMD-EXPORT-TS05** — compatible same-name cross-tool merge, incompatible _(command-test; signed-off)_
+- [x] **EWP-CMD-EXPORT-TS06** — safe merge preserves requested refs, comments/order, defaults, unselected _(command-test; signed-off)_
+- [x] **EWP-CMD-EXPORT-TS07** — dry-run/JSON/no-write behavior including migration preview and blocked _(command-test; signed-off)_
+- [x] **EWP-CMD-EXPORT-TS08** — absolute-path/secret scrub and portable schema gate; placement/path uses _(command-test; signed-off)_
+- [x] **EWP-CMD-EXPORT-TS09** — clean-machine locked round trip using canonical credential-free identity _(command-test; signed-off)_
+- [x] **EWP-P4A-T02** — Implement export classification, merge/update behavior, and writer integration. _(phase-task; signed-off)_
+- [x] **EWP-P4A-TS03** — Export portable/nonportable and existing-file classification matrix. _(phase-test; signed-off)_
+- [x] **P1-06** — `export` _(recommendation; signed-off)_
 
 ## P17-G4A-03 — Planned init registration with preview/execution identity and manifest-only effects
 
