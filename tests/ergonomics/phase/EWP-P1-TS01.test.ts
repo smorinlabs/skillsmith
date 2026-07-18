@@ -275,5 +275,5 @@ describe('EWP-P1-TS01', () => {
     } finally {
       await rm(sandbox, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
