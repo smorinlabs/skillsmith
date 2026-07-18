@@ -5210,7 +5210,7 @@
       "phase": "4A",
       "title": "Install/uninstall default-save, no-save, ownership, and artifact reporting",
       "dependsOn": ["P17-G3B-03", "P17-G3B-04", "P17-G3B-05", "P17-G3B-06"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -5335,7 +5335,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF14.test.ts --test-name-pattern EWP-WF14"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g4a01_independent_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -5366,8 +5366,8 @@
           "evidence": ["projects/p17/evidence/P17-G4A-01.md#refactor"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-01.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -5394,7 +5394,8 @@
         "projects/p17/evidence/P17-G4A-01.md#minimal-implementation",
         "projects/p17/evidence/P17-G4A-01.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-01.md#independent-review-correction-evidence",
-        "projects/p17/evidence/P17-G4A-01.md#refactor"
+        "projects/p17/evidence/P17-G4A-01.md#refactor",
+        "projects/p17/evidence/P17-G4A-01.md#adversarial-review"
       ]
     },
     {

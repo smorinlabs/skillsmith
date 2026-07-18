@@ -1072,7 +1072,7 @@ Downstream coverage obligations: none.
 
 ## P17-G4A-01 — Install/uninstall default-save, no-save, ownership, and artifact reporting
 
-Phase: 4A; status: **active**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05, P17-G3B-06.
+Phase: 4A; status: **reviewed**; dependencies: P17-G3B-03, P17-G3B-04, P17-G3B-05, P17-G3B-06.
 Required-now validations: EWP-CMD-INSTALL-TS01, EWP-CMD-INSTALL-TS02, EWP-CMD-INSTALL-TS03, EWP-CMD-INSTALL-TS04, EWP-CMD-INSTALL-TS05, EWP-CMD-INSTALL-TS06, EWP-CMD-INSTALL-TS07, EWP-CMD-INSTALL-TS08, EWP-CMD-UNINSTALL-TS01, EWP-CMD-UNINSTALL-TS02, EWP-CMD-UNINSTALL-TS03, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS05, EWP-CMD-UNINSTALL-TS06, EWP-CMD-UNINSTALL-TS07, EWP-P4A-TS01, EWP-WF02, EWP-WF14.
 Downstream coverage obligations: none.
 
@@ -1085,7 +1085,7 @@ Downstream coverage obligations: none.
 - [x] P17-G4A-01:targeted-green _(passed)_
 - [x] P17-G4A-01:impacted-green _(passed)_
 - [x] P17-G4A-01:refactor _(passed)_
-- [ ] P17-G4A-01:adversarial-review _(pending)_
+- [x] P17-G4A-01:adversarial-review _(passed)_
 - [ ] P17-G4A-01:traceability-closure _(pending)_
 - [ ] P17-G4A-01:signed-off _(pending)_
 
