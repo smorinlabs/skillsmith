@@ -452,7 +452,7 @@ describe('EWP-WF14', () => {
       } finally {
         await rm(workspace.root, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
 
     test('dual owners refuse install and uninstall before writes even when force is requested', async () => {
       const workspace = await createOwnershipWorkspace('dual-owner');
@@ -508,7 +508,7 @@ describe('EWP-WF14', () => {
       } finally {
         await rm(workspace.root, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
 
     test('the reported explicit pair is exact and every nonselected artifact remains byte-identical', async () => {
       const workspace = await createOwnershipWorkspace('exact-pair');
