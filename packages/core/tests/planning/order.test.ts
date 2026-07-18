@@ -190,5 +190,29 @@ describe('planning canonical order', () => {
     expect(() => orderExecutableOperationsTopologically([prefix, alpha, arbitrary])).toThrow(
       /invalid cross-group artifact-prefix dependency/i,
     );
+
+    const laterPrefix = {
+      ...operation('beta-lock', 'user', 'beta', 'codex', 'install'),
+      pairId: null,
+      scope: null,
+      skill: null,
+      source: null,
+      tool: null,
+      kind: 'write-lock',
+      dependencyMetadata: dependencyMetadata([]),
+    } as unknown as ExecutableOperation;
+    const earlierManifest = {
+      ...operation('alpha-manifest', 'user', 'alpha', 'codex', 'install'),
+      pairId: null,
+      scope: null,
+      skill: null,
+      source: null,
+      tool: null,
+      kind: 'write-manifest',
+      dependencyMetadata: dependencyMetadata([laterPrefix.operationId]),
+    } as unknown as ExecutableOperation;
+    expect(() => orderExecutableOperationsTopologically([earlierManifest, laterPrefix])).toThrow(
+      /later|forward/i,
+    );
   });
 });

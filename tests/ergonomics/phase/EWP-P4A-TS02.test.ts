@@ -309,6 +309,34 @@ describe('EWP-P4A-TS02', () => {
     expect(refused.plan.operations).toEqual([]);
     expect(refused.results.every(({ action }) => action === 'refused')).toBeTrue();
     expect(await readPair(unrelatedRoot)).toEqual([afterManifest, unrelatedLock]);
+
+    for (const [label, driftedLock] of [
+      [
+        'resolved-sha-drift',
+        beforeLock.replace(/resolved_sha = "[0-9a-f]+"/u, `resolved_sha = "${'d'.repeat(40)}"`),
+      ],
+      [
+        'content-hash-drift',
+        beforeLock.replace(
+          /content_hash = "sha256:[0-9a-f]+"/u,
+          `content_hash = "sha256:${'b'.repeat(64)}"`,
+        ),
+      ],
+    ] as const) {
+      const driftRoot = join(selected.base, label);
+      await mkdir(driftRoot, { recursive: true });
+      await Promise.all([
+        writeFile(join(driftRoot, 'skillsmith.toml'), afterManifest),
+        writeFile(join(driftRoot, 'skillsmith.lock'), driftedLock),
+      ]);
+      const drifted = await runDeclaredUninstall(selected, driftRoot, ['portable-alpha']);
+      expect(drifted.plan.operations, label).toEqual([]);
+      expect(
+        drifted.results.every(({ action }) => action === 'refused'),
+        label,
+      ).toBeTrue();
+      expect(await readPair(driftRoot), label).toEqual([afterManifest, driftedLock]);
+    }
   });
 
   test('finds the same exact handoff through the bounded automatic sibling owner', async () => {
