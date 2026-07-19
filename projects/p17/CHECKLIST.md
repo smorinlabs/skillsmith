@@ -12,8 +12,8 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 17 | 11 | 6 |
-| phase-task | 65 | 46 | 19 | 0 |
-| phase-test | 61 | 42 | 19 | 0 |
+| phase-task | 65 | 47 | 18 | 0 |
+| phase-test | 61 | 43 | 18 | 0 |
 | command-test | 157 | 81 | 76 | 0 |
 | option-gate | 10 | 6 | 4 | 0 |
 | workflow | 16 | 3 | 13 | 0 |
@@ -29,7 +29,7 @@ Tracked entities: **425** across **45** change groups.
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
-| 4 | 7 | 105 | 48 | 0 |
+| 4 | 7 | 105 | 50 | 0 |
 | 5 | 5 | 69 | 0 | 0 |
 | 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
@@ -1186,7 +1186,7 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
 ## P17-G4A-04 — Multi-source/tool partial-success, crash, and commit-boundary semantics
 
-Phase: 4A; status: **reviewed**; dependencies: P17-G4A-01, P17-G4A-02, P17-G4A-03.
+Phase: 4A; status: **signed-off**; dependencies: P17-G4A-01, P17-G4A-02, P17-G4A-03.
 Required-now validations: EWP-CMD-INSTALL-TS08, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS06, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS07, EWP-P3B-TS03, EWP-P3B-TS05, EWP-P4A-TS02.
 Downstream coverage obligations: EWP-WF13.
 
@@ -1200,13 +1200,13 @@ Downstream coverage obligations: EWP-WF13.
 - [x] P17-G4A-04:impacted-green _(passed)_
 - [x] P17-G4A-04:refactor _(passed)_
 - [x] P17-G4A-04:adversarial-review _(passed)_
-- [ ] P17-G4A-04:traceability-closure _(pending)_
-- [ ] P17-G4A-04:signed-off _(pending)_
+- [x] P17-G4A-04:traceability-closure _(passed)_
+- [x] P17-G4A-04:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-P4A-T03** — Define multi-source/multi-tool partial-success commit semantics for manifest, _(phase-task; green)_
-- [ ] **EWP-P4A-TS02** — Manifest/lock/live/ledger crash and partial-failure matrix. _(phase-test; passing)_
+- [x] **EWP-P4A-T03** — Define multi-source/multi-tool partial-success commit semantics for manifest, _(phase-task; signed-off)_
+- [x] **EWP-P4A-TS02** — Manifest/lock/live/ledger crash and partial-failure matrix. _(phase-test; signed-off)_
 
 ## P17-G4B-01 — Desired/current planner, prune selection, renderers, check exits, and idempotence
 

@@ -5770,7 +5770,7 @@
       "phase": "4A",
       "title": "Multi-source/tool partial-success, crash, and commit-boundary semantics",
       "dependsOn": ["P17-G4A-01", "P17-G4A-02", "P17-G4A-03"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/acquire/plan.ts",
@@ -5877,12 +5877,15 @@
           ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-04.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4A-04.md#terminal-full-repository-gate",
+            "projects/p17/evidence/P17-G4A-04.md#traceability-and-sign-off"
+          ]
         }
       },
       "evidence": [
@@ -5908,7 +5911,9 @@
         "projects/p17/evidence/P17-G4A-04.md#third-correction-minimal-implementation",
         "projects/p17/evidence/P17-G4A-04.md#third-correction-targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-04.md#third-correction-refactor",
-        "projects/p17/evidence/P17-G4A-04.md#third-correction-independent-adversarial-review"
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-independent-adversarial-review",
+        "projects/p17/evidence/P17-G4A-04.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G4A-04.md#traceability-and-sign-off"
       ]
     },
     {
@@ -21414,7 +21419,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-04",
-      "status": "green",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-04",
       "target": null,
@@ -21433,7 +21438,9 @@
         "projects/p17/evidence/P17-G4A-04.md#third-correction-test-first-evidence",
         "projects/p17/evidence/P17-G4A-04.md#third-correction-minimal-implementation",
         "projects/p17/evidence/P17-G4A-04.md#third-correction-targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4A-04.md#third-correction-refactor"
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-refactor",
+        "projects/p17/evidence/P17-G4A-04.md#terminal-full-repository-gate",
+        "projects/p17/evidence/P17-G4A-04.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -21640,7 +21647,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-04:tests/ergonomics/phase/EWP-P4A-TS02.test.ts#EWP-P4A-TS02",
       "target": {
@@ -21650,6 +21657,7 @@
         "command": "bun test tests/ergonomics/phase/EWP-P4A-TS02.test.ts --test-name-pattern EWP-P4A-TS02"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-04.md#terminal-signed-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#third-correction-green-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#third-correction-red-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#corrected-green-execution-receipt-ewp-p4a-ts02",
