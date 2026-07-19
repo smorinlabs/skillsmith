@@ -184,6 +184,10 @@ describe('planning canonical order', () => {
       source: null,
       tool: null,
       kind: 'write-lock',
+      after: {
+        kind: 'lock',
+        location: { kind: 'portable', token: 'artifacts/skills-lock.json' },
+      },
       dependencyMetadata: dependencyMetadata([]),
     } as unknown as ExecutableOperation;
     const alpha = {

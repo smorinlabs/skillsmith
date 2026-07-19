@@ -54,6 +54,18 @@ const PINNED: OperationImage = {
   source: SOURCE,
   contentHash: CONTENT_HASH,
 };
+const LOCKED: OperationImage = {
+  kind: 'lock',
+  location: { kind: 'portable', token: 'artifacts/skills-lock.json' },
+  version: 1,
+  value: {
+    version: 1,
+    hashSchemaVersion: 1,
+    manifestHash: CONTENT_HASH,
+    skills: [],
+  },
+  canonicalHash: CONTENT_HASH,
+};
 
 const groupIdentityFor = (
   source: OperationSource | null = SOURCE,
@@ -454,6 +466,7 @@ describe('planning constructors', () => {
         source: null,
         tool: null,
         scope: null,
+        after: kind === 'write-lock' ? LOCKED : live.after,
       };
     };
     const artifactA = artifactFor(groupA);

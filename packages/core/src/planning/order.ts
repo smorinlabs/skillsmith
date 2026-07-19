@@ -176,6 +176,30 @@ export const artifactPrefixDependencyError = <ToolId extends string = string>(
     if ((groupPositions.get(prefix.groupId) as number) >= (groupPositions.get(groupId) as number)) {
       return `operation group ${groupId} depends on a later artifact prefix`;
     }
+    if (prefix.after.kind !== 'lock') {
+      return `operation group ${groupId} has an invalid cross-group artifact-prefix image`;
+    }
+    const groupPosition = groupPositions.get(groupId) as number;
+    const prefixPosition = groupPositions.get(prefix.groupId) as number;
+    const prefixLocation = canonicalPlanningString(prefix.after.location);
+    let latestPrefixPosition = -1;
+    for (const [position, candidateGroup] of groups.entries()) {
+      if (position >= groupPosition) break;
+      if (
+        candidateGroup.some(
+          (candidate) =>
+            candidate.kind === 'write-lock' &&
+            candidate.pairId === null &&
+            candidate.after.kind === 'lock' &&
+            canonicalPlanningString(candidate.after.location) === prefixLocation,
+        )
+      ) {
+        latestPrefixPosition = position;
+      }
+    }
+    if (prefixPosition !== latestPrefixPosition) {
+      return `operation group ${groupId} does not depend on the latest artifact prefix`;
+    }
     const prefixGroup = groups.find((candidate) => candidate[0]?.groupId === prefix.groupId) ?? [];
     if (
       prefixGroup.filter(

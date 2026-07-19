@@ -1184,12 +1184,12 @@ const runUninstallInternal = async (
     ...requested,
     targets: planningTargets.length === 0 ? ['[unresolved target]'] : planningTargets,
   };
-  const fixedUserProjectContext =
-    opts.scope === 'user' &&
+  const fixedNamedScopeProjectContext =
+    (opts.scope === 'user' || opts.scope === 'project') &&
     !opts.allScopes &&
     opts.targets.every((target) => !isUninstallPathTarget(target));
   const projectContext = await resolveAcquisitionProjectContextV1({
-    env: fixedUserProjectContext
+    env: fixedNamedScopeProjectContext
       ? { ...env, git: { ...env.git, findRepositoryRoot: async () => null } }
       : env,
     cwd: opts.cwd,
@@ -1350,6 +1350,7 @@ const runUninstallInternal = async (
     readonly retainedSiblings: readonly Readonly<{
       tool: FlipTool;
       liveResourceId: string;
+      placementPath: string;
     }>[];
   }
   interface PreparedUninstallArtifactPlanning {
@@ -1427,15 +1428,26 @@ const runUninstallInternal = async (
       const live = observedLiveFor(snapshot, sibling.liveResourceId);
       const pinned = pair?.pinned ?? null;
       const origin = pair?.origin;
+      const normalizedOrigin =
+        origin === undefined
+          ? null
+          : normalizeSourceIdentity(origin.source, 'ledger origin source');
       if (
         pair === null ||
         pair.mode !== 'pinned' ||
         pinned === null ||
         origin === undefined ||
+        normalizedOrigin === null ||
+        !normalizedOrigin.ok ||
         live === null ||
         live === undefined ||
         live.placementClass === 'absent' ||
         live.contentRevision === null ||
+        pair.placementPath !== sibling.placementPath ||
+        live.path !== sibling.placementPath ||
+        (pinned.placement ?? 'copy') !== recovery.declaration.placement ||
+        canonicalPlanningString(normalizedOrigin.value) !==
+          canonicalPlanningString(recovery.declaration.source) ||
         origin.host !== recovery.declaration.source.host ||
         origin.repo !== recovery.declaration.source.repository ||
         origin.skillPath !== (recovery.declaration.source.path ?? '.') ||
@@ -2367,7 +2379,11 @@ const runUninstallInternal = async (
             storeRoot,
           });
         }
-        const retainedSiblings: Array<{ tool: FlipTool; liveResourceId: string }> = [];
+        const retainedSiblings: Array<{
+          tool: FlipTool;
+          liveResourceId: string;
+          placementPath: string;
+        }> = [];
         if (mode === 'reduced' && currentDeclaration !== undefined) {
           for (const tool of currentDeclaration.tools) {
             if (!registry.toolsFor('install').includes(tool)) continue;
@@ -2381,7 +2397,7 @@ const runUninstallInternal = async (
             );
             const placementPath = resolve(root, target.name);
             const liveResourceId = acquireStateResourceId('live', [placementPath]);
-            retainedSiblings.push({ tool: retainedTool, liveResourceId });
+            retainedSiblings.push({ tool: retainedTool, liveResourceId, placementPath });
             addLiveResource({
               resourceId: liveResourceId,
               skill: target.name,
@@ -2525,7 +2541,7 @@ const runUninstallInternal = async (
       ledgerPath,
       liveResources: [...liveResourcesByPath.values()],
       storeResources: [...storeResourcesByPath.values()],
-      ...(fixedUserProjectContext ? { fixedProjectContext: true } : {}),
+      ...(fixedNamedScopeProjectContext ? { fixedProjectContext: true } : {}),
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     });
     const artifactRecoveries: PreparedArtifactOnlyRecovery[] = [];
