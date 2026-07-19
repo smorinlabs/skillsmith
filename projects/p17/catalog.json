@@ -5770,7 +5770,7 @@
       "phase": "4A",
       "title": "Multi-source/tool partial-success, crash, and commit-boundary semantics",
       "dependsOn": ["P17-G4A-01", "P17-G4A-02", "P17-G4A-03"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/acquire/plan.ts",
@@ -5827,7 +5827,7 @@
         "bun test packages/cli/tests/contracts/promote.test.ts --test-name-pattern EWP-CMD-PROMOTE-TS06"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g4a04_third_correction_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -5871,8 +5871,10 @@
           "evidence": ["projects/p17/evidence/P17-G4A-04.md#third-correction-refactor"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4A-04.md#third-correction-independent-adversarial-review"
+          ]
         },
         "traceability-closure": {
           "status": "pending",
@@ -5905,7 +5907,8 @@
         "projects/p17/evidence/P17-G4A-04.md#third-correction-test-first-evidence",
         "projects/p17/evidence/P17-G4A-04.md#third-correction-minimal-implementation",
         "projects/p17/evidence/P17-G4A-04.md#third-correction-targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4A-04.md#third-correction-refactor"
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-refactor",
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-independent-adversarial-review"
       ]
     },
     {

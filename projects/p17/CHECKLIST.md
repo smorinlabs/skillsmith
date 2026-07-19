@@ -1186,7 +1186,7 @@ Downstream coverage obligations: EWP-OPT-TS05, EWP-WF03.
 
 ## P17-G4A-04 — Multi-source/tool partial-success, crash, and commit-boundary semantics
 
-Phase: 4A; status: **active**; dependencies: P17-G4A-01, P17-G4A-02, P17-G4A-03.
+Phase: 4A; status: **reviewed**; dependencies: P17-G4A-01, P17-G4A-02, P17-G4A-03.
 Required-now validations: EWP-CMD-INSTALL-TS08, EWP-CMD-PROMOTE-TS04, EWP-CMD-PROMOTE-TS06, EWP-CMD-UNINSTALL-TS04, EWP-CMD-UNINSTALL-TS07, EWP-P3B-TS03, EWP-P3B-TS05, EWP-P4A-TS02.
 Downstream coverage obligations: EWP-WF13.
 
@@ -1199,7 +1199,7 @@ Downstream coverage obligations: EWP-WF13.
 - [x] P17-G4A-04:targeted-green _(passed)_
 - [x] P17-G4A-04:impacted-green _(passed)_
 - [x] P17-G4A-04:refactor _(passed)_
-- [ ] P17-G4A-04:adversarial-review _(pending)_
+- [x] P17-G4A-04:adversarial-review _(passed)_
 - [ ] P17-G4A-04:traceability-closure _(pending)_
 - [ ] P17-G4A-04:signed-off _(pending)_
 
