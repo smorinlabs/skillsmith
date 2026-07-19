@@ -1448,6 +1448,131 @@ describe('EWP-OPT-TS06', () => {
   });
 });
 
+describe('EWP-OPT-TS09', () => {
+  test('fresh and saved apply have one exhaustive declarative option partition', async () => {
+    const api = await requireOptionContractApi();
+    const apply = api.CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith apply');
+    expect(apply, 'live apply CommandSpec').toBeDefined();
+    expect(apply?.aliases).toEqual([]);
+    expect(apply?.options.map(({ long }) => long).sort()).toEqual(
+      [
+        '--check',
+        '--continue-on-error',
+        '--dry-run',
+        '--file',
+        '--json',
+        '--locked',
+        '--lockfile',
+        '--plan',
+        '--project',
+        '--prune',
+        '--scope',
+        '--tool',
+        '--user',
+        '--yes',
+      ].sort(),
+    );
+    expect(api.validateCurrentOptionRelations()).toEqual([]);
+    expect(
+      api.CURRENT_OPTION_RELATIONS.filter((relation) => relation.command === 'skillsmith apply'),
+    ).not.toHaveLength(0);
+
+    const accepted = [
+      ['--file', 'skillsmith.toml', '--lockfile', 'skillsmith.lock'],
+      ['--tool', 'codex', '--tool', 'claude-code', '--scope', 'user', '--prune'],
+      ['--project', '--locked', '--continue-on-error'],
+      ['--dry-run', '--no-prompt'],
+      ['--check', '--no-prompt'],
+      ['--plan', 'review.plan'],
+      ['--plan', 'review.plan', '--dry-run', '--json'],
+      ['--plan', 'review.plan', '--check', '--no-prompt'],
+    ] as const;
+    for (const args of accepted) {
+      expect(
+        api.validateOptionInvocation('skillsmith apply', args),
+        `accepted: ${args.join(' ')}`,
+      ).toEqual({ ok: true });
+    }
+
+    const savedConflicts = [
+      ['--file', 'skillsmith.toml'],
+      ['--lockfile', 'skillsmith.lock'],
+      ['--tool', 'codex'],
+      ['--scope', 'user'],
+      ['--user'],
+      ['--project'],
+      ['--locked'],
+      ['--prune'],
+      ['--yes'],
+      ['--continue-on-error'],
+    ] as const;
+    const rejected = [
+      ...savedConflicts.flatMap((conflict) => [
+        ['--plan', 'review.plan', ...conflict],
+        [...conflict, '--plan', 'review.plan'],
+      ]),
+      ['--dry-run', '--check'],
+      ['--check', '--dry-run'],
+      ['--dry-run', '--yes'],
+      ['--yes', '--dry-run'],
+      ['--check', '--yes'],
+      ['--yes', '--check'],
+      ['--lockfile', 'skillsmith.lock'],
+      ['--file', 'one.toml', '--file', 'two.toml'],
+      ['--plan', 'one.plan', '--plan', 'two.plan'],
+      ['--scope', 'user', '--project'],
+      ['--tool', 'codex', '--tool', 'codex'],
+    ] as const;
+    for (const args of rejected) {
+      const result = api.validateOptionInvocation('skillsmith apply', args);
+      expect(result.ok, `rejected: ${args.join(' ')}`).toBeFalse();
+      if (result.ok) throw new Error(`invalid apply option relation passed: ${args.join(' ')}`);
+      expect(result.error.exitCode).toBe(2);
+    }
+  });
+
+  test('saved-plan conflicts fail before discovery, plan reads, prompts, or state creation', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'skillsmith-apply-preflight-'));
+    const stateRoot = join(sandbox, 'watched-state');
+    const cwd = join(stateRoot, 'cwd');
+    const home = join(stateRoot, 'home');
+    const config = join(stateRoot, 'config');
+    const data = join(stateRoot, 'data');
+    const cache = join(sandbox, 'cache');
+    await Promise.all(
+      [cwd, home, config, data, cache].map((path) => mkdir(path, { recursive: true })),
+    );
+    await writeFile(join(config, 'skillsmith.toml'), 'not = [valid\n');
+    const before = await snapshotTree(stateRoot);
+    const env = {
+      HOME: home,
+      XDG_CONFIG_HOME: config,
+      XDG_DATA_HOME: data,
+      XDG_CACHE_HOME: cache,
+      SKILLSMITH_HOME: join(data, 'skillsmith'),
+      CI: '1',
+      NO_COLOR: '1',
+    };
+    try {
+      for (const args of [
+        ['apply', '--plan', join(sandbox, 'absent.plan'), '--file', 'state.toml', '--json'],
+        ['apply', '--plan', join(sandbox, 'absent.plan'), '--yes', '--json'],
+        ['apply', '--plan', join(sandbox, 'absent.plan'), '--dry-run', '--check', '--json'],
+      ] as const) {
+        const result = await runHermeticCli(args, cwd, env);
+        expect(result.code, args.join(' ')).toBe(2);
+        expect(JSON.parse(result.stdout), args.join(' ')).toMatchObject({
+          code: 'usage',
+          exitCode: 2,
+        });
+        expect(await snapshotTree(stateRoot), args.join(' ')).toEqual(before);
+      }
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('EWP-OPT-TS10', () => {
   test.each(['install', 'uninstall', 'dev', 'promote'] as const)(
     '%s rejects --yes with --dry-run as a usage error',

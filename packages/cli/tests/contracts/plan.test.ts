@@ -818,6 +818,44 @@ describe('EWP-CMD-PLAN-TS10', () => {
   });
 });
 
+describe('EWP-CMD-PLAN-TS11', () => {
+  test('plan/check and fresh apply dry-run/check retain one semantic operation product', async () => {
+    const fixture = await planFixture([
+      { name: 'zulu', tool: 'codex', scope: 'user' },
+      { name: 'alpha', tool: 'claude-code', scope: 'project' },
+    ]);
+    const projection = (report: UnknownRecord) => ({
+      artifactPair: report.artifactPair,
+      selection: report.selection,
+      operations: report.operations,
+      checks: report.checks,
+      diagnostics: report.diagnostics,
+    });
+    const args = ['--file', fixture.manifest, '--lockfile', fixture.lock, '--locked'] as const;
+    const plan = await planJson(fixture, ['--locked']);
+    const planCheck = await planJson(fixture, ['--locked', '--check'], 7);
+    const applyDryRun = jsonReport(
+      await runPlanCli(fixture, ['apply', ...args, '--dry-run', '--json']),
+      0,
+      'fresh apply dry-run equivalence',
+    );
+    const applyCheck = jsonReport(
+      await runPlanCli(fixture, ['apply', ...args, '--check', '--json']),
+      7,
+      'fresh apply check equivalence',
+    );
+    expect(projection(planCheck)).toEqual(projection(plan));
+    expect(projection(applyDryRun)).toEqual(projection(plan));
+    expect(projection(applyCheck)).toEqual(projection(plan));
+
+    const empty = await planFixture();
+    const emptyArgs = ['--file', empty.manifest, '--lockfile', empty.lock, '--locked'] as const;
+    expect((await runPlanCli(empty, ['apply', ...emptyArgs, '--check', '--json'])).exitCode).toBe(
+      0,
+    );
+  });
+});
+
 describe('EWP-CMD-PLAN-TS12', () => {
   test('a representative fleet remains bounded and byte-deterministic', async () => {
     const skills = Array.from({ length: 128 }, (_, index) => ({
