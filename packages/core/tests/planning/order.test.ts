@@ -239,5 +239,27 @@ describe('planning canonical order', () => {
     expect(() => orderExecutableOperationsTopologically([earlierManifest, laterPrefix])).toThrow(
       /later|forward/i,
     );
+
+    const firstLock = {
+      ...prefix,
+      operationId: 'group-a-lock',
+      groupId: 'group:a',
+      dependencyMetadata: dependencyMetadata([]),
+    } as unknown as ExecutableOperation;
+    const interveningLock = {
+      ...prefix,
+      operationId: 'group-b-lock',
+      groupId: 'group:b',
+      dependencyMetadata: dependencyMetadata([firstLock.operationId]),
+    } as unknown as ExecutableOperation;
+    const staleDependent = {
+      ...beta,
+      operationId: 'group-c-live',
+      groupId: 'group:c',
+      dependencyMetadata: dependencyMetadata([firstLock.operationId]),
+    } as unknown as ExecutableOperation;
+    expect(() =>
+      orderExecutableOperationsTopologically([firstLock, interveningLock, staleDependent]),
+    ).toThrow(/latest|stale|prefix/i);
   });
 });

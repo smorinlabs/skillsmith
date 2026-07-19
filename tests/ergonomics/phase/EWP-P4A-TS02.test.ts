@@ -7,11 +7,16 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { renderUninstallHuman } from '../../../packages/cli/src/output/install-human.ts';
 import { renderUninstallJson } from '../../../packages/cli/src/output/install-json.ts';
 import { selectExitCode } from '../../../packages/cli/src/util/exit-codes.ts';
+import {
+  type AcquisitionSnapshotAuthorityV1,
+  createAcquisitionRepositoryLifecycleControllerV1,
+  resolveAcquisitionProjectContextV1,
+} from '../../../packages/core/src/acquire/execute.ts';
 import { runInstall, runUninstall } from '../../../packages/core/src/acquire/run.ts';
 import type {
   InstallDeps,
@@ -26,6 +31,7 @@ import { flipFailedError } from '../../../packages/core/src/errors.ts';
 import { scheduleOperationPlan } from '../../../packages/core/src/execution/scheduler.ts';
 import {
   emptyLedgerModel,
+  getPairAt,
   readLedgerState,
   withLedgerPairAt,
   writeLedger,
@@ -43,6 +49,12 @@ import {
 import { orderExecutableOperationsTopologically } from '../../../packages/core/src/planning/order.ts';
 import type { OperationExecutionResult } from '../../../packages/core/src/planning/types.ts';
 import { err, ok } from '../../../packages/core/src/result.ts';
+import { stageLogicalRepositoryEditV1 } from '../../../packages/core/src/state/repositories.ts';
+import {
+  type ExpectedRevisionV1,
+  createExpectedRevisionV1,
+} from '../../../packages/core/src/state/types.ts';
+import { readStatus } from '../../../packages/core/src/status/read.ts';
 import { VERIFIED_AGAINST, type VerifyReport } from '../../../packages/core/src/verify/types.ts';
 import {
   type RemoteFixture,
@@ -283,6 +295,122 @@ const declarationWithTools = (tools: readonly FlipTool[]): string => {
   );
 };
 
+const projectDeclarationWithTools = (tools: readonly FlipTool[]): string =>
+  declarationWithTools(tools).replaceAll('scope = "user"', 'scope = "project"');
+
+const prepareReducedHandoff = async (selected: FixtureFleet, root: string) => {
+  const contentHash = await seedManagedPairs(selected, 'portable-alpha', ['claude-code', 'codex']);
+  await commitManagedRemoval(selected, 'portable-alpha', ['claude-code']);
+  await mkdir(root, { recursive: true });
+  const beforeManifest = declarationWithTools(['claude-code', 'codex']);
+  const afterManifest = beforeManifest.replace(
+    'tools = ["claude-code", "codex"]',
+    'tools = ["codex"]',
+  );
+  const beforeLock = lockSourceFor(beforeManifest, selected.headSha, contentHash);
+  const afterLock = lockSourceFor(afterManifest, selected.headSha, contentHash);
+  await Promise.all([
+    writeFile(join(root, 'skillsmith.toml'), afterManifest),
+    writeFile(join(root, 'skillsmith.lock'), beforeLock),
+  ]);
+  return { beforeManifest, afterManifest, beforeLock, afterLock };
+};
+
+const countingExternalEnv = (selected: FixtureFleet) => {
+  const calls: string[] = [];
+  const env = {
+    ...selected.env,
+    git: {
+      findRepositoryRoot: async (
+        ...args: Parameters<typeof selected.env.git.findRepositoryRoot>
+      ) => {
+        calls.push('git.findRepositoryRoot');
+        return selected.env.git.findRepositoryRoot(...args);
+      },
+      inspectWorktree: async (...args: Parameters<typeof selected.env.git.inspectWorktree>) => {
+        calls.push('git.inspectWorktree');
+        return selected.env.git.inspectWorktree(...args);
+      },
+      resolveRemoteRef: async (...args: Parameters<typeof selected.env.git.resolveRemoteRef>) => {
+        calls.push('git.resolveRemoteRef');
+        return selected.env.git.resolveRemoteRef(...args);
+      },
+      initializeFetch: async (...args: Parameters<typeof selected.env.git.initializeFetch>) => {
+        calls.push('git.initializeFetch');
+        return selected.env.git.initializeFetch(...args);
+      },
+      fetchRef: async (...args: Parameters<typeof selected.env.git.fetchRef>) => {
+        calls.push('git.fetchRef');
+        return selected.env.git.fetchRef(...args);
+      },
+      listTree: async (...args: Parameters<typeof selected.env.git.listTree>) => {
+        calls.push('git.listTree');
+        return selected.env.git.listTree(...args);
+      },
+      readBlob: async (...args: Parameters<typeof selected.env.git.readBlob>) => {
+        calls.push('git.readBlob');
+        return selected.env.git.readBlob(...args);
+      },
+      materializeTree: async (...args: Parameters<typeof selected.env.git.materializeTree>) => {
+        calls.push('git.materializeTree');
+        return selected.env.git.materializeTree(...args);
+      },
+    },
+    http: {
+      request: async (...args: Parameters<typeof selected.env.http.request>) => {
+        calls.push('http.request');
+        return selected.env.http.request(...args);
+      },
+    },
+  };
+  return { calls, env };
+};
+
+const freshStatus = async (
+  selected: FixtureFleet,
+  root: string,
+  target: string,
+  tools: readonly FlipTool[],
+) => {
+  const projectContext = await resolveAcquisitionProjectContextV1({
+    env: selected.env,
+    cwd: root,
+    ...(selected.configuration.explicitConfigPath === undefined
+      ? {}
+      : { explicitConfigPath: selected.configuration.explicitConfigPath }),
+  });
+  const projectPlacement =
+    projectContext.projectRoot === null || projectContext.projectIdentity === null
+      ? ({ state: 'unselected' } as const)
+      : ({
+          state: 'selected',
+          source: 'shared-project',
+          canonicalCwd: await selected.env.realpath(projectContext.effectiveCwd),
+          root: projectContext.projectRoot,
+          identity: projectContext.projectIdentity,
+        } as const);
+  const status = await readStatus(selected.env, {
+    projectContext,
+    projectPlacement,
+    configuration: selected.configuration,
+    targets: [target],
+    tools,
+    toolSelectionSource: 'explicit',
+    scopes: ['user'],
+    scopeSelectionSource: 'explicit',
+    selectionSource: 'explicit-targets',
+    artifactSelection: {
+      state: 'selected',
+      source: 'explicit',
+      manifestPath: join(root, 'skillsmith.toml'),
+      lockPath: join(root, 'skillsmith.lock'),
+      lockSource: 'explicit',
+    },
+  });
+  if (!status.ok) throw new Error(status.error.message);
+  return status.value;
+};
+
 const prepareFinalHandoff = async (
   selected: FixtureFleet,
   tools: readonly FlipTool[] = ['claude-code'],
@@ -438,6 +566,22 @@ const bindingFor = (
   },
 });
 
+const lifecycleRevision = (resourceId: string, marker: string): ExpectedRevisionV1 => {
+  const revision = createExpectedRevisionV1({
+    schemaVersion: 1,
+    domain: 'ledger',
+    resourceId,
+    state: 'absent',
+    targetIdentity: `/fixture/${marker}/placements.json`,
+    targetKind: 'absent',
+    parentIdentity: `/fixture/${marker}`,
+    parentKind: 'directory',
+    parentMetadataIdentity: `metadata:v1:${marker.repeat(64).slice(0, 64)}`,
+  });
+  if (!revision.ok) throw new Error('invalid TS02 lifecycle revision fixture');
+  return revision.value;
+};
+
 const readReached = async (
   stream: ReadableStream<Uint8Array>,
 ): Promise<Readonly<{ kind: string; barrier: string }>> => {
@@ -486,6 +630,43 @@ const seedCrashBoundary = async (
   expect(reached).toEqual({ kind: 'reached', barrier: `after-${stopAfter}` });
   child.kill('SIGKILL');
   await child.exited;
+};
+
+const crashAfterCommittedLivePair = async (
+  selected: FixtureFleet,
+  target: string,
+  tools: readonly FlipTool[],
+) => {
+  const coordinationRoot = join(selected.base, 'after-live-pair-coordination');
+  const child = Bun.spawn([process.execPath, CRASH_CHILD], {
+    cwd: selected.base,
+    env: {
+      ...process.env,
+      HOME: selected.home,
+      XDG_CONFIG_HOME: selected.env.xdg.config,
+      XDG_DATA_HOME: selected.env.xdg.data,
+      XDG_CACHE_HOME: selected.env.xdg.cache,
+      SKILLSMITH_HOME: selected.data,
+    },
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  child.stdin.write(
+    `${JSON.stringify({
+      kind: 'start-live',
+      cwd: selected.base,
+      dataDir: selected.data,
+      target,
+      tools,
+      coordinationRoot,
+    })}\n`,
+  );
+  const reached = await readReached(child.stdout);
+  expect(reached).toEqual({ kind: 'reached', barrier: 'after-live-pair' });
+  child.kill('SIGKILL');
+  await child.exited;
+  return createTestNodeArtifactCoordinatorPorts(coordinationRoot);
 };
 
 describe('EWP-P4A-TS02', () => {
@@ -621,6 +802,36 @@ describe('EWP-P4A-TS02', () => {
     expect(await readPair(userRoot)).toEqual([ownerManifest, ownerLock]);
     expect(await readPair(dual.project)).toEqual([ownerManifest, ownerLock]);
     expect(await dual.env.pathKind(ledgerPathOf(dual.data))).toBe('absent');
+
+    const cliEntrypoint = join(import.meta.dir, '../../../packages/cli/src/index.ts');
+    for (const args of [
+      ['uninstall', '--scope', 'invalid', 'portable-alpha'],
+      ['uninstall', '--scope', 'user', '--all-scopes', 'portable-alpha'],
+    ] as const) {
+      const child = Bun.spawn([process.execPath, cliEntrypoint, ...args], {
+        cwd: selected.base,
+        env: {
+          ...process.env,
+          HOME: selected.home,
+          XDG_CONFIG_HOME: selected.env.xdg.config,
+          XDG_DATA_HOME: selected.env.xdg.data,
+          XDG_CACHE_HOME: selected.env.xdg.cache,
+          SKILLSMITH_HOME: selected.data,
+        },
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      expect(await child.exited, args.join(' ')).not.toBe(0);
+      expect(await selected.env.pathKind(manifestPath), args.join(' ')).toBe('absent');
+      expect(await selected.env.pathKind(lockPath), args.join(' ')).toBe('absent');
+      expect(await selected.env.pathKind(ledgerPathOf(selected.data)), args.join(' ')).toBe(
+        'absent',
+      );
+      expect(await selected.env.pathKind(join(selected.data, 'store')), args.join(' ')).toBe(
+        'absent',
+      );
+    }
   });
 
   test('plans two sources by two tools deterministically under permutation and reuses preview IDs', async () => {
@@ -783,6 +994,31 @@ describe('EWP-P4A-TS02', () => {
       expect(
         await selected.env.pathKind(placementPathFor(selected, succeededTool, 'factor-scan')),
       ).toBe('symlink');
+      const status = await freshStatus(selected, root, 'factor-scan', ['claude-code', 'codex']);
+      const entry = status.entries.find(({ name }) => name === 'factor-scan');
+      expect(entry?.desired.state, failedTool).toBe('present');
+      expect(entry?.locked.state, failedTool).toBe('present');
+      expect(entry?.convergence, failedTool).toBe('drift');
+      expect(
+        entry?.placements.find(({ identity }) => identity.tool === failedTool)?.classification,
+        failedTool,
+      ).toBe('absent');
+      expect(
+        entry?.placements.find(({ identity }) => identity.tool === succeededTool)?.classification,
+        failedTool,
+      ).toBe('store-linked');
+      if (status.artifacts.state !== 'selected')
+        throw new Error('missing selected status artifacts');
+      expect(status.artifacts.manifest).toMatchObject({
+        state: 'present',
+        byteRevision: expect.stringMatching(/^sha256:/u),
+        semanticRevision: expect.stringMatching(/^sha256:/u),
+      });
+      expect(status.artifacts.lock).toMatchObject({
+        state: 'present',
+        byteRevision: expect.stringMatching(/^sha256:/u),
+        semanticRevision: expect.stringMatching(/^sha256:/u),
+      });
       const stableArtifacts = await readPair(root);
 
       const converged = await runInstall(
@@ -874,6 +1110,19 @@ describe('EWP-P4A-TS02', () => {
         await selected.env.pathKind(placementPathFor(selected, succeededTool, 'factor-scan')),
         failedTool,
       ).toBe('absent');
+      const status = await freshStatus(selected, root, 'factor-scan', ['claude-code', 'codex']);
+      const entry = status.entries.find(({ name }) => name === 'factor-scan');
+      expect(entry?.desired.state, failedTool).toBe('present');
+      expect(entry?.locked.state, failedTool).toBe('present');
+      expect(entry?.convergence, failedTool).toBe('drift');
+      expect(
+        entry?.placements.find(({ identity }) => identity.tool === failedTool)?.classification,
+        failedTool,
+      ).toBe('store-linked');
+      expect(
+        entry?.placements.find(({ identity }) => identity.tool === succeededTool)?.classification,
+        failedTool,
+      ).toBe('absent');
 
       const converged = await runUninstall(
         selected.env,
@@ -915,6 +1164,11 @@ describe('EWP-P4A-TS02', () => {
         fixture.plan.operations.map((operation) => bindingFor(operation, calls, failedOperationId)),
       );
       const byId = new Map(results.map((result) => [result.operationId, result.outcome]));
+      for (const result of results) {
+        if (result.outcome !== 'succeeded') {
+          expect(result.actualAfter, `${item.id}:${result.outcome}`).toEqual(result.actualBefore);
+        }
+      }
       expect(byId.get(fixture.betaLiveId), item.id).toBe(item.expectedLater);
       expect(calls.includes(fixture.betaLiveId), item.id).toBe(item.expectedLater === 'succeeded');
       if (item.failure === 'prefix-lock') {
@@ -1254,6 +1508,42 @@ describe('EWP-P4A-TS02', () => {
     expect(afterLock).toContain('name = "portable-alpha"');
   });
 
+  test('refuses reduced recovery when retained ledger path, representation, or source drifts', async () => {
+    for (const drift of ['placement-path', 'placement-representation', 'origin-source'] as const) {
+      const selected = await fleet();
+      const root = join(selected.base, `reduced-${drift}-drift`);
+      const handoff = await prepareReducedHandoff(selected, root);
+      const model = await readLedgerModel(selected);
+      const pair = getPairAt(model, null, 'portable-alpha', 'codex');
+      if (pair === null || pair.pinned == null || pair.origin === undefined) {
+        throw new Error('missing retained Codex authority fixture');
+      }
+      const driftedPair =
+        drift === 'placement-path'
+          ? { ...pair, placementPath: join(selected.base, 'unrelated-custom-placement') }
+          : drift === 'placement-representation'
+            ? { ...pair, pinned: { ...pair.pinned, placement: 'copy' as const } }
+            : {
+                ...pair,
+                origin: {
+                  ...pair.origin,
+                  source: 'fixture.invalid/acme/other//skills/portable-alpha',
+                },
+              };
+      const drifted = withLedgerPairAt(model, null, 'portable-alpha', 'codex', driftedPair);
+      if (!drifted.ok) throw new Error('failed to drift retained Codex authority fixture');
+      await persistLedgerModel(selected, drifted.value);
+
+      const refused = await runDeclaredUninstall(selected, root, ['portable-alpha']);
+      expect(refused.plan.operations, drift).toEqual([]);
+      expect(
+        refused.results.every(({ action }) => action === 'refused'),
+        drift,
+      ).toBeTrue();
+      expect(await readPair(root), drift).toEqual([handoff.afterManifest, handoff.beforeLock]);
+    }
+  });
+
   test('automatically selects an exact reduced sibling handoff with zero Git or network calls', async () => {
     const selected = await fleet();
     const root = join(selected.env.xdg.config, 'skillsmith');
@@ -1339,6 +1629,57 @@ describe('EWP-P4A-TS02', () => {
     expect(repaired.plan.operations.map(({ kind }) => kind)).toEqual(['write-lock']);
     expect(await readPair(root)).toEqual([afterManifest, afterLock]);
     expect(externalCalls).toEqual([]);
+  });
+
+  test('keeps explicit and automatic project reduced/final recovery free of Git and network', async () => {
+    for (const selection of ['explicit', 'automatic'] as const) {
+      for (const mode of ['reduced', 'final'] as const) {
+        const selected = await fleet();
+        const root =
+          selection === 'automatic'
+            ? selected.project
+            : join(selected.base, `project-${selection}-${mode}`);
+        await mkdir(root, { recursive: true });
+        const beforeManifest = projectDeclarationWithTools(
+          mode === 'reduced' ? ['claude-code', 'codex'] : ['claude-code'],
+        );
+        const afterManifest =
+          mode === 'reduced'
+            ? beforeManifest.replace('tools = ["claude-code", "codex"]', 'tools = ["codex"]')
+            : manifestSource(['retained-gamma']).replaceAll('scope = "user"', 'scope = "project"');
+        const staleLock = lockSourceFor(beforeManifest, selected.headSha);
+        await Promise.all([
+          writeFile(join(root, 'skillsmith.toml'), afterManifest),
+          writeFile(join(root, 'skillsmith.lock'), staleLock),
+        ]);
+        const before = await readPair(root);
+        const counted = countingExternalEnv(selected);
+        const result = await runUninstall(
+          counted.env,
+          {
+            targets: ['portable-alpha'],
+            tools: ['claude-code'],
+            scope: 'project',
+            cwd: root,
+            configuration: selected.configuration,
+            ...(selection === 'explicit'
+              ? {
+                  file: join(root, 'skillsmith.toml'),
+                  lockfile: join(root, 'skillsmith.lock'),
+                }
+              : {}),
+          },
+          await depsFor(selected, `project-${selection}-${mode}`),
+        );
+        if (!result.ok) {
+          throw new Error('message' in result.error ? result.error.message : result.error.code);
+        }
+        const refused = reportOf(result.value);
+        expect(refused.plan.operations, `${selection}-${mode}`).toEqual([]);
+        expect(await readPair(root), `${selection}-${mode}`).toEqual(before);
+        expect(counted.calls, `${selection}-${mode}`).toEqual([]);
+      }
+    }
   });
 
   test('refuses split automatic sibling owners before snapshot planning or writes', async () => {
@@ -1701,6 +2042,160 @@ describe('EWP-P4A-TS02', () => {
     });
     expect(calls).not.toContain(fixture.betaLiveId);
     expect(selectExitCode([1, 7, 130])).toBe(130);
+  });
+
+  test('advances only committed durability revisions and retains failed lifecycle revisions', async () => {
+    const fixture = collisionPlan('continue-on-error');
+    const first = fixture.plan.operations[0];
+    const second = fixture.plan.operations[1];
+    if (first === undefined || second === undefined)
+      throw new Error('missing lifecycle operations');
+    const resourceId = 'ledger:p4a-ts02-receipts';
+    const initial = lifecycleRevision(resourceId, 'a');
+    const committed = lifecycleRevision(resourceId, 'b');
+    let current = initial;
+    const stagedExpected: ExpectedRevisionV1[] = [];
+    const repository = {
+      observe: async () => err({ code: 'unused' }),
+      observeRevision: async () => ok(current),
+      stage: async (request: Parameters<typeof stageLogicalRepositoryEditV1>[0]) => {
+        stagedExpected.push(request.expectedRevision);
+        return stageLogicalRepositoryEditV1({ ...request, observedRevision: current });
+      },
+    };
+    const controller = createAcquisitionRepositoryLifecycleControllerV1({
+      authority: {
+        ledgerResourceId: resourceId,
+        repositories: { ledger: repository, live: repository, store: repository },
+      } as unknown as AcquisitionSnapshotAuthorityV1,
+      snapshotId: `snapshot:v1:${'e'.repeat(64)}`,
+      expectedRevisions: [initial],
+    });
+    const execute = async (
+      operation: typeof first,
+      outcome: 'succeeded' | 'failed',
+      nextRevision?: ExpectedRevisionV1,
+    ) => {
+      const binding = controller.bind(
+        operation,
+        {
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: operation.pairId,
+          unstartedForce: null,
+          observeActualBefore: async () => operation.before,
+          execute: async () => {
+            if (nextRevision !== undefined) current = nextRevision;
+            return createOperationExecutionResult({
+              operationId: operation.operationId,
+              outcome,
+              actualBefore: operation.before,
+              actualAfter: outcome === 'succeeded' ? operation.after : operation.before,
+              force: null,
+              error:
+                outcome === 'succeeded'
+                  ? null
+                  : { code: 'fixture-failed', message: 'fixture failed', remediation: 'retry' },
+            });
+          },
+        },
+        [resourceId],
+      );
+      return binding.execute({
+        operationId: operation.operationId,
+        groupId: operation.groupId,
+        pairId: operation.pairId,
+        actualBefore: operation.before,
+        unstartedForce: null,
+        execute: async () => {
+          throw new Error('validated lifecycle binding must not be re-entered');
+        },
+      });
+    };
+
+    expect((await execute(first, 'succeeded', committed)).outcome).toBe('succeeded');
+    expect((await execute(second, 'failed')).outcome).toBe('failed');
+    expect(stagedExpected).toEqual([initial, committed]);
+    expect(current).toEqual(committed);
+  });
+
+  test('SIGKILL after one durable live-pair commit leaves exact committed truth and converges', async () => {
+    const selected = await fleet();
+    const tools = ['claude-code', 'codex'] as const;
+    await seedManagedPairs(selected, 'portable-alpha', tools);
+    const coordinator = await crashAfterCommittedLivePair(selected, 'portable-alpha', tools);
+
+    const interrupted = await readLedgerModel(selected);
+    expect(interrupted.history).toHaveLength(1);
+    expect(Object.keys(interrupted.transactions)).toEqual([]);
+    const committed = interrupted.history[0];
+    expect(committed).toMatchObject({
+      disposition: 'forward',
+      phase: 'committed',
+      intent: { kind: 'remove', skill: 'portable-alpha' },
+    });
+    const removedTool = committed?.intent.tool;
+    if (removedTool !== 'claude-code' && removedTool !== 'codex') {
+      throw new Error('live-pair crash fixture did not commit one selected tool');
+    }
+    const retainedTool = removedTool === 'claude-code' ? 'codex' : 'claude-code';
+    expect(getPairAt(interrupted, null, 'portable-alpha', removedTool)).toBeNull();
+    expect(getPairAt(interrupted, null, 'portable-alpha', retainedTool)).not.toBeNull();
+    expect(
+      await selected.env.pathKind(placementPathFor(selected, removedTool, 'portable-alpha')),
+    ).toBe('absent');
+    expect(
+      await selected.env.pathKind(placementPathFor(selected, retainedTool, 'portable-alpha')),
+    ).toBe('symlink');
+    expect(await coordinator.recovery.discover()).toEqual([]);
+
+    const staleLeasePath = `${ledgerPathOf(selected.data)}.lock`;
+    expect(await selected.env.pathKind(staleLeasePath)).toBe('dir');
+    const expired = new Date(0);
+    await utimes(staleLeasePath, expired, expired);
+
+    const converged = await runUninstall(
+      selected.env,
+      {
+        targets: ['portable-alpha'],
+        tools,
+        scope: 'user',
+        noSave: true,
+        cwd: selected.base,
+        configuration: selected.configuration,
+      },
+      await depsFor(selected, 'after-live-pair-converge'),
+    );
+    if (!converged.ok) {
+      throw new Error(
+        `live-pair crash convergence failed: ${
+          'message' in converged.error ? converged.error.message : converged.error.code
+        }`,
+      );
+    }
+    expect(converged.value.results.find(({ tool }) => tool === retainedTool)?.action).toBe(
+      'removed',
+    );
+    expect(
+      getPairAt(await readLedgerModel(selected), null, 'portable-alpha', retainedTool),
+    ).toBeNull();
+    expect(await selected.env.pathKind(staleLeasePath)).toBe('absent');
+
+    const noop = await runUninstall(
+      selected.env,
+      {
+        targets: ['portable-alpha'],
+        tools,
+        scope: 'user',
+        noSave: true,
+        cwd: selected.base,
+        configuration: selected.configuration,
+      },
+      await depsFor(selected, 'after-live-pair-noop'),
+    );
+    if (!noop.ok) throw new Error('live-pair crash no-op failed');
+    expect(noop.value.plan.operations).toEqual([]);
+    expect(noop.value.results.every(({ action }) => action === 'noop')).toBeTrue();
   });
 
   test('renders the same current report in human/JSON form and publishes no atomicity promise', async () => {

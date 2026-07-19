@@ -823,6 +823,33 @@ describe('G3B-02 operation scheduler', () => {
       ),
     ).rejects.toThrow(/later artifact prefix/i);
     expect(laterEdgeCalls).toEqual([]);
+
+    const firstGroup = operationFor({ skill: 'stale-prefix-a' }).groupId;
+    const secondGroup = operationFor({ skill: 'stale-prefix-b' }).groupId;
+    const thirdGroup = operationFor({ skill: 'stale-prefix-c' }).groupId;
+    const firstLock = artifactOperationFor({ kind: 'write-lock', groupId: firstGroup });
+    const secondLock = artifactOperationFor({
+      kind: 'write-lock',
+      groupId: secondGroup,
+      dependencies: [firstLock.operationId],
+    });
+    const staleLive = operationFor({
+      skill: 'stale-prefix',
+      groupId: thirdGroup,
+      dependencies: [firstLock.operationId],
+    });
+    const stalePrefixPlan = structuralPlanFor(
+      [firstLock, secondLock, staleLive],
+      'continue-on-error',
+    );
+    const stalePrefixCalls: string[] = [];
+    await expect(
+      scheduleOperationPlan(
+        stalePrefixPlan,
+        stalePrefixPlan.operations.map((operation) => bindingFor(operation, stalePrefixCalls)),
+      ),
+    ).rejects.toThrow(/latest|stale|prefix/i);
+    expect(stalePrefixCalls).toEqual([]);
   });
 
   test('continues independent doctor artifact repairs after ledger migration failure', async () => {
