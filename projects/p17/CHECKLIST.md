@@ -1250,14 +1250,14 @@ Downstream coverage obligations: EWP-CMD-PLAN-TS11, EWP-P4B-TS02, EWP-WF06, EWP-
 
 ## P17-G4B-02 — Saved-plan schema, exact apply, approval, scoped staleness, and validation modes
 
-Phase: 4B; status: **planned**; dependencies: P17-G4B-01.
+Phase: 4B; status: **ready**; dependencies: P17-G4B-01.
 Required-now validations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-OPT-TS09, EWP-P4B-TS02, EWP-P4B-TS03, EWP-P4B-TS07, EWP-WF06, EWP-WF07, EWP-WF08, EWP-WF15.
 Downstream coverage obligations: EWP-WF13.
 
 ### Group gates
 
-- [ ] P17-G4B-02:mapped _(pending)_
-- [ ] P17-G4B-02:ready _(pending)_
+- [x] P17-G4B-02:mapped _(passed)_
+- [x] P17-G4B-02:ready _(passed)_
 - [ ] P17-G4B-02:test-first _(pending)_
 - [ ] P17-G4B-02:minimal-implementation _(pending)_
 - [ ] P17-G4B-02:targeted-green _(pending)_
@@ -1291,8 +1291,8 @@ Downstream coverage obligations: EWP-WF13.
 - [ ] **EWP-CMD-APPLY-TS14** — real manifest with multi-tool, multi-scope, source reuse, portable _(command-test; planned)_
 - [ ] **EWP-CMD-PLAN-TS11** — apply-dry-run and apply-check compatibility equivalence. _(command-test; planned)_
 - [ ] **EWP-OPT-TS09** — Exhaust fresh versus saved apply modes: saved plan allows exact dry-run or check _(option-gate; planned)_
-- [ ] **EWP-P4B-T03** — Saved-plan schema, permissions, recursive redaction, automatic _(phase-task; planned)_
-- [ ] **EWP-P4B-T04** — Apply executor, approval, saved-plan execution, and precondition revalidation. _(phase-task; planned)_
+- [ ] **EWP-P4B-T03** — Saved-plan schema, permissions, recursive redaction, automatic _(phase-task; ready)_
+- [ ] **EWP-P4B-T04** — Apply executor, approval, saved-plan execution, and precondition revalidation. _(phase-task; ready)_
 - [ ] **EWP-P4B-TS02** — Plan/check/apply-dry-run equivalence and apply idempotence. _(phase-test; planned)_
 - [ ] **EWP-P4B-TS03** — Saved-plan exact execution; semantic-manifest/canonical-lock/resource/ _(phase-test; planned)_
 - [ ] **EWP-P4B-TS07** — Portable plan zero-local-path proof; machine-bound reason/path/precondition _(phase-test; planned)_
