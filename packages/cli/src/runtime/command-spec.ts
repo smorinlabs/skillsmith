@@ -56,7 +56,9 @@ const generatedHelp = (spec: CommandSpec): string => {
 
 /** Construct a fresh Commander node exclusively from one CommandSpec using public APIs. */
 export const createCommandFromSpec = (spec: CommandSpec): Command => {
-  const command = new Command(leafName(spec)).description(spec.description);
+  const command = new Command(leafName(spec))
+    .description(spec.description)
+    .allowExcessArguments(false);
   for (const alias of spec.aliases) command.alias(alias);
   for (const argument of spec.arguments) command.addArgument(argumentForSpec(argument));
   for (const option of spec.options) {

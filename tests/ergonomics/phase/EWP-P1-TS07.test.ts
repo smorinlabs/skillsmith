@@ -6,6 +6,7 @@ import { walk } from '../../../packages/cli/src/completion/walk.ts';
 import { canonicalizeCommanderTree } from '../../../packages/cli/src/contracts/commander-surface.ts';
 import { buildProgram } from '../../../packages/cli/src/program.ts';
 import type { RuntimeOutcome } from '../../../packages/cli/src/runtime/adapter.ts';
+import { createCommandFromSpec } from '../../../packages/cli/src/runtime/command-spec.ts';
 import { createCurrentRendererRegistry } from '../../../packages/cli/src/runtime/current-renderers.ts';
 import type { CommandSpec } from '../../../packages/cli/src/spec/types.ts';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
@@ -904,6 +905,65 @@ describe('EWP-P1-TS07', () => {
     expect(writes.stdout.join('')).toBe('fixture-human\n');
     expect(writes.stderr.join('')).toBe('');
     expect(writes.exits.at(-1) ?? 0).toBe(0);
+  });
+
+  test('CommandSpec closes no-argument, fixed, optional, and variadic parser arity', async () => {
+    const fixture = (name: string, arguments_: CommandSpec['arguments']): CommandSpec => ({
+      name,
+      path: `skillsmith ${name}`,
+      aliases: [],
+      group: 'maintain',
+      primaryQuestion: 'Does the declared argument list close parser arity?',
+      description: 'Exercise generic CommandSpec argument closure.',
+      arguments: arguments_,
+      options: [],
+      examples: [],
+      capability: 'read',
+      reportKind: name,
+      application: 'help',
+    });
+    const argument = (
+      name: string,
+      required: boolean,
+      variadic = false,
+    ): CommandSpec['arguments'][number] => ({
+      name,
+      required,
+      variadic,
+      choices: [],
+      defaultValue: undefined,
+      description: `${name} fixture argument`,
+    });
+    const configured = (spec: CommandSpec) =>
+      createCommandFromSpec(spec)
+        .exitOverride()
+        .configureOutput({ writeErr: () => {}, writeOut: () => {} });
+
+    let noArgumentDispatches = 0;
+    const noArguments = configured(fixture('no-arguments', []));
+    noArguments.action(() => noArgumentDispatches++);
+    await expect(
+      noArguments.parseAsync(['node', 'no-arguments', 'unexpected']),
+    ).rejects.toMatchObject({ code: 'commander.excessArguments' });
+    expect(noArgumentDispatches).toBe(0);
+
+    const fixedCalls: unknown[][] = [];
+    const fixed = configured(
+      fixture('fixed', [argument('required', true), argument('optional', false)]),
+    );
+    fixed.action((...values) => fixedCalls.push(values.slice(0, -2)));
+    await fixed.parseAsync(['node', 'fixed', 'one']);
+    await fixed.parseAsync(['node', 'fixed', 'one', 'two']);
+    await expect(fixed.parseAsync(['node', 'fixed', 'one', 'two', 'three'])).rejects.toMatchObject({
+      code: 'commander.excessArguments',
+    });
+    expect(fixedCalls).toHaveLength(2);
+
+    const variadicCalls: unknown[][] = [];
+    const variadic = configured(fixture('variadic', [argument('items', true, true)]));
+    variadic.action((...values) => variadicCalls.push(values.slice(0, -2)));
+    await variadic.parseAsync(['node', 'variadic', 'one', 'two', 'three']);
+    expect(variadicCalls).toHaveLength(1);
   });
 
   test('a current command resolves injected application and renderer registries through runtime IO', async () => {

@@ -86,7 +86,7 @@ describe('planning domain types', () => {
   test('keeps init and its runtime-only opaque image closed outside saved-plan v1', () => {
     const commandParity: Equal<
       CurrentMutatorCommand,
-      'install' | 'uninstall' | 'dev' | 'promote' | 'doctor' | 'export' | 'init'
+      'install' | 'uninstall' | 'dev' | 'promote' | 'doctor' | 'export' | 'init' | 'plan'
     > = true;
     type OpaqueManifest = Extract<OperationImage, { readonly kind: 'opaque-manifest' }>;
     const shapeParity: Equal<

@@ -5971,7 +5971,10 @@
         "tests/ergonomics/phase/EWP-P4B-TS01.test.ts",
         "tests/ergonomics/phase/EWP-P4B-TS04.test.ts",
         "tests/ergonomics/fixtures/p4b-plan/cases.ts",
-        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts",
+        "packages/cli/src/runtime/command-spec.ts",
+        "packages/core/tests/planning/types.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS07.test.ts"
       ],
       "integrationOwner": "root-codex-goal",
       "impactedValidations": [
@@ -6026,7 +6029,9 @@
         "bun test packages/cli/tests/contracts/options.test.ts",
         "bun test tests/ergonomics/phase/EWP-P1-TS10.test.ts --test-name-pattern EWP-P1-TS10",
         "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11",
-        "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08"
+        "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08",
+        "bun test packages/core/tests/planning/types.test.ts",
+        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07"
       ],
       "implementers": ["root-codex-goal"],
       "reviewer": null,
@@ -6080,7 +6085,8 @@
         "projects/p17/evidence/P17-G4B-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-01.md#ready-review",
         "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result",
-        "projects/p17/evidence/P17-G4B-01.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4B-01.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4B-01.md#approved-execution-ownership-amendment"
       ]
     },
     {
