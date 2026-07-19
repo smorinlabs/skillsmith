@@ -106,6 +106,16 @@ protocol; a narrow resource-digest authorization permits opaque old manifest byt
 without relaxing candidate validation. Noop, refusal, and dry-run acquire no mutation authority.
 Sibling locks, live placements, stores, and ledgers stay outside the service's write capability.
 
+`runPlanApplication` is the read-only desired/current convergence service. It validates artifact,
+scope, tool, check, and output grammar before context reads; selects one manifest/lock pair; resolves
+portable source pins through injected acquisition capabilities; and projects one canonical
+`OperationPlan<'plan'>`. Planning observes live placements and registered tool capabilities without
+mutating the manifest, lock, ledger, live roots, store, or configuration. Human and JSON output are
+views of the same strict `plan-report@1` DTO. An optional saved plan is encoded by the persisted
+`plan@1` artifact codec with resource, selection, and capability preconditions, then written by a
+focused owner-only create/atomic-replace writer. That isolated output write is not plan execution;
+approval, staleness validation, and execution remain separate application authority.
+
 ## Result-based error handling
 
 Every fallible function in core returns `Result<T, SkillSmithError>`:
@@ -228,7 +238,8 @@ or define a second public schema.
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
 `commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
 `flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
-`init@1`, `uninstall@2`, `verify@1`, `error@1`, and `capability-snapshot@1`. Each descriptor fixes recursive
+`init@1`, `plan-report@1`, `uninstall@2`, `verify@1`, `error@1`, and
+`capability-snapshot@1`. Each descriptor fixes recursive
 unknown-field rejection, embedded kind and version policy, JSON indentation, terminal framing, and
 conservative compatibility. Current codecs declare no migrations. Lifecycle v2 contracts are
 registered for exact desired-state reports while the live install/uninstall command mappings remain
@@ -255,6 +266,12 @@ types. The ordinary core root exposes `artifactContractRegistry` and the five do
 the concrete codecs and not a migration executor. Registry and repository code resolve codecs
 through the one artifact registry; public barrels and the legacy placement facade do not parse or
 serialize the formats again.
+
+Saved-plan output uses a focused writer rather than the manifest/lock transaction. It creates an
+owner-only stage beside the exact requested target, fsyncs the staged bytes, and publishes by
+rename. Create-only mode refuses an existing target. Forced replacement first retains a bounded
+same-directory backup and restores it if publication or post-publication durability fails; the
+writer never scans for targets or receives authority over selected project state.
 
 `readManifestArtifact`, `readLockArtifact`, `readSavedPlanArtifact`, `readLedgerArtifact`, and
 `readJournalArtifact` form a read-only repository over injected `pathKind` and `readBytes`

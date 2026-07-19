@@ -16,6 +16,7 @@ import {
   type InitReport,
   type InstallApplicationReport,
   type ListReport,
+  type PlanApplicationReport,
   type PromoteApplicationReport,
   type StatusApplicationReport,
   type UninstallApplicationReport,
@@ -55,6 +56,8 @@ import {
 import { renderInstallJson, renderUninstallJson } from '../output/install-json.ts';
 import { renderListHuman } from '../output/list-human.ts';
 import { renderListJson } from '../output/list-json.ts';
+import { renderPlanHuman } from '../output/plan-human.ts';
+import { renderPlanJson } from '../output/plan-json.ts';
 import { renderStatusHuman } from '../output/status-human.ts';
 import { renderStatusJson } from '../output/status-json.ts';
 import {
@@ -442,6 +445,20 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
           ? (errorOutput(outcome, 'json') ?? '')
           : withDiagnostics(outcome, renderInitJson(value as InitReport, currentWireCodecs.init)),
     ),
+    plan: {
+      human: (outcome) => {
+        const value = report<PlanApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'human') ?? '')
+          : withDiagnostics(outcome, renderPlanHuman(value));
+      },
+      json: (outcome) => {
+        const value = report<PlanApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : renderPlanJson(value, currentWireCodecs.plan);
+      },
+    },
     install: lifecycleRenderer<NonNullable<InstallApplicationReport['value']>>(
       (value, outcome) =>
         renderInstallHuman(value, exitCodeForClass(outcome.exitClass), currentInstallStaticNotice),

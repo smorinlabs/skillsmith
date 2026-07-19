@@ -37,14 +37,23 @@ export interface PortErrorDescriptor {
   readonly message?: string;
 }
 
-export const portError = (error: PortError): PortError =>
-  Object.freeze({
+const normalizedPortErrors = new WeakSet<object>();
+
+export const portError = (error: PortError): PortError => {
+  const normalized = Object.freeze({
     capability: error.capability,
     operation: error.operation,
     code: error.code,
     message: error.message,
     context: Object.freeze({ ...error.context }),
   });
+  normalizedPortErrors.add(normalized);
+  return normalized;
+};
+
+/** Recognize only values created by the trusted port boundary without inspecting hostile objects. */
+export const isNormalizedPortError = (value: unknown): value is PortError =>
+  typeof value === 'object' && value !== null && normalizedPortErrors.has(value);
 
 const safeMessage = (value: unknown): string => {
   const raw = value instanceof Error ? value.message : typeof value === 'string' ? value : '';

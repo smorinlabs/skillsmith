@@ -6,6 +6,7 @@ import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import {
   type ArtifactCodec,
   type ArtifactCodecError,
+  LEDGER_ARTIFACT_MAX_NODES,
   artifactCodecError,
   canonicalJsonBytes,
   decodeArtifactUtf8,
@@ -36,6 +37,8 @@ const STATIC_PATHS = new Set(
   ),
 );
 const SECRET_CANARY = 'P17_SECRET_CANARY';
+const PLAN_ARTIFACT_MAX_NODES = LEDGER_ARTIFACT_MAX_NODES;
+const JOURNAL_ARTIFACT_MAX_NODES = 20_000;
 
 type Path = readonly (string | number)[];
 type SnapshotFailure = {
@@ -63,9 +66,10 @@ const snapshotOrdinary = (
   path: Path = [],
   active = new Set<object>(),
   budget = { nodes: 0 },
+  maxNodes = JOURNAL_ARTIFACT_MAX_NODES,
 ): Result<unknown, SnapshotFailure> => {
   budget.nodes += 1;
-  if (budget.nodes > 20_000 || path.length > 64) {
+  if (budget.nodes > maxNodes || path.length > 64) {
     return err({ reason: 'invalid-shape', path });
   }
   if (typeof input === 'string') {
@@ -104,7 +108,13 @@ const snapshotOrdinary = (
         if (descriptor === undefined || !('value' in descriptor)) {
           return err({ reason: 'invalid-shape', path: [...path, index] });
         }
-        const child = snapshotOrdinary(descriptor.value, [...path, index], active, budget);
+        const child = snapshotOrdinary(
+          descriptor.value,
+          [...path, index],
+          active,
+          budget,
+          maxNodes,
+        );
         if (!child.ok) return child;
         values.push(child.value);
       }
@@ -121,7 +131,7 @@ const snapshotOrdinary = (
       if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
         return err({ reason: 'invalid-shape', path: [...path, key] });
       }
-      const child = snapshotOrdinary(descriptor.value, [...path, key], active, budget);
+      const child = snapshotOrdinary(descriptor.value, [...path, key], active, budget, maxNodes);
       if (!child.ok) return child;
       Object.defineProperty(clone, key, {
         value: child.value,
@@ -1310,7 +1320,13 @@ export const ownArtifactDto = (
   artifactId: 'plan' | 'journal',
   input: unknown,
 ): Result<unknown, ArtifactCodecError> => {
-  const snapshot = snapshotOrdinary(input);
+  const snapshot = snapshotOrdinary(
+    input,
+    [],
+    new Set<object>(),
+    { nodes: 0 },
+    artifactId === 'plan' ? PLAN_ARTIFACT_MAX_NODES : JOURNAL_ARTIFACT_MAX_NODES,
+  );
   return snapshot.ok
     ? snapshot
     : err(codecError(artifactId, snapshot.error.reason, snapshot.error.path));
@@ -1629,6 +1645,10 @@ export const savedPlanV1Codec: ArtifactCodec<'plan', 1, SavedPlanV1Dto, SavedPla
     },
     encode(model: SavedPlanV1) {
       const dto = toSavedPlanV1Dto(model);
-      return dto.ok ? canonicalJsonBytes('plan', dto.value, 1, true) : dto;
+      return dto.ok
+        ? canonicalJsonBytes('plan', dto.value, 1, true, {
+            maxNodes: PLAN_ARTIFACT_MAX_NODES,
+          })
+        : dto;
     },
   });

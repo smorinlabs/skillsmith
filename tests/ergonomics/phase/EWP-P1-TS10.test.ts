@@ -65,6 +65,7 @@ const EXPECTED_PATHS = [
   'skillsmith init',
   'skillsmith install',
   'skillsmith list',
+  'skillsmith plan',
   'skillsmith promote',
   'skillsmith status',
   'skillsmith uninstall',
@@ -85,6 +86,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith init', 'init', 1],
   ['skillsmith install', 'install', 2],
   ['skillsmith list', 'list', 3],
+  ['skillsmith plan', 'plan-report', 1],
   ['skillsmith promote', 'flip', 4],
   ['skillsmith status', 'status', 1],
   ['skillsmith uninstall', 'uninstall', 2],
@@ -110,6 +112,7 @@ const EXPECTED_CODECS = [
   ['install', 2],
   ['list', 2],
   ['list', 3],
+  ['plan-report', 1],
   ['status', 1],
   ['uninstall', 1],
   ['uninstall', 2],
@@ -198,6 +201,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     indent: 2,
     terminalLf: true,
   },
+  'plan-report@1': {
+    wireKind: 'skillsmith.plan-report',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
   'status@1': {
     wireKind: 'skillsmith.status',
     embeddedVersion: 'schemaVersion',
@@ -250,6 +259,7 @@ const GOLDEN_FILES = {
   flip: 'flip.stdout',
   install: 'install.stdout',
   list: 'list.stdout',
+  plan: 'plan.stdout',
   status: 'status.stdout',
   uninstall: 'uninstall.stdout',
   verify: 'verify.stdout',
@@ -284,6 +294,7 @@ const V1_RUNTIME_EXPORTS = [
   'healthV1Codec',
   'initV1Codec',
   'installV1Codec',
+  'planV1Codec',
   'toAgentsV1Dto',
   'toCapabilitySnapshotV1Dto',
   'toCommandsV1Dto',
@@ -530,6 +541,7 @@ const renderedCurrentBytes = (): CurrentBytes => {
     flip,
     install: render('install', CURRENT_RENDERER_REPORTS.install),
     list: render('list', CURRENT_RENDERER_REPORTS.list),
+    plan: render('plan', CURRENT_RENDERER_REPORTS.plan),
     status: render('status', CURRENT_RENDERER_REPORTS.status),
     uninstall: render('uninstall', CURRENT_RENDERER_REPORTS.uninstall),
     verify: render('verify', CURRENT_RENDERER_REPORTS.verify),
@@ -595,7 +607,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the seventeen live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the eighteen live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -604,7 +616,7 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(17);
+    expect(new Set(paths).size).toBe(18);
     for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
@@ -640,6 +652,7 @@ describe('EWP-P1-TS10', () => {
       ['install', 'skillsmith install'],
       ['init', 'skillsmith init'],
       ['list', 'skillsmith list'],
+      ['plan', 'skillsmith plan'],
       ['promote', 'skillsmith promote'],
       ['status', 'skillsmith status'],
       ['uninstall', 'skillsmith uninstall'],
@@ -2265,6 +2278,7 @@ describe('EWP-P1-TS10', () => {
       ['install', 2, CURRENT_JSON_GOLDENS.install],
       ['list', 2, HISTORICAL_JSON_GOLDENS.list],
       ['list', 3, CURRENT_JSON_GOLDENS.list],
+      ['plan-report', 1, CURRENT_JSON_GOLDENS.plan],
       ['status', 1, CURRENT_JSON_GOLDENS.status],
       ['uninstall', 1, HISTORICAL_JSON_GOLDENS.uninstall],
       ['uninstall', 2, CURRENT_JSON_GOLDENS.uninstall],

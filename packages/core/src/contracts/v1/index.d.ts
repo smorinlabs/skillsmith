@@ -629,6 +629,288 @@ export interface InitV1Dto {
 export declare const initV1Codec: WireCodec<'init', 1, InitV1Dto>;
 export declare const toInitV1Dto: (report: InitReport) => InitV1Dto;
 
+type PlanLocationV1Dto =
+  | { kind: 'portable'; token: string }
+  | { kind: 'machine-bound'; path: string };
+type PlanSourceV1Dto =
+  | {
+      kind: 'portable';
+      identity: { host: string; repository: string; path: string | null };
+      requestedRef: string | null;
+      resolvedSha: string;
+      sourcePath: string;
+      contentHash: string;
+    }
+  | { kind: 'local-dev'; path: string; contentHash: string };
+type PlanLiveResourceV1Dto = {
+  kind: 'live';
+  skill: string;
+  tool: 'claude-code' | 'codex' | 'kilo-code' | 'opencode';
+  scope: 'user' | 'project';
+  projectRoot: PlanLocationV1Dto | null;
+  location: PlanLocationV1Dto;
+};
+type PlanResourceV1Dto =
+  | { kind: 'manifest-bytes'; location: PlanLocationV1Dto }
+  | { kind: 'lock'; location: PlanLocationV1Dto }
+  | { kind: 'ledger'; projectRoot: PlanLocationV1Dto | null }
+  | { kind: 'ledger-schema'; projectRoot: PlanLocationV1Dto | null }
+  | PlanLiveResourceV1Dto
+  | { kind: 'store'; contentHash: string }
+  | { kind: 'project-context'; root: PlanLocationV1Dto };
+type PlanImageV1Dto =
+  | { kind: 'absent'; resource: PlanResourceV1Dto }
+  | {
+      kind: 'placement';
+      resource: PlanLiveResourceV1Dto;
+      classification: 'dev' | 'pinned' | 'store-linked' | 'unmanaged';
+      representation: 'symlink' | 'copy' | 'other';
+      linkTarget: PlanLocationV1Dto | null;
+      dangling: boolean;
+      source: PlanSourceV1Dto | null;
+      contentHash: string | null;
+    }
+  | {
+      kind: 'manifest';
+      location: PlanLocationV1Dto;
+      shape: 'canonical' | 'legacy';
+      version: 1;
+      byteHash: string;
+      semanticHash: string;
+      value: {
+        version: 1;
+        defaults: {
+          tools: ('claude-code' | 'codex' | 'kilo-code' | 'opencode')[] | null;
+          scope: 'user' | 'project' | null;
+          path: string | null;
+        } | null;
+        registry: { default: string | null } | null;
+        skills: Array<{
+          name: string;
+          source: { host: string; repository: string; path: string | null };
+          ref: string | null;
+          tools: ('claude-code' | 'codex' | 'kilo-code' | 'opencode')[];
+          scope: 'user' | 'project';
+          placement: 'symlink' | 'copy';
+          path: string | null;
+        }>;
+      };
+    }
+  | {
+      kind: 'lock';
+      location: PlanLocationV1Dto;
+      version: 1;
+      canonicalHash: string;
+      value: {
+        version: 1;
+        hashSchemaVersion: 1;
+        manifestHash: string;
+        skills: Array<{
+          name: string;
+          source: string;
+          requestedRef: string | null;
+          resolvedSha: string;
+          sourcePath: string;
+          contentHash: string;
+        }>;
+      };
+    }
+  | {
+      kind: 'ledger';
+      projectRoot: PlanLocationV1Dto | null;
+      schemaVersion: 1 | 2;
+      byteHash: string;
+      semanticHash: string;
+    };
+
+export type PlanOperationV1Dto = {
+  operationId: string;
+  groupId: string;
+  pairId: string | null;
+  kind:
+    | 'install'
+    | 'update'
+    | 'remove'
+    | 'link-dev'
+    | 'promote'
+    | 'move-scope'
+    | 'adapt'
+    | 'repair'
+    | 'write-manifest'
+    | 'write-lock'
+    | 'migrate-project-config'
+    | 'migrate-ledger';
+  dependsOn: string[];
+  skill: string | null;
+  source: PlanSourceV1Dto | null;
+  tool: 'claude-code' | 'codex' | 'kilo-code' | 'opencode' | null;
+  scope: 'user' | 'project' | null;
+  before: PlanImageV1Dto;
+  after: PlanImageV1Dto;
+  reason: { code: string; message: string };
+  selectionSource: 'explicit-targets' | 'explicit-all' | 'bounded-default';
+  preconditionIds: string[];
+  requiredCheckIds: string[];
+  reversibility:
+    | { kind: 'none'; retentionResourceIds: [] }
+    | {
+        kind: 'reversible' | 'conditional';
+        retentionResourceIds: [string, ...string[]];
+      };
+  mutates: { live: boolean; manifest: boolean; lock: boolean; ledger: boolean };
+  conflict:
+    | null
+    | {
+        class: 'unmanaged-target' | 'modified-managed-target' | 'destination-exists';
+        normal: 'refuse';
+        forced: 'backup-and-replace';
+        target: PlanResourceV1Dto;
+        backup: 'required';
+      }
+    | {
+        class: 'source-changed';
+        normal: 'refuse';
+        forced: 'replace';
+        target: PlanResourceV1Dto;
+        backup: 'none';
+      };
+};
+export type PlanCheckV1Dto =
+  | {
+      checkId: string;
+      blocking: true;
+      operationIds: [string, ...string[]];
+      kind: 'source-resolution';
+      source: Extract<PlanSourceV1Dto, { kind: 'portable' }>;
+    }
+  | {
+      checkId: string;
+      blocking: true;
+      operationIds: [string, ...string[]];
+      kind: 'capability';
+      capabilityPreconditionId: string;
+    }
+  | {
+      checkId: string;
+      blocking: true;
+      operationIds: [string, ...string[]];
+      kind: 'content-integrity';
+      source: PlanSourceV1Dto;
+      expectedContentHash: string;
+    }
+  | {
+      checkId: string;
+      blocking: true;
+      operationIds: [string, ...string[]];
+      kind: 'verification';
+      tool: 'claude-code' | 'codex' | 'kilo-code' | 'opencode';
+      mode: 'static' | 'static+deep';
+      expectedContentHash: string;
+    }
+  | {
+      checkId: string;
+      blocking: true;
+      operationIds: [string, ...string[]];
+      kind: 'precondition-validation';
+      preconditionIds: [string, ...string[]];
+    };
+export interface PlanDiagnosticV1Dto {
+  diagnosticId: string;
+  kind: 'noop' | 'skip' | 'refuse' | 'conflict' | 'warning';
+  severity: 'info' | 'warning' | 'error';
+  refusalClass: 'usage' | 'state' | 'capability' | 'source' | 'permission' | null;
+  affected: {
+    skill: string | null;
+    source:
+      | {
+          kind: 'portable';
+          identity: { host: string; repository: string; path: string | null };
+          requestedRef: string | null;
+          resolvedSha: string;
+          sourcePath: string;
+          contentHash: string;
+        }
+      | { kind: 'local-dev'; path: string; contentHash: string }
+      | null;
+    tool: 'claude-code' | 'codex' | 'kilo-code' | 'opencode' | null;
+    scope: 'user' | 'project' | null;
+    path: { kind: 'portable'; token: string } | { kind: 'machine-bound'; path: string } | null;
+  };
+  correlation: { groupId: string | null; pairId: string | null; operationId: string | null };
+  reason: { code: string; message: string };
+  selectionSource: 'explicit-targets' | 'explicit-all' | 'bounded-default';
+}
+
+export interface PlanV1Dto {
+  schemaVersion: 1;
+  kind: 'skillsmith.plan-report';
+  command: 'plan';
+  state: 'ready' | 'refused';
+  artifactPair: {
+    manifestPath: string;
+    lockPath: string;
+    lockSource: 'explicit' | 'sibling';
+    selectionSource: 'explicit' | 'discovered-project' | 'project-default' | 'user-default';
+  };
+  project: {
+    effectiveCwd: string;
+    root: string | null;
+    identity: string | null;
+  };
+  options: { locked: boolean; prune: boolean; check: boolean };
+  selection: {
+    selectionSource: 'explicit-targets' | 'explicit-all' | 'bounded-default';
+    selectionOutcome: 'selected' | 'filter-noop';
+    requestedTools: ('claude-code' | 'codex' | 'kilo-code' | 'opencode')[];
+    requestedScope: 'user' | 'project' | null;
+    skills: string[];
+    tools: ('claude-code' | 'codex' | 'kilo-code' | 'opencode')[];
+    scopes: ('user' | 'project')[];
+  };
+  operations: PlanOperationV1Dto[];
+  checks: PlanCheckV1Dto[];
+  diagnostics: PlanDiagnosticV1Dto[];
+  summary: {
+    operations: number;
+    checks: number;
+    diagnostics: number;
+    drift: number;
+    refusals: number;
+    operationKinds: Record<
+      | 'install'
+      | 'update'
+      | 'remove'
+      | 'link-dev'
+      | 'promote'
+      | 'move-scope'
+      | 'adapt'
+      | 'repair'
+      | 'write-manifest'
+      | 'write-lock'
+      | 'migrate-project-config'
+      | 'migrate-ledger',
+      number
+    >;
+    checkKinds: Record<
+      | 'source-resolution'
+      | 'capability'
+      | 'content-integrity'
+      | 'verification'
+      | 'precondition-validation',
+      number
+    >;
+    diagnosticKinds: Record<'noop' | 'skip' | 'refuse' | 'conflict' | 'warning', number>;
+  };
+  savedOutput: {
+    path: string;
+    disposition: 'created' | 'replaced';
+    mode: '0600';
+    portability: 'portable' | 'machine-bound';
+  } | null;
+}
+
+export declare const planV1Codec: WireCodec<'plan-report', 1, PlanV1Dto>;
+
 type DeepMutable<T> = T extends Readonly<ArtifactDigest>
   ? ArtifactDigest
   : T extends string | number | boolean | bigint | symbol | null | undefined

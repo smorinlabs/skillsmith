@@ -9,7 +9,10 @@ import {
   comparePlanningDiagnostics,
   comparePlanningText,
 } from '../../src/planning/index.ts';
-import { orderExecutableOperationsTopologically } from '../../src/planning/order.ts';
+import {
+  artifactPrefixDependencyError,
+  orderExecutableOperationsTopologically,
+} from '../../src/planning/order.ts';
 
 const operation = <ToolId extends string>(
   operationId: string,
@@ -178,6 +181,7 @@ describe('planning canonical order', () => {
     const prefix = {
       ...alphaSeed,
       operationId: 'alpha-lock',
+      groupId: 'group:sha256:ffff',
       pairId: null,
       scope: null,
       skill: null,
@@ -192,17 +196,46 @@ describe('planning canonical order', () => {
     } as unknown as ExecutableOperation;
     const alpha = {
       ...alphaSeed,
+      groupId: 'group:sha256:0000',
       dependencyMetadata: dependencyMetadata([prefix.operationId]),
     } as ExecutableOperation;
     const beta = {
       ...operation('beta-live', 'user', 'beta', 'codex', 'install'),
+      groupId: 'group:sha256:1111',
       dependencyMetadata: dependencyMetadata([prefix.operationId]),
     } as ExecutableOperation;
-    expect(
-      orderExecutableOperationsTopologically([beta, alpha, prefix]).map(
-        ({ operationId }) => operationId,
-      ),
-    ).toEqual(['alpha-lock', 'alpha-live', 'beta-live']);
+    for (const permutation of [
+      [prefix, alpha, beta],
+      [prefix, beta, alpha],
+      [alpha, prefix, beta],
+      [alpha, beta, prefix],
+      [beta, prefix, alpha],
+      [beta, alpha, prefix],
+    ]) {
+      expect(
+        orderExecutableOperationsTopologically(permutation).map(({ operationId }) => operationId),
+      ).toEqual(['alpha-lock', 'alpha-live', 'beta-live']);
+    }
+
+    const ledger = {
+      ...prefix,
+      operationId: 'ledger-migration',
+      groupId: 'group:sha256:eeee',
+      kind: 'migrate-ledger',
+      after: { kind: 'ledger' },
+    } as unknown as ExecutableOperation;
+    for (const permutation of [
+      [ledger, prefix, alpha],
+      [ledger, alpha, prefix],
+      [prefix, ledger, alpha],
+      [prefix, alpha, ledger],
+      [alpha, ledger, prefix],
+      [alpha, prefix, ledger],
+    ]) {
+      expect(
+        orderExecutableOperationsTopologically(permutation).map(({ operationId }) => operationId),
+      ).toEqual(['ledger-migration', 'alpha-lock', 'alpha-live']);
+    }
 
     const partialBeta = {
       ...beta,
@@ -228,6 +261,10 @@ describe('planning canonical order', () => {
       source: null,
       tool: null,
       kind: 'write-lock',
+      after: {
+        kind: 'lock',
+        location: { kind: 'portable', token: 'artifacts/skills-lock.json' },
+      },
       dependencyMetadata: dependencyMetadata([]),
     } as unknown as ExecutableOperation;
     const earlierManifest = {
@@ -240,7 +277,7 @@ describe('planning canonical order', () => {
       kind: 'write-manifest',
       dependencyMetadata: dependencyMetadata([laterPrefix.operationId]),
     } as unknown as ExecutableOperation;
-    expect(() => orderExecutableOperationsTopologically([earlierManifest, laterPrefix])).toThrow(
+    expect(artifactPrefixDependencyError([[earlierManifest], [laterPrefix]])).toMatch(
       /later|forward/i,
     );
 

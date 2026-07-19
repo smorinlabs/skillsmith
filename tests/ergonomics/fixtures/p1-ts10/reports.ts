@@ -1,4 +1,4 @@
-import type { StatusV1Dto } from '../../../../packages/core/src/contracts/v1/index.ts';
+import type { PlanV1Dto, StatusV1Dto } from '../../../../packages/core/src/contracts/v1/index.ts';
 import type {
   AgentsReport,
   ArtifactDigest,
@@ -787,6 +787,67 @@ export const STATUS_REPORT_FIXTURE = {
   summary: STATUS_V1_DTO_FIXTURE.summary,
 } satisfies StatusReport;
 
+export const PLAN_REPORT_FIXTURE = {
+  schemaVersion: 1,
+  kind: 'skillsmith.plan-report',
+  command: 'plan',
+  state: 'ready',
+  artifactPair: {
+    manifestPath: '/fixture/project/skillsmith.toml',
+    lockPath: '/fixture/project/skillsmith.lock',
+    lockSource: 'sibling',
+    selectionSource: 'explicit',
+  },
+  project: {
+    effectiveCwd: '/fixture/project',
+    root: '/fixture/project',
+    identity: 'fixture-project',
+  },
+  options: { locked: true, prune: false, check: false },
+  selection: {
+    selectionSource: 'bounded-default',
+    selectionOutcome: 'selected',
+    requestedTools: [],
+    requestedScope: null,
+    skills: [],
+    tools: ['codex'],
+    scopes: ['project'],
+  },
+  operations: [],
+  checks: [],
+  diagnostics: [],
+  summary: {
+    operations: 0,
+    checks: 0,
+    diagnostics: 0,
+    drift: 0,
+    refusals: 0,
+    operationKinds: {
+      install: 0,
+      update: 0,
+      remove: 0,
+      'link-dev': 0,
+      promote: 0,
+      'move-scope': 0,
+      adapt: 0,
+      repair: 0,
+      'write-manifest': 0,
+      'write-lock': 0,
+      'migrate-project-config': 0,
+      'migrate-ledger': 0,
+    },
+    checkKinds: {
+      'source-resolution': 0,
+      capability: 0,
+      'content-integrity': 0,
+      verification: 0,
+      'precondition-validation': 0,
+    },
+    diagnosticKinds: { noop: 0, skip: 0, refuse: 0, conflict: 0, warning: 0 },
+  },
+  savedOutput: null,
+} satisfies PlanV1Dto;
+
 export const REPORT_FIXTURES = {
   agents: AGENTS_REPORT_FIXTURE,
   health: HEALTH_REPORT_FIXTURE,
@@ -801,6 +862,7 @@ export const REPORT_FIXTURES = {
   install: INSTALL_REPORT_FIXTURE,
   currentInstall: CURRENT_INSTALL_REPORT_FIXTURE,
   list: LIST_REPORT_FIXTURE,
+  plan: PLAN_REPORT_FIXTURE,
   status: STATUS_REPORT_FIXTURE,
   uninstall: UNINSTALL_REPORT_FIXTURE,
   currentUninstall: CURRENT_UNINSTALL_REPORT_FIXTURE,
@@ -824,6 +886,7 @@ export const CURRENT_RENDERER_REPORTS = {
   flip: { value: REPORT_FIXTURES.flip },
   install: { value: REPORT_FIXTURES.currentInstall },
   list: REPORT_FIXTURES.list,
+  plan: { result: REPORT_FIXTURES.plan },
   status: { result: STATUS_V1_DTO_FIXTURE },
   uninstall: { value: REPORT_FIXTURES.currentUninstall },
   verify: { result: REPORT_FIXTURES.verify },
@@ -1158,6 +1221,7 @@ export const CURRENT_JSON_GOLDENS = {
   flip: JSON.stringify(FLIP_V4_DTO, null, 2),
   install: CURRENT_LIFECYCLE_V2_GOLDENS.install,
   list: `${JSON.stringify(LIST_V3_DTO, null, 2)}\n`,
+  plan: `${JSON.stringify(PLAN_REPORT_FIXTURE, null, 2)}\n`,
   uninstall: CURRENT_LIFECYCLE_V2_GOLDENS.uninstall,
   export: `${JSON.stringify(EXPORT_REPORT_FIXTURE, null, 2)}\n`,
   init: `${JSON.stringify(INIT_REPORT_FIXTURE, null, 2)}\n`,
@@ -1176,6 +1240,7 @@ export const GOLDEN_TERMINAL_LF = {
   flip: false,
   install: false,
   list: true,
+  plan: true,
   status: true,
   uninstall: false,
   verify: false,

@@ -18,6 +18,7 @@ import {
   type HealthV1Dto,
   type InitV1Dto,
   type InstallV1Dto,
+  type PlanV1Dto,
   type StatusV1Dto,
   type UninstallV1Dto,
   type VerifyV1Dto,
@@ -33,6 +34,7 @@ import {
   healthV1Codec,
   initV1Codec,
   installV1Codec,
+  type planV1Codec,
   statusV1Codec,
   toAgentsV1Dto,
   toCapabilitySnapshotV1Dto,
@@ -162,6 +164,7 @@ type _V1RuntimeClosure = Assert<
     | 'toConfigUnsetV1Dto'
     | 'installV1Codec'
     | 'toInstallV1Dto'
+    | 'planV1Codec'
     | 'initV1Codec'
     | 'toInitV1Dto'
     | 'statusV1Codec'
@@ -193,6 +196,10 @@ type _V1RuntimeClosure = Assert<
     | 'toJournalV1Dto'
     | 'fromJournalV1Dto'
   >
+>;
+
+type _PlanCodecDto = Assert<
+  Equal<ReturnType<typeof planV1Codec.validate>, ExpectedWireResult<PlanV1Dto>>
 >;
 type _V2RuntimeClosure = Assert<
   Equal<

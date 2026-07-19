@@ -374,6 +374,12 @@ describe('planning constructors', () => {
     expect(() => (plan.operations as ExecutableOperation[]).push(install)).toThrow(TypeError);
   });
 
+  test('accepts plan as a current read-only planning command', () => {
+    const plan = createOperationPlan({ ...planFor(), command: 'plan' });
+    expect(plan.command).toBe('plan');
+    expect(plan.operations).toHaveLength(1);
+  });
+
   test('uses dependency topology before the semantic comparator and rejects invalid graphs', () => {
     const install = operationFor('install');
     const repair = operationFor('repair');

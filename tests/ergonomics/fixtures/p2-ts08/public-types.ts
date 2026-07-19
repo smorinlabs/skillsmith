@@ -123,6 +123,7 @@ type _V1RuntimeClosed = Assert<
     | 'healthV1Codec'
     | 'initV1Codec'
     | 'installV1Codec'
+    | 'planV1Codec'
     | 'statusV1Codec'
     | 'toAgentsV1Dto'
     | 'toCapabilitySnapshotV1Dto'

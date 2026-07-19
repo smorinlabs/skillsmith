@@ -12,6 +12,7 @@ import {
   resolveExplicitArtifactPairLexically,
 } from '../../src/artifacts/pair.ts';
 import type { ProjectContext } from '../../src/context/types.ts';
+import { portError } from '../../src/ports/errors.ts';
 import type { Result } from '../../src/result.ts';
 
 const ROOT = '/work/repo';
@@ -291,6 +292,34 @@ describe('artifact pair resolution', () => {
           realpath: capability === 'realpath' ? 1 : 0,
         });
       }
+    }
+  });
+
+  test('preserves normalized selector permission failures from every read capability', async () => {
+    for (const capability of ['pathKind', 'realpath'] as const) {
+      const permission = portError({
+        capability: 'file-read',
+        operation: capability,
+        code: 'permission',
+        message: `${capability} EACCES`,
+        context: { path: '/work/repo/team.toml' },
+      });
+      const ports: ArtifactPairPorts = {
+        pathKind: async () => {
+          if (capability === 'pathKind') throw permission;
+          return 'file';
+        },
+        realpath: async (path) => {
+          if (capability === 'realpath') throw permission;
+          return path;
+        },
+      };
+
+      expectError(
+        await resolveArtifactPair(ports, context, { file: './team.toml' }),
+        'artifact-selector-unresolvable',
+        'permission',
+      );
     }
   });
 

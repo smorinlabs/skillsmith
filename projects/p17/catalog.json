@@ -5921,7 +5921,7 @@
       "phase": "4B",
       "title": "Desired/current planner, prune selection, renderers, check exits, and idempotence",
       "dependsOn": ["P17-G4A-04"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -5931,11 +5931,15 @@
         "packages/core/src/reconcile/plan.ts",
         "packages/core/src/reconcile/saved.ts",
         "packages/core/src/reconcile/index.ts",
+        "packages/core/src/artifacts/pair.ts",
+        "packages/core/src/artifacts/plan-codec.ts",
         "packages/core/src/artifacts/plan-writer.ts",
         "packages/core/src/application/plan-service.ts",
         "packages/core/src/application/current-services.ts",
         "packages/core/src/planning/types.ts",
         "packages/core/src/planning/create.ts",
+        "packages/core/src/planning/order.ts",
+        "packages/core/src/ports/errors.ts",
         "packages/core/src/contracts/v1/plan.ts",
         "packages/core/src/contracts/v1/index.ts",
         "packages/core/src/contracts/v1/index.d.ts",
@@ -5948,14 +5952,17 @@
         "packages/cli/src/output/plan-human.ts",
         "packages/cli/src/output/plan-json.ts",
         "packages/cli/src/runtime/current-renderers.ts",
+        "packages/cli/src/index.ts",
         "packages/core/tests/reconcile/observe.test.ts",
         "packages/core/tests/reconcile/resolve.test.ts",
         "packages/core/tests/reconcile/plan.test.ts",
         "packages/core/tests/reconcile/saved.test.ts",
+        "packages/core/tests/artifacts/pair.test.ts",
         "packages/core/tests/artifacts/plan-writer.test.ts",
         "packages/core/tests/application/plan-service.test.ts",
         "packages/core/tests/application/current-services.test.ts",
         "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/planning/order.test.ts",
         "packages/core/tests/contracts/plan.test.ts",
         "packages/core/tests/public-api.test.ts",
         "packages/cli/tests/contracts/plan.test.ts",
@@ -5964,6 +5971,7 @@
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
@@ -6034,7 +6042,7 @@
         "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g4b01_final_adversarial",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6052,24 +6060,24 @@
           "evidence": ["projects/p17/evidence/P17-G4B-01.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-01.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-01.md#refactor"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-01.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -6086,7 +6094,15 @@
         "projects/p17/evidence/P17-G4B-01.md#ready-review",
         "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result",
         "projects/p17/evidence/P17-G4B-01.md#test-first-evidence",
-        "projects/p17/evidence/P17-G4B-01.md#approved-execution-ownership-amendment"
+        "projects/p17/evidence/P17-G4B-01.md#approved-execution-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-01.md#approved-runtime-export-fixture-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-01.md#approved-stream-drain-and-dependency-ordering-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-01.md#approved-saved-plan-traversal-capacity-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-01.md#approved-permission-classification-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4B-01.md#refactor",
+        "projects/p17/evidence/P17-G4B-01.md#adversarial-review"
       ]
     },
     {
@@ -7858,11 +7874,14 @@
       "title": "Declarative — What would convergence change?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "surface:plan",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": [],
       "validatedBy": [
@@ -8242,11 +8261,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-01",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": [],
       "validatedBy": [
@@ -15363,7 +15385,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS01",
       "target": {
@@ -15372,7 +15394,11 @@
         "selector": "EWP-CMD-PLAN-TS01",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts01",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts01",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS01"],
@@ -15407,7 +15433,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS02",
       "target": {
@@ -15416,7 +15442,11 @@
         "selector": "EWP-CMD-PLAN-TS02",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts02",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts02",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS02"],
@@ -15451,7 +15481,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS03",
       "target": {
@@ -15460,7 +15490,11 @@
         "selector": "EWP-CMD-PLAN-TS03",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts03",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts03",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS03"],
@@ -15495,7 +15529,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS04",
       "target": {
@@ -15504,7 +15538,11 @@
         "selector": "EWP-CMD-PLAN-TS04",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS04"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts04"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts04",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts04",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS04"],
@@ -15539,7 +15577,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS05",
       "target": {
@@ -15548,7 +15586,11 @@
         "selector": "EWP-CMD-PLAN-TS05",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts05",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts05",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS05"],
@@ -15583,7 +15625,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS06",
       "target": {
@@ -15592,7 +15634,11 @@
         "selector": "EWP-CMD-PLAN-TS06",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS06"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts06"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts06",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts06",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS06"],
@@ -15627,7 +15673,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS07",
       "target": {
@@ -15636,7 +15682,11 @@
         "selector": "EWP-CMD-PLAN-TS07",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS07"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts07"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts07",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts07",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS07"],
@@ -15671,7 +15721,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS08",
       "target": {
@@ -15680,7 +15730,11 @@
         "selector": "EWP-CMD-PLAN-TS08",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS08"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts08"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts08",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts08",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS08"],
@@ -15715,7 +15769,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS09",
       "target": {
@@ -15724,7 +15778,11 @@
         "selector": "EWP-CMD-PLAN-TS09",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS09"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts09"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts09",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts09",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS09"],
@@ -15759,7 +15817,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS10",
       "target": {
@@ -15768,7 +15826,11 @@
         "selector": "EWP-CMD-PLAN-TS10",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS10"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts10"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts10",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts10",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS10"],
@@ -15856,7 +15918,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS12",
       "target": {
@@ -15865,7 +15927,11 @@
         "selector": "EWP-CMD-PLAN-TS12",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS12"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts12"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts12",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts12",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS12"],
@@ -22045,7 +22111,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-01",
-      "status": "red",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01",
       "target": null,
@@ -22053,7 +22119,10 @@
         "projects/p17/evidence/P17-G4B-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-01.md#ready-review",
         "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result",
-        "projects/p17/evidence/P17-G4B-01.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4B-01.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4B-01.md#adversarial-review"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": ["COMMAND:plan", "D-001", "P1-07"],
@@ -22113,7 +22182,9 @@
         "bun test packages/cli/tests/contracts/options.test.ts",
         "bun test tests/ergonomics/phase/EWP-P1-TS10.test.ts --test-name-pattern EWP-P1-TS10",
         "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11",
-        "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08"
+        "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08",
+        "bun test packages/core/tests/planning/types.test.ts",
+        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07"
       ],
       "ownedFiles": [
         "docs/architecture.md",
@@ -22123,11 +22194,15 @@
         "packages/core/src/reconcile/plan.ts",
         "packages/core/src/reconcile/saved.ts",
         "packages/core/src/reconcile/index.ts",
+        "packages/core/src/artifacts/pair.ts",
+        "packages/core/src/artifacts/plan-codec.ts",
         "packages/core/src/artifacts/plan-writer.ts",
         "packages/core/src/application/plan-service.ts",
         "packages/core/src/application/current-services.ts",
         "packages/core/src/planning/types.ts",
         "packages/core/src/planning/create.ts",
+        "packages/core/src/planning/order.ts",
+        "packages/core/src/ports/errors.ts",
         "packages/core/src/contracts/v1/plan.ts",
         "packages/core/src/contracts/v1/index.ts",
         "packages/core/src/contracts/v1/index.d.ts",
@@ -22140,22 +22215,29 @@
         "packages/cli/src/output/plan-human.ts",
         "packages/cli/src/output/plan-json.ts",
         "packages/cli/src/runtime/current-renderers.ts",
+        "packages/cli/src/runtime/command-spec.ts",
+        "packages/cli/src/index.ts",
         "packages/core/tests/reconcile/observe.test.ts",
         "packages/core/tests/reconcile/resolve.test.ts",
         "packages/core/tests/reconcile/plan.test.ts",
         "packages/core/tests/reconcile/saved.test.ts",
+        "packages/core/tests/artifacts/pair.test.ts",
         "packages/core/tests/artifacts/plan-writer.test.ts",
         "packages/core/tests/application/plan-service.test.ts",
         "packages/core/tests/application/current-services.test.ts",
         "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/planning/order.test.ts",
+        "packages/core/tests/planning/types.test.ts",
         "packages/core/tests/contracts/plan.test.ts",
         "packages/core/tests/public-api.test.ts",
         "packages/cli/tests/contracts/plan.test.ts",
         "packages/cli/tests/output/plan.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
@@ -22172,7 +22254,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-01",
-      "status": "red",
+      "status": "reviewed",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01",
       "target": null,
@@ -22180,7 +22262,10 @@
         "projects/p17/evidence/P17-G4B-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-01.md#ready-review",
         "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result",
-        "projects/p17/evidence/P17-G4B-01.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4B-01.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4B-01.md#adversarial-review"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": ["COMMAND:plan", "D-001", "P1-07"],
@@ -22240,7 +22325,9 @@
         "bun test packages/cli/tests/contracts/options.test.ts",
         "bun test tests/ergonomics/phase/EWP-P1-TS10.test.ts --test-name-pattern EWP-P1-TS10",
         "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11",
-        "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08"
+        "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08",
+        "bun test packages/core/tests/planning/types.test.ts",
+        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07"
       ],
       "ownedFiles": [
         "docs/architecture.md",
@@ -22250,11 +22337,15 @@
         "packages/core/src/reconcile/plan.ts",
         "packages/core/src/reconcile/saved.ts",
         "packages/core/src/reconcile/index.ts",
+        "packages/core/src/artifacts/pair.ts",
+        "packages/core/src/artifacts/plan-codec.ts",
         "packages/core/src/artifacts/plan-writer.ts",
         "packages/core/src/application/plan-service.ts",
         "packages/core/src/application/current-services.ts",
         "packages/core/src/planning/types.ts",
         "packages/core/src/planning/create.ts",
+        "packages/core/src/planning/order.ts",
+        "packages/core/src/ports/errors.ts",
         "packages/core/src/contracts/v1/plan.ts",
         "packages/core/src/contracts/v1/index.ts",
         "packages/core/src/contracts/v1/index.d.ts",
@@ -22267,22 +22358,29 @@
         "packages/cli/src/output/plan-human.ts",
         "packages/cli/src/output/plan-json.ts",
         "packages/cli/src/runtime/current-renderers.ts",
+        "packages/cli/src/runtime/command-spec.ts",
+        "packages/cli/src/index.ts",
         "packages/core/tests/reconcile/observe.test.ts",
         "packages/core/tests/reconcile/resolve.test.ts",
         "packages/core/tests/reconcile/plan.test.ts",
         "packages/core/tests/reconcile/saved.test.ts",
+        "packages/core/tests/artifacts/pair.test.ts",
         "packages/core/tests/artifacts/plan-writer.test.ts",
         "packages/core/tests/application/plan-service.test.ts",
         "packages/core/tests/application/current-services.test.ts",
         "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/planning/order.test.ts",
+        "packages/core/tests/planning/types.test.ts",
         "packages/core/tests/contracts/plan.test.ts",
         "packages/core/tests/public-api.test.ts",
         "packages/cli/tests/contracts/plan.test.ts",
         "packages/cli/tests/output/plan.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
@@ -22498,7 +22596,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:tests/ergonomics/phase/EWP-P4B-TS01.test.ts#EWP-P4B-TS01",
       "target": {
@@ -22507,7 +22605,11 @@
         "selector": "EWP-P4B-TS01",
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS01.test.ts --test-name-pattern EWP-P4B-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-p4b-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-p4b-ts01",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-p4b-ts01",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS01"],
@@ -22645,7 +22747,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:tests/ergonomics/phase/EWP-P4B-TS04.test.ts#EWP-P4B-TS04",
       "target": {
@@ -22654,7 +22756,11 @@
         "selector": "EWP-P4B-TS04",
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS04.test.ts --test-name-pattern EWP-P4B-TS04"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-p4b-ts04"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-p4b-ts04",
+        "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-p4b-ts04",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS04"],
@@ -24587,11 +24693,14 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-01",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": [],
       "validatedBy": [

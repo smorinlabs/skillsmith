@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.plan-report",
+  "command": "plan",
+  "state": "ready",
+  "artifactPair": {
+    "manifestPath": "/fixture/project/skillsmith.toml",
+    "lockPath": "/fixture/project/skillsmith.lock",
+    "lockSource": "sibling",
+    "selectionSource": "explicit"
+  },
+  "project": {
+    "effectiveCwd": "/fixture/project",
+    "root": "/fixture/project",
+    "identity": "fixture-project"
+  },
+  "options": {
+    "locked": true,
+    "prune": false,
+    "check": false
+  },
+  "selection": {
+    "selectionSource": "bounded-default",
+    "selectionOutcome": "selected",
+    "requestedTools": [],
+    "requestedScope": null,
+    "skills": [],
+    "tools": [
+      "codex"
+    ],
+    "scopes": [
+      "project"
+    ]
+  },
+  "operations": [],
+  "checks": [],
+  "diagnostics": [],
+  "summary": {
+    "operations": 0,
+    "checks": 0,
+    "diagnostics": 0,
+    "drift": 0,
+    "refusals": 0,
+    "operationKinds": {
+      "install": 0,
+      "update": 0,
+      "remove": 0,
+      "link-dev": 0,
+      "promote": 0,
+      "move-scope": 0,
+      "adapt": 0,
+      "repair": 0,
+      "write-manifest": 0,
+      "write-lock": 0,
+      "migrate-project-config": 0,
+      "migrate-ledger": 0
+    },
+    "checkKinds": {
+      "source-resolution": 0,
+      "capability": 0,
+      "content-integrity": 0,
+      "verification": 0,
+      "precondition-validation": 0
+    },
+    "diagnosticKinds": {
+      "noop": 0,
+      "skip": 0,
+      "refuse": 0,
+      "conflict": 0,
+      "warning": 0
+    }
+  },
+  "savedOutput": null
+}

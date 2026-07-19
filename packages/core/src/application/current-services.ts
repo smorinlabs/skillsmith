@@ -3,9 +3,11 @@ import { VERSION } from '../version.ts';
 import { runExportApplication } from './export-service.ts';
 import { runInitApplication } from './init-service.ts';
 import { LIFECYCLE_APPLICATION_SERVICES } from './lifecycle-services.ts';
+import { runPlanApplication } from './plan-service.ts';
 import { CURRENT_READ_APPLICATIONS } from './read-services.ts';
 export { runExportApplication } from './export-service.ts';
 export { runInitApplication } from './init-service.ts';
+export { runPlanApplication } from './plan-service.ts';
 import {
   type ApplicationService,
   type CommandOutcome,
@@ -97,6 +99,7 @@ export const CURRENT_APPLICATION_SERVICES: Readonly<Record<string, AnyCurrentApp
     help: runHelpApplication as AnyCurrentApplicationService,
     export: runExportApplication as AnyCurrentApplicationService,
     init: runInitApplication as AnyCurrentApplicationService,
+    plan: runPlanApplication as AnyCurrentApplicationService,
     ...CURRENT_READ_APPLICATIONS,
     ...LIFECYCLE_APPLICATION_SERVICES,
   });

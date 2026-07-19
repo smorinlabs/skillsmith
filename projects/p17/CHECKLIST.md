@@ -118,7 +118,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:init | P17-G4A-03 | signed-off | required-pr |
 | COMMAND:install | P17-G4A-01 | signed-off | required-pr |
 | COMMAND:list | P17-G3A-02 | signed-off | required-pr |
-| COMMAND:plan | P17-G4B-01 | planned | required-pr |
+| COMMAND:plan | P17-G4B-01 | validated | required-pr |
 | COMMAND:promote | P17-G3B-01 | signed-off | required-pr |
 | COMMAND:status | P17-G3A-01 | signed-off | required-pr |
 | COMMAND:sync | P17-G5-01 | planned | required-pr |
@@ -146,7 +146,7 @@ Tracked entities: **425** across **45** change groups.
 | P1-04 | P17-G5-05 | planned | required-pr |
 | P1-05 | P17-G4A-03 | signed-off | required-pr |
 | P1-06 | P17-G4A-02 | signed-off | required-pr |
-| P1-07 | P17-G4B-01 | planned | required-pr |
+| P1-07 | P17-G4B-01 | validated | required-pr |
 | P1-08 | P17-G4B-02 | planned | required-pr |
 | P1-09 | P17-G4A-01 | signed-off | required-pr |
 | P1-10 | P17-G5-01 | planned | required-pr |
@@ -219,7 +219,7 @@ Tracked entities: **425** across **45** change groups.
 
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
-| D-001 | P17-G4B-01 | planned | required-pr |
+| D-001 | P17-G4B-01 | validated | required-pr |
 | D-002 | P17-G4B-02 | planned | required-pr |
 | D-003 | P17-G2-01 | signed-off | required-pr |
 | D-004 | P17-G2-02 | signed-off | required-pr |
@@ -1210,7 +1210,7 @@ Downstream coverage obligations: EWP-WF13.
 
 ## P17-G4B-01 — Desired/current planner, prune selection, renderers, check exits, and idempotence
 
-Phase: 4B; status: **active**; dependencies: P17-G4A-04.
+Phase: 4B; status: **reviewed**; dependencies: P17-G4A-04.
 Required-now validations: EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS02, EWP-CMD-PLAN-TS03, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS05, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS12, EWP-P4B-TS01, EWP-P4B-TS04.
 Downstream coverage obligations: EWP-CMD-PLAN-TS11, EWP-P4B-TS02, EWP-WF06, EWP-WF08.
 
@@ -1219,34 +1219,34 @@ Downstream coverage obligations: EWP-CMD-PLAN-TS11, EWP-P4B-TS02, EWP-WF06, EWP-
 - [x] P17-G4B-01:mapped _(passed)_
 - [x] P17-G4B-01:ready _(passed)_
 - [x] P17-G4B-01:test-first _(passed)_
-- [ ] P17-G4B-01:minimal-implementation _(pending)_
-- [ ] P17-G4B-01:targeted-green _(pending)_
-- [ ] P17-G4B-01:impacted-green _(pending)_
-- [ ] P17-G4B-01:refactor _(pending)_
-- [ ] P17-G4B-01:adversarial-review _(pending)_
+- [x] P17-G4B-01:minimal-implementation _(passed)_
+- [x] P17-G4B-01:targeted-green _(passed)_
+- [x] P17-G4B-01:impacted-green _(passed)_
+- [x] P17-G4B-01:refactor _(passed)_
+- [x] P17-G4B-01:adversarial-review _(passed)_
 - [ ] P17-G4B-01:traceability-closure _(pending)_
 - [ ] P17-G4B-01:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:plan** — Declarative — What would convergence change? _(command; planned)_
-- [ ] **D-001** — User-facing planning command _(decision; planned)_
-- [ ] **EWP-CMD-PLAN-TS01** — empty/create/update/remove/move/adapt/migrate-project-config/ _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS02** — deterministic ordering and repeated-run byte equality. _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS03** — manifest discovery, custom manifest/paired-lock derivation, filters, _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS04** — lock present/missing/stale/noncanonical, default resolve, locked refusal, _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS05** — bounded selected manifest, prune/delete visibility, filter-to-zero no-op, _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS06** — conflict/refusal/partial capability representation. _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS07** — check 0/7, check/out/force conflicts before discovery/I/O, and remaining _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS08** — human/JSON parity and summary counts. _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS09** — saved-plan schema, owner permissions, create-only/force replacement, _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS10** — no filesystem/ledger/manifest/lock mutation, including version-1 in-memory _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS12** — scale/performance on representative fleet. _(command-test; failing)_
-- [ ] **EWP-P4B-T01** — Desired/current diff planner and prune selection. _(phase-task; red)_
-- [ ] **EWP-P4B-T02** — Human and JSON plan renderers plus plan/check exit behavior. _(phase-task; red)_
-- [ ] **EWP-P4B-TS01** — Planner operation matrix and deterministic byte snapshots. _(phase-test; failing)_
-- [ ] **EWP-P4B-TS04** — Prune never deletes undeclared or unselected scopes accidentally. _(phase-test; failing)_
-- [ ] **P1-07** — `plan` _(recommendation; planned)_
+- [ ] **COMMAND:plan** — Declarative — What would convergence change? _(command; validated)_
+- [ ] **D-001** — User-facing planning command _(decision; validated)_
+- [ ] **EWP-CMD-PLAN-TS01** — empty/create/update/remove/move/adapt/migrate-project-config/ _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS02** — deterministic ordering and repeated-run byte equality. _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS03** — manifest discovery, custom manifest/paired-lock derivation, filters, _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS04** — lock present/missing/stale/noncanonical, default resolve, locked refusal, _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS05** — bounded selected manifest, prune/delete visibility, filter-to-zero no-op, _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS06** — conflict/refusal/partial capability representation. _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS07** — check 0/7, check/out/force conflicts before discovery/I/O, and remaining _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS08** — human/JSON parity and summary counts. _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS09** — saved-plan schema, owner permissions, create-only/force replacement, _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS10** — no filesystem/ledger/manifest/lock mutation, including version-1 in-memory _(command-test; passing)_
+- [ ] **EWP-CMD-PLAN-TS12** — scale/performance on representative fleet. _(command-test; passing)_
+- [ ] **EWP-P4B-T01** — Desired/current diff planner and prune selection. _(phase-task; reviewed)_
+- [ ] **EWP-P4B-T02** — Human and JSON plan renderers plus plan/check exit behavior. _(phase-task; reviewed)_
+- [ ] **EWP-P4B-TS01** — Planner operation matrix and deterministic byte snapshots. _(phase-test; passing)_
+- [ ] **EWP-P4B-TS04** — Prune never deletes undeclared or unselected scopes accidentally. _(phase-test; passing)_
+- [ ] **P1-07** — `plan` _(recommendation; validated)_
 
 ## P17-G4B-02 — Saved-plan schema, exact apply, approval, scoped staleness, and validation modes
 

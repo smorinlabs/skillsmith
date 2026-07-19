@@ -21,7 +21,12 @@ export type {
 } from './acquire/types.ts';
 export type { LogicalJournalV1 } from './artifacts/journal-types.ts';
 export type { LedgerModel } from './artifacts/ledger-types.ts';
-export type { SavedPlanV1 } from './artifacts/plan-types.ts';
+export type {
+  PlanCheckV1,
+  PlanDiagnosticV1,
+  PlanOperationV1,
+  SavedPlanV1,
+} from './artifacts/plan-types.ts';
 export type {
   ArtifactAbsent,
   ArtifactReadEnvelope,
@@ -54,6 +59,7 @@ export type {
   VersionApplicationRequest,
   VersionReport,
 } from './application/current-services.ts';
+export type { PlanApplicationReport } from './application/plan-service.ts';
 export type * from './application/lifecycle-services.ts';
 export type * from './application/read-services.ts';
 export type * from './export/types.ts';
@@ -283,3 +289,4 @@ export type {
 } from './verify/types.ts';
 export type { VerifyOptions } from './verify/run.ts';
 export type * from './planning/index.ts';
+export type * from './reconcile/index.ts';

@@ -1,5 +1,6 @@
 import { basename, dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 import type { ProjectContext } from '../context/types.ts';
+import { isNormalizedPortError } from '../ports/errors.ts';
 import type { FileReadPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 
@@ -14,7 +15,7 @@ export type ArtifactPairErrorCode =
 
 export interface ArtifactPairError {
   readonly code: ArtifactPairErrorCode;
-  readonly exitClass: 'usage' | 'state';
+  readonly exitClass: 'usage' | 'state' | 'permission';
   readonly message: string;
   readonly paths?: readonly string[];
 }
@@ -87,6 +88,18 @@ const stateError = (
   Object.freeze({
     code,
     exitClass: 'state' as const,
+    message,
+    ...(paths === undefined ? {} : { paths: Object.freeze([...paths]) }),
+  });
+
+const permissionError = (
+  code: ArtifactPairErrorCode,
+  message: string,
+  paths?: readonly string[],
+): ArtifactPairError =>
+  Object.freeze({
+    code,
+    exitClass: 'permission' as const,
     message,
     ...(paths === undefined ? {} : { paths: Object.freeze([...paths]) }),
   });
@@ -366,11 +379,17 @@ export const resolveArtifactPair = async (
           ),
         );
       }
-    } catch {
+    } catch (error) {
       return err(
-        stateError('artifact-selector-unresolvable', 'cannot resolve artifact selector', [
-          selector.path,
-        ]),
+        isNormalizedPortError(error) && error.code === 'permission'
+          ? permissionError(
+              'artifact-selector-unresolvable',
+              'artifact selector permission denied',
+              [selector.path],
+            )
+          : stateError('artifact-selector-unresolvable', 'cannot resolve artifact selector', [
+              selector.path,
+            ]),
       );
     }
   }

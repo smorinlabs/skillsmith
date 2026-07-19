@@ -26,6 +26,7 @@ import type {
   BoundedForceEffect,
   BoundedForceEffectInput,
   CurrentMutatorCommand,
+  CurrentPlanningCommand,
   ExecutableOperation,
   OperationExecutionResult,
   OperationExecutionResultInput,
@@ -56,7 +57,7 @@ const operationKinds = new Set<string>(EXECUTABLE_OPERATION_KINDS);
 const selectionSources = new Set<string>(OPERATION_SELECTION_SOURCES);
 const diagnosticKinds = new Set<string>(PLANNING_DIAGNOSTIC_KINDS);
 const executionOutcomes = new Set<string>(OPERATION_EXECUTION_OUTCOMES);
-const currentMutatorCommands = new Set<string>([
+const currentPlanningCommands = new Set<string>([
   'install',
   'uninstall',
   'dev',
@@ -64,6 +65,7 @@ const currentMutatorCommands = new Set<string>([
   'doctor',
   'export',
   'init',
+  'plan',
 ]);
 
 const fail = (message: string): never => {
@@ -769,7 +771,7 @@ const validateGroupIdentity = (value: unknown, path: string): OperationGroupIden
   if (identity.domain !== 'skillsmith.operation-group-identity' || identity.schemaVersion !== 1) {
     fail(`${path} has an unsupported group identity domain or schema`);
   }
-  literal(identity.command, currentMutatorCommands, `${path}.command`);
+  literal(identity.command, currentPlanningCommands, `${path}.command`);
   string(identity.skill, `${path}.skill`, true);
   if (identity.source !== null) validateSource(identity.source, `${path}.source`);
   if (identity.scope !== null) {
@@ -1344,17 +1346,17 @@ const canonicalizeCheck = <ToolId extends string>(
   } as unknown as PlanCheck<ToolId>;
 };
 
-export function createOperationPlan<Command extends CurrentMutatorCommand>(
+export function createOperationPlan<Command extends CurrentPlanningCommand>(
   input: OperationPlanInput<Command>,
 ): OperationPlan<Command>;
-export function createOperationPlan<Command extends CurrentMutatorCommand, ToolId extends string>(
+export function createOperationPlan<Command extends CurrentPlanningCommand, ToolId extends string>(
   input: OperationPlanInput<Command, ToolId>,
   context: PlanningToolContext<ToolId>,
 ): OperationPlan<Command, ToolId>;
 export function createOperationPlan(
   input: unknown,
   suppliedContext?: PlanningToolContext<string>,
-): OperationPlan<CurrentMutatorCommand, string> {
+): OperationPlan<CurrentPlanningCommand, string> {
   const context = resolvePlanningToolContext(suppliedContext);
   const snapshot = ownPlanningData(input);
   const plan = record(snapshot, '$plan');
@@ -1385,7 +1387,7 @@ export function createOperationPlan(
   if (plan.domain !== 'skillsmith.operation-plan' || plan.schemaVersion !== 1) {
     fail('$plan has an unsupported domain or schema version');
   }
-  literal(plan.command, currentMutatorCommands, '$plan.command');
+  literal(plan.command, currentPlanningCommands, '$plan.command');
   literal(plan.batchPolicy, new Set(['fail-fast', 'continue-on-error']), '$plan.batchPolicy');
   const selection = canonicalSelection(plan.selection, context);
   if (
@@ -1508,7 +1510,7 @@ export function createOperationPlan(
     operations: canonicalOperations,
     checks: canonicalChecks,
     diagnostics,
-  } as unknown as OperationPlan<CurrentMutatorCommand, string>);
+  } as unknown as OperationPlan<CurrentPlanningCommand, string>);
 }
 
 const validateForceEffect = (

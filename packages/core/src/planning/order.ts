@@ -133,8 +133,9 @@ export const compareExecutableOperations = <ToolId extends string = string>(
  * Return the first invalid external dependency shape. The only admitted cross-group edge is one
  * earlier artifact-prefix write-lock named by every operation in the dependent group.
  */
-export const artifactPrefixDependencyError = <ToolId extends string = string>(
+const artifactPrefixDependencyErrorFor = <ToolId extends string = string>(
   groups: readonly (readonly ExecutableOperation<ToolId>[])[],
+  validateCanonicalPosition: boolean,
 ): string | null => {
   const operations = groups.flat();
   const byId = new Map(operations.map((operation) => [operation.operationId, operation]));
@@ -173,32 +174,37 @@ export const artifactPrefixDependencyError = <ToolId extends string = string>(
     ) {
       return `operation group ${groupId} has an invalid cross-group artifact-prefix dependency`;
     }
-    if ((groupPositions.get(prefix.groupId) as number) >= (groupPositions.get(groupId) as number)) {
+    if (
+      validateCanonicalPosition &&
+      (groupPositions.get(prefix.groupId) as number) >= (groupPositions.get(groupId) as number)
+    ) {
       return `operation group ${groupId} depends on a later artifact prefix`;
     }
     if (prefix.after.kind !== 'lock') {
       return `operation group ${groupId} has an invalid cross-group artifact-prefix image`;
     }
-    const groupPosition = groupPositions.get(groupId) as number;
-    const prefixPosition = groupPositions.get(prefix.groupId) as number;
-    const prefixLocation = canonicalPlanningString(prefix.after.location);
-    let latestPrefixPosition = -1;
-    for (const [position, candidateGroup] of groups.entries()) {
-      if (position >= groupPosition) break;
-      if (
-        candidateGroup.some(
-          (candidate) =>
-            candidate.kind === 'write-lock' &&
-            candidate.pairId === null &&
-            candidate.after.kind === 'lock' &&
-            canonicalPlanningString(candidate.after.location) === prefixLocation,
-        )
-      ) {
-        latestPrefixPosition = position;
+    if (validateCanonicalPosition) {
+      const groupPosition = groupPositions.get(groupId) as number;
+      const prefixPosition = groupPositions.get(prefix.groupId) as number;
+      const prefixLocation = canonicalPlanningString(prefix.after.location);
+      let latestPrefixPosition = -1;
+      for (const [position, candidateGroup] of groups.entries()) {
+        if (position >= groupPosition) break;
+        if (
+          candidateGroup.some(
+            (candidate) =>
+              candidate.kind === 'write-lock' &&
+              candidate.pairId === null &&
+              candidate.after.kind === 'lock' &&
+              canonicalPlanningString(candidate.after.location) === prefixLocation,
+          )
+        ) {
+          latestPrefixPosition = position;
+        }
       }
-    }
-    if (prefixPosition !== latestPrefixPosition) {
-      return `operation group ${groupId} does not depend on the latest artifact prefix`;
+      if (prefixPosition !== latestPrefixPosition) {
+        return `operation group ${groupId} does not depend on the latest artifact prefix`;
+      }
     }
     const prefixGroup = groups.find((candidate) => candidate[0]?.groupId === prefix.groupId) ?? [];
     if (
@@ -214,6 +220,10 @@ export const artifactPrefixDependencyError = <ToolId extends string = string>(
   }
   return null;
 };
+
+export const artifactPrefixDependencyError = <ToolId extends string = string>(
+  groups: readonly (readonly ExecutableOperation<ToolId>[])[],
+): string | null => artifactPrefixDependencyErrorFor(groups, true);
 
 /** Deterministic Kahn ordering: dependencies decide readiness, the canonical comparator breaks ties. */
 export const orderExecutableOperationsTopologically = <ToolId extends string = string>(
@@ -250,12 +260,6 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
     }
     remainingDependencies.set(operation.operationId, internalDependencies);
   }
-  const hasCrossGroupDependencies = operations.some((operation) =>
-    operation.dependencyMetadata.operationIds.some((dependencyId) => {
-      const dependency = byId.get(dependencyId);
-      return dependency !== undefined && dependency.groupId !== operation.groupId;
-    }),
-  );
   const compareCanonicalGroups = (
     left: {
       readonly representative: ExecutableOperation<ToolId>;
@@ -263,10 +267,7 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
     right: {
       readonly representative: ExecutableOperation<ToolId>;
     },
-  ): number =>
-    hasCrossGroupDependencies
-      ? comparePlanningText(left.representative.groupId, right.representative.groupId)
-      : compareExecutableOperations(left.representative, right.representative, context);
+  ): number => compareExecutableOperations(left.representative, right.representative, context);
   const canonicalGroups = [...groups.values()]
     .map((operationsInGroup) => ({
       operations: operationsInGroup,
@@ -275,10 +276,11 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
       )[0] as ExecutableOperation<ToolId>,
     }))
     .sort(compareCanonicalGroups);
-  const prefixError = artifactPrefixDependencyError(
+  const prefixShapeError = artifactPrefixDependencyErrorFor(
     canonicalGroups.map(({ operations: group }) => group),
+    false,
   );
-  if (prefixError !== null) planningContextFail(prefixError);
+  if (prefixShapeError !== null) planningContextFail(prefixShapeError);
   const groupById = new Map(canonicalGroups.map((group) => [group.representative.groupId, group]));
   const remainingGroupDependencies = new Map(
     canonicalGroups.map(({ representative }) => [representative.groupId, 0]),
@@ -302,6 +304,7 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
     ({ representative }) => remainingGroupDependencies.get(representative.groupId) === 0,
   );
   const ordered: ExecutableOperation<ToolId>[] = [];
+  const orderedGroups: ExecutableOperation<ToolId>[][] = [];
   let orderedGroupCount = 0;
   while (readyGroups.length > 0) {
     readyGroups.sort(compareCanonicalGroups);
@@ -327,6 +330,7 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
     if (ordered.length - groupStart !== group.length) {
       planningContextFail('operation dependencies are cyclic');
     }
+    orderedGroups.push(ordered.slice(groupStart));
     orderedGroupCount += 1;
     for (const dependent of dependentGroups.get(selected.representative.groupId) ?? []) {
       const remaining =
@@ -338,6 +342,8 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
   if (orderedGroupCount !== canonicalGroups.length) {
     planningContextFail('operation group dependencies are cyclic');
   }
+  const prefixError = artifactPrefixDependencyError(orderedGroups);
+  if (prefixError !== null) planningContextFail(prefixError);
   return ordered;
 };
 

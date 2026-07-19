@@ -42,6 +42,13 @@ export type { VerifyV1Dto } from './verify.ts';
 export { createVerifyV1Codec, toVerifyV1Dto, verifyV1Codec } from './verify.ts';
 export type { StatusV1Dto } from './status.ts';
 export { statusV1Codec, toStatusV1Dto } from './status.ts';
+export type {
+  PlanCheckV1Dto,
+  PlanDiagnosticV1Dto,
+  PlanOperationV1Dto,
+  PlanV1Dto,
+} from './plan.ts';
+export { planV1Codec } from './plan.ts';
 export type { ManifestV1Dto } from '../../artifacts/manifest-codec.ts';
 export {
   fromManifestV1Dto,

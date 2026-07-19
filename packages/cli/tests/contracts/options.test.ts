@@ -879,6 +879,15 @@ describe('EWP-OPT-TS03', () => {
         ['skill', '--file', 'state.toml', '--lockfile', 'one.lock', '--lockfile', 'two.lock'],
       ],
       ['skillsmith uninstall', ['skill', '--scope', 'project', '--scope', 'project']],
+      ['skillsmith plan', ['--file', 'one.toml', '--file', 'two.toml']],
+      [
+        'skillsmith plan',
+        ['--file', 'state.toml', '--lockfile', 'one.lock', '--lockfile', 'two.lock'],
+      ],
+      ['skillsmith plan', ['--scope', 'user', '--scope', 'user']],
+      ['skillsmith plan', ['--user', '--user']],
+      ['skillsmith plan', ['--project', '--project']],
+      ['skillsmith plan', ['--out', 'one.plan', '--out', 'two.plan']],
     ] as const;
 
     for (const [command, args] of repeated) {
@@ -1109,7 +1118,7 @@ describe('EWP-OPT-TS04', () => {
     );
     expect(delta).toEqual(expected.map(({ path, flags }) => `${path}:${flags}`));
     expect(api.CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0)).toBe(
-      201,
+      214,
     );
   });
 
@@ -1120,7 +1129,7 @@ describe('EWP-OPT-TS04', () => {
       (count, spec) => count + spec.options.length,
       0,
     );
-    if (inventory !== 201) findings.push(`option inventory is ${inventory}, expected 201`);
+    if (inventory !== 214) findings.push(`option inventory is ${inventory}, expected 214`);
 
     const program = buildProgram();
     for (const commandName of ['dev', 'promote'] as const) {

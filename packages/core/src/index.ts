@@ -12,12 +12,14 @@ export {
   runConfigHelpApplication,
   runExportApplication,
   runInitApplication,
+  runPlanApplication,
   runHelpApplication,
   runRootHelpApplication,
   runVersionApplication,
 } from './application/current-services.ts';
 export * from './export/index.ts';
 export * from './init/index.ts';
+export * from './reconcile/index.ts';
 export * from './application/lifecycle-services.ts';
 export * from './application/read-services.ts';
 export { COMMAND_EXIT_CLASSES, NO_MUTATION } from './application/types.ts';
@@ -31,6 +33,13 @@ export {
 export { TOOL_OPERATIONS } from './agents/adapter-types.ts';
 export { SUPPORTED_TOOLS } from './agents/types.ts';
 export * from './artifacts/index.ts';
+export { writeSavedPlan } from './artifacts/plan-writer.ts';
+export type {
+  PlanWriteReceipt,
+  PlanWriteRequest,
+  PlanWriterError,
+  PlanWriterPorts,
+} from './artifacts/plan-writer.ts';
 export { recoverLedgerMigrationState } from './artifacts/ledger-writer.ts';
 export { getConfigValue } from './config/accessors.ts';
 export { resolveEffectiveConfig } from './config/effective.ts';
@@ -184,6 +193,7 @@ export type {
   Origin,
   PathKind,
   PathAccessPort,
+  PlanApplicationReport,
   Placement,
   PlacementBundle,
   PlacementClass,

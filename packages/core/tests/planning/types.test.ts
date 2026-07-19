@@ -3,6 +3,7 @@ import type { PlanImageV1, PlanOperationKindV1 } from '../../src/artifacts/plan-
 import type { SnapshotBoundOperationPlanV1 } from '../../src/planning/create.ts';
 import {
   type CurrentMutatorCommand,
+  type CurrentPlanningCommand,
   EXECUTABLE_OPERATION_KINDS,
   type ExecutableOperationKind,
   OPERATION_EXECUTION_OUTCOMES,
@@ -83,11 +84,12 @@ describe('planning domain types', () => {
     expect(revisionArrayParity).toBeTrue();
   });
 
-  test('keeps init and its runtime-only opaque image closed outside saved-plan v1', () => {
-    const commandParity: Equal<
+  test('keeps preview planning outside executable mutator authority', () => {
+    const mutatorParity: Equal<
       CurrentMutatorCommand,
-      'install' | 'uninstall' | 'dev' | 'promote' | 'doctor' | 'export' | 'init' | 'plan'
+      'install' | 'uninstall' | 'dev' | 'promote' | 'doctor' | 'export' | 'init'
     > = true;
+    const planningParity: Equal<CurrentPlanningCommand, CurrentMutatorCommand | 'plan'> = true;
     type OpaqueManifest = Extract<OperationImage, { readonly kind: 'opaque-manifest' }>;
     const shapeParity: Equal<
       OpaqueManifest['shape'],
@@ -102,7 +104,8 @@ describe('planning domain types', () => {
       never
     > = true;
 
-    expect(commandParity).toBeTrue();
+    expect(mutatorParity).toBeTrue();
+    expect(planningParity).toBeTrue();
     expect(shapeParity).toBeTrue();
     expect(machineBoundParity).toBeTrue();
     expect(persistenceExclusion).toBeTrue();

@@ -17,10 +17,12 @@ const main = async (): Promise<number> => {
 };
 
 main().then(
-  (code) => process.exit(code),
+  (code) => {
+    process.exitCode = code;
+  },
   (e) => {
     const error = normalizeCliError(e);
     process.stderr.write(renderCliError(error, 'human'));
-    process.exit(error.exitCode);
+    process.exitCode = error.exitCode;
   },
 );

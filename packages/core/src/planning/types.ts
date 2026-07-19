@@ -16,6 +16,7 @@ export type CurrentMutatorCommand =
   | 'doctor'
   | 'export'
   | 'init';
+export type CurrentPlanningCommand = CurrentMutatorCommand | 'plan';
 export type OperationScope = 'user' | 'project';
 
 export interface PlanningToolRegistry<ToolId extends string = SupportedTool> {
@@ -267,7 +268,7 @@ export interface OperationSelection<ToolId extends string = SupportedTool> {
 }
 
 export interface OperationPlan<
-  Command extends CurrentMutatorCommand = CurrentMutatorCommand,
+  Command extends CurrentPlanningCommand = CurrentMutatorCommand,
   ToolId extends string = SupportedTool,
 > {
   readonly domain: 'skillsmith.operation-plan';
@@ -282,7 +283,7 @@ export interface OperationPlan<
 
 export type CurrentMutatorOperationPlan = OperationPlan<CurrentMutatorCommand>;
 export type OperationPlanInput<
-  Command extends CurrentMutatorCommand = CurrentMutatorCommand,
+  Command extends CurrentPlanningCommand = CurrentMutatorCommand,
   ToolId extends string = SupportedTool,
 > = OperationPlan<Command, ToolId>;
 
@@ -383,7 +384,7 @@ export interface OperationIdentity<ToolId extends string = SupportedTool> {
 export interface OperationGroupIdentity {
   readonly domain: 'skillsmith.operation-group-identity';
   readonly schemaVersion: 1;
-  readonly command: CurrentMutatorCommand;
+  readonly command: CurrentPlanningCommand;
   readonly skill: string | null;
   readonly source: OperationSource | null;
   readonly scope: OperationScope | null;
