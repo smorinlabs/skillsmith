@@ -2095,6 +2095,17 @@ validation scheduling only: it changes no command behavior, entity count, execut
 dependency, or product scope, and it preserves the workflows' earlier command, decision, finding,
 task, and recommendation traceability. The user explicitly approved this correction on 2026-07-18.
 
+**Dependency-complete plan/apply ownership amendment (2026-07-18, user-approved):** G4B-01 owns
+the pure plan command, desired/current planner, renderers, saved-output generation, check exits, and
+prune safety. EWP-CMD-PLAN-TS11, EWP-P4B-TS02, EWP-WF06, and EWP-WF08 retain their exact text,
+selectors, tiers, and target paths but have primary required-now validation ownership in G4B-02,
+because each invokes or requires `apply`. G4B-01 retains all four as downstream coverage and as a
+secondary group. D-002/EWP-P4B-T03 retain G4B-02 primary ownership with G4B-01 generation-side
+secondary traceability; D-015/EWP-P4B-T05 retain G4B-03 primary ownership with G4B-01 visible
+resolution/locked-preview secondary traceability. This changes validation scheduling and
+traceability only: no assertion, behavior, entity count, execution-group dependency, or product
+scope changes. The user explicitly approved this correction on 2026-07-18.
+
 **Entry:** Phase 3B transaction primitives pass against every existing mutator. **Exit:** init,
 imperative default-save, export, plan, and apply share one operation set and coordinator; all Phase
 4 holistic workflows pass without command-specific transaction engines.

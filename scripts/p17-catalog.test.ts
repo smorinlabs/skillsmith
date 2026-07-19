@@ -439,6 +439,67 @@ describe('P17 immutable catalog and traceability baseline', () => {
     expect(group(catalog, 'P17-G5-05').requiredNowValidations).toContain('EWP-WF13');
   });
 
+  test('schedules apply-dependent plan closure at G4B-02 with exact G4B-01 traceability', () => {
+    const catalog = fixture();
+    const g4b01 = group(catalog, 'P17-G4B-01');
+    const g4b02 = group(catalog, 'P17-G4B-02');
+    const downstream = ['EWP-CMD-PLAN-TS11', 'EWP-P4B-TS02', 'EWP-WF06', 'EWP-WF08'];
+
+    expect(g4b01.requiredNowValidations).toEqual([
+      'EWP-CMD-PLAN-TS01',
+      'EWP-CMD-PLAN-TS02',
+      'EWP-CMD-PLAN-TS03',
+      'EWP-CMD-PLAN-TS04',
+      'EWP-CMD-PLAN-TS05',
+      'EWP-CMD-PLAN-TS06',
+      'EWP-CMD-PLAN-TS07',
+      'EWP-CMD-PLAN-TS08',
+      'EWP-CMD-PLAN-TS09',
+      'EWP-CMD-PLAN-TS10',
+      'EWP-CMD-PLAN-TS12',
+      'EWP-P4B-TS01',
+      'EWP-P4B-TS04',
+    ]);
+    expect(g4b01.downstreamCoverage).toEqual(downstream);
+    expect(g4b02.requiredNowValidations).toEqual(expect.arrayContaining(downstream));
+
+    for (const id of downstream) {
+      const entity = required(
+        catalog.entities.find((item) => item.id === id),
+        `missing ${id}`,
+      );
+      expect(entity.primaryGroup).toBe('P17-G4B-02');
+      expect(entity.secondaryGroups).toContain('P17-G4B-01');
+      expect(entity.affectedContracts).toEqual(
+        expect.arrayContaining(['COMMAND:plan', 'D-001', 'P1-07']),
+      );
+    }
+
+    for (const id of ['COMMAND:plan', 'D-001', 'EWP-P4B-T01', 'EWP-P4B-T02', 'P1-07']) {
+      const entity = required(
+        catalog.entities.find((item) => item.id === id),
+        `missing ${id}`,
+      );
+      expect(entity.validatedBy).toEqual(expect.arrayContaining(downstream));
+      expect(entity.secondaryGroups).toContain('P17-G4B-02');
+    }
+
+    for (const [id, primary, validations] of [
+      ['D-002', 'P17-G4B-02', ['EWP-CMD-PLAN-TS09', 'EWP-CMD-PLAN-TS10']],
+      ['EWP-P4B-T03', 'P17-G4B-02', ['EWP-CMD-PLAN-TS09', 'EWP-CMD-PLAN-TS10']],
+      ['D-015', 'P17-G4B-03', ['EWP-CMD-PLAN-TS04', 'EWP-CMD-PLAN-TS09']],
+      ['EWP-P4B-T05', 'P17-G4B-03', ['EWP-CMD-PLAN-TS04', 'EWP-CMD-PLAN-TS09']],
+    ] as const) {
+      const entity = required(
+        catalog.entities.find((item) => item.id === id),
+        `missing ${id}`,
+      );
+      expect(entity.primaryGroup).toBe(primary);
+      expect(entity.secondaryGroups).toContain('P17-G4B-01');
+      expect(entity.validatedBy).toEqual(expect.arrayContaining([...validations]));
+    }
+  });
+
   test('separates required-now validation from immutable downstream coverage', () => {
     const catalog = fixture();
     const phase0 = group(catalog, 'P17-G0-05');

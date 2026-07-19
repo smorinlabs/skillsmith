@@ -327,8 +327,15 @@ map('G4A-01', ['EWP-P4A-T01', 'EWP-P4A-TS01']);
 map('G4A-02', ['EWP-P4A-T02', 'EWP-P4A-TS03']);
 map('G4A-03', ['EWP-P4A-T04', 'EWP-P4A-TS04']);
 map('G4A-04', ['EWP-P4A-T03', 'EWP-P4A-TS02']);
-map('G4B-01', ['EWP-P4B-T01', 'EWP-P4B-T02', 'EWP-P4B-TS01', 'EWP-P4B-TS02', 'EWP-P4B-TS04']);
-map('G4B-02', ['EWP-P4B-T03', 'EWP-P4B-T04', 'EWP-P4B-TS03', 'EWP-P4B-TS07']);
+map('G4B-01', ['EWP-P4B-T01', 'EWP-P4B-T02', 'EWP-P4B-TS01', 'EWP-P4B-TS04']);
+map('G4B-02', [
+  'EWP-P4B-T03',
+  'EWP-P4B-T04',
+  'EWP-P4B-TS02',
+  'EWP-P4B-TS03',
+  'EWP-P4B-TS07',
+  'EWP-CMD-PLAN-TS11',
+]);
 map('G4B-03', ['EWP-P4B-T05', 'EWP-P4B-TS05', 'EWP-P4B-TS06']);
 
 map('G5-01', ['EWP-P5-T01', 'EWP-P5-T02', 'EWP-P5-TS01']);
@@ -456,9 +463,9 @@ const workflowGroups = [
   'G4B-03',
   'G4B-03',
   'G5-03',
-  'G4B-01',
   'G4B-02',
-  'G4B-01',
+  'G4B-02',
+  'G4B-02',
   'G5-02',
   'G5-01',
   'G5-03',
@@ -628,6 +635,29 @@ const G4A03_VALIDATIONS = [
   'EWP-P4A-TS04',
   'EWP-WF03',
 ] as const;
+
+const G4B01_DOWNSTREAM_VALIDATIONS = [
+  'EWP-CMD-PLAN-TS11',
+  'EWP-P4B-TS02',
+  'EWP-WF06',
+  'EWP-WF08',
+] as const;
+
+const additiveValidationOwnership: Record<string, string[]> = {
+  // The dependency-complete apply owner runs these terminal selectors, while the plan slice must
+  // retain them as immutable downstream coverage.
+  'COMMAND:plan': [...G4B01_DOWNSTREAM_VALIDATIONS],
+  'D-001': [...G4B01_DOWNSTREAM_VALIDATIONS],
+  'EWP-P4B-T01': [...G4B01_DOWNSTREAM_VALIDATIONS],
+  'EWP-P4B-T02': [...G4B01_DOWNSTREAM_VALIDATIONS],
+  'P1-07': [...G4B01_DOWNSTREAM_VALIDATIONS],
+  // Later primaries retain execution/commit closure while recording G4B-01's generation and
+  // visible-resolution slices as secondary traceability.
+  'D-002': ['EWP-CMD-PLAN-TS09', 'EWP-CMD-PLAN-TS10'],
+  'EWP-P4B-T03': ['EWP-CMD-PLAN-TS09', 'EWP-CMD-PLAN-TS10'],
+  'D-015': ['EWP-CMD-PLAN-TS04', 'EWP-CMD-PLAN-TS09'],
+  'EWP-P4B-T05': ['EWP-CMD-PLAN-TS04', 'EWP-CMD-PLAN-TS09'],
+};
 
 const explicitValidationOwnership: Record<string, string[]> = {
   // The full first-installation workflow closes only after distribution, generated help/docs, and
@@ -884,6 +914,10 @@ const explicitContractOwnership: Record<string, string[]> = {
   'EWP-P2-TS02': ['D-003', 'EWP-CF-003', 'EWP-CF-021', 'EWP-CF-022', 'EWP-CF-040'],
 };
 
+const additiveContractOwnership: Record<string, string[]> = Object.fromEntries(
+  G4B01_DOWNSTREAM_VALIDATIONS.map((id) => [id, ['COMMAND:plan', 'D-001', 'P1-07']]),
+);
+
 function validationReferences(value: string): string[] {
   const references = new Set<string>();
   const direct = new RegExp(`${validationPrefix}\\d{2}`, 'g');
@@ -1084,14 +1118,22 @@ function initialize(): Catalog {
         : (validationsByPhase.get(phaseId ?? '') ?? []);
     const findingRelation = item.kind === 'finding' ? tracedFindings.get(item.id) : undefined;
     const tracedValidations = findingRelation?.validations ?? [];
-    const validations =
-      explicitValidationOwnership[item.id] ??
-      (tracedValidations.length > 0 ? tracedValidations : fallbackValidations);
-    const contracts =
-      explicitContractOwnership[item.id] ??
-      (item.kind === 'finding'
-        ? (findingRelation?.contracts ?? [])
-        : (contractsByGroup.get(item.primaryGroup) ?? []));
+    const validations = [
+      ...new Set([
+        ...(explicitValidationOwnership[item.id] ??
+          (tracedValidations.length > 0 ? tracedValidations : fallbackValidations)),
+        ...(additiveValidationOwnership[item.id] ?? []),
+      ]),
+    ];
+    const contracts = [
+      ...new Set([
+        ...(explicitContractOwnership[item.id] ??
+          (item.kind === 'finding'
+            ? (findingRelation?.contracts ?? [])
+            : (contractsByGroup.get(item.primaryGroup) ?? []))),
+        ...(additiveContractOwnership[item.id] ?? []),
+      ]),
+    ];
     const secondaryGroups = [
       ...new Set(
         [...validations, ...contracts]
