@@ -32,6 +32,22 @@ const operation = <ToolId extends string>(
     pairId: `pair:${scope}:${skill}:${tool}`,
   }) as unknown as ExecutableOperation<ToolId>;
 
+const dependencyMetadata = (operationIds: readonly string[]) => ({
+  domain: 'skillsmith.operation-dependency' as const,
+  schemaVersion: 1 as const,
+  operationIds,
+});
+
+const permutations = <Value>(values: readonly Value[]): Value[][] =>
+  values.length === 0
+    ? [[]]
+    : values.flatMap((value, index) =>
+        permutations([...values.slice(0, index), ...values.slice(index + 1)]).map((rest) => [
+          value,
+          ...rest,
+        ]),
+      );
+
 describe('planning canonical order', () => {
   test('uses unsigned UTF-16 comparison and canonical object-member order', () => {
     expect(comparePlanningText('a', 'b')).toBe(-1);
@@ -171,12 +187,127 @@ describe('planning canonical order', () => {
     ).toEqual(['alpha-live', 'beta-live']);
   });
 
+  test('orders a rolling prefix cohort by group identity over all input permutations', () => {
+    const prefix = {
+      ...operation('prefix-lock', 'user', 'artifact', 'codex', 'install'),
+      groupId: 'group:prefix',
+      pairId: null,
+      scope: null,
+      skill: null,
+      source: null,
+      tool: null,
+      kind: 'write-lock',
+      after: {
+        kind: 'lock',
+        location: { kind: 'portable', token: 'artifacts/skills-lock.json' },
+      },
+      dependencyMetadata: dependencyMetadata([]),
+    } as unknown as ExecutableOperation;
+    const unchanged = {
+      ...operation('unchanged-live', 'user', 'zeta', 'codex', 'install'),
+      groupId: 'group:a',
+      dependencyMetadata: dependencyMetadata([prefix.operationId]),
+    } as ExecutableOperation;
+    const laterPrefix = {
+      ...prefix,
+      operationId: 'later-lock',
+      groupId: 'group:z',
+      dependencyMetadata: dependencyMetadata([prefix.operationId]),
+    } as ExecutableOperation;
+
+    for (const input of permutations([prefix, unchanged, laterPrefix])) {
+      expect(
+        orderExecutableOperationsTopologically(input).map(({ operationId }) => operationId),
+      ).toEqual(['prefix-lock', 'unchanged-live', 'later-lock']);
+    }
+  });
+
+  test('uses semantic order among eligible prefix and unrelated groups', () => {
+    const prefix = {
+      ...operation('prefix-lock', 'user', 'artifact', 'codex', 'install'),
+      groupId: 'group:prefix',
+      pairId: null,
+      scope: null,
+      skill: null,
+      source: null,
+      tool: null,
+      kind: 'write-lock',
+      after: {
+        kind: 'lock',
+        location: { kind: 'portable', token: 'artifacts/skills-lock.json' },
+      },
+      dependencyMetadata: dependencyMetadata([]),
+    } as unknown as ExecutableOperation;
+    const unchanged = {
+      ...operation('unchanged-live', 'user', 'zeta', 'codex', 'install'),
+      groupId: 'group:a',
+      dependencyMetadata: dependencyMetadata([prefix.operationId]),
+    } as ExecutableOperation;
+    const laterPrefix = {
+      ...prefix,
+      operationId: 'later-lock',
+      groupId: 'group:z',
+      dependencyMetadata: dependencyMetadata([prefix.operationId]),
+    } as ExecutableOperation;
+    const unrelated = {
+      ...operation('unrelated-live', 'user', 'alpha', 'codex', 'install'),
+      groupId: 'group:unrelated',
+      dependencyMetadata: dependencyMetadata([]),
+    } as ExecutableOperation;
+
+    for (const input of permutations([prefix, unchanged, laterPrefix, unrelated])) {
+      expect(
+        orderExecutableOperationsTopologically(input).map(({ operationId }) => operationId),
+      ).toEqual(['prefix-lock', 'unrelated-live', 'unchanged-live', 'later-lock']);
+    }
+  });
+
+  test('orders two successive artifact-prefix cohorts', () => {
+    const firstPrefix = {
+      ...operation('first-lock', 'user', 'artifact', 'codex', 'install'),
+      groupId: 'group:prefix-1',
+      pairId: null,
+      scope: null,
+      skill: null,
+      source: null,
+      tool: null,
+      kind: 'write-lock',
+      after: {
+        kind: 'lock',
+        location: { kind: 'portable', token: 'artifacts/skills-lock.json' },
+      },
+      dependencyMetadata: dependencyMetadata([]),
+    } as unknown as ExecutableOperation;
+    const firstUnchanged = {
+      ...operation('first-unchanged-live', 'user', 'alpha', 'codex', 'install'),
+      groupId: 'group:a',
+      dependencyMetadata: dependencyMetadata([firstPrefix.operationId]),
+    } as ExecutableOperation;
+    const secondPrefix = {
+      ...firstPrefix,
+      operationId: 'second-lock',
+      groupId: 'group:b',
+      dependencyMetadata: dependencyMetadata([firstPrefix.operationId]),
+    } as ExecutableOperation;
+    const secondUnchanged = {
+      ...operation('second-unchanged-live', 'user', 'beta', 'codex', 'install'),
+      groupId: 'group:c',
+      dependencyMetadata: dependencyMetadata([secondPrefix.operationId]),
+    } as ExecutableOperation;
+
+    for (const input of permutations([
+      firstPrefix,
+      firstUnchanged,
+      secondPrefix,
+      secondUnchanged,
+    ])) {
+      expect(
+        orderExecutableOperationsTopologically(input).map(({ operationId }) => operationId),
+      ).toEqual(['first-lock', 'first-unchanged-live', 'second-lock', 'second-unchanged-live']);
+    }
+  });
+
   test('orders only a complete cross-group artifact-prefix barrier', () => {
-    const dependencyMetadata = (operationIds: readonly string[]) => ({
-      domain: 'skillsmith.operation-dependency' as const,
-      schemaVersion: 1 as const,
-      operationIds,
-    });
     const alphaSeed = operation('alpha-live', 'user', 'alpha', 'codex', 'install');
     const prefix = {
       ...alphaSeed,

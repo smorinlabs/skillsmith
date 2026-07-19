@@ -286,6 +286,7 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
     canonicalGroups.map(({ representative }) => [representative.groupId, 0]),
   );
   const dependentGroups = new Map<string, typeof canonicalGroups>();
+  const externalPrefixIdByGroup = new Map<string, string>();
   for (const selected of canonicalGroups) {
     const external = selected.operations
       .flatMap((operation) => operation.dependencyMetadata.operationIds)
@@ -295,6 +296,7 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
           dependency !== undefined && dependency.groupId !== selected.representative.groupId,
       );
     if (external === undefined) continue;
+    externalPrefixIdByGroup.set(selected.representative.groupId, external.operationId);
     remainingGroupDependencies.set(selected.representative.groupId, 1);
     const current = dependentGroups.get(external.groupId) ?? [];
     current.push(selected);
@@ -308,7 +310,29 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
   let orderedGroupCount = 0;
   while (readyGroups.length > 0) {
     readyGroups.sort(compareCanonicalGroups);
-    const selected = readyGroups.shift() as (typeof canonicalGroups)[number];
+    // A later artifact writer must not leapfrog an earlier consumer of the same exact prefix.
+    // Filter eligibility first so the semantic comparator remains globally transitive.
+    const firstReadyGroupIdByPrefix = new Map<string, string>();
+    for (const readyGroup of readyGroups) {
+      const prefixId = externalPrefixIdByGroup.get(readyGroup.representative.groupId);
+      if (prefixId === undefined) continue;
+      const firstGroupId = firstReadyGroupIdByPrefix.get(prefixId);
+      if (
+        firstGroupId === undefined ||
+        comparePlanningText(readyGroup.representative.groupId, firstGroupId) < 0
+      ) {
+        firstReadyGroupIdByPrefix.set(prefixId, readyGroup.representative.groupId);
+      }
+    }
+    const selectedIndex = readyGroups.findIndex((readyGroup) => {
+      const prefixId = externalPrefixIdByGroup.get(readyGroup.representative.groupId);
+      return (
+        prefixId === undefined ||
+        firstReadyGroupIdByPrefix.get(prefixId) === readyGroup.representative.groupId
+      );
+    });
+    if (selectedIndex < 0) planningContextFail('operation group ordering is invalid');
+    const [selected] = readyGroups.splice(selectedIndex, 1) as [(typeof canonicalGroups)[number]];
     if (!groupById.has(selected.representative.groupId)) {
       planningContextFail('operation group ordering is invalid');
     }

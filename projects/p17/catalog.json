@@ -5924,6 +5924,7 @@
       "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
+        "README.md",
         "docs/architecture.md",
         "packages/core/src/reconcile/types.ts",
         "packages/core/src/reconcile/observe.ts",
@@ -5982,6 +5983,7 @@
         "tests/ergonomics/fixtures/p4b-plan/goldens.ts",
         "packages/cli/src/runtime/command-spec.ts",
         "packages/core/tests/planning/types.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS05.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts"
       ],
       "integrationOwner": "root-codex-goal",
@@ -6039,7 +6041,9 @@
         "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11",
         "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08",
         "bun test packages/core/tests/planning/types.test.ts",
-        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07"
+        "bun test tests/ergonomics/phase/EWP-P1-TS05.test.ts --test-name-pattern EWP-P1-TS05",
+        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07",
+        "bun test tests/ergonomics/phase/EWP-P1-TS09.test.ts --test-name-pattern EWP-P1-TS09"
       ],
       "implementers": ["root-codex-goal"],
       "reviewer": "/root/g4b01_final_adversarial",
@@ -6077,7 +6081,10 @@
         },
         "adversarial-review": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-01.md#adversarial-review"]
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-01.md#adversarial-review",
+            "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review"
+          ]
         },
         "traceability-closure": {
           "status": "pending",
@@ -6099,10 +6106,12 @@
         "projects/p17/evidence/P17-G4B-01.md#approved-stream-drain-and-dependency-ordering-ownership-amendment",
         "projects/p17/evidence/P17-G4B-01.md#approved-saved-plan-traversal-capacity-ownership-amendment",
         "projects/p17/evidence/P17-G4B-01.md#approved-permission-classification-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-01.md#approved-current-readme-compatibility-amendment",
         "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4B-01.md#refactor",
-        "projects/p17/evidence/P17-G4B-01.md#adversarial-review"
+        "projects/p17/evidence/P17-G4B-01.md#adversarial-review",
+        "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review"
       ]
     },
     {
@@ -22119,10 +22128,12 @@
         "projects/p17/evidence/P17-G4B-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-01.md#ready-review",
         "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result",
+        "projects/p17/evidence/P17-G4B-01.md#approved-current-readme-compatibility-amendment",
         "projects/p17/evidence/P17-G4B-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4B-01.md#adversarial-review"
+        "projects/p17/evidence/P17-G4B-01.md#adversarial-review",
+        "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": ["COMMAND:plan", "D-001", "P1-07"],
@@ -22184,9 +22195,12 @@
         "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11",
         "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08",
         "bun test packages/core/tests/planning/types.test.ts",
-        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07"
+        "bun test tests/ergonomics/phase/EWP-P1-TS05.test.ts --test-name-pattern EWP-P1-TS05",
+        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07",
+        "bun test tests/ergonomics/phase/EWP-P1-TS09.test.ts --test-name-pattern EWP-P1-TS09"
       ],
       "ownedFiles": [
+        "README.md",
         "docs/architecture.md",
         "packages/core/src/reconcile/types.ts",
         "packages/core/src/reconcile/observe.ts",
@@ -22233,6 +22247,7 @@
         "packages/cli/tests/contracts/plan.test.ts",
         "packages/cli/tests/output/plan.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS05.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
@@ -22262,10 +22277,12 @@
         "projects/p17/evidence/P17-G4B-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-01.md#ready-review",
         "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result",
+        "projects/p17/evidence/P17-G4B-01.md#approved-current-readme-compatibility-amendment",
         "projects/p17/evidence/P17-G4B-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4B-01.md#adversarial-review"
+        "projects/p17/evidence/P17-G4B-01.md#adversarial-review",
+        "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": ["COMMAND:plan", "D-001", "P1-07"],
@@ -22327,9 +22344,12 @@
         "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11",
         "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08",
         "bun test packages/core/tests/planning/types.test.ts",
-        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07"
+        "bun test tests/ergonomics/phase/EWP-P1-TS05.test.ts --test-name-pattern EWP-P1-TS05",
+        "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07",
+        "bun test tests/ergonomics/phase/EWP-P1-TS09.test.ts --test-name-pattern EWP-P1-TS09"
       ],
       "ownedFiles": [
+        "README.md",
         "docs/architecture.md",
         "packages/core/src/reconcile/types.ts",
         "packages/core/src/reconcile/observe.ts",
@@ -22376,6 +22396,7 @@
         "packages/cli/tests/contracts/plan.test.ts",
         "packages/cli/tests/output/plan.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS05.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SUPPORTED_TOOLS } from '../../agents/types.ts';
+import { SUPPORTED_TOOLS, type SupportedTool } from '../../agents/types.ts';
 import type {
   ConflictV1,
   LockSnapshotV1,
@@ -546,7 +546,7 @@ type PlanSourceV1Dto =
 type PlanLiveResourceV1Dto = {
   kind: 'live';
   skill: string;
-  tool: 'claude-code' | 'codex' | 'kilo-code' | 'opencode';
+  tool: SupportedTool;
   scope: 'user' | 'project';
   projectRoot: PlanLocationV1Dto | null;
   location: PlanLocationV1Dto;
@@ -581,7 +581,7 @@ type PlanImageV1Dto =
       value: {
         version: 1;
         defaults: {
-          tools: ('claude-code' | 'codex' | 'kilo-code' | 'opencode')[] | null;
+          tools: SupportedTool[] | null;
           scope: 'user' | 'project' | null;
           path: string | null;
         } | null;
@@ -590,7 +590,7 @@ type PlanImageV1Dto =
           name: string;
           source: { host: string; repository: string; path: string | null };
           ref: string | null;
-          tools: ('claude-code' | 'codex' | 'kilo-code' | 'opencode')[];
+          tools: SupportedTool[];
           scope: 'user' | 'project';
           placement: 'symlink' | 'copy';
           path: string | null;
@@ -644,7 +644,7 @@ export type PlanOperationV1Dto = {
   dependsOn: string[];
   skill: string | null;
   source: PlanSourceV1Dto | null;
-  tool: 'claude-code' | 'codex' | 'kilo-code' | 'opencode' | null;
+  tool: SupportedTool | null;
   scope: 'user' | 'project' | null;
   before: PlanImageV1Dto;
   after: PlanImageV1Dto;
@@ -704,7 +704,7 @@ export type PlanCheckV1Dto =
       blocking: true;
       operationIds: [string, ...string[]];
       kind: 'verification';
-      tool: 'claude-code' | 'codex' | 'kilo-code' | 'opencode';
+      tool: SupportedTool;
       mode: 'static' | 'static+deep';
       expectedContentHash: string;
     }
@@ -733,7 +733,7 @@ export interface PlanDiagnosticV1Dto {
         }
       | { kind: 'local-dev'; path: string; contentHash: string }
       | null;
-    tool: 'claude-code' | 'codex' | 'kilo-code' | 'opencode' | null;
+    tool: SupportedTool | null;
     scope: 'user' | 'project' | null;
     path: { kind: 'portable'; token: string } | { kind: 'machine-bound'; path: string } | null;
   };
@@ -757,10 +757,10 @@ export interface PlanV1Dto {
   selection: {
     selectionSource: 'explicit-targets' | 'explicit-all' | 'bounded-default';
     selectionOutcome: 'selected' | 'filter-noop';
-    requestedTools: ('claude-code' | 'codex' | 'kilo-code' | 'opencode')[];
+    requestedTools: SupportedTool[];
     requestedScope: 'user' | 'project' | null;
     skills: string[];
-    tools: ('claude-code' | 'codex' | 'kilo-code' | 'opencode')[];
+    tools: SupportedTool[];
     scopes: ('user' | 'project')[];
   };
   operations: PlanOperationV1Dto[];
