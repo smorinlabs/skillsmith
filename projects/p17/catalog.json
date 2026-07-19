@@ -5844,24 +5844,25 @@
           "status": "passed",
           "evidence": [
             "projects/p17/evidence/P17-G4A-04.md#test-first-evidence",
-            "projects/p17/evidence/P17-G4A-04.md#second-correction-test-first-evidence"
+            "projects/p17/evidence/P17-G4A-04.md#second-correction-test-first-evidence",
+            "projects/p17/evidence/P17-G4A-04.md#third-correction-test-first-evidence"
           ]
         },
         "minimal-implementation": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4A-04.md#corrected-minimal-implementation"]
+          "status": "pending",
+          "evidence": []
         },
         "targeted-green": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4A-04.md#corrected-targeted-and-impacted-green"]
+          "status": "pending",
+          "evidence": []
         },
         "impacted-green": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4A-04.md#corrected-targeted-and-impacted-green"]
+          "status": "pending",
+          "evidence": []
         },
         "refactor": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4A-04.md#corrected-refactor"]
+          "status": "pending",
+          "evidence": []
         },
         "adversarial-review": {
           "status": "pending",
@@ -5893,7 +5894,9 @@
         "projects/p17/evidence/P17-G4A-04.md#second-correction-test-first-evidence",
         "projects/p17/evidence/P17-G4A-04.md#corrected-minimal-implementation",
         "projects/p17/evidence/P17-G4A-04.md#corrected-targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4A-04.md#corrected-refactor"
+        "projects/p17/evidence/P17-G4A-04.md#corrected-refactor",
+        "projects/p17/evidence/P17-G4A-04.md#final-adversarial-review-no-go",
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-test-first-evidence"
       ]
     },
     {
@@ -21399,7 +21402,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-04",
-      "status": "green",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-04",
       "target": null,
@@ -21413,7 +21416,9 @@
         "projects/p17/evidence/P17-G4A-04.md#independent-adversarial-review-no-go",
         "projects/p17/evidence/P17-G4A-04.md#corrected-minimal-implementation",
         "projects/p17/evidence/P17-G4A-04.md#corrected-targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4A-04.md#corrected-refactor"
+        "projects/p17/evidence/P17-G4A-04.md#corrected-refactor",
+        "projects/p17/evidence/P17-G4A-04.md#final-adversarial-review-no-go",
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-test-first-evidence"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -21620,7 +21625,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-04",
-      "status": "passing",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-04:tests/ergonomics/phase/EWP-P4A-TS02.test.ts#EWP-P4A-TS02",
       "target": {
@@ -21630,12 +21635,14 @@
         "command": "bun test tests/ergonomics/phase/EWP-P4A-TS02.test.ts --test-name-pattern EWP-P4A-TS02"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-red-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#corrected-green-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#correction-red-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#final-green-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#red-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#independent-adversarial-review-no-go",
-        "projects/p17/evidence/P17-G4A-04.md#second-correction-test-first-evidence"
+        "projects/p17/evidence/P17-G4A-04.md#second-correction-test-first-evidence",
+        "projects/p17/evidence/P17-G4A-04.md#final-adversarial-review-no-go"
       ],
       "secondaryGroups": [],
       "implements": [],

@@ -511,6 +511,67 @@ const supersedingInstallJournal = (removal: LogicalJournalV1Dto): LogicalJournal
   };
 };
 
+const relocatedRemovalJournal = (
+  removal: LogicalJournalV1Dto,
+  placementPath: string,
+  phase: 'live' | 'committed',
+): LogicalJournalV1Dto => {
+  if (
+    removal.intent.kind !== 'remove' ||
+    removal.intent.before.kind !== 'placement' ||
+    removal.intent.after.kind !== 'absent' ||
+    removal.intent.tool === null
+  ) {
+    throw new Error('relocated removal fixture requires a selected removal intent');
+  }
+  const resource = {
+    ...removal.intent.before.resource,
+    location: { kind: 'machine-bound' as const, path: placementPath },
+  };
+  const pairId = createOperationPairId({
+    domain: 'skillsmith.operation-pair-identity',
+    schemaVersion: 1,
+    groupId: removal.intent.groupId,
+    tool: removal.intent.tool,
+    resource,
+  });
+  const operationId = createOperationId({
+    domain: 'skillsmith.operation-identity',
+    schemaVersion: 1,
+    groupId: removal.intent.groupId,
+    pairId,
+    kind: 'remove',
+    skill: removal.intent.skill,
+    source: removal.intent.source,
+    tool: removal.intent.tool,
+    scope: removal.intent.scope,
+  });
+  const relocateActuals = (actuals: LogicalJournalV1Dto['actual']['before']) =>
+    actuals.map((actual) =>
+      actual.role === 'live' ? { ...actual, placementPath } : actual,
+    ) as LogicalJournalV1Dto['actual']['before'];
+  const transactionId = `transaction:p4a-ts02-relocated-${phase}`;
+  return {
+    ...structuredClone(removal),
+    transactionId,
+    intent: {
+      ...removal.intent,
+      operationId,
+      pairId,
+      before: { ...removal.intent.before, resource },
+      after: { ...removal.intent.after, resource },
+    },
+    context: { ...removal.context, parentOperationId: operationId },
+    phase,
+    actual: {
+      before: relocateActuals(removal.actual.before),
+      after: relocateActuals(removal.actual.after),
+      retained: removal.actual.retained,
+    },
+    completedAt: phase === 'committed' ? removal.completedAt : null,
+  };
+};
+
 const runDeclaredUninstall = async (
   selected: FixtureFleet,
   root: string,
@@ -1825,6 +1886,41 @@ describe('EWP-P4A-TS02', () => {
     expect(refused.plan.operations).toEqual([]);
     expect(refused.results.every(({ action }) => action === 'refused')).toBeTrue();
     expect(await readPair(handoff.root)).toEqual([handoff.afterManifest, handoff.beforeLock]);
+  });
+
+  test('refuses a newer committed or nonterminal logical pair at a different path', async () => {
+    for (const phase of ['committed', 'live'] as const) {
+      const selected = await fleet();
+      const handoff = await prepareFinalHandoff(selected);
+      const model = await readLedgerModel(selected);
+      const removal = model.history.at(-1);
+      if (removal === undefined) throw new Error('missing default-path removal authority fixture');
+      const relocated = relocatedRemovalJournal(
+        removal,
+        join(selected.base, `later-${phase}-custom-placement`, 'portable-alpha'),
+        phase,
+      );
+      await persistLedgerModel(
+        selected,
+        phase === 'committed'
+          ? { ...model, history: [...model.history, relocated] }
+          : {
+              ...model,
+              transactions: { ...model.transactions, [relocated.transactionId]: relocated },
+            },
+      );
+
+      const refused = await runDeclaredUninstall(selected, handoff.root, ['portable-alpha']);
+      expect(refused.plan.operations, phase).toEqual([]);
+      expect(
+        refused.results.every(({ action }) => action === 'refused'),
+        phase,
+      ).toBeTrue();
+      expect(await readPair(handoff.root), phase).toEqual([
+        handoff.afterManifest,
+        handoff.beforeLock,
+      ]);
+    }
   });
 
   test('refuses a nonterminal selected-pair transaction without completing its stale lock', async () => {
