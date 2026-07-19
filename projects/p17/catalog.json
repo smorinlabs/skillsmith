@@ -5921,7 +5921,7 @@
       "phase": "4B",
       "title": "Desired/current planner, prune selection, renderers, check exits, and idempotence",
       "dependsOn": ["P17-G4A-04"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -6087,12 +6087,15 @@
           ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-01.md#traceability-and-terminal-verification"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-01.md#traceability-and-terminal-verification",
+            "projects/p17/evidence/P17-G4B-01.md#sign-off"
+          ]
         }
       },
       "evidence": [
@@ -6111,7 +6114,9 @@
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4B-01.md#refactor",
         "projects/p17/evidence/P17-G4B-01.md#adversarial-review",
-        "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review"
+        "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review",
+        "projects/p17/evidence/P17-G4B-01.md#traceability-and-terminal-verification",
+        "projects/p17/evidence/P17-G4B-01.md#sign-off"
       ]
     },
     {
@@ -7883,13 +7888,15 @@
       "title": "Declarative — What would convergence change?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-01",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:plan",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
-        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4B-01.md#traceability-and-terminal-verification",
+        "projects/p17/evidence/P17-G4B-01.md#sign-off"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": [],
@@ -8270,13 +8277,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-01",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
-        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4B-01.md#traceability-and-terminal-verification",
+        "projects/p17/evidence/P17-G4B-01.md#sign-off"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": [],
@@ -15394,7 +15403,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS01",
       "target": {
@@ -15404,6 +15413,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS01"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts01",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts01",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts01",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15442,7 +15452,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS02",
       "target": {
@@ -15452,6 +15462,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS02"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts02",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts02",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts02",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15490,7 +15501,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS03",
       "target": {
@@ -15500,6 +15511,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS03"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts03",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts03",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts03",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15538,7 +15550,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS04",
       "target": {
@@ -15548,6 +15560,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS04"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts04",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts04",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts04",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15586,7 +15599,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS05",
       "target": {
@@ -15596,6 +15609,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS05"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts05",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts05",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts05",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15634,7 +15648,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS06",
       "target": {
@@ -15644,6 +15658,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS06"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts06",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts06",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts06",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15682,7 +15697,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS07",
       "target": {
@@ -15692,6 +15707,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS07"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts07",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts07",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts07",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15730,7 +15746,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS08",
       "target": {
@@ -15740,6 +15756,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS08"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts08",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts08",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts08",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15778,7 +15795,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS09",
       "target": {
@@ -15788,6 +15805,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS09"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts09",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts09",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts09",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15826,7 +15844,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS10",
       "target": {
@@ -15836,6 +15854,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS10"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts10",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts10",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts10",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -15927,7 +15946,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS12",
       "target": {
@@ -15937,6 +15956,7 @@
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS12"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-cmd-plan-ts12",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-cmd-plan-ts12",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts12",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -22120,7 +22140,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-01",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01",
       "target": null,
@@ -22133,7 +22153,9 @@
         "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4B-01.md#adversarial-review",
-        "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review"
+        "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review",
+        "projects/p17/evidence/P17-G4B-01.md#traceability-and-terminal-verification",
+        "projects/p17/evidence/P17-G4B-01.md#sign-off"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": ["COMMAND:plan", "D-001", "P1-07"],
@@ -22269,7 +22291,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-01",
-      "status": "reviewed",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01",
       "target": null,
@@ -22282,7 +22304,9 @@
         "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4B-01.md#adversarial-review",
-        "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review"
+        "projects/p17/evidence/P17-G4B-01.md#terminal-compatibility-correction-review",
+        "projects/p17/evidence/P17-G4B-01.md#traceability-and-terminal-verification",
+        "projects/p17/evidence/P17-G4B-01.md#sign-off"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": ["COMMAND:plan", "D-001", "P1-07"],
@@ -22617,7 +22641,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:tests/ergonomics/phase/EWP-P4B-TS01.test.ts#EWP-P4B-TS01",
       "target": {
@@ -22627,6 +22651,7 @@
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS01.test.ts --test-name-pattern EWP-P4B-TS01"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-p4b-ts01",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-p4b-ts01",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-p4b-ts01",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -22768,7 +22793,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:tests/ergonomics/phase/EWP-P4B-TS04.test.ts#EWP-P4B-TS04",
       "target": {
@@ -22778,6 +22803,7 @@
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS04.test.ts --test-name-pattern EWP-P4B-TS04"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-01.md#terminal-signed-execution-receipt-ewp-p4b-ts04",
         "projects/p17/evidence/P17-G4B-01.md#green-execution-receipt-ewp-p4b-ts04",
         "projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-p4b-ts04",
         "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
@@ -24714,13 +24740,15 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-01",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4B-01.md#minimal-implementation",
-        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G4B-01.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4B-01.md#traceability-and-terminal-verification",
+        "projects/p17/evidence/P17-G4B-01.md#sign-off"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": [],
