@@ -5921,7 +5921,7 @@
       "phase": "4B",
       "title": "Desired/current planner, prune selection, renderers, check exits, and idempotence",
       "dependsOn": ["P17-G4A-04"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -6043,8 +6043,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-01.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -6079,7 +6079,8 @@
         "projects/p17/plans/P17-G4B-01.md",
         "projects/p17/evidence/P17-G4B-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-01.md#ready-review",
-        "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result"
+        "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result",
+        "projects/p17/evidence/P17-G4B-01.md#test-first-evidence"
       ]
     },
     {
@@ -15356,11 +15357,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS01",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS01"],
@@ -15380,8 +15386,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS01"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS02",
@@ -15389,11 +15401,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS02",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS02"],
@@ -15413,8 +15430,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS02"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS03",
@@ -15422,11 +15445,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS03",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS03"],
@@ -15446,8 +15474,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS03"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS04",
@@ -15455,11 +15489,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS04",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS04"],
@@ -15479,8 +15518,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS04"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS05",
@@ -15488,11 +15533,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS05",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS05"],
@@ -15512,8 +15562,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS05"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS06",
@@ -15521,11 +15577,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS06",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS06"],
@@ -15545,8 +15606,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS06"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS07",
@@ -15554,11 +15621,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS07",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS07"],
@@ -15578,8 +15650,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS07"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS08",
@@ -15587,11 +15665,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS08",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS08",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS08"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts08"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS08"],
@@ -15611,8 +15694,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS08"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS09",
@@ -15620,11 +15709,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS09",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS09",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS09"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts09"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS09"],
@@ -15644,8 +15738,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS09"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS10",
@@ -15653,11 +15753,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS10",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS10",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS10"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts10"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS10"],
@@ -15677,8 +15782,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS10"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PLAN-TS11",
@@ -15739,11 +15850,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS12",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/plan.test.ts",
+        "selector": "EWP-CMD-PLAN-TS12",
+        "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS12"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-cmd-plan-ts12"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS12"],
@@ -15763,8 +15879,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS12"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/plan.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-CMD-PROMOTE-TS01",
@@ -21917,14 +22039,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-01",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4B-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-01.md#ready-review",
-        "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result"
+        "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result",
+        "projects/p17/evidence/P17-G4B-01.md#test-first-evidence"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": ["COMMAND:plan", "D-001", "P1-07"],
@@ -22043,14 +22166,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-01",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4B-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-01.md#ready-review",
-        "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result"
+        "projects/p17/evidence/P17-G4B-01.md#approved-amendment-and-ready-result",
+        "projects/p17/evidence/P17-G4B-01.md#test-first-evidence"
       ],
       "secondaryGroups": ["P17-G4B-02"],
       "implements": ["COMMAND:plan", "D-001", "P1-07"],
@@ -22368,11 +22492,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:tests/ergonomics/phase/EWP-P4B-TS01.test.ts#EWP-P4B-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P4B-TS01.test.ts",
+        "selector": "EWP-P4B-TS01",
+        "command": "bun test tests/ergonomics/phase/EWP-P4B-TS01.test.ts --test-name-pattern EWP-P4B-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-p4b-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS01"],
@@ -22392,8 +22521,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P4B-TS01.test.ts --test-name-pattern EWP-P4B-TS01"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P4B-TS01.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-P4B-TS02",
@@ -22504,11 +22639,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-01:tests/ergonomics/phase/EWP-P4B-TS04.test.ts#EWP-P4B-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P4B-TS04.test.ts",
+        "selector": "EWP-P4B-TS04",
+        "command": "bun test tests/ergonomics/phase/EWP-P4B-TS04.test.ts --test-name-pattern EWP-P4B-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-01.md#red-execution-receipt-ewp-p4b-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS04"],
@@ -22528,8 +22668,14 @@
         "EWP-P4B-TS04"
       ],
       "affectedContracts": ["COMMAND:plan", "D-001", "P1-07"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P4B-TS04.test.ts --test-name-pattern EWP-P4B-TS04"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P4B-TS04.test.ts",
+        "tests/ergonomics/fixtures/p4b-plan/cases.ts",
+        "tests/ergonomics/fixtures/p4b-plan/goldens.ts"
+      ]
     },
     {
       "id": "EWP-P4B-TS05",
