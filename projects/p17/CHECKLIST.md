@@ -248,7 +248,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-OPT-TS06 | P17-G1-01 | signed-off | required-pr |
 | EWP-OPT-TS07 | P17-G6-02A | planned | required-pr |
 | EWP-OPT-TS08 | P17-G5-05 | planned | required-pr |
-| EWP-OPT-TS09 | P17-G4B-02 | planned | required-pr |
+| EWP-OPT-TS09 | P17-G4B-02 | failing | required-pr |
 | EWP-OPT-TS10 | P17-G1-02A | signed-off | required-pr |
 
 #### workflow
@@ -260,9 +260,9 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF03 | P17-G4B-03 | planned | required-pr |
 | EWP-WF04 | P17-G4B-03 | planned | required-pr |
 | EWP-WF05 | P17-G5-03 | planned | required-pr |
-| EWP-WF06 | P17-G4B-02 | planned | required-pr |
-| EWP-WF07 | P17-G4B-02 | planned | required-pr |
-| EWP-WF08 | P17-G4B-02 | planned | required-pr |
+| EWP-WF06 | P17-G4B-02 | failing | required-pr |
+| EWP-WF07 | P17-G4B-02 | failing | required-pr |
+| EWP-WF08 | P17-G4B-02 | failing | required-pr |
 | EWP-WF09 | P17-G5-02 | planned | required-pr |
 | EWP-WF10 | P17-G5-01 | planned | required-pr |
 | EWP-WF11 | P17-G5-03 | planned | required-pr |
@@ -1250,7 +1250,7 @@ Downstream coverage obligations: EWP-CMD-PLAN-TS11, EWP-P4B-TS02, EWP-WF06, EWP-
 
 ## P17-G4B-02 — Saved-plan schema, exact apply, approval, scoped staleness, and validation modes
 
-Phase: 4B; status: **ready**; dependencies: P17-G4B-01.
+Phase: 4B; status: **active**; dependencies: P17-G4B-01.
 Required-now validations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-OPT-TS09, EWP-P4B-TS02, EWP-P4B-TS03, EWP-P4B-TS07, EWP-WF06, EWP-WF07, EWP-WF08, EWP-WF15.
 Downstream coverage obligations: EWP-WF13.
 
@@ -1258,7 +1258,7 @@ Downstream coverage obligations: EWP-WF13.
 
 - [x] P17-G4B-02:mapped _(passed)_
 - [x] P17-G4B-02:ready _(passed)_
-- [ ] P17-G4B-02:test-first _(pending)_
+- [x] P17-G4B-02:test-first _(passed)_
 - [ ] P17-G4B-02:minimal-implementation _(pending)_
 - [ ] P17-G4B-02:targeted-green _(pending)_
 - [ ] P17-G4B-02:impacted-green _(pending)_
@@ -1275,30 +1275,30 @@ Downstream coverage obligations: EWP-WF13.
 - [ ] **EWP-CF-009** — Scope saved-plan invalidation to actual dependencies _(finding; planned)_
 - [ ] **EWP-CF-015** — Protect saved plans as reviewed artifacts _(finding; planned)_
 - [ ] **EWP-CF-042** — Define exact saved-plan validation modes and option conflicts _(finding; planned)_
-- [ ] **EWP-CMD-APPLY-TS01** — fresh plan/display/confirm/execute pipeline. _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS02** — rejection/cancel/no-prompt/yes behavior and no mutation. _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS03** — idempotent unchanged application. _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS04** — lock update and locked strictness. _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS05** — fresh bounded-manifest/saved-exact selection, prune opt-in, _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS06** — saved plan exact execution and exact dry-run/check validation without _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS07** — precise manifest/lock/resource/selection/capability stale-plan refusals, _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS08** — operation dependency ordering and safe parallelism. _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS09** — per-tool partial failure and rerun convergence. _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS10** — version-1-to-2 migration followed by manifest/lock/ledger atomic commit, _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS11** — continue-on-error and exit precedence. _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS12** — fresh and saved dry-run/check aliases, mutual exclusion, exact allowed/ _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS13** — human/JSON/quiet/verbose/SIGINT contracts. _(command-test; planned)_
-- [ ] **EWP-CMD-APPLY-TS14** — real manifest with multi-tool, multi-scope, source reuse, portable _(command-test; planned)_
-- [ ] **EWP-CMD-PLAN-TS11** — apply-dry-run and apply-check compatibility equivalence. _(command-test; planned)_
-- [ ] **EWP-OPT-TS09** — Exhaust fresh versus saved apply modes: saved plan allows exact dry-run or check _(option-gate; planned)_
-- [ ] **EWP-P4B-T03** — Saved-plan schema, permissions, recursive redaction, automatic _(phase-task; ready)_
-- [ ] **EWP-P4B-T04** — Apply executor, approval, saved-plan execution, and precondition revalidation. _(phase-task; ready)_
-- [ ] **EWP-P4B-TS02** — Plan/check/apply-dry-run equivalence and apply idempotence. _(phase-test; planned)_
-- [ ] **EWP-P4B-TS03** — Saved-plan exact execution; semantic-manifest/canonical-lock/resource/ _(phase-test; planned)_
-- [ ] **EWP-P4B-TS07** — Portable plan zero-local-path proof; machine-bound reason/path/precondition _(phase-test; planned)_
-- [ ] **EWP-WF06** — Interactive plan/apply _(workflow; planned)_
-- [ ] **EWP-WF07** — Saved-plan automation _(workflow; planned)_
-- [ ] **EWP-WF08** — CI gates _(workflow; planned)_
+- [ ] **EWP-CMD-APPLY-TS01** — fresh plan/display/confirm/execute pipeline. _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS02** — rejection/cancel/no-prompt/yes behavior and no mutation. _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS03** — idempotent unchanged application. _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS04** — lock update and locked strictness. _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS05** — fresh bounded-manifest/saved-exact selection, prune opt-in, _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS06** — saved plan exact execution and exact dry-run/check validation without _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS07** — precise manifest/lock/resource/selection/capability stale-plan refusals, _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS08** — operation dependency ordering and safe parallelism. _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS09** — per-tool partial failure and rerun convergence. _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS10** — version-1-to-2 migration followed by manifest/lock/ledger atomic commit, _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS11** — continue-on-error and exit precedence. _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS12** — fresh and saved dry-run/check aliases, mutual exclusion, exact allowed/ _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS13** — human/JSON/quiet/verbose/SIGINT contracts. _(command-test; failing)_
+- [ ] **EWP-CMD-APPLY-TS14** — real manifest with multi-tool, multi-scope, source reuse, portable _(command-test; failing)_
+- [ ] **EWP-CMD-PLAN-TS11** — apply-dry-run and apply-check compatibility equivalence. _(command-test; failing)_
+- [ ] **EWP-OPT-TS09** — Exhaust fresh versus saved apply modes: saved plan allows exact dry-run or check _(option-gate; failing)_
+- [ ] **EWP-P4B-T03** — Saved-plan schema, permissions, recursive redaction, automatic _(phase-task; red)_
+- [ ] **EWP-P4B-T04** — Apply executor, approval, saved-plan execution, and precondition revalidation. _(phase-task; red)_
+- [ ] **EWP-P4B-TS02** — Plan/check/apply-dry-run equivalence and apply idempotence. _(phase-test; failing)_
+- [ ] **EWP-P4B-TS03** — Saved-plan exact execution; semantic-manifest/canonical-lock/resource/ _(phase-test; failing)_
+- [ ] **EWP-P4B-TS07** — Portable plan zero-local-path proof; machine-bound reason/path/precondition _(phase-test; failing)_
+- [ ] **EWP-WF06** — Interactive plan/apply _(workflow; failing)_
+- [ ] **EWP-WF07** — Saved-plan automation _(workflow; failing)_
+- [ ] **EWP-WF08** — CI gates _(workflow; failing)_
 - [ ] **P1-08** — `apply` _(recommendation; planned)_
 
 ## P17-G4B-03 — Lock update policy, cross-machine reproduction, crash recovery, and secret safety
