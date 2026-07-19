@@ -5849,20 +5849,26 @@
           ]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4A-04.md#third-correction-minimal-implementation"
+          ]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4A-04.md#third-correction-targeted-and-impacted-green"
+          ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4A-04.md#third-correction-targeted-and-impacted-green"
+          ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4A-04.md#third-correction-refactor"]
         },
         "adversarial-review": {
           "status": "pending",
@@ -5896,7 +5902,10 @@
         "projects/p17/evidence/P17-G4A-04.md#corrected-targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-04.md#corrected-refactor",
         "projects/p17/evidence/P17-G4A-04.md#final-adversarial-review-no-go",
-        "projects/p17/evidence/P17-G4A-04.md#third-correction-test-first-evidence"
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-test-first-evidence",
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-minimal-implementation",
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-refactor"
       ]
     },
     {
@@ -21402,7 +21411,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4A-04",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-04",
       "target": null,
@@ -21418,7 +21427,10 @@
         "projects/p17/evidence/P17-G4A-04.md#corrected-targeted-and-impacted-green",
         "projects/p17/evidence/P17-G4A-04.md#corrected-refactor",
         "projects/p17/evidence/P17-G4A-04.md#final-adversarial-review-no-go",
-        "projects/p17/evidence/P17-G4A-04.md#third-correction-test-first-evidence"
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-test-first-evidence",
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-minimal-implementation",
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-refactor"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -21625,7 +21637,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4A-04",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4A-04:tests/ergonomics/phase/EWP-P4A-TS02.test.ts#EWP-P4A-TS02",
       "target": {
@@ -21635,6 +21647,7 @@
         "command": "bun test tests/ergonomics/phase/EWP-P4A-TS02.test.ts --test-name-pattern EWP-P4A-TS02"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4A-04.md#third-correction-green-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#third-correction-red-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#corrected-green-execution-receipt-ewp-p4a-ts02",
         "projects/p17/evidence/P17-G4A-04.md#correction-red-execution-receipt-ewp-p4a-ts02",
