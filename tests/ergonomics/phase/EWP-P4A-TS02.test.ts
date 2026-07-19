@@ -26,6 +26,7 @@ import type {
 } from '../../../packages/core/src/acquire/types.ts';
 import type { ArtifactDigest } from '../../../packages/core/src/artifacts/hash.ts';
 import type { LogicalJournalV1Dto } from '../../../packages/core/src/artifacts/journal-types.ts';
+import { toLedgerV2Dto } from '../../../packages/core/src/artifacts/ledger-codec.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../../packages/core/src/artifacts/node-coordinator.ts';
 import { flipFailedError } from '../../../packages/core/src/errors.ts';
 import { scheduleOperationPlan } from '../../../packages/core/src/execution/scheduler.ts';
@@ -283,6 +284,10 @@ const persistLedgerModel = async (
   selected: FixtureFleet,
   model: Awaited<ReturnType<typeof readLedgerModel>>,
 ): Promise<void> => {
+  const validated = toLedgerV2Dto(model);
+  if (!validated.ok) {
+    throw new Error(`invalid TS02 ledger rewrite: ${JSON.stringify(validated.error)}`);
+  }
   const persisted = await writeLedger(selected.env, ledgerPathOf(selected.data), model);
   if (!persisted.ok) throw new Error('failed to rewrite the TS02 ledger authority');
 };
@@ -535,14 +540,20 @@ const relocatedRemovalJournal = (
     tool: removal.intent.tool,
     resource,
   });
+  const operationKind = phase === 'committed' ? ('remove' as const) : ('repair' as const);
+  const operationSource =
+    phase === 'committed' ? removal.intent.source : removal.intent.before.source;
+  if (phase === 'live' && operationSource === null) {
+    throw new Error('relocated repair fixture requires a selected placement source');
+  }
   const operationId = createOperationId({
     domain: 'skillsmith.operation-identity',
     schemaVersion: 1,
     groupId: removal.intent.groupId,
     pairId,
-    kind: 'remove',
+    kind: operationKind,
     skill: removal.intent.skill,
-    source: removal.intent.source,
+    source: operationSource,
     tool: removal.intent.tool,
     scope: removal.intent.scope,
   });
@@ -558,14 +569,22 @@ const relocatedRemovalJournal = (
       ...removal.intent,
       operationId,
       pairId,
+      kind: operationKind,
+      source: operationSource,
       before: { ...removal.intent.before, resource },
-      after: { ...removal.intent.after, resource },
+      after:
+        phase === 'committed'
+          ? { ...removal.intent.after, resource }
+          : { ...removal.intent.before, resource },
     },
     context: { ...removal.context, parentOperationId: operationId },
     phase,
     actual: {
       before: relocateActuals(removal.actual.before),
-      after: relocateActuals(removal.actual.after),
+      after:
+        phase === 'committed'
+          ? relocateActuals(removal.actual.after)
+          : relocateActuals(removal.actual.before),
       retained: removal.actual.retained,
     },
     completedAt: phase === 'committed' ? removal.completedAt : null,

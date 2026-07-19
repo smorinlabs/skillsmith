@@ -1372,11 +1372,10 @@ const runUninstallInternal = async (
         : ({ kind: 'machine-bound' as const, path: recovery.projectRoot } as const),
     location: { kind: 'machine-bound' as const, path: placementPath },
   });
-  const journalTouchesRecoveryResource = (
+  const journalTouchesRecoveryPair = (
     journal: LogicalJournalV1Dto,
     recovery: PreparedArtifactOnlyRecovery,
     tool: FlipTool,
-    placementPath: string,
   ): boolean => {
     if (
       journal.intent.skill !== recovery.skill ||
@@ -1385,12 +1384,16 @@ const runUninstallInternal = async (
     ) {
       return false;
     }
-    const resource = recoveryLiveResource(recovery, tool, placementPath);
+    const projectRoot =
+      recovery.projectRoot === null
+        ? null
+        : ({ kind: 'machine-bound' as const, path: recovery.projectRoot } as const);
     return [journal.intent.before, journal.intent.after].some(
       (image) =>
         (image.kind === 'placement' || image.kind === 'absent') &&
         image.resource.kind === 'live' &&
-        canonicalPlanningString(image.resource) === canonicalPlanningString(resource),
+        canonicalPlanningString(image.resource.projectRoot) ===
+          canonicalPlanningString(projectRoot),
     );
   };
   const recoverySourceMatches = (
@@ -1486,12 +1489,7 @@ const runUninstallInternal = async (
       });
       if (
         Object.values(ledger.transactions).some((journal) =>
-          journalTouchesRecoveryResource(
-            journal as LogicalJournalV1Dto,
-            recovery,
-            selected.tool,
-            selected.placementPath,
-          ),
+          journalTouchesRecoveryPair(journal as LogicalJournalV1Dto, recovery, selected.tool),
         )
       ) {
         return 'portable lock handoff has a nonterminal selected-pair authority';
@@ -1499,12 +1497,7 @@ const runUninstallInternal = async (
       const journal = [...ledger.history]
         .reverse()
         .find((candidate) =>
-          journalTouchesRecoveryResource(
-            candidate as LogicalJournalV1Dto,
-            recovery,
-            selected.tool,
-            selected.placementPath,
-          ),
+          journalTouchesRecoveryPair(candidate as LogicalJournalV1Dto, recovery, selected.tool),
         ) as LogicalJournalV1Dto | undefined;
       if (
         journal === undefined ||
