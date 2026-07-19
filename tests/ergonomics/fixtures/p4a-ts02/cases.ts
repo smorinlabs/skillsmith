@@ -77,8 +77,16 @@ export const LOCK_HANDOFF_CASES = Object.freeze([
   { id: 'explicit-final', selectedBy: 'explicit', outcome: 'repair' },
   { id: 'bounded-sibling-reduced', selectedBy: 'bounded-owner', outcome: 'repair' },
   { id: 'bounded-sibling-final', selectedBy: 'bounded-owner', outcome: 'repair' },
-  { id: 'declared-only-unique-hash', selectedBy: 'bounded-owner', outcome: 'repair' },
+  { id: 'history-free-final', selectedBy: 'explicit', outcome: 'refuse' },
+  { id: 'pending-final', selectedBy: 'explicit', outcome: 'refuse' },
+  { id: 'rollback-final', selectedBy: 'explicit', outcome: 'refuse' },
+  { id: 'superseded-final', selectedBy: 'explicit', outcome: 'refuse' },
+  { id: 'intent-actual-mismatch', selectedBy: 'explicit', outcome: 'refuse' },
+  { id: 'selected-pair-disagreement', selectedBy: 'explicit', outcome: 'refuse' },
   { id: 'split-owner', selectedBy: 'ambiguous', outcome: 'refuse' },
+  { id: 'requested-ref-drift', selectedBy: 'explicit', outcome: 'refuse' },
+  { id: 'resolved-sha-drift', selectedBy: 'explicit', outcome: 'refuse' },
+  { id: 'content-hash-drift', selectedBy: 'explicit', outcome: 'refuse' },
   { id: 'unrelated-lock-drift', selectedBy: 'explicit', outcome: 'refuse' },
 ] as const);
 
@@ -117,7 +125,11 @@ export const normalizeManifest = (source: string) => {
   return normalized.value;
 };
 
-export const lockSourceFor = (source: string, resolvedSha: string): string => {
+export const lockSourceFor = (
+  source: string,
+  resolvedSha: string,
+  contentHash: `sha256:${string}` = `sha256:${'a'.repeat(64)}`,
+): string => {
   const manifest = normalizeManifest(source);
   const lock: PortableLockV1 = {
     version: 1,
@@ -130,7 +142,7 @@ export const lockSourceFor = (source: string, resolvedSha: string): string => {
         requestedRef: skill.ref,
         resolvedSha,
         sourcePath: skill.source.path,
-        contentHash: `sha256:${'a'.repeat(64)}` as const,
+        contentHash,
       }))
       .sort((left, right) => left.name.localeCompare(right.name)),
   };
@@ -312,10 +324,16 @@ export interface CollisionPlanFixture {
 export const collisionPlan = (
   batchPolicy: CurrentMutatorOperationPlan['batchPolicy'],
 ): CollisionPlanFixture => {
-  const manifest = artifactOperation('alpha', 'write-manifest', []);
-  const lock = artifactOperation('alpha', 'write-lock', [manifest.operationId]);
-  const alpha = liveOperation('alpha', [lock.operationId]);
-  const beta = liveOperation('beta', [lock.operationId]);
+  const candidateSkills = ['alpha', 'beta'] as const;
+  const [prefixSkill, dependentSkill] = [...candidateSkills].sort((left, right) => {
+    const leftGroup = liveOperation(left, []).groupId;
+    const rightGroup = liveOperation(right, []).groupId;
+    return leftGroup < rightGroup ? -1 : leftGroup > rightGroup ? 1 : 0;
+  });
+  const manifest = artifactOperation(prefixSkill, 'write-manifest', []);
+  const lock = artifactOperation(prefixSkill, 'write-lock', [manifest.operationId]);
+  const alpha = liveOperation(prefixSkill, [lock.operationId]);
+  const beta = liveOperation(dependentSkill, [lock.operationId]);
   return {
     plan: {
       domain: 'skillsmith.operation-plan',
@@ -323,7 +341,7 @@ export const collisionPlan = (
       command: 'install',
       selection: {
         source: 'explicit-targets',
-        skills: ['alpha', 'beta'],
+        skills: [prefixSkill, dependentSkill],
         tools: ['codex'],
         scopes: ['user'],
       },
@@ -336,5 +354,57 @@ export const collisionPlan = (
     alphaLockId: lock.operationId,
     alphaLiveId: alpha.operationId,
     betaLiveId: beta.operationId,
+  };
+};
+
+export interface RollingCollisionPlanFixture {
+  readonly plan: CurrentMutatorOperationPlan;
+  readonly firstLockId: string;
+  readonly middleLiveId: string;
+  readonly laterLockId: string;
+  readonly laterLiveId: string;
+}
+
+export const rollingCollisionPlan = (
+  batchPolicy: CurrentMutatorOperationPlan['batchPolicy'],
+): RollingCollisionPlanFixture => {
+  const firstManifest = artifactOperation('epsilon', 'write-manifest', []);
+  const firstLock = artifactOperation('epsilon', 'write-lock', [firstManifest.operationId]);
+  const firstLive = liveOperation('epsilon', [firstLock.operationId]);
+  const middleLive = liveOperation('skill-0', [firstLock.operationId]);
+  const laterManifest = artifactOperation('alpha', 'write-manifest', [firstLock.operationId]);
+  const laterLock = artifactOperation('alpha', 'write-lock', [
+    firstLock.operationId,
+    laterManifest.operationId,
+  ]);
+  const laterLive = liveOperation('alpha', [firstLock.operationId, laterLock.operationId]);
+  return {
+    plan: {
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'install',
+      selection: {
+        source: 'explicit-targets',
+        skills: ['epsilon', 'skill-0', 'alpha'],
+        tools: ['codex'],
+        scopes: ['user'],
+      },
+      batchPolicy,
+      operations: [
+        firstManifest,
+        firstLock,
+        firstLive,
+        middleLive,
+        laterManifest,
+        laterLock,
+        laterLive,
+      ],
+      checks: [],
+      diagnostics: [],
+    },
+    firstLockId: firstLock.operationId,
+    middleLiveId: middleLive.operationId,
+    laterLockId: laterLock.operationId,
+    laterLiveId: laterLive.operationId,
   };
 };

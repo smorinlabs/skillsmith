@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   type AcquisitionSnapshotAuthorityV1,
+  acquireActualBefore,
   acquisitionRevisionPreconditions,
   acquisitionSnapshotArtifactAuthorityV1,
   createAcquisitionArtifactExecutionControllerV1,
@@ -36,7 +37,7 @@ import {
 import type { ExecutionPrecondition, PreparedExecutionBinding } from '../../src/execution/types.ts';
 import type { PlacementExecutionInput } from '../../src/place/execute.ts';
 import { emptyLedgerModel } from '../../src/place/ledger.ts';
-import type { PlacementPorts } from '../../src/place/types.ts';
+import type { PairRecord, PlacementPorts } from '../../src/place/types.ts';
 import { createOperationExecutionResult } from '../../src/planning/create.ts';
 import type {
   CurrentMutatorOperationPlan,
@@ -149,6 +150,79 @@ const resolveDestination = (
     mode: 'save',
     ...input,
   });
+
+describe('acquisition live before-image provenance', () => {
+  test('adds pinned portable provenance only for callers that need durable removal authority', () => {
+    const contentHash = `sha256:${'a'.repeat(64)}`;
+    const resolvedSha = 'b'.repeat(40);
+    const placementPath = '/home/user/.agents/skills/factor-scan';
+    const resource = {
+      kind: 'live' as const,
+      skill: 'factor-scan',
+      tool: 'codex' as const,
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path: placementPath },
+    };
+    const pair: PairRecord = {
+      placementPath,
+      mode: 'pinned',
+      dev: null,
+      pinned: {
+        storePath: '/data/store/acme/skills@bbbbbbbbbbbb/factor-scan',
+        rev: resolvedSha.slice(0, 12),
+        gitSha: resolvedSha,
+        dirty: false,
+        contentHash,
+        snapshotAt: '2026-07-18T00:00:00.000Z',
+        verify: 'passed',
+        placement: 'symlink',
+      },
+      origin: {
+        source: 'github.com/acme/skills//factor-scan',
+        host: 'github.com',
+        repo: 'acme/skills',
+        skillPath: 'factor-scan',
+        refRequested: null,
+        refResolved: resolvedSha,
+        pin: false,
+        installedAt: '2026-07-18T00:00:00.000Z',
+      },
+      journal: null,
+    };
+    const facts = {
+      pathKind: 'symlink' as const,
+      canonicalPath: placementPath,
+      placement: {
+        skill: 'factor-scan',
+        root: '/home/user/.agents/skills',
+        path: placementPath,
+        class: 'store-linked' as const,
+        symlinkTarget: pair.pinned?.storePath ?? null,
+        dangling: false,
+      },
+      contentHash: null,
+    };
+
+    expect(acquireActualBefore(resource, facts, pair)).toMatchObject({
+      kind: 'placement',
+      source: null,
+      contentHash: null,
+    });
+    expect(acquireActualBefore(resource, facts, pair, true)).toMatchObject({
+      kind: 'placement',
+      source: {
+        kind: 'portable',
+        identity: { host: 'github.com', repository: 'acme/skills', path: 'factor-scan' },
+        requestedRef: null,
+        resolvedSha,
+        sourcePath: 'factor-scan',
+        contentHash,
+      },
+      contentHash,
+    });
+  });
+});
 
 const expectNoneTypeCorrelation = (
   result: Awaited<ReturnType<typeof resolveAcquisitionArtifactDestinationV1>>,

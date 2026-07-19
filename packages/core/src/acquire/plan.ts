@@ -1318,17 +1318,6 @@ const validateLegacyUninstallMigrationIntent = (
   }
 };
 
-const validateUnchangedInstallGroups = (
-  request: AcquisitionInstallPlanRequestV1,
-  unchangedGroupIds: readonly string[],
-  manifest: ManifestImageV1 | AbsentManifestImageV1,
-  lock: LockImageV1 | AbsentLockImageV1,
-): void => {
-  for (const groupId of unchangedGroupIds) {
-    validateInstallGroupPortableIntent(request, groupId, manifest, lock);
-  }
-};
-
 const createArtifactTransitionOperations = (
   request: AcquisitionPlanRequestV1,
   snapshot: AcquisitionObservedStateSnapshotV1,
@@ -1373,6 +1362,11 @@ const createArtifactTransitionOperations = (
       (left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0)
     );
   });
+  const groupsById = new Map(groups.map((group) => [group.groupId, group]));
+  const collisionLaneGroupIds =
+    request.command === 'install'
+      ? [...accountedGroups].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+      : groups.map(({ groupId }) => groupId);
   const manifestLocation = artifactLocation(snapshot.artifact.pair.file.path);
   const lockLocation = artifactLocation(snapshot.artifact.pair.lockfile.path);
   requireArtifactLocation(transition.initial.manifest, manifestLocation);
@@ -1384,7 +1378,20 @@ const createArtifactTransitionOperations = (
   const artifacts: ExecutableOperation[] = [];
   let updatedLive = [...liveOperations];
   let artifactPrefixId: string | null = null;
-  for (const group of groups) {
+  for (const groupId of collisionLaneGroupIds) {
+    const group = groupsById.get(groupId);
+    if (group === undefined) {
+      if (request.command !== 'install' || !unchangedGroups.has(groupId)) {
+        throw new TypeError('acquisition planning: artifact collision lane is incoherent');
+      }
+      validateInstallGroupPortableIntent(request, groupId, currentManifest, currentLock);
+      if (artifactPrefixId !== null) {
+        updatedLive = updatedLive.map((live) =>
+          live.groupId === groupId ? withDependencies(live, [artifactPrefixId as string]) : live,
+        );
+      }
+      continue;
+    }
     const prefixDependencies = artifactPrefixId === null ? [] : [artifactPrefixId];
     const groupLive = [
       ...new Map(
@@ -1569,16 +1576,6 @@ const createArtifactTransitionOperations = (
     artifactPrefixId = lock.operationId;
     if (request.command === 'install') {
       validateInstallGroupPortableIntent(request, group.groupId, currentManifest, currentLock);
-    }
-  }
-  if (request.command === 'install') {
-    validateUnchangedInstallGroups(request, unchangedGroupIds, currentManifest, currentLock);
-    if (artifactPrefixId !== null) {
-      updatedLive = updatedLive.map((live) =>
-        unchangedGroups.has(live.groupId)
-          ? withDependencies(live, [artifactPrefixId as string])
-          : live,
-      );
     }
   }
   return [...artifacts, ...updatedLive];

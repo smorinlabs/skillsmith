@@ -8,14 +8,17 @@ import {
   hashManifestSemantics,
 } from '../artifacts/hash.ts';
 import { normalizeSourceIdentity } from '../artifacts/identity.ts';
+import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import {
+  type PortableLockSkillV1,
   type PortableLockV1,
   correlatePortableLock,
   serializePortableLock,
 } from '../artifacts/lock.ts';
 import { type ManifestEditRequest, editManifestBytes } from '../artifacts/manifest-edit.ts';
 import { createNodeArtifactCoordinatorPorts } from '../artifacts/node-coordinator.ts';
+import type { PlanSourceV1 } from '../artifacts/plan-types.ts';
 import { artifactContractRegistry } from '../artifacts/registry.ts';
 import type { NormalizedManifestDeclaration, NormalizedManifestV1 } from '../artifacts/types.ts';
 import {
@@ -48,6 +51,7 @@ import {
   createBoundedForceEffect,
   createOperationExecutionResult,
   createOperationGroupId,
+  createOperationPairId,
 } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
@@ -60,7 +64,7 @@ import type {
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial, redactSensitiveString } from '../safety/redaction.ts';
-import type { ExpectedRevisionV1 } from '../state/types.ts';
+import type { ExpectedRevisionV1, LivePlacementStateV1 } from '../state/types.ts';
 import {
   type AcquireContentFacts,
   type AcquireExecutionInput,
@@ -1180,8 +1184,14 @@ const runUninstallInternal = async (
     ...requested,
     targets: planningTargets.length === 0 ? ['[unresolved target]'] : planningTargets,
   };
+  const fixedUserProjectContext =
+    opts.scope === 'user' &&
+    !opts.allScopes &&
+    opts.targets.every((target) => !isUninstallPathTarget(target));
   const projectContext = await resolveAcquisitionProjectContextV1({
-    env,
+    env: fixedUserProjectContext
+      ? { ...env, git: { ...env.git, findRepositoryRoot: async () => null } }
+      : env,
     cwd: opts.cwd,
     ...(opts.configuration.explicitConfigPath === undefined
       ? {}
@@ -1318,8 +1328,10 @@ const runUninstallInternal = async (
     readonly skill: string;
     readonly scope: InstallScope;
     readonly declaration: NormalizedManifestDeclaration;
+    readonly lockedSkill: PortableLockSkillV1;
     readonly mode: 'reduced' | 'removed';
     readonly selectedTools: readonly FlipTool[];
+    readonly projectRoot: string | null;
     readonly groupIdentity: {
       readonly domain: 'skillsmith.operation-group-identity';
       readonly schemaVersion: 1;
@@ -1330,11 +1342,219 @@ const runUninstallInternal = async (
       readonly target: string;
     };
     readonly liveResourceIds: readonly string[];
+    readonly selectedPairs: readonly Readonly<{
+      tool: FlipTool;
+      liveResourceId: string;
+      placementPath: string;
+    }>[];
+    readonly retainedSiblings: readonly Readonly<{
+      tool: FlipTool;
+      liveResourceId: string;
+    }>[];
   }
   interface PreparedUninstallArtifactPlanning {
     readonly transition: AcquisitionArtifactTransitionEnvelopeV1 | undefined;
     readonly actions: ReadonlyMap<string, AcquisitionArtifactExecutionActionV1>;
   }
+  const recoveryLiveResource = (
+    recovery: PreparedArtifactOnlyRecovery,
+    tool: FlipTool,
+    placementPath: string,
+  ) => ({
+    kind: 'live' as const,
+    skill: recovery.skill,
+    tool,
+    scope: recovery.scope,
+    projectRoot:
+      recovery.projectRoot === null
+        ? null
+        : ({ kind: 'machine-bound' as const, path: recovery.projectRoot } as const),
+    location: { kind: 'machine-bound' as const, path: placementPath },
+  });
+  const journalTouchesRecoveryResource = (
+    journal: LogicalJournalV1Dto,
+    recovery: PreparedArtifactOnlyRecovery,
+    tool: FlipTool,
+    placementPath: string,
+  ): boolean => {
+    if (
+      journal.intent.skill !== recovery.skill ||
+      journal.intent.tool !== tool ||
+      journal.intent.scope !== recovery.scope
+    ) {
+      return false;
+    }
+    const resource = recoveryLiveResource(recovery, tool, placementPath);
+    return [journal.intent.before, journal.intent.after].some(
+      (image) =>
+        (image.kind === 'placement' || image.kind === 'absent') &&
+        image.resource.kind === 'live' &&
+        canonicalPlanningString(image.resource) === canonicalPlanningString(resource),
+    );
+  };
+  const recoverySourceMatches = (
+    recovery: PreparedArtifactOnlyRecovery,
+    source: PlanSourceV1 | null,
+  ): boolean =>
+    source?.kind === 'portable' &&
+    canonicalPlanningString(source.identity) ===
+      canonicalPlanningString(recovery.declaration.source) &&
+    source.requestedRef === recovery.lockedSkill.requestedRef &&
+    source.resolvedSha === recovery.lockedSkill.resolvedSha &&
+    source.sourcePath === recovery.lockedSkill.sourcePath &&
+    source.contentHash === recovery.lockedSkill.contentHash &&
+    (recovery.declaration.ref === source.requestedRef ||
+      recovery.declaration.ref === source.resolvedSha);
+  const observedLiveFor = (
+    snapshot: AcquisitionSnapshotAuthorityV1['snapshot'],
+    resourceId: string,
+  ): LivePlacementStateV1 | null | undefined => {
+    const matches = snapshot.live.filter(
+      ({ revision }) => revision.domain === 'live' && revision.resourceId === resourceId,
+    );
+    return matches.length === 1 ? matches[0]?.value : undefined;
+  };
+  const reducedRecoveryAuthorityError = (
+    recovery: PreparedArtifactOnlyRecovery,
+    ledger: LedgerModel,
+    snapshot: AcquisitionSnapshotAuthorityV1['snapshot'],
+  ): string | null => {
+    if (recovery.retainedSiblings.length === 0) {
+      return 'portable lock handoff has no retained sibling authority';
+    }
+    for (const sibling of recovery.retainedSiblings) {
+      const pair = getPairAt(ledger, recovery.projectRoot, recovery.skill, sibling.tool);
+      const live = observedLiveFor(snapshot, sibling.liveResourceId);
+      const pinned = pair?.pinned ?? null;
+      const origin = pair?.origin;
+      if (
+        pair === null ||
+        pair.mode !== 'pinned' ||
+        pinned === null ||
+        origin === undefined ||
+        live === null ||
+        live === undefined ||
+        live.placementClass === 'absent' ||
+        live.contentRevision === null ||
+        origin.host !== recovery.declaration.source.host ||
+        origin.repo !== recovery.declaration.source.repository ||
+        origin.skillPath !== (recovery.declaration.source.path ?? '.') ||
+        origin.refRequested !== recovery.lockedSkill.requestedRef ||
+        !/^[0-9a-f]{40}$/u.test(origin.refResolved) ||
+        origin.refResolved !== pinned.gitSha ||
+        origin.refResolved !== recovery.lockedSkill.resolvedSha ||
+        pinned.contentHash !== recovery.lockedSkill.contentHash ||
+        live.contentRevision !== pinned.contentHash ||
+        live.skill !== recovery.skill ||
+        live.tool !== sibling.tool ||
+        live.scope !== recovery.scope ||
+        live.projectIdentity !== recovery.projectRoot ||
+        (recovery.declaration.placement === 'symlink'
+          ? live.representation !== 'symlink'
+          : live.representation !== 'directory')
+      ) {
+        return 'portable lock handoff retained sibling authority is inconsistent';
+      }
+    }
+    return null;
+  };
+  const finalRecoveryAuthorityError = (
+    recovery: PreparedArtifactOnlyRecovery,
+    ledger: LedgerModel,
+  ): string | null => {
+    const expectedGroupId = createOperationGroupId(recovery.groupIdentity);
+    for (const selected of recovery.selectedPairs) {
+      const resource = recoveryLiveResource(recovery, selected.tool, selected.placementPath);
+      const pairId = createOperationPairId({
+        domain: 'skillsmith.operation-pair-identity',
+        schemaVersion: 1,
+        groupId: expectedGroupId,
+        tool: selected.tool,
+        resource,
+      });
+      if (
+        Object.values(ledger.transactions).some((journal) =>
+          journalTouchesRecoveryResource(
+            journal as LogicalJournalV1Dto,
+            recovery,
+            selected.tool,
+            selected.placementPath,
+          ),
+        )
+      ) {
+        return 'portable lock handoff has a nonterminal selected-pair authority';
+      }
+      const journal = [...ledger.history]
+        .reverse()
+        .find((candidate) =>
+          journalTouchesRecoveryResource(
+            candidate as LogicalJournalV1Dto,
+            recovery,
+            selected.tool,
+            selected.placementPath,
+          ),
+        ) as LogicalJournalV1Dto | undefined;
+      if (
+        journal === undefined ||
+        journal.phase !== 'committed' ||
+        journal.disposition !== 'forward' ||
+        journal.intent.kind !== 'remove' ||
+        journal.intent.groupId !== expectedGroupId ||
+        journal.intent.pairId !== pairId ||
+        journal.completedAt === null ||
+        journal.intent.before.kind !== 'placement' ||
+        journal.intent.after.kind !== 'absent' ||
+        canonicalPlanningString(journal.intent.before.resource) !==
+          canonicalPlanningString(resource) ||
+        canonicalPlanningString(journal.intent.after.resource) !==
+          canonicalPlanningString(resource) ||
+        journal.intent.before.contentHash !== recovery.lockedSkill.contentHash ||
+        !recoverySourceMatches(recovery, journal.intent.before.source)
+      ) {
+        return 'portable lock handoff selected-pair history is not an exact terminal removal';
+      }
+      const actualBefore = journal.actual.before.filter(
+        (actual) => actual.role === 'live' && actual.placementPath === selected.placementPath,
+      );
+      const actualAfter = journal.actual.after.filter(
+        (actual) => actual.role === 'live' && actual.placementPath === selected.placementPath,
+      );
+      const before = actualBefore[0];
+      const after = actualAfter[0];
+      if (
+        actualBefore.length !== 1 ||
+        actualAfter.length !== 1 ||
+        before?.role !== 'live' ||
+        before.state !== 'present' ||
+        before.contentHash !== recovery.lockedSkill.contentHash ||
+        after?.role !== 'live' ||
+        after.state !== 'absent'
+      ) {
+        return 'portable lock handoff selected-pair history disagrees with its actual images';
+      }
+    }
+    return recovery.selectedPairs.length === 0
+      ? 'portable lock handoff has no selected-pair history authority'
+      : null;
+  };
+  const recoveryAuthorityError = (
+    recovery: PreparedArtifactOnlyRecovery,
+    ledger: LedgerModel | null,
+    snapshot: AcquisitionSnapshotAuthorityV1['snapshot'],
+  ): string | null => {
+    if (ledger === null) return 'portable lock handoff has no ledger authority';
+    for (const selected of recovery.selectedPairs) {
+      if (
+        getPairAt(ledger, recovery.projectRoot, recovery.skill, selected.tool) !== null ||
+        observedLiveFor(snapshot, selected.liveResourceId) !== null
+      ) {
+        return 'portable lock handoff selected pair is not terminally absent';
+      }
+    }
+    return recovery.mode === 'reduced'
+      ? reducedRecoveryAuthorityError(recovery, ledger, snapshot)
+      : finalRecoveryAuthorityError(recovery, ledger);
+  };
   const artifactBindingKey = (groupId: string, kind: ExecutableOperation['kind']): string =>
     `${groupId}:${kind}`;
   const prepareUninstallArtifactPlanning = async (
@@ -2110,6 +2330,7 @@ const runUninstallInternal = async (
           ]);
           continue;
         }
+        if (lockedSkill === undefined) continue;
         const { declaration, mode, selectedTools } = match;
         const scopeKey = await scopeKeyFor(declaration.scope);
         const rootsContext = {
@@ -2117,6 +2338,11 @@ const runUninstallInternal = async (
           configuration: opts.configuration,
         };
         const liveResourceIds: string[] = [];
+        const selectedPairs: Array<{
+          tool: FlipTool;
+          liveResourceId: string;
+          placementPath: string;
+        }> = [];
         let terminallyAbsent = true;
         for (const tool of selectedTools) {
           const root = destinationSkillRootFor(
@@ -2129,6 +2355,7 @@ const runUninstallInternal = async (
           const placementPath = resolve(root, target.name);
           const liveResourceId = acquireStateResourceId('live', [placementPath]);
           liveResourceIds.push(liveResourceId);
+          selectedPairs.push({ tool, liveResourceId, placementPath });
           terminallyAbsent &&= getPairAt(legacyLedger, scopeKey, target.name, tool) === null;
           addLiveResource({
             resourceId: liveResourceId,
@@ -2139,6 +2366,32 @@ const runUninstallInternal = async (
             placementPath,
             storeRoot,
           });
+        }
+        const retainedSiblings: Array<{ tool: FlipTool; liveResourceId: string }> = [];
+        if (mode === 'reduced' && currentDeclaration !== undefined) {
+          for (const tool of currentDeclaration.tools) {
+            if (!registry.toolsFor('install').includes(tool)) continue;
+            const retainedTool = tool as FlipTool;
+            const root = destinationSkillRootFor(
+              registry,
+              retainedTool,
+              env,
+              declaration.scope,
+              rootsContext,
+            );
+            const placementPath = resolve(root, target.name);
+            const liveResourceId = acquireStateResourceId('live', [placementPath]);
+            retainedSiblings.push({ tool: retainedTool, liveResourceId });
+            addLiveResource({
+              resourceId: liveResourceId,
+              skill: target.name,
+              tool: retainedTool,
+              scope: declaration.scope,
+              projectIdentity: declaration.scope === 'project' ? scopeKey : null,
+              placementPath,
+              storeRoot,
+            });
+          }
         }
         if (!terminallyAbsent) {
           const reason = 'portable lock handoff still has managed placement state';
@@ -2171,10 +2424,14 @@ const runUninstallInternal = async (
             skill: target.name,
             scope: declaration.scope,
             declaration,
+            lockedSkill,
             mode,
             selectedTools,
+            projectRoot: scopeKey,
             groupIdentity,
             liveResourceIds: Object.freeze(liveResourceIds),
+            selectedPairs: Object.freeze(selectedPairs),
+            retainedSiblings: Object.freeze(retainedSiblings),
           });
         }
       }
@@ -2268,26 +2525,25 @@ const runUninstallInternal = async (
       ledgerPath,
       liveResources: [...liveResourcesByPath.values()],
       storeResources: [...storeResourcesByPath.values()],
+      ...(fixedUserProjectContext ? { fixedProjectContext: true } : {}),
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     });
     const artifactRecoveries: PreparedArtifactOnlyRecovery[] = [];
     for (const recovery of recoveryCandidates) {
-      const terminallyAbsent = recovery.liveResourceIds.every((resourceId) => {
-        const observations = snapshotAuthority.snapshot.live.filter(
-          ({ revision }) => revision.domain === 'live' && revision.resourceId === resourceId,
-        );
-        return observations.length === 1 && observations[0]?.value === null;
-      });
-      if (terminallyAbsent) {
+      const authorityError = recoveryAuthorityError(
+        recovery,
+        snapshotAuthority.snapshot.ledger.value,
+        snapshotAuthority.snapshot,
+      );
+      if (authorityError === null) {
         artifactRecoveries.push(recovery);
         continue;
       }
-      const reason = 'portable lock handoff still has live placement state';
       resultsByTarget.set(recovery.target, [
         {
           ...emptyUninstallResult(recovery.skill, null, null, 'refused'),
-          reason,
-          error: flipRefusedError(reason),
+          reason: authorityError,
+          error: flipRefusedError(authorityError),
         },
       ]);
     }
@@ -2428,6 +2684,7 @@ const runUninstallInternal = async (
         resource,
         prepared.expectedFacts.live,
         prepared.expectedFacts.selectedPair,
+        true,
       );
       preparedBindings.set(operation.operationId, {
         kind: 'pair',
@@ -2569,7 +2826,12 @@ const runUninstallInternal = async (
               if (resource === null || resource.kind !== 'live') {
                 throw new Error('prepared uninstall actual-before resource is not live');
               }
-              compatibilityBefore = acquireActualBefore(resource, facts.live, facts.selectedPair);
+              compatibilityBefore = acquireActualBefore(
+                resource,
+                facts.live,
+                facts.selectedPair,
+                true,
+              );
               return canonicalPlanningString(compatibilityBefore) ===
                 canonicalPlanningString(binding.actualBefore)
                 ? operation.before

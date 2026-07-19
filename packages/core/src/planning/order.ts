@@ -138,6 +138,14 @@ export const artifactPrefixDependencyError = <ToolId extends string = string>(
 ): string | null => {
   const operations = groups.flat();
   const byId = new Map(operations.map((operation) => [operation.operationId, operation]));
+  const groupPositions = new Map<string, number>();
+  for (const [position, group] of groups.entries()) {
+    const groupId = group[0]?.groupId;
+    if (groupId === undefined || groupPositions.has(groupId)) {
+      return 'operation groups are malformed';
+    }
+    groupPositions.set(groupId, position);
+  }
   for (const group of groups) {
     const groupId = group[0]?.groupId;
     if (groupId === undefined || group.some((operation) => operation.groupId !== groupId)) {
@@ -164,6 +172,9 @@ export const artifactPrefixDependencyError = <ToolId extends string = string>(
       prefix.pairId !== null
     ) {
       return `operation group ${groupId} has an invalid cross-group artifact-prefix dependency`;
+    }
+    if ((groupPositions.get(prefix.groupId) as number) >= (groupPositions.get(groupId) as number)) {
+      return `operation group ${groupId} depends on a later artifact prefix`;
     }
     const prefixGroup = groups.find((candidate) => candidate[0]?.groupId === prefix.groupId) ?? [];
     if (
@@ -215,6 +226,23 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
     }
     remainingDependencies.set(operation.operationId, internalDependencies);
   }
+  const hasCrossGroupDependencies = operations.some((operation) =>
+    operation.dependencyMetadata.operationIds.some((dependencyId) => {
+      const dependency = byId.get(dependencyId);
+      return dependency !== undefined && dependency.groupId !== operation.groupId;
+    }),
+  );
+  const compareCanonicalGroups = (
+    left: {
+      readonly representative: ExecutableOperation<ToolId>;
+    },
+    right: {
+      readonly representative: ExecutableOperation<ToolId>;
+    },
+  ): number =>
+    hasCrossGroupDependencies
+      ? comparePlanningText(left.representative.groupId, right.representative.groupId)
+      : compareExecutableOperations(left.representative, right.representative, context);
   const canonicalGroups = [...groups.values()]
     .map((operationsInGroup) => ({
       operations: operationsInGroup,
@@ -222,9 +250,7 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
         compareExecutableOperations(left, right, context),
       )[0] as ExecutableOperation<ToolId>,
     }))
-    .sort((left, right) =>
-      compareExecutableOperations(left.representative, right.representative, context),
-    );
+    .sort(compareCanonicalGroups);
   const prefixError = artifactPrefixDependencyError(
     canonicalGroups.map(({ operations: group }) => group),
   );
@@ -254,9 +280,7 @@ export const orderExecutableOperationsTopologically = <ToolId extends string = s
   const ordered: ExecutableOperation<ToolId>[] = [];
   let orderedGroupCount = 0;
   while (readyGroups.length > 0) {
-    readyGroups.sort((left, right) =>
-      compareExecutableOperations(left.representative, right.representative, context),
-    );
+    readyGroups.sort(compareCanonicalGroups);
     const selected = readyGroups.shift() as (typeof canonicalGroups)[number];
     if (!groupById.has(selected.representative.groupId)) {
       planningContextFail('operation group ordering is invalid');

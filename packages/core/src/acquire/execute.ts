@@ -106,7 +106,10 @@ import type {
   SwapOutcome,
   SwapPlan,
 } from '../place/types.ts';
-import { createOperationExecutionResult } from '../planning/create.ts';
+import {
+  createOperationExecutionResult,
+  operationSourceFromLedgerPairV1,
+} from '../planning/create.ts';
 import { canonicalPlanningString, comparePlanningText } from '../planning/order.ts';
 import type {
   ExecutableOperation,
@@ -131,9 +134,11 @@ import {
   type ObservedComponentV1,
   type StateDomainV1,
   createContentObservationIdentityV1,
+  createExpectedRevisionV1,
   createFilesystemMetadataIdentityV1,
   isExpectedRevisionV1,
   sameExpectedRevisionV1,
+  semanticValueRevisionV1,
 } from '../state/types.ts';
 import type { AcquisitionObservedStateSnapshotV1 } from './plan.ts';
 import type {
@@ -747,10 +752,12 @@ export const acquireActualBefore = (
   resource: Extract<OperationImage, { kind: 'placement' }>['resource'],
   facts: AcquirePlacementFacts,
   pair: PairRecord | null,
+  includePortableProvenance = false,
 ): OperationImage => {
   if (facts.placement.class === 'absent') return { kind: 'absent', resource };
   const representation =
     facts.pathKind === 'symlink' ? 'symlink' : facts.pathKind === 'dir' ? 'copy' : 'other';
+  const source = includePortableProvenance ? operationSourceFromLedgerPairV1(pair, null) : null;
   return {
     kind: 'placement',
     resource,
@@ -761,8 +768,9 @@ export const acquireActualBefore = (
         ? null
         : { kind: 'machine-bound', path: facts.placement.symlinkTarget },
     dangling: facts.placement.dangling,
-    source: null,
-    contentHash: null,
+    source,
+    contentHash:
+      source === null ? null : ((facts.contentHash ?? source.contentHash) as OperationDigest),
   };
 };
 
@@ -1168,6 +1176,7 @@ export const readAcquisitionSnapshotV1 = async (input: {
   readonly ledgerPath: string;
   readonly liveResources: readonly AcquireLiveSnapshotResourceV1[];
   readonly storeResources: readonly AcquireStoreSnapshotResourceV1[];
+  readonly fixedProjectContext?: boolean;
   readonly signal?: AbortSignal;
 }): Promise<AcquisitionSnapshotAuthorityV1> => {
   const projectOptions = {
@@ -1196,12 +1205,42 @@ export const readAcquisitionSnapshotV1 = async (input: {
     ledgerWriterPorts === undefined
       ? input.env
       : { ...input.env, readFileMetadata: ledgerWriterPorts.readFileMetadata };
+  const project = input.fixedProjectContext
+    ? (() => {
+        const semanticRevision = semanticValueRevisionV1('project', initialProject);
+        const revision = createExpectedRevisionV1({
+          schemaVersion: 1,
+          domain: 'project',
+          resourceId: projectResourceId,
+          state: 'present',
+          targetKind: 'semantic',
+          semanticRevision,
+        });
+        if (!revision.ok) throw new Error('fixed acquisition project revision is invalid');
+        const observation = Object.freeze({ revision: revision.value, value: initialProject });
+        const observe = async (resourceId: string) =>
+          resourceId === projectResourceId
+            ? ok(observation)
+            : err({
+                code: 'state-repository' as const,
+                domain: 'project' as const,
+                reason: 'invalid-request' as const,
+              });
+        return Object.freeze({
+          observe,
+          observeRevision: async (resourceId: string) => {
+            const observed = await observe(resourceId);
+            return observed.ok ? ok(observed.value.revision) : observed;
+          },
+        });
+      })()
+    : createProjectStateReaderV1({
+        resourceId: projectResourceId,
+        ports: input.env,
+        context: projectOptions,
+      });
   const commonRepositories = {
-    project: createProjectStateReaderV1({
-      resourceId: projectResourceId,
-      ports: input.env,
-      context: projectOptions,
-    }),
+    project,
     ledger: createLedgerRepository({
       resourceId: ledgerResourceId,
       reader: {

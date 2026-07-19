@@ -143,6 +143,31 @@ describe('planning canonical order', () => {
     ).toEqual(['ledger', 'project', 'manifest', 'lock']);
   });
 
+  test('preserves semantic group order when no artifact-prefix lane exists', () => {
+    const alpha = {
+      ...operation('alpha-live', 'user', 'alpha', 'codex', 'install'),
+      groupId: 'group:z',
+      dependencyMetadata: {
+        domain: 'skillsmith.operation-dependency',
+        schemaVersion: 1,
+        operationIds: [],
+      },
+    } as unknown as ExecutableOperation;
+    const beta = {
+      ...operation('beta-live', 'user', 'beta', 'codex', 'install'),
+      groupId: 'group:a',
+      dependencyMetadata: {
+        domain: 'skillsmith.operation-dependency',
+        schemaVersion: 1,
+        operationIds: [],
+      },
+    } as unknown as ExecutableOperation;
+
+    expect(
+      orderExecutableOperationsTopologically([beta, alpha]).map(({ operationId }) => operationId),
+    ).toEqual(['alpha-live', 'beta-live']);
+  });
+
   test('orders only a complete cross-group artifact-prefix barrier', () => {
     const dependencyMetadata = (operationIds: readonly string[]) => ({
       domain: 'skillsmith.operation-dependency' as const,

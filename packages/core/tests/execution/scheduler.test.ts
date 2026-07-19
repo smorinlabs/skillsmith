@@ -803,6 +803,26 @@ describe('G3B-02 operation scheduler', () => {
       'skipped-after-failure',
       'skipped-after-failure',
     ]);
+
+    const laterGroup = operationFor({ skill: 'beta-forward-edge' }).groupId;
+    const laterLock = artifactOperationFor({ kind: 'write-lock', groupId: laterGroup });
+    const earlierLiveSeed = operationFor({ skill: 'alpha-forward-edge' });
+    const earlierLive = {
+      ...earlierLiveSeed,
+      dependencyMetadata: {
+        ...earlierLiveSeed.dependencyMetadata,
+        operationIds: [laterLock.operationId],
+      },
+    };
+    const laterEdgePlan = structuralPlanFor([earlierLive, laterLock], 'continue-on-error');
+    const laterEdgeCalls: string[] = [];
+    await expect(
+      scheduleOperationPlan(
+        laterEdgePlan,
+        laterEdgePlan.operations.map((operation) => bindingFor(operation, laterEdgeCalls)),
+      ),
+    ).rejects.toThrow(/later artifact prefix/i);
+    expect(laterEdgeCalls).toEqual([]);
   });
 
   test('continues independent doctor artifact repairs after ledger migration failure', async () => {

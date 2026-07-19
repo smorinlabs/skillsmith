@@ -773,24 +773,54 @@ describe('createAcquisitionPlan', () => {
     });
     const beta = {
       ...structuredClone(alpha),
-      skill: 'beta',
+      skill: 'epsilon',
       liveResourceId: 'live-resource-beta',
       storeResourceId: 'store-resource-beta',
       sourceContent: betaContent,
       sourcePreconditionId: createContentObservationPreconditionIdV1(betaContent),
       source: {
         ...alpha.source,
-        identity: { ...alpha.source.identity, path: 'skills/beta' },
-        sourcePath: 'skills/beta',
+        identity: { ...alpha.source.identity, path: 'skills/epsilon' },
+        sourcePath: 'skills/epsilon',
       },
       placement: {
         ...alpha.placement,
-        location: { kind: 'portable' as const, token: 'skills/user/codex/beta' },
+        location: { kind: 'portable' as const, token: 'skills/user/codex/epsilon' },
       },
       store: {
         ...alpha.store,
-        location: { kind: 'portable' as const, token: 'store/fixture/beta' },
+        location: { kind: 'portable' as const, token: 'store/fixture/epsilon' },
         snapshotIdentity: createStoreSnapshotIdentityV1('store-resource-beta', `sha256:${HEX.a}`),
+      },
+    };
+    const laterContent = createContentObservationIdentityV1({
+      ...alpha.sourceContent,
+      resourceId: 'materialized-source-skill-0',
+      targetIdentity: '/fixture/fetch/skill-0',
+    });
+    const later = {
+      ...structuredClone(alpha),
+      skill: 'skill-0',
+      liveResourceId: 'live-resource-skill-0',
+      storeResourceId: 'store-resource-skill-0',
+      sourceContent: laterContent,
+      sourcePreconditionId: createContentObservationPreconditionIdV1(laterContent),
+      source: {
+        ...alpha.source,
+        identity: { ...alpha.source.identity, path: 'skills/skill-0' },
+        sourcePath: 'skills/skill-0',
+      },
+      placement: {
+        ...alpha.placement,
+        location: { kind: 'portable' as const, token: 'skills/user/codex/skill-0' },
+      },
+      store: {
+        ...alpha.store,
+        location: { kind: 'portable' as const, token: 'store/fixture/skill-0' },
+        snapshotIdentity: createStoreSnapshotIdentityV1(
+          'store-resource-skill-0',
+          `sha256:${HEX.a}`,
+        ),
       },
     };
     const transition = artifactTransitionForInstall(base, ['codex']);
@@ -822,7 +852,7 @@ describe('createAcquisitionPlan', () => {
         ...changed.lockAfter.value.skills,
         {
           name: beta.skill,
-          source: 'example.test/fixture/repo//skills/beta',
+          source: 'example.test/fixture/repo//skills/epsilon',
           requestedRef: beta.source.requestedRef,
           resolvedSha: beta.source.resolvedSha,
           sourcePath: beta.source.sourcePath,
@@ -832,6 +862,42 @@ describe('createAcquisitionPlan', () => {
     };
     const lockHash = hashPortableLock(lockValue as unknown as PortableLockV1);
     if (!lockHash.ok) throw new Error(lockHash.error.message);
+    const finalManifestValue = {
+      ...manifestValue,
+      skills: [
+        ...manifestValue.skills,
+        {
+          name: later.skill,
+          source: later.source.identity,
+          ref: later.source.requestedRef,
+          tools: [later.tool],
+          scope: later.scope,
+          placement: later.placement.representation,
+          path: null,
+        },
+      ],
+    };
+    const finalManifestHash = hashManifestSemantics({
+      version: 1,
+      skills: finalManifestValue.skills,
+    });
+    const finalLockValue = {
+      ...lockValue,
+      manifestHash: finalManifestHash as `sha256:${string}`,
+      skills: [
+        ...lockValue.skills,
+        {
+          name: later.skill,
+          source: 'example.test/fixture/repo//skills/skill-0',
+          requestedRef: later.source.requestedRef,
+          resolvedSha: later.source.resolvedSha,
+          sourcePath: later.source.sourcePath,
+          contentHash: later.source.contentHash,
+        },
+      ],
+    };
+    const finalLockHash = hashPortableLock(finalLockValue as unknown as PortableLockV1);
+    if (!finalLockHash.ok) throw new Error(finalLockHash.error.message);
     const betaGroupIdentity = {
       domain: 'skillsmith.operation-group-identity' as const,
       schemaVersion: 1 as const,
@@ -839,6 +905,15 @@ describe('createAcquisitionPlan', () => {
       skill: beta.skill,
       source: beta.source,
       scope: beta.scope,
+      target: null,
+    };
+    const laterGroupIdentity = {
+      domain: 'skillsmith.operation-group-identity' as const,
+      schemaVersion: 1 as const,
+      command: 'install' as const,
+      skill: later.skill,
+      source: later.source,
+      scope: later.scope,
       target: null,
     };
     const artifactTransition = {
@@ -858,22 +933,38 @@ describe('createAcquisitionPlan', () => {
             value: lockValue,
           },
         },
+        {
+          groupIdentity: laterGroupIdentity,
+          manifestAfter: {
+            ...changed.manifestAfter,
+            byteHash: `sha256:${HEX.d}` as const,
+            semanticHash: finalManifestHash as `sha256:${string}`,
+            value: finalManifestValue,
+          },
+          lockAfter: {
+            ...changed.lockAfter,
+            canonicalHash: finalLockHash.value,
+            value: finalLockValue,
+          },
+        },
       ],
     } as unknown as NonNullable<AcquisitionInstallPlanRequestV1['artifactTransition']>;
     const observed = snapshot(HEX.a, HEX.b, {
       live: [
         { revision: revision('live', 'live-resource-alpha', HEX.d), value: null },
         { revision: revision('live', 'live-resource-beta', HEX.c), value: null },
+        { revision: revision('live', 'live-resource-skill-0', HEX.b), value: null },
       ],
       store: [
         storeState('store-resource-alpha', 'alpha'),
         storeState('store-resource-beta', 'beta'),
+        storeState('store-resource-skill-0', 'skill-0'),
       ],
     });
     const commonInput = {
       ...base,
-      selection: { ...base.selection, skills: ['alpha', 'beta'] },
-      intents: [alpha, beta],
+      selection: { ...base.selection, skills: ['alpha', beta.skill, later.skill] },
+      intents: [alpha, beta, later],
     };
     const omitted = createAcquisitionPlan(
       { ...commonInput, artifactTransition: { ...artifactTransition, unchangedGroups: [] } },
@@ -889,18 +980,36 @@ describe('createAcquisitionPlan', () => {
     );
     expect(result.ok).toBeTrue();
     if (!result.ok) throw new Error(result.error.message);
-    const lock = result.value.plan.operations.find(({ kind }) => kind === 'write-lock');
     const alphaPlacement = result.value.plan.operations.find(
       ({ skill, pairId }) => skill === 'alpha' && pairId !== null,
     );
     const betaPlacement = result.value.plan.operations.find(
-      ({ skill, pairId }) => skill === 'beta' && pairId !== null,
+      ({ skill, pairId }) => skill === beta.skill && pairId !== null,
     );
-    if (lock === undefined || alphaPlacement === undefined || betaPlacement === undefined) {
+    const laterPlacement = result.value.plan.operations.find(
+      ({ skill, pairId }) => skill === later.skill && pairId !== null,
+    );
+    const firstLock = result.value.plan.operations.find(
+      ({ kind, groupId }) => kind === 'write-lock' && groupId === alphaPlacement?.groupId,
+    );
+    const laterLock = result.value.plan.operations.find(
+      ({ kind, groupId }) => kind === 'write-lock' && groupId === laterPlacement?.groupId,
+    );
+    if (
+      firstLock === undefined ||
+      laterLock === undefined ||
+      alphaPlacement === undefined ||
+      betaPlacement === undefined ||
+      laterPlacement === undefined
+    ) {
       throw new Error('missing mixed transition operations');
     }
-    expect(alphaPlacement.dependencyMetadata.operationIds).toEqual([lock.operationId]);
-    expect(betaPlacement.dependencyMetadata.operationIds).toEqual([lock.operationId]);
+    expect(alphaPlacement.dependencyMetadata.operationIds).toEqual([firstLock.operationId]);
+    expect(betaPlacement.dependencyMetadata.operationIds).toEqual([firstLock.operationId]);
+    expect(betaPlacement.dependencyMetadata.operationIds).not.toContain(laterLock.operationId);
+    expect(new Set(laterPlacement.dependencyMetadata.operationIds)).toEqual(
+      new Set([laterLock.operationId, firstLock.operationId]),
+    );
 
     const extraToolManifest = {
       ...manifestValue,
