@@ -27,6 +27,7 @@ import {
   writeLedger,
 } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
+import { contentHashOf } from '../../src/place/store.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 import { portError } from '../../src/ports/errors.ts';
 import type { ResolvedRuntimeConfiguration, RuntimePorts } from '../../src/ports/types.ts';
@@ -1648,11 +1649,18 @@ describe('validated reconciliation physical boundary', () => {
       throw new Error('physical install did not persist its ledger');
     }
     const firstPair = getLedgerPairAt(firstLedger.value.model, null, 'alpha', 'codex');
+    const legacyContentHash = await contentHashOf(execution.ports, livePath);
+    if (!legacyContentHash.ok) throw new Error(legacyContentHash.error.message);
     expect(firstPair).toMatchObject({
       mode: 'pinned',
-      pinned: { gitSha: '1'.repeat(40), placement: 'copy' },
+      pinned: {
+        gitSha: '1'.repeat(40),
+        placement: 'copy',
+        contentHash: legacyContentHash.value,
+      },
       origin: { refRequested: 'reviewed-main', refResolved: '1'.repeat(40) },
     });
+    expect(firstPair?.pinned?.contentHash).not.toBe(execution.contentHashes.get('alpha'));
 
     const unchanged = await prepareReconcilePlan(
       {

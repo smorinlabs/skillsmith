@@ -803,6 +803,27 @@ describe('saved plan projection', () => {
     expect(replannedLock?.operationId).toBe(reviewedLock?.operationId);
   });
 
+  test('keeps distinct machine-bound artifact pairs in distinct public operation domains', async () => {
+    const first = await fixture(false, false, true, 'user', false, true);
+    const second = await fixture(false, false, true, 'user', false, true);
+    const firstProjection = createSavedPlanProjection(first.product);
+    const secondProjection = createSavedPlanProjection(second.product);
+    expect(firstProjection.ok).toBeTrue();
+    expect(secondProjection.ok).toBeTrue();
+    if (!firstProjection.ok) throw new Error(firstProjection.error.message);
+    if (!secondProjection.ok) throw new Error(secondProjection.error.message);
+
+    const firstIds = firstProjection.value.plan.operations.map(({ groupId, operationId }) => ({
+      groupId,
+      operationId,
+    }));
+    const secondIds = secondProjection.value.plan.operations.map(({ groupId, operationId }) => ({
+      groupId,
+      operationId,
+    }));
+    expect(firstIds).not.toEqual(secondIds);
+  });
+
   test('retains the ledger-schema guard and adds a same-resource execution guard', async () => {
     const state = await fixture(true, true, false, 'user', true);
     const projection = createSavedPlanProjection(state.product);
