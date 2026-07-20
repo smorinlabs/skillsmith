@@ -6124,23 +6124,34 @@
       "phase": "4B",
       "title": "Saved-plan schema, exact apply, approval, scoped staleness, and validation modes",
       "dependsOn": ["P17-G4B-01"],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
         "docs/architecture.md",
+        "packages/core/src/agents/placement-shared.ts",
         "packages/core/src/application/apply-service.ts",
         "packages/core/src/application/plan-service.ts",
         "packages/core/src/application/current-services.ts",
         "packages/core/src/application/types.ts",
+        "packages/core/src/reconcile/apply-execution.ts",
         "packages/core/src/reconcile/apply.ts",
         "packages/core/src/reconcile/execute.ts",
         "packages/core/src/reconcile/index.ts",
+        "packages/core/src/reconcile/saved.ts",
         "packages/core/src/planning/types.ts",
         "packages/core/src/planning/create.ts",
         "packages/core/src/artifacts/execution.ts",
+        "packages/core/src/artifacts/plan-codec.ts",
+        "packages/core/src/artifacts/ledger-history.ts",
+        "packages/core/src/artifacts/registry.ts",
         "packages/core/src/acquire/execute.ts",
+        "packages/core/src/acquire/fetch.ts",
         "packages/core/src/place/execute.ts",
+        "packages/core/src/place/live-repository.ts",
+        "packages/core/src/place/logical-transactions.ts",
+        "packages/core/src/place/recovery.ts",
+        "packages/core/src/place/swap.ts",
         "packages/core/src/contracts/v1/apply.ts",
         "packages/core/src/contracts/v1/index.ts",
         "packages/core/src/contracts/v1/index.d.ts",
@@ -6150,6 +6161,8 @@
         "packages/cli/src/contracts/wire-contracts.ts",
         "packages/cli/src/spec/options.ts",
         "packages/cli/src/spec/registry.ts",
+        "packages/cli/src/spec/types.ts",
+        "packages/cli/src/spec/relations.ts",
         "packages/cli/src/output/apply-human.ts",
         "packages/cli/src/output/apply-json.ts",
         "packages/cli/src/runtime/current-renderers.ts",
@@ -6157,12 +6170,24 @@
         "packages/cli/src/index.ts",
         "packages/core/tests/application/apply-service.test.ts",
         "packages/core/tests/application/current-services.test.ts",
+        "packages/core/tests/agents/registry.test.ts",
         "packages/core/tests/reconcile/apply.test.ts",
         "packages/core/tests/reconcile/execute.test.ts",
+        "packages/core/tests/reconcile/saved.test.ts",
         "packages/core/tests/contracts/apply.test.ts",
+        "packages/core/tests/artifacts/ledger-writer.test.ts",
         "packages/core/tests/planning/types.test.ts",
+        "packages/core/tests/acquire/fetch.test.ts",
+        "packages/core/tests/place/crash-sweep-acquire.test.ts",
+        "packages/core/tests/place/execute.test.ts",
+        "packages/core/tests/place/live-repository.test.ts",
+        "packages/core/tests/place/recovery.test.ts",
+        "packages/core/tests/place/swap-acquire.test.ts",
+        "packages/core/tests/place/swap.test.ts",
         "packages/core/tests/public-api.test.ts",
         "packages/cli/tests/contracts/apply.test.ts",
+        "packages/cli/tests/contracts/doctor.test.ts",
+        "packages/cli/tests/contracts/export.test.ts",
         "packages/cli/tests/contracts/plan.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
         "packages/cli/tests/output/apply.test.ts",
@@ -6170,16 +6195,20 @@
         "tests/ergonomics/phase/EWP-P1-TS05.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS06.test.ts",
         "tests/ergonomics/fixtures/p1-ts10/reports.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
         "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
         "tests/ergonomics/fixtures/p1-ts10/goldens/apply.stdout",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
         "tests/ergonomics/phase/EWP-P4B-TS02.test.ts",
         "tests/ergonomics/phase/EWP-P4B-TS03.test.ts",
         "tests/ergonomics/phase/EWP-P4B-TS07.test.ts",
         "tests/ergonomics/workflows/EWP-WF06.test.ts",
         "tests/ergonomics/workflows/EWP-WF07.test.ts",
         "tests/ergonomics/workflows/EWP-WF08.test.ts",
+        "tests/ergonomics/workflows/EWP-WF15.test.ts",
         "tests/ergonomics/fixtures/p4b-apply/cases.ts"
       ],
       "integrationOwner": "root-codex-goal",
@@ -6279,6 +6308,13 @@
         "bun test tests/ergonomics/workflows/EWP-WF15.test.ts --test-name-pattern EWP-WF15",
         "bun test packages/cli/tests/contracts/options.test.ts",
         "bun test packages/core/tests/planning/types.test.ts",
+        "bun test packages/core/tests/acquire/fetch.test.ts",
+        "bun test packages/core/tests/place/swap-acquire.test.ts",
+        "bun test packages/cli/tests/contracts/doctor.test.ts --test-name-pattern 'every known adapter advertises the diagnostics capability used by doctor'",
+        "bun test packages/core/tests/artifacts/ledger-writer.test.ts",
+        "bun test packages/core/tests/agents/registry.test.ts",
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS07",
+        "bun test tests/ergonomics/phase/EWP-P3B-TS06.test.ts --test-name-pattern EWP-P3B-TS06",
         "bun test tests/ergonomics/phase/EWP-P1-TS05.test.ts --test-name-pattern EWP-P1-TS05",
         "bun test tests/ergonomics/phase/EWP-P1-TS07.test.ts --test-name-pattern EWP-P1-TS07",
         "bun test tests/ergonomics/phase/EWP-P1-TS09.test.ts --test-name-pattern EWP-P1-TS09",
@@ -6287,7 +6323,7 @@
         "bun test tests/ergonomics/phase/EWP-P2-TS08.test.ts --test-name-pattern EWP-P2-TS08"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g4b02_placement_root_amend_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6305,32 +6341,35 @@
           "evidence": ["projects/p17/evidence/P17-G4B-02.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-02.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-02.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-02.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-02.md#refactor"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-02.md#adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-02.md#traceability-and-terminal-verification"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-02.md#traceability-and-terminal-verification",
+            "projects/p17/evidence/P17-G4B-02.md#sign-off"
+          ]
         }
       },
       "evidence": [
@@ -6338,7 +6377,26 @@
         "projects/p17/evidence/P17-G4B-02.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-02.md#ready-review",
         "projects/p17/evidence/P17-G4B-02.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G4B-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4B-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4B-02.md#approved-option-relation-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#approved-scoped-saved-validation-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#approved-p2-ts08-compatibility-inventory-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#corrected-non-directory-placement-root-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#physical-executor-module-ownership-correction",
+        "projects/p17/evidence/P17-G4B-02.md#approved-cross-scope-transaction-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#saved-plan-validation-and-read-only-application-checkpoint",
+        "projects/p17/evidence/P17-G4B-02.md#exact-reconciliation-execution-dispatch-checkpoint",
+        "projects/p17/evidence/P17-G4B-02.md#cross-root-move-scope-transaction-checkpoint",
+        "projects/p17/evidence/P17-G4B-02.md#artifact-registry-guard-validation-export-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#approved-exact-guard-and-live-topology-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#impacted-test-ownership-and-cold-run-efficiency-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#permission-taxonomy-ownership-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#bootstrap-lock-and-v1-swap-compatibility-amendments",
+        "projects/p17/evidence/P17-G4B-02.md#terminal-matcher-mutation-harness-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#terminal-fixture-determinism-and-load-bound-correction-amendment",
+        "projects/p17/evidence/P17-G4B-02.md#terminal-correction-independent-review",
+        "projects/p17/evidence/P17-G4B-02.md#traceability-and-terminal-verification",
+        "projects/p17/evidence/P17-G4B-02.md#sign-off"
       ]
     },
     {
@@ -7346,11 +7404,14 @@
       "title": "Declarative — How do I execute the reviewed convergence plan?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:apply",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -8440,11 +8501,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": [],
       "validatedBy": [
@@ -8967,11 +9031,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -9438,11 +9505,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": [],
       "validatedBy": [
@@ -9664,11 +9734,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": [],
       "validatedBy": [
@@ -11390,11 +11463,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G1-02A"],
       "implements": [],
       "validatedBy": [
@@ -11877,7 +11953,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS01",
       "target": {
@@ -11886,7 +11962,10 @@
         "selector": "EWP-CMD-APPLY-TS01",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts01",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS01"],
@@ -11934,7 +12013,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS02",
       "target": {
@@ -11943,7 +12022,10 @@
         "selector": "EWP-CMD-APPLY-TS02",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts02",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS02"],
@@ -11991,7 +12073,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS03",
       "target": {
@@ -12000,7 +12082,10 @@
         "selector": "EWP-CMD-APPLY-TS03",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts03",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS03"],
@@ -12048,7 +12133,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS04",
       "target": {
@@ -12057,7 +12142,10 @@
         "selector": "EWP-CMD-APPLY-TS04",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS04"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts04"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts04",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts04"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS04"],
@@ -12105,7 +12193,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS05",
       "target": {
@@ -12114,7 +12202,10 @@
         "selector": "EWP-CMD-APPLY-TS05",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts05",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS05"],
@@ -12162,7 +12253,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS06",
       "target": {
@@ -12171,7 +12262,10 @@
         "selector": "EWP-CMD-APPLY-TS06",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS06"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts06"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts06",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts06"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS06"],
@@ -12219,7 +12313,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS07",
       "target": {
@@ -12228,7 +12322,10 @@
         "selector": "EWP-CMD-APPLY-TS07",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS07"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts07"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts07",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts07"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS07"],
@@ -12276,7 +12373,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS08",
       "target": {
@@ -12285,7 +12382,10 @@
         "selector": "EWP-CMD-APPLY-TS08",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS08"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts08"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts08",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts08"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS08"],
@@ -12333,7 +12433,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS09",
       "target": {
@@ -12342,7 +12442,10 @@
         "selector": "EWP-CMD-APPLY-TS09",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS09"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts09"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts09",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts09"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS09"],
@@ -12390,7 +12493,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS10",
       "target": {
@@ -12399,7 +12502,10 @@
         "selector": "EWP-CMD-APPLY-TS10",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS10"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts10"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts10",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts10"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS10"],
@@ -12447,7 +12553,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS11",
       "target": {
@@ -12456,7 +12562,10 @@
         "selector": "EWP-CMD-APPLY-TS11",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS11"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts11"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts11",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts11"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS11"],
@@ -12504,7 +12613,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS12",
       "target": {
@@ -12513,7 +12622,10 @@
         "selector": "EWP-CMD-APPLY-TS12",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS12"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts12"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts12",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts12"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS12"],
@@ -12561,7 +12673,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS13",
       "target": {
@@ -12570,7 +12682,10 @@
         "selector": "EWP-CMD-APPLY-TS13",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS13"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts13"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts13",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts13"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS13"],
@@ -12618,7 +12733,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/apply.test.ts#EWP-CMD-APPLY-TS14",
       "target": {
@@ -12627,7 +12742,10 @@
         "selector": "EWP-CMD-APPLY-TS14",
         "command": "bun test packages/cli/tests/contracts/apply.test.ts --test-name-pattern EWP-CMD-APPLY-TS14"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts14"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-apply-ts14",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-apply-ts14"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-APPLY-TS14"],
@@ -16093,7 +16211,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/plan.test.ts#EWP-CMD-PLAN-TS11",
       "target": {
@@ -16102,7 +16220,10 @@
         "selector": "EWP-CMD-PLAN-TS11",
         "command": "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS11"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-plan-ts11"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-cmd-plan-ts11",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-cmd-plan-ts11"
+      ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-PLAN-TS11"],
@@ -18314,7 +18435,7 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS09",
       "target": {
@@ -18323,7 +18444,10 @@
         "selector": "EWP-OPT-TS09",
         "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS09"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-opt-ts09"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-opt-ts09",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-opt-ts09"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-OPT-TS09"],
@@ -22656,7 +22780,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-02",
-      "status": "red",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02",
       "target": null,
@@ -22746,7 +22870,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-02",
-      "status": "red",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02",
       "target": null,
@@ -22914,7 +23038,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:tests/ergonomics/phase/EWP-P4B-TS02.test.ts#EWP-P4B-TS02",
       "target": {
@@ -22923,7 +23047,10 @@
         "selector": "EWP-P4B-TS02",
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS02.test.ts --test-name-pattern EWP-P4B-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-p4b-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-p4b-ts02",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-p4b-ts02"
+      ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS02"],
@@ -22974,7 +23101,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:tests/ergonomics/phase/EWP-P4B-TS03.test.ts#EWP-P4B-TS03",
       "target": {
@@ -22983,7 +23110,10 @@
         "selector": "EWP-P4B-TS03",
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS03.test.ts --test-name-pattern EWP-P4B-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-p4b-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-p4b-ts03",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-p4b-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS03"],
@@ -23118,7 +23248,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:tests/ergonomics/phase/EWP-P4B-TS07.test.ts#EWP-P4B-TS07",
       "target": {
@@ -23127,7 +23257,10 @@
         "selector": "EWP-P4B-TS07",
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS07.test.ts --test-name-pattern EWP-P4B-TS07"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-p4b-ts07"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-p4b-ts07",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-p4b-ts07"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS07"],
@@ -24076,7 +24209,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:tests/ergonomics/workflows/EWP-WF06.test.ts#EWP-WF06",
       "target": {
@@ -24085,7 +24218,10 @@
         "selector": "EWP-WF06",
         "command": "bun test tests/ergonomics/workflows/EWP-WF06.test.ts --test-name-pattern EWP-WF06"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-wf06"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-wf06",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-wf06"
+      ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": [],
       "validatedBy": ["EWP-WF06"],
@@ -24136,7 +24272,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:tests/ergonomics/workflows/EWP-WF07.test.ts#EWP-WF07",
       "target": {
@@ -24145,7 +24281,10 @@
         "selector": "EWP-WF07",
         "command": "bun test tests/ergonomics/workflows/EWP-WF07.test.ts --test-name-pattern EWP-WF07"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-wf07"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-wf07",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-wf07"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-WF07"],
@@ -24193,7 +24332,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-02",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-02:tests/ergonomics/workflows/EWP-WF08.test.ts#EWP-WF08",
       "target": {
@@ -24202,7 +24341,10 @@
         "selector": "EWP-WF08",
         "command": "bun test tests/ergonomics/workflows/EWP-WF08.test.ts --test-name-pattern EWP-WF08"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-wf08"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#green-execution-receipt-ewp-wf08",
+        "projects/p17/evidence/P17-G4B-02.md#red-execution-receipt-ewp-wf08"
+      ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": [],
       "validatedBy": ["EWP-WF08"],
@@ -25067,11 +25209,14 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-02.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [

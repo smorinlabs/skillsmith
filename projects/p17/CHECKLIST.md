@@ -11,15 +11,15 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 18 | 10 | 6 |
-| phase-task | 65 | 49 | 16 | 0 |
-| phase-test | 61 | 45 | 16 | 0 |
-| command-test | 157 | 92 | 65 | 0 |
-| option-gate | 10 | 6 | 4 | 0 |
-| workflow | 16 | 3 | 13 | 0 |
-| command | 23 | 16 | 7 | 0 |
-| finding | 43 | 35 | 8 | 0 |
-| decision | 16 | 8 | 7 | 1 |
+| recommendation | 34 | 19 | 9 | 6 |
+| phase-task | 65 | 51 | 14 | 0 |
+| phase-test | 61 | 48 | 13 | 0 |
+| command-test | 157 | 107 | 50 | 0 |
+| option-gate | 10 | 7 | 3 | 0 |
+| workflow | 16 | 6 | 10 | 0 |
+| command | 23 | 17 | 6 | 0 |
+| finding | 43 | 38 | 5 | 0 |
+| decision | 16 | 10 | 5 | 1 |
 
 ### Phases
 
@@ -29,7 +29,7 @@ Tracked entities: **425** across **45** change groups.
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
-| 4 | 7 | 105 | 68 | 0 |
+| 4 | 7 | 105 | 99 | 0 |
 | 5 | 5 | 69 | 0 | 0 |
 | 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
@@ -105,7 +105,7 @@ Tracked entities: **425** across **45** change groups.
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
 | COMMAND:agents | P17-G3A-02 | signed-off | required-pr |
-| COMMAND:apply | P17-G4B-02 | planned | required-pr |
+| COMMAND:apply | P17-G4B-02 | signed-off | required-pr |
 | COMMAND:check | P17-G1-02B | signed-off | required-pr |
 | COMMAND:commands | P17-G3A-02 | signed-off | required-pr |
 | COMMAND:completion | P17-G6-02B | planned | supported-platform |
@@ -147,7 +147,7 @@ Tracked entities: **425** across **45** change groups.
 | P1-05 | P17-G4A-03 | signed-off | required-pr |
 | P1-06 | P17-G4A-02 | signed-off | required-pr |
 | P1-07 | P17-G4B-01 | signed-off | required-pr |
-| P1-08 | P17-G4B-02 | planned | required-pr |
+| P1-08 | P17-G4B-02 | signed-off | required-pr |
 | P1-09 | P17-G4A-01 | signed-off | required-pr |
 | P1-10 | P17-G5-01 | planned | required-pr |
 | P1-11 | P17-G5-03 | planned | required-pr |
@@ -179,13 +179,13 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-006 | P17-G3B-03 | signed-off | required-pr |
 | EWP-CF-007 | P17-G1-05 | signed-off | required-pr |
 | EWP-CF-008 | P17-G5-02 | planned | required-pr |
-| EWP-CF-009 | P17-G4B-02 | planned | required-pr |
+| EWP-CF-009 | P17-G4B-02 | signed-off | required-pr |
 | EWP-CF-010 | P17-G0-02 | signed-off | required-pr |
 | EWP-CF-011 | P17-G4A-02 | signed-off | required-pr |
 | EWP-CF-012 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-013 | P17-G6-02A | planned | required-pr |
 | EWP-CF-014 | P17-G6-02B | planned | supported-platform |
-| EWP-CF-015 | P17-G4B-02 | planned | required-pr |
+| EWP-CF-015 | P17-G4B-02 | signed-off | required-pr |
 | EWP-CF-016 | P17-G5-04 | planned | required-pr |
 | EWP-CF-017 | P17-G0-04 | signed-off | required-pr |
 | EWP-CF-018 | P17-G0-05 | signed-off | required-pr |
@@ -212,7 +212,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-039 | P17-G0-05 | signed-off | required-pr |
 | EWP-CF-040 | P17-G2-01 | signed-off | required-pr |
 | EWP-CF-041 | P17-G4A-03 | signed-off | required-pr |
-| EWP-CF-042 | P17-G4B-02 | planned | required-pr |
+| EWP-CF-042 | P17-G4B-02 | signed-off | required-pr |
 | EWP-CF-043 | P17-G1-02A | signed-off | required-pr |
 
 #### decision
@@ -220,7 +220,7 @@ Tracked entities: **425** across **45** change groups.
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
 | D-001 | P17-G4B-01 | signed-off | required-pr |
-| D-002 | P17-G4B-02 | planned | required-pr |
+| D-002 | P17-G4B-02 | signed-off | required-pr |
 | D-003 | P17-G2-01 | signed-off | required-pr |
 | D-004 | P17-G2-02 | signed-off | required-pr |
 | D-005 | P17-G4A-02 | signed-off | required-pr |
@@ -232,7 +232,7 @@ Tracked entities: **425** across **45** change groups.
 | D-011 | P17-G5-02 | planned | required-pr |
 | D-012 | P17-G5-04 | planned | required-pr |
 | D-013 | P17-G7-01 | deferred | deferred |
-| D-014 | P17-G4B-02 | planned | required-pr |
+| D-014 | P17-G4B-02 | signed-off | required-pr |
 | D-015 | P17-G4B-03 | planned | required-pr |
 | D-016 | P17-G6-04 | planned | release |
 
@@ -248,7 +248,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-OPT-TS06 | P17-G1-01 | signed-off | required-pr |
 | EWP-OPT-TS07 | P17-G6-02A | planned | required-pr |
 | EWP-OPT-TS08 | P17-G5-05 | planned | required-pr |
-| EWP-OPT-TS09 | P17-G4B-02 | failing | required-pr |
+| EWP-OPT-TS09 | P17-G4B-02 | signed-off | required-pr |
 | EWP-OPT-TS10 | P17-G1-02A | signed-off | required-pr |
 
 #### workflow
@@ -260,9 +260,9 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF03 | P17-G4B-03 | planned | required-pr |
 | EWP-WF04 | P17-G4B-03 | planned | required-pr |
 | EWP-WF05 | P17-G5-03 | planned | required-pr |
-| EWP-WF06 | P17-G4B-02 | failing | required-pr |
-| EWP-WF07 | P17-G4B-02 | failing | required-pr |
-| EWP-WF08 | P17-G4B-02 | failing | required-pr |
+| EWP-WF06 | P17-G4B-02 | signed-off | required-pr |
+| EWP-WF07 | P17-G4B-02 | signed-off | required-pr |
+| EWP-WF08 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF09 | P17-G5-02 | planned | required-pr |
 | EWP-WF10 | P17-G5-01 | planned | required-pr |
 | EWP-WF11 | P17-G5-03 | planned | required-pr |
@@ -1250,7 +1250,7 @@ Downstream coverage obligations: EWP-CMD-PLAN-TS11, EWP-P4B-TS02, EWP-WF06, EWP-
 
 ## P17-G4B-02 — Saved-plan schema, exact apply, approval, scoped staleness, and validation modes
 
-Phase: 4B; status: **active**; dependencies: P17-G4B-01.
+Phase: 4B; status: **signed-off**; dependencies: P17-G4B-01.
 Required-now validations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD-APPLY-TS03, EWP-CMD-APPLY-TS04, EWP-CMD-APPLY-TS05, EWP-CMD-APPLY-TS06, EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS08, EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS10, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS12, EWP-CMD-APPLY-TS13, EWP-CMD-APPLY-TS14, EWP-CMD-PLAN-TS06, EWP-CMD-PLAN-TS07, EWP-CMD-PLAN-TS08, EWP-CMD-PLAN-TS09, EWP-CMD-PLAN-TS10, EWP-CMD-PLAN-TS11, EWP-CMD-PLAN-TS12, EWP-OPT-TS09, EWP-P4B-TS02, EWP-P4B-TS03, EWP-P4B-TS07, EWP-WF06, EWP-WF07, EWP-WF08, EWP-WF15.
 Downstream coverage obligations: EWP-WF13.
 
@@ -1259,47 +1259,47 @@ Downstream coverage obligations: EWP-WF13.
 - [x] P17-G4B-02:mapped _(passed)_
 - [x] P17-G4B-02:ready _(passed)_
 - [x] P17-G4B-02:test-first _(passed)_
-- [ ] P17-G4B-02:minimal-implementation _(pending)_
-- [ ] P17-G4B-02:targeted-green _(pending)_
-- [ ] P17-G4B-02:impacted-green _(pending)_
-- [ ] P17-G4B-02:refactor _(pending)_
-- [ ] P17-G4B-02:adversarial-review _(pending)_
-- [ ] P17-G4B-02:traceability-closure _(pending)_
-- [ ] P17-G4B-02:signed-off _(pending)_
+- [x] P17-G4B-02:minimal-implementation _(passed)_
+- [x] P17-G4B-02:targeted-green _(passed)_
+- [x] P17-G4B-02:impacted-green _(passed)_
+- [x] P17-G4B-02:refactor _(passed)_
+- [x] P17-G4B-02:adversarial-review _(passed)_
+- [x] P17-G4B-02:traceability-closure _(passed)_
+- [x] P17-G4B-02:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:apply** — Declarative — How do I execute the reviewed convergence plan? _(command; planned)_
-- [ ] **D-002** — Saved executable plans _(decision; planned)_
-- [ ] **D-014** — Fresh apply approval and saved-plan authorization _(decision; planned)_
-- [ ] **EWP-CF-009** — Scope saved-plan invalidation to actual dependencies _(finding; planned)_
-- [ ] **EWP-CF-015** — Protect saved plans as reviewed artifacts _(finding; planned)_
-- [ ] **EWP-CF-042** — Define exact saved-plan validation modes and option conflicts _(finding; planned)_
-- [ ] **EWP-CMD-APPLY-TS01** — fresh plan/display/confirm/execute pipeline. _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS02** — rejection/cancel/no-prompt/yes behavior and no mutation. _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS03** — idempotent unchanged application. _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS04** — lock update and locked strictness. _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS05** — fresh bounded-manifest/saved-exact selection, prune opt-in, _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS06** — saved plan exact execution and exact dry-run/check validation without _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS07** — precise manifest/lock/resource/selection/capability stale-plan refusals, _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS08** — operation dependency ordering and safe parallelism. _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS09** — per-tool partial failure and rerun convergence. _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS10** — version-1-to-2 migration followed by manifest/lock/ledger atomic commit, _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS11** — continue-on-error and exit precedence. _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS12** — fresh and saved dry-run/check aliases, mutual exclusion, exact allowed/ _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS13** — human/JSON/quiet/verbose/SIGINT contracts. _(command-test; failing)_
-- [ ] **EWP-CMD-APPLY-TS14** — real manifest with multi-tool, multi-scope, source reuse, portable _(command-test; failing)_
-- [ ] **EWP-CMD-PLAN-TS11** — apply-dry-run and apply-check compatibility equivalence. _(command-test; failing)_
-- [ ] **EWP-OPT-TS09** — Exhaust fresh versus saved apply modes: saved plan allows exact dry-run or check _(option-gate; failing)_
-- [ ] **EWP-P4B-T03** — Saved-plan schema, permissions, recursive redaction, automatic _(phase-task; red)_
-- [ ] **EWP-P4B-T04** — Apply executor, approval, saved-plan execution, and precondition revalidation. _(phase-task; red)_
-- [ ] **EWP-P4B-TS02** — Plan/check/apply-dry-run equivalence and apply idempotence. _(phase-test; failing)_
-- [ ] **EWP-P4B-TS03** — Saved-plan exact execution; semantic-manifest/canonical-lock/resource/ _(phase-test; failing)_
-- [ ] **EWP-P4B-TS07** — Portable plan zero-local-path proof; machine-bound reason/path/precondition _(phase-test; failing)_
-- [ ] **EWP-WF06** — Interactive plan/apply _(workflow; failing)_
-- [ ] **EWP-WF07** — Saved-plan automation _(workflow; failing)_
-- [ ] **EWP-WF08** — CI gates _(workflow; failing)_
-- [ ] **P1-08** — `apply` _(recommendation; planned)_
+- [x] **COMMAND:apply** — Declarative — How do I execute the reviewed convergence plan? _(command; signed-off)_
+- [x] **D-002** — Saved executable plans _(decision; signed-off)_
+- [x] **D-014** — Fresh apply approval and saved-plan authorization _(decision; signed-off)_
+- [x] **EWP-CF-009** — Scope saved-plan invalidation to actual dependencies _(finding; signed-off)_
+- [x] **EWP-CF-015** — Protect saved plans as reviewed artifacts _(finding; signed-off)_
+- [x] **EWP-CF-042** — Define exact saved-plan validation modes and option conflicts _(finding; signed-off)_
+- [x] **EWP-CMD-APPLY-TS01** — fresh plan/display/confirm/execute pipeline. _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS02** — rejection/cancel/no-prompt/yes behavior and no mutation. _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS03** — idempotent unchanged application. _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS04** — lock update and locked strictness. _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS05** — fresh bounded-manifest/saved-exact selection, prune opt-in, _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS06** — saved plan exact execution and exact dry-run/check validation without _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS07** — precise manifest/lock/resource/selection/capability stale-plan refusals, _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS08** — operation dependency ordering and safe parallelism. _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS09** — per-tool partial failure and rerun convergence. _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS10** — version-1-to-2 migration followed by manifest/lock/ledger atomic commit, _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS11** — continue-on-error and exit precedence. _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS12** — fresh and saved dry-run/check aliases, mutual exclusion, exact allowed/ _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS13** — human/JSON/quiet/verbose/SIGINT contracts. _(command-test; signed-off)_
+- [x] **EWP-CMD-APPLY-TS14** — real manifest with multi-tool, multi-scope, source reuse, portable _(command-test; signed-off)_
+- [x] **EWP-CMD-PLAN-TS11** — apply-dry-run and apply-check compatibility equivalence. _(command-test; signed-off)_
+- [x] **EWP-OPT-TS09** — Exhaust fresh versus saved apply modes: saved plan allows exact dry-run or check _(option-gate; signed-off)_
+- [x] **EWP-P4B-T03** — Saved-plan schema, permissions, recursive redaction, automatic _(phase-task; signed-off)_
+- [x] **EWP-P4B-T04** — Apply executor, approval, saved-plan execution, and precondition revalidation. _(phase-task; signed-off)_
+- [x] **EWP-P4B-TS02** — Plan/check/apply-dry-run equivalence and apply idempotence. _(phase-test; signed-off)_
+- [x] **EWP-P4B-TS03** — Saved-plan exact execution; semantic-manifest/canonical-lock/resource/ _(phase-test; signed-off)_
+- [x] **EWP-P4B-TS07** — Portable plan zero-local-path proof; machine-bound reason/path/precondition _(phase-test; signed-off)_
+- [x] **EWP-WF06** — Interactive plan/apply _(workflow; signed-off)_
+- [x] **EWP-WF07** — Saved-plan automation _(workflow; signed-off)_
+- [x] **EWP-WF08** — CI gates _(workflow; signed-off)_
+- [x] **P1-08** — `apply` _(recommendation; signed-off)_
 
 ## P17-G4B-03 — Lock update policy, cross-machine reproduction, crash recovery, and secret safety
 
