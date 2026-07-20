@@ -6404,7 +6404,7 @@
       "phase": "4B",
       "title": "Lock update policy, cross-machine reproduction, crash recovery, and secret safety",
       "dependsOn": ["P17-G4B-02"],
-      "status": "reviewed",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/reconcile/resolve.ts",
@@ -6414,6 +6414,7 @@
         "packages/core/tests/reconcile/resolve.test.ts",
         "packages/core/tests/reconcile/plan.test.ts",
         "packages/core/tests/reconcile/apply.test.ts",
+        "packages/core/tests/reconcile/execute.test.ts",
         "packages/core/src/reconcile/saved.ts",
         "packages/core/tests/reconcile/saved.test.ts",
         "packages/core/src/place/swap.ts",
@@ -6522,10 +6523,13 @@
         "bun test tests/ergonomics/workflows/EWP-WF04.test.ts --test-name-pattern EWP-WF04",
         "bun test tests/ergonomics/phase/EWP-P4A-TS02.test.ts --test-name-pattern EWP-P4A-TS02",
         "bun test tests/ergonomics/phase/EWP-P4B-TS01.test.ts --test-name-pattern EWP-P4B-TS01",
-        "bun test tests/ergonomics/phase/EWP-P4B-TS04.test.ts --test-name-pattern EWP-P4B-TS04"
+        "bun test tests/ergonomics/phase/EWP-P4B-TS04.test.ts --test-name-pattern EWP-P4B-TS04",
+        "bun test packages/core/tests/acquire/uninstall-run.test.ts",
+        "bun test packages/core/tests/reconcile/execute.test.ts",
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g4a04_corrected_adversarial_review",
+      "reviewer": null,
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6559,8 +6563,8 @@
           "evidence": ["projects/p17/evidence/P17-G4B-03.md#refactor"]
         },
         "adversarial-review": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#adversarial-review"]
+          "status": "pending",
+          "evidence": []
         },
         "traceability-closure": {
           "status": "pending",
@@ -6579,8 +6583,7 @@
         "projects/p17/evidence/P17-G4B-03.md#test-first-evidence",
         "projects/p17/evidence/P17-G4B-03.md#minimal-implementation",
         "projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4B-03.md#refactor",
-        "projects/p17/evidence/P17-G4B-03.md#adversarial-review"
+        "projects/p17/evidence/P17-G4B-03.md#refactor"
       ]
     },
     {

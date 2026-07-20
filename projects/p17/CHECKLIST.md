@@ -1303,7 +1303,7 @@ Downstream coverage obligations: EWP-WF13.
 
 ## P17-G4B-03 — Lock update policy, cross-machine reproduction, crash recovery, and secret safety
 
-Phase: 4B; status: **reviewed**; dependencies: P17-G4B-02.
+Phase: 4B; status: **active**; dependencies: P17-G4B-02.
 Required-now validations: EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS09, EWP-P4A-TS03, EWP-P4A-TS04, EWP-P4B-TS05, EWP-P4B-TS06, EWP-WF03, EWP-WF04.
 Downstream coverage obligations: none.
 
@@ -1316,7 +1316,7 @@ Downstream coverage obligations: none.
 - [x] P17-G4B-03:targeted-green _(passed)_
 - [x] P17-G4B-03:impacted-green _(passed)_
 - [x] P17-G4B-03:refactor _(passed)_
-- [x] P17-G4B-03:adversarial-review _(passed)_
+- [ ] P17-G4B-03:adversarial-review _(pending)_
 - [ ] P17-G4B-03:traceability-closure _(pending)_
 - [ ] P17-G4B-03:signed-off _(pending)_
 
