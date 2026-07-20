@@ -48,7 +48,12 @@ import {
 } from '../place/ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
 import { recoverPlacementWithObservation } from '../place/recovery.ts';
-import { type SnapshotResult, clampStoreNs, snapshotToStore } from '../place/store.ts';
+import {
+  type SnapshotResult,
+  clampStoreNs,
+  contentHashOf,
+  snapshotToStore,
+} from '../place/store.ts';
 import type { Provenance, SwapExecutionResult, SwapPlan } from '../place/types.ts';
 import { createOperationExecutionResult, createOperationPlan } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
@@ -292,6 +297,18 @@ const prepareExecutionSources = async (
             ),
           );
         }
+        const legacyContentHash = await contentHashOf(runtime.ports, storePath);
+        if (!legacyContentHash.ok) {
+          return err(
+            physicalFailure(
+              legacyContentHash.error,
+              'apply-store-integrity',
+              'the approved store entry could not be hashed',
+              'state',
+              runtime.signal,
+            ),
+          );
+        }
         prepared.set(key, {
           source,
           spec,
@@ -301,7 +318,7 @@ const prepareExecutionSources = async (
           snapshot: {
             storePath,
             rev: source.resolvedSha.slice(0, 12),
-            contentHash: source.contentHash,
+            contentHash: legacyContentHash.value,
             reused: true,
           },
         });
@@ -635,12 +652,8 @@ const sourceSnapshot = async (
   ) {
     throw new TypeError('approved source snapshot differs from the reviewed after-state');
   }
-  const approvedSnapshot = Object.freeze({
-    ...snap.value,
-    contentHash: prepared.source.contentHash,
-  });
-  prepared.snapshot = approvedSnapshot;
-  return approvedSnapshot;
+  prepared.snapshot = snap.value;
+  return snap.value;
 };
 
 /** Build the mandatory directory-to-symlink bridge for an approved copy-over-copy replacement. */

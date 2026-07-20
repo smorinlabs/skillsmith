@@ -251,11 +251,19 @@ const canonicalResourcePrecondition = (
   };
 };
 
-const artifactGroupTarget = (operation: PlanOperationV1): string | null => {
+const artifactGroupTarget = (
+  operation: PlanOperationV1,
+  manifest: PlanLocationV1,
+  lock: PlanLocationV1,
+): string | null => {
   if (operation.skill !== null || operation.source !== null || operation.scope !== null)
     return null;
   if (operation.kind === 'migrate-project-config' || operation.kind === 'write-lock') {
-    return 'artifact-pair:manifest-lock';
+    return JSON.stringify({
+      kind: 'artifact-pair',
+      manifest: { kind: 'manifest-bytes', location: manifest },
+      lock: { kind: 'lock', location: lock },
+    });
   }
   return `resource:${resourceKey(imageResource(operation.after))}`;
 };
@@ -633,7 +641,7 @@ export const createSavedPlanProjection = (
         skill: operation.skill,
         source: operation.source as unknown as OperationSource | null,
         scope: operation.scope,
-        target: artifactGroupTarget(operation),
+        target: artifactGroupTarget(operation, manifestLocation, lockLocation),
       }),
     );
   }

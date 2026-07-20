@@ -1650,7 +1650,7 @@ describe('validated reconciliation physical boundary', () => {
     }
     const firstPair = getLedgerPairAt(firstLedger.value.model, null, 'alpha', 'codex');
     const legacyContentHash = await contentHashOf(execution.ports, livePath);
-    if (!legacyContentHash.ok) throw new Error(legacyContentHash.error.message);
+    if (!legacyContentHash.ok) throw new Error(JSON.stringify(legacyContentHash.error));
     expect(firstPair).toMatchObject({
       mode: 'pinned',
       pinned: {
