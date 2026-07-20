@@ -50,6 +50,11 @@ describe('EWP-P4B-TS06', () => {
         state: 'ready',
         summary: { operations: 0, drift: 0 },
       });
+      expect(reports.machineBExport).toMatchObject({
+        kind: 'skillsmith.export',
+        results: [{ name: fixture.machineA.skill.name, action: 'add', reason: null }],
+        summary: { portable: 1, skipped: 0, changed: 1 },
+      });
       expect(await Bun.file(fixture.machineB.ledger).exists()).toBeTrue();
       expect(await collectResiduePaths(fixture.machineB.root)).toEqual([]);
 
@@ -60,6 +65,7 @@ describe('EWP-P4B-TS06', () => {
         reports.machineBPlan,
         reports.machineBApply,
         reports.machineBConverged,
+        reports.machineBExport,
       ]);
       expect(machineBOutput).not.toContain(fixture.machineA.root);
       for (const canary of POLICY_SECRET_CANARIES) {

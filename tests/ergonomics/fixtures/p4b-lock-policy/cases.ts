@@ -69,6 +69,7 @@ export interface CrossMachineResult {
     readonly machineBPlan: JsonRecord;
     readonly machineBApply: JsonRecord;
     readonly machineBConverged: JsonRecord;
+    readonly machineBExport: JsonRecord;
     readonly machineBSiblingPlan: JsonRecord;
   };
   readonly pairBytes: {
@@ -282,6 +283,22 @@ export const runCrossMachineReproduction = async (): Promise<CrossMachineResult>
       ]),
       'Machine B converged locked plan',
     );
+    const machineBExportRoot = join(fixture.machineB.cwd, 'roundtrip');
+    await mkdir(machineBExportRoot, { recursive: true });
+    const machineBExport = asJsonReport(
+      await runApplyCli(fixture.machineB, [
+        'export',
+        '--user',
+        '--tool',
+        'codex',
+        '--file',
+        join(machineBExportRoot, 'restored.toml'),
+        '--lockfile',
+        join(machineBExportRoot, 'restored.lock'),
+        '--json',
+      ]),
+      'Machine B managed export after locked apply',
+    );
     const machineBSiblingPlan = asJsonReport(
       await runApplyCli(fixture.machineB, [
         'plan',
@@ -301,6 +318,7 @@ export const runCrossMachineReproduction = async (): Promise<CrossMachineResult>
         machineBPlan,
         machineBApply,
         machineBConverged,
+        machineBExport,
         machineBSiblingPlan,
       }),
       pairBytes,

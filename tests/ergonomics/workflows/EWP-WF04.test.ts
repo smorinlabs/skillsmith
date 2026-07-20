@@ -56,6 +56,11 @@ describe('EWP-WF04', () => {
         },
         summary: { operations: 0, drift: 0 },
       });
+      expect(reports.machineBExport).toMatchObject({
+        kind: 'skillsmith.export',
+        results: [{ name: fixture.machineA.skill.name, action: 'add', reason: null }],
+        summary: { portable: 1, skipped: 0, changed: 1 },
+      });
       expect(reproduction.machineBLedgerWasAbsent).toBeTrue();
       expect(reproduction.contentHashes.machineB).toBe(reproduction.contentHashes.machineA);
       expect(await collectResiduePaths(fixture.machineA.root)).toEqual([]);
