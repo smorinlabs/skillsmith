@@ -6404,7 +6404,7 @@
       "phase": "4B",
       "title": "Lock update policy, cross-machine reproduction, crash recovery, and secret safety",
       "dependsOn": ["P17-G4B-02"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/reconcile/resolve.ts",
@@ -6529,7 +6529,7 @@
         "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g4a04_corrected_adversarial_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6563,8 +6563,8 @@
           "evidence": ["projects/p17/evidence/P17-G4B-03.md#refactor"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -6583,7 +6583,8 @@
         "projects/p17/evidence/P17-G4B-03.md#test-first-evidence",
         "projects/p17/evidence/P17-G4B-03.md#minimal-implementation",
         "projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4B-03.md#refactor"
+        "projects/p17/evidence/P17-G4B-03.md#refactor",
+        "projects/p17/evidence/P17-G4B-03.md#adversarial-review"
       ]
     },
     {
