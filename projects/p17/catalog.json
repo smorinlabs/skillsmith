@@ -6414,6 +6414,8 @@
         "packages/core/tests/reconcile/resolve.test.ts",
         "packages/core/tests/reconcile/plan.test.ts",
         "packages/core/tests/reconcile/apply.test.ts",
+        "packages/core/src/reconcile/saved.ts",
+        "packages/core/tests/reconcile/saved.test.ts",
         "packages/core/src/place/swap.ts",
         "packages/core/tests/place/swap.test.ts",
         "packages/core/src/acquire/run.ts",
@@ -6429,6 +6431,13 @@
         "packages/core/src/ports/types.ts",
         "packages/core/src/ports/git.ts",
         "packages/core/tests/ports/git.test.ts",
+        "packages/core/tests/fixtures/git-env.ts",
+        "packages/core/tests/fixtures/git-env.test.ts",
+        "packages/cli/tests/contracts/export.test.ts",
+        "tests/ergonomics/phase/EWP-P4A-TS03.test.ts",
+        "tests/ergonomics/phase/EWP-P4A-TS02.test.ts",
+        "tests/ergonomics/phase/EWP-P4B-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P4B-TS04.test.ts",
         "tests/ergonomics/fixtures/p4b-lock-policy/cases.ts",
         "tests/ergonomics/fixtures/p4b-lock-policy/apply-crash-child.ts",
         "tests/ergonomics/phase/EWP-P4B-TS05.test.ts",
@@ -6510,7 +6519,10 @@
         "bun test tests/ergonomics/phase/EWP-P4B-TS05.test.ts --test-name-pattern EWP-P4B-TS05",
         "bun test tests/ergonomics/phase/EWP-P4B-TS06.test.ts --test-name-pattern EWP-P4B-TS06",
         "bun test tests/ergonomics/workflows/EWP-WF03.test.ts --test-name-pattern EWP-WF03",
-        "bun test tests/ergonomics/workflows/EWP-WF04.test.ts --test-name-pattern EWP-WF04"
+        "bun test tests/ergonomics/workflows/EWP-WF04.test.ts --test-name-pattern EWP-WF04",
+        "bun test tests/ergonomics/phase/EWP-P4A-TS02.test.ts --test-name-pattern EWP-P4A-TS02",
+        "bun test tests/ergonomics/phase/EWP-P4B-TS01.test.ts --test-name-pattern EWP-P4B-TS01",
+        "bun test tests/ergonomics/phase/EWP-P4B-TS04.test.ts --test-name-pattern EWP-P4B-TS04"
       ],
       "implementers": ["root-codex-goal"],
       "reviewer": null,
@@ -6531,20 +6543,20 @@
           "evidence": ["projects/p17/evidence/P17-G4B-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#refactor"]
         },
         "adversarial-review": {
           "status": "pending",
@@ -6564,7 +6576,10 @@
         "projects/p17/evidence/P17-G4B-03.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-03.md#ready-review",
         "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G4B-03.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4B-03.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4B-03.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4B-03.md#refactor"
       ]
     },
     {
@@ -9171,11 +9186,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-03",
-      "status": "planned",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-03",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-03.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green"
+      ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": [],
       "validatedBy": [
@@ -23019,7 +23037,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-03",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03",
       "target": null,
@@ -23027,7 +23045,9 @@
         "projects/p17/evidence/P17-G4B-03.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-03.md#ready-review",
         "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G4B-03.md#test-first-evidence"
+        "projects/p17/evidence/P17-G4B-03.md#test-first-evidence",
+        "projects/p17/evidence/P17-G4B-03.md#minimal-implementation",
+        "projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green"
       ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": ["D-015"],
@@ -23278,7 +23298,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/phase/EWP-P4B-TS05.test.ts#EWP-P4B-TS05",
       "target": {
@@ -23287,7 +23307,10 @@
         "selector": "EWP-P4B-TS05",
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS05.test.ts --test-name-pattern EWP-P4B-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-p4b-ts05",
+        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS05"],
@@ -23308,7 +23331,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/phase/EWP-P4B-TS06.test.ts#EWP-P4B-TS06",
       "target": {
@@ -23317,7 +23340,10 @@
         "selector": "EWP-P4B-TS06",
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS06.test.ts --test-name-pattern EWP-P4B-TS06"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts06"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-p4b-ts06",
+        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts06"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS06"],
@@ -24199,7 +24225,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF03.test.ts#EWP-WF03",
       "target": {
@@ -24208,7 +24234,10 @@
         "selector": "EWP-WF03",
         "command": "bun test tests/ergonomics/workflows/EWP-WF03.test.ts --test-name-pattern EWP-WF03"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-wf03",
+        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf03"
+      ],
       "secondaryGroups": ["P17-G4A-03"],
       "implements": [],
       "validatedBy": ["EWP-WF03"],
@@ -24236,7 +24265,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF04.test.ts#EWP-WF04",
       "target": {
@@ -24245,7 +24274,10 @@
         "selector": "EWP-WF04",
         "command": "bun test tests/ergonomics/workflows/EWP-WF04.test.ts --test-name-pattern EWP-WF04"
       },
-      "evidence": ["projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf04"],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-wf04",
+        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf04"
+      ],
       "secondaryGroups": ["P17-G4A-02"],
       "implements": [],
       "validatedBy": ["EWP-WF04"],

@@ -233,7 +233,7 @@ Tracked entities: **425** across **45** change groups.
 | D-012 | P17-G5-04 | planned | required-pr |
 | D-013 | P17-G7-01 | deferred | deferred |
 | D-014 | P17-G4B-02 | signed-off | required-pr |
-| D-015 | P17-G4B-03 | planned | required-pr |
+| D-015 | P17-G4B-03 | validated | required-pr |
 | D-016 | P17-G6-04 | planned | release |
 
 #### option-gate
@@ -257,8 +257,8 @@ Tracked entities: **425** across **45** change groups.
 |---|---|---|---|
 | EWP-WF01 | P17-G6-04 | planned | release |
 | EWP-WF02 | P17-G4A-01 | signed-off | required-pr |
-| EWP-WF03 | P17-G4B-03 | failing | required-pr |
-| EWP-WF04 | P17-G4B-03 | failing | required-pr |
+| EWP-WF03 | P17-G4B-03 | passing | required-pr |
+| EWP-WF04 | P17-G4B-03 | passing | required-pr |
 | EWP-WF05 | P17-G5-03 | planned | required-pr |
 | EWP-WF06 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF07 | P17-G4B-02 | signed-off | required-pr |
@@ -1312,22 +1312,22 @@ Downstream coverage obligations: none.
 - [x] P17-G4B-03:mapped _(passed)_
 - [x] P17-G4B-03:ready _(passed)_
 - [x] P17-G4B-03:test-first _(passed)_
-- [ ] P17-G4B-03:minimal-implementation _(pending)_
-- [ ] P17-G4B-03:targeted-green _(pending)_
-- [ ] P17-G4B-03:impacted-green _(pending)_
-- [ ] P17-G4B-03:refactor _(pending)_
+- [x] P17-G4B-03:minimal-implementation _(passed)_
+- [x] P17-G4B-03:targeted-green _(passed)_
+- [x] P17-G4B-03:impacted-green _(passed)_
+- [x] P17-G4B-03:refactor _(passed)_
 - [ ] P17-G4B-03:adversarial-review _(pending)_
 - [ ] P17-G4B-03:traceability-closure _(pending)_
 - [ ] P17-G4B-03:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **D-015** — Visible default resolution; strict locked mode _(decision; planned)_
-- [ ] **EWP-P4B-T05** — Lockfile resolution/update policy and commit points. _(phase-task; red)_
-- [ ] **EWP-P4B-TS05** — Crash/recovery at every manifest/lock/ledger/live commit boundary. _(phase-test; failing)_
-- [ ] **EWP-P4B-TS06** — Machine-A export -> machine-B locked plan/apply reproduction. _(phase-test; failing)_
-- [ ] **EWP-WF03** — Reproducible project bootstrap _(workflow; failing)_
-- [ ] **EWP-WF04** — Existing-fleet export and restore _(workflow; failing)_
+- [ ] **D-015** — Visible default resolution; strict locked mode _(decision; validated)_
+- [ ] **EWP-P4B-T05** — Lockfile resolution/update policy and commit points. _(phase-task; green)_
+- [ ] **EWP-P4B-TS05** — Crash/recovery at every manifest/lock/ledger/live commit boundary. _(phase-test; passing)_
+- [ ] **EWP-P4B-TS06** — Machine-A export -> machine-B locked plan/apply reproduction. _(phase-test; passing)_
+- [ ] **EWP-WF03** — Reproducible project bootstrap _(workflow; passing)_
+- [ ] **EWP-WF04** — Existing-fleet export and restore _(workflow; passing)_
 
 ## P17-G5-01 — Direct sync endpoints, selection, save/delete semantics, and operation equivalence
 
