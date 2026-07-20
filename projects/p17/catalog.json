@@ -6404,10 +6404,21 @@
       "phase": "4B",
       "title": "Lock update policy, cross-machine reproduction, crash recovery, and secret safety",
       "dependsOn": ["P17-G4B-02"],
-      "status": "planned",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "packages/core/src/reconcile/resolve.ts",
+        "packages/core/tests/reconcile/resolve.test.ts",
+        "tests/ergonomics/fixtures/p4b-lock-policy/cases.ts",
+        "tests/ergonomics/fixtures/p4b-lock-policy/apply-crash-child.ts",
+        "tests/ergonomics/phase/EWP-P4B-TS05.test.ts",
+        "tests/ergonomics/phase/EWP-P4B-TS06.test.ts",
+        "tests/ergonomics/workflows/EWP-WF03.test.ts",
+        "tests/ergonomics/workflows/EWP-WF04.test.ts",
+        "projects/p17/plans/P17-G4B-03.md",
+        "projects/p17/evidence/P17-G4B-03.md"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": [
         "EWP-CMD-EXPORT-TS01",
         "EWP-CMD-EXPORT-TS02",
@@ -6457,17 +6468,43 @@
         "EWP-WF04"
       ],
       "downstreamCoverage": [],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS01",
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS02",
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS03",
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS04",
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS05",
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS06",
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS07",
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS08",
+        "bun test packages/cli/tests/contracts/export.test.ts --test-name-pattern EWP-CMD-EXPORT-TS09",
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS01",
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS02",
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS03",
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS04",
+        "bun test packages/cli/tests/contracts/init.test.ts --test-name-pattern EWP-CMD-INIT-TS05",
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS04",
+        "bun test packages/cli/tests/contracts/plan.test.ts --test-name-pattern EWP-CMD-PLAN-TS09",
+        "bun test tests/ergonomics/phase/EWP-P4A-TS03.test.ts --test-name-pattern EWP-P4A-TS03",
+        "bun test tests/ergonomics/phase/EWP-P4A-TS04.test.ts --test-name-pattern EWP-P4A-TS04",
+        "bun test tests/ergonomics/phase/EWP-P4B-TS05.test.ts --test-name-pattern EWP-P4B-TS05",
+        "bun test tests/ergonomics/phase/EWP-P4B-TS06.test.ts --test-name-pattern EWP-P4B-TS06",
+        "bun test tests/ergonomics/workflows/EWP-WF03.test.ts --test-name-pattern EWP-WF03",
+        "bun test tests/ergonomics/workflows/EWP-WF04.test.ts --test-name-pattern EWP-WF04"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#mapping-and-dependency-audit"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-03.md#ready-review",
+            "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -6502,7 +6539,12 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": [
+        "projects/p17/plans/P17-G4B-03.md",
+        "projects/p17/evidence/P17-G4B-03.md#mapping-and-dependency-audit",
+        "projects/p17/evidence/P17-G4B-03.md#ready-review",
+        "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result"
+      ]
     },
     {
       "id": "P17-G5-01",
@@ -22956,11 +22998,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-03",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G4B-03.md#mapping-and-dependency-audit",
+        "projects/p17/evidence/P17-G4B-03.md#ready-review",
+        "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result"
+      ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": ["D-015"],
       "validatedBy": [
