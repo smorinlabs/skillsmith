@@ -20,6 +20,7 @@ import {
 } from './identity.ts';
 import { classifyArtifactSelectorToken } from './pair.ts';
 import type {
+  CapabilityPreconditionV1,
   PlanImageV1,
   PlanLocationV1,
   PlanOperationIntentV1,
@@ -29,6 +30,7 @@ import type {
   ResourcePreconditionV1,
   SavedPlanV1,
   SavedPlanV1Dto,
+  SelectionPreconditionV1,
 } from './plan-types.ts';
 
 const STATIC_PATHS = new Set(
@@ -581,6 +583,7 @@ const selectionPrecondition = strictSchema({
     .array(strictSchema({ resource: resourceIdentity, resourceHash: hashFact }))
     .refine((values) => unique(values.map((value) => JSON.stringify(value.resource)))),
 });
+const CAPABILITY_SCOPES = ['user', 'project', 'system', 'managed', 'custom', 'artifact'] as const;
 const capabilityPrecondition = strictSchema({
   preconditionId: id,
   domain: z.literal('capability'),
@@ -607,9 +610,12 @@ const capabilityPrecondition = strictSchema({
   ]),
   capabilityVersion: z.number().int().positive().safe(),
   supported: z.literal(true),
-  scopes: z
-    .array(z.enum(['user', 'project', 'system', 'managed', 'custom', 'artifact']))
-    .refine(unique),
+  scopes: z.array(z.enum(CAPABILITY_SCOPES)).refine(unique),
+});
+const executionGuards = strictSchema({
+  resourcePreconditions: z.array(resourcePrecondition),
+  selectionPreconditions: z.array(selectionPrecondition),
+  capabilityPreconditions: z.array(capabilityPrecondition),
 });
 const machineReason = strictSchema({
   code: z.enum([
@@ -1353,6 +1359,15 @@ const parsePlan = (input: unknown): Result<SavedPlanV1Dto, ArtifactCodecError> =
 };
 
 const sortStrings = <T extends string>(values: readonly T[]): T[] => [...values].sort();
+const CAPABILITY_SCOPE_ORDER = new Map<string, number>(
+  CAPABILITY_SCOPES.map((scope, index) => [scope, index] as const),
+);
+const sortCapabilityScopes = <T extends string>(values: readonly T[]): T[] =>
+  [...values].sort(
+    (left, right) =>
+      (CAPABILITY_SCOPE_ORDER.get(left) ?? Number.MAX_SAFE_INTEGER) -
+        (CAPABILITY_SCOPE_ORDER.get(right) ?? Number.MAX_SAFE_INTEGER) || left.localeCompare(right),
+  );
 const sortByJson = <T>(values: readonly T[]): T[] =>
   [...values].sort((left, right) => {
     const a = JSON.stringify(left);
@@ -1407,7 +1422,7 @@ const canonicalizePlan = (input: SavedPlanV1Dto): SavedPlanV1Dto => {
           : 0,
     );
   value.capabilityPreconditions = value.capabilityPreconditions
-    .map((item) => ({ ...item, scopes: sortStrings(item.scopes) }))
+    .map((item) => ({ ...item, scopes: sortCapabilityScopes(item.scopes) }))
     .sort((left, right) =>
       left.preconditionId < right.preconditionId
         ? -1
@@ -1469,6 +1484,34 @@ const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
   seen.add(value);
   for (const child of Object.values(value)) deepFreeze(child, seen);
   return Object.freeze(value);
+};
+
+/** Own and exact-decode the execution-guard subset using the saved-plan artifact grammar. */
+export const validatePlanExecutionGuardsV1 = (
+  input: unknown,
+): Result<
+  Readonly<{
+    resourcePreconditions: readonly ResourcePreconditionV1[];
+    selectionPreconditions: readonly SelectionPreconditionV1[];
+    capabilityPreconditions: readonly CapabilityPreconditionV1[];
+  }>,
+  ArtifactCodecError
+> => {
+  const snapshot = ownArtifactDto('plan', input);
+  if (!snapshot.ok) return snapshot;
+  const parsed = executionGuards.safeParse(snapshot.value);
+  if (!parsed.success) {
+    return err(codecError('plan', 'invalid-shape', firstZodPath(parsed.error)));
+  }
+  return ok(
+    deepFreeze(
+      parsed.data as {
+        resourcePreconditions: ResourcePreconditionV1[];
+        selectionPreconditions: SelectionPreconditionV1[];
+        capabilityPreconditions: CapabilityPreconditionV1[];
+      },
+    ),
+  );
 };
 
 export const validateSavedPlanV1Dto = (

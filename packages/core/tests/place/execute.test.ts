@@ -7,7 +7,9 @@ import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
 import { resolveProjectContext } from '../../src/context/project.ts';
 import {
+  type PlacementOperationExecutionBindingInput,
   createPlacementExecutionInput,
+  createPlacementOperationExecutionBindingV1,
   createPlacementSnapshotAuthority,
   createPlacementSwapRequest,
   executeRecordOnlyPlacementPlan,
@@ -20,7 +22,7 @@ import {
   createOperationId,
   createOperationPairId,
 } from '../../src/planning/create.ts';
-import type { ExecutableOperation } from '../../src/planning/types.ts';
+import type { ExecutableOperation, OperationExecutionResult } from '../../src/planning/types.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 
 const NOW = '2026-07-16T12:34:56-07:00';
@@ -215,6 +217,155 @@ const installOperation = (): ExecutableOperation => {
 };
 
 describe('placement execution boundary', () => {
+  test('creates an exact pair binding that delegates through the placement lifecycle', async () => {
+    const operation = installOperation();
+    const stageResourceIds = ['live:alpha', 'store:alpha'];
+    const calls: string[] = [];
+    const observation = {} as Parameters<
+      ReturnType<typeof createPlacementOperationExecutionBindingV1>['execute']
+    >[1];
+    const expected: OperationExecutionResult = {
+      operationId: operation.operationId,
+      outcome: 'succeeded',
+      actualBefore: operation.before,
+      actualAfter: operation.after,
+      force: null,
+      error: null,
+    };
+    const unstartedForce = {
+      requested: false,
+      applied: false,
+      conflictType: null,
+      target: null,
+      normalBehavior: null,
+      forcedBehavior: null,
+      backup: null,
+    } as const;
+    const input: PlacementOperationExecutionBindingInput = {
+      operation,
+      stageResourceIds,
+      unstartedForce,
+      lifecycle: {
+        execute: async (receivedOperation, receivedResourceIds, commit) => {
+          expect(receivedOperation).toBe(operation);
+          expect(receivedResourceIds).toEqual(stageResourceIds);
+          expect(Object.isFrozen(receivedResourceIds)).toBeTrue();
+          calls.push('lifecycle');
+          return commit();
+        },
+      },
+      observeActualBefore: async () => operation.before,
+      execute: async (validated, receivedObservation) => {
+        expect(validated.operationId).toBe(operation.operationId);
+        expect(receivedObservation).toBe(observation);
+        calls.push('execute');
+        return expected;
+      },
+    };
+    const binding = createPlacementOperationExecutionBindingV1(input);
+    const validated = {
+      operationId: operation.operationId,
+      groupId: operation.groupId,
+      pairId: operation.pairId,
+      actualBefore: operation.before,
+      unstartedForce: null,
+      execute: async () => expected,
+    };
+
+    expect(binding.operationId).toBe(operation.operationId);
+    expect(binding.groupId).toBe(operation.groupId);
+    expect(binding.pairId).toBe(operation.pairId);
+    expect(binding.unstartedForce).toBe(unstartedForce);
+    expect(await binding.observeActualBefore()).toBe(operation.before);
+    expect(await binding.execute(validated, observation)).toBe(expected);
+    expect(calls).toEqual(['lifecycle', 'execute']);
+    expect(Object.isFrozen(binding)).toBeTrue();
+  });
+
+  test('snapshots execution authorities so a retained input cannot retarget the binding', async () => {
+    const operation = installOperation();
+    const calls: string[] = [];
+    const expected: OperationExecutionResult = {
+      operationId: operation.operationId,
+      outcome: 'succeeded',
+      actualBefore: operation.before,
+      actualAfter: operation.after,
+      force: null,
+      error: null,
+    };
+    const input: PlacementOperationExecutionBindingInput = {
+      operation,
+      stageResourceIds: ['live:alpha'],
+      unstartedForce: null,
+      lifecycle: {
+        execute: async (_operation, _resourceIds, commit) => {
+          calls.push('original-lifecycle');
+          return commit();
+        },
+      },
+      observeActualBefore: async () => operation.before,
+      execute: async () => {
+        calls.push('original-execute');
+        return expected;
+      },
+    };
+    const binding = createPlacementOperationExecutionBindingV1(input);
+    const mutable = input as {
+      operation: ExecutableOperation;
+      lifecycle: PlacementOperationExecutionBindingInput['lifecycle'];
+      observeActualBefore: PlacementOperationExecutionBindingInput['observeActualBefore'];
+      execute: PlacementOperationExecutionBindingInput['execute'];
+    };
+    mutable.operation = { ...operation, operationId: 'retargeted-operation' };
+    mutable.lifecycle = {
+      execute: async (_operation, _resourceIds, commit) => {
+        calls.push('retargeted-lifecycle');
+        return commit();
+      },
+    };
+    mutable.observeActualBefore = async () => operation.after;
+    mutable.execute = async () => {
+      calls.push('retargeted-execute');
+      return expected;
+    };
+
+    expect(await binding.observeActualBefore()).toBe(operation.before);
+    await binding.execute({
+      operationId: operation.operationId,
+      groupId: operation.groupId,
+      pairId: operation.pairId,
+      actualBefore: operation.before,
+      unstartedForce: null,
+      execute: async () => expected,
+    });
+    expect(calls).toEqual(['original-lifecycle', 'original-execute']);
+  });
+
+  test('rejects missing pair identity and invalid stage resource identities', () => {
+    const operation = installOperation();
+    const create = (candidate: ExecutableOperation, stageResourceIds: readonly string[]): unknown =>
+      createPlacementOperationExecutionBindingV1({
+        operation: candidate,
+        stageResourceIds,
+        unstartedForce: null,
+        lifecycle: { execute: async (_operation, _resourceIds, commit) => commit() },
+        observeActualBefore: async () => candidate.before,
+        execute: async () => {
+          throw new Error('not called');
+        },
+      });
+
+    expect(() => create({ ...operation, pairId: null }, ['live:alpha'])).toThrow(
+      'prepared operation pair identity is missing',
+    );
+    expect(() => create(operation, [''])).toThrow(
+      'prepared placement stage resource identity is empty',
+    );
+    expect(() => create(operation, ['live:alpha', 'live:alpha'])).toThrow(
+      'prepared placement stage resource identities must be unique',
+    );
+  });
+
   test('binds immutable swap state and effect authorities outside SwapCtx', () => {
     const ledger = emptyLedgerModel(NOW);
     const input = createPlacementExecutionInput(env, '/tmp/placements.json', ledger, {}, {});

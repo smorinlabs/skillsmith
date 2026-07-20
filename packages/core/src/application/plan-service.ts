@@ -1,28 +1,17 @@
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { toolRegistry } from '../agents/registry.ts';
 import type { SupportedTool } from '../agents/types.ts';
-import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
-import { resolveArtifactPair } from '../artifacts/pair.ts';
 import { writeSavedPlan } from '../artifacts/plan-writer.ts';
 import { artifactContractRegistry } from '../artifacts/registry.ts';
-import { resolveProjectContext } from '../context/project.ts';
 import type {
   PlanCheckV1Dto,
   PlanDiagnosticV1Dto,
   PlanOperationV1Dto,
   PlanV1Dto,
 } from '../contracts/v1/plan.ts';
-import { errorMessage } from '../errors.ts';
-import { ledgerPathOf, resolveDataDir } from '../place/paths.ts';
 import { isNormalizedPortError } from '../ports/errors.ts';
 import type { FileReadPort } from '../ports/types.ts';
-import {
-  createReconcilePlan,
-  createSavedPlanProjection,
-  observePlanArtifacts,
-  observeReconcileInput,
-  resolvePlanInput,
-} from '../reconcile/index.ts';
+import { prepareReconcilePlan } from '../reconcile/index.ts';
 import type { SavedPlanProjection } from '../reconcile/saved.ts';
 import type { PlanReconcileError, ReconcilePlanProduct } from '../reconcile/types.ts';
 import type { CommandExitClass, Diagnostic } from './types.ts';
@@ -168,19 +157,18 @@ const scopeFor = (
   return { ok: true, value };
 };
 
-const projectFailure = (message: string): PlanReconcileError => ({
-  code: 'plan-project-context',
-  message,
-  exitClass: 'state',
-});
-
 const cancellationFailure = (): PlanReconcileError => ({
   code: 'plan-cancelled',
   message: 'plan was cancelled',
   exitClass: 'cancelled',
 });
 
-const reportFor = (
+/**
+ * Project one prepared reconciliation product into the versioned plan report shared by `plan`
+ * and fresh `apply`. Callers may add command-specific lifecycle facts, but must not rebuild or
+ * reinterpret the operation/check/diagnostic projection.
+ */
+export const projectPlanReport = (
   product: ReconcilePlanProduct,
   projection: SavedPlanProjection,
   savedOutput: PlanV1Dto['savedOutput'],
@@ -403,59 +391,10 @@ export const runPlanApplication: ApplicationService<
 
   const explicitConfigPath =
     context.globalOptions.config ?? context.configuration.explicitConfigPath;
-  const project =
-    context.projectContext === undefined
-      ? await resolveProjectContext(context.ports, {
-          invocationCwd: context.invocationCwd,
-          ...(context.globalOptions.cd === undefined ? {} : { cd: context.globalOptions.cd }),
-          ...(explicitConfigPath === undefined ? {} : { explicitConfigPath }),
-        })
-      : { ok: true as const, value: context.projectContext };
-  if (context.signal?.aborted) return failed(cancellationFailure());
-  if (!project.ok) return failed(projectFailure(errorMessage(project.error)));
-
-  const readable = selectReadableArtifactContext(context.ports, project.value, {
-    ...(file === undefined ? {} : { explicitFile: file }),
-    scope: scope.value,
-  });
-  if (readable.state === 'unselected') {
-    return failed({
-      code: 'plan-artifact-unselected',
-      message: 'plan requires one user or project artifact pair',
-      exitClass: 'usage',
-    });
-  }
-  const pair = await resolveArtifactPair(
-    context.ports,
-    project.value,
-    readable.source === 'explicit'
-      ? { file: file as string, ...(lockfile === undefined ? {} : { lockfile }) }
-      : { discoveredFile: readable.file },
-  );
-  if (context.signal?.aborted) return failed(cancellationFailure());
-  if (!pair.ok) {
-    return failed({
-      code: pair.error.code,
-      message: pair.error.message,
-      exitClass: pair.error.exitClass,
-    });
-  }
-  const observed = await observePlanArtifacts(context.ports, project.value, pair.value, {
-    ledgerPath: ledgerPathOf(resolveDataDir(context.ports, context.configuration)),
-    ...(readable.source === 'user-default'
-      ? {
-          artifactPortableTokens: {
-            manifest: 'user:skillsmith.toml',
-            lock: 'user:skillsmith.lock',
-          },
-        }
-      : {}),
-  });
-  if (context.signal?.aborted) return failed(cancellationFailure());
-  if (!observed.ok) return failed(observed.error);
-  const resolved = await resolvePlanInput(
-    observed.value,
+  const prepared = await prepareReconcilePlan(
     {
+      ...(file === undefined ? {} : { file }),
+      ...(lockfile === undefined ? {} : { lockfile }),
       tools: tools as readonly SupportedTool[],
       scope: scope.value,
       locked: enabled(request, 'locked'),
@@ -465,23 +404,19 @@ export const runPlanApplication: ApplicationService<
     {
       ports: context.ports,
       configuration: context.configuration,
+      invocationCwd: context.invocationCwd,
+      ...(context.globalOptions.cd === undefined ? {} : { cd: context.globalOptions.cd }),
+      ...(explicitConfigPath === undefined ? {} : { explicitConfigPath }),
+      ...(context.projectContext === undefined ? {} : { projectContext: context.projectContext }),
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     },
   );
-  if (context.signal?.aborted) return failed(cancellationFailure());
-  if (!resolved.ok) return failed(resolved.error);
-  const reconcileObservation = await observeReconcileInput(resolved.value, {
-    ports: context.ports,
-    configuration: context.configuration,
-    ...(context.signal === undefined ? {} : { signal: context.signal }),
-  });
-  if (context.signal?.aborted) return failed(cancellationFailure());
-  if (!reconcileObservation.ok) return failed(reconcileObservation.error);
-  const planned = createReconcilePlan(reconcileObservation.value);
-  if (!planned.ok) return failed(planned.error);
-  const projection = createSavedPlanProjection(planned.value);
-  if (!projection.ok) return failed(projection.error);
-  const refusals = planned.value.plan.diagnostics.filter(
+  if (!prepared.ok) return failed(prepared.error);
+  const { product, projection, observation, artifactSelectionSource } = prepared.value;
+  const project = product.input.observed.project;
+  const pair = product.input.observed.pair;
+  const observed = product.input.observed;
+  const refusals = product.plan.diagnostics.filter(
     (
       diagnostic,
     ): diagnostic is typeof diagnostic & {
@@ -493,17 +428,17 @@ export const runPlanApplication: ApplicationService<
   if (out !== undefined) {
     if (refusals.length > 0) {
       return refusalOutcome(
-        { result: reportFor(planned.value, projection.value, null, readable.source) },
+        { result: projectPlanReport(product, projection, null, artifactSelectionSource) },
         refusals,
       );
     }
-    const outputPath = resolve(project.value.effectiveCwd, out);
+    const outputPath = resolve(project.effectiveCwd, out);
     const protectedFiles = [
-      pair.value.file.path,
-      pair.value.lockfile.path,
-      observed.value.ledgerPath,
-      project.value.discoveredConfigPath,
-      project.value.explicitConfigPath,
+      pair.file.path,
+      pair.lockfile.path,
+      observed.ledgerPath,
+      project.discoveredConfigPath,
+      project.explicitConfigPath,
       context.configuration.explicitConfigPath,
       context.globalOptions.config,
     ].filter((path): path is string => typeof path === 'string');
@@ -516,21 +451,21 @@ export const runPlanApplication: ApplicationService<
               .rootFacts(context.ports, selectedScope, {
                 cwd:
                   selectedScope === 'project'
-                    ? (project.value.projectRoot ?? project.value.effectiveCwd)
-                    : project.value.effectiveCwd,
+                    ? (project.projectRoot ?? project.effectiveCwd)
+                    : project.effectiveCwd,
                 configuration: context.configuration,
               })
               .map((fact) => fact.path),
           );
     });
     const protectedRoots = [
-      reconcileObservation.value.storeRoot,
+      observation.storeRoot,
       resolve(context.ports.xdg.config, 'skillsmith'),
       ...registeredLiveRoots,
-      ...reconcileObservation.value.desiredPlacements.flatMap((item) =>
+      ...observation.desiredPlacements.flatMap((item) =>
         item.state === 'observed' ? [item.placement.root] : [],
       ),
-      ...reconcileObservation.value.prunePlacements.map((item) => item.placement.root),
+      ...observation.prunePlacements.map((item) => item.placement.root),
     ];
     let aliasesSelectedState: boolean;
     try {
@@ -559,7 +494,7 @@ export const runPlanApplication: ApplicationService<
         exitClass: 'usage',
       });
     }
-    const saved = projection.value.plan;
+    const saved = projection.plan;
     const savedPlanCodec = artifactContractRegistry.get('plan', 1);
     if (savedPlanCodec === undefined) {
       return failed({
@@ -593,7 +528,7 @@ export const runPlanApplication: ApplicationService<
     };
   }
 
-  const report = reportFor(planned.value, projection.value, savedOutput, readable.source);
+  const report = projectPlanReport(product, projection, savedOutput, artifactSelectionSource);
   if (refusals.length > 0) return refusalOutcome({ result: report }, refusals);
   return outcome(
     { result: report },

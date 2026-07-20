@@ -1,5 +1,10 @@
 import { confirm, isCancel, select } from '@clack/prompts';
-import type { InteractionPort, InteractionRequest, InteractionResolution } from '@skillsmith/core';
+import type {
+  InteractionConfirmationRequest,
+  InteractionPort,
+  InteractionRequest,
+  InteractionResolution,
+} from '@skillsmith/core';
 
 export interface InteractionPolicyInput {
   readonly json: boolean;
@@ -30,6 +35,21 @@ const refused = <T>(reason = 'interactive input is unavailable'): InteractionRes
   reason,
 });
 
+/** Build the one @clack confirmation projection without changing exact operation order. */
+export const createConfirmationPromptOptions = (request: InteractionConfirmationRequest) => {
+  const operations = request.preview?.operationIds ?? [];
+  const exactPreview =
+    operations.length === 0
+      ? ''
+      : `\nExact operations:\n${operations
+          .map((operationId, index) => `  ${index + 1}. ${JSON.stringify(operationId)}`)
+          .join('\n')}`;
+  return Object.freeze({
+    message: `${request.message}${exactPreview}`,
+    initialValue: false,
+  });
+};
+
 export const noninteractiveInteraction = (): InteractionPort => ({
   mode: 'noninteractive',
   choose: async () => refused(),
@@ -50,8 +70,10 @@ export const promptInteraction = (): InteractionPort => ({
     });
     return isCancel(answer) ? cancelled() : { status: 'resolved', value: answer as T };
   },
-  confirm: async (request): Promise<InteractionResolution<boolean>> => {
-    const answer = await confirm({ message: request.message });
+  confirm: async (
+    request: InteractionConfirmationRequest,
+  ): Promise<InteractionResolution<boolean>> => {
+    const answer = await confirm(createConfirmationPromptOptions(request));
     return isCancel(answer) ? cancelled() : { status: 'resolved', value: Boolean(answer) };
   },
 });
@@ -79,4 +101,10 @@ export const createPolicyInteraction = (
   };
 };
 
-export type { InteractionPort, InteractionRequest, InteractionResolution } from '@skillsmith/core';
+export type {
+  ExactApprovalPreviewRequest,
+  InteractionConfirmationRequest,
+  InteractionPort,
+  InteractionRequest,
+  InteractionResolution,
+} from '@skillsmith/core';

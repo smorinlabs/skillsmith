@@ -788,10 +788,17 @@ describe('EWP-CMD-DOCTOR-TS01', () => {
     expect(toolRegistry.ids).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode']);
     expect(toolRegistry.toolsFor('diagnostics')).toEqual(toolRegistry.ids);
     for (const tool of toolRegistry.ids) {
-      expect(toolRegistry.capability(tool, 'diagnostics')).toMatchObject({
-        supported: true,
-        scopes: expect.arrayContaining(['user', 'project', 'system']),
-      });
+      const capability = toolRegistry.capability(tool, 'diagnostics');
+      if ('code' in capability) {
+        throw new Error(
+          `expected ${tool} diagnostics capability fact, received ${capability.code}`,
+        );
+      }
+      expect(capability.supported).toBeTrue();
+      expect(Array.isArray(capability.scopes)).toBeTrue();
+      expect(capability.scopes).toContain('user');
+      expect(capability.scopes).toContain('project');
+      expect(capability.scopes).toContain('system');
     }
   });
 

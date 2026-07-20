@@ -2,8 +2,13 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type ArtifactDigest, hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import {
+  type ArtifactDigest,
+  hashCanonicalInput,
+  hashManifestSemantics,
+} from '../../src/artifacts/hash.ts';
 import { type PortableLockV1, hashPortableLock } from '../../src/artifacts/lock.ts';
+import type { SavedPlanV1 } from '../../src/artifacts/plan-types.ts';
 import { artifactContractRegistry } from '../../src/artifacts/registry.ts';
 import type { NormalizedManifestV1 } from '../../src/artifacts/types.ts';
 import type { OperationDigest } from '../../src/planning/types.ts';
@@ -11,7 +16,11 @@ import { defaultRuntimePorts } from '../../src/ports/default.ts';
 import type { ResolvedRuntimeConfiguration, RuntimePorts } from '../../src/ports/types.ts';
 import { observeReconcileInput } from '../../src/reconcile/observe.ts';
 import { createReconcilePlan } from '../../src/reconcile/plan.ts';
-import { createSavedPlan, createSavedPlanProjection } from '../../src/reconcile/saved.ts';
+import {
+  createSavedPlan,
+  createSavedPlanProjection,
+  createSavedPlanScopedArtifactFacts,
+} from '../../src/reconcile/saved.ts';
 import type { ResolvedPlanInput } from '../../src/reconcile/types.ts';
 
 const roots: string[] = [];
@@ -47,6 +56,7 @@ const fixture = async (
   withOperation = false,
   missingLock = false,
   scope: 'user' | 'project' = 'user',
+  legacyLedger = false,
 ) => {
   const root = await mkdtemp(join(tmpdir(), 'skillsmith-saved-plan-'));
   roots.push(root);
@@ -134,6 +144,41 @@ const fixture = async (
             migration: null,
           },
       relationship: missingLock ? { state: 'missing-lock' } : { state: 'current' },
+      ...(legacyLedger
+        ? {
+            ledgerPath: join(root, 'placements.json'),
+            ledger: {
+              state: 'present' as const,
+              artifact: 'ledger' as const,
+              sourceVersion: 1 as const,
+              currentVersion: 2 as const,
+              source: '{}',
+              byteLength: 2,
+              byteRevision: digest('e'),
+              semanticRevision: digest('f'),
+              model: {
+                updatedAt: '2026-07-19T00:00:00.000Z',
+                skills: {},
+                projects: {},
+                projectRegistrations: {},
+                transactions: {},
+                history: [],
+              },
+              canonical: true,
+              migration: {
+                kind: 'ledger-v1-to-v2' as const,
+                fromSchemaVersion: 1 as const,
+                toSchemaVersion: 2 as const,
+                sourceByteRevision: digest('e'),
+                sourceSemanticRevision: digest('f'),
+                targetSemanticRevision: digest('f'),
+                targetByteRevision: digest('1'),
+                targetCanonicalSource: '{}\n',
+                preservedLegacyJournals: [],
+              },
+            },
+          }
+        : {}),
     },
     request: { tools: [], scope: null, locked: !missingLock, prune: false, check: false },
     declarations: withOperation ? [{ declaration, tool: 'codex', lock: pin }] : [],
@@ -155,6 +200,232 @@ const fixture = async (
   return { root, lock, product: planned.value };
 };
 
+const scopedFixture = () => {
+  const manifest: NormalizedManifestV1 = {
+    version: 1,
+    skills: [
+      {
+        name: 'alpha',
+        source: { host: 'fixture.invalid', repository: 'acme/alpha', path: 'skills/alpha' },
+        ref: 'main',
+        tools: ['kilo-code', 'codex'],
+        scope: 'user',
+        placement: 'copy',
+        path: null,
+      },
+      {
+        name: 'beta',
+        source: { host: 'fixture.invalid', repository: 'acme/beta', path: 'skills/beta' },
+        ref: 'main',
+        tools: ['opencode'],
+        scope: 'project',
+        placement: 'symlink',
+        path: null,
+      },
+    ],
+  };
+  const pin = (name: string, character: 'a' | 'b' | 'c') => ({
+    name,
+    source: `fixture.invalid/acme/${name}//skills/${name}`,
+    requestedRef: 'main',
+    resolvedSha: character.repeat(40),
+    sourcePath: `skills/${name}`,
+    contentHash: digest(character),
+  });
+  const lock: PortableLockV1 = {
+    version: 1,
+    hashSchemaVersion: 1,
+    manifestHash: digest('f'),
+    skills: [pin('alpha', 'a'), pin('beta', 'b'), pin('orphan', 'c')],
+  };
+  return { manifest, lock };
+};
+
+const scopedFacts = (
+  manifest: NormalizedManifestV1,
+  lock: PortableLockV1 | null,
+  predicates: Parameters<typeof createSavedPlanScopedArtifactFacts>[0]['predicates'],
+  prune = false,
+) => {
+  const result = createSavedPlanScopedArtifactFacts({ manifest, lock, predicates, prune });
+  expect(result.ok).toBeTrue();
+  if (!result.ok) throw new Error(result.error.message);
+  return result.value;
+};
+
+describe('saved scoped artifact facts', () => {
+  const predicates = { skills: [], tools: ['codex'] as const, scopes: ['user'] as const };
+
+  test('changes for selected rows but ignores declaration edits outside both predicates', () => {
+    const state = scopedFixture();
+    const baseline = scopedFacts(state.manifest, state.lock, predicates);
+    expect(baseline).toMatchObject({
+      selectedSkills: ['alpha'],
+      selectedTools: ['codex'],
+      selectedScopes: ['user'],
+      selectionOutcome: 'selected',
+    });
+    const beta = state.manifest.skills[1];
+    const alpha = state.manifest.skills[0];
+    if (alpha === undefined || beta === undefined) throw new Error('missing scoped fixture row');
+
+    const unrelated = scopedFacts(
+      { ...state.manifest, skills: [alpha, { ...beta, ref: 'unrelated-edit' }] },
+      state.lock,
+      predicates,
+    );
+    expect(unrelated).toEqual(baseline);
+
+    const unrelatedTool = scopedFacts(
+      { ...state.manifest, skills: [{ ...alpha, tools: ['codex'] }, beta] },
+      state.lock,
+      predicates,
+    );
+    expect(unrelatedTool).toEqual(baseline);
+
+    const selected = scopedFacts(
+      { ...state.manifest, skills: [{ ...alpha, placement: 'symlink' }, beta] },
+      state.lock,
+      predicates,
+    );
+    expect(selected.scopedManifestSemanticHash).not.toBe(baseline.scopedManifestSemanticHash);
+  });
+
+  test('treats tool and scope independently and fingerprints a newly matching row', () => {
+    const state = scopedFixture();
+    const baseline = scopedFacts(state.manifest, state.lock, predicates);
+    const alpha = state.manifest.skills[0];
+    const beta = state.manifest.skills[1];
+    if (alpha === undefined || beta === undefined) throw new Error('missing scoped fixture row');
+
+    const toolOnly = scopedFacts(
+      { ...state.manifest, skills: [alpha, { ...beta, tools: ['codex'] }] },
+      state.lock,
+      predicates,
+    );
+    const scopeOnly = scopedFacts(
+      { ...state.manifest, skills: [alpha, { ...beta, scope: 'user' }] },
+      state.lock,
+      predicates,
+    );
+    expect(toolOnly).toEqual(baseline);
+    expect(scopeOnly).toEqual(baseline);
+
+    const newlyMatching = scopedFacts(
+      {
+        ...state.manifest,
+        skills: [alpha, { ...beta, tools: ['codex'], scope: 'user' }],
+      },
+      state.lock,
+      predicates,
+    );
+    expect(newlyMatching.scopedManifestSemanticHash).not.toBe(baseline.scopedManifestSemanticHash);
+    expect(newlyMatching.scopedLockCanonicalHash).not.toBe(baseline.scopedLockCanonicalHash);
+  });
+
+  test('scopes lock pins and binds the complete orphan-pin set only for prune', () => {
+    const state = scopedFixture();
+    const baseline = scopedFacts(state.manifest, state.lock, predicates);
+    const changedBetaLock = {
+      ...state.lock,
+      skills: state.lock.skills.map((pin) =>
+        pin.name === 'beta' ? { ...pin, contentHash: digest('d') } : pin,
+      ),
+    };
+    expect(scopedFacts(state.manifest, changedBetaLock, predicates)).toEqual(baseline);
+
+    const changedAlphaLock = {
+      ...state.lock,
+      skills: state.lock.skills.map((pin) =>
+        pin.name === 'alpha' ? { ...pin, contentHash: digest('e') } : pin,
+      ),
+    };
+    expect(
+      scopedFacts(state.manifest, changedAlphaLock, predicates).scopedLockCanonicalHash,
+    ).not.toBe(baseline.scopedLockCanonicalHash);
+
+    const pruneBaseline = scopedFacts(state.manifest, state.lock, predicates, true);
+    const changedOrphanLock = {
+      ...state.lock,
+      skills: state.lock.skills.map((pin) =>
+        pin.name === 'orphan' ? { ...pin, contentHash: digest('d') } : pin,
+      ),
+    };
+    expect(
+      scopedFacts(state.manifest, changedOrphanLock, predicates, true).scopedLockCanonicalHash,
+    ).not.toBe(pruneBaseline.scopedLockCanonicalHash);
+    expect(scopedFacts(state.manifest, changedOrphanLock, predicates)).toEqual(baseline);
+
+    const alpha = state.manifest.skills[0];
+    if (alpha === undefined) throw new Error('missing scoped fixture row');
+    expect(
+      scopedFacts({ ...state.manifest, skills: [alpha] }, state.lock, predicates, true)
+        .scopedLockCanonicalHash,
+    ).not.toBe(pruneBaseline.scopedLockCanonicalHash);
+  });
+
+  test('wildcards bind all rows and canonical ordering is deterministic', () => {
+    const state = scopedFixture();
+    const wildcard = { skills: [], tools: [], scopes: [] } as const;
+    const baseline = scopedFacts(state.manifest, state.lock, wildcard);
+    expect(baseline).toMatchObject({
+      selectedSkills: ['alpha', 'beta'],
+      selectedTools: ['codex', 'kilo-code', 'opencode'],
+      selectedScopes: ['project', 'user'],
+      selectionOutcome: 'selected',
+    });
+    const reordered = scopedFacts(
+      {
+        ...state.manifest,
+        skills: [...state.manifest.skills]
+          .reverse()
+          .map((row) => ({ ...row, tools: [...row.tools].reverse() })),
+      },
+      { ...state.lock, skills: [...state.lock.skills].reverse() },
+      wildcard,
+    );
+    expect(reordered).toEqual(baseline);
+
+    const beta = state.manifest.skills[1];
+    const alpha = state.manifest.skills[0];
+    if (alpha === undefined || beta === undefined) throw new Error('missing scoped fixture row');
+    expect(
+      scopedFacts(
+        { ...state.manifest, skills: [alpha, { ...beta, ref: 'wildcard-edit' }] },
+        state.lock,
+        wildcard,
+      ).scopedManifestSemanticHash,
+    ).not.toBe(baseline.scopedManifestSemanticHash);
+  });
+
+  test('retains explicit predicates for filter-noop and keeps an empty wildcard selected', () => {
+    const state = scopedFixture();
+    const noMatch = scopedFacts(state.manifest, state.lock, {
+      skills: [],
+      tools: ['claude-code'],
+      scopes: ['project'],
+    });
+    expect(noMatch).toMatchObject({
+      selectedSkills: [],
+      selectedTools: ['claude-code'],
+      selectedScopes: ['project'],
+      selectionOutcome: 'filter-noop',
+    });
+
+    const emptyWildcard = scopedFacts({ version: 1, skills: [] }, state.lock, {
+      skills: [],
+      tools: [],
+      scopes: [],
+    });
+    expect(emptyWildcard).toMatchObject({
+      selectedSkills: [],
+      selectedTools: [],
+      selectedScopes: [],
+      selectionOutcome: 'selected',
+    });
+  });
+});
+
 describe('saved plan projection', () => {
   test('tokenizes a portable project pair and contains no local absolute path', async () => {
     const state = await fixture(true);
@@ -170,8 +441,17 @@ describe('saved plan projection', () => {
         manifest: { kind: 'portable', token: 'project:skillsmith.toml' },
         lock: { kind: 'portable', token: 'project:skillsmith.lock' },
       },
+      manifestSemanticHash: state.product.input.observed.manifest.semanticRevision,
       lockCanonicalHash: lockHash.value,
     });
+    const scopedManifest = saved.value.resourcePreconditions.find(
+      ({ expectedHash }) => expectedHash.domain === 'manifest-semantic',
+    );
+    const scopedLock = saved.value.resourcePreconditions.find(
+      ({ expectedHash }) => expectedHash.domain === 'lock-canonical',
+    );
+    expect(scopedManifest?.expectedHash.digest).not.toBe(saved.value.manifestSemanticHash);
+    expect(scopedLock?.expectedHash.digest).not.toBe(saved.value.lockCanonicalHash);
     expect(JSON.stringify(saved.value)).not.toContain(state.root);
     expect(validatesAsSavedPlan(saved.value)).toBeTrue();
   });
@@ -200,6 +480,59 @@ describe('saved plan projection', () => {
     expect(firstBytes.value).toEqual(secondBytes.value);
     expect(JSON.stringify(firstSaved.value)).not.toContain(first.root);
     expect(JSON.stringify(secondSaved.value)).not.toContain(second.root);
+  });
+
+  test('round-trips capability scopes in their signed domain order', async () => {
+    const state = await fixture(true, true);
+    const saved = createSavedPlan(state.product);
+    expect(saved.ok).toBeTrue();
+    if (!saved.ok) throw new Error(saved.error.message);
+    const capability = saved.value.capabilityPreconditions[0];
+    if (capability === undefined) throw new Error('saved plan capability guard is missing');
+    const scopes = ['user', 'project'] as const;
+    const expectedHash = hashCanonicalInput(
+      'capability',
+      1,
+      JSON.stringify([
+        'skillsmith-capability-precondition',
+        1,
+        capability.tool,
+        capability.operation,
+        capability.capabilityVersion,
+        true,
+        scopes,
+      ]),
+    );
+    if (!expectedHash.ok) throw new Error(expectedHash.error.message);
+    const codec = artifactContractRegistry.get('plan', 1);
+    if (codec === undefined) throw new Error('saved plan codec unavailable');
+    const decoded = codec.toDto({
+      ...saved.value,
+      capabilityPreconditions: [
+        { ...capability, scopes: ['project', 'user'], expectedHash: expectedHash.value },
+      ],
+    });
+    expect(decoded.ok).toBeTrue();
+    if (!decoded.ok) throw new Error(decoded.error.message);
+    const roundTripped = (decoded.value as SavedPlanV1).capabilityPreconditions[0];
+    expect(roundTripped?.scopes).toEqual(scopes);
+    expect(
+      roundTripped === undefined
+        ? null
+        : hashCanonicalInput(
+            'capability',
+            1,
+            JSON.stringify([
+              'skillsmith-capability-precondition',
+              1,
+              roundTripped.tool,
+              roundTripped.operation,
+              roundTripped.capabilityVersion,
+              true,
+              roundTripped.scopes,
+            ]),
+          ),
+    ).toEqual({ ok: true, value: expectedHash.value });
   });
 
   test('tokenizes standard user and project refusal paths and messages identically across roots', async () => {
@@ -263,13 +596,7 @@ describe('saved plan projection', () => {
     const saved = createSavedPlan(state.product);
     expect(saved.ok).toBeTrue();
     if (!saved.ok) throw new Error(saved.error.message);
-    expect(saved.value.portability).toMatchObject({
-      kind: 'machine-bound',
-      reasons: [
-        { code: 'absolute-artifact-selector', path: join(state.root, 'skillsmith.lock') },
-        { code: 'absolute-artifact-selector', path: join(state.root, 'skillsmith.toml') },
-      ],
-    });
+    expect(saved.value.portability).toMatchObject({ kind: 'machine-bound' });
     if (saved.value.portability.kind !== 'machine-bound') {
       throw new Error('absolute selector fixture must be machine-bound');
     }
@@ -279,7 +606,14 @@ describe('saved plan projection', () => {
         precondition.resource,
       ]),
     );
-    for (const reason of saved.value.portability.reasons) {
+    const absoluteReasons = saved.value.portability.reasons.filter(
+      ({ code }) => code === 'absolute-artifact-selector',
+    );
+    expect(absoluteReasons).toMatchObject([
+      { path: join(state.root, 'skillsmith.lock') },
+      { path: join(state.root, 'skillsmith.toml') },
+    ]);
+    for (const reason of absoluteReasons) {
       expect(reason.preconditionIds.length).toBeGreaterThan(0);
       expect(
         reason.preconditionIds
@@ -292,6 +626,20 @@ describe('saved plan projection', () => {
           ),
       ).toBeTrue();
     }
+    const projectReason = saved.value.portability.reasons.find(
+      ({ code }) => code === 'local-project-root',
+    );
+    expect(projectReason).toMatchObject({ path: state.root });
+    expect(
+      projectReason?.preconditionIds
+        .map((id) => resourcesById.get(id))
+        .every(
+          (resource) =>
+            resource?.kind === 'project-context' &&
+            resource.root.kind === 'machine-bound' &&
+            resource.root.path === state.root,
+        ),
+    ).toBeTrue();
     expect(validatesAsSavedPlan(saved.value)).toBeTrue();
   });
 
@@ -342,9 +690,9 @@ describe('saved plan projection', () => {
       {
         domain: 'selection-set',
         selectionSource: 'bounded-default',
-        skills: ['alpha'],
-        tools: ['codex'],
-        scopes: ['user'],
+        skills: [],
+        tools: [],
+        scopes: [],
       },
     ]);
     expect(saved.value.capabilityPreconditions).toMatchObject([
@@ -408,6 +756,63 @@ describe('saved plan projection', () => {
     expect(projection.value.plan.operations[0]?.preconditionIds).toContain(
       lockPreconditions[0]?.preconditionId,
     );
+  });
+
+  test('retains the ledger-schema guard and adds a same-resource execution guard', async () => {
+    const state = await fixture(true, true, false, 'user', true);
+    const projection = createSavedPlanProjection(state.product);
+    expect(projection.ok).toBeTrue();
+    if (!projection.ok) throw new Error(projection.error.message);
+
+    const migration = projection.value.plan.operations.find(
+      ({ kind }) => kind === 'migrate-ledger',
+    );
+    expect(migration).toBeDefined();
+    const schemaGuard = projection.value.plan.resourcePreconditions.find(
+      ({ resource }) => resource.kind === 'ledger-schema',
+    );
+    const executionGuards = projection.value.plan.resourcePreconditions.filter(
+      ({ resource }) => resource.kind === 'ledger' && resource.projectRoot === null,
+    );
+    const executionGuard = executionGuards[0];
+    expect(executionGuards).toHaveLength(1);
+    expect(schemaGuard).toMatchObject({
+      expectedState: 'present',
+      expectedRevision: { kind: 'artifact-bytes', digest: digest('e') },
+    });
+    expect(executionGuard).toMatchObject({
+      expectedState: 'present',
+      expectedRevision: { kind: 'artifact-bytes', digest: digest('e') },
+    });
+    expect(migration?.preconditionIds).toContain(schemaGuard?.preconditionId);
+    expect(migration?.preconditionIds).toContain(executionGuard?.preconditionId);
+    expect(validatesAsSavedPlan(projection.value.plan)).toBeTrue();
+  });
+
+  test('adds a distinct null-root migration guard beside project-scoped ledger facts', async () => {
+    const state = await fixture(true, true, false, 'project', true);
+    const projection = createSavedPlanProjection(state.product);
+    expect(projection.ok).toBeTrue();
+    if (!projection.ok) throw new Error(projection.error.message);
+
+    const migration = projection.value.plan.operations.find(
+      ({ kind }) => kind === 'migrate-ledger',
+    );
+    const referencedGuards = projection.value.plan.resourcePreconditions.filter(
+      ({ preconditionId }) => migration?.preconditionIds.includes(preconditionId),
+    );
+    expect(referencedGuards).toContainEqual(
+      expect.objectContaining({ resource: { kind: 'ledger', projectRoot: null } }),
+    );
+    expect(projection.value.plan.resourcePreconditions).toContainEqual(
+      expect.objectContaining({
+        resource: {
+          kind: 'ledger',
+          projectRoot: { kind: 'portable', token: 'project:root' },
+        },
+      }),
+    );
+    expect(validatesAsSavedPlan(projection.value.plan)).toBeTrue();
   });
 
   test('records machine bindings carried only by warning diagnostics', async () => {

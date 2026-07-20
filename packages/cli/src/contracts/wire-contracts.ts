@@ -2,6 +2,7 @@ import { createWireContractRegistry } from '@skillsmith/core/contracts';
 import type { WireCodec, WireContractMapping } from '@skillsmith/core/contracts';
 import {
   agentsV1Codec,
+  applyV1Codec,
   capabilitySnapshotV1Codec,
   commandsV1Codec,
   configGetV1Codec,
@@ -36,6 +37,7 @@ const mapping = (commandPath: string, contractId: string, version: number): Wire
 
 export const currentWireCommandMappings = Object.freeze([
   mapping('skillsmith agents', 'agents', 2),
+  mapping('skillsmith apply', 'apply-report', 1),
   mapping('skillsmith check', 'health', 1),
   mapping('skillsmith commands', 'commands', 2),
   mapping('skillsmith config get', 'config-get', 1),
@@ -84,6 +86,7 @@ export const currentWireContractRegistry = createWireContractRegistry(
   [
     agentsV1Codec,
     agentsV2Codec,
+    applyV1Codec,
     healthV1Codec,
     healthV2Codec,
     commandsV1Codec,
@@ -132,6 +135,7 @@ const boundCodec = <Id extends string, Version extends number, Dto>(
 /** Typed runtime bindings: every current JSON renderer resolves through the authoritative map. */
 export const currentWireCodecs = Object.freeze({
   agents: boundCodec('skillsmith agents', agentsV2Codec),
+  apply: boundCodec('skillsmith apply', applyV1Codec),
   check: boundCodec('skillsmith check', healthV1Codec),
   commands: boundCodec('skillsmith commands', commandsV2Codec),
   configGet: boundCodec('skillsmith config get', configGetV1Codec),

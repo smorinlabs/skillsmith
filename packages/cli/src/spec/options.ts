@@ -19,6 +19,7 @@ const ALLOWED_SCOPES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith export': KNOWN_SCOPES,
   'skillsmith init': ['user', 'project'],
   'skillsmith plan': ['user', 'project'],
+  'skillsmith apply': ['user', 'project'],
   'skillsmith uninstall': ['user', 'project'],
   'skillsmith dev': ['user', 'project'],
   'skillsmith promote': ['user', 'project'],
@@ -133,6 +134,21 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith plan:--out': 'Create one canonical saved-plan v1 artifact',
   'skillsmith plan:--force': 'Atomically replace only the selected saved-plan output',
   'skillsmith plan:--json': 'Emit the strict plan-report@1 report',
+  'skillsmith apply:--file': 'Read one explicit desired-state manifest in fresh mode',
+  'skillsmith apply:--lockfile': 'Read one explicit lockfile in fresh mode (requires --file)',
+  'skillsmith apply:--plan': 'Validate or execute one exact reviewed saved-plan v1 artifact',
+  'skillsmith apply:--tool': 'Restrict fresh convergence to a target tool; repeatable',
+  'skillsmith apply:--scope': 'Restrict fresh convergence to user or project scope',
+  'skillsmith apply:--user': 'Converge user-scope desired state in fresh mode',
+  'skillsmith apply:--project': 'Converge current-project desired state in fresh mode',
+  'skillsmith apply:--locked': 'Require every selected lock entry to be current in fresh mode',
+  'skillsmith apply:--prune': 'Authorize bounded managed removals in fresh mode',
+  'skillsmith apply:--yes': 'Approve a changing fresh plan without prompting',
+  'skillsmith apply:--continue-on-error':
+    'Continue with later independent fresh-plan groups after a failure',
+  'skillsmith apply:--dry-run': 'Validate and render the exact plan without locking or writing',
+  'skillsmith apply:--check': 'Exit 7 when the valid exact plan contains changes',
+  'skillsmith apply:--json': 'Emit the strict apply-report@1 report',
   'skillsmith verify:--tool': 'Restrict to tools; repeatable; default: all detected',
   'skillsmith verify:--static': 'Run static verification only; this is the default',
   'skillsmith verify:--deep': 'Also run isolated session-backed load verification',
@@ -265,7 +281,10 @@ export const optionsForPath = (path: string): readonly CommandOptionSpec[] => {
   const prefix = `option:${path}:`;
   const options = optionRows
     .filter((row) => row.key.startsWith(prefix))
-    .filter((row) => path !== 'skillsmith status' || row.option.long !== '--help')
+    .filter(
+      (row) =>
+        !['skillsmith status', 'skillsmith apply'].includes(path) || row.option.long !== '--help',
+    )
     .map((row) => optionFromState(path, row.option));
 
   if (path === 'skillsmith status') {
@@ -329,6 +348,25 @@ export const optionsForPath = (path: string): readonly CommandOptionSpec[] => {
       '--force',
       '--json',
       '--help',
+    ];
+    return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
+  }
+  if (path === 'skillsmith apply') {
+    const order = [
+      '--file',
+      '--lockfile',
+      '--plan',
+      '--tool',
+      '--scope',
+      '--user',
+      '--project',
+      '--locked',
+      '--prune',
+      '--yes',
+      '--continue-on-error',
+      '--dry-run',
+      '--check',
+      '--json',
     ];
     return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
   }

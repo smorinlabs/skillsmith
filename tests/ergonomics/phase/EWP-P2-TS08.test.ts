@@ -109,6 +109,7 @@ const EXPECTED_IDENTITIES = [
 const EXPECTED_WIRE_IDENTITIES = [
   'agents@1',
   'agents@2',
+  'apply-report@1',
   'health@1',
   'health@2',
   'commands@1',
@@ -210,6 +211,7 @@ const EMPTY_MANIFEST_SHA256 =
 const CONTRACT_RUNTIME_EXPORTS = ['createWireContractRegistry'] as const;
 const V1_RUNTIME_EXPORTS = [
   'agentsV1Codec',
+  'applyV1Codec',
   'capabilitySnapshotV1Codec',
   'commandsV1Codec',
   'configGetV1Codec',

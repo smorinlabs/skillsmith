@@ -1,4 +1,8 @@
-import type { PlanV1Dto, StatusV1Dto } from '../../../../packages/core/src/contracts/v1/index.ts';
+import type {
+  ApplyReportV1Dto,
+  PlanV1Dto,
+  StatusV1Dto,
+} from '../../../../packages/core/src/contracts/v1/index.ts';
 import type {
   AgentsReport,
   ArtifactDigest,
@@ -848,8 +852,55 @@ export const PLAN_REPORT_FIXTURE = {
   savedOutput: null,
 } satisfies PlanV1Dto;
 
+export const APPLY_REPORT_FIXTURE = {
+  schemaVersion: 1,
+  kind: 'skillsmith.apply-report',
+  command: 'apply',
+  mode: 'fresh-execute',
+  state: 'completed',
+  artifactPair: PLAN_REPORT_FIXTURE.artifactPair,
+  savedPlan: null,
+  project: PLAN_REPORT_FIXTURE.project,
+  options: {
+    locked: true,
+    prune: false,
+    check: false,
+    dryRun: false,
+    continueOnError: false,
+  },
+  selection: PLAN_REPORT_FIXTURE.selection,
+  operations: PLAN_REPORT_FIXTURE.operations,
+  checks: PLAN_REPORT_FIXTURE.checks,
+  diagnostics: PLAN_REPORT_FIXTURE.diagnostics,
+  approval: { required: false, outcome: 'not-required' },
+  validation: { outcome: 'not-run', replanned: false },
+  results: [],
+  summary: {
+    ...PLAN_REPORT_FIXTURE.summary,
+    succeeded: 0,
+    failed: 0,
+    cancelled: 0,
+    rolledBack: 0,
+    skipped: 0,
+  },
+} satisfies ApplyReportV1Dto;
+
+export const APPLY_HUMAN_GOLDEN = `Apply: fresh-execute (completed)
+Manifest: /fixture/project/skillsmith.toml
+Lock: /fixture/project/skillsmith.lock
+Project: /fixture/project [fixture-project] cwd=/fixture/project
+Options: locked=true prune=false check=false dry-run=false continue-on-error=false
+Selection: codex / project (bounded-default; selected)
+Selected skills: (none)
+Approval: { outcome: 'not-required', required: false }
+Validation: { outcome: 'not-run', replanned: false }
+Summary: 0 operations, 0 succeeded, 0 failed, 0 cancelled, 0 rolled back, 0 skipped, 0 drift, 0 refusals
+Summary exact: { cancelled: 0, checkKinds: { 'content-integrity': 0, 'precondition-validation': 0, 'source-resolution': 0, capability: 0, verification: 0 }, checks: 0, diagnosticKinds: { conflict: 0, noop: 0, refuse: 0, skip: 0, warning: 0 }, diagnostics: 0, drift: 0, failed: 0, operationKinds: { 'link-dev': 0, 'migrate-ledger': 0, 'migrate-project-config': 0, 'move-scope': 0, 'write-lock': 0, 'write-manifest': 0, adapt: 0, install: 0, promote: 0, remove: 0, repair: 0, update: 0 }, operations: 0, refusals: 0, rolledBack: 0, skipped: 0, succeeded: 0 }
+`;
+
 export const REPORT_FIXTURES = {
   agents: AGENTS_REPORT_FIXTURE,
+  apply: APPLY_REPORT_FIXTURE,
   health: HEALTH_REPORT_FIXTURE,
   commands: COMMANDS_REPORT_FIXTURE,
   configGetUnscoped: CONFIG_GET_UNSCOPED_REPORT_FIXTURE,
@@ -875,6 +926,7 @@ export const REPORT_FIXTURES = {
 /** Report values in the shape consumed by the shared current renderer registry. */
 export const CURRENT_RENDERER_REPORTS = {
   agents: REPORT_FIXTURES.agents,
+  apply: { result: REPORT_FIXTURES.apply },
   health: REPORT_FIXTURES.health,
   commands: REPORT_FIXTURES.commands,
   configGetUnscoped: REPORT_FIXTURES.configGetUnscoped,
@@ -1217,6 +1269,7 @@ export const CURRENT_LIFECYCLE_V2_GOLDENS = {
 export const CURRENT_JSON_GOLDENS = {
   ...HISTORICAL_JSON_GOLDENS,
   agents: `${JSON.stringify(AGENTS_V2_DTO, null, 2)}\n`,
+  apply: `${JSON.stringify(APPLY_REPORT_FIXTURE, null, 2)}\n`,
   commands: `${JSON.stringify(COMMANDS_V2_DTO, null, 2)}\n`,
   flip: JSON.stringify(FLIP_V4_DTO, null, 2),
   install: CURRENT_LIFECYCLE_V2_GOLDENS.install,
@@ -1229,6 +1282,7 @@ export const CURRENT_JSON_GOLDENS = {
 
 export const GOLDEN_TERMINAL_LF = {
   agents: true,
+  apply: true,
   health: false,
   commands: true,
   configGetUnscoped: true,

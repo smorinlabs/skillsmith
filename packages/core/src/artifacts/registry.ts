@@ -25,6 +25,7 @@ import { manifestV1Codec } from './manifest-codec.ts';
 import {
   ownArtifactDto,
   savedPlanV1Codec,
+  validatePlanExecutionGuardsV1,
   validatePlanOperationIntentShapeV1,
   validatePlanOperationIntentV1,
 } from './plan-codec.ts';
@@ -95,6 +96,7 @@ export {
   validateJournalV1Dto,
   validateJournalV1DtoShape,
   validateLedgerV1Dto,
+  validatePlanExecutionGuardsV1,
   validatePlanOperationIntentShapeV1,
   validatePlanOperationIntentV1,
 };

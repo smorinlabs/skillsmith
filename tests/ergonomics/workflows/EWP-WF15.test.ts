@@ -122,15 +122,19 @@ const schedulingContext = (
   ...(signal === undefined ? {} : { signal }),
 });
 
-const runSchedulingProduct = async (options: {
-  readonly format: 'human' | 'json';
-  readonly continueOnError?: boolean;
-  readonly cancelOnFailure?: boolean;
-  readonly refuseApproval?: boolean;
-}): Promise<SchedulingProduct> => {
-  const fleet = await buildFixtureFleet();
+const runSchedulingProduct = async (
+  options: {
+    readonly format: 'human' | 'json';
+    readonly continueOnError?: boolean;
+    readonly cancelOnFailure?: boolean;
+    readonly refuseApproval?: boolean;
+  },
+  preparedFleet?: FixtureFleet,
+): Promise<SchedulingProduct> => {
+  const ownsFleet = preparedFleet === undefined;
+  const fleet = preparedFleet ?? (await buildFixtureFleet());
   try {
-    await prepareSchedulingFleet(fleet);
+    if (ownsFleet) await prepareSchedulingFleet(fleet);
     const mutationEvents: string[] = [];
     const controller = new AbortController();
     let interruptedFirstGroup = false;
@@ -205,7 +209,7 @@ const runSchedulingProduct = async (options: {
       mutationEvents,
     };
   } finally {
-    await destroyFixtureFleet(fleet);
+    if (ownsFleet) await destroyFixtureFleet(fleet);
   }
 };
 
@@ -411,20 +415,37 @@ describe('EWP-WF15', () => {
   });
 
   test('real CLI scheduling products preserve group boundaries, policy, cancellation, streams, and redaction', async () => {
-    const failFastHuman = await runSchedulingProduct({ format: 'human' });
-    const failFastJson = await runSchedulingProduct({ format: 'json' });
-    const continuedJson = await runSchedulingProduct({
-      format: 'json',
-      continueOnError: true,
-    });
-    const cancelledJson = await runSchedulingProduct({
-      format: 'json',
-      cancelOnFailure: true,
-    });
-    const refusedHuman = await runSchedulingProduct({
-      format: 'human',
-      refuseApproval: true,
-    });
+    // Approval refusal is mutation-free, so it can reuse the fail-fast human fleet before that
+    // fleet is changed. This keeps the five product assertions while avoiding a fifth pair of Git
+    // repositories in the timeout-sensitive fixture setup.
+    const sharedFleet = await buildFixtureFleet();
+    let products: readonly [
+      SchedulingProduct,
+      SchedulingProduct,
+      SchedulingProduct,
+      SchedulingProduct,
+      SchedulingProduct,
+    ];
+    try {
+      await prepareSchedulingFleet(sharedFleet);
+      const [humanProducts, failFastJson, continuedJson, cancelledJson] = await Promise.all([
+        (async () => {
+          const refused = await runSchedulingProduct(
+            { format: 'human', refuseApproval: true },
+            sharedFleet,
+          );
+          const failFast = await runSchedulingProduct({ format: 'human' }, sharedFleet);
+          return [failFast, refused] as const;
+        })(),
+        runSchedulingProduct({ format: 'json' }),
+        runSchedulingProduct({ format: 'json', continueOnError: true }),
+        runSchedulingProduct({ format: 'json', cancelOnFailure: true }),
+      ]);
+      products = [humanProducts[0], failFastJson, continuedJson, cancelledJson, humanProducts[1]];
+    } finally {
+      await destroyFixtureFleet(sharedFleet);
+    }
+    const [failFastHuman, failFastJson, continuedJson, cancelledJson, refusedHuman] = products;
 
     for (const [label, product] of [
       ['fail-fast human', failFastHuman],

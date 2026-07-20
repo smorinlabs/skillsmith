@@ -4,7 +4,11 @@ import type {
   RelevantCapabilityQueryV1,
   RelevantCapabilitySnapshotV1,
 } from '../agents/capabilities.ts';
-import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
+import {
+  type Placement,
+  classifyPlacement,
+  classifyPlacementRoot,
+} from '../agents/placement-shared.ts';
 import type { LifecycleToolRegistry } from '../agents/registry.ts';
 import type {
   ArtifactCoordinatorPorts,
@@ -734,8 +738,9 @@ export const acquirePlacementFacts = async (
   storeRoot: string,
 ): Promise<AcquirePlacementFacts> => {
   const path = join(root, skill);
+  const rootClass = await classifyPlacementRoot(env, root);
   const [pathKind, placement] = await Promise.all([
-    env.pathKind(path),
+    rootClass === 'container' ? env.pathKind(path) : Promise.resolve('absent' as const),
     classifyPlacement(env, root, skill, storeRoot),
   ]);
   const hash = pathKind === 'dir' ? await contentHashOf(env, path) : null;
@@ -1490,7 +1495,7 @@ export const createAcquireExecutionLockPort = (
     ledgerPath,
     lockFailure: (error) => {
       const safe = sanitize(error);
-      return safe.code === 'cancelled'
+      return safe.code === 'cancelled' || safe.code === 'permission-denied'
         ? safe
         : flipFailedError(`another skillsmith operation is running: ${message(safe)}`);
     },

@@ -116,6 +116,12 @@ views of the same strict `plan-report@1` DTO. An optional saved plan is encoded 
 focused owner-only create/atomic-replace writer. That isolated output write is not plan execution;
 approval, staleness validation, and execution remain separate application authority.
 
+`runApplyApplication` is the matching convergence boundary. Fresh mode consumes the same prepared
+reconciliation product as `plan`; saved mode validates one exact `plan@1` authorization without
+replanning. Dry-run and check remain nonmutating, while changing execution requires explicit
+approval and revalidates exact preconditions under the existing coordinator locks. Human and JSON
+output are views of one strict `apply-report@1` DTO rather than a second execution model.
+
 ## Result-based error handling
 
 Every fallible function in core returns `Result<T, SkillSmithError>`:
@@ -238,7 +244,7 @@ or define a second public schema.
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
 `commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
 `flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
-`init@1`, `plan-report@1`, `uninstall@2`, `verify@1`, `error@1`, and
+`init@1`, `plan-report@1`, `apply-report@1`, `uninstall@2`, `verify@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive
 unknown-field rejection, embedded kind and version policy, JSON indentation, terminal framing, and
 conservative compatibility. Current codecs declare no migrations. Lifecycle v2 contracts are

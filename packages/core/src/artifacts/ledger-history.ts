@@ -62,6 +62,66 @@ const locationTuple = (
     ? Object.freeze(['portable', location.token])
     : Object.freeze(['machine-bound', location.path]);
 
+const placementAnchorKey = (input: {
+  readonly scope: 'user' | 'project';
+  readonly projectRoot: string | null;
+  readonly skill: string;
+  readonly tool: string;
+  readonly placementPath: string;
+}): string =>
+  JSON.stringify([
+    'ledger-history-anchor',
+    1,
+    'placement',
+    'live',
+    input.scope,
+    input.projectRoot === null ? ['user'] : ['project', input.projectRoot],
+    input.skill,
+    input.tool,
+    input.placementPath,
+  ]);
+
+const crossScopePlacementAnchors = (
+  journal: LogicalJournalV1Dto,
+): readonly LedgerHistoryAnchor[] => {
+  if (
+    journal.intent.kind !== 'move-scope' ||
+    journal.intent.skill === null ||
+    journal.intent.tool === null
+  ) {
+    return Object.freeze([]);
+  }
+  const anchors = new Map<string, LedgerHistoryAnchor>();
+  for (const image of [journal.intent.before, journal.intent.after]) {
+    if (
+      image.kind !== 'placement' ||
+      image.resource.kind !== 'live' ||
+      image.resource.skill !== journal.intent.skill ||
+      image.resource.tool !== journal.intent.tool ||
+      image.resource.location.kind !== 'machine-bound'
+    ) {
+      return Object.freeze([]);
+    }
+    const root = image.resource.projectRoot;
+    if (root !== null && root.kind !== 'machine-bound') return Object.freeze([]);
+    if (
+      (image.resource.scope === 'user' && root !== null) ||
+      (image.resource.scope === 'project' && (root === null || root.kind !== 'machine-bound'))
+    ) {
+      return Object.freeze([]);
+    }
+    const key = placementAnchorKey({
+      scope: image.resource.scope,
+      projectRoot: root === null ? null : root.path,
+      skill: image.resource.skill,
+      tool: image.resource.tool,
+      placementPath: image.resource.location.path,
+    });
+    anchors.set(key, { key, kind: 'placement' });
+  }
+  return Object.freeze([...anchors.values()]);
+};
+
 const journalAnchors = (
   journal: LogicalJournalV1Dto,
 ): Result<readonly LedgerHistoryAnchor[], LedgerHistoryError> => {
@@ -76,19 +136,17 @@ const journalAnchors = (
   if (pair !== null) {
     for (const actual of [...journal.actual.before, ...journal.actual.after]) {
       if (actual.role !== 'live') continue;
-      const key = JSON.stringify([
-        'ledger-history-anchor',
-        1,
-        'placement',
-        'live',
-        journal.intent.scope,
-        pair.projectRoot === null ? ['user'] : ['project', pair.projectRoot],
-        pair.skill,
-        pair.tool,
-        actual.placementPath,
-      ]);
+      const key = placementAnchorKey({
+        scope: journal.intent.scope ?? 'user',
+        projectRoot: pair.projectRoot,
+        skill: pair.skill,
+        tool: pair.tool,
+        placementPath: actual.placementPath,
+      });
       anchors.set(key, { key, kind: 'placement' });
     }
+  } else {
+    for (const anchor of crossScopePlacementAnchors(journal)) anchors.set(anchor.key, anchor);
   }
   for (const image of [journal.intent.before, journal.intent.after]) {
     if (image.kind === 'manifest') {

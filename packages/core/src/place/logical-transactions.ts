@@ -151,6 +151,66 @@ const pairLocation = (journal: LogicalJournalV1Dto): PairLocation | null => {
   return { projectRoot, skill: journal.intent.skill, tool: journal.intent.tool };
 };
 
+type CrossScopePairLocation = PairLocation & Readonly<{ placementPath: string }>;
+
+interface CrossScopePairLocations {
+  readonly source: CrossScopePairLocation;
+  readonly destination: CrossScopePairLocation;
+}
+
+const crossScopeLocation = (
+  journal: LogicalJournalV1Dto,
+  image: LogicalJournalV1Dto['intent']['before'],
+): CrossScopePairLocation | null => {
+  if (
+    image.kind !== 'placement' ||
+    image.resource.kind !== 'live' ||
+    image.resource.location.kind !== 'machine-bound' ||
+    journal.intent.skill === null ||
+    journal.intent.tool === null ||
+    image.resource.skill !== journal.intent.skill ||
+    image.resource.tool !== journal.intent.tool
+  ) {
+    return null;
+  }
+  const root = image.resource.projectRoot;
+  if (root !== null && root.kind !== 'machine-bound') return null;
+  if (image.resource.scope === 'user' && root !== null) return null;
+  if (image.resource.scope === 'project' && (root === null || root.kind !== 'machine-bound')) {
+    return null;
+  }
+  return {
+    projectRoot: root === null ? null : root.path,
+    skill: image.resource.skill,
+    tool: image.resource.tool,
+    placementPath: image.resource.location.path,
+  };
+};
+
+/** A move-scope journal has two explicit pair locations and no legacy pair shadow. */
+const crossScopePairLocations = (journal: LogicalJournalV1Dto): CrossScopePairLocations | null => {
+  if (
+    journal.intent.kind !== 'move-scope' ||
+    journal.intent.pairId === null ||
+    journal.intent.scope === null ||
+    journal.intent.after.kind !== 'placement' ||
+    journal.intent.after.resource.scope !== journal.intent.scope
+  ) {
+    return null;
+  }
+  const source = crossScopeLocation(journal, journal.intent.before);
+  const destination = crossScopeLocation(journal, journal.intent.after);
+  if (
+    source === null ||
+    destination === null ||
+    (source.projectRoot === destination.projectRoot &&
+      source.placementPath === destination.placementPath)
+  ) {
+    return null;
+  }
+  return Object.freeze({ source: Object.freeze(source), destination: Object.freeze(destination) });
+};
+
 const getPair = (model: LedgerModel, location: PairLocation): LedgerPairV1Dto | null => {
   const skills =
     location.projectRoot === null ? model.skills : model.projects[location.projectRoot]?.skills;
@@ -403,6 +463,35 @@ const withPendingShadow = (
   journal: LogicalJournalV1Dto,
   previous: LogicalJournalV1Dto | null,
 ): Result<LedgerModel, LogicalTransactionError> => {
+  const crossScope = crossScopePairLocations(journal);
+  if (journal.intent.kind === 'move-scope') {
+    if (crossScope === null) {
+      return err(failure('identity-conflict', 'move-scope pair locations are invalid'));
+    }
+    for (const candidate of scanPhysicalShadows(model)) {
+      if (candidate.shadow.txId === journal.transactionId) {
+        return err(
+          failure('shadow-conflict', 'move-scope transaction cannot have a physical pair shadow'),
+        );
+      }
+    }
+    const sourcePair = getPair(model, crossScope.source);
+    const sameMembership = same(crossScope.source, crossScope.destination);
+    const destinationPair = sameMembership ? null : getPair(model, crossScope.destination);
+    if (
+      sourcePair === null ||
+      sourcePair.placementPath !== crossScope.source.placementPath ||
+      sourcePair.journal != null
+    ) {
+      return err(
+        failure('identity-conflict', 'move-scope source pair membership is not authoritative'),
+      );
+    }
+    if (destinationPair !== null) {
+      return err(failure('identity-conflict', 'move-scope destination pair already exists'));
+    }
+    return ok(model);
+  }
   const location = pairLocation(journal);
   if (journal.intent.pairId === null)
     return location === null
@@ -490,6 +579,45 @@ const terminalPair = (
   pending: LogicalJournalV1Dto,
   committed: LogicalJournalV1Dto,
 ): Result<LedgerModel, LogicalTransactionError> => {
+  const crossScope = crossScopePairLocations(committed);
+  if (committed.intent.kind === 'move-scope') {
+    if (crossScope === null) {
+      return err(failure('identity-conflict', 'terminal move-scope pair locations are invalid'));
+    }
+    const sourcePair = getPair(model, crossScope.source);
+    const sameMembership = same(crossScope.source, crossScope.destination);
+    const destinationPair = sameMembership ? null : getPair(model, crossScope.destination);
+    if (
+      sourcePair === null ||
+      sourcePair.placementPath !== crossScope.source.placementPath ||
+      sourcePair.journal != null
+    ) {
+      return err(failure('identity-conflict', 'terminal move-scope source membership is missing'));
+    }
+    if (destinationPair !== null) {
+      return err(
+        failure('identity-conflict', 'terminal move-scope destination membership already exists'),
+      );
+    }
+    if (committed.disposition === 'rollback') return ok(model);
+    const withoutSource = sameMembership ? model : replacePair(model, crossScope.source, null);
+    const placement =
+      committed.intent.after.kind === 'placement' &&
+      (committed.intent.after.representation === 'copy' ||
+        committed.intent.after.representation === 'symlink')
+        ? committed.intent.after.representation
+        : undefined;
+    return ok(
+      replacePair(withoutSource, crossScope.destination, {
+        ...sourcePair,
+        placementPath: crossScope.destination.placementPath,
+        ...(sourcePair.pinned == null || placement === undefined
+          ? {}
+          : { pinned: { ...sourcePair.pinned, placement } }),
+        journal: null,
+      }),
+    );
+  }
   const location = pairLocation(committed);
   if (committed.intent.pairId === null) return ok(model);
   if (location === null)

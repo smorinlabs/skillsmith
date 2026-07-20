@@ -188,7 +188,11 @@ const virtualPlacementPorts = (nodes: Readonly<Record<string, VirtualNode>>) => 
     ...ENV,
     fileExists: async (path: string) =>
       Object.hasOwn(nodes, path) || paths.some((candidate) => candidate.startsWith(`${path}/`)),
-    pathKind: async (path: string) => nodes[path]?.kind ?? ('absent' as const),
+    pathKind: async (path: string) =>
+      nodes[path]?.kind ??
+      (paths.some((candidate) => candidate.startsWith(`${path}/`))
+        ? ('dir' as const)
+        : ('absent' as const)),
     realpath: async (path: string) => path,
     listDir: async (path: string) =>
       paths

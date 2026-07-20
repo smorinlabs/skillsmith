@@ -394,6 +394,137 @@ describe('private live-placement repository adapter', () => {
     expect(afterReplacement).not.toEqual({ ok: true, value: observed.value.revision });
   });
 
+  test('revision-binds an absent child to a followed symlink parent target', async () => {
+    const placementPath = '/fixture/live-link/alpha';
+    const parentPath = '/fixture/live-link';
+    const followedTargetPath = '/fixture/targets/live';
+    let followedTargetIdentity = 'target:1';
+    const repository = createLivePlacementRepository({
+      resources: [
+        {
+          resourceId: 'live:user:codex:alpha',
+          skill: 'alpha',
+          tool: 'codex',
+          scope: 'user',
+          projectIdentity: null,
+          placementPath,
+          storeRoot: '/fixture/store',
+        },
+      ],
+      ports: {
+        pathKind: async (path) => (path === placementPath ? 'absent' : 'dir'),
+        readFileMetadata: async (path) => {
+          if (path === parentPath) {
+            return { kind: 'symlink', mode: 0o777, identity: 'parent-link:1', linkCount: 1 };
+          }
+          if (path === followedTargetPath) {
+            return {
+              kind: 'dir',
+              mode: 0o755,
+              identity: followedTargetIdentity,
+              linkCount: 1,
+            };
+          }
+          return { kind: 'absent', mode: null, identity: null, linkCount: 0 };
+        },
+        readLink: async (path) => {
+          if (path !== parentPath) throw new Error(`unexpected readlink: ${path}`);
+          return 'targets/live';
+        },
+        realpath: async (path) => {
+          if (path !== parentPath) throw new Error(`unexpected realpath: ${path}`);
+          return followedTargetPath;
+        },
+        listDir: async () => [],
+        readBytes: async () => new Uint8Array(),
+        isExecutable: async () => false,
+      },
+    });
+    const before = await repository.observe('live:user:codex:alpha');
+    expect(before.ok).toBeTrue();
+    if (!before.ok) return;
+    expect(before.value.value).toBeNull();
+    expect(before.value.revision).toMatchObject({
+      state: 'absent',
+      parentIdentity: parentPath,
+      parentKind: 'directory',
+    });
+
+    followedTargetIdentity = 'target:2';
+    const after = await repository.observeRevision('live:user:codex:alpha');
+    expect(after.ok).toBeTrue();
+    if (!after.ok) return;
+    expect(after.value.revisionDigest).not.toBe(before.value.revision.revisionDigest);
+    expect(
+      await repository.stage({
+        schemaVersion: 1,
+        operationId: 'operation:symlink-parent-replaced',
+        domain: 'live',
+        resourceId: 'live:user:codex:alpha',
+        expectedRevision: before.value.revision,
+        editDigest: digest('c'),
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: 'stale-revision',
+        domain: 'live',
+        resourceId: 'live:user:codex:alpha',
+      },
+    });
+  });
+
+  test('observes an absent child under a non-directory parent and binds that conflict', async () => {
+    const placementPath = '/fixture/live/alpha';
+    let parentIdentity = 'parent-file:1';
+    const repository = createLivePlacementRepository({
+      resources: [
+        {
+          resourceId: 'live:user:codex:alpha',
+          skill: 'alpha',
+          tool: 'codex',
+          scope: 'user',
+          projectIdentity: null,
+          placementPath,
+          storeRoot: '/fixture/store',
+        },
+      ],
+      ports: {
+        pathKind: async () => {
+          throw Object.assign(new Error('non-directory parent'), { code: 'ENOTDIR' });
+        },
+        readFileMetadata: async (path) => {
+          if (path === placementPath) {
+            throw Object.assign(new Error('non-directory parent'), { code: 'ENOTDIR' });
+          }
+          return { kind: 'file', mode: 0o644, identity: parentIdentity, linkCount: 1 };
+        },
+        readLink: async () => '',
+        realpath: async (path) => path,
+        listDir: async () => [],
+        readBytes: async () => new Uint8Array(),
+        isExecutable: async () => false,
+      },
+    });
+
+    const observed = await repository.observe('live:user:codex:alpha');
+
+    expect(observed.ok).toBeTrue();
+    if (!observed.ok) return;
+    expect(observed.value.value).toBeNull();
+    expect(observed.value.revision).toMatchObject({
+      domain: 'live',
+      state: 'absent',
+      parentIdentity: '/fixture/live',
+      parentKind: 'absent',
+    });
+    parentIdentity = 'parent-file:2';
+    expect(await repository.observeRevision('live:user:codex:alpha')).not.toEqual({
+      ok: true,
+      value: observed.value.revision,
+    });
+  });
+
   test('reobserves the live parent before staging and rejects a forged caller revision', async () => {
     const placementPath = '/fixture/live/alpha';
     let parentIdentity = 'parent:1';

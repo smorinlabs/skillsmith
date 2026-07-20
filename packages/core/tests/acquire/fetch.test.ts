@@ -249,6 +249,44 @@ describe('lsTreeSkills', () => {
 });
 
 describe('sparseCheckoutSkill', () => {
+  test('preserves permission taxonomy and redacts private Git failure material', async () => {
+    const privateMaterial = 'synthetic-private-material::fetch-permission::do-not-emit';
+    const permission = await sparseCheckoutSkill(
+      {
+        git: {
+          ...env.git,
+          materializeTree: async () => {
+            throw Object.assign(new Error(privateMaterial), { code: 'EACCES' });
+          },
+        },
+      },
+      freshFetchDir(),
+      'plugins/fh/skills/factor-scan',
+    );
+    expect(permission).toMatchObject({ ok: false, error: { code: 'permission-denied' } });
+    expect(JSON.stringify(permission)).not.toContain(privateMaterial);
+
+    const ordinary = await sparseCheckoutSkill(
+      {
+        git: {
+          ...env.git,
+          materializeTree: async () => {
+            throw Object.assign(new Error('ordinary checkout failure'), { code: 'EIO' });
+          },
+        },
+      },
+      freshFetchDir(),
+      'plugins/fh/skills/factor-scan',
+    );
+    expect(ordinary).toMatchObject({
+      ok: false,
+      error: {
+        code: 'source-unresolvable',
+        message: expect.stringContaining('ordinary checkout failure'),
+      },
+    });
+  });
+
   test('sparse checkout materializes exactly the chosen subtree', async () => {
     const fetchDir = freshFetchDir();
     await fetchRepo(env, { cloneUrl: fixture.multiUrl, ref: null, fetchDir });

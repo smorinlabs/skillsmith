@@ -3,6 +3,7 @@ import { appendFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fromLedgerV1Dto } from '../../src/artifacts/ledger-codec.ts';
 import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
+import { hashSourceContentV1, projectSourceContent } from '../../src/artifacts/source-content.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { emptyLedger, getLedgerPairAt, setPairAt, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../src/place/paths.ts';
@@ -117,6 +118,14 @@ const seedStore = async (f: FixtureFleet): Promise<StoreSeed> => {
   };
 };
 
+const v1ContentHashOf = async (env: RuntimePorts, path: string): Promise<string> => {
+  const projected = await projectSourceContent(env, path);
+  if (!projected.ok) throw new Error(projected.error.message);
+  const hashed = hashSourceContentV1(projected.value);
+  if (!hashed.ok) throw new Error(hashed.error.message);
+  return hashed.value;
+};
+
 const residue = async (env: RuntimePorts, skillsRoot: string): Promise<string[]> =>
   (await env.listDir(skillsRoot)).filter((n) => n.startsWith('.skillsmith-'));
 
@@ -177,8 +186,9 @@ describe('runSwap — install', () => {
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
 
-  test('fresh install, build copy → live real dir with matching content hash, placement copy', async () => {
+  test('fresh direct acquisition accepts its legacy copy hash while v1 differs', async () => {
     const s = await seedStore(f);
+    expect(await v1ContentHashOf(f.env, s.storePath)).not.toBe(s.contentHash);
     const ledger = emptyLedger(NOW);
     const ctx = makeCtx(f.env, ledgerPath, ledger);
     const r = await runSwap(ctx, installPlan(s, skillsRoot, placementPath, 'copy'));
@@ -232,6 +242,30 @@ describe('runSwap — install', () => {
     expect(pair?.mode).toBe('pinned');
     expect(pair?.dev).toEqual(adopted);
     expect(pair?.journal).toBeNull();
+    expect(await residue(f.env, skillsRoot)).toEqual([]);
+  });
+
+  test('replace install reclaims an unchanged v1 pinned copy without a warning', async () => {
+    const s = await seedStore(f);
+    const live = join(skillsRoot, SKILL);
+    await f.env.copyTree(s.storePath, live);
+    const v1ContentHash = await v1ContentHashOf(f.env, live);
+    const ledger = emptyLedger(NOW);
+    setPairAt(ledger, null, SKILL, TOOL, {
+      placementPath: live,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf(s.storePath, s.rev, v1ContentHash, 'copy'),
+      origin: origin('smorinlabs/fixture-harness/alpha'),
+      journal: null,
+    });
+
+    const replaced = await runSwap(
+      makeCtx(f.env, ledgerPath, ledger),
+      installPlan(s, skillsRoot, live, 'symlink'),
+    );
+    if (!replaced.ok) throw new Error(msg(replaced.error));
+    expect(replaced.value).toMatchObject({ backupKept: null, warning: null });
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
 
@@ -453,6 +487,28 @@ describe('runSwap — uninstall', () => {
     expect(r.value.backupKept).toBeNull();
     expect(await f.env.pathKind(live)).toBe('absent');
     expect(getSwapPairAt(r.state.ledger, null, SKILL, TOOL)).toBeNull();
+    expect(await residue(f.env, skillsRoot)).toEqual([]);
+  });
+
+  test('uninstall reclaims an unchanged v1 pinned copy without a warning', async () => {
+    const s = await seedStore(f);
+    const live = join(skillsRoot, SKILL);
+    await f.env.copyTree(s.storePath, live);
+    const v1ContentHash = await v1ContentHashOf(f.env, live);
+    const ledger = emptyLedger(NOW);
+    setPairAt(ledger, null, SKILL, TOOL, {
+      placementPath: live,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf(s.storePath, s.rev, v1ContentHash, 'copy'),
+      origin: origin('smorinlabs/fixture-harness/alpha'),
+      journal: null,
+    });
+
+    const uninstalled = await runSwap(makeCtx(f.env, ledgerPath, ledger), uninstallPlan(live));
+    if (!uninstalled.ok) throw new Error(msg(uninstalled.error));
+    expect(uninstalled.value).toMatchObject({ backupKept: null, warning: null });
+    expect(getSwapPairAt(uninstalled.state.ledger, null, SKILL, TOOL)).toBeNull();
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
 

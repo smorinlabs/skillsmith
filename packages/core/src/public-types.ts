@@ -48,9 +48,11 @@ export type {
   DiagnosticDetail,
   DiagnosticSeverity,
   InteractionChoice,
+  InteractionConfirmationRequest,
   InteractionPort,
   InteractionRequest,
   InteractionResolution,
+  ExactApprovalPreviewRequest,
   MutationSummary,
 } from './application/types.ts';
 export type {
@@ -60,6 +62,7 @@ export type {
   VersionReport,
 } from './application/current-services.ts';
 export type { PlanApplicationReport } from './application/plan-service.ts';
+export type { ApplyApplicationReport } from './application/apply-service.ts';
 export type * from './application/lifecycle-services.ts';
 export type * from './application/read-services.ts';
 export type * from './export/types.ts';

@@ -14,6 +14,7 @@ import {
   type PlanFixture,
   createPlanFixture,
   destroyPlanFixture,
+  lockSource,
   runPlanCli,
 } from '../../../../tests/ergonomics/fixtures/p4b-plan/cases.ts';
 import {
@@ -30,6 +31,7 @@ type UnknownRecord = Record<string, unknown>;
 
 interface DesiredSkill {
   readonly name: string;
+  readonly repository?: 'multi' | 'single';
   readonly sourcePath: string;
   readonly tools: readonly ('claude-code' | 'codex')[];
   readonly scope: 'user' | 'project';
@@ -58,7 +60,7 @@ const desiredManifest = (skills: readonly DesiredSkill[]): string =>
     ...skills.flatMap((skill) => [
       '[[skills]]',
       `name = "${skill.name}"`,
-      `source = "fixture.invalid/acme/multi//${skill.sourcePath}"`,
+      `source = "fixture.invalid/acme/${skill.repository ?? 'multi'}//${skill.sourcePath}"`,
       `tools = [${skill.tools.map((tool) => `"${tool}"`).join(', ')}]`,
       `scope = "${skill.scope}"`,
       'placement = "copy"',
@@ -85,6 +87,8 @@ const applyFixture = async (
     [
       `[url "${remote.multiUrl}"]`,
       `\tinsteadOf = ${remote.multiSource}`,
+      `[url "${remote.singleUrl}"]`,
+      `\tinsteadOf = ${remote.singleSource}`,
       '[protocol "file"]',
       '\tallow = always',
       '',
@@ -160,7 +164,9 @@ const records = (value: unknown, label: string): readonly UnknownRecord[] => {
 };
 
 const operationIds = (report: UnknownRecord): readonly string[] =>
-  records(report.operations, 'report.operations').map((operation) => String(operation.operationId));
+  records(report.operations, `${String(report.kind)}.operations`).map((operation) =>
+    String(operation.operationId),
+  );
 
 const exactPlanProjection = (report: UnknownRecord) => ({
   artifactPair: report.artifactPair,
@@ -211,19 +217,19 @@ const stateSnapshot = async (fixture: PlanFixture): Promise<UnknownRecord> => {
 };
 
 const expectApplyReport = (report: UnknownRecord, mode: string): void => {
-  expect(report).toMatchObject({
-    schemaVersion: 1,
-    kind: 'skillsmith.apply-report',
-    command: 'apply',
-    mode,
-    operations: expect.any(Array),
-    checks: expect.any(Array),
-    diagnostics: expect.any(Array),
-    results: expect.any(Array),
-    approval: expect.any(Object),
-    validation: expect.any(Object),
-    summary: expect.any(Object),
-  });
+  expect(report.schemaVersion).toBe(1);
+  expect(report.kind).toBe('skillsmith.apply-report');
+  expect(report.command).toBe('apply');
+  expect(report.mode).toBe(mode);
+  for (const field of ['operations', 'checks', 'diagnostics', 'results'] as const) {
+    expect(Array.isArray(report[field]), field).toBeTrue();
+  }
+  for (const field of ['approval', 'validation', 'summary'] as const) {
+    expect(
+      report[field] !== null && typeof report[field] === 'object' && !Array.isArray(report[field]),
+      field,
+    ).toBeTrue();
+  }
 };
 
 describe('EWP-CMD-APPLY-TS01', () => {
@@ -293,6 +299,7 @@ describe('EWP-CMD-APPLY-TS02', () => {
 describe('EWP-CMD-APPLY-TS03', () => {
   test('unchanged work never prompts and a second fresh execution is an exact no-op', async () => {
     const empty = await applyFixture([]);
+    await writeFile(empty.lock, lockSource(await readFile(empty.manifest, 'utf8')));
     const unchanged = json(
       await runApply(empty, [...artifactArgs(empty), '--no-prompt', '--json']),
       0,
@@ -362,6 +369,7 @@ describe('EWP-CMD-APPLY-TS05', () => {
         scope: 'project',
       },
     ]);
+    await writeFile(fixture.lock, lockSource(await readFile(fixture.manifest, 'utf8')));
     const selected = json(
       await runApply(fixture, [
         ...artifactArgs(fixture),
@@ -516,7 +524,13 @@ describe('EWP-CMD-APPLY-TS08', () => {
       {
         name: 'factor-scan',
         sourcePath: 'plugins/fh/skills/factor-scan',
-        tools: ['claude-code', 'codex'],
+        tools: ['claude-code'],
+        scope: 'user',
+      },
+      {
+        name: 'review',
+        sourcePath: 'plugins/web/skills/review',
+        tools: ['codex'],
         scope: 'user',
       },
     ]);
@@ -621,6 +635,13 @@ describe('EWP-CMD-APPLY-TS11', () => {
         tools: ['claude-code', 'codex'],
         scope: 'user',
       },
+      {
+        name: 'lint',
+        repository: 'single',
+        sourcePath: 'tools/deep/skills/lint',
+        tools: ['claude-code', 'codex'],
+        scope: 'user',
+      },
     ]);
     await mkdir(join(fixture.home, '.claude'), { recursive: true });
     await writeFile(join(fixture.home, '.claude', 'skills'), 'synthetic path conflict\n');
@@ -630,12 +651,29 @@ describe('EWP-CMD-APPLY-TS11', () => {
       1,
       'fail-fast apply',
     );
-    expect(records(failFast.results, 'fail-fast results')).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ outcome: 'failed' }),
-        expect.objectContaining({ outcome: 'skipped', reason: 'fail-fast' }),
-      ]),
+    const failFastOperations = records(failFast.operations, 'fail-fast operations');
+    const failFastResults = records(failFast.results, 'fail-fast results');
+    const resultByOperationId = new Map(
+      failFastResults.map((result) => [result.operationId, result]),
     );
+    const failedOperation = failFastOperations.find(
+      ({ operationId }) => resultByOperationId.get(operationId)?.outcome === 'failed',
+    );
+    expect(failedOperation?.groupId).toBeString();
+    const startedGroupResults = failFastOperations
+      .filter(({ groupId }) => groupId === failedOperation?.groupId)
+      .map(({ operationId }) => resultByOperationId.get(operationId));
+    expect(startedGroupResults.some((result) => result?.outcome === 'failed')).toBeTrue();
+    expect(startedGroupResults.some((result) => result?.outcome === 'succeeded')).toBeTrue();
+    const laterSourceResults = failFastOperations
+      .filter(({ pairId, groupId }) => pairId !== null && groupId !== failedOperation?.groupId)
+      .map(({ operationId }) => resultByOperationId.get(operationId));
+    expect(laterSourceResults.length).toBeGreaterThan(0);
+    expect(
+      laterSourceResults.every(
+        (result) => result?.outcome === 'skipped' && result.reason === 'fail-fast',
+      ),
+    ).toBeTrue();
 
     const continued = json(
       await runApply(fixture, [
@@ -781,7 +819,7 @@ describe('EWP-CMD-APPLY-TS14', () => {
     const artifact = JSON.parse(bytes) as UnknownRecord;
     const portability = artifact.portability as UnknownRecord;
     if (portability.kind === 'machine-bound') {
-      expect(portability).toMatchObject({ reasons: expect.any(Array) });
+      expect(Array.isArray(portability.reasons)).toBeTrue();
       expect(records(portability.reasons, 'machine-bound reasons').length).toBeGreaterThan(0);
     } else {
       expect(bytes).not.toContain(selected.root);

@@ -1,5 +1,11 @@
 import { basename, dirname, join } from 'node:path';
-import { type SkillSmithError, errorMessage, sourceUnresolvableError } from '../errors.ts';
+import {
+  type SkillSmithError,
+  errorMessage,
+  permissionDeniedError,
+  safeErrorCode,
+  sourceUnresolvableError,
+} from '../errors.ts';
 import type { ClockPort, FileReadPort, FileWritePort, GitPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import type { CandidateSkill } from './types.ts';
@@ -21,9 +27,20 @@ const stderrTail = (message: string): string =>
     .slice(-5)
     .join('\n');
 
-/** Blobless partial clone of a single ref into a fresh, skillsmith-created git dir. Any non-zero
- *  git exit maps to `source-unresolvable` (never a half-state): git only ever writes inside
- *  `fetchDir`. Returns the full 40-hex COMMIT SHA of FETCH_HEAD (annotated tags are peeled). */
+const sourceFailure = (error: unknown, message: string): SkillSmithError => {
+  const code = safeErrorCode(error);
+  return code === 'permission' ||
+    code === 'permission-denied' ||
+    code === 'EACCES' ||
+    code === 'EPERM'
+    ? permissionDeniedError(`${message}: permission denied`)
+    : sourceUnresolvableError(`${message}: ${stderrTail(errorMessage(error))}`);
+};
+
+/** Blobless partial clone of a single ref into a fresh, skillsmith-created git dir. Permission
+ *  failures remain permission failures; every other non-zero git exit maps to
+ *  `source-unresolvable` (never a half-state): git only ever writes inside `fetchDir`. Returns the
+ *  full 40-hex COMMIT SHA of FETCH_HEAD (annotated tags are peeled). */
 export const fetchRepo = async (
   ports: FetchGitPorts,
   opts: {
@@ -56,7 +73,7 @@ export const fetchRepo = async (
     }
     return ok({ sha: fetched.sha });
   } catch (e) {
-    return err(sourceUnresolvableError(`cannot fetch ${cloneUrl}: ${stderrTail(errorMessage(e))}`));
+    return err(sourceFailure(e, `cannot fetch ${cloneUrl}`));
   }
 };
 
@@ -88,7 +105,7 @@ export const lsTreeSkills = async (
     }
     return ok({ candidates, scanned: candidates.length });
   } catch (e) {
-    return err(sourceUnresolvableError(`cannot list ${fetchDir}: ${stderrTail(errorMessage(e))}`));
+    return err(sourceFailure(e, `cannot list ${fetchDir}`));
   }
 };
 
@@ -111,11 +128,7 @@ export const sparseCheckoutSkill = async (
       }),
     );
   } catch (e) {
-    return err(
-      sourceUnresolvableError(
-        `cannot check out ${skillPath === '' ? '<root>' : skillPath}: ${stderrTail(errorMessage(e))}`,
-      ),
-    );
+    return err(sourceFailure(e, `cannot check out ${skillPath === '' ? '<root>' : skillPath}`));
   }
 };
 

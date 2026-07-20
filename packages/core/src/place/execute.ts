@@ -28,6 +28,7 @@ import {
 import {
   type ExecutionCoordinatorRequest,
   type ExecutionPrecondition,
+  type PreparedExecutionBinding,
   type ValidatedExecutionBinding,
   executeOperationPlan,
 } from '../execution/index.ts';
@@ -404,6 +405,48 @@ export const createPlacementLifecycleExecutor = (
   });
 };
 
+export interface PlacementOperationExecutionBindingInput {
+  readonly operation: ExecutableOperation;
+  readonly lifecycle: PlacementLifecycleExecutor;
+  readonly stageResourceIds: readonly string[];
+  readonly unstartedForce: PreparedExecutionBinding['unstartedForce'];
+  readonly observeActualBefore: () => Promise<OperationImage>;
+  readonly execute: (
+    binding: ValidatedExecutionBinding,
+    observation?: ObservationBundle,
+  ) => Promise<OperationExecutionResult>;
+}
+
+export const createPlacementOperationExecutionBindingV1 = (
+  input: PlacementOperationExecutionBindingInput,
+): ObservedPreparedExecutionBinding => {
+  const operation = input.operation;
+  const lifecycle = input.lifecycle;
+  const unstartedForce = input.unstartedForce;
+  const observeActualBefore = input.observeActualBefore;
+  const execute = input.execute;
+  if (operation.pairId === null) {
+    throw new Error('prepared operation pair identity is missing');
+  }
+  const stageResourceIds = Object.freeze([...input.stageResourceIds]);
+  if (stageResourceIds.some((resourceId) => resourceId.length === 0)) {
+    throw new Error('prepared placement stage resource identity is empty');
+  }
+  if (new Set(stageResourceIds).size !== stageResourceIds.length) {
+    throw new Error('prepared placement stage resource identities must be unique');
+  }
+
+  return Object.freeze({
+    operationId: operation.operationId,
+    groupId: operation.groupId,
+    pairId: operation.pairId,
+    unstartedForce,
+    observeActualBefore,
+    execute: (binding: ValidatedExecutionBinding, observation?: ObservationBundle) =>
+      lifecycle.execute(operation, stageResourceIds, () => execute(binding, observation)),
+  });
+};
+
 export type PlacementCoordinatorBinding =
   | Readonly<{
       kind: 'migrate-ledger';
@@ -518,13 +561,10 @@ export const executePlacementOperationPlan = async (
             ),
         };
       }
-      if (operation.pairId === null) {
-        throw new Error('prepared operation pair identity is missing');
-      }
-      return {
-        operationId: operation.operationId,
-        groupId: operation.groupId,
-        pairId: operation.pairId,
+      return createPlacementOperationExecutionBindingV1({
+        operation,
+        lifecycle,
+        stageResourceIds: binding.stageResourceIds,
         unstartedForce: null,
         observeActualBefore: async (): Promise<OperationImage> => {
           const current = await readLedgerState(input.env, input.ledgerPath);
@@ -538,20 +578,18 @@ export const executePlacementOperationPlan = async (
         ): Promise<OperationExecutionResult> => {
           const ledger = executionLedger;
           if (ledger === null) throw new Error('validated execution ledger is missing');
-          return lifecycle.execute(operation, binding.stageResourceIds, async () => {
-            const result = failClosedPlannedNoop(
-              operation,
-              await input.executePair(operation, ledger, observation),
-            );
-            input.onStarted(operation, result);
-            const reread = await readLedgerState(input.env, input.ledgerPath);
-            // The durable ledger is the sole composition source after a started operation.
-            if (!reread.ok) throw reread.error;
-            executionLedger = ledgerModelForMutation(reread.value, input.modelNow());
-            return operationResultForFlip(operation, validatedBinding, result, input.reportOp);
-          });
+          const result = failClosedPlannedNoop(
+            operation,
+            await input.executePair(operation, ledger, observation),
+          );
+          input.onStarted(operation, result);
+          const reread = await readLedgerState(input.env, input.ledgerPath);
+          // The durable ledger is the sole composition source after a started operation.
+          if (!reread.ok) throw reread.error;
+          executionLedger = ledgerModelForMutation(reread.value, input.modelNow());
+          return operationResultForFlip(operation, validatedBinding, result, input.reportOp);
         },
-      };
+      });
     },
   );
   const compatibilityLockPort = {

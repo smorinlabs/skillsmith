@@ -1,5 +1,6 @@
 import {
   type AgentsReport,
+  type ApplyApplicationReport,
   CONFIG_KEYS,
   type CliMetadataReport,
   type CommandsReport,
@@ -37,6 +38,8 @@ import { currentWireCodecs } from '../contracts/wire-contracts.ts';
 import { HELP_TOPIC_NAMES, renderTopic } from '../help/topics.ts';
 import { renderAgentsJson } from '../output/agents-json.ts';
 import { renderAgentsMarkdown } from '../output/agents-markdown.ts';
+import { renderApplyHuman } from '../output/apply-human.ts';
+import { renderApplyJson } from '../output/apply-json.ts';
 import { renderCommandsHuman } from '../output/commands-human.ts';
 import { renderCommandsJson } from '../output/commands-json.ts';
 import { renderDoctorHuman } from '../output/doctor-human.ts';
@@ -321,6 +324,20 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
         ),
       (value) => renderAgentsJson(value),
     ),
+    apply: {
+      human: (outcome) => {
+        const value = report<ApplyApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'human') ?? '')
+          : withDiagnostics(outcome, renderApplyHuman(value));
+      },
+      json: (outcome) => {
+        const value = report<ApplyApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : renderApplyJson(value, currentWireCodecs.apply);
+      },
+    },
     configGet: guarded<ConfigGetReport>(
       (value, outcome) => withDiagnostics(outcome, `${value.value ?? ''}\n`),
       (value, outcome) =>

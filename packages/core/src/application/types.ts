@@ -75,6 +75,20 @@ export interface InteractionRequest<TValue> {
   readonly choices: readonly InteractionChoice<TValue>[];
 }
 
+/** Exact immutable operation order presented before an apply confirmation. */
+export interface ExactApprovalPreviewRequest {
+  readonly kind: 'exact-operation-preview';
+  readonly command: 'apply';
+  readonly operationIds: readonly string[];
+}
+
+/** Structured confirmation facts; adapters own presentation and interactive defaults. */
+export interface InteractionConfirmationRequest {
+  readonly id: string;
+  readonly message: string;
+  readonly preview?: ExactApprovalPreviewRequest;
+}
+
 export type InteractionResolution<TValue> =
   | { readonly status: 'resolved'; readonly value: TValue }
   | { readonly status: 'refused'; readonly reason: string }
@@ -87,10 +101,7 @@ export type InteractionResolution<TValue> =
 export interface InteractionPort {
   readonly mode: 'interactive' | 'noninteractive';
   choose<TValue>(request: InteractionRequest<TValue>): Promise<InteractionResolution<TValue>>;
-  confirm(request: {
-    readonly id: string;
-    readonly message: string;
-  }): Promise<InteractionResolution<boolean>>;
+  confirm(request: InteractionConfirmationRequest): Promise<InteractionResolution<boolean>>;
 }
 
 /** Capability-scoped composition context for application services migrated by G1-04. */

@@ -3,6 +3,7 @@ export type OptionValueShape = 'boolean' | 'required' | 'optional';
 export type OptionRelationKind =
   | 'conflicts'
   | 'requires'
+  | 'distinct-values'
   | 'cardinality'
   | 'exclusive-group'
   | 'scope-consistency';
@@ -72,6 +73,10 @@ export type OptionRelationSpec =
       readonly kind: 'requires';
       readonly option: string;
       readonly requiredOption: string;
+    })
+  | (OptionRelationBase & {
+      readonly kind: 'distinct-values';
+      readonly option: string;
     })
   | (OptionRelationBase & {
       readonly kind: 'exclusive-group';

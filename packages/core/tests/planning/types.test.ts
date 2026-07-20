@@ -87,7 +87,7 @@ describe('planning domain types', () => {
   test('keeps preview planning outside executable mutator authority', () => {
     const mutatorParity: Equal<
       CurrentMutatorCommand,
-      'install' | 'uninstall' | 'dev' | 'promote' | 'doctor' | 'export' | 'init'
+      'install' | 'uninstall' | 'dev' | 'promote' | 'doctor' | 'export' | 'init' | 'apply'
     > = true;
     const planningParity: Equal<CurrentPlanningCommand, CurrentMutatorCommand | 'plan'> = true;
     type OpaqueManifest = Extract<OperationImage, { readonly kind: 'opaque-manifest' }>;

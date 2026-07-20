@@ -111,6 +111,7 @@ type _V1RuntimeClosed = Assert<
   Equal<
     keyof V1Runtime,
     | 'agentsV1Codec'
+    | 'applyV1Codec'
     | 'capabilitySnapshotV1Codec'
     | 'commandsV1Codec'
     | 'configGetV1Codec'

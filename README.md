@@ -5,8 +5,8 @@
 Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill discovery
 and management across Claude Code, Codex, Kilo Code, and opencode.
 
-**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `plan`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `init`, `version`, `completion`, and `help` are implemented.
-**P17 target:** desired-state `apply`, narrow `sync`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
+**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `init`, `version`, `completion`, and `help` are implemented.
+**P17 target:** narrow `sync`, `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
 
 ## Example output
 
@@ -81,6 +81,8 @@ skillsmith check --report-only          # report CI checks without failing on fi
 skillsmith verify . --static            # statically verify a plugin or bare skill directory
 skillsmith status --tool codex --user   # correlate desired, locked, ledger, and live state
 skillsmith plan --check                 # preview convergence; exit 7 when drift exists
+skillsmith apply --dry-run              # validate and render fresh convergence without writing
+skillsmith apply --plan review.plan --check # validate exact reviewed work; exit 7 on changes
 skillsmith init --dry-run               # preview creation of the selected manifest
 skillsmith init --tool codex --project  # create project defaults without a lock or live import
 skillsmith install owner/repo           # acquire a skill from a git host
@@ -104,6 +106,13 @@ and live skill roots without running verification or writing recovery state. Use
 does not execute or apply them and does not mutate the selected manifest, lock, ledger, live roots,
 store, or configuration. Human output is the default, `--json` emits the same report as strict
 data, and `--out` writes only the requested owner-only saved-plan artifact.
+
+`apply` is the matching convergence command. Fresh mode prepares the same exact operation set as
+`plan`; changing execution requires approval, while `--dry-run` and `--check` never lock or write.
+`--plan <path>` validates a reviewed saved-plan v1 artifact without replanning or widening its
+selection, and saved execution uses that prior authorization without prompting. Human output and
+strict `apply-report@1` JSON are projections of the same operations, checks, diagnostics,
+validation state, and execution results.
 
 `init` creates one declaration-empty canonical manifest. It selects the Git root when available and
 otherwise the XDG user configuration path; `--file`, `--user`, or `--project` select it explicitly.

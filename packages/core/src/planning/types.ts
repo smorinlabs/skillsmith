@@ -15,7 +15,8 @@ export type CurrentMutatorCommand =
   | 'promote'
   | 'doctor'
   | 'export'
-  | 'init';
+  | 'init'
+  | 'apply';
 export type CurrentPlanningCommand = CurrentMutatorCommand | 'plan';
 export type OperationScope = 'user' | 'project';
 

@@ -595,13 +595,37 @@ describe('G4A-02 export command contract', () => {
         stdout: 'pipe',
         stderr: 'pipe',
       });
-      await Bun.sleep(800);
-      child.kill('SIGINT');
-      cancelledProduct = {
-        exitCode: await child.exited,
-        stdout: await new Response(child.stdout).text(),
-        stderr: await new Response(child.stderr).text(),
-      };
+      let exited = false;
+      try {
+        const compatibilityLocks = [
+          `${cancelledPaths.manifest}.lock`,
+          `${cancelledPaths.lock}.lock`,
+        ] as const;
+        const deadline = Date.now() + 10_000;
+        let lockKinds = await Promise.all(
+          compatibilityLocks.map((path) => fleet.env.pathKind(path)),
+        );
+        while (Date.now() < deadline && lockKinds.some((kind) => kind !== 'dir')) {
+          await Bun.sleep(10);
+          lockKinds = await Promise.all(compatibilityLocks.map((path) => fleet.env.pathKind(path)));
+        }
+        expect(lockKinds, 'export child did not acquire artifact compatibility locks').toEqual([
+          'dir',
+          'dir',
+        ]);
+        child.kill('SIGINT');
+        cancelledProduct = {
+          exitCode: await child.exited,
+          stdout: await new Response(child.stdout).text(),
+          stderr: await new Response(child.stderr).text(),
+        };
+        exited = true;
+      } finally {
+        if (!exited) {
+          child.kill('SIGKILL');
+          await child.exited;
+        }
+      }
     });
     if (cancelledProduct === null) throw new Error('cancelled export product was unavailable');
     const cancelled = requireJson(cancelledProduct, 130, 'artifact cancellation');

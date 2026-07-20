@@ -12,6 +12,21 @@ export interface Placement {
   dangling: boolean; // 'dev' symlink whose resolved target is absent
 }
 
+export type PlacementRootClass = 'absent' | 'container' | 'non-directory';
+
+/** Classify only whether a skills root can contain placements. Symlink roots retain followed
+ * filesystem behavior so links to directories remain supported and unsafe targets fail closed. */
+export const classifyPlacementRoot = async (
+  env: FileReadPort,
+  root: string,
+): Promise<PlacementRootClass> => {
+  const kind = await env.pathKind(root);
+  if (kind === 'absent') return 'absent';
+  if (kind === 'file') return 'non-directory';
+  if (kind === 'symlink' && !(await env.fileExists(root))) return 'absent';
+  return 'container';
+};
+
 const isInsideStoreRoot = (resolvedTarget: string, storeRoot: string): boolean =>
   resolvedTarget === storeRoot ||
   resolvedTarget.startsWith(storeRoot.endsWith(sep) ? storeRoot : `${storeRoot}${sep}`);
@@ -25,6 +40,9 @@ export const classifyPlacement = async (
   storeRoot: string,
 ): Promise<Placement> => {
   const path = join(root, skill);
+  if ((await classifyPlacementRoot(env, root)) !== 'container') {
+    return { skill, root, path, class: 'absent', symlinkTarget: null, dangling: false };
+  }
   const kind = await env.pathKind(path);
 
   if (kind === 'absent' || kind === 'file') {
@@ -53,7 +71,7 @@ export const listPlacements = async (
   root: string,
   storeRoot: string,
 ): Promise<Placement[]> => {
-  if (!(await env.fileExists(root))) return [];
+  if ((await classifyPlacementRoot(env, root)) !== 'container') return [];
   const entries = await env.listDir(root);
   const names = entries.filter((name) => !name.startsWith('.'));
   return Promise.all(names.map((name) => classifyPlacement(env, root, name, storeRoot)));

@@ -36,7 +36,10 @@ const virtualPlacementPorts = (directories: readonly string[]) => {
     ...ENV,
     fileExists: async (path: string) =>
       present.has(path) || directories.some((candidate) => candidate.startsWith(`${path}/`)),
-    pathKind: async (path: string) => (present.has(path) ? ('dir' as const) : ('absent' as const)),
+    pathKind: async (path: string) =>
+      present.has(path) || directories.some((candidate) => candidate.startsWith(`${path}/`))
+        ? ('dir' as const)
+        : ('absent' as const),
     realpath: async (path: string) => path,
     listDir: async (path: string) =>
       directories

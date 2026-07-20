@@ -113,7 +113,9 @@ const contentHashAt = async (path: string) => {
   return hashed.value;
 };
 
-export const createRemoteApplyFixture = async (): Promise<RemoteApplyFixture> => {
+export const createRemoteApplyFixture = async (
+  options: Readonly<{ includeReview?: boolean }> = {},
+): Promise<RemoteApplyFixture> => {
   const [base, remote] = await Promise.all([
     createApplyFixture([], { writeLock: false }),
     buildRemoteFixture(),
@@ -122,17 +124,39 @@ export const createRemoteApplyFixture = async (): Promise<RemoteApplyFixture> =>
     const name = 'lint' as const;
     const source = 'fixture.invalid/acme/single//tools/deep/skills/lint' as const;
     const sourcePath = join(remote.base, 'single-work', 'tools', 'deep', 'skills', name);
+    const declarations = [
+      {
+        name,
+        source,
+        sourcePath: 'tools/deep/skills/lint',
+        checkoutPath: sourcePath,
+        resolvedSha: remote.singleHead,
+      },
+      ...(options.includeReview === true
+        ? [
+            {
+              name: 'review' as const,
+              source: 'fixture.invalid/acme/multi//plugins/web/skills/review' as const,
+              sourcePath: 'plugins/web/skills/review',
+              checkoutPath: join(remote.base, 'multi-work', 'plugins', 'web', 'skills', 'review'),
+              resolvedSha: remote.multiHead,
+            },
+          ]
+        : []),
+    ];
     const manifest = `${[
       '# P4B apply fixture: public identity is fixture.invalid; Git transport is local.',
       'version = 1',
       '',
-      '[[skills]]',
-      `name = "${name}"`,
-      `source = "${source}"`,
-      'tools = ["codex"]',
-      'scope = "user"',
-      'placement = "copy"',
-      '',
+      ...declarations.flatMap((declaration) => [
+        '[[skills]]',
+        `name = "${declaration.name}"`,
+        `source = "${declaration.source}"`,
+        'tools = ["codex"]',
+        'scope = "user"',
+        'placement = "copy"',
+        '',
+      ]),
     ].join('\n')}\n`;
     const lock: PortableLockV1 = {
       version: 1,
@@ -145,27 +169,46 @@ export const createRemoteApplyFixture = async (): Promise<RemoteApplyFixture> =>
         if (!normalized.ok) throw new Error(normalized.error.message);
         return hashManifestSemantics(normalized.value);
       })(),
-      skills: [
-        {
-          name,
-          source,
+      skills: await Promise.all(
+        declarations.map(async (declaration) => ({
+          name: declaration.name,
+          source: declaration.source,
           requestedRef: null,
-          resolvedSha: remote.singleHead,
-          sourcePath: 'tools/deep/skills/lint',
-          contentHash: await contentHashAt(sourcePath),
-        },
-      ],
+          resolvedSha: declaration.resolvedSha,
+          sourcePath: declaration.sourcePath,
+          contentHash: await contentHashAt(declaration.checkoutPath),
+        })),
+      ),
     };
     const encodedLock = serializePortableLock(lock);
     if (!encodedLock.ok) throw new Error(encodedLock.error.message);
+    const gitConfig = join(base.root, 'gitconfig');
     await Promise.all([
       writeFile(base.manifest, manifest),
       writeFile(base.lock, encodedLock.value),
+      writeFile(
+        gitConfig,
+        [
+          `[url "${remote.singleUrl}"]`,
+          `\tinsteadOf = ${remote.singleSource}`,
+          `[url "${remote.multiUrl}"]`,
+          `\tinsteadOf = ${remote.multiSource}`,
+          `[url "${remote.rootUrl}"]`,
+          `\tinsteadOf = ${remote.rootSource}`,
+          '[protocol "file"]',
+          '\tallow = always',
+          '',
+        ].join('\n'),
+      ),
     ]);
     return {
       ...base,
       remote,
-      env: Object.freeze({ ...base.env, ...remote.gitRewriteEnv }),
+      env: Object.freeze({
+        ...base.env,
+        GIT_CONFIG_GLOBAL: gitConfig,
+        GIT_ALLOW_PROTOCOL: 'file:https',
+      }),
       skill: {
         name,
         source,

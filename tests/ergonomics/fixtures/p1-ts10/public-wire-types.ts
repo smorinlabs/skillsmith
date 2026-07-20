@@ -8,6 +8,7 @@ import {
 } from '@skillsmith/core/contracts';
 import {
   type AgentsV1Dto,
+  type ApplyReportV1Dto,
   type CapabilitySnapshotV1Dto,
   type CommandsV1Dto,
   type ConfigGetV1Dto,
@@ -23,6 +24,7 @@ import {
   type UninstallV1Dto,
   type VerifyV1Dto,
   agentsV1Codec,
+  applyV1Codec,
   capabilitySnapshotV1Codec,
   commandsV1Codec,
   configGetV1Codec,
@@ -149,6 +151,7 @@ type _V1RuntimeClosure = Assert<
   Equal<
     keyof V1Runtime,
     | 'agentsV1Codec'
+    | 'applyV1Codec'
     | 'toAgentsV1Dto'
     | 'healthV1Codec'
     | 'toHealthV1Dto'
@@ -200,6 +203,9 @@ type _V1RuntimeClosure = Assert<
 
 type _PlanCodecDto = Assert<
   Equal<ReturnType<typeof planV1Codec.validate>, ExpectedWireResult<PlanV1Dto>>
+>;
+type _ApplyCodecDto = Assert<
+  Equal<ReturnType<typeof applyV1Codec.validate>, ExpectedWireResult<ApplyReportV1Dto>>
 >;
 type _V2RuntimeClosure = Assert<
   Equal<
@@ -367,6 +373,7 @@ type _ErrorHasOnlyPublicFields = Assert<
 >;
 
 const agentsCodec: WireCodec<'agents', 1, AgentsV1Dto> = agentsV1Codec;
+const applyCodec: WireCodec<'apply-report', 1, ApplyReportV1Dto> = applyV1Codec;
 const healthCodec: WireCodec<'health', 1, HealthV1Dto> = healthV1Codec;
 const commandsCodec: WireCodec<'commands', 1, CommandsV1Dto> = commandsV1Codec;
 const configGetCodec: WireCodec<'config-get', 1, ConfigGetV1Dto> = configGetV1Codec;
@@ -462,6 +469,7 @@ export type VersionClosureCanaries = [
 ];
 
 void [
+  applyCodec,
   healthCodec,
   commandsCodec,
   configGetCodec,
@@ -512,6 +520,7 @@ void [
 export type PublicWireCompileContract = {
   readonly registry: typeof registry;
   readonly agents: AgentsV1Dto;
+  readonly apply: ApplyReportV1Dto;
   readonly health: HealthV1Dto;
   readonly commands: CommandsV1Dto;
   readonly configGet: ConfigGetV1Dto;

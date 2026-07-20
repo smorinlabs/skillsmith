@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 const fixture = async (): Promise<RemoteApplyFixture> => {
-  const value = await createRemoteApplyFixture();
+  const value = await createRemoteApplyFixture({ includeReview: true });
   fixtures.push(value);
   return value;
 };
@@ -51,7 +51,11 @@ describe('EWP-WF06', () => {
     const beforeRefusal = await snapshotApplyState(selected);
     const refusal = await runApplyCli(selected, ['apply', '--locked', '--json']);
     expect(refusal.exitCode).toBe(2);
-    expect(JSON.parse(refusal.stdout)).toMatchObject({ exitCode: 2 });
+    expect(JSON.parse(refusal.stdout)).toMatchObject({
+      kind: 'skillsmith.apply-report',
+      state: 'refused',
+      approval: { required: true, outcome: 'refused' },
+    });
     expect(refusal.stderr).toBe('');
     expect(await snapshotApplyState(selected)).toEqual(beforeRefusal);
 
@@ -69,9 +73,7 @@ describe('EWP-WF06', () => {
       'approved fresh apply',
     );
     expect(operationIds(execution)).toEqual(planIds);
-    expect(records(execution.executionResults).map((result) => result.operationId)).toEqual(
-      planIds,
-    );
+    expect(records(execution.results).map((result) => result.operationId)).toEqual(planIds);
     expect(await lstat(selected.skill.livePath)).toBeDefined();
 
     const converged = jsonApplyReport(
@@ -88,7 +90,20 @@ describe('EWP-WF06', () => {
     );
     expect(await snapshotApplyState(selected)).toEqual(noOpState);
 
-    await writeFile(selected.manifest, 'version = 1\n');
+    await writeFile(
+      selected.manifest,
+      `${[
+        'version = 1',
+        '',
+        '[[skills]]',
+        'name = "review"',
+        'source = "fixture.invalid/acme/multi//plugins/web/skills/review"',
+        'tools = ["codex"]',
+        'scope = "user"',
+        'placement = "copy"',
+        '',
+      ].join('\n')}\n`,
+    );
     const withoutPrune = jsonApplyReport(
       await runApplyCli(selected, ['plan', '--json']),
       0,

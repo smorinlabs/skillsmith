@@ -14,6 +14,7 @@ import {
   legacyJournalMatchesLogicalShadow,
   validateJournalV1DtoShape,
 } from '../artifacts/registry.ts';
+import { hashSourceContentV1, projectSourceContent } from '../artifacts/source-content.ts';
 import type { PathKind } from '../env/types.ts';
 import {
   type SkillSmithError,
@@ -85,6 +86,40 @@ type SwapOperation<T> = (
   ledger: SwapLedgerAccess,
   effects: SwapEffects,
 ) => Promise<Result<T, SkillSmithError>>;
+
+const portableContentHash = async (
+  env: SwapPorts,
+  path: string,
+): Promise<Result<string, SkillSmithError>> => {
+  if (!('readFileMetadata' in env) || typeof env.readFileMetadata !== 'function') {
+    return err(genericError('portable source metadata authority is unavailable'));
+  }
+  const projected = await projectSourceContent(
+    env as Parameters<typeof projectSourceContent>[0],
+    path,
+  );
+  if (!projected.ok) {
+    return err(genericError('portable source content could not be projected'));
+  }
+  const hashed = hashSourceContentV1(projected.value);
+  return hashed.ok
+    ? ok(hashed.value)
+    : err(genericError('portable source content could not be hashed'));
+};
+
+const contentMatchesAnyHash = async (
+  env: SwapPorts,
+  path: string,
+  acceptableHashes: readonly string[],
+  v1First: boolean,
+): Promise<Result<boolean, SkillSmithError>> => {
+  if (v1First) {
+    const v1 = await portableContentHash(env, path);
+    if (v1.ok && acceptableHashes.includes(v1.value)) return ok(true);
+  }
+  const legacy = await contentHashOf(env, path);
+  return legacy.ok ? ok(acceptableHashes.includes(legacy.value)) : legacy;
+};
 
 const executeWithSwapState = async <T>(
   request: SwapRequest,
@@ -509,6 +544,716 @@ export const commitRecordOnlyLogicalTransactionObserved = (
     scopeKey,
   );
 
+interface MoveScopeTransactionState {
+  readonly operation: ExecutableOperation;
+  readonly sourceScopeKey: string | null;
+  readonly destinationScopeKey: string | null;
+  readonly sourcePath: string;
+  readonly destinationPath: string;
+  readonly stagingPath: string;
+  readonly backupPath: string;
+  readonly pair: PairRecord;
+}
+
+const moveScopeRoot = (
+  image: OperationImage,
+): Readonly<{ scopeKey: string | null; path: string }> | null => {
+  if (
+    image.kind !== 'placement' ||
+    image.resource.kind !== 'live' ||
+    image.resource.location.kind !== 'machine-bound'
+  ) {
+    return null;
+  }
+  const root = image.resource.projectRoot;
+  if (image.resource.scope === 'user' && root === null) {
+    return { scopeKey: null, path: image.resource.location.path };
+  }
+  if (image.resource.scope === 'project' && root !== null && root.kind === 'machine-bound') {
+    return { scopeKey: root.path, path: image.resource.location.path };
+  }
+  return null;
+};
+
+const moveScopeTransactionState = (
+  model: LedgerModel,
+  operation: ExecutableOperation,
+  transactionId: string,
+): Result<MoveScopeTransactionState, SkillSmithError> => {
+  if (
+    operation.kind !== 'move-scope' ||
+    operation.pairId === null ||
+    operation.skill === null ||
+    operation.tool === null ||
+    operation.scope === null ||
+    operation.before.kind !== 'placement' ||
+    operation.after.kind !== 'placement' ||
+    operation.before.resource.skill !== operation.skill ||
+    operation.after.resource.skill !== operation.skill ||
+    operation.before.resource.tool !== operation.tool ||
+    operation.after.resource.tool !== operation.tool ||
+    operation.after.resource.scope !== operation.scope
+  ) {
+    return err(flipFailedError('move-scope operation identity is invalid'));
+  }
+  const source = moveScopeRoot(operation.before);
+  const destination = moveScopeRoot(operation.after);
+  if (
+    source === null ||
+    destination === null ||
+    (source.scopeKey === destination.scopeKey && source.path === destination.path)
+  ) {
+    return err(flipFailedError('move-scope live locations are invalid'));
+  }
+  const pair = getLedgerPairAt(model, source.scopeKey, operation.skill, operation.tool);
+  if (
+    pair === null ||
+    pair.placementPath !== source.path ||
+    pair.journal != null ||
+    getLedgerPairAt(model, destination.scopeKey, operation.skill, operation.tool) !== null
+  ) {
+    return err(flipRefusedError('move-scope ledger membership changed; retry'));
+  }
+  if (
+    pair.mode !== 'pinned' ||
+    pair.pinned == null ||
+    operation.before.contentHash === null ||
+    operation.after.contentHash === null ||
+    operation.before.contentHash !== operation.after.contentHash ||
+    operation.before.contentHash !== pair.pinned.contentHash ||
+    operation.source?.contentHash !== pair.pinned.contentHash ||
+    operation.before.source?.contentHash !== pair.pinned.contentHash ||
+    operation.after.source?.contentHash !== pair.pinned.contentHash ||
+    operation.before.dangling ||
+    operation.after.dangling ||
+    operation.after.classification !== 'pinned' ||
+    (operation.before.representation === 'copy'
+      ? operation.before.classification !== 'pinned' || operation.before.linkTarget !== null
+      : operation.before.representation === 'symlink'
+        ? operation.before.classification !== 'store-linked' ||
+          operation.before.linkTarget?.kind !== 'machine-bound' ||
+          operation.before.linkTarget.path !== pair.pinned.storePath
+        : true) ||
+    (operation.after.representation === 'copy'
+      ? operation.after.linkTarget !== null
+      : operation.after.representation === 'symlink'
+        ? operation.after.linkTarget?.kind !== 'machine-bound' ||
+          operation.after.linkTarget.path !== pair.pinned.storePath
+        : true) ||
+    (pair.pinned.placement ?? 'copy') !== operation.before.representation
+  ) {
+    return err(flipRefusedError('move-scope requires one reproducible pinned source pair'));
+  }
+  return ok(
+    Object.freeze({
+      operation,
+      sourceScopeKey: source.scopeKey,
+      destinationScopeKey: destination.scopeKey,
+      sourcePath: source.path,
+      destinationPath: destination.path,
+      stagingPath: join(
+        dirname(destination.path),
+        `.skillsmith-staging-${operation.skill}-${transactionId}`,
+      ),
+      backupPath: join(
+        dirname(source.path),
+        `.skillsmith-backup-${operation.skill}-${transactionId}`,
+      ),
+      pair: structuredClone(pair) as PairRecord,
+    }),
+  );
+};
+
+const moveScopeJournal = (
+  state: MoveScopeTransactionState,
+  transactionId: string,
+  startedAt: string,
+): LogicalJournalV1Dto => {
+  const ledgerActual = {
+    resourceId: 'ledger:placements',
+    role: 'ledger' as const,
+    state: 'present' as const,
+    repositoryRevision: { kind: 'resource' as const, digest: ZERO_DIGEST },
+    schemaVersion: 2 as const,
+    semanticHash: ZERO_DIGEST,
+  };
+  return {
+    schemaVersion: 1,
+    kind: 'skillsmith.transaction-journal',
+    transactionId,
+    intent: {
+      operationId: state.operation.operationId,
+      groupId: state.operation.groupId,
+      pairId: state.operation.pairId,
+      kind: state.operation.kind,
+      skill: state.operation.skill,
+      source: state.operation.source as LogicalJournalV1Dto['intent']['source'],
+      tool: state.operation.tool,
+      scope: state.operation.scope,
+      before: state.operation.before as LogicalJournalV1Dto['intent']['before'],
+      after: state.operation.after as LogicalJournalV1Dto['intent']['after'],
+      mutates: state.operation.mutates,
+      reversibility: state.operation
+        .reversibility as LogicalJournalV1Dto['intent']['reversibility'],
+      conflict: state.operation.conflict as LogicalJournalV1Dto['intent']['conflict'],
+    },
+    context: {
+      parentOperationId: state.operation.operationId,
+      command: 'skillsmith-apply',
+      workflow: 'reconcile-move-scope',
+      attempt: 1,
+      startedAt,
+    },
+    disposition: 'forward',
+    phase: 'prepared',
+    actual: {
+      before: [liveActual(state.operation.before, state.pair, 'present'), ledgerActual],
+      after: [],
+      retained: [],
+    },
+    updatedAt: startedAt,
+    completedAt: null,
+  };
+};
+
+const journalOperation = (journal: LogicalJournalV1Dto): ExecutableOperation => ({
+  operationId: journal.intent.operationId,
+  groupId: journal.intent.groupId,
+  pairId: journal.intent.pairId,
+  kind: journal.intent.kind,
+  dependencyMetadata: {
+    domain: 'skillsmith.operation-dependency',
+    schemaVersion: 1,
+    operationIds: [],
+  },
+  skill: journal.intent.skill,
+  source: journal.intent.source as ExecutableOperation['source'],
+  tool: journal.intent.tool,
+  scope: journal.intent.scope,
+  before: journal.intent.before as ExecutableOperation['before'],
+  after: journal.intent.after as ExecutableOperation['after'],
+  reason: { code: 'transaction-recovery', message: 'Recover move-scope transaction.' },
+  selectionSource: 'explicit-targets',
+  preconditionIds: [],
+  requiredCheckIds: [],
+  reversibility: journal.intent.reversibility as ExecutableOperation['reversibility'],
+  mutates: journal.intent.mutates,
+  conflict: journal.intent.conflict as ExecutableOperation['conflict'],
+});
+
+const persistMoveScopePhase = async (
+  ctx: SwapCtx,
+  ledger: SwapLedgerAccess,
+  effects: SwapEffects,
+  journal: LogicalJournalV1Dto,
+  phase: Exclude<LogicalJournalV1Dto['phase'], 'committed'>,
+): Promise<Result<LogicalJournalV1Dto, SkillSmithError>> => {
+  const current = ledger.current().transactions[journal.transactionId] ?? journal;
+  const visible = phase === 'live';
+  const state = moveScopeTransactionState(
+    ledger.current(),
+    journalOperation(current),
+    journal.transactionId,
+  );
+  if (!state.ok) return state;
+  const ledgerActual = current.actual.before.find(({ role }) => role === 'ledger');
+  if (ledgerActual === undefined) {
+    return err(flipFailedError('move-scope ledger observation is missing'));
+  }
+  const next: LogicalJournalV1Dto = {
+    ...current,
+    phase,
+    actual: {
+      ...current.actual,
+      after: visible
+        ? [
+            liveActual(
+              current.intent.after as OperationImage,
+              { ...state.value.pair, placementPath: state.value.destinationPath },
+              'present',
+            ),
+            ledgerActual,
+          ]
+        : [],
+    },
+    updatedAt: effects.journalNow(),
+    completedAt: null,
+  };
+  const advanced = advanceLogicalTransaction(ledger.current(), next);
+  if (!advanced.ok) return err(flipFailedError(advanced.error.message));
+  const persisted = await ledger.persist(advanced.value);
+  if (!persisted.ok) return persisted;
+  if (ctx.pauseAt === phase) await pause(ctx.signal);
+  return ok(ledger.current().transactions[journal.transactionId] ?? next);
+};
+
+const moveScopeImageMatches = async (
+  env: SwapPorts,
+  path: string,
+  image: Extract<OperationImage, { kind: 'placement' }>,
+  operation: ExecutableOperation,
+): Promise<boolean> => {
+  const kind = await env.pathKind(path);
+  if (image.representation === 'symlink') {
+    return (
+      kind === 'symlink' &&
+      image.linkTarget?.kind === 'machine-bound' &&
+      (await env.readLink(path)) === image.linkTarget.path
+    );
+  }
+  if (image.representation !== 'copy' || kind !== 'dir' || image.contentHash === null) return false;
+  const matches = await contentMatchesAnyHash(
+    env,
+    path,
+    [image.contentHash],
+    operation.source?.kind === 'portable',
+  );
+  return matches.ok && matches.value;
+};
+
+const buildMoveScopeStaging = async (
+  ctx: SwapCtx,
+  state: MoveScopeTransactionState,
+): Promise<Result<void, SkillSmithError>> => {
+  const after = state.operation.after;
+  if (after.kind !== 'placement') return err(flipFailedError('move-scope after-image is invalid'));
+  try {
+    if (after.representation === 'symlink') {
+      if (after.linkTarget?.kind !== 'machine-bound') {
+        return err(flipFailedError('move-scope symlink target is invalid'));
+      }
+      await ctx.env.makeSymlink(after.linkTarget.path, state.stagingPath);
+      return ok(undefined);
+    }
+    if (after.representation !== 'copy' || state.pair.pinned == null) {
+      return err(flipFailedError('move-scope representation is unsupported'));
+    }
+    await ctx.env.copyTree(state.pair.pinned.storePath, state.stagingPath);
+    await fsyncTree(ctx.env, state.stagingPath);
+    return (await moveScopeImageMatches(ctx.env, state.stagingPath, after, state.operation))
+      ? ok(undefined)
+      : err(flipFailedError('move-scope staging content changed'));
+  } catch (error) {
+    return err(mapFsErr(error, `cannot stage move-scope ${state.operation.skill ?? 'skill'}`));
+  }
+};
+
+const commitMoveScope = async (
+  ctx: SwapCtx,
+  ledger: SwapLedgerAccess,
+  effects: SwapEffects,
+  journal: LogicalJournalV1Dto,
+  state: MoveScopeTransactionState,
+): Promise<Result<SwapOutcome, SkillSmithError>> => {
+  const pending = ledger.current().transactions[journal.transactionId];
+  if (pending === undefined || pending.phase !== 'live' || pending.disposition !== 'forward') {
+    return err(flipFailedError('move-scope transaction is not ready to commit'));
+  }
+  const completedAt = effects.journalNow();
+  const committed = commitLogicalTransaction(ledger.current(), {
+    ...pending,
+    phase: 'committed',
+    updatedAt: completedAt,
+    completedAt,
+  });
+  if (!committed.ok) return err(flipFailedError(committed.error.message));
+  const persisted = await ledger.persist(committed.value);
+  if (!persisted.ok) return persisted;
+  if (ctx.pauseAt === 'committed') await pause(ctx.signal);
+  const reclaimed = await reclaimBackup(
+    ctx.env,
+    state.backupPath,
+    [state.operation.before.kind === 'placement' ? state.operation.before.contentHash : null],
+    'moved',
+  );
+  if (!reclaimed.ok) return reclaimed;
+  const synced = await guardFs(
+    () => ctx.env.fsyncDir(dirname(state.sourcePath)),
+    `cannot fsync ${dirname(state.sourcePath)}`,
+  );
+  return synced.ok ? ok({ committed: true, ...reclaimed.value }) : synced;
+};
+
+const forwardMoveScope = async (
+  ctx: SwapCtx,
+  ledger: SwapLedgerAccess,
+  effects: SwapEffects,
+  journal: LogicalJournalV1Dto,
+): Promise<Result<SwapOutcome, SkillSmithError>> => {
+  let pending = ledger.current().transactions[journal.transactionId] ?? journal;
+  const state = moveScopeTransactionState(
+    ledger.current(),
+    journalOperation(pending),
+    journal.transactionId,
+  );
+  if (!state.ok) return state;
+  const before = state.value.operation.before;
+  const after = state.value.operation.after;
+  if (before.kind !== 'placement' || after.kind !== 'placement') {
+    return err(flipFailedError('move-scope placement images are invalid'));
+  }
+  const idx = (): number => PHASE_INDEX[pending.phase];
+
+  if (idx() < PHASE_INDEX.staged) {
+    if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+    const stagingKind = await ctx.env.pathKind(state.value.stagingPath);
+    if (stagingKind !== 'absent') {
+      if (
+        !(await moveScopeImageMatches(
+          ctx.env,
+          state.value.stagingPath,
+          after,
+          state.value.operation,
+        ))
+      ) {
+        return err(flipRefusedError('move-scope staging path changed; recovery refused'));
+      }
+    } else {
+      const built = await buildMoveScopeStaging(ctx, state.value);
+      if (!built.ok) return built;
+    }
+    const advanced = await persistMoveScopePhase(ctx, ledger, effects, pending, 'staged');
+    if (!advanced.ok) return advanced;
+    pending = advanced.value;
+  }
+
+  if (idx() < PHASE_INDEX['backed-up']) {
+    if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+    const advanced = await persistMoveScopePhase(ctx, ledger, effects, pending, 'backed-up');
+    if (!advanced.ok) return advanced;
+    pending = advanced.value;
+  }
+  if (idx() <= PHASE_INDEX['backed-up']) {
+    const [sourceKind, backupKind] = await Promise.all([
+      ctx.env.pathKind(state.value.sourcePath),
+      ctx.env.pathKind(state.value.backupPath),
+    ]);
+    if (sourceKind !== 'absent' && backupKind === 'absent') {
+      if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+      if (
+        !(await moveScopeImageMatches(
+          ctx.env,
+          state.value.sourcePath,
+          before,
+          state.value.operation,
+        ))
+      ) {
+        return err(flipRefusedError('move-scope source changed; recovery refused'));
+      }
+      const moved = await guardFs(
+        () => ctx.env.rename(state.value.sourcePath, state.value.backupPath),
+        `cannot back up move-scope ${state.value.operation.skill ?? 'skill'}`,
+      );
+      if (!moved.ok) return moved;
+    } else if (sourceKind === 'absent' && backupKind !== 'absent') {
+      if (
+        !(await moveScopeImageMatches(
+          ctx.env,
+          state.value.backupPath,
+          before,
+          state.value.operation,
+        ))
+      ) {
+        return err(flipRefusedError('move-scope backup changed; recovery refused'));
+      }
+    } else {
+      return err(flipRefusedError('move-scope source/backup state is ambiguous'));
+    }
+  }
+
+  if (idx() < PHASE_INDEX.live) {
+    if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+    const advanced = await persistMoveScopePhase(ctx, ledger, effects, pending, 'live');
+    if (!advanced.ok) return advanced;
+    pending = advanced.value;
+  }
+  if (idx() <= PHASE_INDEX.live) {
+    const [destinationKind, stagingKind] = await Promise.all([
+      ctx.env.pathKind(state.value.destinationPath),
+      ctx.env.pathKind(state.value.stagingPath),
+    ]);
+    if (destinationKind === 'absent' && stagingKind !== 'absent') {
+      if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+      if (
+        !(await moveScopeImageMatches(
+          ctx.env,
+          state.value.stagingPath,
+          after,
+          state.value.operation,
+        ))
+      ) {
+        return err(flipRefusedError('move-scope staging changed; recovery refused'));
+      }
+      const published = await guardFs(
+        () => ctx.env.rename(state.value.stagingPath, state.value.destinationPath),
+        `cannot publish move-scope ${state.value.operation.skill ?? 'skill'}`,
+      );
+      if (!published.ok) return published;
+    } else if (destinationKind !== 'absent' && stagingKind === 'absent') {
+      if (
+        !(await moveScopeImageMatches(
+          ctx.env,
+          state.value.destinationPath,
+          after,
+          state.value.operation,
+        ))
+      ) {
+        return err(flipRefusedError('move-scope destination changed; recovery refused'));
+      }
+    } else {
+      return err(flipRefusedError('move-scope destination/staging state is ambiguous'));
+    }
+  }
+
+  const synced = await Promise.all([
+    guardFs(
+      () => ctx.env.fsyncDir(dirname(state.value.sourcePath)),
+      `cannot fsync ${dirname(state.value.sourcePath)}`,
+    ),
+    guardFs(
+      () => ctx.env.fsyncDir(dirname(state.value.destinationPath)),
+      `cannot fsync ${dirname(state.value.destinationPath)}`,
+    ),
+  ]);
+  const syncFailure = synced.find((result) => !result.ok);
+  if (syncFailure !== undefined && !syncFailure.ok) return syncFailure;
+  return commitMoveScope(ctx, ledger, effects, pending, state.value);
+};
+
+const runMoveScopeTransactionInternal = async (
+  ctx: SwapCtx,
+  ledger: SwapLedgerAccess,
+  effects: SwapEffects,
+  operation: ExecutableOperation,
+): Promise<Result<SwapOutcome, SkillSmithError>> => {
+  const transactionId = effects.newTransactionId(ledger.current());
+  const state = moveScopeTransactionState(ledger.current(), operation, transactionId);
+  if (!state.ok) return state;
+  const [sourceKind, destinationKind, stagingKind, backupKind] = await Promise.all([
+    ctx.env.pathKind(state.value.sourcePath),
+    ctx.env.pathKind(state.value.destinationPath),
+    ctx.env.pathKind(state.value.stagingPath),
+    ctx.env.pathKind(state.value.backupPath),
+  ]);
+  if (
+    sourceKind === 'absent' ||
+    destinationKind !== 'absent' ||
+    stagingKind !== 'absent' ||
+    backupKind !== 'absent' ||
+    operation.before.kind !== 'placement' ||
+    !(await moveScopeImageMatches(ctx.env, state.value.sourcePath, operation.before, operation))
+  ) {
+    return err(flipRefusedError('move-scope filesystem precondition changed; retry'));
+  }
+  const journal = moveScopeJournal(state.value, transactionId, effects.journalNow());
+  const advanced = advanceLogicalTransaction(ledger.current(), journal);
+  if (!advanced.ok) return err(flipFailedError(advanced.error.message));
+  const persisted = await ledger.persist(advanced.value);
+  if (!persisted.ok) return persisted;
+  if (ctx.pauseAt === 'prepared') await pause(ctx.signal);
+  return forwardMoveScope(ctx, ledger, effects, journal);
+};
+
+export const runMoveScopeTransaction = (
+  request: SwapRequest,
+  operation: ExecutableOperation,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  executeWithSwapState(request, (ctx, ledger, effects) =>
+    runMoveScopeTransactionInternal(ctx, ledger, effects, operation),
+  );
+
+export const runMoveScopeTransactionObserved = (
+  request: SwapRequest,
+  operation: ExecutableOperation,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  runMoveScopeTransaction(observeSwapPersistence(request, observation, operation), operation);
+
+export const resumeMoveScopeTransaction = (
+  request: SwapRequest,
+  journal: LogicalJournalV1Dto,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  executeWithSwapState(request, (ctx, ledger, effects) => {
+    const durable = ledger.current().transactions[journal.transactionId] ?? journal;
+    return durable.disposition === 'rollback'
+      ? rollbackMoveScopeTransactionInternal(ctx, ledger, effects, durable, true)
+      : forwardMoveScope(ctx, ledger, effects, durable);
+  });
+
+export const resumeMoveScopeTransactionObserved = (
+  request: SwapRequest,
+  journal: LogicalJournalV1Dto,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  resumeMoveScopeTransaction(
+    observeSwapPersistence(request, observation, { operationId: journal.intent.operationId }),
+    journal,
+  );
+
+const rollbackMoveScopeTransactionInternal = async (
+  ctx: SwapCtx,
+  ledger: SwapLedgerAccess,
+  effects: SwapEffects,
+  journal: LogicalJournalV1Dto,
+  recoveryAttemptBegun: boolean,
+): Promise<Result<SwapOutcome, SkillSmithError>> => {
+  const pending = ledger.current().transactions[journal.transactionId];
+  if (pending === undefined || pending.intent.kind !== 'move-scope') {
+    return err(flipRefusedError('move-scope transaction is not pending'));
+  }
+  const state = moveScopeTransactionState(
+    ledger.current(),
+    journalOperation(pending),
+    journal.transactionId,
+  );
+  if (!state.ok) return state;
+  const before = state.value.operation.before;
+  const after = state.value.operation.after;
+  if (before.kind !== 'placement' || after.kind !== 'placement') {
+    return err(flipFailedError('move-scope rollback images are invalid'));
+  }
+  let rollback = pending;
+  if (pending.disposition === 'forward') {
+    const abort = recoveryAttemptBegun
+      ? abortPendingLogicalTransactionAfterRecoveryAttempt
+      : abortPendingLogicalTransaction;
+    const aborted = abort(ledger.current(), {
+      transactionId: pending.transactionId,
+      pairId: pending.intent.pairId,
+      command: recoveryAttemptBegun ? pending.context.command : 'skillsmith-rollback',
+      workflow: recoveryAttemptBegun ? pending.context.workflow : 'reconcile-move-scope',
+      updatedAt: effects.journalNow(),
+      ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+    });
+    if (!aborted.ok) {
+      return err(logicalRollbackError(aborted.error.message, aborted.error.reason === 'cancelled'));
+    }
+    const persisted = await ledger.persist(aborted.value);
+    if (!persisted.ok) return persisted;
+    const durableRollback = ledger.current().transactions[journal.transactionId];
+    if (durableRollback === undefined || durableRollback.disposition !== 'rollback') {
+      return err(flipFailedError('durable move-scope rollback transaction is missing'));
+    }
+    rollback = durableRollback;
+  }
+
+  const [sourceKind, backupKind] = await Promise.all([
+    ctx.env.pathKind(state.value.sourcePath),
+    ctx.env.pathKind(state.value.backupPath),
+  ]);
+  if (sourceKind === 'absent') {
+    if (backupKind === 'absent') {
+      return err(flipRefusedError('move-scope rollback source and backup are both absent'));
+    }
+    if (
+      !(await moveScopeImageMatches(ctx.env, state.value.backupPath, before, state.value.operation))
+    ) {
+      return err(flipRefusedError('move-scope rollback backup changed; recovery refused'));
+    }
+    const restored = await guardFs(
+      () => ctx.env.rename(state.value.backupPath, state.value.sourcePath),
+      `cannot restore move-scope ${state.value.operation.skill ?? 'skill'}`,
+    );
+    if (!restored.ok) return restored;
+  } else {
+    if (
+      !(await moveScopeImageMatches(ctx.env, state.value.sourcePath, before, state.value.operation))
+    ) {
+      return err(flipRefusedError('move-scope rollback source changed; recovery refused'));
+    }
+    if (backupKind !== 'absent') {
+      const reclaimed = await reclaimBackup(
+        ctx.env,
+        state.value.backupPath,
+        [before.contentHash],
+        'move-scope rollback',
+      );
+      if (!reclaimed.ok || reclaimed.value.backupKept !== null) {
+        return reclaimed.ok
+          ? err(flipRefusedError('move-scope rollback backup changed; recovery refused'))
+          : reclaimed;
+      }
+    }
+  }
+
+  const destinationKind = await ctx.env.pathKind(state.value.destinationPath);
+  if (destinationKind !== 'absent') {
+    if (
+      !(await moveScopeImageMatches(
+        ctx.env,
+        state.value.destinationPath,
+        after,
+        state.value.operation,
+      ))
+    ) {
+      return err(flipRefusedError('move-scope rollback destination changed; recovery refused'));
+    }
+    const removed = await guardFs(
+      () => ctx.env.removeTree(state.value.destinationPath),
+      `cannot remove move-scope destination ${state.value.operation.skill ?? 'skill'}`,
+    );
+    if (!removed.ok) return removed;
+  }
+  const stagingKind = await ctx.env.pathKind(state.value.stagingPath);
+  if (stagingKind !== 'absent') {
+    if (
+      !(await moveScopeImageMatches(ctx.env, state.value.stagingPath, after, state.value.operation))
+    ) {
+      return err(flipRefusedError('move-scope rollback staging changed; recovery refused'));
+    }
+    const removed = await guardFs(
+      () => ctx.env.removeTree(state.value.stagingPath),
+      `cannot remove move-scope staging ${state.value.operation.skill ?? 'skill'}`,
+    );
+    if (!removed.ok) return removed;
+  }
+  const synced = await Promise.all([
+    guardFs(
+      () => ctx.env.fsyncDir(dirname(state.value.sourcePath)),
+      `cannot fsync ${dirname(state.value.sourcePath)}`,
+    ),
+    guardFs(
+      () => ctx.env.fsyncDir(dirname(state.value.destinationPath)),
+      `cannot fsync ${dirname(state.value.destinationPath)}`,
+    ),
+  ]);
+  const syncFailure = synced.find((result) => !result.ok);
+  if (syncFailure !== undefined && !syncFailure.ok) return syncFailure;
+
+  const completedAt = effects.journalNow();
+  const committed = commitLogicalTransaction(ledger.current(), {
+    ...rollback,
+    phase: 'committed',
+    actual: { ...rollback.actual, after: rollback.actual.before },
+    updatedAt: completedAt,
+    completedAt,
+  });
+  if (!committed.ok) return err(flipFailedError(committed.error.message));
+  const persisted = await ledger.persist(committed.value);
+  return persisted.ok ? ok({ committed: true, backupKept: null, warning: null }) : persisted;
+};
+
+export const rollbackMoveScopeTransaction = (
+  request: SwapRequest,
+  journal: LogicalJournalV1Dto,
+  recoveryAttemptBegun = false,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  executeWithSwapState(request, (ctx, ledger, effects) =>
+    rollbackMoveScopeTransactionInternal(ctx, ledger, effects, journal, recoveryAttemptBegun),
+  );
+
+export const rollbackMoveScopeTransactionObserved = (
+  request: SwapRequest,
+  journal: LogicalJournalV1Dto,
+  observation: ObservationBundle,
+  recoveryAttemptBegun = false,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  rollbackMoveScopeTransaction(
+    observeSwapPersistence(request, observation, { operationId: journal.intent.operationId }),
+    journal,
+    recoveryAttemptBegun,
+  );
+
 const hydrateLogicalPendingFromShadow = (
   model: LedgerModel,
   scopeKey: string | null,
@@ -899,9 +1644,14 @@ const buildStaging = async (
       }
       await env.copyTree(plan.install.storePath, j.stagingPath);
       await fsyncTree(env, j.stagingPath);
-      const h = await contentHashOf(env, j.stagingPath);
-      if (!h.ok) return h;
-      if (h.value !== plan.install.contentHash) {
+      const matches = await contentMatchesAnyHash(
+        env,
+        j.stagingPath,
+        [plan.install.contentHash],
+        true,
+      );
+      if (!matches.ok) return matches;
+      if (!matches.value) {
         return err(
           flipFailedError(
             `staging hash mismatch for ${plan.skill}: expected ${plan.install.contentHash}`,
@@ -939,9 +1689,9 @@ const reclaimBackup = async (
     const acceptable = acceptableHashes.filter(
       (h): h is string => typeof h === 'string' && h.length > 0,
     );
-    const h = await contentHashOf(env, backupPath);
-    if (!h.ok) return h;
-    if (acceptable.includes(h.value)) {
+    const matches = await contentMatchesAnyHash(env, backupPath, acceptable, true);
+    if (!matches.ok) return matches;
+    if (matches.value) {
       await env.removeTree(backupPath);
       return ok({ backupKept: null, warning: null });
     }
@@ -1875,6 +2625,76 @@ const sweepCommittedAcquireJournalsInternal = async (
   }
 
   const notes: string[] = [];
+  for (const journal of model.history) {
+    if (
+      journal.intent.kind !== 'move-scope' ||
+      journal.disposition !== 'forward' ||
+      journal.phase !== 'committed' ||
+      journal.intent.skill === null ||
+      journal.intent.tool === null ||
+      journal.intent.before.kind !== 'placement' ||
+      journal.intent.after.kind !== 'placement'
+    ) {
+      continue;
+    }
+    if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+    const source = moveScopeRoot(journal.intent.before as OperationImage);
+    const destination = moveScopeRoot(journal.intent.after as OperationImage);
+    if (source === null || destination === null) continue;
+    const pair = getLedgerPairAt(
+      model,
+      destination.scopeKey,
+      journal.intent.skill,
+      journal.intent.tool,
+    );
+    if (pair === null || pair.placementPath !== destination.path) continue;
+    const backupPath = join(
+      dirname(source.path),
+      `.skillsmith-backup-${journal.intent.skill}-${journal.transactionId}`,
+    );
+    const transactionObservation =
+      observation === undefined ? null : createTransactionObservation(observation, journal);
+    const span =
+      transactionObservation === null
+        ? null
+        : beginRecoveryObservation(transactionObservation, 'cleanup');
+    const reclaimed = await reclaimBackup(
+      ctx.env,
+      backupPath,
+      [journal.intent.before.contentHash, pair.pinned?.contentHash],
+      'moved',
+    );
+    if (!reclaimed.ok) {
+      if (transactionObservation !== null) {
+        completeRecoveryObservation(
+          transactionObservation,
+          span,
+          reclaimed.error.code === 'cancelled' ? 'cancelled' : 'failure',
+          reclaimed.error.code,
+        );
+      }
+      return reclaimed;
+    }
+    const synced = await guardFs(
+      () => ctx.env.fsyncDir(dirname(source.path)),
+      `cannot fsync ${dirname(source.path)}`,
+    );
+    if (!synced.ok) {
+      if (transactionObservation !== null) {
+        completeRecoveryObservation(
+          transactionObservation,
+          span,
+          synced.error.code === 'cancelled' ? 'cancelled' : 'failure',
+          synced.error.code,
+        );
+      }
+      return synced;
+    }
+    if (transactionObservation !== null) {
+      completeRecoveryObservation(transactionObservation, span, 'success', null);
+    }
+    if (reclaimed.value.warning !== null) notes.push(reclaimed.value.warning);
+  }
   const canonicalTargets = targets.filter(({ canonicalJournal }) => canonicalJournal !== null);
   const pendingCanonicalObservations: Array<
     Readonly<{

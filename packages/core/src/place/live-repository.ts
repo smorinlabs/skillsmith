@@ -55,6 +55,11 @@ interface ObservedSkillFileV1 {
   > | null;
 }
 
+interface ObservedPlacementParentV1 {
+  readonly kind: 'directory' | 'absent';
+  readonly metadataIdentity: `metadata:v1:${string}`;
+}
+
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const scopes = new Set<Scope>(['system', 'user', 'project', 'managed']);
 
@@ -82,6 +87,9 @@ const digest = (label: string, value: unknown): string => {
   if (!hashed.ok) throw new Error('live repository hash invariant failed');
   return hashed.value;
 };
+
+const metadataDigest = (label: string, value: unknown): `metadata:v1:${string}` =>
+  `metadata:v1:${digest(label, value).slice('sha256:'.length)}`;
 
 const ownRevision = (input: unknown): Result<ExpectedRevisionV1, StateRepositoryError> => {
   const revision = createExpectedRevisionV1(input);
@@ -201,6 +209,41 @@ const contentRevision = async (
   return hashed.ok ? ok(hashed.value) : err(mapUnknownError(hashed.error));
 };
 
+const observePlacementParent = async (
+  ports: LiveReadPorts,
+  parentPath: string,
+): Promise<ObservedPlacementParentV1> => {
+  const literal = await ports.readFileMetadata(parentPath);
+  if (literal.kind !== 'symlink') {
+    return Object.freeze({
+      kind: literal.kind === 'dir' ? 'directory' : 'absent',
+      metadataIdentity: createFilesystemMetadataIdentityV1(parentPath, literal, 'parent'),
+    });
+  }
+
+  const linkTarget = await ports.readLink(parentPath);
+  const immediateTargetPath = resolve(dirname(parentPath), linkTarget);
+  const immediateTarget = await ports.readFileMetadata(immediateTargetPath);
+  if (immediateTarget.kind === 'absent') throw new Error('placement parent symlink is dangling');
+  const followedTargetPath = resolve(await ports.realpath(parentPath));
+  const followedTarget = await ports.readFileMetadata(followedTargetPath);
+  if (followedTarget.kind !== 'dir') {
+    throw new Error('placement parent symlink does not resolve to a directory');
+  }
+  return Object.freeze({
+    kind: 'directory',
+    metadataIdentity: metadataDigest('placement-parent-symlink', [
+      parentPath,
+      createFilesystemMetadataIdentityV1(parentPath, literal, 'parent'),
+      linkTarget,
+      immediateTargetPath,
+      createFilesystemMetadataIdentityV1(immediateTargetPath, immediateTarget, 'target'),
+      followedTargetPath,
+      createFilesystemMetadataIdentityV1(followedTargetPath, followedTarget, 'target'),
+    ]),
+  });
+};
+
 const observePlacement = async (
   resource: NormalizedLivePlacementResourceV1,
   ports: LiveReadPorts,
@@ -213,17 +256,8 @@ const observePlacement = async (
   const placementPath = resource.placementPath;
   const parentPath = dirname(placementPath);
   try {
-    const kind = await ports.pathKind(placementPath);
-    const target = await ports.readFileMetadata(placementPath);
-    const parent = await ports.readFileMetadata(parentPath);
-    if (
-      (kind === 'absent' && target.kind !== 'absent') ||
-      (kind !== 'absent' && target.kind !== kind) ||
-      (parent.kind !== 'dir' && parent.kind !== 'absent')
-    ) {
-      return err(repositoryError('observation-failed'));
-    }
-    if (kind === 'absent') {
+    const parent = await observePlacementParent(ports, parentPath);
+    const absent = () => {
       const revision = ownRevision({
         schemaVersion: 1,
         domain: 'live',
@@ -232,12 +266,24 @@ const observePlacement = async (
         targetIdentity: placementPath,
         targetKind: 'absent',
         parentIdentity: parentPath,
-        parentKind: parent.kind === 'dir' ? 'directory' : 'absent',
-        parentMetadataIdentity: createFilesystemMetadataIdentityV1(parentPath, parent, 'parent'),
+        parentKind: parent.kind,
+        parentMetadataIdentity: parent.metadataIdentity,
       });
       return revision.ok ? ok(Object.freeze({ revision: revision.value, value: null })) : revision;
+    };
+    if (parent.kind !== 'directory') return absent();
+    const kind = await ports.pathKind(placementPath);
+    const target = await ports.readFileMetadata(placementPath);
+    if (
+      (kind === 'absent' && target.kind !== 'absent') ||
+      (kind !== 'absent' && target.kind !== kind)
+    ) {
+      return err(repositoryError('observation-failed'));
     }
-    if (parent.kind !== 'dir' || (kind !== 'file' && kind !== 'dir' && kind !== 'symlink')) {
+    if (kind === 'absent') {
+      return absent();
+    }
+    if (kind !== 'file' && kind !== 'dir' && kind !== 'symlink') {
       return err(repositoryError('observation-failed'));
     }
     let observedContentRevision: string | null = null;
@@ -320,7 +366,7 @@ const observePlacement = async (
       targetMetadataIdentity: createFilesystemMetadataIdentityV1(placementPath, target, 'target'),
       parentIdentity: parentPath,
       parentKind: 'directory',
-      parentMetadataIdentity: createFilesystemMetadataIdentityV1(parentPath, parent, 'parent'),
+      parentMetadataIdentity: parent.metadataIdentity,
       resourceRevision,
       contentRevision: observedContentRevision,
     });

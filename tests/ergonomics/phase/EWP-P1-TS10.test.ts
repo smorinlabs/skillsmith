@@ -38,6 +38,7 @@ import {
 } from '../../../packages/core/tests/fixtures/wire-codec.ts';
 import { writeFixtureAdapter } from '../fixtures/p1-ts09/write-adapter.ts';
 import {
+  APPLY_HUMAN_GOLDEN,
   CURRENT_JSON_GOLDENS,
   CURRENT_LIFECYCLE_V2_GOLDENS,
   CURRENT_RENDERER_REPORTS,
@@ -53,6 +54,7 @@ const CLI_AUTHORITY = join(ROOT, 'packages/cli/src/contracts/wire-contracts.ts')
 
 const EXPECTED_PATHS = [
   'skillsmith agents',
+  'skillsmith apply',
   'skillsmith check',
   'skillsmith commands',
   'skillsmith config get',
@@ -74,6 +76,7 @@ const EXPECTED_PATHS = [
 
 const EXPECTED_MAPPINGS = [
   ['skillsmith agents', 'agents', 2],
+  ['skillsmith apply', 'apply-report', 1],
   ['skillsmith check', 'health', 1],
   ['skillsmith commands', 'commands', 2],
   ['skillsmith config get', 'config-get', 1],
@@ -96,6 +99,7 @@ const EXPECTED_MAPPINGS = [
 const EXPECTED_CODECS = [
   ['agents', 1],
   ['agents', 2],
+  ['apply-report', 1],
   ['health', 1],
   ['health', 2],
   ['commands', 1],
@@ -136,6 +140,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
   'agents@1': { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: true },
   'agents@2': {
     wireKind: 'skillsmith.agents',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
+  'apply-report@1': {
+    wireKind: 'skillsmith.apply-report',
     embeddedVersion: 'schemaVersion',
     indent: 2,
     terminalLf: true,
@@ -248,6 +258,7 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
 
 const GOLDEN_FILES = {
   agents: 'agents.stdout',
+  apply: 'apply.stdout',
   health: 'health.stdout',
   commands: 'commands.stdout',
   configGetUnscoped: 'config-get-unscoped.stdout',
@@ -282,6 +293,7 @@ const MAPPING_KEYS = ['commandPath', 'contractId', 'version'] as const;
 const CONTRACT_RUNTIME_EXPORTS = ['createWireContractRegistry'] as const;
 const V1_RUNTIME_EXPORTS = [
   'agentsV1Codec',
+  'applyV1Codec',
   'capabilitySnapshotV1Codec',
   'commandsV1Codec',
   'configGetV1Codec',
@@ -530,6 +542,7 @@ const renderedCurrentBytes = (): CurrentBytes => {
   expect(render('promote', CURRENT_RENDERER_REPORTS.flip), 'promote renderer drift').toBe(flip);
   return {
     agents: render('agents', CURRENT_RENDERER_REPORTS.agents),
+    apply: render('apply', CURRENT_RENDERER_REPORTS.apply),
     health,
     commands: render('commands', CURRENT_RENDERER_REPORTS.commands),
     configGetUnscoped: render('configGet', CURRENT_RENDERER_REPORTS.configGetUnscoped),
@@ -607,7 +620,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the eighteen live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the nineteen live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -616,7 +629,7 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(18);
+    expect(new Set(paths).size).toBe(19);
     for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
@@ -640,6 +653,7 @@ describe('EWP-P1-TS10', () => {
     expect(registry.commandMappings).toEqual(mappings);
     const bindingRows = [
       ['agents', 'skillsmith agents'],
+      ['apply', 'skillsmith apply'],
       ['check', 'skillsmith check'],
       ['commands', 'skillsmith commands'],
       ['configGet', 'skillsmith config get'],
@@ -2241,6 +2255,16 @@ describe('EWP-P1-TS10', () => {
   test('family 6: preserves exact current renderer bytes and terminal framing for every path', async () => {
     const actual = renderedCurrentBytes();
     expect(actual).toEqual(CURRENT_JSON_GOLDENS);
+    const applyRenderer = createCurrentRendererRegistry(
+      {} as Parameters<typeof createCurrentRendererRegistry>[0],
+    ).apply;
+    expect(applyRenderer, 'missing current apply human renderer').toBeDefined();
+    expect(
+      applyRenderer === undefined
+        ? ''
+        : stdout(applyRenderer.human(successOutcome(CURRENT_RENDERER_REPORTS.apply))),
+      'apply human renderer drift',
+    ).toBe(APPLY_HUMAN_GOLDEN);
     const encoder = new TextEncoder();
     for (const key of Object.keys(actual) as Array<keyof typeof actual>) {
       const committed = await readFile(
@@ -2264,6 +2288,7 @@ describe('EWP-P1-TS10', () => {
     const fixtures = [
       ['agents', 1, HISTORICAL_JSON_GOLDENS.agents],
       ['agents', 2, CURRENT_JSON_GOLDENS.agents],
+      ['apply-report', 1, CURRENT_JSON_GOLDENS.apply],
       ['health', 1, CURRENT_JSON_GOLDENS.health],
       ['commands', 1, HISTORICAL_JSON_GOLDENS.commands],
       ['commands', 2, CURRENT_JSON_GOLDENS.commands],

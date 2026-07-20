@@ -49,6 +49,12 @@ export type {
   PlanV1Dto,
 } from './plan.ts';
 export { planV1Codec } from './plan.ts';
+export type {
+  ApplyModeV1,
+  ApplyOperationResultV1Dto,
+  ApplyReportV1Dto,
+} from './apply.ts';
+export { applyV1Codec } from './apply.ts';
 export type { ManifestV1Dto } from '../../artifacts/manifest-codec.ts';
 export {
   fromManifestV1Dto,

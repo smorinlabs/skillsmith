@@ -63,7 +63,7 @@ describe('EWP-P1-TS05', () => {
     const target = readme.split('\n').find((line) => line.startsWith('**P17 target:**')) ?? '';
 
     expect(markdownTokens(today).sort()).toEqual(all);
-    expect(markdownTokens(target).sort()).toEqual(['apply', 'gc', 'sync', 'undo', 'update'].sort());
+    expect(markdownTokens(target).sort()).toEqual(['gc', 'sync', 'undo', 'update'].sort());
     for (const future of markdownTokens(target)) {
       expect(today).not.toContain(`\`${future}\``);
       expect(all).not.toContain(future);

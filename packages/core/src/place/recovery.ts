@@ -14,8 +14,12 @@ import { getLedgerPairAt } from './ledger.ts';
 import { beginTransactionRecoveryAttempt } from './logical-transactions.ts';
 import {
   refusedMessage,
+  resumeMoveScopeTransaction,
+  resumeMoveScopeTransactionObserved,
   resumeSwap,
   resumeSwapObserved,
+  rollbackMoveScopeTransaction,
+  rollbackMoveScopeTransactionObserved,
   rollbackSwap,
   rollbackSwapAfterRecoveryAttempt,
   rollbackSwapObserved,
@@ -30,18 +34,47 @@ export interface PlacementRecoveryTarget {
   readonly scopeKey?: string | null;
 }
 
-const journalForTarget = (
+const moveScopeJournalMatchesTarget = (
+  journal: LogicalJournalV1Dto,
+  target: PlacementRecoveryTarget,
+): boolean => {
+  if (journal.intent.kind !== 'move-scope') return false;
+  const targetRoot = target.scopeKey ?? null;
+  return [journal.intent.before, journal.intent.after].some((image) => {
+    if (
+      image.kind !== 'placement' ||
+      image.resource.kind !== 'live' ||
+      image.resource.skill !== target.skill ||
+      image.resource.tool !== target.tool
+    ) {
+      return false;
+    }
+    const root = image.resource.projectRoot;
+    return root === null
+      ? targetRoot === null && image.resource.scope === 'user'
+      : root.kind === 'machine-bound' &&
+          image.resource.scope === 'project' &&
+          root.path === targetRoot;
+  });
+};
+
+export const placementRecoveryJournalForTarget = (
   input: PlacementExecutionInput,
   target: PlacementRecoveryTarget,
 ): LogicalJournalV1Dto | null => {
   const pair = getLedgerPairAt(input.ledger, target.scopeKey ?? null, target.skill, target.tool);
   const transactionId = pair?.journal?.txId;
-  if (transactionId === undefined) return null;
-  return (
-    input.ledger.transactions[transactionId] ??
-    input.ledger.history.find((journal) => journal.transactionId === transactionId) ??
-    null
+  if (transactionId !== undefined) {
+    return (
+      input.ledger.transactions[transactionId] ??
+      input.ledger.history.find((journal) => journal.transactionId === transactionId) ??
+      null
+    );
+  }
+  const unanchoredMoves = Object.values(input.ledger.transactions).filter((journal) =>
+    moveScopeJournalMatchesTarget(journal, target),
   );
+  return unanchoredMoves.length === 1 ? (unanchoredMoves[0] ?? null) : null;
 };
 
 const recoveryCompletion = (
@@ -230,7 +263,7 @@ const recoverPlacementInternal = async (
   target: PlacementRecoveryTarget,
   observation?: ObservationBundle,
 ): Promise<SwapExecutionResult<SwapOutcome>> => {
-  const sourceJournal = journalForTarget(input, target);
+  const sourceJournal = placementRecoveryJournalForTarget(input, target);
   const observationJournal = recoveryObservationJournal(input, direction, sourceJournal);
   const transactionObservation =
     observation === undefined || observationJournal === null
@@ -268,32 +301,71 @@ const recoverPlacementInternal = async (
       return prepared;
     }
     const recovered =
-      direction === 'resume'
-        ? observation === undefined
-          ? await resumeSwap(prepared.request, target.skill, target.tool, target.scopeKey ?? null)
-          : await resumeSwapObserved(
-              prepared.request,
-              target.skill,
-              target.tool,
-              target.scopeKey ?? null,
-              observation,
-            )
-        : observation === undefined
-          ? await (prepared.attemptBegun
-              ? rollbackSwapAfterRecoveryAttempt(
+      prepared.journal?.intent.kind === 'move-scope'
+        ? prepared.journal.disposition === 'rollback'
+          ? observation === undefined
+            ? await rollbackMoveScopeTransaction(
+                prepared.request,
+                prepared.journal,
+                prepared.attemptBegun,
+              )
+            : await rollbackMoveScopeTransactionObserved(
+                prepared.request,
+                prepared.journal,
+                observation,
+                prepared.attemptBegun,
+              )
+          : direction === 'resume'
+            ? observation === undefined
+              ? await resumeMoveScopeTransaction(prepared.request, prepared.journal)
+              : await resumeMoveScopeTransactionObserved(
                   prepared.request,
-                  target.skill,
-                  target.tool,
-                  target.scopeKey ?? null,
+                  prepared.journal,
+                  observation,
                 )
-              : rollbackSwap(prepared.request, target.skill, target.tool, target.scopeKey ?? null))
-          : await rollbackSwapObserved(
-              prepared.request,
-              target.skill,
-              target.tool,
-              target.scopeKey ?? null,
-              observation,
-            );
+            : observation === undefined
+              ? await rollbackMoveScopeTransaction(
+                  prepared.request,
+                  prepared.journal,
+                  prepared.attemptBegun,
+                )
+              : await rollbackMoveScopeTransactionObserved(
+                  prepared.request,
+                  prepared.journal,
+                  observation,
+                  prepared.attemptBegun,
+                )
+        : direction === 'resume'
+          ? observation === undefined
+            ? await resumeSwap(prepared.request, target.skill, target.tool, target.scopeKey ?? null)
+            : await resumeSwapObserved(
+                prepared.request,
+                target.skill,
+                target.tool,
+                target.scopeKey ?? null,
+                observation,
+              )
+          : observation === undefined
+            ? await (prepared.attemptBegun
+                ? rollbackSwapAfterRecoveryAttempt(
+                    prepared.request,
+                    target.skill,
+                    target.tool,
+                    target.scopeKey ?? null,
+                  )
+                : rollbackSwap(
+                    prepared.request,
+                    target.skill,
+                    target.tool,
+                    target.scopeKey ?? null,
+                  ))
+            : await rollbackSwapObserved(
+                prepared.request,
+                target.skill,
+                target.tool,
+                target.scopeKey ?? null,
+                observation,
+              );
     if (transactionObservation !== null) {
       const completion = recoveryCompletion(recovered);
       completeRecoveryObservation(

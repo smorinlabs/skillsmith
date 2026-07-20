@@ -117,6 +117,10 @@ const validateRelation = (
       ? failure(relation.description)
       : null;
   }
+  if (relation.kind === 'distinct-values') {
+    const values = parsed.values.get(relation.option) ?? [];
+    return new Set(values).size !== values.length ? failure(relation.description) : null;
+  }
   if (relation.kind === 'exclusive-group') {
     const active = relation.options.filter((option) => selected(parsed, option));
     return active.length > 1

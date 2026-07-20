@@ -1,11 +1,17 @@
 import { isAbsolute, relative } from 'node:path';
 import { type ArtifactDigest, hashCanonicalInput } from '../artifacts/hash.ts';
-import { hashPortableLock } from '../artifacts/lock.ts';
+import {
+  type PortableLockSkillV1,
+  type PortableLockV1,
+  hashPortableLock,
+} from '../artifacts/lock.ts';
 import type {
   MachineReasonV1,
   PlanImageV1,
   PlanLocationV1,
   PlanOperationV1,
+  PlanScopeV1,
+  PlanToolV1,
   ResourceIdentityV1,
   ResourcePreconditionV1,
   SavedPlanV1,
@@ -13,6 +19,7 @@ import type {
   SelectionPreconditionV1,
 } from '../artifacts/plan-types.ts';
 import { artifactContractRegistry } from '../artifacts/registry.ts';
+import type { NormalizedManifestV1 } from '../artifacts/types.ts';
 import {
   createOperationGroupId,
   createOperationId,
@@ -20,6 +27,7 @@ import {
   createPlanCheckId,
   createPlanningDiagnosticId,
 } from '../planning/create.ts';
+import { comparePlanChecks, comparePlanningDiagnostics } from '../planning/order.ts';
 import type {
   OperationImage,
   OperationResourceIdentity,
@@ -29,7 +37,7 @@ import type {
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { VERSION } from '../version.ts';
-import type { PlanReconcileError, ReconcilePlanProduct } from './types.ts';
+import type { ObservedReconcileInput, PlanReconcileError, ReconcilePlanProduct } from './types.ts';
 
 const location = (path: string): PlanLocationV1 => ({ kind: 'machine-bound', path });
 const portableLocation = (token: string): PlanLocationV1 => ({ kind: 'portable', token });
@@ -255,12 +263,161 @@ export interface SavedPlanProjection {
   readonly diagnosticIds: ReadonlyMap<string, string>;
 }
 
+export interface SavedPlanSelectionPredicates {
+  readonly skills: readonly string[];
+  readonly tools: readonly PlanToolV1[];
+  readonly scopes: readonly PlanScopeV1[];
+}
+
+export interface SavedPlanScopedArtifactFacts {
+  readonly scopedManifestSemanticHash: ArtifactDigest;
+  /** The scoped resource fact exists for both present and absent reviewed lock states. */
+  readonly scopedLockCanonicalHash: ArtifactDigest;
+  readonly selectedSkills: readonly string[];
+  readonly selectedTools: readonly PlanToolV1[];
+  readonly selectedScopes: readonly PlanScopeV1[];
+  readonly selectionOutcome: 'selected' | 'filter-noop';
+}
+
+const compareStrings = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+const canonicalPredicates = (
+  predicates: SavedPlanSelectionPredicates,
+): SavedPlanSelectionPredicates => ({
+  skills: [...new Set(predicates.skills)].sort(compareStrings),
+  tools: [...new Set(predicates.tools)].sort(compareStrings),
+  scopes: [...new Set(predicates.scopes)].sort(compareStrings),
+});
+
+const declarationMatches = (
+  declaration: NormalizedManifestV1['skills'][number],
+  predicates: SavedPlanSelectionPredicates,
+): boolean =>
+  (predicates.skills.length === 0 || predicates.skills.includes(declaration.name)) &&
+  (predicates.tools.length === 0 ||
+    declaration.tools.some((tool) => predicates.tools.includes(tool))) &&
+  (predicates.scopes.length === 0 || predicates.scopes.includes(declaration.scope));
+
+const canonicalDeclaration = (
+  declaration: NormalizedManifestV1['skills'][number],
+  predicates: SavedPlanSelectionPredicates,
+): NormalizedManifestV1['skills'][number] => ({
+  name: declaration.name,
+  source: {
+    host: declaration.source.host,
+    repository: declaration.source.repository,
+    path: declaration.source.path,
+  },
+  ref: declaration.ref,
+  tools: declaration.tools
+    .filter((tool) => predicates.tools.length === 0 || predicates.tools.includes(tool))
+    .sort(compareStrings),
+  scope: declaration.scope,
+  placement: declaration.placement,
+  path: declaration.path,
+});
+
+const canonicalPin = (pin: PortableLockSkillV1): PortableLockSkillV1 => ({
+  name: pin.name,
+  source: pin.source,
+  requestedRef: pin.requestedRef,
+  resolvedSha: pin.resolvedSha,
+  sourcePath: pin.sourcePath,
+  contentHash: pin.contentHash,
+});
+
+/**
+ * Compute the marked, selection-scoped artifact facts used by newly projected saved-v1 plans.
+ * Empty predicate arrays mean wildcard. Prune additionally binds every lock pin whose name is
+ * absent from the complete manifest because each such pin can authorize a delete candidate.
+ */
+export const createSavedPlanScopedArtifactFacts = (input: {
+  readonly manifest: NormalizedManifestV1;
+  readonly lock: PortableLockV1 | null;
+  readonly predicates: SavedPlanSelectionPredicates;
+  readonly prune: boolean;
+}): Result<SavedPlanScopedArtifactFacts, PlanReconcileError> => {
+  const predicates = canonicalPredicates(input.predicates);
+  const rows = input.manifest.skills
+    .filter((declaration) => declarationMatches(declaration, predicates))
+    .map((declaration) => canonicalDeclaration(declaration, predicates))
+    .sort((left, right) => compareStrings(left.name, right.name));
+  const selectedNames = new Set(rows.map(({ name }) => name));
+  const explicitFilter =
+    predicates.skills.length > 0 || predicates.tools.length > 0 || predicates.scopes.length > 0;
+  const selectedSkills = [...selectedNames].sort(compareStrings);
+  const selectedTools =
+    predicates.tools.length > 0
+      ? [...predicates.tools]
+      : [...new Set(rows.flatMap(({ tools }) => tools))].sort(compareStrings);
+  const selectedScopes =
+    predicates.scopes.length > 0
+      ? [...predicates.scopes]
+      : [...new Set(rows.map(({ scope }) => scope))].sort(compareStrings);
+  const manifestNames = new Set(input.manifest.skills.map(({ name }) => name));
+  const pins = (input.lock?.skills ?? [])
+    .filter(
+      ({ name }) =>
+        selectedNames.has(name) || (input.prune && rows.length > 0 && !manifestNames.has(name)),
+    )
+    .map(canonicalPin)
+    .sort((left, right) => compareStrings(left.name, right.name));
+  const manifestHash = hashCanonicalInput(
+    'manifest-semantic',
+    1,
+    JSON.stringify([
+      'skillsmith-saved-plan-scoped-manifest',
+      1,
+      predicates,
+      { prune: input.prune, rows },
+    ]),
+  );
+  if (!manifestHash.ok) {
+    return err({
+      code: 'plan-scoped-manifest-hash',
+      message: manifestHash.error.message,
+      exitClass: 'failure',
+    });
+  }
+  const lockHash = hashCanonicalInput(
+    'lock-canonical',
+    1,
+    JSON.stringify([
+      'skillsmith-saved-plan-scoped-lock',
+      1,
+      predicates,
+      {
+        prune: input.prune,
+        state: input.lock === null ? 'absent' : 'present',
+        pins,
+      },
+    ]),
+  );
+  if (!lockHash.ok) {
+    return err({
+      code: 'plan-scoped-lock-hash',
+      message: lockHash.error.message,
+      exitClass: 'failure',
+    });
+  }
+  return ok({
+    scopedManifestSemanticHash: manifestHash.value,
+    scopedLockCanonicalHash: lockHash.value,
+    selectedSkills,
+    selectedTools,
+    selectedScopes,
+    selectionOutcome: explicitFilter && rows.length === 0 ? 'filter-noop' : 'selected',
+  });
+};
+
 /**
  * Build the execution-bound plan projection once so every public representation
  * publishes the same operation precondition set.
  */
 export const createSavedPlanProjection = (
   product: ReconcilePlanProduct,
+  observation?: ObservedReconcileInput,
 ): Result<SavedPlanProjection, PlanReconcileError> => {
   const { observed } = product.input;
   const machineBoundLivePaths = new Set(product.machineBoundLivePaths);
@@ -290,7 +447,22 @@ export const createSavedPlanProjection = (
       exitClass: 'state',
     });
   }
-  const manifestPreconditionId = preconditionIdFor('manifest-semantic', manifestSemanticRevision);
+  const selectionPredicates: SavedPlanSelectionPredicates = {
+    skills: [],
+    tools: [...product.input.request.tools],
+    scopes: product.input.request.scope === null ? [] : [product.input.request.scope],
+  };
+  const scopedFacts = createSavedPlanScopedArtifactFacts({
+    manifest: observed.manifest.model,
+    lock: observed.lock.state === 'present' ? observed.lock.model : null,
+    predicates: selectionPredicates,
+    prune: product.input.request.prune,
+  });
+  if (!scopedFacts.ok) return scopedFacts;
+  const manifestPreconditionId = preconditionIdFor(
+    'manifest-semantic',
+    scopedFacts.value.scopedManifestSemanticHash,
+  );
   const manifestBytesPreconditionId = preconditionIdFor(
     'manifest-bytes',
     observed.manifest.byteRevision,
@@ -302,7 +474,10 @@ export const createSavedPlanProjection = (
   if (!lockHash.ok) {
     return err({ code: 'plan-lock-hash', message: lockHash.error.message, exitClass: 'state' });
   }
-  const lockPreconditionId = preconditionIdFor('lock-canonical', lockHash.value);
+  const lockPreconditionId = preconditionIdFor(
+    'lock-canonical',
+    scopedFacts.value.scopedLockCanonicalHash,
+  );
   const resourcePreconditions: ResourcePreconditionV1[] = [
     {
       preconditionId: manifestPreconditionId,
@@ -311,7 +486,7 @@ export const createSavedPlanProjection = (
       expectedHash: {
         domain: 'manifest-semantic',
         hashSchemaVersion: 1,
-        digest: manifestSemanticRevision,
+        digest: scopedFacts.value.scopedManifestSemanticHash,
       },
       expectedRevision: { kind: 'artifact-bytes', digest: observed.manifest.byteRevision },
     },
@@ -333,7 +508,7 @@ export const createSavedPlanProjection = (
       expectedHash: {
         domain: 'lock-canonical',
         hashSchemaVersion: 1,
-        digest: lockHash.value,
+        digest: scopedFacts.value.scopedLockCanonicalHash,
       },
       expectedRevision:
         observed.lock.state === 'present'
@@ -421,6 +596,27 @@ export const createSavedPlanProjection = (
     preconditionIdMap.set(precondition.preconditionId, selected.preconditionId);
   }
 
+  const manifestMigrationBefore = portableOperations.find(
+    (operation) => operation.kind === 'migrate-project-config',
+  )?.before;
+  const manifestMigrationSemanticPreconditionId =
+    manifestMigrationBefore?.kind === 'manifest'
+      ? preconditionIdFor('manifest-migration-semantic', manifestMigrationBefore.semanticHash)
+      : null;
+  if (manifestMigrationBefore?.kind === 'manifest') {
+    resourcePreconditions.push({
+      preconditionId: manifestMigrationSemanticPreconditionId as string,
+      resource: { kind: 'manifest-bytes', location: manifestLocation },
+      expectedState: 'present',
+      expectedHash: {
+        domain: 'manifest-semantic',
+        hashSchemaVersion: 1,
+        digest: manifestMigrationBefore.semanticHash,
+      },
+      expectedRevision: { kind: 'artifact-bytes', digest: manifestMigrationBefore.byteHash },
+    });
+  }
+
   const groupIdMap = new Map<string, string>();
   for (const operation of portableOperations) {
     if (groupIdMap.has(operation.groupId)) continue;
@@ -480,7 +676,7 @@ export const createSavedPlanProjection = (
     );
   }
 
-  const resourceIdByOperation = new Map<string, string>();
+  const resourceIdsByOperation = new Map<string, string[]>();
   for (const operation of portableOperations) {
     const precondition = resourcePreconditionForImage(operation.before);
     if (precondition === null) continue;
@@ -491,7 +687,32 @@ export const createSavedPlanProjection = (
       resourcePreconditions.push(selected);
       resourcePreconditionByKey.set(key, selected);
     }
-    resourceIdByOperation.set(operation.operationId, selected.preconditionId);
+    const operationResourceIds = [selected.preconditionId];
+    if (operation.before.kind === 'ledger') {
+      // The saved contract deliberately signs the v1 schema bytes as a ledger-schema resource.
+      // Coordinator preflight separately requires a same-resource guard for the physical ledger
+      // image. Retain both facts; neither substitutes for or weakens the other.
+      const executionResource: ResourcePreconditionV1 = {
+        preconditionId: preconditionIdFor('ledger-execution', operation.before.byteHash),
+        resource: { kind: 'ledger', projectRoot: operation.before.projectRoot },
+        expectedState: 'present',
+        expectedHash: {
+          domain: 'resource',
+          hashSchemaVersion: 1,
+          digest: operation.before.byteHash,
+        },
+        expectedRevision: { kind: 'artifact-bytes', digest: operation.before.byteHash },
+      };
+      const executionKey = `${resourceKey(executionResource.resource)}\0${executionResource.expectedHash.domain}`;
+      const existingExecution = resourcePreconditionByKey.get(executionKey);
+      const selectedExecution = existingExecution ?? executionResource;
+      if (existingExecution === undefined) {
+        resourcePreconditions.push(selectedExecution);
+        resourcePreconditionByKey.set(executionKey, selectedExecution);
+      }
+      operationResourceIds.push(selectedExecution.preconditionId);
+    }
+    resourceIdsByOperation.set(operation.operationId, operationResourceIds);
   }
 
   const addBindingPrecondition = (
@@ -499,23 +720,27 @@ export const createSavedPlanProjection = (
     resource: ResourceIdentityV1,
     domain: ResourcePreconditionV1['expectedHash']['domain'],
     value: unknown,
-  ): void => {
+    expectedState: ResourcePreconditionV1['expectedState'] = 'present',
+  ): string => {
     const key = `${resourceKey(resource)}\0${domain}`;
-    if (resourcePreconditionByKey.has(key)) return;
+    const existing = resourcePreconditionByKey.get(key);
+    if (existing !== undefined) return existing.preconditionId;
     const seedDigest = resourceDigestFor(label, value);
     const canonical = canonicalResourcePrecondition(
       {
         preconditionId: preconditionIdFor(label, seedDigest),
         resource,
-        expectedState: 'present',
+        expectedState,
         expectedHash: { domain, hashSchemaVersion: 1, digest: seedDigest },
-        expectedRevision: { kind: 'resource', digest: seedDigest },
+        expectedRevision:
+          expectedState === 'present' ? { kind: 'resource', digest: seedDigest } : null,
       },
       resource,
       undefined,
     );
     resourcePreconditions.push(canonical);
     resourcePreconditionByKey.set(key, canonical);
+    return canonical.preconditionId;
   };
   const addSourceBindingPrecondition = (source: OperationSource | null): void => {
     if (source?.kind !== 'local-dev') return;
@@ -556,6 +781,115 @@ export const createSavedPlanProjection = (
     }
   }
 
+  const addObservedLivePrecondition = (
+    label: string,
+    input: Readonly<{
+      readonly skill: string;
+      readonly tool: PlanToolV1;
+      readonly scope: PlanScopeV1;
+      readonly placement: Readonly<{
+        readonly path: string;
+        readonly class: 'dev' | 'pinned' | 'store-linked' | 'absent';
+        readonly dangling: boolean;
+      }>;
+    }>,
+  ): void => {
+    const runtimeResource: OperationResourceIdentity = {
+      kind: 'live',
+      skill: input.skill,
+      tool: input.tool,
+      scope: input.scope,
+      projectRoot:
+        input.scope === 'project' && observed.project.projectRoot !== null
+          ? location(observed.project.projectRoot)
+          : null,
+      location: location(input.placement.path),
+    };
+    const resource = portableResource(
+      runtimeResource,
+      manifestLocation,
+      lockLocation,
+      machineBoundLivePaths,
+    );
+    const expectedState = input.placement.class === 'absent' ? 'absent' : 'present';
+    addBindingPrecondition(
+      label,
+      resource,
+      'resource',
+      {
+        resource,
+        expectedState,
+        classification: input.placement.class,
+        dangling: input.placement.dangling,
+      },
+      expectedState,
+    );
+  };
+
+  if (observation !== undefined) {
+    if (observation.resolved !== product.input) {
+      return err({
+        code: 'plan-observation-product-mismatch',
+        message: 'saved plan inventory observation does not belong to the planned product',
+        exitClass: 'failure',
+      });
+    }
+    for (const desired of observation.desiredPlacements) {
+      if (desired.state === 'observed') {
+        addObservedLivePrecondition('selected-live-inventory', {
+          skill: desired.row.declaration.name,
+          tool: desired.row.tool,
+          scope: desired.row.declaration.scope,
+          placement: desired.placement,
+        });
+        if (desired.opposite !== null) {
+          addObservedLivePrecondition('selected-opposite-live-inventory', {
+            skill: desired.row.declaration.name,
+            tool: desired.row.tool,
+            scope: desired.opposite.scope,
+            placement: desired.opposite.placement,
+          });
+        }
+      } else {
+        for (const evidence of desired.evidence) {
+          addObservedLivePrecondition('selected-refusal-live-inventory', {
+            skill: desired.row.declaration.name,
+            tool: desired.row.tool,
+            scope: evidence.scope,
+            placement: evidence.placement,
+          });
+        }
+      }
+    }
+    for (const undeclared of observation.undeclaredPlacements) {
+      addObservedLivePrecondition('selected-undeclared-live-inventory', {
+        skill: undeclared.placement.skill,
+        tool: undeclared.tool,
+        scope: undeclared.scope,
+        placement: undeclared.placement,
+      });
+    }
+    for (const prune of observation.prunePlacements) {
+      addObservedLivePrecondition('selected-prune-live-inventory', {
+        skill: prune.pin.name,
+        tool: prune.tool,
+        scope: prune.scope,
+        placement: prune.placement,
+      });
+    }
+  }
+
+  let projectContextPreconditionId: string | null = null;
+  if (manifestLocation.kind === 'machine-bound' || lockLocation.kind === 'machine-bound') {
+    const root = observed.project.projectRoot ?? observed.project.effectiveCwd;
+    projectContextPreconditionId = addBindingPrecondition(
+      'absolute-artifact-project-context',
+      { kind: 'project-context', root: location(root) },
+      'resource',
+      { root },
+    );
+  }
+
   const memberByResource = new Map<string, SelectionPreconditionMemberV1>();
   for (const precondition of resourcePreconditions) {
     const key = resourceKey(precondition.resource);
@@ -565,9 +899,11 @@ export const createSavedPlanProjection = (
       resourceHash: precondition.expectedHash,
     });
   }
-  const selectionMembers = [...memberByResource.values()].sort((left, right) =>
-    resourceKey(left.resource).localeCompare(resourceKey(right.resource)),
-  );
+  const selectionMembers = [...memberByResource.values()].sort((left, right) => {
+    const a = JSON.stringify(left);
+    const b = JSON.stringify(right);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
   const selectionHash = hashCanonicalInput(
     'selection-set',
     1,
@@ -575,9 +911,9 @@ export const createSavedPlanProjection = (
       'skillsmith-saved-plan-selection',
       1,
       product.plan.selection.source,
-      [...product.input.selectedSkills].sort(),
-      [...product.input.selectedTools].sort(),
-      [...product.input.selectedScopes].sort(),
+      [...selectionPredicates.skills].sort(),
+      [...selectionPredicates.tools].sort(),
+      [...selectionPredicates.scopes].sort(),
       selectionMembers,
     ]),
   );
@@ -594,9 +930,9 @@ export const createSavedPlanProjection = (
     hashSchemaVersion: 1,
     expectedHash: selectionHash.value,
     selectionSource: product.plan.selection.source,
-    skills: [...product.input.selectedSkills],
-    tools: [...product.input.selectedTools],
-    scopes: [...product.input.selectedScopes],
+    skills: [...selectionPredicates.skills],
+    tools: [...selectionPredicates.tools],
+    scopes: [...selectionPredicates.scopes],
     members: selectionMembers,
   };
 
@@ -618,10 +954,18 @@ export const createSavedPlanProjection = (
       manifestBytesPreconditionId,
       lockPreconditionId,
       selectionPrecondition.preconditionId,
+      ...(projectContextPreconditionId === null ? [] : [projectContextPreconditionId]),
       ...operation.preconditionIds.map((id) => preconditionIdMap.get(id) ?? id),
     ]);
-    const resourceId = resourceIdByOperation.get(operation.operationId);
-    if (resourceId !== undefined) preconditionIds.add(resourceId);
+    if (operation.kind === 'migrate-project-config') {
+      if (manifestMigrationSemanticPreconditionId === null) {
+        throw new TypeError('saved manifest migration semantic precondition is missing');
+      }
+      preconditionIds.add(manifestMigrationSemanticPreconditionId);
+    }
+    for (const resourceId of resourceIdsByOperation.get(operation.operationId) ?? []) {
+      preconditionIds.add(resourceId);
+    }
     if (operation.tool !== null && operation.scope !== null) {
       const capabilityId = capabilityIdByToolScope.get(`${operation.tool}\0${operation.scope}`);
       if (capabilityId !== undefined) preconditionIds.add(capabilityId);
@@ -647,7 +991,33 @@ export const createSavedPlanProjection = (
     };
   });
 
+  const referencedGuardIds = new Set(
+    operationsWithoutChecks.flatMap(({ preconditionIds }) => preconditionIds),
+  );
+  const unreferencedGuardIds = [
+    ...resourcePreconditions,
+    selectionPrecondition,
+    ...capabilityPreconditions,
+  ]
+    .map(({ preconditionId }) => preconditionId)
+    .filter((preconditionId) => !referencedGuardIds.has(preconditionId))
+    .sort();
+  const guardCoveredOperations = operationsWithoutChecks.map((operation, index) =>
+    index === 0 && unreferencedGuardIds.length > 0
+      ? {
+          ...operation,
+          preconditionIds: [...operation.preconditionIds, ...unreferencedGuardIds].sort(),
+        }
+      : operation,
+  );
+
   const checkIdMap = new Map<string, string>();
+  const portableOperationIndex = new Map(
+    portableOperations.map(
+      (operation, index) =>
+        [operationIdMap.get(operation.operationId) ?? operation.operationId, index] as const,
+    ),
+  );
   const checks = product.plan.checks
     .map((check): SavedPlanV1['checks'][number] => {
       const operationIds = check.operationIds.map((id) => operationIdMap.get(id) ?? id).sort() as [
@@ -674,8 +1044,14 @@ export const createSavedPlanProjection = (
       checkIdMap.set(check.checkId, checkId);
       return { ...projected, checkId } as unknown as SavedPlanV1['checks'][number];
     })
-    .sort((left, right) => left.checkId.localeCompare(right.checkId));
-  const operations = operationsWithoutChecks.map(
+    .sort((left, right) =>
+      comparePlanChecks(
+        portableOperationIndex,
+        left as unknown as PlanCheck,
+        right as unknown as PlanCheck,
+      ),
+    );
+  const operations = guardCoveredOperations.map(
     (operation, index): PlanOperationV1 => ({
       ...operation,
       requiredCheckIds:
@@ -724,7 +1100,12 @@ export const createSavedPlanProjection = (
       diagnosticIdMap.set(diagnostic.diagnosticId, diagnosticId);
       return { ...projected, diagnosticId } as unknown as SavedPlanV1['diagnostics'][number];
     })
-    .sort((left, right) => left.diagnosticId.localeCompare(right.diagnosticId));
+    .sort((left, right) =>
+      comparePlanningDiagnostics(
+        left as unknown as PlanningDiagnostic,
+        right as unknown as PlanningDiagnostic,
+      ),
+    );
 
   const resourcePreconditionIds = new Set(
     resourcePreconditions.map(({ preconditionId }) => preconditionId),

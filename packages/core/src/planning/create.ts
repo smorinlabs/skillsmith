@@ -65,6 +65,7 @@ const currentPlanningCommands = new Set<string>([
   'doctor',
   'export',
   'init',
+  'apply',
   'plan',
 ]);
 

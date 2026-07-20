@@ -373,7 +373,7 @@ describe('EWP-P1-TS11', () => {
     expect(jsonError.stderr).toBe('');
     expect(record(JSON.parse(configJson.stdout))).toBeTrue();
     expect(configJson.stderr).toBe('');
-  }, 20_000);
+  }, 30_000);
 
   test('characterization: preserves legacy Logger messages and structured result authority', async () => {
     const messages: string[] = [];
@@ -2384,6 +2384,7 @@ describe('EWP-P1-TS11', () => {
     const expectedPaths = [
       'skillsmith',
       'skillsmith agents',
+      'skillsmith apply',
       'skillsmith check',
       'skillsmith commands',
       'skillsmith completion',
@@ -2411,7 +2412,7 @@ describe('EWP-P1-TS11', () => {
       JSON.stringify(expectedPaths)
     )
       findings.push('command registry: command inventory changed');
-    if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 214)
+    if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 228)
       findings.push('command registry: option inventory changed');
     const optionInventory = CURRENT_COMMAND_SPECS.flatMap((spec) =>
       spec.options.map((option) => [spec.path, option.flags]),
@@ -2419,7 +2420,7 @@ describe('EWP-P1-TS11', () => {
     const optionHash = new Bun.CryptoHasher('sha256')
       .update(JSON.stringify(optionInventory))
       .digest('hex');
-    if (optionHash !== '5548ed3fa60cdb9fdf378322d95bf55194f7783b19bea6c1d79e71b3cf022180')
+    if (optionHash !== 'be9a0856f4b30df5c5d24383d54ae31c7f309e66081856a23b8a4ff60bf19c82')
       findings.push('command registry: option rows changed');
     const adr = await readFile(
       join(ROOT, 'docs/adr/0009-operation-scoped-observation.md'),

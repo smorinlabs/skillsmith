@@ -81,6 +81,7 @@ interface OptionContractApi {
     readonly kind:
       | 'conflicts'
       | 'requires'
+      | 'distinct-values'
       | 'cardinality'
       | 'exclusive-group'
       | 'scope-consistency';
@@ -456,6 +457,8 @@ describe('EWP-OPT-TS03', () => {
       } else if (relation.kind === 'requires') {
         expect(relation.option, relation.id).toMatch(/^--/);
         expect(relation.requiredOption, relation.id).toMatch(/^--/);
+      } else if (relation.kind === 'distinct-values') {
+        expect(relation.option, relation.id).toMatch(/^--/);
       } else if (relation.kind === 'scope-consistency') {
         expect(relation.scopeOption, relation.id).toBe('--scope');
         expect(relation.sugars?.length, relation.id).toBeGreaterThan(0);
@@ -471,7 +474,13 @@ describe('EWP-OPT-TS03', () => {
     const relations = api.CURRENT_OPTION_RELATIONS as {
       id: string;
       command: string;
-      kind: 'conflicts' | 'requires' | 'cardinality' | 'exclusive-group' | 'scope-consistency';
+      kind:
+        | 'conflicts'
+        | 'requires'
+        | 'distinct-values'
+        | 'cardinality'
+        | 'exclusive-group'
+        | 'scope-consistency';
     }[];
     const index = relations.findIndex(
       (relation) => relation.command === 'skillsmith verify' && relation.kind === 'conflicts',
@@ -629,6 +638,45 @@ describe('EWP-OPT-TS03', () => {
           'mutation.bad-scope-consistency has unsupported scope shorthand value ghost',
           "mutation.bad-scope-consistency does not close the command's scope shorthands",
         ]),
+      );
+      relations.pop();
+
+      relations.push({
+        id: 'mutation.bad-distinct-values.boolean',
+        command: 'skillsmith doctor',
+        kind: 'distinct-values',
+        option: '--all-tools',
+        description: 'mutation fixture',
+      });
+      expect(api.validateCurrentOptionRelations()).toEqual(
+        expect.arrayContaining([
+          'mutation.bad-distinct-values.boolean option --all-tools must accept a value',
+          'mutation.bad-distinct-values.boolean option --all-tools must be repeatable',
+        ]),
+      );
+      relations.pop();
+
+      relations.push({
+        id: 'mutation.bad-distinct-values.singular',
+        command: 'skillsmith doctor',
+        kind: 'distinct-values',
+        option: '--scope',
+        description: 'mutation fixture',
+      });
+      expect(api.validateCurrentOptionRelations()).toContain(
+        'mutation.bad-distinct-values.singular option --scope must be repeatable',
+      );
+      relations.pop();
+
+      relations.push({
+        id: 'mutation.bad-distinct-values.unknown',
+        command: 'skillsmith doctor',
+        kind: 'distinct-values',
+        option: '--ghost',
+        description: 'mutation fixture',
+      });
+      expect(api.validateCurrentOptionRelations()).toContain(
+        'mutation.bad-distinct-values.unknown has unknown option --ghost',
       );
     } finally {
       relations.splice(baseline);
@@ -1118,7 +1166,7 @@ describe('EWP-OPT-TS04', () => {
     );
     expect(delta).toEqual(expected.map(({ path, flags }) => `${path}:${flags}`));
     expect(api.CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0)).toBe(
-      214,
+      228,
     );
   });
 
@@ -1129,7 +1177,7 @@ describe('EWP-OPT-TS04', () => {
       (count, spec) => count + spec.options.length,
       0,
     );
-    if (inventory !== 214) findings.push(`option inventory is ${inventory}, expected 214`);
+    if (inventory !== 228) findings.push(`option inventory is ${inventory}, expected 228`);
 
     const program = buildProgram();
     for (const commandName of ['dev', 'promote'] as const) {
@@ -1522,6 +1570,8 @@ describe('EWP-OPT-TS09', () => {
       ['--plan', 'one.plan', '--plan', 'two.plan'],
       ['--scope', 'user', '--project'],
       ['--tool', 'codex', '--tool', 'codex'],
+      ['--tool=codex', '--tool', 'codex'],
+      ['-tcodex', '--tool', 'codex'],
     ] as const;
     for (const args of rejected) {
       const result = api.validateOptionInvocation('skillsmith apply', args);
@@ -1529,6 +1579,27 @@ describe('EWP-OPT-TS09', () => {
       if (result.ok) throw new Error(`invalid apply option relation passed: ${args.join(' ')}`);
       expect(result.error.exitCode).toBe(2);
     }
+
+    const relations =
+      api.CURRENT_OPTION_RELATIONS as (typeof api.CURRENT_OPTION_RELATIONS)[number][];
+    const index = relations.findIndex(
+      (relation) => relation.id === 'skillsmith.apply.tool.distinct-values',
+    );
+    expect(index).toBeGreaterThanOrEqual(0);
+    const removed = relations.splice(index, 1)[0];
+    try {
+      expect(api.validateCurrentOptionRelations()).toContain(
+        'missing required current option relation skillsmith.apply.tool.distinct-values',
+      );
+      expect(
+        api.validateOptionInvocation('skillsmith apply', ['--tool', 'codex', '--tool', 'codex']),
+      ).toEqual({ ok: true });
+    } finally {
+      if (removed !== undefined) relations.splice(index, 0, removed);
+    }
+    expect(
+      api.validateOptionInvocation('skillsmith apply', ['--tool', 'codex', '--tool', 'codex']).ok,
+    ).toBeFalse();
   });
 
   test('saved-plan conflicts fail before discovery, plan reads, prompts, or state creation', async () => {
@@ -1558,6 +1629,7 @@ describe('EWP-OPT-TS09', () => {
         ['apply', '--plan', join(sandbox, 'absent.plan'), '--file', 'state.toml', '--json'],
         ['apply', '--plan', join(sandbox, 'absent.plan'), '--yes', '--json'],
         ['apply', '--plan', join(sandbox, 'absent.plan'), '--dry-run', '--check', '--json'],
+        ['apply', '--tool', 'codex', '--tool=codex', '--json'],
       ] as const) {
         const result = await runHermeticCli(args, cwd, env);
         expect(result.code, args.join(' ')).toBe(2);
@@ -1657,21 +1729,20 @@ describe('EWP-OPT-TS10', () => {
     ] as const;
 
     try {
-      for (const { command, target, approvals } of cases) {
-        for (const approval of approvals) {
-          for (const args of [
-            [command, target, '--dry-run', approval],
-            [command, approval, '--dry-run', target],
-          ]) {
-            const before = await snapshotTree(stateRoot);
-            const result = await runHermeticCli(args, cwd, env);
-            expect(result.code).toBe(2);
-            expect(result.stderr).toContain('--dry-run');
-            expect(result.stderr).toContain('--yes');
-            expect(await snapshotTree(stateRoot)).toEqual(before);
-          }
-        }
+      const invocations = cases.flatMap(({ command, target, approvals }) =>
+        approvals.flatMap((approval) => [
+          [command, target, '--dry-run', approval],
+          [command, approval, '--dry-run', target],
+        ]),
+      );
+      const before = await snapshotTree(stateRoot);
+      const results = await Promise.all(invocations.map((args) => runHermeticCli(args, cwd, env)));
+      for (const result of results) {
+        expect(result.code).toBe(2);
+        expect(result.stderr).toContain('--dry-run');
+        expect(result.stderr).toContain('--yes');
       }
+      expect(await snapshotTree(stateRoot)).toEqual(before);
     } finally {
       await rm(sandbox, { recursive: true, force: true });
     }

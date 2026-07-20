@@ -1059,3 +1059,73 @@ export declare const fromJournalV1Dto: (
 export declare const ledgerV1Codec: ArtifactCodec<'ledger', 1, LedgerV1Dto, LedgerModel>;
 export declare const toLedgerV1Dto: (model: LedgerModel) => Result<LedgerV1Dto, ArtifactCodecError>;
 export declare const fromLedgerV1Dto: (dto: LedgerV1Dto) => Result<LedgerModel, ArtifactCodecError>;
+
+export type ApplyModeV1 =
+  | 'fresh-execute'
+  | 'fresh-dry-run'
+  | 'fresh-check'
+  | 'saved-execute'
+  | 'saved-dry-run'
+  | 'saved-check';
+
+export interface ApplyOperationResultV1Dto {
+  readonly operationId: string;
+  readonly outcome: 'succeeded' | 'failed' | 'cancelled' | 'rolled-back' | 'skipped';
+  readonly reason: string | null;
+  readonly error: {
+    readonly code: string;
+    readonly message: string;
+    readonly remediation: string;
+  } | null;
+}
+
+export interface ApplyReportV1Dto {
+  readonly schemaVersion: 1;
+  readonly kind: 'skillsmith.apply-report';
+  readonly command: 'apply';
+  readonly mode: ApplyModeV1;
+  readonly state: 'ready' | 'refused' | 'completed' | 'partial';
+  readonly artifactPair: PlanV1Dto['artifactPair'] | null;
+  readonly savedPlan: {
+    readonly path: string;
+    readonly portability: 'portable' | 'machine-bound';
+    readonly executorSchemaVersion: 1;
+    readonly hashSchemaVersion: 1;
+  } | null;
+  readonly project: PlanV1Dto['project'];
+  readonly options: {
+    readonly locked: boolean;
+    readonly prune: boolean;
+    readonly check: boolean;
+    readonly dryRun: boolean;
+    readonly continueOnError: boolean;
+  };
+  readonly selection: PlanV1Dto['selection'];
+  readonly operations: PlanOperationV1Dto[];
+  readonly checks: PlanCheckV1Dto[];
+  readonly diagnostics: PlanDiagnosticV1Dto[];
+  readonly approval: {
+    readonly required: boolean;
+    readonly outcome:
+      | 'not-required'
+      | 'pending'
+      | 'approved'
+      | 'refused'
+      | 'cancelled'
+      | 'prior-authorization';
+  };
+  readonly validation: {
+    readonly outcome: 'not-run' | 'valid' | 'stale' | 'incompatible';
+    readonly replanned: false;
+  };
+  readonly results: ApplyOperationResultV1Dto[];
+  readonly summary: PlanV1Dto['summary'] & {
+    readonly succeeded: number;
+    readonly failed: number;
+    readonly cancelled: number;
+    readonly rolledBack: number;
+    readonly skipped: number;
+  };
+}
+
+export declare const applyV1Codec: WireCodec<'apply-report', 1, ApplyReportV1Dto>;

@@ -103,6 +103,12 @@ const PROFILE: Readonly<
     capability: 'plan',
     application: 'plan',
   },
+  'skillsmith apply': {
+    group: 'declarative',
+    question: 'How do I converge declared and live skill state?',
+    capability: 'apply',
+    application: 'apply',
+  },
   'skillsmith check': {
     group: 'maintain',
     question: 'Are blocking machine and project checks passing?',
@@ -174,6 +180,7 @@ const DESCRIPTION: Readonly<Record<string, string>> = {
   'skillsmith export': 'Capture portable live skill state in a manifest and lockfile',
   'skillsmith init': 'Create or safely migrate one desired-state manifest',
   'skillsmith plan': 'Preview desired/current convergence without changing selected state',
+  'skillsmith apply': 'Converge live skill state from a manifest or exact reviewed saved plan',
   'skillsmith check': 'Error-severity subset of doctor, suitable for CI',
   'skillsmith verify': 'Verify that a plugin loads under each target tool',
   'skillsmith install': 'Install agent skills from a git host.',
@@ -253,6 +260,12 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     'skillsmith plan --locked --check --json',
     'skillsmith plan --locked --out review.skillsmith.plan',
   ],
+  'skillsmith apply': [
+    'skillsmith apply',
+    'skillsmith apply --project --prune',
+    'skillsmith apply --plan review.skillsmith.plan --dry-run',
+    'skillsmith apply --plan review.skillsmith.plan --check --json',
+  ],
   'skillsmith uninstall': [
     'skillsmith uninstall factor-scan',
     'skillsmith uninstall review --project',
@@ -323,6 +336,17 @@ const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
     [5, 'a selected source could not be resolved'],
     [6, 'a selected path could not be read or written due to permissions'],
     [7, 'a valid --check preview contains drift'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith apply': exitCodes(
+    [0, 'selected state converged, or an exact valid plan was empty or previewed'],
+    [1, 'execution, integrity, or partial convergence failed'],
+    [2, 'invalid selection, mode, approval, or option policy'],
+    [3, 'saved authorization or selected state is invalid, incompatible, or stale'],
+    [4, 'a required apply capability is unavailable'],
+    [5, 'a selected source could not be resolved'],
+    [6, 'a selected path could not be read or written due to permissions'],
+    [7, 'a valid --check plan contains changes'],
     [130, 'cancelled by SIGINT'],
   ),
   'skillsmith config': exitCodes([0, 'configuration help page emitted']),
@@ -492,6 +516,7 @@ export const CURRENT_COMMAND_SPECS: readonly CommandSpec[] = commandPaths.map((p
     application: profile.application,
     ...(path === 'skillsmith status' ? { reportKind: 'status' } : {}),
     ...(path === 'skillsmith plan' ? { reportKind: 'plan' } : {}),
+    ...(path === 'skillsmith apply' ? { reportKind: 'apply' } : {}),
   });
 });
 
@@ -659,6 +684,44 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
     requiredOption: '--out',
     description: '--force requires --out',
   },
+  exclusive('skillsmith apply', ['--user', '--project']),
+  conflicts('skillsmith apply', '--scope', '--user'),
+  conflicts('skillsmith apply', '--scope', '--project'),
+  ...scopeRelations('skillsmith apply', ['user', 'project']),
+  singularOption('skillsmith apply', '--scope'),
+  singularOption('skillsmith apply', '--user'),
+  singularOption('skillsmith apply', '--project'),
+  singularOption('skillsmith apply', '--file'),
+  singularOption('skillsmith apply', '--lockfile'),
+  singularOption('skillsmith apply', '--plan'),
+  {
+    id: 'skillsmith.apply.tool.distinct-values',
+    command: 'skillsmith apply',
+    kind: 'distinct-values',
+    option: '--tool',
+    description: '--tool values must be distinct',
+  },
+  {
+    id: 'skillsmith.apply.lockfile.requires.file',
+    command: 'skillsmith apply',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  conflicts('skillsmith apply', '--dry-run', '--check'),
+  conflicts('skillsmith apply', '--yes', '--dry-run'),
+  conflicts('skillsmith apply', '--yes', '--check'),
+  conflicts('skillsmith apply', '--plan', '--file'),
+  conflicts('skillsmith apply', '--plan', '--lockfile'),
+  conflicts('skillsmith apply', '--plan', '--tool'),
+  conflicts('skillsmith apply', '--plan', '--scope'),
+  conflicts('skillsmith apply', '--plan', '--user'),
+  conflicts('skillsmith apply', '--plan', '--project'),
+  conflicts('skillsmith apply', '--plan', '--locked'),
+  conflicts('skillsmith apply', '--plan', '--prune'),
+  conflicts('skillsmith apply', '--plan', '--yes'),
+  conflicts('skillsmith apply', '--plan', '--continue-on-error'),
   conflicts('skillsmith verify', '--static', '--deep'),
   conflicts('skillsmith install', '--deep', '--no-verify'),
   conflicts('skillsmith install', '--yes', '--dry-run'),
@@ -973,6 +1036,16 @@ export const validateCurrentOptionRelations = (): readonly string[] => {
       validateOperand(relation.requiredOption, 'required option');
       if (relation.option === relation.requiredOption)
         errors.push(`${id} cannot require an option to require itself`);
+      continue;
+    }
+    if (relation.kind === 'distinct-values') {
+      validateOperand(relation.option, 'option');
+      const operand =
+        typeof relation.option === 'string' ? options.get(relation.option) : undefined;
+      if (operand !== undefined && operand.valueShape === 'boolean')
+        errors.push(`${id} option ${String(relation.option)} must accept a value`);
+      if (operand !== undefined && !operand.repeatable)
+        errors.push(`${id} option ${String(relation.option)} must be repeatable`);
       continue;
     }
     if (relation.kind === 'scope-consistency') {

@@ -27,7 +27,11 @@ import {
   type LedgerWriterBarrierKind,
   createTestNodeLedgerWriter,
 } from '../../src/artifacts/ledger-writer.ts';
-import { cleanupHistoryVictim, selectBoundedHistory } from '../../src/place/history.ts';
+import {
+  cleanupHistoryVictim,
+  ledgerJournalAnchors,
+  selectBoundedHistory,
+} from '../../src/place/history.ts';
 import { emptyLedgerModel } from '../../src/place/ledger.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 
@@ -440,6 +444,98 @@ describe('bounded history and one-victim cleanup', () => {
     expect(selected.history).toEqual([rollback]);
   });
 
+  test('protects distinct source and destination placement anchors for one move-scope history row', async () => {
+    const decoded = unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(V2_GOLDEN))));
+    const seed = decoded.model.history[0];
+    if (seed === undefined) throw new Error('missing committed history seed');
+    const digest = parseArtifactDigest(`sha256:${'a'.repeat(64)}`);
+    if (!digest.ok) throw new Error('fixture digest invalid');
+    const sourcePath = '/fixture/user/skills/alpha';
+    const destinationRoot = '/fixture/project';
+    const destinationPath = `${destinationRoot}/.agents/skills/alpha`;
+    const source = {
+      kind: 'portable' as const,
+      identity: { host: 'fixture.invalid', repository: 'acme/skills', path: 'skills/alpha' },
+      requestedRef: null,
+      resolvedSha: 'a'.repeat(40),
+      sourcePath: 'skills/alpha',
+      contentHash: digest.value,
+    };
+    const before = {
+      kind: 'placement' as const,
+      resource: {
+        kind: 'live' as const,
+        skill: 'alpha',
+        tool: 'codex' as const,
+        scope: 'user' as const,
+        projectRoot: null,
+        location: { kind: 'machine-bound' as const, path: sourcePath },
+      },
+      classification: 'pinned' as const,
+      representation: 'copy' as const,
+      linkTarget: null,
+      dangling: false,
+      source,
+      contentHash: digest.value,
+    };
+    const after = {
+      ...before,
+      resource: {
+        ...before.resource,
+        scope: 'project' as const,
+        projectRoot: { kind: 'machine-bound' as const, path: destinationRoot },
+        location: { kind: 'machine-bound' as const, path: destinationPath },
+      },
+    };
+    const liveBefore = {
+      resourceId: 'live:alpha:codex',
+      role: 'live' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest: digest.value },
+      placementPath: sourcePath,
+      liveKind: 'directory' as const,
+      mode: 'pinned' as const,
+      symlinkTarget: null,
+      contentHash: digest.value,
+    };
+    const move: LogicalJournalV1Dto = {
+      ...seed,
+      transactionId: 'tx:move-scope-history',
+      intent: {
+        operationId: 'operation:move-scope-history',
+        groupId: 'group:alpha',
+        pairId: 'pair:alpha:codex',
+        kind: 'move-scope',
+        skill: 'alpha',
+        source,
+        tool: 'codex',
+        scope: 'project',
+        before,
+        after,
+        mutates: { live: true, manifest: false, lock: false, ledger: true },
+        reversibility: { kind: 'conditional', retentionResourceIds: ['pair:alpha:codex'] },
+        conflict: null,
+      },
+      actual: {
+        before: [liveBefore, ...seed.actual.before],
+        after: [{ ...liveBefore, placementPath: destinationPath }, ...seed.actual.after],
+        retained: [],
+      },
+    };
+
+    const anchors = unwrap(ledgerJournalAnchors(move));
+    expect(anchors).toHaveLength(2);
+    expect(anchors.some((anchor) => anchor.includes(sourcePath))).toBeTrue();
+    expect(anchors.some((anchor) => anchor.includes(destinationPath))).toBeTrue();
+    const selected = unwrap(
+      selectBoundedHistory({
+        ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+        history: [move],
+      }),
+    );
+    expect(selected.history).toEqual([move]);
+  });
+
   test('keeps the newest 256 complete journals in commit order for one deep anchor', async () => {
     const decoded = unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(V2_GOLDEN))));
     const seed = decoded.model.history[0];
@@ -540,17 +636,34 @@ describe('bounded history and one-victim cleanup', () => {
     roots.push(root);
     const path = join(root, 'placements.json');
     const durable = await cleanupHistoryModel(root, 257, 0);
-    const terminal = await cleanupHistoryModel(root, 258, 0);
+    const durableTail = durable.model.history.at(-1);
+    if (durableTail === undefined) throw new Error('missing durable history tail');
+    const terminalTransactionId = (257).toString(16).padStart(16, '0');
+    const terminal = {
+      model: {
+        ...durable.model,
+        history: [
+          ...durable.model.history,
+          {
+            ...durableTail,
+            transactionId: terminalTransactionId,
+            intent: {
+              ...durableTail.intent,
+              operationId: `operation:${terminalTransactionId}`,
+            },
+          },
+        ],
+      },
+    };
     const writer = await createTestNodeLedgerWriter(path, {});
-    const persisted = unwrap(
-      await writer.replace({ model: durable.model, expectedByteRevision: null }),
-    );
-    expect(persisted.model.history).toHaveLength(257);
+    const durableBytes = unwrap(ledgerV2Codec.encode(durable.model));
+    await writeFile(path, durableBytes, { mode: 0o600 });
+    expect(durable.model.history).toHaveLength(257);
 
     const finalized = unwrap(
       await writer.finalizeHistory({
         model: terminal.model,
-        expectedByteRevision: persisted.byteRevision,
+        expectedByteRevision: ledgerByteRevision(durableBytes),
       }),
     );
     expect(finalized.model.history).toHaveLength(256);
