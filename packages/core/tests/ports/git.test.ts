@@ -128,6 +128,29 @@ describe('GitPort', () => {
     ).toEqual(blob);
   });
 
+  test('preserves tree object mode and commit entries for exact content projection', async () => {
+    const git = createGitPort(
+      processPort(async () => ({
+        code: 0,
+        stdout: [
+          `100755 blob ${'a'.repeat(40)}\tbin/run.sh`,
+          `120000 blob ${'b'.repeat(40)}\tlink.md`,
+          `160000 commit ${'c'.repeat(40)}\tvendor/submodule`,
+          '',
+        ].join('\0'),
+        stderr: '',
+        timedOut: false,
+      })),
+      unusedBinaryProcessPort(),
+    );
+
+    expect(await git.listTree({ repositoryRoot: '/repo', ref: 'HEAD' })).toEqual([
+      { mode: '100755', kind: 'blob', path: 'bin/run.sh' },
+      { mode: '120000', kind: 'blob', path: 'link.md' },
+      { mode: '160000', kind: 'commit', path: 'vendor/submodule' },
+    ]);
+  });
+
   test('delimits intent fields and restores bounded fetch and checkout execution', async () => {
     const calls: Array<{ args: readonly string[]; timeoutMs: number | undefined }> = [];
     const sha = '0123456789abcdef0123456789abcdef01234567';

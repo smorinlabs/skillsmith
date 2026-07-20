@@ -123,6 +123,9 @@ const portableManaged = (
   }
   if (fact.liveContentHash === null) return 'invalid-content';
   if (fact.liveContentHash !== pinned.contentHash) return 'live-content-mismatch';
+  if (fact.portableContentHash == null || !DIGEST.test(fact.portableContentHash)) {
+    return 'invalid-content';
+  }
   const path = portablePlacementPath(observation, fact);
   if (typeof path === 'string' && path === 'invalid-path') return path;
   const source = Object.freeze(normalized.value);
@@ -135,7 +138,7 @@ const portableManaged = (
     requestedRef: origin.refRequested,
     resolvedSha: origin.refResolved,
     sourcePath: origin.skillPath,
-    contentHash: pinned.contentHash as PortableExportCandidate['contentHash'],
+    contentHash: fact.portableContentHash,
     placement: entry.placement,
     path,
     classification: 'portable-managed' as const,
@@ -183,7 +186,9 @@ const portableDev = (
     '/',
   );
   if (sourceRelative !== dev.sourceRelPath) return 'incomplete-provenance';
-  if (fact.liveContentHash === null) return 'invalid-content';
+  if (fact.portableContentHash == null || !DIGEST.test(fact.portableContentHash)) {
+    return 'invalid-content';
+  }
   const path = portablePlacementPath(observation, fact);
   if (typeof path === 'string' && path === 'invalid-path') return path;
   const source = Object.freeze(normalized.value);
@@ -196,7 +201,7 @@ const portableDev = (
     requestedRef: inspected.headSha,
     resolvedSha: inspected.headSha,
     sourcePath: dev.sourceRelPath,
-    contentHash: fact.liveContentHash,
+    contentHash: fact.portableContentHash,
     placement: entry.placement,
     path,
     classification: 'portable-dev' as const,

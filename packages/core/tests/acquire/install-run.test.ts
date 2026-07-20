@@ -22,8 +22,10 @@ import type { CandidateSkill, InstallDeps, InstallOptions } from '../../src/acqu
 import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
 import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
+import { lockV1Codec } from '../../src/artifacts/lock-codec.ts';
 import { manifestV1Codec } from '../../src/artifacts/manifest-codec.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
+import { hashSourceContentV1, projectSourceContent } from '../../src/artifacts/source-content.ts';
 import type { ExecResult } from '../../src/env/types.ts';
 import { type SkillSmithError, sourceUnresolvableError } from '../../src/errors.ts';
 import {
@@ -386,6 +388,16 @@ describe('runInstall — idempotence / update / repair', () => {
     const manifestBytes = await f.env.readText(file);
     const lockBytes = await f.env.readText(lockfile);
     const liveTarget = await readlink(livePath);
+    const ledger = await led();
+    const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
+    const projected = await projectSourceContent(f.env, pair?.pinned?.storePath ?? '');
+    if (!projected.ok) throw new Error(projected.error.message);
+    const portable = hashSourceContentV1(projected.value);
+    if (!portable.ok) throw new Error(portable.error.message);
+    const savedLock = lockV1Codec.decode(new TextEncoder().encode(lockBytes));
+    if (!savedLock.ok) throw new Error(savedLock.error.message);
+    expect(savedLock.value.model.skills[0]?.contentHash).toBe(portable.value);
+    expect(savedLock.value.model.skills[0]?.contentHash).not.toBe(pair?.pinned?.contentHash);
 
     const exact = await runInstall(f.env, options, makeDeps());
     if (!exact.ok) throw new Error(msg(exact.error));
@@ -393,6 +405,7 @@ describe('runInstall — idempotence / update / repair', () => {
     expect(exact.value.plan.operations).toEqual([]);
     expect(exact.value.executionResults).toEqual([]);
 
+    await f.env.makeDir(join(pair?.pinned?.storePath ?? '', 'legacy-invisible-empty'));
     await f.env.removeTree(lockfile);
     const repaired = await runInstall(f.env, options, makeDeps());
     if (!repaired.ok) throw new Error(msg(repaired.error));
@@ -402,6 +415,41 @@ describe('runInstall — idempotence / update / repair', () => {
     expect(await f.env.readText(file)).toBe(manifestBytes);
     expect(await f.env.readText(lockfile)).toBe(lockBytes);
     expect(await readlink(livePath)).toBe(liveTarget);
+  });
+
+  test('a saving rerun never legitimizes a file-tampered elided store as exact Git content', async () => {
+    const file = join(f.base, 'tampered-store.toml');
+    const lockfile = join(f.base, 'tampered-store.lock');
+    const options = { ...userOpts, tools: ['claude-code'] as const, file, lockfile };
+    const installed = await runInstall(f.env, options, makeDeps());
+    if (!installed.ok) throw new Error(msg(installed.error));
+    const beforeLock = await f.env.readText(lockfile);
+    const pair = getPairAt(await led(), null, 'factor-scan', 'claude-code');
+    await f.env.writeTextFile(join(pair?.pinned?.storePath ?? '', 'SKILL.md'), '# tampered\n');
+
+    let fetches = 0;
+    let materializations = 0;
+    const rerun = await runInstall(
+      f.env,
+      options,
+      makeDeps({
+        transport: {
+          ...fixture.transport,
+          fetchRepo: async (...args) => {
+            fetches += 1;
+            return fixture.transport.fetchRepo(...args);
+          },
+          materializeSkill: async (...args) => {
+            materializations += 1;
+            return fixture.transport.materializeSkill(...args);
+          },
+        },
+      }),
+    );
+    if (!rerun.ok) throw new Error(msg(rerun.error));
+    expect(rerun.value.results[0]).toMatchObject({ action: 'failed' });
+    expect({ fetches, materializations }).toEqual({ fetches: 1, materializations: 1 });
+    expect(await f.env.readText(lockfile)).toBe(beforeLock);
   });
 
   test('--ref v1.0.0 --force → updated at the tag rev (deliberate downgrade)', async () => {
@@ -2389,7 +2437,7 @@ describe('runInstall — dry run', () => {
     expect(result.value.plan.operations[0]?.kind).toBe('migrate-ledger');
     expect(result.value.summary.installed).toBe(2);
     expect(calls).toEqual({
-      resolveRef: 1,
+      resolveRef: 0,
       fetchRepo: 1,
       listSkills: 1,
       materializeSkill: 1,

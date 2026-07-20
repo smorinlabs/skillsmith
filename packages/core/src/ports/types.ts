@@ -121,7 +121,9 @@ export interface GitTreeRequest extends GitRequest {
 
 export interface GitTreeEntry {
   readonly path: string;
-  readonly kind: 'blob' | 'tree';
+  readonly kind: 'blob' | 'tree' | 'commit';
+  /** Raw six-octal-digit Git tree mode when the adapter can preserve it. */
+  readonly mode?: string;
 }
 
 export interface GitBlobRequest extends GitRequest {

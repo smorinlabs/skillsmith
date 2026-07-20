@@ -75,6 +75,13 @@ const pinFor = (
   contentHash,
 });
 
+const storePathFor = (
+  root: string,
+  row: NormalizedManifestDeclaration,
+  pin: PortableLockSkillV1,
+): string =>
+  join(root, 'data', 'store', 'acme', `skills@${pin.resolvedSha.slice(0, 12)}`, row.name);
+
 const pairFor = (
   row: NormalizedManifestDeclaration,
   pin: PortableLockSkillV1,
@@ -106,6 +113,14 @@ const pairFor = (
     installedAt: '2026-07-19T00:00:00.000Z',
   },
 });
+
+const withPinnedContentHash = (
+  pair: LedgerPairV1Dto,
+  contentHash: ArtifactDigest,
+): LedgerPairV1Dto => {
+  if (pair.pinned == null) throw new Error('fixture pair lacks a pin');
+  return { ...pair, pinned: { ...pair.pinned, contentHash } };
+};
 
 const ledgerFor = (
   root: string,
@@ -451,6 +466,7 @@ describe('desired/current plan reconciliation', () => {
     );
     await mkdir(storePath, { recursive: true });
     await writeFile(join(storePath, 'SKILL.md'), '# Alpha\n');
+    const convergedPair = pairFor(row, resolved.lock, live, storePath);
     const ownedInput = withLedger(
       productInput(state.root, [resolved]),
       state.root,
@@ -459,7 +475,7 @@ describe('desired/current plan reconciliation', () => {
           scope: 'user',
           row,
           tool: 'codex',
-          pair: pairFor(row, resolved.lock, live, storePath),
+          pair: withPinnedContentHash(convergedPair, digest('9')),
         },
       ]),
     );
@@ -509,7 +525,7 @@ describe('desired/current plan reconciliation', () => {
       ),
     ).toBeTrue();
 
-    const storePath = join(state.root, 'store', 'alpha');
+    const storePath = storePathFor(state.root, row, resolved.lock);
     const managedInput = withLedger(
       productInput(state.root, [resolved]),
       state.root,
@@ -628,7 +644,10 @@ describe('desired/current plan reconciliation', () => {
           scope: 'user',
           row,
           tool: 'codex',
-          pair: pairFor(row, resolved.lock, userLive, storePath),
+          pair: withPinnedContentHash(
+            pairFor(row, resolved.lock, userLive, storePath),
+            digest('9'),
+          ),
         },
       ]),
     );
@@ -666,7 +685,12 @@ describe('desired/current plan reconciliation', () => {
           scope: 'user',
           row: desired,
           tool: 'codex',
-          pair: pairFor(desired, row.lock, customUserLive, join(state.root, 'store', 'alpha')),
+          pair: pairFor(
+            desired,
+            row.lock,
+            customUserLive,
+            storePathFor(state.root, desired, row.lock),
+          ),
         },
       ]),
     );
@@ -711,7 +735,7 @@ describe('desired/current plan reconciliation', () => {
       };
       let input = productInput(state.root, [row]);
       if (selected.kind === 'modified' || selected.kind === 'wrong-source') {
-        const storePath = join(state.root, 'store', 'alpha');
+        const storePath = storePathFor(state.root, desired, row.lock);
         const pair = pairFor(desired, row.lock, userLive, storePath);
         if (pair.origin === undefined) throw new Error('fixture pair lacks origin');
         const selectedPair: LedgerPairV1Dto =
@@ -933,7 +957,10 @@ describe('desired/current plan reconciliation', () => {
       ...baseLock.model,
       skills: [...baseLock.model.skills, orphanPin],
     };
-    const ownedPair = pairFor(orphan, orphanPin, live, join(state.root, 'store', 'orphan'));
+    const ownedPair = withPinnedContentHash(
+      pairFor(orphan, orphanPin, live, storePathFor(state.root, orphan, orphanPin)),
+      digest('9'),
+    );
     const input: ResolvedPlanInput = withLedger(
       {
         ...base,

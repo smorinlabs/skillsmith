@@ -222,4 +222,44 @@ describe('resolveRemoteSource', () => {
     expect(fetches).toBe(0);
     expect(allocations).toBe(0);
   });
+
+  test('forces a fresh materialization when portable artifacts may be saved', async () => {
+    let probes = 0;
+    let fetches = 0;
+    let allocations = 0;
+    const result = await resolveRemoteSource({
+      ports: portsWithPathKind('dir'),
+      source: sourceOf('acme/repo//plugins/fh/skills/factor-scan'),
+      transport: transportWith({
+        resolveRef: async () => {
+          probes += 1;
+          return ok(SHA);
+        },
+        fetchRepo: async () => {
+          fetches += 1;
+          return ok({ sha: SHA });
+        },
+      }),
+      ledger: emptyLedger(NOW),
+      scopeKey: null,
+      storeRoot: '/store',
+      allowStoreElision: false,
+      createFetchDirectory: () => {
+        allocations += 1;
+        return '/fetch/fresh';
+      },
+    });
+
+    expect(result).toEqual({
+      kind: 'resolved',
+      materialization: {
+        sha: SHA,
+        skillName: 'factor-scan',
+        skillPath: 'plugins/fh/skills/factor-scan',
+        materializedDir: '/fetch/tx/plugins/fh/skills/factor-scan',
+      },
+      cleanupDirectory: '/fetch/fresh',
+    });
+    expect({ probes, fetches, allocations }).toEqual({ probes: 0, fetches: 1, allocations: 1 });
+  });
 });

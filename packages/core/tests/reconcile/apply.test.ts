@@ -19,7 +19,13 @@ import {
   createOperationContext,
   noopObserver,
 } from '../../src/observation/index.ts';
-import { emptyLedgerModel, getLedgerPairAt, readLedgerState } from '../../src/place/ledger.ts';
+import {
+  emptyLedgerModel,
+  getLedgerPairAt,
+  readLedgerState,
+  withLedgerPairAt,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 import { portError } from '../../src/ports/errors.ts';
@@ -332,6 +338,35 @@ const physicalExecutionFixture = async (
 };
 
 type PhysicalExecutionFixture = Awaited<ReturnType<typeof physicalExecutionFixture>>;
+
+const seedLegacyLedgerDigest = async (
+  execution: PhysicalExecutionFixture,
+  name: string,
+  projectRoot: string | null = null,
+): Promise<void> => {
+  const ledger = await readLedgerState(
+    execution.context.ports,
+    ledgerPathOf(execution.context.configuration.skillsmithHome as string),
+  );
+  if (!ledger.ok || ledger.value.state !== 'present') {
+    throw new Error('physical fixture ledger is absent');
+  }
+  const pair = getLedgerPairAt(ledger.value.model, projectRoot, name, 'codex');
+  if (pair?.pinned == null) throw new Error('physical fixture pin is absent');
+  const legacyContentHash = digest('e');
+  expect(legacyContentHash).not.toBe(execution.contentHashes.get(name));
+  const changed = withLedgerPairAt(ledger.value.model, projectRoot, name, 'codex', {
+    ...pair,
+    pinned: { ...pair.pinned, contentHash: legacyContentHash },
+  });
+  if (!changed.ok) throw new Error(JSON.stringify(changed.error));
+  const written = await writeLedger(
+    execution.context.ports,
+    ledgerPathOf(execution.context.configuration.skillsmithHome as string),
+    changed.value,
+  );
+  if (!written.ok) throw new Error(JSON.stringify(written.error));
+};
 
 const preparePhysicalScopePlan = async (
   execution: PhysicalExecutionFixture,
@@ -1802,6 +1837,7 @@ describe('validated reconciliation physical boundary', () => {
     if (!installed.ok) throw new Error(installed.error.message);
     const currentHash = execution.contentHashes.get('alpha');
     if (currentHash === undefined) throw new Error('installed fixture has no alpha content hash');
+    await seedLegacyLedgerDigest(execution, 'alpha');
     const relinkManifest: NormalizedManifestV1 = {
       version: 1,
       skills: [
@@ -1918,7 +1954,6 @@ describe('validated reconciliation physical boundary', () => {
     const installed = await executeValidatedReconcilePlan(execution.validated, runtime);
     expect(installed).toMatchObject({ ok: true, value: [{ outcome: 'succeeded' }] });
     if (!installed.ok) throw new Error(installed.error.message);
-
     const betaHash = execution.contentHashes.get('beta');
     if (betaHash === undefined) throw new Error('removal fixture has no beta content hash');
     const retainedManifest: NormalizedManifestV1 = {
@@ -2006,6 +2041,7 @@ describe('validated reconciliation physical boundary', () => {
       value: [{ outcome: 'succeeded' }, { outcome: 'succeeded' }],
     });
     if (!installed.ok) throw new Error(installed.error.message);
+    await seedLegacyLedgerDigest(execution, 'alpha');
 
     const retainedManifest: NormalizedManifestV1 = {
       version: 1,
@@ -2131,6 +2167,7 @@ describe('validated reconciliation physical boundary', () => {
     };
     const seeded = await executeValidatedReconcilePlan(execution.validated, runtime);
     if (!seeded.ok) throw new Error(seeded.error.message);
+    await seedLegacyLedgerDigest(execution, 'alpha');
 
     const prepared = await preparePhysicalScopePlan(execution, [
       { name: 'alpha', scope: 'project' },

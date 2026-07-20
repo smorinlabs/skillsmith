@@ -251,10 +251,14 @@ const canonicalResourcePrecondition = (
   };
 };
 
-const artifactGroupTarget = (operation: PlanOperationV1): string | null =>
-  operation.skill === null && operation.source === null && operation.scope === null
-    ? `resource:${resourceKey(imageResource(operation.after))}`
-    : null;
+const artifactGroupTarget = (operation: PlanOperationV1): string | null => {
+  if (operation.skill !== null || operation.source !== null || operation.scope !== null)
+    return null;
+  if (operation.kind === 'migrate-project-config' || operation.kind === 'write-lock') {
+    return 'artifact-pair:manifest-lock';
+  }
+  return `resource:${resourceKey(imageResource(operation.after))}`;
+};
 
 export interface SavedPlanProjection {
   readonly plan: SavedPlanV1;

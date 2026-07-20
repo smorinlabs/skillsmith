@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { Placement } from '../agents/placement-shared.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { normalizeSourceIdentity } from '../artifacts/identity.ts';
@@ -12,6 +12,7 @@ import type {
   ResourcePreconditionV1,
 } from '../artifacts/plan-types.ts';
 import type { NormalizedManifestV1 } from '../artifacts/types.ts';
+import { clampStoreNs } from '../place/store.ts';
 import { operationSourceFromLedgerPairV1 } from '../planning/create.ts';
 import {
   type ExecutableOperation,
@@ -66,10 +67,12 @@ const manifestSnapshot = (manifest: NormalizedManifestV1) => ({
   skills: manifest.skills.map((skill) => ({ ...skill, source: { ...skill.source } })),
 });
 
-const sourceFor = (row: ResolvedPlanDeclaration): OperationSource => ({
+const sourceFor = (
+  row: ResolvedPlanDeclaration,
+): Extract<OperationSource, { readonly kind: 'portable' }> => ({
   kind: 'portable',
   identity: { ...row.declaration.source },
-  requestedRef: row.declaration.ref,
+  requestedRef: row.lock.requestedRef,
   resolvedSha: row.lock.resolvedSha,
   sourcePath: row.lock.sourcePath,
   contentHash: row.lock.contentHash as OperationDigest,
@@ -154,18 +157,65 @@ const representationFor = (placement: Placement): 'symlink' | 'copy' | 'other' =
 const sourceFromLedger = (pair: LedgerPairV1Dto | null): OperationSource | null =>
   operationSourceFromLedgerPairV1(pair, null);
 
+const ledgerMatchesPortableSource = (
+  pair: LedgerPairV1Dto | null,
+  source: Extract<OperationSource, { readonly kind: 'portable' }>,
+  placementPath: string,
+  storePath: string,
+  representation: 'symlink' | 'copy',
+): boolean => {
+  if (
+    pair === null ||
+    pair.mode !== 'pinned' ||
+    pair.pinned == null ||
+    pair.origin === undefined ||
+    pair.journal != null ||
+    pair.placementPath !== placementPath ||
+    resolve(pair.pinned.storePath) !== resolve(storePath) ||
+    (pair.pinned.placement ?? 'copy') !== representation ||
+    pair.origin.host !== source.identity.host ||
+    pair.origin.repo !== source.identity.repository ||
+    pair.origin.skillPath !== source.sourcePath ||
+    pair.origin.refRequested !== source.requestedRef ||
+    pair.origin.refResolved !== source.resolvedSha ||
+    (pair.pinned.gitSha !== null && pair.pinned.gitSha !== source.resolvedSha)
+  ) {
+    return false;
+  }
+  const originIdentity = normalizeSourceIdentity(pair.origin.source, 'plan.ledger.origin');
+  return (
+    originIdentity.ok &&
+    canonicalPlanningString(originIdentity.value) === canonicalPlanningString(source.identity)
+  );
+};
+
 const placementImage = (
   placement: Placement,
   resource: Extract<OperationResourceIdentity, { kind: 'live' }>,
   contentHash: OperationDigest | null,
   ledgerPair: LedgerPairV1Dto | null,
+  portableSource: Extract<OperationSource, { readonly kind: 'portable' }> | null = null,
+  storePath: string | null = null,
 ): OperationImage => {
-  const ledgerSource = sourceFromLedger(ledgerPair);
-  const exactLedgerSource = ledgerPair?.pinned?.contentHash === contentHash ? ledgerSource : null;
+  const representation = representationFor(placement);
+  const exactPortableSource =
+    portableSource !== null &&
+    storePath !== null &&
+    contentHash === portableSource.contentHash &&
+    representation !== 'other' &&
+    ledgerMatchesPortableSource(
+      ledgerPair,
+      portableSource,
+      placement.path,
+      storePath,
+      representation,
+    )
+      ? portableSource
+      : null;
   const source: OperationSource | null =
     contentHash === null
       ? null
-      : (exactLedgerSource ?? {
+      : (exactPortableSource ?? {
           kind: 'local-dev',
           path: placement.path,
           contentHash,
@@ -175,7 +225,7 @@ const placementImage = (
     resource,
     classification:
       ledgerPair === null || placement.class === 'absent' ? 'unmanaged' : placement.class,
-    representation: representationFor(placement),
+    representation,
     linkTarget:
       placement.symlinkTarget === null
         ? null
@@ -331,28 +381,15 @@ const ledgerMatchesDesired = (
   pair: LedgerPairV1Dto | null,
   row: ResolvedPlanDeclaration,
   placementPath: string,
+  storePath: string,
+  representation: 'symlink' | 'copy',
 ): boolean => {
-  if (
-    pair === null ||
-    pair.mode !== 'pinned' ||
-    pair.pinned == null ||
-    pair.origin === undefined ||
-    pair.journal != null ||
-    pair.placementPath !== placementPath ||
-    pair.pinned.contentHash !== row.lock.contentHash ||
-    pair.origin.host !== row.declaration.source.host ||
-    pair.origin.repo !== row.declaration.source.repository ||
-    pair.origin.skillPath !== (row.declaration.source.path ?? '.') ||
-    pair.origin.refRequested !== row.lock.requestedRef ||
-    pair.origin.refResolved !== row.lock.resolvedSha ||
-    (pair.pinned.gitSha !== null && pair.pinned.gitSha !== row.lock.resolvedSha)
-  ) {
-    return false;
-  }
-  const actualSource = sourceFromLedger(pair);
-  return (
-    actualSource !== null &&
-    canonicalPlanningString(actualSource) === canonicalPlanningString(sourceFor(row))
+  return ledgerMatchesPortableSource(
+    pair,
+    sourceFor(row),
+    placementPath,
+    storePath,
+    representation,
   );
 };
 
@@ -378,7 +415,13 @@ const moveCandidate = (desired: DesiredObservation): DesiredObservation['opposit
     opposite.placement.class === 'dev' ||
     opposite.placement.dangling ||
     opposite.contentHash !== desired.row.lock.contentHash ||
-    !ledgerMatchesDesired(opposite.ledgerPair, desired.row, opposite.placement.path)
+    !ledgerMatchesDesired(
+      opposite.ledgerPair,
+      desired.row,
+      opposite.placement.path,
+      desired.store.path,
+      opposite.placement.class === 'store-linked' ? 'symlink' : 'copy',
+    )
   ) {
     return null;
   }
@@ -388,7 +431,13 @@ const moveCandidate = (desired: DesiredObservation): DesiredObservation['opposit
 const operationKindFor = (desired: DesiredObservation): ExecutableOperation['kind'] | null => {
   if (moveCandidate(desired) !== null) return 'move-scope';
   if (desired.placement.class === 'absent') return 'install';
-  const exactLedger = ledgerMatchesDesired(desired.ledgerPair, desired.row, desired.placement.path);
+  const exactLedger = ledgerMatchesDesired(
+    desired.ledgerPair,
+    desired.row,
+    desired.placement.path,
+    desired.store.path,
+    desired.placement.class === 'store-linked' ? 'symlink' : 'copy',
+  );
   const exactContent = desired.contentHash === desired.row.lock.contentHash;
   const exactRepresentation = desiredRepresentationMatches(desired);
   const exactStore =
@@ -535,7 +584,7 @@ const conflictFor = (
     (pinned.placement ?? 'copy') === 'copy' &&
     desired.placement.class === 'pinned' &&
     desired.contentHash !== null &&
-    desired.contentHash !== pinned.contentHash
+    desired.contentHash !== desired.row.lock.contentHash
   ) {
     return {
       class: 'modified-managed-target',
@@ -545,10 +594,16 @@ const conflictFor = (
       backup: 'required',
     };
   }
-  const currentSource = sourceFromLedger(desired.ledgerPair);
+  const currentRepresentation = representationFor(desired.placement);
   if (
-    currentSource === null ||
-    canonicalPlanningString(currentSource) !== canonicalPlanningString(sourceFor(desired.row))
+    currentRepresentation === 'other' ||
+    !ledgerMatchesPortableSource(
+      desired.ledgerPair,
+      sourceFor(desired.row),
+      desired.placement.path,
+      desired.store.path,
+      currentRepresentation,
+    )
   ) {
     return {
       class: 'source-changed',
@@ -604,10 +659,19 @@ const operationFromPlacement = (
           resourceForPlacement(input, row, opposite.scope, opposite.placement),
           opposite.contentHash,
           opposite.ledgerPair,
+          source,
+          desired.store.path,
         )
       : desired.placement.class === 'absent'
         ? { kind: 'absent', resource }
-        : placementImage(desired.placement, resource, desired.contentHash, desired.ledgerPair);
+        : placementImage(
+            desired.placement,
+            resource,
+            desired.contentHash,
+            desired.ledgerPair,
+            source,
+            desired.store.path,
+          );
   const after: OperationImage = {
     kind: 'placement',
     resource,
@@ -718,6 +782,7 @@ const resourcePreconditionsForPrune = (
 const removeOperationFromPlacement = (
   input: ResolvedPlanInput,
   prune: ObservedPrunePlacement,
+  storeRoot: string,
 ): ExecutableOperation | null => {
   const { pin, tool, scope, placement, ledgerPair } = prune;
   if (ledgerPair === null) return null;
@@ -738,6 +803,14 @@ const removeOperationFromPlacement = (
     ledgerPair.origin?.source ?? '',
     'plan.prune.ledger',
   );
+  const storeIdentity = clampStoreNs(identity.value.repository);
+  const expectedStorePath = join(
+    storeRoot,
+    storeIdentity.ns,
+    `${storeIdentity.name}@${pin.resolvedSha.slice(0, 12)}`,
+    pin.name,
+  );
+  const representation = ledgerPair.pinned?.placement ?? 'copy';
   if (
     !originIdentity.ok ||
     ledgerPair.mode !== 'pinned' ||
@@ -745,7 +818,7 @@ const removeOperationFromPlacement = (
     ledgerPair.origin === undefined ||
     ledgerPair.journal != null ||
     ledgerPair.placementPath !== placement.path ||
-    ledgerPair.pinned.contentHash !== pin.contentHash ||
+    resolve(ledgerPair.pinned.storePath) !== resolve(expectedStorePath) ||
     prune.contentHash !== pin.contentHash ||
     canonicalPlanningString(originIdentity.value) !== canonicalPlanningString(identity.value) ||
     ledgerPair.origin.host !== identity.value.host ||
@@ -754,7 +827,7 @@ const removeOperationFromPlacement = (
     ledgerPair.origin.refRequested !== pin.requestedRef ||
     ledgerPair.origin.refResolved !== pin.resolvedSha ||
     (ledgerPair.pinned.gitSha !== null && ledgerPair.pinned.gitSha !== pin.resolvedSha) ||
-    ((ledgerPair.pinned.placement ?? 'copy') === 'symlink'
+    (representation === 'symlink'
       ? placement.class !== 'store-linked' ||
         placement.symlinkTarget === null ||
         resolve(dirname(placement.path), placement.symlinkTarget) !==
@@ -813,7 +886,14 @@ const removeOperationFromPlacement = (
     source,
     tool,
     scope,
-    before: placementImage(placement, resource, prune.contentHash, ledgerPair),
+    before: placementImage(
+      placement,
+      resource,
+      prune.contentHash,
+      ledgerPair,
+      source,
+      expectedStorePath,
+    ),
     after: { kind: 'absent', resource },
     reason: {
       code: 'prune-lock-owned-placement',
@@ -832,20 +912,25 @@ const removeOperationFromPlacement = (
   };
 };
 
-const lockOperation = (input: ResolvedPlanInput): ExecutableOperation | null => {
+const lockOperation = (
+  input: ResolvedPlanInput,
+  artifactGroupId: string | null = null,
+): ExecutableOperation | null => {
   const replacement = input.replacementLock;
   if (replacement === null) return null;
   const location = machineLocation(input.observed.pair.lockfile.path);
   const resource = { kind: 'lock' as const, location };
-  const groupId = createOperationGroupId({
-    domain: 'skillsmith.operation-group-identity',
-    schemaVersion: 1,
-    command: 'plan',
-    skill: null,
-    source: null,
-    scope: null,
-    target: input.observed.pair.lockfile.path,
-  });
+  const groupId =
+    artifactGroupId ??
+    createOperationGroupId({
+      domain: 'skillsmith.operation-group-identity',
+      schemaVersion: 1,
+      command: 'plan',
+      skill: null,
+      source: null,
+      scope: null,
+      target: input.observed.pair.file.path,
+    });
   const kind = 'write-lock' as const;
   const operationId = createOperationId({
     domain: 'skillsmith.operation-identity',
@@ -1172,7 +1257,7 @@ export const createReconcilePlan = (
     ) {
       continue;
     }
-    const removal = removeOperationFromPlacement(input, prune);
+    const removal = removeOperationFromPlacement(input, prune, observation.storeRoot);
     if (removal !== null) {
       operations.push(removal);
       removedLiveKeys.add(
@@ -1187,10 +1272,10 @@ export const createReconcilePlan = (
     if (!removedLiveKeys.has(key)) diagnostics.push(undeclaredPlacementDiagnostic(undeclared));
   }
 
-  const lock = lockOperation(input);
-  if (lock !== null) operations.push(lock);
   const projectMigration = projectConfigMigrationOperation(input);
   if (projectMigration !== null) operations.push(projectMigration);
+  const lock = lockOperation(input, projectMigration?.groupId ?? null);
+  if (lock !== null) operations.push(lock);
   if (operations.some((operation) => operation.mutates.ledger)) {
     const migration = ledgerMigrationOperation(input);
     if (migration !== null) operations.push(migration);
@@ -1200,19 +1285,37 @@ export const createReconcilePlan = (
     lock === null
       ? operations
       : operations.map((operation) =>
-          operation.mutates.live
+          operation.operationId === lock.operationId && projectMigration !== null
             ? {
                 ...operation,
                 dependencyMetadata: {
                   ...operation.dependencyMetadata,
                   operationIds: Object.freeze(
                     [
-                      ...new Set([...operation.dependencyMetadata.operationIds, lock.operationId]),
+                      ...new Set([
+                        ...operation.dependencyMetadata.operationIds,
+                        projectMigration.operationId,
+                      ]),
                     ].sort(),
                   ),
                 },
               }
-            : operation,
+            : operation.mutates.live
+              ? {
+                  ...operation,
+                  dependencyMetadata: {
+                    ...operation.dependencyMetadata,
+                    operationIds: Object.freeze(
+                      [
+                        ...new Set([
+                          ...operation.dependencyMetadata.operationIds,
+                          lock.operationId,
+                        ]),
+                      ].sort(),
+                    ),
+                  },
+                }
+              : operation,
         );
   const checked = checksFor(observation, dependencyBoundOperations);
 

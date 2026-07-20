@@ -385,6 +385,16 @@ const seedPhysicalMoveScope = async (f: FixtureFleet) => {
       ...pinnedOf(snapshot.value.storePath, snapshot.value.rev, snapshot.value.contentHash),
       placement: 'copy',
     },
+    origin: {
+      source: 'https://github.com/smorinlabs/fixture-harness//plugins/fh/skills/alpha',
+      host: 'github.com',
+      repo: 'smorinlabs/fixture-harness',
+      skillPath: 'plugins/fh/skills/alpha',
+      refRequested: null,
+      refResolved: f.headSha,
+      pin: true,
+      installedAt: JOURNAL_NOW,
+    },
     journal: null,
   };
   const placed = withLedgerPairAt(
@@ -465,22 +475,16 @@ const seedPhysicalMoveScope = async (f: FixtureFleet) => {
   });
 };
 
-const seedV1PhysicalMoveScope = async (f: FixtureFleet) => {
+const seedPortableOperationMoveScope = async (f: FixtureFleet) => {
   const seeded = await seedPhysicalMoveScope(f);
   const projected = await projectSourceContent(f.env, seeded.sourcePath);
   if (!projected.ok) throw new Error(projected.error.message);
   const hashed = hashSourceContentV1(projected.value);
   if (!hashed.ok) throw new Error(hashed.error.message);
   const contentHash = hashed.value as OperationDigest;
-  const pair = getLedgerPairAt(seeded.ledger, null, 'alpha', 'claude-code');
-  if (pair?.pinned == null || seeded.operation.source?.kind !== 'portable') {
+  if (seeded.operation.source?.kind !== 'portable') {
     throw new Error('move-scope v1 seed is incomplete');
   }
-  const placed = withLedgerPairAt(seeded.ledger, null, 'alpha', 'claude-code', {
-    ...pair,
-    pinned: { ...pair.pinned, contentHash },
-  });
-  if (!placed.ok) throw new Error(msg(placed.error));
   const source: NonNullable<ExecutableOperation['source']> = Object.freeze({
     ...seeded.operation.source,
     contentHash,
@@ -501,9 +505,22 @@ const seedV1PhysicalMoveScope = async (f: FixtureFleet) => {
   });
   return Object.freeze({
     ...seeded,
-    ledger: placed.value,
     operation,
   });
+};
+
+const seedV1PhysicalMoveScope = async (f: FixtureFleet) => {
+  const seeded = await seedPortableOperationMoveScope(f);
+  const pair = getLedgerPairAt(seeded.ledger, null, 'alpha', 'claude-code');
+  if (pair?.pinned == null || seeded.operation.source?.kind !== 'portable') {
+    throw new Error('move-scope v1 seed is incomplete');
+  }
+  const placed = withLedgerPairAt(seeded.ledger, null, 'alpha', 'claude-code', {
+    ...pair,
+    pinned: { ...pair.pinned, contentHash: seeded.operation.source.contentHash },
+  });
+  if (!placed.ok) throw new Error(msg(placed.error));
+  return Object.freeze({ ...seeded, ledger: placed.value });
 };
 
 describe('physical move-scope transaction', () => {
@@ -542,6 +559,26 @@ describe('physical move-scope transaction', () => {
     expect(moved.state.ledger.history.map(({ transactionId }) => transactionId)).toEqual([
       'move0001',
     ]);
+  });
+
+  test('moves a portable source while preserving its distinct legacy ledger digest', async () => {
+    const seeded = await seedPortableOperationMoveScope(f);
+    const pair = getLedgerPairAt(seeded.ledger, null, 'alpha', 'claude-code');
+    expect(pair?.pinned?.contentHash).not.toBe(seeded.operation.source?.contentHash);
+    const request = makeCtx(f.env, seeded.ledgerPath, seeded.ledger, {
+      txId: 'move-portable-legacy',
+    });
+    const moved = await runMoveScopeTransaction(
+      { ...request, effects: { ...request.effects, journalNow: () => JOURNAL_NOW } },
+      seeded.operation,
+    );
+    if (!moved.ok) throw new Error(msg(moved.error));
+    expect(await f.env.pathKind(seeded.sourcePath)).toBe('absent');
+    expect(await f.env.pathKind(seeded.destinationPath)).toBe('dir');
+    expect(
+      getLedgerPairAt(moved.state.ledger, f.projectReal, 'alpha', 'claude-code')?.pinned
+        ?.contentHash,
+    ).toBe(pair?.pinned?.contentHash);
   });
 
   test('reclaims an unchanged v1 copy backup after a committed scope move', async () => {

@@ -5,6 +5,7 @@ import {
 } from '../agents/capabilities.ts';
 import { type Placement, classifyPlacement } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
+import { normalizeSourceIdentity } from '../artifacts/identity.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
 import { correlatePortableLock } from '../artifacts/lock.ts';
 import type { ResolvedArtifactPair } from '../artifacts/pair.ts';
@@ -18,6 +19,7 @@ import { hashSourceContentV1, projectSourceContent } from '../artifacts/source-c
 import type { ProjectContext } from '../context/types.ts';
 import { resolveDataDir, storeRootOf } from '../place/paths.ts';
 import { clampStoreNs } from '../place/store.ts';
+import { canonicalPlanningString } from '../planning/order.ts';
 import type { OperationDigest } from '../planning/types.ts';
 import { isPortError } from '../ports/errors.ts';
 import type {
@@ -250,20 +252,34 @@ const ledgerPairMatchesDesiredSource = (
   pair: LedgerPairV1Dto | null,
   row: ResolvedPlanInput['declarations'][number],
   placementPath: string,
-): boolean =>
-  pair !== null &&
-  pair.mode === 'pinned' &&
-  pair.pinned != null &&
-  pair.origin !== undefined &&
-  pair.journal == null &&
-  pair.placementPath === placementPath &&
-  pair.pinned.contentHash === row.lock.contentHash &&
-  pair.origin.host === row.declaration.source.host &&
-  pair.origin.repo === row.declaration.source.repository &&
-  pair.origin.skillPath === (row.declaration.source.path ?? '.') &&
-  pair.origin.refRequested === row.lock.requestedRef &&
-  pair.origin.refResolved === row.lock.resolvedSha &&
-  (pair.pinned.gitSha === null || pair.pinned.gitSha === row.lock.resolvedSha);
+  storePath: string,
+  representation: 'symlink' | 'copy',
+): boolean => {
+  if (
+    pair === null ||
+    pair.mode !== 'pinned' ||
+    pair.pinned == null ||
+    pair.origin === undefined ||
+    pair.journal != null ||
+    pair.placementPath !== placementPath ||
+    resolve(pair.pinned.storePath) !== resolve(storePath) ||
+    (pair.pinned.placement ?? 'copy') !== representation ||
+    pair.origin.host !== row.declaration.source.host ||
+    pair.origin.repo !== row.declaration.source.repository ||
+    pair.origin.skillPath !== row.lock.sourcePath ||
+    pair.origin.refRequested !== row.lock.requestedRef ||
+    pair.origin.refResolved !== row.lock.resolvedSha ||
+    (pair.pinned.gitSha !== null && pair.pinned.gitSha !== row.lock.resolvedSha)
+  ) {
+    return false;
+  }
+  const originIdentity = normalizeSourceIdentity(pair.origin.source, 'plan.ledger.origin');
+  return (
+    originIdentity.ok &&
+    canonicalPlanningString(originIdentity.value) ===
+      canonicalPlanningString(row.declaration.source)
+  );
+};
 
 const projectRootForScope = (
   input: ResolvedPlanInput,
@@ -630,7 +646,13 @@ export const observeReconcileInput = async (
           const unmanaged = oppositePair === null || oppositePlacement.class === 'dev';
           const sourceChanged =
             !unmanaged &&
-            !ledgerPairMatchesDesiredSource(oppositePair, row, oppositePlacement.path);
+            !ledgerPairMatchesDesiredSource(
+              oppositePair,
+              row,
+              oppositePlacement.path,
+              store.value.path,
+              oppositePlacement.class === 'store-linked' ? 'symlink' : 'copy',
+            );
           const modified =
             !unmanaged &&
             !sourceChanged &&

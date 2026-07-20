@@ -186,6 +186,8 @@ export interface ResolveRemoteSourceInput {
   readonly signal?: AbortSignal;
   readonly pick?: (candidates: readonly CandidateSkill[]) => Promise<CandidateSkill | null>;
   readonly createFetchDirectory: () => string;
+  /** Portable artifact writers require a fresh exact-revision materialization. */
+  readonly allowStoreElision?: boolean;
 }
 
 const lastSegment = (repoPath: string): string =>
@@ -275,7 +277,7 @@ export const resolveRemoteSource = async (
 ): Promise<ResolveRemoteSourceOutcome> => {
   const { ports, source, signal, pick } = input;
   const transport = input.transport ?? defaultInstallSourceTransport;
-  const elided = await tryElide(input, transport);
+  const elided = input.allowStoreElision === false ? null : await tryElide(input, transport);
   if (elided) return { kind: 'resolved', materialization: elided, cleanupDirectory: null };
 
   const fetchDirectory = input.createFetchDirectory();

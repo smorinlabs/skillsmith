@@ -69,6 +69,7 @@ const managedObservation = (
     readonly source?: string;
     readonly requestedRef?: string;
     readonly liveContentHash?: ArtifactDigest;
+    readonly portableContentHash?: ArtifactDigest | null;
   } = {},
 ): ExportObservation => {
   const contentHash = `sha256:${'b'.repeat(64)}` as ArtifactDigest;
@@ -116,6 +117,10 @@ const managedObservation = (
         entry: candidate,
         ledgerPair: pair,
         liveContentHash: input.liveContentHash ?? contentHash,
+        portableContentHash:
+          input.portableContentHash === undefined
+            ? (`sha256:${'d'.repeat(64)}` as ArtifactDigest)
+            : input.portableContentHash,
         git: null,
         defaultLocation: input.defaultLocation ?? true,
       },
@@ -203,6 +208,18 @@ describe('export classification', () => {
     expect(mismatch.ok && mismatch.value.results[0]).toMatchObject({
       action: 'skipped',
       reason: 'live-content-mismatch',
+    });
+  });
+
+  test('keeps the legacy digest as an integrity gate but exports only the exact portable digest', () => {
+    const portableContentHash = `sha256:${'e'.repeat(64)}` as ArtifactDigest;
+    const exact = classifyExport(managedObservation({ portableContentHash }));
+    expect(exact.ok && exact.value.portable[0]?.contentHash).toBe(portableContentHash);
+
+    const unavailable = classifyExport(managedObservation({ portableContentHash: null }));
+    expect(unavailable.ok && unavailable.value.results[0]).toMatchObject({
+      action: 'skipped',
+      reason: 'invalid-content',
     });
   });
 

@@ -262,9 +262,15 @@ export const createGitPort = (
         .split('\0')
         .filter(Boolean)
         .flatMap((row) => {
-          const match = /^\d+\s+(blob|tree)\s+[0-9a-f]+\t(.+)$/s.exec(row);
-          return match?.[1] && match[2]
-            ? [{ kind: match[1] as 'blob' | 'tree', path: match[2] }]
+          const match = /^([0-7]{6})\s+(blob|tree|commit)\s+[0-9a-f]+\t(.+)$/s.exec(row);
+          return match?.[1] && match[2] && match[3]
+            ? [
+                {
+                  mode: match[1],
+                  kind: match[2] as 'blob' | 'tree' | 'commit',
+                  path: match[3],
+                },
+              ]
             : [];
         });
     },

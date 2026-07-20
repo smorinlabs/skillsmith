@@ -361,7 +361,7 @@ describe('plan source resolution', () => {
     }
   });
 
-  test('--locked accepts a current selected pin despite unrelated incomplete lock state', async () => {
+  test('--locked requires a current complete whole pair before applying any selection filter', async () => {
     const state = await setup([
       { name: 'alpha', tool: 'codex' },
       { name: 'beta', tool: 'claude-code' },
@@ -391,24 +391,28 @@ describe('plan source resolution', () => {
     expect(observed.ok).toBeTrue();
     if (!observed.ok) throw new Error(observed.error.message);
 
-    const calls: string[] = [];
-    const result = await resolvePlanInput(
-      observed.value,
-      { ...request, tools: ['codex'], locked: true },
-      {
-        ports: state.ports,
-        configuration: configuration(state.root),
-        transport: transport(calls),
-      },
-    );
-    expect(result.ok).toBeTrue();
-    if (!result.ok) throw new Error(result.error.message);
-    expect(result.value).toMatchObject({
-      selectedSkills: ['alpha'],
-      selectionOutcome: 'selected',
-      replacementLock: null,
-    });
-    expect(calls).toEqual([]);
+    for (const selection of [
+      { label: 'unbounded', tools: [] as const, scope: null },
+      { label: 'bounded-tool', tools: ['codex'] as const, scope: null },
+      { label: 'bounded-scope', tools: [] as const, scope: 'user' as const },
+      { label: 'filter-to-zero', tools: ['opencode'] as const, scope: null },
+    ]) {
+      const calls: string[] = [];
+      const result = await resolvePlanInput(
+        observed.value,
+        { ...request, tools: selection.tools, scope: selection.scope, locked: true },
+        {
+          ports: state.ports,
+          configuration: configuration(state.root),
+          transport: transport(calls),
+        },
+      );
+      expect(result, selection.label).toMatchObject({
+        ok: false,
+        error: { code: 'plan-locked-state', exitClass: 'state' },
+      });
+      expect(calls, selection.label).toEqual([]);
+    }
 
     const unlockedCalls: string[] = [];
     const unlocked = await resolvePlanInput(

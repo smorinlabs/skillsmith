@@ -7,14 +7,20 @@ import { GIT_REPO_LOCAL_ENV_VARS } from '../../src/env/git.ts';
 //
 export const GIT_REPO_SCRUB_VARS = GIT_REPO_LOCAL_ENV_VARS;
 
+export interface HermeticGitEnvOptions {
+  /** Explicit isolated global config selected only after repository-local variables are scrubbed. */
+  readonly globalConfigPath?: string;
+}
+
 // Scrub and config-pinning win over overrides: no test may reintroduce a
 // repo-location var, so a poisoned caller can never opt back into the bug.
 export const hermeticGitEnv = (
   overrides: Record<string, string | undefined> = {},
+  options: HermeticGitEnvOptions = {},
 ): Record<string, string | undefined> => {
   const env: Record<string, string | undefined> = { ...process.env, ...overrides };
   for (const name of GIT_REPO_SCRUB_VARS) delete env[name];
-  env.GIT_CONFIG_GLOBAL = '/dev/null';
+  env.GIT_CONFIG_GLOBAL = options.globalConfigPath ?? '/dev/null';
   env.GIT_CONFIG_SYSTEM = '/dev/null';
   return env;
 };

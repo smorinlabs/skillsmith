@@ -160,6 +160,8 @@ export interface AcquisitionInstallIntentV1 {
   readonly sourceContent: ContentObservationIdentityV1;
   readonly sourcePreconditionId: `precondition:v1:${string}`;
   readonly source: OperationSource;
+  /** Canonical source-content digest for a portable artifact; placement/store remain legacy. */
+  readonly portableContentHash?: OperationDigest;
   /** Exact portable-only fields that are not otherwise carried by the placement intent. */
   readonly declaration?: Readonly<{
     readonly ref: NormalizedManifestDeclaration['ref'];
@@ -1113,14 +1115,19 @@ const validateInstallGroupPortableIntent = (
     (intent) => createOperationGroupId(installGroupIdentityFor(request, intent)) === groupId,
   );
   const seed = intents[0];
+  const portableContentHash =
+    seed?.portableContentHash ??
+    (seed?.source.kind === 'portable' ? seed.source.contentHash : null);
   if (
     seed === undefined ||
     seed.source.kind !== 'portable' ||
     seed.declaration === undefined ||
+    portableContentHash === null ||
     intents.some(
       (intent) =>
         intent.source.kind !== 'portable' ||
         intent.declaration === undefined ||
+        (intent.portableContentHash ?? intent.source.contentHash) !== portableContentHash ||
         canonicalPlanningString(intent.declaration) !== canonicalPlanningString(seed.declaration) ||
         intent.placement.representation !== seed.placement.representation,
     )
@@ -1150,7 +1157,7 @@ const validateInstallGroupPortableIntent = (
     locked.requestedRef !== seed.source.requestedRef ||
     locked.resolvedSha !== seed.source.resolvedSha ||
     locked.sourcePath !== seed.source.sourcePath ||
-    locked.contentHash !== seed.source.contentHash
+    locked.contentHash !== portableContentHash
   ) {
     throw new TypeError(
       'acquisition planning: install group differs from complete portable intent',

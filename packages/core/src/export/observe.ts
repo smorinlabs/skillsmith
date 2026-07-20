@@ -1,4 +1,6 @@
-import { dirname, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fetchRepo } from '../acquire/fetch.ts';
+import { parseSource } from '../acquire/source.ts';
 import type { BuiltInToolId } from '../agents/registry.ts';
 import type { CurrentApplicationContext } from '../application/types.ts';
 import type { ArtifactDigest } from '../artifacts/hash.ts';
@@ -21,14 +23,21 @@ import { ledgerPathOf, resolveDataDir } from '../place/paths.ts';
 import { contentHashOf } from '../place/store.ts';
 import type { GitWorktreeInspection } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import { containsSensitiveMaterial } from '../safety/redaction.ts';
 import { observeSkillPlacements } from '../scan/list-skills.ts';
 import type { SkillEntry } from '../skills/types.ts';
+import {
+  hashGitPortableContent,
+  hashLivePortableContent,
+  observeExactGitPortableContent,
+} from './portable-content.ts';
 import type { ExportFailure, ExportRequest } from './types.ts';
 
 export interface ExportEntryObservation {
   readonly entry: SkillInventoryEntry;
   readonly ledgerPair: LedgerPairV1Dto | null;
   readonly liveContentHash: ArtifactDigest | null;
+  readonly portableContentHash?: ArtifactDigest | null;
   readonly git: GitWorktreeInspection | null;
   readonly defaultLocation: boolean;
 }
@@ -171,9 +180,11 @@ const entryFacts = async (
   ledger: LedgerModel | null,
   sourceProjectRoot: string | null,
   synthetic: ReadonlySet<string>,
+  dataDir: string,
 ): Promise<readonly ExportEntryObservation[]> => {
   const hashes = new Map<string, Promise<ArtifactDigest | null>>();
-  const inspections = new Map<string, Promise<GitWorktreeInspection | null>>();
+  const livePortableHashes = new Map<string, Promise<ArtifactDigest | null>>();
+  const managedPortableHashes = new Map<string, Promise<ArtifactDigest | null>>();
   const hashAt = (path: string): Promise<ArtifactDigest | null> => {
     const cached = hashes.get(path);
     if (cached !== undefined) return cached;
@@ -194,30 +205,118 @@ const entryFacts = async (
     hashes.set(path, pending);
     return pending;
   };
-  const inspect = (repositoryRoot: string): Promise<GitWorktreeInspection | null> => {
-    const key = resolve(repositoryRoot);
-    const cached = inspections.get(key);
+  const livePortableHashAt = (path: string): Promise<ArtifactDigest | null> => {
+    const cached = livePortableHashes.get(path);
     if (cached !== undefined) return cached;
-    const pending = context.ports.git
-      .inspectWorktree({
-        repositoryRoot,
-        ...(context.signal === undefined ? {} : { signal: context.signal }),
-      })
-      .catch((error) => {
-        const code = safeErrorCode(error);
-        if (
-          context.signal?.aborted ||
-          code === 'cancelled' ||
-          code === 'EACCES' ||
-          code === 'EPERM' ||
-          code === 'permission-denied'
-        ) {
-          throw error;
-        }
-        return null;
-      });
-    inspections.set(key, pending);
+    const pending = hashLivePortableContent(context.ports, path);
+    livePortableHashes.set(path, pending);
     return pending;
+  };
+  const managedSource = (
+    pair: LedgerPairV1Dto,
+  ): Readonly<{ cloneUrl: string; sha: string; sourcePath: string }> | null => {
+    const origin = pair.origin;
+    if (
+      pair.mode !== 'pinned' ||
+      origin === undefined ||
+      pair.pinned == null ||
+      pair.journal != null ||
+      !/^[0-9a-f]{40}$/u.test(origin.refResolved)
+    ) {
+      return null;
+    }
+    const parsed = parseSource(origin.source);
+    if (!parsed.ok) return null;
+    const parsedPath = parsed.value.identity.path ?? '.';
+    if (
+      parsed.value.identity.host !== origin.host ||
+      parsed.value.identity.repository !== origin.repo ||
+      (parsedPath !== origin.skillPath &&
+        !(parsed.value.identity.path === null && origin.skillPath === '')) ||
+      [parsed.value.cloneUrl, origin.source, origin.skillPath, origin.refResolved].some(
+        containsSensitiveMaterial,
+      )
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      cloneUrl: parsed.value.cloneUrl,
+      sha: origin.refResolved,
+      sourcePath: origin.skillPath,
+    });
+  };
+  const managedPortableHash = (
+    source: Readonly<{ cloneUrl: string; sha: string; sourcePath: string }>,
+  ): Promise<ArtifactDigest | null> => {
+    const key = `${source.cloneUrl}\0${source.sha}\0${source.sourcePath}`;
+    const cached = managedPortableHashes.get(key);
+    if (cached !== undefined) return cached;
+    const pending = (async (): Promise<ArtifactDigest | null> => {
+      const fetchDirectory = join(dataDir, '.export-source', context.ports.nextId('export-source'));
+      await context.ports.makeDir(dirname(fetchDirectory));
+      try {
+        const fetched = await fetchRepo(context.ports, {
+          cloneUrl: source.cloneUrl,
+          ref: source.sha,
+          fetchDir: fetchDirectory,
+          ...(context.signal === undefined ? {} : { signal: context.signal }),
+        });
+        if (!fetched.ok) {
+          const code = safeErrorCode(fetched.error);
+          if (
+            context.signal?.aborted ||
+            code === 'cancelled' ||
+            code === 'EACCES' ||
+            code === 'EPERM' ||
+            code === 'permission-denied'
+          ) {
+            throw fetched.error;
+          }
+          return null;
+        }
+        if (fetched.value.sha !== source.sha) return null;
+        return await hashGitPortableContent(context.ports.git, {
+          repositoryRoot: fetchDirectory,
+          ref: fetched.value.sha,
+          sourcePath: source.sourcePath,
+          ...(context.signal === undefined ? {} : { signal: context.signal }),
+        });
+      } finally {
+        await context.ports.removeTree(fetchDirectory);
+      }
+    })();
+    managedPortableHashes.set(key, pending);
+    return pending;
+  };
+  const safeExactDev = async (
+    repositoryRoot: string,
+    liveRoot: string,
+    sourcePath: string,
+  ): Promise<Readonly<{
+    git: GitWorktreeInspection;
+    contentHash: ArtifactDigest | null;
+  }> | null> => {
+    try {
+      const exact = await observeExactGitPortableContent(context.ports, {
+        repositoryRoot,
+        liveRoot,
+        sourcePath,
+        ...(context.signal === undefined ? {} : { signal: context.signal }),
+      });
+      return Object.freeze({ git: exact.inspection, contentHash: exact.contentHash });
+    } catch (error) {
+      const code = safeErrorCode(error);
+      if (
+        context.signal?.aborted ||
+        code === 'cancelled' ||
+        code === 'EACCES' ||
+        code === 'EPERM' ||
+        code === 'permission-denied'
+      ) {
+        throw error;
+      }
+      return null;
+    }
   };
 
   return Object.freeze(
@@ -230,13 +329,37 @@ const entryFacts = async (
           entry.visibility.state !== 'shadowed' &&
           ledgerPair !== null;
         const liveContentHash = eligible ? await hashAt(entry.realpath) : null;
-        const repositoryRoot =
-          eligible && ledgerPair.mode === 'dev' ? ledgerPair.dev?.repoRoot : null;
-        const git = repositoryRoot == null ? null : await inspect(repositoryRoot);
+        let git: GitWorktreeInspection | null = null;
+        let portableContentHash: ArtifactDigest | null = null;
+        if (eligible && ledgerPair.mode === 'dev') {
+          const repositoryRoot = ledgerPair.dev?.repoRoot;
+          const sourcePath = ledgerPair.dev?.sourceRelPath;
+          if (repositoryRoot != null && sourcePath != null) {
+            const exact = await safeExactDev(repositoryRoot, entry.realpath, sourcePath);
+            git = exact?.git ?? null;
+            portableContentHash = exact?.contentHash ?? null;
+          }
+        } else if (
+          eligible &&
+          ledgerPair.mode === 'pinned' &&
+          ledgerPair.pinned != null &&
+          liveContentHash === ledgerPair.pinned.contentHash
+        ) {
+          const source = managedSource(ledgerPair);
+          if (source !== null) {
+            const [livePortable, exactPortable] = await Promise.all([
+              livePortableHashAt(entry.realpath),
+              managedPortableHash(source),
+            ]);
+            portableContentHash =
+              livePortable !== null && livePortable === exactPortable ? exactPortable : null;
+          }
+        }
         return Object.freeze({
           entry,
           ledgerPair,
           liveContentHash,
+          portableContentHash,
           git,
           defaultLocation:
             !synthetic.has(`${entry.tool}\0${entry.path}`) && dirname(entry.path) === entry.root,
@@ -255,7 +378,8 @@ export const observeExport = async (
   try {
     const sourceProjectRoot =
       request.scope === 'project' ? (project.projectRoot ?? project.effectiveCwd) : null;
-    const ledgerPath = ledgerPathOf(resolveDataDir(context.ports, context.configuration));
+    const dataDir = resolveDataDir(context.ports, context.configuration);
+    const ledgerPath = ledgerPathOf(dataDir);
     const [ledgerRead, placementsRead, manifestRead, lockRead] = await Promise.all([
       readLedgerArtifact(context.ports, ledgerPath),
       observeSkillPlacements(context.ports, {
@@ -305,6 +429,7 @@ export const observeExport = async (
       ledger,
       sourceProjectRoot,
       synthetic,
+      dataDir,
     );
 
     return ok(

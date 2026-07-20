@@ -20,6 +20,7 @@ import { classifyPlacement } from '../agents/placement-shared.ts';
 import { FLIP_TOOLS, type PlacementToolId, toolRegistry } from '../agents/registry.ts';
 import type { ArtifactCoordinatorPorts } from '../artifacts/coordinator-types.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
+import { normalizeSourceIdentity } from '../artifacts/identity.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { PortableLockV1 } from '../artifacts/lock.ts';
 import type {
@@ -46,13 +47,10 @@ import {
   readLedgerState,
 } from '../place/ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
+import { recoverPlacementWithObservation } from '../place/recovery.ts';
 import { type SnapshotResult, clampStoreNs, snapshotToStore } from '../place/store.ts';
 import type { Provenance, SwapExecutionResult, SwapPlan } from '../place/types.ts';
-import {
-  createOperationExecutionResult,
-  createOperationPlan,
-  operationSourceFromLedgerPairV1,
-} from '../planning/create.ts';
+import { createOperationExecutionResult, createOperationPlan } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   ExecutableOperation,
@@ -411,6 +409,37 @@ const liveProjectKey = (image: OperationImage): string | null => {
   return resource.projectRoot?.kind === 'machine-bound' ? resolve(resource.projectRoot.path) : null;
 };
 
+const exactPendingPlacementOperation = (
+  ledger: LedgerModel,
+  operation: PhysicalPlacementOperation,
+): boolean => {
+  const expectedIntent = {
+    operationId: operation.operationId,
+    groupId: operation.groupId,
+    pairId: operation.pairId,
+    kind: operation.kind,
+    skill: operation.skill,
+    source: operation.source,
+    tool: operation.tool,
+    scope: operation.scope,
+    before: operation.before,
+    after: operation.after,
+    mutates: operation.mutates,
+    reversibility:
+      operation.kind === 'move-scope'
+        ? operation.reversibility
+        : { kind: 'none' as const, retentionResourceIds: [] },
+    conflict: operation.kind === 'move-scope' ? operation.conflict : null,
+  };
+  return (
+    Object.values(ledger.transactions).filter(
+      (journal) =>
+        journal.disposition === 'forward' &&
+        canonicalPlanningString(journal.intent) === canonicalPlanningString(expectedIntent),
+    ).length === 1
+  );
+};
+
 const observePhysicalPlacement = async (
   operation: PhysicalPlacementOperation,
   runtime: ExecuteValidatedReconcilePlanRuntime,
@@ -424,6 +453,7 @@ const observePhysicalPlacement = async (
   const state = await readLedgerState(runtime.ports, ledgerPath);
   if (!state.ok) throw state.error;
   const ledger = ledgerModelForMutation(state.value, runtime.ports.wallNowIso());
+  if (exactPendingPlacementOperation(ledger, operation)) return operation.before;
   const pair = getLedgerPairAt(
     ledger,
     liveProjectKey(operation.before),
@@ -455,12 +485,34 @@ const observePhysicalPlacement = async (
         : path;
     contentHash = await exactContentHash(runtime.ports, contentRoot);
   }
-  const ledgerSource = operationSourceFromLedgerPairV1(pair, null);
+  const approvedSource =
+    operation.before.source?.kind === 'portable' ? operation.before.source : null;
+  const expectedStorePath = executionStorePath(storeRoot, operation);
+  const originIdentity = normalizeSourceIdentity(pair?.origin?.source ?? '', 'apply.ledger.origin');
+  const ledgerOwnsApprovedSource =
+    approvedSource !== null &&
+    expectedStorePath !== null &&
+    pair?.mode === 'pinned' &&
+    pair.pinned != null &&
+    pair.origin !== undefined &&
+    pair.journal == null &&
+    pair.placementPath === path &&
+    resolve(pair.pinned.storePath) === resolve(expectedStorePath) &&
+    (pair.pinned.placement ?? 'copy') === operation.before.representation &&
+    pair.origin.host === approvedSource.identity.host &&
+    pair.origin.repo === approvedSource.identity.repository &&
+    pair.origin.skillPath === approvedSource.sourcePath &&
+    pair.origin.refRequested === approvedSource.requestedRef &&
+    pair.origin.refResolved === approvedSource.resolvedSha &&
+    (pair.pinned.gitSha === null || pair.pinned.gitSha === approvedSource.resolvedSha) &&
+    originIdentity.ok &&
+    canonicalPlanningString(originIdentity.value) ===
+      canonicalPlanningString(approvedSource.identity);
   const source =
     contentHash === null
       ? null
-      : pair?.pinned?.contentHash === contentHash && ledgerSource !== null
-        ? ledgerSource
+      : ledgerOwnsApprovedSource && contentHash === approvedSource.contentHash
+        ? approvedSource
         : ({ kind: 'local-dev', path, contentHash } as const);
   const observed: OperationImage = Object.freeze({
     kind: 'placement' as const,
@@ -630,6 +682,24 @@ const executePhysicalPlacement = async (
     { ...(runtime.signal === undefined ? {} : { signal: runtime.signal }) },
     operation,
   );
+  if (operation.skill !== null && exactPendingPlacementOperation(ledger, operation)) {
+    const resumed = await recoverPlacementWithObservation(
+      input,
+      'resume',
+      {
+        skill: operation.skill,
+        tool: operation.tool,
+        scopeKey: liveProjectKey(operation.before),
+      },
+      runtime.observation,
+    );
+    return physicalOperationResult(
+      operation,
+      binding,
+      resumed,
+      reachedNewDurableAfter(operation, ledger, resumed),
+    );
+  }
   if (operation.kind === 'remove') {
     const path = livePath(operation.before);
     if (path === null || operation.skill === null) {

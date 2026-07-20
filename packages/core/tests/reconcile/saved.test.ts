@@ -57,6 +57,7 @@ const fixture = async (
   missingLock = false,
   scope: 'user' | 'project' = 'user',
   legacyLedger = false,
+  legacyManifest = false,
 ) => {
   const root = await mkdtemp(join(tmpdir(), 'skillsmith-saved-plan-'));
   roots.push(root);
@@ -118,15 +119,27 @@ const fixture = async (
       manifest: {
         state: 'present',
         artifact: 'manifest',
-        sourceVersion: 1,
+        sourceVersion: legacyManifest ? 'legacy' : 1,
         currentVersion: 1,
         source: 'version = 1\n',
         byteLength: 12,
         byteRevision: digest('a'),
         semanticRevision: hashManifestSemantics(model),
         model,
-        canonical: true,
-        migration: null,
+        canonical: !legacyManifest,
+        migration: legacyManifest
+          ? {
+              kind: 'migrate-project-config' as const,
+              from: 'legacy' as const,
+              toVersion: 1 as const,
+              expectedByteRevision: digest('a'),
+              expectedSemanticRevision: hashManifestSemantics(model),
+              resultByteRevision: digest('2'),
+              resultSemanticRevision: hashManifestSemantics(model),
+              resultSource: 'version = 1\n',
+              createsLockfile: false,
+            }
+          : null,
       },
       lock: missingLock
         ? { state: 'absent', artifact: 'lock', migration: null }
@@ -756,6 +769,38 @@ describe('saved plan projection', () => {
     expect(projection.value.plan.operations[0]?.preconditionIds).toContain(
       lockPreconditions[0]?.preconditionId,
     );
+  });
+
+  test('keeps one reviewed lock identity across a committed manifest migration replan', async () => {
+    const combined = await fixture(true, false, true, 'user', false, true);
+    const lockOnly = await fixture(true, false, true);
+    expect(combined.product.plan.operations.map(({ kind }) => kind)).toEqual([
+      'migrate-project-config',
+      'write-lock',
+    ]);
+    const migration = combined.product.plan.operations[0];
+    const combinedLock = combined.product.plan.operations[1];
+    if (migration === undefined || combinedLock === undefined) {
+      throw new Error('combined artifact group is incomplete');
+    }
+    expect(combinedLock.groupId).toBe(migration.groupId);
+    expect(combinedLock.dependencyMetadata.operationIds).toEqual([migration.operationId]);
+
+    const combinedProjection = createSavedPlanProjection(combined.product);
+    const lockOnlyProjection = createSavedPlanProjection(lockOnly.product);
+    expect(combinedProjection.ok).toBeTrue();
+    expect(lockOnlyProjection.ok).toBeTrue();
+    if (!combinedProjection.ok) throw new Error(combinedProjection.error.message);
+    if (!lockOnlyProjection.ok) throw new Error(lockOnlyProjection.error.message);
+
+    const reviewedLock = combinedProjection.value.plan.operations.find(
+      ({ kind }) => kind === 'write-lock',
+    );
+    const replannedLock = lockOnlyProjection.value.plan.operations.find(
+      ({ kind }) => kind === 'write-lock',
+    );
+    expect(replannedLock?.groupId).toBe(reviewedLock?.groupId);
+    expect(replannedLock?.operationId).toBe(reviewedLock?.operationId);
   });
 
   test('retains the ledger-schema guard and adds a same-resource execution guard', async () => {

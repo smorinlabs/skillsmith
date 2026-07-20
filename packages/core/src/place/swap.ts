@@ -1,5 +1,6 @@
 import { dirname, join } from 'node:path';
 import type { ArtifactDigest } from '../artifacts/hash.ts';
+import { normalizeSourceIdentity } from '../artifacts/identity.ts';
 import type {
   JournalResourceActualV1Dto,
   LogicalJournalV1Dto,
@@ -40,6 +41,7 @@ import type {
   ObservationOutcome,
   TransactionStage,
 } from '../observation/index.ts';
+import { canonicalPlanningString } from '../planning/order.ts';
 import type { ExecutableOperation, OperationImage } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { getLedgerPairAt, withLedgerPairAt, withoutLedgerPairAt } from './ledger.ts';
@@ -615,15 +617,29 @@ const moveScopeTransactionState = (
     return err(flipRefusedError('move-scope ledger membership changed; retry'));
   }
   if (
+    operation.source?.kind !== 'portable' ||
+    operation.before.source?.kind !== 'portable' ||
+    operation.after.source?.kind !== 'portable' ||
     pair.mode !== 'pinned' ||
     pair.pinned == null ||
+    pair.origin === undefined ||
     operation.before.contentHash === null ||
     operation.after.contentHash === null ||
     operation.before.contentHash !== operation.after.contentHash ||
-    operation.before.contentHash !== pair.pinned.contentHash ||
-    operation.source?.contentHash !== pair.pinned.contentHash ||
-    operation.before.source?.contentHash !== pair.pinned.contentHash ||
-    operation.after.source?.contentHash !== pair.pinned.contentHash ||
+    operation.source.contentHash !== operation.before.contentHash ||
+    operation.before.source.contentHash !== operation.before.contentHash ||
+    operation.after.source.contentHash !== operation.before.contentHash ||
+    canonicalPlanningString(operation.before.source) !==
+      canonicalPlanningString(operation.source) ||
+    canonicalPlanningString(operation.after.source) !== canonicalPlanningString(operation.source) ||
+    pair.origin.host !== operation.source.identity.host ||
+    pair.origin.repo !== operation.source.identity.repository ||
+    pair.origin.skillPath !== operation.source.sourcePath ||
+    pair.origin.refRequested !== operation.source.requestedRef ||
+    pair.origin.refResolved !== operation.source.resolvedSha ||
+    (pair.pinned.gitSha !== null && pair.pinned.gitSha !== operation.source.resolvedSha) ||
+    pair.pinned.rev !== operation.source.resolvedSha.slice(0, 12) ||
+    pair.pinned.storePath.length === 0 ||
     operation.before.dangling ||
     operation.after.dangling ||
     operation.after.classification !== 'pinned' ||
@@ -641,6 +657,14 @@ const moveScopeTransactionState = (
           operation.after.linkTarget.path !== pair.pinned.storePath
         : true) ||
     (pair.pinned.placement ?? 'copy') !== operation.before.representation
+  ) {
+    return err(flipRefusedError('move-scope requires one reproducible pinned source pair'));
+  }
+  const originIdentity = normalizeSourceIdentity(pair.origin.source, 'move-scope.ledger.origin');
+  if (
+    !originIdentity.ok ||
+    canonicalPlanningString(originIdentity.value) !==
+      canonicalPlanningString(operation.source.identity)
   ) {
     return err(flipRefusedError('move-scope requires one reproducible pinned source pair'));
   }
@@ -1850,7 +1874,12 @@ const commit = async (
   const reclaimed = await reclaimBackup(
     env,
     j.backupPath,
-    [pair.pinned?.contentHash],
+    [
+      ctx.logicalOperation?.kind === 'remove' && ctx.logicalOperation.before.kind === 'placement'
+        ? ctx.logicalOperation.before.contentHash
+        : null,
+      pair.pinned?.contentHash,
+    ],
     'uninstalled',
   );
   if (!reclaimed.ok) return reclaimed;

@@ -286,6 +286,14 @@ export const resolvePlanInput = async (
     if (pinMatches(declaration, existing)) pins.set(declaration.name, existing);
   }
 
+  if (request.locked && observed.relationship.state !== 'current') {
+    return err({
+      code: 'plan-locked-state',
+      message: `--locked requires a current complete lock; observed ${observed.relationship.state}`,
+      exitClass: 'state',
+    });
+  }
+
   if (selectionOutcome !== 'filter-noop') {
     for (const name of sortedUnique(selectedSkills)) {
       if (pins.has(name)) continue;
@@ -321,13 +329,6 @@ export const resolvePlanInput = async (
   let replacementLock: PortableLockV1 | null = null;
   if (observed.relationship.state !== 'current' && selectionOutcome !== 'filter-noop') {
     const boundedSelection = request.tools.length > 0 || request.scope !== null;
-    if (request.locked && !boundedSelection) {
-      return err({
-        code: 'plan-locked-state',
-        message: `--locked requires a current complete lock; observed ${observed.relationship.state}`,
-        exitClass: 'state',
-      });
-    }
     const manifestNames = new Set(observed.manifest.model.skills.map((skill) => skill.name));
     const retainedPinNames = [...existingPins.keys()]
       .filter((name) => !manifestNames.has(name))

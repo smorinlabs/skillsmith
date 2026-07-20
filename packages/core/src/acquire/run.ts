@@ -22,6 +22,7 @@ import {
 } from '../artifacts/manifest-edit.ts';
 import { createNodeArtifactCoordinatorPorts } from '../artifacts/node-coordinator.ts';
 import { artifactContractRegistry } from '../artifacts/registry.ts';
+import { hashSourceContentV1, projectSourceContent } from '../artifacts/source-content.ts';
 import type { NormalizedManifestDeclaration, NormalizedManifestV1 } from '../artifacts/types.ts';
 import {
   type SkillSmithError,
@@ -69,6 +70,7 @@ import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   CurrentMutatorOperationPlan,
   ExecutableOperation,
+  OperationDigest,
   OperationExecutionResult,
   OperationImage,
   OperationPlan,
@@ -1712,13 +1714,23 @@ const runInstallInternal = async (
         placement: first.intent.placement.representation,
         path: first.intent.declaration.path,
       });
+      const portableContentHash =
+        first.intent.portableContentHash ?? first.intent.source.contentHash;
+      if (
+        group.intents.some(
+          ({ intent }) =>
+            (intent.portableContentHash ?? intent.source.contentHash) !== portableContentHash,
+        )
+      ) {
+        throw new Error('install artifact group has ambiguous portable content');
+      }
       const desiredLockEntry: PortableLockSkillV1 = Object.freeze({
         name: desired.name,
         source: portableSourceToken(desired),
         requestedRef: first.intent.source.requestedRef,
         resolvedSha: first.intent.source.resolvedSha,
         sourcePath: first.intent.source.sourcePath,
-        contentHash: first.intent.source.contentHash as ArtifactDigest,
+        contentHash: portableContentHash as ArtifactDigest,
       });
       let migrationAfter:
         | AcquisitionArtifactTransitionEnvelopeV1['groups'][number]['migrationAfter']
@@ -1912,6 +1924,7 @@ const runInstallInternal = async (
           ledger,
           scopeKey,
           storeRoot,
+          allowStoreElision: Boolean(opts.noSave),
           ...(opts.signal === undefined ? {} : { signal: opts.signal }),
           ...(deps.pick === undefined ? {} : { pick: deps.pick }),
           createFetchDirectory: () => join(dataDir, '.fetch', txIdOf(env, deps)),
@@ -2305,6 +2318,29 @@ const runInstallInternal = async (
       };
     }
     const preparedIntents: PreparedInstallIntent[] = [];
+    const ledgerWriterPorts = (
+      env as AcquisitionPorts & {
+        readonly ledgerWriterPorts?: Pick<AcquisitionPorts, 'readFileMetadata'>;
+      }
+    ).ledgerWriterPorts;
+    const portableContentPorts =
+      ledgerWriterPorts === undefined
+        ? env
+        : { ...env, readFileMetadata: ledgerWriterPorts.readFileMetadata };
+    const portableContentHashes = new Map<string, Promise<OperationDigest>>();
+    const portableContentHashAt = (path: string): Promise<OperationDigest> => {
+      const cached = portableContentHashes.get(path);
+      if (cached !== undefined) return cached;
+      const pending = (async (): Promise<OperationDigest> => {
+        const projected = await projectSourceContent(portableContentPorts, path);
+        if (!projected.ok) throw projected.error;
+        const hashed = hashSourceContentV1(projected.value);
+        if (!hashed.ok) throw hashed.error;
+        return hashed.value as OperationDigest;
+      })();
+      portableContentHashes.set(path, pending);
+      return pending;
+    };
     const liveResourcesByPath = new Map<string, AcquireLiveSnapshotResourceV1>();
     const storeResourcesByPath = new Map<string, AcquireStoreSnapshotResourceV1>();
     const addLiveResource = (resource: AcquireLiveSnapshotResourceV1): void => {
@@ -2345,6 +2381,7 @@ const runInstallInternal = async (
         sourceResourceId,
         await acquireContentFacts(env, seed.resolved.materializedDir),
       );
+      const portableContentHash = await portableContentHashAt(seed.resolved.materializedDir);
       const livePath = resolve(seed.preview.placementPath);
       const liveResourceId = acquireStateResourceId('live', [livePath]);
       addLiveResource({
@@ -2415,6 +2452,7 @@ const runInstallInternal = async (
           force: Boolean(opts.force),
           sourceContent,
           sourcePreconditionId: createContentObservationPreconditionIdV1(sourceContent),
+          portableContentHash,
           source: {
             kind: 'portable',
             identity: {
