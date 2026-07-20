@@ -188,10 +188,32 @@ const cliEnv = (): Record<string, string | undefined> => ({
   NO_COLOR: '1',
 });
 
+const gitConfigPath = (): string => join(fleet.base, 'export-gitconfig');
+
+const writeGitConfig = (): Promise<void> =>
+  writeFile(
+    gitConfigPath(),
+    [
+      `[url "${remote.multiUrl}"]`,
+      `\tinsteadOf = ${remote.multiSource}`,
+      `[url "${remote.singleUrl}"]`,
+      `\tinsteadOf = ${remote.singleSource}`,
+      `[url "${remote.rootUrl}"]`,
+      `\tinsteadOf = ${remote.rootSource}`,
+      '[protocol "file"]',
+      '\tallow = always',
+      '',
+    ].join('\n'),
+  );
+
 const runCli = async (args: readonly string[], cwd = fleet.base): Promise<CliProduct> => {
+  await writeGitConfig();
   const process = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
     cwd,
-    env: hermeticGitEnv(cliEnv()),
+    env: hermeticGitEnv(
+      { ...cliEnv(), GIT_ALLOW_PROTOCOL: 'file:https' },
+      { globalConfigPath: gitConfigPath() },
+    ),
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -590,7 +612,10 @@ describe('G4A-02 export command contract', () => {
     await fleet.env.withFileLock(ledgerPathOf(fleet.data), async () => {
       const child = Bun.spawn(['bun', CLI_ENTRYPOINT, ...exportArgs(cancelledPaths)], {
         cwd: fleet.base,
-        env: hermeticGitEnv(cliEnv()),
+        env: hermeticGitEnv(
+          { ...cliEnv(), GIT_ALLOW_PROTOCOL: 'file:https' },
+          { globalConfigPath: gitConfigPath() },
+        ),
         stdin: 'ignore',
         stdout: 'pipe',
         stderr: 'pipe',

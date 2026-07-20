@@ -129,19 +129,38 @@ const downgradeLedgerToV1 = async (fleet: FixtureFleet): Promise<void> => {
 };
 
 const runCli = async (fleet: FixtureFleet, args: readonly string[]): Promise<CliProduct> => {
+  const gitConfig = join(fleet.base, 'p4a-ts03-gitconfig');
+  await writeFile(
+    gitConfig,
+    [
+      `[url "${remote.multiUrl}"]`,
+      `\tinsteadOf = ${remote.multiSource}`,
+      `[url "${remote.singleUrl}"]`,
+      `\tinsteadOf = ${remote.singleSource}`,
+      `[url "${remote.rootUrl}"]`,
+      `\tinsteadOf = ${remote.rootSource}`,
+      '[protocol "file"]',
+      '\tallow = always',
+      '',
+    ].join('\n'),
+  );
   const process = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
     cwd: fleet.base,
-    env: hermeticGitEnv({
-      HOME: fleet.home,
-      XDG_CONFIG_HOME: fleet.env.xdg.config,
-      XDG_DATA_HOME: fleet.env.xdg.data,
-      XDG_CACHE_HOME: fleet.env.xdg.cache,
-      SKILLSMITH_HOME: fleet.data,
-      CLAUDE_CONFIG_DIR: join(fleet.home, '.claude'),
-      CODEX_HOME: join(fleet.home, '.codex'),
-      CI: '1',
-      NO_COLOR: '1',
-    }),
+    env: hermeticGitEnv(
+      {
+        HOME: fleet.home,
+        XDG_CONFIG_HOME: fleet.env.xdg.config,
+        XDG_DATA_HOME: fleet.env.xdg.data,
+        XDG_CACHE_HOME: fleet.env.xdg.cache,
+        SKILLSMITH_HOME: fleet.data,
+        CLAUDE_CONFIG_DIR: join(fleet.home, '.claude'),
+        CODEX_HOME: join(fleet.home, '.codex'),
+        CI: '1',
+        NO_COLOR: '1',
+        GIT_ALLOW_PROTOCOL: 'file:https',
+      },
+      { globalConfigPath: gitConfig },
+    ),
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
