@@ -6404,7 +6404,7 @@
       "phase": "4B",
       "title": "Lock update policy, cross-machine reproduction, crash recovery, and secret safety",
       "dependsOn": ["P17-G4B-02"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/reconcile/resolve.ts",
@@ -6507,8 +6507,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -6543,7 +6543,8 @@
         "projects/p17/plans/P17-G4B-03.md",
         "projects/p17/evidence/P17-G4B-03.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-03.md#ready-review",
-        "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G4B-03.md#test-first-evidence"
       ]
     },
     {
@@ -22998,14 +22999,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-03",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4B-03.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G4B-03.md#ready-review",
-        "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G4B-03.md#test-first-evidence"
       ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": ["D-015"],
@@ -23256,18 +23258,29 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/phase/EWP-P4B-TS05.test.ts#EWP-P4B-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P4B-TS05.test.ts",
+        "selector": "EWP-P4B-TS05",
+        "command": "bun test tests/ergonomics/phase/EWP-P4B-TS05.test.ts --test-name-pattern EWP-P4B-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS05"],
       "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06", "EWP-WF03", "EWP-WF04"],
       "affectedContracts": ["D-015"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P4B-TS05.test.ts --test-name-pattern EWP-P4B-TS05"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P4B-TS05.test.ts",
+        "tests/ergonomics/fixtures/p4b-lock-policy/cases.ts",
+        "tests/ergonomics/fixtures/p4b-lock-policy/apply-crash-child.ts"
+      ]
     },
     {
       "id": "EWP-P4B-TS06",
@@ -23275,18 +23288,28 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/phase/EWP-P4B-TS06.test.ts#EWP-P4B-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P4B-TS06.test.ts",
+        "selector": "EWP-P4B-TS06",
+        "command": "bun test tests/ergonomics/phase/EWP-P4B-TS06.test.ts --test-name-pattern EWP-P4B-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P4B-TS06"],
       "impactedValidations": ["EWP-P4B-TS05", "EWP-P4B-TS06", "EWP-WF03", "EWP-WF04"],
       "affectedContracts": ["D-015"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P4B-TS06.test.ts --test-name-pattern EWP-P4B-TS06"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P4B-TS06.test.ts",
+        "tests/ergonomics/fixtures/p4b-lock-policy/cases.ts"
+      ]
     },
     {
       "id": "EWP-P4B-TS07",
@@ -24156,11 +24179,16 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF03.test.ts#EWP-WF03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF03.test.ts",
+        "selector": "EWP-WF03",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF03.test.ts --test-name-pattern EWP-WF03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf03"],
       "secondaryGroups": ["P17-G4A-03"],
       "implements": [],
       "validatedBy": ["EWP-WF03"],
@@ -24174,8 +24202,13 @@
         "EWP-WF03"
       ],
       "affectedContracts": ["COMMAND:init", "EWP-CF-041", "P1-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF03.test.ts --test-name-pattern EWP-WF03"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/workflows/EWP-WF03.test.ts",
+        "tests/ergonomics/fixtures/p4b-lock-policy/cases.ts"
+      ]
     },
     {
       "id": "EWP-WF04",
@@ -24183,11 +24216,16 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF04.test.ts#EWP-WF04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF04.test.ts",
+        "selector": "EWP-WF04",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF04.test.ts --test-name-pattern EWP-WF04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf04"],
       "secondaryGroups": ["P17-G4A-02"],
       "implements": [],
       "validatedBy": ["EWP-WF04"],
@@ -24205,8 +24243,13 @@
         "EWP-WF04"
       ],
       "affectedContracts": ["COMMAND:export", "D-005", "EWP-CF-011", "P1-06"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF04.test.ts --test-name-pattern EWP-WF04"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/workflows/EWP-WF04.test.ts",
+        "tests/ergonomics/fixtures/p4b-lock-policy/cases.ts"
+      ]
     },
     {
       "id": "EWP-WF05",
