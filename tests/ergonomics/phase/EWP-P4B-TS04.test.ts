@@ -162,7 +162,11 @@ describe('EWP-P4B-TS04', () => {
     const userSkills: Record<string, { tools: Record<string, LedgerPairV1Dto> }> = {
       'owned-prune': {
         tools: {
-          codex: pairFor(pins.owned, join(skillFiles.owned, '..'), join(storeRoot, 'owned-prune')),
+          codex: pairFor(
+            pins.owned,
+            join(skillFiles.owned, '..'),
+            join(storeRoot, 'acme', `skills@${pins.owned.resolvedSha.slice(0, 12)}`, 'owned-prune'),
+          ),
         },
       },
       'wrong-source': {
@@ -250,7 +254,6 @@ describe('EWP-P4B-TS04', () => {
         'plan',
         '--file',
         fixture.manifest,
-        '--locked',
         '--prune',
         '--tool',
         'codex',
@@ -327,7 +330,6 @@ describe('EWP-P4B-TS04', () => {
         'plan',
         '--file',
         fixture.manifest,
-        '--locked',
         '--prune',
         '--tool',
         'opencode',

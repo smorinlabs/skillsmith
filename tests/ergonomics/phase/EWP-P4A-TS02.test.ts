@@ -149,6 +149,8 @@ const verificationReport = (tool: FlipTool): VerifyReport => ({
   ],
 });
 
+const installTransactionSequences = new WeakMap<FixtureFleet, bigint>();
+
 const installDepsFor = async (
   selected: FixtureFleet,
   label: string,
@@ -158,6 +160,9 @@ const installDepsFor = async (
   const coordinator = await createTestNodeArtifactCoordinatorPorts(
     join(selected.base, `install-coordination-${label}`),
   );
+  const sequence = installTransactionSequences.get(selected) ?? 0n;
+  installTransactionSequences.set(selected, sequence + 1n);
+  const transactionBase = 0x7100000000000000n + sequence * 0x1000n;
   let index = 0;
   return {
     verify,
@@ -166,7 +171,7 @@ const installDepsFor = async (
     transport: remote.transport,
     artifactCoordinator: coordinator,
     now: () => '2026-07-18T00:00:00.000Z',
-    newTxId: () => (0x7100000000000000n + BigInt(index++)).toString(16),
+    newTxId: () => (transactionBase + BigInt(index++)).toString(16),
   };
 };
 
@@ -878,7 +883,7 @@ describe('EWP-P4A-TS02', () => {
       expect(refused.value.plan.operations).toEqual([]);
       expect(refused.value.artifactSelection.outcome).toBe('refused');
     }
-    expect(transportCalls).toEqual(['resolveRef', 'fetchRepo', 'listSkills', 'materializeSkill']);
+    expect(transportCalls).toEqual(['fetchRepo', 'listSkills', 'materializeSkill']);
     expect(await readPair(userRoot)).toEqual([ownerManifest, ownerLock]);
     expect(await readPair(dual.project)).toEqual([ownerManifest, ownerLock]);
     expect(await dual.env.pathKind(ledgerPathOf(dual.data))).toBe('absent');

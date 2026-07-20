@@ -109,7 +109,8 @@ const placement = (
   };
 };
 
-const storePathFor = (skill: string): string => join(ROOT, 'store', skill);
+const storePathFor = (skill: string): string =>
+  join(ROOT, 'store', 'acme', `skills@${SHA.slice(0, 12)}`, skill);
 
 const pairFor = (
   row: NormalizedManifestDeclaration,
