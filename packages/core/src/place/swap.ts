@@ -1737,6 +1737,15 @@ const trustedInstallBackupHashes = (
 ): readonly (string | null)[] =>
   before.mode === 'pinned' && before.contentHash !== null ? [newHash, before.contentHash] : [];
 
+const trustedPortableRemovalBackupHash = (operation: ExecutableOperation | null | undefined) =>
+  operation?.kind === 'remove' &&
+  operation.source?.kind === 'portable' &&
+  operation.before.kind === 'placement' &&
+  operation.before.source?.kind === 'portable' &&
+  operation.before.source.contentHash === operation.before.contentHash
+    ? operation.before.contentHash
+    : null;
+
 // P5: write-ahead commit (durable committed journal) THEN reclaim the backup. Committing first
 // keeps the C5 rollback valid — the backup is the only physical copy of the old state and must
 // survive until the new live entry is recorded as committed. Promote/dev leave the committed
@@ -1874,12 +1883,7 @@ const commit = async (
   const reclaimed = await reclaimBackup(
     env,
     j.backupPath,
-    [
-      ctx.logicalOperation?.kind === 'remove' && ctx.logicalOperation.before.kind === 'placement'
-        ? ctx.logicalOperation.before.contentHash
-        : null,
-      pair.pinned?.contentHash,
-    ],
+    [trustedPortableRemovalBackupHash(ctx.logicalOperation), pair.pinned?.contentHash],
     'uninstalled',
   );
   if (!reclaimed.ok) return reclaimed;

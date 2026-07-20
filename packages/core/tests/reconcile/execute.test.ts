@@ -6,6 +6,7 @@ import type {
   ResourcePreconditionV1,
   SelectionPreconditionV1,
 } from '../../src/artifacts/plan-types.ts';
+import { hashSourceContentV1, projectSourceContent } from '../../src/artifacts/source-content.ts';
 import type { PreparedExecutionBinding } from '../../src/execution/types.ts';
 import { emptyLedgerModel, withLedgerPairAt } from '../../src/place/ledger.ts';
 import { contentHashOf } from '../../src/place/store.ts';
@@ -1157,9 +1158,13 @@ describe('validated reconciliation coordinator execution', () => {
       await mkdir(dirname(storePath), { recursive: true });
       await fixture.env.copyTree(fixture.alphaSrc, storePath);
       await fixture.env.copyTree(storePath, sourcePath);
-      const hashed = await contentHashOf(fixture.env, storePath);
-      if (!hashed.ok) throw new Error(JSON.stringify(hashed.error));
-      const contentHash = hashed.value as OperationDigest;
+      const legacyHashed = await contentHashOf(fixture.env, storePath);
+      if (!legacyHashed.ok) throw new Error(JSON.stringify(legacyHashed.error));
+      const projected = await projectSourceContent(fixture.env, storePath);
+      if (!projected.ok) throw new Error(JSON.stringify(projected.error));
+      const portableHashed = hashSourceContentV1(projected.value);
+      if (!portableHashed.ok) throw new Error(JSON.stringify(portableHashed.error));
+      const contentHash = portableHashed.value as OperationDigest;
       const operationSource = Object.freeze({
         kind: 'portable' as const,
         identity: Object.freeze({
@@ -1262,13 +1267,23 @@ describe('validated reconciliation coordinator execution', () => {
         dev: null,
         pinned: {
           storePath,
-          rev: 'fixture',
-          gitSha: null,
+          rev: 'a'.repeat(12),
+          gitSha: 'a'.repeat(40),
           dirty: false,
-          contentHash,
+          contentHash: legacyHashed.value,
           snapshotAt: '2026-07-19T00:00:00.000Z',
           verify: 'passed',
           placement: 'copy',
+        },
+        origin: {
+          source: 'fixture.invalid/acme/skills//skills/alpha',
+          host: 'fixture.invalid',
+          repo: 'acme/skills',
+          skillPath: 'skills/alpha',
+          refRequested: null,
+          refResolved: 'a'.repeat(40),
+          pin: true,
+          installedAt: '2026-07-19T00:00:00.000Z',
         },
         journal: null,
       };
