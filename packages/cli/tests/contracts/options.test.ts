@@ -1781,10 +1781,20 @@ describe('sync CommandSpec option contract', () => {
       ['--from', 'user', '--to', 'project', '--yes', '--dry-run'],
       ['--from', 'user', '--to', 'project', '--file', 'state.toml'],
       ['--from', 'user', '--to', 'project', '--save', '--lockfile', 'state.lock'],
-      ['--from', 'user', '--to', 'project', '--tool', 'codex', '--tool=codex'],
     ] as const) {
       expect(api.validateOptionInvocation('skillsmith sync', args).ok, args.join(' ')).toBeFalse();
     }
+    expect(
+      api.validateOptionInvocation('skillsmith sync', [
+        '--from',
+        'user',
+        '--to',
+        'project',
+        '--tool',
+        'codex',
+        '--tool=codex',
+      ]),
+    ).toEqual({ ok: true });
     expect(
       api.validateOptionInvocation('skillsmith sync', [
         'lint',

@@ -54,7 +54,7 @@ export const currentWireCommandMappings = Object.freeze([
   mapping('skillsmith plan', 'plan-report', 1),
   mapping('skillsmith promote', 'flip', 4),
   mapping('skillsmith status', 'status', 1),
-  mapping('skillsmith sync', 'sync-report', 1),
+  mapping('skillsmith sync', 'sync', 1),
   mapping('skillsmith uninstall', 'uninstall', 2),
   mapping('skillsmith verify', 'verify', 1),
 ]);

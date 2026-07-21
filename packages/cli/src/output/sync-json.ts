@@ -4,5 +4,5 @@ import { encodeWire } from './wire-codec.ts';
 
 export const renderSyncJson = (
   report: SyncReportV1Dto,
-  codec: WireCodec<'sync-report', 1, SyncReportV1Dto>,
+  codec: WireCodec<'sync', 1, SyncReportV1Dto>,
 ): string => encodeWire(codec, report);

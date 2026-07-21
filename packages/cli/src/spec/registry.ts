@@ -214,7 +214,7 @@ const ARGUMENT_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith list:glob': 'Glob filters for installed skill names',
   'skillsmith promote:skill': 'Skill names or placement paths',
   'skillsmith status:skill': 'Skill names or exact placement paths',
-  'skillsmith sync:skill': 'Exact skill names; omitted means the bounded source membership',
+  'skillsmith sync:skill': 'Skill-name or glob filters; omitted means bounded source membership',
   'skillsmith uninstall:skill':
     'Installed skill names or placement paths; use scope or tool flags to disambiguate',
   'skillsmith verify:path': 'Plugin or bare skill directory',
@@ -761,13 +761,6 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   singularOption('skillsmith sync', '--to'),
   singularOption('skillsmith sync', '--file'),
   singularOption('skillsmith sync', '--lockfile'),
-  {
-    id: 'skillsmith.sync.tool.distinct-values',
-    command: 'skillsmith sync',
-    kind: 'distinct-values',
-    option: '--tool',
-    description: '--tool values must be distinct',
-  },
   {
     id: 'skillsmith.sync.file.requires.save',
     command: 'skillsmith sync',

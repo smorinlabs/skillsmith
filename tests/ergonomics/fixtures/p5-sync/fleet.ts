@@ -226,18 +226,12 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
   });
   const basePorts = await defaultRuntimePorts();
   const ledgerWrite = await writeLedger(
-    {
-      ...basePorts,
-      homeDir: home,
-      xdg: { config, data, cache },
-    },
+    basePorts,
     join(skillsmithHome, 'placements.json'),
     ledgerModel,
   );
   if (!ledgerWrite.ok) {
-    throw new Error(
-      `sync fixture ledger failed: ${ledgerWrite.error.code}: ${ledgerWrite.error.message}`,
-    );
+    throw new Error(`sync fixture ledger failed: ${ledgerWrite.error.code}`);
   }
   return Object.freeze({
     root,

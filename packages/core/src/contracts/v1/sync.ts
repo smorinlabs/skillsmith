@@ -532,7 +532,7 @@ const SyncV1Schema = z
 
 export const syncV1Codec = createJsonWireCodec(
   {
-    id: 'sync-report',
+    id: 'sync',
     version: 1,
     wireKind: 'skillsmith.sync',
     embeddedVersion: 'schemaVersion',
@@ -542,4 +542,4 @@ export const syncV1Codec = createJsonWireCodec(
     compatibility: 'conservative',
   } as const,
   SyncV1Schema,
-) as unknown as WireCodec<'sync-report', 1, SyncReportV1Dto>;
+) as unknown as WireCodec<'sync', 1, SyncReportV1Dto>;

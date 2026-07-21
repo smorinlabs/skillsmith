@@ -1237,4 +1237,4 @@ export interface SyncReportV1Dto {
   readonly summary: SyncSummaryV1Dto;
 }
 
-export declare const syncV1Codec: WireCodec<'sync-report', 1, SyncReportV1Dto>;
+export declare const syncV1Codec: WireCodec<'sync', 1, SyncReportV1Dto>;
