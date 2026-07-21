@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLI_ENTRYPOINT } from '../../../../packages/cli/tests/fixtures/cli.ts';
@@ -28,6 +28,7 @@ export interface SyncFleet {
     readonly current: string;
     readonly a: string;
     readonly b: string;
+    readonly bAlias: string;
     readonly c: string;
   };
   readonly skills: {
@@ -67,14 +68,17 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
   const config = join(root, 'xdg', 'config');
   const data = join(root, 'xdg', 'data');
   const cache = join(root, 'xdg', 'cache');
+  const portableRemote = join(root, 'project-a.git');
+  const gitConfig = join(root, 'gitconfig');
   const projects = Object.freeze({
     current: join(root, 'current'),
     a: join(root, 'project-a'),
     b: join(root, 'project-b'),
+    bAlias: join(root, 'project-b-alias'),
     c: join(root, 'project-c'),
   });
   await Promise.all([home, config, data, cache].map((path) => mkdir(path, { recursive: true })));
-  await Promise.all(Object.values(projects).map(createProject));
+  await Promise.all([projects.current, projects.a, projects.b, projects.c].map(createProject));
 
   const userRoot = join(home, '.agents', 'skills');
   const projectARoot = join(projects.a, '.agents', 'skills');
@@ -98,7 +102,26 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
     mkdir(join(projects.b, 'portable'), { recursive: true }),
     writeFile(artifacts.legacyManifest, 'tool = "codex"\nscope = "project"\n'),
     writeFile(join(root, 'canary.txt'), `${SYNC_SECRET_CANARIES[1]}\n`),
+    symlink(projects.b, projects.bAlias),
   ]);
+  runGit(projects.a, ['config', 'user.name', 'P17 Sync Fixture']);
+  runGit(projects.a, ['config', 'user.email', 'sync@fixture.invalid']);
+  runGit(projects.a, ['add', '.']);
+  runGit(projects.a, ['commit', '--quiet', '-m', 'fixture: seed portable sources']);
+  runGit(root, ['clone', '--quiet', '--bare', projects.a, portableRemote]);
+  runGit(portableRemote, ['config', 'uploadpack.allowFilter', 'true']);
+  runGit(portableRemote, ['config', 'uploadpack.allowReachableSHA1InWant', 'true']);
+  runGit(projects.a, ['remote', 'add', 'origin', 'https://fixture.invalid/acme/project-a.git']);
+  await writeFile(
+    gitConfig,
+    [
+      `[url "file://${portableRemote}"]`,
+      '\tinsteadOf = https://fixture.invalid/acme/project-a.git',
+      '[protocol "file"]',
+      '\tallow = always',
+      '',
+    ].join('\n'),
+  );
 
   const skillsmithHome = join(data, 'skillsmith');
   return Object.freeze({
@@ -121,22 +144,26 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
     }),
     artifacts,
     env: Object.freeze(
-      hermeticGitEnv({
-        HOME: home,
-        XDG_CONFIG_HOME: config,
-        XDG_DATA_HOME: data,
-        XDG_CACHE_HOME: cache,
-        SKILLSMITH_HOME: skillsmithHome,
-        CLAUDE_CONFIG_DIR: join(home, '.claude'),
-        CODEX_HOME: join(home, '.codex'),
-        SKILLSMITH_CONFIG: undefined,
-        SKILLSMITH_TOOL: undefined,
-        SKILLSMITH_SCOPE: undefined,
-        SKILLSMITH_PATH: undefined,
-        P17_SYNC_TEST_CANARY: SYNC_SECRET_CANARIES[0],
-        CI: '1',
-        NO_COLOR: '1',
-      }),
+      hermeticGitEnv(
+        {
+          HOME: home,
+          XDG_CONFIG_HOME: config,
+          XDG_DATA_HOME: data,
+          XDG_CACHE_HOME: cache,
+          SKILLSMITH_HOME: skillsmithHome,
+          CLAUDE_CONFIG_DIR: join(home, '.claude'),
+          CODEX_HOME: join(home, '.codex'),
+          SKILLSMITH_CONFIG: undefined,
+          SKILLSMITH_TOOL: undefined,
+          SKILLSMITH_SCOPE: undefined,
+          SKILLSMITH_PATH: undefined,
+          P17_SYNC_TEST_CANARY: SYNC_SECRET_CANARIES[0],
+          GIT_ALLOW_PROTOCOL: 'file:https',
+          CI: '1',
+          NO_COLOR: '1',
+        },
+        { globalConfigPath: gitConfig },
+      ),
     ),
   });
 };
