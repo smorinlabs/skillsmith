@@ -6546,7 +6546,7 @@
         "bun test scripts/check-p17-package-output.test.ts"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g4b03_sigkill_stale_review",
+      "reviewer": "/root/g4b03_shellcheck_directive_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6591,7 +6591,7 @@
         "adversarial-review": {
           "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G4B-03.md#independent-sigkill-staleness-fixture-review"
+            "projects/p17/evidence/P17-G4B-03.md#independent-shellcheck-directive-syntax-review"
           ]
         },
         "traceability-closure": {
@@ -6627,7 +6627,9 @@
         "projects/p17/evidence/P17-G4B-03.md#sigkill-central-lock-staleness-fixture-reopening",
         "projects/p17/evidence/P17-G4B-03.md#corrected-sigkill-staleness-fixture-validation",
         "projects/p17/evidence/P17-G4B-03.md#corrected-complete-terminal-gate-after-sigkill-fixture-amendment",
-        "projects/p17/evidence/P17-G4B-03.md#independent-sigkill-staleness-fixture-review"
+        "projects/p17/evidence/P17-G4B-03.md#independent-sigkill-staleness-fixture-review",
+        "projects/p17/evidence/P17-G4B-03.md#ubuntu-shellcheck-directive-syntax-reopening",
+        "projects/p17/evidence/P17-G4B-03.md#independent-shellcheck-directive-syntax-review"
       ]
     },
     {

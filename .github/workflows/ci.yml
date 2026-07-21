@@ -58,13 +58,15 @@ jobs:
             done
           done
           unset IFS
-          # shellcheck disable=SC2016 -- preserve variables in the generated stub.
+          # Preserve variables for the generated stub rather than this workflow shell.
+          # shellcheck disable=SC2016
           printf '%s\n' \
             '#!/bin/sh' \
             '[ "$#" -eq 1 ] && [ "$1" = "--version" ] || exit 64' \
             'printf "%s\\n" "2.1.207 (Claude Code)"' \
             > "$test_bin/claude"
-          # shellcheck disable=SC2016 -- preserve variables in the generated stub.
+          # Preserve variables for the generated stub rather than this workflow shell.
+          # shellcheck disable=SC2016
           printf '%s\n' \
             '#!/bin/sh' \
             '[ "$#" -eq 1 ] && [ "$1" = "--version" ] || exit 64' \
