@@ -34,10 +34,14 @@ export interface SyncFleet {
   readonly skills: {
     readonly userLint: string;
     readonly userReview: string;
+    readonly userClaudeReview: string;
     readonly projectALint: string;
     readonly projectAReview: string;
+    readonly projectAClaudeReview: string;
     readonly projectBReview: string;
     readonly projectBExtra: string;
+    readonly projectBClaudeReview: string;
+    readonly managedClaudePolicy: string;
   };
   readonly artifacts: {
     readonly legacyManifest: string;
@@ -81,17 +85,36 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
   await Promise.all([projects.current, projects.a, projects.b, projects.c].map(createProject));
 
   const userRoot = join(home, '.agents', 'skills');
+  const userClaudeRoot = join(home, '.claude', 'skills');
   const projectARoot = join(projects.a, '.agents', 'skills');
+  const projectAClaudeRoot = join(projects.a, '.claude', 'skills');
   const projectBRoot = join(projects.b, '.agents', 'skills');
-  const [userLint, userReview, projectALint, projectAReview, projectBReview, projectBExtra] =
-    await Promise.all([
-      writeSkill(userRoot, 'lint', 'portable lint source'),
-      writeSkill(userRoot, 'review', 'portable review source'),
-      writeSkill(projectARoot, 'lint', 'project A lint source'),
-      writeSkill(projectARoot, 'review', 'project A review source'),
-      writeSkill(projectBRoot, 'review', 'conflicting project B review destination'),
-      writeSkill(projectBRoot, 'extra', 'destination-only project B skill'),
-    ]);
+  const projectBClaudeRoot = join(projects.b, '.claude', 'skills');
+  const managedClaudeBase = join(root, 'claude-managed');
+  const managedClaudeRoot = join(managedClaudeBase, '.claude', 'skills');
+  const [
+    userLint,
+    userReview,
+    userClaudeReview,
+    projectALint,
+    projectAReview,
+    projectAClaudeReview,
+    projectBReview,
+    projectBExtra,
+    projectBClaudeReview,
+    managedClaudePolicy,
+  ] = await Promise.all([
+    writeSkill(userRoot, 'lint', 'portable lint source'),
+    writeSkill(userRoot, 'review', 'portable review source'),
+    writeSkill(userClaudeRoot, 'review', 'Claude user review source'),
+    writeSkill(projectARoot, 'lint', 'project A lint source'),
+    writeSkill(projectARoot, 'review', 'project A review source'),
+    writeSkill(projectAClaudeRoot, 'review', 'Claude project A review source'),
+    writeSkill(projectBRoot, 'review', 'conflicting project B review destination'),
+    writeSkill(projectBRoot, 'extra', 'destination-only project B skill'),
+    writeSkill(projectBClaudeRoot, 'review', 'conflicting Claude project B review destination'),
+    writeSkill(managedClaudeRoot, 'policy', 'managed Claude policy source'),
+  ]);
 
   const artifacts = Object.freeze({
     legacyManifest: join(projects.b, 'legacy.toml'),
@@ -137,10 +160,14 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
     skills: Object.freeze({
       userLint,
       userReview,
+      userClaudeReview,
       projectALint,
       projectAReview,
+      projectAClaudeReview,
       projectBReview,
       projectBExtra,
+      projectBClaudeReview,
+      managedClaudePolicy,
     }),
     artifacts,
     env: Object.freeze(
@@ -152,6 +179,7 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
           XDG_CACHE_HOME: cache,
           SKILLSMITH_HOME: skillsmithHome,
           CLAUDE_CONFIG_DIR: join(home, '.claude'),
+          CLAUDE_CODE_MANAGED_SETTINGS_PATH: managedClaudeBase,
           CODEX_HOME: join(home, '.codex'),
           SKILLSMITH_CONFIG: undefined,
           SKILLSMITH_TOOL: undefined,
