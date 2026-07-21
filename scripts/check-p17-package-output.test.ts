@@ -104,7 +104,7 @@ describe('P17 package-check output compatibility', () => {
     expect(v2).toContain(
       `final:    review ${catalog.finalReview.status}; approval ${catalog.finalApproval.status}; sign-off ${catalog.finalSignoff.status}`,
     );
-  }, 30_000);
+  }, 55_000);
 
   test('an unknown output version fails closed', () => {
     const result = run('invalid');

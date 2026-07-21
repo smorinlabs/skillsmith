@@ -6451,6 +6451,7 @@
         "packages/core/src/artifacts/node-coordinator.ts",
         "packages/core/tests/config/save.test.ts",
         "packages/cli/tests/contracts/verify.test.ts",
+        "scripts/check-p17-package-output.test.ts",
         ".github/workflows/ci.yml",
         "projects/p17/plans/P17-G4B-03.md",
         "projects/p17/evidence/P17-G4B-03.md"
@@ -6536,10 +6537,11 @@
         "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03",
         "bun test packages/core/tests/artifacts/node-coordinator.test.ts",
         "bun test packages/core/tests/config/save.test.ts",
-        "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS03"
+        "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS03",
+        "bun test scripts/check-p17-package-output.test.ts"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g4b03_portability_review",
+      "reviewer": "/root/g4b03_macos_fixture_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6579,7 +6581,7 @@
         "adversarial-review": {
           "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G4B-03.md#independent-portability-correction-review"
+            "projects/p17/evidence/P17-G4B-03.md#independent-macos-compatibility-amendment-review"
           ]
         },
         "traceability-closure": {
@@ -6605,7 +6607,9 @@
         "projects/p17/evidence/P17-G4B-03.md#traceability-and-terminal-verification",
         "projects/p17/evidence/P17-G4B-03.md#sign-off",
         "projects/p17/evidence/P17-G4B-03.md#phase-4-ci-reopening-and-full-matrix-amendment",
-        "projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt"
+        "projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt",
+        "projects/p17/evidence/P17-G4B-03.md#independent-macos-compatibility-amendment-review",
+        "projects/p17/evidence/P17-G4B-03.md#corrected-tree-complete-local-gate"
       ]
     },
     {

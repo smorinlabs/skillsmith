@@ -656,6 +656,7 @@ interface CrashResidueSnapshot {
   readonly categories: Readonly<Record<string, number>>;
   readonly files: readonly Readonly<Record<string, unknown>>[];
   readonly directories: readonly Readonly<Record<string, unknown>>[];
+  readonly symbolicLinks: readonly Readonly<Record<string, unknown>>[];
   readonly records: readonly Readonly<Record<string, unknown>>[];
   readonly inodeGroups: readonly (readonly string[])[];
 }
@@ -663,15 +664,27 @@ interface CrashResidueSnapshot {
 const serializeCrashResidueSnapshot = (snapshot: CrashResidueSnapshot): string =>
   JSON.stringify([
     recoveryFixture().allowedResidue.map((category) => snapshot.categories[category]),
-    snapshot.files
-      .filter(
-        (file) => file.category !== 'member-owner-marker' && !String(file.path).endsWith('/owner'),
-      )
-      .map((file) => [file.path, file.category, file.content, file.mode, file.nlink]),
+    [
+      ...snapshot.files
+        .filter(
+          (file) =>
+            file.category !== 'member-owner-marker' && !String(file.path).endsWith('/owner'),
+        )
+        .map((file) => [file.path, file.category, file.content, file.mode, file.nlink]),
+      ...snapshot.symbolicLinks.map((link) => [
+        link.path,
+        'symbolic-link',
+        link.target,
+        link.mode,
+        link.nlink,
+      ]),
+    ],
     snapshot.directories
       .filter(
         (directory) =>
-          directory.kind === 'owned-transaction' || directory.kind === 'collision-transaction',
+          directory.kind === 'owned-transaction' ||
+          directory.kind === 'collision-transaction' ||
+          directory.kind === 'transaction-child-directory',
       )
       .map((directory) => [directory.path, directory.kind, directory.mode, directory.nlink]),
     snapshot.records.map((record) => [
@@ -701,6 +714,7 @@ const crashResidueSnapshot = async (
   );
   const files: Readonly<Record<string, unknown>>[] = [];
   const directories: Readonly<Record<string, unknown>>[] = [];
+  const symbolicLinks: Readonly<Record<string, unknown>>[] = [];
   const records: Readonly<Record<string, unknown>>[] = [];
   const inodeMembers = new Map<string, string[]>();
   const stats = new Map<string, Awaited<ReturnType<typeof lstat>>>();
@@ -716,6 +730,20 @@ const crashResidueSnapshot = async (
     if (stat.isSymbolicLink()) {
       const target = await readlink(path);
       expect(target, `secret leaked in symlink ${relative}`).not.toContain(SECRET_CANARY);
+      const normalizedTarget =
+        target === root
+          ? '<root>'
+          : target.startsWith(`${root}/`)
+            ? `<root>/${normalizeResiduePath(target.slice(root.length + 1))}`
+            : normalizeResiduePath(target);
+      symbolicLinks.push(
+        Object.freeze({
+          path: normalizeResiduePath(relative),
+          target: normalizedTarget,
+          mode: stat.mode & 0o777,
+          nlink: stat.nlink,
+        }),
+      );
     }
     if (stat.isFile()) {
       const bytes = new Uint8Array(await readFile(path));
@@ -758,6 +786,10 @@ const crashResidueSnapshot = async (
     const name = basename(relative);
     if (stat.isDirectory()) {
       let kind = 'infrastructure';
+      const hasTransactionAncestor = relative
+        .split('/')
+        .slice(0, -1)
+        .some((segment) => /^\.skillsmith-artifact-[0-9a-f]{16}$/u.test(segment));
       if (/^\.skillsmith-artifact-[0-9a-f]{16}$/u.test(name)) {
         const owner = rawFiles.get(join(relative, 'owner'));
         kind =
@@ -767,13 +799,27 @@ const crashResidueSnapshot = async (
         categories[
           kind === 'owned-transaction' ? 'transaction-directory' : 'collision-directory'
         ] += 1;
+      } else if (hasTransactionAncestor) {
+        kind = 'transaction-child-directory';
       } else if (name.endsWith('.lock')) {
         kind = compatibilityLockDirectories.has(relative) ? 'lock-sidecar' : 'central-lock-sidecar';
         if (kind === 'lock-sidecar') categories['member-lock-sidecar'] += 1;
         expect(stat.mode & 0o777, `${relative}: lock directory mode drift`).toBe(0o700);
       }
+      const transactionDirectory = kind === 'owned-transaction' || kind === 'collision-transaction';
+      if (transactionDirectory) {
+        expect(
+          stat.nlink,
+          `${relative}: transaction directory link count drift`,
+        ).toBeGreaterThanOrEqual(2);
+      }
       directories.push(
-        Object.freeze({ path: normalized, kind, mode: stat.mode & 0o777, nlink: stat.nlink }),
+        Object.freeze({
+          path: normalized,
+          kind,
+          mode: stat.mode & 0o777,
+          nlink: transactionDirectory ? 2 : stat.nlink,
+        }),
       );
       continue;
     }
@@ -944,11 +990,13 @@ const crashResidueSnapshot = async (
   }
   files.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
   directories.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  symbolicLinks.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
   records.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
   return Object.freeze({
     categories: Object.freeze(categories),
     files,
     directories,
+    symbolicLinks,
     records,
     inodeGroups,
   });
@@ -1883,6 +1931,46 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
   test('fixtures are counted, independent, hostile, and canonically shaped', () => {
     guardManifestFixture(manifestFixture());
     guardRecoveryFixture(recoveryFixture());
+
+    const emptySnapshot: CrashResidueSnapshot = Object.freeze({
+      categories: Object.freeze(
+        Object.fromEntries(recoveryFixture().allowedResidue.map((category) => [category, 0])),
+      ),
+      files: Object.freeze([]),
+      directories: Object.freeze([]),
+      symbolicLinks: Object.freeze([]),
+      records: Object.freeze([]),
+      inodeGroups: Object.freeze([]),
+    });
+    const serializedEmpty = serializeCrashResidueSnapshot(emptySnapshot);
+    expect(
+      serializeCrashResidueSnapshot({
+        ...emptySnapshot,
+        directories: Object.freeze([
+          Object.freeze({
+            path: '.skillsmith-artifact-<tx>/unexpected',
+            kind: 'transaction-child-directory',
+            mode: 0o700,
+            nlink: 2,
+          }),
+        ]),
+      }),
+      'nested transaction directory disappeared from exact snapshot',
+    ).not.toBe(serializedEmpty);
+    expect(
+      serializeCrashResidueSnapshot({
+        ...emptySnapshot,
+        symbolicLinks: Object.freeze([
+          Object.freeze({
+            path: '.skillsmith-artifact-<tx>/unexpected-link',
+            target: 'unexpected-target',
+            mode: 0o777,
+            nlink: 1,
+          }),
+        ]),
+      }),
+      'symbolic link disappeared from exact snapshot',
+    ).not.toBe(serializedEmpty);
   });
 
   test('spawn fixtures expose only bounded IPC protocols and no production bypass', () => {
