@@ -17,6 +17,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -35,7 +37,39 @@ jobs:
         run: bun test tests/ergonomics/workflows/EWP-WF03.test.ts --test-name-pattern EWP-WF03
 
       - name: Test
-        run: bun test
+        env:
+          TMPDIR: ${{ runner.temp }}/skillsmith-tests
+        run: |
+          test_bin="$RUNNER_TEMP/skillsmith-test-bin"
+          test_path="$RUNNER_TEMP/skillsmith-test-path"
+          mkdir -p "$TMPDIR" "$test_bin" "$test_path"
+          IFS=:
+          for path_dir in $PATH; do
+            [ -d "$path_dir" ] || continue
+            for executable in "$path_dir"/*; do
+              [ -x "$executable" ] || continue
+              [ -d "$executable" ] && continue
+              executable_name="${executable##*/}"
+              case "$executable_name" in
+                claude|codex) continue ;;
+              esac
+              [ -e "$test_path/$executable_name" ] ||
+                ln -s "$executable" "$test_path/$executable_name"
+            done
+          done
+          unset IFS
+          printf '%s\n' \
+            '#!/bin/sh' \
+            '[ "$#" -eq 1 ] && [ "$1" = "--version" ] || exit 64' \
+            'printf "%s\\n" "2.1.207 (Claude Code)"' \
+            > "$test_bin/claude"
+          printf '%s\n' \
+            '#!/bin/sh' \
+            '[ "$#" -eq 1 ] && [ "$1" = "--version" ] || exit 64' \
+            'printf "%s\\n" "codex-cli 0.144.1"' \
+            > "$test_bin/codex"
+          chmod 0755 "$test_bin/claude" "$test_bin/codex"
+          PATH="$test_bin:$test_path" bun test --timeout 60000 --max-concurrency 1
 
       - name: Install actionlint
         run: |

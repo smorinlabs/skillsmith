@@ -12,14 +12,14 @@ Tracked entities: **425** across **45** change groups.
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
 | recommendation | 34 | 19 | 9 | 6 |
-| phase-task | 65 | 52 | 13 | 0 |
-| phase-test | 61 | 50 | 11 | 0 |
+| phase-task | 65 | 51 | 14 | 0 |
+| phase-test | 61 | 48 | 13 | 0 |
 | command-test | 157 | 107 | 50 | 0 |
 | option-gate | 10 | 7 | 3 | 0 |
-| workflow | 16 | 8 | 8 | 0 |
+| workflow | 16 | 6 | 10 | 0 |
 | command | 23 | 17 | 6 | 0 |
 | finding | 43 | 38 | 5 | 0 |
-| decision | 16 | 11 | 4 | 1 |
+| decision | 16 | 10 | 5 | 1 |
 
 ### Phases
 
@@ -29,7 +29,7 @@ Tracked entities: **425** across **45** change groups.
 | 1 | 9 | 62 | 62 | 0 |
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
-| 4 | 7 | 105 | 105 | 0 |
+| 4 | 7 | 105 | 99 | 0 |
 | 5 | 5 | 69 | 0 | 0 |
 | 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
@@ -233,7 +233,7 @@ Tracked entities: **425** across **45** change groups.
 | D-012 | P17-G5-04 | planned | required-pr |
 | D-013 | P17-G7-01 | deferred | deferred |
 | D-014 | P17-G4B-02 | signed-off | required-pr |
-| D-015 | P17-G4B-03 | signed-off | required-pr |
+| D-015 | P17-G4B-03 | validated | required-pr |
 | D-016 | P17-G6-04 | planned | release |
 
 #### option-gate
@@ -257,8 +257,8 @@ Tracked entities: **425** across **45** change groups.
 |---|---|---|---|
 | EWP-WF01 | P17-G6-04 | planned | release |
 | EWP-WF02 | P17-G4A-01 | signed-off | required-pr |
-| EWP-WF03 | P17-G4B-03 | signed-off | required-pr |
-| EWP-WF04 | P17-G4B-03 | signed-off | required-pr |
+| EWP-WF03 | P17-G4B-03 | passing | required-pr |
+| EWP-WF04 | P17-G4B-03 | passing | required-pr |
 | EWP-WF05 | P17-G5-03 | planned | required-pr |
 | EWP-WF06 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF07 | P17-G4B-02 | signed-off | required-pr |
@@ -1303,7 +1303,7 @@ Downstream coverage obligations: EWP-WF13.
 
 ## P17-G4B-03 — Lock update policy, cross-machine reproduction, crash recovery, and secret safety
 
-Phase: 4B; status: **signed-off**; dependencies: P17-G4B-02.
+Phase: 4B; status: **reviewed**; dependencies: P17-G4B-02.
 Required-now validations: EWP-CMD-EXPORT-TS01, EWP-CMD-EXPORT-TS02, EWP-CMD-EXPORT-TS03, EWP-CMD-EXPORT-TS04, EWP-CMD-EXPORT-TS05, EWP-CMD-EXPORT-TS06, EWP-CMD-EXPORT-TS07, EWP-CMD-EXPORT-TS08, EWP-CMD-EXPORT-TS09, EWP-CMD-INIT-TS01, EWP-CMD-INIT-TS02, EWP-CMD-INIT-TS03, EWP-CMD-INIT-TS04, EWP-CMD-INIT-TS05, EWP-CMD-PLAN-TS04, EWP-CMD-PLAN-TS09, EWP-P4A-TS03, EWP-P4A-TS04, EWP-P4B-TS05, EWP-P4B-TS06, EWP-WF03, EWP-WF04.
 Downstream coverage obligations: none.
 
@@ -1317,17 +1317,17 @@ Downstream coverage obligations: none.
 - [x] P17-G4B-03:impacted-green _(passed)_
 - [x] P17-G4B-03:refactor _(passed)_
 - [x] P17-G4B-03:adversarial-review _(passed)_
-- [x] P17-G4B-03:traceability-closure _(passed)_
-- [x] P17-G4B-03:signed-off _(passed)_
+- [ ] P17-G4B-03:traceability-closure _(pending)_
+- [ ] P17-G4B-03:signed-off _(pending)_
 
 ### Tracked entities
 
-- [x] **D-015** — Visible default resolution; strict locked mode _(decision; signed-off)_
-- [x] **EWP-P4B-T05** — Lockfile resolution/update policy and commit points. _(phase-task; signed-off)_
-- [x] **EWP-P4B-TS05** — Crash/recovery at every manifest/lock/ledger/live commit boundary. _(phase-test; signed-off)_
-- [x] **EWP-P4B-TS06** — Machine-A export -> machine-B locked plan/apply reproduction. _(phase-test; signed-off)_
-- [x] **EWP-WF03** — Reproducible project bootstrap _(workflow; signed-off)_
-- [x] **EWP-WF04** — Existing-fleet export and restore _(workflow; signed-off)_
+- [ ] **D-015** — Visible default resolution; strict locked mode _(decision; validated)_
+- [ ] **EWP-P4B-T05** — Lockfile resolution/update policy and commit points. _(phase-task; green)_
+- [ ] **EWP-P4B-TS05** — Crash/recovery at every manifest/lock/ledger/live commit boundary. _(phase-test; passing)_
+- [ ] **EWP-P4B-TS06** — Machine-A export -> machine-B locked plan/apply reproduction. _(phase-test; passing)_
+- [ ] **EWP-WF03** — Reproducible project bootstrap _(workflow; passing)_
+- [ ] **EWP-WF04** — Existing-fleet export and restore _(workflow; passing)_
 
 ## P17-G5-01 — Direct sync endpoints, selection, save/delete semantics, and operation equivalence
 

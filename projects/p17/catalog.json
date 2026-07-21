@@ -5620,6 +5620,7 @@
         "packages/core/src/artifacts/coordinator-types.ts",
         "packages/core/src/artifacts/coordinator.ts",
         "packages/core/src/artifacts/execution.ts",
+        "packages/core/src/artifacts/init.ts",
         "packages/core/src/planning/types.ts",
         "packages/core/src/planning/create.ts",
         "packages/core/src/contracts/v1/init.ts",
@@ -5762,7 +5763,8 @@
         "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-ownership-and-architecture-amendment",
         "projects/p17/evidence/P17-G4A-03.md#terminal-adversarial-f23-correction",
         "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-gate",
-        "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off"
+        "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G4A-03.md#phase-4-traceability-correction"
       ]
     },
     {
@@ -6404,7 +6406,7 @@
       "phase": "4B",
       "title": "Lock update policy, cross-machine reproduction, crash recovery, and secret safety",
       "dependsOn": ["P17-G4B-02"],
-      "status": "signed-off",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/reconcile/resolve.ts",
@@ -6437,6 +6439,7 @@
         "packages/cli/tests/contracts/export.test.ts",
         "tests/ergonomics/phase/EWP-P4A-TS03.test.ts",
         "tests/ergonomics/phase/EWP-P4A-TS02.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS04.test.ts",
         "tests/ergonomics/phase/EWP-P4B-TS01.test.ts",
         "tests/ergonomics/phase/EWP-P4B-TS04.test.ts",
         "tests/ergonomics/fixtures/p4b-lock-policy/cases.ts",
@@ -6530,7 +6533,7 @@
         "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g4b03_platform_receipt_review",
+      "reviewer": "/root/phase4_correction_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6557,23 +6560,23 @@
         },
         "impacted-green": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#amended-targeted-and-impacted-green"]
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt"]
         },
         "refactor": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#amended-refactor"]
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt"]
         },
         "adversarial-review": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#amended-independent-adversarial-review"]
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt"]
         },
         "traceability-closure": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#traceability-and-terminal-verification"]
+          "status": "pending",
+          "evidence": []
         },
         "signed-off": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#sign-off"]
+          "status": "pending",
+          "evidence": []
         }
       },
       "evidence": [
@@ -6588,7 +6591,9 @@
         "projects/p17/evidence/P17-G4B-03.md#amended-refactor",
         "projects/p17/evidence/P17-G4B-03.md#amended-independent-adversarial-review",
         "projects/p17/evidence/P17-G4B-03.md#traceability-and-terminal-verification",
-        "projects/p17/evidence/P17-G4B-03.md#sign-off"
+        "projects/p17/evidence/P17-G4B-03.md#sign-off",
+        "projects/p17/evidence/P17-G4B-03.md#phase-4-ci-reopening-and-full-matrix-amendment",
+        "projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt"
       ]
     },
     {
@@ -9195,7 +9200,7 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-03",
-      "status": "signed-off",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-03",
       "target": null,
@@ -22303,7 +22308,8 @@
         "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-ownership-and-architecture-amendment",
         "projects/p17/evidence/P17-G4A-03.md#terminal-adversarial-f23-correction",
         "projects/p17/evidence/P17-G4A-03.md#terminal-full-repository-gate",
-        "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off"
+        "projects/p17/evidence/P17-G4A-03.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G4A-03.md#phase-4-traceability-correction"
       ],
       "secondaryGroups": ["P17-G4B-03"],
       "implements": ["COMMAND:init", "EWP-CF-041", "P1-05"],
@@ -22353,6 +22359,7 @@
         "packages/core/src/artifacts/coordinator-types.ts",
         "packages/core/src/artifacts/coordinator.ts",
         "packages/core/src/artifacts/execution.ts",
+        "packages/core/src/artifacts/init.ts",
         "packages/core/src/planning/types.ts",
         "packages/core/src/planning/create.ts",
         "packages/core/src/contracts/v1/init.ts",
@@ -23047,7 +23054,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-03",
-      "status": "signed-off",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03",
       "target": null,
@@ -23309,7 +23316,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "signed-off",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/phase/EWP-P4B-TS05.test.ts#EWP-P4B-TS05",
       "target": {
@@ -23343,7 +23350,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "signed-off",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/phase/EWP-P4B-TS06.test.ts#EWP-P4B-TS06",
       "target": {
@@ -24240,7 +24247,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "signed-off",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF03.test.ts#EWP-WF03",
       "target": {
@@ -24283,7 +24290,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "signed-off",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF04.test.ts#EWP-WF04",
       "target": {

@@ -2209,7 +2209,7 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
       kind: 'hold',
       policy: 'central',
       target: 'global',
-      holdMs: 2_800,
+      holdMs: 6_200,
     });
     expect(await holder.acquired).toMatchObject({
       kind: 'acquired',
