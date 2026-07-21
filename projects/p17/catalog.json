@@ -151,34 +151,36 @@
         "P17-G4B-02",
         "P17-G4B-03"
       ],
-      "status": "active",
+      "status": "approved",
       "entry": {
         "status": "passed",
         "evidence": ["projects/p17/evidence/phase-4.md#entry-gate-2026-07-16"]
       },
       "review": {
-        "status": "pending",
-        "evidence": [],
-        "reviewer": null
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/phase-4.md#whole-phase-adversarial-review-2026-07-21"],
+        "reviewer": "/root/phase4_final_whole_review"
       },
       "approval": {
-        "status": "pending",
-        "evidence": [],
-        "approvedBy": null
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/standing-authorization.md"],
+        "approvedBy": "user-standing-authorization-2026-07-12"
       },
       "exit": {
-        "status": "pending",
-        "evidence": []
+        "status": "passed",
+        "evidence": [
+          "projects/p17/evidence/phase-4.md#standing-approval-and-phase-4-exit-2026-07-21"
+        ]
       }
     },
     {
       "id": "5",
       "dependsOn": "4",
       "requiredGroups": ["P17-G5-01", "P17-G5-02", "P17-G5-03", "P17-G5-04", "P17-G5-05"],
-      "status": "planned",
+      "status": "active",
       "entry": {
-        "status": "pending",
-        "evidence": []
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/phase-5.md#entry-gate-2026-07-21"]
       },
       "review": {
         "status": "pending",
