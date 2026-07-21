@@ -21,6 +21,10 @@ import type {
 import { VERIFIED_AGAINST, err, ok, runInstall } from '@skillsmith/core';
 import { parseSource } from '../../../core/src/acquire/source.ts';
 import {
+  ARTIFACT_CENTRAL_LOCK_HEARTBEAT_MS,
+  ARTIFACT_CENTRAL_LOCK_STALE_MS,
+} from '../../../core/src/artifacts/coordinator-types.ts';
+import {
   normalizeManifestDocument,
   readManifestSource,
 } from '../../../core/src/artifacts/manifest.ts';
@@ -386,6 +390,9 @@ const waitForJournalPhase = async (
   }
   throw new Error(`timed out waiting for install journal phase ${phase}`);
 };
+
+const awaitKilledCentralLockStaleness = (): Promise<void> =>
+  Bun.sleep(ARTIFACT_CENTRAL_LOCK_STALE_MS + ARTIFACT_CENTRAL_LOCK_HEARTBEAT_MS + 250);
 
 const persistedFixtureText = async (
   ports: RuntimePorts,
@@ -1046,6 +1053,7 @@ describe('G4A-01 install command contract', () => {
           await waitForChildExit(child, 'SIGKILL fixture cleanup');
         }
         await rm(`${crashLedgerPath}.lock`, { recursive: true, force: true });
+        await awaitKilledCentralLockStaleness();
       }
 
       const interrupted = await readLedgerState(crashFleet.env, crashLedgerPath);

@@ -6449,7 +6449,10 @@
         "tests/ergonomics/workflows/EWP-WF03.test.ts",
         "tests/ergonomics/workflows/EWP-WF04.test.ts",
         "packages/core/src/artifacts/node-coordinator.ts",
+        "packages/core/tests/artifacts/node-coordinator.test.ts",
+        "packages/core/tests/artifacts/ledger-writer.test.ts",
         "packages/core/tests/config/save.test.ts",
+        "packages/cli/tests/contracts/install.test.ts",
         "packages/cli/tests/contracts/verify.test.ts",
         "scripts/check-p17-package-output.test.ts",
         ".github/workflows/ci.yml",
@@ -6536,12 +6539,14 @@
         "bun test packages/core/tests/reconcile/execute.test.ts",
         "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03",
         "bun test packages/core/tests/artifacts/node-coordinator.test.ts",
+        "bun test packages/core/tests/artifacts/ledger-writer.test.ts --test-name-pattern 'recomputes and removes one exact victim at a time until history converges'",
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS08",
         "bun test packages/core/tests/config/save.test.ts",
         "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS03",
         "bun test scripts/check-p17-package-output.test.ts"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g4b03_macos_fixture_review",
+      "reviewer": "/root/g4b03_sigkill_stale_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6564,24 +6569,29 @@
         },
         "targeted-green": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#amended-targeted-and-impacted-green"]
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-03.md#amended-targeted-and-impacted-green",
+            "projects/p17/evidence/P17-G4B-03.md#corrected-sigkill-staleness-fixture-validation"
+          ]
         },
         "impacted-green": {
           "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G4B-03.md#supported-platform-full-suite-portability-correction"
+            "projects/p17/evidence/P17-G4B-03.md#supported-platform-full-suite-portability-correction",
+            "projects/p17/evidence/P17-G4B-03.md#corrected-sigkill-staleness-fixture-validation"
           ]
         },
         "refactor": {
           "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G4B-03.md#supported-platform-full-suite-portability-correction"
+            "projects/p17/evidence/P17-G4B-03.md#supported-platform-full-suite-portability-correction",
+            "projects/p17/evidence/P17-G4B-03.md#corrected-sigkill-staleness-fixture-validation"
           ]
         },
         "adversarial-review": {
           "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G4B-03.md#independent-macos-compatibility-amendment-review"
+            "projects/p17/evidence/P17-G4B-03.md#independent-sigkill-staleness-fixture-review"
           ]
         },
         "traceability-closure": {
@@ -6609,7 +6619,15 @@
         "projects/p17/evidence/P17-G4B-03.md#phase-4-ci-reopening-and-full-matrix-amendment",
         "projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt",
         "projects/p17/evidence/P17-G4B-03.md#independent-macos-compatibility-amendment-review",
-        "projects/p17/evidence/P17-G4B-03.md#corrected-tree-complete-local-gate"
+        "projects/p17/evidence/P17-G4B-03.md#corrected-tree-complete-local-gate",
+        "projects/p17/evidence/P17-G4B-03.md#ubuntu-release-heartbeat-race-reopening",
+        "projects/p17/evidence/P17-G4B-03.md#independent-release-heartbeat-correction-review",
+        "projects/p17/evidence/P17-G4B-03.md#ledger-history-fixture-runtime-reopening",
+        "projects/p17/evidence/P17-G4B-03.md#independent-ledger-history-runtime-review",
+        "projects/p17/evidence/P17-G4B-03.md#sigkill-central-lock-staleness-fixture-reopening",
+        "projects/p17/evidence/P17-G4B-03.md#corrected-sigkill-staleness-fixture-validation",
+        "projects/p17/evidence/P17-G4B-03.md#corrected-complete-terminal-gate-after-sigkill-fixture-amendment",
+        "projects/p17/evidence/P17-G4B-03.md#independent-sigkill-staleness-fixture-review"
       ]
     },
     {

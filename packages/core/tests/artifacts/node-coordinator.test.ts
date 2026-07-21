@@ -18,6 +18,13 @@ import {
 } from '../../src/artifacts/node-coordinator.ts';
 
 const roots: string[] = [];
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
 afterEach(async () =>
   Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))),
 );
@@ -116,6 +123,42 @@ describe('Node artifact coordinator adapter', () => {
     expect(order).toEqual(['marker-remove', 'physical-release']);
     expect((await ports.observe(`${target}.lock`)).kind).toBe('absent');
   });
+
+  test('does not compromise a released lock when an in-flight heartbeat stat observes its removal', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-node-lock-release-stat-'));
+    roots.push(root);
+    const heartbeatStarted = deferred();
+    const allowHeartbeatStat = deferred();
+    const heartbeatReturned = deferred();
+    let statCalls = 0;
+    const ports = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'), {
+      beforeLockStat: async () => {
+        statCalls += 1;
+        if (statCalls !== 2) return;
+        heartbeatStarted.resolve();
+        await allowHeartbeatStat.promise;
+      },
+      afterLockStat: () => {
+        if (statCalls === 2) heartbeatReturned.resolve();
+      },
+      failAfterLockRelease: allowHeartbeatStat.resolve,
+    });
+    const target = join(root, 'artifact.toml');
+
+    await ports.withFileLock(
+      target,
+      {
+        policy: 'central',
+        centralOperationId: '0000000000000001',
+        retryDelaysMs: [0],
+      },
+      async () => heartbeatStarted.promise,
+    );
+    await heartbeatReturned.promise;
+
+    expect(statCalls).toBe(2);
+    expect((await ports.observe(`${target}.lock`)).kind).toBe('absent');
+  }, 5_000);
 
   test('maps non-contention lock acquisition I/O failures to filesystem failure', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-node-lock-io-'));

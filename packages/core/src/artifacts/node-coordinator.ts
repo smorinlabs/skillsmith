@@ -305,6 +305,8 @@ const delay = (milliseconds: number, signal?: AbortSignal): Promise<void> => {
 };
 
 interface NodeCoordinatorTestFaults {
+  readonly beforeLockStat?: (path: nodeFs.PathLike) => Promise<void>;
+  readonly afterLockStat?: (path: nodeFs.PathLike) => void;
   readonly failAfterLockRelease?: () => void;
   readonly failBeforeMarkerRemoval?: () => void;
   readonly failExclusiveWriteAfterBytes?: number;
@@ -340,6 +342,34 @@ const makeNodePorts = async (
   const physical = async (step: NodeArtifactCoordinatorPhysicalStep): Promise<void> => {
     await testFaults.afterPhysicalStep?.(step);
   };
+  const lockFs =
+    testFaults.beforeLockStat === undefined && testFaults.afterLockStat === undefined
+      ? privateLockFs
+      : {
+          ...privateLockFs,
+          stat: (
+            path: nodeFs.PathLike,
+            callback: (error: NodeJS.ErrnoException | null, stats: nodeFs.Stats) => void,
+          ): void => {
+            const run = (): void => {
+              nodeFs.stat(path, (error, stats) => {
+                callback(error, stats);
+                testFaults.afterLockStat?.(path);
+              });
+            };
+            const before = testFaults.beforeLockStat?.(path);
+            if (before === undefined) {
+              run();
+              return;
+            }
+            void before.then(run, (error: unknown) => {
+              const failure =
+                error instanceof Error ? error : new Error('lock stat test fault rejected');
+              callback(failure as NodeJS.ErrnoException, undefined as never);
+              testFaults.afterLockStat?.(path);
+            });
+          },
+        };
   await ensurePrivatePath(coordinationRoot, expectedUid);
   const recoveryDirectory = join(coordinationRoot, 'recovery');
   const memberOwners = join(coordinationRoot, 'member-owners');
@@ -538,12 +568,13 @@ const makeNodePorts = async (
       }
       if (options.policy === 'compatibility') await reclaimMarkedMember(target);
       let release: (() => Promise<void>) | null = null;
+      let releaseStarted = false;
       for (const wait of options.retryDelaysMs) {
         await delay(wait, options.signal);
         if (options.signal?.aborted) throw abortError();
         try {
           release = await lockfile.lock(target, {
-            fs: privateLockFs,
+            fs: lockFs,
             realpath: false,
             stale:
               options.policy === 'central'
@@ -554,6 +585,9 @@ const makeNodePorts = async (
                 ? ARTIFACT_CENTRAL_LOCK_HEARTBEAT_MS
                 : ARTIFACT_COMPATIBILITY_LOCK_HEARTBEAT_MS,
             retries: 0,
+            onCompromised: (error) => {
+              if (!releaseStarted) throw error;
+            },
           });
           break;
         } catch (error) {
@@ -592,6 +626,7 @@ const makeNodePorts = async (
         }
       }
       let releaseError: unknown = null;
+      releaseStarted = true;
       try {
         await release();
         testFaults.failAfterLockRelease?.();

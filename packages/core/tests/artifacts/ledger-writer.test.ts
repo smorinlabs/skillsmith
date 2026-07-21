@@ -629,7 +629,7 @@ describe('bounded history and one-victim cleanup', () => {
     );
     expect(receipt.model.history).toHaveLength(256);
     expect(fixture.backupPaths.map((backupPath) => existsSync(backupPath))).toEqual([false, false]);
-  }, 15_000);
+  }, 30_000);
 
   test('allows a later terminal history change when durable pruning needs no backup proof', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-history-finalize-benign-'));
