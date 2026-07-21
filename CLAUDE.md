@@ -68,7 +68,7 @@ Scopes are **cosmetic** in this repo's release-please setup (single package + `e
 
 ## PR titles must also be Conventional
 
-`main` uses squash-merge, so the PR title becomes the commit release-please parses. The `commit-msg` lefthook hook validates local commits; the `lint-pr-title` CI job validates PR titles.
+`main` uses merge commits, so release-please parses the branch's individual commits — every commit must be Conventional, not just the title. The `commit-msg` lefthook hook validates locally and the `commitlint (humans)` CI job enforces it on every PR commit. The merge commit's own subject is deliberately left non-conventional (`merge_commit_title=MERGE_MESSAGE`, i.e. `Merge pull request #N from …`) so release-please skips it and counts each change exactly once; `lint-pr-title` still validates the PR title for review legibility.
 
 ## Pushing: bypass the pre-push hook (issue #17)
 
