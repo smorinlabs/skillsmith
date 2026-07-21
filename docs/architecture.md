@@ -27,6 +27,7 @@ packages/
       selection/     shared tool/scope/target validation
       skills/        installed-skill parsing and domain types
       status/        correlated desired/lock/ledger/live read model
+      sync/          bounded endpoint observation and shared-plan projection
       verify/        static/deep verification orchestration
       errors.ts      SkillSmithError tagged union
       result.ts      Result<T, E> helpers (ok/err/isOk/isErr/map/mapErr)
@@ -121,6 +122,16 @@ reconciliation product as `plan`; saved mode validates one exact `plan@1` author
 replanning. Dry-run and check remain nonmutating, while changing execution requires explicit
 approval and revalidates exact preconditions under the existing coordinator locks. Human and JSON
 output are views of one strict `apply-report@1` DTO rather than a second execution model.
+
+`runSyncApplication` is the bounded live-endpoint convergence boundary. It freezes two distinct
+endpoint identities, limits the destination to a writable user or project endpoint, observes
+complete source and destination membership, and projects the selected pairs into the existing
+placement operation algebra. Ordinary sync requests only live content evidence; `--save`
+separately requires exact portable Git proof and composes the existing artifact-pair controller.
+Approval is applied to the one immutable prepared plan, and execution revalidates source
+membership/content plus normal destination preconditions without observing or planning again. The
+source is read-only, destination removal requires the independent `--delete` authority, and
+`--force` can replace only a conflicting destination already in the selection.
 
 ## Result-based error handling
 
@@ -244,7 +255,7 @@ or define a second public schema.
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
 `commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
 `flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
-`init@1`, `plan-report@1`, `apply-report@1`, `uninstall@2`, `verify@1`, `error@1`, and
+`init@1`, `plan-report@1`, `apply-report@1`, `sync@1`, `uninstall@2`, `verify@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive
 unknown-field rejection, embedded kind and version policy, JSON indentation, terminal framing, and
 conservative compatibility. Current codecs declare no migrations. Lifecycle v2 contracts are
@@ -296,6 +307,12 @@ empty state; malformed, noncanonical, or future ledgers refuse without cleanup o
 codecs reject noncanonical generated forms, and every artifact boundary rejects recursive unknown
 fields, hostile inputs, and sensitive content with fixed sanitized errors rather than persisting
 redaction placeholders or echoing raw values.
+
+Saved-plan and runtime-journal validation intentionally have different source matrices. Persisted
+`plan@1` install/update operations remain portable-only. A runtime `journal@1` may retain a
+machine-bound local source for sync install/update only when the after-image is an exact pinned
+copy with no synthetic origin or link target and its source, staged-store, and placement hashes
+agree. The journal, ledger, physical recovery format, and operation vocabulary are unchanged.
 
 The focused ledger writer owns canonical replacement and migration durability. A private,
 ledger-derived recovery pointer records the exact source, target, transaction identity, revisions,
