@@ -33,13 +33,46 @@ import {
 } from './portable-content.ts';
 import type { ExportFailure, ExportRequest } from './types.ts';
 
-export interface ExportEntryObservation {
+export interface LiveFleetEntryObservation {
   readonly entry: SkillInventoryEntry;
   readonly ledgerPair: LedgerPairV1Dto | null;
   readonly liveContentHash: ArtifactDigest | null;
   readonly portableContentHash?: ArtifactDigest | null;
   readonly git: GitWorktreeInspection | null;
   readonly defaultLocation: boolean;
+  readonly pendingJournal: boolean;
+  readonly pendingTransactionIds: readonly string[];
+}
+
+export type ExportEntryObservation = LiveFleetEntryObservation;
+
+export interface LiveFleetRequest {
+  readonly tools: readonly BuiltInToolId[];
+  readonly scope: ExportRequest['scope'];
+  readonly liveContent: 'portable-members' | 'all-members';
+  readonly portableProof: 'none' | 'exact';
+}
+
+export interface LiveFleetObservation {
+  readonly project: ProjectContext;
+  readonly sourceProjectRoot: string | null;
+  readonly homeDir: string;
+  readonly request: LiveFleetRequest;
+  readonly inventory: SkillInventory;
+  readonly entries: readonly LiveFleetEntryObservation[];
+  readonly ledger: ArtifactReadResult<LedgerModel>;
+  readonly ledgerPath: string;
+}
+
+export interface LiveFleetFailure {
+  readonly code:
+    | 'live-fleet-ledger-state'
+    | 'live-fleet-inventory'
+    | 'live-fleet-cancelled'
+    | 'live-fleet-permission'
+    | 'live-fleet-observation';
+  readonly message: string;
+  readonly exitClass: 'failure' | 'state' | 'permission' | 'cancelled';
 }
 
 export interface ExportObservation {
@@ -117,7 +150,7 @@ const enrichEntry = async (
 
 const selectedLedgerSkills = (
   ledger: LedgerModel | null,
-  request: ExportRequest,
+  request: Pick<LiveFleetRequest, 'scope'>,
   sourceProjectRoot: string | null,
 ) =>
   ledger === null
@@ -132,7 +165,7 @@ const addLedgerOnlyPlacements = async (
   context: CurrentApplicationContext,
   entries: SkillEntry[],
   ledger: LedgerModel | null,
-  request: ExportRequest,
+  request: Pick<LiveFleetRequest, 'scope' | 'tools'>,
   sourceProjectRoot: string | null,
 ): Promise<ReadonlySet<string>> => {
   const synthetic = new Set<string>();
@@ -181,6 +214,7 @@ const entryFacts = async (
   sourceProjectRoot: string | null,
   synthetic: ReadonlySet<string>,
   dataDir: string,
+  request: Pick<LiveFleetRequest, 'liveContent' | 'portableProof'>,
 ): Promise<readonly ExportEntryObservation[]> => {
   const hashes = new Map<string, Promise<ArtifactDigest | null>>();
   const livePortableHashes = new Map<string, Promise<ArtifactDigest | null>>();
@@ -318,20 +352,47 @@ const entryFacts = async (
       return null;
     }
   };
+  const pendingTransactionIdsFor = (entry: SkillInventoryEntry): readonly string[] => {
+    if (ledger === null) return Object.freeze([]);
+    return Object.freeze(
+      Object.values(ledger.transactions)
+        .filter((transaction) => {
+          const intent = transaction.intent;
+          if (
+            intent.skill !== entry.name ||
+            intent.tool !== entry.tool ||
+            intent.scope !== entry.scope
+          ) {
+            return false;
+          }
+          return [...transaction.actual.before, ...transaction.actual.after].some(
+            (actual) =>
+              actual.role === 'live' &&
+              (actual.placementPath === entry.path || actual.placementPath === entry.realpath),
+          );
+        })
+        .map(({ transactionId }) => transactionId)
+        .sort(),
+    );
+  };
 
   return Object.freeze(
     await Promise.all(
       inventory.entries.map(async (entry): Promise<ExportEntryObservation> => {
         const ledgerPair = pairFor(ledger, entry, sourceProjectRoot);
-        const eligible =
+        const portableEligible =
           (entry.scope === 'user' || entry.scope === 'project') &&
           entry.visibility.state !== 'duplicate' &&
           entry.visibility.state !== 'shadowed' &&
           ledgerPair !== null;
-        const liveContentHash = eligible ? await hashAt(entry.realpath) : null;
+        const liveEligible =
+          entry.visibility.state !== 'duplicate' &&
+          entry.visibility.state !== 'shadowed' &&
+          (request.liveContent === 'all-members' || portableEligible);
+        const liveContentHash = liveEligible ? await hashAt(entry.realpath) : null;
         let git: GitWorktreeInspection | null = null;
         let portableContentHash: ArtifactDigest | null = null;
-        if (eligible && ledgerPair.mode === 'dev') {
+        if (request.portableProof === 'exact' && portableEligible && ledgerPair.mode === 'dev') {
           const repositoryRoot = ledgerPair.dev?.repoRoot;
           const sourcePath = ledgerPair.dev?.sourceRelPath;
           if (repositoryRoot != null && sourcePath != null) {
@@ -340,7 +401,8 @@ const entryFacts = async (
             portableContentHash = exact?.contentHash ?? null;
           }
         } else if (
-          eligible &&
+          request.portableProof === 'exact' &&
+          portableEligible &&
           ledgerPair.mode === 'pinned' &&
           ledgerPair.pinned != null &&
           liveContentHash === ledgerPair.pinned.contentHash
@@ -355,6 +417,7 @@ const entryFacts = async (
               livePortable !== null && livePortable === exactPortable ? exactPortable : null;
           }
         }
+        const pendingTransactionIds = pendingTransactionIdsFor(entry);
         return Object.freeze({
           entry,
           ledgerPair,
@@ -363,24 +426,35 @@ const entryFacts = async (
           git,
           defaultLocation:
             !synthetic.has(`${entry.tool}\0${entry.path}`) && dirname(entry.path) === entry.root,
+          pendingJournal: ledgerPair?.journal != null || pendingTransactionIds.length > 0,
+          pendingTransactionIds,
         });
       }),
     ),
   );
 };
 
-export const observeExport = async (
+const liveFailure = (
+  code: LiveFleetFailure['code'],
+  message: string,
+  exitClass: LiveFleetFailure['exitClass'],
+): Result<never, LiveFleetFailure> => err(Object.freeze({ code, message, exitClass }));
+
+/**
+ * Command-neutral immutable live inventory. Portable proof is an explicit cost boundary: callers
+ * that select `none` perform no Git inspection, fetch, tree, or blob work.
+ */
+export const observeLiveFleet = async (
   context: CurrentApplicationContext,
   project: ProjectContext,
-  request: ExportRequest,
-  pair: ResolvedArtifactPair | null,
-): Promise<Result<ExportObservation, ExportFailure>> => {
+  request: LiveFleetRequest,
+): Promise<Result<LiveFleetObservation, LiveFleetFailure>> => {
   try {
     const sourceProjectRoot =
       request.scope === 'project' ? (project.projectRoot ?? project.effectiveCwd) : null;
     const dataDir = resolveDataDir(context.ports, context.configuration);
     const ledgerPath = ledgerPathOf(dataDir);
-    const [ledgerRead, placementsRead, manifestRead, lockRead] = await Promise.all([
+    const [ledgerRead, placementsRead] = await Promise.all([
       readLedgerArtifact(context.ports, ledgerPath),
       observeSkillPlacements(context.ports, {
         tools: request.tools,
@@ -390,21 +464,21 @@ export const observeExport = async (
         ...(context.signal === undefined ? {} : { signal: context.signal }),
         observation: context.observation,
       }),
-      pair === null ? Promise.resolve(null) : readManifestArtifact(context.ports, pair.file.path),
-      pair === null ? Promise.resolve(null) : readLockArtifact(context.ports, pair.lockfile.path),
     ]);
-    if (!ledgerRead.ok) return repositoryFailure('ledger', ledgerRead.error);
+    if (!ledgerRead.ok) {
+      return liveFailure(
+        'live-fleet-ledger-state',
+        'placement ledger is unavailable or invalid',
+        ledgerRead.error.reason === 'permission-denied' ? 'permission' : 'state',
+      );
+    }
     if (!placementsRead.ok) {
-      return failure(
-        'export-inventory',
+      return liveFailure(
+        'live-fleet-inventory',
         'selected live inventory could not be read',
         placementsRead.error.code === 'permission-denied' ? 'permission' : 'state',
       );
     }
-    if (manifestRead !== null && !manifestRead.ok) {
-      return repositoryFailure('manifest', manifestRead.error);
-    }
-    if (lockRead !== null && !lockRead.ok) return repositoryFailure('lock', lockRead.error);
 
     const ledger = ledgerRead.value.state === 'present' ? ledgerRead.value.model : null;
     const raw = [...placementsRead.value];
@@ -422,7 +496,9 @@ export const observeExport = async (
       tools: request.tools,
       scopes: [request.scope],
     });
-    if (!inventory.ok) return failure('export-inventory', 'selected inventory is invalid', 'state');
+    if (!inventory.ok) {
+      return liveFailure('live-fleet-inventory', 'selected inventory is invalid', 'state');
+    }
     const entries = await entryFacts(
       context,
       inventory.value,
@@ -430,6 +506,7 @@ export const observeExport = async (
       sourceProjectRoot,
       synthetic,
       dataDir,
+      request,
     );
 
     return ok(
@@ -438,11 +515,80 @@ export const observeExport = async (
         sourceProjectRoot,
         homeDir: context.ports.homeDir,
         request,
-        pair,
         inventory: inventory.value,
         entries,
         ledger: ledgerRead.value,
         ledgerPath,
+      }),
+    );
+  } catch (error) {
+    if (context.signal?.aborted || safeErrorCode(error) === 'cancelled') {
+      return liveFailure('live-fleet-cancelled', 'live inventory was cancelled', 'cancelled');
+    }
+    const code = safeErrorCode(error);
+    if (code === 'EACCES' || code === 'EPERM' || code === 'permission-denied') {
+      return liveFailure(
+        'live-fleet-permission',
+        'live inventory permission was denied',
+        'permission',
+      );
+    }
+    return liveFailure('live-fleet-observation', 'live inventory observation failed', 'failure');
+  }
+};
+
+const exportFailureFromLive = (error: LiveFleetFailure): Result<never, ExportFailure> => {
+  switch (error.code) {
+    case 'live-fleet-ledger-state':
+      return failure(
+        'export-ledger-state',
+        'ledger state is unavailable or invalid',
+        error.exitClass,
+      );
+    case 'live-fleet-inventory':
+      return failure('export-inventory', error.message, error.exitClass);
+    case 'live-fleet-cancelled':
+      return failure('export-cancelled', 'export was cancelled', 'cancelled');
+    case 'live-fleet-permission':
+      return failure('export-permission', 'export observation permission was denied', 'permission');
+    case 'live-fleet-observation':
+      return failure('export-observation', 'export observation failed', 'failure');
+  }
+};
+
+export const observeExport = async (
+  context: CurrentApplicationContext,
+  project: ProjectContext,
+  request: ExportRequest,
+  pair: ResolvedArtifactPair | null,
+): Promise<Result<ExportObservation, ExportFailure>> => {
+  try {
+    const [fleet, manifestRead, lockRead] = await Promise.all([
+      observeLiveFleet(context, project, {
+        tools: request.tools,
+        scope: request.scope,
+        liveContent: 'portable-members',
+        portableProof: 'exact',
+      }),
+      pair === null ? Promise.resolve(null) : readManifestArtifact(context.ports, pair.file.path),
+      pair === null ? Promise.resolve(null) : readLockArtifact(context.ports, pair.lockfile.path),
+    ]);
+    if (!fleet.ok) return exportFailureFromLive(fleet.error);
+    if (manifestRead !== null && !manifestRead.ok) {
+      return repositoryFailure('manifest', manifestRead.error);
+    }
+    if (lockRead !== null && !lockRead.ok) return repositoryFailure('lock', lockRead.error);
+    return ok(
+      Object.freeze({
+        project: fleet.value.project,
+        sourceProjectRoot: fleet.value.sourceProjectRoot,
+        homeDir: fleet.value.homeDir,
+        request,
+        pair,
+        inventory: fleet.value.inventory,
+        entries: fleet.value.entries,
+        ledger: fleet.value.ledger,
+        ledgerPath: fleet.value.ledgerPath,
         manifest: manifestRead?.value ?? null,
         lock: lockRead?.value ?? null,
       }),
