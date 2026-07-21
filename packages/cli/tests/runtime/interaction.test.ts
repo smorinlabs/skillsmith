@@ -79,3 +79,25 @@ describe('apply interaction preview', () => {
     ).toEqual({ status: 'cancelled' });
   });
 });
+
+describe('sync interaction preview', () => {
+  test('renders exact group and operation IDs in supplied order', () => {
+    expect(
+      createConfirmationPromptOptions({
+        id: 'sync.exact-plan',
+        message: 'Execute this exact sync plan?',
+        preview: {
+          kind: 'exact-sync-preview',
+          command: 'sync',
+          groupIds: ['group:z', 'group:a'],
+          operationIds: ['operation:2', 'operation:1'],
+        },
+      }),
+    ).toEqual({
+      message:
+        'Execute this exact sync plan?\nExact groups:\n  1. "group:z"\n  2. "group:a"\n' +
+        'Exact operations:\n  1. "operation:2"\n  2. "operation:1"',
+      initialValue: false,
+    });
+  });
+});

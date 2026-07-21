@@ -1,8 +1,11 @@
 import type { ArtifactCoordinatorPorts } from '../artifacts/coordinator-types.ts';
 import type { EffectiveConfig } from '../config/types.ts';
 import type { ProjectContext } from '../context/types.ts';
+import type { SyncReportV1Dto } from '../contracts/v1/sync.ts';
+import type { SkillSmithError } from '../errors.ts';
 import type { ObservationBundle } from '../observation/index.ts';
 import type { ResolvedRuntimeConfiguration, RuntimePorts } from '../ports/types.ts';
+import type { Result } from '../result.ts';
 
 /** Semantic exit classes. Numeric CLI exit codes remain presentation policy. */
 export const COMMAND_EXIT_CLASSES = [
@@ -82,11 +85,52 @@ export interface ExactApprovalPreviewRequest {
   readonly operationIds: readonly string[];
 }
 
+/** Exact immutable sync group and operation order presented before execution. */
+export interface ExactSyncApprovalPreviewRequest {
+  readonly kind: 'exact-sync-preview';
+  readonly command: 'sync';
+  readonly groupIds: readonly string[];
+  readonly operationIds: readonly string[];
+}
+
 /** Structured confirmation facts; adapters own presentation and interactive defaults. */
 export interface InteractionConfirmationRequest {
   readonly id: string;
   readonly message: string;
-  readonly preview?: ExactApprovalPreviewRequest;
+  readonly preview?: ExactApprovalPreviewRequest | ExactSyncApprovalPreviewRequest;
+}
+
+/** Parser-normalized sync request; endpoint resolution and I/O remain behind SyncApplicationPort. */
+export interface SyncApplicationRequest {
+  readonly from: string;
+  readonly to: string;
+  readonly skills: readonly string[];
+  readonly tools: readonly string[];
+  readonly force: boolean;
+  readonly delete: boolean;
+  readonly save: boolean;
+  readonly file: string | null;
+  readonly lockfile: string | null;
+  readonly dryRun: boolean;
+  readonly yes: boolean;
+  readonly continueOnError: boolean;
+}
+
+/** Opaque preparation token. The application only reads immutable approval/report facts. */
+export interface PreparedSyncApplication {
+  readonly report: SyncReportV1Dto;
+}
+
+/** Narrow adapter seam for the concurrently implemented sync domain. */
+export interface SyncApplicationPort {
+  prepare(
+    request: Readonly<SyncApplicationRequest>,
+    context: CurrentApplicationContext,
+  ): Promise<Result<PreparedSyncApplication, SkillSmithError>>;
+  execute(
+    prepared: PreparedSyncApplication,
+    context: CurrentApplicationContext,
+  ): Promise<Result<SyncReportV1Dto, SkillSmithError>>;
 }
 
 export type InteractionResolution<TValue> =
@@ -119,6 +163,8 @@ export interface ApplicationContext {
   readonly projectContext?: ProjectContext;
   readonly effectiveConfig?: EffectiveConfig;
   readonly signal?: AbortSignal;
+  /** Additive composition seam; only the sync application reads it. */
+  readonly sync?: SyncApplicationPort;
 }
 
 /** @deprecated Transitional name retained for the 1.x application-service registry. */

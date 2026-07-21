@@ -440,6 +440,7 @@ describe('EWP-OPT-TS03', () => {
       'skillsmith doctor',
       'skillsmith check',
       'skillsmith status',
+      'skillsmith sync',
       'skillsmith verify',
       'skillsmith install',
       'skillsmith uninstall',
@@ -455,7 +456,7 @@ describe('EWP-OPT-TS03', () => {
       if (relation.kind === 'conflicts' || relation.kind === 'exclusive-group') {
         expect(relation.options?.length, relation.id).toBeGreaterThan(1);
       } else if (relation.kind === 'requires') {
-        expect(relation.option, relation.id).toMatch(/^--/);
+        expect(relation.option, relation.id).toMatch(/^(?:--|\$command$)/);
         expect(relation.requiredOption, relation.id).toMatch(/^--/);
       } else if (relation.kind === 'distinct-values') {
         expect(relation.option, relation.id).toMatch(/^--/);
@@ -1166,7 +1167,7 @@ describe('EWP-OPT-TS04', () => {
     );
     expect(delta).toEqual(expected.map(({ path, flags }) => `${path}:${flags}`));
     expect(api.CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0)).toBe(
-      228,
+      241,
     );
   });
 
@@ -1177,7 +1178,7 @@ describe('EWP-OPT-TS04', () => {
       (count, spec) => count + spec.options.length,
       0,
     );
-    if (inventory !== 228) findings.push(`option inventory is ${inventory}, expected 228`);
+    if (inventory !== 241) findings.push(`option inventory is ${inventory}, expected 241`);
 
     const program = buildProgram();
     for (const commandName of ['dev', 'promote'] as const) {
@@ -1746,5 +1747,60 @@ describe('EWP-OPT-TS10', () => {
     } finally {
       await rm(sandbox, { recursive: true, force: true });
     }
+  });
+});
+
+describe('sync CommandSpec option contract', () => {
+  test('registers the exact additive grammar and pre-I/O relations once', async () => {
+    const api = await requireOptionContractApi();
+    const spec = api.CURRENT_COMMAND_SPECS.find(({ path }) => path === 'skillsmith sync');
+    expect(spec?.aliases).toEqual([]);
+    expect(spec?.options.map(({ flags }) => flags)).toEqual([
+      '--from <scope|path>',
+      '--to <scope|path>',
+      '-t, --tool <name>',
+      '-f, --force',
+      '--delete',
+      '--save',
+      '--file <path>',
+      '--lockfile <path>',
+      '--dry-run',
+      '-y, --yes',
+      '--continue-on-error',
+      '--json',
+      '-h, --help',
+    ]);
+    expect(api.validateCurrentCommandSpecs()).toEqual([]);
+    expect(api.validateCurrentOptionRelations()).toEqual([]);
+
+    for (const args of [
+      [],
+      ['--from', 'user'],
+      ['--to', 'project'],
+      ['--from', 'user', '--from', 'system', '--to', 'project'],
+      ['--from', 'user', '--to', 'project', '--yes', '--dry-run'],
+      ['--from', 'user', '--to', 'project', '--file', 'state.toml'],
+      ['--from', 'user', '--to', 'project', '--save', '--lockfile', 'state.lock'],
+      ['--from', 'user', '--to', 'project', '--tool', 'codex', '--tool=codex'],
+    ] as const) {
+      expect(api.validateOptionInvocation('skillsmith sync', args).ok, args.join(' ')).toBeFalse();
+    }
+    expect(
+      api.validateOptionInvocation('skillsmith sync', [
+        'lint',
+        '--from',
+        'user',
+        '--to',
+        './project-b',
+        '-tcodex',
+        '--save',
+        '--file',
+        'state.toml',
+        '--lockfile',
+        'state.lock',
+        '--dry-run',
+        '--json',
+      ]),
+    ).toEqual({ ok: true });
   });
 });

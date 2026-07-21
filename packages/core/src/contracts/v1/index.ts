@@ -55,6 +55,16 @@ export type {
   ApplyReportV1Dto,
 } from './apply.ts';
 export { applyV1Codec } from './apply.ts';
+export type {
+  SyncEffectV1Dto,
+  SyncEndpointV1Dto,
+  SyncGroupResultV1Dto,
+  SyncPairResultV1Dto,
+  SyncReportV1Dto,
+  SyncSelectionV1Dto,
+  SyncSummaryV1Dto,
+} from './sync.ts';
+export { syncV1Codec } from './sync.ts';
 export type { ManifestV1Dto } from '../../artifacts/manifest-codec.ts';
 export {
   fromManifestV1Dto,

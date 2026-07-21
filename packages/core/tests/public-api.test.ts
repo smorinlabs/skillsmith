@@ -64,6 +64,7 @@ describe('@skillsmith/core public API', () => {
       'runInitApplication',
       'runPlanApplication',
       'runApplyApplication',
+      'runSyncApplication',
       'prepareInitOperationPlan',
       'observeInitManifest',
       'executePreparedInit',

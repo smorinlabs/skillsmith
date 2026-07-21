@@ -1129,3 +1129,112 @@ export interface ApplyReportV1Dto {
 }
 
 export declare const applyV1Codec: WireCodec<'apply-report', 1, ApplyReportV1Dto>;
+
+export interface SyncEndpointV1Dto {
+  readonly kind: 'user' | 'project' | 'system' | 'managed' | 'path';
+  readonly scope: 'user' | 'project' | 'system' | 'managed';
+  readonly selectedInput: string;
+  readonly projectRoot: string | null;
+}
+
+export interface SyncSelectionV1Dto {
+  readonly selectionSource: 'bounded-default' | 'explicit-targets';
+  readonly selectionOutcome: 'selected' | 'filter-noop';
+  readonly targets: readonly string[];
+  readonly skills: readonly string[];
+  readonly tools: readonly SupportedTool[];
+  readonly groupIds: readonly string[];
+  readonly sourceMembers: number;
+  readonly destinationMembers: number;
+}
+
+export interface SyncPairResultV1Dto {
+  readonly tool: SupportedTool;
+  readonly source: { readonly scope: SyncEndpointV1Dto['scope']; readonly present: boolean };
+  readonly destination: { readonly scope: SyncEndpointV1Dto['scope']; readonly present: boolean };
+  readonly action: 'install' | 'update' | 'remove' | 'noop' | 'refuse';
+  readonly outcome: 'planned' | 'succeeded' | 'failed' | 'cancelled' | 'skipped' | 'not-run';
+  readonly skipReason: string | null;
+  readonly failure: { readonly code: string; readonly message: string } | null;
+  readonly force: {
+    readonly requested: boolean;
+    readonly used: boolean;
+    readonly conflictType:
+      | 'unmanaged-target'
+      | 'modified-managed-target'
+      | 'destination-exists'
+      | 'source-changed'
+      | null;
+    readonly destination: string | null;
+    readonly normal: 'apply' | 'refuse';
+    readonly forced: 'not-applicable' | 'backup-and-replace' | 'replace';
+    readonly required: boolean;
+    readonly outcome: 'not-required' | 'planned' | 'succeeded' | 'failed' | 'cancelled' | 'not-run';
+  };
+  readonly drift: { readonly artifact: boolean; readonly live: boolean };
+}
+
+export interface SyncGroupResultV1Dto {
+  readonly groupId: string;
+  readonly skill: string;
+  readonly pairs: readonly SyncPairResultV1Dto[];
+}
+
+export interface SyncEffectV1Dto {
+  readonly role: 'manifest' | 'lock' | 'ledger' | 'store' | 'live' | 'backup';
+  readonly action: string;
+  readonly operationId: string | null;
+  readonly groupId: string;
+  readonly outcome: 'planned' | 'succeeded' | 'failed' | 'cancelled' | 'not-run';
+}
+
+export interface SyncSummaryV1Dto {
+  readonly groups: number;
+  readonly pairs: number;
+  readonly planned: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly cancelled: number;
+  readonly skipped: number;
+  readonly notRun: number;
+  readonly changed: number;
+  readonly unchanged: number;
+  readonly effects: number;
+  readonly drift: number;
+  readonly refusals: number;
+}
+
+export interface SyncReportV1Dto {
+  readonly schemaVersion: 1;
+  readonly kind: 'skillsmith.sync';
+  readonly command: 'sync';
+  readonly mode: 'dry-run' | 'execute';
+  readonly state: 'ready' | 'refused' | 'completed' | 'partial';
+  readonly endpoints: { readonly from: SyncEndpointV1Dto; readonly to: SyncEndpointV1Dto };
+  readonly artifactPair: null | {
+    readonly manifestPath: string;
+    readonly lockPath: string;
+    readonly lockSource: 'sibling' | 'explicit';
+    readonly selectionSource: 'explicit' | 'destination-project' | 'destination-user';
+  };
+  readonly options: {
+    readonly force: boolean;
+    readonly delete: boolean;
+    readonly save: boolean;
+    readonly dryRun: boolean;
+    readonly continueOnError: boolean;
+  };
+  readonly selection: SyncSelectionV1Dto;
+  readonly operations: readonly PlanOperationV1Dto[];
+  readonly checks: readonly PlanCheckV1Dto[];
+  readonly diagnostics: readonly PlanDiagnosticV1Dto[];
+  readonly approval: {
+    readonly required: boolean;
+    readonly outcome: 'not-required' | 'pending' | 'approved' | 'refused' | 'cancelled';
+  };
+  readonly groups: readonly SyncGroupResultV1Dto[];
+  readonly effects: readonly SyncEffectV1Dto[];
+  readonly summary: SyncSummaryV1Dto;
+}
+
+export declare const syncV1Codec: WireCodec<'sync-report', 1, SyncReportV1Dto>;

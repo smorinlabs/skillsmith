@@ -53,7 +53,11 @@ export type {
   InteractionRequest,
   InteractionResolution,
   ExactApprovalPreviewRequest,
+  ExactSyncApprovalPreviewRequest,
   MutationSummary,
+  PreparedSyncApplication,
+  SyncApplicationPort,
+  SyncApplicationRequest,
 } from './application/types.ts';
 export type {
   AnyCurrentApplicationService,
@@ -63,6 +67,7 @@ export type {
 } from './application/current-services.ts';
 export type { PlanApplicationReport } from './application/plan-service.ts';
 export type { ApplyApplicationReport } from './application/apply-service.ts';
+export type { SyncApplicationReport } from './application/sync-service.ts';
 export type * from './application/lifecycle-services.ts';
 export type * from './application/read-services.ts';
 export type * from './export/types.ts';

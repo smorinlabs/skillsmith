@@ -109,6 +109,12 @@ const PROFILE: Readonly<
     capability: 'apply',
     application: 'apply',
   },
+  'skillsmith sync': {
+    group: 'declarative',
+    question: 'Which exact source and destination should converge?',
+    capability: 'sync',
+    application: 'sync',
+  },
   'skillsmith check': {
     group: 'maintain',
     question: 'Are blocking machine and project checks passing?',
@@ -181,6 +187,7 @@ const DESCRIPTION: Readonly<Record<string, string>> = {
   'skillsmith init': 'Create or safely migrate one desired-state manifest',
   'skillsmith plan': 'Preview desired/current convergence without changing selected state',
   'skillsmith apply': 'Converge live skill state from a manifest or exact reviewed saved plan',
+  'skillsmith sync': 'Converge one exact destination from one immutable live source',
   'skillsmith check': 'Error-severity subset of doctor, suitable for CI',
   'skillsmith verify': 'Verify that a plugin loads under each target tool',
   'skillsmith install': 'Install agent skills from a git host.',
@@ -207,6 +214,7 @@ const ARGUMENT_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith list:glob': 'Glob filters for installed skill names',
   'skillsmith promote:skill': 'Skill names or placement paths',
   'skillsmith status:skill': 'Skill names or exact placement paths',
+  'skillsmith sync:skill': 'Exact skill names; omitted means the bounded source membership',
   'skillsmith uninstall:skill':
     'Installed skill names or placement paths; use scope or tool flags to disambiguate',
   'skillsmith verify:path': 'Plugin or bare skill directory',
@@ -265,6 +273,12 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     'skillsmith apply --project --prune',
     'skillsmith apply --plan review.skillsmith.plan --dry-run',
     'skillsmith apply --plan review.skillsmith.plan --check --json',
+  ],
+  'skillsmith sync': [
+    'skillsmith sync --from user --to ./project-b --dry-run',
+    'skillsmith sync lint --from ./project-a --to ./project-b --tool codex',
+    'skillsmith sync --from user --to project --delete --yes',
+    'skillsmith sync review --from user --to project --save --json',
   ],
   'skillsmith uninstall': [
     'skillsmith uninstall factor-scan',
@@ -347,6 +361,15 @@ const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
     [5, 'a selected source could not be resolved'],
     [6, 'a selected path could not be read or written due to permissions'],
     [7, 'a valid --check plan contains changes'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith sync': exitCodes(
+    [0, 'selected destination converged, was already current, filtered to no-op, or was previewed'],
+    [1, 'execution, integrity, or partial convergence failed'],
+    [2, 'invalid endpoint, selection, conflict, save, option, or approval policy'],
+    [3, 'selected artifact, ledger, or precondition state is invalid or stale'],
+    [4, 'a selected tool or destination sync capability is unavailable'],
+    [6, 'a selected destination or artifact path is permission denied'],
     [130, 'cancelled by SIGINT'],
   ),
   'skillsmith config': exitCodes([0, 'configuration help page emitted']),
@@ -517,6 +540,7 @@ export const CURRENT_COMMAND_SPECS: readonly CommandSpec[] = commandPaths.map((p
     ...(path === 'skillsmith status' ? { reportKind: 'status' } : {}),
     ...(path === 'skillsmith plan' ? { reportKind: 'plan' } : {}),
     ...(path === 'skillsmith apply' ? { reportKind: 'apply' } : {}),
+    ...(path === 'skillsmith sync' ? { reportKind: 'sync' } : {}),
   });
 });
 
@@ -560,6 +584,15 @@ const singularOption = (command: string, option: string): OptionRelationSpec => 
   maximum: 1,
   label: `${option} may only be specified once`,
   description: `${option} may only be specified once`,
+});
+
+const requiredOption = (command: string, option: string): OptionRelationSpec => ({
+  id: `${command}.${option}.required`.replaceAll(' ', '.').replaceAll('--', ''),
+  command,
+  kind: 'requires',
+  option: '$command',
+  requiredOption: option,
+  description: `${option} is required`,
 });
 
 /**
@@ -722,6 +755,44 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   conflicts('skillsmith apply', '--plan', '--prune'),
   conflicts('skillsmith apply', '--plan', '--yes'),
   conflicts('skillsmith apply', '--plan', '--continue-on-error'),
+  requiredOption('skillsmith sync', '--from'),
+  requiredOption('skillsmith sync', '--to'),
+  singularOption('skillsmith sync', '--from'),
+  singularOption('skillsmith sync', '--to'),
+  singularOption('skillsmith sync', '--file'),
+  singularOption('skillsmith sync', '--lockfile'),
+  {
+    id: 'skillsmith.sync.tool.distinct-values',
+    command: 'skillsmith sync',
+    kind: 'distinct-values',
+    option: '--tool',
+    description: '--tool values must be distinct',
+  },
+  {
+    id: 'skillsmith.sync.file.requires.save',
+    command: 'skillsmith sync',
+    kind: 'requires',
+    option: '--file',
+    requiredOption: '--save',
+    description: '--file requires --save',
+  },
+  {
+    id: 'skillsmith.sync.lockfile.requires.file',
+    command: 'skillsmith sync',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  {
+    id: 'skillsmith.sync.lockfile.requires.save',
+    command: 'skillsmith sync',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--save',
+    description: '--lockfile requires --save',
+  },
+  conflicts('skillsmith sync', '--yes', '--dry-run'),
   conflicts('skillsmith verify', '--static', '--deep'),
   conflicts('skillsmith install', '--deep', '--no-verify'),
   conflicts('skillsmith install', '--yes', '--dry-run'),
@@ -1032,7 +1103,7 @@ export const validateCurrentOptionRelations = (): readonly string[] => {
       continue;
     }
     if (relation.kind === 'requires') {
-      validateOperand(relation.option, 'option');
+      if (relation.option !== '$command') validateOperand(relation.option, 'option');
       validateOperand(relation.requiredOption, 'required option');
       if (relation.option === relation.requiredOption)
         errors.push(`${id} cannot require an option to require itself`);

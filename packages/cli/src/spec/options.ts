@@ -149,6 +149,19 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith apply:--dry-run': 'Validate and render the exact plan without locking or writing',
   'skillsmith apply:--check': 'Exit 7 when the valid exact plan contains changes',
   'skillsmith apply:--json': 'Emit the strict apply-report@1 report',
+  'skillsmith sync:--from': 'Read the exact source scope or project path',
+  'skillsmith sync:--to': 'Write the exact destination user scope or project path',
+  'skillsmith sync:--tool': 'Restrict sync to a target tool; repeatable',
+  'skillsmith sync:--force': 'Back up and replace only selected destination conflicts',
+  'skillsmith sync:--delete': 'Remove exact selected destination-only placements',
+  'skillsmith sync:--save': 'Update the selected destination manifest and lockfile pair',
+  'skillsmith sync:--file': 'Select one destination manifest (requires --save)',
+  'skillsmith sync:--lockfile': 'Select one destination lockfile (requires --file and --save)',
+  'skillsmith sync:--dry-run': 'Render the exact non-mutating sync plan',
+  'skillsmith sync:--yes': 'Approve a guarded sync plan without prompting',
+  'skillsmith sync:--continue-on-error':
+    'Continue with later independent destination groups after a failure',
+  'skillsmith sync:--json': 'Emit the strict sync@1 report',
   'skillsmith verify:--tool': 'Restrict to tools; repeatable; default: all detected',
   'skillsmith verify:--static': 'Run static verification only; this is the default',
   'skillsmith verify:--deep': 'Also run isolated session-backed load verification',
@@ -367,6 +380,24 @@ export const optionsForPath = (path: string): readonly CommandOptionSpec[] => {
       '--dry-run',
       '--check',
       '--json',
+    ];
+    return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
+  }
+  if (path === 'skillsmith sync') {
+    const order = [
+      '--from',
+      '--to',
+      '--tool',
+      '--force',
+      '--delete',
+      '--save',
+      '--file',
+      '--lockfile',
+      '--dry-run',
+      '--yes',
+      '--continue-on-error',
+      '--json',
+      '--help',
     ];
     return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
   }

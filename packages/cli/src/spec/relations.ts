@@ -101,7 +101,7 @@ const parseInvocation = (command: string, args: readonly string[]): ParsedInvoca
 };
 
 const selected = (parsed: ParsedInvocation, option: string): boolean =>
-  (parsed.occurrences.get(option) ?? 0) > 0;
+  option === '$command' || (parsed.occurrences.get(option) ?? 0) > 0;
 
 const validateRelation = (
   relation: OptionRelationSpec,

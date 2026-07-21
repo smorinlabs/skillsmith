@@ -20,6 +20,7 @@ import {
   type PlanApplicationReport,
   type PromoteApplicationReport,
   type StatusApplicationReport,
+  type SyncApplicationReport,
   type UninstallApplicationReport,
   type VerifyApplicationReport,
   type VersionReport,
@@ -63,6 +64,8 @@ import { renderPlanHuman } from '../output/plan-human.ts';
 import { renderPlanJson } from '../output/plan-json.ts';
 import { renderStatusHuman } from '../output/status-human.ts';
 import { renderStatusJson } from '../output/status-json.ts';
+import { renderSyncHuman } from '../output/sync-human.ts';
+import { renderSyncJson } from '../output/sync-json.ts';
 import {
   type VerifyDeepCoverageSuffixResolver,
   renderVerifyHuman,
@@ -336,6 +339,20 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
         return value === null
           ? (errorOutput(outcome, 'json') ?? '')
           : renderApplyJson(value, currentWireCodecs.apply);
+      },
+    },
+    sync: {
+      human: (outcome) => {
+        const value = report<SyncApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'human') ?? '')
+          : withDiagnostics(outcome, renderSyncHuman(value));
+      },
+      json: (outcome) => {
+        const value = report<SyncApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : renderSyncJson(value, currentWireCodecs.sync);
       },
     },
     configGet: guarded<ConfigGetReport>(

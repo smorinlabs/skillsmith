@@ -56,15 +56,21 @@ describe('current application-service foundation', () => {
     expect(Object.isFrozen(NO_MUTATION)).toBeTrue();
   });
 
-  test('the current application registry activates export, init, plan, and apply exactly once', () => {
+  test('the current application registry activates declarative services exactly once', () => {
     expect(
       Object.keys(CURRENT_APPLICATION_SERVICES).filter(
-        (name) => name === 'export' || name === 'init' || name === 'plan' || name === 'apply',
+        (name) =>
+          name === 'export' ||
+          name === 'init' ||
+          name === 'plan' ||
+          name === 'apply' ||
+          name === 'sync',
       ),
-    ).toEqual(['export', 'init', 'plan', 'apply']);
+    ).toEqual(['export', 'init', 'plan', 'apply', 'sync']);
     expect(typeof CURRENT_APPLICATION_SERVICES.export).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.init).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.plan).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.apply).toBe('function');
+    expect(typeof CURRENT_APPLICATION_SERVICES.sync).toBe('function');
   });
 });
