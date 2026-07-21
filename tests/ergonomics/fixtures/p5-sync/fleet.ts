@@ -2,6 +2,13 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLI_ENTRYPOINT } from '../../../../packages/cli/tests/fixtures/cli.ts';
+import type {
+  LedgerModel,
+  LedgerPairV1Dto,
+} from '../../../../packages/core/src/artifacts/ledger-types.ts';
+import { deriveLedgerProjectRegistrations } from '../../../../packages/core/src/artifacts/registry.ts';
+import { emptyLedgerModel, writeLedger } from '../../../../packages/core/src/place/ledger.ts';
+import { defaultRuntimePorts } from '../../../../packages/core/src/ports/default.ts';
 import { hermeticGitEnv, runGit } from '../../../../packages/core/tests/fixtures/git-env.ts';
 
 export const SYNC_SECRET_CANARIES = Object.freeze([
@@ -24,6 +31,11 @@ export interface SyncFleet {
   readonly cache: string;
   readonly ledger: string;
   readonly store: string;
+  readonly git: {
+    readonly publicRemote: 'https://fixture.invalid/acme/project-a.git';
+    readonly portableRemote: string;
+    readonly transportConfig: string;
+  };
   readonly projects: {
     readonly current: string;
     readonly a: string;
@@ -88,6 +100,8 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
   const userClaudeRoot = join(home, '.claude', 'skills');
   const projectARoot = join(projects.a, '.agents', 'skills');
   const projectAClaudeRoot = join(projects.a, '.claude', 'skills');
+  const projectACodexSources = join(projects.a, 'skill-sources', 'codex');
+  const projectAClaudeSources = join(projects.a, 'skill-sources', 'claude-code');
   const projectBRoot = join(projects.b, '.agents', 'skills');
   const projectBClaudeRoot = join(projects.b, '.claude', 'skills');
   const managedClaudeBase = join(root, 'claude-managed');
@@ -96,9 +110,9 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
     userLint,
     userReview,
     userClaudeReview,
-    projectALint,
-    projectAReview,
-    projectAClaudeReview,
+    projectALintSource,
+    projectAReviewSource,
+    projectAClaudeReviewSource,
     projectBReview,
     projectBExtra,
     projectBClaudeReview,
@@ -107,13 +121,25 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
     writeSkill(userRoot, 'lint', 'portable lint source'),
     writeSkill(userRoot, 'review', 'portable review source'),
     writeSkill(userClaudeRoot, 'review', 'Claude user review source'),
-    writeSkill(projectARoot, 'lint', 'project A lint source'),
-    writeSkill(projectARoot, 'review', 'project A review source'),
-    writeSkill(projectAClaudeRoot, 'review', 'Claude project A review source'),
+    writeSkill(projectACodexSources, 'lint', 'project A lint source'),
+    writeSkill(projectACodexSources, 'review', 'project A review source'),
+    writeSkill(projectAClaudeSources, 'review', 'Claude project A review source'),
     writeSkill(projectBRoot, 'review', 'conflicting project B review destination'),
     writeSkill(projectBRoot, 'extra', 'destination-only project B skill'),
     writeSkill(projectBClaudeRoot, 'review', 'conflicting Claude project B review destination'),
     writeSkill(managedClaudeRoot, 'policy', 'managed Claude policy source'),
+  ]);
+  const projectALint = join(projectARoot, 'lint');
+  const projectAReview = join(projectARoot, 'review');
+  const projectAClaudeReview = join(projectAClaudeRoot, 'review');
+  await Promise.all([
+    mkdir(projectARoot, { recursive: true }),
+    mkdir(projectAClaudeRoot, { recursive: true }),
+  ]);
+  await Promise.all([
+    symlink('../../skill-sources/codex/lint', projectALint),
+    symlink('../../skill-sources/codex/review', projectAReview),
+    symlink('../../skill-sources/claude-code/review', projectAClaudeReview),
   ]);
 
   const artifacts = Object.freeze({
@@ -147,6 +173,72 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
   );
 
   const skillsmithHome = join(data, 'skillsmith');
+  await mkdir(skillsmithHome, { recursive: true });
+  const recordedAt = '2026-07-21T00:00:00.000Z';
+  const devPair = (
+    placementPath: string,
+    sourcePath: string,
+    sourceRelPath: string,
+  ): LedgerPairV1Dto =>
+    Object.freeze({
+      placementPath,
+      mode: 'dev',
+      dev: Object.freeze({
+        sourcePath,
+        resolvedPath: sourcePath,
+        repoRoot: projects.a,
+        sourceRelPath,
+        remote: 'https://fixture.invalid/acme/project-a.git',
+        recordedAt,
+      }),
+      pinned: null,
+      journal: null,
+    });
+  const codexLintPair = devPair(projectALint, projectALintSource, 'skill-sources/codex/lint');
+  const codexReviewPair = devPair(
+    projectAReview,
+    projectAReviewSource,
+    'skill-sources/codex/review',
+  );
+  const claudeReviewPair = devPair(
+    projectAClaudeReview,
+    projectAClaudeReviewSource,
+    'skill-sources/claude-code/review',
+  );
+  const emptyLedger = emptyLedgerModel(recordedAt);
+  const ledgerProjects: LedgerModel['projects'] = Object.freeze({
+    [projects.a]: Object.freeze({
+      skills: Object.freeze({
+        lint: Object.freeze({ tools: Object.freeze({ codex: codexLintPair }) }),
+        review: Object.freeze({
+          tools: Object.freeze({
+            codex: codexReviewPair,
+            'claude-code': claudeReviewPair,
+          }),
+        }),
+      }),
+    }),
+  });
+  const ledgerModel: LedgerModel = Object.freeze({
+    ...emptyLedger,
+    projects: ledgerProjects,
+    projectRegistrations: deriveLedgerProjectRegistrations(ledgerProjects),
+  });
+  const basePorts = await defaultRuntimePorts();
+  const ledgerWrite = await writeLedger(
+    {
+      ...basePorts,
+      homeDir: home,
+      xdg: { config, data, cache },
+    },
+    join(skillsmithHome, 'placements.json'),
+    ledgerModel,
+  );
+  if (!ledgerWrite.ok) {
+    throw new Error(
+      `sync fixture ledger failed: ${ledgerWrite.error.code}: ${ledgerWrite.error.message}`,
+    );
+  }
   return Object.freeze({
     root,
     cwd: projects.current,
@@ -156,6 +248,11 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
     cache,
     ledger: join(skillsmithHome, 'placements.json'),
     store: join(skillsmithHome, 'store'),
+    git: Object.freeze({
+      publicRemote: 'https://fixture.invalid/acme/project-a.git',
+      portableRemote,
+      transportConfig: gitConfig,
+    }),
     projects,
     skills: Object.freeze({
       userLint,
@@ -171,27 +268,23 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
     }),
     artifacts,
     env: Object.freeze(
-      hermeticGitEnv(
-        {
-          HOME: home,
-          XDG_CONFIG_HOME: config,
-          XDG_DATA_HOME: data,
-          XDG_CACHE_HOME: cache,
-          SKILLSMITH_HOME: skillsmithHome,
-          CLAUDE_CONFIG_DIR: join(home, '.claude'),
-          CLAUDE_CODE_MANAGED_SETTINGS_PATH: managedClaudeBase,
-          CODEX_HOME: join(home, '.codex'),
-          SKILLSMITH_CONFIG: undefined,
-          SKILLSMITH_TOOL: undefined,
-          SKILLSMITH_SCOPE: undefined,
-          SKILLSMITH_PATH: undefined,
-          P17_SYNC_TEST_CANARY: SYNC_SECRET_CANARIES[0],
-          GIT_ALLOW_PROTOCOL: 'file:https',
-          CI: '1',
-          NO_COLOR: '1',
-        },
-        { globalConfigPath: gitConfig },
-      ),
+      hermeticGitEnv({
+        HOME: home,
+        XDG_CONFIG_HOME: config,
+        XDG_DATA_HOME: data,
+        XDG_CACHE_HOME: cache,
+        SKILLSMITH_HOME: skillsmithHome,
+        CLAUDE_CONFIG_DIR: join(home, '.claude'),
+        CLAUDE_CODE_MANAGED_SETTINGS_PATH: managedClaudeBase,
+        CODEX_HOME: join(home, '.codex'),
+        SKILLSMITH_CONFIG: undefined,
+        SKILLSMITH_TOOL: undefined,
+        SKILLSMITH_SCOPE: undefined,
+        SKILLSMITH_PATH: undefined,
+        P17_SYNC_TEST_CANARY: SYNC_SECRET_CANARIES[0],
+        CI: '1',
+        NO_COLOR: '1',
+      }),
     ),
   });
 };
