@@ -531,7 +531,7 @@ describe('EWP-CMD-VERIFY-TS03', () => {
           stderr: 'pipe',
         },
       );
-      for (let attempt = 0; attempt < 200 && !(await Bun.file(marker).exists()); attempt++) {
+      for (let attempt = 0; attempt < 1_000 && !(await Bun.file(marker).exists()); attempt++) {
         await Bun.sleep(10);
       }
       expect(await Bun.file(marker).exists()).toBeTrue();

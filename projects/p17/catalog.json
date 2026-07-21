@@ -6448,6 +6448,9 @@
         "tests/ergonomics/phase/EWP-P4B-TS06.test.ts",
         "tests/ergonomics/workflows/EWP-WF03.test.ts",
         "tests/ergonomics/workflows/EWP-WF04.test.ts",
+        "packages/core/src/artifacts/node-coordinator.ts",
+        "packages/core/tests/config/save.test.ts",
+        "packages/cli/tests/contracts/verify.test.ts",
         ".github/workflows/ci.yml",
         "projects/p17/plans/P17-G4B-03.md",
         "projects/p17/evidence/P17-G4B-03.md"
@@ -6530,10 +6533,13 @@
         "bun test tests/ergonomics/phase/EWP-P4B-TS04.test.ts --test-name-pattern EWP-P4B-TS04",
         "bun test packages/core/tests/acquire/uninstall-run.test.ts",
         "bun test packages/core/tests/reconcile/execute.test.ts",
-        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03"
+        "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03",
+        "bun test packages/core/tests/artifacts/node-coordinator.test.ts",
+        "bun test packages/core/tests/config/save.test.ts",
+        "bun test packages/cli/tests/contracts/verify.test.ts --test-name-pattern EWP-CMD-VERIFY-TS03"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/phase4_correction_review",
+      "reviewer": "/root/g4b03_portability_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6560,15 +6566,21 @@
         },
         "impacted-green": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt"]
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-03.md#supported-platform-full-suite-portability-correction"
+          ]
         },
         "refactor": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt"]
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-03.md#supported-platform-full-suite-portability-correction"
+          ]
         },
         "adversarial-review": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#corrected-local-full-matrix-receipt"]
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-03.md#independent-portability-correction-review"
+          ]
         },
         "traceability-closure": {
           "status": "pending",

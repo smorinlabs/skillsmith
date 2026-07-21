@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-// eslint-disable-next-line skillsmith/capability-ownership -- This focused adapter owns the account-helper fd write.
-import { writeFileSync } from 'node:fs';
+// eslint-disable-next-line skillsmith/capability-ownership -- This focused adapter owns the account-helper fd write and private lock filesystem.
+import * as nodeFs from 'node:fs';
 // eslint-disable-next-line skillsmith/capability-ownership -- This file is the focused artifact runtime adapter.
 import { chmod, link, lstat, mkdir, open, readFile, rename, rmdir, unlink } from 'node:fs/promises';
 // eslint-disable-next-line skillsmith/capability-ownership -- Account identity is owned by this focused adapter.
@@ -32,7 +32,7 @@ import {
 
 const ACCOUNT_HELPER_ARGV0 = 'skillsmith-account-helper-v1';
 if (process.argv0 === ACCOUNT_HELPER_ARGV0) {
-  writeFileSync(1, JSON.stringify(userInfo()));
+  nodeFs.writeFileSync(1, JSON.stringify(userInfo()));
   // eslint-disable-next-line no-restricted-syntax -- The private argv0 helper must terminate before CLI module evaluation continues.
   process.exit(0);
 }
@@ -41,6 +41,12 @@ const ID_16 = /^[0-9a-f]{16}$/u;
 const ID_64 = /^[0-9a-f]{64}$/u;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
+const privateLockFs = {
+  ...nodeFs,
+  mkdir: (path: nodeFs.PathLike, callback: nodeFs.NoParamCallback): void => {
+    nodeFs.mkdir(path, { mode: 0o700 }, callback);
+  },
+};
 let cachedAccountInfo: ReturnType<typeof userInfo> | null = null;
 const stableAccountInfo = (): ReturnType<typeof userInfo> => {
   if (cachedAccountInfo !== null) return cachedAccountInfo;
@@ -477,7 +483,7 @@ const makeNodePorts = async (
       return Object.freeze({ identity: value.identity });
     },
     writeBytesExclusive: async (path, bytes, mode) => {
-      const handle = await open(path, 'wx', mode);
+      const handle = await open(path, 'wx', mode & 0o600);
       await physical({ area: 'stage', step: 'file-opened' });
       const opened = await handle.stat();
       let failure: unknown = null;
@@ -537,6 +543,7 @@ const makeNodePorts = async (
         if (options.signal?.aborted) throw abortError();
         try {
           release = await lockfile.lock(target, {
+            fs: privateLockFs,
             realpath: false,
             stale:
               options.policy === 'central'

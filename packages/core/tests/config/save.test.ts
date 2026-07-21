@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { chmod, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
@@ -13,12 +14,7 @@ const saveConfigWithCoordinator = saveConfig as unknown as (
 ) => ReturnType<typeof saveConfig>;
 
 const tmpDir = async (name: string): Promise<string> => {
-  const d = join(
-    '/tmp',
-    `skillsmith-save-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
-  await mkdir(d, { recursive: true });
-  return d;
+  return mkdtemp(join(tmpdir(), `skillsmith-save-${name}-`));
 };
 
 describe('saveConfig', () => {
