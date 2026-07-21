@@ -31,6 +31,9 @@ jobs:
       - name: Typecheck
         run: bunx tsc --noEmit
 
+      - name: P17 WF03 platform receipt
+        run: bun test tests/ergonomics/workflows/EWP-WF03.test.ts --test-name-pattern EWP-WF03
+
       - name: Test
         run: bun test
 

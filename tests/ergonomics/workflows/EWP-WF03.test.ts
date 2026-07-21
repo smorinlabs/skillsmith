@@ -11,6 +11,7 @@ import {
   contentHashAt,
   createIncompleteWholePairFixture,
   destroyIncompleteWholePairFixture,
+  provisionDetectedCodex,
   runBoundedLockedPreview,
 } from '../fixtures/p4b-lock-policy/cases.ts';
 
@@ -31,7 +32,7 @@ describe('EWP-WF03', () => {
   });
 
   test('doctor, init, pinned install, locked apply, and clean-clone hashes form one reproducible chain', async () => {
-    const selected = await createRemoteApplyFixture();
+    const selected = await provisionDetectedCodex(await createRemoteApplyFixture());
     try {
       await Promise.all([rm(selected.manifest), rm(selected.lock)]);
       const doctor = jsonApplyReport(

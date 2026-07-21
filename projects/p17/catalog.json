@@ -6445,6 +6445,7 @@
         "tests/ergonomics/phase/EWP-P4B-TS06.test.ts",
         "tests/ergonomics/workflows/EWP-WF03.test.ts",
         "tests/ergonomics/workflows/EWP-WF04.test.ts",
+        ".github/workflows/ci.yml",
         "projects/p17/plans/P17-G4B-03.md",
         "projects/p17/evidence/P17-G4B-03.md"
       ],
@@ -6529,7 +6530,7 @@
         "bun test packages/cli/tests/contracts/uninstall.test.ts --test-name-pattern EWP-CMD-UNINSTALL-TS03"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g4a04_corrected_adversarial_review",
+      "reviewer": "/root/g4b03_platform_receipt_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6552,19 +6553,19 @@
         },
         "targeted-green": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green"]
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#amended-targeted-and-impacted-green"]
         },
         "impacted-green": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green"]
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#amended-targeted-and-impacted-green"]
         },
         "refactor": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#refactor"]
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#amended-refactor"]
         },
         "adversarial-review": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G4B-03.md#adversarial-review"]
+          "evidence": ["projects/p17/evidence/P17-G4B-03.md#amended-independent-adversarial-review"]
         },
         "traceability-closure": {
           "status": "pending",
@@ -6582,9 +6583,10 @@
         "projects/p17/evidence/P17-G4B-03.md#accepted-ready-result",
         "projects/p17/evidence/P17-G4B-03.md#test-first-evidence",
         "projects/p17/evidence/P17-G4B-03.md#minimal-implementation",
-        "projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4B-03.md#refactor",
-        "projects/p17/evidence/P17-G4B-03.md#adversarial-review"
+        "projects/p17/evidence/P17-G4B-03.md#supported-platform-receipt-reopening-and-approved-harness-amendment",
+        "projects/p17/evidence/P17-G4B-03.md#amended-targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G4B-03.md#amended-refactor",
+        "projects/p17/evidence/P17-G4B-03.md#amended-independent-adversarial-review"
       ]
     },
     {
@@ -23346,8 +23348,10 @@
         "command": "bun test tests/ergonomics/phase/EWP-P4B-TS06.test.ts --test-name-pattern EWP-P4B-TS06"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-03.md#corrected-working-tree-execution-receipt-ewp-p4b-ts06",
         "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-p4b-ts06",
-        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts06"
+        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts06",
+        "projects/p17/evidence/P17-G4B-03.md#supported-platform-receipt-reopening-and-approved-harness-amendment"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -24240,8 +24244,10 @@
         "command": "bun test tests/ergonomics/workflows/EWP-WF03.test.ts --test-name-pattern EWP-WF03"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-03.md#corrected-working-tree-execution-receipt-ewp-wf03",
         "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-wf03",
-        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf03"
+        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf03",
+        "projects/p17/evidence/P17-G4B-03.md#supported-platform-receipt-reopening-and-approved-harness-amendment"
       ],
       "secondaryGroups": ["P17-G4A-03"],
       "implements": [],
@@ -24280,8 +24286,10 @@
         "command": "bun test tests/ergonomics/workflows/EWP-WF04.test.ts --test-name-pattern EWP-WF04"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G4B-03.md#corrected-working-tree-execution-receipt-ewp-wf04",
         "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-wf04",
-        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf04"
+        "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf04",
+        "projects/p17/evidence/P17-G4B-03.md#supported-platform-receipt-reopening-and-approved-harness-amendment"
       ],
       "secondaryGroups": ["P17-G4A-02"],
       "implements": [],

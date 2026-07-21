@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, readdir, utimes, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, readdir, utimes, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { recoverArtifactPair } from '../../../../packages/core/src/artifacts/coordinator.ts';
 import {
@@ -107,6 +107,26 @@ export interface ApplyCrashRunResult {
 
 const APPLY_CRASH_CHILD = join(import.meta.dir, 'apply-crash-child.ts');
 
+export const provisionDetectedCodex = async <Fixture extends ApplyFixture>(
+  fixture: Fixture,
+): Promise<Fixture> => {
+  const bin = join(fixture.root, 'fixture-bin');
+  const executable = join(bin, 'codex');
+  await mkdir(bin, { recursive: true });
+  await writeFile(
+    executable,
+    '#!/bin/sh\nif [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then\n  echo "codex-cli 0.142.5"\n  exit 0\nfi\nexit 64\n',
+  );
+  await chmod(executable, 0o755);
+  return Object.freeze({
+    ...fixture,
+    env: Object.freeze({
+      ...fixture.env,
+      PATH: `${bin}:${fixture.env.PATH ?? process.env.PATH ?? '/usr/bin:/bin'}`,
+    }),
+  }) as Fixture;
+};
+
 const asJsonReport = (
   product: Awaited<ReturnType<typeof runApplyCli>>,
   label: string,
@@ -137,9 +157,9 @@ const gitConfigSource = (fixture: RemoteApplyFixture): string =>
   ].join('\n');
 
 export const createCrossMachineFixture = async (): Promise<CrossMachineFixture> => {
-  const machineA = await createRemoteApplyFixture();
+  const machineA = await provisionDetectedCodex(await createRemoteApplyFixture());
   try {
-    const baseB = await createApplyFixture([], { writeLock: false });
+    const baseB = await provisionDetectedCodex(await createApplyFixture([], { writeLock: false }));
     try {
       const gitConfig = join(baseB.root, 'gitconfig');
       await writeFile(gitConfig, gitConfigSource(machineA), { mode: 0o600 });
@@ -338,7 +358,7 @@ export const runCrossMachineReproduction = async (): Promise<CrossMachineResult>
 };
 
 export const runPoisonedNoSaveExport = async (): Promise<PoisonedNoSaveExportResult> => {
-  const fixture = await createRemoteApplyFixture();
+  const fixture = await provisionDetectedCodex(await createRemoteApplyFixture());
   try {
     const store = join(
       fixture.store,
