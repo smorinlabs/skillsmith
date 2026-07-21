@@ -370,7 +370,7 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
     ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
     expect(
       mutateFile('projects/p17/EXECUTION.md', (text) =>
-        text.replace('Phase 4 is `active`', 'Phase 4 is `planned`'),
+        text.replace('Phase 5 is `active`', 'Phase 5 is `planned`'),
       ),
     ).toContain('projects/p17/EXECUTION.md status must match live catalog phase and gate facts');
     expect(
@@ -420,21 +420,21 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
       readFileSync(resolve(ROOT, 'projects/p17/catalog.json'), 'utf8'),
     ) as JsonObject;
     const phases = futureCatalog.phases as JsonObject[];
-    const phase3 = phases.find((row) => row.id === '3');
-    const phase4 = phases.find((row) => row.id === '4');
-    if (!phase3 || !phase4) throw new Error('missing future phase catalog rows');
-    phase3.status = 'approved';
-    (phase3.review as JsonObject).status = 'passed';
-    (phase3.approval as JsonObject).status = 'passed';
-    (phase3.exit as JsonObject).status = 'passed';
-    phase4.status = 'active';
-    (phase4.entry as JsonObject).status = 'passed';
+    const phase5 = phases.find((row) => row.id === '5');
+    const phase6 = phases.find((row) => row.id === '6');
+    if (!phase5 || !phase6) throw new Error('missing future phase catalog rows');
+    phase5.status = 'approved';
+    (phase5.review as JsonObject).status = 'passed';
+    (phase5.approval as JsonObject).status = 'passed';
+    (phase5.exit as JsonObject).status = 'passed';
+    phase6.status = 'active';
+    (phase6.entry as JsonObject).status = 'passed';
     const futureExecution = readFileSync(
       resolve(ROOT, 'projects/p17/EXECUTION.md'),
       'utf8',
     ).replace(
-      'Phase 3 is `active`; its entry gate is passed.',
-      'Phase 3 is `approved`; its entry, whole-phase review, standing approval, and exit are passed. Phase 4 is `active`; its entry gate is passed.',
+      'Phase 5 is `active`; its entry gate is passed.',
+      'Phase 5 is `approved`; its entry, whole-phase review, standing approval, and exit are passed. Phase 6 is `active`; its entry gate is passed.',
     );
     expect(
       validateDocumentationDrift(copy(), {
