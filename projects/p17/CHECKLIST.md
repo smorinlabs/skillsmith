@@ -264,7 +264,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF07 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF08 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF09 | P17-G5-02 | planned | required-pr |
-| EWP-WF10 | P17-G5-01 | planned | required-pr |
+| EWP-WF10 | P17-G5-01 | failing | required-pr |
 | EWP-WF11 | P17-G5-03 | planned | required-pr |
 | EWP-WF12 | P17-G5-04 | planned | required-pr |
 | EWP-WF13 | P17-G5-05 | planned | required-pr |
@@ -1331,7 +1331,7 @@ Downstream coverage obligations: none.
 
 ## P17-G5-01 — Direct sync endpoints, selection, save/delete semantics, and operation equivalence
 
-Phase: 5; status: **ready**; dependencies: P17-G4B-03.
+Phase: 5; status: **active**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-SYNC-TS01, EWP-CMD-SYNC-TS02, EWP-CMD-SYNC-TS03, EWP-CMD-SYNC-TS04, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-SYNC-TS09, EWP-CMD-SYNC-TS10, EWP-P5-TS01, EWP-WF10.
 Downstream coverage obligations: EWP-WF13.
 
@@ -1339,7 +1339,7 @@ Downstream coverage obligations: EWP-WF13.
 
 - [x] P17-G5-01:mapped _(passed)_
 - [x] P17-G5-01:ready _(passed)_
-- [ ] P17-G5-01:test-first _(pending)_
+- [x] P17-G5-01:test-first _(passed)_
 - [ ] P17-G5-01:minimal-implementation _(pending)_
 - [ ] P17-G5-01:targeted-green _(pending)_
 - [ ] P17-G5-01:impacted-green _(pending)_
@@ -1352,20 +1352,20 @@ Downstream coverage obligations: EWP-WF13.
 
 - [ ] **COMMAND:sync** — Declarative — How do I reconcile one live location into another? _(command; planned)_
 - [ ] **D-007** — Narrow direct synchronization _(decision; planned)_
-- [ ] **EWP-CMD-SYNC-TS01** — from/to grammar for scopes and paths plus targetless bounded-endpoint and _(command-test; planned)_
-- [ ] **EWP-CMD-SYNC-TS02** — user->project and project->user reconciliation. _(command-test; planned)_
-- [ ] **EWP-CMD-SYNC-TS03** — project-A->project-B and -C semantics. _(command-test; planned)_
-- [ ] **EWP-CMD-SYNC-TS04** — tool/scope filtering, unmatched target/filter-to-zero behavior, _(command-test; planned)_
-- [ ] **EWP-CMD-SYNC-TS05** — selected destination conflicts, bounded force replacement, _(command-test; planned)_
-- [ ] **EWP-CMD-SYNC-TS06** — delete opt-in and exact removal plan, including proof force never implies _(command-test; planned)_
-- [ ] **EWP-CMD-SYNC-TS07** — save destination manifest/lock under safe merge even when live force is _(command-test; planned)_
-- [ ] **EWP-CMD-SYNC-TS08** — dry-run/JSON/source byte-identity and destination migration preview with _(command-test; planned)_
-- [ ] **EWP-CMD-SYNC-TS09** — idempotence/partial failure/continue behavior. _(command-test; planned)_
-- [ ] **EWP-CMD-SYNC-TS10** — equivalence to planner operations, no duplicate engine. _(command-test; planned)_
-- [ ] **EWP-P5-T01** — Sync source/destination model over planner. _(phase-task; ready)_
-- [ ] **EWP-P5-T02** — Sync save/delete semantics. _(phase-task; ready)_
-- [ ] **EWP-P5-TS01** — Sync scope/path cartesian matrix. _(phase-test; planned)_
-- [ ] **EWP-WF10** — Direct sync _(workflow; planned)_
+- [ ] **EWP-CMD-SYNC-TS01** — from/to grammar for scopes and paths plus targetless bounded-endpoint and _(command-test; failing)_
+- [ ] **EWP-CMD-SYNC-TS02** — user->project and project->user reconciliation. _(command-test; failing)_
+- [ ] **EWP-CMD-SYNC-TS03** — project-A->project-B and -C semantics. _(command-test; failing)_
+- [ ] **EWP-CMD-SYNC-TS04** — tool/scope filtering, unmatched target/filter-to-zero behavior, _(command-test; failing)_
+- [ ] **EWP-CMD-SYNC-TS05** — selected destination conflicts, bounded force replacement, _(command-test; failing)_
+- [ ] **EWP-CMD-SYNC-TS06** — delete opt-in and exact removal plan, including proof force never implies _(command-test; failing)_
+- [ ] **EWP-CMD-SYNC-TS07** — save destination manifest/lock under safe merge even when live force is _(command-test; failing)_
+- [ ] **EWP-CMD-SYNC-TS08** — dry-run/JSON/source byte-identity and destination migration preview with _(command-test; failing)_
+- [ ] **EWP-CMD-SYNC-TS09** — idempotence/partial failure/continue behavior. _(command-test; failing)_
+- [ ] **EWP-CMD-SYNC-TS10** — equivalence to planner operations, no duplicate engine. _(command-test; failing)_
+- [ ] **EWP-P5-T01** — Sync source/destination model over planner. _(phase-task; red)_
+- [ ] **EWP-P5-T02** — Sync save/delete semantics. _(phase-task; red)_
+- [ ] **EWP-P5-TS01** — Sync scope/path cartesian matrix. _(phase-test; failing)_
+- [ ] **EWP-WF10** — Direct sync _(workflow; failing)_
 - [ ] **P1-10** — Narrow `sync` _(recommendation; planned)_
 
 ## P17-G5-02 — Update discovery, check/preview/apply, refs, pins, and retention

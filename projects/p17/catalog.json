@@ -6648,7 +6648,7 @@
       "phase": "5",
       "title": "Direct sync endpoints, selection, save/delete semantics, and operation equivalence",
       "dependsOn": ["P17-G4B-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -6785,8 +6785,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-01.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -6821,7 +6821,8 @@
         "projects/p17/plans/P17-G5-01.md",
         "projects/p17/evidence/P17-G5-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G5-01.md#ready-review",
-        "projects/p17/evidence/P17-G5-01.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G5-01.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G5-01.md#test-first-evidence"
       ]
     },
     {
@@ -17042,11 +17043,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS01",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS01"],
@@ -17065,8 +17071,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS01"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-SYNC-TS02",
@@ -17074,11 +17085,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS02",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS02"],
@@ -17097,8 +17113,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS02"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-SYNC-TS03",
@@ -17106,11 +17127,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS03",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS03"],
@@ -17129,8 +17155,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS03"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-SYNC-TS04",
@@ -17138,11 +17169,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS04",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS04"],
@@ -17161,8 +17197,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS04"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-SYNC-TS05",
@@ -17170,11 +17211,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS05",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS05"],
@@ -17193,8 +17239,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS05"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-SYNC-TS06",
@@ -17202,11 +17253,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS06",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS06"],
@@ -17225,8 +17281,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS06"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-SYNC-TS07",
@@ -17234,11 +17295,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS07",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS07"],
@@ -17257,8 +17323,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS07"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-SYNC-TS08",
@@ -17266,11 +17337,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS08",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS08",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS08"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts08"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS08"],
@@ -17289,8 +17365,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS08"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-SYNC-TS09",
@@ -17298,11 +17379,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS09",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS09",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS09"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts09"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS09"],
@@ -17321,8 +17407,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS09"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-SYNC-TS10",
@@ -17330,11 +17421,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:packages/cli/tests/contracts/sync.test.ts#EWP-CMD-SYNC-TS10",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/sync.test.ts",
+        "selector": "EWP-CMD-SYNC-TS10",
+        "command": "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS10"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-cmd-sync-ts10"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-SYNC-TS10"],
@@ -17353,8 +17449,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/sync.test.ts --test-name-pattern EWP-CMD-SYNC-TS10"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/sync.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNDO-TS01",
@@ -23591,14 +23692,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G5-01",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G5-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G5-01.md#ready-review",
-        "projects/p17/evidence/P17-G5-01.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G5-01.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G5-01.md#test-first-evidence"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:sync", "D-007", "P1-10"],
@@ -23640,14 +23742,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G5-01",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G5-01.md#mapping-and-dependency-audit",
         "projects/p17/evidence/P17-G5-01.md#ready-review",
-        "projects/p17/evidence/P17-G5-01.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G5-01.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G5-01.md#test-first-evidence"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:sync", "D-007", "P1-10"],
@@ -23867,11 +23970,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:tests/ergonomics/phase/EWP-P5-TS01.test.ts#EWP-P5-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P5-TS01.test.ts",
+        "selector": "EWP-P5-TS01",
+        "command": "bun test tests/ergonomics/phase/EWP-P5-TS01.test.ts --test-name-pattern EWP-P5-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-p5-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P5-TS01"],
@@ -23890,8 +23998,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P5-TS01.test.ts --test-name-pattern EWP-P5-TS01"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P5-TS01.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-P5-TS02",
@@ -24752,11 +24865,16 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-01:tests/ergonomics/workflows/EWP-WF10.test.ts#EWP-WF10",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF10.test.ts",
+        "selector": "EWP-WF10",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF10.test.ts --test-name-pattern EWP-WF10"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-01.md#red-execution-receipt-ewp-wf10"],
       "secondaryGroups": ["P17-G3B-02"],
       "implements": [],
       "validatedBy": ["EWP-WF10"],
@@ -24775,8 +24893,13 @@
         "EWP-WF10"
       ],
       "affectedContracts": ["COMMAND:sync", "D-007", "EWP-CF-026", "P1-10"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF10.test.ts --test-name-pattern EWP-WF10"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/workflows/EWP-WF10.test.ts",
+        "tests/ergonomics/fixtures/p5-sync/fleet.ts"
+      ]
     },
     {
       "id": "EWP-WF11",
