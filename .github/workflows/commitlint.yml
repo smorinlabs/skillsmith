@@ -1,0 +1,36 @@
+# Validates every non-merge commit in a PR against conventional-commits.
+#
+# Load-bearing for releases: `main` uses merge commits, so the branch's
+# individual commits land on the trunk and release-please parses them.
+# The PR title is separately gated by the `lint-pr-title` job in ci.yml.
+#
+# The action reads the PR's commits from the REST API (not from git), so it
+# needs `pull-requests: read` and does NOT need full history.
+
+name: commitlint
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: commitlint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commitlint:
+    name: commitlint (humans)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # Checkout is only needed so the action can read commitlint.config.mjs.
+      - uses: actions/checkout@v4
+
+      # configFile must be .mjs — the action hard-rejects a .js extension.
+      - name: commitlint
+        uses: wagoid/commitlint-github-action@v6.2.1
+        with:
+          configFile: commitlint.config.mjs
