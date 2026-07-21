@@ -1331,14 +1331,14 @@ Downstream coverage obligations: none.
 
 ## P17-G5-01 — Direct sync endpoints, selection, save/delete semantics, and operation equivalence
 
-Phase: 5; status: **planned**; dependencies: P17-G4B-03.
+Phase: 5; status: **ready**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-SYNC-TS01, EWP-CMD-SYNC-TS02, EWP-CMD-SYNC-TS03, EWP-CMD-SYNC-TS04, EWP-CMD-SYNC-TS05, EWP-CMD-SYNC-TS06, EWP-CMD-SYNC-TS07, EWP-CMD-SYNC-TS08, EWP-CMD-SYNC-TS09, EWP-CMD-SYNC-TS10, EWP-P5-TS01, EWP-WF10.
 Downstream coverage obligations: EWP-WF13.
 
 ### Group gates
 
-- [ ] P17-G5-01:mapped _(pending)_
-- [ ] P17-G5-01:ready _(pending)_
+- [x] P17-G5-01:mapped _(passed)_
+- [x] P17-G5-01:ready _(passed)_
 - [ ] P17-G5-01:test-first _(pending)_
 - [ ] P17-G5-01:minimal-implementation _(pending)_
 - [ ] P17-G5-01:targeted-green _(pending)_
@@ -1362,8 +1362,8 @@ Downstream coverage obligations: EWP-WF13.
 - [ ] **EWP-CMD-SYNC-TS08** — dry-run/JSON/source byte-identity and destination migration preview with _(command-test; planned)_
 - [ ] **EWP-CMD-SYNC-TS09** — idempotence/partial failure/continue behavior. _(command-test; planned)_
 - [ ] **EWP-CMD-SYNC-TS10** — equivalence to planner operations, no duplicate engine. _(command-test; planned)_
-- [ ] **EWP-P5-T01** — Sync source/destination model over planner. _(phase-task; planned)_
-- [ ] **EWP-P5-T02** — Sync save/delete semantics. _(phase-task; planned)_
+- [ ] **EWP-P5-T01** — Sync source/destination model over planner. _(phase-task; ready)_
+- [ ] **EWP-P5-T02** — Sync save/delete semantics. _(phase-task; ready)_
 - [ ] **EWP-P5-TS01** — Sync scope/path cartesian matrix. _(phase-test; planned)_
 - [ ] **EWP-WF10** — Direct sync _(workflow; planned)_
 - [ ] **P1-10** — Narrow `sync` _(recommendation; planned)_
