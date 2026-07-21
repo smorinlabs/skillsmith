@@ -1248,6 +1248,35 @@ export const operationMatchesMatrix = (item: PlanOperationV1): boolean => {
   }
 };
 
+/**
+ * Runtime journals additionally represent truthful machine-bound sync installs/updates. Saved
+ * plans deliberately continue to use `operationMatchesMatrix`, so this exception cannot widen the
+ * persisted saved-plan contract.
+ */
+const runtimeJournalOperationMatchesMatrix = (item: PlanOperationV1): boolean => {
+  if (operationMatchesMatrix(item)) return true;
+  if (item.kind !== 'install' && item.kind !== 'update') return false;
+  if (
+    !hasPlacementIdentity(item) ||
+    item.source?.kind !== 'local-dev' ||
+    item.after.kind !== 'placement' ||
+    item.after.classification !== 'pinned' ||
+    item.after.representation !== 'copy' ||
+    item.after.linkTarget !== null ||
+    item.after.dangling ||
+    item.after.source?.kind !== 'local-dev' ||
+    item.after.source.path !== item.source.path ||
+    item.after.source.contentHash !== item.source.contentHash ||
+    item.after.contentHash !== item.source.contentHash ||
+    !flagsEqual(item.mutates, [true, false, false, true]) ||
+    !imageScopeMatches(item.before, item) ||
+    !imageScopeMatches(item.after, item)
+  ) {
+    return false;
+  }
+  return item.kind === 'install' ? item.before.kind === 'absent' : item.before.kind === 'placement';
+};
+
 type ParsedPlanOperationIntent = Readonly<{
   value: PlanOperationIntentV1;
   snapshot: unknown;
@@ -1270,7 +1299,9 @@ const parsePlanOperationIntentV1 = (
     preconditionIds: [],
     requiredCheckIds: [],
   };
-  if (!operationMatchesMatrix(full)) return err(codecError('journal', 'invalid-shape'));
+  if (!runtimeJournalOperationMatchesMatrix(full)) {
+    return err(codecError('journal', 'invalid-shape'));
+  }
   if (!operationSourceRelationshipsMatch(full)) {
     return err(codecError('journal', 'invalid-shape', ['source']));
   }

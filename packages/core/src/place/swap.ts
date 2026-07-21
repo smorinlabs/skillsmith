@@ -313,8 +313,7 @@ const logicalJournalFor = (
   const visible = shadow.phase === 'live' || shadow.phase === 'committed';
   const imageSource = operation.after.kind === 'placement' ? operation.after.source : null;
   const source =
-    (operation.kind === 'promote' || operation.kind === 'update') &&
-    operation.source?.kind !== 'portable'
+    operation.kind === 'promote' && operation.source?.kind !== 'portable'
       ? {
           kind: 'portable' as const,
           identity: {
@@ -2039,18 +2038,29 @@ const computeBefore = async (
       return ok({ mode: 'absent' });
     }
     // Replace install. `rollbackSwap` decides "live is the new artifact" (P4 done): for a
-    // kind-changing swap by the kind flip; for symlink→symlink by the recorded old symlink target
-    // (see below + rollbackSwap). dir→dir is BOTH kind- and target-ambiguous at that window, so it
-    // stays rejected — the run layer must route a copy re-install as a kind change (promote's
-    // demote-first path). symlink→symlink is safe and allowed.
+    // kind-changing swap by the kind flip; for symlink→symlink by the recorded old symlink target;
+    // and for a logical copy→copy update by exact before/after content hashes (see rollbackSwap).
     const newBuildKind = plan.install?.build === 'symlink' ? 'symlink' : 'dir';
     const oldKind = kindOf(liveKind);
     if (newBuildKind === 'dir' && oldKind === 'dir') {
-      return err(
-        genericError(
-          `same-kind replace of ${plan.skill} (dir → dir) must be routed as a kind change by the run layer`,
-        ),
-      );
+      const logical = ctx.logicalOperation;
+      const beforeHash = logical?.before.kind === 'placement' ? logical.before.contentHash : null;
+      const afterHash = logical?.after.kind === 'placement' ? logical.after.contentHash : null;
+      if (
+        (logical?.kind !== 'update' && logical?.kind !== 'repair') ||
+        logical.after.kind !== 'placement' ||
+        logical.after.representation !== 'copy' ||
+        beforeHash === null ||
+        afterHash === null ||
+        beforeHash === afterHash ||
+        afterHash !== plan.install?.contentHash
+      ) {
+        return err(
+          genericError(
+            `same-kind replace of ${plan.skill} (dir → dir) lacks exact logical before/after hashes`,
+          ),
+        );
+      }
     }
     // Record the old symlink target for ANY symlink pre-state so rollback can disambiguate a
     // symlink→symlink replace via the target. `adoptedDev` is the run layer's signal that the live
@@ -2073,7 +2083,10 @@ const computeBefore = async (
     return ok({
       mode: 'pinned',
       storePath: existing?.pinned?.storePath ?? null,
-      contentHash: existing?.pinned?.contentHash ?? null,
+      contentHash:
+        ctx.logicalOperation?.before.kind === 'placement'
+          ? ctx.logicalOperation.before.contentHash
+          : (existing?.pinned?.contentHash ?? null),
       liveKind: oldKind,
       ...(symlinkTarget !== null ? { symlinkTarget } : {}),
     });
@@ -2117,7 +2130,7 @@ const stagePair = (
       mode: 'pinned',
       dev: plan.install.adoptedDev ?? existing?.dev ?? null,
       pinned: plan.install.pinned,
-      origin: plan.install.origin,
+      ...(plan.install.origin === null ? {} : { origin: plan.install.origin }),
       journal,
     });
   }
@@ -2150,7 +2163,7 @@ const runSwapInternal = async (
   if (existing?.journal && existing.journal.phase !== 'committed') {
     return err(
       flipRefusedError(
-        refusedMessage(existing.journal.op, plan.skill, plan.install?.origin.source),
+        refusedMessage(existing.journal.op, plan.skill, plan.install?.origin?.source),
       ),
     );
   }
@@ -2208,6 +2221,7 @@ export const runSwapObserved = (
 };
 
 const reconstructPlan = (
+  model: LedgerModel,
   pair: PairRecord,
   j: Journal,
   skill: string,
@@ -2245,7 +2259,44 @@ const reconstructPlan = (
   }
   if (j.op === 'install') {
     if (!pair.pinned) return err(genericError(`cannot resume install of ${skill}: pinned missing`));
-    if (!pair.origin) return err(genericError(`cannot resume install of ${skill}: origin missing`));
+    const logicalJournal =
+      model.transactions[j.txId] ??
+      model.history.find((candidate) => candidate.transactionId === j.txId) ??
+      null;
+    const localIntent = logicalJournal?.intent;
+    const localAfter = localIntent?.after;
+    const localResume =
+      pair.origin === undefined &&
+      (pair.pinned.placement ?? 'copy') === 'copy' &&
+      localIntent !== undefined &&
+      (localIntent.kind === 'install' || localIntent.kind === 'update') &&
+      localIntent.skill === skill &&
+      localIntent.tool === tool &&
+      localIntent.scope === (scopeKey === null ? 'user' : 'project') &&
+      localIntent.source?.kind === 'local-dev' &&
+      (localIntent.kind === 'install'
+        ? localIntent.before.kind === 'absent'
+        : localIntent.before.kind === 'placement') &&
+      localAfter?.kind === 'placement' &&
+      localAfter.resource.kind === 'live' &&
+      localAfter.resource.skill === skill &&
+      localAfter.resource.tool === tool &&
+      localAfter.resource.scope === (scopeKey === null ? 'user' : 'project') &&
+      localAfter.resource.location.kind === 'machine-bound' &&
+      localAfter.resource.location.path === pair.placementPath &&
+      localAfter.classification === 'pinned' &&
+      localAfter.representation === 'copy' &&
+      localAfter.linkTarget === null &&
+      !localAfter.dangling &&
+      localAfter.source?.kind === 'local-dev' &&
+      localAfter.source.path === localIntent.source.path &&
+      localAfter.source.contentHash === localIntent.source.contentHash &&
+      localAfter.contentHash === localIntent.source.contentHash &&
+      pair.pinned.contentHash === localIntent.source.contentHash &&
+      pair.pinned.storePath.length > 0;
+    if (pair.origin === undefined && !localResume) {
+      return err(genericError(`cannot resume install of ${skill}: origin missing`));
+    }
     return ok({
       ...base,
       op: 'install',
@@ -2254,7 +2305,7 @@ const reconstructPlan = (
         storePath: pair.pinned.storePath,
         contentHash: pair.pinned.contentHash,
         pinned: pair.pinned,
-        origin: pair.origin,
+        origin: pair.origin ?? null,
         adoptedDev: pair.dev,
       },
     });
@@ -2282,9 +2333,17 @@ const resumeSwapInternal = async (
   const pair = pairAt(ledger.current(), scopeKey, skill, tool);
   const j = pair?.journal ?? null;
   if (!pair || !j) return err(flipRefusedError(`nothing to resume for ${skill}`));
-  const plan = reconstructPlan(pair, j, skill, tool, scopeKey);
+  const plan = reconstructPlan(ledger.current(), pair, j, skill, tool, scopeKey);
   if (!plan.ok) return plan;
-  return forward(ctx, ledger, effects, plan.value, pair);
+  const logicalJournal =
+    ledger.current().transactions[j.txId] ??
+    ledger.current().history.find((candidate) => candidate.transactionId === j.txId) ??
+    null;
+  const resumedContext: SwapCtx =
+    ctx.logicalOperation !== undefined || logicalJournal === null
+      ? ctx
+      : Object.freeze({ ...ctx, logicalOperation: journalOperation(logicalJournal) });
+  return forward(resumedContext, ledger, effects, plan.value, pair);
 };
 
 export const resumeSwap = (
@@ -2412,8 +2471,7 @@ const rollbackSwapInternal = async (
       }
     } else {
       // Live is present: decide whether it is the NEW artifact (P4 done) or still the OLD one. A kind
-      // change tells them apart; a symlink→symlink replace can't be told apart by kind, so compare
-      // the recorded old symlink target — this is what makes symlink→symlink replace safe to allow.
+      // change tells them apart; same-kind swaps use their exact retained identity.
       let liveIsNew: boolean;
       if (oldKind === 'symlink' && liveKind === 'symlink') {
         if (before.symlinkTarget == null) {
@@ -2422,6 +2480,23 @@ const rollbackSwapInternal = async (
           );
         }
         liveIsNew = (await env.readLink(live)) !== before.symlinkTarget;
+      } else if (oldKind === 'dir' && liveKind === 'dir') {
+        const newHash = pair.pinned?.contentHash ?? null;
+        if (
+          before.mode !== 'pinned' ||
+          before.contentHash === null ||
+          newHash === null ||
+          before.contentHash === newHash
+        ) {
+          return err(genericError(`cannot roll back ${skill}: copy identity is ambiguous`));
+        }
+        const observedHash = await contentHashOf(env, live);
+        if (!observedHash.ok) return observedHash;
+        if (observedHash.value === newHash) liveIsNew = true;
+        else if (observedHash.value === before.contentHash) liveIsNew = false;
+        else {
+          return err(genericError(`cannot roll back ${skill}: copy residue is incompatible`));
+        }
       } else {
         liveIsNew = liveKind !== oldKind;
       }
@@ -2763,6 +2838,7 @@ const sweepCommittedAcquireJournalsInternal = async (
         });
       }
       const plan = reconstructPlan(
+        model,
         target.pair,
         target.shadow,
         target.skill,
@@ -2833,7 +2909,7 @@ const sweepCommittedAcquireJournalsInternal = async (
       transactionObservation === null
         ? null
         : beginRecoveryObservation(transactionObservation, 'cleanup');
-    const plan = reconstructPlan(pair, j, t.skill, t.tool, t.scopeKey);
+    const plan = reconstructPlan(model, pair, j, t.skill, t.tool, t.scopeKey);
     if (!plan.ok) {
       if (transactionObservation !== null) {
         completeRecoveryObservation(

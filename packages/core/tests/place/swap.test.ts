@@ -90,12 +90,15 @@ const makeCtx = (
     signal?: AbortSignal;
     pauseAt?: 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';
     afterPersist?: (ledger: LedgerModel) => void;
+    logicalOperation?: ExecutableOperation;
+    journalTimestamp?: string;
   } = {},
 ): SwapRequest => {
   let durableLedger = ledger;
   return {
     context: {
       env,
+      ...(opts.logicalOperation === undefined ? {} : { logicalOperation: opts.logicalOperation }),
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
       ...(opts.pauseAt === undefined ? {} : { pauseAt: opts.pauseAt }),
     },
@@ -108,7 +111,7 @@ const makeCtx = (
         opts.afterPersist?.(candidate);
         return { ok: true, ledger: candidate };
       },
-      journalNow: () => NOW,
+      journalNow: () => opts.journalTimestamp ?? NOW,
       newTransactionId: () => opts.txId ?? 'aabbccdd',
     },
   };
@@ -1045,6 +1048,132 @@ describe('runSwap — promote / demote happy paths', () => {
     const backupHash = await contentHashOf(f.env, r.value.backupKept as string);
     if (!backupHash.ok) throw new Error(msg(backupHash.error));
     expect(backupHash.value).toBe(snapshot.value.contentHash);
+  });
+
+  test('resumes an interrupted machine-bound pinned-copy install without synthetic origin', async () => {
+    const skill = 'local-sync';
+    const skillsRoot = join(f.home, '.claude', 'skills');
+    const placementPath = join(skillsRoot, skill);
+    const provenance = await resolveProvenance(f.env, f.alphaSrc);
+    if (!provenance.ok) throw new Error(msg(provenance.error));
+    const snapshot = await snapshotToStore(f.env, {
+      sourceDir: f.alphaSrc,
+      skill,
+      storeRoot: storeRootOf(f.data),
+      provenance: provenance.value,
+      txId: 'locals01',
+    });
+    if (!snapshot.ok) throw new Error(msg(snapshot.error));
+    const pinned = pinnedOf(
+      snapshot.value.storePath,
+      snapshot.value.rev,
+      snapshot.value.contentHash,
+    );
+    const source = {
+      kind: 'local-dev' as const,
+      path: resolve(f.alphaSrc),
+      contentHash: snapshot.value.contentHash as OperationDigest,
+    };
+    const liveResource = {
+      kind: 'live' as const,
+      skill,
+      tool: 'claude-code' as const,
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path: placementPath },
+    };
+    const logicalOperation: ExecutableOperation = {
+      operationId: 'operation:sync-local-install',
+      groupId: 'group:sync-local-install',
+      pairId: 'pair:sync-local-install',
+      kind: 'install',
+      dependencyMetadata: {
+        domain: 'skillsmith.operation-dependency',
+        schemaVersion: 1,
+        operationIds: [],
+      },
+      skill,
+      source,
+      tool: 'claude-code',
+      scope: 'user',
+      before: { kind: 'absent', resource: liveResource },
+      after: {
+        kind: 'placement',
+        resource: liveResource,
+        classification: 'pinned',
+        representation: 'copy',
+        linkTarget: null,
+        dangling: false,
+        source,
+        contentHash: source.contentHash,
+      },
+      reason: { code: 'sync-install-selected', message: 'Install local sync source.' },
+      selectionSource: 'bounded-default',
+      preconditionIds: [],
+      requiredCheckIds: [],
+      reversibility: { kind: 'none', retentionResourceIds: [] },
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+      conflict: null,
+    };
+    const plan: SwapPlan = {
+      op: 'install',
+      skill,
+      tool: 'claude-code',
+      skillsRoot,
+      placementPath,
+      install: {
+        build: 'copy',
+        storePath: snapshot.value.storePath,
+        contentHash: snapshot.value.contentHash,
+        pinned,
+        origin: null,
+        adoptedDev: null,
+      },
+    };
+    const controller = new AbortController();
+    controller.abort();
+    const interrupted = await runSwap(
+      makeCtx(f.env, ledgerPathOf(f.data), emptyLedgerModel(NOW), {
+        signal: controller.signal,
+        logicalOperation,
+        journalTimestamp: JOURNAL_NOW,
+      }),
+      plan,
+    );
+    expect(interrupted.ok).toBeFalse();
+    if (interrupted.ok) throw new Error('expected interrupted local install');
+    expect(interrupted.error.code).toBe('flip-failed');
+    expect(msg(interrupted.error)).toContain('interrupted');
+    expect(getSwapPair(interrupted.state.ledger, skill, 'claude-code')).toMatchObject({
+      mode: 'pinned',
+      pinned: { contentHash: snapshot.value.contentHash },
+      journal: { op: 'install', phase: 'prepared' },
+    });
+    expect(getSwapPair(interrupted.state.ledger, skill, 'claude-code')?.origin).toBeUndefined();
+    expect(Object.values(interrupted.state.ledger.transactions)).toMatchObject([
+      {
+        intent: {
+          kind: 'install',
+          source: { kind: 'local-dev', contentHash: snapshot.value.contentHash },
+        },
+      },
+    ]);
+
+    const resumed = await resumeSwap(
+      makeCtx(f.env, ledgerPathOf(f.data), interrupted.state.ledger, {
+        journalTimestamp: JOURNAL_NOW,
+      }),
+      skill,
+      'claude-code',
+    );
+    if (!resumed.ok) throw new Error(msg(resumed.error));
+    expect(await f.env.pathKind(placementPath)).toBe('dir');
+    const installedHash = await contentHashOf(f.env, placementPath);
+    if (!installedHash.ok) throw new Error(msg(installedHash.error));
+    expect(installedHash.value).toBe(snapshot.value.contentHash);
+    const pair = getSwapPair(resumed.state.ledger, skill, 'claude-code');
+    expect(pair?.origin).toBeUndefined();
+    expect(pair?.journal).toBeNull();
   });
 });
 

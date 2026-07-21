@@ -64,6 +64,7 @@ const currentPlanningCommands = new Set<string>([
   'promote',
   'doctor',
   'export',
+  'sync',
   'init',
   'apply',
   'plan',
@@ -610,8 +611,11 @@ const validateImage = (
     boolean(image.dangling, `${path}.dangling`);
     if (image.source !== null) validateSource(image.source, `${path}.source`);
     if (image.contentHash !== null) validateDigest(image.contentHash, `${path}.contentHash`);
-    if ((image.source === null) !== (image.contentHash === null)) {
-      fail(`${path}.source and contentHash must be present together`);
+    if (
+      (image.source !== null && image.contentHash === null) ||
+      (image.source === null && image.contentHash !== null && image.classification !== 'unmanaged')
+    ) {
+      fail(`${path}.source and contentHash are inconsistent for its placement class`);
     }
     return;
   }

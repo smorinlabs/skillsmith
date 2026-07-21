@@ -15,6 +15,7 @@ export type CurrentMutatorCommand =
   | 'promote'
   | 'doctor'
   | 'export'
+  | 'sync'
   | 'init'
   | 'apply';
 export type CurrentPlanningCommand = CurrentMutatorCommand | 'plan';

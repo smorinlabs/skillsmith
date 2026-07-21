@@ -22,6 +22,7 @@ import {
   createOperationPairId,
   createOperationPlan,
   createPlanCheckId,
+  createPlanningDiagnosticId,
   expectedRevisionPreconditionIdsForSnapshotV1,
   operationImageFromLiveStateV1,
   operationSourceFromLedgerPairV1,
@@ -39,6 +40,7 @@ import type {
   PlanCheck,
   PlanCheckIdentity,
   PlanningDiagnostic,
+  PlanningDiagnosticIdentity,
   PlanningToolContext,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -948,10 +950,17 @@ export interface PlacementRollbackPlanRequestV1 extends PlacementPlanRequestComm
   readonly intents: readonly PlacementRollbackIntentV1[];
 }
 
+export interface PlacementSyncPlanRequestV1 extends PlacementPlanRequestCommonV1 {
+  readonly command: 'sync';
+  readonly force?: boolean;
+  readonly intents: readonly PlacementSyncIntentV1[];
+}
+
 export type PlacementPlanRequestV1 =
   | PlacementDevPlanRequestV1
   | PlacementPromotePlanRequestV1
-  | PlacementRollbackPlanRequestV1;
+  | PlacementRollbackPlanRequestV1
+  | PlacementSyncPlanRequestV1;
 
 interface PlacementIntentIdentityV1 {
   readonly skill: string;
@@ -986,6 +995,30 @@ export interface PlacementRollbackIntentV1 extends PlacementIntentIdentityV1 {
   readonly storeResourceId: string | null;
   readonly sourceContent?: ContentObservationIdentityV1;
 }
+
+export type PlacementSyncIntentV1 = PlacementIntentIdentityV1 &
+  Readonly<{
+    readonly kind: 'sync';
+    readonly action: 'converge' | 'remove';
+    readonly source: OperationSource | null;
+    readonly sourceContent?: ContentObservationIdentityV1;
+    readonly storeResourceId: string | null;
+    readonly representation: 'symlink' | 'copy';
+    readonly desiredContentHash: `sha256:${string}` | null;
+    /** Stable normalized endpoint identity; participates in the destination-skill group ID. */
+    readonly endpointIdentity: string;
+    /** Shared aggregate source identity for every tool pair in one destination-skill group. */
+    readonly groupSource: OperationSource | null;
+    /** Endpoint + source-membership/content aggregate used by the semantic group identity. */
+    readonly groupIdentityTarget: string;
+    /** Exact source and destination fleet memberships consumed by this selected pair. */
+    readonly membershipContent: readonly [
+      ContentObservationIdentityV1,
+      ContentObservationIdentityV1,
+    ];
+    /** Exact earlier write-lock prefixes for branch-safe same-pair artifact composition. */
+    readonly artifactPrefixOperationIds?: readonly string[];
+  }>;
 
 const placementPlanningError = (error: unknown): SnapshotPlanningErrorV1 =>
   Object.freeze({
@@ -1179,12 +1212,14 @@ const placementOperationIds = (
   target: string | null = null,
   planningContext?: PlacementPlanningContext,
 ) => {
+  const groupSource =
+    request.command === 'sync' ? (intent as PlacementSyncIntentV1).groupSource : source;
   const groupId = createOperationGroupId({
     domain: 'skillsmith.operation-group-identity',
     schemaVersion: 1,
     command: request.command,
     skill: intent.skill,
-    source,
+    source: groupSource,
     scope: intent.scope,
     target,
   });
@@ -1271,6 +1306,11 @@ const placementOperationBase = (
       ...(intent.sourceContent === undefined
         ? []
         : [createContentObservationPreconditionIdV1(intent.sourceContent)]),
+      ...(request.command === 'sync'
+        ? (intent as PlacementSyncIntentV1).membershipContent.map(
+            createContentObservationPreconditionIdV1,
+          )
+        : []),
     ],
     requiredCheckIds,
     reversibility: {
@@ -1283,16 +1323,347 @@ const placementOperationBase = (
 };
 
 const validatePlacementSourceContent = (
-  source: Extract<OperationSource, { readonly kind: 'local-dev' }>,
+  source: OperationSource,
   sourceContent: ContentObservationIdentityV1,
 ): void => {
   if (
     sourceContent.targetKind !== 'directory' ||
-    sourceContent.targetIdentity !== resolve(source.path) ||
+    (source.kind === 'local-dev' && sourceContent.targetIdentity !== resolve(source.path)) ||
     sourceContent.contentRevision !== source.contentHash
   ) {
     throw new TypeError('placement planning: source content observation differs from intent');
   }
+};
+
+const syncConflictFor = (
+  liveResource: ReturnType<typeof placementLiveResource>,
+  liveState: LivePlacementStateV1 | null,
+  ledgerPair: ReturnType<typeof placementLedgerPair>,
+) => {
+  if (liveState === null) return null;
+  if (ledgerPair === null) {
+    return {
+      class: 'unmanaged-target' as const,
+      normal: 'refuse' as const,
+      forced: 'backup-and-replace' as const,
+      target: liveResource,
+      backup: 'required' as const,
+    };
+  }
+  if (
+    ledgerPair.pinned?.contentHash !== null &&
+    ledgerPair.pinned?.contentHash !== undefined &&
+    liveState.contentRevision !== ledgerPair.pinned.contentHash
+  ) {
+    return {
+      class: 'modified-managed-target' as const,
+      normal: 'refuse' as const,
+      forced: 'backup-and-replace' as const,
+      target: liveResource,
+      backup: 'required' as const,
+    };
+  }
+  return null;
+};
+
+type PlacementSyncProjectionV1 = Readonly<{
+  operation: ExecutableOperation | null;
+  diagnostics: readonly PlanningDiagnostic[];
+  groupId: string;
+}>;
+
+const syncConflictDiagnostic = (
+  intent: PlacementSyncIntentV1,
+  operation: ExecutableOperation,
+  planningContext: PlacementPlanningContext | undefined,
+): PlanningDiagnostic => {
+  const identity: PlanningDiagnosticIdentity = {
+    domain: 'skillsmith.planning-diagnostic-identity',
+    schemaVersion: 1,
+    kind: 'refuse',
+    severity: 'error',
+    refusalClass: 'usage',
+    affected: {
+      skill: intent.skill,
+      source: operation.source,
+      tool: intent.tool,
+      scope: intent.scope,
+      path: operation.conflict?.target.kind === 'live' ? operation.conflict.target.location : null,
+    },
+    correlation: {
+      groupId: operation.groupId,
+      pairId: operation.pairId,
+      operationId: operation.operationId,
+    },
+    reasonCode: 'sync-force-required',
+    selectionSource: operation.selectionSource,
+  };
+  const diagnosticId =
+    planningContext === undefined
+      ? createPlanningDiagnosticId(identity)
+      : createPlanningDiagnosticId(identity, planningContext);
+  return {
+    diagnosticId,
+    kind: identity.kind,
+    severity: identity.severity,
+    refusalClass: identity.refusalClass,
+    affected: identity.affected,
+    correlation: identity.correlation,
+    reason: {
+      code: identity.reasonCode,
+      message: `${intent.skill} has a destination conflict; rerun with force to replace it.`,
+    },
+    selectionSource: identity.selectionSource,
+  };
+};
+
+const placementSyncProjectionFor = (
+  request: PlacementSyncPlanRequestV1,
+  intent: PlacementSyncIntentV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
+  planningContext: PlacementPlanningContext | undefined,
+): PlacementSyncProjectionV1 => {
+  const observation = placementLiveObservation(snapshot, intent.liveResourceId);
+  const liveState = observation.value;
+  validatePlacementLive(intent, liveState);
+  const ledgerPair = placementLedgerPair(snapshot, intent, observation, liveState);
+  const liveResource = placementLiveResource(intent, observation);
+  const beforeSource = operationSourceFromLedgerPairV1(ledgerPair, liveState);
+  const projectedBefore = operationImageFromLiveStateV1({
+    resource: liveResource,
+    state: liveState,
+    managed: ledgerPair !== null,
+    source: beforeSource,
+  });
+  const before: OperationImage =
+    projectedBefore.kind === 'placement' &&
+    projectedBefore.contentHash === null &&
+    liveState?.contentRevision != null &&
+    /^sha256:[0-9a-f]{64}$/u.test(liveState.contentRevision)
+      ? {
+          ...projectedBefore,
+          contentHash: liveState.contentRevision as `sha256:${string}`,
+        }
+      : projectedBefore;
+  const source = intent.source;
+  if (
+    intent.membershipContent.length !== 2 ||
+    new Set(intent.membershipContent.map(({ resourceId }) => resourceId)).size !== 2
+  ) {
+    throw new TypeError('placement planning: sync membership authority is incomplete');
+  }
+  const groupId = createOperationGroupId({
+    domain: 'skillsmith.operation-group-identity',
+    schemaVersion: 1,
+    command: 'sync',
+    skill: intent.skill,
+    source: intent.groupSource,
+    scope: intent.scope,
+    target: intent.groupIdentityTarget,
+  });
+
+  if (intent.action === 'remove') {
+    if (
+      source !== null ||
+      intent.sourceContent !== undefined ||
+      intent.storeResourceId !== null ||
+      intent.desiredContentHash !== null
+    ) {
+      throw new TypeError('placement planning: sync remove intent carries source state');
+    }
+    if (before.kind === 'absent') {
+      return {
+        operation: null,
+        groupId,
+        diagnostics: [
+          syncNoopDiagnostic(
+            intent,
+            groupId,
+            null,
+            liveResource,
+            request.selection.source,
+            planningContext,
+          ),
+        ],
+      };
+    }
+    const base = placementOperationBase(
+      request,
+      intent,
+      snapshot,
+      liveResource,
+      'remove',
+      null,
+      intent.groupIdentityTarget,
+      planningContext,
+    );
+    const operation: ExecutableOperation = {
+      ...base,
+      dependencyMetadata: {
+        ...base.dependencyMetadata,
+        operationIds: [...(intent.artifactPrefixOperationIds ?? [])],
+      },
+      before,
+      after: { kind: 'absent', resource: liveResource },
+      reason: { code: 'sync-remove-selected', message: `Remove extra ${intent.skill}.` },
+      conflict: syncConflictFor(liveResource, liveState, ledgerPair),
+    };
+    return {
+      groupId: base.groupId,
+      diagnostics:
+        operation.conflict !== null && request.force !== true
+          ? [syncConflictDiagnostic(intent, operation, planningContext)]
+          : [],
+      operation,
+    };
+  }
+
+  if (
+    source === null ||
+    intent.sourceContent === undefined ||
+    intent.storeResourceId === null ||
+    intent.desiredContentHash === null ||
+    source.contentHash !== intent.desiredContentHash
+  ) {
+    throw new TypeError('placement planning: sync convergence intent is incomplete');
+  }
+  if (source.kind === 'local-dev' && intent.representation !== 'copy') {
+    throw new TypeError('placement planning: machine-bound sync must produce a pinned copy');
+  }
+  validatePlacementSourceContent(source, intent.sourceContent);
+  const store = validatePlacementStore(
+    intent.storeResourceId,
+    intent.desiredContentHash,
+    placementStoreObservation(snapshot, intent.storeResourceId),
+    false,
+  );
+  const desiredLink = intent.representation === 'symlink' ? resolve(store.path) : null;
+  const actualLink =
+    liveState?.linkTarget == null ? null : resolve(dirname(liveState.path), liveState.linkTarget);
+  const exact =
+    liveState !== null &&
+    liveState.brokenReason === null &&
+    !liveState.dangling &&
+    liveState.contentRevision === intent.desiredContentHash &&
+    liveState.representation === (intent.representation === 'symlink' ? 'symlink' : 'directory') &&
+    actualLink === desiredLink &&
+    ledgerPair?.mode === 'pinned' &&
+    ledgerPair.pinned?.storePath === store.path &&
+    ledgerPair.pinned.contentHash === intent.desiredContentHash &&
+    (ledgerPair.pinned.placement ?? 'copy') === intent.representation &&
+    (source.kind === 'local-dev'
+      ? ledgerPair.origin === undefined
+      : ledgerPair.origin?.host === source.identity.host &&
+        ledgerPair.origin.repo === source.identity.repository &&
+        ledgerPair.origin.skillPath === source.sourcePath &&
+        ledgerPair.origin.refRequested === source.requestedRef &&
+        ledgerPair.origin.refResolved === source.resolvedSha);
+  if (exact) {
+    return {
+      operation: null,
+      groupId,
+      diagnostics: [
+        syncNoopDiagnostic(
+          intent,
+          groupId,
+          source,
+          liveResource,
+          request.selection.source,
+          planningContext,
+        ),
+      ],
+    };
+  }
+
+  const kind: ExecutableOperation['kind'] =
+    before.kind === 'absent'
+      ? 'install'
+      : before.kind === 'placement' && before.contentHash === intent.desiredContentHash
+        ? 'repair'
+        : 'update';
+  const base = placementOperationBase(
+    request,
+    intent,
+    snapshot,
+    liveResource,
+    kind,
+    source,
+    intent.groupIdentityTarget,
+    planningContext,
+  );
+  const operation: ExecutableOperation = {
+    ...base,
+    dependencyMetadata: {
+      ...base.dependencyMetadata,
+      operationIds: [...(intent.artifactPrefixOperationIds ?? [])],
+    },
+    before,
+    after: {
+      kind: 'placement',
+      resource: liveResource,
+      classification: 'pinned',
+      representation: intent.representation,
+      linkTarget:
+        intent.representation === 'symlink' ? { kind: 'machine-bound', path: store.path } : null,
+      dangling: false,
+      source,
+      contentHash: intent.desiredContentHash,
+    },
+    reason: {
+      code: `sync-${kind}-selected`,
+      message: `${kind === 'install' ? 'Install' : kind === 'repair' ? 'Repair' : 'Update'} ${intent.skill} from the selected sync source.`,
+    },
+    conflict: syncConflictFor(liveResource, liveState, ledgerPair),
+  };
+  return {
+    groupId: base.groupId,
+    diagnostics:
+      operation.conflict !== null && request.force !== true
+        ? [syncConflictDiagnostic(intent, operation, planningContext)]
+        : [],
+    operation,
+  };
+};
+
+const syncNoopDiagnostic = (
+  intent: PlacementSyncIntentV1,
+  groupId: string,
+  source: OperationSource | null,
+  liveResource: ReturnType<typeof placementLiveResource>,
+  selectionSource: OperationSelection['source'],
+  planningContext: PlacementPlanningContext | undefined,
+): PlanningDiagnostic => {
+  const identity: PlanningDiagnosticIdentity = {
+    domain: 'skillsmith.planning-diagnostic-identity',
+    schemaVersion: 1,
+    kind: 'noop',
+    severity: 'info',
+    refusalClass: null,
+    affected: {
+      skill: intent.skill,
+      source,
+      tool: intent.tool,
+      scope: intent.scope,
+      path: liveResource.location,
+    },
+    correlation: { groupId, pairId: null, operationId: null },
+    reasonCode: 'sync-destination-current',
+    selectionSource,
+  };
+  const diagnosticId =
+    planningContext === undefined
+      ? createPlanningDiagnosticId(identity)
+      : createPlanningDiagnosticId(identity, planningContext);
+  return {
+    diagnosticId,
+    kind: 'noop',
+    severity: 'info',
+    refusalClass: null,
+    affected: identity.affected,
+    correlation: identity.correlation,
+    reason: { code: identity.reasonCode, message: `${intent.skill} is already synchronized.` },
+    selectionSource,
+  };
 };
 
 const placementDevOperationFor = (
@@ -1959,39 +2330,70 @@ const placementChecksFor = (
  * Pure snapshot-bound placement planning seam. `planFlips` remains the compatibility observer
  * while callers migrate their reads into `ObservedStateSnapshotV1`.
  */
-export const createPlacementPlan = (
+export function createPlacementPlan(
+  request:
+    | PlacementDevPlanRequestV1
+    | PlacementPromotePlanRequestV1
+    | PlacementRollbackPlanRequestV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
+  planningContext?: PlacementPlanningContext,
+): Result<SnapshotBoundOperationPlanV1<'dev' | 'promote'>, SnapshotPlanningErrorV1>;
+export function createPlacementPlan(
+  request: PlacementSyncPlanRequestV1,
+  snapshot: ObservedStateSnapshotV1<unknown>,
+  planningContext?: PlacementPlanningContext,
+): Result<SnapshotBoundOperationPlanV1<'sync'>, SnapshotPlanningErrorV1>;
+export function createPlacementPlan(
   request: PlacementPlanRequestV1,
   snapshot: ObservedStateSnapshotV1<unknown>,
   planningContext?: PlacementPlanningContext,
-): Result<SnapshotBoundOperationPlanV1<'dev' | 'promote'>, SnapshotPlanningErrorV1> => {
+): Result<SnapshotBoundOperationPlanV1<'dev' | 'promote' | 'sync'>, SnapshotPlanningErrorV1> {
   try {
     if (
       request.schemaVersion !== 1 ||
-      (request.command !== 'dev' && request.command !== 'promote') ||
-      (request.mode !== undefined && request.mode !== 'forward' && request.mode !== 'rollback')
+      (request.command !== 'dev' && request.command !== 'promote' && request.command !== 'sync') ||
+      ('mode' in request &&
+        request.mode !== undefined &&
+        request.mode !== 'forward' &&
+        request.mode !== 'rollback')
     ) {
       throw new TypeError('placement planning: unsupported request');
     }
-    const plannedOperations =
-      request.mode === 'rollback'
+    const syncProjections =
+      request.command === 'sync'
         ? request.intents.map((intent) =>
-            placementRollbackOperationFor(request, intent, snapshot, planningContext),
+            placementSyncProjectionFor(request, intent, snapshot, planningContext),
           )
-        : request.command === 'dev'
-          ? request.intents
-              .map((intent) => placementDevOperationFor(request, intent, snapshot, planningContext))
-              .filter((operation): operation is ExecutableOperation => operation !== null)
-          : request.intents
-              .map((intent) =>
-                placementPromoteOperationFor(request, intent, snapshot, planningContext),
-              )
-              .filter((operation): operation is ExecutableOperation => operation !== null);
+        : [];
+    const plannedOperations: readonly ExecutableOperation[] =
+      request.command === 'sync'
+        ? syncProjections.flatMap(({ operation }) => (operation === null ? [] : [operation]))
+        : request.mode === 'rollback'
+          ? request.intents.map((intent) =>
+              placementRollbackOperationFor(request, intent, snapshot, planningContext),
+            )
+          : request.command === 'dev'
+            ? request.intents
+                .map((intent) =>
+                  placementDevOperationFor(request, intent, snapshot, planningContext),
+                )
+                .filter((operation): operation is ExecutableOperation => operation !== null)
+            : request.intents
+                .map((intent) =>
+                  placementPromoteOperationFor(request, intent, snapshot, planningContext),
+                )
+                .filter((operation): operation is ExecutableOperation => operation !== null);
     const expectedRevisionIds = placementExpectedRevisionIds(snapshot);
     const compatibilityOperations = (request.compatibilityOperations ?? []).map((operation) => ({
       ...operation,
       preconditionIds: [...new Set([...operation.preconditionIds, ...expectedRevisionIds])],
     }));
     const operations = [...compatibilityOperations, ...plannedOperations];
+    const syncDiagnostics = syncProjections.flatMap(({ diagnostics }) => diagnostics);
+    const selectedGroupIds =
+      request.command === 'sync'
+        ? syncProjections.map(({ groupId }) => groupId)
+        : operations.map((operation) => operation.groupId);
     const plan = createCanonicalPlacementPlan(
       {
         domain: 'skillsmith.operation-plan',
@@ -1999,12 +2401,12 @@ export const createPlacementPlan = (
         command: request.command,
         selection: {
           ...request.selection,
-          groupIds: [...new Set(operations.map((operation) => operation.groupId))],
+          groupIds: [...new Set(selectedGroupIds)],
         },
         batchPolicy: request.batchPolicy,
         operations,
         checks: placementChecksFor(request, plannedOperations),
-        diagnostics: request.diagnostics ?? [],
+        diagnostics: [...(request.diagnostics ?? []), ...syncDiagnostics],
       },
       planningContext,
     );
@@ -2012,4 +2414,4 @@ export const createPlacementPlan = (
   } catch (error) {
     return err(placementPlanningError(error));
   }
-};
+}

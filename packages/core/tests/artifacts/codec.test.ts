@@ -11,13 +11,89 @@ import {
   ownArtifactReadBytes,
   unsignedUtf16Compare,
 } from '../../src/artifacts/codec.ts';
+import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import type { LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
+import {
+  operationMatchesMatrix,
+  validatePlanOperationIntentShapeV1,
+} from '../../src/artifacts/plan-codec.ts';
+import type { PlanOperationIntentV1, PlanOperationV1 } from '../../src/artifacts/plan-types.ts';
 import { legacyJournalMatchesLogicalShadow } from '../../src/artifacts/registry.ts';
 
 const decoder = new TextDecoder();
 
 describe('artifact codec foundation', () => {
+  test('keeps local pinned-copy sync intent journal-only and exact', () => {
+    const hash = `sha256:${'a'.repeat(64)}` as ArtifactDigest;
+    const source = { kind: 'local-dev' as const, path: '/fixture/source/alpha', contentHash: hash };
+    const resource = {
+      kind: 'live' as const,
+      skill: 'alpha',
+      tool: 'codex' as const,
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path: '/fixture/live/alpha' },
+    };
+    const intent: PlanOperationIntentV1 = {
+      operationId: 'operation:local-install',
+      groupId: 'group:alpha',
+      pairId: 'pair:alpha:codex',
+      kind: 'install',
+      skill: 'alpha',
+      source,
+      tool: 'codex',
+      scope: 'user',
+      before: { kind: 'absent', resource },
+      after: {
+        kind: 'placement',
+        resource,
+        classification: 'pinned',
+        representation: 'copy',
+        linkTarget: null,
+        dangling: false,
+        source,
+        contentHash: hash,
+      },
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+      reversibility: { kind: 'none', retentionResourceIds: [] },
+      conflict: null,
+    };
+    const savedOperation: PlanOperationV1 = {
+      ...intent,
+      dependsOn: [],
+      reason: { code: 'sync-install-selected', message: 'Install alpha.' },
+      selectionSource: 'bounded-default',
+      preconditionIds: [],
+      requiredCheckIds: [],
+    };
+
+    expect(operationMatchesMatrix(savedOperation)).toBeFalse();
+    expect(validatePlanOperationIntentShapeV1(intent)).toMatchObject({ ok: true });
+    for (const incompatible of [
+      { ...intent, after: { ...intent.after, representation: 'symlink' as const } },
+      { ...intent, after: { ...intent.after, linkTarget: resource.location } },
+      {
+        ...intent,
+        after: { ...intent.after, contentHash: `sha256:${'b'.repeat(64)}` as const },
+      },
+      { ...intent, kind: 'promote' as const },
+      { ...intent, kind: 'update' as const, before: intent.before },
+    ]) {
+      expect(validatePlanOperationIntentShapeV1(incompatible)).toMatchObject({ ok: false });
+    }
+    expect(
+      validatePlanOperationIntentShapeV1({
+        ...intent,
+        kind: 'update',
+        before: {
+          ...intent.after,
+          contentHash: `sha256:${'b'.repeat(64)}`,
+        },
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
   test('constructs fixed secret-safe errors and bounds schema paths', () => {
     expect(
       artifactCodecError('plan', 2, 'unsupported-version', ['schemaVersion', 'x'.repeat(65), -1]),

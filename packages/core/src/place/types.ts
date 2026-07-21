@@ -188,7 +188,8 @@ export interface SwapPlan {
     storePath: string;
     contentHash: string;
     pinned: PinnedRecord;
-    origin: OriginRecord;
+    /** Portable provenance is absent only for a machine-bound sync pinned-copy placement. */
+    origin: OriginRecord | null;
     adoptedDev: DevRecord | null;
   };
   // op 'uninstall' needs no payload — the engine reads the pair record.
