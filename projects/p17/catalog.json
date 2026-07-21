@@ -6406,7 +6406,7 @@
       "phase": "4B",
       "title": "Lock update policy, cross-machine reproduction, crash recovery, and secret safety",
       "dependsOn": ["P17-G4B-02"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "packages/core/src/reconcile/resolve.ts",
@@ -6546,7 +6546,7 @@
         "bun test scripts/check-p17-package-output.test.ts"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g4b03_shellcheck_directive_review",
+      "reviewer": "/root/g4b03_terminal_receipt_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6595,12 +6595,17 @@
           ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-03.md#renewed-traceability-and-terminal-verification"
+          ]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G4B-03.md#renewed-traceability-and-terminal-verification",
+            "projects/p17/evidence/P17-G4B-03.md#renewed-sign-off"
+          ]
         }
       },
       "evidence": [
@@ -6629,7 +6634,11 @@
         "projects/p17/evidence/P17-G4B-03.md#corrected-complete-terminal-gate-after-sigkill-fixture-amendment",
         "projects/p17/evidence/P17-G4B-03.md#independent-sigkill-staleness-fixture-review",
         "projects/p17/evidence/P17-G4B-03.md#ubuntu-shellcheck-directive-syntax-reopening",
-        "projects/p17/evidence/P17-G4B-03.md#independent-shellcheck-directive-syntax-review"
+        "projects/p17/evidence/P17-G4B-03.md#independent-shellcheck-directive-syntax-review",
+        "projects/p17/evidence/P17-G4B-03.md#final-corrected-head-supported-platform-receipts",
+        "projects/p17/evidence/P17-G4B-03.md#independent-final-terminal-receipt-review",
+        "projects/p17/evidence/P17-G4B-03.md#renewed-traceability-and-terminal-verification",
+        "projects/p17/evidence/P17-G4B-03.md#renewed-sign-off"
       ]
     },
     {
@@ -9236,14 +9245,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G4B-03",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G4B-03",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G4B-03.md#minimal-implementation",
         "projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4B-03.md#sign-off"
+        "projects/p17/evidence/P17-G4B-03.md#sign-off",
+        "projects/p17/evidence/P17-G4B-03.md#renewed-sign-off"
       ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": [],
@@ -23090,7 +23100,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G4B-03",
-      "status": "green",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03",
       "target": null,
@@ -23101,7 +23111,8 @@
         "projects/p17/evidence/P17-G4B-03.md#test-first-evidence",
         "projects/p17/evidence/P17-G4B-03.md#minimal-implementation",
         "projects/p17/evidence/P17-G4B-03.md#targeted-and-impacted-green",
-        "projects/p17/evidence/P17-G4B-03.md#sign-off"
+        "projects/p17/evidence/P17-G4B-03.md#sign-off",
+        "projects/p17/evidence/P17-G4B-03.md#renewed-sign-off"
       ],
       "secondaryGroups": ["P17-G4B-01"],
       "implements": ["D-015"],
@@ -23352,7 +23363,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/phase/EWP-P4B-TS05.test.ts#EWP-P4B-TS05",
       "target": {
@@ -23364,7 +23375,8 @@
       "evidence": [
         "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-p4b-ts05",
         "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts05",
-        "projects/p17/evidence/P17-G4B-03.md#sign-off"
+        "projects/p17/evidence/P17-G4B-03.md#sign-off",
+        "projects/p17/evidence/P17-G4B-03.md#renewed-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -23386,7 +23398,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/phase/EWP-P4B-TS06.test.ts#EWP-P4B-TS06",
       "target": {
@@ -23400,7 +23412,8 @@
         "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-p4b-ts06",
         "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-p4b-ts06",
         "projects/p17/evidence/P17-G4B-03.md#supported-platform-receipt-reopening-and-approved-harness-amendment",
-        "projects/p17/evidence/P17-G4B-03.md#sign-off"
+        "projects/p17/evidence/P17-G4B-03.md#sign-off",
+        "projects/p17/evidence/P17-G4B-03.md#renewed-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -24283,7 +24296,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF03.test.ts#EWP-WF03",
       "target": {
@@ -24297,7 +24310,8 @@
         "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-wf03",
         "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf03",
         "projects/p17/evidence/P17-G4B-03.md#supported-platform-receipt-reopening-and-approved-harness-amendment",
-        "projects/p17/evidence/P17-G4B-03.md#sign-off"
+        "projects/p17/evidence/P17-G4B-03.md#sign-off",
+        "projects/p17/evidence/P17-G4B-03.md#renewed-sign-off"
       ],
       "secondaryGroups": ["P17-G4A-03"],
       "implements": [],
@@ -24326,7 +24340,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G4B-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G4B-03:tests/ergonomics/workflows/EWP-WF04.test.ts#EWP-WF04",
       "target": {
@@ -24340,7 +24354,8 @@
         "projects/p17/evidence/P17-G4B-03.md#green-execution-receipt-ewp-wf04",
         "projects/p17/evidence/P17-G4B-03.md#red-execution-receipt-ewp-wf04",
         "projects/p17/evidence/P17-G4B-03.md#supported-platform-receipt-reopening-and-approved-harness-amendment",
-        "projects/p17/evidence/P17-G4B-03.md#sign-off"
+        "projects/p17/evidence/P17-G4B-03.md#sign-off",
+        "projects/p17/evidence/P17-G4B-03.md#renewed-sign-off"
       ],
       "secondaryGroups": ["P17-G4A-02"],
       "implements": [],
