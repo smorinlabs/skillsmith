@@ -46,7 +46,12 @@ import {
   createSavedPlanProjection,
   createSavedPlanScopedArtifactFacts,
 } from './saved.ts';
-import type { ObservedReconcileInput, PlanReconcileError, ReconcilePlanProduct } from './types.ts';
+import type {
+  ObservedReconcileInput,
+  PlanReconcileError,
+  ReconcileExecutionCommandV1,
+  ReconcilePlanProduct,
+} from './types.ts';
 
 export interface PrepareReconcilePlanRequest {
   readonly file?: string;
@@ -97,16 +102,18 @@ export interface SavedReconcileExecutionGuards {
   readonly capabilityPreconditions: readonly CapabilityPreconditionV1[];
 }
 
-export interface ValidatedSavedReconcilePlanValue {
+export interface ValidatedSavedReconcilePlanValue<
+  Command extends ReconcileExecutionCommandV1 = 'apply',
+> {
   readonly savedPlan: SavedPlanV1;
-  readonly plan: OperationPlan<'apply'>;
+  readonly plan: OperationPlan<Command>;
   readonly pair: ResolvedArtifactPair;
   readonly selectionOutcome: 'selected' | 'filter-noop';
   readonly resolvedTokens: ReadonlyMap<string, string>;
   readonly guards: SavedReconcileExecutionGuards;
 }
 
-export interface ValidatedSavedReconcilePlan extends ValidatedSavedReconcilePlanValue {
+export interface ValidatedSavedReconcilePlan extends ValidatedSavedReconcilePlanValue<'apply'> {
   /** Owner-retained decoded envelope preserves the exact source bytes and strict v1 model. */
   readonly artifact: ArtifactReadEnvelope<SavedPlanV1>;
 }
@@ -955,12 +962,11 @@ const validateReferencedResources = async (
     }
     if (resource.kind === 'store') {
       const contentHash = String(resource.contentHash);
-      if ([...localSources.values()].includes(contentHash)) {
-        if (precondition.expectedState !== 'present') {
-          return err(
-            stale('apply-saved-source-content', 'local source state authorization changed'),
-          );
-        }
+      if (
+        precondition.expectedHash.domain === 'source-content' &&
+        precondition.expectedState === 'present' &&
+        [...localSources.values()].includes(contentHash)
+      ) {
         continue;
       }
       const prefix = `store:${contentHash.slice('sha256:'.length)}/`;
@@ -1097,10 +1103,13 @@ const validateCurrentSelectedLiveInventory = async (
  * approved/rendered portable operation IDs are the exact IDs handed to execution, without a
  * temporary plan artifact or a second planning pass.
  */
-export const validateSavedReconcilePlanValue = async (
+export const validateSavedReconcilePlanValue = async <
+  Command extends ReconcileExecutionCommandV1 = 'apply',
+>(
   input: SavedPlanV1,
   runtime: ValidateSavedReconcilePlanRuntime,
-): Promise<Result<ValidatedSavedReconcilePlanValue, PlanReconcileError>> => {
+  command: Command = 'apply' as Command,
+): Promise<Result<ValidatedSavedReconcilePlanValue<Command>, PlanReconcileError>> => {
   if (runtime.signal?.aborted) return err(savedCancelled());
   const codec = artifactContractRegistry.get('plan', 1);
   if (codec === undefined) {
@@ -1410,12 +1419,12 @@ export const validateSavedReconcilePlanValue = async (
       operationIds: dependsOn,
     },
   }));
-  let plan: OperationPlan<'apply'>;
+  let plan: OperationPlan<Command>;
   try {
     plan = createOperationPlan({
       domain: 'skillsmith.operation-plan',
       schemaVersion: 1,
-      command: 'apply',
+      command,
       selection: {
         source: runtimeSavedPlan.selection.selectionSource,
         skills: runtimeSavedPlan.selection.skills,
@@ -1426,7 +1435,7 @@ export const validateSavedReconcilePlanValue = async (
       operations: operationInputs,
       checks: runtimeSavedPlan.checks,
       diagnostics: runtimeSavedPlan.diagnostics,
-    } as unknown as OperationPlanInput<'apply'>);
+    } as unknown as OperationPlanInput<Command>);
   } catch {
     return err(stale('apply-saved-operation-graph', 'saved operation graph is incompatible'));
   }

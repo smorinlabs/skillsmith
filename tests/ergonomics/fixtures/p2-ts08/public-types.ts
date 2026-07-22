@@ -17,7 +17,10 @@ import type {
   CurrentInstallResult,
   CurrentUninstallReport,
   CurrentUninstallResult,
+  ExactUpdateApprovalPreviewRequest,
   FlipReport,
+  GitRemoteRefInspection,
+  GitRemoteRefInspectionPort,
   InstallReport,
   LedgerModel,
   ListReport,
@@ -27,6 +30,7 @@ import type {
   ProjectConfigMigration,
   SavedPlanV1,
   UninstallReport,
+  UpdateApplicationReport,
 } from '@skillsmith/core';
 import type {
   ArtifactCodec,
@@ -59,6 +63,7 @@ import {
   toManifestV1Dto,
   toSavedPlanV1Dto,
   type toStatusV1Dto,
+  updateV1Codec,
 } from '@skillsmith/core/contracts/v1';
 import type {
   InitV1Dto,
@@ -69,6 +74,7 @@ import type {
   SavedPlanV1Dto,
   StatusV1Dto,
   SyncReportV1Dto,
+  UpdateReportV1Dto,
 } from '@skillsmith/core/contracts/v1';
 import {
   agentsV2Codec,
@@ -130,6 +136,7 @@ type _V1RuntimeClosed = Assert<
     | 'planV1Codec'
     | 'statusV1Codec'
     | 'syncV1Codec'
+    | 'updateV1Codec'
     | 'toAgentsV1Dto'
     | 'toCapabilitySnapshotV1Dto'
     | 'toCommandsV1Dto'
@@ -202,6 +209,19 @@ type _CurrentUninstallVersion = Assert<Equal<CurrentUninstallReport['reportVersi
 type _SyncWireKind = Assert<Equal<SyncReportV1Dto['kind'], 'skillsmith.sync'>>;
 type _SyncCodecDto = Assert<
   Equal<ReturnType<typeof syncV1Codec.validate>, Result<SyncReportV1Dto, WireCodecError>>
+>;
+type _UpdateWireKind = Assert<Equal<UpdateReportV1Dto['kind'], 'skillsmith.update'>>;
+type _UpdateCodecDto = Assert<
+  Equal<ReturnType<typeof updateV1Codec.validate>, Result<UpdateReportV1Dto, WireCodecError>>
+>;
+type _UpdateApplicationResult = Assert<
+  Equal<UpdateApplicationReport['result'], UpdateReportV1Dto | null>
+>;
+type _UpdatePreviewKind = Assert<
+  Equal<ExactUpdateApprovalPreviewRequest['kind'], 'exact-update-preview'>
+>;
+type _UpdateRefInspection = Assert<
+  Equal<Awaited<ReturnType<GitRemoteRefInspectionPort['inspectRemoteRef']>>, GitRemoteRefInspection>
 >;
 type _LegacyInstallVersion = Assert<Equal<InstallReport['reportVersion'], 1 | undefined>>;
 type _LegacyUninstallVersion = Assert<Equal<UninstallReport['reportVersion'], 1 | undefined>>;
@@ -517,6 +537,8 @@ const _ledgerV1Codec: ArtifactCodec<'ledger', 1, LedgerV1Dto, LedgerModel> = led
 const _ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel> = ledgerV2Codec;
 const _journalCodec: ArtifactCodec<'journal', 1, JournalV1Dto, LogicalJournalV1> = journalV1Codec;
 const _statusCodec: WireCodec<'status', 1, StatusV1Dto> = statusV1Codec;
+declare const _updateCodec: WireCodec<'update', 1, UpdateReportV1Dto>;
+const _updateCodecBinding: typeof _updateCodec = updateV1Codec;
 const _initV1Codec: WireCodec<'init', 1, InitV1Dto> = initV1Codec;
 const _agentsV2Codec: WireCodec<'agents', 2, AgentsV2Dto> = agentsV2Codec;
 const _commandsV2Codec: WireCodec<'commands', 2, CommandsV2Dto> = commandsV2Codec;
@@ -580,6 +602,7 @@ void [
   _ledgerV2Codec,
   _journalCodec,
   _statusCodec,
+  _updateCodecBinding,
   _initV1Codec,
   _agentsV2Codec,
   _commandsV2Codec,

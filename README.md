@@ -5,8 +5,8 @@
 Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill discovery
 and management across Claude Code, Codex, Kilo Code, and opencode.
 
-**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `init`, `version`, `completion`, and `help` are implemented.
-**P17 target:** narrow `update`, `undo`, and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
+**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `update`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `init`, `version`, `completion`, and `help` are implemented.
+**P17 target:** narrow `undo` and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
 
 ## Example output
 
@@ -83,6 +83,9 @@ skillsmith status --tool codex --user   # correlate desired, locked, ledger, and
 skillsmith plan --check                 # preview convergence; exit 7 when drift exists
 skillsmith apply --dry-run              # validate and render fresh convergence without writing
 skillsmith apply --plan review.plan --check # validate exact reviewed work; exit 7 on changes
+skillsmith update --check               # check moving declarations; exit 7 when updates exist
+skillsmith update factor-scan --dry-run # render one exact update plan without writing
+skillsmith update --all --yes           # approve and execute the exact bulk update plan
 skillsmith init --dry-run               # preview creation of the selected manifest
 skillsmith init --tool codex --project  # create project defaults without a lock or live import
 skillsmith install owner/repo           # acquire a skill from a git host
@@ -113,6 +116,16 @@ data, and `--out` writes only the requested owner-only saved-plan artifact.
 selection, and saved execution uses that prior authorization without prompting. Human output and
 strict `apply-report@1` JSON are projections of the same operations, checks, diagnostics,
 validation state, and execution results.
+
+`update` is declaration-first: it selects entries from one portable manifest/lock pair and checks
+moving refs by default; a fixed declaration is evaluated only when an explicit `--ref` replaces its
+intent. Branch, tag, and full-SHA refs are inspected exactly, without naming heuristics, and the
+inspected commit is materialized once for planning and execution. `--pin` stores that full SHA as
+the declaration intent. `--check` and `--dry-run` make no durable writes. A multi-declaration
+mutation requires approval of the exact group and operation order, or `--yes`; noninteractive bulk
+mutation without `--yes` is a usage error. Claude Code uses its static update gate, while Codex uses
+its static-plus-deep gate. Human output and strict `update@1` JSON project the same selected SHA,
+skill, group, operation, diagnostic, and summary facts; `--check` exits 7 when an update is available.
 
 `init` creates one declaration-empty canonical manifest. It selects the Git root when available and
 otherwise the XDG user configuration path; `--file`, `--user`, or `--project` select it explicitly.

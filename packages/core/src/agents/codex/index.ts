@@ -26,7 +26,7 @@ export const codexAdapter = {
     verifiedAgainst: CODEX_VERIFIED_AGAINST,
     modes: ['static', 'deep'],
     verify: verifyCodex,
-    gatePolicy: { installDeep: true, promote: 'static+deep' },
+    gatePolicy: { installDeep: true, promote: 'static+deep', update: 'static+deep' },
     targetManifests: ['.codex-plugin/plugin.json'],
     renderedFacts: {
       deepSkillCoverageSuffix: null,

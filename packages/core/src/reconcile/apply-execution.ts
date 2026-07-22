@@ -2,6 +2,7 @@ import { dirname, join, resolve } from 'node:path';
 import {
   type AcquireLiveSnapshotResourceV1,
   type AcquireStoreSnapshotResourceV1,
+  type AcquisitionArtifactExecutionActionV1,
   acquireStateResourceId,
   createAcquireExecutionInput,
   createAcquireExecutionLockPort,
@@ -11,6 +12,7 @@ import {
   createAcquisitionPinnedRecord,
   createAcquisitionRepositoryLifecycleControllerV1,
   executeAcquireReplacementWithObservation,
+  executeRecordOnlyAcquirePlanWithObservation,
   readAcquisitionSnapshotV1,
 } from '../acquire/execute.ts';
 import { resolveRemoteSource } from '../acquire/resolve.ts';
@@ -54,7 +56,7 @@ import {
   contentHashOf,
   snapshotToStore,
 } from '../place/store.ts';
-import type { Provenance, SwapExecutionResult, SwapPlan } from '../place/types.ts';
+import type { PairRecord, Provenance, SwapExecutionResult, SwapPlan } from '../place/types.ts';
 import { createOperationExecutionResult, createOperationPlan } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
@@ -82,11 +84,34 @@ import {
   executeValidatedReconcilePlanV1,
 } from './execute.ts';
 import type { PlanReconcileError } from './types.ts';
+import type { ReconcileExecutionCommandV1 } from './types.ts';
 
 export interface ExecuteValidatedReconcilePlanRuntime extends ValidateSavedReconcilePlanRuntime {
   readonly artifactCoordinator: ArtifactCoordinatorPorts;
   readonly observation: ObservationBundle;
   readonly continueOnError: boolean;
+  /** Fresh update's exact artifact-prefixed plan; its guard authority remains the validated base. */
+  readonly approvedUpdatePlan?: OperationPlan<'update'>;
+  /** Exact attempt-scoped sources already inspected, hashed, and verified by fresh update. */
+  readonly preparedSources?: readonly ReconcilePreparedSourceV1[];
+  /** Lossless artifact actions for command-specific write-manifest/write-lock operations. */
+  readonly artifactActions?: readonly ReconcileArtifactExecutionActionV1[];
+  /** Verification-blocked placement operations retained in the immutable approved plan. */
+  readonly blockedOperationIds?: ReadonlySet<string>;
+  /** Groups whose every selected pair was blocked; their artifact prefix must not mutate. */
+  readonly blockedGroupIds?: ReadonlySet<string>;
+}
+
+export interface ReconcilePreparedSourceV1 {
+  readonly source: Extract<ExecutableOperation['source'], { readonly kind: 'portable' }>;
+  readonly skillName: string;
+  readonly materializedDir: string;
+  readonly cleanupDirectory: string | null;
+}
+
+export interface ReconcileArtifactExecutionActionV1 {
+  readonly operationId: string;
+  readonly action: AcquisitionArtifactExecutionActionV1;
 }
 
 export interface ExecuteValidatedReconcilePlanError extends PlanReconcileError {
@@ -243,13 +268,16 @@ const exactContentHash = async (
 };
 
 const prepareExecutionSources = async (
-  plan: OperationPlan<'apply'>,
+  plan: OperationPlan<ReconcileExecutionCommandV1>,
   runtime: ExecuteValidatedReconcilePlanRuntime,
   storeRoot: string,
   legacyLedger: ReturnType<typeof legacyLedgerView>,
 ): Promise<Result<Map<string, PreparedExecutionSource>, PlanReconcileError>> => {
   const prepared = new Map<string, PreparedExecutionSource>();
   const cleanupDirectories = new Set<string>();
+  const supplied = new Map(
+    (runtime.preparedSources ?? []).map((source) => [executionSourceKey(source.source), source]),
+  );
   let cleanupOwnershipTransferred = false;
   try {
     for (const candidate of plan.operations) {
@@ -285,6 +313,31 @@ const prepareExecutionSources = async (
       const key = executionSourceKey(source);
       if (prepared.has(key)) continue;
       if (runtime.signal?.aborted) return err(savedCancelled());
+
+      const held = supplied.get(key);
+      if (held !== undefined) {
+        const contentHash = await exactContentHash(runtime.ports, held.materializedDir);
+        if (held.skillName !== operation.skill || contentHash !== source.contentHash) {
+          return err(
+            physicalError(
+              'apply-source-stale',
+              'the prepared source changed after approval',
+              'state',
+            ),
+          );
+        }
+        if (held.cleanupDirectory !== null) cleanupDirectories.add(held.cleanupDirectory);
+        prepared.set(key, {
+          source,
+          spec,
+          materializedDir: held.materializedDir,
+          cleanupDirectory: held.cleanupDirectory,
+          storePath,
+          snapshot: null,
+        });
+        supplied.delete(key);
+        continue;
+      }
 
       if ((await runtime.ports.pathKind(storePath)) === 'dir') {
         const contentHash = await exactContentHash(runtime.ports, storePath);
@@ -392,6 +445,15 @@ const prepareExecutionSources = async (
         storePath,
         snapshot: null,
       });
+    }
+    if (supplied.size > 0) {
+      return err(
+        physicalError(
+          'apply-source-stale',
+          'prepared source coverage does not match the approved plan',
+          'state',
+        ),
+      );
     }
     cleanupOwnershipTransferred = true;
     return ok(prepared);
@@ -764,6 +826,39 @@ const executePhysicalPlacement = async (
       false,
       runtime.ports.wallNowIso(),
     );
+    if (
+      operation.kind === 'repair' &&
+      binding.actualBefore.kind === 'placement' &&
+      binding.actualBefore.contentHash === operation.after.contentHash
+    ) {
+      const existing = getLedgerPairAt(
+        ledger,
+        liveProjectKey(operation.after),
+        operation.skill,
+        operation.tool,
+      );
+      const repaired: PairRecord = {
+        placementPath: path,
+        mode: 'pinned',
+        dev: existing?.dev ?? null,
+        pinned,
+        origin,
+        journal: null,
+      };
+      const committed = await executeRecordOnlyAcquirePlanWithObservation(
+        input,
+        operation,
+        repaired,
+        liveProjectKey(operation.after),
+        runtime.observation,
+      );
+      return physicalOperationResult(
+        operation,
+        binding,
+        committed,
+        reachedNewDurableAfter(operation, ledger, committed),
+      );
+    }
     const plan: SwapPlan = {
       op: 'install',
       skill: operation.skill,
@@ -895,8 +990,10 @@ export const createReconcileCapabilityQueriesV1 = (
  * plan, token bindings, and all three guard vectors exactly. Legacy ledger byte aliases additionally
  * read the physical ledger on every observation so cached validation can never hide a byte change.
  */
-export const createReconcileExecutionGuardAuthorityV1 = (
-  validated: ValidatedSavedReconcilePlanValue,
+export const createReconcileExecutionGuardAuthorityV1 = <
+  Command extends ReconcileExecutionCommandV1,
+>(
+  validated: ValidatedSavedReconcilePlanValue<Command>,
   runtime: ValidateSavedReconcilePlanRuntime,
 ): ReconcileExecutionGuardAuthorityV1 => {
   const savedPlan = deepFreeze(jsonValue(validated.savedPlan) as unknown as SavedPlanV1);
@@ -915,11 +1012,15 @@ export const createReconcileExecutionGuardAuthorityV1 = (
     capabilityPreconditions: guardVectorCanonical(approvedGuards, 'capabilityPreconditions'),
   });
   const ownedRuntime = ownValidationRuntime(runtime);
-  let revalidated: Promise<Readonly<ValidatedSavedReconcilePlanValue>> | null = null;
+  let revalidated: Promise<Readonly<ValidatedSavedReconcilePlanValue<Command>>> | null = null;
 
-  const revalidate = (): Promise<Readonly<ValidatedSavedReconcilePlanValue>> => {
+  const revalidate = (): Promise<Readonly<ValidatedSavedReconcilePlanValue<Command>>> => {
     revalidated ??= (async () => {
-      const current = await validateSavedReconcilePlanValue(savedPlan, ownedRuntime);
+      const current = await validateSavedReconcilePlanValue(
+        savedPlan,
+        ownedRuntime,
+        validated.plan.command,
+      );
       if (!current.ok) {
         throw guardObservationError(
           current.error.exitClass === 'cancelled' ? 'cancelled' : 'precondition-state-changed',
@@ -1039,17 +1140,31 @@ export const createReconcileExecutionGuardAuthorityV1 = (
 };
 
 /** Execute the exact fresh/saved validation product without invoking the planner again. */
-export const executeValidatedReconcilePlan = async (
-  validated: ValidatedSavedReconcilePlanValue,
+export const executeValidatedReconcilePlan = async <Command extends ReconcileExecutionCommandV1>(
+  validated: ValidatedSavedReconcilePlanValue<Command>,
   runtime: ExecuteValidatedReconcilePlanRuntime,
 ): Promise<Result<readonly OperationExecutionResult[], ExecuteValidatedReconcilePlanError>> => {
   if (runtime.signal?.aborted) return err(savedCancelled());
-  let plan: OperationPlan<'apply'>;
+  let plan: OperationPlan<Command | 'update'>;
   try {
-    plan = createOperationPlan(validated.plan as OperationPlanInput<'apply'>);
+    const hasApprovedUpdatePlan = Object.prototype.hasOwnProperty.call(
+      runtime,
+      'approvedUpdatePlan',
+    );
+    if (
+      hasApprovedUpdatePlan &&
+      (validated.plan.command !== 'update' || runtime.approvedUpdatePlan?.command !== 'update')
+    ) {
+      throw new TypeError('update execution authority cannot be attached to another command');
+    }
+    const approved =
+      validated.plan.command === 'update' && hasApprovedUpdatePlan
+        ? (runtime.approvedUpdatePlan ?? validated.plan)
+        : validated.plan;
+    plan = createOperationPlan(approved as OperationPlanInput<Command | 'update'>);
     if (
       (plan.batchPolicy === 'continue-on-error') !== runtime.continueOnError ||
-      canonicalPlanningString(plan) !== canonicalPlanningString(validated.plan)
+      canonicalPlanningString(plan) !== canonicalPlanningString(approved)
     ) {
       throw new TypeError('approved execution policy was not derived before execution');
     }
@@ -1295,6 +1410,25 @@ export const executeValidatedReconcilePlan = async (
         snapshotId: snapshotAuthority.snapshot.snapshotId,
         expectedRevisions,
       });
+      const artifactActions = new Map(
+        (runtime.artifactActions ?? []).map(({ operationId, action }) => [operationId, action]),
+      );
+      const verificationBlockedResult = (
+        operation: ExecutableOperation,
+        actualBefore: OperationImage,
+      ): OperationExecutionResult =>
+        createOperationExecutionResult({
+          operationId: operation.operationId,
+          outcome: 'failed',
+          actualBefore,
+          actualAfter: actualBefore,
+          force: null,
+          error: {
+            code: 'update-verification-blocked',
+            message: 'the selected update verification gate blocked this operation',
+            remediation: 'resolve verification findings and retry the same update selection',
+          },
+        });
       const liveIds = (operation: PhysicalPlacementOperation): string[] => [
         ...new Set(
           [operation.before, operation.after].flatMap((image) => {
@@ -1360,30 +1494,50 @@ export const executeValidatedReconcilePlan = async (
                   return actualBefore;
                 },
                 execute: (binding: ValidatedExecutionBinding) =>
-                  executePhysicalPlacement(
-                    physical,
-                    { ...binding, actualBefore },
-                    runtime,
-                    ledgerPath,
-                    storeRoot,
-                    sources.value,
-                  ),
+                  runtime.blockedOperationIds?.has(operation.operationId)
+                    ? Promise.resolve(verificationBlockedResult(operation, binding.actualBefore))
+                    : executePhysicalPlacement(
+                        physical,
+                        { ...binding, actualBefore },
+                        runtime,
+                        ledgerPath,
+                        storeRoot,
+                        sources.value,
+                      ),
               }),
               [snapshotAuthority.ledgerResourceId, ...lifecycleResourceIds(physical)],
             );
           },
         },
         artifact: {
-          bind: (operation) =>
-            artifactController.bind(
-              operation,
-              operation.kind === 'migrate-project-config'
+          bind: (operation) => {
+            const action =
+              artifactActions.get(operation.operationId) ??
+              (operation.kind === 'migrate-project-config'
                 ? {
-                    role: 'manifest',
-                    action: { kind: 'edit', request: { edits: [{ kind: 'migrate-legacy' }] } },
+                    role: 'manifest' as const,
+                    action: {
+                      kind: 'edit' as const,
+                      request: { edits: [{ kind: 'migrate-legacy' as const }] },
+                    },
                   }
-                : { role: 'lock', action: { kind: 'replace', lock: lockAfter(operation) } },
-            ),
+                : operation.kind === 'write-lock'
+                  ? {
+                      role: 'lock' as const,
+                      action: { kind: 'replace' as const, lock: lockAfter(operation) },
+                    }
+                  : null);
+            if (action === null) return null;
+            const binding = artifactController.bind(operation, action);
+            if (!runtime.blockedGroupIds?.has(operation.groupId)) return binding;
+            return Object.freeze({
+              ...binding,
+              execute: (validatedBinding: ValidatedExecutionBinding) =>
+                Promise.resolve(
+                  verificationBlockedResult(operation, validatedBinding.actualBefore),
+                ),
+            });
+          },
         },
         ledgerMigration: {
           bind: (operation) =>

@@ -23,6 +23,7 @@ import {
   type StatusV1Dto,
   type SyncReportV1Dto,
   type UninstallV1Dto,
+  type UpdateReportV1Dto,
   type VerifyV1Dto,
   agentsV1Codec,
   applyV1Codec,
@@ -55,6 +56,7 @@ import {
   toUninstallV1Dto,
   toVerifyV1Dto,
   uninstallV1Codec,
+  type updateV1Codec,
   verifyV1Codec,
 } from '@skillsmith/core/contracts/v1';
 import {
@@ -174,6 +176,7 @@ type _V1RuntimeClosure = Assert<
     | 'toInitV1Dto'
     | 'statusV1Codec'
     | 'syncV1Codec'
+    | 'updateV1Codec'
     | 'toStatusV1Dto'
     | 'uninstallV1Codec'
     | 'toUninstallV1Dto'
@@ -212,6 +215,9 @@ type _ApplyCodecDto = Assert<
 >;
 type _SyncCodecDto = Assert<
   Equal<ReturnType<typeof syncV1Codec.validate>, ExpectedWireResult<SyncReportV1Dto>>
+>;
+type _UpdateCodecDto = Assert<
+  Equal<ReturnType<typeof updateV1Codec.validate>, ExpectedWireResult<UpdateReportV1Dto>>
 >;
 type _V2RuntimeClosure = Assert<
   Equal<

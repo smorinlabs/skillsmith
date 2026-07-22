@@ -373,6 +373,51 @@ describe('resolveRefViaLsRemote', () => {
   });
 });
 
+describe('GitPort.inspectRemoteRef', () => {
+  test('classifies exact refs against a hermetic production Git remote and peels tags', async () => {
+    const inspect = env.git.inspectRemoteRef;
+    expect(inspect).toBeDefined();
+    if (inspect === undefined) return;
+
+    await expect(inspect({ remoteUrl: fixture.multiUrl, ref: null })).resolves.toEqual({
+      kind: 'default',
+      requestedRef: null,
+      resolvedSha: fixture.multiHead,
+    });
+    await expect(inspect({ remoteUrl: fixture.multiUrl, ref: 'main' })).resolves.toEqual({
+      kind: 'branch',
+      requestedRef: 'main',
+      resolvedSha: fixture.multiHead,
+    });
+    await expect(inspect({ remoteUrl: fixture.multiUrl, ref: 'v1.0.0' })).resolves.toEqual({
+      kind: 'tag',
+      requestedRef: 'v1.0.0',
+      resolvedSha: fixture.multiTagSha,
+    });
+    await expect(
+      inspect({ remoteUrl: fixture.multiUrl, ref: fixture.multiAnnotatedTag }),
+    ).resolves.toEqual({
+      kind: 'tag',
+      requestedRef: fixture.multiAnnotatedTag,
+      resolvedSha: fixture.multiAnnotatedCommit,
+    });
+  });
+
+  test('returns a structured ref miss instead of degrading to a null SHA', async () => {
+    const inspect = env.git.inspectRemoteRef;
+    expect(inspect).toBeDefined();
+    if (inspect === undefined) return;
+
+    await expect(
+      inspect({ remoteUrl: fixture.multiUrl, ref: 'missing-exact-ref' }),
+    ).rejects.toMatchObject({
+      capability: 'git',
+      operation: 'inspectRemoteRef',
+      code: 'not-found',
+    });
+  });
+});
+
 describe('sweepFetchOrphans', () => {
   test('removes .fetch entries older than 60 minutes and keeps fresh ones', async () => {
     const data = await mkdtemp(join(tmpdir(), 'skillsmith-sweep-'));

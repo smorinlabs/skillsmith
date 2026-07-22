@@ -103,6 +103,17 @@ export interface GitResolveRemoteRefRequest {
   readonly signal?: AbortSignal;
 }
 
+export interface GitRemoteRefInspection {
+  readonly kind: 'default' | 'branch' | 'tag' | 'sha';
+  readonly requestedRef: string | null;
+  readonly resolvedSha: string;
+}
+
+/** Exact remote-ref authority required by update after its compatibility boundary is narrowed. */
+export interface GitRemoteRefInspectionPort {
+  inspectRemoteRef(request: GitResolveRemoteRefRequest): Promise<GitRemoteRefInspection>;
+}
+
 export interface GitInitializeFetchRequest extends GitRequest {
   readonly remoteUrl: string;
 }
@@ -138,6 +149,8 @@ export interface GitMaterializeTreeRequest extends GitTreeRequest {
 export interface GitPort {
   findRepositoryRoot(request: GitFindRepositoryRootRequest): Promise<string | null>;
   inspectWorktree(request: GitRequest): Promise<GitWorktreeInspection>;
+  /** Optional only so historical aggregate GitPort fakes remain source compatible. */
+  inspectRemoteRef?: GitRemoteRefInspectionPort['inspectRemoteRef'];
   resolveRemoteRef(request: GitResolveRemoteRefRequest): Promise<string | null>;
   initializeFetch(request: GitInitializeFetchRequest): Promise<void>;
   fetchRef(request: GitFetchRefRequest): Promise<GitFetchRefResult>;

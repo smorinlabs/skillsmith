@@ -67,6 +67,7 @@ const currentPlanningCommands = new Set<string>([
   'sync',
   'init',
   'apply',
+  'update',
   'plan',
 ]);
 

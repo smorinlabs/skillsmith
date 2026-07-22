@@ -1,25 +1,58 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { chmod, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
+  type CreateUpdateFleetOptions,
+  UPDATE_SECRET_CANARIES,
   type UpdateFleet,
   createUpdateFleet,
   destroyUpdateFleet,
+  pushFactorUpdateCandidate,
   runUpdateCli,
   snapshotUpdateState,
 } from '../../../../tests/ergonomics/fixtures/p5-update/fleet.ts';
 import { CURRENT_APPLICATION_SERVICES } from '../../../core/src/application/current-services.ts';
+import {
+  hashSourceContentV1,
+  projectSourceContent,
+} from '../../../core/src/artifacts/source-content.ts';
+import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
+import { runGit } from '../../../core/tests/fixtures/git-env.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 
 const openFleets: UpdateFleet[] = [];
+
+// Each case creates local Git remotes and seeds managed placements before exercising the CLI.
+// Keep a bounded cold-start allowance while the fixture-local verifier prevents external I/O.
+setDefaultTimeout(90_000);
 
 afterEach(async () => {
   await Promise.all(openFleets.splice(0).map(destroyUpdateFleet));
 });
 
-const fleet = async (): Promise<UpdateFleet> => {
-  const selected = await createUpdateFleet();
+const fleet = async (options: CreateUpdateFleetOptions = {}): Promise<UpdateFleet> => {
+  const selected = await createUpdateFleet(options);
   openFleets.push(selected);
   return selected;
 };
+
+const sourceContentHashAt = async (path: string): Promise<string> => {
+  const projected = await projectSourceContent(await defaultRuntimePorts(), path);
+  if (!projected.ok) throw new Error(projected.error.message);
+  const hashed = hashSourceContentV1(projected.value);
+  if (!hashed.ok) throw new Error(hashed.error.message);
+  return hashed.value;
+};
+
+const exactUpdatePlan = (report: Record<string, unknown>) => ({
+  artifactPair: report.artifactPair,
+  selection: report.selection,
+  candidates: report.candidates,
+  operations: report.operations,
+  checks: report.checks,
+  diagnostics: report.diagnostics,
+});
 
 const updateReport = async (
   selected: UpdateFleet,
@@ -45,6 +78,19 @@ const updateReport = async (
   return parsed as Record<string, unknown>;
 };
 
+const updateError = async (
+  selected: UpdateFleet,
+  args: readonly string[],
+  expectedExit: number,
+): Promise<Record<string, unknown>> => {
+  const product = await runUpdateCli(selected, [...args, '--json']);
+  expect(product.exitCode, `${product.stderr}\n${product.stdout}`).toBe(expectedExit);
+  expect(product.stderr).toBe('');
+  const parsed: unknown = JSON.parse(product.stdout);
+  expect(parsed).toMatchObject({ schemaVersion: 1, kind: 'error' });
+  return parsed as Record<string, unknown>;
+};
+
 describe('update command contract', () => {
   test('EWP-CMD-UPDATE-TS01 — exact remote candidate discovery', async () => {
     const selected = await fleet();
@@ -52,11 +98,107 @@ describe('update command contract', () => {
     expect(report).toMatchObject({
       mode: 'check',
       selection: { selectionSource: 'explicit-targets' },
+      candidates: [
+        {
+          skill: 'factor-scan',
+          current: { requestedRef: 'main', kind: 'branch' },
+          proposed: {
+            requestedRef: 'main',
+            kind: 'branch',
+            resolvedSha: selected.remote.updateHead,
+          },
+          transition: 'preserve',
+          outcome: 'available',
+        },
+      ],
     });
+    const annotated = await updateReport(selected, [
+      'update',
+      'factor-scan',
+      '--ref',
+      selected.remote.multiAnnotatedTag,
+      '--dry-run',
+    ]);
+    expect(annotated.candidates).toEqual([
+      expect.objectContaining({
+        proposed: expect.objectContaining({
+          kind: 'tag',
+          resolvedSha: selected.remote.multiAnnotatedCommit,
+        }),
+      }),
+    ]);
+    expect(selected.remote.multiAnnotatedCommit).not.toBe(selected.remote.multiAnnotatedTagObject);
+    const exactSha = await updateReport(selected, [
+      'update',
+      'factor-scan',
+      '--ref',
+      selected.remote.multiTagSha,
+      '--dry-run',
+    ]);
+    expect(exactSha.candidates).toEqual([
+      expect.objectContaining({
+        proposed: expect.objectContaining({
+          kind: 'sha',
+          resolvedSha: selected.remote.multiTagSha,
+        }),
+      }),
+    ]);
+
+    runGit(selected.remote.multiWork, ['branch', 'v9.9.9', selected.remote.multiTagSha]);
+    runGit(selected.remote.multiWork, [
+      'push',
+      '--quiet',
+      selected.remote.multiUrl,
+      'refs/heads/v9.9.9:refs/heads/v9.9.9',
+    ]);
+    const versionNamedBranch = await updateReport(selected, [
+      'update',
+      'factor-scan',
+      '--ref',
+      'v9.9.9',
+      '--dry-run',
+    ]);
+    expect(versionNamedBranch.candidates).toEqual([
+      expect.objectContaining({ proposed: expect.objectContaining({ kind: 'branch' }) }),
+    ]);
+
+    runGit(selected.remote.multiWork, ['branch', 'collision', selected.remote.multiTagSha]);
+    runGit(selected.remote.multiWork, ['tag', 'collision', selected.remote.multiTagSha]);
+    runGit(selected.remote.multiWork, [
+      'push',
+      '--quiet',
+      selected.remote.multiUrl,
+      'refs/heads/collision:refs/heads/collision',
+      'refs/tags/collision:refs/tags/collision',
+    ]);
+    expect(
+      await updateError(selected, ['update', 'factor-scan', '--ref', 'collision', '--dry-run'], 5),
+    ).toMatchObject({ code: 'update-ref-inspection-failed' });
+    expect(
+      await updateError(
+        selected,
+        ['update', 'factor-scan', '--ref', 'missing-ref', '--dry-run'],
+        5,
+      ),
+    ).toMatchObject({ code: 'update-ref-inspection-failed' });
+
+    const defaultSelected = await fleet({ movingDefault: true });
+    const defaultReport = await updateReport(
+      defaultSelected,
+      ['update', 'factor-scan', '--check'],
+      7,
+    );
+    expect(defaultReport.candidates).toEqual([
+      expect.objectContaining({
+        current: expect.objectContaining({ requestedRef: null, kind: 'default' }),
+        proposed: expect.objectContaining({ requestedRef: null, kind: 'default' }),
+      }),
+    ]);
   });
 
   test('EWP-CMD-UPDATE-TS02 — moving, fixed, ref, and pin policy', async () => {
     const selected = await fleet();
+    const before = await snapshotUpdateState(selected);
     const report = await updateReport(selected, [
       'update',
       'factor-scan',
@@ -65,11 +207,111 @@ describe('update command contract', () => {
       '--pin',
       '--dry-run',
     ]);
-    expect(report.candidates).toBeArray();
+    expect(report.candidates).toEqual([
+      expect.objectContaining({
+        skill: 'factor-scan',
+        transition: 'pin',
+        outcome: 'available',
+        proposed: expect.objectContaining({
+          requestedRef: selected.remote.updateHead,
+          kind: 'branch',
+          resolvedSha: selected.remote.updateHead,
+        }),
+      }),
+    ]);
+    const ordinary = await updateReport(selected, ['update', '--all', '--dry-run']);
+    expect(ordinary.candidates).toEqual([
+      expect.objectContaining({ skill: 'factor-scan', outcome: 'available' }),
+      expect.objectContaining({ skill: 'review', outcome: 'skipped-fixed', proposed: null }),
+    ]);
+    const existingPin = await updateReport(selected, [
+      'update',
+      'factor-scan',
+      '--pin',
+      '--dry-run',
+    ]);
+    expect(existingPin.candidates).toEqual([
+      expect.objectContaining({
+        skill: 'factor-scan',
+        transition: 'pin',
+        proposed: expect.objectContaining({
+          requestedRef: selected.remote.updateHead,
+          kind: 'branch',
+          resolvedSha: selected.remote.updateHead,
+        }),
+      }),
+    ]);
+    const trackedTag = await updateReport(selected, [
+      'update',
+      'factor-scan',
+      '--ref',
+      selected.remote.multiAnnotatedTag,
+      '--dry-run',
+    ]);
+    expect(trackedTag.candidates).toEqual([
+      expect.objectContaining({
+        transition: 'track',
+        proposed: expect.objectContaining({
+          requestedRef: selected.remote.multiAnnotatedTag,
+          kind: 'tag',
+          resolvedSha: selected.remote.multiAnnotatedCommit,
+        }),
+      }),
+    ]);
+    const pinnedTag = await updateReport(selected, [
+      'update',
+      'factor-scan',
+      '--ref',
+      selected.remote.multiAnnotatedTag,
+      '--pin',
+      '--dry-run',
+    ]);
+    expect(pinnedTag.candidates).toEqual([
+      expect.objectContaining({
+        transition: 'pin',
+        proposed: expect.objectContaining({
+          requestedRef: selected.remote.multiAnnotatedCommit,
+          kind: 'tag',
+          resolvedSha: selected.remote.multiAnnotatedCommit,
+        }),
+      }),
+    ]);
+    const trackedSha = await updateReport(selected, [
+      'update',
+      'factor-scan',
+      '--ref',
+      selected.remote.multiTagSha,
+      '--dry-run',
+    ]);
+    expect(trackedSha.candidates).toEqual([
+      expect.objectContaining({
+        transition: 'track',
+        proposed: expect.objectContaining({
+          requestedRef: selected.remote.multiTagSha,
+          kind: 'sha',
+          resolvedSha: selected.remote.multiTagSha,
+        }),
+      }),
+    ]);
+    const bulkPin = await updateReport(selected, ['update', '--all', '--pin', '--dry-run']);
+    expect(bulkPin.candidates).toEqual([
+      expect.objectContaining({ skill: 'factor-scan', transition: 'pin', outcome: 'available' }),
+      expect.objectContaining({ skill: 'review', outcome: 'skipped-fixed', proposed: null }),
+    ]);
+    expect(
+      await updateError(selected, ['update', 'review', '--pin', '--dry-run'], 2),
+    ).toMatchObject({
+      code: 'update-pin-fixed',
+    });
+    expect(
+      await updateError(selected, ['update', 'factor-*', '--ref', 'main', '--dry-run'], 2),
+    ).toMatchObject({ code: 'update-options' });
+    expect(await snapshotUpdateState(selected)).toEqual(before);
   });
 
   test('EWP-CMD-UPDATE-TS03 — declaration-first target and tool selection', async () => {
     const selected = await fleet();
+    const before = await snapshotUpdateState(selected);
     const report = await updateReport(selected, [
       'update',
       'factor-*',
@@ -77,7 +319,44 @@ describe('update command contract', () => {
       'codex',
       '--dry-run',
     ]);
-    expect(report).toMatchObject({ selection: { selectionSource: 'explicit-targets' } });
+    expect(report).toMatchObject({
+      selection: {
+        selectionSource: 'explicit-targets',
+        skills: ['factor-scan'],
+        tools: ['codex'],
+      },
+      groups: [{ skill: 'factor-scan', tools: ['codex'] }],
+    });
+    const unmatched = await updateReport(selected, ['update', 'missing-*', '--dry-run']);
+    expect(unmatched).toMatchObject({
+      state: 'current',
+      selection: {
+        selectionSource: 'explicit-targets',
+        selectionOutcome: 'filter-noop',
+        targets: ['missing-*'],
+        skills: [],
+        tools: [],
+        groupIds: [],
+      },
+      candidates: [],
+      operations: [],
+      groups: [],
+    });
+    const filtered = await updateReport(selected, [
+      'update',
+      'review',
+      '--tool',
+      'claude-code',
+      '--dry-run',
+    ]);
+    expect(filtered).toMatchObject({
+      state: 'current',
+      selection: { selectionOutcome: 'filter-noop', targets: ['review'] },
+      candidates: [],
+      operations: [],
+      groups: [],
+    });
+    expect(await snapshotUpdateState(selected)).toEqual(before);
   });
 
   test('EWP-CMD-UPDATE-TS04 — targetless bounded check and no-write modes', async () => {
@@ -88,17 +367,120 @@ describe('update command contract', () => {
       mode: 'check',
       selection: { selectionSource: 'bounded-default' },
     });
+    const explicitAll = await updateReport(selected, ['update', '--all', '--check'], 7);
+    expect(explicitAll).toMatchObject({
+      mode: 'check',
+      options: { all: true },
+      selection: { selectionSource: 'explicit-all' },
+    });
+    expect(
+      (explicitAll.candidates as readonly Record<string, unknown>[]).map(
+        ({ skill, outcome, proposed }) => ({ skill, outcome, proposed }),
+      ),
+    ).toEqual(
+      (report.candidates as readonly Record<string, unknown>[]).map(
+        ({ skill, outcome, proposed }) => ({ skill, outcome, proposed }),
+      ),
+    );
+    expect((explicitAll.selection as { skills?: unknown }).skills).toEqual(
+      (report.selection as { skills?: unknown }).skills,
+    );
+    const continued = await updateReport(
+      selected,
+      ['update', '--all', '--check', '--continue-on-error'],
+      7,
+    );
+    expect(continued).toMatchObject({ options: { continueOnError: true } });
+    expect(await updateError(selected, ['update'], 2)).toMatchObject({ code: 'update-options' });
+    expect(await updateError(selected, ['update', '--dry-run'], 2)).toMatchObject({
+      code: 'update-options',
+    });
+    await updateError(selected, ['update', '--all', '--check', '--dry-run'], 2);
+    await updateError(selected, ['update', '--all', '--check', '--yes'], 2);
+    await updateError(selected, ['update', '--all', '--dry-run', '--yes'], 2);
     expect(await snapshotUpdateState(selected)).toEqual(before);
   });
 
   test('EWP-CMD-UPDATE-TS05 — adapter-owned verification policy', async () => {
     const selected = await fleet();
     const report = await updateReport(selected, ['update', 'factor-scan', '--strict', '--dry-run']);
-    expect(report.checks).toBeArray();
+    expect(report).toMatchObject({
+      groups: [
+        {
+          verification: [
+            { tool: 'claude-code', mode: 'static', gate: 'passed' },
+            { tool: 'codex', mode: 'static+deep', gate: 'passed' },
+          ],
+        },
+      ],
+    });
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'verification', tool: 'claude-code', mode: 'static' }),
+        expect.objectContaining({ kind: 'verification', tool: 'codex', mode: 'static+deep' }),
+      ]),
+    );
+
+    const warningFleet = await fleet();
+    await pushFactorUpdateCandidate(warningFleet, 'not frontmatter\n');
+    const warningBefore = await snapshotUpdateState(warningFleet);
+    const warned = await updateReport(warningFleet, ['update', 'factor-scan', '--dry-run']);
+    expect(warned).toMatchObject({
+      state: 'ready',
+      groups: [
+        {
+          verification: [
+            { tool: 'claude-code', mode: 'static', gate: 'warned' },
+            { tool: 'codex', mode: 'static+deep', gate: 'passed' },
+          ],
+          outcome: 'planned',
+        },
+      ],
+    });
+    const strict = await updateReport(
+      warningFleet,
+      ['update', 'factor-scan', '--strict', '--dry-run'],
+      1,
+    );
+    expect(strict).toMatchObject({
+      state: 'partial',
+      groups: [
+        {
+          verification: [
+            { tool: 'claude-code', gate: 'failed' },
+            { tool: 'codex', gate: 'passed' },
+          ],
+          outcome: 'failed',
+          failure: { code: 'update-verification-blocked' },
+        },
+      ],
+    });
+    expect(await snapshotUpdateState(warningFleet)).toEqual(warningBefore);
+
+    const allBlocked = await fleet();
+    await pushFactorUpdateCandidate(allBlocked, 'not frontmatter\n');
+    const blockedBefore = await snapshotUpdateState(allBlocked);
+    const blocked = await updateReport(
+      allBlocked,
+      ['update', 'factor-scan', '--tool', 'claude-code', '--strict'],
+      1,
+    );
+    expect(blocked).toMatchObject({
+      groups: [
+        {
+          tools: ['claude-code'],
+          verification: [{ tool: 'claude-code', gate: 'failed' }],
+          outcome: 'failed',
+        },
+      ],
+    });
+    expect(await snapshotUpdateState(allBlocked)).toEqual(blockedBefore);
   });
 
   test('EWP-CMD-UPDATE-TS06 — artifact and selected-tool consistency', async () => {
     const selected = await fleet();
+    const manifestBefore = await Bun.file(selected.manifest).text();
+    const claudeBefore = await Bun.file(`${selected.live.claude}/SKILL.md`).text();
     const report = await updateReport(selected, [
       'update',
       'factor-scan',
@@ -106,7 +488,121 @@ describe('update command contract', () => {
       'codex',
       '--dry-run',
     ]);
-    expect(report.operations).toBeArray();
+    const groupId = (report.candidates as Array<{ groupId?: unknown }>)[0]?.groupId;
+    expect(typeof groupId).toBe('string');
+    const operations = report.operations as Array<{
+      operationId: string;
+      kind: string;
+      groupId: unknown;
+      dependsOn: readonly string[];
+    }>;
+    expect(operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'write-lock', groupId }),
+        expect.objectContaining({
+          kind: 'update',
+          groupId,
+          tool: 'codex',
+        }),
+      ]),
+    );
+    const lockOperation = operations.find(({ kind }) => kind === 'write-lock');
+    expect(lockOperation).toBeDefined();
+    expect(
+      operations
+        .filter(({ kind }) => kind === 'update' || kind === 'repair')
+        .every(({ dependsOn }) =>
+          lockOperation === undefined ? false : dependsOn.includes(lockOperation.operationId),
+        ),
+    ).toBeTrue();
+
+    const explicitSibling = await updateReport(selected, [
+      'update',
+      'factor-scan',
+      '--file',
+      selected.manifest,
+      '--dry-run',
+    ]);
+    expect(explicitSibling).toMatchObject({
+      artifactPair: {
+        manifestPath: selected.manifest,
+        lockPath: selected.lock,
+        lockSource: 'sibling',
+        selectionSource: 'explicit',
+      },
+    });
+    const explicitPair = await updateReport(selected, [
+      'update',
+      'factor-scan',
+      '--file',
+      selected.manifest,
+      '--lockfile',
+      selected.lock,
+      '--dry-run',
+    ]);
+    expect(explicitPair).toMatchObject({ artifactPair: { lockSource: 'explicit' } });
+    await updateError(
+      selected,
+      ['update', 'factor-scan', '--lockfile', selected.lock, '--dry-run'],
+      2,
+    );
+    await updateError(
+      selected,
+      [
+        'update',
+        'factor-scan',
+        '--file',
+        selected.manifest,
+        '--file',
+        selected.manifest,
+        '--dry-run',
+      ],
+      2,
+    );
+
+    const codexOnly = await updateReport(selected, ['update', 'factor-scan', '--tool', 'codex']);
+    expect(codexOnly).toMatchObject({
+      state: 'completed',
+      groups: [{ skill: 'factor-scan', tools: ['codex'], outcome: 'succeeded' }],
+    });
+    expect(await Bun.file(selected.manifest).text()).toBe(manifestBefore);
+    expect(await Bun.file(`${selected.live.claude}/SKILL.md`).text()).toBe(claudeBefore);
+    expect(await Bun.file(`${selected.live.codex}/SKILL.md`).text()).toContain('updated fixture');
+    const selectedCurrent = await updateReport(
+      selected,
+      ['update', 'factor-scan', '--tool', 'codex', '--check'],
+      0,
+    );
+    expect(selectedCurrent).toMatchObject({
+      state: 'current',
+      candidates: [{ skill: 'factor-scan', outcome: 'current' }],
+      operations: [],
+    });
+    const remaining = await updateReport(selected, ['update', 'factor-scan', '--check'], 7);
+    expect(remaining).toMatchObject({
+      candidates: [{ skill: 'factor-scan', outcome: 'available' }],
+      groups: [{ skill: 'factor-scan', drift: { artifact: false, live: true } }],
+    });
+    await writeFile(`${selected.live.claude}/SKILL.md`, `${claudeBefore}\n# local modification\n`);
+    const modified = await updateReport(selected, ['update', 'factor-scan', '--check'], 7);
+    expect(modified.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: 'claude-code',
+          conflict: expect.objectContaining({ class: 'modified-managed-target' }),
+        }),
+      ]),
+    );
+    expect(await updateError(selected, ['update', 'factor-scan'], 3)).toMatchObject({
+      code: 'apply-execution-conflict',
+    });
+    await writeFile(`${selected.live.claude}/SKILL.md`, claudeBefore);
+    const converged = await updateReport(selected, ['update', 'factor-scan']);
+    expect(converged).toMatchObject({ groups: [{ outcome: 'succeeded' }] });
+    expect(await updateReport(selected, ['update', 'factor-scan', '--check'])).toMatchObject({
+      state: 'current',
+      operations: [],
+    });
   });
 
   test('EWP-CMD-UPDATE-TS08 — failure, continuation, and cancellation truth', async () => {
@@ -117,13 +613,241 @@ describe('update command contract', () => {
       '--continue-on-error',
       '--dry-run',
     ]);
-    expect(report).toMatchObject({ options: { continueOnError: true } });
+    expect(report).toMatchObject({
+      options: { continueOnError: true },
+      candidates: [
+        { skill: 'factor-scan', outcome: 'available' },
+        { skill: 'review', outcome: 'skipped-fixed', proposed: null },
+      ],
+      groups: [
+        { skill: 'factor-scan', action: 'update', outcome: 'planned' },
+        { skill: 'review', action: 'skip', outcome: 'skipped' },
+      ],
+    });
+
+    const partialFleet = await fleet({ reviewMoving: true, reviewSourceMissing: true });
+    const partial = await updateReport(
+      partialFleet,
+      ['update', '--all', '--continue-on-error', '--dry-run'],
+      1,
+    );
+    expect(partial).toMatchObject({
+      state: 'partial',
+      candidates: [
+        { skill: 'factor-scan', outcome: 'available', failure: null },
+        {
+          skill: 'review',
+          outcome: 'failed',
+          proposed: null,
+          failure: { code: 'update-source-resolution' },
+        },
+      ],
+      groups: [
+        { skill: 'factor-scan', action: 'update', outcome: 'planned' },
+        { skill: 'review', action: 'refuse', outcome: 'failed' },
+      ],
+      summary: { candidateFailed: 1, failed: 1 },
+    });
+    expect(
+      (partial.operations as Array<{ skill?: string | null }>).every(
+        ({ skill }) => skill === null || skill === 'factor-scan',
+      ),
+    ).toBeTrue();
+
+    const failFastFleet = await fleet({ reviewMoving: true, reviewSourceMissing: true });
+    const failFastBefore = await snapshotUpdateState(failFastFleet);
+    const failFast = await runUpdateCli(failFastFleet, ['update', '--all', '--yes', '--json']);
+    expect(failFast.exitCode).toBe(5);
+    expect(JSON.parse(failFast.stdout)).toMatchObject({ code: 'update-source-resolution' });
+    expect(failFast.stderr).toBe('');
+    expect(await snapshotUpdateState(failFastFleet)).toEqual(failFastBefore);
+
+    const missingRefFleet = await fleet();
+    const missingRefBefore = await snapshotUpdateState(missingRefFleet);
+    expect(
+      await updateError(
+        missingRefFleet,
+        ['update', 'factor-scan', '--ref', 'refs/heads/absent', '--dry-run'],
+        5,
+      ),
+    ).toMatchObject({ code: 'update-ref-inspection-failed' });
+    expect(await snapshotUpdateState(missingRefFleet)).toEqual(missingRefBefore);
+
+    const offlineFleet = await fleet();
+    const offlineBefore = await snapshotUpdateState(offlineFleet);
+    const remotePath = fileURLToPath(offlineFleet.remote.multiUrl);
+    const offlinePath = `${remotePath}.offline`;
+    await rename(remotePath, offlinePath);
+    try {
+      expect(
+        await updateError(offlineFleet, ['update', 'factor-scan', '--dry-run'], 5),
+      ).toMatchObject({ code: 'update-ref-inspection-failed' });
+      expect(await snapshotUpdateState(offlineFleet)).toEqual(offlineBefore);
+    } finally {
+      await rename(offlinePath, remotePath);
+    }
   });
 
   test('EWP-CMD-UPDATE-TS09 — exact approval, JSON, and exit contracts', async () => {
+    const noninteractive = await fleet({ reviewMoving: true });
+    const noninteractiveBefore = await snapshotUpdateState(noninteractive);
+    for (const args of [
+      ['update', '--all'],
+      ['--no-prompt', 'update', '--all'],
+    ] as const) {
+      expect(await updateError(noninteractive, args, 2)).toMatchObject({
+        code: 'update-approval-required',
+      });
+      expect(await snapshotUpdateState(noninteractive)).toEqual(noninteractiveBefore);
+    }
+
+    const parityFleet = await fleet({ reviewMoving: true });
+    const parityArgs = ['update', '--all', '--dry-run'] as const;
+    const parityJson = await runUpdateCli(parityFleet, [...parityArgs, '--json']);
+    const parityHuman = await runUpdateCli(parityFleet, parityArgs);
+    expect(parityJson.exitCode, `${parityJson.stderr}\n${parityJson.stdout}`).toBe(0);
+    expect(parityHuman.exitCode, `${parityHuman.stderr}\n${parityHuman.stdout}`).toBe(0);
+    expect(parityJson.stderr).toBe('');
+    expect(parityHuman.stderr).toBe('');
+    const parityReport = JSON.parse(parityJson.stdout) as {
+      mode: string;
+      state: string;
+      candidates: readonly { skill: string; proposed: { resolvedSha: string } | null }[];
+      groups: readonly { skill: string; outcome: string }[];
+      summary: { groups: number; available: number; planned: number };
+    };
+    expect(parityHuman.stdout).toContain(`Update: ${parityReport.mode} (${parityReport.state})`);
+    for (const candidate of parityReport.candidates) {
+      expect(parityHuman.stdout).toContain(`skill: '${candidate.skill}'`);
+      if (candidate.proposed !== null) {
+        expect(parityHuman.stdout).toContain(candidate.proposed.resolvedSha);
+      }
+    }
+    for (const group of parityReport.groups) {
+      expect(parityHuman.stdout).toContain(`skill: '${group.skill}'`);
+      expect(parityHuman.stdout).toContain(`outcome: '${group.outcome}'`);
+    }
+    expect(parityHuman.stdout).toContain(`Summary: ${parityReport.summary.groups} groups,`);
+    expect(parityHuman.stdout).toContain(`available: ${parityReport.summary.available}`);
+    expect(parityHuman.stdout).toContain(`planned: ${parityReport.summary.planned}`);
+    for (const canary of UPDATE_SECRET_CANARIES) {
+      expect(`${parityJson.stdout}${parityJson.stderr}`).not.toContain(canary);
+      expect(`${parityHuman.stdout}${parityHuman.stderr}`).not.toContain(canary);
+    }
+
     const selected = await fleet();
     const report = await updateReport(selected, ['update', '--all', '--yes']);
-    expect(report).toMatchObject({ approval: { outcome: 'approved' } });
+    expect(report).toMatchObject({
+      state: 'completed',
+      approval: { outcome: 'approved' },
+    });
+    expect(report.groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ skill: 'factor-scan', outcome: 'succeeded' }),
+      ]),
+    );
+    expect(await Bun.file(selected.lock).text()).toContain(selected.remote.updateHead);
+    expect(await Bun.file(`${selected.live.codex}/SKILL.md`).text()).toContain('updated fixture');
+    expect(await Bun.file(`${selected.live.claude}/SKILL.md`).text()).toContain('updated fixture');
+
+    const single = await fleet();
+    const singleReport = await updateReport(single, ['update', 'factor-scan']);
+    expect(singleReport).toMatchObject({
+      state: 'completed',
+      approval: { required: false, outcome: 'not-required' },
+      groups: [{ skill: 'factor-scan', outcome: 'succeeded' }],
+    });
+
+    const bulk = await fleet({ reviewMoving: true });
+    const reviewLive = join(bulk.cwd, '.agents', 'skills', 'review', 'SKILL.md');
+    const reviewLiveBefore = await readFile(reviewLive);
+    const bulkReport = await updateReport(bulk, ['update', '--all', '--yes']);
+    expect(bulkReport).toMatchObject({
+      approval: { required: true, outcome: 'approved' },
+      groups: [
+        { skill: 'factor-scan', outcome: 'succeeded' },
+        { skill: 'review', outcome: 'succeeded' },
+      ],
+    });
+    expect(await Bun.file(join(bulk.cwd, '.agents', 'skills', 'review', 'SKILL.md')).exists()).toBe(
+      true,
+    );
+    expect(await readFile(reviewLive)).toEqual(reviewLiveBefore);
+    const ledger = JSON.parse(await Bun.file(bulk.ledger).text()) as {
+      readonly projects: Readonly<
+        Record<
+          string,
+          {
+            readonly skills: Readonly<
+              Record<
+                string,
+                {
+                  readonly tools: Readonly<
+                    Record<
+                      string,
+                      {
+                        readonly pinned?: { readonly rev: string; readonly gitSha: string | null };
+                        readonly origin?: { readonly refResolved: string };
+                        readonly journal?: unknown;
+                      }
+                    >
+                  >;
+                }
+              >
+            >;
+          }
+        >
+      >;
+      readonly transactions: Readonly<Record<string, unknown>>;
+      readonly history: readonly {
+        readonly disposition: string;
+        readonly phase: string;
+        readonly intent: {
+          readonly kind: string;
+          readonly skill: string | null;
+          readonly tool: string | null;
+        };
+        readonly actual: {
+          readonly before: readonly { readonly role: string; readonly semanticHash?: string }[];
+          readonly after: readonly { readonly role: string; readonly semanticHash?: string }[];
+        };
+      }[];
+    };
+    const reviewPair = ledger.projects[bulk.cwd]?.skills.review?.tools.codex;
+    expect(reviewPair).toMatchObject({
+      pinned: {
+        rev: bulk.remote.updateHead.slice(0, 12),
+        gitSha: bulk.remote.updateHead,
+      },
+      origin: { refResolved: bulk.remote.updateHead },
+      journal: null,
+    });
+    expect(Object.keys(ledger.transactions)).toEqual([]);
+    const repairHistory = ledger.history.filter(
+      ({ disposition, phase, intent }) =>
+        disposition === 'forward' &&
+        phase === 'committed' &&
+        intent.kind === 'repair' &&
+        intent.skill === 'review' &&
+        intent.tool === 'codex',
+    );
+    expect(repairHistory).toHaveLength(1);
+    const repair = repairHistory[0];
+    if (repair === undefined) throw new Error('missing committed review repair history');
+    const ledgerBefore = repair.actual.before.find(({ role }) => role === 'ledger');
+    const ledgerAfter = repair.actual.after.find(({ role }) => role === 'ledger');
+    expect(ledgerBefore?.semanticHash).toStartWith('sha256:');
+    expect(ledgerAfter?.semanticHash).toStartWith('sha256:');
+    expect(ledgerAfter?.semanticHash).not.toBe(ledgerBefore?.semanticHash);
+    const converged = await updateReport(bulk, ['update', '--all', '--check']);
+    expect(converged).toMatchObject({
+      state: 'current',
+      candidates: [
+        { skill: 'factor-scan', outcome: 'current' },
+        { skill: 'review', outcome: 'current' },
+      ],
+      operations: [],
+    });
   });
 
   test('EWP-CMD-UPDATE-TS10 — one exact source materialization and hash domain', async () => {
@@ -135,7 +859,93 @@ describe('update command contract', () => {
       'main',
       '--dry-run',
     ]);
-    expect(report.operations).toBeArray();
+    const operations = report.operations as readonly Record<string, unknown>[];
+    expect(operations.filter(({ kind }) => kind === 'update')).toHaveLength(2);
+    expect(
+      operations
+        .filter(({ kind }) => kind === 'update')
+        .every(
+          ({ source }) =>
+            (source as { resolvedSha?: string } | null)?.resolvedSha === selected.remote.updateHead,
+        ),
+    ).toBeTrue();
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'source-resolution' }),
+        expect.objectContaining({ kind: 'content-integrity' }),
+        expect.objectContaining({ kind: 'verification' }),
+      ]),
+    );
     expect(report.diagnostics).toBeArray();
+
+    const identityFleet = await fleet();
+    const checked = await updateReport(identityFleet, ['update', 'factor-scan', '--check'], 7);
+    const dry = await updateReport(identityFleet, ['update', 'factor-scan', '--dry-run']);
+    const executed = await updateReport(identityFleet, ['update', 'factor-scan']);
+    expect(exactUpdatePlan(dry)).toEqual(exactUpdatePlan(checked));
+    expect(exactUpdatePlan(executed)).toEqual(exactUpdatePlan(dry));
+
+    const contentFleet = await fleet();
+    const sourceRoot = join(
+      contentFleet.remote.multiWork,
+      'plugins',
+      'fh',
+      'skills',
+      'factor-scan',
+    );
+    const skillPath = join(sourceRoot, 'SKILL.md');
+    const runPath = join(sourceRoot, 'bin', 'run.sh');
+    const linkPath = join(sourceRoot, 'link.md');
+    const emptyPath = join(sourceRoot, 'empty');
+    const originalSkill = await readFile(skillPath);
+    const baseline = await sourceContentHashAt(sourceRoot);
+    const variants: string[] = [];
+
+    await writeFile(skillPath, new Uint8Array([...originalSkill, 0x0a]));
+    variants.push(await sourceContentHashAt(sourceRoot));
+    await writeFile(skillPath, originalSkill);
+
+    await chmod(runPath, 0o644);
+    variants.push(await sourceContentHashAt(sourceRoot));
+    await chmod(runPath, 0o755);
+
+    await rm(linkPath);
+    await writeFile(linkPath, 'SKILL.md\n');
+    variants.push(await sourceContentHashAt(sourceRoot));
+    await rm(linkPath);
+    await symlink('SKILL.md', linkPath);
+
+    await rm(linkPath);
+    await symlink('bin/run.sh', linkPath);
+    variants.push(await sourceContentHashAt(sourceRoot));
+    await rm(linkPath);
+    await symlink('SKILL.md', linkPath);
+
+    await mkdir(emptyPath);
+    variants.push(await sourceContentHashAt(sourceRoot));
+    await rm(emptyPath, { recursive: true });
+
+    expect(variants).toHaveLength(5);
+    expect(variants.every((hash) => hash !== baseline)).toBeTrue();
+    expect(new Set(variants).size).toBe(variants.length);
+    expect(await sourceContentHashAt(sourceRoot)).toBe(baseline);
+
+    const updateEngineOwners = await Promise.all(
+      ['artifacts.ts', 'candidates.ts', 'execute.ts', 'observe.ts', 'plan.ts', 'verify.ts'].map(
+        async (file) =>
+          [
+            file,
+            await Bun.file(join(import.meta.dir, '../../../core/src/update', file)).text(),
+          ] as const,
+      ),
+    );
+    expect(
+      updateEngineOwners
+        .filter(([, source]) => source.includes('hashSourceContentV1'))
+        .map(([file]) => file),
+    ).toEqual(['observe.ts']);
+    for (const [, source] of updateEngineOwners) {
+      expect(source).not.toMatch(/(?:createHash|contentHashOf|node:crypto)/u);
+    }
   });
 });

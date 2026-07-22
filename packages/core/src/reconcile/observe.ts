@@ -102,6 +102,7 @@ export interface ReconcileObservationRuntime {
   readonly ports: InventoryReadPorts & FileMetadataReadPort;
   readonly configuration: ResolvedRuntimeConfiguration;
   readonly signal?: AbortSignal;
+  readonly operation?: 'plan' | 'update';
 }
 
 const cancellation = (): PlanReconcileError => ({
@@ -380,6 +381,7 @@ export const observeReconcileInput = async (
 ): Promise<Result<ObservedReconcileInput, PlanReconcileError>> => {
   if (runtime.signal?.aborted) return err(cancellation());
   const storeRoot = storeRootOf(resolveDataDir(runtime.ports, runtime.configuration));
+  const operation = runtime.operation ?? 'plan';
   const ledger =
     resolved.observed.ledger?.state === 'present' ? resolved.observed.ledger.model : null;
   const desiredPlacements: ObservedDesiredPlacement[] = [];
@@ -396,7 +398,7 @@ export const observeReconcileInput = async (
 
   for (const row of resolved.declarations) {
     if (runtime.signal?.aborted) return err(cancellation());
-    const capability = toolRegistry.capability(row.tool, 'plan');
+    const capability = toolRegistry.capability(row.tool, operation);
     if ('code' in capability) {
       if (capability.code === 'usage') {
         return err({ code: capability.code, message: capability.message, exitClass: 'usage' });
@@ -517,6 +519,11 @@ export const observeReconcileInput = async (
           : ledgerPairAt(ledger, scopeProjectRoot, row.declaration.name, row.tool);
       const store = await observeStore(runtime.ports, storePathFor(storeRoot, row), runtime.signal);
       if (!store.ok) return store;
+      const ledgerStore =
+        ledgerPair?.pinned?.storePath === undefined
+          ? null
+          : await observeStore(runtime.ports, ledgerPair.pinned.storePath, runtime.signal);
+      if (ledgerStore !== null && !ledgerStore.ok) return ledgerStore;
       const oppositeScope = row.declaration.scope === 'user' ? 'project' : 'user';
       const oppositeProjectRoot = projectRootForScope(resolved, oppositeScope);
       let opposite: Extract<ObservedDesiredPlacement, { state: 'observed' }>['opposite'] = null;
@@ -697,6 +704,7 @@ export const observeReconcileInput = async (
           contentHash: contentHash.value,
           ledgerPair,
           store: store.value,
+          ledgerStore: ledgerStore?.value ?? null,
           opposite,
         }),
       );
@@ -835,7 +843,7 @@ export const observeReconcileInput = async (
       selectedPairs.map(({ tool, scope }) => ({
         schemaVersion: 1 as const,
         tool,
-        operation: 'plan' as const,
+        operation,
         scope,
       })),
     ),

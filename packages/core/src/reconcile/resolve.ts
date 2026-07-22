@@ -253,6 +253,7 @@ export const resolvePlanInput = async (
   runtime: PlanSourceResolutionRuntime,
 ): Promise<Result<ResolvedPlanInput, PlanReconcileError>> => {
   const requestedTools = new Set<SupportedTool>(request.tools);
+  const requestedSkills = new Set(request.skills ?? []);
   const selectedRows: Array<
     Readonly<{ declaration: NormalizedManifestDeclaration; tool: SupportedTool }>
   > = [];
@@ -261,6 +262,7 @@ export const resolvePlanInput = async (
   const selectedScopes: ('user' | 'project')[] = [];
 
   for (const declaration of observed.manifest.model.skills) {
+    if (requestedSkills.size > 0 && !requestedSkills.has(declaration.name)) continue;
     if (request.scope !== null && declaration.scope !== request.scope) continue;
     for (const tool of declaration.tools) {
       if (requestedTools.size > 0 && !requestedTools.has(tool)) continue;

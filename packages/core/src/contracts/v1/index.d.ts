@@ -1238,3 +1238,113 @@ export interface SyncReportV1Dto {
 }
 
 export declare const syncV1Codec: WireCodec<'sync', 1, SyncReportV1Dto>;
+
+export interface UpdateSelectionV1Dto {
+  readonly selectionSource: 'bounded-default' | 'explicit-targets' | 'explicit-all';
+  readonly selectionOutcome: 'selected' | 'filter-noop';
+  readonly targets: readonly string[];
+  readonly skills: readonly string[];
+  readonly tools: readonly SupportedTool[];
+  readonly groupIds: readonly string[];
+}
+
+export interface UpdateSourceFactV1Dto {
+  readonly requestedRef: string | null;
+  readonly kind: 'default' | 'branch' | 'tag' | 'sha';
+  readonly resolvedSha: string;
+  readonly contentHash: string;
+}
+
+export interface UpdateCandidateV1Dto {
+  readonly groupId: string;
+  readonly skill: string;
+  readonly current: UpdateSourceFactV1Dto;
+  readonly proposed: UpdateSourceFactV1Dto | null;
+  readonly transition: 'preserve' | 'track' | 'pin';
+  readonly outcome: 'current' | 'available' | 'skipped-fixed' | 'failed';
+  readonly failure: { readonly code: string; readonly message: string } | null;
+}
+
+export interface UpdateVerificationV1Dto {
+  readonly tool: SupportedTool;
+  readonly mode: 'static' | 'static+deep';
+  readonly gate: 'pending' | 'passed' | 'warned' | 'failed' | 'inconclusive' | 'skipped';
+}
+
+export interface UpdateGroupResultV1Dto {
+  readonly groupId: string;
+  readonly skill: string;
+  readonly tools: readonly SupportedTool[];
+  readonly verification: readonly UpdateVerificationV1Dto[];
+  readonly action: 'update' | 'noop' | 'skip' | 'refuse';
+  readonly outcome: 'planned' | 'succeeded' | 'failed' | 'cancelled' | 'skipped' | 'not-run';
+  readonly skipReason: string | null;
+  readonly failure: { readonly code: string; readonly message: string } | null;
+  readonly drift: { readonly artifact: boolean; readonly live: boolean };
+}
+
+export interface UpdateEffectV1Dto {
+  readonly role: 'manifest' | 'lock' | 'store' | 'ledger' | 'live' | 'backup';
+  readonly action: string;
+  readonly operationId: string | null;
+  readonly groupId: string;
+  readonly outcome: 'planned' | 'succeeded' | 'failed' | 'cancelled' | 'not-run';
+}
+
+export interface UpdateSummaryV1Dto {
+  readonly groups: number;
+  readonly candidates: number;
+  readonly current: number;
+  readonly available: number;
+  readonly skippedFixed: number;
+  readonly candidateFailed: number;
+  readonly planned: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly cancelled: number;
+  readonly skipped: number;
+  readonly notRun: number;
+  readonly effects: number;
+  readonly artifactDrift: number;
+  readonly liveDrift: number;
+  readonly refusals: number;
+}
+
+export interface UpdateReportV1Dto {
+  readonly schemaVersion: 1;
+  readonly kind: 'skillsmith.update';
+  readonly command: 'update';
+  readonly mode: 'check' | 'dry-run' | 'execute';
+  readonly state: 'current' | 'changes-available' | 'ready' | 'refused' | 'completed' | 'partial';
+  readonly artifactPair: {
+    readonly manifestPath: string;
+    readonly lockPath: string;
+    readonly lockSource: 'sibling' | 'explicit';
+    readonly selectionSource:
+      | 'explicit'
+      | 'discovered-project'
+      | 'project-default'
+      | 'user-default';
+  };
+  readonly options: {
+    readonly all: boolean;
+    readonly ref: string | null;
+    readonly pin: boolean;
+    readonly strict: boolean;
+    readonly continueOnError: boolean;
+  };
+  readonly selection: UpdateSelectionV1Dto;
+  readonly candidates: readonly UpdateCandidateV1Dto[];
+  readonly operations: readonly PlanOperationV1Dto[];
+  readonly checks: readonly PlanCheckV1Dto[];
+  readonly diagnostics: readonly PlanDiagnosticV1Dto[];
+  readonly approval: {
+    readonly required: boolean;
+    readonly outcome: 'not-required' | 'pending' | 'approved' | 'refused' | 'cancelled';
+  };
+  readonly groups: readonly UpdateGroupResultV1Dto[];
+  readonly effects: readonly UpdateEffectV1Dto[];
+  readonly summary: UpdateSummaryV1Dto;
+}
+
+export declare const updateV1Codec: WireCodec<'update', 1, UpdateReportV1Dto>;

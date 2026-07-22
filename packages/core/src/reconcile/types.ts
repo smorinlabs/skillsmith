@@ -11,8 +11,12 @@ import type { NormalizedManifestDeclaration, NormalizedManifestV1 } from '../art
 import type { ProjectContext } from '../context/types.ts';
 import type { OperationDigest, OperationPlan, RefusalClass } from '../planning/types.ts';
 
+export type ReconcileExecutionCommandV1 = 'apply' | 'update';
+
 export interface PlanSelectionRequest {
   readonly tools: readonly SupportedTool[];
+  /** Optional declaration-name membership used by fresh update reconciliation. */
+  readonly skills?: readonly string[];
   readonly scope: 'user' | 'project' | null;
   readonly locked: boolean;
   readonly prune: boolean;
@@ -58,6 +62,12 @@ export interface ObservedPlacementEvidence {
   readonly ledgerPair: LedgerPairV1Dto | null;
 }
 
+export interface ObservedStoreEvidence {
+  readonly path: string;
+  readonly state: 'absent' | 'present' | 'invalid';
+  readonly contentHash: OperationDigest | null;
+}
+
 export type ObservedDesiredPlacement =
   | Readonly<{
       readonly state: 'observed';
@@ -66,11 +76,9 @@ export type ObservedDesiredPlacement =
       readonly placement: Placement;
       readonly contentHash: OperationDigest | null;
       readonly ledgerPair: LedgerPairV1Dto | null;
-      readonly store: Readonly<{
-        readonly path: string;
-        readonly state: 'absent' | 'present' | 'invalid';
-        readonly contentHash: OperationDigest | null;
-      }>;
+      readonly store: Readonly<ObservedStoreEvidence>;
+      /** Exact prior ledger-owned store bytes, distinct from the currently desired lock store. */
+      readonly ledgerStore: Readonly<ObservedStoreEvidence> | null;
       readonly opposite: Readonly<{
         readonly scope: 'user' | 'project';
         readonly binding: 'standard' | 'custom';

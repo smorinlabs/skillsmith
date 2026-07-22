@@ -83,6 +83,8 @@ export interface InventoryBundle<ToolId extends string = string> {
 export interface VerificationGatePolicy {
   readonly installDeep: boolean;
   readonly promote: 'static' | 'static+deep';
+  /** Optional only at the aggregate boundary for legacy custom-adapter compatibility. */
+  readonly update?: 'static' | 'static+deep';
 }
 
 export interface VerificationRenderedFacts {

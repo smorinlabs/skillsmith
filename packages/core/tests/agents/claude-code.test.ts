@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { claudeCodeAgent } from '../../src/agents/claude-code/index.ts';
+import { claudeCodeAdapter, claudeCodeAgent } from '../../src/agents/claude-code/index.ts';
 import type { DetectionPorts } from '../../src/ports/types.ts';
 
 const env = (existing: string[]): DetectionPorts => ({
@@ -23,6 +23,10 @@ describe('claudeCodeAgent', () => {
   test('tool identity + installHint', () => {
     expect(claudeCodeAgent.tool).toBe('claude-code');
     expect(claudeCodeAgent.installHint).toContain('claude');
+  });
+
+  test('owns the static update verification policy', () => {
+    expect(claudeCodeAdapter.verification.gatePolicy.update).toBe('static');
   });
 
   test('returns empty list when not detected', async () => {

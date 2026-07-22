@@ -12,6 +12,7 @@ import type {
 } from '../artifacts/ledger-types.ts';
 import {
   deriveLedgerProjectRegistrations,
+  ledgerSemanticRevision,
   legacyJournalMatchesLogicalShadow,
   validateJournalV1DtoShape,
 } from '../artifacts/registry.ts';
@@ -309,6 +310,10 @@ const logicalJournalFor = (
   operation: ExecutableOperation,
   pair: PairRecord,
   shadow: Journal,
+  ledgerRevisions?: Readonly<{
+    readonly before: ArtifactDigest;
+    readonly after: ArtifactDigest;
+  }>,
 ): LogicalJournalV1Dto => {
   const visible = shadow.phase === 'live' || shadow.phase === 'committed';
   const imageSource = operation.after.kind === 'placement' ? operation.after.source : null;
@@ -356,14 +361,16 @@ const logicalJournalFor = (
             }
           : null));
   const afterImage = operation.after;
-  const ledger = {
+  const ledgerActual = (revision: ArtifactDigest): JournalResourceActualV1Dto => ({
     resourceId: 'ledger:placements',
-    role: 'ledger' as const,
-    state: 'present' as const,
-    repositoryRevision: { kind: 'resource' as const, digest: ZERO_DIGEST },
-    schemaVersion: 2 as const,
-    semanticHash: ZERO_DIGEST,
-  };
+    role: 'ledger',
+    state: 'present',
+    repositoryRevision: { kind: 'resource', digest: revision },
+    schemaVersion: 2,
+    semanticHash: revision,
+  });
+  const ledgerBefore = ledgerActual(ledgerRevisions?.before ?? ZERO_DIGEST);
+  const ledgerAfter = ledgerActual(ledgerRevisions?.after ?? ZERO_DIGEST);
   return {
     schemaVersion: 1,
     kind: 'skillsmith.transaction-journal',
@@ -393,8 +400,10 @@ const logicalJournalFor = (
     disposition: 'forward',
     phase: shadow.phase,
     actual: {
-      before: [liveActual(operation.before, pair, 'absent'), ledger],
-      after: visible ? [liveActual(afterImage as OperationImage, pair, 'present'), ledger] : [],
+      before: [liveActual(operation.before, pair, 'absent'), ledgerBefore],
+      after: visible
+        ? [liveActual(afterImage as OperationImage, pair, 'present'), ledgerAfter]
+        : [],
       retained: [],
     },
     updatedAt: shadow.completedAt ?? shadow.startedAt,
@@ -475,19 +484,6 @@ const commitRecordOnlyLogicalTransactionInternal = async (
       return err(flipFailedError('record-only repair transaction identity already exists'));
     }
     const completedAt = effects.journalNow();
-    const committed = logicalJournalFor(operation, pair, {
-      ...journal,
-      phase: 'committed',
-      completedAt,
-    });
-    const validation = validateJournalV1DtoShape(committed);
-    if (!validation.ok) {
-      return err(
-        flipFailedError(
-          `record-only repair journal is invalid: ${JSON.stringify(validation.error)}`,
-        ),
-      );
-    }
     const terminal = withLedgerPairAt(
       canonicalLedger,
       scopeKey,
@@ -496,6 +492,29 @@ const commitRecordOnlyLogicalTransactionInternal = async (
       { ...pair, journal: null },
     );
     if (!terminal.ok) return terminal;
+    const beforeRevision = ledgerSemanticRevision(canonicalLedger);
+    const afterRevision = ledgerSemanticRevision(terminal.value);
+    if (!beforeRevision.ok || !afterRevision.ok) {
+      return err(flipFailedError('record-only repair ledger revision is invalid'));
+    }
+    const committed = logicalJournalFor(
+      operation,
+      pair,
+      {
+        ...journal,
+        phase: 'committed',
+        completedAt,
+      },
+      { before: beforeRevision.value, after: afterRevision.value },
+    );
+    const validation = validateJournalV1DtoShape(committed);
+    if (!validation.ok) {
+      return err(
+        flipFailedError(
+          `record-only repair journal is invalid: ${JSON.stringify(validation.error)}`,
+        ),
+      );
+    }
     return ledger.persist({
       ...terminal.value,
       history: [...terminal.value.history, committed],

@@ -38,6 +38,7 @@ import type {
 } from '../planning/types.ts';
 import type { LockPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import type { ReconcileExecutionCommandV1 } from './types.ts';
 
 export type ReconcileExecutionBindingClassV1 =
   | 'placement'
@@ -75,7 +76,9 @@ type ReconcilePlacementOperationV1 = ExecutableOperation &
   Readonly<{ readonly kind: 'install' | 'update' | 'remove' | 'repair' }>;
 
 type ReconcileArtifactOperationV1 = ExecutableOperation &
-  Readonly<{ readonly kind: 'write-lock' | 'migrate-project-config' }>;
+  Readonly<{ readonly kind: 'write-manifest' | 'write-lock' | 'migrate-project-config' }>;
+
+type ReconcileExecutionPlanV1 = OperationPlan<ReconcileExecutionCommandV1>;
 
 type ReconcileLedgerMigrationOperationV1 = ExecutableOperation &
   Readonly<{ readonly kind: 'migrate-ledger' }>;
@@ -162,7 +165,7 @@ export interface ReconcileRuntimeExecutionAuthoritiesV1 {
 }
 
 export interface ExecuteValidatedReconcilePlanV1Request {
-  readonly plan: OperationPlan<'apply'>;
+  readonly plan: ReconcileExecutionPlanV1;
   readonly guards: ReconcileExecutionGuardsV1;
   readonly authorities: ReconcileRuntimeExecutionAuthoritiesV1;
   readonly signal?: AbortSignal;
@@ -176,25 +179,27 @@ export interface ExecuteValidatedReconcilePlanV1Request {
  * exactness check proves this derivation changes only the scheduler policy and cannot replan or
  * alter an operation identity, image, dependency, check, diagnostic, or selection fact.
  */
-export const createFreshReconcileExecutionPlanV1 = (
-  plan: OperationPlan<'apply'>,
+export const createFreshReconcileExecutionPlanV1 = <Command extends ReconcileExecutionCommandV1>(
+  plan: OperationPlan<Command>,
   continueOnError: boolean,
-): Result<OperationPlan<'apply'>, ReconcileExecutionBindingErrorV1> => {
+): Result<OperationPlan<Command>, ReconcileExecutionBindingErrorV1> => {
   try {
-    const snapshot = ownFrozenData(plan as unknown) as OperationPlanInput<'apply'>;
-    const canonical = createOperationPlan(snapshot) as OperationPlan<'apply'>;
+    const snapshot = ownFrozenData(
+      plan as unknown,
+    ) as OperationPlanInput<ReconcileExecutionCommandV1>;
+    const canonical = createOperationPlan(snapshot) as ReconcileExecutionPlanV1;
     if (
-      canonical.command !== 'apply' ||
+      (canonical.command !== 'apply' && canonical.command !== 'update') ||
       canonicalPlanningString(canonical) !== canonicalPlanningString(snapshot)
     ) {
-      throw new TypeError('fresh execution plan is not an exact canonical apply plan');
+      throw new TypeError('fresh execution plan is not an exact canonical reconciliation plan');
     }
     validateExecutionPlanShape(canonical);
     const selectedPolicy = continueOnError ? 'continue-on-error' : 'fail-fast';
     const derived = createOperationPlan({
       ...canonical,
       batchPolicy: selectedPolicy,
-    }) as OperationPlan<'apply'>;
+    }) as ReconcileExecutionPlanV1;
     const { batchPolicy: _beforePolicy, ...before } = canonical;
     const { batchPolicy: _afterPolicy, ...after } = derived;
     if (
@@ -203,7 +208,7 @@ export const createFreshReconcileExecutionPlanV1 = (
     ) {
       throw new TypeError('fresh execution policy derivation changed approved plan facts');
     }
-    return ok(derived);
+    return ok(derived as OperationPlan<Command>);
   } catch {
     return err(
       failure(
@@ -607,12 +612,14 @@ const validateBinding = (
  * two independently durable placement operations.
  */
 export const createReconcileExecutionBindingsV1 = (
-  plan: OperationPlan<'apply'>,
+  plan: ReconcileExecutionPlanV1,
   factories: ReconcileExecutionBindingFactoriesV1,
 ): Result<readonly PreparedExecutionBinding[], ReconcileExecutionBindingErrorV1> => {
-  let ownedPlan: OperationPlan<'apply'>;
+  let ownedPlan: ReconcileExecutionPlanV1;
   try {
-    const snapshot = ownFrozenData(plan as unknown) as OperationPlanInput<'apply'>;
+    const snapshot = ownFrozenData(
+      plan as unknown,
+    ) as OperationPlanInput<ReconcileExecutionCommandV1>;
     if (!Array.isArray(snapshot.operations)) {
       throw new TypeError('reconciliation execution plan has an invalid operation vector');
     }
@@ -637,13 +644,13 @@ export const createReconcileExecutionBindingsV1 = (
     }
     const canonical = createOperationPlan(snapshot);
     if (
-      canonical.command !== 'apply' ||
+      (canonical.command !== 'apply' && canonical.command !== 'update') ||
       canonicalPlanningString(canonical) !== canonicalPlanningString(snapshot)
     ) {
-      throw new TypeError('reconciliation execution requires an exact canonical apply plan');
+      throw new TypeError('reconciliation execution requires an exact canonical plan');
     }
     validateExecutionPlanShape(canonical);
-    ownedPlan = canonical as OperationPlan<'apply'>;
+    ownedPlan = canonical as ReconcileExecutionPlanV1;
   } catch {
     return err(
       failure(
@@ -900,15 +907,17 @@ const guardExpectedFactMatchesBefore = (
  * additive physical-ledger guard and never take this compatibility path.
  */
 export const createReconcileExecutionPreconditionsV1 = (
-  plan: OperationPlan<'apply'>,
+  plan: ReconcileExecutionPlanV1,
   guards: ReconcileExecutionGuardsV1,
   authority: ReconcileExecutionGuardAuthorityV1,
 ): Result<readonly ExecutionPrecondition[], ReconcileExecutionBindingErrorV1> => {
   try {
-    const planSnapshot = ownFrozenData(plan as unknown) as OperationPlanInput<'apply'>;
-    const ownedPlan = createOperationPlan(planSnapshot) as OperationPlan<'apply'>;
+    const planSnapshot = ownFrozenData(
+      plan as unknown,
+    ) as OperationPlanInput<ReconcileExecutionCommandV1>;
+    const ownedPlan = createOperationPlan(planSnapshot) as ReconcileExecutionPlanV1;
     if (
-      ownedPlan.command !== 'apply' ||
+      (ownedPlan.command !== 'apply' && ownedPlan.command !== 'update') ||
       canonicalPlanningString(ownedPlan) !== canonicalPlanningString(planSnapshot)
     ) {
       throw new TypeError('reconciliation execution guard plan is not exact');
@@ -1001,7 +1010,24 @@ export const createReconcileExecutionPreconditionsV1 = (
       const hasExactLegacyAlias =
         operation.kind === 'migrate-ledger' &&
         referencedResourceGuards.some(({ preconditionId }) => legacyAliasIds.has(preconditionId));
-      if (!hasExactResource && !hasExactLegacyAlias) {
+      const hasExactStagedBefore = operation.dependencyMetadata.operationIds.some(
+        (dependencyId) => {
+          const dependency = operationById.get(dependencyId);
+          if (dependency === undefined) return false;
+          const exactImage =
+            canonicalPlanningString(imageResource(dependency.after)) ===
+              canonicalPlanningString(expectedResource) &&
+            canonicalPlanningString(dependency.after) === canonicalPlanningString(operation.before);
+          if (exactImage) return true;
+          return (
+            operation.before.kind === 'manifest' &&
+            dependency.kind === 'write-lock' &&
+            dependency.after.kind === 'lock' &&
+            dependency.after.value.manifestHash === operation.before.semanticHash
+          );
+        },
+      );
+      if (!hasExactResource && !hasExactLegacyAlias && !hasExactStagedBefore) {
         throw new TypeError('operation lacks an exact same-resource execution guard');
       }
     }
@@ -1418,13 +1444,15 @@ export const executeValidatedReconcilePlanV1 = async (
   let outcome: Result<readonly OperationExecutionResult[], ReconcileExecutionBindingErrorV1>;
   let cleanup: (() => Promise<void>) | undefined;
   try {
-    const snapshot = ownFrozenData(request.plan as unknown) as OperationPlanInput<'apply'>;
-    const plan = createOperationPlan(snapshot) as OperationPlan<'apply'>;
+    const snapshot = ownFrozenData(
+      request.plan as unknown,
+    ) as OperationPlanInput<ReconcileExecutionCommandV1>;
+    const plan = createOperationPlan(snapshot) as ReconcileExecutionPlanV1;
     if (
-      plan.command !== 'apply' ||
+      (plan.command !== 'apply' && plan.command !== 'update') ||
       canonicalPlanningString(plan) !== canonicalPlanningString(snapshot)
     ) {
-      throw new TypeError('reconciliation execution requires an exact canonical apply plan');
+      throw new TypeError('reconciliation execution requires an exact canonical plan');
     }
     validateExecutionPlanShape(plan);
     const authorities = snapshotRuntimeAuthorities(request.authorities);

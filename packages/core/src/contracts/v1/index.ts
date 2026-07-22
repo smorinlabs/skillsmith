@@ -65,6 +65,17 @@ export type {
   SyncSummaryV1Dto,
 } from './sync.ts';
 export { syncV1Codec } from './sync.ts';
+export type {
+  UpdateCandidateV1Dto,
+  UpdateEffectV1Dto,
+  UpdateGroupResultV1Dto,
+  UpdateReportV1Dto,
+  UpdateSelectionV1Dto,
+  UpdateSourceFactV1Dto,
+  UpdateSummaryV1Dto,
+  UpdateVerificationV1Dto,
+} from './update.ts';
+export { updateV1Codec } from './update.ts';
 export type { ManifestV1Dto } from '../../artifacts/manifest-codec.ts';
 export {
   fromManifestV1Dto,

@@ -129,6 +129,7 @@ const EXPECTED_WIRE_IDENTITIES = [
   'plan-report@1',
   'status@1',
   'sync@1',
+  'update@1',
   'uninstall@1',
   'uninstall@2',
   'verify@1',
@@ -228,6 +229,7 @@ const V1_RUNTIME_EXPORTS = [
   'planV1Codec',
   'statusV1Codec',
   'syncV1Codec',
+  'updateV1Codec',
   'toAgentsV1Dto',
   'toCapabilitySnapshotV1Dto',
   'toCommandsV1Dto',
@@ -2015,6 +2017,7 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
         [v2.listV2Codec, wireRegistry.get('list', 2)],
         [v3.listV3Codec, wireRegistry.get('list', 3)],
         [v1.statusV1Codec, wireRegistry.get('status', 1)],
+        [v1.updateV1Codec, wireRegistry.get('update', 1)],
         [v1.exportV1Codec, wireRegistry.get('export', 1)],
         [v1.initV1Codec, wireRegistry.get('init', 1)],
       ] as const;

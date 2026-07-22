@@ -26,7 +26,7 @@ packages/
       selection/     shared tool/scope/target validation
       skills/        installed-skill parsing and domain types
       status/        correlated desired/lock/ledger/live read model
-      sync/          bounded endpoint observation and shared-plan projection
+      sync/, update/ bounded synchronization and portable-update domain logic
       verify/        static/deep verification orchestration
       errors.ts      SkillSmithError tagged union
       result.ts      Result<T, E> helpers (ok/err/isOk/isErr/map/mapErr)
@@ -131,6 +131,17 @@ Approval is applied to the one immutable prepared plan, and execution revalidate
 membership/content plus normal destination preconditions without observing or planning again. The
 source is read-only, destination removal requires the independent `--delete` authority, and
 `--force` can replace only a conflicting destination already in the selection.
+
+`runUpdateApplication` is the declaration-first portable-update boundary. It selects one exact
+manifest/lock pair, inspects branch, tag, or full-SHA refs without naming heuristics, and
+materializes each inspected commit once for source-content hashing, planning, verification, and
+execution. The service projects only the selected declarations through the shared reconciliation
+planner and executor; a narrow update-only authority binds the approved artifact actions and
+prepared sources to that same plan. Check and dry-run paths never acquire mutation authority.
+Multi-declaration approval happens after the immutable plan is prepared but before verification, so
+refusal or cancellation runs no verifier and writes nothing. Adapter policy selects Claude Code's
+static gate and Codex's static-plus-deep gate. Human output and strict `update@1` JSON are two views
+of the same report.
 
 ## Result-based error handling
 
@@ -254,7 +265,7 @@ or define a second public schema.
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
 `commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
 `flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
-`init@1`, `plan-report@1`, `apply-report@1`, `sync@1`, `uninstall@2`, `verify@1`, `error@1`, and
+`init@1`, `plan-report@1`, `apply-report@1`, `sync@1`, `update@1`, `uninstall@2`, `verify@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive
 unknown-field rejection, embedded kind and version policy, JSON indentation, terminal framing, and
 conservative compatibility. Current codecs declare no migrations. Lifecycle v2 contracts are
@@ -439,6 +450,7 @@ If you find yourself fighting these rules, that's usually a signal to move code,
 | CLI output format | `packages/cli/src/output/` |
 | CLI help text | `packages/cli/src/help/topics.ts` |
 | A public command use case or outcome type | `packages/core/src/application/` |
+| Update selection, ref inspection, source preparation, or planning | `packages/core/src/update/` + `packages/core/src/application/update-service.ts` |
 | Enforced architectural rules | `eslint.config.js` (and a new ADR) |
 
 ## Further reading

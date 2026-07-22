@@ -162,6 +162,19 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith sync:--continue-on-error':
     'Continue with later independent destination groups after a failure',
   'skillsmith sync:--json': 'Emit the strict sync@1 report',
+  'skillsmith update:--all': 'Select every eligible declaration in the chosen manifest',
+  'skillsmith update:--file': 'Select one explicit portable manifest',
+  'skillsmith update:--lockfile': 'Select one explicit lockfile (requires --file)',
+  'skillsmith update:--tool': 'Restrict each selected declaration to a tool; repeatable',
+  'skillsmith update:--check': 'Exit 7 when a successfully evaluated update is available',
+  'skillsmith update:--dry-run': 'Render the exact update plan without durable writes',
+  'skillsmith update:--ref': 'Track one exact branch, tag, or full SHA',
+  'skillsmith update:--pin': 'Freeze the selected moving ref to its resolved full SHA',
+  'skillsmith update:--strict': 'Treat verification warnings or inconclusive results as blocking',
+  'skillsmith update:--yes': 'Approve an exact multi-declaration update plan',
+  'skillsmith update:--continue-on-error':
+    'Continue with later independent declarations after a failure',
+  'skillsmith update:--json': 'Emit the strict update@1 report',
   'skillsmith verify:--tool': 'Restrict to tools; repeatable; default: all detected',
   'skillsmith verify:--static': 'Run static verification only; this is the default',
   'skillsmith verify:--deep': 'Also run isolated session-backed load verification',
@@ -394,6 +407,24 @@ export const optionsForPath = (path: string): readonly CommandOptionSpec[] => {
       '--file',
       '--lockfile',
       '--dry-run',
+      '--yes',
+      '--continue-on-error',
+      '--json',
+      '--help',
+    ];
+    return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
+  }
+  if (path === 'skillsmith update') {
+    const order = [
+      '--all',
+      '--file',
+      '--lockfile',
+      '--tool',
+      '--check',
+      '--dry-run',
+      '--ref',
+      '--pin',
+      '--strict',
       '--yes',
       '--continue-on-error',
       '--json',

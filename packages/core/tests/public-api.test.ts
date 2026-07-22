@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as core from '@skillsmith/core';
+import * as contractsV1 from '@skillsmith/core/contracts/v1';
 import pkg from '../package.json' with { type: 'json' };
 import * as readApplications from '../src/application/read-services.ts';
 import * as artifacts from '../src/artifacts/index.ts';
@@ -231,6 +232,16 @@ describe('@skillsmith/core public API', () => {
   test('does not expose internal sync preparation projections from the package root', () => {
     expect(core).not.toHaveProperty('prepareSyncStoreResourcesV1');
     expect(core).not.toHaveProperty('toSyncReportOperationV1');
+  });
+
+  test('exports the strict update report codec only from the contracts/v1 surface', () => {
+    expect(contractsV1.updateV1Codec.descriptor).toMatchObject({
+      id: 'update',
+      version: 1,
+      wireKind: 'skillsmith.update',
+      unknownFields: 'reject-recursive',
+    });
+    expect(core).not.toHaveProperty('updateV1Codec');
   });
 
   test('exports the validated registry without breaking the 1.x inventory projection', () => {

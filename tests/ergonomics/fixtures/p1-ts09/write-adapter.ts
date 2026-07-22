@@ -50,7 +50,7 @@ export const writeFixtureAdapter = {
         })),
       },
     }),
-    gatePolicy: { installDeep: true, promote: 'static+deep' },
+    gatePolicy: { installDeep: true, promote: 'static+deep', update: 'static+deep' },
     targetManifests: ['.fixture-plugin/plugin.json'],
     renderedFacts: { deepSkillCoverageSuffix: null, installStaticNotice: null },
   },

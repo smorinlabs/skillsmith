@@ -67,6 +67,7 @@ type _GitPort = Assert<
     keyof GitPort,
     | 'findRepositoryRoot'
     | 'inspectWorktree'
+    | 'inspectRemoteRef'
     | 'resolveRemoteRef'
     | 'initializeFetch'
     | 'fetchRef'

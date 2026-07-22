@@ -54,6 +54,7 @@ export type {
   InteractionResolution,
   ExactApprovalPreviewRequest,
   ExactSyncApprovalPreviewRequest,
+  ExactUpdateApprovalPreviewRequest,
   MutationSummary,
   PreparedSyncApplication,
   SyncApplicationPort,
@@ -68,6 +69,7 @@ export type {
 export type { PlanApplicationReport } from './application/plan-service.ts';
 export type { ApplyApplicationReport } from './application/apply-service.ts';
 export type { SyncApplicationReport } from './application/sync-service.ts';
+export type { UpdateApplicationReport } from './application/update-service.ts';
 export type * from './application/lifecycle-services.ts';
 export type * from './application/read-services.ts';
 export type * from './export/types.ts';
@@ -224,6 +226,8 @@ export type {
   GitMaterializeTreeRequest,
   GitPort,
   GitReadPorts,
+  GitRemoteRefInspection,
+  GitRemoteRefInspectionPort,
   GitRequest,
   GitResolveRemoteRefRequest,
   GitTreeEntry,

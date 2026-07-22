@@ -65,6 +65,11 @@ interface CommandSpecOptionContract {
 interface CommandSpecContract {
   readonly path: string;
   readonly aliases: readonly string[];
+  readonly arguments: readonly {
+    readonly name: string;
+    readonly required: boolean;
+    readonly variadic: boolean;
+  }[];
   readonly options: readonly CommandSpecOptionContract[];
 }
 
@@ -1181,7 +1186,7 @@ describe('EWP-OPT-TS04', () => {
     );
     expect(delta).toEqual(expected.map(({ path, flags }) => `${path}:${flags}`));
     expect(api.CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0)).toBe(
-      241,
+      254,
     );
   });
 
@@ -1192,7 +1197,7 @@ describe('EWP-OPT-TS04', () => {
       (count, spec) => count + spec.options.length,
       0,
     );
-    if (inventory !== 241) findings.push(`option inventory is ${inventory}, expected 241`);
+    if (inventory !== 254) findings.push(`option inventory is ${inventory}, expected 254`);
 
     const program = buildProgram();
     for (const commandName of ['dev', 'promote'] as const) {
@@ -1822,6 +1827,58 @@ describe('sync CommandSpec option contract', () => {
         'state.toml',
         '--lockfile',
         'state.lock',
+        '--dry-run',
+        '--json',
+      ]),
+    ).toEqual({ ok: true });
+  });
+});
+
+describe('update CommandSpec option contract', () => {
+  test('registers the exact optional-target grammar and pre-I/O relations once', async () => {
+    const api = await requireOptionContractApi();
+    const spec = api.CURRENT_COMMAND_SPECS.find(({ path }) => path === 'skillsmith update');
+    expect(spec?.aliases).toEqual([]);
+    expect(spec?.arguments).toEqual([
+      expect.objectContaining({ name: 'skill', required: false, variadic: true }),
+    ]);
+    expect(spec?.options.map(({ flags }) => flags)).toEqual([
+      '--all',
+      '--file <path>',
+      '--lockfile <path>',
+      '-t, --tool <name>',
+      '--check',
+      '--dry-run',
+      '--ref <git-ref>',
+      '--pin',
+      '--strict',
+      '-y, --yes',
+      '--continue-on-error',
+      '--json',
+      '-h, --help',
+    ]);
+    expect(api.validateCurrentCommandSpecs()).toEqual([]);
+    expect(api.validateCurrentOptionRelations()).toEqual([]);
+
+    for (const args of [
+      ['--lockfile', 'state.lock'],
+      ['skill', '--ref', 'main', '--ref', 'next'],
+      ['skill', '--check', '--dry-run'],
+      ['skill', '--check', '--yes'],
+      ['skill', '--dry-run', '--yes'],
+      ['first', 'second', '--ref', 'main'],
+    ] as const) {
+      expect(
+        api.validateOptionInvocation('skillsmith update', args).ok,
+        args.join(' '),
+      ).toBeFalse();
+    }
+    expect(api.validateOptionInvocation('skillsmith update', ['--check'])).toEqual({ ok: true });
+    expect(
+      api.validateOptionInvocation('skillsmith update', [
+        'factor-*',
+        '-tcodex',
+        '--strict',
         '--dry-run',
         '--json',
       ]),

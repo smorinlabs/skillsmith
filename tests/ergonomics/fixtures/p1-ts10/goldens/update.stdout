@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.update",
+  "command": "update",
+  "mode": "check",
+  "state": "current",
+  "artifactPair": {
+    "manifestPath": "/fixture/project/skillsmith.toml",
+    "lockPath": "/fixture/project/skillsmith.lock",
+    "lockSource": "sibling",
+    "selectionSource": "discovered-project"
+  },
+  "options": {
+    "all": false,
+    "ref": null,
+    "pin": false,
+    "strict": false,
+    "continueOnError": false
+  },
+  "selection": {
+    "selectionSource": "bounded-default",
+    "selectionOutcome": "filter-noop",
+    "targets": [],
+    "skills": [],
+    "tools": [],
+    "groupIds": []
+  },
+  "candidates": [],
+  "operations": [],
+  "checks": [],
+  "diagnostics": [],
+  "approval": {
+    "required": false,
+    "outcome": "not-required"
+  },
+  "groups": [],
+  "effects": [],
+  "summary": {
+    "groups": 0,
+    "candidates": 0,
+    "current": 0,
+    "available": 0,
+    "skippedFixed": 0,
+    "candidateFailed": 0,
+    "planned": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "notRun": 0,
+    "effects": 0,
+    "artifactDrift": 0,
+    "liveDrift": 0,
+    "refusals": 0
+  }
+}

@@ -205,6 +205,12 @@ describe('P17 immutable catalog and traceability baseline', () => {
       stderr: 'pipe',
     });
     expect(result.exitCode).toBe(0);
+    const committed = JSON.parse(
+      readFileSync(resolve(root, 'projects/p17/catalog.json'), 'utf8'),
+    ) as CatalogFixture;
+    const g502 = group(committed, 'P17-G5-02');
+    expect(g502.ownedFiles).toHaveLength(95);
+    expect(g502.ownedFiles).toContain('packages/core/src/place/swap.ts');
   });
 
   test('tracks every entity one-to-one with required validation coverage', () => {

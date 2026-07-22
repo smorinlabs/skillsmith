@@ -212,7 +212,7 @@ const definition = {
     verifiedAgainst: '3.6.0-fixture',
     modes: ['static', 'deep'],
     verify: verifyFixture,
-    gatePolicy: { installDeep: true, promote: 'static+deep' },
+    gatePolicy: { installDeep: true, promote: 'static+deep', update: 'static+deep' },
     targetManifests: ['.fixture-p3b/plugin.json'],
     renderedFacts: {
       deepSkillCoverageSuffix: FIXTURE_P3B_DEEP_COVERAGE_SUFFIX,

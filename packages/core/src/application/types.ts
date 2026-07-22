@@ -93,11 +93,22 @@ export interface ExactSyncApprovalPreviewRequest {
   readonly operationIds: readonly string[];
 }
 
+/** Exact immutable update declaration and operation order presented before execution. */
+export interface ExactUpdateApprovalPreviewRequest {
+  readonly kind: 'exact-update-preview';
+  readonly command: 'update';
+  readonly groupIds: readonly string[];
+  readonly operationIds: readonly string[];
+}
+
 /** Structured confirmation facts; adapters own presentation and interactive defaults. */
 export interface InteractionConfirmationRequest {
   readonly id: string;
   readonly message: string;
-  readonly preview?: ExactApprovalPreviewRequest | ExactSyncApprovalPreviewRequest;
+  readonly preview?:
+    | ExactApprovalPreviewRequest
+    | ExactSyncApprovalPreviewRequest
+    | ExactUpdateApprovalPreviewRequest;
 }
 
 /** Parser-normalized sync request; endpoint resolution and I/O remain behind SyncApplicationPort. */

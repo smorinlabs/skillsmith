@@ -229,13 +229,19 @@ const validateBundles = (adapter: ToolAdapter): void => {
       !gatePolicy ||
       typeof gatePolicy !== 'object' ||
       typeof gatePolicy.installDeep !== 'boolean' ||
-      (gatePolicy.promote !== 'static' && gatePolicy.promote !== 'static+deep')
+      (gatePolicy.promote !== 'static' && gatePolicy.promote !== 'static+deep') ||
+      (gatePolicy.update !== undefined &&
+        gatePolicy.update !== 'static' &&
+        gatePolicy.update !== 'static+deep')
     ) {
       fail(`${id} verification gate policy is invalid`);
     }
     if (
       !verifyStatic ||
-      ((gatePolicy.installDeep || gatePolicy.promote === 'static+deep') && !verifyDeep)
+      ((gatePolicy.installDeep ||
+        gatePolicy.promote === 'static+deep' ||
+        gatePolicy.update === 'static+deep') &&
+        !verifyDeep)
     ) {
       fail(`${id} verification gate policy requires unsupported verification modes`);
     }

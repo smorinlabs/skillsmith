@@ -57,7 +57,7 @@ export const claudeCodeAdapter = {
     verifiedAgainst: CLAUDE_CODE_VERIFIED_AGAINST,
     modes: ['static', 'deep'],
     verify: verifyClaudeCode,
-    gatePolicy: { installDeep: false, promote: 'static' },
+    gatePolicy: { installDeep: false, promote: 'static', update: 'static' },
     targetManifests: ['.claude-plugin/plugin.json'],
     renderedFacts: {
       deepSkillCoverageSuffix: ' (presence)',

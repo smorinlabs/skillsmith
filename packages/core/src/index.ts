@@ -15,6 +15,7 @@ export {
   runPlanApplication,
   runApplyApplication,
   runSyncApplication,
+  runUpdateApplication,
   runHelpApplication,
   runRootHelpApplication,
   runVersionApplication,
@@ -23,6 +24,7 @@ export * from './export/index.ts';
 export * from './init/index.ts';
 export * from './reconcile/index.ts';
 export * from './sync/index.ts';
+export * from './update/index.ts';
 export * from './application/lifecycle-services.ts';
 export * from './application/read-services.ts';
 export { COMMAND_EXIT_CLASSES, NO_MUTATION } from './application/types.ts';
@@ -150,6 +152,8 @@ export type {
   GitMaterializeTreeRequest,
   GitPort,
   GitReadPorts,
+  GitRemoteRefInspection,
+  GitRemoteRefInspectionPort,
   GitRequest,
   GitResolveRemoteRefRequest,
   GitTreeEntry,
@@ -175,6 +179,7 @@ export type {
   InteractionResolution,
   ExactApprovalPreviewRequest,
   ExactSyncApprovalPreviewRequest,
+  ExactUpdateApprovalPreviewRequest,
   InventoryReadPorts,
   InventoryBundle,
   JournalPhase,
@@ -205,6 +210,7 @@ export type {
   SyncApplicationPort,
   SyncApplicationReport,
   SyncApplicationRequest,
+  UpdateApplicationReport,
   Placement,
   PlacementBundle,
   PlacementClass,

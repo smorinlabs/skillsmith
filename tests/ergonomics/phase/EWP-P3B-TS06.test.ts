@@ -1147,10 +1147,12 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
       expect(claude?.verification?.gatePolicy).toEqual({
         installDeep: false,
         promote: 'static',
+        update: 'static',
       });
       expect(codex?.verification?.gatePolicy).toEqual({
         installDeep: true,
         promote: 'static+deep',
+        update: 'static+deep',
       });
       const codexNotice = codex?.placement?.noticeForRoot('/legacy', {
         placements: [],

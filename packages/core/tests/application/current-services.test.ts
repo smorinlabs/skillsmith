@@ -64,13 +64,15 @@ describe('current application-service foundation', () => {
           name === 'init' ||
           name === 'plan' ||
           name === 'apply' ||
-          name === 'sync',
+          name === 'sync' ||
+          name === 'update',
       ),
-    ).toEqual(['export', 'init', 'plan', 'apply', 'sync']);
+    ).toEqual(['export', 'init', 'plan', 'apply', 'sync', 'update']);
     expect(typeof CURRENT_APPLICATION_SERVICES.export).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.init).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.plan).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.apply).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.sync).toBe('function');
+    expect(typeof CURRENT_APPLICATION_SERVICES.update).toBe('function');
   });
 });

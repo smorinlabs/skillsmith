@@ -101,3 +101,26 @@ describe('sync interaction preview', () => {
     });
   });
 });
+
+describe('update interaction preview', () => {
+  test('renders exact group and operation IDs in supplied order and defaults to No', () => {
+    expect(
+      createConfirmationPromptOptions({
+        id: 'update-exact-plan',
+        message: 'Apply 2 exact update groups?',
+        preview: {
+          kind: 'exact-update-preview',
+          command: 'update',
+          groupIds: ['update:review', 'update:factor-scan'],
+          operationIds: ['operation:lock', 'operation:review', 'operation:factor-scan'],
+        },
+      }),
+    ).toEqual({
+      message:
+        'Apply 2 exact update groups?\n' +
+        'Exact groups:\n  1. "update:review"\n  2. "update:factor-scan"\n' +
+        'Exact operations:\n  1. "operation:lock"\n  2. "operation:review"\n  3. "operation:factor-scan"',
+      initialValue: false,
+    });
+  });
+});

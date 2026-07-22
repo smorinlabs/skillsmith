@@ -17,7 +17,8 @@ export type CurrentMutatorCommand =
   | 'export'
   | 'sync'
   | 'init'
-  | 'apply';
+  | 'apply'
+  | 'update';
 export type CurrentPlanningCommand = CurrentMutatorCommand | 'plan';
 export type OperationScope = 'user' | 'project';
 

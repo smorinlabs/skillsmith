@@ -4,6 +4,7 @@ import type {
   PlacementInventory,
   PlacementResolution,
 } from '../../src/agents/adapter-types.ts';
+import { claudeCodeAdapter } from '../../src/agents/claude-code/index.ts';
 import { codexAdapter } from '../../src/agents/codex/index.ts';
 import { codexPlacementBundle } from '../../src/agents/codex/placement.ts';
 import {
@@ -89,6 +90,66 @@ describe('agents registry', () => {
     const bad = getAgent('nope');
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.error.code).toBe('unknown-tool');
+  });
+
+  test('retains adapter-owned update verification policy', () => {
+    expect(toolRegistry.get('claude-code')?.verification?.gatePolicy.update).toBe('static');
+    expect(toolRegistry.get('codex')?.verification?.gatePolicy.update).toBe('static+deep');
+  });
+
+  test('rejects invalid or unsupported update verification policy', () => {
+    expect(() =>
+      createToolRegistry([
+        {
+          ...claudeCodeAdapter,
+          verification: {
+            ...claudeCodeAdapter.verification,
+            gatePolicy: {
+              ...claudeCodeAdapter.verification.gatePolicy,
+              update: 'deep',
+            },
+          },
+        },
+      ]),
+    ).toThrow(/verification gate policy is invalid/);
+
+    expect(() =>
+      createToolRegistry([
+        {
+          ...codexAdapter,
+          descriptor: {
+            ...codexAdapter.descriptor,
+            operations: {
+              ...codexAdapter.descriptor.operations,
+              'verify-deep': {
+                supported: false,
+                scopes: [],
+                remediation: 'deep verification unavailable',
+              },
+            },
+          },
+          verification: {
+            ...codexAdapter.verification,
+            modes: ['static'],
+          },
+        },
+      ]),
+    ).toThrow(/gate policy requires unsupported verification modes/);
+  });
+
+  test('accepts an omitted update policy only at the legacy aggregate boundary', () => {
+    const { update: _update, ...legacyGatePolicy } = claudeCodeAdapter.verification.gatePolicy;
+    const legacy = createToolRegistry([
+      {
+        ...claudeCodeAdapter,
+        verification: {
+          ...claudeCodeAdapter.verification,
+          gatePolicy: legacyGatePolicy,
+        },
+      },
+    ]);
+
+    expect(legacy.get('claude-code')?.verification?.gatePolicy.update).toBeUndefined();
   });
 
   test('normalizes built-in placements without changing legacy method identity', () => {

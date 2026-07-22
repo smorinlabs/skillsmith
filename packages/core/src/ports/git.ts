@@ -26,6 +26,7 @@ export const GIT_REPOSITORY_ENVIRONMENT = [
 ] as const;
 
 const SHA_HEX_40 = /^[0-9a-f]{40}$/i;
+const CANONICAL_SHA_HEX_40 = /^[0-9a-f]{40}$/;
 const DISCOVERY_TIMEOUT_MS = 2_000;
 const PLUMBING_TIMEOUT_MS = 10_000;
 const FETCH_TIMEOUT_MS = 120_000;
@@ -59,6 +60,68 @@ const stderrTail = (stderr: string): string =>
     .filter((line) => line.trim() !== '')
     .slice(-5)
     .join('\n');
+
+const hasEmbeddedRemoteCredentials = (remoteUrl: string): boolean => {
+  try {
+    const parsed = new URL(remoteUrl);
+    if (parsed.password.length > 0) return true;
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      (parsed.username.length > 0 || parsed.search.length > 0 || parsed.hash.length > 0)
+    );
+  } catch {
+    return false;
+  }
+};
+
+interface RemoteRefRow {
+  readonly sha: string;
+  readonly name: string;
+}
+
+const parseExactRemoteRefRows = (
+  stdout: string,
+  expectedNames: ReadonlySet<string>,
+  context: Readonly<Record<string, string>>,
+): readonly RemoteRefRow[] => {
+  const rows: RemoteRefRow[] = [];
+  for (const rawLine of stdout.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+    if (line.length === 0) continue;
+    const fields = line.split('\t');
+    const sha = fields[0] ?? '';
+    const name = fields[1] ?? '';
+    if (fields.length !== 2 || !CANONICAL_SHA_HEX_40.test(sha) || !expectedNames.has(name)) {
+      throw toPortError(null, {
+        capability: 'git',
+        operation: 'inspectRemoteRef',
+        code: 'invalid',
+        message: 'git remote-ref inspection returned malformed or unexpected output',
+        context,
+      });
+    }
+    rows.push({ sha, name });
+  }
+  return rows;
+};
+
+const uniqueShaFor = (
+  rows: readonly RemoteRefRow[],
+  name: string,
+  context: Readonly<Record<string, string>>,
+): string | null => {
+  const shas = new Set(rows.filter((row) => row.name === name).map((row) => row.sha));
+  if (shas.size > 1) {
+    throw toPortError(null, {
+      capability: 'git',
+      operation: 'inspectRemoteRef',
+      code: 'invalid',
+      message: 'git remote-ref inspection returned conflicting object identifiers',
+      context,
+    });
+  }
+  return shas.values().next().value ?? null;
+};
 
 export const createGitPort = (
   processPort: ProcessPort,
@@ -176,6 +239,106 @@ export const createGitPort = (
         remoteUrl: remote.code === 0 ? remote.stdout.trim() || null : null,
         dirtySummary: status.length > 0 ? status : null,
       };
+    },
+    inspectRemoteRef: async ({ remoteUrl, ref, signal }) => {
+      const context = { requestedRef: ref ?? 'HEAD' };
+      if (hasEmbeddedRemoteCredentials(remoteUrl)) {
+        throw toPortError(null, {
+          capability: 'git',
+          operation: 'inspectRemoteRef',
+          code: 'invalid',
+          message: 'git remote-ref inspection requires a credential-free remote URL',
+          context,
+        });
+      }
+      if (ref !== null && SHA_HEX_40.test(ref)) {
+        return Object.freeze({
+          kind: 'sha' as const,
+          requestedRef: ref,
+          resolvedSha: ref.toLowerCase(),
+        });
+      }
+
+      const names =
+        ref === null
+          ? (['HEAD'] as const)
+          : ([`refs/heads/${ref}`, `refs/tags/${ref}`, `refs/tags/${ref}^{}`] as const);
+      const result = await execute(
+        'inspectRemoteRef',
+        ['ls-remote', '--', remoteUrl, ...names],
+        context,
+        signal,
+      );
+      if (result.code !== 0 || result.timedOut) {
+        throw toPortError(null, {
+          capability: 'git',
+          operation: 'inspectRemoteRef',
+          code: result.timedOut ? 'timeout' : 'unavailable',
+          message: 'git remote-ref inspection failed',
+          context,
+        });
+      }
+
+      const rows = parseExactRemoteRefRows(result.stdout, new Set(names), context);
+      if (ref === null) {
+        const resolvedSha = uniqueShaFor(rows, 'HEAD', context);
+        if (resolvedSha === null) {
+          throw toPortError(null, {
+            capability: 'git',
+            operation: 'inspectRemoteRef',
+            code: 'not-found',
+            message: 'remote default ref was not found',
+            context,
+          });
+        }
+        return Object.freeze({ kind: 'default' as const, requestedRef: null, resolvedSha });
+      }
+
+      const branchName = `refs/heads/${ref}`;
+      const tagName = `refs/tags/${ref}`;
+      const peeledTagName = `${tagName}^{}`;
+      const branchSha = uniqueShaFor(rows, branchName, context);
+      const tagSha = uniqueShaFor(rows, tagName, context);
+      const peeledTagSha = uniqueShaFor(rows, peeledTagName, context);
+      if (branchSha !== null && tagSha !== null) {
+        throw toPortError(null, {
+          capability: 'git',
+          operation: 'inspectRemoteRef',
+          code: 'conflict',
+          message: 'remote ref name is ambiguous between branch and tag',
+          context,
+        });
+      }
+      if (peeledTagSha !== null && tagSha === null) {
+        throw toPortError(null, {
+          capability: 'git',
+          operation: 'inspectRemoteRef',
+          code: 'invalid',
+          message: 'git remote-ref inspection returned a peeled tag without its tag ref',
+          context,
+        });
+      }
+      if (tagSha !== null) {
+        return Object.freeze({
+          kind: 'tag' as const,
+          requestedRef: ref,
+          resolvedSha: peeledTagSha ?? tagSha,
+        });
+      }
+      if (branchSha !== null) {
+        return Object.freeze({
+          kind: 'branch' as const,
+          requestedRef: ref,
+          resolvedSha: branchSha,
+        });
+      }
+      throw toPortError(null, {
+        capability: 'git',
+        operation: 'inspectRemoteRef',
+        code: 'not-found',
+        message: 'remote ref was not found',
+        context,
+      });
     },
     resolveRemoteRef: async ({ remoteUrl, ref, signal }) => {
       if (ref !== null && SHA_HEX_40.test(ref)) return ref;

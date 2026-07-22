@@ -323,6 +323,7 @@ describe('EWP-P1-TS08', () => {
     for (const operation of [
       'findRepositoryRoot',
       'inspectWorktree',
+      'inspectRemoteRef',
       'resolveRemoteRef',
       'initializeFetch',
       'fetchRef',

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { codexAgent } from '../../src/agents/codex/index.ts';
+import { codexAdapter, codexAgent } from '../../src/agents/codex/index.ts';
 import type { DetectionPorts } from '../../src/ports/types.ts';
 
 const env = (existing: string[]): DetectionPorts => ({
@@ -23,6 +23,10 @@ describe('codexAgent', () => {
   test('tool identity + installHint', () => {
     expect(codexAgent.tool).toBe('codex');
     expect(codexAgent.installHint).toContain('codex');
+  });
+
+  test('owns the static-plus-deep update verification policy', () => {
+    expect(codexAdapter.verification.gatePolicy.update).toBe('static+deep');
   });
 
   test('returns InstallRecord[] when codex binary is present', async () => {

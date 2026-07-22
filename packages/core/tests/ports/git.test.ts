@@ -19,6 +19,227 @@ const unusedBinaryProcessPort = (): BinaryProcessPort =>
   }));
 
 describe('GitPort', () => {
+  test('classifies full SHAs offline as immutable closed facts', async () => {
+    let calls = 0;
+    const git = createGitPort(
+      processPort(async () => {
+        calls += 1;
+        return { code: 0, stdout: '', stderr: '', timedOut: false };
+      }),
+      unusedBinaryProcessPort(),
+    );
+    const requestedRef = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
+    const inspection = await git.inspectRemoteRef?.({
+      remoteUrl: 'https://example.invalid/repo',
+      ref: requestedRef,
+    });
+
+    expect(inspection).toEqual({
+      kind: 'sha',
+      requestedRef,
+      resolvedSha: requestedRef.toLowerCase(),
+    });
+    expect(Object.isFrozen(inspection)).toBe(true);
+    expect(calls).toBe(0);
+  });
+
+  test('classifies the exact remote default and branch namespaces', async () => {
+    const sha = '0123456789abcdef0123456789abcdef01234567';
+    const calls: readonly string[][] = [];
+    const recordedCalls = calls as string[][];
+    const git = createGitPort(
+      processPort(async (_command, args) => {
+        recordedCalls.push([...args]);
+        const name = args.at(-1) === 'HEAD' ? 'HEAD' : 'refs/heads/main';
+        return { code: 0, stdout: `${sha}\t${name}\r\n`, stderr: '', timedOut: false };
+      }),
+      unusedBinaryProcessPort(),
+    );
+
+    await expect(
+      git.inspectRemoteRef?.({ remoteUrl: 'https://example.invalid/repo', ref: null }),
+    ).resolves.toEqual({ kind: 'default', requestedRef: null, resolvedSha: sha });
+    await expect(
+      git.inspectRemoteRef?.({ remoteUrl: 'https://example.invalid/repo', ref: 'main' }),
+    ).resolves.toEqual({ kind: 'branch', requestedRef: 'main', resolvedSha: sha });
+    expect(calls).toEqual([
+      ['ls-remote', '--', 'https://example.invalid/repo', 'HEAD'],
+      [
+        'ls-remote',
+        '--',
+        'https://example.invalid/repo',
+        'refs/heads/main',
+        'refs/tags/main',
+        'refs/tags/main^{}',
+      ],
+    ]);
+  });
+
+  test('classifies lightweight and annotated tags and peels the latter', async () => {
+    const tagObject = '1111111111111111111111111111111111111111';
+    const commit = '2222222222222222222222222222222222222222';
+    const git = createGitPort(
+      processPort(async (_command, args) => {
+        const ref = args.at(-1)?.includes('annotated') ? 'annotated' : 'lightweight';
+        const stdout =
+          ref === 'annotated'
+            ? `${tagObject}\trefs/tags/annotated\n${commit}\trefs/tags/annotated^{}\n`
+            : `${commit}\trefs/tags/lightweight\n`;
+        return { code: 0, stdout, stderr: '', timedOut: false };
+      }),
+      unusedBinaryProcessPort(),
+    );
+
+    await expect(
+      git.inspectRemoteRef?.({
+        remoteUrl: 'https://example.invalid/repo',
+        ref: 'lightweight',
+      }),
+    ).resolves.toEqual({ kind: 'tag', requestedRef: 'lightweight', resolvedSha: commit });
+    await expect(
+      git.inspectRemoteRef?.({
+        remoteUrl: 'https://example.invalid/repo',
+        ref: 'annotated',
+      }),
+    ).resolves.toEqual({ kind: 'tag', requestedRef: 'annotated', resolvedSha: commit });
+  });
+
+  test('refuses exact branch/tag collisions without applying a preference', async () => {
+    const sha = '0123456789abcdef0123456789abcdef01234567';
+    const git = createGitPort(
+      processPort(async () => ({
+        code: 0,
+        stdout: `${sha}\trefs/heads/release\n${sha}\trefs/tags/release\n`,
+        stderr: '',
+        timedOut: false,
+      })),
+      unusedBinaryProcessPort(),
+    );
+
+    await expect(
+      git.inspectRemoteRef?.({ remoteUrl: 'https://example.invalid/repo', ref: 'release' }),
+    ).rejects.toMatchObject({
+      capability: 'git',
+      operation: 'inspectRemoteRef',
+      code: 'conflict',
+    });
+  });
+
+  test('refuses missing, malformed, unexpected, and conflicting exact-ref results', async () => {
+    const validSha = '0123456789abcdef0123456789abcdef01234567';
+    const cases = [
+      { stdout: '', code: 'not-found' },
+      { stdout: 'short\trefs/heads/main\n', code: 'invalid' },
+      { stdout: `${validSha.toUpperCase()}\trefs/heads/main\n`, code: 'invalid' },
+      { stdout: `${validSha}\trefs/heads/other\n`, code: 'invalid' },
+      {
+        stdout: `${validSha}\trefs/heads/main\n${'1'.repeat(40)}\trefs/heads/main\n`,
+        code: 'invalid',
+      },
+      { stdout: `${validSha}\trefs/tags/main^{}\n`, code: 'invalid' },
+    ] as const;
+
+    for (const fixture of cases) {
+      const git = createGitPort(
+        processPort(async () => ({
+          code: 0,
+          stdout: fixture.stdout,
+          stderr: '',
+          timedOut: false,
+        })),
+        unusedBinaryProcessPort(),
+      );
+      await expect(
+        git.inspectRemoteRef?.({ remoteUrl: 'https://example.invalid/repo', ref: 'main' }),
+      ).rejects.toMatchObject({
+        capability: 'git',
+        operation: 'inspectRemoteRef',
+        code: fixture.code,
+      });
+    }
+  });
+
+  test('retains structured unavailable, timeout, cancellation, and credential failures', async () => {
+    for (const fixture of [
+      { code: 1, timedOut: false, expected: 'unavailable' },
+      { code: 1, timedOut: true, expected: 'timeout' },
+    ] as const) {
+      const git = createGitPort(
+        processPort(async () => ({
+          code: fixture.code,
+          stdout: '',
+          stderr: 'credential-bearing stderr must not be surfaced',
+          timedOut: fixture.timedOut,
+        })),
+        unusedBinaryProcessPort(),
+      );
+      let failure: unknown;
+      try {
+        await git.inspectRemoteRef?.({
+          remoteUrl: 'https://example.invalid/repo',
+          ref: null,
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        capability: 'git',
+        operation: 'inspectRemoteRef',
+        code: fixture.expected,
+      });
+      expect(JSON.stringify(failure)).not.toContain('credential-bearing stderr');
+    }
+
+    const cancelled = createGitPort(
+      processPort(async () => {
+        throw portError({
+          capability: 'process',
+          operation: 'exec',
+          code: 'cancelled',
+          message: 'process operation was cancelled',
+          context: { command: 'git' },
+        });
+      }),
+      unusedBinaryProcessPort(),
+    );
+    await expect(
+      cancelled.inspectRemoteRef?.({ remoteUrl: 'https://example.invalid/repo', ref: null }),
+    ).rejects.toMatchObject({
+      capability: 'git',
+      operation: 'inspectRemoteRef',
+      code: 'cancelled',
+    });
+
+    let calls = 0;
+    const credentialed = createGitPort(
+      processPort(async () => {
+        calls += 1;
+        return { code: 0, stdout: '', stderr: '', timedOut: false };
+      }),
+      unusedBinaryProcessPort(),
+    );
+    let credentialFailure: unknown;
+    try {
+      await credentialed.inspectRemoteRef?.({
+        remoteUrl: 'https://P17_SECRET_CANARY@example.invalid/repo',
+        ref: null,
+      });
+    } catch (error) {
+      credentialFailure = error;
+    }
+    expect(credentialFailure).toMatchObject({ code: 'invalid' });
+    expect(JSON.stringify(credentialFailure)).not.toContain('P17_SECRET_CANARY');
+    expect(calls).toBe(0);
+
+    await expect(
+      credentialed.inspectRemoteRef?.({
+        remoteUrl: 'https://example.invalid/repo?token=P17_SECRET_CANARY',
+        ref: null,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+    expect(calls).toBe(0);
+  });
+
   test('resolves full SHAs without arbitrary process execution', async () => {
     let calls = 0;
     const git = createGitPort(

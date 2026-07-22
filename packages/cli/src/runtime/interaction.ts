@@ -37,7 +37,11 @@ const refused = <T>(reason = 'interactive input is unavailable'): InteractionRes
 
 /** Build the one @clack confirmation projection without changing exact operation order. */
 export const createConfirmationPromptOptions = (request: InteractionConfirmationRequest) => {
-  const groups = request.preview?.kind === 'exact-sync-preview' ? request.preview.groupIds : [];
+  const groups =
+    request.preview?.kind === 'exact-sync-preview' ||
+    request.preview?.kind === 'exact-update-preview'
+      ? request.preview.groupIds
+      : [];
   const operations = request.preview?.operationIds ?? [];
   const exactGroups =
     groups.length === 0

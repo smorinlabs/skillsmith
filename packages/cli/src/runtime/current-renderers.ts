@@ -33,6 +33,7 @@ import {
   toConfigSetV1Dto,
   toConfigUnsetV1Dto,
 } from '@skillsmith/core/contracts/v1';
+import type { UpdateReportV1Dto } from '@skillsmith/core/contracts/v1';
 import type { Command } from 'commander';
 import { runCompletion } from '../completion/run.ts';
 import { currentWireCodecs } from '../contracts/wire-contracts.ts';
@@ -66,6 +67,8 @@ import { renderStatusHuman } from '../output/status-human.ts';
 import { renderStatusJson } from '../output/status-json.ts';
 import { renderSyncHuman } from '../output/sync-human.ts';
 import { renderSyncJson } from '../output/sync-json.ts';
+import { renderUpdateHuman } from '../output/update-human.ts';
+import { renderUpdateJson } from '../output/update-json.ts';
 import {
   type VerifyDeepCoverageSuffixResolver,
   renderVerifyHuman,
@@ -353,6 +356,20 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
         return value === null
           ? (errorOutput(outcome, 'json') ?? '')
           : renderSyncJson(value, currentWireCodecs.sync);
+      },
+    },
+    update: {
+      human: (outcome) => {
+        const value = report<{ readonly result: UpdateReportV1Dto | null }>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'human') ?? '')
+          : withDiagnostics(outcome, renderUpdateHuman(value));
+      },
+      json: (outcome) => {
+        const value = report<{ readonly result: UpdateReportV1Dto | null }>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : withDiagnostics(outcome, renderUpdateJson(value, currentWireCodecs.update));
       },
     },
     configGet: guarded<ConfigGetReport>(

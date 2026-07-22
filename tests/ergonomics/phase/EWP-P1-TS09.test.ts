@@ -280,8 +280,9 @@ describe('EWP-P1-TS09', () => {
     }
 
     for (const gatePolicy of [
-      { installDeep: 'yes', promote: 'static' },
-      { installDeep: true, promote: 'future' },
+      { installDeep: 'yes', promote: 'static', update: 'static' },
+      { installDeep: true, promote: 'future', update: 'static' },
+      { installDeep: true, promote: 'static', update: 'future' },
     ]) {
       const adapter = verified();
       if (!adapter.verification) throw new Error('fixture verifier is missing');
@@ -289,7 +290,7 @@ describe('EWP-P1-TS09', () => {
         ...adapter.verification,
         gatePolicy: gatePolicy as unknown as NonNullable<Adapter['verification']>['gatePolicy'],
       };
-      expect(() => create([adapter])).toThrow(/gate.*policy|installDeep|promote/i);
+      expect(() => create([adapter])).toThrow(/gate.*policy|installDeep|promote|update/i);
     }
 
     const incoherent = verified();
@@ -302,7 +303,7 @@ describe('EWP-P1-TS09', () => {
     incoherent.verification = {
       ...incoherent.verification,
       modes: ['static'],
-      gatePolicy: { installDeep: true, promote: 'static+deep' },
+      gatePolicy: { installDeep: true, promote: 'static+deep', update: 'static+deep' },
     };
     expect(() => create([incoherent])).toThrow(/gate.*policy|verify-deep|deep.*unsupported/i);
 
@@ -453,8 +454,8 @@ describe('EWP-P1-TS09', () => {
         );
         expect(adapter.verification?.gatePolicy).toEqual(
           adapter.descriptor.id === 'codex'
-            ? { installDeep: true, promote: 'static+deep' }
-            : { installDeep: false, promote: 'static' },
+            ? { installDeep: true, promote: 'static+deep', update: 'static+deep' }
+            : { installDeep: false, promote: 'static', update: 'static' },
         );
         expect(typeof adapter.verification?.verify).toBe('function');
         expect(adapter.verification?.verify).toBe(
