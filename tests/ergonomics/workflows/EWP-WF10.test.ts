@@ -242,6 +242,7 @@ describe('EWP-WF10', () => {
         fleet.artifacts.explicitLock,
       ] as const;
       const savePreview = await syncReport(fleet, [...saveArgs, '--dry-run']);
+      expect(savePreview.selection.selectionSource).toBe('bounded-default');
       const saved = await syncReport(fleet, [...saveArgs, '--yes']);
       expect(saved.operations).toEqual(savePreview.operations);
       expect(pairIdentity(saved)).toEqual(pairIdentity(savePreview));
@@ -255,21 +256,6 @@ describe('EWP-WF10', () => {
       expect((await readFile(fleet.artifacts.explicitManifest)).byteLength).toBeGreaterThan(0);
       expect((await readFile(fleet.artifacts.explicitLock)).byteLength).toBeGreaterThan(0);
 
-      const deletion = await syncReport(fleet, [
-        'sync',
-        '--from',
-        fleet.projects.a,
-        '--to',
-        fleet.projects.b,
-        '--tool',
-        'codex',
-        '--delete',
-        '--continue-on-error',
-        '--dry-run',
-      ]);
-      expect(deletion.options).toMatchObject({ delete: true, continueOnError: true });
-      expect(deletion.operations.some(({ kind }) => kind === 'remove')).toBeTrue();
-
       const rerun = await syncReport(fleet, [...saveArgs, '--dry-run']);
       expect(rerun).toMatchObject({ summary: { changed: 0 } });
       expect(await readSkillBytes(fleet.skills.userLint)).toEqual(userLintBefore);
@@ -277,6 +263,46 @@ describe('EWP-WF10', () => {
       expect(await readSkillBytes(fleet.skills.projectALint)).toEqual(projectLintBefore);
     } finally {
       await destroySyncFleet(fleet);
+    }
+
+    const deletionFleet = await createSyncFleet();
+    try {
+      const deletionLintBefore = await readSkillBytes(deletionFleet.skills.projectALint);
+      const deletionReviewBefore = await readSkillBytes(deletionFleet.skills.projectAReview);
+      const deleteArgs = [
+        'sync',
+        '--from',
+        deletionFleet.projects.a,
+        '--to',
+        deletionFleet.projects.b,
+        '--tool',
+        'codex',
+        '--delete',
+        '--force',
+      ] as const;
+      const deletePreview = await syncReport(deletionFleet, [...deleteArgs, '--dry-run']);
+      expect(deletePreview.groups.find(({ skill }) => skill === 'extra')?.pairs[0]).toMatchObject({
+        action: 'remove',
+        outcome: 'planned',
+      });
+      const deleted = await syncReport(deletionFleet, [...deleteArgs, '--yes']);
+      expect(deleted.operations).toEqual(deletePreview.operations);
+      expect(deleted.groups.find(({ skill }) => skill === 'extra')?.pairs[0]).toMatchObject({
+        action: 'remove',
+        outcome: 'succeeded',
+      });
+      expect(
+        await readSkillBytes(deletionFleet.skills.projectBExtra).then(
+          () => true,
+          () => false,
+        ),
+      ).toBeFalse();
+      expect(await readSkillBytes(deletionFleet.skills.projectALint)).toEqual(deletionLintBefore);
+      expect(await readSkillBytes(deletionFleet.skills.projectAReview)).toEqual(
+        deletionReviewBefore,
+      );
+    } finally {
+      await destroySyncFleet(deletionFleet);
     }
 
     const legacy = await createSyncFleet();

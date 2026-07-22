@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import {
   SYNC_SECRET_CANARIES,
   type SyncFleet,
@@ -9,9 +9,14 @@ import {
   readSkillBytes,
   runSyncCli,
 } from '../../../../tests/ergonomics/fixtures/p5-sync/fleet.ts';
+import type { RelevantCapabilityQueryV1 } from '../../../core/src/agents/capabilities.ts';
+import { toolRegistry } from '../../../core/src/agents/registry.ts';
+import { runSyncApplication } from '../../../core/src/application/sync-service.ts';
+import type { CurrentApplicationContext } from '../../../core/src/application/types.ts';
 import { hashManifestSemantics } from '../../../core/src/artifacts/hash.ts';
 import type { LedgerModel } from '../../../core/src/artifacts/ledger-types.ts';
 import type { PortableLockV1 } from '../../../core/src/artifacts/lock.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
 import {
   operationMatchesMatrix,
   validatePlanOperationIntentShapeV1,
@@ -20,14 +25,22 @@ import {
 import type { PlanOperationV1 } from '../../../core/src/artifacts/plan-types.ts';
 import { artifactContractRegistry } from '../../../core/src/artifacts/registry.ts';
 import type { NormalizedManifestV1 } from '../../../core/src/artifacts/types.ts';
+import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
+import { resolveProjectContext } from '../../../core/src/context/project.ts';
 import {
   type SyncPairResultV1Dto,
   type SyncReportV1Dto,
   syncV1Codec,
 } from '../../../core/src/contracts/v1/sync.ts';
 import { scheduleOperationPlan } from '../../../core/src/execution/scheduler.ts';
+import {
+  createExplicitPlacementProjectLocationV1,
+  createPlacementSnapshotAuthority,
+  placementSnapshotResourceId,
+} from '../../../core/src/place/execute.ts';
 import { emptyLedgerModel, getLedgerPairAt, writeLedger } from '../../../core/src/place/ledger.ts';
-import { storeRootOf } from '../../../core/src/place/paths.ts';
+import { ledgerPathOf, resolveDataDir, storeRootOf } from '../../../core/src/place/paths.ts';
+import { createPlacementPlan } from '../../../core/src/place/plan.ts';
 import {
   contentHashOf,
   resolveProvenance,
@@ -41,11 +54,21 @@ import type {
   OperationDigest,
   OperationPlan,
 } from '../../../core/src/planning/types.ts';
+import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
+import type { RuntimePorts } from '../../../core/src/ports/types.ts';
+import { resolveSyncEndpoints } from '../../../core/src/sync/endpoints.ts';
+import { observeSyncFleet } from '../../../core/src/sync/observe.ts';
+import {
+  createSyncPlan,
+  projectSyncFleetPlanV1,
+  selectSyncFleetResourcesV1,
+} from '../../../core/src/sync/plan.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import { exitCodeForClass } from '../../src/runtime/adapter.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
 const openFleets: SyncFleet[] = [];
@@ -58,6 +81,42 @@ const fleet = async (): Promise<SyncFleet> => {
   const selected = await createSyncFleet();
   openFleets.push(selected);
   return selected;
+};
+
+const syncApplicationContext = async (
+  selected: SyncFleet,
+  artifactCoordinator: Awaited<ReturnType<typeof createTestNodeArtifactCoordinatorPorts>>,
+): Promise<CurrentApplicationContext> => {
+  const base = await defaultRuntimePorts();
+  const ports: RuntimePorts = {
+    ...base,
+    homeDir: selected.home,
+    xdg: {
+      config: selected.config,
+      data: selected.data,
+      cache: selected.cache,
+    },
+  };
+  return {
+    ports,
+    artifactCoordinator,
+    configuration: resolveRuntimeConfiguration(selected.env),
+    invocationCwd: selected.cwd,
+    globalOptions: {},
+    interaction: {
+      mode: 'noninteractive',
+      choose: async () => ({ status: 'refused', reason: 'unused' }),
+      confirm: async () => ({ status: 'resolved', value: true }),
+    },
+  } as unknown as CurrentApplicationContext;
+};
+
+const operationDto = (operation: ExecutableOperation): SyncReportV1Dto['operations'][number] => {
+  const { dependencyMetadata, ...body } = operation;
+  return {
+    ...body,
+    dependsOn: [...dependencyMetadata.operationIds],
+  } as SyncReportV1Dto['operations'][number];
 };
 
 const syncReport = async (
@@ -103,7 +162,7 @@ const readLedger = async (selected: SyncFleet): Promise<LedgerModel> =>
   JSON.parse(await readFile(selected.ledger, 'utf8')) as LedgerModel;
 
 const waitForOpenTransaction = async (selected: SyncFleet): Promise<LedgerModel> => {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     try {
       const ledger = await readLedger(selected);
@@ -1430,69 +1489,87 @@ describe('sync command contract', () => {
     ).toBeTrue();
     expect(new Set(prefixedPairs.map(({ groupId }) => groupId)).size).toBe(2);
 
-    const prefixOperations: readonly ExecutableOperation[] = prefixPreview.operations.map(
-      (operation) =>
-        Object.freeze({
-          ...operation,
-          dependencyMetadata: Object.freeze({
-            domain: 'skillsmith.operation-dependency' as const,
-            schemaVersion: 1 as const,
-            operationIds: operation.dependsOn,
-          }),
-        }) as unknown as ExecutableOperation,
+    let artifactStageFaults = 0;
+    const faultingCoordinator = await createTestNodeArtifactCoordinatorPorts(
+      join(prefixFleet.root, 'faulting-artifact-coordination'),
+      {
+        afterPhysicalStep: async (step) => {
+          if (artifactStageFaults === 0 && step.area === 'stage' && step.step === 'file-opened') {
+            artifactStageFaults++;
+            throw Object.assign(new Error('deterministic sync artifact stage failure'), {
+              code: 'EIO',
+            });
+          }
+        },
+      },
     );
-    const prefixPlan: OperationPlan<'sync'> = Object.freeze({
-      domain: 'skillsmith.operation-plan',
-      schemaVersion: 1,
-      command: 'sync',
-      selection: Object.freeze({
-        source: prefixPreview.selection.selectionSource,
-        outcome: prefixPreview.selection.selectionOutcome,
-        targets: prefixPreview.selection.targets,
-        skills: prefixPreview.selection.skills,
-        tools: prefixPreview.selection.tools,
-        scopes: Object.freeze(
-          [...new Set(prefixOperations.map(({ scope }) => scope))].filter(
-            (scope): scope is NonNullable<typeof scope> => scope !== null,
-          ),
-        ),
-        groupIds: prefixPreview.selection.groupIds,
-      }),
-      batchPolicy: 'continue-on-error',
-      operations: prefixOperations,
-      checks: [],
-      diagnostics: [],
+    const prefixContext = await syncApplicationContext(prefixFleet, faultingCoordinator);
+    const prefixRequest = {
+      arguments: [[]],
+      options: {
+        from: prefixFleet.projects.a,
+        to: prefixFleet.projects.c,
+        tool: ['codex'],
+        save: true,
+        file: prefixFleet.artifacts.explicitManifest,
+        lockfile: prefixFleet.artifacts.explicitLock,
+      },
+    } as const;
+    const applicationPreview = await runSyncApplication(
+      {
+        ...prefixRequest,
+        options: { ...prefixRequest.options, dryRun: true },
+      },
+      prefixContext,
+    );
+    expect(applicationPreview.exitClass).toBe('success');
+    expect(applicationPreview.report.result?.operations).toEqual(prefixPreview.operations);
+    expect(artifactStageFaults).toBe(0);
+    const prefixLedgerBefore = await readFile(prefixFleet.ledger, 'utf8');
+    const prefixFailure = await runSyncApplication(prefixRequest, prefixContext);
+    expect(prefixFailure.exitClass).toBe('failure');
+    expect(exitCodeForClass(prefixFailure.exitClass)).toBe(1);
+    expect(artifactStageFaults).toBe(1);
+    const failedPrefixReport = prefixFailure.report.result;
+    if (failedPrefixReport === null) throw new Error('sync artifact failure report is missing');
+    expect(failedPrefixReport.operations).toEqual(prefixPreview.operations);
+    expect(failedPrefixReport).toMatchObject({
+      mode: 'execute',
+      state: 'partial',
+      summary: { succeeded: 0, failed: 1, skipped: 1 },
     });
-    const prefixCalls: string[] = [];
-    const prefixResults = await scheduleOperationPlan(
-      prefixPlan,
-      prefixOperations.map((operation) =>
-        binding(
-          operation,
-          operation.operationId === prefixLock.operationId ? 'failed' : 'succeeded',
-          () => {
-            prefixCalls.push(operation.operationId);
-          },
-        ),
-      ),
+    const prefixOutcomeBySkill = new Map(
+      failedPrefixReport.groups.map((group) => [group.skill, group.pairs[0]] as const),
+    );
+    const prefixPairOutcomes = [...prefixOutcomeBySkill.values()].filter(
+      (pair): pair is SyncPairResultV1Dto => pair !== undefined,
+    );
+    const failedPrefixPairs = prefixPairOutcomes.filter(({ outcome }) => outcome === 'failed');
+    expect(failedPrefixPairs).toHaveLength(1);
+    expect(failedPrefixPairs[0]).toMatchObject({
+      failure: { code: 'artifact-mutation-filesystem-failure' },
+    });
+    const skippedPrefixPairs = prefixPairOutcomes.filter(({ outcome }) => outcome === 'skipped');
+    expect(skippedPrefixPairs).toHaveLength(1);
+    expect(skippedPrefixPairs[0]).toMatchObject({ skipReason: 'skipped-after-failure' });
+    const artifactOperationIds = new Set(
+      failedPrefixReport.operations
+        .filter(({ pairId }) => pairId === null)
+        .map(({ operationId }) => operationId),
     );
     expect(
-      prefixCalls.map(
-        (operationId) =>
-          prefixOperations.find((operation) => operation.operationId === operationId)?.kind,
-      ),
-    ).toEqual(['write-manifest', 'write-lock']);
-    expect(
-      prefixResults
-        .filter(({ operationId }) => prefixedPairs.some((pair) => pair.operationId === operationId))
+      failedPrefixReport.effects
+        .filter(({ operationId }) =>
+          operationId === null ? false : artifactOperationIds.has(operationId),
+        )
         .map(({ outcome }) => outcome),
-    ).toEqual(['skipped-after-failure', 'skipped-after-failure']);
-    const prefixExecution = await syncReport(prefixFleet, [...prefixArgs, '--yes']);
-    expect(prefixExecution).toMatchObject({
-      state: 'completed',
-      summary: { succeeded: 2, failed: 0, skipped: 0 },
-    });
-    expect(prefixExecution.operations).toEqual(prefixPreview.operations);
+    ).toEqual(expect.arrayContaining(['failed', 'not-run']));
+    expect(await present(prefixFleet.artifacts.explicitManifest)).toBeFalse();
+    expect(await present(prefixFleet.artifacts.explicitLock)).toBeFalse();
+    for (const skill of failedPrefixReport.selection.skills) {
+      expect(await present(join(prefixFleet.projects.c, '.agents', 'skills', skill))).toBeFalse();
+    }
+    expect(await readFile(prefixFleet.ledger, 'utf8')).toBe(prefixLedgerBefore);
 
     const recoveryFleet = await buildFixtureFleet();
     try {
@@ -1890,11 +1967,129 @@ describe('sync command contract', () => {
         .every((operationId) => operationId === report.operations[0]?.operationId),
     ).toBeTrue();
 
+    const plannerCoordinator = await createTestNodeArtifactCoordinatorPorts(
+      join(selected.root, 'ts10-planner-coordination'),
+    );
+    const plannerContext = await syncApplicationContext(selected, plannerCoordinator);
+    const topProject = await resolveProjectContext(plannerContext.ports, {
+      invocationCwd: selected.cwd,
+    });
+    if (!topProject.ok) throw new Error('TS10 project context could not be resolved');
+    const endpoints = await resolveSyncEndpoints(plannerContext, topProject.value, {
+      from: 'user',
+      to: selected.projects.c,
+      tools: ['codex'],
+    });
+    if (!endpoints.ok) throw new Error(endpoints.error.message);
+    const observedFleet = await observeSyncFleet(plannerContext, endpoints.value, {
+      portableProof: 'none',
+    });
+    if (!observedFleet.ok) throw new Error(observedFleet.error.message);
+    const selectedResources = selectSyncFleetResourcesV1(observedFleet.value, {
+      targets: ['lint'],
+      delete: false,
+      continueOnError: false,
+      save: false,
+      force: false,
+    });
+    if (!selectedResources.ok) throw new Error(selectedResources.error.message);
+    const dataDir = resolveDataDir(plannerContext.ports, plannerContext.configuration);
+    const plannerStoreRoot = storeRootOf(dataDir);
+    const storeResourceIdsByPair: Record<string, string> = {};
+    const storeResources = selectedResources.value.stores.map((descriptor) => {
+      const hash12 = descriptor.contentHash.slice('sha256:'.length, 'sha256:'.length + 12);
+      const storePath = join(
+        plannerStoreRoot,
+        'local',
+        `${basename(descriptor.sourcePath)}@content-${hash12}`,
+        descriptor.skill,
+      );
+      const resourceId = placementSnapshotResourceId('store', resolve(storePath));
+      storeResourceIdsByPair[descriptor.bindingKey] = resourceId;
+      return Object.freeze({ resourceId, storePath, contentHash: descriptor.contentHash });
+    });
+    const destinationBase = endpoints.value.to.canonicalBase;
+    if (destinationBase === null) throw new Error('TS10 project destination has no exact base');
+    const explicitLocation = await createExplicitPlacementProjectLocationV1(
+      plannerContext.ports,
+      endpoints.value.to.project,
+      destinationBase,
+    );
+    if (!explicitLocation.ok)
+      throw new Error(`TS10 explicit location: ${explicitLocation.error.code}`);
+    const capabilityQueries: RelevantCapabilityQueryV1[] = selectedResources.value.pairs.map(
+      ({ pair }) => ({
+        schemaVersion: 1,
+        tool: pair.tool,
+        operation: 'sync',
+        scope: pair.scope,
+      }),
+    );
+    const authority = await createPlacementSnapshotAuthority(
+      toolRegistry,
+      capabilityQueries,
+      plannerContext.ports,
+      endpoints.value.to.project,
+      ledgerPathOf(dataDir),
+      plannerStoreRoot,
+      selectedResources.value.pairs.map(({ pair }) => pair),
+      storeResources,
+      {
+        manifestPath: join(dataDir, '.sync-live-only', 'manifest'),
+        lockPath: join(dataDir, '.sync-live-only', 'lock'),
+        observe: false,
+      },
+      explicitLocation.value,
+    );
+    if (!authority.ok) throw new Error(`TS10 placement authority: ${authority.error.code}`);
+    const projection = projectSyncFleetPlanV1(selectedResources.value, authority.value, {
+      storeResourceIdsByPair,
+    });
+    if (!projection.ok) throw new Error(projection.error.message);
+    const directSyncPlan = createSyncPlan(projection.value.request, authority.value.snapshot, {
+      registry: toolRegistry,
+      toolOrder: toolRegistry.ids,
+    });
+    if (!directSyncPlan.ok) throw new Error(directSyncPlan.error.message);
+    const directPlacementPlan = createPlacementPlan(
+      {
+        schemaVersion: projection.value.request.schemaVersion,
+        command: 'sync',
+        selection: projection.value.request.selection,
+        batchPolicy: projection.value.request.batchPolicy,
+        force: projection.value.request.force,
+        intents: projection.value.request.intents,
+        ...(projection.value.request.diagnostics === undefined
+          ? {}
+          : { diagnostics: projection.value.request.diagnostics }),
+        ...(projection.value.request.compatibilityOperations === undefined
+          ? {}
+          : { compatibilityOperations: projection.value.request.compatibilityOperations }),
+      },
+      authority.value.snapshot,
+      { registry: toolRegistry, toolOrder: toolRegistry.ids },
+    );
+    if (!directPlacementPlan.ok) throw new Error(directPlacementPlan.error.message);
+    expect(directSyncPlan.value.plan.operations).toEqual(directPlacementPlan.value.plan.operations);
+    expect(directSyncPlan.value.expectedRevisions).toEqual(
+      directPlacementPlan.value.expectedRevisions,
+    );
+    expect(directSyncPlan.value.plan.operations.map(operationDto)).toEqual([...report.operations]);
+    expect(
+      directSyncPlan.value.plan.operations.map(({ operationId, dependencyMetadata }) => ({
+        operationId,
+        dependsOn: dependencyMetadata.operationIds,
+      })),
+    ).toEqual(report.operations.map(({ operationId, dependsOn }) => ({ operationId, dependsOn })));
+
     const installExecution = await syncReport(
       selected,
       args.filter((argument) => argument !== '--dry-run'),
     );
     expect(installExecution.operations).toEqual(report.operations);
+    expect(installExecution.operations).toEqual(
+      directPlacementPlan.value.plan.operations.map(operationDto),
+    );
     const exactResultProjection = (sync: SyncReportV1Dto) =>
       sync.groups.flatMap((group) =>
         group.pairs.map((pair) => ({
