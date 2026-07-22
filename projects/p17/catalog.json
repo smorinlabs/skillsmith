@@ -6915,6 +6915,7 @@
         "packages/core/tests/update/execute.test.ts",
         "packages/core/tests/update/plan.test.ts",
         "packages/core/tests/update/verify.test.ts",
+        "packages/core/tests/artifacts/ledger-writer.test.ts",
         "packages/cli/tests/output/update.test.ts",
         "packages/cli/tests/runtime/interaction.test.ts",
         "packages/cli/tests/contracts/update.test.ts",

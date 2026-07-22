@@ -209,9 +209,10 @@ describe('P17 immutable catalog and traceability baseline', () => {
       readFileSync(resolve(root, 'projects/p17/catalog.json'), 'utf8'),
     ) as CatalogFixture;
     const g502 = group(committed, 'P17-G5-02');
-    expect(g502.ownedFiles).toHaveLength(96);
+    expect(g502.ownedFiles).toHaveLength(97);
     expect(g502.ownedFiles).toContain('packages/core/src/place/swap.ts');
     expect(g502.ownedFiles).toContain('tests/ergonomics/phase/EWP-P3A-TS02.test.ts');
+    expect(g502.ownedFiles).toContain('packages/core/tests/artifacts/ledger-writer.test.ts');
   });
 
   test('tracks every entity one-to-one with required validation coverage', () => {
