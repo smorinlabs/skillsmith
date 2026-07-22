@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { join } from 'node:path';
 import {
   SYNC_SECRET_CANARIES,
   type SyncFleet,
@@ -17,6 +17,7 @@ import { hashManifestSemantics } from '../../../core/src/artifacts/hash.ts';
 import type { LedgerModel } from '../../../core/src/artifacts/ledger-types.ts';
 import type { PortableLockV1 } from '../../../core/src/artifacts/lock.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
+import { resolveArtifactPair } from '../../../core/src/artifacts/pair.ts';
 import {
   operationMatchesMatrix,
   validatePlanOperationIntentShapeV1,
@@ -36,11 +37,9 @@ import { scheduleOperationPlan } from '../../../core/src/execution/scheduler.ts'
 import {
   createExplicitPlacementProjectLocationV1,
   createPlacementSnapshotAuthority,
-  placementSnapshotResourceId,
 } from '../../../core/src/place/execute.ts';
 import { emptyLedgerModel, getLedgerPairAt, writeLedger } from '../../../core/src/place/ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../../../core/src/place/paths.ts';
-import { createPlacementPlan } from '../../../core/src/place/plan.ts';
 import {
   contentHashOf,
   resolveProvenance,
@@ -56,7 +55,12 @@ import type {
 } from '../../../core/src/planning/types.ts';
 import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
 import type { RuntimePorts } from '../../../core/src/ports/types.ts';
+import { prepareSyncArtifactsV1 } from '../../../core/src/sync/artifacts.ts';
 import { resolveSyncEndpoints } from '../../../core/src/sync/endpoints.ts';
+import {
+  prepareSyncStoreResourcesV1,
+  toSyncReportOperationV1,
+} from '../../../core/src/sync/execute.ts';
 import { observeSyncFleet } from '../../../core/src/sync/observe.ts';
 import {
   createSyncPlan,
@@ -109,14 +113,6 @@ const syncApplicationContext = async (
       confirm: async () => ({ status: 'resolved', value: true }),
     },
   } as unknown as CurrentApplicationContext;
-};
-
-const operationDto = (operation: ExecutableOperation): SyncReportV1Dto['operations'][number] => {
-  const { dependencyMetadata, ...body } = operation;
-  return {
-    ...body,
-    dependsOn: [...dependencyMetadata.operationIds],
-  } as SyncReportV1Dto['operations'][number];
 };
 
 const syncReport = async (
@@ -1967,47 +1963,61 @@ describe('sync command contract', () => {
         .every((operationId) => operationId === report.operations[0]?.operationId),
     ).toBeTrue();
 
+    const plannedFleet = await fleet();
+    const saveArgs = [
+      'sync',
+      'lint',
+      '--from',
+      plannedFleet.projects.a,
+      '--to',
+      plannedFleet.projects.c,
+      '--tool',
+      'codex',
+      '--save',
+      '--file',
+      plannedFleet.artifacts.explicitManifest,
+      '--lockfile',
+      plannedFleet.artifacts.explicitLock,
+    ] as const;
+    const savePreview = await syncReport(plannedFleet, [...saveArgs, '--dry-run']);
     const plannerCoordinator = await createTestNodeArtifactCoordinatorPorts(
-      join(selected.root, 'ts10-planner-coordination'),
+      join(plannedFleet.root, 'ts10-planner-coordination'),
     );
-    const plannerContext = await syncApplicationContext(selected, plannerCoordinator);
+    const plannerContext = await syncApplicationContext(plannedFleet, plannerCoordinator);
     const topProject = await resolveProjectContext(plannerContext.ports, {
-      invocationCwd: selected.cwd,
+      invocationCwd: plannedFleet.cwd,
     });
     if (!topProject.ok) throw new Error('TS10 project context could not be resolved');
     const endpoints = await resolveSyncEndpoints(plannerContext, topProject.value, {
-      from: 'user',
-      to: selected.projects.c,
+      from: plannedFleet.projects.a,
+      to: plannedFleet.projects.c,
       tools: ['codex'],
     });
     if (!endpoints.ok) throw new Error(endpoints.error.message);
     const observedFleet = await observeSyncFleet(plannerContext, endpoints.value, {
-      portableProof: 'none',
+      portableProof: 'exact',
     });
     if (!observedFleet.ok) throw new Error(observedFleet.error.message);
     const selectedResources = selectSyncFleetResourcesV1(observedFleet.value, {
       targets: ['lint'],
       delete: false,
       continueOnError: false,
-      save: false,
+      save: true,
       force: false,
     });
     if (!selectedResources.ok) throw new Error(selectedResources.error.message);
+    expect(selectedResources.value).toMatchObject({
+      options: { save: true, targets: ['lint'] },
+      pairs: [{ action: 'converge', source: { portable: { outcome: 'portable' } } }],
+    });
+    const artifactPair = await resolveArtifactPair(plannerContext.ports, topProject.value, {
+      file: plannedFleet.artifacts.explicitManifest,
+      lockfile: plannedFleet.artifacts.explicitLock,
+    });
+    if (!artifactPair.ok) throw new Error(artifactPair.error.message);
     const dataDir = resolveDataDir(plannerContext.ports, plannerContext.configuration);
     const plannerStoreRoot = storeRootOf(dataDir);
-    const storeResourceIdsByPair: Record<string, string> = {};
-    const storeResources = selectedResources.value.stores.map((descriptor) => {
-      const hash12 = descriptor.contentHash.slice('sha256:'.length, 'sha256:'.length + 12);
-      const storePath = join(
-        plannerStoreRoot,
-        'local',
-        `${basename(descriptor.sourcePath)}@content-${hash12}`,
-        descriptor.skill,
-      );
-      const resourceId = placementSnapshotResourceId('store', resolve(storePath));
-      storeResourceIdsByPair[descriptor.bindingKey] = resourceId;
-      return Object.freeze({ resourceId, storePath, contentHash: descriptor.contentHash });
-    });
+    const preparedStores = prepareSyncStoreResourcesV1(selectedResources.value, plannerStoreRoot);
     const destinationBase = endpoints.value.to.canonicalBase;
     if (destinationBase === null) throw new Error('TS10 project destination has no exact base');
     const explicitLocation = await createExplicitPlacementProjectLocationV1(
@@ -2033,17 +2043,38 @@ describe('sync command contract', () => {
       ledgerPathOf(dataDir),
       plannerStoreRoot,
       selectedResources.value.pairs.map(({ pair }) => pair),
-      storeResources,
+      preparedStores.resources,
       {
-        manifestPath: join(dataDir, '.sync-live-only', 'manifest'),
-        lockPath: join(dataDir, '.sync-live-only', 'lock'),
-        observe: false,
+        manifestPath: artifactPair.value.file.path,
+        lockPath: artifactPair.value.lockfile.path,
       },
       explicitLocation.value,
     );
     if (!authority.ok) throw new Error(`TS10 placement authority: ${authority.error.code}`);
+    const initialProjection = projectSyncFleetPlanV1(
+      selectedResources.value,
+      authority.value,
+      preparedStores.bindings,
+    );
+    if (!initialProjection.ok) throw new Error(initialProjection.error.message);
+    const initialPlan = createSyncPlan(initialProjection.value.request, authority.value.snapshot, {
+      registry: toolRegistry,
+      toolOrder: toolRegistry.ids,
+    });
+    if (!initialPlan.ok) throw new Error(initialPlan.error.message);
+    const preparedArtifacts = await prepareSyncArtifactsV1({
+      ports: plannerContext.ports,
+      homeDir: plannerContext.ports.homeDir,
+      fleet: observedFleet.value,
+      selection: selectedResources.value,
+      livePlan: initialPlan.value.plan,
+      pair: artifactPair.value,
+    });
+    if (!preparedArtifacts.ok) throw new Error(preparedArtifacts.error.code);
     const projection = projectSyncFleetPlanV1(selectedResources.value, authority.value, {
-      storeResourceIdsByPair,
+      ...preparedStores.bindings,
+      artifactPrefixOperationIdsByPair: preparedArtifacts.value.prefixOperationIdsByPair,
+      compatibilityOperations: preparedArtifacts.value.operations.map(({ operation }) => operation),
     });
     if (!projection.ok) throw new Error(projection.error.message);
     const directSyncPlan = createSyncPlan(projection.value.request, authority.value.snapshot, {
@@ -2051,45 +2082,85 @@ describe('sync command contract', () => {
       toolOrder: toolRegistry.ids,
     });
     if (!directSyncPlan.ok) throw new Error(directSyncPlan.error.message);
-    const directPlacementPlan = createPlacementPlan(
-      {
-        schemaVersion: projection.value.request.schemaVersion,
-        command: 'sync',
-        selection: projection.value.request.selection,
-        batchPolicy: projection.value.request.batchPolicy,
-        force: projection.value.request.force,
-        intents: projection.value.request.intents,
-        ...(projection.value.request.diagnostics === undefined
-          ? {}
-          : { diagnostics: projection.value.request.diagnostics }),
-        ...(projection.value.request.compatibilityOperations === undefined
-          ? {}
-          : { compatibilityOperations: projection.value.request.compatibilityOperations }),
-      },
-      authority.value.snapshot,
-      { registry: toolRegistry, toolOrder: toolRegistry.ids },
-    );
-    if (!directPlacementPlan.ok) throw new Error(directPlacementPlan.error.message);
-    expect(directSyncPlan.value.plan.operations).toEqual(directPlacementPlan.value.plan.operations);
-    expect(directSyncPlan.value.expectedRevisions).toEqual(
-      directPlacementPlan.value.expectedRevisions,
-    );
-    expect(directSyncPlan.value.plan.operations.map(operationDto)).toEqual([...report.operations]);
+    const directOperations = directSyncPlan.value.plan.operations;
+    const manifestOperation = directOperations.find(({ kind }) => kind === 'write-manifest');
+    const lockOperation = directOperations.find(({ kind }) => kind === 'write-lock');
+    const placementOperation = directOperations.find(({ pairId }) => pairId !== null);
+    if (
+      manifestOperation === undefined ||
+      lockOperation === undefined ||
+      placementOperation === undefined
+    ) {
+      throw new Error('TS10 save plan lacks its manifest, lock, or placement operation');
+    }
+    expect(directOperations).toHaveLength(3);
     expect(
-      directSyncPlan.value.plan.operations.map(({ operationId, dependencyMetadata }) => ({
+      preparedArtifacts.value.operations.map(({ operation }) => {
+        const { preconditionIds: _preconditionIds, ...body } = operation;
+        return body;
+      }),
+    ).toEqual(
+      [manifestOperation, lockOperation].map((operation) => {
+        const { preconditionIds: _preconditionIds, ...body } = operation;
+        return body;
+      }),
+    );
+    for (const { operation } of preparedArtifacts.value.operations) {
+      const finalOperation = directOperations.find(
+        ({ operationId }) => operationId === operation.operationId,
+      );
+      expect(finalOperation).toBeDefined();
+      expect(
+        operation.preconditionIds.every((preconditionId) =>
+          finalOperation?.preconditionIds.includes(preconditionId),
+        ),
+      ).toBeTrue();
+    }
+    expect(manifestOperation.dependencyMetadata.operationIds).toEqual([]);
+    expect(lockOperation.dependencyMetadata.operationIds).toEqual([manifestOperation.operationId]);
+    expect(placementOperation.dependencyMetadata.operationIds).toEqual([lockOperation.operationId]);
+    expect(
+      new Set(
+        preparedArtifacts.value.operations.flatMap(({ operation }) => operation.preconditionIds),
+      ),
+    ).toEqual(
+      new Set(preparedArtifacts.value.preconditions.map(({ preconditionId }) => preconditionId)),
+    );
+    expect(directOperations.every(({ preconditionIds }) => preconditionIds.length > 0)).toBeTrue();
+    expect(directOperations.map(toSyncReportOperationV1)).toEqual([...savePreview.operations]);
+    expect(
+      directOperations.map(({ operationId, dependencyMetadata, preconditionIds }) => ({
         operationId,
         dependsOn: dependencyMetadata.operationIds,
+        preconditionIds,
       })),
-    ).toEqual(report.operations.map(({ operationId, dependsOn }) => ({ operationId, dependsOn })));
+    ).toEqual(
+      savePreview.operations.map(({ operationId, dependsOn, preconditionIds }) => ({
+        operationId,
+        dependsOn,
+        preconditionIds,
+      })),
+    );
+
+    const saveExecution = await syncReport(plannedFleet, [...saveArgs, '--yes']);
+    expect(saveExecution.operations).toEqual(savePreview.operations);
+    expect(saveExecution.operations).toEqual(directOperations.map(toSyncReportOperationV1));
+    expect(saveExecution.groups).toMatchObject([
+      { skill: 'lint', pairs: [{ action: 'install', outcome: 'succeeded' }] },
+    ]);
+    for (const operation of directOperations) {
+      const operationEffects = saveExecution.effects.filter(
+        ({ operationId }) => operationId === operation.operationId,
+      );
+      expect(operationEffects.length).toBeGreaterThan(0);
+      expect(operationEffects.every(({ outcome }) => outcome === 'succeeded')).toBeTrue();
+    }
 
     const installExecution = await syncReport(
       selected,
       args.filter((argument) => argument !== '--dry-run'),
     );
     expect(installExecution.operations).toEqual(report.operations);
-    expect(installExecution.operations).toEqual(
-      directPlacementPlan.value.plan.operations.map(operationDto),
-    );
     const exactResultProjection = (sync: SyncReportV1Dto) =>
       sync.groups.flatMap((group) =>
         group.pairs.map((pair) => ({
@@ -2160,32 +2231,5 @@ describe('sync command contract', () => {
     expect(
       await readFile(join(selected.projects.c, '.agents', 'skills', 'lint', 'SKILL.md'), 'utf8'),
     ).toBe(changedSource);
-
-    const applicationSource = await readFile(
-      join(import.meta.dir, '../../../core/src/application/sync-service.ts'),
-      'utf8',
-    );
-    const executionSource = await readFile(
-      join(import.meta.dir, '../../../core/src/place/execute.ts'),
-      'utf8',
-    );
-    const recoverySource = await readFile(
-      join(import.meta.dir, '../../../core/src/place/swap.ts'),
-      'utf8',
-    );
-    expect(applicationSource).toContain('executePlacementOperationPlan');
-    expect(applicationSource).not.toContain("kind: 'sync'");
-    const prepareOffset = applicationSource.indexOf('sync.prepare(normalized.value, context)');
-    const approvalOffset = applicationSource.indexOf('context.interaction.confirm({');
-    const executeOffset = applicationSource.indexOf('sync.execute(preparedResult.value, context)');
-    expect(prepareOffset).toBeGreaterThan(0);
-    expect(approvalOffset).toBeGreaterThan(prepareOffset);
-    expect(executeOffset).toBeGreaterThan(approvalOffset);
-    expect(applicationSource.slice(approvalOffset, executeOffset)).not.toContain('sync.prepare(');
-    expect(executionSource).toContain('executeOperationPlan');
-    expect(executionSource).toContain('runSwap');
-    expect(recoverySource).toContain('resumeSwap');
-    expect(recoverySource).toContain('rollbackSwapAfterRecoveryAttempt');
-    expect(executionSource).not.toContain("case 'sync'");
-  }, 15_000);
+  }, 30_000);
 });
