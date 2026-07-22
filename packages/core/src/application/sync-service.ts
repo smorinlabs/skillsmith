@@ -21,6 +21,8 @@ import {
 import { createContentObservationExecutionPrecondition } from '../execution/preconditions.ts';
 import type { ExecutionPrecondition } from '../execution/types.ts';
 import {
+  type ExplicitPlacementProjectLocationV1,
+  createExplicitPlacementProjectLocationV1,
   createPlacementRevisionExecutionPreconditionsV1,
   createPlacementSnapshotAuthority,
   executePlacementOperationPlan,
@@ -934,22 +936,24 @@ const defaultSyncApplicationPort: SyncApplicationPort = Object.freeze({
           scope: selectedPair.scope,
         }),
       );
-      const destinationProject =
+      let destinationProjectLocation: ExplicitPlacementProjectLocationV1 | undefined;
+      if (
         fleet.value.endpoints.to.scope === 'project' &&
         fleet.value.endpoints.to.canonicalBase !== null
-          ? Object.freeze({
-              ...fleet.value.endpoints.to.project,
-              invocationCwd: fleet.value.endpoints.to.canonicalBase,
-              effectiveCwd: fleet.value.endpoints.to.canonicalBase,
-              projectRoot: fleet.value.endpoints.to.canonicalBase,
-              projectIdentity: fleet.value.endpoints.to.canonicalBase,
-            })
-          : fleet.value.endpoints.to.project;
+      ) {
+        const created = await createExplicitPlacementProjectLocationV1(
+          context.ports,
+          fleet.value.endpoints.to.project,
+          fleet.value.endpoints.to.canonicalBase,
+        );
+        if (!created.ok) return created;
+        destinationProjectLocation = created.value;
+      }
       const authority = await createPlacementSnapshotAuthority(
         toolRegistry,
         capabilityQueries,
         context.ports,
-        destinationProject,
+        fleet.value.endpoints.to.project,
         ledgerPath,
         storeRoot,
         selection.value.pairs.map(({ pair: selectedPair }) => selectedPair),
@@ -961,6 +965,7 @@ const defaultSyncApplicationPort: SyncApplicationPort = Object.freeze({
               observe: false,
             }
           : { manifestPath: pair.value.file.path, lockPath: pair.value.lockfile.path },
+        destinationProjectLocation,
       );
       if (!authority.ok) return authority;
       const initialProjection = projectSyncFleetPlanV1(

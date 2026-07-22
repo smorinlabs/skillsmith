@@ -69,6 +69,11 @@ describe('sync endpoint resolution', () => {
       kind: 'path',
       scope: 'project',
       canonicalBase: selected.destination,
+      project: {
+        effectiveCwd: selected.destination,
+        projectRoot: selected.destination,
+        projectIdentity: selected.destination,
+      },
     });
     expect(first.value.to.identity).toBe(second.value.to.identity);
     expect(first.value.to.roots.map(({ canonicalPath }) => canonicalPath)).toEqual([

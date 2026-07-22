@@ -1,12 +1,70 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runSyncApplication } from '../../src/application/sync-service.ts';
 import type {
   CurrentApplicationContext,
   PreparedSyncApplication,
   SyncApplicationPort,
 } from '../../src/application/types.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { SyncReportV1Dto } from '../../src/contracts/v1/sync.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import { ok } from '../../src/result.ts';
+
+const executionRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    executionRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+  );
+});
+
+const executionFixture = async (currentDestination: boolean) => {
+  const root = await mkdtemp(join(tmpdir(), 'skillsmith-sync-application-identity-'));
+  executionRoots.push(root);
+  const home = join(root, 'home');
+  const current = join(root, 'current');
+  const destination = currentDestination ? current : join(root, 'destination');
+  const sourceSkill = join(home, '.agents', 'skills', 'alpha');
+  const data = join(root, 'data');
+  await Promise.all(
+    [home, current, destination, sourceSkill, data].map((path) => mkdir(path, { recursive: true })),
+  );
+  const source = '---\nname: alpha\n---\n\n# endpoint identity\n';
+  await writeFile(join(sourceSkill, 'SKILL.md'), source);
+  const base = await defaultRuntimePorts();
+  const ports: RuntimePorts = {
+    ...base,
+    homeDir: home,
+    xdg: {
+      config: join(root, 'xdg', 'config'),
+      data: join(root, 'xdg', 'data'),
+      cache: join(root, 'xdg', 'cache'),
+    },
+  };
+  const applicationContext = {
+    ports,
+    artifactCoordinator: await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination')),
+    configuration: resolveRuntimeConfiguration({
+      SKILLSMITH_HOME: data,
+      CODEX_HOME: join(home, '.codex'),
+    }),
+    invocationCwd: current,
+    globalOptions: {},
+    interaction: {
+      mode: 'noninteractive',
+      choose: async () => ({ status: 'refused', reason: 'unused' }),
+      confirm: async () => {
+        throw new Error('single nonconflicting sync must not request approval');
+      },
+    },
+  } as unknown as CurrentApplicationContext;
+  return { root, current, destination, sourceSkill, source, applicationContext };
+};
 
 const emptyReport = (mode: 'dry-run' | 'execute' = 'execute'): SyncReportV1Dto => ({
   schemaVersion: 1,
@@ -301,4 +359,54 @@ describe('sync application service', () => {
     expect(outcome.exitClass).toBe('success');
     expect(outcome.report.result?.summary.succeeded).toBe(1);
   });
+
+  for (const selected of [
+    {
+      name: 'relative non-Git path',
+      currentDestination: false,
+      to: (_fixture: Awaited<ReturnType<typeof executionFixture>>) => '../destination',
+      kind: 'path',
+    },
+    {
+      name: 'absolute non-Git path',
+      currentDestination: false,
+      to: (fixture: Awaited<ReturnType<typeof executionFixture>>) => fixture.destination,
+      kind: 'path',
+    },
+    {
+      name: 'current non-Git project',
+      currentDestination: true,
+      to: (_fixture: Awaited<ReturnType<typeof executionFixture>>) => 'project',
+      kind: 'project',
+    },
+  ] as const) {
+    test(`executes into an exact ${selected.name} identity`, async () => {
+      const fixture = await executionFixture(selected.currentDestination);
+      const sourceBefore = await readFile(join(fixture.sourceSkill, 'SKILL.md'));
+      const outcome = await runSyncApplication(
+        {
+          arguments: [['alpha']],
+          options: { from: 'user', to: selected.to(fixture), tool: ['codex'] },
+        },
+        fixture.applicationContext,
+      );
+
+      expect(outcome.exitClass, JSON.stringify(outcome.diagnostics)).toBe('success');
+      expect(outcome.report.result).toMatchObject({
+        state: 'completed',
+        endpoints: {
+          to: {
+            kind: selected.kind,
+            scope: 'project',
+            projectRoot: fixture.destination,
+          },
+        },
+        summary: { succeeded: 1, failed: 0 },
+      });
+      expect(
+        await readFile(join(fixture.destination, '.agents', 'skills', 'alpha', 'SKILL.md')),
+      ).toEqual(sourceBefore);
+      expect(await readFile(join(fixture.sourceSkill, 'SKILL.md'))).toEqual(sourceBefore);
+    });
+  }
 });

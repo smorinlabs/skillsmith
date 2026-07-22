@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { toolRegistry } from '../../src/agents/registry.ts';
@@ -8,6 +8,7 @@ import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
 import { resolveProjectContext } from '../../src/context/project.ts';
 import {
   type PlacementOperationExecutionBindingInput,
+  createExplicitPlacementProjectLocationV1,
   createPlacementExecutionInput,
   createPlacementOperationExecutionBindingV1,
   createPlacementSnapshotAuthority,
@@ -130,6 +131,102 @@ test('placement snapshots bind only the selected lifecycle and verification capa
     expect(reobserved.ok).toBeTrue();
     if (reobserved.ok) {
       expect(reobserved.value.revision).toEqual(authority.value.snapshot.capabilities.revision);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('explicit project locations preserve exact non-Git identity without widening ordinary callers', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillsmith-place-explicit-project-'));
+  try {
+    const ports = await defaultRuntimePorts();
+    const discovered = await resolveProjectContext(ports, { invocationCwd: root });
+    if (!discovered.ok) throw new Error(JSON.stringify(discovered.error));
+    expect(discovered.value).toMatchObject({ projectRoot: null, projectIdentity: null });
+
+    const endpointProject = Object.freeze({
+      ...discovered.value,
+      effectiveCwd: root,
+      projectRoot: root,
+      projectIdentity: root,
+    });
+    const explicit = await createExplicitPlacementProjectLocationV1(ports, endpointProject, root);
+    if (!explicit.ok) throw new Error(JSON.stringify(explicit.error));
+    const authority = await createPlacementSnapshotAuthority(
+      toolRegistry,
+      [],
+      ports,
+      endpointProject,
+      join(root, 'placements.json'),
+      join(root, 'store'),
+      [],
+      [],
+      undefined,
+      explicit.value,
+    );
+    if (!authority.ok) throw new Error(JSON.stringify(authority.error));
+    expect(authority.value.snapshot.project.value).toMatchObject({
+      invocationCwd: root,
+      effectiveCwd: root,
+      projectRoot: root,
+      projectIdentity: root,
+      projectKind: 'non-git',
+    });
+    const reobserved = await authority.value.repositories.project.observe(
+      authority.value.snapshot.project.revision.resourceId,
+    );
+    expect(reobserved.ok).toBeTrue();
+    if (reobserved.ok) {
+      expect(reobserved.value).toEqual(authority.value.snapshot.project);
+    }
+
+    const ordinary = await createPlacementSnapshotAuthority(
+      toolRegistry,
+      [],
+      ports,
+      discovered.value,
+      join(root, 'ordinary-placements.json'),
+      join(root, 'ordinary-store'),
+      [],
+      [],
+    );
+    if (!ordinary.ok) throw new Error(JSON.stringify(ordinary.error));
+    expect(ordinary.value.snapshot.project.value).toMatchObject({
+      projectRoot: null,
+      projectIdentity: null,
+    });
+
+    const forged = Object.freeze({ ...explicit.value });
+    const refused = await createPlacementSnapshotAuthority(
+      toolRegistry,
+      [],
+      ports,
+      endpointProject,
+      join(root, 'forged-placements.json'),
+      join(root, 'forged-store'),
+      [],
+      [],
+      undefined,
+      forged,
+    );
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { code: 'flip-refused', message: 'explicit project endpoint authority is invalid' },
+    });
+
+    await writeFile(join(root, 'skillsmith.toml'), 'version = 1\n');
+    const changed = await authority.value.repositories.project.observe(
+      authority.value.snapshot.project.revision.resourceId,
+    );
+    expect(changed.ok).toBeTrue();
+    if (changed.ok) {
+      expect(changed.value.value).toMatchObject({
+        projectRoot: root,
+        projectIdentity: root,
+        discoveredConfigPath: join(root, 'skillsmith.toml'),
+      });
+      expect(changed.value.revision).not.toEqual(authority.value.snapshot.project.revision);
     }
   } finally {
     await rm(root, { recursive: true, force: true });

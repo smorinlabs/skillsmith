@@ -64,8 +64,8 @@ const canonicalProject = async (
         project: Object.freeze({
           ...project,
           effectiveCwd: base,
-          projectRoot: project.projectRoot === null ? null : base,
-          projectIdentity: project.projectIdentity === null ? null : base,
+          projectRoot: base,
+          projectIdentity: base,
         }),
       }),
     );

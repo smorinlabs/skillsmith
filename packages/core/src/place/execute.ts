@@ -52,6 +52,7 @@ import {
   type LogicalRepositoryStageV1,
   type ManifestRepository,
   type ObservedStateRepositoriesV1,
+  type ProjectStateReaderV1,
   createProjectStateReaderV1,
   createRelevantCapabilityStateReaderV1,
   stageLogicalRepositoryEditV1,
@@ -62,6 +63,7 @@ import {
   createExpectedRevisionPreconditionIdV1,
   createExpectedRevisionV1,
   sameExpectedRevisionV1,
+  semanticValueRevisionV1,
 } from '../state/types.ts';
 import {
   ledgerMigrationExecutionBinding,
@@ -128,6 +130,108 @@ export interface PlacementSnapshotAuthority {
   readonly liveResources: readonly LivePlacementResourceV1[];
   readonly storeResources: readonly PlacementStoreResource[];
 }
+
+/**
+ * Opaque proof that one explicit project endpoint is the exact canonical directory represented by
+ * its ProjectContext. Structural lookalikes are rejected by the shared authority at runtime.
+ */
+export interface ExplicitPlacementProjectLocationV1 {
+  readonly kind: 'explicit-placement-project-location';
+  readonly canonicalRoot: string;
+  readonly context: ProjectContext;
+}
+
+const explicitPlacementProjectLocations = new WeakSet<object>();
+
+export const createExplicitPlacementProjectLocationV1 = async (
+  env: Pick<PlacementPorts, 'pathKind' | 'realpath'>,
+  projectContext: ProjectContext,
+  endpointRoot: string,
+): Promise<Result<ExplicitPlacementProjectLocationV1, SkillSmithError>> => {
+  try {
+    const [canonicalRoot, canonicalContextRoot] = await Promise.all([
+      env.realpath(endpointRoot),
+      env.realpath(projectContext.projectRoot ?? projectContext.effectiveCwd),
+    ]);
+    if (
+      canonicalRoot !== canonicalContextRoot ||
+      (await env.pathKind(canonicalRoot)) !== 'dir' ||
+      (projectContext.projectRoot !== null && projectContext.projectRoot !== canonicalRoot) ||
+      (projectContext.projectIdentity !== null && projectContext.projectIdentity !== canonicalRoot)
+    ) {
+      return err(flipRefusedError('explicit project endpoint identity is inconsistent'));
+    }
+    const location = Object.freeze({
+      kind: 'explicit-placement-project-location' as const,
+      canonicalRoot,
+      context: Object.freeze({ ...projectContext }),
+    });
+    explicitPlacementProjectLocations.add(location);
+    return ok(location);
+  } catch {
+    return err(flipRefusedError('explicit project endpoint identity could not be revalidated'));
+  }
+};
+
+const normalizeExplicitProjectContext = (
+  context: ProjectContext,
+  location: ExplicitPlacementProjectLocationV1,
+): ProjectContext =>
+  Object.freeze({
+    ...context,
+    invocationCwd: location.canonicalRoot,
+    effectiveCwd: location.canonicalRoot,
+    projectRoot: location.canonicalRoot,
+    projectIdentity: location.canonicalRoot,
+  });
+
+const projectReaderForExplicitLocation = (
+  reader: ProjectStateReaderV1,
+  resourceId: string,
+  location: ExplicitPlacementProjectLocationV1,
+): ProjectStateReaderV1 => {
+  const observe: ProjectStateReaderV1['observe'] = async (requestedResourceId) => {
+    const observed = await reader.observe(requestedResourceId);
+    if (!observed.ok || observed.value.value === null) return observed;
+    const raw = observed.value.value;
+    if (raw.projectRoot !== null && raw.projectRoot !== location.canonicalRoot) return observed;
+    const value = normalizeExplicitProjectContext(raw, location);
+    try {
+      const revision = createExpectedRevisionV1({
+        schemaVersion: 1,
+        domain: 'project',
+        resourceId,
+        state: 'present',
+        targetKind: 'semantic',
+        semanticRevision: semanticValueRevisionV1('project', value),
+      });
+      return revision.ok
+        ? ok(Object.freeze({ revision: revision.value, value }))
+        : err(
+            Object.freeze({
+              code: 'state-repository' as const,
+              domain: 'project' as const,
+              reason: 'observation-failed' as const,
+            }),
+          );
+    } catch {
+      return err(
+        Object.freeze({
+          code: 'state-repository' as const,
+          domain: 'project' as const,
+          reason: 'observation-failed' as const,
+        }),
+      );
+    }
+  };
+  return Object.freeze({
+    observe,
+    observeRevision: async (requestedResourceId: string) => {
+      const observed = await observe(requestedResourceId);
+      return observed.ok ? ok(observed.value.revision) : observed;
+    },
+  });
+};
 
 export interface PlacementLifecycleExecutor {
   readonly execute: (
@@ -196,14 +300,34 @@ export const createPlacementSnapshotAuthority = async (
     readonly lockPath: string;
     readonly observe?: boolean;
   }>,
+  explicitProjectLocation?: ExplicitPlacementProjectLocationV1,
 ): Promise<Result<PlacementSnapshotAuthority, SkillSmithError>> => {
+  if (
+    explicitProjectLocation !== undefined &&
+    (!explicitPlacementProjectLocations.has(explicitProjectLocation) ||
+      canonicalPlanningString(explicitProjectLocation.context) !==
+        canonicalPlanningString(projectContext) ||
+      pairs.some(
+        (pair) =>
+          pair.scope !== 'project' || pair.scopeKey !== explicitProjectLocation.canonicalRoot,
+      ))
+  ) {
+    return err(flipRefusedError('explicit project endpoint authority is invalid'));
+  }
+  const effectiveProjectContext =
+    explicitProjectLocation === undefined
+      ? projectContext
+      : normalizeExplicitProjectContext(projectContext, explicitProjectLocation);
   const contextOptions = {
-    invocationCwd: projectContext.invocationCwd,
-    ...(projectContext.explicitConfigPath === null
+    invocationCwd: effectiveProjectContext.invocationCwd,
+    ...(effectiveProjectContext.explicitConfigPath === null
       ? {}
-      : { explicitConfigPath: projectContext.explicitConfigPath }),
+      : { explicitConfigPath: effectiveProjectContext.explicitConfigPath }),
   };
-  const projectRoot = projectContext.projectRoot ?? projectContext.effectiveCwd;
+  const projectRoot =
+    explicitProjectLocation?.canonicalRoot ??
+    effectiveProjectContext.projectRoot ??
+    effectiveProjectContext.effectiveCwd;
   const manifestPath =
     selectedArtifacts?.manifestPath ??
     projectContext.explicitConfigPath ??
@@ -233,11 +357,16 @@ export const createPlacementSnapshotAuthority = async (
     }),
   );
   const repositories: ObservedStateRepositoriesV1<RelevantCapabilitySnapshotV1> = Object.freeze({
-    project: createProjectStateReaderV1({
-      resourceId: projectResourceId,
-      ports: env,
-      context: contextOptions,
-    }),
+    project: (() => {
+      const reader = createProjectStateReaderV1({
+        resourceId: projectResourceId,
+        ports: env,
+        context: contextOptions,
+      });
+      return explicitProjectLocation === undefined
+        ? reader
+        : projectReaderForExplicitLocation(reader, projectResourceId, explicitProjectLocation);
+    })(),
     manifest:
       selectedArtifacts?.observe === false
         ? createSyntheticAbsentArtifactRepository('manifest', manifestResourceId, manifestPath)
@@ -287,7 +416,7 @@ export const createPlacementSnapshotAuthority = async (
   if (
     observed.value.project.value === null ||
     canonicalPlanningString(observed.value.project.value) !==
-      canonicalPlanningString(projectContext)
+      canonicalPlanningString(effectiveProjectContext)
   ) {
     return err(flipRefusedError('project context changed while preparing the operation; retry'));
   }
