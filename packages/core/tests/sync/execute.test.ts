@@ -3,11 +3,11 @@ import { join, resolve } from 'node:path';
 import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import { placementSnapshotResourceId } from '../../src/place/execute.ts';
 import type { ExecutableOperation, OperationSource } from '../../src/planning/types.ts';
+import { createSyncPlacementExecutionPlanV1 } from '../../src/sync/execute.ts';
 import {
-  createSyncPlacementExecutionPlanV1,
   prepareSyncStoreResourcesV1,
   toSyncReportOperationV1,
-} from '../../src/sync/execute.ts';
+} from '../../src/sync/internal-projections.ts';
 import type { SyncFleetResourceSelectionV1, SyncFleetSelectedPairV1 } from '../../src/sync/plan.ts';
 
 const HASH = `sha256:${'a'.repeat(64)}` as const;

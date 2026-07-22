@@ -47,12 +47,12 @@ import {
 } from '../state/types.ts';
 import { type PreparedSyncArtifactsV1, prepareSyncArtifactsV1 } from '../sync/artifacts.ts';
 import { resolveSyncEndpoints } from '../sync/endpoints.ts';
+import { executeSyncPlacementV1 } from '../sync/execute.ts';
 import {
   type PreparedSyncStoreV1,
-  executeSyncPlacementV1,
   prepareSyncStoreResourcesV1,
   toSyncReportOperationV1,
-} from '../sync/execute.ts';
+} from '../sync/internal-projections.ts';
 import { observeSyncFleet } from '../sync/observe.ts';
 import {
   type SyncFleetPlanProjectionV1,

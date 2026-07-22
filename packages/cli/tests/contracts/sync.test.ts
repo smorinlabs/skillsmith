@@ -60,7 +60,7 @@ import { resolveSyncEndpoints } from '../../../core/src/sync/endpoints.ts';
 import {
   prepareSyncStoreResourcesV1,
   toSyncReportOperationV1,
-} from '../../../core/src/sync/execute.ts';
+} from '../../../core/src/sync/internal-projections.ts';
 import { observeSyncFleet } from '../../../core/src/sync/observe.ts';
 import {
   createSyncPlan,

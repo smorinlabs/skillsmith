@@ -228,6 +228,11 @@ describe('@skillsmith/core public API', () => {
     expect(core.CURRENT_READ_APPLICATIONS.status).toBe(readApplications.runStatusApplication);
   });
 
+  test('does not expose internal sync preparation projections from the package root', () => {
+    expect(core).not.toHaveProperty('prepareSyncStoreResourcesV1');
+    expect(core).not.toHaveProperty('toSyncReportOperationV1');
+  });
+
   test('exports the validated registry without breaking the 1.x inventory projection', () => {
     expect(core.toolRegistry.ids).toEqual(core.SUPPORTED_TOOLS);
     expect(core.toolRegistry.toolsFor('verify-static')).toEqual(core.VERIFY_TOOLS);
