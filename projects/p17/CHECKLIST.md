@@ -1408,14 +1408,14 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 
 ## P17-G5-03 — Scope-aware pending abort and committed undo with compatibility routing
 
-Phase: 5; status: **planned**; dependencies: P17-G4B-03.
+Phase: 5; status: **ready**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-DEV-TS05, EWP-CMD-PROMOTE-TS05, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-P5-TS03, EWP-WF05, EWP-WF11.
 Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF09.
 
 ### Group gates
 
-- [ ] P17-G5-03:mapped _(pending)_
-- [ ] P17-G5-03:ready _(pending)_
+- [x] P17-G5-03:mapped _(passed)_
+- [x] P17-G5-03:ready _(passed)_
 - [ ] P17-G5-03:test-first _(pending)_
 - [ ] P17-G5-03:minimal-implementation _(pending)_
 - [ ] P17-G5-03:targeted-green _(pending)_
@@ -1436,7 +1436,7 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 - [ ] **EWP-CMD-UNDO-TS07** — dry-run/JSON/no-write behavior including yes conflict, no-prompt assertion, _(command-test; planned)_
 - [ ] **EWP-CMD-UNDO-TS08** — rollback alias behavioral equivalence/deprecation. _(command-test; planned)_
 - [ ] **EWP-CMD-UNDO-TS09** — migration/undo ordering, crash during either operation, and repeated _(command-test; planned)_
-- [ ] **EWP-P5-T05** — Unified scope-aware undo selection and compatibility aliases. _(phase-task; planned)_
+- [ ] **EWP-P5-T05** — Unified scope-aware undo selection and compatibility aliases. _(phase-task; ready)_
 - [ ] **EWP-P5-TS03** — Undo operation-family and user/project ambiguity/inference matrix. _(phase-test; planned)_
 - [ ] **EWP-WF05** — Local development lifecycle _(workflow; planned)_
 - [ ] **EWP-WF11** — Crash recovery and undo _(workflow; planned)_
