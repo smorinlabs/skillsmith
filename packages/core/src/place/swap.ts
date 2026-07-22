@@ -1644,10 +1644,6 @@ const buildStaging = async (
 ): Promise<Result<void, SkillSmithError>> => {
   const env = ctx.env;
   try {
-    // A writable sync endpoint may expose an adapter root that does not exist until its first
-    // placement. Copy staging already creates parents through copyTree; symlink staging must have
-    // the same journaled first-install behavior.
-    await env.makeDir(plan.skillsRoot);
     if (plan.op === 'promote') {
       if (!plan.promote) return err(genericError('promote plan missing promote payload'));
       await env.copyTree(plan.promote.storePath, j.stagingPath);
@@ -2088,6 +2084,8 @@ const computeBefore = async (
       mode: 'pinned',
       storePath: existing?.pinned?.storePath ?? null,
       contentHash:
+        newBuildKind === 'dir' &&
+        oldKind === 'dir' &&
         ctx.logicalOperation?.before.kind === 'placement'
           ? ctx.logicalOperation.before.contentHash
           : (existing?.pinned?.contentHash ?? null),
@@ -2485,21 +2483,34 @@ const rollbackSwapInternal = async (
         }
         liveIsNew = (await env.readLink(live)) !== before.symlinkTarget;
       } else if (oldKind === 'dir' && liveKind === 'dir') {
-        const newHash = pair.pinned?.contentHash ?? null;
-        if (
-          before.mode !== 'pinned' ||
-          before.contentHash === null ||
-          newHash === null ||
-          before.contentHash === newHash
-        ) {
-          return err(genericError(`cannot roll back ${skill}: copy identity is ambiguous`));
-        }
-        const observedHash = await contentHashOf(env, live);
-        if (!observedHash.ok) return observedHash;
-        if (observedHash.value === newHash) liveIsNew = true;
-        else if (observedHash.value === before.contentHash) liveIsNew = false;
-        else {
-          return err(genericError(`cannot roll back ${skill}: copy residue is incompatible`));
+        const durableLogical = ledger.current().transactions[j.txId];
+        const logicalOperation =
+          ctx.logicalOperation ??
+          (durableLogical === undefined ? undefined : journalOperation(durableLogical));
+        const exactCopyReplace =
+          j.op === 'install' &&
+          (logicalOperation?.kind === 'update' || logicalOperation?.kind === 'repair') &&
+          logicalOperation.after.kind === 'placement' &&
+          logicalOperation.after.representation === 'copy';
+        if (!exactCopyReplace) {
+          liveIsNew = false;
+        } else {
+          const newHash = pair.pinned?.contentHash ?? null;
+          if (
+            before.mode !== 'pinned' ||
+            before.contentHash === null ||
+            newHash === null ||
+            before.contentHash === newHash
+          ) {
+            return err(genericError(`cannot roll back ${skill}: copy identity is ambiguous`));
+          }
+          const observedHash = await contentHashOf(env, live);
+          if (!observedHash.ok) return observedHash;
+          if (observedHash.value === newHash) liveIsNew = true;
+          else if (observedHash.value === before.contentHash) liveIsNew = false;
+          else {
+            return err(genericError(`cannot roll back ${skill}: copy residue is incompatible`));
+          }
         }
       } else {
         liveIsNew = liveKind !== oldKind;

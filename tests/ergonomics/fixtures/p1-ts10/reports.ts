@@ -2,6 +2,7 @@ import type {
   ApplyReportV1Dto,
   PlanV1Dto,
   StatusV1Dto,
+  SyncReportV1Dto,
 } from '../../../../packages/core/src/contracts/v1/index.ts';
 import type {
   AgentsReport,
@@ -898,6 +899,56 @@ Summary: 0 operations, 0 succeeded, 0 failed, 0 cancelled, 0 rolled back, 0 skip
 Summary exact: { cancelled: 0, checkKinds: { 'content-integrity': 0, 'precondition-validation': 0, 'source-resolution': 0, capability: 0, verification: 0 }, checks: 0, diagnosticKinds: { conflict: 0, noop: 0, refuse: 0, skip: 0, warning: 0 }, diagnostics: 0, drift: 0, failed: 0, operationKinds: { 'link-dev': 0, 'migrate-ledger': 0, 'migrate-project-config': 0, 'move-scope': 0, 'write-lock': 0, 'write-manifest': 0, adapt: 0, install: 0, promote: 0, remove: 0, repair: 0, update: 0 }, operations: 0, refusals: 0, rolledBack: 0, skipped: 0, succeeded: 0 }
 `;
 
+export const SYNC_REPORT_FIXTURE = {
+  schemaVersion: 1,
+  kind: 'skillsmith.sync',
+  command: 'sync',
+  mode: 'dry-run',
+  state: 'ready',
+  endpoints: {
+    from: { kind: 'user', scope: 'user', selectedInput: 'user', projectRoot: null },
+    to: {
+      kind: 'project',
+      scope: 'project',
+      selectedInput: 'project',
+      projectRoot: '/fixture/project',
+    },
+  },
+  artifactPair: null,
+  options: { force: false, delete: false, save: false, dryRun: true, continueOnError: false },
+  selection: {
+    selectionSource: 'bounded-default',
+    selectionOutcome: 'filter-noop',
+    targets: [],
+    skills: [],
+    tools: [],
+    groupIds: [],
+    sourceMembers: 0,
+    destinationMembers: 0,
+  },
+  operations: [],
+  checks: [],
+  diagnostics: [],
+  approval: { required: false, outcome: 'not-required' },
+  groups: [],
+  effects: [],
+  summary: {
+    groups: 0,
+    pairs: 0,
+    planned: 0,
+    succeeded: 0,
+    failed: 0,
+    cancelled: 0,
+    skipped: 0,
+    notRun: 0,
+    changed: 0,
+    unchanged: 0,
+    effects: 0,
+    drift: 0,
+    refusals: 0,
+  },
+} satisfies SyncReportV1Dto;
+
 export const REPORT_FIXTURES = {
   agents: AGENTS_REPORT_FIXTURE,
   apply: APPLY_REPORT_FIXTURE,
@@ -915,6 +966,7 @@ export const REPORT_FIXTURES = {
   list: LIST_REPORT_FIXTURE,
   plan: PLAN_REPORT_FIXTURE,
   status: STATUS_REPORT_FIXTURE,
+  sync: SYNC_REPORT_FIXTURE,
   uninstall: UNINSTALL_REPORT_FIXTURE,
   currentUninstall: CURRENT_UNINSTALL_REPORT_FIXTURE,
   verify: VERIFY_REPORT_FIXTURE,
@@ -940,6 +992,7 @@ export const CURRENT_RENDERER_REPORTS = {
   list: REPORT_FIXTURES.list,
   plan: { result: REPORT_FIXTURES.plan },
   status: { result: STATUS_V1_DTO_FIXTURE },
+  sync: { result: REPORT_FIXTURES.sync },
   uninstall: { value: REPORT_FIXTURES.currentUninstall },
   verify: { result: REPORT_FIXTURES.verify },
   export: REPORT_FIXTURES.export,
@@ -1275,6 +1328,7 @@ export const CURRENT_JSON_GOLDENS = {
   install: CURRENT_LIFECYCLE_V2_GOLDENS.install,
   list: `${JSON.stringify(LIST_V3_DTO, null, 2)}\n`,
   plan: `${JSON.stringify(PLAN_REPORT_FIXTURE, null, 2)}\n`,
+  sync: `${JSON.stringify(SYNC_REPORT_FIXTURE, null, 2)}\n`,
   uninstall: CURRENT_LIFECYCLE_V2_GOLDENS.uninstall,
   export: `${JSON.stringify(EXPORT_REPORT_FIXTURE, null, 2)}\n`,
   init: `${JSON.stringify(INIT_REPORT_FIXTURE, null, 2)}\n`,
@@ -1296,6 +1350,7 @@ export const GOLDEN_TERMINAL_LF = {
   list: true,
   plan: true,
   status: true,
+  sync: true,
   uninstall: false,
   verify: false,
   error: true,

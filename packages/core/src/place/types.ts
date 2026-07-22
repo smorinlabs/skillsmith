@@ -42,7 +42,7 @@ export type SwapPorts = Pick<
 > &
   Pick<
     FileWritePort,
-    'copyTree' | 'fsyncFile' | 'makeDir' | 'makeSymlink' | 'removeTree' | 'rename' | 'fsyncDir'
+    'copyTree' | 'fsyncFile' | 'makeSymlink' | 'removeTree' | 'rename' | 'fsyncDir'
   >;
 
 export type FlipTool = (typeof FLIP_TOOLS)[number];

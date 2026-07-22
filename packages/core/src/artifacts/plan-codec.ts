@@ -1249,8 +1249,9 @@ export const operationMatchesMatrix = (item: PlanOperationV1): boolean => {
 };
 
 /**
- * Runtime journals additionally represent truthful machine-bound sync installs/updates. Saved
- * plans deliberately continue to use `operationMatchesMatrix`, so this exception cannot widen the
+ * Runtime journals additionally represent truthful machine-bound installs/updates from local
+ * source content. That includes sync copies and store-backed symlink re-pins. Saved plans
+ * deliberately continue to use `operationMatchesMatrix`, so this exception cannot widen the
  * persisted saved-plan contract.
  */
 const runtimeJournalOperationMatchesMatrix = (item: PlanOperationV1): boolean => {
@@ -1261,8 +1262,11 @@ const runtimeJournalOperationMatchesMatrix = (item: PlanOperationV1): boolean =>
     item.source?.kind !== 'local-dev' ||
     item.after.kind !== 'placement' ||
     item.after.classification !== 'pinned' ||
-    item.after.representation !== 'copy' ||
-    item.after.linkTarget !== null ||
+    (item.after.representation === 'copy'
+      ? item.after.linkTarget !== null
+      : item.after.representation === 'symlink'
+        ? item.after.linkTarget?.kind !== 'machine-bound'
+        : true) ||
     item.after.dangling ||
     item.after.source?.kind !== 'local-dev' ||
     item.after.source.path !== item.source.path ||

@@ -70,6 +70,16 @@ describe('artifact codec foundation', () => {
 
     expect(operationMatchesMatrix(savedOperation)).toBeFalse();
     expect(validatePlanOperationIntentShapeV1(intent)).toMatchObject({ ok: true });
+    expect(
+      validatePlanOperationIntentShapeV1({
+        ...intent,
+        after: {
+          ...intent.after,
+          representation: 'symlink',
+          linkTarget: { kind: 'machine-bound', path: '/fixture/store/alpha' },
+        },
+      }),
+    ).toMatchObject({ ok: true });
     for (const incompatible of [
       { ...intent, after: { ...intent.after, representation: 'symlink' as const } },
       { ...intent, after: { ...intent.after, linkTarget: resource.location } },

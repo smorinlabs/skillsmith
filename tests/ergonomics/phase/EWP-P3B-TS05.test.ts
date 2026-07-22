@@ -1582,7 +1582,9 @@ describe('EWP-P3B-TS05 — immutable observation, pure planning, and repositorie
       expect(forbidden, `${path} effect/orchestrator imports`).toEqual([]);
     }
     expect(
-      /export const create(?:Dev|Promote|Rollback|Placement)Plan/u.test(placementPlanner),
+      /export (?:const|function) create(?:Dev|Promote|Rollback|Placement)Plan/u.test(
+        placementPlanner,
+      ),
       'placement planner entry point',
     ).toBeTrue();
     expect(

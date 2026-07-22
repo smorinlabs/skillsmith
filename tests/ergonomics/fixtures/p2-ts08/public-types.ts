@@ -36,6 +36,7 @@ import type {
   ArtifactId,
   DecodedArtifact,
   WireCodec,
+  WireCodecError,
 } from '@skillsmith/core/contracts';
 import {
   fromJournalV1Dto,
@@ -50,6 +51,7 @@ import {
   manifestV1Codec,
   savedPlanV1Codec,
   statusV1Codec,
+  type syncV1Codec,
   toInitV1Dto,
   toJournalV1Dto,
   toLedgerV1Dto,
@@ -66,6 +68,7 @@ import type {
   ManifestV1Dto,
   SavedPlanV1Dto,
   StatusV1Dto,
+  SyncReportV1Dto,
 } from '@skillsmith/core/contracts/v1';
 import {
   agentsV2Codec,
@@ -126,6 +129,7 @@ type _V1RuntimeClosed = Assert<
     | 'installV1Codec'
     | 'planV1Codec'
     | 'statusV1Codec'
+    | 'syncV1Codec'
     | 'toAgentsV1Dto'
     | 'toCapabilitySnapshotV1Dto'
     | 'toCommandsV1Dto'
@@ -195,6 +199,10 @@ type _CurrentUninstallResultExport = Assert<
 >;
 type _CurrentInstallVersion = Assert<Equal<CurrentInstallReport['reportVersion'], 2>>;
 type _CurrentUninstallVersion = Assert<Equal<CurrentUninstallReport['reportVersion'], 2>>;
+type _SyncWireKind = Assert<Equal<SyncReportV1Dto['kind'], 'skillsmith.sync'>>;
+type _SyncCodecDto = Assert<
+  Equal<ReturnType<typeof syncV1Codec.validate>, Result<SyncReportV1Dto, WireCodecError>>
+>;
 type _LegacyInstallVersion = Assert<Equal<InstallReport['reportVersion'], 1 | undefined>>;
 type _LegacyUninstallVersion = Assert<Equal<UninstallReport['reportVersion'], 1 | undefined>>;
 type _CurrentInstallIsNotLegacy = Assert<

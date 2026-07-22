@@ -229,6 +229,9 @@ export const legacyLedgerView = (model: LedgerModel): LedgerFile => {
     if (pair === undefined) continue;
     if (!claimTerminalPairIdentity(identity.projectRoot, identity.skill, identity.tool)) continue;
     if (pair.journal != null || journal.disposition === 'rollback') continue;
+    // Record-only repair has no compatibility shadow to project. Claiming its terminal identity
+    // above still makes it a tombstone for older supported history at this pair.
+    if (journal.intent.kind === 'repair') continue;
     const candidate = legacyJournalView(journal, pair, identity.skill);
     if (!legacyJournalOperationMatchesLogicalShadow(journal, candidate.op)) continue;
     pair.journal = candidate;

@@ -430,8 +430,6 @@ const shadowOperations = (
       return INSTALL_SHADOW_OPERATIONS;
     case 'update':
       return UPDATE_SHADOW_OPERATIONS;
-    case 'repair':
-      return UPDATE_SHADOW_OPERATIONS;
     case 'remove':
       return UNINSTALL_SHADOW_OPERATIONS;
     case 'link-dev':
@@ -448,11 +446,18 @@ const shadowOperations = (
   }
 };
 
+const matchingShadowOperations = (
+  journal: LogicalJournalV1Dto,
+): readonly LegacyJournalOperation[] | null =>
+  journal.disposition === 'forward' && journal.intent.kind === 'repair'
+    ? UPDATE_SHADOW_OPERATIONS
+    : shadowOperations(journal);
+
 /** Closed operation-only subset of logical/legacy compatibility-shadow matching. */
 export const legacyJournalOperationMatchesLogicalShadow = (
   logical: LogicalJournalV1Dto,
   operation: LegacyJournalOperation,
-): boolean => shadowOperations(logical)?.includes(operation) ?? false;
+): boolean => matchingShadowOperations(logical)?.includes(operation) ?? false;
 
 /** Closed logical/legacy compatibility-shadow predicate shared by codec and status projection. */
 export const legacyJournalMatchesLogicalShadow = (
@@ -462,7 +467,7 @@ export const legacyJournalMatchesLogicalShadow = (
 ): boolean => {
   const physical = pair.journal;
   const logicalIdentity = logicalJournalPairIdentity(logical);
-  const operations = shadowOperations(logical);
+  const operations = matchingShadowOperations(logical);
   if (
     physical === undefined ||
     physical === null ||
@@ -481,7 +486,7 @@ export const legacyJournalMatchesLogicalShadow = (
     paths.size === 1 &&
     paths.has(pair.placementPath) &&
     physical.txId === logical.transactionId &&
-    legacyJournalOperationMatchesLogicalShadow(logical, physical.op) &&
+    operations.includes(physical.op) &&
     physical.phase === logical.phase &&
     physical.startedAt === logical.context.startedAt &&
     physical.completedAt === logical.completedAt

@@ -2403,6 +2403,7 @@ describe('EWP-P1-TS11', () => {
       'skillsmith plan',
       'skillsmith promote',
       'skillsmith status',
+      'skillsmith sync',
       'skillsmith uninstall',
       'skillsmith verify',
       'skillsmith version',
@@ -2412,7 +2413,7 @@ describe('EWP-P1-TS11', () => {
       JSON.stringify(expectedPaths)
     )
       findings.push('command registry: command inventory changed');
-    if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 228)
+    if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 241)
       findings.push('command registry: option inventory changed');
     const optionInventory = CURRENT_COMMAND_SPECS.flatMap((spec) =>
       spec.options.map((option) => [spec.path, option.flags]),
@@ -2420,7 +2421,7 @@ describe('EWP-P1-TS11', () => {
     const optionHash = new Bun.CryptoHasher('sha256')
       .update(JSON.stringify(optionInventory))
       .digest('hex');
-    if (optionHash !== 'be9a0856f4b30df5c5d24383d54ae31c7f309e66081856a23b8a4ff60bf19c82')
+    if (optionHash !== '73e56123acb100ca6a4d19ae641acff38bfe9f503ed12bfec106dd9a5f792fdb')
       findings.push('command registry: option rows changed');
     const adr = await readFile(
       join(ROOT, 'docs/adr/0009-operation-scoped-observation.md'),
