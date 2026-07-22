@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { lstat, readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   SYNC_SECRET_CANARIES,
@@ -12,7 +12,12 @@ import {
 import { hashManifestSemantics } from '../../../core/src/artifacts/hash.ts';
 import type { LedgerModel } from '../../../core/src/artifacts/ledger-types.ts';
 import type { PortableLockV1 } from '../../../core/src/artifacts/lock.ts';
-import { validatePlanOperationIntentV1 } from '../../../core/src/artifacts/plan-codec.ts';
+import {
+  operationMatchesMatrix,
+  validatePlanOperationIntentShapeV1,
+  validatePlanOperationIntentV1,
+} from '../../../core/src/artifacts/plan-codec.ts';
+import type { PlanOperationV1 } from '../../../core/src/artifacts/plan-types.ts';
 import { artifactContractRegistry } from '../../../core/src/artifacts/registry.ts';
 import type { NormalizedManifestV1 } from '../../../core/src/artifacts/types.ts';
 import {
@@ -36,10 +41,12 @@ import type {
   OperationDigest,
   OperationPlan,
 } from '../../../core/src/planning/types.ts';
+import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
 const openFleets: SyncFleet[] = [];
 
@@ -94,6 +101,79 @@ const present = async (path: string): Promise<boolean> =>
 
 const readLedger = async (selected: SyncFleet): Promise<LedgerModel> =>
   JSON.parse(await readFile(selected.ledger, 'utf8')) as LedgerModel;
+
+const waitForOpenTransaction = async (selected: SyncFleet): Promise<LedgerModel> => {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    try {
+      const ledger = await readLedger(selected);
+      if (Object.keys(ledger.transactions).length > 0) return ledger;
+    } catch {
+      // The writer publishes atomically; retry if the observation races fixture setup.
+    }
+    await Bun.sleep(1);
+  }
+  throw new Error('sync runtime never exposed a prepared transaction');
+};
+
+const addSlowRuntimeSources = async (
+  selected: SyncFleet,
+): Promise<Readonly<Record<string, string>>> => {
+  const roots: Record<string, string> = {
+    lint: selected.skills.userLint,
+    review: selected.skills.userReview,
+    tail: join(selected.home, '.agents', 'skills', 'tail'),
+  };
+  await mkdir(roots.tail as string, { recursive: true });
+  await writeFile(
+    join(roots.tail as string, 'SKILL.md'),
+    '---\nname: tail\ndescription: runtime tail fixture\n---\n\n# tail\n',
+  );
+  for (const root of Object.values(roots)) {
+    const payload = join(root, 'payload');
+    await mkdir(payload, { recursive: true });
+    await Promise.all(
+      Array.from({ length: 800 }, (_, index) =>
+        writeFile(
+          join(payload, `${String(index).padStart(4, '0')}.txt`),
+          `${String(index).padStart(4, '0')}:${'x'.repeat(4096)}\n`,
+        ),
+      ),
+    );
+  }
+  return Object.freeze(roots);
+};
+
+const spawnedSyncProduct = async (
+  selected: SyncFleet,
+  args: readonly string[],
+  afterPrepared: (child: ReturnType<typeof Bun.spawn>) => Promise<void>,
+): Promise<Readonly<{ exitCode: number; stdout: string; stderr: string }>> => {
+  const child = Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args], {
+    cwd: selected.cwd,
+    env: hermeticGitEnv(selected.env),
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  await waitForOpenTransaction(selected);
+  await afterPrepared(child);
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return Object.freeze({ exitCode, stdout, stderr });
+};
+
+const decodeSyncProduct = (
+  product: Readonly<{ exitCode: number; stdout: string; stderr: string }>,
+): SyncReportV1Dto => {
+  const decoded = syncV1Codec.decode(product.stdout);
+  expect(decoded.ok, `${product.stderr}\n${product.stdout}`).toBeTrue();
+  if (!decoded.ok) throw new Error(decoded.error.message);
+  return decoded.value;
+};
 
 const seedDestinationOnlyDeclaration = async (selected: SyncFleet): Promise<void> => {
   const manifestCodec = artifactContractRegistry.get('manifest', 1);
@@ -587,6 +667,34 @@ describe('sync command contract', () => {
     expect(forced.effects).toEqual(
       expect.arrayContaining([expect.objectContaining({ role: 'backup', outcome: 'planned' })]),
     );
+    const forcedPair = pairs(forced)[0];
+    const forcedOperation = forced.operations[0];
+    if (forcedPair === undefined || forcedOperation === undefined) {
+      throw new Error('forced sync preview omitted its selected pair or operation');
+    }
+    const humanForce = await runSyncCli(selected, [...conflictArgs, '--force', '--dry-run']);
+    expect(humanForce.exitCode, humanForce.stderr).toBe(0);
+    expect(humanForce.stdout).toContain(
+      'Options: force=true delete=false save=false dry-run=true continue-on-error=false',
+    );
+    expect(humanForce.stdout).toContain(`group: ${forced.groups[0]?.groupId} (review)`);
+    expect(humanForce.stdout).toContain(`${forcedOperation.operationId} update review / codex`);
+    expect(humanForce.stdout).toContain("conflictType: 'unmanaged-target'");
+    expect(humanForce.stdout).toContain("forced: 'backup-and-replace'");
+    expect(humanForce.stdout).toContain('requested: true');
+    expect(humanForce.stdout).toContain('used: true');
+    for (const effect of forced.effects) {
+      expect(humanForce.stdout).toContain(`action: '${effect.action}'`);
+      expect(humanForce.stdout).toContain(`operationId: '${effect.operationId}'`);
+      expect(humanForce.stdout).toContain(`outcome: '${effect.outcome}'`);
+      expect(humanForce.stdout).toContain(`role: '${effect.role}'`);
+    }
+    expect(humanForce.stdout).toContain(
+      `Summary exact: { cancelled: 0, changed: ${forced.summary.changed}, drift: ${forced.summary.drift}, effects: ${forced.summary.effects}`,
+    );
+    for (const canary of SYNC_SECRET_CANARIES) {
+      expect(`${humanForce.stdout}${humanForce.stderr}`).not.toContain(canary);
+    }
     const approval = await syncReport(selected, [...conflictArgs, '--force'], 2);
     expect(approval.approval).toEqual({ required: true, outcome: 'refused' });
     expect(await readSkillBytes(selected.skills.projectBReview)).toEqual(destination);
@@ -1297,6 +1405,95 @@ describe('sync command contract', () => {
     );
     expect(cancelled.map(({ outcome }) => outcome)).toEqual(['cancelled', 'cancelled']);
 
+    const prefixFleet = await fleet();
+    const prefixArgs = [
+      'sync',
+      '--from',
+      prefixFleet.projects.a,
+      '--to',
+      prefixFleet.projects.c,
+      '--tool',
+      'codex',
+      '--save',
+      '--file',
+      prefixFleet.artifacts.explicitManifest,
+      '--lockfile',
+      prefixFleet.artifacts.explicitLock,
+    ] as const;
+    const prefixPreview = await syncReport(prefixFleet, [...prefixArgs, '--dry-run']);
+    const prefixLock = prefixPreview.operations.find(({ kind }) => kind === 'write-lock');
+    const prefixedPairs = prefixPreview.operations.filter(({ pairId }) => pairId !== null);
+    if (prefixLock === undefined) throw new Error('sync artifact prefix lacks its lock operation');
+    expect(prefixedPairs).toHaveLength(2);
+    expect(
+      prefixedPairs.every(({ dependsOn }) => dependsOn.includes(prefixLock.operationId)),
+    ).toBeTrue();
+    expect(new Set(prefixedPairs.map(({ groupId }) => groupId)).size).toBe(2);
+
+    const prefixOperations: readonly ExecutableOperation[] = prefixPreview.operations.map(
+      (operation) =>
+        Object.freeze({
+          ...operation,
+          dependencyMetadata: Object.freeze({
+            domain: 'skillsmith.operation-dependency' as const,
+            schemaVersion: 1 as const,
+            operationIds: operation.dependsOn,
+          }),
+        }) as unknown as ExecutableOperation,
+    );
+    const prefixPlan: OperationPlan<'sync'> = Object.freeze({
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'sync',
+      selection: Object.freeze({
+        source: prefixPreview.selection.selectionSource,
+        outcome: prefixPreview.selection.selectionOutcome,
+        targets: prefixPreview.selection.targets,
+        skills: prefixPreview.selection.skills,
+        tools: prefixPreview.selection.tools,
+        scopes: Object.freeze(
+          [...new Set(prefixOperations.map(({ scope }) => scope))].filter(
+            (scope): scope is NonNullable<typeof scope> => scope !== null,
+          ),
+        ),
+        groupIds: prefixPreview.selection.groupIds,
+      }),
+      batchPolicy: 'continue-on-error',
+      operations: prefixOperations,
+      checks: [],
+      diagnostics: [],
+    });
+    const prefixCalls: string[] = [];
+    const prefixResults = await scheduleOperationPlan(
+      prefixPlan,
+      prefixOperations.map((operation) =>
+        binding(
+          operation,
+          operation.operationId === prefixLock.operationId ? 'failed' : 'succeeded',
+          () => {
+            prefixCalls.push(operation.operationId);
+          },
+        ),
+      ),
+    );
+    expect(
+      prefixCalls.map(
+        (operationId) =>
+          prefixOperations.find((operation) => operation.operationId === operationId)?.kind,
+      ),
+    ).toEqual(['write-manifest', 'write-lock']);
+    expect(
+      prefixResults
+        .filter(({ operationId }) => prefixedPairs.some((pair) => pair.operationId === operationId))
+        .map(({ outcome }) => outcome),
+    ).toEqual(['skipped-after-failure', 'skipped-after-failure']);
+    const prefixExecution = await syncReport(prefixFleet, [...prefixArgs, '--yes']);
+    expect(prefixExecution).toMatchObject({
+      state: 'completed',
+      summary: { succeeded: 2, failed: 0, skipped: 0 },
+    });
+    expect(prefixExecution.operations).toEqual(prefixPreview.operations);
+
     const recoveryFleet = await buildFixtureFleet();
     try {
       const recoverySkill = 'sync-recovery';
@@ -1456,6 +1653,132 @@ describe('sync command contract', () => {
       await destroyFixtureFleet(recoveryFleet);
     }
 
+    const exerciseRuntimeFailure = async (
+      continueOnError: boolean,
+    ): Promise<Readonly<{ report: SyncReportV1Dto; order: readonly string[] }>> => {
+      const runtimeFleet = await fleet();
+      const sourceRoots = await addSlowRuntimeSources(runtimeFleet);
+      const runtimeArgs = [
+        'sync',
+        '--from',
+        'user',
+        '--to',
+        runtimeFleet.projects.c,
+        '--tool',
+        'codex',
+        ...(continueOnError ? ['--continue-on-error'] : []),
+      ] as const;
+      const runtimePreview = await syncReport(runtimeFleet, [...runtimeArgs, '--dry-run']);
+      const order = runtimePreview.operations
+        .filter(({ pairId, skill }) => pairId !== null && skill !== null)
+        .map(({ skill }) => skill as string);
+      expect(order).toHaveLength(3);
+      const secondSkill = order[1];
+      if (secondSkill === undefined || sourceRoots[secondSkill] === undefined) {
+        throw new Error('runtime failure fixture lacks its second scheduled source');
+      }
+      const product = await spawnedSyncProduct(
+        runtimeFleet,
+        [...runtimeArgs, '--yes', '--json'],
+        async () => {
+          await rm(sourceRoots[secondSkill] as string, { recursive: true });
+        },
+      );
+      expect(product.exitCode, `${product.stderr}\n${product.stdout}`).toBe(1);
+      const runtimeReport = decodeSyncProduct(product);
+      const outcomeBySkill = new Map(
+        runtimeReport.groups.map((group) => [group.skill, group.pairs[0]] as const),
+      );
+      const firstSkill = order[0];
+      const thirdSkill = order[2];
+      if (firstSkill === undefined || thirdSkill === undefined) {
+        throw new Error('runtime failure fixture operation order is incomplete');
+      }
+      expect(runtimeReport).toMatchObject({
+        state: 'partial',
+        options: { continueOnError },
+        summary: {
+          succeeded: continueOnError ? 2 : 1,
+          failed: 1,
+          skipped: continueOnError ? 0 : 1,
+        },
+      });
+      expect(outcomeBySkill.get(firstSkill)).toMatchObject({ outcome: 'succeeded' });
+      expect(outcomeBySkill.get(secondSkill)).toMatchObject({
+        outcome: 'failed',
+        failure: { code: 'generic' },
+      });
+      expect(outcomeBySkill.get(thirdSkill)).toMatchObject(
+        continueOnError
+          ? { outcome: 'succeeded', skipReason: null }
+          : { outcome: 'skipped', skipReason: 'skipped-after-failure' },
+      );
+      expect(
+        await present(join(runtimeFleet.projects.c, '.agents', 'skills', firstSkill)),
+      ).toBeTrue();
+      expect(
+        await present(join(runtimeFleet.projects.c, '.agents', 'skills', secondSkill)),
+      ).toBeFalse();
+      expect(await present(join(runtimeFleet.projects.c, '.agents', 'skills', thirdSkill))).toBe(
+        continueOnError,
+      );
+      const runtimeLedger = await readLedger(runtimeFleet);
+      expect(Object.keys(runtimeLedger.transactions)).toHaveLength(0);
+      expect(runtimeLedger.projects[runtimeFleet.projects.c]?.skills).toHaveProperty(firstSkill);
+      if (continueOnError) {
+        expect(runtimeLedger.projects[runtimeFleet.projects.c]?.skills).toHaveProperty(thirdSkill);
+      } else {
+        expect(runtimeLedger.projects[runtimeFleet.projects.c]?.skills).not.toHaveProperty(
+          thirdSkill,
+        );
+      }
+      expect(runtimeLedger.projects[runtimeFleet.projects.c]?.skills).not.toHaveProperty(
+        secondSkill,
+      );
+      expect(runtimeLedger.history.some(({ intent }) => intent.skill === firstSkill)).toBeTrue();
+      expect(runtimeLedger.history.some(({ intent }) => intent.skill === secondSkill)).toBeFalse();
+      return Object.freeze({ report: runtimeReport, order: Object.freeze(order) });
+    };
+
+    const failFastRuntime = await exerciseRuntimeFailure(false);
+    const continuedRuntime = await exerciseRuntimeFailure(true);
+    expect(failFastRuntime.order).toHaveLength(continuedRuntime.order.length);
+
+    const cancellationFleet = await fleet();
+    await addSlowRuntimeSources(cancellationFleet);
+    const cancellationArgs = [
+      'sync',
+      '--from',
+      'user',
+      '--to',
+      cancellationFleet.projects.c,
+      '--tool',
+      'codex',
+      '--yes',
+      '--json',
+    ] as const;
+    const cancelledProduct = await spawnedSyncProduct(
+      cancellationFleet,
+      cancellationArgs,
+      async (child) => {
+        child.kill('SIGINT');
+      },
+    );
+    expect(cancelledProduct.exitCode, cancelledProduct.stderr).toBe(130);
+    const cancelledReport = decodeSyncProduct(cancelledProduct);
+    expect(cancelledReport).toMatchObject({
+      state: 'partial',
+      summary: { failed: 0, cancelled: 3, succeeded: 0 },
+    });
+    expect(pairs(cancelledReport).every(({ outcome }) => outcome === 'cancelled')).toBeTrue();
+    const cancellationLedger = await readLedger(cancellationFleet);
+    expect(Object.keys(cancellationLedger.transactions).length).toBeGreaterThan(0);
+    expect(cancellationLedger.history).toHaveLength(0);
+    for (const skill of cancelledReport.selection.skills) {
+      expect(
+        await present(join(cancellationFleet.projects.c, '.agents', 'skills', skill)),
+      ).toBeFalse();
+    }
     const report = await syncReport(selected, [
       'sync',
       '--from',
@@ -1509,7 +1832,7 @@ describe('sync command contract', () => {
     });
     expect(await readSkillBytes(approvalFleet.skills.projectBReview)).toEqual(liveBefore);
     expect((await readLedger(approvalFleet)).transactions).toEqual({});
-  }, 25_000);
+  }, 60_000);
 
   test('EWP-CMD-SYNC-TS10 — output exposes shared planner operations', async () => {
     const selected = await fleet();
@@ -1539,16 +1862,24 @@ describe('sync command contract', () => {
       dependsOn: [],
     });
     expect(report.operations[0]).not.toHaveProperty('syncKind');
-    const {
-      dependsOn: _dependsOn,
-      preconditionIds: _preconditionIds,
-      reason: _reason,
-      requiredCheckIds: _requiredCheckIds,
-      selectionSource: _selectionSource,
-      ...runtimeJournalIntent
-    } = report.operations[0] as NonNullable<(typeof report.operations)[number]>;
-    expect(validatePlanOperationIntentV1(runtimeJournalIntent).ok).toBeTrue();
-    expect(validatePlanOperationIntentV1(report.operations[0]).ok).toBeFalse();
+    const runtimeIntentFor = (operation: NonNullable<(typeof report.operations)[number]>) => {
+      const {
+        dependsOn: _dependsOn,
+        preconditionIds: _preconditionIds,
+        reason: _reason,
+        requiredCheckIds: _requiredCheckIds,
+        selectionSource: _selectionSource,
+        ...runtimeJournalIntent
+      } = operation;
+      return runtimeJournalIntent;
+    };
+    const installOperation = report.operations[0];
+    if (installOperation === undefined) throw new Error('sync install operation is missing');
+    const installIntent = runtimeIntentFor(installOperation);
+    expect(operationMatchesMatrix(installOperation as unknown as PlanOperationV1)).toBeFalse();
+    expect(validatePlanOperationIntentShapeV1(installIntent).ok).toBeTrue();
+    expect(validatePlanOperationIntentV1(installIntent).ok).toBeTrue();
+    expect(validatePlanOperationIntentV1(installOperation).ok).toBeFalse();
     expect(pairs(report)[0]).toMatchObject({
       action: report.operations[0]?.kind,
       outcome: 'planned',
@@ -1558,6 +1889,82 @@ describe('sync command contract', () => {
         .map(({ operationId }) => operationId)
         .every((operationId) => operationId === report.operations[0]?.operationId),
     ).toBeTrue();
+
+    const installExecution = await syncReport(
+      selected,
+      args.filter((argument) => argument !== '--dry-run'),
+    );
+    expect(installExecution.operations).toEqual(report.operations);
+    const exactResultProjection = (sync: SyncReportV1Dto) =>
+      sync.groups.flatMap((group) =>
+        group.pairs.map((pair) => ({
+          groupId: group.groupId,
+          skill: group.skill,
+          tool: pair.tool,
+          action: pair.action,
+          outcome: pair.outcome,
+        })),
+      );
+    expect(exactResultProjection(installExecution)).toEqual(
+      installExecution.operations.flatMap((operation) =>
+        operation.pairId !== null &&
+        operation.skill !== null &&
+        operation.tool !== null &&
+        (operation.kind === 'install' || operation.kind === 'update' || operation.kind === 'remove')
+          ? [
+              {
+                groupId: operation.groupId,
+                skill: operation.skill,
+                tool: operation.tool,
+                action: operation.kind,
+                outcome: 'succeeded',
+              },
+            ]
+          : [],
+      ),
+    );
+    expect(
+      installExecution.effects.every(
+        ({ operationId, outcome }) =>
+          operationId === installOperation.operationId && outcome === 'succeeded',
+      ),
+    ).toBeTrue();
+
+    const changedSource = `${await readFile(join(selected.skills.userLint, 'SKILL.md'), 'utf8')}\nchanged\n`;
+    await writeFile(join(selected.skills.userLint, 'SKILL.md'), changedSource);
+    const updateArgs = [
+      'sync',
+      'lint',
+      '--from',
+      'user',
+      '--to',
+      selected.projects.c,
+      '--tool',
+      'codex',
+      '--force',
+    ] as const;
+    const updatePreview = await syncReport(selected, [...updateArgs, '--dry-run']);
+    const updateOperation = updatePreview.operations[0];
+    if (updateOperation === undefined) throw new Error('sync update operation is missing');
+    expect(updateOperation).toMatchObject({ kind: 'update', source: { kind: 'local-dev' } });
+    const updateIntent = runtimeIntentFor(updateOperation);
+    expect(operationMatchesMatrix(updateOperation as unknown as PlanOperationV1)).toBeFalse();
+    expect(validatePlanOperationIntentShapeV1(updateIntent).ok).toBeTrue();
+    expect(validatePlanOperationIntentV1(updateIntent).ok).toBeTrue();
+    const updateExecution = await syncReport(selected, [...updateArgs, '--yes']);
+    expect(updateExecution.operations).toEqual(updatePreview.operations);
+    expect(exactResultProjection(updateExecution)).toEqual([
+      {
+        groupId: updateOperation.groupId,
+        skill: 'lint',
+        tool: 'codex',
+        action: 'update',
+        outcome: 'succeeded',
+      },
+    ]);
+    expect(
+      await readFile(join(selected.projects.c, '.agents', 'skills', 'lint', 'SKILL.md'), 'utf8'),
+    ).toBe(changedSource);
 
     const applicationSource = await readFile(
       join(import.meta.dir, '../../../core/src/application/sync-service.ts'),

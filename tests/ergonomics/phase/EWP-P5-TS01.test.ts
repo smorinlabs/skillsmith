@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { lstat, readFile } from 'node:fs/promises';
+import { lstat, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { LedgerModel } from '../../../packages/core/src/artifacts/ledger-types.ts';
 import { type SyncReportV1Dto, syncV1Codec } from '../../../packages/core/src/contracts/v1/sync.ts';
@@ -310,8 +310,206 @@ describe('EWP-P5-TS01', () => {
 
       const sourceAfter = await Promise.all(sourcePaths.map(readSkillBytes));
       expect(sourceAfter).toEqual(sourceBefore);
+
+      const userDestinationFleet = await createSyncFleet();
+      try {
+        const projectLintBefore = await readSkillBytes(userDestinationFleet.skills.projectALint);
+        const projectClaudeBefore = await readSkillBytes(
+          userDestinationFleet.skills.projectAClaudeReview,
+        );
+        const managedBefore = await readSkillBytes(userDestinationFleet.skills.managedClaudePolicy);
+
+        const systemToUser = await report(userDestinationFleet, [
+          'sync',
+          '--from',
+          'system',
+          '--to',
+          'user',
+          '--tool',
+          'codex',
+        ]);
+        expect(systemToUser).toMatchObject({
+          mode: 'execute',
+          state: 'completed',
+          endpoints: {
+            from: { scope: 'system', projectRoot: null },
+            to: { scope: 'user', projectRoot: null },
+          },
+          selection: { selectionOutcome: 'filter-noop' },
+          summary: { groups: 0, changed: 0 },
+        });
+
+        const unsupportedSystemToUser = await runSyncCli(userDestinationFleet, [
+          'sync',
+          '--from',
+          'system',
+          '--to',
+          'user',
+          '--tool',
+          'claude-code',
+          '--json',
+        ]);
+        expect(unsupportedSystemToUser.exitCode).toBe(4);
+        expect(JSON.parse(unsupportedSystemToUser.stdout)).toMatchObject({
+          kind: 'error',
+          code: 'tool-unavailable',
+          exitCode: 4,
+        });
+
+        const managedToUser = await report(userDestinationFleet, [
+          'sync',
+          'policy',
+          '--from',
+          'managed',
+          '--to',
+          'user',
+          '--tool',
+          'claude-code',
+        ]);
+        expect(managedToUser).toMatchObject({
+          mode: 'execute',
+          state: 'completed',
+          endpoints: {
+            from: { scope: 'managed', projectRoot: null },
+            to: { scope: 'user', projectRoot: null },
+          },
+          summary: { succeeded: 1, changed: 1 },
+        });
+        expect(
+          await readSkillBytes(join(userDestinationFleet.home, '.claude', 'skills', 'policy')),
+        ).toEqual(managedBefore);
+
+        const managedCodexZero = await report(
+          userDestinationFleet,
+          ['sync', 'policy', '--from', 'managed', '--to', 'user', '--tool', 'codex', '--dry-run'],
+          4,
+        );
+        expect(managedCodexZero).toMatchObject({
+          state: 'refused',
+          selection: { selectionOutcome: 'filter-noop', tools: ['codex'] },
+          summary: { groups: 0, pairs: 0, refusals: 1 },
+        });
+
+        await rm(userDestinationFleet.skills.userLint, { recursive: true });
+        const projectCodexToUser = await report(userDestinationFleet, [
+          'sync',
+          'lint',
+          '--from',
+          userDestinationFleet.projects.a,
+          '--to',
+          'user',
+          '--tool',
+          'codex',
+        ]);
+        expect(projectCodexToUser).toMatchObject({
+          state: 'completed',
+          summary: { succeeded: 1, changed: 1 },
+        });
+        expect(await readSkillBytes(userDestinationFleet.skills.userLint)).toEqual(
+          projectLintBefore,
+        );
+
+        await rm(userDestinationFleet.skills.userClaudeReview, { recursive: true });
+        const projectClaudeToUser = await report(userDestinationFleet, [
+          'sync',
+          'review',
+          '--from',
+          userDestinationFleet.projects.a,
+          '--to',
+          'user',
+          '--tool',
+          'claude-code',
+        ]);
+        expect(projectClaudeToUser).toMatchObject({
+          state: 'completed',
+          summary: { succeeded: 1, changed: 1 },
+        });
+        expect(await readSkillBytes(userDestinationFleet.skills.userClaudeReview)).toEqual(
+          projectClaudeBefore,
+        );
+
+        const userToProject = await report(userDestinationFleet, [
+          'sync',
+          'lint',
+          '--from',
+          'user',
+          '--to',
+          userDestinationFleet.projects.c,
+          '--tool',
+          'codex',
+        ]);
+        expect(userToProject).toMatchObject({
+          state: 'completed',
+          endpoints: {
+            from: { scope: 'user' },
+            to: { scope: 'project', projectRoot: userDestinationFleet.projects.c },
+          },
+          summary: { succeeded: 1 },
+        });
+
+        const projectBToC = await report(userDestinationFleet, [
+          'sync',
+          'review',
+          '--from',
+          userDestinationFleet.projects.b,
+          '--to',
+          userDestinationFleet.projects.c,
+          '--tool',
+          'codex',
+        ]);
+        expect(projectBToC).toMatchObject({
+          state: 'completed',
+          endpoints: {
+            from: { projectRoot: userDestinationFleet.projects.b },
+            to: { projectRoot: userDestinationFleet.projects.c },
+          },
+          summary: { succeeded: 1 },
+        });
+
+        for (const tool of ['kilo-code', 'opencode'] as const) {
+          const userRefusal = await report(
+            userDestinationFleet,
+            [
+              'sync',
+              'lint',
+              '--from',
+              userDestinationFleet.projects.a,
+              '--to',
+              'user',
+              '--tool',
+              tool,
+            ],
+            4,
+          );
+          expect(userRefusal).toMatchObject({
+            state: 'refused',
+            endpoints: { to: { scope: 'user' } },
+            summary: { refusals: 1 },
+          });
+        }
+
+        expect(await readSkillBytes(userDestinationFleet.skills.projectALint)).toEqual(
+          projectLintBefore,
+        );
+        expect(await readSkillBytes(userDestinationFleet.skills.projectAClaudeReview)).toEqual(
+          projectClaudeBefore,
+        );
+        expect(await readSkillBytes(userDestinationFleet.skills.managedClaudePolicy)).toEqual(
+          managedBefore,
+        );
+        const userLedger = JSON.parse(
+          await readFile(userDestinationFleet.ledger, 'utf8'),
+        ) as LedgerModel;
+        expect(userLedger.skills).toHaveProperty('lint.tools.codex');
+        expect(userLedger.skills).toHaveProperty('review.tools.claude-code');
+        expect(userLedger.skills).toHaveProperty('policy.tools.claude-code');
+        expect(userLedger.projects).toHaveProperty(userDestinationFleet.projects.c);
+        expect(userLedger.projects).not.toHaveProperty(userDestinationFleet.projects.bAlias);
+      } finally {
+        await destroySyncFleet(userDestinationFleet);
+      }
     } finally {
       await destroySyncFleet(fleet);
     }
-  }, 35_000);
+  }, 50_000);
 });
