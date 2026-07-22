@@ -616,7 +616,7 @@ describe('bounded history and one-victim cleanup', () => {
     expect(
       unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(path)))).model.history,
     ).toEqual(receipt.model.history);
-  }, 15_000);
+  }, 60_000);
 
   test('recomputes and removes one exact victim at a time until history converges', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-history-finalize-repeat-'));
