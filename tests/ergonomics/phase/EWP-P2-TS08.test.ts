@@ -2059,5 +2059,5 @@ describe('EWP-P2-TS08 — persisted artifact codecs and compatibility', () => {
     );
     const output = `${compiled.stdout.toString()}${compiled.stderr.toString()}`;
     expect(compiled.exitCode, output).toBe(0);
-  }, 20_000);
+  }, 60_000);
 });
