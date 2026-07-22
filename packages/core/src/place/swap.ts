@@ -1733,8 +1733,13 @@ const reclaimBackup = async (
 const trustedInstallBackupHashes = (
   before: Journal['before'],
   newHash: string | null,
+  logicalOperation: ExecutableOperation | null | undefined,
 ): readonly (string | null)[] =>
-  before.mode === 'pinned' && before.contentHash !== null ? [newHash, before.contentHash] : [];
+  logicalOperation?.conflict?.backup === 'required'
+    ? []
+    : before.mode === 'pinned' && before.contentHash !== null
+      ? [newHash, before.contentHash]
+      : [];
 
 const trustedPortableRemovalBackupHash = (operation: ExecutableOperation | null | undefined) =>
   operation?.kind === 'remove' &&
@@ -1857,7 +1862,7 @@ const commit = async (
     const reclaimed = await reclaimBackup(
       env,
       j.backupPath,
-      trustedInstallBackupHashes(j.before, newHash),
+      trustedInstallBackupHashes(j.before, newHash, ctx.logicalOperation),
       'replaced',
     );
     if (!reclaimed.ok) return reclaimed;
@@ -2648,6 +2653,7 @@ const cleanupCanonicalCommittedAcquire = async (
   plan: SwapPlan,
   pair: PairRecord,
   shadow: Journal,
+  logicalOperation: ExecutableOperation,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
   if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
   const syncedBeforeCleanup = await guardFs(
@@ -2664,7 +2670,7 @@ const cleanupCanonicalCommittedAcquire = async (
     const reclaimed = await reclaimBackup(
       ctx.env,
       shadow.backupPath,
-      trustedInstallBackupHashes(shadow.before, newHash),
+      trustedInstallBackupHashes(shadow.before, newHash, logicalOperation),
       'replaced',
     );
     if (!reclaimed.ok) return reclaimed;
@@ -2874,6 +2880,7 @@ const sweepCommittedAcquireJournalsInternal = async (
         plan.value,
         target.pair,
         target.shadow,
+        journalOperation(journal),
       );
       if (!done.ok) {
         completeCanonicalObservations(

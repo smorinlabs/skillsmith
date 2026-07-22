@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSyncApplication } from '../../src/application/sync-service.ts';
@@ -438,5 +438,76 @@ describe('sync application service', () => {
     expect(
       await readFile(join(fixture.destination, '.agents', 'skills', 'alpha', 'SKILL.md'), 'utf8'),
     ).toBe(fixture.source);
+  });
+
+  test('force-replaces an edited managed copy with exact before and after identities', async () => {
+    const fixture = await executionFixture(false);
+    const destinationRoot = join(fixture.destination, '.agents', 'skills');
+    const destinationSkill = join(destinationRoot, 'alpha');
+    await mkdir(destinationSkill, { recursive: true });
+    await writeFile(join(destinationSkill, 'SKILL.md'), '# unmanaged destination\n');
+    const approvedContext = {
+      ...fixture.applicationContext,
+      interaction: {
+        mode: 'noninteractive',
+        choose: async () => ({ status: 'refused', reason: 'unused' }),
+        confirm: async () => ({ status: 'resolved', value: true }),
+      },
+    } as unknown as CurrentApplicationContext;
+    const request = {
+      arguments: [['alpha']],
+      options: {
+        from: 'user',
+        to: '../destination',
+        tool: ['codex'],
+        force: true,
+        yes: true,
+      },
+    } as const;
+
+    const first = await runSyncApplication(request, approvedContext);
+    expect(first.exitClass, JSON.stringify(first.diagnostics)).toBe('success');
+    expect(first.report.result).toMatchObject({
+      state: 'completed',
+      groups: [
+        {
+          pairs: [
+            {
+              action: 'update',
+              outcome: 'succeeded',
+              force: { requested: true, used: true, required: true, outcome: 'succeeded' },
+            },
+          ],
+        },
+      ],
+    });
+
+    const edited = '---\nname: alpha\n---\n\n# edited managed destination\n';
+    await writeFile(join(destinationSkill, 'SKILL.md'), edited);
+    const rerun = await runSyncApplication(request, approvedContext);
+    expect(rerun.exitClass, JSON.stringify(rerun.diagnostics)).toBe('success');
+    expect(rerun.report.result).toMatchObject({
+      state: 'completed',
+      groups: [
+        {
+          pairs: [
+            {
+              action: 'update',
+              outcome: 'succeeded',
+              force: { requested: true, used: true, required: true, outcome: 'succeeded' },
+            },
+          ],
+        },
+      ],
+      summary: { succeeded: 1, failed: 0, changed: 1 },
+    });
+    expect(await readFile(join(destinationSkill, 'SKILL.md'), 'utf8')).toBe(fixture.source);
+    const backups = (await readdir(destinationRoot, { withFileTypes: true })).filter(
+      (entry) => entry.isDirectory() && entry.name.startsWith('.skillsmith-backup-alpha-'),
+    );
+    const backupBytes = await Promise.all(
+      backups.map((entry) => readFile(join(destinationRoot, entry.name, 'SKILL.md'), 'utf8')),
+    );
+    expect(backupBytes).toContain(edited);
   });
 });

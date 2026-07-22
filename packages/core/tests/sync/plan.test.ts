@@ -10,6 +10,7 @@ import {
   type StoreStateV1,
   createContentObservationIdentityV1,
   createContentObservationPreconditionIdV1,
+  createExpectedRevisionPreconditionIdV1,
   createExpectedRevisionV1,
   createStoreSnapshotIdentityV1,
 } from '../../src/state/types.ts';
@@ -291,6 +292,68 @@ describe('sync placement planning projection', () => {
     expect(
       unused.value.plan.diagnostics.some(({ reason }) => reason.code === 'sync-force-required'),
     ).toBeFalse();
+  });
+
+  test('binds an edited managed copy to distinct exact logical before and after hashes', () => {
+    const live: LivePlacementStateV1 = {
+      skill: 'alpha',
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      representation: 'directory',
+      path: '/fixture/live/alpha',
+      realpath: '/fixture/live/alpha',
+      linkTarget: null,
+      dangling: false,
+      placementClass: 'pinned',
+      skillFile: 'valid',
+      brokenReason: null,
+      contentRevision: OLD_HASH,
+    };
+    const ledger: LedgerModel = {
+      ...emptyLedger(),
+      skills: {
+        alpha: {
+          tools: {
+            codex: {
+              placementPath: live.path,
+              mode: 'pinned',
+              dev: null,
+              pinned: {
+                storePath: storeValue.path,
+                rev: 'local-alpha',
+                gitSha: null,
+                dirty: false,
+                contentHash: HASH,
+                snapshotAt: '2026-07-21T00:00:00.000Z',
+                verify: 'passed',
+                placement: 'copy',
+              },
+              journal: null,
+            },
+          },
+        },
+      },
+    };
+    const observed = snapshot(live, ledger);
+    const liveObservation = observed.live[0];
+    if (liveObservation === undefined) throw new Error('missing live observation fixture');
+    const result = createSyncPlan({ ...request(), force: true }, observed);
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations[0]).toMatchObject({
+      kind: 'update',
+      before: {
+        kind: 'placement',
+        classification: 'pinned',
+        source: { kind: 'local-dev', path: live.realpath, contentHash: OLD_HASH },
+        contentHash: OLD_HASH,
+      },
+      after: { kind: 'placement', contentHash: HASH },
+      conflict: { class: 'modified-managed-target', backup: 'required' },
+    });
+    expect(result.value.plan.operations[0]?.preconditionIds).toContain(
+      createExpectedRevisionPreconditionIdV1(liveObservation.revision),
+    );
   });
 
   test('projects exact local pinned state to a noop without an executable operation', () => {
