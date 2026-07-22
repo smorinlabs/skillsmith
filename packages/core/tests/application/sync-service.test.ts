@@ -409,4 +409,34 @@ describe('sync application service', () => {
       expect(await readFile(join(fixture.sourceSkill, 'SKILL.md'))).toEqual(sourceBefore);
     });
   }
+
+  test('reports a successful noop for an exact execute-mode rerun', async () => {
+    const fixture = await executionFixture(false);
+    const request = {
+      arguments: [['alpha']],
+      options: { from: 'user', to: '../destination', tool: ['codex'] },
+    } as const;
+
+    const first = await runSyncApplication(request, fixture.applicationContext);
+    expect(first.exitClass, JSON.stringify(first.diagnostics)).toBe('success');
+    expect(first.report.result).toMatchObject({
+      state: 'completed',
+      groups: [{ skill: 'alpha', pairs: [{ action: 'install', outcome: 'succeeded' }] }],
+      summary: { succeeded: 1, unchanged: 0 },
+    });
+
+    const rerun = await runSyncApplication(request, fixture.applicationContext);
+    expect(rerun.exitClass, JSON.stringify(rerun.diagnostics)).toBe('success');
+    expect(rerun.report.result).toMatchObject({
+      mode: 'execute',
+      state: 'completed',
+      operations: [],
+      groups: [{ skill: 'alpha', pairs: [{ action: 'noop', outcome: 'succeeded' }] }],
+      summary: { planned: 0, succeeded: 1, changed: 0, unchanged: 1 },
+    });
+    expect(await readFile(join(fixture.sourceSkill, 'SKILL.md'), 'utf8')).toBe(fixture.source);
+    expect(
+      await readFile(join(fixture.destination, '.agents', 'skills', 'alpha', 'SKILL.md'), 'utf8'),
+    ).toBe(fixture.source);
+  });
 });

@@ -601,7 +601,10 @@ const previewSyncReport = (
                 present: pair.destination !== null,
               },
               action,
-              outcome: refused || action === 'noop' ? ('not-run' as const) : ('planned' as const),
+              outcome:
+                refused || (request.dryRun && action === 'noop')
+                  ? ('not-run' as const)
+                  : ('planned' as const),
               skipReason: null,
               failure: null,
               force: forceProjection(request, operation),
