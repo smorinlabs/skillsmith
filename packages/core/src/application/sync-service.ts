@@ -1,4 +1,4 @@
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { RelevantCapabilityQueryV1 } from '../agents/capabilities.ts';
 import { toolRegistry } from '../agents/registry.ts';
 import {
@@ -26,13 +26,12 @@ import {
   createPlacementRevisionExecutionPreconditionsV1,
   createPlacementSnapshotAuthority,
   executePlacementOperationPlan,
-  placementSnapshotResourceId,
   rebindPlacementSnapshotAuthorityForLedgerBootstrapV1,
   withPlacementLedgerBootstrapAuthorityV1,
 } from '../place/execute.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
-import { clampStoreNs, contentHashOf, snapshotToStore } from '../place/store.ts';
-import type { FlipResult, OriginRecord, PinnedRecord, Provenance } from '../place/types.ts';
+import { contentHashOf, snapshotToStore } from '../place/store.ts';
+import type { FlipResult, OriginRecord, PinnedRecord } from '../place/types.ts';
 import { createBoundedForceEffect, createPlanningDiagnosticId } from '../planning/create.ts';
 import type {
   ExecutableOperation,
@@ -48,13 +47,17 @@ import {
 } from '../state/types.ts';
 import { type PreparedSyncArtifactsV1, prepareSyncArtifactsV1 } from '../sync/artifacts.ts';
 import { resolveSyncEndpoints } from '../sync/endpoints.ts';
-import { executeSyncPlacementV1 } from '../sync/execute.ts';
+import {
+  type PreparedSyncStoreV1,
+  executeSyncPlacementV1,
+  prepareSyncStoreResourcesV1,
+  toSyncReportOperationV1,
+} from '../sync/execute.ts';
 import { observeSyncFleet } from '../sync/observe.ts';
 import {
   type SyncFleetPlanProjectionV1,
   type SyncFleetResourceSelectionV1,
   type SyncFleetSelectedPairV1,
-  type SyncFleetStoreBindingsV1,
   createSyncPlan,
   projectSyncFleetPlanV1,
   selectSyncFleetResourcesV1,
@@ -309,16 +312,6 @@ const executedApprovalReport = (report: SyncReportV1Dto, required: boolean): Syn
     : { required: false, outcome: 'not-required' },
 });
 
-interface PreparedSyncStoreV1 {
-  readonly bindingKey: string;
-  readonly sourcePath: string;
-  readonly skill: string;
-  readonly provenance: Provenance;
-  readonly storePath: string;
-  readonly rev: string;
-  readonly contentHash: `sha256:${string}`;
-}
-
 interface PreparedDefaultSyncV1 {
   readonly report: SyncReportV1Dto;
   readonly request: SyncApplicationRequest;
@@ -375,99 +368,6 @@ const resolveTopProject = async (
     ...(explicitConfigPath === undefined ? {} : { explicitConfigPath }),
   });
   return project.ok ? project : err(flipRefusedError('sync project context could not be resolved'));
-};
-
-const storeProvenance = (pair: SyncFleetSelectedPairV1): Provenance => {
-  const source = pair.operationSource;
-  if (source?.kind === 'portable') {
-    const clamped = clampStoreNs(source.identity.repository);
-    return Object.freeze({
-      kind: 'git-clean',
-      repoRoot: null,
-      sourceRelPath: source.sourcePath,
-      remote: source.identity.repository,
-      gitSha: source.resolvedSha,
-      ns: clamped.ns,
-      name: clamped.name,
-      dirtySummary: null,
-    });
-  }
-  return Object.freeze({
-    kind: 'non-git',
-    repoRoot: null,
-    sourceRelPath: null,
-    remote: null,
-    gitSha: null,
-    ns: 'local',
-    name: basename(pair.store?.sourcePath ?? pair.pair.skill),
-    dirtySummary: null,
-  });
-};
-
-const prepareStores = (
-  selection: SyncFleetResourceSelectionV1,
-  storeRoot: string,
-): Readonly<{
-  stores: ReadonlyMap<string, PreparedSyncStoreV1>;
-  resources: readonly import('../place/execute.ts').PlacementStoreResource[];
-  bindings: SyncFleetStoreBindingsV1;
-}> => {
-  const stores = new Map<string, PreparedSyncStoreV1>();
-  const resources = new Map<string, import('../place/execute.ts').PlacementStoreResource>();
-  const storeResourceIdsByPair: Record<string, string> = {};
-  for (const descriptor of selection.stores) {
-    const pair = selection.pairs.find(({ bindingKey }) => bindingKey === descriptor.bindingKey);
-    if (pair === undefined) throw new Error('selected sync store has no exact pair');
-    const provenance = storeProvenance(pair);
-    const hash12 = descriptor.contentHash.slice('sha256:'.length, 'sha256:'.length + 12);
-    const rev =
-      provenance.kind === 'git-clean'
-        ? (provenance.gitSha?.slice(0, 12) ?? '')
-        : provenance.kind === 'git-dirty'
-          ? `dirty-${hash12}`
-          : `content-${hash12}`;
-    if (rev.length === 0) throw new Error('selected sync store revision is unavailable');
-    const storePath = join(storeRoot, provenance.ns, `${provenance.name}@${rev}`, descriptor.skill);
-    const resourceId = placementSnapshotResourceId('store', resolve(storePath));
-    const prepared = Object.freeze({
-      bindingKey: descriptor.bindingKey,
-      sourcePath: descriptor.sourcePath,
-      skill: descriptor.skill,
-      provenance,
-      storePath,
-      rev,
-      contentHash: descriptor.contentHash,
-    });
-    stores.set(descriptor.bindingKey, prepared);
-    storeResourceIdsByPair[descriptor.bindingKey] = resourceId;
-    const existing = resources.get(resourceId);
-    if (existing !== undefined && existing.contentHash !== descriptor.contentHash) {
-      throw new Error('selected sync stores collide with different content');
-    }
-    resources.set(
-      resourceId,
-      Object.freeze({ resourceId, storePath, contentHash: descriptor.contentHash }),
-    );
-  }
-  return Object.freeze({
-    stores,
-    resources: Object.freeze([...resources.values()]),
-    bindings: Object.freeze({ storeResourceIdsByPair: Object.freeze(storeResourceIdsByPair) }),
-  });
-};
-
-const operationDto = (operation: ExecutableOperation): SyncReportV1Dto['operations'][number] => {
-  const { dependencyMetadata, ...value } = operation;
-  return {
-    ...value,
-    dependsOn: Object.freeze([...dependencyMetadata.operationIds]),
-    preconditionIds: Object.freeze([...value.preconditionIds]),
-    requiredCheckIds: Object.freeze([...value.requiredCheckIds]),
-    reversibility: Object.freeze({
-      ...value.reversibility,
-      retentionResourceIds: Object.freeze([...value.reversibility.retentionResourceIds]),
-    }),
-  } as SyncReportV1Dto['operations'][number];
 };
 
 const endpointDto = (
@@ -671,7 +571,7 @@ const previewSyncReport = (
       sourceMembers: fleet.source.entries.length,
       destinationMembers: fleet.destination.entries.length,
     },
-    operations: Object.freeze(plan.operations.map(operationDto)),
+    operations: Object.freeze(plan.operations.map(toSyncReportOperationV1)),
     checks: Object.freeze(plan.checks.map((check) => ({ ...check }))) as SyncReportV1Dto['checks'],
     diagnostics,
     approval: { required: false, outcome: 'not-required' },
@@ -933,7 +833,7 @@ const defaultSyncApplicationPort: SyncApplicationPort = Object.freeze({
       const dataDir = resolveDataDir(context.ports, context.configuration);
       const storeRoot = storeRootOf(dataDir);
       const ledgerPath = ledgerPathOf(dataDir);
-      const preparedStores = prepareStores(selection.value, storeRoot);
+      const preparedStores = prepareSyncStoreResourcesV1(selection.value, storeRoot);
       const capabilityQueries: RelevantCapabilityQueryV1[] = selection.value.pairs.map(
         ({ pair: selectedPair }) => ({
           schemaVersion: 1,
