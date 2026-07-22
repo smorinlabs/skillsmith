@@ -121,7 +121,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:plan | P17-G4B-01 | signed-off | required-pr |
 | COMMAND:promote | P17-G3B-01 | signed-off | required-pr |
 | COMMAND:status | P17-G3A-01 | signed-off | required-pr |
-| COMMAND:sync | P17-G5-01 | planned | required-pr |
+| COMMAND:sync | P17-G5-01 | validated | required-pr |
 | COMMAND:undo | P17-G5-03 | planned | required-pr |
 | COMMAND:uninstall | P17-G4A-01 | signed-off | required-pr |
 | COMMAND:update | P17-G5-02 | planned | required-pr |
@@ -149,7 +149,7 @@ Tracked entities: **425** across **45** change groups.
 | P1-07 | P17-G4B-01 | signed-off | required-pr |
 | P1-08 | P17-G4B-02 | signed-off | required-pr |
 | P1-09 | P17-G4A-01 | signed-off | required-pr |
-| P1-10 | P17-G5-01 | planned | required-pr |
+| P1-10 | P17-G5-01 | validated | required-pr |
 | P1-11 | P17-G5-03 | planned | required-pr |
 | P1-12 | P17-G6-01 | planned | release |
 | P2-01 | P17-G1-02A | signed-off | required-pr |
@@ -225,7 +225,7 @@ Tracked entities: **425** across **45** change groups.
 | D-004 | P17-G2-02 | signed-off | required-pr |
 | D-005 | P17-G4A-02 | signed-off | required-pr |
 | D-006 | P17-G4A-01 | signed-off | required-pr |
-| D-007 | P17-G5-01 | planned | required-pr |
+| D-007 | P17-G5-01 | validated | required-pr |
 | D-008 | P17-G3A-01 | signed-off | required-pr |
 | D-009 | P17-G3B-01 | signed-off | required-pr |
 | D-010 | P17-G3B-03 | signed-off | required-pr |
@@ -264,7 +264,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF07 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF08 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF09 | P17-G5-02 | planned | required-pr |
-| EWP-WF10 | P17-G5-01 | failing | required-pr |
+| EWP-WF10 | P17-G5-01 | passing | required-pr |
 | EWP-WF11 | P17-G5-03 | planned | required-pr |
 | EWP-WF12 | P17-G5-04 | planned | required-pr |
 | EWP-WF13 | P17-G5-05 | planned | required-pr |
@@ -1340,33 +1340,33 @@ Downstream coverage obligations: EWP-WF13.
 - [x] P17-G5-01:mapped _(passed)_
 - [x] P17-G5-01:ready _(passed)_
 - [x] P17-G5-01:test-first _(passed)_
-- [ ] P17-G5-01:minimal-implementation _(pending)_
-- [ ] P17-G5-01:targeted-green _(pending)_
-- [ ] P17-G5-01:impacted-green _(pending)_
-- [ ] P17-G5-01:refactor _(pending)_
+- [x] P17-G5-01:minimal-implementation _(passed)_
+- [x] P17-G5-01:targeted-green _(passed)_
+- [x] P17-G5-01:impacted-green _(passed)_
+- [x] P17-G5-01:refactor _(passed)_
 - [ ] P17-G5-01:adversarial-review _(pending)_
 - [ ] P17-G5-01:traceability-closure _(pending)_
 - [ ] P17-G5-01:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:sync** — Declarative — How do I reconcile one live location into another? _(command; planned)_
-- [ ] **D-007** — Narrow direct synchronization _(decision; planned)_
-- [ ] **EWP-CMD-SYNC-TS01** — from/to grammar for scopes and paths plus targetless bounded-endpoint and _(command-test; failing)_
-- [ ] **EWP-CMD-SYNC-TS02** — user->project and project->user reconciliation. _(command-test; failing)_
-- [ ] **EWP-CMD-SYNC-TS03** — project-A->project-B and -C semantics. _(command-test; failing)_
-- [ ] **EWP-CMD-SYNC-TS04** — tool/scope filtering, unmatched target/filter-to-zero behavior, _(command-test; failing)_
-- [ ] **EWP-CMD-SYNC-TS05** — selected destination conflicts, bounded force replacement, _(command-test; failing)_
-- [ ] **EWP-CMD-SYNC-TS06** — delete opt-in and exact removal plan, including proof force never implies _(command-test; failing)_
-- [ ] **EWP-CMD-SYNC-TS07** — save destination manifest/lock under safe merge even when live force is _(command-test; failing)_
-- [ ] **EWP-CMD-SYNC-TS08** — dry-run/JSON/source byte-identity and destination migration preview with _(command-test; failing)_
-- [ ] **EWP-CMD-SYNC-TS09** — idempotence/partial failure/continue behavior. _(command-test; failing)_
-- [ ] **EWP-CMD-SYNC-TS10** — equivalence to planner operations, no duplicate engine. _(command-test; failing)_
-- [ ] **EWP-P5-T01** — Sync source/destination model over planner. _(phase-task; red)_
-- [ ] **EWP-P5-T02** — Sync save/delete semantics. _(phase-task; red)_
-- [ ] **EWP-P5-TS01** — Sync scope/path cartesian matrix. _(phase-test; failing)_
-- [ ] **EWP-WF10** — Direct sync _(workflow; failing)_
-- [ ] **P1-10** — Narrow `sync` _(recommendation; planned)_
+- [ ] **COMMAND:sync** — Declarative — How do I reconcile one live location into another? _(command; validated)_
+- [ ] **D-007** — Narrow direct synchronization _(decision; validated)_
+- [ ] **EWP-CMD-SYNC-TS01** — from/to grammar for scopes and paths plus targetless bounded-endpoint and _(command-test; passing)_
+- [ ] **EWP-CMD-SYNC-TS02** — user->project and project->user reconciliation. _(command-test; passing)_
+- [ ] **EWP-CMD-SYNC-TS03** — project-A->project-B and -C semantics. _(command-test; passing)_
+- [ ] **EWP-CMD-SYNC-TS04** — tool/scope filtering, unmatched target/filter-to-zero behavior, _(command-test; passing)_
+- [ ] **EWP-CMD-SYNC-TS05** — selected destination conflicts, bounded force replacement, _(command-test; passing)_
+- [ ] **EWP-CMD-SYNC-TS06** — delete opt-in and exact removal plan, including proof force never implies _(command-test; passing)_
+- [ ] **EWP-CMD-SYNC-TS07** — save destination manifest/lock under safe merge even when live force is _(command-test; passing)_
+- [ ] **EWP-CMD-SYNC-TS08** — dry-run/JSON/source byte-identity and destination migration preview with _(command-test; passing)_
+- [ ] **EWP-CMD-SYNC-TS09** — idempotence/partial failure/continue behavior. _(command-test; passing)_
+- [ ] **EWP-CMD-SYNC-TS10** — equivalence to planner operations, no duplicate engine. _(command-test; passing)_
+- [ ] **EWP-P5-T01** — Sync source/destination model over planner. _(phase-task; green)_
+- [ ] **EWP-P5-T02** — Sync save/delete semantics. _(phase-task; green)_
+- [ ] **EWP-P5-TS01** — Sync scope/path cartesian matrix. _(phase-test; passing)_
+- [ ] **EWP-WF10** — Direct sync _(workflow; passing)_
+- [ ] **P1-10** — Narrow `sync` _(recommendation; validated)_
 
 ## P17-G5-02 — Update discovery, check/preview/apply, refs, pins, and retention
 
