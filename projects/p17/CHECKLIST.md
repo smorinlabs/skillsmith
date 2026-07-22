@@ -1370,7 +1370,7 @@ Downstream coverage obligations: EWP-WF13.
 
 ## P17-G5-02 — Update discovery, check/preview/apply, refs, pins, and retention
 
-Phase: 5; status: **ready**; dependencies: P17-G4B-03.
+Phase: 5; status: **active**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-INSTALL-TS05, EWP-CMD-UPDATE-TS01, EWP-CMD-UPDATE-TS02, EWP-CMD-UPDATE-TS03, EWP-CMD-UPDATE-TS04, EWP-CMD-UPDATE-TS05, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-CMD-UPDATE-TS10, EWP-P5-TS02.
 Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF09, EWP-WF13.
 
@@ -1378,7 +1378,7 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 
 - [x] P17-G5-02:mapped _(passed)_
 - [x] P17-G5-02:ready _(passed)_
-- [ ] P17-G5-02:test-first _(pending)_
+- [x] P17-G5-02:test-first _(passed)_
 - [ ] P17-G5-02:minimal-implementation _(pending)_
 - [ ] P17-G5-02:targeted-green _(pending)_
 - [ ] P17-G5-02:impacted-green _(pending)_
@@ -1392,18 +1392,18 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 - [ ] **COMMAND:update** — Manage — How do I check or apply source revision changes? _(command; planned)_
 - [ ] **D-011** — One update lifecycle _(decision; planned)_
 - [ ] **EWP-CF-008** — Give pinning one portable observable effect _(finding; planned)_
-- [ ] **EWP-CMD-UPDATE-TS01** — candidate discovery for branches/tags/explicit refs. _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS02** — moving/fixed/exact candidate policy, `--ref` tracking transition, and _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS03** — target/all/tool selection, mutation target-or-all requirement, _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS04** — targetless check bounded-default, equivalent all-check, targetless _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS05** — verify/strict/deep policy reuse. _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS06** — new lock-intent commit and per-tool live/ledger drift consistency across _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS08** — offline/fetch/ref failure, partial tools, and default _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS09** — confirmation/JSON/exit contracts including preview yes rejection and _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS10** — manifest requested-ref preservation, explicit tracking change, and _(command-test; planned)_
-- [ ] **EWP-P5-T03** — Update candidate and pin policy. _(phase-task; ready)_
-- [ ] **EWP-P5-T04** — Update plan/execution/retention. _(phase-task; ready)_
-- [ ] **EWP-P5-TS02** — Update check/dry-run/apply matrix. _(phase-test; planned)_
+- [ ] **EWP-CMD-UPDATE-TS01** — candidate discovery for branches/tags/explicit refs. _(command-test; failing)_
+- [ ] **EWP-CMD-UPDATE-TS02** — moving/fixed/exact candidate policy, `--ref` tracking transition, and _(command-test; failing)_
+- [ ] **EWP-CMD-UPDATE-TS03** — target/all/tool selection, mutation target-or-all requirement, _(command-test; failing)_
+- [ ] **EWP-CMD-UPDATE-TS04** — targetless check bounded-default, equivalent all-check, targetless _(command-test; failing)_
+- [ ] **EWP-CMD-UPDATE-TS05** — verify/strict/deep policy reuse. _(command-test; failing)_
+- [ ] **EWP-CMD-UPDATE-TS06** — new lock-intent commit and per-tool live/ledger drift consistency across _(command-test; failing)_
+- [ ] **EWP-CMD-UPDATE-TS08** — offline/fetch/ref failure, partial tools, and default _(command-test; failing)_
+- [ ] **EWP-CMD-UPDATE-TS09** — confirmation/JSON/exit contracts including preview yes rejection and _(command-test; failing)_
+- [ ] **EWP-CMD-UPDATE-TS10** — manifest requested-ref preservation, explicit tracking change, and _(command-test; failing)_
+- [ ] **EWP-P5-T03** — Update candidate and pin policy. _(phase-task; red)_
+- [ ] **EWP-P5-T04** — Update plan/execution/retention. _(phase-task; red)_
+- [ ] **EWP-P5-TS02** — Update check/dry-run/apply matrix. _(phase-test; failing)_
 - [ ] **P2-02** — `update` _(recommendation; planned)_
 
 ## P17-G5-03 — Scope-aware pending abort and committed undo with compatibility routing
