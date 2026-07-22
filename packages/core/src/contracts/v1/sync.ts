@@ -250,6 +250,22 @@ const SyncV1Schema = z
   })
   .strict()
   .superRefine((value, context) => {
+    const operationGroupIds = new Set(value.operations.map(({ groupId }) => groupId));
+    // plan-report@1 has no selected-group vector, so a truthful group-only noop/skip/refusal
+    // correlation cannot be anchored when that group has no executable operation. Sync validates
+    // those correlations against its own exact selection below; omit only that unavailable anchor
+    // from the embedded plan-codec projection.
+    const projectedDiagnostics = value.diagnostics.map((diagnostic) =>
+      diagnostic.correlation.groupId !== null &&
+      diagnostic.correlation.operationId === null &&
+      diagnostic.correlation.pairId === null &&
+      !operationGroupIds.has(diagnostic.correlation.groupId)
+        ? {
+            ...diagnostic,
+            correlation: { ...diagnostic.correlation, groupId: null },
+          }
+        : diagnostic,
+    );
     const operationKinds = [
       'install',
       'update',
@@ -322,7 +338,7 @@ const SyncV1Schema = z
       },
       operations: value.operations,
       checks: value.checks,
-      diagnostics: value.diagnostics,
+      diagnostics: projectedDiagnostics,
       summary: planSummary,
       savedOutput: null,
     };
@@ -516,6 +532,18 @@ const SyncV1Schema = z
       }
     }
     const groupIds = new Set(value.selection.groupIds);
+    for (const [index, diagnostic] of value.diagnostics.entries()) {
+      if (
+        diagnostic.correlation.groupId !== null &&
+        !groupIds.has(diagnostic.correlation.groupId)
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['diagnostics', index, 'correlation', 'groupId'],
+          message: 'sync diagnostic references an unselected group',
+        });
+      }
+    }
     const operationIds = new Set(value.operations.map(({ operationId }) => operationId));
     for (const [index, effect] of value.effects.entries()) {
       if (

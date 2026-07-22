@@ -136,6 +136,58 @@ test('placement snapshots bind only the selected lifecycle and verification capa
   }
 });
 
+test('live-only placement snapshots never read synthetic manifest or lock paths', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillsmith-place-live-only-'));
+  try {
+    const base = await defaultRuntimePorts();
+    const project = await resolveProjectContext(base, { invocationCwd: root });
+    if (!project.ok) throw new Error(JSON.stringify(project.error));
+    const manifestPath = join(root, 'must-not-read.toml');
+    const lockPath = join(root, 'must-not-read.lock');
+    const selected = new Set([manifestPath, lockPath]);
+    const reads: string[] = [];
+    const ports = new Proxy(base, {
+      get(target, property, receiver) {
+        if (
+          property === 'pathKind' ||
+          property === 'readFileMetadata' ||
+          property === 'readBytes'
+        ) {
+          const method = Reflect.get(target, property, receiver) as (path: string) => unknown;
+          return (path: string) => {
+            if (selected.has(path)) reads.push(`${String(property)}:${path}`);
+            return method.call(target, path);
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const authority = await createPlacementSnapshotAuthority(
+      toolRegistry,
+      [],
+      ports,
+      project.value,
+      join(root, 'placements.json'),
+      join(root, 'store'),
+      [],
+      [],
+      { manifestPath, lockPath, observe: false },
+    );
+    if (!authority.ok) throw new Error(JSON.stringify(authority.error));
+    await authority.value.repositories.manifest.observe(
+      authority.value.snapshot.manifest.revision.resourceId,
+    );
+    await authority.value.repositories.lock.observe(
+      authority.value.snapshot.lock.revision.resourceId,
+    );
+    expect(reads).toEqual([]);
+    expect(authority.value.snapshot.manifest.revision).toMatchObject({ state: 'absent' });
+    expect(authority.value.snapshot.lock.revision).toMatchObject({ state: 'absent' });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 const installOperation = (): ExecutableOperation => {
   const resource = {
     kind: 'live' as const,

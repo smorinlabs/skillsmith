@@ -121,7 +121,9 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
     writeSkill(userRoot, 'lint', 'portable lint source'),
     writeSkill(userRoot, 'review', 'portable review source'),
     writeSkill(userClaudeRoot, 'review', 'Claude user review source'),
-    writeSkill(projectACodexSources, 'lint', 'project A lint source'),
+    // The workflow intentionally converges this same logical lint skill through user and
+    // project-A endpoints so its final rerun proves endpoint spelling does not create drift.
+    writeSkill(projectACodexSources, 'lint', 'portable lint source'),
     writeSkill(projectACodexSources, 'review', 'project A review source'),
     writeSkill(projectAClaudeSources, 'review', 'Claude project A review source'),
     writeSkill(projectBRoot, 'review', 'conflicting project B review destination'),

@@ -430,6 +430,8 @@ const shadowOperations = (
       return INSTALL_SHADOW_OPERATIONS;
     case 'update':
       return UPDATE_SHADOW_OPERATIONS;
+    case 'repair':
+      return UPDATE_SHADOW_OPERATIONS;
     case 'remove':
       return UNINSTALL_SHADOW_OPERATIONS;
     case 'link-dev':

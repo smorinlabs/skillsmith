@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFile } from 'node:fs/promises';
 import {
   SYNC_SECRET_CANARIES,
   type SyncFleet,
@@ -69,6 +70,8 @@ describe('EWP-WF10', () => {
         fleet.artifacts.explicitLock,
         '--yes',
       ]);
+      expect((await readFile(fleet.artifacts.explicitManifest)).byteLength).toBeGreaterThan(0);
+      expect((await readFile(fleet.artifacts.explicitLock)).byteLength).toBeGreaterThan(0);
       await successfulSync(fleet, [
         'sync',
         'review',
@@ -96,13 +99,17 @@ describe('EWP-WF10', () => {
       ]);
       const rerun = await successfulSync(fleet, [
         'sync',
-        'lint',
         '--from',
-        'user',
+        fleet.projects.a,
         '--to',
         fleet.projects.c,
         '--tool',
         'codex',
+        '--save',
+        '--file',
+        fleet.artifacts.explicitManifest,
+        '--lockfile',
+        fleet.artifacts.explicitLock,
         '--dry-run',
       ]);
       expect(rerun).toMatchObject({ summary: { changed: 0 } });
@@ -112,5 +119,5 @@ describe('EWP-WF10', () => {
     } finally {
       await destroySyncFleet(fleet);
     }
-  });
+  }, 15_000);
 });

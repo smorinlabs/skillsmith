@@ -1644,6 +1644,10 @@ const buildStaging = async (
 ): Promise<Result<void, SkillSmithError>> => {
   const env = ctx.env;
   try {
+    // A writable sync endpoint may expose an adapter root that does not exist until its first
+    // placement. Copy staging already creates parents through copyTree; symlink staging must have
+    // the same journaled first-install behavior.
+    await env.makeDir(plan.skillsRoot);
     if (plan.op === 'promote') {
       if (!plan.promote) return err(genericError('promote plan missing promote payload'));
       await env.copyTree(plan.promote.storePath, j.stagingPath);

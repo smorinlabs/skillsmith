@@ -268,7 +268,7 @@ describe('artifact codec foundation', () => {
     expect(['z', 'a', 'ä'].sort(unsignedUtf16Compare)).toEqual(['a', 'z', 'ä']);
   });
 
-  test('accepts only install and promote physical shadows for a logical update journal', () => {
+  test('accepts only install and promote physical shadows for logical update and repair journals', () => {
     const placementPath = '/home/fixture/.agents/skills/alpha';
     const transactionId = 'transaction:update-alpha';
     const startedAt = '2026-07-15T00:00:00.000Z';
@@ -318,6 +318,31 @@ describe('artifact codec foundation', () => {
 
     expect((['install', 'promote'] as const).map(matches)).toEqual([true, true]);
     expect((['uninstall', 'dev', 'rollback'] as const).map(matches)).toEqual([false, false, false]);
+    const repair = {
+      ...logical,
+      intent: { ...logical.intent, kind: 'repair' },
+    } as unknown as LogicalJournalV1Dto;
+    const repairMatches = (op: NonNullable<LedgerPairV1Dto['journal']>['op']): boolean =>
+      legacyJournalMatchesLogicalShadow(
+        repair,
+        { projectRoot: null, skill: 'alpha', tool: 'fixture-tool' },
+        {
+          placementPath,
+          journal: {
+            op,
+            txId: transactionId,
+            phase: 'prepared',
+            startedAt,
+            completedAt: null,
+          },
+        } as LedgerPairV1Dto,
+      );
+    expect((['install', 'promote'] as const).map(repairMatches)).toEqual([true, true]);
+    expect((['uninstall', 'dev', 'rollback'] as const).map(repairMatches)).toEqual([
+      false,
+      false,
+      false,
+    ]);
   });
 
   test('accepts an install shadow only for the symlink re-pin subset of logical promote', () => {

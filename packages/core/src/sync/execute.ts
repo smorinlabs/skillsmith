@@ -7,6 +7,7 @@ import {
   executePlacementPlanWithObservation,
   executeRecordOnlyPlacementPlanWithObservation,
 } from '../place/execute.ts';
+import { getLedgerPairAt, withLedgerPairAt } from '../place/ledger.ts';
 import { FLIP_TOOLS, type FlipTool, type OriginRecord } from '../place/types.ts';
 import type {
   FlipDeps,
@@ -200,10 +201,40 @@ export const executeSyncPlacementV1 = async (
       state: { ledger: input.ledger },
     };
   }
+  let executionLedger = input.ledger;
+  if (
+    input.operation.kind === 'remove' &&
+    input.operation.conflict !== null &&
+    input.force &&
+    input.operation.skill !== null &&
+    input.operation.tool !== null &&
+    getLedgerPairAt(
+      executionLedger,
+      input.binding.scopeKey,
+      input.operation.skill,
+      input.operation.tool,
+    ) === null
+  ) {
+    const staged = withLedgerPairAt(
+      executionLedger,
+      input.binding.scopeKey,
+      input.operation.skill,
+      input.operation.tool,
+      {
+        placementPath: input.binding.placementPath,
+        mode: 'pinned',
+        dev: null,
+        pinned: null,
+        journal: null,
+      },
+    );
+    if (!staged.ok) return { ok: false, error: staged.error, state: { ledger: executionLedger } };
+    executionLedger = staged.value;
+  }
   const execution = createPlacementExecutionInput(
     input.env,
     input.ledgerPath,
-    input.ledger,
+    executionLedger,
     input.deps,
     input.options,
     input.operation,

@@ -1428,7 +1428,18 @@ const placementSyncProjectionFor = (
   validatePlacementLive(intent, liveState);
   const ledgerPair = placementLedgerPair(snapshot, intent, observation, liveState);
   const liveResource = placementLiveResource(intent, observation);
-  const beforeSource = operationSourceFromLedgerPairV1(ledgerPair, liveState);
+  const beforeSource =
+    operationSourceFromLedgerPairV1(ledgerPair, liveState) ??
+    (ledgerPair?.mode === 'pinned' &&
+    ledgerPair.origin === undefined &&
+    ledgerPair.pinned != null &&
+    liveState?.contentRevision === ledgerPair.pinned.contentHash
+      ? {
+          kind: 'local-dev' as const,
+          path: ledgerPair.pinned.storePath,
+          contentHash: ledgerPair.pinned.contentHash as `sha256:${string}`,
+        }
+      : null);
   const projectedBefore = operationImageFromLiveStateV1({
     resource: liveResource,
     state: liveState,
@@ -1437,6 +1448,7 @@ const placementSyncProjectionFor = (
   });
   const before: OperationImage =
     projectedBefore.kind === 'placement' &&
+    projectedBefore.classification === 'unmanaged' &&
     projectedBefore.contentHash === null &&
     liveState?.contentRevision != null &&
     /^sha256:[0-9a-f]{64}$/u.test(liveState.contentRevision)

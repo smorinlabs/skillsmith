@@ -22,6 +22,7 @@ export {
 export * from './export/index.ts';
 export * from './init/index.ts';
 export * from './reconcile/index.ts';
+export * from './sync/index.ts';
 export * from './application/lifecycle-services.ts';
 export * from './application/read-services.ts';
 export { COMMAND_EXIT_CLASSES, NO_MUTATION } from './application/types.ts';

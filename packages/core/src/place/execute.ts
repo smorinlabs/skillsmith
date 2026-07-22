@@ -27,29 +27,42 @@ import {
 } from '../execution/coordinator.ts';
 import {
   type ExecutionCoordinatorRequest,
+  type ExecutionLockDescriptor,
   type ExecutionPrecondition,
   type PreparedExecutionBinding,
   type ValidatedExecutionBinding,
   executeOperationPlan,
 } from '../execution/index.ts';
+import { createExpectedRevisionExecutionPrecondition } from '../execution/preconditions.ts';
 import type { ObservationBundle } from '../observation/index.ts';
 import { createOperationExecutionResult } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
+  BoundedForceEffect,
   ExecutableOperation,
   OperationExecutionResult,
   OperationImage,
   OperationPlan,
+  OperationResourceIdentity,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { readObservedStateSnapshotV1 } from '../state/read.ts';
 import {
+  type LockRepository,
   type LogicalRepositoryStageV1,
+  type ManifestRepository,
   type ObservedStateRepositoriesV1,
   createProjectStateReaderV1,
   createRelevantCapabilityStateReaderV1,
+  stageLogicalRepositoryEditV1,
 } from '../state/repositories.ts';
-import { type ObservedStateSnapshotV1, sameExpectedRevisionV1 } from '../state/types.ts';
+import {
+  type ExpectedRevisionV1,
+  type ObservedStateSnapshotV1,
+  createExpectedRevisionPreconditionIdV1,
+  createExpectedRevisionV1,
+  sameExpectedRevisionV1,
+} from '../state/types.ts';
 import {
   ledgerMigrationExecutionBinding,
   ledgerMigrationExecutionBindingObserved,
@@ -72,6 +85,7 @@ import type {
   FlipOp,
   FlipOptions,
   FlipResult,
+  FlipTool,
   JournalPhase,
   PairRecord,
   PlacementPorts,
@@ -123,6 +137,51 @@ export interface PlacementLifecycleExecutor {
   ) => Promise<OperationExecutionResult>;
 }
 
+const createSyntheticAbsentArtifactRepository = <Domain extends 'manifest' | 'lock'>(
+  domain: Domain,
+  resourceId: string,
+  path: string,
+): Domain extends 'manifest' ? ManifestRepository : LockRepository => {
+  const revision = createExpectedRevisionV1({
+    schemaVersion: 1,
+    domain,
+    resourceId,
+    state: 'absent',
+    targetIdentity: path,
+    targetKind: 'absent',
+    parentIdentity: parse(path).dir,
+    parentKind: 'absent',
+    parentMetadataIdentity: 'synthetic-live-only-artifact-parent',
+  });
+  if (!revision.ok) throw new Error('synthetic placement artifact revision is invalid');
+  const invalid = () =>
+    err(
+      Object.freeze({
+        code: 'state-repository' as const,
+        domain,
+        reason: 'invalid-request' as const,
+      }),
+    );
+  const observe = async (requestedResourceId: string) =>
+    requestedResourceId === resourceId
+      ? ok(Object.freeze({ revision: revision.value, value: null }))
+      : invalid();
+  const repository = Object.freeze({
+    observe,
+    observeRevision: async (requestedResourceId: string) => {
+      const observed = await observe(requestedResourceId);
+      return observed.ok ? ok(observed.value.revision) : observed;
+    },
+    stage: async (request: import('../state/repositories.ts').RepositoryStageRequestV1) => {
+      if (request.domain !== domain || request.resourceId !== resourceId) {
+        return err(Object.freeze({ code: 'invalid-logical-stage' as const }));
+      }
+      return stageLogicalRepositoryEditV1({ ...request, observedRevision: revision.value });
+    },
+  });
+  return repository as Domain extends 'manifest' ? ManifestRepository : LockRepository;
+};
+
 export const createPlacementSnapshotAuthority = async (
   registry: LifecycleToolRegistry,
   capabilityQueries: readonly RelevantCapabilityQueryV1[],
@@ -132,6 +191,11 @@ export const createPlacementSnapshotAuthority = async (
   storeRoot: string,
   pairs: readonly PairPlan[],
   stores: readonly PlacementStoreResource[],
+  selectedArtifacts?: Readonly<{
+    readonly manifestPath: string;
+    readonly lockPath: string;
+    readonly observe?: boolean;
+  }>,
 ): Promise<Result<PlacementSnapshotAuthority, SkillSmithError>> => {
   const contextOptions = {
     invocationCwd: projectContext.invocationCwd,
@@ -141,10 +205,11 @@ export const createPlacementSnapshotAuthority = async (
   };
   const projectRoot = projectContext.projectRoot ?? projectContext.effectiveCwd;
   const manifestPath =
+    selectedArtifacts?.manifestPath ??
     projectContext.explicitConfigPath ??
     projectContext.discoveredConfigPath ??
     join(projectRoot, 'skillsmith.toml');
-  const lockPath = siblingLockPath(manifestPath);
+  const lockPath = selectedArtifacts?.lockPath ?? siblingLockPath(manifestPath);
   const projectResourceId = placementSnapshotResourceId('project', projectRoot);
   const manifestResourceId = placementSnapshotResourceId('manifest', manifestPath);
   const lockResourceId = placementSnapshotResourceId('lock', lockPath);
@@ -173,12 +238,18 @@ export const createPlacementSnapshotAuthority = async (
       ports: env,
       context: contextOptions,
     }),
-    manifest: createManifestRepository({
-      resourceId: manifestResourceId,
-      path: manifestPath,
-      ports: env,
-    }),
-    lock: createLockRepository({ resourceId: lockResourceId, path: lockPath, ports: env }),
+    manifest:
+      selectedArtifacts?.observe === false
+        ? createSyntheticAbsentArtifactRepository('manifest', manifestResourceId, manifestPath)
+        : createManifestRepository({
+            resourceId: manifestResourceId,
+            path: manifestPath,
+            ports: env,
+          }),
+    lock:
+      selectedArtifacts?.observe === false
+        ? createSyntheticAbsentArtifactRepository('lock', lockResourceId, lockPath)
+        : createLockRepository({ resourceId: lockResourceId, path: lockPath, ports: env }),
     ledger: createLedgerRepository({
       resourceId: ledgerResourceId,
       reader: {
@@ -230,6 +301,93 @@ export const createPlacementSnapshotAuthority = async (
     liveResources,
     storeResources: stores,
   });
+};
+
+const placementRevisionResource = (
+  authority: PlacementSnapshotAuthority,
+  revision: ExpectedRevisionV1,
+): OperationResourceIdentity => {
+  if (revision.domain === 'manifest') {
+    return {
+      kind: 'manifest-bytes',
+      location: { kind: 'machine-bound', path: authority.manifestPath },
+    };
+  }
+  if (revision.domain === 'lock') {
+    return { kind: 'lock', location: { kind: 'machine-bound', path: authority.lockPath } };
+  }
+  if (revision.domain === 'ledger') return { kind: 'ledger', projectRoot: null };
+  if (revision.domain === 'store') {
+    const store = authority.storeResources.find(
+      (candidate) => candidate.resourceId === revision.resourceId,
+    );
+    if (store === undefined) throw new Error('placement store revision resource is missing');
+    return { kind: 'store', contentHash: store.contentHash };
+  }
+  if (revision.domain === 'live') {
+    const live = authority.liveResources.find(
+      (candidate) => candidate.resourceId === revision.resourceId,
+    );
+    if (live === undefined) throw new Error('placement live revision resource is missing');
+    return {
+      kind: 'live',
+      skill: live.skill,
+      tool: live.tool as FlipTool,
+      scope: live.scope === 'project' ? 'project' : 'user',
+      projectRoot:
+        live.projectIdentity === null
+          ? null
+          : { kind: 'machine-bound', path: live.projectIdentity },
+      location: { kind: 'machine-bound', path: live.placementPath },
+    };
+  }
+  return {
+    kind: 'project-context',
+    root: { kind: 'machine-bound', path: authority.projectRoot },
+  };
+};
+
+/** Bind one snapshot-bound placement plan to its exact command-neutral repository observers. */
+export const createPlacementRevisionExecutionPreconditionsV1 = (
+  authority: PlacementSnapshotAuthority,
+  plan: OperationPlan,
+  expectedRevisions: readonly ExpectedRevisionV1[],
+): readonly ExecutionPrecondition[] => {
+  const preconditions: ExecutionPrecondition[] = [];
+  for (const revision of expectedRevisions) {
+    const preconditionId = createExpectedRevisionPreconditionIdV1(revision);
+    const operationIds = plan.operations
+      .filter((operation) => operation.preconditionIds.includes(preconditionId))
+      .map((operation) => operation.operationId);
+    if (operationIds.length === 0) continue;
+    preconditions.push(
+      createExpectedRevisionExecutionPrecondition({
+        operationIds,
+        resource: placementRevisionResource(authority, revision),
+        expectedRevision: revision,
+        observeRevision: () =>
+          authority.repositories[revision.domain]
+            .observeRevision(revision.resourceId)
+            .then((observed) => {
+              if (!observed.ok) throw observed.error;
+              // An absent ledger has no bytes whose timestamp can be refreshed. Preserve the
+              // planner-owned absence identity when the same path and parent remain absent.
+              if (
+                revision.domain === 'ledger' &&
+                revision.state === 'absent' &&
+                observed.value.domain === 'ledger' &&
+                observed.value.state === 'absent' &&
+                revision.targetIdentity === observed.value.targetIdentity &&
+                revision.parentIdentity === observed.value.parentIdentity
+              ) {
+                return revision;
+              }
+              return observed.value;
+            }),
+      }),
+    );
+  }
+  return Object.freeze(preconditions);
 };
 
 const createPlacementRevisionCursor = (authority: PlacementSnapshotAuthority): RevisionCursorV1 =>
@@ -449,6 +607,10 @@ export const createPlacementOperationExecutionBindingV1 = (
 
 export type PlacementCoordinatorBinding =
   | Readonly<{
+      kind: 'external';
+      binding: ObservedPreparedExecutionBinding;
+    }>
+  | Readonly<{
       kind: 'migrate-ledger';
       expectedState: Extract<LedgerReadState, { readonly state: 'present' }>;
     }>
@@ -460,13 +622,14 @@ export type PlacementCoordinatorBinding =
 export interface PlacementOperationPlanExecutionInput {
   readonly env: PlacementPorts;
   readonly ledgerPath: string;
-  readonly plan: OperationPlan<'dev' | 'promote'>;
+  readonly plan: OperationPlan<'dev' | 'promote' | 'sync'>;
   readonly preconditions: readonly ExecutionPrecondition[];
   readonly authority: PlacementSnapshotAuthority;
-  readonly reportOp: FlipOp;
+  readonly reportOp: FlipOp | 'sync';
   readonly modelNow: () => string;
   readonly journalNow: () => string;
   readonly bindingForOperation: (operation: ExecutableOperation) => PlacementCoordinatorBinding;
+  readonly forceForOperation?: (operation: ExecutableOperation) => BoundedForceEffect | null;
   readonly executePair: (
     operation: ExecutableOperation,
     ledger: LedgerModel,
@@ -475,13 +638,15 @@ export interface PlacementOperationPlanExecutionInput {
   readonly onStarted: (operation: ExecutableOperation, result: FlipResult) => void;
   readonly signal?: AbortSignal;
   readonly observation?: ObservationBundle;
+  /** Omit only when an enclosing artifact-pair authority already holds the placement ledger. */
+  readonly locks?: readonly ExecutionLockDescriptor[];
 }
 
 const operationResultForFlip = (
   operation: ExecutableOperation,
   binding: ValidatedExecutionBinding,
   result: FlipResult,
-  reportOp: FlipOp,
+  reportOp: FlipOp | 'sync',
 ): OperationExecutionResult => {
   const cancelled = result.reason === 'interrupted' || result.error?.code === 'cancelled';
   const failed = result.action === 'failed' || result.action === 'refused';
@@ -490,7 +655,12 @@ const operationResultForFlip = (
     operationId: operation.operationId,
     actualBefore: binding.actualBefore,
     actualAfter: unchanged ? binding.actualBefore : operation.after,
-    force: null,
+    force:
+      binding.unstartedForce === null
+        ? null
+        : binding.unstartedForce.conflictType === null
+          ? binding.unstartedForce
+          : { ...binding.unstartedForce, applied: !unchanged },
   } as const;
   if (cancelled) {
     return createOperationExecutionResult({ ...common, outcome: 'cancelled', error: null });
@@ -536,6 +706,7 @@ export const executePlacementOperationPlan = async (
   const coordinatorBindings: ObservedPreparedExecutionBinding[] = input.plan.operations.map(
     (operation) => {
       const binding = input.bindingForOperation(operation);
+      if (binding.kind === 'external') return binding.binding;
       if (binding.kind === 'migrate-ledger') {
         const migrationInput = {
           env: input.env,
@@ -565,7 +736,7 @@ export const executePlacementOperationPlan = async (
         operation,
         lifecycle,
         stageResourceIds: binding.stageResourceIds,
-        unstartedForce: null,
+        unstartedForce: input.forceForOperation?.(operation) ?? null,
         observeActualBefore: async (): Promise<OperationImage> => {
           const current = await readLedgerState(input.env, input.ledgerPath);
           if (!current.ok) throw current.error;
@@ -623,13 +794,15 @@ export const executePlacementOperationPlan = async (
     plan: input.plan,
     bindings: coordinatorBindings,
     preconditions: input.preconditions,
-    locks: [
-      {
-        rank: 'ledger' as const,
-        key: `placements-ledger:${input.ledgerPath}`,
-        path: input.ledgerPath,
-      },
-    ],
+    locks:
+      input.locks ??
+      ([
+        {
+          rank: 'ledger' as const,
+          key: `placements-ledger:${input.ledgerPath}`,
+          path: input.ledgerPath,
+        },
+      ] satisfies readonly ExecutionLockDescriptor[]),
     lockPort: compatibilityLockPort,
     ...(input.signal === undefined ? {} : { signal: input.signal }),
   };

@@ -77,4 +77,79 @@ describe('sync@1 report codec', () => {
       }),
     ).toMatchObject({ ok: false });
   });
+
+  test('validates operation-free noop correlations against sync-selected groups', () => {
+    const groupId = 'group:v1:noop';
+    const value: SyncReportV1Dto = {
+      ...report(),
+      selection: {
+        ...report().selection,
+        selectionOutcome: 'selected',
+        skills: ['lint'],
+        tools: ['codex'],
+        groupIds: [groupId],
+        sourceMembers: 1,
+        destinationMembers: 1,
+      },
+      diagnostics: [
+        {
+          diagnosticId: 'diagnostic:v1:noop',
+          kind: 'noop',
+          severity: 'info',
+          refusalClass: null,
+          affected: {
+            skill: 'lint',
+            source: null,
+            tool: 'codex',
+            scope: 'project',
+            path: null,
+          },
+          correlation: { groupId, pairId: null, operationId: null },
+          reason: { code: 'sync-destination-current', message: 'lint is current' },
+          selectionSource: 'bounded-default',
+        },
+      ],
+      groups: [
+        {
+          groupId,
+          skill: 'lint',
+          pairs: [
+            {
+              tool: 'codex',
+              source: { scope: 'user', present: true },
+              destination: { scope: 'project', present: true },
+              action: 'noop',
+              outcome: 'not-run',
+              skipReason: null,
+              failure: null,
+              force: {
+                requested: false,
+                used: false,
+                conflictType: null,
+                destination: null,
+                normal: 'apply',
+                forced: 'not-applicable',
+                required: false,
+                outcome: 'not-required',
+              },
+              drift: { artifact: false, live: false },
+            },
+          ],
+        },
+      ],
+      summary: { ...report().summary, groups: 1, pairs: 1, notRun: 1, unchanged: 1 },
+    };
+    expect(syncV1Codec.validate(value)).toMatchObject({ ok: true });
+    expect(
+      syncV1Codec.validate({
+        ...value,
+        diagnostics: [
+          {
+            ...value.diagnostics[0],
+            correlation: { groupId: 'group:v1:unselected', pairId: null, operationId: null },
+          },
+        ],
+      }),
+    ).toMatchObject({ ok: false });
+  });
 });

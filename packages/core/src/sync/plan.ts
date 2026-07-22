@@ -85,7 +85,8 @@ export interface SyncFleetPlanOptionsV1 {
 export interface SyncFleetStoreBindingsV1 {
   /** Exact selected pair key to authority store resource ID; content-only lookup is forbidden. */
   readonly storeResourceIdsByPair: Readonly<Record<string, string>>;
-  readonly artifactPrefixOperationIdsBySkill?: Readonly<Record<string, readonly string[]>>;
+  /** Exact selected pair key to its artifact-prefix dependencies; skill-only lookup is ambiguous. */
+  readonly artifactPrefixOperationIdsByPair?: Readonly<Record<string, readonly string[]>>;
   readonly compatibilityOperations?: readonly ExecutableOperation<BuiltInToolId>[];
 }
 
@@ -255,10 +256,10 @@ const operationSourceFor = (
     );
   }
   const candidate = member.portable.candidate;
-  if (candidate.contentHash !== contentHash || !candidate.tools.includes(member.entry.tool)) {
+  if (!candidate.tools.includes(member.entry.tool)) {
     return projectionFailure(
-      'sync-source-portable-mismatch',
-      'sync portable proof differs from selected live content',
+      'sync-source-portable-tool-mismatch',
+      'sync portable proof differs from the selected tool member',
     );
   }
   return {
@@ -273,6 +274,8 @@ const operationSourceFor = (
       requestedRef: candidate.requestedRef,
       resolvedSha: candidate.resolvedSha,
       sourcePath: candidate.sourcePath,
+      // Placement/store identity retains the existing live-tree digest domain. The portable
+      // candidate separately carries the exact source-content digest used by manifest/lock state.
       contentHash: contentHash as `sha256:${string}`,
     },
   };
@@ -537,7 +540,8 @@ export const projectSyncFleetPlanV1 = (
         'sync selected placement is absent from the immutable execution authority',
       );
     }
-    const artifactPrefixOperationIds = bindings.artifactPrefixOperationIdsBySkill?.[pair.skill];
+    const artifactPrefixOperationIds =
+      bindings.artifactPrefixOperationIdsByPair?.[selected.bindingKey];
     if (selected.action === 'remove') {
       intents.push({
         kind: 'sync',

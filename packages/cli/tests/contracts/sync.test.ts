@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { lstat, readFile, writeFile } from 'node:fs/promises';
 import {
   type SyncFleet,
   createSyncFleet,
@@ -6,6 +7,10 @@ import {
   readSkillBytes,
   runSyncCli,
 } from '../../../../tests/ergonomics/fixtures/p5-sync/fleet.ts';
+import { hashManifestSemantics } from '../../../core/src/artifacts/hash.ts';
+import type { PortableLockV1 } from '../../../core/src/artifacts/lock.ts';
+import { artifactContractRegistry } from '../../../core/src/artifacts/registry.ts';
+import type { NormalizedManifestV1 } from '../../../core/src/artifacts/types.ts';
 
 const openFleets: SyncFleet[] = [];
 
@@ -34,6 +39,48 @@ const syncReport = async (
     command: 'sync',
   });
   return parsed as Record<string, unknown>;
+};
+
+const seedDestinationOnlyDeclaration = async (selected: SyncFleet): Promise<void> => {
+  const manifestCodec = artifactContractRegistry.get('manifest', 1);
+  const lockCodec = artifactContractRegistry.get('lock', 1);
+  if (manifestCodec === undefined || lockCodec === undefined) {
+    throw new Error('portable artifact codecs are unavailable');
+  }
+  const decodedManifest = manifestCodec.decode(
+    new Uint8Array(await readFile(selected.artifacts.explicitManifest)),
+  );
+  const decodedLock = lockCodec.decode(
+    new Uint8Array(await readFile(selected.artifacts.explicitLock)),
+  );
+  if (!decodedManifest.ok || !decodedLock.ok)
+    throw new Error('portable artifact fixture is invalid');
+  const beforeManifest = decodedManifest.value.model as NormalizedManifestV1;
+  const beforeLock = decodedLock.value.model as PortableLockV1;
+  const declaration = beforeManifest.skills.find(({ name }) => name === 'lint');
+  const lockEntry = beforeLock.skills.find(({ name }) => name === 'lint');
+  if (declaration === undefined || lockEntry === undefined) {
+    throw new Error('portable artifact fixture lacks lint');
+  }
+  const manifest: NormalizedManifestV1 = Object.freeze({
+    ...beforeManifest,
+    skills: Object.freeze([
+      ...beforeManifest.skills,
+      Object.freeze({ ...declaration, name: 'extra' }),
+    ]),
+  });
+  const lock: PortableLockV1 = Object.freeze({
+    ...beforeLock,
+    manifestHash: hashManifestSemantics(manifest),
+    skills: Object.freeze([...beforeLock.skills, Object.freeze({ ...lockEntry, name: 'extra' })]),
+  });
+  const encodedManifest = manifestCodec.encode(manifest);
+  const encodedLock = lockCodec.encode(lock);
+  if (!encodedManifest.ok || !encodedLock.ok) throw new Error('portable fixture encoding failed');
+  await Promise.all([
+    writeFile(selected.artifacts.explicitManifest, encodedManifest.value),
+    writeFile(selected.artifacts.explicitLock, encodedLock.value),
+  ]);
 };
 
 describe('sync command contract', () => {
@@ -158,7 +205,77 @@ describe('sync command contract', () => {
       '--dry-run',
     ]);
     expect(report).toMatchObject({ options: { save: true } });
-  });
+
+    await syncReport(selected, [
+      'sync',
+      '--from',
+      selected.projects.a,
+      '--to',
+      selected.projects.c,
+      '--tool',
+      'codex',
+      '--save',
+      '--file',
+      selected.artifacts.explicitManifest,
+      '--lockfile',
+      selected.artifacts.explicitLock,
+      '--yes',
+    ]);
+    await seedDestinationOnlyDeclaration(selected);
+    const deleted = await syncReport(selected, [
+      'sync',
+      '--from',
+      selected.projects.a,
+      '--to',
+      selected.projects.b,
+      '--tool',
+      'codex',
+      '--force',
+      '--delete',
+      '--save',
+      '--file',
+      selected.artifacts.explicitManifest,
+      '--lockfile',
+      selected.artifacts.explicitLock,
+      '--yes',
+    ]);
+    expect(deleted).toMatchObject({ options: { delete: true, save: true } });
+    expect(
+      new Set((deleted.effects as readonly Readonly<{ role: string }>[]).map(({ role }) => role)),
+    ).toEqual(new Set(['manifest', 'lock', 'store', 'backup', 'live', 'ledger']));
+    expect(await readFile(selected.artifacts.explicitManifest, 'utf8')).not.toContain(
+      'name = "extra"',
+    );
+    expect(await readFile(selected.artifacts.explicitLock, 'utf8')).not.toContain(
+      '"name": "extra"',
+    );
+    expect(
+      await lstat(selected.skills.projectBExtra).then(
+        () => 'present',
+        () => 'absent',
+      ),
+    ).toBe('absent');
+
+    const legacy = await fleet();
+    const migrated = await syncReport(legacy, [
+      'sync',
+      'lint',
+      '--from',
+      legacy.projects.a,
+      '--to',
+      legacy.projects.c,
+      '--tool',
+      'codex',
+      '--save',
+      '--file',
+      legacy.artifacts.legacyManifest,
+      '--yes',
+    ]);
+    expect(migrated.operations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'migrate-project-config' })]),
+    );
+    expect(await readFile(legacy.artifacts.legacyManifest, 'utf8')).toStartWith('version = 1');
+  }, 20_000);
 
   test('EWP-CMD-SYNC-TS08 — preview preserves source bytes and exact options', async () => {
     const selected = await fleet();
