@@ -53,6 +53,7 @@ import {
   createStoreSnapshotIdentityV1,
 } from '../state/types.ts';
 import { getPairAt } from './ledger.ts';
+import { logicalRollbackExecutionMode } from './logical-transactions.ts';
 import type {
   FlipOp,
   FlipOptions,
@@ -945,7 +946,7 @@ export interface PlacementPromotePlanRequestV1 extends PlacementPlanRequestCommo
 }
 
 export interface PlacementRollbackPlanRequestV1 extends PlacementPlanRequestCommonV1 {
-  readonly command: 'dev' | 'promote';
+  readonly command: 'dev' | 'promote' | 'undo';
   readonly mode: 'rollback';
   readonly intents: readonly PlacementRollbackIntentV1[];
 }
@@ -1997,9 +1998,58 @@ const retainedPlacementHistoryInverse = (
         'placement planning: retained rollback history does not match live state',
       );
     }
-    return { journal, inverse };
+    return { journal, inverse, current: retainedCurrent };
   }
   return null;
+};
+
+const pendingFreshPlacementHistoryInverse = (
+  snapshot: ObservedStateSnapshotV1<unknown>,
+  intent: PlacementRollbackIntentV1,
+  liveResource: ReturnType<typeof placementLiveResource>,
+  pair: NonNullable<ReturnType<typeof placementLedgerPair>>,
+) => {
+  const ledger = snapshot.ledger.value;
+  const transactionId = pair.journal?.txId;
+  if (ledger === null || transactionId === undefined) return null;
+  const child = ledger.transactions[transactionId];
+  if (
+    child === undefined ||
+    child.disposition !== 'rollback' ||
+    child.context.parentOperationId === null ||
+    child.context.parentOperationId === child.intent.operationId
+  ) {
+    return null;
+  }
+  const mode = logicalRollbackExecutionMode(ledger, child);
+  if (!mode.ok || mode.value !== 'fresh-reversal') {
+    throw new TypeError('placement planning: fresh rollback linkage is inconsistent');
+  }
+  const parents = ledger.history.filter(
+    (journal) => journal.intent.operationId === child.context.parentOperationId,
+  );
+  const parent = parents.length === 1 ? parents[0] : undefined;
+  const identity = parent === undefined ? null : logicalJournalPairIdentity(parent);
+  const pairId = parent?.intent.pairId ?? null;
+  const projectRoot = intent.projectRoot?.kind === 'machine-bound' ? intent.projectRoot.path : null;
+  if (
+    parent === undefined ||
+    identity === null ||
+    identity.projectRoot !== projectRoot ||
+    identity.skill !== intent.skill ||
+    identity.tool !== intent.tool ||
+    pairId === null ||
+    child.intent.pairId !== pairId
+  ) {
+    throw new TypeError('placement planning: fresh rollback parent targets another placement');
+  }
+  return {
+    child,
+    parent,
+    pairId,
+    before: ownedLiveOperationImage(parent.intent.after, liveResource),
+    after: ownedLiveOperationImage(parent.intent.before, liveResource),
+  };
 };
 
 const placementRollbackOperationFor = (
@@ -2012,10 +2062,58 @@ const placementRollbackOperationFor = (
   const liveState = observation.value;
   validatePlacementLive(intent, liveState);
   const ledgerPair = placementLedgerPair(snapshot, intent, observation, liveState);
-  if (ledgerPair === null) {
-    throw new TypeError('placement planning: rollback intent has no retained inverse');
-  }
   const liveResource = placementLiveResource(intent, observation);
+  const pendingFresh =
+    ledgerPair === null
+      ? null
+      : pendingFreshPlacementHistoryInverse(snapshot, intent, liveResource, ledgerPair);
+  if (pendingFresh !== null) {
+    const { child, pairId, before: parentAfter, after: parentBefore } = pendingFresh;
+    const kind: ExecutableOperation['kind'] =
+      parentBefore.kind === 'absent'
+        ? 'remove'
+        : parentBefore.classification === 'dev'
+          ? 'link-dev'
+          : parentAfter.kind === 'absent'
+            ? 'install'
+            : 'promote';
+    const source = parentBefore.kind === 'placement' ? parentBefore.source : null;
+    const target =
+      kind === 'link-dev' &&
+      parentBefore.kind === 'placement' &&
+      parentBefore.linkTarget?.kind === 'machine-bound'
+        ? parentBefore.linkTarget.path
+        : null;
+    if (kind === 'link-dev' && (source?.kind !== 'local-dev' || target === null)) {
+      throw new TypeError('placement planning: fresh dev rollback history is incomplete');
+    }
+    const base = placementOperationBase(
+      request,
+      intent,
+      snapshot,
+      liveResource,
+      kind,
+      source,
+      target,
+      planningContext,
+    );
+    return {
+      ...base,
+      operationId: child.intent.operationId,
+      groupId: child.intent.groupId,
+      pairId,
+      reversibility: {
+        kind: 'conditional',
+        retentionResourceIds: [pairId],
+      },
+      before: parentAfter,
+      after: parentBefore,
+      reason: {
+        code: 'rollback-inverse',
+        message: `Resume the retained placement reversal for ${intent.skill}.`,
+      },
+    };
+  }
   const observedBeforeSource = operationSourceFromLedgerPairV1(ledgerPair, liveState);
   const before = placementOperationImage(
     operationImageFromLiveStateV1({
@@ -2028,6 +2126,7 @@ const placementRollbackOperationFor = (
   // D9 retains both portable origin and local-dev facts. Prefer the latter only for retained
   // history comparison when the ledger, source observation, and live content prove it exactly.
   const retainedDevSource =
+    ledgerPair !== null &&
     (observedBeforeSource === null || liveState?.placementClass === 'store-linked') &&
     ledgerPair.mode === 'pinned' &&
     ledgerPair.dev != null &&
@@ -2054,13 +2153,19 @@ const placementRollbackOperationFor = (
           }),
         );
   const retainedHistory =
-    ledgerPair.journal == null
+    ledgerPair?.journal == null
       ? retainedPlacementHistoryInverse(snapshot, intent, retainedBefore, liveResource)
       : null;
   if (retainedHistory !== null) {
-    const { inverse: after, journal } = retainedHistory;
+    const { inverse: after, current: canonicalBefore, journal } = retainedHistory;
     const kind: ExecutableOperation['kind'] =
-      after.kind === 'absent' ? 'remove' : after.classification === 'dev' ? 'link-dev' : 'promote';
+      after.kind === 'absent'
+        ? 'remove'
+        : after.classification === 'dev'
+          ? 'link-dev'
+          : canonicalBefore.kind === 'absent'
+            ? 'install'
+            : 'promote';
     const source = after.kind === 'placement' ? after.source : null;
     const target =
       kind === 'link-dev' &&
@@ -2108,13 +2213,16 @@ const placementRollbackOperationFor = (
         kind: 'conditional',
         retentionResourceIds: [journal.intent.pairId],
       },
-      before: retainedBefore,
+      before: canonicalBefore,
       after,
       reason: {
         code: 'rollback-inverse',
         message: `Rollback inverse restores the retained placement for ${intent.skill}.`,
       },
     };
+  }
+  if (ledgerPair === null) {
+    throw new TypeError('placement planning: rollback intent has no retained inverse');
   }
   const rollbackBefore =
     ledgerPair.journal?.before ??
@@ -2350,13 +2458,15 @@ const placementChecksFor = (
  * while callers migrate their reads into `ObservedStateSnapshotV1`.
  */
 export function createPlacementPlan(
-  request:
-    | PlacementDevPlanRequestV1
-    | PlacementPromotePlanRequestV1
-    | PlacementRollbackPlanRequestV1,
+  request: PlacementDevPlanRequestV1 | PlacementPromotePlanRequestV1,
   snapshot: ObservedStateSnapshotV1<unknown>,
   planningContext?: PlacementPlanningContext,
 ): Result<SnapshotBoundOperationPlanV1<'dev' | 'promote'>, SnapshotPlanningErrorV1>;
+export function createPlacementPlan<Command extends PlacementRollbackPlanRequestV1['command']>(
+  request: Omit<PlacementRollbackPlanRequestV1, 'command'> & Readonly<{ command: Command }>,
+  snapshot: ObservedStateSnapshotV1<unknown>,
+  planningContext?: PlacementPlanningContext,
+): Result<SnapshotBoundOperationPlanV1<Command>, SnapshotPlanningErrorV1>;
 export function createPlacementPlan(
   request: PlacementSyncPlanRequestV1,
   snapshot: ObservedStateSnapshotV1<unknown>,
@@ -2366,11 +2476,17 @@ export function createPlacementPlan(
   request: PlacementPlanRequestV1,
   snapshot: ObservedStateSnapshotV1<unknown>,
   planningContext?: PlacementPlanningContext,
-): Result<SnapshotBoundOperationPlanV1<'dev' | 'promote' | 'sync'>, SnapshotPlanningErrorV1> {
+): Result<
+  SnapshotBoundOperationPlanV1<'dev' | 'promote' | 'sync' | 'undo'>,
+  SnapshotPlanningErrorV1
+> {
   try {
     if (
       request.schemaVersion !== 1 ||
-      (request.command !== 'dev' && request.command !== 'promote' && request.command !== 'sync') ||
+      (request.command !== 'dev' &&
+        request.command !== 'promote' &&
+        request.command !== 'sync' &&
+        request.command !== 'undo') ||
       ('mode' in request &&
         request.mode !== undefined &&
         request.mode !== 'forward' &&

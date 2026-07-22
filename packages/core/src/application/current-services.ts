@@ -7,6 +7,7 @@ import { LIFECYCLE_APPLICATION_SERVICES } from './lifecycle-services.ts';
 import { runPlanApplication } from './plan-service.ts';
 import { CURRENT_READ_APPLICATIONS } from './read-services.ts';
 import { runSyncApplication } from './sync-service.ts';
+import { runUndoApplication } from './undo-service.ts';
 import { runUpdateApplication } from './update-service.ts';
 export { runExportApplication } from './export-service.ts';
 export { runInitApplication } from './init-service.ts';
@@ -14,6 +15,7 @@ export { runPlanApplication } from './plan-service.ts';
 export { runApplyApplication } from './apply-service.ts';
 export { runSyncApplication } from './sync-service.ts';
 export { runUpdateApplication } from './update-service.ts';
+export { runUndoApplication } from './undo-service.ts';
 import {
   type ApplicationService,
   type CommandOutcome,
@@ -109,6 +111,7 @@ export const CURRENT_APPLICATION_SERVICES: Readonly<Record<string, AnyCurrentApp
     apply: runApplyApplication as AnyCurrentApplicationService,
     sync: runSyncApplication as AnyCurrentApplicationService,
     update: runUpdateApplication as AnyCurrentApplicationService,
+    undo: runUndoApplication as AnyCurrentApplicationService,
     ...CURRENT_READ_APPLICATIONS,
     ...LIFECYCLE_APPLICATION_SERVICES,
   });

@@ -20,6 +20,7 @@ const ALLOWED_SCOPES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith init': ['user', 'project'],
   'skillsmith plan': ['user', 'project'],
   'skillsmith apply': ['user', 'project'],
+  'skillsmith undo': ['user', 'project'],
   'skillsmith uninstall': ['user', 'project'],
   'skillsmith dev': ['user', 'project'],
   'skillsmith promote': ['user', 'project'],
@@ -175,6 +176,16 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith update:--continue-on-error':
     'Continue with later independent declarations after a failure',
   'skillsmith update:--json': 'Emit the strict update@1 report',
+  'skillsmith undo:--all': 'Select every eligible retained operation in the chosen scope',
+  'skillsmith undo:--tool': 'Restrict selection to a target tool; repeatable',
+  'skillsmith undo:--scope': 'Restrict selection to user or current-project scope',
+  'skillsmith undo:--user': 'Select user-scope retained operations',
+  'skillsmith undo:--project': 'Select current-project retained operations',
+  'skillsmith undo:--dry-run': 'Render the exact undo plan without locking or writing',
+  'skillsmith undo:--yes': 'Approve the exact changing undo plan without prompting',
+  'skillsmith undo:--continue-on-error':
+    'Continue with later independent undo groups after a failure',
+  'skillsmith undo:--json': 'Emit the strict undo@1 report',
   'skillsmith verify:--tool': 'Restrict to tools; repeatable; default: all detected',
   'skillsmith verify:--static': 'Run static verification only; this is the default',
   'skillsmith verify:--deep': 'Also run isolated session-backed load verification',
@@ -425,6 +436,21 @@ export const optionsForPath = (path: string): readonly CommandOptionSpec[] => {
       '--ref',
       '--pin',
       '--strict',
+      '--yes',
+      '--continue-on-error',
+      '--json',
+      '--help',
+    ];
+    return options.sort((left, right) => order.indexOf(left.long) - order.indexOf(right.long));
+  }
+  if (path === 'skillsmith undo') {
+    const order = [
+      '--all',
+      '--tool',
+      '--scope',
+      '--user',
+      '--project',
+      '--dry-run',
       '--yes',
       '--continue-on-error',
       '--json',

@@ -5,8 +5,8 @@
 Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill discovery
 and management across Claude Code, Codex, Kilo Code, and opencode.
 
-**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `update`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `init`, `version`, `completion`, and `help` are implemented.
-**P17 target:** narrow `undo` and `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
+**Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `update`, `undo`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `init`, `version`, `completion`, and `help` are implemented.
+**P17 target:** narrow `gc`, plus consistent behavior across retained commands. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for that future surface.
 
 ## Example output
 
@@ -86,6 +86,8 @@ skillsmith apply --plan review.plan --check # validate exact reviewed work; exit
 skillsmith update --check               # check moving declarations; exit 7 when updates exist
 skillsmith update factor-scan --dry-run # render one exact update plan without writing
 skillsmith update --all --yes           # approve and execute the exact bulk update plan
+skillsmith undo my-skill --dry-run      # preview the newest reversible placement operation
+skillsmith undo --all --yes             # approve the exact bounded undo batch
 skillsmith init --dry-run               # preview creation of the selected manifest
 skillsmith init --tool codex --project  # create project defaults without a lock or live import
 skillsmith install owner/repo           # acquire a skill from a git host
@@ -126,6 +128,16 @@ mutation requires approval of the exact group and operation order, or `--yes`; n
 mutation without `--yes` is a usage error. Claude Code uses its static update gate, while Codex uses
 its static-plus-deep gate. Human output and strict `update@1` JSON project the same selected SHA,
 skill, group, operation, diagnostic, and summary facts; `--check` exits 7 when an update is available.
+
+`undo` selects a target or `--all` within the user and current-project placement history. It aborts
+the newest pending placement transaction or reverses the newest committed `dev`, `promote`,
+`install`, or `uninstall` only when the recorded live image and retained source still match; it
+never guesses an older history entry. `--dry-run` is read-only. Changing JSON or noninteractive
+execution requires `--yes`, while interactive execution presents the exact group and operation
+order before approval. Human output and strict `undo@1` JSON report the same selection, linkage,
+retention, operation, result, and summary facts. Repeating a completed undo reports
+`already-reversed` without toggling state. `dev --rollback` and `promote --rollback` remain
+deprecated compatibility spellings routed through this same undo plan.
 
 `init` creates one declaration-empty canonical manifest. It selects the Git root when available and
 otherwise the XDG user configuration path; `--file`, `--user`, or `--project` select it explicitly.

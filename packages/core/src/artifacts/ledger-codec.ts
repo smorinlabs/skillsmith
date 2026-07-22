@@ -421,6 +421,96 @@ const UNINSTALL_SHADOW_OPERATIONS = Object.freeze(['uninstall'] as const);
 const DEV_SHADOW_OPERATIONS = Object.freeze(['dev'] as const);
 const PROMOTE_SHADOW_OPERATIONS = Object.freeze(['promote'] as const);
 
+const sameJson = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
+
+const sameFreshRollbackIntent = (
+  parent: LogicalJournalV1Dto,
+  child: LogicalJournalV1Dto,
+): boolean =>
+  sameJson(
+    {
+      ...parent.intent,
+      operationId: child.intent.operationId,
+      groupId: child.intent.groupId,
+    },
+    child.intent,
+  );
+
+const freshRollbackParentMatches = (
+  child: LogicalJournalV1Dto,
+  parent: LogicalJournalV1Dto | null | undefined,
+): parent is LogicalJournalV1Dto =>
+  child.disposition === 'rollback' &&
+  child.context.parentOperationId !== null &&
+  child.context.parentOperationId !== child.intent.operationId &&
+  parent !== null &&
+  parent !== undefined &&
+  parent.phase === 'committed' &&
+  parent.disposition === 'forward' &&
+  parent.intent.operationId === child.context.parentOperationId &&
+  parent.transactionId !== child.transactionId &&
+  sameFreshRollbackIntent(parent, child) &&
+  sameJson(parent.actual.after, child.actual.before) &&
+  sameJson(parent.actual.retained, child.actual.retained);
+
+const placementClass = (
+  image: LogicalJournalV1Dto['intent']['before'],
+): 'absent' | 'dev' | 'managed' | null => {
+  if (image.kind === 'absent' && image.resource.kind === 'live') return 'absent';
+  if (image.kind !== 'placement' || image.resource.kind !== 'live') return null;
+  if (image.classification === 'dev') return 'dev';
+  return image.classification === 'pinned' || image.classification === 'store-linked'
+    ? 'managed'
+    : null;
+};
+
+const freshRollbackShadowOperations = (
+  parent: LogicalJournalV1Dto,
+): readonly LegacyJournalOperation[] | null => {
+  const before = placementClass(parent.intent.before);
+  const after = placementClass(parent.intent.after);
+  if (before === null || after === null) return null;
+  switch (parent.intent.kind) {
+    case 'install':
+      return before === 'absent' && after === 'managed' ? UNINSTALL_SHADOW_OPERATIONS : null;
+    case 'link-dev':
+      return after === 'dev'
+        ? before === 'absent'
+          ? UNINSTALL_SHADOW_OPERATIONS
+          : before === 'managed'
+            ? PROMOTE_SHADOW_OPERATIONS
+            : null
+        : null;
+    case 'promote':
+      return after === 'managed'
+        ? before === 'dev'
+          ? DEV_SHADOW_OPERATIONS
+          : before === 'managed'
+            ? PROMOTE_SHADOW_OPERATIONS
+            : null
+        : null;
+    case 'remove':
+      return after === 'absent'
+        ? before === 'dev'
+          ? DEV_SHADOW_OPERATIONS
+          : before === 'managed'
+            ? INSTALL_SHADOW_OPERATIONS
+            : null
+        : null;
+    default:
+      return null;
+  }
+};
+
+const freshRollbackPhaseMatchesParent = (
+  child: LogicalJournalV1Dto,
+  parent: LogicalJournalV1Dto,
+): boolean =>
+  child.phase === 'live' || child.phase === 'committed'
+    ? sameJson(child.actual.after, parent.actual.before)
+    : child.actual.after.length === 0;
+
 const shadowOperations = (
   journal: LogicalJournalV1Dto,
 ): readonly LegacyJournalOperation[] | null => {
@@ -448,26 +538,60 @@ const shadowOperations = (
 
 const matchingShadowOperations = (
   journal: LogicalJournalV1Dto,
+  parent?: LogicalJournalV1Dto | null,
 ): readonly LegacyJournalOperation[] | null =>
-  journal.disposition === 'forward' && journal.intent.kind === 'repair'
-    ? UPDATE_SHADOW_OPERATIONS
-    : shadowOperations(journal);
+  freshRollbackParentMatches(journal, parent)
+    ? freshRollbackShadowOperations(parent)
+    : journal.disposition === 'forward' && journal.intent.kind === 'repair'
+      ? UPDATE_SHADOW_OPERATIONS
+      : shadowOperations(journal);
 
 /** Closed operation-only subset of logical/legacy compatibility-shadow matching. */
 export const legacyJournalOperationMatchesLogicalShadow = (
   logical: LogicalJournalV1Dto,
   operation: LegacyJournalOperation,
-): boolean => matchingShadowOperations(logical)?.includes(operation) ?? false;
+  parent?: LogicalJournalV1Dto | null,
+): boolean => matchingShadowOperations(logical, parent)?.includes(operation) ?? false;
+
+const freshRollbackPhysicalBeforeMatches = (
+  logical: LogicalJournalV1Dto,
+  pair: LedgerPairV1Dto,
+): boolean => {
+  const lives = logical.actual.before.filter((resource) => resource.role === 'live');
+  if (lives.length !== 1) return false;
+  const live = lives[0];
+  const before = pair.journal?.before;
+  if (live === undefined || before === undefined) return false;
+  if (live.state === 'absent') return before.mode === 'absent';
+  const liveKind = live.liveKind === 'symlink' ? 'symlink' : 'dir';
+  if (live.mode === 'dev') {
+    return (
+      before.mode === 'dev' &&
+      live.symlinkTarget !== null &&
+      before.symlinkTarget === live.symlinkTarget &&
+      (before.liveKind ?? liveKind) === liveKind
+    );
+  }
+  if (live.mode !== 'pinned' || before.mode !== 'pinned') return false;
+  return (
+    before.storePath === (pair.pinned?.storePath ?? null) &&
+    before.contentHash === live.contentHash &&
+    (before.liveKind ?? liveKind) === liveKind &&
+    (liveKind !== 'symlink' || before.symlinkTarget === live.symlinkTarget)
+  );
+};
 
 /** Closed logical/legacy compatibility-shadow predicate shared by codec and status projection. */
 export const legacyJournalMatchesLogicalShadow = (
   logical: LogicalJournalV1Dto,
   identity: LedgerPairIdentity,
   pair: LedgerPairV1Dto,
+  parent?: LogicalJournalV1Dto | null,
 ): boolean => {
   const physical = pair.journal;
   const logicalIdentity = logicalJournalPairIdentity(logical);
-  const operations = matchingShadowOperations(logical);
+  const fresh = freshRollbackParentMatches(logical, parent);
+  const operations = matchingShadowOperations(logical, parent);
   if (
     physical === undefined ||
     physical === null ||
@@ -489,7 +613,8 @@ export const legacyJournalMatchesLogicalShadow = (
     operations.includes(physical.op) &&
     physical.phase === logical.phase &&
     physical.startedAt === logical.context.startedAt &&
-    physical.completedAt === logical.completedAt
+    physical.completedAt === logical.completedAt &&
+    (!fresh || freshRollbackPhysicalBeforeMatches(logical, pair))
   );
 };
 
@@ -525,6 +650,39 @@ const validateLedgerCrossReferences = (
     }
     logicalById.set(logical.transactionId, logical);
   }
+  const historyByOperationId = new Map<string, LogicalJournalV1Dto>();
+  for (const logical of history) {
+    if (historyByOperationId.has(logical.intent.operationId)) {
+      return err(codecError('invalid-shape', ['history'], 2));
+    }
+    historyByOperationId.set(logical.intent.operationId, logical);
+  }
+  const pendingOperationIds = new Set<string>();
+  for (const logical of Object.values(transactions)) {
+    if (pendingOperationIds.has(logical.intent.operationId)) {
+      return err(codecError('invalid-shape', ['transactions'], 2));
+    }
+    pendingOperationIds.add(logical.intent.operationId);
+  }
+
+  for (const logical of [...Object.values(transactions), ...history]) {
+    if (
+      logical.disposition === 'rollback' &&
+      logical.context.parentOperationId !== null &&
+      logical.context.parentOperationId !== logical.intent.operationId
+    ) {
+      const parent = historyByOperationId.get(logical.context.parentOperationId);
+      if (
+        (transactions[logical.transactionId] === logical &&
+          historyByOperationId.has(logical.intent.operationId)) ||
+        !freshRollbackParentMatches(logical, parent) ||
+        freshRollbackShadowOperations(parent) === null ||
+        !freshRollbackPhaseMatchesParent(logical, parent)
+      ) {
+        return err(codecError('invalid-shape', ['history'], 2));
+      }
+    }
+  }
 
   const legacyById = new Map<string, LedgerLegacyJournalEntry>();
   for (const legacy of collectLegacyJournals(skills, projects)) {
@@ -533,9 +691,14 @@ const validateLedgerCrossReferences = (
     }
     legacyById.set(legacy.journal.txId, legacy);
     const logical = logicalById.get(legacy.journal.txId);
+    const parent =
+      logical?.context.parentOperationId === null ||
+      logical?.context.parentOperationId === undefined
+        ? null
+        : historyByOperationId.get(logical.context.parentOperationId);
     if (
       logical !== undefined &&
-      !legacyJournalMatchesLogicalShadow(logical, legacy.identity, legacy.pair)
+      !legacyJournalMatchesLogicalShadow(logical, legacy.identity, legacy.pair, parent)
     ) {
       return err(codecError('invalid-shape', ['skills'], 2));
     }
@@ -550,13 +713,23 @@ const validateLedgerCrossReferences = (
   }
 
   for (const logical of Object.values(transactions)) {
-    const operations = shadowOperations(logical);
+    const parent =
+      logical.context.parentOperationId === null
+        ? null
+        : historyByOperationId.get(logical.context.parentOperationId);
+    const operations = freshRollbackParentMatches(logical, parent)
+      ? matchingShadowOperations(logical, parent)
+      : shadowOperations(logical);
     const identity = logicalJournalPairIdentity(logical);
+    const fresh = freshRollbackParentMatches(logical, parent);
+    if (fresh && (operations === null || identity === null)) {
+      return err(codecError('invalid-shape', ['transactions', logical.transactionId], 2));
+    }
     if (operations === null || identity === null) continue;
     const legacy = legacyById.get(logical.transactionId);
     if (
       legacy === undefined ||
-      !legacyJournalMatchesLogicalShadow(logical, identity, legacy.pair)
+      !legacyJournalMatchesLogicalShadow(logical, identity, legacy.pair, parent)
     ) {
       return err(codecError('invalid-shape', ['transactions', logical.transactionId], 2));
     }

@@ -101,6 +101,14 @@ export interface ExactUpdateApprovalPreviewRequest {
   readonly operationIds: readonly string[];
 }
 
+/** Exact immutable undo group and operation order presented before execution. */
+export interface ExactUndoApprovalPreviewRequest {
+  readonly kind: 'exact-undo-preview';
+  readonly command: 'undo';
+  readonly groupIds: readonly string[];
+  readonly operationIds: readonly string[];
+}
+
 /** Structured confirmation facts; adapters own presentation and interactive defaults. */
 export interface InteractionConfirmationRequest {
   readonly id: string;
@@ -108,7 +116,8 @@ export interface InteractionConfirmationRequest {
   readonly preview?:
     | ExactApprovalPreviewRequest
     | ExactSyncApprovalPreviewRequest
-    | ExactUpdateApprovalPreviewRequest;
+    | ExactUpdateApprovalPreviewRequest
+    | ExactUndoApprovalPreviewRequest;
 }
 
 /** Parser-normalized sync request; endpoint resolution and I/O remain behind SyncApplicationPort. */

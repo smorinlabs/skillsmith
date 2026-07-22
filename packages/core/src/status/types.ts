@@ -1,4 +1,5 @@
 import type { SupportedTool } from '../agents/types.ts';
+import type { LedgerReadState } from '../artifacts/ledger-types.ts';
 import type { Scope } from '../config/types.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type {
@@ -10,7 +11,10 @@ import type {
 export type StatusReadPorts = InventoryReadPorts & FileMetadataReadPort;
 
 export type StatusArtifactSelection =
-  | Readonly<{ readonly state: 'unselected'; readonly reason: 'live-only-scope' }>
+  | Readonly<{
+      readonly state: 'unselected';
+      readonly reason: 'live-only-scope' | 'lifecycle-history';
+    }>
   | Readonly<{
       readonly state: 'selected';
       readonly source: 'explicit' | 'discovered-project' | 'project-default' | 'user-default';
@@ -41,6 +45,23 @@ export interface StatusReadRequest {
   readonly selectionSource: 'explicit-targets' | 'bounded-default';
   readonly artifactSelection: StatusArtifactSelection;
   readonly signal?: AbortSignal;
+}
+
+/** Private request-only history observation; it does not widen the public status CLI grammar. */
+export type StatusLifecycleHistoryReadRequest = Readonly<
+  Omit<StatusReadRequest, 'artifactSelection'> & {
+    readonly artifactSelection: Readonly<{
+      readonly state: 'unselected';
+      readonly reason: 'lifecycle-history';
+    }>;
+  }
+>;
+
+/** Status report and exact ledger authority produced by the same single observation. */
+export interface StatusLifecycleHistoryReadResult {
+  readonly report: StatusReport;
+  readonly ledgerPath: string;
+  readonly ledgerState: LedgerReadState;
 }
 
 export interface StatusReadError {

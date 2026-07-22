@@ -102,17 +102,21 @@ describe('undo command contract', () => {
       groups: [
         {
           skill: 'review',
-          tool: 'claude-code',
           scope: 'project',
-          action: 'abort-pending',
-          sourceTransactionId: legacy.transactionId,
-          executionMode: 'resume-rollback',
+          pairs: [
+            {
+              tool: 'claude-code',
+              action: 'abort-pending',
+              sourceTransactionId: legacy.transactionId,
+              executionMode: 'convert-to-rollback',
+            },
+          ],
         },
       ],
     });
     expect(records(preview.operations).map((operation) => operation.kind)).toEqual([
       'migrate-ledger',
-      expect.stringMatching(/rollback|restore/),
+      'remove',
     ]);
     expect(await snapshotUndoState(selected)).toBe(before);
 
@@ -142,17 +146,20 @@ describe('undo command contract', () => {
           {
             skill: 'review',
             scope: 'project',
-            tool: 'claude-code',
-            action: 'reverse-committed',
-            operationFamily: scenario.family,
-            disposition: 'rollback',
+            pairs: [
+              {
+                tool: 'claude-code',
+                action: 'reverse-committed',
+                operationFamily: scenario.family,
+                disposition: 'rollback',
+              },
+            ],
           },
         ],
       });
-      expect(records(preview.groups)[0]?.parentOperationId).toBeString();
-      expect(records(preview.groups)[0]?.activeOperationId).not.toBe(
-        records(preview.groups)[0]?.sourceOperationId,
-      );
+      const pair = records(records(preview.groups)[0]?.pairs)[0];
+      expect(pair?.parentOperationId).toBeString();
+      expect(pair?.activeOperationId).not.toBe(pair?.sourceOperationId);
       const executed = requireUndoReport(
         await runUndoCli(selected, ['undo', 'review', '--project', '--yes', '--json']),
       );
@@ -189,9 +196,13 @@ describe('undo command contract', () => {
     expect(preview).toMatchObject({
       groups: [
         {
-          action: 'abort-pending',
-          phase: 'live',
-          executionMode: expect.stringMatching(/rollback/),
+          pairs: [
+            {
+              action: 'abort-pending',
+              phase: 'live',
+              executionMode: expect.stringMatching(/rollback/),
+            },
+          ],
         },
       ],
     });
@@ -237,9 +248,15 @@ describe('undo command contract', () => {
     expect(repeated).toMatchObject({
       groups: [
         {
-          disposition: 'rollback',
           outcome: 'already-reversed',
           operations: [],
+          pairs: [
+            {
+              disposition: 'rollback',
+              outcome: 'already-reversed',
+              operations: [],
+            },
+          ],
         },
       ],
     });
@@ -289,7 +306,9 @@ describe('undo command contract', () => {
         batchPolicy: 'fail-fast',
       },
     });
-    expect(records(bulk.groups).map((group) => [group.scope, group.tool])).toEqual([
+    expect(
+      records(bulk.groups).map((group) => [group.scope, records(group.pairs)[0]?.tool]),
+    ).toEqual([
       ['user', 'claude-code'],
       ['project', 'codex'],
     ]);
@@ -332,14 +351,14 @@ describe('undo command contract', () => {
 
   test('EWP-CMD-UNDO-TS08 — rollback aliases share undo behavior and emit deprecation', async () => {
     requireUndoBoundary();
-    const directFleet = await fleet();
-    const aliasFleet = await fleet();
-    await seedPromote(directFleet);
-    await seedPromote(aliasFleet);
+    const selected = await fleet();
+    await seedPromote(selected);
+    const before = await snapshotUndoState(selected);
     const direct = requireUndoReport(
-      await runUndoCli(directFleet, ['undo', 'review', '--project', '--dry-run', '--json']),
+      await runUndoCli(selected, ['undo', 'review', '--project', '--dry-run', '--json']),
     );
-    const aliasProduct = await runUndoCli(aliasFleet, [
+    expect(await snapshotUndoState(selected)).toBe(before);
+    const aliasProduct = await runUndoCli(selected, [
       'promote',
       '--rollback',
       'review',
@@ -348,6 +367,7 @@ describe('undo command contract', () => {
       '--json',
     ]);
     const alias = requireJsonObject(aliasProduct);
+    expect(await snapshotUndoState(selected)).toBe(before);
     expect(alias).toMatchObject({ kind: 'skillsmith.flip', schemaVersion: 4, op: 'rollback' });
     expect({
       operations: alias.operations,
@@ -358,7 +378,17 @@ describe('undo command contract', () => {
       checks: direct.checks,
       diagnostics: direct.diagnostics,
     });
-    expect(JSON.stringify(alias)).toMatch(/deprecated|skillsmith undo/i);
+    const humanAlias = await runUndoCli(selected, [
+      'promote',
+      '--rollback',
+      'review',
+      '--project',
+      '--dry-run',
+    ]);
+    expect(humanAlias.exitCode, `${humanAlias.stderr}\n${humanAlias.stdout}`).toBe(0);
+    expect(humanAlias.stderr).toMatch(/deprecated/i);
+    expect(humanAlias.stderr).toContain('skillsmith undo');
+    expect(humanAlias.stderr).toContain('2.0');
   });
 
   test('EWP-CMD-UNDO-TS09 — migration and crash retries converge without toggling history', async () => {

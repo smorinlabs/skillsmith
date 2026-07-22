@@ -1164,6 +1164,35 @@ const logicalLiveMatches = (row: MutableRow, journal: LogicalJournalV1Dto): bool
   return observed.nodeKind === before.liveKind;
 };
 
+const logicalActualLiveMatches = (
+  row: MutableRow,
+  actuals: LogicalJournalV1Dto['actual']['after'],
+): boolean => {
+  const lives = actuals.filter((resource) => resource.role === 'live');
+  if (lives.length !== 1) return false;
+  const actual = lives[0];
+  if (actual === undefined) return false;
+  if (actual.state === 'absent') return row.live === null && row.ledger === null;
+  if (row.live === null || row.path !== actual.placementPath) return false;
+  const observed = row.live.observation;
+  if (
+    (actual.liveKind === 'directory' && observed.nodeKind !== 'directory') ||
+    (actual.liveKind === 'symlink' &&
+      (observed.nodeKind !== 'symlink' || observed.linkTarget !== actual.symlinkTarget)) ||
+    (actual.liveKind !== 'directory' &&
+      actual.liveKind !== 'symlink' &&
+      observed.nodeKind !== actual.liveKind)
+  ) {
+    return false;
+  }
+  if (actual.mode === 'dev') return row.live.physicalClass === 'dev';
+  return (
+    actual.mode === 'pinned' &&
+    row.ledger?.mode === 'pinned' &&
+    (actual.contentHash === null || row.ledger.pinned?.contentHash === actual.contentHash)
+  );
+};
+
 const logicalRetentionCorrelationKey = (journalKey: string, resourceIndex: number): string =>
   JSON.stringify(['logical-retention', journalKey, resourceIndex]);
 
@@ -1296,7 +1325,22 @@ const logicalEligibility = (
   if (journal.phase === 'prepared' || journal.phase === 'staged') {
     return logicalLiveMatches(row, journal) ? 'eligible' : 'not-reversible';
   }
-  if (journal.intent.reversibility.kind === 'none') return 'not-reversible';
+  const terminalForwardMatches =
+    journal.phase !== 'committed' ||
+    journal.disposition !== 'forward' ||
+    logicalActualLiveMatches(row, journal.actual.after);
+  if (journal.intent.reversibility.kind === 'none') {
+    const freshPlacement =
+      journal.phase === 'committed' &&
+      journal.disposition === 'forward' &&
+      (journal.intent.kind === 'install' || journal.intent.kind === 'link-dev') &&
+      journal.intent.before.kind === 'absent' &&
+      before === 'absent' &&
+      journal.intent.after.kind === 'placement' &&
+      journal.actual.retained.length === 0;
+    return freshPlacement && terminalForwardMatches ? 'eligible' : 'not-reversible';
+  }
+  if (!terminalForwardMatches) return 'not-reversible';
   const required = new Set(journal.intent.reversibility.retentionResourceIds);
   const retained = new Set(journal.actual.retained.map((resource) => resource.resourceId));
   if (
@@ -1336,6 +1380,10 @@ const logicalJournalState = (
     '--scope',
     journal.intent.scope as string,
   ]);
+  const terminalEligibility =
+    journal.phase === 'committed' && journal.disposition === 'rollback'
+      ? ('not-reversible' as const)
+      : eligibility;
   return journal.phase === 'committed'
     ? {
         state: 'committed',
@@ -1345,8 +1393,8 @@ const logicalJournalState = (
         phase: 'committed',
         before,
         retention,
-        reverseEligibility: eligibility,
-        remediation: { reverse: eligibility === 'eligible' ? argv : null },
+        reverseEligibility: terminalEligibility,
+        remediation: { reverse: terminalEligibility === 'eligible' ? argv : null },
       }
     : {
         state: 'pending',

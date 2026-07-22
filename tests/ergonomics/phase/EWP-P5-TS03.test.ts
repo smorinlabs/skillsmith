@@ -68,13 +68,18 @@ describe('EWP-P5-TS03', () => {
           await runUndoCli(selected, ['undo', 'review', '--dry-run', '--json']),
         );
         expect(report).toMatchObject({
-          selection: { source: 'explicit-targets', scopes: ['project'] },
+          selection: { source: 'explicit-targets', scopes: ['user', 'project'] },
           groups: [
             {
               skill: 'review',
-              operationFamily: scenario.family,
-              action: 'reverse-committed',
               scope: 'project',
+              pairs: [
+                {
+                  operationFamily: scenario.family,
+                  action: 'reverse-committed',
+                  tool: 'claude-code',
+                },
+              ],
             },
           ],
         });

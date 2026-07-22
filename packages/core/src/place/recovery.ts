@@ -11,7 +11,10 @@ import type { ExecutableOperation } from '../planning/types.ts';
 import type { PlacementExecutionInput } from './execute.ts';
 import { createPlacementSwapRequest } from './execute.ts';
 import { getLedgerPairAt } from './ledger.ts';
-import { beginTransactionRecoveryAttempt } from './logical-transactions.ts';
+import {
+  beginTransactionRecoveryAttempt,
+  logicalRollbackExecutionMode,
+} from './logical-transactions.ts';
 import {
   refusedMessage,
   resumeMoveScopeTransaction,
@@ -32,6 +35,7 @@ export interface PlacementRecoveryTarget {
   readonly skill: string;
   readonly tool: FlipTool;
   readonly scopeKey?: string | null;
+  readonly rollbackContext?: Readonly<{ command: string; workflow: string }>;
 }
 
 const moveScopeJournalMatchesTarget = (
@@ -148,20 +152,22 @@ type PreparedPlacementRecovery =
 const recoveryAttemptCommand = (
   journal: LogicalJournalV1Dto,
   direction: 'resume' | 'rollback',
+  target: PlacementRecoveryTarget,
 ): Readonly<{ command: string; workflow: string }> =>
   direction === 'rollback' && journal.disposition === 'forward'
-    ? { command: 'skillsmith-rollback', workflow: 'placement-swap' }
+    ? (target.rollbackContext ?? { command: 'skillsmith-rollback', workflow: 'placement-swap' })
     : { command: journal.context.command, workflow: journal.context.workflow };
 
 const recoveryObservationJournal = (
   input: PlacementExecutionInput,
   direction: 'resume' | 'rollback',
   journal: LogicalJournalV1Dto | null,
+  target: PlacementRecoveryTarget,
 ): LogicalJournalV1Dto | null => {
   if (journal === null || input.ledger.transactions[journal.transactionId] === undefined) {
     return journal;
   }
-  const attemptContext = recoveryAttemptCommand(journal, direction);
+  const attemptContext = recoveryAttemptCommand(journal, direction, target);
   const attempted = beginTransactionRecoveryAttempt(input.ledger, {
     transactionId: journal.transactionId,
     command: attemptContext.command,
@@ -175,6 +181,7 @@ const planPlacementRecovery = (
   input: PlacementExecutionInput,
   direction: 'resume' | 'rollback',
   journal: LogicalJournalV1Dto | null,
+  target: PlacementRecoveryTarget,
 ): PlannedPlacementRecovery => {
   const request = recoveryRequest(input, journal);
   if (journal === null || input.ledger.transactions[journal.transactionId] === undefined) {
@@ -186,7 +193,7 @@ const planPlacementRecovery = (
       attemptBegun: false,
     });
   }
-  const attemptContext = recoveryAttemptCommand(journal, direction);
+  const attemptContext = recoveryAttemptCommand(journal, direction, target);
   const attempted = beginTransactionRecoveryAttempt(input.ledger, {
     transactionId: journal.transactionId,
     command: attemptContext.command,
@@ -264,7 +271,7 @@ const recoverPlacementInternal = async (
   observation?: ObservationBundle,
 ): Promise<SwapExecutionResult<SwapOutcome>> => {
   const sourceJournal = placementRecoveryJournalForTarget(input, target);
-  const observationJournal = recoveryObservationJournal(input, direction, sourceJournal);
+  const observationJournal = recoveryObservationJournal(input, direction, sourceJournal, target);
   const transactionObservation =
     observation === undefined || observationJournal === null
       ? null
@@ -274,7 +281,7 @@ const recoverPlacementInternal = async (
       ? null
       : beginRecoveryObservation(transactionObservation, direction);
   try {
-    const planned = planPlacementRecovery(input, direction, sourceJournal);
+    const planned = planPlacementRecovery(input, direction, sourceJournal, target);
     if (!planned.ok) {
       if (transactionObservation !== null) {
         const completion = recoveryCompletion(planned);
@@ -300,6 +307,35 @@ const recoverPlacementInternal = async (
       }
       return prepared;
     }
+    const rollbackMode =
+      prepared.journal !== null &&
+      prepared.journal.intent.kind !== 'move-scope' &&
+      prepared.journal.disposition === 'rollback'
+        ? logicalRollbackExecutionMode(prepared.request.state.ledger, prepared.journal)
+        : null;
+    if (rollbackMode !== null && !rollbackMode.ok) {
+      const failed = Object.freeze({
+        ok: false as const,
+        error: flipFailedError(`cannot classify placement recovery: ${rollbackMode.error.message}`),
+        state: prepared.request.state,
+      });
+      if (transactionObservation !== null) {
+        const completion = recoveryCompletion(failed);
+        completeRecoveryObservation(
+          transactionObservation,
+          span,
+          completion.outcome,
+          completion.errorCode,
+        );
+      }
+      return failed;
+    }
+    const physicalDirection =
+      rollbackMode?.ok === true
+        ? rollbackMode.value === 'fresh-reversal'
+          ? 'resume'
+          : 'rollback'
+        : direction;
     const recovered =
       prepared.journal?.intent.kind === 'move-scope'
         ? prepared.journal.disposition === 'rollback'
@@ -335,7 +371,7 @@ const recoverPlacementInternal = async (
                   observation,
                   prepared.attemptBegun,
                 )
-        : direction === 'resume'
+        : physicalDirection === 'resume'
           ? observation === undefined
             ? await resumeSwap(prepared.request, target.skill, target.tool, target.scopeKey ?? null)
             : await resumeSwapObserved(

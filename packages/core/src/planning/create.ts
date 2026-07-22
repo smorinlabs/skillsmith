@@ -68,6 +68,7 @@ const currentPlanningCommands = new Set<string>([
   'init',
   'apply',
   'update',
+  'undo',
   'plan',
 ]);
 
@@ -1397,7 +1398,7 @@ export function createOperationPlan(
   literal(plan.batchPolicy, new Set(['fail-fast', 'continue-on-error']), '$plan.batchPolicy');
   const selection = canonicalSelection(plan.selection, context);
   if (
-    (plan.command === 'dev' || plan.command === 'promote') &&
+    (plan.command === 'dev' || plan.command === 'promote' || plan.command === 'undo') &&
     selection.source === 'bounded-default'
   ) {
     fail(`$plan.selection.source must be explicit for ${plan.command}`);

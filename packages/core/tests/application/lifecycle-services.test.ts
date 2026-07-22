@@ -25,10 +25,10 @@ import {
   createOperationContext,
   noopObserver,
 } from '../../src/observation/index.ts';
-import type { prepareRollback } from '../../src/place/run.ts';
 import type { FlipReport } from '../../src/place/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
 import { err, ok } from '../../src/result.ts';
+import type { PreparedUndoPlan } from '../../src/undo/types.ts';
 import { buildFixtureFleet, destroyFixtureFleet } from '../fixtures/place/fleet.ts';
 
 const ports = {} as RuntimePorts;
@@ -1029,16 +1029,88 @@ describe('lifecycle application services', () => {
     });
   });
 
-  test('dev rollback dispatches to rollback and translates report refusal semantically', async () => {
+  test('dev rollback projects the prepared undo product and emits structured deprecation', async () => {
     let devCalls = 0;
     let devArguments: readonly unknown[] = [];
-    let rollbackArguments: readonly unknown[] = [];
-    let rollbackOptions: Parameters<typeof prepareRollback>[1] | undefined;
-    const refused = flipReport('rollback', {
-      action: 'refused',
-      reason: 'no prior state',
-      error: { code: 'flip-refused', message: 'no prior state' },
-    });
+    let undoArguments: readonly unknown[] = [];
+    const operationId = 'operation:undo:skill:claude';
+    const codexOperationId = 'operation:undo:skill:codex';
+    const groupId = 'group:undo:skill';
+    const operations = [
+      { operationId, groupId, kind: 'promote' },
+      { operationId: codexOperationId, groupId, kind: 'promote' },
+    ] as never;
+    const undoPrepared = {
+      observation: {
+        request: {
+          targets: ['skill'],
+          all: false,
+          tools: ['claude-code', 'codex'],
+          scopes: ['project'],
+          dryRun: false,
+          yes: false,
+          continueOnError: false,
+        },
+        selection: {
+          source: 'explicit-targets',
+          outcome: 'selected',
+          reason: null,
+          targets: ['skill'],
+          tools: ['claude-code', 'codex'],
+          scopes: ['project'],
+        },
+      },
+      plan: {
+        ...flipReport('rollback').plan,
+        command: 'undo',
+        operations,
+      },
+      groups: [
+        {
+          name: 'skill',
+          scope: 'project',
+          groupId,
+          pairs: [
+            {
+              pairId: 'pair:undo:skill:claude',
+              tool: 'claude-code',
+              path: '/project/.claude/skills/skill',
+              operationIds: [operationId],
+              outcome: 'planned',
+              failure: null,
+            },
+            {
+              pairId: 'pair:undo:skill:codex',
+              tool: 'codex',
+              path: '/project/.codex/skills/skill',
+              operationIds: [codexOperationId],
+              outcome: 'planned',
+              failure: null,
+            },
+          ],
+          operationIds: [operationId, codexOperationId],
+          outcome: 'planned',
+          failure: null,
+        },
+      ],
+      execute: async () =>
+        ok([
+          {
+            operationId,
+            outcome: 'failed',
+            error: {
+              code: 'undo-state',
+              message: 'no prior state',
+              remediation: 'inspect skillsmith status',
+            },
+          } as never,
+          {
+            operationId: codexOperationId,
+            outcome: 'succeeded',
+            error: null,
+          } as never,
+        ]),
+    } as unknown as PreparedUndoPlan;
     const services = createLifecycleApplicationServices({
       prepareDev: (async (...args: unknown[]) => {
         devCalls++;
@@ -1050,35 +1122,56 @@ describe('lifecycle application services', () => {
           execute: async () => ok(report),
         });
       }) as never,
-      prepareRollback: (async (...args: Parameters<typeof prepareRollback>) => {
-        rollbackArguments = args;
-        const [, options] = args;
-        rollbackOptions = options;
-        return ok({
-          preview: { ...refused, dryRun: true, executionResults: [] },
-          plan: refused.plan,
-          execute: async () => ok(refused),
-        });
+      prepareUndo: (async (...args: readonly unknown[]) => {
+        undoArguments = args;
+        return ok(undoPrepared);
       }) as never,
     });
 
     const outcome = await services.dev(
       {
         arguments: [['skill']],
-        options: { tool: ['codex'], rollback: true, verify: true },
+        options: { tool: ['claude-code', 'codex'], rollback: true, verify: true },
       },
       context(),
     );
 
     expect(devCalls).toBe(0);
-    expect(rollbackArguments).toHaveLength(2);
-    expect(rollbackArguments).not.toContain(observation);
-    expect(rollbackOptions).toMatchObject({ op: 'dev', targets: ['skill'], tools: ['codex'] });
-    expect(outcome.exitClass).toBe('usage');
+    expect(undoArguments).toHaveLength(3);
+    expect(undoArguments[0]).toMatchObject({
+      targets: ['skill'],
+      tools: ['claude-code', 'codex'],
+    });
+    expect(undoArguments[2]).toMatchObject({ observation });
+    expect(outcome.report.value?.plan.operations.map((item) => item.operationId)).toEqual([
+      operationId,
+      codexOperationId,
+    ]);
+    expect(outcome.report.value?.results).toMatchObject([
+      { skill: 'skill', tool: 'claude-code', action: 'failed', reason: 'no prior state' },
+      { skill: 'skill', tool: 'codex', action: 'rolled-back', reason: null },
+    ]);
+    expect(outcome.exitClass).toBe('failure');
     expect(outcome.diagnostics).toEqual([
-      { code: 'skillsmith.flip-refused', severity: 'error', message: 'no prior state' },
+      { code: 'skillsmith.flip-failed', severity: 'error', message: 'no prior state' },
     ]);
     expect(outcome.mutation.failed).toBe(1);
+    expect(outcome.deprecations).toEqual([
+      expect.objectContaining({
+        spelling: 'skillsmith dev --rollback',
+        replacement: 'skillsmith undo',
+        removalVersion: '2.0',
+      }),
+    ]);
+
+    const promoteAlias = await services.promote(
+      {
+        arguments: [['skill']],
+        options: { tool: ['claude-code', 'codex'], rollback: true, verify: true },
+      },
+      context(),
+    );
+    expect(promoteAlias.report.value?.results).toEqual(outcome.report.value?.results);
 
     const forward = await services.dev(
       {

@@ -39,7 +39,8 @@ const refused = <T>(reason = 'interactive input is unavailable'): InteractionRes
 export const createConfirmationPromptOptions = (request: InteractionConfirmationRequest) => {
   const groups =
     request.preview?.kind === 'exact-sync-preview' ||
-    request.preview?.kind === 'exact-update-preview'
+    request.preview?.kind === 'exact-update-preview' ||
+    request.preview?.kind === 'exact-undo-preview'
       ? request.preview.groupIds
       : [];
   const operations = request.preview?.operationIds ?? [];
@@ -115,6 +116,7 @@ export const createPolicyInteraction = (
 export type {
   ExactApprovalPreviewRequest,
   ExactSyncApprovalPreviewRequest,
+  ExactUndoApprovalPreviewRequest,
   InteractionConfirmationRequest,
   InteractionPort,
   InteractionRequest,

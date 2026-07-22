@@ -79,9 +79,13 @@ describe('planning domain types', () => {
       SnapshotBoundOperationPlanV1['expectedRevisions'],
       SnapshotBoundOperationPlanV1['expectedRevisions']
     > = true;
+    const undoCommand: CurrentMutatorCommand = 'undo';
+    const undoParity: Equal<SnapshotBoundOperationPlanV1<'undo'>['plan']['command'], 'undo'> = true;
 
     expect(commandParity).toBeTrue();
     expect(revisionArrayParity).toBeTrue();
+    expect(undoCommand).toBe('undo');
+    expect(undoParity).toBeTrue();
   });
 
   test('keeps preview planning outside executable mutator authority', () => {
@@ -97,6 +101,7 @@ describe('planning domain types', () => {
       | 'init'
       | 'apply'
       | 'update'
+      | 'undo'
     > = true;
     const planningParity: Equal<CurrentPlanningCommand, CurrentMutatorCommand | 'plan'> = true;
     type OpaqueManifest = Extract<OperationImage, { readonly kind: 'opaque-manifest' }>;

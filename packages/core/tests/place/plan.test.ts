@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm, symlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
+import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
+import { validateJournalV1DtoShape } from '../../src/artifacts/registry.ts';
 import { emptyLedger, setPair } from '../../src/place/ledger.ts';
 import { storeRootOf } from '../../src/place/paths.ts';
 import {
@@ -18,6 +20,11 @@ import type {
   PairRecord,
   PinnedRecord,
 } from '../../src/place/types.ts';
+import {
+  createOperationGroupId,
+  createOperationId,
+  createOperationPairId,
+} from '../../src/planning/create.ts';
 import {
   type ExpectedRevisionV1,
   type LivePlacementStateV1,
@@ -1316,6 +1323,299 @@ describe('createPlacementPlan', () => {
     expect(result.value.plan.operations[0]?.preconditionIds).toHaveLength(
       result.value.expectedRevisions.length + 1,
     );
+
+    const undo = createPlacementPlan({ ...input, command: 'undo' }, observed);
+    expect(undo.ok).toBeTrue();
+    if (!undo.ok) throw new Error(undo.error.message);
+    expect(undo.value.plan.command).toBe('undo');
+    expect(undo.value.plan.selection.source).toBe('explicit-targets');
+  });
+
+  test('plans committed uninstall reversal from retained history when pair and live are absent', () => {
+    const journalNow = '2026-07-16T00:00:00.000Z';
+    const path = '/fixture/live/alpha';
+    const resource = {
+      kind: 'live' as const,
+      skill: 'alpha',
+      tool: 'codex' as const,
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path },
+    };
+    const source = {
+      kind: 'portable' as const,
+      identity: { host: 'example.test', repository: 'fixture/repo', path: 'skills/alpha' },
+      requestedRef: null,
+      resolvedSha: 'c'.repeat(40),
+      sourcePath: 'skills/alpha',
+      contentHash: `sha256:${PLANNER_HEX.c}` as const,
+    };
+    const installed = {
+      kind: 'placement' as const,
+      resource,
+      classification: 'pinned' as const,
+      representation: 'copy' as const,
+      linkTarget: null,
+      dangling: false,
+      source,
+      contentHash: source.contentHash,
+    };
+    const absent = { kind: 'absent' as const, resource };
+    const groupId = createOperationGroupId({
+      domain: 'skillsmith.operation-group-identity',
+      schemaVersion: 1,
+      command: 'uninstall',
+      skill: 'alpha',
+      source,
+      scope: 'user',
+      target: null,
+    });
+    const pairId = createOperationPairId({
+      domain: 'skillsmith.operation-pair-identity',
+      schemaVersion: 1,
+      groupId,
+      tool: 'codex',
+      resource,
+    });
+    const operationId = createOperationId({
+      domain: 'skillsmith.operation-identity',
+      schemaVersion: 1,
+      groupId,
+      pairId,
+      kind: 'remove',
+      skill: 'alpha',
+      source,
+      tool: 'codex',
+      scope: 'user',
+    });
+    const journalInput = {
+      schemaVersion: 1,
+      kind: 'skillsmith.transaction-journal',
+      transactionId: 'tx:uninstall-alpha',
+      intent: {
+        operationId,
+        groupId,
+        pairId,
+        kind: 'remove',
+        skill: 'alpha',
+        source,
+        tool: 'codex',
+        scope: 'user',
+        before: installed,
+        after: absent,
+        mutates: { live: true, manifest: false, lock: false, ledger: true },
+        reversibility: { kind: 'conditional', retentionResourceIds: [pairId] },
+        conflict: null,
+      },
+      context: {
+        parentOperationId: null,
+        command: 'skillsmith-uninstall',
+        workflow: 'uninstall',
+        attempt: 1,
+        startedAt: journalNow,
+      },
+      disposition: 'forward',
+      phase: 'committed',
+      actual: {
+        before: [
+          {
+            resourceId: 'live:alpha',
+            role: 'live',
+            state: 'present',
+            repositoryRevision: { kind: 'resource', digest: source.contentHash },
+            placementPath: path,
+            liveKind: 'directory',
+            mode: 'pinned',
+            symlinkTarget: null,
+            contentHash: source.contentHash,
+          },
+          {
+            resourceId: 'ledger:user',
+            role: 'ledger',
+            state: 'present',
+            repositoryRevision: { kind: 'resource', digest: source.contentHash },
+            schemaVersion: 2,
+            semanticHash: source.contentHash,
+          },
+        ],
+        after: [
+          {
+            resourceId: 'live:alpha',
+            role: 'live',
+            state: 'absent',
+            repositoryRevision: null,
+            placementPath: path,
+            liveKind: null,
+            mode: null,
+            symlinkTarget: null,
+            contentHash: null,
+          },
+          {
+            resourceId: 'ledger:user',
+            role: 'ledger',
+            state: 'present',
+            repositoryRevision: { kind: 'resource', digest: source.contentHash },
+            schemaVersion: 2,
+            semanticHash: source.contentHash,
+          },
+        ],
+        retained: [],
+      },
+      updatedAt: journalNow,
+      completedAt: journalNow,
+    };
+    const journalShape = validateJournalV1DtoShape(journalInput);
+    expect(journalShape.ok, JSON.stringify(journalShape)).toBeTrue();
+    if (!journalShape.ok) throw new Error(journalShape.error.message);
+    const journal = journalShape.value;
+    const observed = plannerSnapshot(PLANNER_HEX.a, PLANNER_HEX.b, {
+      live: [
+        {
+          revision: plannerAbsentRevision('live', 'live-resource-alpha', path, PLANNER_HEX.d),
+          value: null,
+        },
+      ],
+      ledger: {
+        revision: plannerPresentLedgerRevision(PLANNER_HEX.c),
+        value: {
+          updatedAt: journalNow,
+          skills: {},
+          projects: {},
+          projectRegistrations: {},
+          transactions: {},
+          history: [journal],
+        },
+      },
+    });
+    const result = createPlacementPlan(
+      {
+        schemaVersion: 1,
+        command: 'undo',
+        mode: 'rollback',
+        selection: placementRequest().selection,
+        batchPolicy: 'fail-fast',
+        intents: [
+          {
+            kind: 'rollback',
+            skill: 'alpha',
+            tool: 'codex',
+            scope: 'user',
+            projectRoot: null,
+            liveResourceId: 'live-resource-alpha',
+            storeResourceId: null,
+          },
+        ],
+      },
+      observed,
+    );
+
+    expect(result.ok, JSON.stringify(result)).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan).toMatchObject({
+      command: 'undo',
+      operations: [
+        {
+          kind: 'install',
+          before: { kind: 'absent' },
+          after: { kind: 'placement', classification: 'pinned' },
+          reason: { code: 'rollback-inverse' },
+        },
+      ],
+    });
+
+    const inverseOperation = result.value.plan.operations[0];
+    if (inverseOperation === undefined) throw new Error('missing committed reversal operation');
+    const inverseOperationId = inverseOperation.operationId;
+    const inverseTransactionId = 'tx:fresh-remove-reversal';
+    for (const phase of ['prepared', 'staged', 'backed-up', 'live'] as const) {
+      const child: LogicalJournalV1Dto = {
+        ...journal,
+        transactionId: inverseTransactionId,
+        intent: {
+          ...journal.intent,
+          operationId: inverseOperationId,
+          groupId: inverseOperation.groupId,
+        },
+        context: {
+          ...journal.context,
+          parentOperationId: journal.intent.operationId,
+          command: 'skillsmith-undo',
+          workflow: 'undo',
+        },
+        disposition: 'rollback',
+        phase,
+        actual: {
+          before: journal.actual.after,
+          after: phase === 'live' ? journal.actual.before : [],
+          retained: journal.actual.retained,
+        },
+        completedAt: null,
+      };
+      const inversePair: LedgerPairV1Dto = {
+        placementPath: path,
+        mode: 'pinned',
+        dev: null,
+        pinned: {
+          storePath: '/fixture/store/alpha',
+          rev: source.resolvedSha.slice(0, 12),
+          gitSha: source.resolvedSha,
+          dirty: false,
+          contentHash: source.contentHash,
+          snapshotAt: journalNow,
+          verify: 'passed',
+          placement: 'copy',
+        },
+        journal: {
+          op: 'install',
+          txId: inverseTransactionId,
+          phase,
+          startedAt: journalNow,
+          completedAt: null,
+          before: { mode: 'absent' },
+          stagingPath: '/fixture/staging/fresh-alpha',
+          backupPath: '/fixture/backup/fresh-alpha',
+        },
+      };
+      const retry = createPlacementPlan(
+        {
+          schemaVersion: 1,
+          command: 'undo',
+          mode: 'rollback',
+          selection: placementRequest().selection,
+          batchPolicy: 'fail-fast',
+          intents: [
+            {
+              kind: 'rollback',
+              skill: 'alpha',
+              tool: 'codex',
+              scope: 'user',
+              projectRoot: null,
+              liveResourceId: 'live-resource-alpha',
+              storeResourceId: null,
+            },
+          ],
+        },
+        {
+          ...observed,
+          ledger: {
+            ...observed.ledger,
+            value: {
+              ...(observed.ledger.value as NonNullable<typeof observed.ledger.value>),
+              skills: { alpha: { tools: { codex: inversePair } } },
+              transactions: { [inverseTransactionId]: child },
+            },
+          },
+        },
+      );
+      expect(retry.ok, `${phase}: ${JSON.stringify(retry)}`).toBeTrue();
+      if (!retry.ok) throw new Error(retry.error.message);
+      expect(retry.value.plan.operations[0]).toMatchObject({
+        operationId: inverseOperationId,
+        kind: 'install',
+        before: { kind: 'absent' },
+        after: { kind: 'placement', classification: 'pinned' },
+      });
+    }
   });
 
   test('plans rollback to retained pinned state with existing promote vocabulary', () => {

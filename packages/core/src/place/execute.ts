@@ -84,6 +84,8 @@ import type { StoreResourceV1 } from './store-repository.ts';
 import {
   commitRecordOnlyLogicalTransaction,
   commitRecordOnlyLogicalTransactionObserved,
+  runCommittedPlacementReversal,
+  runCommittedPlacementReversalObserved,
   runSwap,
   runSwapObserved,
 } from './swap.ts';
@@ -997,7 +999,7 @@ export type PlacementCoordinatorBinding =
 export interface PlacementOperationPlanExecutionInput {
   readonly env: PlacementPorts;
   readonly ledgerPath: string;
-  readonly plan: OperationPlan<'dev' | 'promote' | 'sync'>;
+  readonly plan: OperationPlan<'dev' | 'promote' | 'sync' | 'undo'>;
   readonly preconditions: readonly ExecutionPrecondition[];
   readonly authority: PlacementSnapshotAuthority;
   readonly reportOp: FlipOp | 'sync';
@@ -1279,6 +1281,33 @@ export const executePlacementPlanWithObservation = (
   observation === undefined
     ? executePlacementPlan(input, plan)
     : executePlacementPlanObserved(input, plan, observation);
+
+/** Atomically publish and execute a fresh reversal of one committed placement transaction. */
+export const executeCommittedPlacementReversal = (
+  input: PlacementExecutionInput,
+  sourceTransactionId: string,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  runCommittedPlacementReversal(createPlacementSwapRequest(input), sourceTransactionId);
+
+export const executeCommittedPlacementReversalObserved = (
+  input: PlacementExecutionInput,
+  sourceTransactionId: string,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  runCommittedPlacementReversalObserved(
+    createPlacementSwapRequest(input),
+    sourceTransactionId,
+    observation,
+  );
+
+export const executeCommittedPlacementReversalWithObservation = (
+  input: PlacementExecutionInput,
+  sourceTransactionId: string,
+  observation?: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> =>
+  observation === undefined
+    ? executeCommittedPlacementReversal(input, sourceTransactionId)
+    : executeCommittedPlacementReversalObserved(input, sourceTransactionId, observation);
 
 export const executePlacementPlans = async (
   input: PlacementExecutionInput,

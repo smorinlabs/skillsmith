@@ -438,7 +438,7 @@ const targetRows: Readonly<Record<string, readonly string[]>> = {
     '--json',
   ],
   undo: [
-    '<skill...>',
+    '[skill...]',
     '--all',
     '-t, --tool <name>',
     '-s, --scope <scope>',

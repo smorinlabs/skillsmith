@@ -6,10 +6,14 @@ import {
   createOperationExecutionResult,
   createOperationPlan,
 } from '@skillsmith/core';
+import { Command } from 'commander';
 import {
   currentWireCodecs,
   currentWireContractRegistry,
 } from '../../src/contracts/wire-contracts.ts';
+import { renderFlipJson } from '../../src/output/flip-json.ts';
+import type { RuntimeOutcome } from '../../src/runtime/adapter.ts';
+import { createCurrentRendererRegistry } from '../../src/runtime/current-renderers.ts';
 
 const V4_GOLDEN_PATH = join(import.meta.dir, '..', 'fixtures', 'flip-report-v4.golden.json');
 const V4_GOLDEN_TEXT = readFileSync(V4_GOLDEN_PATH, 'utf8');
@@ -301,5 +305,46 @@ describe('flip report contract v4', () => {
     if (changedResult === undefined || !isRecord(changedResult.actualAfter)) return;
     changedResult.actualAfter.classification = 'pinned';
     expect(Reflect.apply(codec.validate, codec, [changed])).toMatchObject({ ok: false });
+  });
+
+  test('keeps flip@4 stdout byte exact while legacy rollback aliases warn toward skillsmith undo', () => {
+    const source = createSkippedRuntimeReport();
+    if (source === null) return;
+    const report: FlipReport = {
+      ...source,
+      results: source.results.map((result) => ({ ...result, reason: 'fail-fast' })),
+    };
+    const renderers = createCurrentRendererRegistry(new Command());
+    const outcome: RuntimeOutcome = {
+      report: { value: report },
+      diagnostics: [],
+      exitClass: 'success',
+      mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 1, failed: 0 },
+      deprecations: [
+        {
+          spelling: '--rollback',
+          replacement: 'skillsmith undo',
+          removalVersion: '2.0',
+          message: 'the lifecycle rollback alias is deprecated',
+        },
+      ],
+    };
+
+    for (const [name, renderer, codec] of [
+      ['dev', renderers.dev, currentWireCodecs.dev],
+      ['promote', renderers.promote, currentWireCodecs.promote],
+    ] as const) {
+      if (renderer === undefined) throw new Error(`missing ${name} renderer`);
+      const rendered = renderer.json(outcome);
+      expect(rendered).toEqual({
+        stdout: renderFlipJson(report, codec),
+      });
+      const human = renderer.human(outcome) as {
+        readonly stdout: string;
+        readonly stderr?: string;
+      };
+      expect(human.stderr).toContain('skillsmith undo');
+      expect(human.stderr).toContain('deprecated');
+    }
   });
 });

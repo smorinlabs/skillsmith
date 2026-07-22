@@ -65,14 +65,16 @@ describe('current application-service foundation', () => {
           name === 'plan' ||
           name === 'apply' ||
           name === 'sync' ||
-          name === 'update',
+          name === 'update' ||
+          name === 'undo',
       ),
-    ).toEqual(['export', 'init', 'plan', 'apply', 'sync', 'update']);
+    ).toEqual(['export', 'init', 'plan', 'apply', 'sync', 'update', 'undo']);
     expect(typeof CURRENT_APPLICATION_SERVICES.export).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.init).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.plan).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.apply).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.sync).toBe('function');
     expect(typeof CURRENT_APPLICATION_SERVICES.update).toBe('function');
+    expect(typeof CURRENT_APPLICATION_SERVICES.undo).toBe('function');
   });
 });

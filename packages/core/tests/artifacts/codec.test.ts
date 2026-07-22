@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   DEFAULT_ARTIFACT_MAX_NODES,
   LEDGER_ARTIFACT_MAX_NODES,
@@ -13,6 +15,7 @@ import {
 } from '../../src/artifacts/codec.ts';
 import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
+import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
 import type { LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
 import {
   operationMatchesMatrix,
@@ -22,6 +25,18 @@ import type { PlanOperationIntentV1, PlanOperationV1 } from '../../src/artifacts
 import { legacyJournalMatchesLogicalShadow } from '../../src/artifacts/registry.ts';
 
 const decoder = new TextDecoder();
+const V2_GOLDEN = join(
+  import.meta.dir,
+  '..',
+  '..',
+  '..',
+  '..',
+  'tests',
+  'ergonomics',
+  'fixtures',
+  'p2-ts08',
+  'ledger-v2.golden.json',
+);
 
 describe('artifact codec foundation', () => {
   test('keeps local pinned-copy sync intent journal-only and exact', () => {
@@ -421,6 +436,241 @@ describe('artifact codec foundation', () => {
         identity,
         pair('install'),
       ),
+    ).toBeFalse();
+  });
+
+  test('keeps signed V2 operation-ID compatibility while rejecting duplicate committed IDs', async () => {
+    const decoded = ledgerV2Codec.decode(new Uint8Array(await readFile(V2_GOLDEN)));
+    expect(decoded.ok, JSON.stringify(decoded)).toBeTrue();
+    if (!decoded.ok) return;
+    const pending = Object.values(decoded.value.model.transactions)[0];
+    const committed = decoded.value.model.history[0];
+    expect(pending?.intent.operationId).toBe(committed?.intent.operationId);
+    if (committed === undefined) throw new Error('golden history is missing');
+    expect(
+      ledgerV2Codec.encode({
+        ...decoded.value.model,
+        history: [
+          ...decoded.value.model.history,
+          { ...committed, transactionId: 'tx:duplicate-committed-operation' },
+        ],
+      }).ok,
+    ).toBeFalse();
+  });
+
+  test('validates fresh rollback linkage, phase images, unique IDs, and its exact inverse shadow', () => {
+    const digest = `sha256:${'a'.repeat(64)}` as ArtifactDigest;
+    const ledgerDigest = `sha256:${'b'.repeat(64)}` as ArtifactDigest;
+    const startedAt = '2026-07-16T00:00:00.000Z';
+    const resource = {
+      kind: 'live' as const,
+      skill: 'alpha',
+      tool: 'codex' as const,
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path: '/fixture/live/alpha' },
+    };
+    const source = {
+      kind: 'portable' as const,
+      identity: { host: 'example.test', repository: 'fixture/repo', path: 'skills/alpha' },
+      requestedRef: null,
+      resolvedSha: 'a'.repeat(40),
+      sourcePath: 'skills/alpha',
+      contentHash: digest,
+    };
+    const absent = { kind: 'absent' as const, resource };
+    const placement = {
+      kind: 'placement' as const,
+      resource,
+      classification: 'pinned' as const,
+      representation: 'copy' as const,
+      linkTarget: null,
+      dangling: false,
+      source,
+      contentHash: digest,
+    };
+    const absentActual = {
+      resourceId: 'live:alpha',
+      role: 'live' as const,
+      state: 'absent' as const,
+      repositoryRevision: null,
+      placementPath: resource.location.path,
+      liveKind: null,
+      mode: null,
+      symlinkTarget: null,
+      contentHash: null,
+    };
+    const placementActual = {
+      resourceId: 'live:alpha',
+      role: 'live' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest },
+      placementPath: resource.location.path,
+      liveKind: 'directory' as const,
+      mode: 'pinned' as const,
+      symlinkTarget: null,
+      contentHash: digest,
+    };
+    const ledgerActual = {
+      resourceId: 'ledger:user',
+      role: 'ledger' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest: ledgerDigest },
+      schemaVersion: 2 as const,
+      semanticHash: ledgerDigest,
+    };
+    const parent: LogicalJournalV1Dto = {
+      schemaVersion: 1,
+      kind: 'skillsmith.transaction-journal',
+      transactionId: 'tx:parent-install',
+      intent: {
+        operationId: 'operation:parent-install',
+        groupId: 'group:parent-install',
+        pairId: 'pair:alpha:codex',
+        kind: 'install',
+        skill: 'alpha',
+        source,
+        tool: 'codex',
+        scope: 'user',
+        before: absent,
+        after: placement,
+        mutates: { live: true, manifest: false, lock: false, ledger: true },
+        reversibility: { kind: 'none', retentionResourceIds: [] },
+        conflict: null,
+      },
+      context: {
+        parentOperationId: null,
+        command: 'skillsmith-install',
+        workflow: 'install',
+        attempt: 1,
+        startedAt,
+      },
+      disposition: 'forward',
+      phase: 'committed',
+      actual: {
+        before: [absentActual, ledgerActual],
+        after: [placementActual, ledgerActual],
+        retained: [],
+      },
+      updatedAt: startedAt,
+      completedAt: startedAt,
+    };
+    const child: LogicalJournalV1Dto = {
+      ...parent,
+      transactionId: 'tx:fresh-install-reversal',
+      intent: {
+        ...parent.intent,
+        operationId: 'operation:fresh-install-reversal',
+        groupId: 'group:fresh-install-reversal',
+      },
+      context: {
+        parentOperationId: parent.intent.operationId,
+        command: 'skillsmith-undo',
+        workflow: 'undo',
+        attempt: 1,
+        startedAt,
+      },
+      disposition: 'rollback',
+      phase: 'prepared',
+      actual: { before: parent.actual.after, after: [], retained: parent.actual.retained },
+      completedAt: null,
+    };
+    const pair: LedgerPairV1Dto = {
+      placementPath: resource.location.path,
+      mode: 'pinned',
+      dev: null,
+      pinned: {
+        storePath: '/fixture/store/alpha',
+        rev: source.resolvedSha.slice(0, 12),
+        gitSha: source.resolvedSha,
+        dirty: false,
+        contentHash: digest,
+        snapshotAt: startedAt,
+        verify: 'passed',
+        placement: 'copy',
+      },
+      journal: {
+        op: 'uninstall',
+        txId: child.transactionId,
+        phase: 'prepared',
+        startedAt,
+        completedAt: null,
+        before: {
+          mode: 'pinned',
+          storePath: '/fixture/store/alpha',
+          contentHash: digest,
+          liveKind: 'dir',
+        },
+        stagingPath: '/fixture/staging/alpha',
+        backupPath: '/fixture/backup/alpha',
+      },
+    };
+    const model = {
+      updatedAt: startedAt,
+      skills: { alpha: { tools: { codex: pair } } },
+      projects: {},
+      projectRegistrations: {},
+      transactions: { [child.transactionId]: child },
+      history: [parent],
+    };
+
+    expect(ledgerV2Codec.encode(model).ok).toBeTrue();
+    expect(
+      ledgerV2Codec.encode({
+        ...model,
+        transactions: {
+          [child.transactionId]: {
+            ...child,
+            actual: { ...child.actual, after: parent.actual.before },
+          },
+        },
+      }).ok,
+    ).toBeFalse();
+    expect(
+      ledgerV2Codec.encode({
+        ...model,
+        skills: { alpha: { tools: { codex: { ...pair, journal: null } } } },
+      }).ok,
+    ).toBeFalse();
+    expect(
+      ledgerV2Codec.encode({
+        ...model,
+        transactions: {
+          [child.transactionId]: {
+            ...child,
+            intent: { ...child.intent, operationId: parent.intent.operationId },
+          },
+        },
+      }).ok,
+    ).toBeFalse();
+    const liveChild = {
+      ...child,
+      phase: 'live' as const,
+      actual: { ...child.actual, after: parent.actual.before },
+    };
+    if (pair.journal == null) throw new Error('fresh physical shadow is missing');
+    const livePair: LedgerPairV1Dto = {
+      ...pair,
+      journal: { ...pair.journal, phase: 'live' },
+    };
+    expect(
+      ledgerV2Codec.encode({
+        ...model,
+        skills: { alpha: { tools: { codex: livePair } } },
+        transactions: { [liveChild.transactionId]: liveChild },
+      }).ok,
+    ).toBeTrue();
+    expect(
+      ledgerV2Codec.encode({
+        ...model,
+        skills: { alpha: { tools: { codex: livePair } } },
+        transactions: {
+          [liveChild.transactionId]: {
+            ...liveChild,
+            actual: { ...liveChild.actual, after: [] },
+          },
+        },
+      }).ok,
     ).toBeFalse();
   });
 });

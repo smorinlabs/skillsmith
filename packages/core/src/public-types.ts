@@ -55,6 +55,7 @@ export type {
   ExactApprovalPreviewRequest,
   ExactSyncApprovalPreviewRequest,
   ExactUpdateApprovalPreviewRequest,
+  ExactUndoApprovalPreviewRequest,
   MutationSummary,
   PreparedSyncApplication,
   SyncApplicationPort,
@@ -70,6 +71,29 @@ export type { PlanApplicationReport } from './application/plan-service.ts';
 export type { ApplyApplicationReport } from './application/apply-service.ts';
 export type { SyncApplicationReport } from './application/sync-service.ts';
 export type { UpdateApplicationReport } from './application/update-service.ts';
+export type { UndoApplicationReport } from './application/undo-service.ts';
+export type {
+  PreparedUndoPlan,
+  UndoAction,
+  UndoApplicationComposition,
+  UndoCandidate,
+  UndoEffect,
+  UndoError,
+  UndoExecutionMode,
+  UndoJournalAuthority,
+  UndoObservation,
+  UndoOperationFamily,
+  UndoPhase,
+  UndoPlanGroup,
+  UndoPreparedProduct,
+  UndoReport,
+  UndoRequest,
+  UndoScope,
+  UndoSelectionReport,
+  UndoTool,
+  ValidatedUndoSelection,
+} from './undo/types.ts';
+export type { ObserveUndoRuntime } from './undo/observe.ts';
 export type * from './application/lifecycle-services.ts';
 export type * from './application/read-services.ts';
 export type * from './export/types.ts';

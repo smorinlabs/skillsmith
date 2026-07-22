@@ -14,7 +14,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { parseArtifactDigest } from '../../src/artifacts/hash.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import {
@@ -137,6 +137,197 @@ const cleanupHistoryModel = async (
   return Object.freeze({
     model: { ...emptyLedgerModel('2026-07-15T00:00:00.000Z'), history },
     backupPaths: Object.freeze(backupPaths),
+  });
+};
+
+const dependencyDigest = unwrap(parseArtifactDigest(`sha256:${'d'.repeat(64)}`));
+
+const dependencyBackup = (
+  transactionId: string,
+  path: string,
+  retainUntil: string | null = null,
+): LogicalJournalV1Dto['actual']['retained'][number] => ({
+  resourceId: `backup:${transactionId}`,
+  role: 'backup',
+  sourceRole: 'live',
+  path,
+  repositoryRevision: { kind: 'resource', digest: dependencyDigest },
+  contentHash: dependencyDigest,
+  retainUntil,
+});
+
+const dependencyForwardJournal = (
+  index: number,
+  retained: LogicalJournalV1Dto['actual']['retained'] = [],
+): LogicalJournalV1Dto => {
+  const suffix = index.toString(16).padStart(16, '0');
+  const placementPath = '/fixture/dependency/skills/review';
+  const resource = {
+    kind: 'live' as const,
+    skill: 'review',
+    tool: 'codex' as const,
+    scope: 'user' as const,
+    projectRoot: null,
+    location: { kind: 'machine-bound' as const, path: placementPath },
+  };
+  const source = {
+    kind: 'portable' as const,
+    identity: { host: 'fixture.invalid', repository: 'acme/skills', path: 'review' },
+    requestedRef: null,
+    resolvedSha: 'd'.repeat(40),
+    sourcePath: 'review',
+    contentHash: dependencyDigest,
+  };
+  const absent = {
+    resourceId: 'live:review:codex',
+    role: 'live' as const,
+    state: 'absent' as const,
+    repositoryRevision: null,
+    placementPath,
+    liveKind: null,
+    mode: null,
+    symlinkTarget: null,
+    contentHash: null,
+  };
+  const present = {
+    resourceId: 'live:review:codex',
+    role: 'live' as const,
+    state: 'present' as const,
+    repositoryRevision: { kind: 'resource' as const, digest: dependencyDigest },
+    placementPath,
+    liveKind: 'directory' as const,
+    mode: 'pinned' as const,
+    symlinkTarget: null,
+    contentHash: dependencyDigest,
+  };
+  const ledger = {
+    resourceId: 'ledger:placements',
+    role: 'ledger' as const,
+    state: 'present' as const,
+    repositoryRevision: { kind: 'artifact-bytes' as const, digest: dependencyDigest },
+    schemaVersion: 2 as const,
+    semanticHash: dependencyDigest,
+  };
+  return {
+    schemaVersion: 1,
+    kind: 'skillsmith.transaction-journal',
+    transactionId: `tx:dependency:${suffix}`,
+    intent: {
+      operationId: `operation:dependency:${suffix}`,
+      groupId: `group:dependency:${suffix}`,
+      pairId: 'pair:review:codex',
+      kind: 'install',
+      skill: 'review',
+      source,
+      tool: 'codex',
+      scope: 'user',
+      before: { kind: 'absent', resource },
+      after: {
+        kind: 'placement',
+        resource,
+        classification: 'pinned',
+        representation: 'copy',
+        linkTarget: null,
+        dangling: false,
+        source,
+        contentHash: dependencyDigest,
+      },
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+      reversibility:
+        retained.length === 0
+          ? { kind: 'none', retentionResourceIds: [] }
+          : {
+              kind: 'conditional',
+              retentionResourceIds: retained.map(({ resourceId }) => resourceId) as [
+                string,
+                ...string[],
+              ],
+            },
+      conflict: null,
+    },
+    context: {
+      parentOperationId: null,
+      command: 'skillsmith-install',
+      workflow: 'dependency-history-fixture',
+      attempt: 1,
+      startedAt: `2026-07-15T00:${(index % 60).toString().padStart(2, '0')}:00.000Z`,
+    },
+    disposition: 'forward',
+    phase: 'committed',
+    actual: { before: [absent, ledger], after: [present, ledger], retained },
+    updatedAt: '2026-07-15T01:00:00.000Z',
+    completedAt: '2026-07-15T01:00:01.000Z',
+  };
+};
+
+const dependencyRollbackChild = (
+  parent: LogicalJournalV1Dto,
+  identity: LogicalJournalV1Dto,
+  phase: LogicalJournalV1Dto['phase'] = 'committed',
+): LogicalJournalV1Dto => ({
+  ...parent,
+  transactionId: identity.transactionId,
+  intent: {
+    ...parent.intent,
+    operationId: identity.intent.operationId,
+    groupId: identity.intent.groupId,
+  },
+  context: {
+    ...parent.context,
+    parentOperationId: parent.intent.operationId,
+    workflow: 'dependency-history-rollback',
+  },
+  disposition: 'rollback',
+  phase,
+  actual: {
+    before: parent.actual.after,
+    after: phase === 'live' || phase === 'committed' ? parent.actual.before : [],
+    retained: parent.actual.retained,
+  },
+  completedAt: phase === 'committed' ? '2026-07-15T02:00:01.000Z' : null,
+});
+
+const dependencyCleanupModel = async (
+  root: string,
+): Promise<
+  Readonly<{
+    model: ReturnType<typeof emptyLedgerModel>;
+    parent: LogicalJournalV1Dto;
+    child: LogicalJournalV1Dto;
+    backupPath: string;
+  }>
+> => {
+  const parentIdentity = dependencyForwardJournal(0);
+  const backupPath = join(
+    root,
+    `.skillsmith-artifact-${parentIdentity.transactionId}`,
+    'live.backup',
+  );
+  const bytes = Buffer.from('dependency-closed retained backup\n');
+  const digest = unwrap(
+    parseArtifactDigest(`sha256:${createHash('sha256').update(bytes).digest('hex')}`),
+  );
+  const retained: LogicalJournalV1Dto['actual']['retained'] = [
+    {
+      ...dependencyBackup(parentIdentity.transactionId, backupPath),
+      repositoryRevision: { kind: 'resource', digest },
+      contentHash: digest,
+    },
+  ];
+  const parent = dependencyForwardJournal(0, retained);
+  const child = dependencyRollbackChild(parent, dependencyForwardJournal(1));
+  await mkdir(dirname(backupPath), { recursive: true, mode: 0o700 });
+  await chmod(dirname(backupPath), 0o700);
+  await writeFile(backupPath, bytes);
+  const tail = Array.from({ length: 256 }, (_, index) => dependencyForwardJournal(index + 2));
+  return Object.freeze({
+    model: {
+      ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+      history: [parent, child, ...tail],
+    },
+    parent,
+    child,
+    backupPath,
   });
 };
 
@@ -557,6 +748,118 @@ describe('bounded history and one-victim cleanup', () => {
     expect(selected.cleanupVictim).toBeNull();
   });
 
+  test('rejects duplicate committed operations and fresh rollback children without an exact parent', () => {
+    const parent = dependencyForwardJournal(0);
+    const duplicate: LogicalJournalV1Dto = {
+      ...dependencyForwardJournal(1),
+      intent: {
+        ...dependencyForwardJournal(1).intent,
+        operationId: parent.intent.operationId,
+      },
+    };
+    expect(
+      selectBoundedHistory({
+        ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+        history: [parent, duplicate],
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: 'invalid-history', transactionId: duplicate.transactionId },
+    });
+
+    const orphan: LogicalJournalV1Dto = {
+      ...dependencyRollbackChild(parent, dependencyForwardJournal(2)),
+      context: {
+        ...parent.context,
+        parentOperationId: 'operation:dependency:missing',
+      },
+    };
+    expect(
+      selectBoundedHistory({
+        ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+        history: [parent, orphan],
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: 'invalid-history', transactionId: orphan.transactionId },
+    });
+  });
+
+  test('admits a fair rollback child and its parent as one unit at the capacity boundary', () => {
+    const history = Array.from({ length: 258 }, (_, index) => dependencyForwardJournal(index));
+    const parent = history[1];
+    const childIdentity = history[2];
+    if (parent === undefined || childIdentity === undefined) {
+      throw new Error('dependency capacity fixture is incomplete');
+    }
+    const child = dependencyRollbackChild(parent, childIdentity);
+    history[2] = child;
+    const selected = unwrap(
+      selectBoundedHistory({
+        ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+        history,
+      }),
+    );
+    const selectedIds = selected.history.map(({ transactionId }) => transactionId);
+    expect(selected.history).toHaveLength(257);
+    expect(selectedIds).toContain(parent.transactionId);
+    expect(selectedIds).toContain(child.transactionId);
+    expect(selectedIds).not.toContain(history[0]?.transactionId);
+  });
+
+  test('raises protected capacity and lets newest, retained, and pending children protect parents', () => {
+    const parent = dependencyForwardJournal(0);
+    const protectedHistory = [parent];
+    for (let index = 1; index <= 255; index += 1) {
+      const identity = dependencyForwardJournal(index);
+      protectedHistory.push(
+        dependencyForwardJournal(index, [
+          dependencyBackup(
+            identity.transactionId,
+            `/fixture/protected/${identity.transactionId}/live.backup`,
+            '2026-08-01T00:00:00.000Z',
+          ),
+        ]),
+      );
+    }
+    const newestChild = dependencyRollbackChild(parent, dependencyForwardJournal(256));
+    protectedHistory.push(newestChild);
+    const protectedSelection = unwrap(
+      selectBoundedHistory({
+        ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+        history: protectedHistory,
+      }),
+    );
+    expect(protectedSelection.history).toHaveLength(257);
+    expect(protectedSelection.history[0]?.transactionId).toBe(parent.transactionId);
+    expect(protectedSelection.history.at(-1)?.transactionId).toBe(newestChild.transactionId);
+
+    const parentBackup = dependencyBackup(
+      parent.transactionId,
+      `/fixture/.skillsmith-artifact-${parent.transactionId}/live.backup`,
+    );
+    const cleanupParent = dependencyForwardJournal(0, [parentBackup]);
+    const pendingChild = dependencyRollbackChild(
+      cleanupParent,
+      dependencyForwardJournal(300),
+      'live',
+    );
+    const pendingSelection = unwrap(
+      selectBoundedHistory({
+        ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+        transactions: { [pendingChild.transactionId]: pendingChild },
+        history: [
+          cleanupParent,
+          ...Array.from({ length: 256 }, (_, index) => dependencyForwardJournal(index + 1)),
+        ],
+      }),
+    );
+    expect(pendingSelection.history.map(({ transactionId }) => transactionId)).toContain(
+      cleanupParent.transactionId,
+    );
+    expect(pendingSelection.cleanupVictim?.transactionId).not.toBe(cleanupParent.transactionId);
+  });
+
   test('refuses cleanup when revision authority is stale before filesystem access', async () => {
     const calls: string[] = [];
     const model = emptyLedgerModel('2026-07-15T00:00:00.000Z');
@@ -613,6 +916,88 @@ describe('bounded history and one-victim cleanup', () => {
       }),
     );
     expect(receipt.model.history).toHaveLength(256);
+    expect(
+      unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(path)))).model.history,
+    ).toEqual(receipt.model.history);
+  }, 60_000);
+
+  test('preflights and removes a shared-backup dependency closure as one victim unit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-history-dependency-cleanup-'));
+    roots.push(root);
+    const path = join(root, 'placements.json');
+    const fixture = await dependencyCleanupModel(root);
+    const selected = unwrap(selectBoundedHistory(fixture.model));
+    expect(selected.cleanupVictim?.transactionId).toBe(fixture.child.transactionId);
+    expect(selected.history.map(({ transactionId }) => transactionId)).toEqual(
+      fixture.model.history.map(({ transactionId }) => transactionId),
+    );
+
+    const writer = await createTestNodeLedgerWriter(path, {});
+    const receipt = unwrap(
+      await writer.finalizeHistory({ model: fixture.model, expectedByteRevision: null }),
+    );
+    const finalIds = receipt.model.history.map(({ transactionId }) => transactionId);
+    expect(receipt.model.history).toHaveLength(256);
+    expect(finalIds).not.toContain(fixture.parent.transactionId);
+    expect(finalIds).not.toContain(fixture.child.transactionId);
+    expect(existsSync(fixture.backupPath)).toBeFalse();
+  }, 30_000);
+
+  test('keeps the complete dependency frontier durable when shared-backup proof is unsafe', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-history-dependency-unsafe-'));
+    roots.push(root);
+    const path = join(root, 'placements.json');
+    const fixture = await dependencyCleanupModel(root);
+    const shared = join(root, 'linked-dependency-backup');
+    await link(fixture.backupPath, shared);
+    const writer = await createTestNodeLedgerWriter(path, {});
+    expect(
+      await writer.finalizeHistory({ model: fixture.model, expectedByteRevision: null }),
+    ).toEqual({ ok: false, error: { code: 'invalid-state', path: fixture.backupPath } });
+    const durable = unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(path)))).model;
+    const durableIds = durable.history.map(({ transactionId }) => transactionId);
+    expect(durableIds).toContain(fixture.parent.transactionId);
+    expect(durableIds).toContain(fixture.child.transactionId);
+    expect(selectBoundedHistory(durable)).toMatchObject({
+      ok: true,
+      value: { cleanupVictim: { transactionId: fixture.child.transactionId, status: 'pending' } },
+    });
+    expect(existsSync(fixture.backupPath)).toBeTrue();
+  }, 30_000);
+
+  test('restart never persists a rollback child after its shared-backup parent was cleaned', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-history-dependency-restart-'));
+    roots.push(root);
+    const path = join(root, 'placements.json');
+    const fixture = await dependencyCleanupModel(root);
+    const interrupted = await createTestNodeLedgerWriter(path, {
+      afterBarrier: async ({ kind }) => {
+        if (kind === 'history-backup-cleanup') {
+          throw Object.assign(new Error('dependency cleanup interruption'), { code: 'cancelled' });
+        }
+      },
+    });
+    await expect(
+      interrupted.finalizeHistory({ model: fixture.model, expectedByteRevision: null }),
+    ).rejects.toThrow('dependency cleanup interruption');
+    const durableBytes = new Uint8Array(await readFile(path));
+    const durable = unwrap(ledgerV2Codec.decode(durableBytes)).model;
+    const durableIds = durable.history.map(({ transactionId }) => transactionId);
+    expect(durableIds).toContain(fixture.parent.transactionId);
+    expect(durableIds).toContain(fixture.child.transactionId);
+    expect(existsSync(fixture.backupPath)).toBeFalse();
+
+    const resumed = await createTestNodeLedgerWriter(path, {});
+    const receipt = unwrap(
+      await resumed.finalizeHistory({
+        model: durable,
+        expectedByteRevision: ledgerByteRevision(durableBytes),
+      }),
+    );
+    const finalIds = receipt.model.history.map(({ transactionId }) => transactionId);
+    expect(receipt.model.history).toHaveLength(256);
+    expect(finalIds).not.toContain(fixture.parent.transactionId);
+    expect(finalIds).not.toContain(fixture.child.transactionId);
     expect(
       unwrap(ledgerV2Codec.decode(new Uint8Array(await readFile(path)))).model.history,
     ).toEqual(receipt.model.history);

@@ -6,6 +6,7 @@ import { toolRegistry } from '../../src/agents/registry.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
+import { validateJournalV1DtoShape } from '../../src/artifacts/registry.ts';
 import { resolveProjectContext } from '../../src/context/project.ts';
 import {
   type PlacementOperationExecutionBindingInput,
@@ -20,6 +21,12 @@ import {
   withPlacementLedgerBootstrapAuthorityV1,
 } from '../../src/place/execute.ts';
 import { emptyLedgerModel, readLedgerState, writeLedger } from '../../src/place/ledger.ts';
+import {
+  beginCommittedLogicalTransactionReversal,
+  beginTransactionRecoveryAttempt,
+  logicalRollbackExecutionMode,
+  logicalRollbackTerminalActualAfter,
+} from '../../src/place/logical-transactions.ts';
 import type { PairRecord, PlacementPorts } from '../../src/place/types.ts';
 import {
   createOperationGroupId,
@@ -507,6 +514,190 @@ const installOperation = (): ExecutableOperation => {
 };
 
 describe('placement execution boundary', () => {
+  test('begins a fresh history-preserving reversal with parent-oriented terminal facts', async () => {
+    const reversalNow = '2026-07-16T19:34:56.000Z';
+    const operation = installOperation();
+    const liveActual = {
+      resourceId: 'live:alpha',
+      role: 'live' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest: `sha256:${'d'.repeat(64)}` },
+      placementPath: '/fixture/skills/alpha',
+      liveKind: 'directory' as const,
+      mode: 'pinned' as const,
+      symlinkTarget: null,
+      contentHash: operation.source?.contentHash ?? null,
+    };
+    const absentActual = {
+      resourceId: 'live:alpha',
+      role: 'live' as const,
+      state: 'absent' as const,
+      repositoryRevision: null,
+      placementPath: '/fixture/skills/alpha',
+      liveKind: null,
+      mode: null,
+      symlinkTarget: null,
+      contentHash: null,
+    };
+    const ledgerActual = {
+      resourceId: 'ledger:user',
+      role: 'ledger' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest: `sha256:${'e'.repeat(64)}` },
+      schemaVersion: 2 as const,
+      semanticHash: `sha256:${'f'.repeat(64)}` as const,
+    };
+    const sourceInput = {
+      schemaVersion: 1,
+      kind: 'skillsmith.transaction-journal',
+      transactionId: 'tx:source-install',
+      intent: {
+        operationId: operation.operationId,
+        groupId: operation.groupId,
+        pairId: operation.pairId,
+        kind: operation.kind,
+        skill: operation.skill,
+        source: operation.source,
+        tool: operation.tool,
+        scope: operation.scope,
+        before: operation.before,
+        after: operation.after,
+        mutates: operation.mutates,
+        reversibility: operation.reversibility,
+        conflict: operation.conflict,
+      },
+      context: {
+        parentOperationId: null,
+        command: 'skillsmith-install',
+        workflow: 'install',
+        attempt: 1,
+        startedAt: reversalNow,
+      },
+      disposition: 'forward',
+      phase: 'committed',
+      actual: {
+        before: [absentActual, ledgerActual],
+        after: [liveActual, ledgerActual],
+        retained: [],
+      },
+      updatedAt: reversalNow,
+      completedAt: reversalNow,
+    };
+    const sourceShape = validateJournalV1DtoShape(sourceInput);
+    expect(sourceShape.ok, JSON.stringify(sourceShape)).toBeTrue();
+    if (!sourceShape.ok) throw new Error(sourceShape.error.message);
+    const source = sourceShape.value;
+    const pair: PairRecord = {
+      placementPath: '/fixture/skills/alpha',
+      mode: 'pinned',
+      dev: null,
+      pinned: {
+        storePath: '/fixture/store/alpha',
+        rev: 'fixture-revision',
+        gitSha: null,
+        dirty: false,
+        contentHash: operation.source?.contentHash ?? '',
+        snapshotAt: reversalNow,
+        verify: 'passed',
+        placement: 'copy',
+      },
+      journal: null,
+    };
+    const model: ReturnType<typeof emptyLedgerModel> = {
+      ...emptyLedgerModel(NOW),
+      skills: { alpha: { tools: { codex: pair } } },
+      history: [source],
+    };
+    const before = structuredClone(model);
+    const begun = beginCommittedLogicalTransactionReversal(model, {
+      sourceTransactionId: source.transactionId,
+      transactionId: 'tx:fresh-reversal',
+      operationId: 'operation:fresh-reversal',
+      groupId: 'group:fresh-reversal',
+      command: 'skillsmith-undo',
+      workflow: 'undo',
+      startedAt: reversalNow,
+      updatedAt: reversalNow,
+    });
+
+    expect(begun.ok, JSON.stringify(begun)).toBeTrue();
+    if (!begun.ok) throw new Error(begun.error.message);
+    expect(model).toEqual(before);
+    expect(begun.value.history).toEqual(model.history);
+    const rollback = begun.value.transactions['tx:fresh-reversal'];
+    if (rollback === undefined) throw new Error('fresh reversal transaction missing');
+    expect(rollback).toMatchObject({
+      disposition: 'rollback',
+      phase: 'prepared',
+      intent: {
+        operationId: 'operation:fresh-reversal',
+        groupId: 'group:fresh-reversal',
+        before: source.intent.before,
+        after: source.intent.after,
+      },
+      context: {
+        parentOperationId: source.intent.operationId,
+        command: 'skillsmith-undo',
+        workflow: 'undo',
+      },
+      actual: { before: source.actual.after, after: [], retained: source.actual.retained },
+    });
+    expect(logicalRollbackExecutionMode(begun.value, rollback)).toEqual({
+      ok: true,
+      value: 'fresh-reversal',
+    });
+    expect(logicalRollbackTerminalActualAfter(begun.value, rollback)).toEqual({
+      ok: true,
+      value: source.actual.before,
+    });
+
+    const attempted = beginTransactionRecoveryAttempt(begun.value, {
+      transactionId: rollback.transactionId,
+      command: 'skillsmith-undo',
+      workflow: 'undo',
+      updatedAt: reversalNow,
+    });
+    expect(attempted.ok).toBeTrue();
+    if (!attempted.ok) throw new Error(attempted.error.message);
+    const retried = attempted.value.transactions[rollback.transactionId];
+    if (retried === undefined) throw new Error('retried reversal transaction missing');
+    expect(retried.context.parentOperationId).toBe(source.intent.operationId);
+    expect(logicalRollbackExecutionMode(attempted.value, retried)).toEqual({
+      ok: true,
+      value: 'fresh-reversal',
+    });
+    expect(logicalRollbackTerminalActualAfter(attempted.value, retried)).toEqual({
+      ok: true,
+      value: source.actual.before,
+    });
+
+    const convertedPending = {
+      ...source,
+      disposition: 'rollback' as const,
+      phase: 'prepared' as const,
+      context: { ...source.context, parentOperationId: source.intent.operationId },
+      actual: { ...source.actual, after: [] },
+      completedAt: null,
+    };
+    expect(logicalRollbackExecutionMode(model, convertedPending)).toEqual({
+      ok: true,
+      value: 'resume-rollback',
+    });
+    expect(logicalRollbackTerminalActualAfter(model, convertedPending)).toEqual({
+      ok: true,
+      value: source.actual.before,
+    });
+
+    const inconsistent = {
+      ...rollback,
+      actual: { ...rollback.actual, before: source.actual.before },
+    };
+    expect(logicalRollbackExecutionMode(begun.value, inconsistent)).toMatchObject({
+      ok: false,
+      error: { reason: 'identity-conflict' },
+    });
+  });
+
   test('creates an exact pair binding that delegates through the placement lifecycle', async () => {
     const operation = installOperation();
     const stageResourceIds = ['live:alpha', 'store:alpha'];

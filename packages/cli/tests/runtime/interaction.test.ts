@@ -124,3 +124,26 @@ describe('update interaction preview', () => {
     });
   });
 });
+
+describe('undo interaction preview', () => {
+  test('renders exact group and operation IDs in supplied order and defaults to No', () => {
+    expect(
+      createConfirmationPromptOptions({
+        id: 'undo.approval',
+        message: 'Confirm this exact undo plan?',
+        preview: {
+          kind: 'exact-undo-preview',
+          command: 'undo',
+          groupIds: ['group:z-last', 'group:a-first'],
+          operationIds: ['operation:migrate', 'operation:restore'],
+        },
+      }),
+    ).toEqual({
+      message:
+        'Confirm this exact undo plan?\n' +
+        'Exact groups:\n  1. "group:z-last"\n  2. "group:a-first"\n' +
+        'Exact operations:\n  1. "operation:migrate"\n  2. "operation:restore"',
+      initialValue: false,
+    });
+  });
+});

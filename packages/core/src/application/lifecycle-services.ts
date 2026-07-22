@@ -16,21 +16,30 @@ import type {
 import { type LifecycleToolRegistry, toolRegistry } from '../agents/registry.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
-import type { SkillSmithError } from '../errors.ts';
+import { type SkillSmithError, cancelledError, flipFailedError } from '../errors.ts';
 import { emitOperationPlanCreated } from '../execution/observation.ts';
 import type { ObservationBundle } from '../observation/index.ts';
 import {
   prepareDevWithRegistryObserved,
   preparePromoteWithRegistryObserved,
-  prepareRollbackWithRegistryObserved,
 } from '../place/run.ts';
-import type { prepareDev, preparePromote, prepareRollback } from '../place/run.ts';
-import type { FlipReport, FlipTool } from '../place/types.ts';
+import type { prepareDev, preparePromote } from '../place/run.ts';
+import type { FlipReport, FlipTool, PreparedFlipRun } from '../place/types.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
-import type { OperationPlan } from '../planning/types.ts';
-import type { Result } from '../result.ts';
+import type { OperationExecutionResult, OperationPlan } from '../planning/types.ts';
+import { type Result, ok } from '../result.ts';
 import { validateSelectionRequest } from '../selection/resolve.ts';
 import type { SelectionCapability, SelectionPolicy } from '../selection/types.ts';
+import { prepareUndo } from '../undo/execute.ts';
+import { reduceUndoPlanGroups } from '../undo/plan.ts';
+import type {
+  PreparedUndoPlan,
+  UndoError,
+  UndoPlanPair,
+  UndoRequest,
+  UndoTool,
+  ValidatedUndoSelection,
+} from '../undo/types.ts';
 import { exitClassForApplicationError, selectApplicationExitClass } from './exit-policy.ts';
 import {
   type ApplicationService,
@@ -38,6 +47,7 @@ import {
   type CommandOutcome,
   type CurrentApplicationContext,
   type CurrentCommandRequest,
+  type Deprecation,
   type Diagnostic,
   type InteractionPort,
   type MutationSummary,
@@ -61,7 +71,7 @@ export interface LifecycleDependencies {
   readonly uninstall: typeof runUninstall;
   readonly prepareDev: typeof prepareDev;
   readonly preparePromote: typeof preparePromote;
-  readonly prepareRollback: typeof prepareRollback;
+  readonly prepareUndo: typeof prepareUndo;
 }
 
 type ObservedInstallDependency = (
@@ -81,19 +91,13 @@ type ObservedPrepareDependency = (
   opts: Parameters<typeof prepareDev>[1],
   observation: ObservationBundle,
 ) => ReturnType<typeof prepareDev>;
-type ObservedRollbackDependency = (
-  env: Parameters<typeof prepareRollback>[0],
-  opts: Parameters<typeof prepareRollback>[1],
-  observation: ObservationBundle,
-) => ReturnType<typeof prepareRollback>;
-
 interface ObservedLifecycleDependencies {
   readonly resolveContext: typeof resolveProjectContext;
   readonly install: ObservedInstallDependency;
   readonly uninstall: ObservedUninstallDependency;
   readonly prepareDev: ObservedPrepareDependency;
   readonly preparePromote: ObservedPrepareDependency;
-  readonly prepareRollback: ObservedRollbackDependency;
+  readonly prepareUndo: typeof prepareUndo;
 }
 
 const defaultDependenciesFor = (
@@ -120,8 +124,7 @@ const defaultDependenciesFor = (
     prepareDevWithRegistryObserved(registry, env, opts, observation),
   preparePromote: (env, opts, observation) =>
     preparePromoteWithRegistryObserved(registry, env, opts, observation),
-  prepareRollback: (env, opts, observation) =>
-    prepareRollbackWithRegistryObserved(registry, env, opts, observation),
+  prepareUndo,
 });
 
 const observeDependencyPlan = <TReport extends Readonly<{ plan: OperationPlan }>, TError>(
@@ -141,7 +144,7 @@ const runtimeDependenciesFor = (
   const uninstallOverride = overrides.uninstall;
   const prepareDevOverride = overrides.prepareDev;
   const preparePromoteOverride = overrides.preparePromote;
-  const prepareRollbackOverride = overrides.prepareRollback;
+  const prepareUndoOverride = overrides.prepareUndo;
   return {
     resolveContext: overrides.resolveContext ?? defaults.resolveContext,
     install:
@@ -164,11 +167,7 @@ const runtimeDependenciesFor = (
         ? defaults.preparePromote
         : async (env, opts, observation) =>
             observeDependencyPlan(await preparePromoteOverride(env, opts), observation),
-    prepareRollback:
-      prepareRollbackOverride === undefined
-        ? defaults.prepareRollback
-        : async (env, opts, observation) =>
-            observeDependencyPlan(await prepareRollbackOverride(env, opts), observation),
+    prepareUndo: prepareUndoOverride ?? defaults.prepareUndo,
   };
 };
 
@@ -562,6 +561,7 @@ const reportOutcome = <TReport extends CurrentInstallReport | CurrentUninstallRe
   errors: readonly SkillSmithError[],
   mutation: MutationSummary,
   signal?: AbortSignal,
+  deprecations: readonly Deprecation[] = [],
 ): CommandOutcome<LifecycleApplicationReport<TReport>> => ({
   report: { command, value: report },
   diagnostics: errors.map(diagnosticForError),
@@ -569,8 +569,132 @@ const reportOutcome = <TReport extends CurrentInstallReport | CurrentUninstallRe
     ? 'cancelled'
     : selectApplicationExitClass(errors.map((error) => exitClassForApplicationError(error))),
   mutation,
-  deprecations: [],
+  deprecations,
 });
+
+const rollbackDeprecation = (command: 'dev' | 'promote'): readonly Deprecation[] =>
+  Object.freeze([
+    Object.freeze({
+      spelling: `skillsmith ${command} --rollback`,
+      replacement: 'skillsmith undo',
+      removalVersion: '2.0',
+      message: `skillsmith ${command} --rollback is deprecated`,
+    }),
+  ]);
+
+const aliasFailure = (
+  command: 'dev' | 'promote',
+  error: UndoError,
+): CommandOutcome<DevApplicationReport | PromoteApplicationReport> => ({
+  report: { command, value: null },
+  diagnostics: [{ code: error.code, severity: 'error', message: error.message }],
+  exitClass: error.exitClass,
+  mutation: NO_MUTATION,
+  deprecations: rollbackDeprecation(command),
+});
+
+const aliasPlan = (
+  prepared: PreparedUndoPlan,
+  command: 'dev' | 'promote',
+): OperationPlan<'dev' | 'promote'> =>
+  Object.freeze({ ...prepared.plan, command }) as OperationPlan<'dev' | 'promote'>;
+
+const aliasPairResult = (skill: string, pair: UndoPlanPair): FlipReport['results'][number] => {
+  const action =
+    pair.outcome === 'already-reversed'
+      ? ('noop' as const)
+      : pair.outcome === 'failed' || pair.outcome === 'cancelled'
+        ? ('failed' as const)
+        : pair.outcome === 'not-run'
+          ? ('skipped' as const)
+          : ('rolled-back' as const);
+  const reason =
+    pair.outcome === 'already-reversed'
+      ? 'already reversed'
+      : pair.outcome === 'cancelled'
+        ? 'undo was cancelled'
+        : pair.outcome === 'not-run'
+          ? 'not run after an earlier failure'
+          : (pair.failure?.message ?? null);
+  return {
+    skill,
+    tool: pair.tool,
+    placementPath: pair.path,
+    action,
+    reason,
+    before: null,
+    after: null,
+    store: null,
+    verify: null,
+    ...(pair.outcome !== 'failed' && pair.outcome !== 'cancelled'
+      ? {}
+      : {
+          error:
+            pair.outcome === 'cancelled'
+              ? cancelledError('undo was cancelled')
+              : flipFailedError(pair.failure?.message ?? 'undo execution failed'),
+        }),
+  };
+};
+
+const aliasFlipReport = (
+  prepared: PreparedUndoPlan,
+  command: 'dev' | 'promote',
+  dryRun: boolean,
+  executionResults: readonly OperationExecutionResult[],
+): FlipReport => {
+  const groups = dryRun ? prepared.groups : reduceUndoPlanGroups(prepared.groups, executionResults);
+  const results = groups.flatMap((group) =>
+    group.pairs.map((pair) => aliasPairResult(group.name, pair)),
+  );
+  const count = (action: FlipReport['results'][number]['action']): number =>
+    results.filter((result) => result.action === action).length;
+  return Object.freeze({
+    op: 'rollback' as const,
+    dryRun,
+    requested: {
+      targets: [...prepared.observation.selection.targets],
+      all: prepared.observation.request.all,
+      tools: [...prepared.observation.selection.tools],
+      explicitTools: prepared.observation.request.tools.length > 0,
+    },
+    plan: aliasPlan(prepared, command),
+    executionResults: [...executionResults],
+    results,
+    summary: {
+      flipped: 0,
+      updated: 0,
+      noop: count('noop'),
+      skipped: count('skipped'),
+      refused: count('refused'),
+      failed: count('failed'),
+      rolledBack: count('rolled-back'),
+      created: 0,
+      adopted: 0,
+    },
+  });
+};
+
+interface PreparedUndoAlias {
+  readonly preview: FlipReport;
+  readonly plan: OperationPlan<'dev' | 'promote'>;
+  readonly execute: () => Promise<Result<FlipReport, UndoError>>;
+}
+
+const projectUndoAlias = (
+  prepared: PreparedUndoPlan,
+  command: 'dev' | 'promote',
+): PreparedUndoAlias => {
+  const preview = aliasFlipReport(prepared, command, true, []);
+  return Object.freeze({
+    preview,
+    plan: preview.plan,
+    execute: async () => {
+      const executed = await prepared.execute();
+      return executed.ok ? ok(aliasFlipReport(prepared, command, false, executed.value)) : executed;
+    },
+  });
+};
 
 const installMutation = (report: CurrentInstallReport): MutationSummary => ({
   kind: report.dryRun ? 'preview' : 'applied',
@@ -1002,15 +1126,40 @@ export const createLifecycleApplicationServices = (
       ...(pause === undefined ? {} : { testPauseAt: pause }),
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
-    const prepared = await (rollback
-      ? dependencies.prepareRollback(
-          context.ports,
-          { ...flipOptions, op: 'dev' },
-          context.observation,
-        )
-      : dependencies.prepareDev(context.ports, flipOptions, context.observation));
-    if (!prepared.ok) return domainFailure('dev', prepared.error, context.signal);
-    const missingTarget = explicitBatchTargetFailure(prepared.value.preview, targets.length);
+    let prepared: PreparedFlipRun | PreparedUndoAlias;
+    if (rollback) {
+      const undoRequest: UndoRequest = {
+        targets,
+        all: flipOptions.all,
+        tools: selection.value.tools as readonly UndoTool[],
+        scopes: selection.value.scopes as readonly ('user' | 'project')[],
+        dryRun: flipOptions.dryRun,
+        yes: bool(options, 'yes'),
+        continueOnError: flipOptions.continueOnError,
+      };
+      const undoPrepared = await dependencies.prepareUndo(
+        undoRequest,
+        selection.value as ValidatedUndoSelection,
+        {
+          ports: context.ports,
+          projectContext: project.value,
+          configuration: context.configuration,
+          observation: context.observation,
+          ...(context.signal === undefined ? {} : { signal: context.signal }),
+        },
+      );
+      if (!undoPrepared.ok) return aliasFailure('dev', undoPrepared.error);
+      prepared = projectUndoAlias(undoPrepared.value, 'dev');
+    } else {
+      const forwardPrepared = await dependencies.prepareDev(
+        context.ports,
+        flipOptions,
+        context.observation,
+      );
+      if (!forwardPrepared.ok) return domainFailure('dev', forwardPrepared.error, context.signal);
+      prepared = forwardPrepared.value;
+    }
+    const missingTarget = explicitBatchTargetFailure(prepared.preview, targets.length);
     if (missingTarget !== undefined) {
       return refusal(
         'dev',
@@ -1021,19 +1170,30 @@ export const createLifecycleApplicationServices = (
     }
     let report: FlipReport;
     if (flipOptions.dryRun) {
-      report = prepared.value.preview;
+      report = prepared.preview;
     } else {
       if (flipOptions.all || targets.length > 1) {
-        const approval = await authorizeBulkPlan('dev', prepared.value.plan, context.interaction);
+        const approval = await authorizeBulkPlan('dev', prepared.plan, context.interaction);
         if (!approval.ok)
           return refusal('dev', approval.exitClass, approval.code, approval.message);
       }
-      const result = await prepared.value.execute();
-      if (!result.ok) return domainFailure('dev', result.error, context.signal);
+      const result = await prepared.execute();
+      if (!result.ok) {
+        return rollback
+          ? aliasFailure('dev', result.error as UndoError)
+          : domainFailure('dev', result.error as SkillSmithError, context.signal);
+      }
       report = result.value;
     }
     const errors = report.results.flatMap((item) => (item.error ? [item.error] : []));
-    return reportOutcome('dev', report, errors, flipMutation(report), context.signal);
+    return reportOutcome(
+      'dev',
+      report,
+      errors,
+      flipMutation(report),
+      context.signal,
+      rollback ? rollbackDeprecation('dev') : [],
+    );
   };
 
   const promote: ApplicationService<CurrentCommandRequest, PromoteApplicationReport> = async (
@@ -1097,15 +1257,42 @@ export const createLifecycleApplicationServices = (
       ...(pause === undefined ? {} : { testPauseAt: pause }),
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     };
-    const prepared = await (rollback
-      ? dependencies.prepareRollback(
-          context.ports,
-          { ...flipOptions, op: 'promote' },
-          context.observation,
-        )
-      : dependencies.preparePromote(context.ports, flipOptions, context.observation));
-    if (!prepared.ok) return domainFailure('promote', prepared.error, context.signal);
-    const missingTarget = explicitBatchTargetFailure(prepared.value.preview, targets.length);
+    let prepared: PreparedFlipRun | PreparedUndoAlias;
+    if (rollback) {
+      const undoRequest: UndoRequest = {
+        targets,
+        all: flipOptions.all,
+        tools: selection.value.tools as readonly UndoTool[],
+        scopes: selection.value.scopes as readonly ('user' | 'project')[],
+        dryRun: flipOptions.dryRun,
+        yes: bool(options, 'yes'),
+        continueOnError: flipOptions.continueOnError,
+      };
+      const undoPrepared = await dependencies.prepareUndo(
+        undoRequest,
+        selection.value as ValidatedUndoSelection,
+        {
+          ports: context.ports,
+          projectContext: project.value,
+          configuration: context.configuration,
+          observation: context.observation,
+          ...(context.signal === undefined ? {} : { signal: context.signal }),
+        },
+      );
+      if (!undoPrepared.ok) return aliasFailure('promote', undoPrepared.error);
+      prepared = projectUndoAlias(undoPrepared.value, 'promote');
+    } else {
+      const forwardPrepared = await dependencies.preparePromote(
+        context.ports,
+        flipOptions,
+        context.observation,
+      );
+      if (!forwardPrepared.ok) {
+        return domainFailure('promote', forwardPrepared.error, context.signal);
+      }
+      prepared = forwardPrepared.value;
+    }
+    const missingTarget = explicitBatchTargetFailure(prepared.preview, targets.length);
     if (missingTarget !== undefined) {
       return refusal(
         'promote',
@@ -1116,23 +1303,30 @@ export const createLifecycleApplicationServices = (
     }
     let report: FlipReport;
     if (flipOptions.dryRun) {
-      report = prepared.value.preview;
+      report = prepared.preview;
     } else {
       if (flipOptions.all || targets.length > 1) {
-        const approval = await authorizeBulkPlan(
-          'promote',
-          prepared.value.plan,
-          context.interaction,
-        );
+        const approval = await authorizeBulkPlan('promote', prepared.plan, context.interaction);
         if (!approval.ok)
           return refusal('promote', approval.exitClass, approval.code, approval.message);
       }
-      const result = await prepared.value.execute();
-      if (!result.ok) return domainFailure('promote', result.error, context.signal);
+      const result = await prepared.execute();
+      if (!result.ok) {
+        return rollback
+          ? aliasFailure('promote', result.error as UndoError)
+          : domainFailure('promote', result.error as SkillSmithError, context.signal);
+      }
       report = result.value;
     }
     const errors = report.results.flatMap((item) => (item.error ? [item.error] : []));
-    return reportOutcome('promote', report, errors, flipMutation(report), context.signal);
+    return reportOutcome(
+      'promote',
+      report,
+      errors,
+      flipMutation(report),
+      context.signal,
+      rollback ? rollbackDeprecation('promote') : [],
+    );
   };
 
   return { install, uninstall, dev, promote } as const;

@@ -105,6 +105,24 @@ describe('skillsmith help routing', () => {
     expect(r.stdout).not.toContain('See skillsmith help exit-codes.');
   });
 
+  test('undo help exposes the exact optional target-or-all grammar and guarded execution policy', async () => {
+    const r = await run(['undo', '--help']);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    expect(r.stdout).toContain('undo [options] [skill...]');
+    expect(r.stdout).toContain('Skill names whose latest eligible retained operations');
+    expect(r.stdout).toContain('should be reversed');
+    expect(r.stdout).toContain('--all');
+    expect(r.stdout).toContain('Select every eligible retained operation in the chosen');
+    expect(r.stdout).toContain('--dry-run');
+    expect(r.stdout).toContain('--yes');
+    expect(r.stdout).toContain('Approve the exact changing undo plan without prompting');
+    expect(r.stdout).toContain('$ skillsmith undo factor-scan --dry-run');
+    expect(r.stdout).toContain(
+      '4    a selected tool does not support the required undo capability',
+    );
+  });
+
   test('generated help stays descriptive across discover, maintain, and develop groups', async () => {
     const [list, check, dev] = await Promise.all([
       run(['list', '--help']),

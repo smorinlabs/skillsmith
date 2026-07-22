@@ -21,6 +21,7 @@ import {
   type PromoteApplicationReport,
   type StatusApplicationReport,
   type SyncApplicationReport,
+  type UndoApplicationReport,
   type UninstallApplicationReport,
   type VerifyApplicationReport,
   type VersionReport,
@@ -67,6 +68,8 @@ import { renderStatusHuman } from '../output/status-human.ts';
 import { renderStatusJson } from '../output/status-json.ts';
 import { renderSyncHuman } from '../output/sync-human.ts';
 import { renderSyncJson } from '../output/sync-json.ts';
+import { renderUndoHuman } from '../output/undo-human.ts';
+import { renderUndoJson } from '../output/undo-json.ts';
 import { renderUpdateHuman } from '../output/update-human.ts';
 import { renderUpdateJson } from '../output/update-json.ts';
 import {
@@ -211,19 +214,19 @@ export const renderFlipLifecycleStderr = (value: FlipReport): string =>
 const lifecycleRenderer = <T>(
   human: (value: T, outcome: RuntimeOutcome) => string,
   json: (value: T) => string,
-  stderr: (value: T) => string,
+  stderr: (value: T, outcome: RuntimeOutcome, format: 'human' | 'json') => string,
 ) => ({
   human: (outcome: RuntimeOutcome) => {
     const value = report<{ readonly value: T | null }>(outcome).value;
     return value === null
       ? (errorOutput(outcome, 'human') ?? '')
-      : renderedLifecycleOutput(human(value, outcome), stderr(value));
+      : renderedLifecycleOutput(human(value, outcome), stderr(value, outcome, 'human'));
   },
   json: (outcome: RuntimeOutcome) => {
     const value = report<{ readonly value: T | null }>(outcome).value;
     return value === null
       ? (errorOutput(outcome, 'json') ?? '')
-      : renderedLifecycleOutput(json(value), stderr(value));
+      : renderedLifecycleOutput(json(value), stderr(value, outcome, 'json'));
   },
 });
 
@@ -370,6 +373,20 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
         return value === null
           ? (errorOutput(outcome, 'json') ?? '')
           : withDiagnostics(outcome, renderUpdateJson(value, currentWireCodecs.update));
+      },
+    },
+    undo: {
+      human: (outcome) => {
+        const value = report<UndoApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'human') ?? '')
+          : withDiagnostics(outcome, renderUndoHuman(value));
+      },
+      json: (outcome) => {
+        const value = report<UndoApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : withDiagnostics(outcome, renderUndoJson(value, currentWireCodecs.undo));
       },
     },
     configGet: guarded<ConfigGetReport>(
@@ -524,12 +541,14 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
     dev: lifecycleRenderer<NonNullable<DevApplicationReport['value']>>(
       (value, outcome) => renderFlipHuman(value, exitCodeForClass(outcome.exitClass)),
       (value) => renderFlipJson(value, currentWireCodecs.dev),
-      renderFlipLifecycleStderr,
+      (value, outcome, format) =>
+        `${renderFlipLifecycleStderr(value)}${format === 'human' ? warningOutput(outcome) : ''}`,
     ),
     promote: lifecycleRenderer<NonNullable<PromoteApplicationReport['value']>>(
       (value, outcome) => renderFlipHuman(value, exitCodeForClass(outcome.exitClass)),
       (value) => renderFlipJson(value, currentWireCodecs.promote),
-      renderFlipLifecycleStderr,
+      (value, outcome, format) =>
+        `${renderFlipLifecycleStderr(value)}${format === 'human' ? warningOutput(outcome) : ''}`,
     ),
   };
 };

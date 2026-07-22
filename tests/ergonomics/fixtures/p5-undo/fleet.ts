@@ -8,6 +8,7 @@ import {
   realpath,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -161,9 +162,10 @@ export const createUndoFleet = async (): Promise<UndoFleet> => {
       join(bin, 'claude'),
       [
         '#!/bin/sh',
-        'if [ "$1" = "--version" ]; then echo "2.1.202 (Claude Code)"; exit 0; fi',
-        'if [ "$1" = "plugin" ] && [ "$2" = "validate" ]; then exit 0; fi',
-        'exit 0',
+        'if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then echo "2.1.202 (Claude Code)"; exit 0; fi',
+        'if [ "$#" -eq 4 ] && [ "$1" = "plugin" ] && [ "$2" = "validate" ] && [ "$4" = "--strict" ]; then exit 0; fi',
+        'if [ "$#" -eq 9 ] && [ "$1" = "--print" ] && [ "$2" = "--verbose" ] && [ "$3" = "--output-format" ] && [ "$4" = "stream-json" ] && [ "$5" = "--setting-sources" ] && [ -z "$6" ] && [ "$7" = "--plugin-dir" ] && [ "$9" = "ok" ]; then echo "{\\"type\\":\\"system\\",\\"subtype\\":\\"init\\",\\"plugins\\":[{\\"name\\":\\"review\\"}],\\"skills\\":[\\"review:review\\"]}"; exit 0; fi',
+        'exit 64',
         '',
       ].join('\n'),
       { mode: 0o755 },
@@ -172,9 +174,12 @@ export const createUndoFleet = async (): Promise<UndoFleet> => {
       join(bin, 'codex'),
       [
         '#!/bin/sh',
-        'if [ "$1" = "--version" ]; then echo "codex-cli 0.142.5"; exit 0; fi',
-        'if [ "$1" = "exec" ]; then exit 0; fi',
-        'exit 0',
+        'if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then echo "codex-cli 0.142.5"; exit 0; fi',
+        'if [ "$#" -eq 4 ] && [ "$1" = "plugin" ] && [ "$2" = "marketplace" ] && [ "$3" = "add" ]; then exit 0; fi',
+        'if [ "$#" -eq 3 ] && [ "$1" = "plugin" ] && [ "$2" = "add" ] && [ "$3" = "review@skillsmith-mkt" ]; then echo "Added plugin review@skillsmith-mkt"; exit 0; fi',
+        'if [ "$#" -eq 3 ] && [ "$1" = "plugin" ] && [ "$2" = "list" ] && [ "$3" = "--json" ]; then echo "{\\"installed\\":[{\\"name\\":\\"review\\"}]}"; exit 0; fi',
+        'if [ "$#" -eq 6 ] && [ "$1" = "exec" ] && [ "$2" = "-C" ] && [ "$4" = "--skip-git-repo-check" ] && [ "$5" = "--dangerously-bypass-approvals-and-sandbox" ] && [ "$6" = "ok" ]; then exit 0; fi',
+        'exit 64',
         '',
       ].join('\n'),
       { mode: 0o755 },
@@ -447,6 +452,21 @@ const ledgerHasPhase = (value: unknown, phase: string): boolean => {
   return Object.values(value).some((entry) => ledgerHasPhase(entry, phase));
 };
 
+const ageOrphanedLedgerLock = async (fleet: UndoFleet): Promise<void> => {
+  const lockPath = `${fleet.ledger}.lock`;
+  try {
+    const target = await lstat(lockPath);
+    if (!target.isDirectory()) {
+      throw new Error(`refusing to age non-directory ledger lock ${lockPath}`);
+    }
+    const stale = new Date(Date.now() - 60_000);
+    await utimes(lockPath, stale, stale);
+  } catch (error) {
+    if (isRecord(error) && error.code === 'ENOENT') return;
+    throw error;
+  }
+};
+
 export const crashPublicCommandAt = async (
   fleet: UndoFleet,
   args: readonly string[],
@@ -463,6 +483,7 @@ export const crashPublicCommandAt = async (
         if (ledgerHasPhase(await readUndoLedger(fleet), phase)) {
           child.kill('SIGKILL');
           await child.exited;
+          await ageOrphanedLedgerLock(fleet);
           return;
         }
       } catch {

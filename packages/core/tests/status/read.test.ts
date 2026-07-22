@@ -41,8 +41,15 @@ import {
   joinStatus,
   planStatusRetention,
 } from '../../src/status/join.ts';
-import { createStatusReportFromSnapshot } from '../../src/status/read.ts';
-import type { StatusReadRequest, StatusReport } from '../../src/status/types.ts';
+import {
+  createStatusReportFromSnapshot,
+  readLifecycleHistoryStatus,
+} from '../../src/status/read.ts';
+import type {
+  StatusLifecycleHistoryReadRequest,
+  StatusReadRequest,
+  StatusReport,
+} from '../../src/status/types.ts';
 
 type StatusReader = (
   ports: InventoryReadPorts & FileMetadataReadPort,
@@ -65,7 +72,7 @@ type StatusReader = (
     scopeSelectionSource: 'explicit' | 'unbounded-default';
     selectionSource: 'explicit-targets' | 'bounded-default';
     artifactSelection:
-      | Readonly<{ state: 'unselected'; reason: 'live-only-scope' }>
+      | Readonly<{ state: 'unselected'; reason: 'live-only-scope' | 'lifecycle-history' }>
       | Readonly<{
           state: 'selected';
           source: 'explicit' | 'discovered-project' | 'project-default' | 'user-default';
@@ -179,7 +186,7 @@ const configuration = resolveRuntimeConfiguration({});
 
 const request = (
   artifactSelection:
-    | Readonly<{ state: 'unselected'; reason: 'live-only-scope' }>
+    | Readonly<{ state: 'unselected'; reason: 'live-only-scope' | 'lifecycle-history' }>
     | Readonly<{
         state: 'selected';
         source: 'explicit' | 'discovered-project' | 'project-default' | 'user-default';
@@ -1140,6 +1147,121 @@ describe('G3A-01 focused status reader', () => {
     });
     expect(forbiddenReads).toEqual([]);
     expectDeepFrozen(result.value);
+  });
+
+  test('returns one exact lifecycle ledger authority without manifest or lock reads', async () => {
+    const bytes = artifactBytes([]);
+    const readPaths: string[] = [];
+    const base = readPorts({ bytes });
+    const ports = {
+      ...base,
+      pathKind: async (path: string) => {
+        readPaths.push(`kind:${path}`);
+        return base.pathKind(path);
+      },
+      readBytes: async (path: string) => {
+        readPaths.push(`bytes:${path}`);
+        return base.readBytes(path);
+      },
+    };
+    const lifecycleRequest: StatusLifecycleHistoryReadRequest = {
+      ...request(),
+      targets: [],
+      tools: ['codex'],
+      toolSelectionSource: 'unbounded-default',
+      scopes: ['user', 'project'],
+      scopeSelectionSource: 'unbounded-default',
+      selectionSource: 'bounded-default',
+      artifactSelection: { state: 'unselected', reason: 'lifecycle-history' },
+    };
+
+    const observed = await readLifecycleHistoryStatus(ports, lifecycleRequest);
+    expect(observed.ok, JSON.stringify(observed)).toBeTrue();
+    if (!observed.ok) throw new Error(observed.error.message);
+    expect(observed.value.ledgerPath).toBe(LEDGER_PATH);
+    expect(observed.value.ledgerState).toMatchObject({ state: 'present', sourceVersion: 2 });
+    expect(observed.value.report.selection).toMatchObject({
+      tools: ['codex'],
+      toolSource: 'unbounded-default',
+      scopes: ['user', 'project'],
+      scopeSource: 'unbounded-default',
+    });
+    expect(readPaths.filter((path) => path === `bytes:${LEDGER_PATH}`)).toHaveLength(1);
+    expect(
+      readPaths.some((path) => path.includes(MANIFEST_PATH) || path.includes(LOCK_PATH)),
+    ).toBeFalse();
+
+    const userOnly = await readLifecycleHistoryStatus(ports, {
+      ...lifecycleRequest,
+      toolSelectionSource: 'explicit',
+      scopes: ['user'],
+      scopeSelectionSource: 'explicit',
+    });
+    expect(userOnly.ok, JSON.stringify(userOnly)).toBeTrue();
+    if (userOnly.ok) expect(userOnly.value.report.selection.scopes).toEqual(['user']);
+  });
+
+  test('rejects invalid lifecycle history coverage and pre-cancellation before artifact I/O', async () => {
+    const lifecycleRequest: StatusLifecycleHistoryReadRequest = {
+      ...request(),
+      targets: [],
+      tools: ['codex'],
+      toolSelectionSource: 'explicit',
+      scopes: ['user'],
+      scopeSelectionSource: 'explicit',
+      selectionSource: 'bounded-default',
+      artifactSelection: { state: 'unselected', reason: 'lifecycle-history' },
+    };
+    const invalidRequests: ReadonlyArray<readonly [string, unknown]> = [
+      ['nonempty targets', { ...lifecycleRequest, targets: ['alpha'] }],
+      ['explicit targets', { ...lifecycleRequest, selectionSource: 'explicit-targets' }],
+      ['effective tools', { ...lifecycleRequest, toolSelectionSource: 'effective-config' }],
+      ['duplicate scope', { ...lifecycleRequest, scopes: ['user', 'user'] }],
+      ['empty scope', { ...lifecycleRequest, scopes: [] }],
+      ['system scope', { ...lifecycleRequest, scopes: ['system'] }],
+      [
+        'project without placement',
+        {
+          ...lifecycleRequest,
+          scopes: ['project'],
+          projectPlacement: { state: 'unselected' },
+        },
+      ],
+    ];
+    for (const [label, candidate] of invalidRequests) {
+      let portAccesses = 0;
+      const ports = new Proxy(readPorts(), {
+        get(target, property, receiver) {
+          portAccesses += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      const result = await readLifecycleHistoryStatus(ports, candidate as never);
+      expect(result, label).toMatchObject({
+        ok: false,
+        error: { reason: 'invalid-request', exitClass: 'usage' },
+      });
+      expect(portAccesses, label).toBe(0);
+    }
+
+    const controller = new AbortController();
+    controller.abort();
+    let cancelledAccesses = 0;
+    const cancelledPorts = new Proxy(readPorts(), {
+      get(target, property, receiver) {
+        cancelledAccesses += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const cancelled = await readLifecycleHistoryStatus(cancelledPorts, {
+      ...lifecycleRequest,
+      signal: controller.signal,
+    });
+    expect(cancelled).toMatchObject({
+      ok: false,
+      error: { reason: 'cancelled', exitClass: 'cancelled' },
+    });
+    expect(cancelledAccesses).toBe(0);
   });
 
   test('routes selected canonical reads through the shared snapshot and refuses a pass change', async () => {
@@ -3159,6 +3281,151 @@ describe('G3A-01 focused status reader', () => {
     ).toEqual(['retention-missing']);
   });
 
+  test('keeps pending rollback undo-eligible but never advertises terminal rollback reversal', () => {
+    const path = join(CODEX_ROOT, 'rollback-status');
+    const pending = logicalJournal({
+      name: 'rollback-status',
+      path,
+      transactionId: 'tx:rollback-status',
+      phase: 'prepared',
+    });
+    pending.disposition = 'rollback';
+    pending.context.parentOperationId = pending.intent.operationId;
+    const reportFor = (journal: LogicalJournalV1Dto) =>
+      unwrapJoin(
+        joinInput({
+          ledger: artifactPresent(
+            'ledger',
+            emptyLedgerModel(
+              journal.phase === 'committed'
+                ? { history: [journal] }
+                : { transactions: { [journal.transactionId]: journal } },
+            ),
+            2,
+          ),
+          live: [liveInput('rollback-status', path)],
+        }),
+      ).entries[0]?.placements[0]?.journal;
+
+    expect(reportFor(pending)).toMatchObject({
+      state: 'pending',
+      abortEligibility: 'eligible',
+      remediation: {
+        abort: ['skillsmith', 'undo', path, '--tool', 'codex', '--scope', 'user'],
+      },
+    });
+    const committed = {
+      ...pending,
+      phase: 'committed' as const,
+      actual: { ...pending.actual, after: pending.actual.before },
+      completedAt: '2026-07-14T00:00:02.000Z',
+    };
+    expect(reportFor(committed)).toMatchObject({
+      state: 'committed',
+      reverseEligibility: 'not-reversible',
+      remediation: { reverse: null },
+    });
+  });
+
+  test('requires exact committed live-after state and correlated zero-retention before state', () => {
+    const path = join(CODEX_ROOT, 'terminal-forward');
+    const retained = retainedResource('/fixture/retained/terminal-forward');
+    const conditional = logicalJournal({
+      name: 'terminal-forward',
+      path,
+      transactionId: 'tx:terminal-forward',
+      phase: 'committed',
+      retained: [retained],
+      reversibility: { kind: 'conditional', retentionResourceIds: [retained.resourceId] },
+    });
+    const pair = pairFor('terminal-forward');
+    const retention: StatusRetentionProbeInput = {
+      transactionId: conditional.transactionId,
+      resourceId: retained.resourceId,
+      path: retained.path,
+      pathState: 'satisfied',
+      repositoryRevision: { state: 'observed', digest: retained.repositoryRevision.digest },
+      contentHash: { state: 'observed', digest: retained.contentHash },
+      node: { state: 'observed', kind: 'directory', linkTarget: null },
+    };
+    const journalFor = (
+      journal: LogicalJournalV1Dto,
+      live: StatusLiveInput = liveInput('terminal-forward', path),
+    ) =>
+      unwrapJoin(
+        joinInput({
+          ledger: artifactPresent(
+            'ledger',
+            emptyLedgerModel({
+              skills: { 'terminal-forward': { tools: { codex: pair } } },
+              history: [journal],
+            }),
+            2,
+          ),
+          live: [live],
+          retention: [retention],
+        }),
+      ).entries[0]?.placements[0]?.journal;
+
+    expect(journalFor(conditional)).toMatchObject({ reverseEligibility: 'eligible' });
+    expect(
+      journalFor(conditional, {
+        ...liveInput('terminal-forward', path),
+        observation: {
+          ...liveInput('terminal-forward', path).observation,
+          nodeKind: 'symlink',
+          linkTarget: '/fixture/other',
+        },
+      }),
+    ).toMatchObject({ reverseEligibility: 'not-reversible', remediation: { reverse: null } });
+
+    if (conditional.intent.before.kind !== 'placement') {
+      throw new Error('missing placement before-image');
+    }
+    const resource = conditional.intent.before.resource;
+    const hostileZero: LogicalJournalV1Dto = {
+      ...conditional,
+      transactionId: 'tx:zero-retention-hostile',
+      intent: {
+        ...conditional.intent,
+        operationId: 'operation:zero-retention-hostile',
+        kind: 'install',
+        before: { kind: 'absent', resource },
+        reversibility: { kind: 'none', retentionResourceIds: [] },
+      },
+      actual: { ...conditional.actual, retained: [] },
+    };
+    expect(journalFor(hostileZero)).toMatchObject({ reverseEligibility: 'not-reversible' });
+    const ledgerBefore = hostileZero.actual.before.find((actual) => actual.role === 'ledger');
+    if (ledgerBefore === undefined) throw new Error('missing ledger before-image');
+    const coherentZero: LogicalJournalV1Dto = {
+      ...hostileZero,
+      transactionId: 'tx:zero-retention-coherent',
+      intent: {
+        ...hostileZero.intent,
+        operationId: 'operation:zero-retention-coherent',
+      },
+      actual: {
+        ...hostileZero.actual,
+        before: [
+          {
+            resourceId: 'resource:terminal-forward:live',
+            role: 'live',
+            state: 'absent',
+            repositoryRevision: null,
+            placementPath: path,
+            liveKind: null,
+            mode: null,
+            symlinkTarget: null,
+            contentHash: null,
+          },
+          ledgerBefore,
+        ],
+      },
+    };
+    expect(journalFor(coherentZero)).toMatchObject({ reverseEligibility: 'eligible' });
+  });
+
   test('ranks journals by pending, timestamp, transaction id, then format', () => {
     const path = join(CODEX_ROOT, 'alpha');
     const winnerFor = (
@@ -3575,12 +3842,25 @@ describe('G3A-01 focused status reader', () => {
       retained: [betaRetained],
       reversibility: { kind: 'conditional', retentionResourceIds: [resourceId] },
     });
-    const ledger = ledgerV2Codec.encode(emptyLedgerModel({ history: [beta, alpha] }));
+    const ledger = ledgerV2Codec.encode(
+      emptyLedgerModel({
+        skills: {
+          'alpha-probe-correlation': {
+            tools: { codex: pairFor('alpha-probe-correlation') },
+          },
+          'beta-probe-correlation': {
+            tools: { codex: pairFor('beta-probe-correlation') },
+          },
+        },
+        history: [beta, alpha],
+      }),
+    );
     if (!ledger.ok) {
       throw new Error(`shared-correlation ledger encoding failed: ${JSON.stringify(ledger.error)}`);
     }
     const result = await readStatus(
       readPorts({
+        names: ['alpha-probe-correlation', 'beta-probe-correlation'],
         bytes: new Map([
           [LEDGER_PATH, ledger.value],
           [retainedPath, retainedBytes],
@@ -3771,6 +4051,10 @@ describe('G3A-01 focused status reader', () => {
           }
           if (path === nestedTarget) throw nestedAbort;
           return nestedBase.readFileMetadata(path);
+        },
+        listDir: async (path) => {
+          if (path === nestedTarget) throw nestedAbort;
+          return nestedBase.listDir(path);
         },
       },
       request(),

@@ -4,7 +4,7 @@ import { toolRegistry } from '../agents/registry.ts';
 import { SUPPORTED_TOOLS } from '../agents/types.ts';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
 import { hashCanonicalInput, hashManifestBytes } from '../artifacts/hash.ts';
-import type { LedgerModel } from '../artifacts/ledger-types.ts';
+import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import { readPortableLockSource, serializePortableLock } from '../artifacts/lock.ts';
 import type { PortableLockV1 } from '../artifacts/lock.ts';
 import { artifactContractRegistry, resolveLedgerArtifactCodec } from '../artifacts/registry.ts';
@@ -17,7 +17,6 @@ import {
   readManifestArtifact,
 } from '../artifacts/repository.ts';
 import {
-  hashSourceContentV1,
   projectSourceContent,
   serializeSourceContentProjection,
 } from '../artifacts/source-content.ts';
@@ -25,6 +24,7 @@ import type { SourceContentReadPort } from '../artifacts/source-content.ts';
 import type { NormalizedManifestV1 } from '../artifacts/types.ts';
 import { SCOPES, type Scope } from '../config/types.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
+import { contentHashOf } from '../place/store.ts';
 import type { FileMetadata } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { parseSkillFrontmatter } from '../skills/frontmatter.ts';
@@ -59,6 +59,8 @@ import {
 } from './join.ts';
 import type {
   StatusBrokenReason,
+  StatusLifecycleHistoryReadRequest,
+  StatusLifecycleHistoryReadResult,
   StatusLiveObservation,
   StatusReadError,
   StatusReadPorts,
@@ -479,6 +481,17 @@ const snapshotRequest = (value: unknown): Readonly<StatusReadRequest> | null => 
   ) {
     return null;
   }
+  const lifecycleHistory =
+    artifactSelection.state === 'unselected' && artifactSelection.reason === 'lifecycle-history';
+  if (
+    lifecycleHistory &&
+    (request.selectionSource !== 'bounded-default' ||
+      targets.length !== 0 ||
+      request.toolSelectionSource === 'effective-config' ||
+      !scopes.every((scope) => scope === 'user' || scope === 'project'))
+  ) {
+    return null;
+  }
   if (
     !isNonemptyString(projectContext.invocationCwd) ||
     !isAbsolute(projectContext.invocationCwd) ||
@@ -569,10 +582,17 @@ const snapshotRequest = (value: unknown): Readonly<StatusReadRequest> | null => 
   } else {
     return null;
   }
-  const expectedUnboundedScopes =
-    placement.state === 'selected' ? SCOPES : SCOPES.filter((scope) => scope !== 'project');
+  const expectedUnboundedScopes = lifecycleHistory
+    ? placement.state === 'selected'
+      ? (['user', 'project'] as const)
+      : (['user'] as const)
+    : placement.state === 'selected'
+      ? SCOPES
+      : SCOPES.filter((scope) => scope !== 'project');
   if (
-    (request.toolSelectionSource === 'unbounded-default' && !sameStrings(tools, SUPPORTED_TOOLS)) ||
+    (!lifecycleHistory &&
+      request.toolSelectionSource === 'unbounded-default' &&
+      !sameStrings(tools, SUPPORTED_TOOLS)) ||
     (request.scopeSelectionSource === 'unbounded-default' &&
       !sameStrings(scopes, expectedUnboundedScopes)) ||
     (request.scopeSelectionSource === 'explicit' && scopes.length !== 1) ||
@@ -584,16 +604,31 @@ const snapshotRequest = (value: unknown): Readonly<StatusReadRequest> | null => 
   }
   let artifacts: StatusReadRequest['artifactSelection'];
   if (artifactSelection.state === 'unselected') {
+    const validLiveOnly =
+      artifactSelection.reason === 'live-only-scope' &&
+      request.scopeSelectionSource === 'explicit' &&
+      scopes.length === 1 &&
+      (scopes[0] === 'system' || scopes[0] === 'managed');
+    const validLifecycle =
+      artifactSelection.reason === 'lifecycle-history' &&
+      request.selectionSource === 'bounded-default' &&
+      targets.length === 0 &&
+      (request.toolSelectionSource === 'explicit' ||
+        request.toolSelectionSource === 'unbounded-default') &&
+      (request.scopeSelectionSource === 'explicit' ||
+        request.scopeSelectionSource === 'unbounded-default') &&
+      scopes.every((scope) => scope === 'user' || scope === 'project') &&
+      (!scopes.includes('project') || placement.state === 'selected');
+    if (Reflect.ownKeys(artifactSelection).length !== 2 || (!validLiveOnly && !validLifecycle)) {
+      return null;
+    }
     if (
-      Reflect.ownKeys(artifactSelection).length !== 2 ||
-      artifactSelection.reason !== 'live-only-scope' ||
-      request.scopeSelectionSource !== 'explicit' ||
-      scopes.length !== 1 ||
-      (scopes[0] !== 'system' && scopes[0] !== 'managed')
+      artifactSelection.reason !== 'live-only-scope' &&
+      artifactSelection.reason !== 'lifecycle-history'
     ) {
       return null;
     }
-    artifacts = Object.freeze({ state: 'unselected', reason: 'live-only-scope' });
+    artifacts = Object.freeze({ state: 'unselected', reason: artifactSelection.reason });
   } else if (artifactSelection.state === 'selected') {
     if (
       Reflect.ownKeys(artifactSelection).length !== 5 ||
@@ -910,6 +945,24 @@ const projectRetainedSourceContent = async (
   return result;
 };
 
+const hashRetainedSourceContent = async (
+  ports: StatusReadPorts,
+  path: string,
+  signal?: AbortSignal,
+): Promise<string | null> => {
+  const tracker = createCancellationTracker();
+  const focused = {
+    listDir: (target: string) => tracker.track(() => ports.listDir(target)),
+    pathKind: (target: string) => tracker.track(() => ports.pathKind(target)),
+    readLink: (target: string) => tracker.track(() => ports.readLink(target)),
+    readBytes: (target: string) => tracker.track(() => ports.readBytes(target)),
+    isExecutable: (target: string) => tracker.track(() => ports.isExecutable(target)),
+  };
+  const result = await contentHashOf(focused, path);
+  if (tracker.cancelled(signal)) throw CANCELLED;
+  return result.ok ? result.value : null;
+};
+
 const observeRetainedPhysical = async (
   ports: StatusReadPorts,
   path: string,
@@ -963,11 +1016,7 @@ const observeRetainedPhysical = async (
       if (needs.contentKind === 'source-content' && needs.followSourceSymlink) {
         try {
           const resolved = await ports.realpath(path);
-          const projection = await projectRetainedSourceContent(ports, resolved, signal);
-          if (projection.ok) {
-            const source = hashSourceContentV1(projection.value);
-            sourceDigest = source.ok ? source.value : null;
-          }
+          sourceDigest = await hashRetainedSourceContent(ports, resolved, signal);
         } catch (error) {
           if (error === CANCELLED || isStatusReadCancellation(error, signal)) {
             throw CANCELLED;
@@ -977,20 +1026,25 @@ const observeRetainedPhysical = async (
       }
     } else if (metadata.kind === 'dir') {
       if (needs.repositoryKind === 'resource' || needs.contentKind === 'source-content') {
-        const projection = await projectRetainedSourceContent(ports, path, signal);
-        if (projection.ok) {
-          if (needs.repositoryKind === 'resource') {
+        if (needs.contentKind === 'source-content') {
+          sourceDigest = await hashRetainedSourceContent(ports, path, signal);
+        } else {
+          const projection = await projectRetainedSourceContent(ports, path, signal);
+          if (projection.ok && needs.repositoryKind === 'resource') {
             const serialized = serializeSourceContentProjection(projection.value);
             repositoryDigest = serialized.ok
               ? observedDigest(hashCanonicalInput('resource', 1, serialized.value))
               : null;
           }
-          if (needs.contentKind === 'source-content') {
-            const source = hashSourceContentV1(projection.value);
-            sourceDigest = source.ok ? source.value : null;
-          }
         }
       }
+    }
+    if (
+      needs.repositoryKind === 'resource' &&
+      needs.contentKind === 'source-content' &&
+      sourceDigest !== null
+    ) {
+      repositoryDigest = sourceDigest;
     }
     if (isStatusReadCancelled(signal)) throw CANCELLED;
 
@@ -1106,10 +1160,47 @@ const observeRetention = async (
   return probes;
 };
 
-export const readStatus = async (
+interface StatusReadObservation {
+  readonly report: StatusReport;
+  readonly ledgerPath: string;
+  readonly ledgerState: LedgerReadState;
+}
+
+const exactLedgerReadState = (
+  ledger: ArtifactReadResult<LedgerModel>,
+  bytes: Uint8Array | null,
+): LedgerReadState | null => {
+  if (ledger.state === 'absent') {
+    return Object.freeze({
+      state: 'absent',
+      sourceVersion: null,
+      bytes: null,
+      byteRevision: null,
+      semanticRevision: null,
+      model: null,
+    });
+  }
+  if (
+    bytes === null ||
+    (ledger.sourceVersion !== 1 && ledger.sourceVersion !== 2) ||
+    ledger.semanticRevision === null
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    state: 'present',
+    sourceVersion: ledger.sourceVersion,
+    bytes: new Uint8Array(bytes),
+    byteRevision: ledger.byteRevision,
+    semanticRevision: ledger.semanticRevision,
+    model: ledger.model,
+  });
+};
+
+const readStatusObservation = async (
   ports: StatusReadPorts,
   rawRequest: Readonly<StatusReadRequest>,
-): Promise<Result<StatusReport, StatusReadError>> => {
+): Promise<Result<StatusReadObservation, StatusReadError>> => {
   let request: Readonly<StatusReadRequest> | null = null;
   try {
     request = snapshotRequest(rawRequest);
@@ -1128,9 +1219,17 @@ export const readStatus = async (
 
   try {
     const tracker = createCancellationTracker();
+    const dataDir = resolveDataDir({ xdg: ports.xdg }, request.configuration);
+    const ledgerPath = ledgerPathOf(dataDir);
+    let ledgerBytes: Uint8Array | null = null;
     const artifactPorts = {
       pathKind: (path: string) => tracker.track(() => ports.pathKind(path)),
-      readBytes: (path: string) => tracker.track(() => ports.readBytes(path)),
+      readBytes: (path: string) =>
+        tracker.track(async () => {
+          const bytes = await ports.readBytes(path);
+          if (path === ledgerPath && ledgerBytes === null) ledgerBytes = new Uint8Array(bytes);
+          return bytes;
+        }),
     };
     if (request.projectPlacement.state === 'selected') {
       const canonicalEffectiveCwd = await tracker.track(() =>
@@ -1160,12 +1259,17 @@ export const readStatus = async (
       if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
     }
 
-    const dataDir = resolveDataDir({ xdg: ports.xdg }, request.configuration);
-    const ledgerPath = ledgerPathOf(dataDir);
     const ledgerRead = await readLedgerArtifact(artifactPorts, ledgerPath);
     if (tracker.cancelled(request.signal)) return err(CANCELLED);
     if (!ledgerRead.ok) return err(artifactError(ledgerRead.error, request.signal));
     if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
+    const ledgerState = exactLedgerReadState(ledgerRead.value, ledgerBytes);
+    if (ledgerState === null) return err(OBSERVATION_FAILED);
+
+    const complete = (
+      report: Result<StatusReport, StatusReadError>,
+    ): Result<StatusReadObservation, StatusReadError> =>
+      report.ok ? ok(Object.freeze({ report: report.value, ledgerPath, ledgerState })) : report;
 
     const live = await observeSelectedRoots(ports, request, storeRootOf(dataDir));
     if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
@@ -1199,7 +1303,7 @@ export const readStatus = async (
           input.observation.nodeKind !== 'file',
       )
     ) {
-      return createStatusReportFromFacts(request, facts);
+      return complete(createStatusReportFromFacts(request, facts));
     }
     const snapshotParentPaths = [
       ...(facts.manifest?.state === 'present' ? [dirname(artifactSelection.manifestPath)] : []),
@@ -1209,7 +1313,7 @@ export const readStatus = async (
     ];
     for (const path of new Set(snapshotParentPaths)) {
       const metadata = await tracker.track(() => ports.readFileMetadata(path));
-      if (metadata.kind !== 'dir') return createStatusReportFromFacts(request, facts);
+      if (metadata.kind !== 'dir') return complete(createStatusReportFromFacts(request, facts));
     }
     const reobserveFacts = async (): Promise<Readonly<Omit<StatusJoinInput, 'request'>>> => {
       const manifestRead = await readManifestArtifact(
@@ -1250,7 +1354,7 @@ export const readStatus = async (
       (path) => tracker.track(() => ports.readFileMetadata(path)),
     );
     if (tracker.cancelled(request.signal)) return err(CANCELLED);
-    return createStatusReportFromSnapshot(request, prepared.snapshot, prepared.adjunct);
+    return complete(createStatusReportFromSnapshot(request, prepared.snapshot, prepared.adjunct));
   } catch (error) {
     if (
       error === CANCELLED ||
@@ -1262,6 +1366,26 @@ export const readStatus = async (
     }
     return err(mapThrowable(error, request.signal));
   }
+};
+
+export const readStatus = async (
+  ports: StatusReadPorts,
+  request: Readonly<StatusReadRequest>,
+): Promise<Result<StatusReport, StatusReadError>> => {
+  const observed = await readStatusObservation(ports, request);
+  return observed.ok ? ok(observed.value.report) : observed;
+};
+
+/**
+ * Private lifecycle history observation. The report and exact ledger read state come from one
+ * ledger read; lifecycle-history validation also guarantees no manifest or lock artifact reads.
+ */
+export const readLifecycleHistoryStatus = async (
+  ports: StatusReadPorts,
+  request: StatusLifecycleHistoryReadRequest,
+): Promise<Result<StatusLifecycleHistoryReadResult, StatusReadError>> => {
+  const observed = await readStatusObservation(ports, request);
+  return observed.ok ? ok(observed.value) : observed;
 };
 
 export interface StatusSnapshotAdjunctV1 {

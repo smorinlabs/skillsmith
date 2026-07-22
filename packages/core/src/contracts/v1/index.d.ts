@@ -23,6 +23,7 @@ import type {
   StatusReport,
   SupportedTool,
   ToolRegistry,
+  UndoReport,
   UninstallReport,
   VerifyReport,
 } from '@skillsmith/core';
@@ -1348,3 +1349,129 @@ export interface UpdateReportV1Dto {
 }
 
 export declare const updateV1Codec: WireCodec<'update', 1, UpdateReportV1Dto>;
+
+export interface UndoSelectionV1Dto {
+  readonly source: 'explicit-targets' | 'explicit-all';
+  readonly outcome: 'selected' | 'filter-zero';
+  readonly targets: readonly string[];
+  readonly all: boolean;
+  readonly tools: readonly SupportedTool[];
+  readonly scopes: readonly ('user' | 'project')[];
+  readonly groupIds: readonly string[];
+  readonly batchPolicy: 'fail-fast' | 'continue-on-error';
+}
+
+export interface UndoPairV1Dto {
+  readonly pairId: string;
+  readonly tool: SupportedTool;
+  readonly path: string;
+  readonly action: 'abort-pending' | 'reverse-committed';
+  readonly operationFamily: 'dev' | 'promote' | 'install' | 'uninstall' | 'update';
+  readonly disposition: 'rollback';
+  readonly phase: 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';
+  readonly executionMode: 'convert-to-rollback' | 'resume-rollback';
+  readonly sourceTransactionId: string;
+  readonly activeTransactionId: string;
+  readonly sourceOperationId: string;
+  readonly activeOperationId: string;
+  readonly parentOperationId: string | null;
+  readonly beforeState: 'absent' | 'dev' | 'pinned';
+  readonly eligibility: 'eligible' | 'already-reversed';
+  readonly retention: {
+    readonly required: boolean;
+    readonly resourceIds: readonly string[];
+  };
+  readonly operations: readonly string[];
+  readonly outcome:
+    | 'planned'
+    | 'succeeded'
+    | 'failed'
+    | 'cancelled'
+    | 'not-run'
+    | 'already-reversed';
+  readonly failure: { readonly code: string; readonly message: string } | null;
+}
+
+export interface UndoGroupV1Dto {
+  readonly groupId: string;
+  readonly skill: string;
+  readonly scope: 'user' | 'project';
+  readonly pairs: readonly UndoPairV1Dto[];
+  readonly operations: readonly string[];
+  readonly outcome:
+    | 'planned'
+    | 'succeeded'
+    | 'failed'
+    | 'cancelled'
+    | 'not-run'
+    | 'already-reversed';
+  readonly failure: { readonly code: string; readonly message: string } | null;
+}
+
+export interface UndoOperationResultV1Dto {
+  readonly operationId: string;
+  readonly outcome: 'succeeded' | 'failed' | 'cancelled' | 'rolled-back' | 'skipped-after-failure';
+  readonly error: {
+    readonly code: string;
+    readonly message: string;
+    readonly remediation: string;
+  } | null;
+}
+
+export interface UndoEffectV1Dto {
+  readonly role: 'ledger' | 'store' | 'live' | 'backup';
+  readonly action: string;
+  readonly operationId: string | null;
+  readonly groupId: string;
+  readonly outcome: 'planned' | 'succeeded' | 'failed' | 'cancelled' | 'not-run';
+}
+
+export interface UndoSummaryV1Dto {
+  readonly selected: number;
+  readonly actionable: number;
+  readonly alreadyReversed: number;
+  readonly planned: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly cancelled: number;
+  readonly skipped: number;
+  readonly notRun: number;
+  readonly effects: number;
+  readonly refusals: number;
+}
+
+export type UndoOperationV1Dto = Omit<PlanOperationV1Dto, 'dependsOn'> & {
+  readonly dependencyMetadata: {
+    readonly domain: 'skillsmith.operation-dependency';
+    readonly schemaVersion: 1;
+    readonly operationIds: readonly string[];
+  };
+};
+
+export interface UndoReportV1Dto {
+  readonly schemaVersion: 1;
+  readonly kind: 'skillsmith.undo';
+  readonly command: 'undo';
+  readonly mode: 'dry-run' | 'execute';
+  readonly state: 'ready' | 'refused' | 'completed' | 'partial';
+  readonly project: {
+    readonly effectiveCwd: string;
+    readonly root: string | null;
+    readonly identity: string | null;
+  };
+  readonly selection: UndoSelectionV1Dto;
+  readonly approval: {
+    readonly required: boolean;
+    readonly outcome: 'not-required' | 'pending' | 'approved' | 'refused' | 'cancelled';
+  };
+  readonly groups: readonly UndoGroupV1Dto[];
+  readonly operations: readonly UndoOperationV1Dto[];
+  readonly checks: readonly PlanCheckV1Dto[];
+  readonly results: readonly UndoOperationResultV1Dto[];
+  readonly effects: readonly UndoEffectV1Dto[];
+  readonly diagnostics: readonly PlanDiagnosticV1Dto[];
+  readonly summary: UndoSummaryV1Dto;
+}
+
+export declare const undoV1Codec: WireCodec<'undo', 1, UndoReportV1Dto>;
+export declare const toUndoV1Dto: (report: UndoReport) => UndoReportV1Dto;

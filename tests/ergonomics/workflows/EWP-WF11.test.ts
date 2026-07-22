@@ -81,7 +81,16 @@ describe('EWP-WF11', () => {
       expect(dry).toMatchObject({
         kind: 'skillsmith.undo',
         mode: 'dry-run',
-        groups: [{ action: 'abort-pending', sourceTransactionId: pending.transactionId }],
+        groups: [
+          {
+            pairs: [
+              {
+                action: 'abort-pending',
+                sourceTransactionId: pending.transactionId,
+              },
+            ],
+          },
+        ],
       });
       expect(JSON.stringify(dry)).toMatch(/migrate-ledger/);
       expect(await readFile(legacy.ledger, 'utf8')).toBe(v1Bytes);
@@ -109,7 +118,7 @@ describe('EWP-WF11', () => {
         );
         expect(preview).toMatchObject({
           kind: 'skillsmith.undo',
-          groups: [{ action: 'abort-pending', phase }],
+          groups: [{ pairs: [{ action: 'abort-pending', phase }] }],
         });
       }
 

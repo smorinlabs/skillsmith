@@ -694,6 +694,16 @@ describe('planning constructors', () => {
     expect(() => createOperationPlan(implicitDev as unknown as OperationPlanInput<'dev'>)).toThrow(
       /selection.*explicit/i,
     );
+
+    const explicitUndo = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    explicitUndo.command = 'undo';
+    expect(createOperationPlan(explicitUndo as unknown as OperationPlanInput<'undo'>).command).toBe(
+      'undo',
+    );
+    (explicitUndo.selection as Record<string, unknown>).source = 'bounded-default';
+    expect(() =>
+      createOperationPlan(explicitUndo as unknown as OperationPlanInput<'undo'>),
+    ).toThrow(/selection.*explicit/i);
   });
 
   test('preserves closed hostile-data error families and ownership budgets', () => {

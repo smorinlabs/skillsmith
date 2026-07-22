@@ -66,6 +66,12 @@ describe('@skillsmith/core public API', () => {
       'runPlanApplication',
       'runApplyApplication',
       'runSyncApplication',
+      'runUndoApplication',
+      'prepareUndo',
+      'observeUndo',
+      'createUndoPlanGroups',
+      'createUndoReport',
+      'asUndoPlan',
       'prepareInitOperationPlan',
       'observeInitManifest',
       'executePreparedInit',
@@ -242,6 +248,19 @@ describe('@skillsmith/core public API', () => {
       unknownFields: 'reject-recursive',
     });
     expect(core).not.toHaveProperty('updateV1Codec');
+  });
+
+  test('exports public undo entrypoints while keeping undo@1 on the contracts surface', () => {
+    expect(contractsV1.undoV1Codec.descriptor).toMatchObject({
+      id: 'undo',
+      version: 1,
+      wireKind: 'skillsmith.undo',
+      unknownFields: 'reject-recursive',
+    });
+    expect(typeof contractsV1.toUndoV1Dto).toBe('function');
+    expect(typeof core.runUndoApplication).toBe('function');
+    expect(typeof core.prepareUndo).toBe('function');
+    expect(core).not.toHaveProperty('undoV1Codec');
   });
 
   test('exports the validated registry without breaking the 1.x inventory projection', () => {

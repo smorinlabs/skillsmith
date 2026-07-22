@@ -53,6 +53,19 @@ export interface BeginTransactionRecoveryAttemptRequest {
   readonly updatedAt: string;
 }
 
+export interface BeginCommittedLogicalTransactionReversalRequest {
+  readonly sourceTransactionId: string;
+  readonly transactionId: string;
+  readonly operationId: string;
+  readonly groupId: string;
+  readonly command: string;
+  readonly workflow: string;
+  readonly startedAt: string;
+  readonly updatedAt: string;
+}
+
+export type LogicalRollbackExecutionMode = 'convert-forward' | 'resume-rollback' | 'fresh-reversal';
+
 export interface LogicalShadowCollapse {
   readonly model: LedgerModel;
   readonly transactionIds: readonly string[];
@@ -331,19 +344,48 @@ const legacyOperation = (journal: LogicalJournalV1Dto): LegacyPairJournalV1Dto['
   return 'install';
 };
 
+const rollbackParent = (
+  model: LedgerModel,
+  journal: LogicalJournalV1Dto,
+): LogicalJournalV1Dto | null => {
+  const parentOperationId = journal.context.parentOperationId;
+  if (
+    journal.disposition !== 'rollback' ||
+    parentOperationId === null ||
+    parentOperationId === journal.intent.operationId
+  ) {
+    return null;
+  }
+  const matches = model.history.filter(
+    (candidate) => candidate.intent.operationId === parentOperationId,
+  );
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+};
+
+const inverseLegacyOperation = (
+  journal: LogicalJournalV1Dto,
+  parent: LogicalJournalV1Dto | null,
+): LegacyPairJournalV1Dto['op'] | null =>
+  (['install', 'uninstall', 'dev', 'promote'] as const).find((operation) =>
+    legacyJournalOperationMatchesLogicalShadow(journal, operation, parent),
+  ) ?? null;
+
 const derivedTransactionRoot = (path: string): string => dirname(dirname(path));
 
 const physicalShadow = (
+  model: LedgerModel,
   journal: LogicalJournalV1Dto,
   previous: LegacyPairJournalV1Dto | null = null,
 ): LegacyPairJournalV1Dto => {
   const path = placementPath(journal) ?? '/';
   const root = derivedTransactionRoot(path);
+  const parent = rollbackParent(model, journal);
+  const inverse = inverseLegacyOperation(journal, parent);
   return {
     op:
-      previous !== null && legacyJournalOperationMatchesLogicalShadow(journal, previous.op)
+      previous !== null && legacyJournalOperationMatchesLogicalShadow(journal, previous.op, parent)
         ? previous.op
-        : legacyOperation(journal),
+        : (inverse ?? legacyOperation(journal)),
     txId: journal.transactionId,
     phase: journal.phase,
     startedAt: journal.context.startedAt,
@@ -420,10 +462,15 @@ const pairFromJournal = (
   };
 };
 
-const shadowMatches = (journal: LogicalJournalV1Dto, shadow: LegacyPairJournalV1Dto): boolean => {
-  const expected = physicalShadow(journal, shadow);
+const shadowMatches = (
+  model: LedgerModel,
+  journal: LogicalJournalV1Dto,
+  shadow: LegacyPairJournalV1Dto,
+): boolean => {
+  const parent = rollbackParent(model, journal);
+  const expected = physicalShadow(model, journal, shadow);
   return (
-    legacyJournalOperationMatchesLogicalShadow(journal, shadow.op) &&
+    legacyJournalOperationMatchesLogicalShadow(journal, shadow.op, parent) &&
     shadow.op === expected.op &&
     shadow.txId === expected.txId &&
     shadow.phase === expected.phase &&
@@ -508,13 +555,13 @@ const withPendingShadow = (
   }
   const pair = getPair(model, location);
   const priorShadow = pair?.journal ?? null;
-  if (previous !== null && (priorShadow === null || !shadowMatches(previous, priorShadow))) {
+  if (previous !== null && (priorShadow === null || !shadowMatches(model, previous, priorShadow))) {
     return err(failure('shadow-conflict', 'physical shadow does not match pending logical state'));
   }
-  if (previous === null && priorShadow !== null && !shadowMatches(journal, priorShadow)) {
+  if (previous === null && priorShadow !== null && !shadowMatches(model, journal, priorShadow)) {
     return err(failure('shadow-conflict', 'legacy physical shadow does not match logical attach'));
   }
-  const shadow = physicalShadow(journal, priorShadow);
+  const shadow = physicalShadow(model, journal, priorShadow);
   const nextPair = pair === null ? pairFromJournal(journal, shadow) : { ...pair, journal: shadow };
   if (nextPair === null) return err(failure('shadow-conflict', 'pair image cannot be derived'));
   return ok(replacePair(model, location, nextPair));
@@ -522,6 +569,167 @@ const withPendingShadow = (
 
 const historyById = (model: LedgerModel, transactionId: string): LogicalJournalV1Dto | null =>
   model.history.find((journal) => journal.transactionId === transactionId) ?? null;
+
+const historyByOperationId = (
+  model: LedgerModel,
+  operationId: string,
+): LogicalJournalV1Dto | null => {
+  const matches = model.history.filter((journal) => journal.intent.operationId === operationId);
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+};
+
+const sameForwardIntentOrientation = (
+  source: LogicalJournalV1Dto,
+  rollback: LogicalJournalV1Dto,
+): boolean =>
+  same(
+    {
+      ...source.intent,
+      operationId: rollback.intent.operationId,
+      groupId: rollback.intent.groupId,
+    },
+    rollback.intent,
+  );
+
+/**
+ * Classify the durable rollback direction without adding an origin field to the journal schema.
+ * A converted pending abort points at its own operation. A fresh reversal points at one retained
+ * committed forward operation and keeps that operation's intent orientation.
+ */
+export const logicalRollbackExecutionMode = (
+  model: LedgerModel,
+  journal: LogicalJournalV1Dto,
+): Result<LogicalRollbackExecutionMode, LogicalTransactionError> => {
+  if (!modelIdentityValid(model)) {
+    return err(failure('invalid-model', 'logical transaction model is invalid'));
+  }
+  if (!validJournal(journal)) {
+    return err(failure('invalid-journal', 'logical rollback journal is invalid'));
+  }
+  if (journal.disposition === 'forward') {
+    return journal.phase === 'committed'
+      ? err(failure('phase-conflict', 'committed forward transaction cannot be converted'))
+      : ok('convert-forward');
+  }
+  if (journal.context.parentOperationId === journal.intent.operationId) {
+    return ok('resume-rollback');
+  }
+  if (journal.context.parentOperationId === null) {
+    return err(failure('identity-conflict', 'rollback origin operation is missing'));
+  }
+  const source = historyByOperationId(model, journal.context.parentOperationId);
+  if (
+    source === null ||
+    source.phase !== 'committed' ||
+    source.disposition !== 'forward' ||
+    !sameForwardIntentOrientation(source, journal) ||
+    !same(source.actual.after, journal.actual.before) ||
+    !same(source.actual.retained, journal.actual.retained) ||
+    inverseLegacyOperation(journal, source) === null ||
+    (journal.phase === 'live' || journal.phase === 'committed'
+      ? !same(source.actual.before, journal.actual.after)
+      : journal.actual.after.length !== 0)
+  ) {
+    return err(failure('identity-conflict', 'fresh rollback origin linkage is inconsistent'));
+  }
+  return ok('fresh-reversal');
+};
+
+/**
+ * Resolve the truthful terminal after-image for a rollback. Converted pending aborts restore their
+ * own before-image; fresh committed reversals restore the retained parent forward before-image.
+ */
+export const logicalRollbackTerminalActualAfter = (
+  model: LedgerModel,
+  journal: LogicalJournalV1Dto,
+): Result<LogicalJournalV1Dto['actual']['after'], LogicalTransactionError> => {
+  const mode = logicalRollbackExecutionMode(model, journal);
+  if (!mode.ok) return mode;
+  if (mode.value !== 'fresh-reversal') return ok(journal.actual.before);
+  const parentOperationId = journal.context.parentOperationId;
+  const source = parentOperationId === null ? null : historyByOperationId(model, parentOperationId);
+  return source === null
+    ? err(failure('identity-conflict', 'fresh rollback origin operation is missing'))
+    : ok(source.actual.before);
+};
+
+/**
+ * Begin one history-preserving reversal of an eligible committed placement operation. The new
+ * rollback transaction keeps the parent's forward before/after orientation; only its active
+ * operation/group/transaction identities are fresh. Physical rollback owns the inversion.
+ */
+export const beginCommittedLogicalTransactionReversal = (
+  model: LedgerModel,
+  request: BeginCommittedLogicalTransactionReversalRequest,
+): Result<LedgerModel, LogicalTransactionError> => {
+  if (!modelIdentityValid(model)) {
+    return err(failure('invalid-model', 'logical transaction model is invalid'));
+  }
+  const source = historyById(model, request.sourceTransactionId);
+  if (
+    source === null ||
+    source.phase !== 'committed' ||
+    source.disposition !== 'forward' ||
+    !new Set(['install', 'remove', 'link-dev', 'promote']).has(source.intent.kind)
+  ) {
+    return err(
+      failure('identity-conflict', 'reversal has no eligible committed forward transaction'),
+    );
+  }
+  if (
+    request.transactionId.length === 0 ||
+    request.operationId.length === 0 ||
+    request.groupId.length === 0 ||
+    request.command.length === 0 ||
+    request.workflow.length === 0 ||
+    request.startedAt.length === 0 ||
+    request.updatedAt.length === 0 ||
+    request.transactionId === source.transactionId ||
+    request.operationId === source.intent.operationId ||
+    Object.values(model.transactions).some(
+      (journal) => journal.intent.operationId === request.operationId,
+    ) ||
+    model.history.some((journal) => journal.intent.operationId === request.operationId)
+  ) {
+    return err(failure('identity-conflict', 'fresh reversal identities are invalid or reused'));
+  }
+  const rollback: LogicalJournalV1Dto = {
+    schemaVersion: 1,
+    kind: 'skillsmith.transaction-journal',
+    transactionId: request.transactionId,
+    intent: {
+      ...source.intent,
+      operationId: request.operationId,
+      groupId: request.groupId,
+    },
+    context: {
+      parentOperationId: source.intent.operationId,
+      command: request.command,
+      workflow: request.workflow,
+      attempt: 1,
+      startedAt: request.startedAt,
+    },
+    disposition: 'rollback',
+    phase: 'prepared',
+    actual: {
+      before: source.actual.after,
+      after: [],
+      retained: source.actual.retained,
+    },
+    updatedAt: request.updatedAt,
+    completedAt: null,
+  };
+  if (!validJournal(rollback)) {
+    return err(failure('invalid-journal', 'fresh reversal journal is invalid'));
+  }
+  const origin = logicalRollbackExecutionMode(model, rollback);
+  if (!origin.ok || origin.value !== 'fresh-reversal') {
+    return origin.ok
+      ? err(failure('identity-conflict', 'fresh reversal origin was not preserved'))
+      : origin;
+  }
+  return advanceLogicalTransaction(model, rollback);
+};
 
 export const advanceLogicalTransaction = (
   model: LedgerModel,
@@ -627,7 +835,7 @@ const terminalPair = (
     pair === null ||
     pair.journal === null ||
     pair.journal === undefined ||
-    !shadowMatches(pending, pair.journal)
+    !shadowMatches(model, pending, pair.journal)
   ) {
     return err(failure('shadow-conflict', 'terminal physical shadow does not match pending state'));
   }
@@ -701,7 +909,10 @@ export const projectTransactionRecoveryAttemptJournal = (
 ): LogicalJournalV1Dto => ({
   ...pending,
   context: {
-    parentOperationId: pending.intent.operationId,
+    parentOperationId:
+      pending.disposition === 'rollback'
+        ? pending.context.parentOperationId
+        : pending.intent.operationId,
     command: request.command,
     workflow: request.workflow,
     attempt: pending.context.attempt + 1,
@@ -819,7 +1030,7 @@ export const collapseLogicalTransactionShadows = (
   const counts = new Map<string, number>();
   for (const candidate of scanPhysicalShadows(model)) {
     const committed = historyById(model, candidate.shadow.txId);
-    if (committed === null || !shadowMatches(committed, candidate.shadow)) continue;
+    if (committed === null || !shadowMatches(model, committed, candidate.shadow)) continue;
     const location = pairLocation(committed);
     if (location === null || !same(location, candidate.location)) continue;
     counts.set(committed.transactionId, (counts.get(committed.transactionId) ?? 0) + 1);

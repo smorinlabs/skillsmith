@@ -187,6 +187,129 @@ export const ledgerJournalAnchors = (
   return anchors.ok ? ok(Object.freeze(anchors.value.map((anchor) => anchor.key))) : anchors;
 };
 
+interface LedgerHistoryDependencies {
+  readonly parentByChildIndex: ReadonlyMap<number, number>;
+  readonly childrenByParentIndex: ReadonlyMap<number, readonly number[]>;
+  readonly pendingParentIndexes: readonly number[];
+}
+
+const freshRollbackParentOperationId = (journal: LogicalJournalV1Dto): string | null => {
+  const parentOperationId = journal.context.parentOperationId;
+  return journal.disposition === 'rollback' &&
+    parentOperationId !== null &&
+    parentOperationId !== journal.intent.operationId
+    ? parentOperationId
+    : null;
+};
+
+const historyDependencies = (
+  model: LedgerModel,
+): Result<LedgerHistoryDependencies, LedgerHistoryError> => {
+  const operationIndex = new Map<string, number>();
+  for (const [index, journal] of model.history.entries()) {
+    if (operationIndex.has(journal.intent.operationId)) {
+      return err({ code: 'invalid-history', transactionId: journal.transactionId });
+    }
+    operationIndex.set(journal.intent.operationId, index);
+  }
+
+  const pendingOperationIds = new Set<string>();
+  for (const journal of Object.values(model.transactions)) {
+    if (
+      pendingOperationIds.has(journal.intent.operationId) ||
+      (freshRollbackParentOperationId(journal) !== null &&
+        operationIndex.has(journal.intent.operationId))
+    ) {
+      return err({ code: 'invalid-history', transactionId: journal.transactionId });
+    }
+    pendingOperationIds.add(journal.intent.operationId);
+  }
+
+  const parentByChildIndex = new Map<number, number>();
+  const childrenByParentIndex = new Map<number, number[]>();
+  const resolveParent = (
+    journal: LogicalJournalV1Dto,
+    childIndex: number | null,
+  ): Result<number | null, LedgerHistoryError> => {
+    const parentOperationId = freshRollbackParentOperationId(journal);
+    if (parentOperationId === null) return ok(null);
+    const parentIndex = operationIndex.get(parentOperationId);
+    const parent = parentIndex === undefined ? undefined : model.history[parentIndex];
+    if (
+      parentIndex === undefined ||
+      parent === undefined ||
+      parent.disposition !== 'forward' ||
+      (childIndex !== null && parentIndex >= childIndex)
+    ) {
+      return err({ code: 'invalid-history', transactionId: journal.transactionId });
+    }
+    return ok(parentIndex);
+  };
+
+  for (const [childIndex, journal] of model.history.entries()) {
+    const parent = resolveParent(journal, childIndex);
+    if (!parent.ok) return parent;
+    if (parent.value === null) continue;
+    parentByChildIndex.set(childIndex, parent.value);
+    const children = childrenByParentIndex.get(parent.value) ?? [];
+    children.push(childIndex);
+    childrenByParentIndex.set(parent.value, children);
+  }
+
+  const pendingParentIndexes: number[] = [];
+  for (const journal of Object.values(model.transactions)) {
+    const parent = resolveParent(journal, null);
+    if (!parent.ok) return parent;
+    if (parent.value !== null) pendingParentIndexes.push(parent.value);
+  }
+  for (const children of childrenByParentIndex.values()) {
+    children.sort((left, right) => left - right);
+  }
+  return ok({
+    parentByChildIndex,
+    childrenByParentIndex,
+    pendingParentIndexes: Object.freeze([...new Set(pendingParentIndexes)].sort((a, b) => a - b)),
+  });
+};
+
+const addDependencyParents = (
+  indexes: Set<number>,
+  parentByChildIndex: ReadonlyMap<number, number>,
+): void => {
+  const pending = [...indexes];
+  for (let offset = 0; offset < pending.length; offset += 1) {
+    const child = pending[offset];
+    if (child === undefined) continue;
+    const parent = parentByChildIndex.get(child);
+    if (parent === undefined || indexes.has(parent)) continue;
+    indexes.add(parent);
+    pending.push(parent);
+  }
+};
+
+const excludedDependencyClosure = (
+  seed: number,
+  excluded: ReadonlySet<number>,
+  dependencies: LedgerHistoryDependencies,
+): Set<number> => {
+  const closure = new Set<number>([seed]);
+  const pending = [seed];
+  for (let offset = 0; offset < pending.length; offset += 1) {
+    const index = pending[offset];
+    if (index === undefined) continue;
+    const candidates = [
+      dependencies.parentByChildIndex.get(index),
+      ...(dependencies.childrenByParentIndex.get(index) ?? []),
+    ];
+    for (const candidate of candidates) {
+      if (candidate === undefined || !excluded.has(candidate) || closure.has(candidate)) continue;
+      closure.add(candidate);
+      pending.push(candidate);
+    }
+  }
+  return closure;
+};
+
 /** Pure protected/fair selection. Array position is the only commit-order authority. */
 export const selectBoundedHistory = (
   model: LedgerModel,
@@ -204,6 +327,8 @@ export const selectBoundedHistory = (
     if (!anchors.ok) return anchors;
     anchorsByIndex.push([...anchors.value]);
   }
+  const dependencies = historyDependencies(model);
+  if (!dependencies.ok) return dependencies;
 
   const protectedIndexes = new Set<number>();
   if (history.length > 0) {
@@ -268,8 +393,10 @@ export const selectBoundedHistory = (
     }
   }
   for (const index of newestPendingAnchor.values()) protectedIndexes.add(index);
+  for (const index of dependencies.value.pendingParentIndexes) protectedIndexes.add(index);
+  addDependencyParents(protectedIndexes, dependencies.value.parentByChildIndex);
 
-  const effectiveCapacity = Math.max(LEDGER_HISTORY_LIMIT, protectedIndexes.size);
+  let effectiveCapacity = Math.max(LEDGER_HISTORY_LIMIT, protectedIndexes.size);
   const retained = new Set(protectedIndexes);
   const buckets = new Map<string, number[]>();
   for (const [index, anchors] of anchorsByIndex.entries()) {
@@ -295,7 +422,14 @@ export const selectBoundedHistory = (
     });
     for (const index of ordered) {
       if (retained.size >= effectiveCapacity) break;
-      retained.add(index);
+      const dependencyUnit = new Set([index]);
+      addDependencyParents(dependencyUnit, dependencies.value.parentByChildIndex);
+      const missing = [...dependencyUnit].filter((candidate) => !retained.has(candidate));
+      if (missing.length === 0) continue;
+      if (retained.size + missing.length > effectiveCapacity) {
+        effectiveCapacity = retained.size + missing.length;
+      }
+      for (const candidate of missing) retained.add(candidate);
     }
   }
 
@@ -307,6 +441,11 @@ export const selectBoundedHistory = (
     history[index]?.actual.retained.some((resource) => resource.role === 'backup'),
   );
   const victimJournal = victimIndex === undefined ? undefined : history[victimIndex];
+  const excludedSet = new Set(excluded);
+  const cleanupIndexes =
+    victimIndex === undefined
+      ? new Set<number>()
+      : excludedDependencyClosure(victimIndex, excludedSet, dependencies.value);
   const victim: LedgerHistoryVictim | null =
     victimIndex === undefined || victimJournal === undefined
       ? null
@@ -323,11 +462,29 @@ export const selectBoundedHistory = (
   const cleanupUnsafe = cleanupMatches && options.cleanup?.outcome === 'unsafe';
   const visibleIndexes = new Set(retained);
   if (victimIndex !== undefined) {
-    // Keep the frontier tombstone and every older excluded candidate until each converges. Once
-    // this victim is deleted, keep only older candidates so the next call recomputes one victim.
+    // Keep the dependency-closed frontier and every older excluded candidate until the complete
+    // unit converges. Once deleted, omit the entire unit before recomputing the next victim.
     for (const index of excluded) {
-      if (index < victimIndex || (index === victimIndex && !cleanupDeleted)) {
+      if (
+        (!cleanupIndexes.has(index) && index < victimIndex) ||
+        (cleanupIndexes.has(index) && !cleanupDeleted)
+      ) {
         visibleIndexes.add(index);
+      }
+    }
+  }
+  addDependencyParents(visibleIndexes, dependencies.value.parentByChildIndex);
+  if (cleanupDeleted) {
+    for (const index of cleanupIndexes) visibleIndexes.delete(index);
+    // Removing a parent also removes every dependent child from the visible persisted frontier.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [child, parent] of dependencies.value.parentByChildIndex) {
+        if (visibleIndexes.has(child) && !visibleIndexes.has(parent)) {
+          visibleIndexes.delete(child);
+          changed = true;
+        }
       }
     }
   }
@@ -449,7 +606,7 @@ const pairReferencesPath = (model: LedgerModel, path: string): boolean => {
 
 const backupIsUnreferenced = (
   model: LedgerModel,
-  victimTransactionId: string,
+  excludedTransactionIds: ReadonlySet<string>,
   path: string,
 ): boolean => {
   if (Object.values(model.transactions).some((journal) => journalReferencesPath(journal, path))) {
@@ -458,7 +615,7 @@ const backupIsUnreferenced = (
   if (
     model.history.some(
       (journal) =>
-        journal.transactionId !== victimTransactionId && journalReferencesPath(journal, path),
+        !excludedTransactionIds.has(journal.transactionId) && journalReferencesPath(journal, path),
     )
   ) {
     return false;
@@ -490,29 +647,58 @@ export const cleanupHistoryVictim = async (
   if (journal === undefined) {
     return err({ code: 'victim-mismatch', transactionId: options.transactionId });
   }
-  const backups = journal.actual.retained.filter((resource) => resource.role === 'backup');
+  const projected = selectBoundedHistory(model, {
+    ledgerRevision: options.ledgerRevision,
+    cleanup: { transactionId: options.transactionId, outcome: 'deleted' },
+  });
+  if (!projected.ok) return projected;
+  const survivingTransactionIds = new Set(
+    projected.value.history.map(({ transactionId }) => transactionId),
+  );
+  const excludedJournals = model.history.filter(
+    ({ transactionId }) => !survivingTransactionIds.has(transactionId),
+  );
+  const excludedTransactionIds = new Set(
+    excludedJournals.map(({ transactionId }) => transactionId),
+  );
+  if (!excludedTransactionIds.has(options.transactionId)) {
+    return err({ code: 'victim-mismatch', transactionId: options.transactionId });
+  }
+  const backups = excludedJournals.flatMap(({ actual }) =>
+    actual.retained.filter((resource) => resource.role === 'backup'),
+  );
   if (backups.length === 0) {
     return err({ code: 'victim-mismatch', transactionId: options.transactionId });
   }
 
-  const seenPaths = new Set<string>();
+  const backupsByPath = new Map<string, LogicalJournalV1Dto['actual']['retained'][number]>();
   const present: Array<
     Readonly<{ readonly path: string; readonly identity: string; readonly parentIdentity: string }>
   > = [];
   for (const backup of backups) {
     const directory = dirname(backup.path);
+    const directoryName = basename(directory);
+    const ownerTransactionId = directoryName.startsWith('.skillsmith-artifact-')
+      ? directoryName.slice('.skillsmith-artifact-'.length)
+      : '';
+    const duplicate = backupsByPath.get(backup.path);
     if (
       backup.path !== resolve(backup.path) ||
-      basename(directory) !== `.skillsmith-artifact-${options.transactionId}` ||
+      !excludedTransactionIds.has(ownerTransactionId) ||
       basename(backup.path) !== `${backup.sourceRole}.backup` ||
       dirname(backup.path) === backup.path ||
       backup.repositoryRevision.digest !== backup.contentHash ||
-      seenPaths.has(backup.path) ||
-      !backupIsUnreferenced(model, options.transactionId, backup.path)
+      (duplicate !== undefined &&
+        (duplicate.role !== 'backup' ||
+          duplicate.sourceRole !== backup.sourceRole ||
+          duplicate.repositoryRevision.digest !== backup.repositoryRevision.digest ||
+          duplicate.contentHash !== backup.contentHash)) ||
+      !backupIsUnreferenced(model, excludedTransactionIds, backup.path)
     ) {
       return err({ code: 'victim-mismatch', transactionId: options.transactionId });
     }
-    seenPaths.add(backup.path);
+    if (duplicate !== undefined) continue;
+    backupsByPath.set(backup.path, backup);
     const parent = await ports.readFileMetadata(directory);
     if (parent.kind !== 'dir' || parent.identity === null || parent.mode !== 0o700) {
       return err({ code: 'victim-mismatch', transactionId: options.transactionId });
@@ -564,8 +750,5 @@ export const cleanupHistoryVictim = async (
     }
     await ports.fsyncDir(dirname(backup.path));
   }
-  return selectBoundedHistory(model, {
-    ledgerRevision: options.ledgerRevision,
-    cleanup: { transactionId: options.transactionId, outcome: 'deleted' },
-  });
+  return projected;
 };

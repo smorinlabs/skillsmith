@@ -3,7 +3,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
-import { fromLedgerV1Dto } from '../../src/artifacts/ledger-codec.ts';
+import { fromLedgerV1Dto, ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
 import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
 import { hashSourceContentV1, projectSourceContent } from '../../src/artifacts/source-content.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
@@ -28,6 +28,7 @@ import {
   resumeSwap,
   rollbackMoveScopeTransaction,
   rollbackSwap,
+  runCommittedPlacementReversal,
   runMoveScopeTransaction,
   runSwap,
   sweepCommittedAcquireJournals,
@@ -742,12 +743,20 @@ describe('physical move-scope transaction', () => {
         newTransactionId: () => 'unused',
       },
       'rollback',
-      { skill: 'alpha', tool: 'claude-code' },
+      {
+        skill: 'alpha',
+        tool: 'claude-code',
+        rollbackContext: { command: 'skillsmith-undo', workflow: 'undo' },
+      },
     );
     if (!rolledBack.ok) throw new Error(msg(rolledBack.error));
     expect(await f.env.pathKind(second.sourcePath)).toBe('dir');
     expect(await f.env.pathKind(second.destinationPath)).toBe('absent');
     expect(rolledBack.state.ledger.history[0]?.disposition).toBe('rollback');
+    expect(rolledBack.state.ledger.history[0]?.context).toMatchObject({
+      command: 'skillsmith-undo',
+      workflow: 'undo',
+    });
   });
 
   test('resume obeys a durable rollback direction after a crash at the rollback boundary', async () => {
@@ -961,6 +970,176 @@ describe('runSwap — promote / demote happy paths', () => {
     expect(pair?.mode).toBe('dev');
     expect(pair?.pinned).not.toBeNull();
   });
+
+  test('atomically publishes a fresh rollback child with its inverse shadow and recovery never toggles it', async () => {
+    const s = await seedAlphaDev(f);
+    const source = {
+      kind: 'local-dev' as const,
+      path: s.target,
+      contentHash: s.contentHash as OperationDigest,
+    };
+    const resource = {
+      kind: 'live' as const,
+      skill: 'alpha',
+      tool: 'claude-code' as const,
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path: s.placementPath },
+    };
+    const promoted: ExecutableOperation = {
+      operationId: 'operation:promote-alpha',
+      groupId: 'group:promote-alpha',
+      pairId: 'pair:alpha:claude-code',
+      kind: 'promote',
+      dependencyMetadata: {
+        domain: 'skillsmith.operation-dependency',
+        schemaVersion: 1,
+        operationIds: [],
+      },
+      skill: 'alpha',
+      source,
+      tool: 'claude-code',
+      scope: 'user',
+      before: {
+        kind: 'placement',
+        resource,
+        classification: 'dev',
+        representation: 'symlink',
+        linkTarget: { kind: 'machine-bound', path: s.target },
+        dangling: false,
+        source,
+        contentHash: source.contentHash,
+      },
+      after: {
+        kind: 'placement',
+        resource,
+        classification: 'pinned',
+        representation: 'copy',
+        linkTarget: null,
+        dangling: false,
+        source,
+        contentHash: source.contentHash,
+      },
+      reason: { code: 'promote-selected', message: 'Promote alpha.' },
+      selectionSource: 'explicit-targets',
+      preconditionIds: [],
+      requiredCheckIds: [],
+      reversibility: { kind: 'conditional', retentionResourceIds: ['pair:alpha:claude-code'] },
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+      conflict: null,
+    };
+    let currentLedger = s.ledger;
+    for (const phase of ['prepared', 'staged', 'backed-up', 'live'] as const) {
+      const forwardOperation: ExecutableOperation = {
+        ...promoted,
+        operationId: `${promoted.operationId}:${phase}`,
+        groupId: `${promoted.groupId}:${phase}`,
+      };
+      const parentTransactionId = `parent-promote-${phase}`;
+      const forward = await runSwap(
+        makeCtx(f.env, s.ledgerPath, currentLedger, {
+          txId: parentTransactionId,
+          logicalOperation: forwardOperation,
+          journalTimestamp: JOURNAL_NOW,
+        }),
+        promotePlan(s),
+      );
+      if (!forward.ok) throw new Error(`${phase}: ${msg(forward.error)}`);
+      const parent = forward.state.ledger.history.find(
+        (journal) => journal.transactionId === parentTransactionId,
+      );
+      if (parent === undefined) throw new Error(`${phase}: committed parent journal is missing`);
+      expect(parent.actual.retained).toMatchObject([
+        {
+          resourceId: promoted.pairId,
+          path: s.target,
+          repositoryRevision: { digest: s.contentHash },
+          contentHash: s.contentHash,
+        },
+      ]);
+
+      const reversal: ExecutableOperation = {
+        ...forwardOperation,
+        operationId: `operation:reverse-promote-alpha:${phase}`,
+        groupId: `group:reverse-promote-alpha:${phase}`,
+        before: forwardOperation.after,
+        after: forwardOperation.before,
+        reason: { code: 'rollback-inverse', message: 'Restore alpha development placement.' },
+      };
+      const transactionId = `fresh-promote-reversal-${phase}`;
+      const controller = new AbortController();
+      const persisted: LedgerModel[] = [];
+      const interrupted = await runCommittedPlacementReversal(
+        makeCtx(f.env, s.ledgerPath, forward.state.ledger, {
+          txId: transactionId,
+          signal: controller.signal,
+          pauseAt: phase,
+          logicalOperation: reversal,
+          journalTimestamp: JOURNAL_NOW,
+          afterPersist: (ledger) => {
+            persisted.push(ledger);
+            if (getSwapPair(ledger, 'alpha', 'claude-code')?.journal?.phase === phase) {
+              controller.abort();
+            }
+          },
+        }),
+        parent.transactionId,
+      );
+      expect(interrupted.ok, phase).toBeFalse();
+      expect(persisted.length, phase).toBeGreaterThanOrEqual(1);
+      const first = persisted[0];
+      if (first === undefined) throw new Error(`${phase}: fresh first publication is missing`);
+      const firstChild = first.transactions[transactionId];
+      const durableParent = first.history.find(
+        (journal) => journal.transactionId === parent.transactionId,
+      );
+      if (durableParent === undefined) throw new Error(`${phase}: durable parent is missing`);
+      expect(firstChild, phase).toMatchObject({
+        disposition: 'rollback',
+        phase: 'prepared',
+        context: { parentOperationId: durableParent.intent.operationId },
+        actual: { before: durableParent.actual.after, after: [] },
+      });
+      expect(getSwapPair(first, 'alpha', 'claude-code')?.journal, phase).toMatchObject({
+        op: 'dev',
+        txId: firstChild?.transactionId,
+        phase: 'prepared',
+      });
+      expect(ledgerV2Codec.encode(first).ok, phase).toBeTrue();
+      const durableChild = interrupted.state.ledger.transactions[transactionId];
+      expect(durableChild?.phase, phase).toBe(phase);
+      expect(getSwapPair(interrupted.state.ledger, 'alpha', 'claude-code')?.journal?.op).toBe(
+        'dev',
+      );
+
+      const recovered = await recoverPlacement(
+        {
+          env: f.env,
+          ledgerPath: s.ledgerPath,
+          ledger: interrupted.state.ledger,
+          journalNow: () => JOURNAL_NOW,
+          newTransactionId: () => 'unused-recovery-id',
+          logicalOperation: reversal,
+        },
+        'rollback',
+        { skill: 'alpha', tool: 'claude-code' },
+      );
+      if (!recovered.ok) throw new Error(`${phase}: ${msg(recovered.error)}`);
+      expect(await f.env.pathKind(s.placementPath), phase).toBe('symlink');
+      expect(await f.env.readLink(s.placementPath), phase).toBe(s.target);
+      expect(recovered.state.ledger.transactions, phase).toEqual({});
+      const committedChild = recovered.state.ledger.history.find(
+        (journal) => journal.transactionId === transactionId,
+      );
+      expect(committedChild, phase).toMatchObject({
+        disposition: 'rollback',
+        phase: 'committed',
+        intent: { operationId: reversal.operationId },
+        actual: { after: durableParent.actual.before },
+      });
+      currentLedger = recovered.state.ledger;
+    }
+  }, 20_000);
 
   test('demote when the pinned copy was edited in place: backup kept + warning, still flips', async () => {
     const s = await seedAlphaDev(f);

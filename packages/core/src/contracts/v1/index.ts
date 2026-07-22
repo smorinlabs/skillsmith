@@ -76,6 +76,17 @@ export type {
   UpdateVerificationV1Dto,
 } from './update.ts';
 export { updateV1Codec } from './update.ts';
+export type {
+  UndoEffectV1Dto,
+  UndoGroupV1Dto,
+  UndoOperationV1Dto,
+  UndoOperationResultV1Dto,
+  UndoPairV1Dto,
+  UndoReportV1Dto,
+  UndoSelectionV1Dto,
+  UndoSummaryV1Dto,
+} from './undo.ts';
+export { toUndoV1Dto, undoV1Codec } from './undo.ts';
 export type { ManifestV1Dto } from '../../artifacts/manifest-codec.ts';
 export {
   fromManifestV1Dto,

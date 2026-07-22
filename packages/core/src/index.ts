@@ -16,6 +16,7 @@ export {
   runApplyApplication,
   runSyncApplication,
   runUpdateApplication,
+  runUndoApplication,
   runHelpApplication,
   runRootHelpApplication,
   runVersionApplication,
@@ -25,6 +26,7 @@ export * from './init/index.ts';
 export * from './reconcile/index.ts';
 export * from './sync/index.ts';
 export * from './update/index.ts';
+export * from './undo/index.ts';
 export * from './application/lifecycle-services.ts';
 export * from './application/read-services.ts';
 export { COMMAND_EXIT_CLASSES, NO_MUTATION } from './application/types.ts';
@@ -180,6 +182,7 @@ export type {
   ExactApprovalPreviewRequest,
   ExactSyncApprovalPreviewRequest,
   ExactUpdateApprovalPreviewRequest,
+  ExactUndoApprovalPreviewRequest,
   InventoryReadPorts,
   InventoryBundle,
   JournalPhase,
@@ -211,6 +214,7 @@ export type {
   SyncApplicationReport,
   SyncApplicationRequest,
   UpdateApplicationReport,
+  UndoApplicationReport,
   Placement,
   PlacementBundle,
   PlacementClass,

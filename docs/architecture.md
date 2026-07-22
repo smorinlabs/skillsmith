@@ -265,7 +265,7 @@ or define a second public schema.
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
 `commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
 `flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
-`init@1`, `plan-report@1`, `apply-report@1`, `sync@1`, `update@1`, `uninstall@2`, `verify@1`, `error@1`, and
+`init@1`, `plan-report@1`, `apply-report@1`, `sync@1`, `update@1`, `undo@1`, `uninstall@2`, `verify@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive
 unknown-field rejection, embedded kind and version policy, JSON indentation, terminal framing, and
 conservative compatibility. Current codecs declare no migrations. Lifecycle v2 contracts are
@@ -335,9 +335,20 @@ paths.
 Ledger-v2 mutations update pair state and derived project registrations atomically. Pending logical
 transactions advance with their physical pair shadow and move exactly once into committed history.
 History retention is deterministic and bounded: the newest state for every resource anchor,
-pending anchors, retained resources, and the new commit are protected; remaining capacity is
-selected breadth-first across anchors. Cleanup handles one verified victim at a time so a crash
-cannot expose an evicted history entry whose retained resource still exists.
+pending anchors, retained resources, rollback-parent dependencies, and the new commit are protected;
+remaining capacity is selected breadth-first across anchors. A retained rollback child and its
+committed forward parent are admitted as one dependency-closed unit. Cleanup handles verified
+dependency closures so a crash cannot expose a rollback child without its parent or an evicted
+history entry whose retained resource still exists.
+
+Forward placement journals retain the exact source needed to restore a non-absent development or
+managed store placement. A fresh install or development link from an absent before-image is the
+only zero-retention reversal because its inverse is removal. Committed undo preserves the forward
+intent orientation, writes its rollback child and inverse physical shadow atomically at the first
+durable boundary, and then uses normal placement resume. Interrupted forward work continues to use
+the distinct backup-restoring rollback path. Status supplies undo with one private lifecycle-only
+observation of the selected user/current-project roots, ledger, and retention probes; that mode
+does not read manifest or lock artifacts and does not alter public `status@1`.
 
 Doctor diagnostics remain read-capability-only. `doctor --fix` is a separate capability-scoped
 planner/executor with a closed safe-repair allowlist and explicit preview/approval semantics; it

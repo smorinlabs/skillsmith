@@ -108,11 +108,37 @@ describe('EWP-WF05', () => {
         kind: 'skillsmith.undo',
         command: 'undo',
         mode: 'dry-run',
+        summary: { selected: 1, actionable: 1, planned: 1 },
+        groups: [
+          {
+            skill: 'review',
+            scope: 'project',
+            outcome: 'planned',
+            pairs: [
+              { tool: 'claude-code', outcome: 'planned' },
+              { tool: 'codex', outcome: 'planned' },
+            ],
+          },
+        ],
       });
       const undone = jsonReport(
         await runUndoCli(fleet, ['undo', 'review', '--project', '--yes', '--json']),
       );
-      expect(undone).toMatchObject({ kind: 'skillsmith.undo', summary: { failed: 0 } });
+      expect(undone).toMatchObject({
+        kind: 'skillsmith.undo',
+        summary: { selected: 1, actionable: 1, succeeded: 1, failed: 0 },
+        groups: [
+          {
+            skill: 'review',
+            scope: 'project',
+            outcome: 'succeeded',
+            pairs: [
+              { tool: 'claude-code', outcome: 'succeeded' },
+              { tool: 'codex', outcome: 'succeeded' },
+            ],
+          },
+        ],
+      });
 
       const relinked = jsonReport(
         await runUndoCli(fleet, ['dev', 'review', '--project', '--no-verify', '--json']),

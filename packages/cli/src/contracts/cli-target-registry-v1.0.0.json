@@ -4084,12 +4084,12 @@
     "validationOwner": "EWP-CMD-UNDO-TS01"
   },
   {
-    "key": "argument:skillsmith undo:<skill...>",
+    "key": "argument:skillsmith undo:[skill...]",
     "disposition": "N",
     "phase": "P17-G5-03",
     "validationOwner": "EWP-CMD-UNDO-TS01",
     "argument": {
-      "required": true,
+      "required": false,
       "variadic": true,
       "choices": [],
       "defaultValue": "unset",

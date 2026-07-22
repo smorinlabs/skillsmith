@@ -121,6 +121,12 @@ const PROFILE: Readonly<
     capability: 'update',
     application: 'update',
   },
+  'skillsmith undo': {
+    group: 'manage',
+    question: 'Which exact retained operation should be safely reversed?',
+    capability: 'undo',
+    application: 'undo',
+  },
   'skillsmith check': {
     group: 'maintain',
     question: 'Are blocking machine and project checks passing?',
@@ -195,6 +201,7 @@ const DESCRIPTION: Readonly<Record<string, string>> = {
   'skillsmith apply': 'Converge live skill state from a manifest or exact reviewed saved plan',
   'skillsmith sync': 'Converge one exact destination from one immutable live source',
   'skillsmith update': 'Update selected portable declarations to exact verified revisions',
+  'skillsmith undo': 'Reverse the latest eligible retained operation for selected placements',
   'skillsmith check': 'Error-severity subset of doctor, suitable for CI',
   'skillsmith verify': 'Verify that a plugin loads under each target tool',
   'skillsmith install': 'Install agent skills from a git host.',
@@ -224,6 +231,8 @@ const ARGUMENT_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith sync:skill': 'Skill-name or glob filters; omitted means bounded source membership',
   'skillsmith update:skill':
     'Declared skill names or globs; omitted is valid only for bounded check or with --all',
+  'skillsmith undo:skill':
+    'Skill names whose latest eligible retained operations should be reversed',
   'skillsmith uninstall:skill':
     'Installed skill names or placement paths; use scope or tool flags to disambiguate',
   'skillsmith verify:path': 'Plugin or bare skill directory',
@@ -294,6 +303,12 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     'skillsmith update factor-scan --dry-run',
     'skillsmith update factor-scan --ref main --pin',
     'skillsmith update --all --yes',
+  ],
+  'skillsmith undo': [
+    'skillsmith undo factor-scan --dry-run',
+    'skillsmith undo factor-scan --tool codex --project',
+    'skillsmith undo --all --scope user --yes',
+    'skillsmith undo factor-scan review --yes --json',
   ],
   'skillsmith uninstall': [
     'skillsmith uninstall factor-scan',
@@ -396,6 +411,15 @@ const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
     [5, 'a selected source or exact remote ref could not be resolved'],
     [6, 'a selected artifact or placement path is permission denied'],
     [7, 'a valid --check evaluation contains available changes'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith undo': exitCodes(
+    [0, 'selected work was previewed, already reversed, filtered to no-op, or safely undone'],
+    [1, 'one or more selected reversals failed'],
+    [2, 'invalid target, --all, scope, approval, or option usage'],
+    [3, 'selected history, retained state, ledger, or execution guard is invalid'],
+    [4, 'a selected tool does not support the required undo capability'],
+    [6, 'a selected retained artifact or placement path is permission denied'],
     [130, 'cancelled by SIGINT'],
   ),
   'skillsmith config': exitCodes([0, 'configuration help page emitted']),
@@ -568,6 +592,7 @@ export const CURRENT_COMMAND_SPECS: readonly CommandSpec[] = commandPaths.map((p
     ...(path === 'skillsmith apply' ? { reportKind: 'apply' } : {}),
     ...(path === 'skillsmith sync' ? { reportKind: 'sync' } : {}),
     ...(path === 'skillsmith update' ? { reportKind: 'update' } : {}),
+    ...(path === 'skillsmith undo' ? { reportKind: 'undo' } : {}),
   });
 });
 
@@ -844,6 +869,31 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   conflicts('skillsmith update', '--check', '--dry-run'),
   conflicts('skillsmith update', '--check', '--yes'),
   conflicts('skillsmith update', '--dry-run', '--yes'),
+  exclusive('skillsmith undo', ['--user', '--project']),
+  conflicts('skillsmith undo', '--scope', '--user'),
+  conflicts('skillsmith undo', '--scope', '--project'),
+  ...scopeRelations('skillsmith undo', ['user', 'project']),
+  singularOption('skillsmith undo', '--scope'),
+  singularOption('skillsmith undo', '--user'),
+  singularOption('skillsmith undo', '--project'),
+  {
+    id: 'skillsmith.undo.all.no-targets',
+    command: 'skillsmith undo',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--all',
+    maximum: 0,
+    label: '--all cannot be combined with positional targets',
+    description: '--all cannot be combined with positional targets',
+  },
+  {
+    id: 'skillsmith.undo.tool.distinct-values',
+    command: 'skillsmith undo',
+    kind: 'distinct-values',
+    option: '--tool',
+    description: '--tool values must be distinct',
+  },
+  conflicts('skillsmith undo', '--yes', '--dry-run'),
   conflicts('skillsmith verify', '--static', '--deep'),
   conflicts('skillsmith install', '--deep', '--no-verify'),
   conflicts('skillsmith install', '--yes', '--dry-run'),

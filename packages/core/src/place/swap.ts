@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { ArtifactDigest } from '../artifacts/hash.ts';
 import { normalizeSourceIdentity } from '../artifacts/identity.ts';
 import type {
@@ -50,7 +50,9 @@ import {
   abortPendingLogicalTransaction,
   abortPendingLogicalTransactionAfterRecoveryAttempt,
   advanceLogicalTransaction,
+  beginCommittedLogicalTransactionReversal,
   commitLogicalTransaction,
+  logicalRollbackTerminalActualAfter,
 } from './logical-transactions.ts';
 import { contentHashOf } from './store.ts';
 import type {
@@ -306,6 +308,110 @@ const liveActual = (
       };
 };
 
+const retainedPlacementBefore = (
+  operation: ExecutableOperation,
+  pair: PairRecord,
+  shadow: Journal,
+): LogicalJournalV1Dto['actual']['retained'][number] | null => {
+  const before = operation.before;
+  if (operation.pairId === null || before.kind !== 'placement') {
+    return null;
+  }
+  const contentHash =
+    before.contentHash ??
+    (shadow.before.mode === 'pinned'
+      ? (shadow.before.contentHash as ArtifactDigest | null)
+      : null) ??
+    (pair.pinned?.contentHash as ArtifactDigest | null | undefined) ??
+    before.source?.contentHash ??
+    null;
+  if (contentHash === null) return null;
+  let path: string | null = null;
+  if (before.classification === 'dev') {
+    if (
+      before.representation !== 'symlink' ||
+      before.source?.kind !== 'local-dev' ||
+      before.linkTarget?.kind !== 'machine-bound' ||
+      before.linkTarget.path !== before.source.path ||
+      before.source.contentHash !== contentHash
+    ) {
+      return null;
+    }
+    path = before.source.path;
+  } else if (before.classification === 'pinned' || before.classification === 'store-linked') {
+    const storePath =
+      shadow.before.mode === 'pinned' &&
+      shadow.before.storePath !== null &&
+      shadow.before.contentHash === contentHash
+        ? shadow.before.storePath
+        : pair.pinned?.contentHash === contentHash
+          ? pair.pinned.storePath
+          : null;
+    if (
+      storePath === null ||
+      storePath.length === 0 ||
+      (before.classification === 'store-linked' &&
+        (before.representation !== 'symlink' ||
+          before.linkTarget?.kind !== 'machine-bound' ||
+          before.linkTarget.path !== storePath))
+    ) {
+      return null;
+    }
+    path = storePath;
+  }
+  if (path === null) return null;
+  return {
+    resourceId: operation.pairId,
+    role: 'store',
+    path,
+    repositoryRevision: { kind: 'resource', digest: contentHash as ArtifactDigest },
+    contentHash: contentHash as ArtifactDigest,
+    retainUntil: null,
+  };
+};
+
+const journalReversibility = (
+  operation: ExecutableOperation,
+): LogicalJournalV1Dto['intent']['reversibility'] =>
+  operation.reversibility.kind === 'none'
+    ? { kind: 'none', retentionResourceIds: [] }
+    : {
+        kind: operation.reversibility.kind,
+        retentionResourceIds: [...operation.reversibility.retentionResourceIds] as [
+          string,
+          ...string[],
+        ],
+      };
+
+const forwardPlacementRetention = (
+  operation: ExecutableOperation,
+  pair: PairRecord,
+  shadow: Journal,
+): Readonly<{
+  reversibility: LogicalJournalV1Dto['intent']['reversibility'];
+  retained: LogicalJournalV1Dto['actual']['retained'];
+}> => {
+  const reversibleFamily =
+    operation.kind === 'install' ||
+    operation.kind === 'remove' ||
+    operation.kind === 'link-dev' ||
+    operation.kind === 'promote';
+  if (!reversibleFamily || operation.pairId === null) {
+    return { reversibility: journalReversibility(operation), retained: [] };
+  }
+  if (
+    operation.before.kind === 'absent' &&
+    (operation.kind === 'install' || operation.kind === 'link-dev')
+  ) {
+    return { reversibility: { kind: 'none', retentionResourceIds: [] }, retained: [] };
+  }
+  const retained = retainedPlacementBefore(operation, pair, shadow);
+  return {
+    reversibility: { kind: 'conditional', retentionResourceIds: [operation.pairId] },
+    retained: retained === null ? [] : [retained],
+  };
+};
+
 const logicalJournalFor = (
   operation: ExecutableOperation,
   pair: PairRecord,
@@ -371,6 +477,7 @@ const logicalJournalFor = (
   });
   const ledgerBefore = ledgerActual(ledgerRevisions?.before ?? ZERO_DIGEST);
   const ledgerAfter = ledgerActual(ledgerRevisions?.after ?? ZERO_DIGEST);
+  const retention = forwardPlacementRetention(operation, pair, shadow);
   return {
     schemaVersion: 1,
     kind: 'skillsmith.transaction-journal',
@@ -387,7 +494,7 @@ const logicalJournalFor = (
       before: operation.before as unknown as LogicalJournalV1Dto['intent']['before'],
       after: afterImage as unknown as LogicalJournalV1Dto['intent']['after'],
       mutates: operation.mutates,
-      reversibility: { kind: 'none', retentionResourceIds: [] },
+      reversibility: retention.reversibility,
       conflict: null,
     },
     context: {
@@ -404,7 +511,7 @@ const logicalJournalFor = (
       after: visible
         ? [liveActual(afterImage as OperationImage, pair, 'present'), ledgerAfter]
         : [],
-      retained: [],
+      retained: retention.retained,
     },
     updatedAt: shadow.completedAt ?? shadow.startedAt,
     completedAt: shadow.completedAt,
@@ -1263,10 +1370,12 @@ const rollbackMoveScopeTransactionInternal = async (
   if (syncFailure !== undefined && !syncFailure.ok) return syncFailure;
 
   const completedAt = effects.journalNow();
+  const terminalAfter = logicalRollbackTerminalActualAfter(ledger.current(), rollback);
+  if (!terminalAfter.ok) return err(flipFailedError(terminalAfter.error.message));
   const committed = commitLogicalTransaction(ledger.current(), {
     ...rollback,
     phase: 'committed',
-    actual: { ...rollback.actual, after: rollback.actual.before },
+    actual: { ...rollback.actual, after: terminalAfter.value },
     updatedAt: completedAt,
     completedAt,
   });
@@ -1387,6 +1496,17 @@ const persistPair = async (
   if (operation !== undefined && pair.journal != null) {
     const freshJournal = logicalJournalFor(operation, pair, pair.journal);
     const persistedPending = model.transactions[freshJournal.transactionId];
+    let observedAfter = freshJournal.actual.after;
+    if (
+      persistedPending !== undefined &&
+      persistedPending.disposition === 'rollback' &&
+      persistedPending.context.parentOperationId !== persistedPending.intent.operationId &&
+      (freshJournal.phase === 'live' || freshJournal.phase === 'committed')
+    ) {
+      const terminalAfter = logicalRollbackTerminalActualAfter(model, persistedPending);
+      if (!terminalAfter.ok) return err(flipFailedError(terminalAfter.error.message));
+      observedAfter = terminalAfter.value;
+    }
     // A crash can make the freshly observed live image differ from the operation's original
     // before-image (for example, live has already moved to backup). Resume from the durable logical
     // identity and use the fresh journal only for this phase's observed after-resources/timestamps.
@@ -1396,7 +1516,7 @@ const persistPair = async (
         : {
             ...persistedPending,
             phase: freshJournal.phase,
-            actual: { ...persistedPending.actual, after: freshJournal.actual.after },
+            actual: { ...persistedPending.actual, after: observedAfter },
             updatedAt: freshJournal.updatedAt,
             completedAt: freshJournal.completedAt,
           };
@@ -1557,10 +1677,12 @@ const commitLogicalRollback = async (
     return err(flipFailedError('logical placement rollback transaction was lost during staging'));
   }
   const completedAt = effects.journalNow();
+  const terminalAfter = logicalRollbackTerminalActualAfter(terminalBase, terminalPending);
+  if (!terminalAfter.ok) return err(flipFailedError(terminalAfter.error.message));
   const committed = commitLogicalTransaction(terminalBase, {
     ...terminalPending,
     phase: 'committed',
-    actual: { ...terminalPending.actual, after: terminalPending.actual.before },
+    actual: { ...terminalPending.actual, after: terminalAfter.value },
     updatedAt: completedAt,
     completedAt,
   });
@@ -2036,11 +2158,37 @@ const computeBefore = async (
   };
 
   if (plan.op === 'promote') {
+    if (
+      plan.rollbackOf === 'rollback' &&
+      ctx.logicalOperation?.before.kind === 'placement' &&
+      ctx.logicalOperation.before.classification !== 'dev'
+    ) {
+      if (existing?.pinned == null) {
+        return err(genericError(`cannot reverse promote ${plan.skill}: current pin is missing`));
+      }
+      const liveKindBefore = kindOf(liveKind);
+      let symlinkTarget: string | null = null;
+      if (liveKindBefore === 'symlink') {
+        const target = await readLive();
+        if (!target.ok) return target;
+        symlinkTarget = target.value;
+      }
+      return ok({
+        mode: 'pinned',
+        storePath: existing.pinned.storePath,
+        contentHash: existing.pinned.contentHash,
+        liveKind: liveKindBefore,
+        ...(symlinkTarget === null ? {} : { symlinkTarget }),
+      });
+    }
     const t = await readLive();
     if (!t.ok) return t;
     return ok({ mode: 'dev', symlinkTarget: t.value, liveKind: kindOf(liveKind) });
   }
   if (plan.op === 'dev') {
+    if (plan.rollbackOf === 'rollback' && liveKind === 'absent') {
+      return ok({ mode: 'absent' });
+    }
     return ok({
       mode: 'pinned',
       storePath: existing?.pinned?.storePath ?? null,
@@ -2183,6 +2331,7 @@ const runSwapInternal = async (
   ledger: SwapLedgerAccess,
   effects: SwapEffects,
   plan: SwapPlan,
+  freshReversalSourceTransactionId?: string,
 ): Promise<Result<SwapOutcome, SkillSmithError>> => {
   const scopeKey = plan.scopeKey ?? null;
   const existing = pairAt(ledger.current(), scopeKey, plan.skill, plan.tool);
@@ -2220,7 +2369,35 @@ const runSwapInternal = async (
   const pairRes = stagePair(plan, existing, before, journal);
   if (!pairRes.ok) return pairRes;
   const pair = pairRes.value;
-  const p1 = await persistPair(ctx, ledger, effects, scopeKey, plan.skill, plan.tool, pair);
+  let p1: Result<void, SkillSmithError>;
+  if (freshReversalSourceTransactionId === undefined) {
+    p1 = await persistPair(ctx, ledger, effects, scopeKey, plan.skill, plan.tool, pair);
+  } else {
+    const operation = ctx.logicalOperation;
+    if (operation === undefined) {
+      return err(flipFailedError('fresh placement reversal operation is missing'));
+    }
+    const paired = withLedgerPairAt(
+      ledger.current(),
+      scopeKey,
+      plan.skill,
+      plan.tool,
+      pair as LedgerPairV1Dto,
+    );
+    if (!paired.ok) return paired;
+    const begun = beginCommittedLogicalTransactionReversal(paired.value, {
+      sourceTransactionId: freshReversalSourceTransactionId,
+      transactionId: txId,
+      operationId: operation.operationId,
+      groupId: operation.groupId,
+      command: 'skillsmith-undo',
+      workflow: 'undo',
+      startedAt: journal.startedAt,
+      updatedAt: journal.startedAt,
+    });
+    if (!begun.ok) return err(flipFailedError(begun.error.message));
+    p1 = await ledger.persist(begun.value);
+  }
   if (!p1.ok) return p1;
   if (ctx.pauseAt === 'prepared') await pause(ctx.signal);
 
@@ -2244,6 +2421,212 @@ export const runSwapObserved = (
   return operation === undefined
     ? runSwap(request, plan)
     : runSwap(observeSwapPersistence(request, observation, operation), plan);
+};
+
+const machineLivePath = (operation: ExecutableOperation): string | null => {
+  const paths = new Set<string>();
+  for (const image of [operation.before, operation.after]) {
+    if (
+      (image.kind === 'placement' || image.kind === 'absent') &&
+      image.resource.kind === 'live' &&
+      image.resource.location.kind === 'machine-bound'
+    ) {
+      paths.add(image.resource.location.path);
+    }
+  }
+  return paths.size === 1 ? ([...paths][0] ?? null) : null;
+};
+
+const machineProjectRoot = (operation: ExecutableOperation): string | null => {
+  const paths = new Set<string>();
+  for (const image of [operation.before, operation.after]) {
+    if (
+      (image.kind === 'placement' || image.kind === 'absent') &&
+      image.resource.kind === 'live' &&
+      image.resource.projectRoot?.kind === 'machine-bound'
+    ) {
+      paths.add(image.resource.projectRoot.path);
+    }
+  }
+  return paths.size === 1 ? ([...paths][0] ?? null) : null;
+};
+
+const freshReversalPlan = (
+  request: SwapRequest,
+  sourceTransactionId: string,
+): Result<SwapPlan, SkillSmithError> => {
+  const operation = request.context.logicalOperation;
+  const parent = request.state.ledger.history.find(
+    (journal) => journal.transactionId === sourceTransactionId,
+  );
+  if (
+    operation === undefined ||
+    parent === undefined ||
+    parent.disposition !== 'forward' ||
+    parent.phase !== 'committed' ||
+    operation.skill === null ||
+    operation.tool === null ||
+    operation.scope === null ||
+    operation.pairId === null ||
+    canonicalPlanningString(operation.before) !== canonicalPlanningString(parent.intent.after) ||
+    canonicalPlanningString(operation.after) !== canonicalPlanningString(parent.intent.before)
+  ) {
+    return err(flipFailedError('fresh placement reversal authority is inconsistent'));
+  }
+  const path = machineLivePath(operation);
+  const scopeKey = operation.scope === 'project' ? machineProjectRoot(operation) : null;
+  if (path === null || (operation.scope === 'project') !== (scopeKey !== null)) {
+    return err(flipFailedError('fresh placement reversal location is invalid'));
+  }
+  const base = {
+    rollbackOf: 'rollback' as const,
+    skill: operation.skill,
+    tool: operation.tool as FlipTool,
+    scopeKey,
+    skillsRoot: dirname(path),
+    placementPath: path,
+  };
+  const pair = getLedgerPairAt(
+    request.state.ledger,
+    scopeKey,
+    operation.skill,
+    operation.tool as FlipTool,
+  );
+  const desired = operation.after;
+  const current = operation.before;
+  if (desired.kind === 'absent') {
+    return pair === null
+      ? err(flipFailedError('fresh reversal pair is missing for uninstall'))
+      : ok({ ...base, op: 'uninstall' });
+  }
+  if (desired.kind !== 'placement') {
+    return err(flipFailedError('fresh reversal before-image is not a placement'));
+  }
+  if (desired.classification === 'dev') {
+    const source = desired.source;
+    if (
+      desired.representation !== 'symlink' ||
+      source?.kind !== 'local-dev' ||
+      desired.linkTarget?.kind !== 'machine-bound' ||
+      desired.linkTarget.path !== source.path ||
+      source.contentHash !== desired.contentHash
+    ) {
+      return err(flipFailedError('fresh development reversal source is invalid'));
+    }
+    const recorded = pair?.dev;
+    const devRecord =
+      recorded !== null &&
+      recorded !== undefined &&
+      resolve(recorded.resolvedPath) === resolve(source.path)
+        ? recorded
+        : {
+            sourcePath: source.path,
+            resolvedPath: source.path,
+            repoRoot: null,
+            sourceRelPath: null,
+            remote: null,
+            recordedAt: parent.completedAt ?? parent.updatedAt,
+          };
+    return ok({
+      ...base,
+      op: 'dev',
+      dev: { sourcePath: source.path, devRecord },
+    });
+  }
+  const source = desired.source;
+  const retained = parent.actual.retained.find(
+    (resource) => resource.role === 'store' && resource.resourceId === operation.pairId,
+  );
+  if (
+    (desired.classification !== 'pinned' && desired.classification !== 'store-linked') ||
+    (desired.representation !== 'copy' && desired.representation !== 'symlink') ||
+    desired.contentHash === null ||
+    source?.kind !== 'portable' ||
+    source.contentHash !== desired.contentHash ||
+    retained === undefined ||
+    retained.contentHash !== desired.contentHash ||
+    retained.repositoryRevision.digest !== desired.contentHash
+  ) {
+    return err(flipFailedError('fresh managed reversal retained authority is invalid'));
+  }
+  const pinned = {
+    storePath: retained.path,
+    rev: source.resolvedSha.slice(0, 12),
+    gitSha: source.resolvedSha,
+    dirty: false,
+    contentHash: source.contentHash,
+    snapshotAt: parent.completedAt ?? parent.updatedAt,
+    verify: 'passed' as const,
+    placement: desired.representation,
+  };
+  const sourcePath = source.sourcePath === '.' ? '' : source.sourcePath;
+  const origin = {
+    source: `${source.identity.host}/${source.identity.repository}${sourcePath.length === 0 ? '' : `//${sourcePath}`}`,
+    host: source.identity.host,
+    repo: source.identity.repository,
+    skillPath: sourcePath,
+    refRequested: source.requestedRef,
+    refResolved: source.resolvedSha,
+    pin: true,
+    installedAt: parent.context.startedAt,
+  };
+  if (current.kind === 'absent') {
+    if (pair !== null) {
+      return err(flipFailedError('fresh retained installation destination is not empty'));
+    }
+    return ok({
+      ...base,
+      op: 'install',
+      install: {
+        build: desired.representation,
+        storePath: retained.path,
+        contentHash: source.contentHash,
+        pinned,
+        origin,
+        adoptedDev: null,
+      },
+    });
+  }
+  if (current.kind !== 'placement' || pair === null || pair.dev === null) {
+    return err(flipFailedError('fresh promotion reversal pair authority is invalid'));
+  }
+  return ok({
+    ...base,
+    op: 'promote',
+    promote: {
+      storePath: retained.path,
+      contentHash: source.contentHash,
+      pinned,
+      devRecord: pair.dev,
+    },
+  });
+};
+
+/** Atomically publish and drive one fresh committed placement reversal. */
+export const runCommittedPlacementReversal = async (
+  request: SwapRequest,
+  sourceTransactionId: string,
+): Promise<SwapExecutionResult<SwapOutcome>> => {
+  const plan = freshReversalPlan(request, sourceTransactionId);
+  return plan.ok
+    ? executeWithSwapState(request, (ctx, ledger, effects) =>
+        runSwapInternal(ctx, ledger, effects, plan.value, sourceTransactionId),
+      )
+    : Object.freeze({ ok: false, error: plan.error, state: request.state });
+};
+
+export const runCommittedPlacementReversalObserved = (
+  request: SwapRequest,
+  sourceTransactionId: string,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome>> => {
+  const operation = request.context.logicalOperation;
+  return operation === undefined
+    ? runCommittedPlacementReversal(request, sourceTransactionId)
+    : runCommittedPlacementReversal(
+        observeSwapPersistence(request, observation, operation),
+        sourceTransactionId,
+      );
 };
 
 const reconstructPlan = (
