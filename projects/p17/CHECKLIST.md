@@ -259,13 +259,13 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF02 | P17-G4A-01 | signed-off | required-pr |
 | EWP-WF03 | P17-G4B-03 | signed-off | required-pr |
 | EWP-WF04 | P17-G4B-03 | signed-off | required-pr |
-| EWP-WF05 | P17-G5-03 | planned | required-pr |
+| EWP-WF05 | P17-G5-03 | failing | required-pr |
 | EWP-WF06 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF07 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF08 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF09 | P17-G5-05 | planned | required-pr |
 | EWP-WF10 | P17-G5-01 | signed-off | required-pr |
-| EWP-WF11 | P17-G5-03 | planned | required-pr |
+| EWP-WF11 | P17-G5-03 | failing | required-pr |
 | EWP-WF12 | P17-G5-04 | planned | required-pr |
 | EWP-WF13 | P17-G5-05 | planned | required-pr |
 | EWP-WF14 | P17-G1-01 | signed-off | required-pr |
@@ -1408,7 +1408,7 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 
 ## P17-G5-03 — Scope-aware pending abort and committed undo with compatibility routing
 
-Phase: 5; status: **ready**; dependencies: P17-G4B-03.
+Phase: 5; status: **active**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-DEV-TS05, EWP-CMD-PROMOTE-TS05, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-P5-TS03, EWP-WF05, EWP-WF11.
 Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF09.
 
@@ -1416,7 +1416,7 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 
 - [x] P17-G5-03:mapped _(passed)_
 - [x] P17-G5-03:ready _(passed)_
-- [ ] P17-G5-03:test-first _(pending)_
+- [x] P17-G5-03:test-first _(passed)_
 - [ ] P17-G5-03:minimal-implementation _(pending)_
 - [ ] P17-G5-03:targeted-green _(pending)_
 - [ ] P17-G5-03:impacted-green _(pending)_
@@ -1428,18 +1428,18 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 ### Tracked entities
 
 - [ ] **COMMAND:undo** — Manage — How do I abort or reverse a selected retained operation? _(command; planned)_
-- [ ] **EWP-CMD-UNDO-TS01** — pending transaction abort and before-state restoration for every operation _(command-test; planned)_
-- [ ] **EWP-CMD-UNDO-TS02** — committed promote/dev/install/uninstall reversal where retention permits, _(command-test; planned)_
-- [ ] **EWP-CMD-UNDO-TS04** — pending precedence plus stale/unrestorable expected-state refusal. _(command-test; planned)_
-- [ ] **EWP-CMD-UNDO-TS05** — status labeling and relationship between abort and same-op resume. _(command-test; planned)_
-- [ ] **EWP-CMD-UNDO-TS06** — target/tool/scope/all selection across user+current-project history, exact _(command-test; planned)_
-- [ ] **EWP-CMD-UNDO-TS07** — dry-run/JSON/no-write behavior including yes conflict, no-prompt assertion, _(command-test; planned)_
-- [ ] **EWP-CMD-UNDO-TS08** — rollback alias behavioral equivalence/deprecation. _(command-test; planned)_
-- [ ] **EWP-CMD-UNDO-TS09** — migration/undo ordering, crash during either operation, and repeated _(command-test; planned)_
+- [ ] **EWP-CMD-UNDO-TS01** — pending transaction abort and before-state restoration for every operation _(command-test; failing)_
+- [ ] **EWP-CMD-UNDO-TS02** — committed promote/dev/install/uninstall reversal where retention permits, _(command-test; failing)_
+- [ ] **EWP-CMD-UNDO-TS04** — pending precedence plus stale/unrestorable expected-state refusal. _(command-test; failing)_
+- [ ] **EWP-CMD-UNDO-TS05** — status labeling and relationship between abort and same-op resume. _(command-test; failing)_
+- [ ] **EWP-CMD-UNDO-TS06** — target/tool/scope/all selection across user+current-project history, exact _(command-test; failing)_
+- [ ] **EWP-CMD-UNDO-TS07** — dry-run/JSON/no-write behavior including yes conflict, no-prompt assertion, _(command-test; failing)_
+- [ ] **EWP-CMD-UNDO-TS08** — rollback alias behavioral equivalence/deprecation. _(command-test; failing)_
+- [ ] **EWP-CMD-UNDO-TS09** — migration/undo ordering, crash during either operation, and repeated _(command-test; failing)_
 - [ ] **EWP-P5-T05** — Unified scope-aware undo selection and compatibility aliases. _(phase-task; ready)_
-- [ ] **EWP-P5-TS03** — Undo operation-family and user/project ambiguity/inference matrix. _(phase-test; planned)_
-- [ ] **EWP-WF05** — Local development lifecycle _(workflow; planned)_
-- [ ] **EWP-WF11** — Crash recovery and undo _(workflow; planned)_
+- [ ] **EWP-P5-TS03** — Undo operation-family and user/project ambiguity/inference matrix. _(phase-test; failing)_
+- [ ] **EWP-WF05** — Local development lifecycle _(workflow; failing)_
+- [ ] **EWP-WF11** — Crash recovery and undo _(workflow; failing)_
 - [ ] **P1-11** — `undo` _(recommendation; planned)_
 
 ## P17-G5-04 — Ledger-authoritative reachability, retention, explicit forget, and safe GC

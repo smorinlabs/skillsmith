@@ -7055,7 +7055,7 @@
       "phase": "5",
       "title": "Scope-aware pending abort and committed undo with compatibility routing",
       "dependsOn": ["P17-G4B-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7204,8 +7204,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -7240,7 +7240,8 @@
         "projects/p17/plans/P17-G5-03.md",
         "projects/p17/evidence/P17-G5-03.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G5-03.md#ready-review",
-        "projects/p17/evidence/P17-G5-03.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G5-03.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G5-03.md#test-first-evidence"
       ]
     },
     {
@@ -17788,11 +17789,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/undo.test.ts",
+        "selector": "EWP-CMD-UNDO-TS01",
+        "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS01"],
@@ -17810,8 +17816,13 @@
         "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS01"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/undo.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNDO-TS02",
@@ -17819,11 +17830,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/undo.test.ts",
+        "selector": "EWP-CMD-UNDO-TS02",
+        "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS02"],
@@ -17841,8 +17857,13 @@
         "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS02"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/undo.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNDO-TS03",
@@ -17885,11 +17906,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/undo.test.ts",
+        "selector": "EWP-CMD-UNDO-TS04",
+        "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS04"],
@@ -17907,8 +17933,13 @@
         "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS04"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/undo.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNDO-TS05",
@@ -17916,11 +17947,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/undo.test.ts",
+        "selector": "EWP-CMD-UNDO-TS05",
+        "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS05"],
@@ -17938,8 +17974,13 @@
         "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS05"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/undo.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNDO-TS06",
@@ -17947,11 +17988,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/undo.test.ts",
+        "selector": "EWP-CMD-UNDO-TS06",
+        "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS06"],
@@ -17969,8 +18015,13 @@
         "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS06"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/undo.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNDO-TS07",
@@ -17978,11 +18029,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/undo.test.ts",
+        "selector": "EWP-CMD-UNDO-TS07",
+        "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS07"],
@@ -18000,8 +18056,13 @@
         "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS07"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/undo.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNDO-TS08",
@@ -18009,11 +18070,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS08",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/undo.test.ts",
+        "selector": "EWP-CMD-UNDO-TS08",
+        "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS08"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts08"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS08"],
@@ -18031,8 +18097,13 @@
         "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS08"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/undo.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNDO-TS09",
@@ -18040,11 +18111,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS09",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/undo.test.ts",
+        "selector": "EWP-CMD-UNDO-TS09",
+        "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS09"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts09"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS09"],
@@ -18062,8 +18138,13 @@
         "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS09"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/undo.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNINSTALL-TS01",
@@ -24510,11 +24591,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:tests/ergonomics/phase/EWP-P5-TS03.test.ts#EWP-P5-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P5-TS03.test.ts",
+        "selector": "EWP-P5-TS03",
+        "command": "bun test tests/ergonomics/phase/EWP-P5-TS03.test.ts --test-name-pattern EWP-P5-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-p5-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P5-TS03"],
@@ -24532,8 +24618,13 @@
         "EWP-WF11"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P5-TS03.test.ts --test-name-pattern EWP-P5-TS03"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P5-TS03.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-P5-TS04",
@@ -25071,11 +25162,16 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:tests/ergonomics/workflows/EWP-WF05.test.ts#EWP-WF05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF05.test.ts",
+        "selector": "EWP-WF05",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF05.test.ts --test-name-pattern EWP-WF05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-wf05"],
       "secondaryGroups": ["P17-G3B-01", "P17-G3B-02"],
       "implements": [],
       "validatedBy": ["EWP-WF05"],
@@ -25102,8 +25198,13 @@
         "EWP-CF-026",
         "P1-11"
       ],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF05.test.ts --test-name-pattern EWP-WF05"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/workflows/EWP-WF05.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-WF06",
@@ -25387,11 +25488,16 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:tests/ergonomics/workflows/EWP-WF11.test.ts#EWP-WF11",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF11.test.ts",
+        "selector": "EWP-WF11",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF11.test.ts --test-name-pattern EWP-WF11"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-wf11"],
       "secondaryGroups": ["P17-G3B-03", "P17-G3A-01", "P17-G1-01", "P17-G1-04", "P17-G3B-04"],
       "implements": [],
       "validatedBy": ["EWP-WF11"],
@@ -25421,8 +25527,13 @@
         "P1-11",
         "P2-07"
       ],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF11.test.ts --test-name-pattern EWP-WF11"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/workflows/EWP-WF11.test.ts",
+        "tests/ergonomics/fixtures/p5-undo/fleet.ts"
+      ]
     },
     {
       "id": "EWP-WF12",
