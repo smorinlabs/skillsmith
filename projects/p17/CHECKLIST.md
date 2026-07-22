@@ -11,15 +11,15 @@ Tracked entities: **425** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 20 | 8 | 6 |
-| phase-task | 65 | 54 | 11 | 0 |
-| phase-test | 61 | 51 | 10 | 0 |
-| command-test | 157 | 117 | 40 | 0 |
+| recommendation | 34 | 21 | 7 | 6 |
+| phase-task | 65 | 56 | 9 | 0 |
+| phase-test | 61 | 52 | 9 | 0 |
+| command-test | 157 | 126 | 31 | 0 |
 | option-gate | 10 | 7 | 3 | 0 |
 | workflow | 16 | 9 | 7 | 0 |
-| command | 23 | 18 | 5 | 0 |
-| finding | 43 | 38 | 5 | 0 |
-| decision | 16 | 12 | 3 | 1 |
+| command | 23 | 19 | 4 | 0 |
+| finding | 43 | 39 | 4 | 0 |
+| decision | 16 | 13 | 2 | 1 |
 
 ### Phases
 
@@ -30,7 +30,7 @@ Tracked entities: **425** across **45** change groups.
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
 | 4 | 7 | 105 | 105 | 0 |
-| 5 | 5 | 69 | 17 | 0 |
+| 5 | 5 | 69 | 33 | 0 |
 | 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
@@ -124,7 +124,7 @@ Tracked entities: **425** across **45** change groups.
 | COMMAND:sync | P17-G5-01 | signed-off | required-pr |
 | COMMAND:undo | P17-G5-03 | planned | required-pr |
 | COMMAND:uninstall | P17-G4A-01 | signed-off | required-pr |
-| COMMAND:update | P17-G5-02 | planned | required-pr |
+| COMMAND:update | P17-G5-02 | signed-off | required-pr |
 | COMMAND:verify | P17-G1-05 | signed-off | required-pr |
 | COMMAND:version | P17-G1-03 | signed-off | required-pr |
 
@@ -153,7 +153,7 @@ Tracked entities: **425** across **45** change groups.
 | P1-11 | P17-G5-03 | planned | required-pr |
 | P1-12 | P17-G6-01 | planned | release |
 | P2-01 | P17-G1-02A | signed-off | required-pr |
-| P2-02 | P17-G5-02 | planned | required-pr |
+| P2-02 | P17-G5-02 | signed-off | required-pr |
 | P2-03 | P17-G5-04 | planned | required-pr |
 | P2-04 | P17-G6-02B | planned | supported-platform |
 | P2-05 | P17-G6-02A | planned | required-pr |
@@ -178,7 +178,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-CF-005 | P17-G3B-02 | signed-off | required-pr |
 | EWP-CF-006 | P17-G3B-03 | signed-off | required-pr |
 | EWP-CF-007 | P17-G1-05 | signed-off | required-pr |
-| EWP-CF-008 | P17-G5-02 | planned | required-pr |
+| EWP-CF-008 | P17-G5-02 | signed-off | required-pr |
 | EWP-CF-009 | P17-G4B-02 | signed-off | required-pr |
 | EWP-CF-010 | P17-G0-02 | signed-off | required-pr |
 | EWP-CF-011 | P17-G4A-02 | signed-off | required-pr |
@@ -229,7 +229,7 @@ Tracked entities: **425** across **45** change groups.
 | D-008 | P17-G3A-01 | signed-off | required-pr |
 | D-009 | P17-G3B-01 | signed-off | required-pr |
 | D-010 | P17-G3B-03 | signed-off | required-pr |
-| D-011 | P17-G5-02 | planned | required-pr |
+| D-011 | P17-G5-02 | signed-off | required-pr |
 | D-012 | P17-G5-04 | planned | required-pr |
 | D-013 | P17-G7-01 | deferred | deferred |
 | D-014 | P17-G4B-02 | signed-off | required-pr |
@@ -1370,7 +1370,7 @@ Downstream coverage obligations: EWP-WF13.
 
 ## P17-G5-02 — Update discovery, check/preview/apply, refs, pins, and retention
 
-Phase: 5; status: **reviewed**; dependencies: P17-G4B-03.
+Phase: 5; status: **signed-off**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-INSTALL-TS05, EWP-CMD-UPDATE-TS01, EWP-CMD-UPDATE-TS02, EWP-CMD-UPDATE-TS03, EWP-CMD-UPDATE-TS04, EWP-CMD-UPDATE-TS05, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-CMD-UPDATE-TS10, EWP-P5-TS02.
 Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF09, EWP-WF13.
 
@@ -1384,27 +1384,27 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 - [x] P17-G5-02:impacted-green _(passed)_
 - [x] P17-G5-02:refactor _(passed)_
 - [x] P17-G5-02:adversarial-review _(passed)_
-- [ ] P17-G5-02:traceability-closure _(pending)_
-- [ ] P17-G5-02:signed-off _(pending)_
+- [x] P17-G5-02:traceability-closure _(passed)_
+- [x] P17-G5-02:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:update** — Manage — How do I check or apply source revision changes? _(command; planned)_
-- [ ] **D-011** — One update lifecycle _(decision; planned)_
-- [ ] **EWP-CF-008** — Give pinning one portable observable effect _(finding; planned)_
-- [ ] **EWP-CMD-UPDATE-TS01** — candidate discovery for branches/tags/explicit refs. _(command-test; passing)_
-- [ ] **EWP-CMD-UPDATE-TS02** — moving/fixed/exact candidate policy, `--ref` tracking transition, and _(command-test; passing)_
-- [ ] **EWP-CMD-UPDATE-TS03** — target/all/tool selection, mutation target-or-all requirement, _(command-test; passing)_
-- [ ] **EWP-CMD-UPDATE-TS04** — targetless check bounded-default, equivalent all-check, targetless _(command-test; passing)_
-- [ ] **EWP-CMD-UPDATE-TS05** — verify/strict/deep policy reuse. _(command-test; passing)_
-- [ ] **EWP-CMD-UPDATE-TS06** — new lock-intent commit and per-tool live/ledger drift consistency across _(command-test; passing)_
-- [ ] **EWP-CMD-UPDATE-TS08** — offline/fetch/ref failure, partial tools, and default _(command-test; passing)_
-- [ ] **EWP-CMD-UPDATE-TS09** — confirmation/JSON/exit contracts including preview yes rejection and _(command-test; passing)_
-- [ ] **EWP-CMD-UPDATE-TS10** — manifest requested-ref preservation, explicit tracking change, and _(command-test; passing)_
-- [ ] **EWP-P5-T03** — Update candidate and pin policy. _(phase-task; red)_
-- [ ] **EWP-P5-T04** — Update plan/execution/retention. _(phase-task; red)_
-- [ ] **EWP-P5-TS02** — Update check/dry-run/apply matrix. _(phase-test; passing)_
-- [ ] **P2-02** — `update` _(recommendation; planned)_
+- [x] **COMMAND:update** — Manage — How do I check or apply source revision changes? _(command; signed-off)_
+- [x] **D-011** — One update lifecycle _(decision; signed-off)_
+- [x] **EWP-CF-008** — Give pinning one portable observable effect _(finding; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS01** — candidate discovery for branches/tags/explicit refs. _(command-test; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS02** — moving/fixed/exact candidate policy, `--ref` tracking transition, and _(command-test; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS03** — target/all/tool selection, mutation target-or-all requirement, _(command-test; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS04** — targetless check bounded-default, equivalent all-check, targetless _(command-test; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS05** — verify/strict/deep policy reuse. _(command-test; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS06** — new lock-intent commit and per-tool live/ledger drift consistency across _(command-test; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS08** — offline/fetch/ref failure, partial tools, and default _(command-test; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS09** — confirmation/JSON/exit contracts including preview yes rejection and _(command-test; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS10** — manifest requested-ref preservation, explicit tracking change, and _(command-test; signed-off)_
+- [x] **EWP-P5-T03** — Update candidate and pin policy. _(phase-task; signed-off)_
+- [x] **EWP-P5-T04** — Update plan/execution/retention. _(phase-task; signed-off)_
+- [x] **EWP-P5-TS02** — Update check/dry-run/apply matrix. _(phase-test; signed-off)_
+- [x] **P2-02** — `update` _(recommendation; signed-off)_
 
 ## P17-G5-03 — Scope-aware pending abort and committed undo with compatibility routing
 

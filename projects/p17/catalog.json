@@ -6844,7 +6844,7 @@
       "phase": "5",
       "title": "Update discovery, check/preview/apply, refs, pins, and retention",
       "dependsOn": ["P17-G4B-03"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7029,12 +7029,12 @@
           "evidence": ["projects/p17/evidence/P17-G5-02.md#independent-adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"]
         }
       },
       "evidence": [
@@ -7044,7 +7044,10 @@
         "projects/p17/evidence/P17-G5-02.md#accepted-ready-result",
         "projects/p17/evidence/P17-G5-02.md#test-first-evidence",
         "projects/p17/evidence/P17-G5-02.md#minimal-implementation",
-        "projects/p17/evidence/P17-G5-02.md#targeted-and-impacted-green"
+        "projects/p17/evidence/P17-G5-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-02.md#refactor",
+        "projects/p17/evidence/P17-G5-02.md#independent-adversarial-review",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ]
     },
     {
@@ -8728,11 +8731,15 @@
       "title": "Manage — How do I check or apply source revision changes?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:update",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
@@ -9319,11 +9326,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
@@ -9862,11 +9873,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": ["P17-G4A-01", "P17-G5-05"],
       "implements": [],
       "validatedBy": [
@@ -18282,7 +18297,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS01",
       "target": {
@@ -18293,7 +18308,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-cmd-update-ts01",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts01"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts01",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -18325,7 +18341,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS02",
       "target": {
@@ -18336,7 +18352,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-cmd-update-ts02",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts02"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts02",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -18368,7 +18385,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS03",
       "target": {
@@ -18379,7 +18396,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-cmd-update-ts03",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts03"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts03",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -18411,7 +18429,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS04",
       "target": {
@@ -18422,7 +18440,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-cmd-update-ts04",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts04"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts04",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -18454,7 +18473,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS05",
       "target": {
@@ -18465,7 +18484,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-cmd-update-ts05",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts05"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts05",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -18497,7 +18517,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS06",
       "target": {
@@ -18508,7 +18528,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-cmd-update-ts06",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts06"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts06",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -18576,7 +18597,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS08",
       "target": {
@@ -18587,7 +18608,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-cmd-update-ts08",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts08"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts08",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -18619,7 +18641,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS09",
       "target": {
@@ -18630,7 +18652,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-cmd-update-ts09",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts09"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts09",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -18662,7 +18685,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS10",
       "target": {
@@ -18673,7 +18696,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-cmd-update-ts10",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts10"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-cmd-update-ts10",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -24103,7 +24127,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G5-02",
-      "status": "red",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02",
       "target": null,
@@ -24111,7 +24135,10 @@
         "projects/p17/evidence/P17-G5-02.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G5-02.md#ready-review",
         "projects/p17/evidence/P17-G5-02.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G5-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G5-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
@@ -24149,7 +24176,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G5-02",
-      "status": "red",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02",
       "target": null,
@@ -24157,7 +24184,10 @@
         "projects/p17/evidence/P17-G5-02.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G5-02.md#ready-review",
         "projects/p17/evidence/P17-G5-02.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G5-02.md#test-first-evidence"
+        "projects/p17/evidence/P17-G5-02.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
@@ -24329,7 +24359,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-02",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02:tests/ergonomics/phase/EWP-P5-TS02.test.ts#EWP-P5-TS02",
       "target": {
@@ -24340,7 +24370,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-02.md#green-execution-receipt-ewp-p5-ts02",
-        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-p5-ts02"
+        "projects/p17/evidence/P17-G5-02.md#red-execution-receipt-ewp-p5-ts02",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -26271,11 +26302,15 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-02",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-02.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-02.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-02.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
