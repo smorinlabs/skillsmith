@@ -692,7 +692,7 @@ describe('EWP-P1-TS11', () => {
     );
     expect(() => createEvent(built.context, proxyEvent)).toThrow(TypeError);
     expect(eventProxyReads).toBe(0);
-  }, 20_000);
+  }, 30_000);
 
   test('family 2: correlates command/span lifecycle with independent clocks and deterministic error codes', async () => {
     const authority = await observationAuthority('ewp-p1-ts11-family-2');

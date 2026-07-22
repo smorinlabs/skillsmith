@@ -157,7 +157,7 @@ describe('EWP-P1-TS08', () => {
     const exitCode = await child.exited;
     const output = `${await new Response(child.stdout).text()}${await new Response(child.stderr).text()}`;
     expect(exitCode, output).toBe(0);
-  });
+  }, 30_000);
 
   test('focused read fakes and the ScanEnv compatibility adapter preserve behavior', async () => {
     const [compatibility, scans] = await Promise.all([

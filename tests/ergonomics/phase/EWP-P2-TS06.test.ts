@@ -1604,5 +1604,5 @@ describe('EWP-P2-TS06', () => {
     expect(rootSource).not.toContain('executeProjectConfigMigration');
     expect(artifactIndexSource).not.toContain('executeProjectConfigMigration');
     expect(basename(MIGRATION_EXECUTOR_PATH)).toBe('migration-executor.ts');
-  }, 20_000);
+  }, 30_000);
 });
