@@ -9,6 +9,7 @@ import {
   createPlacementPlan,
 } from '../place/plan.ts';
 import type { SnapshotBoundOperationPlanV1, SnapshotPlanningErrorV1 } from '../planning/create.ts';
+import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   ExecutableOperation,
   OperationSelection,
@@ -324,6 +325,42 @@ const selectedPairPlan = (
   return Object.freeze(pair);
 };
 
+const aggregateGroupTargets = (
+  pairs: readonly SyncFleetSelectedPairV1[],
+  fleet: SyncFleetObservation,
+): ReadonlyMap<string, string> => {
+  const bySkill = new Map<string, SyncFleetSelectedPairV1[]>();
+  for (const pair of pairs) {
+    const skillPairs = bySkill.get(pair.pair.skill) ?? [];
+    skillPairs.push(pair);
+    bySkill.set(pair.pair.skill, skillPairs);
+  }
+  return new Map(
+    [...bySkill].map(([skill, skillPairs]) => [
+      skill,
+      canonicalPlanningString([
+        'skillsmith-sync-destination-skill-group',
+        1,
+        fleet.endpoints.to.identity,
+        fleet.source.membershipHash,
+        fleet.destination.membershipHash,
+        skill,
+        skillPairs
+          .map((pair) =>
+            canonicalPlanningString([
+              pair.pair.tool,
+              pair.action,
+              pair.bindingKey,
+              pair.operationSource,
+              pair.representation,
+            ]),
+          )
+          .sort(),
+      ]),
+    ]),
+  );
+};
+
 /**
  * Pure first stage: selects the exact bounded source/destination members once and returns every
  * descriptor needed to materialize stores and construct placement snapshot authority.
@@ -498,6 +535,14 @@ export const selectSyncFleetResourcesV1 = (
     save: options.save,
     force: options.force,
   });
+  const groupTargets = aggregateGroupTargets(pairs, fleet);
+  const aggregatePairs = pairs.map((pair) => {
+    const groupIdentityTarget = groupTargets.get(pair.pair.skill);
+    if (groupIdentityTarget === undefined) {
+      throw new TypeError('sync selected group identity is missing');
+    }
+    return Object.freeze({ ...pair, groupIdentityTarget });
+  });
   return ok(
     Object.freeze({
       schemaVersion: 1,
@@ -506,7 +551,7 @@ export const selectSyncFleetResourcesV1 = (
       tools: Object.freeze([...fleet.endpoints.tools]),
       scope,
       projectRoot,
-      pairs: Object.freeze(pairs),
+      pairs: Object.freeze(aggregatePairs),
       stores: Object.freeze(stores),
       sourceMembership: membershipContentFor('source', fleet),
       destinationMembership: membershipContentFor('destination', fleet),

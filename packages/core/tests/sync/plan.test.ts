@@ -14,6 +14,7 @@ import {
   createStoreSnapshotIdentityV1,
 } from '../../src/state/types.ts';
 import {
+  type SyncFleetResourceSelectionV1,
   createSyncPlan,
   projectSyncFleetPlanV1,
   selectSyncFleetResourcesV1,
@@ -85,11 +86,11 @@ const storeRevision = revision({
   snapshotIdentity: storeValue.snapshotIdentity,
 });
 
-const liveRevision = (value: LivePlacementStateV1) =>
+const liveRevision = (value: LivePlacementStateV1, resourceId = 'live:alpha') =>
   revision({
     schemaVersion: 1,
     domain: 'live',
-    resourceId: 'live:alpha',
+    resourceId,
     state: 'present',
     targetIdentity: value.path,
     targetKind: value.representation,
@@ -507,6 +508,34 @@ const fleetFor = (
     },
   }) as unknown as SyncFleetObservation;
 
+const authorityForSelection = (selection: SyncFleetResourceSelectionV1) => {
+  const liveResources = selection.pairs.map(({ pair }, index) => ({
+    resourceId: `live:selected:${index}`,
+    skill: pair.skill,
+    tool: pair.tool,
+    scope: pair.scope,
+    projectIdentity: pair.scopeKey,
+    placementPath: pair.placement.path,
+    storeRoot: '/store',
+  }));
+  const storeResources = selection.stores.map((store, index) => ({
+    resourceId: `store:selected:${index}`,
+    storePath: `/store/${store.tool}-${store.skill}-${index}`,
+    contentHash: store.contentHash,
+  }));
+  return {
+    authority: { liveResources, storeResources } as unknown as PlacementSnapshotAuthority,
+    bindings: {
+      storeResourceIdsByPair: Object.fromEntries(
+        selection.stores.map((store, index) => [
+          store.bindingKey,
+          storeResources[index]?.resourceId,
+        ]),
+      ) as Readonly<Record<string, string>>,
+    },
+  };
+};
+
 describe('sync fleet-to-intent projection', () => {
   test('uses exact pair-to-store bindings and one aggregate group identity across tool members', () => {
     const claude = fleetMember('claude-code');
@@ -613,6 +642,152 @@ describe('sync fleet-to-intent projection', () => {
         ),
       ),
     ).toBeTrue();
+  });
+
+  test('aggregates different per-tool source bytes into one destination-skill group', () => {
+    const claude = fleetMember('claude-code');
+    const codex = fleetMember('codex', { liveContentHash: OLD_HASH as never });
+    const fleet = fleetFor([claude, codex]);
+    const selected = selectSyncFleetResourcesV1(fleet, {
+      targets: [],
+      delete: false,
+      continueOnError: false,
+      save: false,
+      force: false,
+    });
+    if (!selected.ok) throw new Error(selected.error.message);
+    const reversed = selectSyncFleetResourcesV1(fleetFor([codex, claude]), {
+      targets: [],
+      delete: false,
+      continueOnError: false,
+      save: false,
+      force: false,
+    });
+    if (!reversed.ok) throw new Error(reversed.error.message);
+    expect(
+      new Set(selected.value.pairs.map(({ groupIdentityTarget }) => groupIdentityTarget)),
+    ).toEqual(new Set(reversed.value.pairs.map(({ groupIdentityTarget }) => groupIdentityTarget)));
+    const prepared = authorityForSelection(selected.value);
+    const projected = projectSyncFleetPlanV1(selected.value, prepared.authority, prepared.bindings);
+    if (!projected.ok) throw new Error(projected.error.message);
+    const observed = {
+      ...snapshot(),
+      live: prepared.authority.liveResources.map((resource) => ({
+        revision: absent('live', resource.resourceId, resource.placementPath),
+        value: null,
+      })),
+      store: prepared.authority.storeResources.map((resource) => ({
+        revision: absent('store', resource.resourceId, resource.storePath),
+        value: null,
+      })),
+    } as ObservedStateSnapshotV1;
+    const plan = createSyncPlan(projected.value.request, observed);
+    if (!plan.ok) throw new Error(plan.error.message);
+
+    expect(new Set(plan.value.plan.operations.map(({ groupId }) => groupId)).size).toBe(1);
+    expect(plan.value.plan.operations.map(({ source }) => source?.contentHash).sort()).toEqual(
+      [HASH, OLD_HASH].sort(),
+    );
+    const membershipIds = projected.value.request.intents[0]?.membershipContent.map(
+      createContentObservationPreconditionIdV1,
+    );
+    expect(
+      plan.value.plan.operations.every(({ preconditionIds }) =>
+        membershipIds?.every((preconditionId) => preconditionIds.includes(preconditionId)),
+      ),
+    ).toBeTrue();
+    expect(
+      new Set(
+        projected.value.request.intents.map(({ sourceContent }) =>
+          sourceContent === undefined
+            ? null
+            : createContentObservationPreconditionIdV1(sourceContent),
+        ),
+      ).size,
+    ).toBe(2);
+  });
+
+  test('aggregates save convergence and delete removal for one skill into one group', () => {
+    const source = fleetMember('codex', {
+      portable: {
+        outcome: 'portable',
+        candidate: {
+          name: 'alpha',
+          tools: ['codex'],
+          scope: 'project',
+          source: { host: 'fixture.invalid', repository: 'acme/skills', path: 'skills/alpha' },
+          sourceText: 'fixture.invalid/acme/skills//skills/alpha',
+          requestedRef: 'main',
+          resolvedSha: 'a'.repeat(40),
+          sourcePath: 'skills/alpha',
+          contentHash: HASH as never,
+          placement: 'copy',
+          path: null,
+          classification: 'portable-managed',
+        },
+      },
+    });
+    const extra = fleetMember('claude-code', {
+      entry: {
+        ...fleetMember('claude-code').entry,
+        path: '/destination/claude-code/alpha',
+        realpath: '/destination/claude-code/alpha',
+        root: '/destination/claude-code',
+      },
+    });
+    const selected = selectSyncFleetResourcesV1(fleetFor([source], 'exact', [extra]), {
+      targets: [],
+      delete: true,
+      continueOnError: false,
+      save: true,
+      force: true,
+    });
+    if (!selected.ok) throw new Error(selected.error.message);
+    expect(selected.value.pairs.map(({ action }) => action).sort()).toEqual(['converge', 'remove']);
+    const prepared = authorityForSelection(selected.value);
+    const projected = projectSyncFleetPlanV1(selected.value, prepared.authority, prepared.bindings);
+    if (!projected.ok) throw new Error(projected.error.message);
+    const observed = {
+      ...snapshot(),
+      live: selected.value.pairs.map((selectedPair, index) => {
+        const resource = prepared.authority.liveResources[index];
+        if (resource === undefined) throw new Error('missing selected live resource');
+        if (selectedPair.action === 'converge') {
+          return {
+            revision: absent('live', resource.resourceId, resource.placementPath),
+            value: null,
+          };
+        }
+        const value: LivePlacementStateV1 = {
+          skill: selectedPair.pair.skill,
+          tool: selectedPair.pair.tool,
+          scope: selectedPair.pair.scope,
+          projectIdentity: selectedPair.pair.scopeKey,
+          representation: 'directory',
+          path: selectedPair.pair.placement.path,
+          realpath: selectedPair.pair.placement.path,
+          linkTarget: null,
+          dangling: false,
+          placementClass: 'pinned',
+          skillFile: 'valid',
+          brokenReason: null,
+          contentRevision: OLD_HASH,
+        };
+        return { revision: liveRevision(value, resource.resourceId), value };
+      }),
+      store: prepared.authority.storeResources.map((resource) => ({
+        revision: absent('store', resource.resourceId, resource.storePath),
+        value: null,
+      })),
+    } as ObservedStateSnapshotV1;
+    const plan = createSyncPlan(projected.value.request, observed);
+    if (!plan.ok) throw new Error(plan.error.message);
+
+    expect(plan.value.plan.operations.map(({ kind }) => kind).sort()).toEqual([
+      'install',
+      'remove',
+    ]);
+    expect(new Set(plan.value.plan.operations.map(({ groupId }) => groupId)).size).toBe(1);
   });
 
   test('selects targetless deletion once with the exact destination path and scope key', () => {
