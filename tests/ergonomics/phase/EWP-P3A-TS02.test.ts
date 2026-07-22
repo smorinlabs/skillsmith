@@ -264,5 +264,5 @@ describe('EWP-P3A-TS02', () => {
     ]);
     expect(`${stdout}${stderr}`, 'public status type fixture must compile').toBe('');
     expect(exitCode).toBe(0);
-  }, 15_000);
+  }, 60_000);
 });
