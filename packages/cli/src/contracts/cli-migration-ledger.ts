@@ -423,7 +423,7 @@ const targetRows: Readonly<Record<string, readonly string[]>> = {
     '--json',
   ],
   update: [
-    '<skill...>',
+    '[skill...]',
     '--all',
     '--file <path>',
     '--lockfile <path>',

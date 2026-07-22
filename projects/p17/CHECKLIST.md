@@ -263,7 +263,7 @@ Tracked entities: **425** across **45** change groups.
 | EWP-WF06 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF07 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF08 | P17-G4B-02 | signed-off | required-pr |
-| EWP-WF09 | P17-G5-02 | planned | required-pr |
+| EWP-WF09 | P17-G5-05 | planned | required-pr |
 | EWP-WF10 | P17-G5-01 | signed-off | required-pr |
 | EWP-WF11 | P17-G5-03 | planned | required-pr |
 | EWP-WF12 | P17-G5-04 | planned | required-pr |
@@ -966,7 +966,7 @@ Downstream coverage obligations: EWP-CMD-APPLY-TS01, EWP-CMD-APPLY-TS02, EWP-CMD
 
 Phase: 3B; status: **signed-off**; dependencies: P17-G3B-02.
 Required-now validations: EWP-CMD-DOCTOR-TS01, EWP-CMD-DOCTOR-TS02, EWP-CMD-DOCTOR-TS03, EWP-CMD-DOCTOR-TS04, EWP-CMD-DOCTOR-TS05, EWP-CMD-DOCTOR-TS06, EWP-CMD-STATUS-TS04, EWP-P3B-TS03, EWP-P3B-TS04.
-Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD-GC-TS02, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-WF11, EWP-WF12.
+Downstream coverage obligations: EWP-CMD-APPLY-TS07, EWP-CMD-APPLY-TS10, EWP-CMD-GC-TS02, EWP-CMD-PLAN-TS01, EWP-CMD-PLAN-TS10, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-CMD-UPDATE-TS07, EWP-WF09, EWP-WF11, EWP-WF12.
 
 ### Group gates
 
@@ -1370,14 +1370,14 @@ Downstream coverage obligations: EWP-WF13.
 
 ## P17-G5-02 — Update discovery, check/preview/apply, refs, pins, and retention
 
-Phase: 5; status: **planned**; dependencies: P17-G4B-03.
-Required-now validations: EWP-CMD-INSTALL-TS05, EWP-CMD-UPDATE-TS01, EWP-CMD-UPDATE-TS02, EWP-CMD-UPDATE-TS03, EWP-CMD-UPDATE-TS04, EWP-CMD-UPDATE-TS05, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-CMD-UPDATE-TS10, EWP-P5-TS02, EWP-WF09.
-Downstream coverage obligations: EWP-WF13.
+Phase: 5; status: **ready**; dependencies: P17-G4B-03.
+Required-now validations: EWP-CMD-INSTALL-TS05, EWP-CMD-UPDATE-TS01, EWP-CMD-UPDATE-TS02, EWP-CMD-UPDATE-TS03, EWP-CMD-UPDATE-TS04, EWP-CMD-UPDATE-TS05, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-CMD-UPDATE-TS10, EWP-P5-TS02.
+Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF09, EWP-WF13.
 
 ### Group gates
 
-- [ ] P17-G5-02:mapped _(pending)_
-- [ ] P17-G5-02:ready _(pending)_
+- [x] P17-G5-02:mapped _(passed)_
+- [x] P17-G5-02:ready _(passed)_
 - [ ] P17-G5-02:test-first _(pending)_
 - [ ] P17-G5-02:minimal-implementation _(pending)_
 - [ ] P17-G5-02:targeted-green _(pending)_
@@ -1398,21 +1398,19 @@ Downstream coverage obligations: EWP-WF13.
 - [ ] **EWP-CMD-UPDATE-TS04** — targetless check bounded-default, equivalent all-check, targetless _(command-test; planned)_
 - [ ] **EWP-CMD-UPDATE-TS05** — verify/strict/deep policy reuse. _(command-test; planned)_
 - [ ] **EWP-CMD-UPDATE-TS06** — new lock-intent commit and per-tool live/ledger drift consistency across _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS07** — prior-store retention and undo. _(command-test; planned)_
 - [ ] **EWP-CMD-UPDATE-TS08** — offline/fetch/ref failure, partial tools, and default _(command-test; planned)_
 - [ ] **EWP-CMD-UPDATE-TS09** — confirmation/JSON/exit contracts including preview yes rejection and _(command-test; planned)_
 - [ ] **EWP-CMD-UPDATE-TS10** — manifest requested-ref preservation, explicit tracking change, and _(command-test; planned)_
-- [ ] **EWP-P5-T03** — Update candidate and pin policy. _(phase-task; planned)_
-- [ ] **EWP-P5-T04** — Update plan/execution/retention. _(phase-task; planned)_
+- [ ] **EWP-P5-T03** — Update candidate and pin policy. _(phase-task; ready)_
+- [ ] **EWP-P5-T04** — Update plan/execution/retention. _(phase-task; ready)_
 - [ ] **EWP-P5-TS02** — Update check/dry-run/apply matrix. _(phase-test; planned)_
-- [ ] **EWP-WF09** — Update lifecycle _(workflow; planned)_
 - [ ] **P2-02** — `update` _(recommendation; planned)_
 
 ## P17-G5-03 — Scope-aware pending abort and committed undo with compatibility routing
 
 Phase: 5; status: **planned**; dependencies: P17-G4B-03.
-Required-now validations: EWP-CMD-DEV-TS05, EWP-CMD-PROMOTE-TS05, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS03, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-P5-TS03, EWP-WF05, EWP-WF11.
-Downstream coverage obligations: none.
+Required-now validations: EWP-CMD-DEV-TS05, EWP-CMD-PROMOTE-TS05, EWP-CMD-UNDO-TS01, EWP-CMD-UNDO-TS02, EWP-CMD-UNDO-TS04, EWP-CMD-UNDO-TS05, EWP-CMD-UNDO-TS06, EWP-CMD-UNDO-TS07, EWP-CMD-UNDO-TS08, EWP-CMD-UNDO-TS09, EWP-P5-TS03, EWP-WF05, EWP-WF11.
+Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF09.
 
 ### Group gates
 
@@ -1432,7 +1430,6 @@ Downstream coverage obligations: none.
 - [ ] **COMMAND:undo** — Manage — How do I abort or reverse a selected retained operation? _(command; planned)_
 - [ ] **EWP-CMD-UNDO-TS01** — pending transaction abort and before-state restoration for every operation _(command-test; planned)_
 - [ ] **EWP-CMD-UNDO-TS02** — committed promote/dev/install/uninstall reversal where retention permits, _(command-test; planned)_
-- [ ] **EWP-CMD-UNDO-TS03** — update reversal and lock restoration. _(command-test; planned)_
 - [ ] **EWP-CMD-UNDO-TS04** — pending precedence plus stale/unrestorable expected-state refusal. _(command-test; planned)_
 - [ ] **EWP-CMD-UNDO-TS05** — status labeling and relationship between abort and same-op resume. _(command-test; planned)_
 - [ ] **EWP-CMD-UNDO-TS06** — target/tool/scope/all selection across user+current-project history, exact _(command-test; planned)_
@@ -1485,7 +1482,7 @@ Downstream coverage obligations: none.
 ## P17-G5-05 — Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure
 
 Phase: 5; status: **planned**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
-Required-now validations: EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS13, EWP-CMD-SYNC-TS09, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-OPT-TS08, EWP-P4A-TS02, EWP-P5-TS05, EWP-WF13.
+Required-now validations: EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS13, EWP-CMD-SYNC-TS09, EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-OPT-TS08, EWP-P4A-TS02, EWP-P5-TS05, EWP-WF09, EWP-WF13.
 Downstream coverage obligations: none.
 
 ### Group gates
@@ -1503,8 +1500,11 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
+- [ ] **EWP-CMD-UNDO-TS03** — update reversal and lock restoration. _(command-test; planned)_
+- [ ] **EWP-CMD-UPDATE-TS07** — prior-store retention and undo. _(command-test; planned)_
 - [ ] **EWP-OPT-TS08** — Assert sibling lock derivation plus the uniform advanced lockfile override on _(option-gate; planned)_
 - [ ] **EWP-P5-TS05** — Bulk confirmation/noninteractive safety plus fail-fast/continue scheduling _(phase-test; planned)_
+- [ ] **EWP-WF09** — Update lifecycle _(workflow; planned)_
 - [ ] **EWP-WF13** — Multi-tool partial failure _(workflow; planned)_
 - [ ] **P1-04** — Safe bulk mutation _(recommendation; planned)_
 

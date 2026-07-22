@@ -4646,8 +4646,10 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
+        "EWP-CMD-UPDATE-TS07",
         "EWP-P3B-TS03",
         "EWP-P3B-TS04",
+        "EWP-WF09",
         "EWP-WF11",
         "EWP-WF12"
       ],
@@ -4677,6 +4679,8 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-WF09",
         "EWP-WF11",
         "EWP-WF12"
       ],
@@ -6840,12 +6844,108 @@
       "phase": "5",
       "title": "Update discovery, check/preview/apply, refs, pins, and retention",
       "dependsOn": ["P17-G4B-03"],
-      "status": "planned",
+      "status": "ready",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "README.md",
+        "docs/architecture.md",
+        "packages/core/src/acquire/fetch.ts",
+        "packages/core/src/agents/adapter-types.ts",
+        "packages/core/src/agents/claude-code/index.ts",
+        "packages/core/src/agents/codex/index.ts",
+        "packages/core/src/agents/registry.ts",
+        "packages/core/src/application/current-services.ts",
+        "packages/core/src/application/types.ts",
+        "packages/core/src/application/update-service.ts",
+        "packages/core/src/contracts/v1/index.d.ts",
+        "packages/core/src/contracts/v1/index.ts",
+        "packages/core/src/contracts/v1/update.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/planning/create.ts",
+        "packages/core/src/planning/types.ts",
+        "packages/core/src/ports/git.ts",
+        "packages/core/src/ports/types.ts",
+        "packages/core/src/public-types.ts",
+        "packages/core/src/reconcile/apply-execution.ts",
+        "packages/core/src/reconcile/apply.ts",
+        "packages/core/src/reconcile/execute.ts",
+        "packages/core/src/reconcile/index.ts",
+        "packages/core/src/reconcile/observe.ts",
+        "packages/core/src/reconcile/plan.ts",
+        "packages/core/src/reconcile/resolve.ts",
+        "packages/core/src/reconcile/types.ts",
+        "packages/core/src/update/artifacts.ts",
+        "packages/core/src/update/candidates.ts",
+        "packages/core/src/update/execute.ts",
+        "packages/core/src/update/index.ts",
+        "packages/core/src/update/observe.ts",
+        "packages/core/src/update/plan.ts",
+        "packages/core/src/update/types.ts",
+        "packages/core/src/update/verify.ts",
+        "packages/cli/src/contracts/cli-migration-ledger.ts",
+        "packages/cli/src/contracts/cli-target-registry-v1.0.0.json",
+        "packages/cli/src/contracts/commander-current-state-v0.json",
+        "packages/cli/src/contracts/wire-contracts.ts",
+        "packages/cli/src/output/update-human.ts",
+        "packages/cli/src/output/update-json.ts",
+        "packages/cli/src/runtime/current-renderers.ts",
+        "packages/cli/src/runtime/interaction.ts",
+        "packages/cli/src/spec/options.ts",
+        "packages/cli/src/spec/registry.ts",
+        "packages/cli/src/spec/relations.ts",
+        "packages/core/tests/acquire/fetch.test.ts",
+        "packages/core/tests/agents/claude-code.test.ts",
+        "packages/core/tests/agents/codex.test.ts",
+        "packages/core/tests/agents/registry.test.ts",
+        "packages/core/tests/application/current-services.test.ts",
+        "packages/core/tests/application/update-service.test.ts",
+        "packages/core/tests/contracts/update.test.ts",
+        "packages/core/tests/planning/create.test.ts",
+        "packages/core/tests/planning/types.test.ts",
+        "packages/core/tests/ports/git.test.ts",
+        "packages/core/tests/public-api.test.ts",
+        "packages/core/tests/reconcile/apply.test.ts",
+        "packages/core/tests/reconcile/execute.test.ts",
+        "packages/core/tests/reconcile/observe.test.ts",
+        "packages/core/tests/reconcile/plan.test.ts",
+        "packages/core/tests/reconcile/resolve.test.ts",
+        "packages/core/tests/update/artifacts.test.ts",
+        "packages/core/tests/update/candidates.test.ts",
+        "packages/core/tests/update/execute.test.ts",
+        "packages/core/tests/update/plan.test.ts",
+        "packages/core/tests/update/verify.test.ts",
+        "packages/cli/tests/output/update.test.ts",
+        "packages/cli/tests/runtime/interaction.test.ts",
+        "packages/cli/tests/contracts/update.test.ts",
+        "tests/ergonomics/fixtures/p5-update/fleet.ts",
+        "tests/ergonomics/phase/EWP-P5-TS02.test.ts",
+        "packages/cli/tests/contracts/options.test.ts",
+        "tests/ergonomics/fixtures/p1-ts08/read-only-capability.ts",
+        "tests/ergonomics/fixtures/p1-ts09/write-adapter.ts",
+        "tests/ergonomics/fixtures/p1-ts10/goldens/update.stdout",
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-implementation.ts",
+        "tests/ergonomics/fixtures/p1-ts10/public-wire-types.ts",
+        "tests/ergonomics/fixtures/p1-ts10/reports.ts",
+        "tests/ergonomics/fixtures/p2-ts08/public-types.ts",
+        "tests/ergonomics/fixtures/p3b-ts06/write-adapter.ts",
+        "tests/ergonomics/phase/EWP-P1-TS05.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS08.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS09.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS05.test.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS06.test.ts",
+        "scripts/p17-catalog.ts",
+        "scripts/p17-catalog.test.ts",
+        "projects/p17/plans/P17-G5-02.md",
+        "projects/p17/evidence/P17-G5-02.md"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": [
         "EWP-CMD-INSTALL-TS05",
+        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UPDATE-TS01",
         "EWP-CMD-UPDATE-TS02",
         "EWP-CMD-UPDATE-TS03",
@@ -6868,25 +6968,38 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
-      "downstreamCoverage": ["EWP-WF13"],
-      "testCommands": [],
-      "implementers": [],
+      "downstreamCoverage": ["EWP-CMD-UNDO-TS03", "EWP-CMD-UPDATE-TS07", "EWP-WF09", "EWP-WF13"],
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/install.test.ts --test-name-pattern EWP-CMD-INSTALL-TS05",
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS01",
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS02",
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS03",
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS04",
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS05",
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS06",
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS08",
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS09",
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS10",
+        "bun test tests/ergonomics/phase/EWP-P5-TS02.test.ts --test-name-pattern EWP-P5-TS02"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-02.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-02.md#ready-review",
+            "projects/p17/evidence/P17-G5-02.md#accepted-ready-result"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -6921,7 +7034,12 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": [
+        "projects/p17/plans/P17-G5-02.md",
+        "projects/p17/evidence/P17-G5-02.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G5-02.md#ready-review",
+        "projects/p17/evidence/P17-G5-02.md#accepted-ready-result"
+      ]
     },
     {
       "id": "P17-G5-03",
@@ -6944,8 +7062,10 @@
         "EWP-CMD-UNDO-TS07",
         "EWP-CMD-UNDO-TS08",
         "EWP-CMD-UNDO-TS09",
+        "EWP-CMD-UPDATE-TS07",
         "EWP-P5-TS03",
         "EWP-WF05",
+        "EWP-WF09",
         "EWP-WF11"
       ],
       "requiredNowValidations": [
@@ -6953,7 +7073,6 @@
         "EWP-CMD-PROMOTE-TS05",
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -6964,7 +7083,7 @@
         "EWP-WF05",
         "EWP-WF11"
       ],
-      "downstreamCoverage": [],
+      "downstreamCoverage": ["EWP-CMD-UNDO-TS03", "EWP-CMD-UPDATE-TS07", "EWP-WF09"],
       "testCommands": [],
       "implementers": [],
       "reviewer": null,
@@ -7107,12 +7226,15 @@
         "EWP-CMD-APPLY-TS11",
         "EWP-CMD-APPLY-TS13",
         "EWP-CMD-SYNC-TS09",
+        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UPDATE-TS06",
+        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-OPT-TS08",
         "EWP-P4A-TS02",
         "EWP-P5-TS05",
+        "EWP-WF09",
         "EWP-WF13"
       ],
       "requiredNowValidations": [
@@ -7120,12 +7242,15 @@
         "EWP-CMD-APPLY-TS11",
         "EWP-CMD-APPLY-TS13",
         "EWP-CMD-SYNC-TS09",
+        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UPDATE-TS06",
+        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-OPT-TS08",
         "EWP-P4A-TS02",
         "EWP-P5-TS05",
+        "EWP-WF09",
         "EWP-WF13"
       ],
       "downstreamCoverage": [],
@@ -8498,12 +8623,11 @@
       "plannedTarget": "surface:undo",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -8512,12 +8636,14 @@
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
         "EWP-WF05",
-        "EWP-WF11"
+        "EWP-WF11",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
+        "EWP-WF09"
       ],
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -8526,7 +8652,10 @@
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
         "EWP-WF05",
-        "EWP-WF11"
+        "EWP-WF11",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
+        "EWP-WF09"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -8598,7 +8727,7 @@
       "plannedTarget": "surface:update",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-UPDATE-TS01",
@@ -8607,11 +8736,12 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
         "EWP-P5-TS02",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
         "EWP-WF09"
       ],
       "impactedValidations": [
@@ -8621,11 +8751,12 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
         "EWP-P5-TS02",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
         "EWP-WF09"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
@@ -9143,7 +9274,7 @@
       "plannedTarget": "coverage:P17-G3B-03",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G3B-03.md#traceability-and-sign-off"],
-      "secondaryGroups": ["P17-G5-03"],
+      "secondaryGroups": ["P17-G5-03", "P17-G5-05"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-DOCTOR-TS01",
@@ -9153,7 +9284,10 @@
         "EWP-CMD-DOCTOR-TS05",
         "EWP-CMD-DOCTOR-TS06",
         "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-WF11",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
+        "EWP-WF09"
       ],
       "impactedValidations": [
         "EWP-CMD-DOCTOR-TS01",
@@ -9163,7 +9297,10 @@
         "EWP-CMD-DOCTOR-TS05",
         "EWP-CMD-DOCTOR-TS06",
         "EWP-P3B-TS04",
-        "EWP-WF11"
+        "EWP-WF11",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
+        "EWP-WF09"
       ],
       "affectedContracts": ["COMMAND:doctor", "D-010", "EWP-CF-006", "EWP-CF-028", "P2-07"],
       "testCommands": [],
@@ -9181,7 +9318,7 @@
       "plannedTarget": "coverage:P17-G5-02",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-UPDATE-TS01",
@@ -9190,11 +9327,12 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
         "EWP-P5-TS02",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
         "EWP-WF09"
       ],
       "impactedValidations": [
@@ -9204,11 +9342,12 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
         "EWP-P5-TS02",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
         "EWP-WF09"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
@@ -9658,7 +9797,7 @@
       "plannedTarget": "coverage:P17-G3B-03",
       "target": null,
       "evidence": ["projects/p17/evidence/P17-G3B-03.md#traceability-and-sign-off"],
-      "secondaryGroups": ["P17-G5-03", "P17-G3B-02"],
+      "secondaryGroups": ["P17-G5-03", "P17-G5-05", "P17-G3B-02"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-UNDO-TS01",
@@ -9722,7 +9861,7 @@
       "plannedTarget": "coverage:P17-G5-02",
       "target": null,
       "evidence": [],
-      "secondaryGroups": ["P17-G4A-01"],
+      "secondaryGroups": ["P17-G4A-01", "P17-G5-05"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-INSTALL-TS05",
@@ -10281,6 +10420,7 @@
         "P17-G3B-01",
         "P17-G4A-01",
         "P17-G5-03",
+        "P17-G5-05",
         "P17-G1-03",
         "P17-G1-02A",
         "P17-G6-02A"
@@ -10513,9 +10653,9 @@
         "P17-G4A-01",
         "P17-G5-01",
         "P17-G5-03",
+        "P17-G5-05",
         "P17-G5-02",
-        "P17-G1-02A",
-        "P17-G5-05"
+        "P17-G1-02A"
       ],
       "implements": [],
       "validatedBy": [
@@ -10710,7 +10850,8 @@
         "P17-G5-02",
         "P17-G2-01",
         "P17-G2-03",
-        "P17-G4B-03"
+        "P17-G4B-03",
+        "P17-G5-05"
       ],
       "implements": [],
       "validatedBy": [
@@ -11184,6 +11325,7 @@
         "P17-G3A-01",
         "P17-G5-01",
         "P17-G5-03",
+        "P17-G5-05",
         "P17-G5-02",
         "P17-G1-02A"
       ],
@@ -11777,6 +11919,7 @@
         "P17-G4B-01",
         "P17-G5-01",
         "P17-G5-03",
+        "P17-G5-05",
         "P17-G5-02",
         "P17-G0-02"
       ],
@@ -17532,7 +17675,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -17564,7 +17706,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -17584,30 +17725,33 @@
       "title": "update reversal and lock restoration.",
       "kind": "command-test",
       "stateModel": "validation",
-      "primaryGroup": "P17-G5-03",
+      "primaryGroup": "P17-G5-05",
       "status": "planned",
       "tier": "required-pr",
-      "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS03",
+      "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-02", "P17-G5-03", "P17-G3B-03", "P17-G3B-02", "P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS03"],
       "impactedValidations": [
-        "EWP-CMD-UNDO-TS01",
-        "EWP-CMD-UNDO-TS02",
         "EWP-CMD-UNDO-TS03",
-        "EWP-CMD-UNDO-TS04",
-        "EWP-CMD-UNDO-TS05",
-        "EWP-CMD-UNDO-TS06",
-        "EWP-CMD-UNDO-TS07",
-        "EWP-CMD-UNDO-TS08",
-        "EWP-CMD-UNDO-TS09",
-        "EWP-P5-TS03",
-        "EWP-WF05",
-        "EWP-WF11"
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-OPT-TS08",
+        "EWP-P5-TS05",
+        "EWP-WF09",
+        "EWP-WF13"
       ],
-      "affectedContracts": ["COMMAND:undo", "P1-11"],
+      "affectedContracts": [
+        "COMMAND:update",
+        "COMMAND:undo",
+        "D-010",
+        "D-011",
+        "EWP-CF-026",
+        "EWP-CF-031",
+        "P1-11",
+        "P2-02"
+      ],
       "testCommands": [],
       "ownedFiles": []
     },
@@ -17628,7 +17772,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -17660,7 +17803,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -17692,7 +17834,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -17724,7 +17865,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -17756,7 +17896,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -17788,7 +17927,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -18153,12 +18291,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -18185,12 +18321,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -18217,12 +18351,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -18249,12 +18381,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -18281,12 +18411,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -18313,12 +18441,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -18329,30 +18455,34 @@
       "title": "prior-store retention and undo.",
       "kind": "command-test",
       "stateModel": "validation",
-      "primaryGroup": "P17-G5-02",
+      "primaryGroup": "P17-G5-05",
       "status": "planned",
       "tier": "required-pr",
-      "plannedTarget": "planned:P17-G5-02:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS07",
+      "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS07",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-02", "P17-G5-03", "P17-G3B-03", "P17-G3B-02", "P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-UPDATE-TS07"],
       "impactedValidations": [
-        "EWP-CMD-UPDATE-TS01",
-        "EWP-CMD-UPDATE-TS02",
-        "EWP-CMD-UPDATE-TS03",
-        "EWP-CMD-UPDATE-TS04",
-        "EWP-CMD-UPDATE-TS05",
-        "EWP-CMD-UPDATE-TS06",
+        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UPDATE-TS07",
-        "EWP-CMD-UPDATE-TS08",
-        "EWP-CMD-UPDATE-TS09",
-        "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-OPT-TS08",
+        "EWP-P5-TS05",
+        "EWP-WF09",
+        "EWP-WF13"
       ],
-      "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
+      "affectedContracts": [
+        "COMMAND:update",
+        "COMMAND:undo",
+        "D-010",
+        "D-011",
+        "EWP-CF-008",
+        "EWP-CF-026",
+        "EWP-CF-031",
+        "P1-11",
+        "P2-02"
+      ],
       "testCommands": [],
       "ownedFiles": []
     },
@@ -18377,12 +18507,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -18409,12 +18537,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -18441,12 +18567,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -23856,11 +23980,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G5-02",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-02.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G5-02.md#ready-review",
+        "projects/p17/evidence/P17-G5-02.md#accepted-ready-result"
+      ],
       "secondaryGroups": [],
       "implements": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "validatedBy": [
@@ -23870,12 +23998,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "impactedValidations": [
         "EWP-CMD-UPDATE-TS01",
@@ -23884,12 +24010,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -23901,11 +24025,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G5-02",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-02",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-02.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G5-02.md#ready-review",
+        "projects/p17/evidence/P17-G5-02.md#accepted-ready-result"
+      ],
       "secondaryGroups": [],
       "implements": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "validatedBy": [
@@ -23915,12 +24043,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "impactedValidations": [
         "EWP-CMD-UPDATE-TS01",
@@ -23929,12 +24055,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -23951,7 +24075,7 @@
       "plannedTarget": "planned:P17-G5-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": ["P17-G3B-01"],
+      "secondaryGroups": ["P17-G3B-01", "P17-G5-05"],
       "implements": ["COMMAND:undo", "P1-11"],
       "validatedBy": [
         "EWP-CMD-DEV-TS05",
@@ -24095,12 +24219,10 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-P5-TS02"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],
       "testCommands": [],
@@ -24123,7 +24245,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -24685,7 +24806,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -24900,30 +25020,42 @@
       "title": "Update lifecycle",
       "kind": "workflow",
       "stateModel": "validation",
-      "primaryGroup": "P17-G5-02",
+      "primaryGroup": "P17-G5-05",
       "status": "planned",
       "tier": "required-pr",
-      "plannedTarget": "planned:P17-G5-02:tests/ergonomics/workflows/EWP-WF09.test.ts#EWP-WF09",
+      "plannedTarget": "planned:P17-G5-05:tests/ergonomics/workflows/EWP-WF09.test.ts#EWP-WF09",
       "target": null,
       "evidence": [],
-      "secondaryGroups": ["P17-G3B-02"],
+      "secondaryGroups": [
+        "P17-G5-02",
+        "P17-G5-03",
+        "P17-G3B-03",
+        "P17-G3B-02",
+        "P17-G2-02",
+        "P17-G1-01"
+      ],
       "implements": [],
       "validatedBy": ["EWP-WF09"],
       "impactedValidations": [
-        "EWP-CMD-UPDATE-TS01",
-        "EWP-CMD-UPDATE-TS02",
-        "EWP-CMD-UPDATE-TS03",
-        "EWP-CMD-UPDATE-TS04",
-        "EWP-CMD-UPDATE-TS05",
-        "EWP-CMD-UPDATE-TS06",
+        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UPDATE-TS07",
-        "EWP-CMD-UPDATE-TS08",
-        "EWP-CMD-UPDATE-TS09",
-        "EWP-CMD-UPDATE-TS10",
-        "EWP-P5-TS02",
-        "EWP-WF09"
+        "EWP-OPT-TS08",
+        "EWP-P5-TS05",
+        "EWP-WF09",
+        "EWP-WF13"
       ],
-      "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "EWP-CF-026", "P2-02"],
+      "affectedContracts": [
+        "COMMAND:update",
+        "COMMAND:undo",
+        "D-010",
+        "D-011",
+        "EWP-CF-008",
+        "EWP-CF-026",
+        "EWP-CF-027",
+        "EWP-CF-031",
+        "P1-11",
+        "P2-02"
+      ],
       "testCommands": [],
       "ownedFiles": []
     },
@@ -24990,7 +25122,6 @@
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -25917,12 +26048,11 @@
       "plannedTarget": "coverage:P17-G5-03",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -25931,12 +26061,14 @@
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
         "EWP-WF05",
-        "EWP-WF11"
+        "EWP-WF11",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
+        "EWP-WF09"
       ],
       "impactedValidations": [
         "EWP-CMD-UNDO-TS01",
         "EWP-CMD-UNDO-TS02",
-        "EWP-CMD-UNDO-TS03",
         "EWP-CMD-UNDO-TS04",
         "EWP-CMD-UNDO-TS05",
         "EWP-CMD-UNDO-TS06",
@@ -25945,7 +26077,10 @@
         "EWP-CMD-UNDO-TS09",
         "EWP-P5-TS03",
         "EWP-WF05",
-        "EWP-WF11"
+        "EWP-WF11",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
+        "EWP-WF09"
       ],
       "affectedContracts": ["COMMAND:undo", "P1-11"],
       "testCommands": [],
@@ -26003,7 +26138,7 @@
       "plannedTarget": "coverage:P17-G5-02",
       "target": null,
       "evidence": [],
-      "secondaryGroups": [],
+      "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
         "EWP-CMD-UPDATE-TS01",
@@ -26012,11 +26147,12 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
         "EWP-P5-TS02",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
         "EWP-WF09"
       ],
       "impactedValidations": [
@@ -26026,11 +26162,12 @@
         "EWP-CMD-UPDATE-TS04",
         "EWP-CMD-UPDATE-TS05",
         "EWP-CMD-UPDATE-TS06",
-        "EWP-CMD-UPDATE-TS07",
         "EWP-CMD-UPDATE-TS08",
         "EWP-CMD-UPDATE-TS09",
         "EWP-CMD-UPDATE-TS10",
         "EWP-P5-TS02",
+        "EWP-CMD-UPDATE-TS07",
+        "EWP-CMD-UNDO-TS03",
         "EWP-WF09"
       ],
       "affectedContracts": ["COMMAND:update", "D-011", "EWP-CF-008", "P2-02"],

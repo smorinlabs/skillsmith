@@ -175,6 +175,19 @@ describe('EWP-OPT-TS01', () => {
       defaultValue: 'unset',
       defaultSource: 'none',
     });
+    expect(
+      migrationLedger.target.find((row) => row.key === 'argument:skillsmith update:[skill...]')
+        ?.argument,
+    ).toEqual({
+      required: false,
+      variadic: true,
+      choices: [],
+      defaultValue: 'unset',
+      defaultSource: 'none',
+    });
+    expect(
+      migrationLedger.target.some((row) => row.key === 'argument:skillsmith update:<skill...>'),
+    ).toBeFalse();
   });
 
   test('rejects missing live surfaces, duplicate mappings, unknown dispositions, and owner gaps', () => {
@@ -235,6 +248,7 @@ describe('EWP-OPT-TS01', () => {
       ['argument:skillsmith completion:<shell>', 'choices'],
       ['argument:skillsmith verify:<path>', 'required'],
       ['argument:skillsmith install:<source...>', 'variadic'],
+      ['argument:skillsmith update:[skill...]', 'required'],
     ] as const;
     for (const [key, field] of argumentMutations) {
       const mutated = structuredClone(migrationLedger);

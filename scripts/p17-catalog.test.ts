@@ -439,6 +439,158 @@ describe('P17 immutable catalog and traceability baseline', () => {
     expect(group(catalog, 'P17-G5-05').requiredNowValidations).toContain('EWP-WF13');
   });
 
+  test('schedules update-to-undo closure at dependency-complete G5-05 with reciprocal traceability', () => {
+    const catalog = fixture();
+    const moved = [
+      {
+        id: 'EWP-CMD-UPDATE-TS07',
+        target: 'planned:P17-G5-05:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS07',
+        contracts: [
+          'COMMAND:update',
+          'COMMAND:undo',
+          'D-010',
+          'D-011',
+          'EWP-CF-008',
+          'EWP-CF-026',
+          'EWP-CF-031',
+          'P1-11',
+          'P2-02',
+        ],
+        secondary: ['P17-G5-02', 'P17-G5-03', 'P17-G3B-03', 'P17-G3B-02', 'P17-G1-01'],
+      },
+      {
+        id: 'EWP-CMD-UNDO-TS03',
+        target: 'planned:P17-G5-05:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS03',
+        contracts: [
+          'COMMAND:update',
+          'COMMAND:undo',
+          'D-010',
+          'D-011',
+          'EWP-CF-026',
+          'EWP-CF-031',
+          'P1-11',
+          'P2-02',
+        ],
+        secondary: ['P17-G5-02', 'P17-G5-03', 'P17-G3B-03', 'P17-G3B-02', 'P17-G1-01'],
+      },
+      {
+        id: 'EWP-WF09',
+        target: 'planned:P17-G5-05:tests/ergonomics/workflows/EWP-WF09.test.ts#EWP-WF09',
+        contracts: [
+          'COMMAND:update',
+          'COMMAND:undo',
+          'D-010',
+          'D-011',
+          'EWP-CF-008',
+          'EWP-CF-026',
+          'EWP-CF-027',
+          'EWP-CF-031',
+          'P1-11',
+          'P2-02',
+        ],
+        secondary: ['P17-G5-02', 'P17-G5-03', 'P17-G3B-03', 'P17-G3B-02', 'P17-G2-02', 'P17-G1-01'],
+      },
+    ] as const;
+
+    for (const expected of moved) {
+      const entity = required(
+        catalog.entities.find((item) => item.id === expected.id),
+        `missing ${expected.id}`,
+      );
+      expect(entity.primaryGroup).toBe('P17-G5-05');
+      expect(entity.plannedTarget).toBe(expected.target);
+      expect(entity.affectedContracts).toEqual(expected.contracts);
+      expect(entity.secondaryGroups).toEqual(expected.secondary);
+      for (const contractId of expected.contracts) {
+        const contract = required(
+          catalog.entities.find((item) => item.id === contractId),
+          `missing ${contractId}`,
+        );
+        expect(contract.validatedBy).toContain(expected.id);
+      }
+    }
+
+    const g502 = group(catalog, 'P17-G5-02');
+    const g503 = group(catalog, 'P17-G5-03');
+    const g505 = group(catalog, 'P17-G5-05');
+    expect(catalog.entities.filter((entity) => entity.primaryGroup === g502.id)).toHaveLength(16);
+    expect(catalog.entities.filter((entity) => entity.primaryGroup === g503.id)).toHaveLength(14);
+    expect(catalog.entities.filter((entity) => entity.primaryGroup === g505.id)).toHaveLength(7);
+    expect(g502.requiredNowValidations).toEqual([
+      'EWP-CMD-INSTALL-TS05',
+      'EWP-CMD-UPDATE-TS01',
+      'EWP-CMD-UPDATE-TS02',
+      'EWP-CMD-UPDATE-TS03',
+      'EWP-CMD-UPDATE-TS04',
+      'EWP-CMD-UPDATE-TS05',
+      'EWP-CMD-UPDATE-TS06',
+      'EWP-CMD-UPDATE-TS08',
+      'EWP-CMD-UPDATE-TS09',
+      'EWP-CMD-UPDATE-TS10',
+      'EWP-P5-TS02',
+    ]);
+    expect(g502.downstreamCoverage).toEqual([
+      'EWP-CMD-UNDO-TS03',
+      'EWP-CMD-UPDATE-TS07',
+      'EWP-WF09',
+      'EWP-WF13',
+    ]);
+    expect(g503.requiredNowValidations).toEqual([
+      'EWP-CMD-DEV-TS05',
+      'EWP-CMD-PROMOTE-TS05',
+      'EWP-CMD-UNDO-TS01',
+      'EWP-CMD-UNDO-TS02',
+      'EWP-CMD-UNDO-TS04',
+      'EWP-CMD-UNDO-TS05',
+      'EWP-CMD-UNDO-TS06',
+      'EWP-CMD-UNDO-TS07',
+      'EWP-CMD-UNDO-TS08',
+      'EWP-CMD-UNDO-TS09',
+      'EWP-P5-TS03',
+      'EWP-WF05',
+      'EWP-WF11',
+    ]);
+    expect(g503.downstreamCoverage).toEqual([
+      'EWP-CMD-UNDO-TS03',
+      'EWP-CMD-UPDATE-TS07',
+      'EWP-WF09',
+    ]);
+    expect(g505.requiredNowValidations).toEqual([
+      'EWP-CMD-APPLY-TS09',
+      'EWP-CMD-APPLY-TS11',
+      'EWP-CMD-APPLY-TS13',
+      'EWP-CMD-SYNC-TS09',
+      'EWP-CMD-UNDO-TS03',
+      'EWP-CMD-UPDATE-TS06',
+      'EWP-CMD-UPDATE-TS07',
+      'EWP-CMD-UPDATE-TS08',
+      'EWP-CMD-UPDATE-TS09',
+      'EWP-OPT-TS08',
+      'EWP-P4A-TS02',
+      'EWP-P5-TS05',
+      'EWP-WF09',
+      'EWP-WF13',
+    ]);
+    expect(g505.downstreamCoverage).toEqual([]);
+
+    const g3b03 = group(catalog, 'P17-G3B-03');
+    expect(g3b03.impactedValidations).toHaveLength(27);
+    expect(g3b03.requiredNowValidations).toEqual([
+      'EWP-CMD-DOCTOR-TS01',
+      'EWP-CMD-DOCTOR-TS02',
+      'EWP-CMD-DOCTOR-TS03',
+      'EWP-CMD-DOCTOR-TS04',
+      'EWP-CMD-DOCTOR-TS05',
+      'EWP-CMD-DOCTOR-TS06',
+      'EWP-CMD-STATUS-TS04',
+      'EWP-P3B-TS03',
+      'EWP-P3B-TS04',
+    ]);
+    expect(g3b03.downstreamCoverage).toHaveLength(18);
+    expect(g3b03.downstreamCoverage).toContain('EWP-CMD-UPDATE-TS07');
+    expect(g3b03.downstreamCoverage).toContain('EWP-WF09');
+  });
+
   test('schedules apply-dependent plan closure at G4B-02 with exact G4B-01 traceability', () => {
     const catalog = fixture();
     const g4b01 = group(catalog, 'P17-G4B-01');

@@ -466,7 +466,7 @@ const workflowGroups = [
   'G4B-02',
   'G4B-02',
   'G4B-02',
-  'G5-02',
+  'G5-05',
   'G5-01',
   'G5-03',
   'G5-04',
@@ -547,6 +547,10 @@ const commandTestGroups: Record<string, string> = {
   VERSION: 'G1-03',
   HELP: 'G6-02A',
 };
+
+// These selectors require both independent command slices and therefore execute only at the
+// dependency-complete Phase-5 integration boundary.
+map('G5-05', ['EWP-CMD-UPDATE-TS07', 'EWP-CMD-UNDO-TS03']);
 
 function groupFor(id: string): string {
   const direct = mapping.get(id);
@@ -657,6 +661,14 @@ const additiveValidationOwnership: Record<string, string[]> = {
   'EWP-P4B-T03': ['EWP-CMD-PLAN-TS09', 'EWP-CMD-PLAN-TS10'],
   'D-015': ['EWP-CMD-PLAN-TS04', 'EWP-CMD-PLAN-TS09'],
   'EWP-P4B-T05': ['EWP-CMD-PLAN-TS04', 'EWP-CMD-PLAN-TS09'],
+  // Update retention/reversal closes only after both peer command slices exist. Preserve the
+  // reciprocal contract trace even though the executable selectors move to G5-05.
+  'COMMAND:update': ['EWP-CMD-UPDATE-TS07', 'EWP-CMD-UNDO-TS03', 'EWP-WF09'],
+  'COMMAND:undo': ['EWP-CMD-UPDATE-TS07', 'EWP-CMD-UNDO-TS03', 'EWP-WF09'],
+  'D-010': ['EWP-CMD-UPDATE-TS07', 'EWP-CMD-UNDO-TS03', 'EWP-WF09'],
+  'D-011': ['EWP-CMD-UPDATE-TS07', 'EWP-CMD-UNDO-TS03', 'EWP-WF09'],
+  'P1-11': ['EWP-CMD-UPDATE-TS07', 'EWP-CMD-UNDO-TS03', 'EWP-WF09'],
+  'P2-02': ['EWP-CMD-UPDATE-TS07', 'EWP-CMD-UNDO-TS03', 'EWP-WF09'],
 };
 
 const explicitValidationOwnership: Record<string, string[]> = {
@@ -854,7 +866,8 @@ const explicitGroupValidationOwnership: Record<string, string[]> = {
   ],
   'P17-G4B-02': ['EWP-WF13'],
   'P17-G5-01': ['EWP-WF13'],
-  'P17-G5-02': ['EWP-WF13'],
+  'P17-G5-02': ['EWP-CMD-UPDATE-TS07', 'EWP-CMD-UNDO-TS03', 'EWP-WF09', 'EWP-WF13'],
+  'P17-G5-03': ['EWP-CMD-UPDATE-TS07', 'EWP-CMD-UNDO-TS03', 'EWP-WF09'],
 };
 
 const explicitContractOwnership: Record<string, string[]> = {
@@ -873,7 +886,39 @@ const explicitContractOwnership: Record<string, string[]> = {
     'EWP-CF-026',
     'P1-11',
   ],
-  'EWP-WF09': ['COMMAND:update', 'D-011', 'EWP-CF-008', 'EWP-CF-026', 'P2-02'],
+  'EWP-CMD-UPDATE-TS07': [
+    'COMMAND:update',
+    'COMMAND:undo',
+    'D-010',
+    'D-011',
+    'EWP-CF-008',
+    'EWP-CF-026',
+    'EWP-CF-031',
+    'P1-11',
+    'P2-02',
+  ],
+  'EWP-CMD-UNDO-TS03': [
+    'COMMAND:update',
+    'COMMAND:undo',
+    'D-010',
+    'D-011',
+    'EWP-CF-026',
+    'EWP-CF-031',
+    'P1-11',
+    'P2-02',
+  ],
+  'EWP-WF09': [
+    'COMMAND:update',
+    'COMMAND:undo',
+    'D-010',
+    'D-011',
+    'EWP-CF-008',
+    'EWP-CF-026',
+    'EWP-CF-027',
+    'EWP-CF-031',
+    'P1-11',
+    'P2-02',
+  ],
   'EWP-WF10': ['COMMAND:sync', 'D-007', 'EWP-CF-026', 'P1-10'],
   'EWP-WF11': [
     'COMMAND:doctor',

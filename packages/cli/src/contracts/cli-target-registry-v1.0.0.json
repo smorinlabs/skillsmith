@@ -3873,12 +3873,12 @@
     "validationOwner": "EWP-CMD-UPDATE-TS01"
   },
   {
-    "key": "argument:skillsmith update:<skill...>",
+    "key": "argument:skillsmith update:[skill...]",
     "disposition": "N",
     "phase": "P17-G5-02",
     "validationOwner": "EWP-CMD-UPDATE-TS01",
     "argument": {
-      "required": true,
+      "required": false,
       "variadic": true,
       "choices": [],
       "defaultValue": "unset",
