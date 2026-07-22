@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { toolRegistry } from '../../src/agents/registry.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import { resolveProjectContext } from '../../src/context/project.ts';
 import {
   type PlacementOperationExecutionBindingInput,
@@ -15,6 +16,8 @@ import {
   createPlacementSwapRequest,
   executeRecordOnlyPlacementPlan,
   placementSnapshotResourceId,
+  rebindPlacementSnapshotAuthorityForLedgerBootstrapV1,
+  withPlacementLedgerBootstrapAuthorityV1,
 } from '../../src/place/execute.ts';
 import { emptyLedgerModel, readLedgerState, writeLedger } from '../../src/place/ledger.ts';
 import type { PairRecord, PlacementPorts } from '../../src/place/types.ts';
@@ -228,6 +231,144 @@ test('explicit project locations preserve exact non-Git identity without widenin
       });
       expect(changed.value.revision).not.toEqual(authority.value.snapshot.project.revision);
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('ledger bootstrap recapture authenticates only its exact callback-scoped self-change', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillsmith-place-ledger-bootstrap-'));
+  try {
+    const ports = await defaultRuntimePorts();
+    const coordinator = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const project = await resolveProjectContext(ports, { invocationCwd: root });
+    if (!project.ok) throw new Error(JSON.stringify(project.error));
+    const ledgerDirectory = join(root, 'data');
+    const ledgerPath = join(ledgerDirectory, 'placements.json');
+    const approved = await createPlacementSnapshotAuthority(
+      toolRegistry,
+      [],
+      ports,
+      project.value,
+      ledgerPath,
+      join(ledgerDirectory, 'store'),
+      [],
+      [],
+    );
+    if (!approved.ok) throw new Error(JSON.stringify(approved.error));
+    expect(approved.value.snapshot.ledger.revision).toMatchObject({
+      state: 'absent',
+      parentKind: 'absent',
+      parentIdentity: ledgerDirectory,
+    });
+
+    await withPlacementLedgerBootstrapAuthorityV1(
+      { env: ports, artifactCoordinator: coordinator, ledgerPath },
+      async (bootstrap) => {
+        expect(bootstrap).toMatchObject({
+          ledgerDirectory,
+          ledgerPath,
+          createdDirectory: true,
+        });
+        const rebound = await rebindPlacementSnapshotAuthorityForLedgerBootstrapV1(
+          approved.value,
+          bootstrap,
+        );
+        if (!rebound.ok) throw new Error(JSON.stringify(rebound.error));
+        expect(rebound.value.snapshot.ledger.revision).toMatchObject({
+          state: 'absent',
+          parentKind: 'directory',
+          parentIdentity: ledgerDirectory,
+        });
+        const staged = await rebound.value.repositories.ledger.stage({
+          schemaVersion: 1,
+          operationId: 'bootstrap-stage-test',
+          domain: 'ledger',
+          resourceId: rebound.value.ledgerResourceId,
+          expectedRevision: rebound.value.snapshot.ledger.revision,
+          editDigest: `sha256:${'a'.repeat(64)}`,
+        });
+        expect(staged.ok).toBeTrue();
+
+        const forged = Object.freeze({ ...bootstrap });
+        expect(
+          await rebindPlacementSnapshotAuthorityForLedgerBootstrapV1(approved.value, forged),
+        ).toMatchObject({
+          ok: false,
+          error: {
+            code: 'flip-refused',
+            message: 'placement ledger bootstrap authority is invalid',
+          },
+        });
+      },
+    );
+
+    const externalDirectory = join(root, 'external-data');
+    const externalLedger = join(externalDirectory, 'placements.json');
+    const externallyChanged = await createPlacementSnapshotAuthority(
+      toolRegistry,
+      [],
+      ports,
+      project.value,
+      externalLedger,
+      join(externalDirectory, 'store'),
+      [],
+      [],
+    );
+    if (!externallyChanged.ok) throw new Error(JSON.stringify(externallyChanged.error));
+    await mkdir(externalDirectory);
+    await withPlacementLedgerBootstrapAuthorityV1(
+      { env: ports, artifactCoordinator: coordinator, ledgerPath: externalLedger },
+      async (bootstrap) => {
+        expect(bootstrap.createdDirectory).toBeFalse();
+        expect(
+          await rebindPlacementSnapshotAuthorityForLedgerBootstrapV1(
+            externallyChanged.value,
+            bootstrap,
+          ),
+        ).toMatchObject({
+          ok: false,
+          error: {
+            code: 'flip-refused',
+            message: 'placement state changed under ledger bootstrap authority',
+          },
+        });
+      },
+    );
+    expect(await ports.pathKind(externalDirectory)).toBe('dir');
+
+    const rollbackDirectory = join(root, 'rollback-data');
+    const rollbackLedger = join(rollbackDirectory, 'placements.json');
+    expect(
+      await withPlacementLedgerBootstrapAuthorityV1(
+        {
+          env: ports,
+          artifactCoordinator: coordinator,
+          ledgerPath: rollbackLedger,
+          rollbackOnResult: (value: string) => value === 'failed',
+        },
+        async () => 'failed',
+      ),
+    ).toBe('failed');
+    expect(await ports.pathKind(rollbackDirectory)).toBe('absent');
+
+    const durableDirectory = join(root, 'durable-data');
+    const durableLedger = join(durableDirectory, 'placements.json');
+    expect(
+      await withPlacementLedgerBootstrapAuthorityV1(
+        {
+          env: ports,
+          artifactCoordinator: coordinator,
+          ledgerPath: durableLedger,
+          rollbackOnResult: (value: string) => value === 'failed',
+        },
+        async () => {
+          await writeFile(durableLedger, '{}\n');
+          return 'failed';
+        },
+      ),
+    ).toBe('failed');
+    expect(await ports.pathKind(durableLedger)).toBe('file');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

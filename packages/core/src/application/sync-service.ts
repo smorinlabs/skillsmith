@@ -27,6 +27,8 @@ import {
   createPlacementSnapshotAuthority,
   executePlacementOperationPlan,
   placementSnapshotResourceId,
+  rebindPlacementSnapshotAuthorityForLedgerBootstrapV1,
+  withPlacementLedgerBootstrapAuthorityV1,
 } from '../place/execute.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
 import { clampStoreNs, contentHashOf, snapshotToStore } from '../place/store.ts';
@@ -42,6 +44,7 @@ import { type Result, err, ok } from '../result.ts';
 import {
   createContentObservationIdentityV1,
   createContentObservationPreconditionIdV1,
+  createExpectedRevisionPreconditionIdV1,
 } from '../state/types.ts';
 import { type PreparedSyncArtifactsV1, prepareSyncArtifactsV1 } from '../sync/artifacts.ts';
 import { resolveSyncEndpoints } from '../sync/endpoints.ts';
@@ -1099,14 +1102,16 @@ const defaultSyncApplicationPort: SyncApplicationPort = Object.freeze({
           });
     try {
       const executePreparedPlan = (
+        authority: PreparedDefaultSyncV1['authority'],
+        preconditions: readonly ExecutionPrecondition[],
         artifactController: ReturnType<typeof createArtifactPairOperationControllerV1> | null,
       ) =>
         executePlacementOperationPlan({
           env: context.ports,
           ledgerPath: prepared.fleet.destination.ledgerPath,
           plan: prepared.plan,
-          preconditions: prepared.preconditions,
-          authority: prepared.authority,
+          preconditions,
+          authority,
           reportOp: 'sync',
           modelNow: () => context.ports.wallNowIso(),
           journalNow: () => context.ports.wallNowIso(),
@@ -1127,10 +1132,7 @@ const defaultSyncApplicationPort: SyncApplicationPort = Object.freeze({
               projected.liveResourceId,
               ...(projected.storeResourceId === null ? [] : [projected.storeResourceId]),
             ]);
-            const mutable = [
-              ...prepared.authority.snapshot.live,
-              ...prepared.authority.snapshot.store,
-            ]
+            const mutable = [...authority.snapshot.live, ...authority.snapshot.store]
               .map(({ revision }) => revision)
               .filter(
                 (revision): revision is typeof revision & Readonly<{ parentIdentity: string }> =>
@@ -1264,28 +1266,59 @@ const defaultSyncApplicationPort: SyncApplicationPort = Object.freeze({
           observation: context.observation,
           ...(artifactController === null ? {} : { locks: [] }),
         });
-      const artifactPair = prepared.artifacts?.pair ?? null;
-      const results =
-        artifactPair === null
-          ? await executePreparedPlan(null)
-          : await withArtifactPairExecutionAuthority(
-              {
-                artifactCoordinator: context.artifactCoordinator,
-                lockPort: context.ports,
-                pair: artifactPair,
-                ledgerPath: prepared.fleet.destination.ledgerPath,
-                ...(context.signal === undefined ? {} : { signal: context.signal }),
-              },
-              async (lease) =>
-                executePreparedPlan(
-                  createArtifactPairOperationControllerV1({
-                    lease,
-                    artifactCoordinator: context.artifactCoordinator,
-                    pair: artifactPair,
-                    ...(context.signal === undefined ? {} : { signal: context.signal }),
-                  }),
-                ),
-            );
+      const results = await withPlacementLedgerBootstrapAuthorityV1(
+        {
+          env: context.ports,
+          artifactCoordinator: context.artifactCoordinator,
+          ledgerPath: prepared.fleet.destination.ledgerPath,
+          rollbackOnResult: (results: readonly OperationExecutionResult[]) =>
+            results.length === 0 || results.some(({ outcome }) => outcome !== 'succeeded'),
+          ...(context.signal === undefined ? {} : { signal: context.signal }),
+        },
+        async (bootstrap) => {
+          const rebound = await rebindPlacementSnapshotAuthorityForLedgerBootstrapV1(
+            prepared.authority,
+            bootstrap,
+          );
+          if (!rebound.ok) throw rebound.error;
+          const revisionPreconditionIds = new Set<string>(
+            prepared.expectedRevisions.map(createExpectedRevisionPreconditionIdV1),
+          );
+          const preconditions = Object.freeze([
+            ...createPlacementRevisionExecutionPreconditionsV1(
+              rebound.value,
+              prepared.plan,
+              prepared.expectedRevisions,
+            ),
+            ...prepared.preconditions.filter(
+              ({ preconditionId }) => !revisionPreconditionIds.has(preconditionId),
+            ),
+          ]);
+          const artifactPair = prepared.artifacts?.pair ?? null;
+          return artifactPair === null
+            ? executePreparedPlan(rebound.value, preconditions, null)
+            : withArtifactPairExecutionAuthority(
+                {
+                  artifactCoordinator: context.artifactCoordinator,
+                  lockPort: context.ports,
+                  pair: artifactPair,
+                  ledgerPath: prepared.fleet.destination.ledgerPath,
+                  ...(context.signal === undefined ? {} : { signal: context.signal }),
+                },
+                async (lease) =>
+                  executePreparedPlan(
+                    rebound.value,
+                    preconditions,
+                    createArtifactPairOperationControllerV1({
+                      lease,
+                      artifactCoordinator: context.artifactCoordinator,
+                      pair: artifactPair,
+                      ...(context.signal === undefined ? {} : { signal: context.signal }),
+                    }),
+                  ),
+              );
+        },
+      );
       return ok(executedSyncReport(prepared, results));
     } catch (error) {
       return err(

@@ -1,9 +1,10 @@
-import { join, parse } from 'node:path';
+import { dirname, join, parse } from 'node:path';
 import type {
   RelevantCapabilityQueryV1,
   RelevantCapabilitySnapshotV1,
 } from '../agents/capabilities.ts';
 import type { LifecycleToolRegistry } from '../agents/registry.ts';
+import type { ArtifactCoordinatorPorts } from '../artifacts/coordinator-types.ts';
 import { hashCanonicalInput } from '../artifacts/hash.ts';
 import { createLedgerRepository } from '../artifacts/ledger-repository.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
@@ -12,8 +13,11 @@ import { createLockRepository, createManifestRepository } from '../artifacts/rep
 import type { ProjectContext } from '../context/types.ts';
 import {
   type SkillSmithError,
+  cancelledError,
+  errorMessage,
   flipFailedError,
   flipRefusedError,
+  permissionDeniedError,
   safeErrorCode,
 } from '../errors.ts';
 import {
@@ -62,6 +66,7 @@ import {
   type ObservedStateSnapshotV1,
   createExpectedRevisionPreconditionIdV1,
   createExpectedRevisionV1,
+  createFilesystemMetadataIdentityV1,
   sameExpectedRevisionV1,
   semanticValueRevisionV1,
 } from '../state/types.ts';
@@ -130,6 +135,145 @@ export interface PlacementSnapshotAuthority {
   readonly liveResources: readonly LivePlacementResourceV1[];
   readonly storeResources: readonly PlacementStoreResource[];
 }
+
+export interface PlacementLedgerBootstrapAuthorityV1 {
+  readonly kind: 'placement-ledger-bootstrap-authority';
+  readonly ledgerPath: string;
+  readonly ledgerDirectory: string;
+  readonly createdDirectory: boolean;
+}
+
+interface PlacementSnapshotAuthorityRuntimeState {
+  readonly env: PlacementPorts;
+  readonly snapshotRequest: Readonly<{
+    readonly schemaVersion: 1;
+    readonly projectResourceId: string;
+    readonly manifestResourceId: string;
+    readonly lockResourceId: string;
+    readonly ledgerResourceId: string;
+    readonly liveResourceIds: readonly string[];
+    readonly storeResourceIds: readonly string[];
+    readonly capabilitiesResourceId: string;
+  }>;
+  readonly revisionRebinding: Readonly<{
+    readonly approved: ExpectedRevisionV1;
+    readonly authoritative: ExpectedRevisionV1;
+    readonly bootstrap: PlacementLedgerBootstrapAuthorityV1;
+  }> | null;
+}
+
+const activePlacementLedgerBootstrapAuthorities = new WeakSet<object>();
+const placementSnapshotAuthorityRuntime = new WeakMap<
+  object,
+  PlacementSnapshotAuthorityRuntimeState
+>();
+
+const placementSnapshotRevisions = (
+  snapshot: ObservedStateSnapshotV1<RelevantCapabilitySnapshotV1>,
+): readonly ExpectedRevisionV1[] =>
+  Object.freeze([
+    snapshot.project.revision,
+    snapshot.manifest.revision,
+    snapshot.lock.revision,
+    snapshot.ledger.revision,
+    ...snapshot.live.map(({ revision }) => revision),
+    ...snapshot.store.map(({ revision }) => revision),
+    snapshot.capabilities.revision,
+  ]);
+
+const placementLedgerBootstrapCleanupError = (cause: unknown): unknown =>
+  Object.freeze({
+    code: 'placement-ledger-bootstrap-cleanup' as const,
+    message: 'the empty placement ledger directory could not be rolled back',
+    cause,
+  });
+
+const placementLedgerBootstrapSetupError = (
+  error: unknown,
+  ledgerPath: string,
+): SkillSmithError => {
+  const code = safeErrorCode(error);
+  if (code === 'cancelled' || code === 'ABORT_ERR' || code === 'AbortError') {
+    return cancelledError('placement ledger bootstrap was cancelled');
+  }
+  if (
+    code === 'permission' ||
+    code === 'permission-denied' ||
+    code === 'EACCES' ||
+    code === 'EPERM'
+  ) {
+    return permissionDeniedError('cannot prepare placement ledger directory', ledgerPath);
+  }
+  return flipFailedError(`placement ledger bootstrap failed: ${errorMessage(error)}`);
+};
+
+/**
+ * Hold the stable cross-command bootstrap lock while materializing only the missing ledger parent.
+ * The callback receives an opaque, callback-scoped proof. A failed attempt atomically removes only
+ * the exact empty directory this authority created; recursive cleanup is intentionally forbidden.
+ */
+export const withPlacementLedgerBootstrapAuthorityV1 = async <T>(
+  input: Readonly<{
+    readonly env: Pick<PlacementPorts, 'pathKind' | 'makeDir' | 'withFileLock'>;
+    readonly artifactCoordinator: Pick<
+      ArtifactCoordinatorPorts,
+      'coordinationRoot' | 'removeEmptyDirectory'
+    >;
+    readonly ledgerPath: string;
+    readonly signal?: AbortSignal;
+    readonly rollbackOnResult?: (value: T) => boolean;
+  }>,
+  operation: (authority: PlacementLedgerBootstrapAuthorityV1) => Promise<T>,
+): Promise<T> => {
+  const bootstrapLockPath = join(
+    input.artifactCoordinator.coordinationRoot,
+    'apply-ledger-bootstrap',
+  );
+  let callbackStarted = false;
+  try {
+    return await input.env.withFileLock(
+      bootstrapLockPath,
+      async () => {
+        const ledgerDirectory = dirname(input.ledgerPath);
+        const createdDirectory = (await input.env.pathKind(ledgerDirectory)) === 'absent';
+        await input.env.makeDir(ledgerDirectory);
+        const authority = Object.freeze({
+          kind: 'placement-ledger-bootstrap-authority' as const,
+          ledgerPath: input.ledgerPath,
+          ledgerDirectory,
+          createdDirectory,
+        });
+        activePlacementLedgerBootstrapAuthorities.add(authority);
+
+        const rollbackEmptyDirectory = async (): Promise<void> => {
+          if (!createdDirectory || (await input.env.pathKind(ledgerDirectory)) === 'absent') return;
+          try {
+            await input.artifactCoordinator.removeEmptyDirectory(ledgerDirectory);
+          } catch (error) {
+            const code = safeErrorCode(error);
+            if (code === 'ENOTEMPTY' || code === 'EEXIST' || code === 'conflict') return;
+            throw placementLedgerBootstrapCleanupError(error);
+          }
+        };
+
+        try {
+          callbackStarted = true;
+          const value = await operation(authority);
+          if (input.rollbackOnResult?.(value) === true) await rollbackEmptyDirectory();
+          return value;
+        } catch (error) {
+          await rollbackEmptyDirectory();
+          throw error;
+        } finally {
+          activePlacementLedgerBootstrapAuthorities.delete(authority);
+        }
+      },
+      input.signal === undefined ? undefined : { signal: input.signal },
+    );
+  } catch (error) {
+    throw callbackStarted ? error : placementLedgerBootstrapSetupError(error, input.ledgerPath);
+  }
+};
 
 /**
  * Opaque proof that one explicit project endpoint is the exact canonical directory represented by
@@ -391,19 +535,17 @@ export const createPlacementSnapshotAuthority = async (
     store: createStoreRepository({ resources: stores, ports: env }),
     capabilities,
   });
-  const observed = await readObservedStateSnapshotV1(
-    {
-      schemaVersion: 1,
-      projectResourceId,
-      manifestResourceId,
-      lockResourceId,
-      ledgerResourceId,
-      liveResourceIds: liveResources.map((resource) => resource.resourceId),
-      storeResourceIds: stores.map((resource) => resource.resourceId),
-      capabilitiesResourceId,
-    },
-    repositories,
-  );
+  const snapshotRequest = Object.freeze({
+    schemaVersion: 1 as const,
+    projectResourceId,
+    manifestResourceId,
+    lockResourceId,
+    ledgerResourceId,
+    liveResourceIds: Object.freeze(liveResources.map((resource) => resource.resourceId)),
+    storeResourceIds: Object.freeze(stores.map((resource) => resource.resourceId)),
+    capabilitiesResourceId,
+  });
+  const observed = await readObservedStateSnapshotV1(snapshotRequest, repositories);
   if (!observed.ok) {
     return err(
       flipRefusedError(
@@ -420,7 +562,7 @@ export const createPlacementSnapshotAuthority = async (
   ) {
     return err(flipRefusedError('project context changed while preparing the operation; retry'));
   }
-  return ok({
+  const authority: PlacementSnapshotAuthority = {
     snapshot: observed.value,
     repositories,
     projectRoot,
@@ -429,7 +571,111 @@ export const createPlacementSnapshotAuthority = async (
     ledgerResourceId,
     liveResources,
     storeResources: stores,
+  };
+  placementSnapshotAuthorityRuntime.set(authority, {
+    env,
+    snapshotRequest,
+    revisionRebinding: null,
   });
+  return ok(authority);
+};
+
+const exactPlacementLedgerBootstrapDelta = async (
+  state: PlacementSnapshotAuthorityRuntimeState,
+  bootstrap: PlacementLedgerBootstrapAuthorityV1,
+  approved: ExpectedRevisionV1,
+  authoritative: ExpectedRevisionV1,
+): Promise<boolean> => {
+  if (
+    !activePlacementLedgerBootstrapAuthorities.has(bootstrap) ||
+    !bootstrap.createdDirectory ||
+    approved.domain !== 'ledger' ||
+    authoritative.domain !== 'ledger' ||
+    approved.state !== 'absent' ||
+    authoritative.state !== 'absent' ||
+    approved.resourceId !== authoritative.resourceId ||
+    approved.targetIdentity !== bootstrap.ledgerPath ||
+    authoritative.targetIdentity !== bootstrap.ledgerPath ||
+    approved.targetKind !== 'absent' ||
+    authoritative.targetKind !== 'absent' ||
+    approved.parentIdentity !== bootstrap.ledgerDirectory ||
+    authoritative.parentIdentity !== bootstrap.ledgerDirectory ||
+    approved.parentKind !== 'absent' ||
+    authoritative.parentKind !== 'directory'
+  ) {
+    return false;
+  }
+  const metadata = await state.env.readFileMetadata(bootstrap.ledgerDirectory);
+  return (
+    metadata.kind === 'dir' &&
+    authoritative.parentMetadataIdentity ===
+      createFilesystemMetadataIdentityV1(bootstrap.ledgerDirectory, metadata, 'parent')
+  );
+};
+
+/**
+ * Recapture one prepared placement authority under the stable ledger-bootstrap lock. Every
+ * repository revision must remain exact except the authenticated directory this callback created.
+ * The returned authority changes no approved operation, dependency, source, effect, or report.
+ */
+export const rebindPlacementSnapshotAuthorityForLedgerBootstrapV1 = async (
+  approved: PlacementSnapshotAuthority,
+  bootstrap: PlacementLedgerBootstrapAuthorityV1,
+): Promise<Result<PlacementSnapshotAuthority, SkillSmithError>> => {
+  const state = placementSnapshotAuthorityRuntime.get(approved);
+  const approvedLedgerRevision = approved.snapshot.ledger.revision;
+  if (
+    state === undefined ||
+    state.revisionRebinding !== null ||
+    !activePlacementLedgerBootstrapAuthorities.has(bootstrap) ||
+    approvedLedgerRevision.domain !== 'ledger' ||
+    bootstrap.ledgerPath !== approvedLedgerRevision.targetIdentity
+  ) {
+    return err(flipRefusedError('placement ledger bootstrap authority is invalid'));
+  }
+  const observed = await readObservedStateSnapshotV1(state.snapshotRequest, approved.repositories);
+  if (!observed.ok) {
+    return err(flipRefusedError('placement state could not be recaptured under ledger authority'));
+  }
+  const expected = placementSnapshotRevisions(approved.snapshot);
+  const actual = new Map(
+    placementSnapshotRevisions(observed.value).map((revision) => [
+      `${revision.domain}\0${revision.resourceId}`,
+      revision,
+    ]),
+  );
+  let revisionRebinding: PlacementSnapshotAuthorityRuntimeState['revisionRebinding'] = null;
+  for (const revision of expected) {
+    const current = actual.get(`${revision.domain}\0${revision.resourceId}`);
+    if (current === undefined) {
+      return err(flipRefusedError('placement state changed under ledger bootstrap authority'));
+    }
+    actual.delete(`${revision.domain}\0${revision.resourceId}`);
+    if (sameExpectedRevisionV1(revision, current)) continue;
+    if (
+      revisionRebinding !== null ||
+      !(await exactPlacementLedgerBootstrapDelta(state, bootstrap, revision, current))
+    ) {
+      return err(flipRefusedError('placement state changed under ledger bootstrap authority'));
+    }
+    revisionRebinding = Object.freeze({
+      approved: revision,
+      authoritative: current,
+      bootstrap,
+    });
+  }
+  if (actual.size !== 0 || (bootstrap.createdDirectory && revisionRebinding === null)) {
+    return err(flipRefusedError('placement state changed under ledger bootstrap authority'));
+  }
+  const authority: PlacementSnapshotAuthority = {
+    ...approved,
+    snapshot: observed.value,
+  };
+  placementSnapshotAuthorityRuntime.set(authority, {
+    ...state,
+    revisionRebinding,
+  });
+  return ok(authority);
 };
 
 const placementRevisionResource = (
@@ -482,6 +728,7 @@ export const createPlacementRevisionExecutionPreconditionsV1 = (
   plan: OperationPlan,
   expectedRevisions: readonly ExpectedRevisionV1[],
 ): readonly ExecutionPrecondition[] => {
+  const rebinding = placementSnapshotAuthorityRuntime.get(authority)?.revisionRebinding ?? null;
   const preconditions: ExecutionPrecondition[] = [];
   for (const revision of expectedRevisions) {
     const preconditionId = createExpectedRevisionPreconditionIdV1(revision);
@@ -499,15 +746,14 @@ export const createPlacementRevisionExecutionPreconditionsV1 = (
             .observeRevision(revision.resourceId)
             .then((observed) => {
               if (!observed.ok) throw observed.error;
-              // An absent ledger has no bytes whose timestamp can be refreshed. Preserve the
-              // planner-owned absence identity when the same path and parent remain absent.
+              // Preserve the immutable prepared plan's revision identity only for the exact
+              // self-change authenticated by the active outer bootstrap authority. Repository
+              // staging remains bound to the freshly recaptured authoritative revision.
               if (
-                revision.domain === 'ledger' &&
-                revision.state === 'absent' &&
-                observed.value.domain === 'ledger' &&
-                observed.value.state === 'absent' &&
-                revision.targetIdentity === observed.value.targetIdentity &&
-                revision.parentIdentity === observed.value.parentIdentity
+                rebinding !== null &&
+                activePlacementLedgerBootstrapAuthorities.has(rebinding.bootstrap) &&
+                sameExpectedRevisionV1(revision, rebinding.approved) &&
+                sameExpectedRevisionV1(observed.value, rebinding.authoritative)
               ) {
                 return revision;
               }

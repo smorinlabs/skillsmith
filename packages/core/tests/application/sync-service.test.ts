@@ -32,7 +32,7 @@ const executionFixture = async (currentDestination: boolean) => {
   const sourceSkill = join(home, '.agents', 'skills', 'alpha');
   const data = join(root, 'data');
   await Promise.all(
-    [home, current, destination, sourceSkill, data].map((path) => mkdir(path, { recursive: true })),
+    [home, current, destination, sourceSkill].map((path) => mkdir(path, { recursive: true })),
   );
   const source = '---\nname: alpha\n---\n\n# endpoint identity\n';
   await writeFile(join(sourceSkill, 'SKILL.md'), source);
@@ -63,7 +63,7 @@ const executionFixture = async (currentDestination: boolean) => {
       },
     },
   } as unknown as CurrentApplicationContext;
-  return { root, current, destination, sourceSkill, source, applicationContext };
+  return { root, current, destination, sourceSkill, source, data, applicationContext };
 };
 
 const emptyReport = (mode: 'dry-run' | 'execute' = 'execute'): SyncReportV1Dto => ({
@@ -410,13 +410,14 @@ describe('sync application service', () => {
     });
   }
 
-  test('reports a successful noop for an exact execute-mode rerun', async () => {
+  test('succeeds on the first pristine-data execution and noops on its exact retry', async () => {
     const fixture = await executionFixture(false);
     const request = {
       arguments: [['alpha']],
       options: { from: 'user', to: '../destination', tool: ['codex'] },
     } as const;
 
+    expect(await fixture.applicationContext.ports.pathKind(fixture.data)).toBe('absent');
     const first = await runSyncApplication(request, fixture.applicationContext);
     expect(first.exitClass, JSON.stringify(first.diagnostics)).toBe('success');
     expect(first.report.result).toMatchObject({
@@ -424,6 +425,7 @@ describe('sync application service', () => {
       groups: [{ skill: 'alpha', pairs: [{ action: 'install', outcome: 'succeeded' }] }],
       summary: { succeeded: 1, unchanged: 0 },
     });
+    expect(await fixture.applicationContext.ports.pathKind(fixture.data)).toBe('dir');
 
     const rerun = await runSyncApplication(request, fixture.applicationContext);
     expect(rerun.exitClass, JSON.stringify(rerun.diagnostics)).toBe('success');
@@ -439,6 +441,97 @@ describe('sync application service', () => {
       await readFile(join(fixture.destination, '.agents', 'skills', 'alpha', 'SKILL.md'), 'utf8'),
     ).toBe(fixture.source);
   });
+
+  test('fails closed on an external post-bootstrap appearance without empty data residue', async () => {
+    const fixture = await executionFixture(false);
+    const base = fixture.applicationContext.ports;
+    const externalConfig = join(fixture.destination, 'skillsmith.toml');
+    let appeared = false;
+    const ports: RuntimePorts = {
+      ...base,
+      makeDir: async (path) => {
+        await base.makeDir(path);
+        if (!appeared && path === fixture.data) {
+          appeared = true;
+          await writeFile(externalConfig, 'version = 1\n');
+        }
+      },
+    };
+    const changedContext = {
+      ...fixture.applicationContext,
+      ports,
+    } as unknown as CurrentApplicationContext;
+
+    expect(await ports.pathKind(fixture.data)).toBe('absent');
+    const outcome = await runSyncApplication(
+      {
+        arguments: [['alpha']],
+        options: { from: 'user', to: '../destination', tool: ['codex'] },
+      },
+      changedContext,
+    );
+
+    expect(appeared).toBeTrue();
+    expect(outcome).toMatchObject({
+      exitClass: 'state',
+      diagnostics: [{ code: 'flip-refused' }],
+    });
+    expect(await readFile(externalConfig, 'utf8')).toBe('version = 1\n');
+    expect(await ports.pathKind(fixture.data)).toBe('absent');
+    expect(await ports.pathKind(join(fixture.destination, '.agents', 'skills', 'alpha'))).toBe(
+      'absent',
+    );
+    expect(await readFile(join(fixture.sourceSkill, 'SKILL.md'), 'utf8')).toBe(fixture.source);
+  });
+
+  for (const setupFailure of [
+    {
+      name: 'permission',
+      portCode: 'permission',
+      exitClass: 'permission',
+      code: 'permission-denied',
+    },
+    { name: 'cancellation', portCode: 'cancelled', exitClass: 'cancelled', code: 'cancelled' },
+  ] as const) {
+    test(`retains the ${setupFailure.name} exit class from ledger bootstrap setup`, async () => {
+      const fixture = await executionFixture(false);
+      const base = fixture.applicationContext.ports;
+      const bootstrapLock = join(
+        fixture.applicationContext.artifactCoordinator.coordinationRoot,
+        'apply-ledger-bootstrap',
+      );
+      const ports: RuntimePorts = {
+        ...base,
+        withFileLock: async <T>(
+          path: string,
+          operation: () => Promise<T>,
+          options?: { readonly signal?: AbortSignal },
+        ) => {
+          if (path === bootstrapLock) {
+            throw Object.freeze({
+              code: setupFailure.portCode,
+              message: `synthetic bootstrap ${setupFailure.name}`,
+            });
+          }
+          return base.withFileLock(path, operation, options);
+        },
+      };
+
+      const outcome = await runSyncApplication(
+        {
+          arguments: [['alpha']],
+          options: { from: 'user', to: '../destination', tool: ['codex'] },
+        },
+        { ...fixture.applicationContext, ports } as unknown as CurrentApplicationContext,
+      );
+
+      expect(outcome).toMatchObject({
+        exitClass: setupFailure.exitClass,
+        diagnostics: [{ code: setupFailure.code }],
+      });
+      expect(await ports.pathKind(fixture.data)).toBe('absent');
+    });
+  }
 
   test('force-replaces an edited managed copy with exact before and after identities', async () => {
     const fixture = await executionFixture(false);
