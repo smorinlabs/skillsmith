@@ -1,5 +1,6 @@
 import { dirname, join } from 'node:path';
 import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
+import { resolveFreshRollbackParent } from '../artifacts/ledger-history.ts';
 import type {
   LedgerModel,
   LedgerPairV1Dto,
@@ -41,7 +42,9 @@ export interface AbortPendingLogicalTransactionRequest {
     contentHash: string | undefined;
     state: 'present' | 'absent';
     owned: boolean;
-    linkCount: number;
+    kind: 'dir' | 'file' | 'symlink' | 'other' | 'absent';
+    beforeIdentity: string | null;
+    afterIdentity: string | null;
   }>[];
   readonly signal?: AbortSignal;
   readonly cancelAt?: 'after-durable-boundary';
@@ -349,18 +352,8 @@ const rollbackParent = (
   model: LedgerModel,
   journal: LogicalJournalV1Dto,
 ): LogicalJournalV1Dto | null => {
-  const parentOperationId = journal.context.parentOperationId;
-  if (
-    journal.disposition !== 'rollback' ||
-    parentOperationId === null ||
-    parentOperationId === journal.intent.operationId
-  ) {
-    return null;
-  }
-  const matches = model.history.filter(
-    (candidate) => candidate.intent.operationId === parentOperationId,
-  );
-  return matches.length === 1 ? (matches[0] ?? null) : null;
+  const parent = resolveFreshRollbackParent(model.history, model.transactions, journal);
+  return parent.ok ? parent.value : null;
 };
 
 const inverseLegacyOperation = (
@@ -571,14 +564,6 @@ const withPendingShadow = (
 const historyById = (model: LedgerModel, transactionId: string): LogicalJournalV1Dto | null =>
   model.history.find((journal) => journal.transactionId === transactionId) ?? null;
 
-const historyByOperationId = (
-  model: LedgerModel,
-  operationId: string,
-): LogicalJournalV1Dto | null => {
-  const matches = model.history.filter((journal) => journal.intent.operationId === operationId);
-  return matches.length === 1 ? (matches[0] ?? null) : null;
-};
-
 const sameForwardIntentOrientation = (
   source: LogicalJournalV1Dto,
   rollback: LogicalJournalV1Dto,
@@ -618,7 +603,8 @@ export const logicalRollbackExecutionMode = (
   if (journal.context.parentOperationId === null) {
     return err(failure('identity-conflict', 'rollback origin operation is missing'));
   }
-  const source = historyByOperationId(model, journal.context.parentOperationId);
+  const resolvedParent = resolveFreshRollbackParent(model.history, model.transactions, journal);
+  const source = resolvedParent.ok ? resolvedParent.value : null;
   if (
     source === null ||
     source.phase !== 'committed' ||
@@ -647,8 +633,8 @@ export const logicalRollbackTerminalActualAfter = (
   const mode = logicalRollbackExecutionMode(model, journal);
   if (!mode.ok) return mode;
   if (mode.value !== 'fresh-reversal') return ok(journal.actual.before);
-  const parentOperationId = journal.context.parentOperationId;
-  const source = parentOperationId === null ? null : historyByOperationId(model, parentOperationId);
+  const resolvedParent = resolveFreshRollbackParent(model.history, model.transactions, journal);
+  const source = resolvedParent.ok ? resolvedParent.value : null;
   return source === null
     ? err(failure('identity-conflict', 'fresh rollback origin operation is missing'))
     : ok(source.actual.before);
@@ -689,8 +675,7 @@ export const beginCommittedLogicalTransactionReversal = (
     request.operationId === source.intent.operationId ||
     Object.values(model.transactions).some(
       (journal) => journal.intent.operationId === request.operationId,
-    ) ||
-    model.history.some((journal) => journal.intent.operationId === request.operationId)
+    )
   ) {
     return err(failure('identity-conflict', 'fresh reversal identities are invalid or reused'));
   }
@@ -722,6 +707,10 @@ export const beginCommittedLogicalTransactionReversal = (
   };
   if (!validJournal(rollback)) {
     return err(failure('invalid-journal', 'fresh reversal journal is invalid'));
+  }
+  const resolvedOrigin = resolveFreshRollbackParent(model.history, model.transactions, rollback);
+  if (!resolvedOrigin.ok || resolvedOrigin.value?.transactionId !== source.transactionId) {
+    return err(failure('identity-conflict', 'fresh reversal did not resolve to its exact source'));
   }
   const origin = logicalRollbackExecutionMode(model, rollback);
   if (!origin.ok || origin.value !== 'fresh-reversal') {
@@ -995,7 +984,9 @@ const retainedResourcesValid = (
       observation !== undefined &&
       observation.state === 'present' &&
       observation.owned &&
-      observation.linkCount === 1 &&
+      observation.kind === 'dir' &&
+      observation.beforeIdentity !== null &&
+      observation.beforeIdentity === observation.afterIdentity &&
       observation.path === resource.path &&
       same(observation.repositoryRevision, resource.repositoryRevision) &&
       observation.contentHash === resource.contentHash

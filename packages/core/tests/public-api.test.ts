@@ -240,6 +240,17 @@ describe('@skillsmith/core public API', () => {
     expect(core).not.toHaveProperty('toSyncReportOperationV1');
   });
 
+  test('does not expose internal committed-placement cleanup machinery from the package root', () => {
+    for (const name of [
+      'prepareCommittedPlacementCleanup',
+      'recoverCommittedPlacementCleanup',
+      'recoverCommittedPlacementCleanupObserved',
+      'recoverCommittedPlacementCleanupWithObservation',
+    ]) {
+      expect(core).not.toHaveProperty(name);
+    }
+  });
+
   test('exports the strict update report codec only from the contracts/v1 surface', () => {
     expect(contractsV1.updateV1Codec.descriptor).toMatchObject({
       id: 'update',

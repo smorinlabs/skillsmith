@@ -180,6 +180,96 @@ const promotePlan = (s: Seeded): SwapPlan => ({
   },
 });
 
+const logicalPromoteOperation = (s: Seeded, operationId: string): ExecutableOperation => {
+  const source = {
+    kind: 'local-dev' as const,
+    path: s.target,
+    contentHash: s.contentHash as OperationDigest,
+  };
+  const resource = {
+    kind: 'live' as const,
+    skill: 'alpha',
+    tool: 'claude-code' as const,
+    scope: 'user' as const,
+    projectRoot: null,
+    location: { kind: 'machine-bound' as const, path: s.placementPath },
+  };
+  return {
+    operationId,
+    groupId: `group:${operationId}`,
+    pairId: 'pair:alpha:claude-code',
+    kind: 'promote',
+    dependencyMetadata: {
+      domain: 'skillsmith.operation-dependency',
+      schemaVersion: 1,
+      operationIds: [],
+    },
+    skill: 'alpha',
+    source,
+    tool: 'claude-code',
+    scope: 'user',
+    before: {
+      kind: 'placement',
+      resource,
+      classification: 'dev',
+      representation: 'symlink',
+      linkTarget: { kind: 'machine-bound', path: s.target },
+      dangling: false,
+      source,
+      contentHash: source.contentHash,
+    },
+    after: {
+      kind: 'placement',
+      resource,
+      classification: 'pinned',
+      representation: 'copy',
+      linkTarget: null,
+      dangling: false,
+      source,
+      contentHash: source.contentHash,
+    },
+    reason: { code: 'promote-selected', message: 'Promote alpha.' },
+    selectionSource: 'explicit-targets',
+    preconditionIds: [],
+    requiredCheckIds: [],
+    reversibility: { kind: 'conditional', retentionResourceIds: ['pair:alpha:claude-code'] },
+    mutates: { live: true, manifest: false, lock: false, ledger: true },
+    conflict: null,
+  };
+};
+
+const interruptLogicalPromote = async (f: FixtureFleet, s: Seeded, transactionId: string) => {
+  const controller = new AbortController();
+  const interrupted = await runSwap(
+    makeCtx(f.env, s.ledgerPath, s.ledger, {
+      txId: transactionId,
+      signal: controller.signal,
+      pauseAt: 'prepared',
+      logicalOperation: logicalPromoteOperation(s, `operation:${transactionId}`),
+      journalTimestamp: JOURNAL_NOW,
+      afterPersist: (ledger) => {
+        if (ledger.transactions[transactionId]?.phase === 'prepared') controller.abort();
+      },
+    }),
+    promotePlan(s),
+  );
+  expect(interrupted.ok).toBeFalse();
+  expect(interrupted.state.ledger.transactions[transactionId]).toMatchObject({
+    disposition: 'forward',
+    phase: 'prepared',
+    actual: {
+      retained: [
+        {
+          resourceId: 'pair:alpha:claude-code',
+          path: s.target,
+          contentHash: s.contentHash,
+        },
+      ],
+    },
+  });
+  return interrupted.state.ledger;
+};
+
 const demotePlan = (s: Seeded): SwapPlan => ({
   op: 'dev',
   skill: 'alpha',
@@ -1741,6 +1831,200 @@ describe('runSwap / rollbackSwap — guards and abort', () => {
     expect(await f.env.readLink(s.placementPath)).toBe(s.target);
     expect(await f.env.pathKind(stagingPath)).toBe('absent');
     expect(getSwapPair(rolledBack.state.ledger, 'alpha', 'claude-code')?.journal).toBeNull();
+  });
+
+  test('rollback authorizes a retained directory with stable real metadata and a multi-link count', async () => {
+    const s = await seedAlphaDev(f);
+    const transactionId = 'retained-real-metadata';
+    const interruptedLedger = await interruptLogicalPromote(f, s, transactionId);
+    const readFileMetadata = f.env.readFileMetadata;
+    const retainedLinkCounts: number[] = [];
+    const observingEnv: RuntimePorts = {
+      ...f.env,
+      readFileMetadata: async (path) => {
+        const metadata = await readFileMetadata(path);
+        if (path === s.target && metadata.linkCount !== null && metadata.linkCount !== undefined) {
+          retainedLinkCounts.push(metadata.linkCount);
+        }
+        return metadata;
+      },
+    };
+    const durableDirections: LogicalJournalV1Dto['disposition'][] = [];
+    const rolledBack = await rollbackSwap(
+      makeCtx(observingEnv, s.ledgerPath, interruptedLedger, {
+        journalTimestamp: JOURNAL_NOW,
+        afterPersist: (ledger) => {
+          const pending = ledger.transactions[transactionId];
+          if (pending !== undefined) durableDirections.push(pending.disposition);
+        },
+      }),
+      'alpha',
+      'claude-code',
+    );
+    if (!rolledBack.ok) throw new Error(msg(rolledBack.error));
+    expect(retainedLinkCounts.slice(0, 2)).toHaveLength(2);
+    expect(retainedLinkCounts.slice(0, 2).every((linkCount) => linkCount > 1)).toBeTrue();
+    expect(durableDirections[0]).toBe('rollback');
+    expect(rolledBack.state.ledger.transactions[transactionId]).toBeUndefined();
+    expect(
+      rolledBack.state.ledger.history.find((journal) => journal.transactionId === transactionId)
+        ?.disposition,
+    ).toBe('rollback');
+  });
+
+  test('retained-resource reducer accepts multi-link directories but rejects hostile evidence', async () => {
+    const s = await seedAlphaDev(f);
+    const transactionId = 'retained-reducer-evidence';
+    const interruptedLedger = await interruptLogicalPromote(f, s, transactionId);
+    const pending = interruptedLedger.transactions[transactionId];
+    const retained = pending?.actual.retained[0];
+    if (pending === undefined || retained === undefined) {
+      throw new Error('retained logical transaction is missing');
+    }
+    const observation = {
+      resourceId: retained.resourceId,
+      path: retained.path,
+      repositoryRevision: retained.repositoryRevision,
+      contentHash: retained.contentHash,
+      state: 'present' as const,
+      owned: true,
+      kind: 'dir' as const,
+      beforeIdentity: 'retained:stable',
+      afterIdentity: 'retained:stable',
+    };
+    const request = {
+      transactionId,
+      pairId: pending.intent.pairId,
+      command: 'skillsmith-rollback',
+      workflow: 'placement-swap',
+      updatedAt: JOURNAL_NOW,
+    };
+    expect(
+      abortPendingLogicalTransaction(interruptedLedger, {
+        ...request,
+        retainedResources: [observation],
+      }).ok,
+    ).toBeTrue();
+
+    const hostile = [
+      { ...observation, resourceId: 'pair:hostile' },
+      { ...observation, path: `${retained.path}.replaced` },
+      {
+        ...observation,
+        repositoryRevision: { kind: 'resource', digest: `sha256:${'b'.repeat(64)}` },
+      },
+      { ...observation, contentHash: `sha256:${'b'.repeat(64)}` },
+      { ...observation, state: 'absent' as const },
+      { ...observation, owned: false },
+      { ...observation, kind: 'file' as const },
+      { ...observation, beforeIdentity: null },
+      { ...observation, afterIdentity: 'retained:replacement' },
+    ];
+    for (const evidence of hostile) {
+      const refused = abortPendingLogicalTransaction(interruptedLedger, {
+        ...request,
+        retainedResources: [evidence],
+      });
+      expect(refused.ok).toBeFalse();
+      if (!refused.ok) expect(refused.error.reason).toBe('retention-conflict');
+    }
+  });
+
+  test('rollback fails before persisting direction when retained metadata authority is missing', async () => {
+    const s = await seedAlphaDev(f);
+    const transactionId = 'retained-missing-authority';
+    const interruptedLedger = await interruptLogicalPromote(f, s, transactionId);
+    const missingAuthorityEnv = {
+      ...f.env,
+      readFileMetadata: undefined,
+    } as unknown as RuntimePorts;
+    let writes = 0;
+    const refused = await rollbackSwap(
+      makeCtx(missingAuthorityEnv, s.ledgerPath, interruptedLedger, {
+        journalTimestamp: JOURNAL_NOW,
+        afterPersist: () => {
+          writes += 1;
+        },
+      }),
+      'alpha',
+      'claude-code',
+    );
+    expect(refused.ok).toBeFalse();
+    expect(refused.ok ? null : msg(refused.error)).toContain('metadata authority is unavailable');
+    expect(writes).toBe(0);
+    expect(refused.state.ledger.transactions[transactionId]?.disposition).toBe('forward');
+  });
+
+  test('rollback fails before persisting direction when retained directory identity changes', async () => {
+    const s = await seedAlphaDev(f);
+    const transactionId = 'retained-identity-change';
+    const interruptedLedger = await interruptLogicalPromote(f, s, transactionId);
+    const readFileMetadata = f.env.readFileMetadata;
+    let retainedReads = 0;
+    const hostileEnv: RuntimePorts = {
+      ...f.env,
+      readFileMetadata: async (path) => {
+        const metadata = await readFileMetadata(path);
+        if (path !== s.target) return metadata;
+        retainedReads += 1;
+        return retainedReads === 2
+          ? { ...metadata, identity: `${metadata.identity ?? 'missing'}:replacement` }
+          : metadata;
+      },
+    };
+    let writes = 0;
+    const refused = await rollbackSwap(
+      makeCtx(hostileEnv, s.ledgerPath, interruptedLedger, {
+        journalTimestamp: JOURNAL_NOW,
+        afterPersist: () => {
+          writes += 1;
+        },
+      }),
+      'alpha',
+      'claude-code',
+    );
+    expect(refused.ok).toBeFalse();
+    expect(refused.ok ? null : msg(refused.error)).toContain('failed authority validation');
+    expect(retainedReads).toBe(2);
+    expect(writes).toBe(0);
+    expect(refused.state.ledger.transactions[transactionId]?.disposition).toBe('forward');
+  });
+
+  test('rollback cancellation during retained observation precedes the direction write', async () => {
+    const s = await seedAlphaDev(f);
+    const transactionId = 'retained-observation-cancelled';
+    const interruptedLedger = await interruptLogicalPromote(f, s, transactionId);
+    const controller = new AbortController();
+    const readFileMetadata = f.env.readFileMetadata;
+    let retainedReads = 0;
+    const cancellingEnv: RuntimePorts = {
+      ...f.env,
+      readFileMetadata: async (path) => {
+        const metadata = await readFileMetadata(path);
+        if (path === s.target) {
+          retainedReads += 1;
+          controller.abort();
+        }
+        return metadata;
+      },
+    };
+    let writes = 0;
+    const cancelled = await rollbackSwap(
+      makeCtx(cancellingEnv, s.ledgerPath, interruptedLedger, {
+        signal: controller.signal,
+        journalTimestamp: JOURNAL_NOW,
+        afterPersist: () => {
+          writes += 1;
+        },
+      }),
+      'alpha',
+      'claude-code',
+    );
+    expect(cancelled.ok).toBeFalse();
+    expect(cancelled.ok ? null : cancelled.error.code).toBe('cancelled');
+    expect(retainedReads).toBe(1);
+    expect(writes).toBe(0);
+    expect(cancelled.state.ledger.transactions[transactionId]?.disposition).toBe('forward');
   });
 
   test('pre-aborted signal → flip-failed, journal left recoverable, resumeSwap completes it', async () => {

@@ -5,6 +5,7 @@ import type {
   JournalResourceActualV1Dto,
   LogicalJournalV1Dto,
 } from '../artifacts/journal-types.ts';
+import { resolveFreshRollbackParent } from '../artifacts/ledger-history.ts';
 import type {
   LedgerModel,
   LedgerPairIdentity,
@@ -44,9 +45,11 @@ import type {
 } from '../observation/index.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type { ExecutableOperation, OperationImage } from '../planning/types.ts';
+import type { FileMetadataReadPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { getLedgerPairAt, withLedgerPairAt, withoutLedgerPairAt } from './ledger.ts';
 import {
+  type AbortPendingLogicalTransactionRequest,
   abortPendingLogicalTransaction,
   abortPendingLogicalTransactionAfterRecoveryAttempt,
   advanceLogicalTransaction,
@@ -1627,6 +1630,85 @@ const persistCommittedCleanupFinalizer = async (
 const logicalRollbackError = (message: string, cancelled = false): SkillSmithError =>
   cancelled ? cancelledError(message) : flipFailedError(message);
 
+type RetainedResourceObservation = NonNullable<
+  AbortPendingLogicalTransactionRequest['retainedResources']
+>[number];
+
+type RetainedResourceMetadataPorts = SwapPorts & FileMetadataReadPort;
+
+const retainedResourceMetadataPorts = (env: SwapPorts): RetainedResourceMetadataPorts | null =>
+  'readFileMetadata' in env && typeof env.readFileMetadata === 'function'
+    ? (env as RetainedResourceMetadataPorts)
+    : null;
+
+const observeRetainedResources = async (
+  ctx: SwapCtx,
+  pending: LogicalJournalV1Dto,
+): Promise<Result<readonly RetainedResourceObservation[], SkillSmithError>> => {
+  if (pending.actual.retained.length === 0) return ok(Object.freeze([]));
+  if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+
+  const env = retainedResourceMetadataPorts(ctx.env);
+  if (env === null) {
+    return err(flipFailedError('retained resource metadata authority is unavailable'));
+  }
+
+  const observations: RetainedResourceObservation[] = [];
+  for (const resource of pending.actual.retained) {
+    if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+
+    let before: Awaited<ReturnType<FileMetadataReadPort['readFileMetadata']>>;
+    try {
+      before = await env.readFileMetadata(resource.path);
+    } catch (error) {
+      return err(mapFsErr(error, `cannot inspect retained resource ${resource.resourceId}`));
+    }
+    if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+
+    const hashed = await contentHashOf(env, resource.path);
+    if (!hashed.ok) return hashed;
+    if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+
+    let after: Awaited<ReturnType<FileMetadataReadPort['readFileMetadata']>>;
+    try {
+      after = await env.readFileMetadata(resource.path);
+    } catch (error) {
+      return err(mapFsErr(error, `cannot inspect retained resource ${resource.resourceId}`));
+    }
+    if (ctx.signal?.aborted) return err(cancelledError('interrupted'));
+
+    const owned =
+      before.kind === 'dir' &&
+      after.kind === 'dir' &&
+      before.identity !== null &&
+      after.identity !== null &&
+      before.identity === after.identity &&
+      resource.repositoryRevision.kind === 'resource' &&
+      resource.repositoryRevision.digest === resource.contentHash &&
+      hashed.value === resource.contentHash;
+    if (!owned) {
+      return err(
+        flipFailedError(`retained resource ${resource.resourceId} failed authority validation`),
+      );
+    }
+
+    observations.push(
+      Object.freeze({
+        resourceId: resource.resourceId,
+        path: resource.path,
+        repositoryRevision: resource.repositoryRevision,
+        contentHash: hashed.value,
+        state: 'present',
+        owned,
+        kind: after.kind,
+        beforeIdentity: before.identity,
+        afterIdentity: after.identity,
+      }),
+    );
+  }
+  return ok(Object.freeze(observations));
+};
+
 /**
  * Switch the original interrupted transaction to rollback before changing the filesystem. The
  * durable direction change makes a crash after this boundary resume rollback instead of allowing a
@@ -1646,6 +1728,9 @@ const prepareLogicalRollback = async (
   if (pending === undefined) return ok(null);
   if (pending.disposition === 'rollback') return ok(pending);
 
+  const retainedResources = await observeRetainedResources(ctx, pending);
+  if (!retainedResources.ok) return retainedResources;
+
   const abort = recoveryAttemptBegun
     ? abortPendingLogicalTransactionAfterRecoveryAttempt
     : abortPendingLogicalTransaction;
@@ -1655,6 +1740,7 @@ const prepareLogicalRollback = async (
     command: recoveryAttemptBegun ? pending.context.command : 'skillsmith-rollback',
     workflow: recoveryAttemptBegun ? pending.context.workflow : 'placement-swap',
     updatedAt: effects.journalNow(),
+    retainedResources: retainedResources.value,
     ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
   });
   if (!aborted.ok) {
@@ -3244,13 +3330,12 @@ const freshCommittedRollbackJournal = (
     return err(flipFailedError('committed fresh-reversal cleanup carrier is inconsistent'));
   }
   const mode = logicalRollbackExecutionMode(model, journal);
-  const parent = model.history.find(
-    (candidate) => candidate.intent.operationId === journal.context.parentOperationId,
-  );
+  const resolvedParent = resolveFreshRollbackParent(model.history, model.transactions, journal);
+  const parent = resolvedParent.ok ? resolvedParent.value : null;
   if (
     !mode.ok ||
     mode.value !== 'fresh-reversal' ||
-    parent === undefined ||
+    parent === null ||
     !legacyJournalMatchesLogicalShadow(journal, identity, pair, parent)
   ) {
     return err(flipFailedError('committed fresh-reversal cleanup carrier is inconsistent'));

@@ -1,6 +1,7 @@
 import { dirname } from 'node:path';
 import { toolRegistry } from '../agents/registry.ts';
 import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
+import { resolveFreshRollbackParent } from '../artifacts/ledger-history.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import { committedPlacementCleanupTransactionForTarget } from '../place/swap.ts';
 import { createOperationGroupId } from '../planning/create.ts';
@@ -42,10 +43,11 @@ const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
 const failure = (code: string, message: string, exitClass: UndoError['exitClass']): UndoError =>
   Object.freeze({ code, message, exitClass });
 
-const toolOrder = (tool: UndoTool): number => {
-  const index = toolRegistry.ids.indexOf(tool);
-  return index < 0 ? Number.MAX_SAFE_INTEGER : index;
-};
+const undoTools = Object.freeze(toolRegistry.toolsFor('undo')) as readonly UndoTool[];
+const undoToolSet: ReadonlySet<string> = new Set(undoTools);
+const undoToolOrder = new Map(undoTools.map((tool, index) => [tool, index] as const));
+const isUndoTool = (tool: string): tool is UndoTool => undoToolSet.has(tool);
+const toolOrder = (tool: UndoTool): number => undoToolOrder.get(tool) ?? Number.MAX_SAFE_INTEGER;
 
 const familyFor = (operation: string): UndoOperationFamily | null => {
   switch (operation) {
@@ -66,14 +68,6 @@ const familyFor = (operation: string): UndoOperationFamily | null => {
   }
 };
 
-const historyByOperationId = (
-  ledger: LedgerModel,
-  operationId: string | null,
-): LogicalJournalV1Dto | null =>
-  operationId === null
-    ? null
-    : (ledger.history.find((journal) => journal.intent.operationId === operationId) ?? null);
-
 const logicalAuthority = (
   ledger: LedgerModel,
   state: Extract<StatusJournalState, { readonly format: 'logical' }>,
@@ -84,10 +78,17 @@ const logicalAuthority = (
   if (journal === undefined) {
     return err(failure('undo-journal-correlation', 'selected logical journal is missing', 'state'));
   }
-  const source =
-    journal.disposition === 'rollback'
-      ? historyByOperationId(ledger, journal.context.parentOperationId)
-      : journal;
+  const resolvedParent = resolveFreshRollbackParent(ledger.history, ledger.transactions, journal);
+  if (!resolvedParent.ok) {
+    return err(
+      failure(
+        'undo-journal-linkage',
+        'selected rollback journal has inconsistent forward lineage',
+        'state',
+      ),
+    );
+  }
+  const source = journal.disposition === 'rollback' ? resolvedParent.value : journal;
   if (journal.disposition === 'rollback' && source === null) {
     // A converted pending abort points back to its own operation and has no committed parent row.
     if (
@@ -135,7 +136,7 @@ export const candidateForStatusPlacement = (
   const journalState = placement.journal;
   if (journalState.state === 'none' || placement.identity.path === null) return ok(null);
   const tool = placement.identity.tool;
-  if (tool !== 'claude-code' && tool !== 'codex') return ok(null);
+  if (!isUndoTool(tool)) return ok(null);
   const scope = placement.identity.scope;
   if (scope !== 'user' && scope !== 'project') return ok(null);
   const projectRoot = scope === 'project' ? placement.identity.projectIdentity : null;
@@ -283,13 +284,7 @@ const selectedScopes = (
 };
 
 const selectedTools = (selection: ValidatedUndoSelection): readonly UndoTool[] =>
-  selection.tools.length > 0
-    ? selection.tools
-    : (toolRegistry
-        .toolsFor('undo')
-        .filter(
-          (tool): tool is UndoTool => tool === 'claude-code' || tool === 'codex',
-        ) as readonly UndoTool[]);
+  selection.tools.length > 0 ? selection.tools : undoTools;
 
 const immutableRequest = (
   request: UndoRequest,

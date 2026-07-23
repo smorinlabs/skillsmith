@@ -94,6 +94,11 @@ const logicalJournal = (
     projectRoot: null,
     location: { kind: 'machine-bound' as const, path: '/fixture/skills/review' },
   };
+  const source = {
+    kind: 'local-dev' as const,
+    path: '/fixture/source/review',
+    contentHash: `sha256:${'a'.repeat(64)}` as ArtifactDigest,
+  };
   return {
     schemaVersion: 1,
     kind: 'skillsmith.transaction-journal',
@@ -104,11 +109,20 @@ const logicalJournal = (
       pairId: 'pair:review:codex',
       kind: 'link-dev',
       skill: 'review',
-      source: null,
+      source,
       tool: 'codex',
       scope: 'user',
       before: { kind: 'absent', resource },
-      after: { kind: 'absent', resource },
+      after: {
+        kind: 'placement',
+        resource,
+        classification: 'dev',
+        representation: 'symlink',
+        linkTarget: { kind: 'machine-bound', path: source.path },
+        dangling: false,
+        source,
+        contentHash: source.contentHash,
+      },
       mutates: { live: true, manifest: false, lock: false, ledger: true },
       reversibility: { kind: 'none', retentionResourceIds: [] },
       conflict: null,

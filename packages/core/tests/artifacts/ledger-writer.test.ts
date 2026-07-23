@@ -748,7 +748,7 @@ describe('bounded history and one-victim cleanup', () => {
     expect(selected.cleanupVictim).toBeNull();
   });
 
-  test('rejects duplicate committed operations and fresh rollback children without an exact parent', () => {
+  test('admits repeated committed operation identities and rejects a rollback without an exact parent', () => {
     const parent = dependencyForwardJournal(0);
     const duplicate: LogicalJournalV1Dto = {
       ...dependencyForwardJournal(1),
@@ -757,15 +757,12 @@ describe('bounded history and one-victim cleanup', () => {
         operationId: parent.intent.operationId,
       },
     };
-    expect(
-      selectBoundedHistory({
-        ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
-        history: [parent, duplicate],
-      }),
-    ).toEqual({
-      ok: false,
-      error: { code: 'invalid-history', transactionId: duplicate.transactionId },
+    const repeated = selectBoundedHistory({
+      ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+      history: [parent, duplicate],
     });
+    expect(repeated.ok).toBeTrue();
+    if (repeated.ok) expect(repeated.value.history).toEqual([parent, duplicate]);
 
     const orphan: LogicalJournalV1Dto = {
       ...dependencyRollbackChild(parent, dependencyForwardJournal(2)),
@@ -783,6 +780,39 @@ describe('bounded history and one-victim cleanup', () => {
       ok: false,
       error: { code: 'invalid-history', transactionId: orphan.transactionId },
     });
+  });
+
+  test('retains repeated-operation rollback parents and children as exact LIFO units', () => {
+    const olderParent = dependencyForwardJournal(0);
+    const newerSeed = dependencyForwardJournal(1);
+    const newerParent: LogicalJournalV1Dto = {
+      ...newerSeed,
+      intent: { ...olderParent.intent },
+    };
+    const newerChild = dependencyRollbackChild(newerParent, dependencyForwardJournal(2));
+    const olderChildSeed = dependencyRollbackChild(olderParent, dependencyForwardJournal(3));
+    const olderChild: LogicalJournalV1Dto = {
+      ...olderChildSeed,
+      intent: {
+        ...olderChildSeed.intent,
+        operationId: newerChild.intent.operationId,
+        groupId: newerChild.intent.groupId,
+      },
+    };
+    const tail = Array.from({ length: 254 }, (_, index) => dependencyForwardJournal(index + 4));
+    const selected = unwrap(
+      selectBoundedHistory({
+        ...emptyLedgerModel('2026-07-15T00:00:00.000Z'),
+        history: [olderParent, newerParent, newerChild, olderChild, ...tail],
+      }),
+    );
+    const retainedIds = new Set(selected.history.map(({ transactionId }) => transactionId));
+    for (const [parent, child] of [
+      [olderParent, olderChild],
+      [newerParent, newerChild],
+    ] as const) {
+      expect(retainedIds.has(parent.transactionId)).toBe(retainedIds.has(child.transactionId));
+    }
   });
 
   test('admits a fair rollback child and its parent as one unit at the capacity boundary', () => {

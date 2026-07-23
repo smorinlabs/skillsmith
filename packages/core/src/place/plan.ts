@@ -10,6 +10,7 @@ import {
   toolRegistry as defaultLifecycleToolRegistry,
 } from '../agents/registry.ts';
 import { parseArtifactDigest } from '../artifacts/hash.ts';
+import { resolveFreshRollbackParent } from '../artifacts/ledger-history.ts';
 import type { PlanImageV1, PlanSourceV1 } from '../artifacts/plan-types.ts';
 import { logicalJournalPairIdentity } from '../artifacts/registry.ts';
 import { type SkillSmithError, flipRefusedError, placementNotFoundError } from '../errors.ts';
@@ -2025,10 +2026,11 @@ const pendingFreshPlacementHistoryInverse = (
   if (!mode.ok || mode.value !== 'fresh-reversal') {
     throw new TypeError('placement planning: fresh rollback linkage is inconsistent');
   }
-  const parents = ledger.history.filter(
-    (journal) => journal.intent.operationId === child.context.parentOperationId,
-  );
-  const parent = parents.length === 1 ? parents[0] : undefined;
+  const resolvedParent = resolveFreshRollbackParent(ledger.history, ledger.transactions, child);
+  if (!resolvedParent.ok) {
+    throw new TypeError('placement planning: fresh rollback parent lineage is inconsistent');
+  }
+  const parent = resolvedParent.value ?? undefined;
   const identity = parent === undefined ? null : logicalJournalPairIdentity(parent);
   const pairId = parent?.intent.pairId ?? null;
   const projectRoot = intent.projectRoot?.kind === 'machine-bound' ? intent.projectRoot.path : null;

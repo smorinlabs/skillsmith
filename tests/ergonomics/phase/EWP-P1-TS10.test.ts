@@ -71,6 +71,7 @@ const EXPECTED_PATHS = [
   'skillsmith promote',
   'skillsmith status',
   'skillsmith sync',
+  'skillsmith undo',
   'skillsmith uninstall',
   'skillsmith update',
   'skillsmith verify',
@@ -95,6 +96,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith promote', 'flip', 4],
   ['skillsmith status', 'status', 1],
   ['skillsmith sync', 'sync', 1],
+  ['skillsmith undo', 'undo', 1],
   ['skillsmith uninstall', 'uninstall', 2],
   ['skillsmith update', 'update', 1],
   ['skillsmith verify', 'verify', 1],
@@ -126,6 +128,7 @@ const EXPECTED_CODECS = [
   ['update', 1],
   ['uninstall', 1],
   ['uninstall', 2],
+  ['undo', 1],
   ['verify', 1],
   ['error', 1],
   ['export', 1],
@@ -253,6 +256,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     indent: 2,
     terminalLf: false,
   },
+  'undo@1': {
+    wireKind: 'skillsmith.undo',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
   'verify@1': {
     wireKind: 'skillsmith.verify',
     embeddedVersion: 'schemaVersion',
@@ -291,6 +300,7 @@ const GOLDEN_FILES = {
   plan: 'plan.stdout',
   status: 'status.stdout',
   sync: 'sync.stdout',
+  undo: 'undo.stdout',
   update: 'update.stdout',
   uninstall: 'uninstall.stdout',
   verify: 'verify.stdout',
@@ -344,8 +354,10 @@ const V1_RUNTIME_EXPORTS = [
   'statusV1Codec',
   'toStatusV1Dto',
   'toUninstallV1Dto',
+  'toUndoV1Dto',
   'toVerifyV1Dto',
   'uninstallV1Codec',
+  'undoV1Codec',
   'verifyV1Codec',
   'manifestV1Codec',
   'toManifestV1Dto',
@@ -579,6 +591,7 @@ const renderedCurrentBytes = (): CurrentBytes => {
     plan: render('plan', CURRENT_RENDERER_REPORTS.plan),
     status: render('status', CURRENT_RENDERER_REPORTS.status),
     sync: render('sync', CURRENT_RENDERER_REPORTS.sync),
+    undo: render('undo', CURRENT_RENDERER_REPORTS.undo),
     update: render('update', CURRENT_RENDERER_REPORTS.update),
     uninstall: render('uninstall', CURRENT_RENDERER_REPORTS.uninstall),
     verify: render('verify', CURRENT_RENDERER_REPORTS.verify),
@@ -644,7 +657,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the twenty-one live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the twenty-two live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -653,7 +666,7 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(21);
+    expect(new Set(paths).size).toBe(22);
     for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
@@ -694,6 +707,7 @@ describe('EWP-P1-TS10', () => {
       ['promote', 'skillsmith promote'],
       ['status', 'skillsmith status'],
       ['sync', 'skillsmith sync'],
+      ['undo', 'skillsmith undo'],
       ['update', 'skillsmith update'],
       ['uninstall', 'skillsmith uninstall'],
       ['verify', 'skillsmith verify'],
@@ -2030,6 +2044,7 @@ describe('EWP-P1-TS10', () => {
     const hostileCurrentUninstall = hostileLifecycleReport(REPORT_FIXTURES.currentUninstall);
     const hostileFlip = hostileLifecycleReport(REPORT_FIXTURES.flip);
     const hostileInit = addHostileFields(REPORT_FIXTURES.init);
+    const hostileUndo = addHostileFields(REPORT_FIXTURES.undo);
     const capabilityBytes = JSON.stringify(expectedCapabilitySnapshot(), null, 2);
     const cases: ReadonlyArray<{
       readonly name: string;
@@ -2121,6 +2136,13 @@ describe('EWP-P1-TS10', () => {
         codec: v1.statusV1Codec,
         args: [hostileStatus],
         bytes: CURRENT_JSON_GOLDENS.status,
+      },
+      {
+        name: 'undo@1',
+        mapper: v1.toUndoV1Dto,
+        codec: v1.undoV1Codec,
+        args: [hostileUndo],
+        bytes: CURRENT_JSON_GOLDENS.undo,
       },
       {
         name: 'uninstall@1',
@@ -2332,6 +2354,7 @@ describe('EWP-P1-TS10', () => {
       ['plan-report', 1, CURRENT_JSON_GOLDENS.plan],
       ['status', 1, CURRENT_JSON_GOLDENS.status],
       ['sync', 1, CURRENT_JSON_GOLDENS.sync],
+      ['undo', 1, CURRENT_JSON_GOLDENS.undo],
       ['update', 1, CURRENT_JSON_GOLDENS.update],
       ['uninstall', 1, HISTORICAL_JSON_GOLDENS.uninstall],
       ['uninstall', 2, CURRENT_JSON_GOLDENS.uninstall],

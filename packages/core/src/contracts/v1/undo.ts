@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toolRegistry } from '../../agents/registry.ts';
 import { containsSensitiveMaterial } from '../../safety/redaction.ts';
 import type { UndoReport, UndoTool } from '../../undo/types.ts';
 import { createJsonWireCodec } from '../codec.ts';
@@ -132,7 +133,12 @@ export interface UndoReportV1Dto {
 
 const IdSchema = z.string().min(1);
 const CountSchema = z.number().int().nonnegative();
-const ToolSchema = z.enum(['claude-code', 'codex']);
+const UNDO_TOOLS = Object.freeze([...toolRegistry.toolsFor('undo')]) as readonly [
+  UndoTool,
+  ...UndoTool[],
+];
+const UNDO_TOOL_ORDER = new Map(UNDO_TOOLS.map((tool, index) => [tool, index] as const));
+const ToolSchema = z.enum(UNDO_TOOLS);
 const ScopeSchema = z.enum(['user', 'project']);
 const FailureSchema = z.object({ code: IdSchema, message: z.string().min(1) }).strict();
 const DependencySchema = z
@@ -244,7 +250,7 @@ const countKinds = <Kind extends string>(
 const unique = (values: readonly string[]): boolean => new Set(values).size === values.length;
 const vectorsMatch = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index]);
-const toolOrder = (tool: UndoTool): number => (tool === 'claude-code' ? 0 : 1);
+const toolOrder = (tool: UndoTool): number => UNDO_TOOL_ORDER.get(tool) ?? Number.MAX_SAFE_INTEGER;
 const groupOutcome = (pairs: readonly UndoPairV1Dto[]): UndoGroupV1Dto['outcome'] => {
   const precedence: Readonly<Record<UndoGroupV1Dto['outcome'], number>> = {
     failed: 6,

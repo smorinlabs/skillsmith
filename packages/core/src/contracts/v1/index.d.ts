@@ -24,6 +24,7 @@ import type {
   SupportedTool,
   ToolRegistry,
   UndoReport,
+  UndoTool,
   UninstallReport,
   VerifyReport,
 } from '@skillsmith/core';
@@ -1355,7 +1356,7 @@ export interface UndoSelectionV1Dto {
   readonly outcome: 'selected' | 'filter-zero';
   readonly targets: readonly string[];
   readonly all: boolean;
-  readonly tools: readonly SupportedTool[];
+  readonly tools: readonly UndoTool[];
   readonly scopes: readonly ('user' | 'project')[];
   readonly groupIds: readonly string[];
   readonly batchPolicy: 'fail-fast' | 'continue-on-error';
@@ -1363,7 +1364,7 @@ export interface UndoSelectionV1Dto {
 
 export interface UndoPairV1Dto {
   readonly pairId: string;
-  readonly tool: SupportedTool;
+  readonly tool: UndoTool;
   readonly path: string;
   readonly action: 'abort-pending' | 'reverse-committed';
   readonly operationFamily: 'dev' | 'promote' | 'install' | 'uninstall' | 'update';

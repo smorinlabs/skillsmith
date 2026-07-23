@@ -19,6 +19,7 @@ import {
   committedFreshRollbackTerminalMembershipMatches,
   ledgerV2Codec,
 } from '../../src/artifacts/ledger-codec.ts';
+import { resolveFreshRollbackLineage } from '../../src/artifacts/ledger-history.ts';
 import type { LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
 import {
   operationMatchesMatrix,
@@ -450,7 +451,7 @@ describe('artifact codec foundation', () => {
     ).toBeFalse();
   });
 
-  test('keeps signed V2 operation-ID compatibility while rejecting duplicate committed IDs', async () => {
+  test('keeps signed V2 operation-ID compatibility while admitting repeated committed identities', async () => {
     const decoded = ledgerV2Codec.decode(new Uint8Array(await readFile(V2_GOLDEN)));
     expect(decoded.ok, JSON.stringify(decoded)).toBeTrue();
     if (!decoded.ok) return;
@@ -463,10 +464,10 @@ describe('artifact codec foundation', () => {
         ...decoded.value.model,
         history: [
           ...decoded.value.model.history,
-          { ...committed, transactionId: 'tx:duplicate-committed-operation' },
+          { ...committed, transactionId: 'tx:repeated-committed-operation' },
         ],
       }).ok,
-    ).toBeFalse();
+    ).toBeTrue();
   });
 
   test('validates fresh rollback linkage, phase images, unique IDs, and its exact inverse shadow', () => {
@@ -624,6 +625,128 @@ describe('artifact codec foundation', () => {
       transactions: { [child.transactionId]: child },
       history: [parent],
     };
+
+    const olderParent = { ...parent, transactionId: 'tx:older-parent-install' };
+    const committedFirstChild: LogicalJournalV1Dto = {
+      ...child,
+      phase: 'committed',
+      actual: { ...child.actual, after: parent.actual.before },
+      completedAt: startedAt,
+    };
+    const pendingSecondChild: LogicalJournalV1Dto = {
+      ...child,
+      transactionId: 'tx:second-fresh-install-reversal',
+    };
+    const repeatedLineage = resolveFreshRollbackLineage(
+      [olderParent, parent, committedFirstChild],
+      { [pendingSecondChild.transactionId]: pendingSecondChild },
+    );
+    expect(repeatedLineage.ok).toBeTrue();
+    if (repeatedLineage.ok) {
+      expect(
+        repeatedLineage.value.parentTransactionIdByChildTransactionId[
+          committedFirstChild.transactionId
+        ],
+      ).toBe(parent.transactionId);
+      expect(
+        repeatedLineage.value.parentTransactionIdByChildTransactionId[
+          pendingSecondChild.transactionId
+        ],
+      ).toBe(olderParent.transactionId);
+    }
+    expect(
+      resolveFreshRollbackLineage([parent, committedFirstChild], {
+        [pendingSecondChild.transactionId]: pendingSecondChild,
+      }).ok,
+    ).toBeFalse();
+
+    const mismatchedNearParent: LogicalJournalV1Dto = {
+      ...parent,
+      transactionId: 'tx:mismatched-near-parent',
+      actual: { ...parent.actual, after: parent.actual.before },
+    };
+    const skippedMismatch = resolveFreshRollbackLineage([olderParent, mismatchedNearParent], {
+      [child.transactionId]: child,
+    });
+    expect(skippedMismatch.ok).toBeTrue();
+    if (skippedMismatch.ok) {
+      expect(
+        skippedMismatch.value.parentTransactionIdByChildTransactionId[child.transactionId],
+      ).toBe(olderParent.transactionId);
+    }
+
+    const unrelatedOperationParent: LogicalJournalV1Dto = {
+      ...parent,
+      transactionId: 'tx:unrelated-operation-parent',
+      intent: { ...parent.intent, operationId: child.intent.operationId },
+    };
+    const collidingChild: LogicalJournalV1Dto = {
+      ...child,
+      transactionId: 'tx:child-operation-collision',
+      intent: { ...child.intent, operationId: unrelatedOperationParent.intent.operationId },
+    };
+    const collidingLineage = resolveFreshRollbackLineage([parent, unrelatedOperationParent], {
+      [collidingChild.transactionId]: collidingChild,
+    });
+    expect(collidingLineage.ok).toBeTrue();
+    if (collidingLineage.ok) {
+      expect(
+        collidingLineage.value.parentTransactionIdByChildTransactionId[
+          collidingChild.transactionId
+        ],
+      ).toBe(parent.transactionId);
+    }
+    const collidingShadow = pair.journal;
+    if (collidingShadow == null) throw new Error('fresh physical shadow is missing');
+    expect(
+      ledgerV2Codec.encode({
+        ...model,
+        skills: {
+          alpha: {
+            tools: {
+              codex: {
+                ...pair,
+                journal: { ...collidingShadow, txId: collidingChild.transactionId },
+              },
+            },
+          },
+        },
+        transactions: { [collidingChild.transactionId]: collidingChild },
+        history: [parent, unrelatedOperationParent],
+      }).ok,
+    ).toBeTrue();
+
+    const pendingAlpha: LogicalJournalV1Dto = {
+      ...child,
+      transactionId: 'tx:a-pending-fresh-reversal',
+      intent: {
+        ...child.intent,
+        operationId: 'operation:a-pending-fresh-reversal',
+        groupId: 'group:a-pending-fresh-reversal',
+      },
+    };
+    const pendingZulu: LogicalJournalV1Dto = {
+      ...child,
+      transactionId: 'tx:z-pending-fresh-reversal',
+      intent: {
+        ...child.intent,
+        operationId: 'operation:z-pending-fresh-reversal',
+        groupId: 'group:z-pending-fresh-reversal',
+      },
+    };
+    const pendingLineage = resolveFreshRollbackLineage([olderParent, parent], {
+      [pendingZulu.transactionId]: pendingZulu,
+      [pendingAlpha.transactionId]: pendingAlpha,
+    });
+    expect(pendingLineage.ok).toBeTrue();
+    if (pendingLineage.ok) {
+      expect(
+        pendingLineage.value.parentTransactionIdByChildTransactionId[pendingAlpha.transactionId],
+      ).toBe(parent.transactionId);
+      expect(
+        pendingLineage.value.parentTransactionIdByChildTransactionId[pendingZulu.transactionId],
+      ).toBe(olderParent.transactionId);
+    }
 
     expect(ledgerV2Codec.encode(model).ok).toBeTrue();
     expect(

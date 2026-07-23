@@ -305,13 +305,6 @@ export {
   commitLogicalTransactionRetainingShadow,
   finalizeCommittedLogicalTransactionShadow,
 } from './place/logical-transactions.ts';
-export {
-  prepareCommittedPlacementCleanup,
-  recoverCommittedPlacementCleanup,
-  recoverCommittedPlacementCleanupObserved,
-  recoverCommittedPlacementCleanupWithObservation,
-} from './place/recovery.ts';
-export type { CommittedPlacementCleanupPreparation } from './place/recovery.ts';
 export { cleanupHistoryVictim, selectBoundedHistory } from './place/history.ts';
 export { FLIP_TOOLS } from './place/types.ts';
 export { err, isErr, isOk, map, mapErr, ok } from './result.ts';

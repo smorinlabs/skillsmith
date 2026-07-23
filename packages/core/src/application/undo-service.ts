@@ -40,6 +40,7 @@ const DEFAULT_DEPENDENCIES: UndoApplicationDependencies = Object.freeze({
 });
 
 const EMPTY_REPORT: UndoApplicationReport = Object.freeze({ result: null });
+const UNDO_TOOLS = Object.freeze([...toolRegistry.toolsFor('undo')]) as readonly UndoTool[];
 
 const refusal = (
   exitClass: UndoError['exitClass'],
@@ -341,9 +342,7 @@ export const createUndoApplicationService = (
       requiresSelection: true,
       allowBoundedDefault: false,
       allowAbsentCreate: false,
-      allowedTools: toolRegistry
-        .toolsFor('undo')
-        .filter((tool): tool is UndoTool => tool === 'claude-code' || tool === 'codex'),
+      allowedTools: UNDO_TOOLS,
       allowedScopes: ['user', 'project'],
       allowedCapabilities: ['undo'],
     };

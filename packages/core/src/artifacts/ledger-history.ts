@@ -2,9 +2,199 @@ import { createHash } from 'node:crypto';
 import { basename, dirname, resolve } from 'node:path';
 import type { FileMetadataReadPort } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import { unsignedUtf16Compare } from './codec.ts';
 import type { LogicalJournalV1Dto } from './journal-types.ts';
 import type { LedgerModel } from './ledger-types.ts';
 import { logicalJournalPairIdentity } from './registry.ts';
+
+export type LegacyJournalOperation = NonNullable<
+  import('./ledger-types.ts').LedgerPairV1Dto['journal']
+>['op'];
+
+export const INSTALL_SHADOW_OPERATIONS = Object.freeze(['install'] as const);
+export const UNINSTALL_SHADOW_OPERATIONS = Object.freeze(['uninstall'] as const);
+export const DEV_SHADOW_OPERATIONS = Object.freeze(['dev'] as const);
+export const PROMOTE_SHADOW_OPERATIONS = Object.freeze(['promote'] as const);
+
+const sameJson = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
+
+const sameFreshRollbackIntent = (
+  parent: LogicalJournalV1Dto,
+  child: LogicalJournalV1Dto,
+): boolean =>
+  sameJson(
+    {
+      ...parent.intent,
+      operationId: child.intent.operationId,
+      groupId: child.intent.groupId,
+    },
+    child.intent,
+  );
+
+export const freshRollbackParentMatches = (
+  child: LogicalJournalV1Dto,
+  parent: LogicalJournalV1Dto | null | undefined,
+): parent is LogicalJournalV1Dto =>
+  child.disposition === 'rollback' &&
+  child.context.parentOperationId !== null &&
+  child.context.parentOperationId !== child.intent.operationId &&
+  parent !== null &&
+  parent !== undefined &&
+  parent.phase === 'committed' &&
+  parent.disposition === 'forward' &&
+  parent.intent.operationId === child.context.parentOperationId &&
+  parent.transactionId !== child.transactionId &&
+  sameFreshRollbackIntent(parent, child) &&
+  sameJson(parent.actual.after, child.actual.before) &&
+  sameJson(parent.actual.retained, child.actual.retained);
+
+const placementClass = (
+  image: LogicalJournalV1Dto['intent']['before'],
+): 'absent' | 'dev' | 'managed' | null => {
+  if (image.kind === 'absent' && image.resource.kind === 'live') return 'absent';
+  if (image.kind !== 'placement' || image.resource.kind !== 'live') return null;
+  if (image.classification === 'dev') return 'dev';
+  return image.classification === 'pinned' || image.classification === 'store-linked'
+    ? 'managed'
+    : null;
+};
+
+export const freshRollbackShadowOperations = (
+  parent: LogicalJournalV1Dto,
+): readonly LegacyJournalOperation[] | null => {
+  const before = placementClass(parent.intent.before);
+  const after = placementClass(parent.intent.after);
+  if (before === null || after === null) return null;
+  switch (parent.intent.kind) {
+    case 'install':
+      return before === 'absent' && after === 'managed' ? UNINSTALL_SHADOW_OPERATIONS : null;
+    case 'link-dev':
+      return after === 'dev'
+        ? before === 'absent'
+          ? UNINSTALL_SHADOW_OPERATIONS
+          : before === 'managed'
+            ? PROMOTE_SHADOW_OPERATIONS
+            : null
+        : null;
+    case 'promote':
+      return after === 'managed'
+        ? before === 'dev'
+          ? DEV_SHADOW_OPERATIONS
+          : before === 'managed'
+            ? PROMOTE_SHADOW_OPERATIONS
+            : null
+        : null;
+    case 'remove':
+      return after === 'absent'
+        ? before === 'dev'
+          ? DEV_SHADOW_OPERATIONS
+          : before === 'managed'
+            ? INSTALL_SHADOW_OPERATIONS
+            : null
+        : null;
+    default:
+      return null;
+  }
+};
+
+const freshRollbackPhaseMatchesParent = (
+  child: LogicalJournalV1Dto,
+  parent: LogicalJournalV1Dto,
+): boolean =>
+  child.phase === 'live' || child.phase === 'committed'
+    ? sameJson(child.actual.after, parent.actual.before)
+    : child.actual.after.length === 0;
+
+export interface FreshRollbackLineageError {
+  readonly transactionId: string;
+}
+
+export interface FreshRollbackLineage {
+  readonly parentTransactionIdByChildTransactionId: Readonly<Record<string, string>>;
+  readonly childTransactionIdByParentTransactionId: Readonly<Record<string, string>>;
+}
+
+const distinctParentRollback = (journal: LogicalJournalV1Dto): boolean =>
+  journal.disposition === 'rollback' &&
+  journal.context.parentOperationId !== null &&
+  journal.context.parentOperationId !== journal.intent.operationId;
+
+/** Resolve deterministic operation identities to exact transaction-level rollback lineage. */
+export const resolveFreshRollbackLineage = (
+  history: readonly LogicalJournalV1Dto[],
+  transactions: Readonly<Record<string, LogicalJournalV1Dto>>,
+): Result<FreshRollbackLineage, FreshRollbackLineageError> => {
+  const consumedParentTransactionIds = new Set<string>();
+  const parentByChild = Object.create(null) as Record<string, string>;
+  const childByParent = Object.create(null) as Record<string, string>;
+  const resolveParent = (
+    child: LogicalJournalV1Dto,
+    beforeIndex: number,
+  ): LogicalJournalV1Dto | null => {
+    for (let index = beforeIndex - 1; index >= 0; index -= 1) {
+      const parent = history[index];
+      if (
+        parent !== undefined &&
+        !consumedParentTransactionIds.has(parent.transactionId) &&
+        freshRollbackParentMatches(child, parent) &&
+        freshRollbackShadowOperations(parent) !== null &&
+        freshRollbackPhaseMatchesParent(child, parent)
+      ) {
+        return parent;
+      }
+    }
+    return null;
+  };
+  const consume = (
+    child: LogicalJournalV1Dto,
+    beforeIndex: number,
+  ): Result<void, FreshRollbackLineageError> => {
+    if (!distinctParentRollback(child)) return ok(undefined);
+    const parent = resolveParent(child, beforeIndex);
+    if (parent === null) return err({ transactionId: child.transactionId });
+    consumedParentTransactionIds.add(parent.transactionId);
+    parentByChild[child.transactionId] = parent.transactionId;
+    childByParent[parent.transactionId] = child.transactionId;
+    return ok(undefined);
+  };
+
+  for (const [index, journal] of history.entries()) {
+    const consumed = consume(journal, index);
+    if (!consumed.ok) return consumed;
+  }
+  for (const journal of Object.values(transactions).sort((left, right) =>
+    unsignedUtf16Compare(left.transactionId, right.transactionId),
+  )) {
+    const consumed = consume(journal, history.length);
+    if (!consumed.ok) return consumed;
+  }
+  return ok(
+    Object.freeze({
+      parentTransactionIdByChildTransactionId: Object.freeze(parentByChild),
+      childTransactionIdByParentTransactionId: Object.freeze(childByParent),
+    }),
+  );
+};
+
+export const resolveFreshRollbackParent = (
+  history: readonly LogicalJournalV1Dto[],
+  transactions: Readonly<Record<string, LogicalJournalV1Dto>>,
+  child: LogicalJournalV1Dto,
+): Result<LogicalJournalV1Dto | null, FreshRollbackLineageError> => {
+  if (!distinctParentRollback(child)) return ok(null);
+  const committed = history.some(({ transactionId }) => transactionId === child.transactionId);
+  const candidateTransactions = committed
+    ? transactions
+    : { ...transactions, [child.transactionId]: child };
+  const lineage = resolveFreshRollbackLineage(history, candidateTransactions);
+  if (!lineage.ok) return lineage;
+  const parentTransactionId =
+    lineage.value.parentTransactionIdByChildTransactionId[child.transactionId];
+  if (parentTransactionId === undefined) return err({ transactionId: child.transactionId });
+  const parent = history.find(({ transactionId }) => transactionId === parentTransactionId);
+  return parent === undefined ? err({ transactionId: child.transactionId }) : ok(parent);
+};
 
 export const LEDGER_HISTORY_LIMIT = 256 as const;
 
@@ -193,74 +383,46 @@ interface LedgerHistoryDependencies {
   readonly pendingParentIndexes: readonly number[];
 }
 
-const freshRollbackParentOperationId = (journal: LogicalJournalV1Dto): string | null => {
-  const parentOperationId = journal.context.parentOperationId;
-  return journal.disposition === 'rollback' &&
-    parentOperationId !== null &&
-    parentOperationId !== journal.intent.operationId
-    ? parentOperationId
-    : null;
-};
-
 const historyDependencies = (
   model: LedgerModel,
 ): Result<LedgerHistoryDependencies, LedgerHistoryError> => {
-  const operationIndex = new Map<string, number>();
-  for (const [index, journal] of model.history.entries()) {
-    if (operationIndex.has(journal.intent.operationId)) {
-      return err({ code: 'invalid-history', transactionId: journal.transactionId });
-    }
-    operationIndex.set(journal.intent.operationId, index);
-  }
-
   const pendingOperationIds = new Set<string>();
   for (const journal of Object.values(model.transactions)) {
-    if (
-      pendingOperationIds.has(journal.intent.operationId) ||
-      (freshRollbackParentOperationId(journal) !== null &&
-        operationIndex.has(journal.intent.operationId))
-    ) {
+    if (pendingOperationIds.has(journal.intent.operationId)) {
       return err({ code: 'invalid-history', transactionId: journal.transactionId });
     }
     pendingOperationIds.add(journal.intent.operationId);
   }
 
+  const lineage = resolveFreshRollbackLineage(model.history, model.transactions);
+  if (!lineage.ok) {
+    return err({ code: 'invalid-history', transactionId: lineage.error.transactionId });
+  }
+  const historyIndexByTransactionId = new Map(
+    model.history.map((journal, index) => [journal.transactionId, index] as const),
+  );
   const parentByChildIndex = new Map<number, number>();
   const childrenByParentIndex = new Map<number, number[]>();
-  const resolveParent = (
-    journal: LogicalJournalV1Dto,
-    childIndex: number | null,
-  ): Result<number | null, LedgerHistoryError> => {
-    const parentOperationId = freshRollbackParentOperationId(journal);
-    if (parentOperationId === null) return ok(null);
-    const parentIndex = operationIndex.get(parentOperationId);
-    const parent = parentIndex === undefined ? undefined : model.history[parentIndex];
-    if (
-      parentIndex === undefined ||
-      parent === undefined ||
-      parent.disposition !== 'forward' ||
-      (childIndex !== null && parentIndex >= childIndex)
-    ) {
-      return err({ code: 'invalid-history', transactionId: journal.transactionId });
-    }
-    return ok(parentIndex);
-  };
-
-  for (const [childIndex, journal] of model.history.entries()) {
-    const parent = resolveParent(journal, childIndex);
-    if (!parent.ok) return parent;
-    if (parent.value === null) continue;
-    parentByChildIndex.set(childIndex, parent.value);
-    const children = childrenByParentIndex.get(parent.value) ?? [];
-    children.push(childIndex);
-    childrenByParentIndex.set(parent.value, children);
-  }
-
   const pendingParentIndexes: number[] = [];
-  for (const journal of Object.values(model.transactions)) {
-    const parent = resolveParent(journal, null);
-    if (!parent.ok) return parent;
-    if (parent.value !== null) pendingParentIndexes.push(parent.value);
+  for (const [childTransactionId, parentTransactionId] of Object.entries(
+    lineage.value.parentTransactionIdByChildTransactionId,
+  )) {
+    const parentIndex = historyIndexByTransactionId.get(parentTransactionId);
+    if (parentIndex === undefined) {
+      return err({ code: 'invalid-history', transactionId: childTransactionId });
+    }
+    const childIndex = historyIndexByTransactionId.get(childTransactionId);
+    if (childIndex === undefined) {
+      if (model.transactions[childTransactionId] === undefined) {
+        return err({ code: 'invalid-history', transactionId: childTransactionId });
+      }
+      pendingParentIndexes.push(parentIndex);
+      continue;
+    }
+    parentByChildIndex.set(childIndex, parentIndex);
+    const children = childrenByParentIndex.get(parentIndex) ?? [];
+    children.push(childIndex);
+    childrenByParentIndex.set(parentIndex, children);
   }
   for (const children of childrenByParentIndex.values()) {
     children.sort((left, right) => left - right);
@@ -272,18 +434,20 @@ const historyDependencies = (
   });
 };
 
-const addDependencyParents = (
-  indexes: Set<number>,
-  parentByChildIndex: ReadonlyMap<number, number>,
-): void => {
+const addDependencyUnit = (indexes: Set<number>, dependencies: LedgerHistoryDependencies): void => {
   const pending = [...indexes];
   for (let offset = 0; offset < pending.length; offset += 1) {
-    const child = pending[offset];
-    if (child === undefined) continue;
-    const parent = parentByChildIndex.get(child);
-    if (parent === undefined || indexes.has(parent)) continue;
-    indexes.add(parent);
-    pending.push(parent);
+    const index = pending[offset];
+    if (index === undefined) continue;
+    const candidates = [
+      dependencies.parentByChildIndex.get(index),
+      ...(dependencies.childrenByParentIndex.get(index) ?? []),
+    ];
+    for (const candidate of candidates) {
+      if (candidate === undefined || indexes.has(candidate)) continue;
+      indexes.add(candidate);
+      pending.push(candidate);
+    }
   }
 };
 
@@ -394,7 +558,7 @@ export const selectBoundedHistory = (
   }
   for (const index of newestPendingAnchor.values()) protectedIndexes.add(index);
   for (const index of dependencies.value.pendingParentIndexes) protectedIndexes.add(index);
-  addDependencyParents(protectedIndexes, dependencies.value.parentByChildIndex);
+  addDependencyUnit(protectedIndexes, dependencies.value);
 
   let effectiveCapacity = Math.max(LEDGER_HISTORY_LIMIT, protectedIndexes.size);
   const retained = new Set(protectedIndexes);
@@ -423,7 +587,7 @@ export const selectBoundedHistory = (
     for (const index of ordered) {
       if (retained.size >= effectiveCapacity) break;
       const dependencyUnit = new Set([index]);
-      addDependencyParents(dependencyUnit, dependencies.value.parentByChildIndex);
+      addDependencyUnit(dependencyUnit, dependencies.value);
       const missing = [...dependencyUnit].filter((candidate) => !retained.has(candidate));
       if (missing.length === 0) continue;
       if (retained.size + missing.length > effectiveCapacity) {
@@ -473,7 +637,7 @@ export const selectBoundedHistory = (
       }
     }
   }
-  addDependencyParents(visibleIndexes, dependencies.value.parentByChildIndex);
+  addDependencyUnit(visibleIndexes, dependencies.value);
   if (cleanupDeleted) {
     for (const index of cleanupIndexes) visibleIndexes.delete(index);
     // Removing a parent also removes every dependent child from the visible persisted frontier.

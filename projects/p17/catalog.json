@@ -7141,6 +7141,7 @@
         "tests/ergonomics/phase/EWP-P1-TS10.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/phase/EWP-P2-TS08.test.ts",
+        "tests/ergonomics/phase/EWP-P3B-TS04.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS05.test.ts",
         "tests/ergonomics/phase/EWP-P3B-TS06.test.ts",
         "packages/cli/tests/help.test.ts",

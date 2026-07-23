@@ -1098,6 +1098,58 @@ describe('placement execution boundary', () => {
       value: source.actual.before,
     });
 
+    const newerSource: LogicalJournalV1Dto = {
+      ...source,
+      transactionId: 'tx:newer-repeated-install',
+    };
+    const repeatedModel = { ...model, history: [source, newerSource] };
+    expect(
+      beginCommittedLogicalTransactionReversal(repeatedModel, {
+        sourceTransactionId: source.transactionId,
+        transactionId: 'tx:wrong-older-reversal',
+        operationId: 'operation:wrong-older-reversal',
+        groupId: 'group:wrong-older-reversal',
+        command: 'skillsmith-undo',
+        workflow: 'undo',
+        startedAt: reversalNow,
+        updatedAt: reversalNow,
+      }),
+    ).toMatchObject({ ok: false, error: { reason: 'identity-conflict' } });
+    expect(
+      beginCommittedLogicalTransactionReversal(repeatedModel, {
+        sourceTransactionId: newerSource.transactionId,
+        transactionId: 'tx:exact-newer-reversal',
+        operationId: 'operation:exact-newer-reversal',
+        groupId: 'group:exact-newer-reversal',
+        command: 'skillsmith-undo',
+        workflow: 'undo',
+        startedAt: reversalNow,
+        updatedAt: reversalNow,
+      }).ok,
+    ).toBeTrue();
+
+    const reusedChildOperationId = 'operation:reused-history-child-id';
+    const unrelatedHistoricalIdentity: LogicalJournalV1Dto = {
+      ...source,
+      transactionId: 'tx:unrelated-history-operation',
+      intent: { ...source.intent, operationId: reusedChildOperationId },
+    };
+    expect(
+      beginCommittedLogicalTransactionReversal(
+        { ...model, history: [unrelatedHistoricalIdentity, source] },
+        {
+          sourceTransactionId: source.transactionId,
+          transactionId: 'tx:reused-history-child-id',
+          operationId: reusedChildOperationId,
+          groupId: 'group:reused-history-child-id',
+          command: 'skillsmith-undo',
+          workflow: 'undo',
+          startedAt: reversalNow,
+          updatedAt: reversalNow,
+        },
+      ).ok,
+    ).toBeTrue();
+
     const attempted = beginTransactionRecoveryAttempt(begun.value, {
       transactionId: rollback.transactionId,
       command: 'skillsmith-undo',

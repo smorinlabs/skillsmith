@@ -22,6 +22,7 @@ import {
   type PlanV1Dto,
   type StatusV1Dto,
   type SyncReportV1Dto,
+  type UndoReportV1Dto,
   type UninstallV1Dto,
   type UpdateReportV1Dto,
   type VerifyV1Dto,
@@ -53,8 +54,10 @@ import {
   toInitV1Dto,
   toInstallV1Dto,
   toStatusV1Dto,
+  toUndoV1Dto,
   toUninstallV1Dto,
   toVerifyV1Dto,
+  undoV1Codec,
   uninstallV1Codec,
   type updateV1Codec,
   verifyV1Codec,
@@ -126,6 +129,8 @@ import type { InstallV1Dto as ForbiddenInstallDtoFromV2 } from '@skillsmith/core
 // @ts-expect-error v2 entry point must expose no v1 DTOs
 import type { UninstallV1Dto as ForbiddenUninstallDtoFromV2 } from '@skillsmith/core/contracts/v2';
 // @ts-expect-error v2 entry point must expose no v1 DTOs
+import type { UndoReportV1Dto as ForbiddenUndoDtoFromV2 } from '@skillsmith/core/contracts/v2';
+// @ts-expect-error v2 entry point must expose no v1 DTOs
 import type { VerifyV1Dto as ForbiddenVerifyDtoFromV2 } from '@skillsmith/core/contracts/v2';
 // @ts-expect-error v2 entry point must expose no v1 DTOs
 import type { StatusV1Dto as ForbiddenStatusDtoFromV2 } from '@skillsmith/core/contracts/v2';
@@ -180,6 +185,8 @@ type _V1RuntimeClosure = Assert<
     | 'toStatusV1Dto'
     | 'uninstallV1Codec'
     | 'toUninstallV1Dto'
+    | 'undoV1Codec'
+    | 'toUndoV1Dto'
     | 'verifyV1Codec'
     | 'createVerifyV1Codec'
     | 'toVerifyV1Dto'
@@ -218,6 +225,9 @@ type _SyncCodecDto = Assert<
 >;
 type _UpdateCodecDto = Assert<
   Equal<ReturnType<typeof updateV1Codec.validate>, ExpectedWireResult<UpdateReportV1Dto>>
+>;
+type _UndoCodecDto = Assert<
+  Equal<ReturnType<typeof undoV1Codec.validate>, ExpectedWireResult<UndoReportV1Dto>>
 >;
 type _V2RuntimeClosure = Assert<
   Equal<
@@ -396,6 +406,7 @@ const installCodec: WireCodec<'install', 1, InstallV1Dto> = installV1Codec;
 const initCodec: WireCodec<'init', 1, InitV1Dto> = initV1Codec;
 const statusCodec: WireCodec<'status', 1, StatusV1Dto> = statusV1Codec;
 const uninstallCodec: WireCodec<'uninstall', 1, UninstallV1Dto> = uninstallV1Codec;
+const undoCodec: WireCodec<'undo', 1, UndoReportV1Dto> = undoV1Codec;
 const verifyCodec: WireCodec<'verify', 1, VerifyV1Dto> = verifyV1Codec;
 const errorCodec: WireCodec<'error', 1, ErrorV1Dto> = errorV1Codec;
 const capabilityCodec: WireCodec<'capability-snapshot', 1, CapabilitySnapshotV1Dto> =
@@ -423,6 +434,7 @@ type _InstallMapperReturn = Assert<Equal<ReturnType<typeof toInstallV1Dto>, Inst
 type _InitMapperReturn = Assert<Equal<ReturnType<typeof toInitV1Dto>, InitV1Dto>>;
 type _StatusMapperReturn = Assert<Equal<ReturnType<typeof toStatusV1Dto>, StatusV1Dto>>;
 type _UninstallMapperReturn = Assert<Equal<ReturnType<typeof toUninstallV1Dto>, UninstallV1Dto>>;
+type _UndoMapperReturn = Assert<Equal<ReturnType<typeof toUndoV1Dto>, UndoReportV1Dto>>;
 type _VerifyMapperReturn = Assert<Equal<ReturnType<typeof toVerifyV1Dto>, VerifyV1Dto>>;
 type _ErrorMapperReturn = Assert<Equal<ReturnType<typeof toErrorV1Dto>, ErrorV1Dto>>;
 type _CapabilityMapperReturn = Assert<
@@ -475,6 +487,7 @@ export type VersionClosureCanaries = [
   ForbiddenStatusDtoFromV2,
   ForbiddenInitDtoFromV2,
   ForbiddenUninstallDtoFromV2,
+  ForbiddenUndoDtoFromV2,
   ForbiddenVerifyDtoFromV2,
   ForbiddenAgentsDtoFromV3,
   ForbiddenListDtoFromV2,
@@ -492,6 +505,7 @@ void [
   initCodec,
   statusCodec,
   uninstallCodec,
+  undoCodec,
   verifyCodec,
   capabilityCodec,
   healthV2Binding,
@@ -513,6 +527,7 @@ void [
   toInitV1Dto,
   toStatusV1Dto,
   toUninstallV1Dto,
+  toUndoV1Dto,
   toVerifyV1Dto,
   toErrorV1Dto,
   toCapabilitySnapshotV1Dto,
@@ -543,6 +558,7 @@ export type PublicWireCompileContract = {
   readonly init: InitV1Dto;
   readonly status: StatusV1Dto;
   readonly uninstall: UninstallV1Dto;
+  readonly undo: UndoReportV1Dto;
   readonly verify: VerifyV1Dto;
   readonly error: ErrorV1Dto;
   readonly capability: CapabilitySnapshotV1Dto;

@@ -1526,7 +1526,9 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
           contentHash: retained?.contentHash,
           state: 'present',
           owned: true,
-          linkCount: 1,
+          kind: 'dir',
+          beforeIdentity: 'retained:stable',
+          afterIdentity: 'retained:stable',
         },
       ],
     };
@@ -1551,9 +1553,11 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
     for (const [label, mutation] of [
       ['missing', { state: 'absent' }],
       ['stale revision', { repositoryRevision: { kind: 'resource', digest: digestB } }],
-      ['shared', { linkCount: 2 }],
       ['unowned', { owned: false }],
       ['hash mismatch', { contentHash: digestB }],
+      ['wrong kind', { kind: 'file' }],
+      ['missing identity', { beforeIdentity: null }],
+      ['replaced identity', { afterIdentity: 'retained:replacement' }],
     ] as const) {
       await expectRefusal(
         () =>

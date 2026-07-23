@@ -29,6 +29,8 @@ import type {
   PortableLockV1,
   ProjectConfigMigration,
   SavedPlanV1,
+  UndoApplicationReport,
+  UndoReport,
   UninstallReport,
   UpdateApplicationReport,
 } from '@skillsmith/core';
@@ -63,6 +65,8 @@ import {
   toManifestV1Dto,
   toSavedPlanV1Dto,
   type toStatusV1Dto,
+  toUndoV1Dto,
+  undoV1Codec,
   updateV1Codec,
 } from '@skillsmith/core/contracts/v1';
 import type {
@@ -74,6 +78,7 @@ import type {
   SavedPlanV1Dto,
   StatusV1Dto,
   SyncReportV1Dto,
+  UndoReportV1Dto,
   UpdateReportV1Dto,
 } from '@skillsmith/core/contracts/v1';
 import {
@@ -151,8 +156,10 @@ type _V1RuntimeClosed = Assert<
     | 'toInstallV1Dto'
     | 'toStatusV1Dto'
     | 'toUninstallV1Dto'
+    | 'toUndoV1Dto'
     | 'toVerifyV1Dto'
     | 'uninstallV1Codec'
+    | 'undoV1Codec'
     | 'verifyV1Codec'
     | 'manifestV1Codec'
     | 'toManifestV1Dto'
@@ -216,6 +223,13 @@ type _UpdateCodecDto = Assert<
 >;
 type _UpdateApplicationResult = Assert<
   Equal<UpdateApplicationReport['result'], UpdateReportV1Dto | null>
+>;
+type _UndoWireKind = Assert<Equal<UndoReportV1Dto['kind'], 'skillsmith.undo'>>;
+type _UndoCodecDto = Assert<
+  Equal<ReturnType<typeof undoV1Codec.validate>, Result<UndoReportV1Dto, WireCodecError>>
+>;
+type _UndoApplicationResult = Assert<
+  Equal<UndoApplicationReport['result'], UndoReportV1Dto | null>
 >;
 type _UpdatePreviewKind = Assert<
   Equal<ExactUpdateApprovalPreviewRequest['kind'], 'exact-update-preview'>
@@ -537,6 +551,7 @@ const _ledgerV1Codec: ArtifactCodec<'ledger', 1, LedgerV1Dto, LedgerModel> = led
 const _ledgerV2Codec: ArtifactCodec<'ledger', 2, LedgerV2Dto, LedgerModel> = ledgerV2Codec;
 const _journalCodec: ArtifactCodec<'journal', 1, JournalV1Dto, LogicalJournalV1> = journalV1Codec;
 const _statusCodec: WireCodec<'status', 1, StatusV1Dto> = statusV1Codec;
+const _undoCodec: WireCodec<'undo', 1, UndoReportV1Dto> = undoV1Codec;
 declare const _updateCodec: WireCodec<'update', 1, UpdateReportV1Dto>;
 const _updateCodecBinding: typeof _updateCodec = updateV1Codec;
 const _initV1Codec: WireCodec<'init', 1, InitV1Dto> = initV1Codec;
@@ -572,6 +587,7 @@ const _journalReverse: (value: JournalV1Dto) => Result<LogicalJournalV1, Artifac
   fromJournalV1Dto;
 type _StatusMapperReturn = Assert<Equal<ReturnType<typeof toStatusV1Dto>, StatusV1Dto>>;
 const _initV1Mapper: (value: Parameters<typeof toInitV1Dto>[0]) => InitV1Dto = toInitV1Dto;
+const _undoMapper: (value: UndoReport) => UndoReportV1Dto = toUndoV1Dto;
 const _agentsV2Mapper: (value: AgentsReport) => AgentsV2Dto = toAgentsV2Dto;
 const _commandsV2Mapper: (value: CommandsReport) => CommandsV2Dto = toCommandsV2Dto;
 const _installV2Mapper: (value: CurrentInstallReport) => InstallV2Dto = toInstallV2Dto;
@@ -602,6 +618,7 @@ void [
   _ledgerV2Codec,
   _journalCodec,
   _statusCodec,
+  _undoCodec,
   _updateCodecBinding,
   _initV1Codec,
   _agentsV2Codec,
@@ -623,6 +640,7 @@ void [
   _journalMapper,
   _journalReverse,
   _initV1Mapper,
+  _undoMapper,
   _agentsV2Mapper,
   _commandsV2Mapper,
   _installV2Mapper,
