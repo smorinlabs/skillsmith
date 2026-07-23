@@ -14,6 +14,7 @@ import {
   createOperationContext,
   noopObserver,
 } from '../../src/observation/index.ts';
+import { createPlanningDiagnosticId } from '../../src/planning/create.ts';
 import type { ExecutableOperation, OperationExecutionResult } from '../../src/planning/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
 import { ok } from '../../src/result.ts';
@@ -213,7 +214,89 @@ const prepared = (changing: boolean, executed = { value: 0 }): PreparedUndoPlan 
     groups,
     execute: async () => {
       executed.value++;
-      return ok(changing ? [result] : []);
+      return ok({ results: changing ? [result] : [], warnings: [] });
+    },
+  };
+};
+
+const cleanupPrepared = (executed = { value: 0 }, warning = false): PreparedUndoPlan => {
+  const base = prepared(true);
+  const sourceGroup = base.groups[0];
+  const sourcePair = sourceGroup?.pairs[0];
+  if (sourceGroup === undefined || sourcePair === undefined) {
+    throw new Error('cleanup fixture requires one source pair');
+  }
+  const groupId = `group:v1:${'1'.repeat(64)}`;
+  const pairId = `pair:v1:${'2'.repeat(64)}`;
+  const pair = {
+    ...sourcePair,
+    pairId,
+    eligibility: 'already-reversed' as const,
+    operationIds: [],
+    operations: [],
+    outcome: 'already-reversed' as const,
+  };
+  const group = {
+    ...sourceGroup,
+    groupId,
+    pairs: [pair],
+    operationIds: [],
+    operations: [],
+    outcome: 'already-reversed' as const,
+  };
+  const affected = {
+    skill: group.name,
+    source: null,
+    tool: pair.tool,
+    scope: group.scope,
+    path: { kind: 'machine-bound' as const, path: pair.path },
+  };
+  const correlation = { groupId, pairId, operationId: null };
+  const diagnostic = {
+    diagnosticId: createPlanningDiagnosticId({
+      domain: 'skillsmith.planning-diagnostic-identity',
+      schemaVersion: 1,
+      kind: 'warning',
+      severity: 'warning',
+      refusalClass: null,
+      affected,
+      correlation,
+      reasonCode: 'undo-cleanup-pending',
+      selectionSource: 'explicit-targets',
+    }),
+    kind: 'warning' as const,
+    severity: 'warning' as const,
+    refusalClass: null,
+    affected,
+    correlation,
+    reason: {
+      code: 'undo-cleanup-pending',
+      message: "Committed undo cleanup remains pending for 'review' on claude-code.",
+    },
+    selectionSource: 'explicit-targets' as const,
+  };
+  return {
+    ...base,
+    plan: {
+      ...base.plan,
+      selection: { ...base.plan.selection, groupIds: [groupId] },
+      operations: [],
+      diagnostics: [diagnostic],
+    },
+    groups: [group],
+    execute: async () => {
+      executed.value++;
+      return ok({
+        results: [],
+        warnings: warning
+          ? [
+              {
+                code: 'undo-cleanup-retained' as const,
+                message: 'Undo cleanup retained a mismatched backup for manual inspection.',
+              },
+            ]
+          : [],
+      });
     },
   };
 };
@@ -323,5 +406,109 @@ describe('undo application service', () => {
       results: [],
     });
     expect(executed.value).toBe(0);
+  });
+
+  test('cleanup-only dry-run remains read-only and does not require approval', async () => {
+    const executed = { value: 0 };
+    const service = createUndoApplicationService({
+      prepare: (async () =>
+        ok(cleanupPrepared(executed))) as UndoApplicationDependencies['prepare'],
+    });
+
+    const result = await service(
+      request({ tool: ['claude-code'], project: true, dryRun: true }),
+      context(
+        interaction(async () => {
+          throw new Error('cleanup dry-run must not prompt');
+        }),
+      ),
+    );
+
+    expect(result.exitClass).toBe('success');
+    expect(result.report.result).toMatchObject({
+      mode: 'dry-run',
+      state: 'ready',
+      approval: { required: false, outcome: 'not-required' },
+      operations: [],
+      results: [],
+      effects: [],
+      diagnostics: [{ reason: { code: 'undo-cleanup-pending' } }],
+    });
+    expect(executed.value).toBe(0);
+  });
+
+  test('cleanup-only approval preview carries exact cleanup authority and refusal writes nothing', async () => {
+    const executed = { value: 0 };
+    let preview: unknown;
+    const service = createUndoApplicationService({
+      prepare: (async () =>
+        ok(cleanupPrepared(executed))) as UndoApplicationDependencies['prepare'],
+    });
+
+    const result = await service(
+      request({ tool: ['claude-code'], project: true }),
+      context(
+        interaction(async (confirmation) => {
+          preview = confirmation.preview;
+          return { status: 'resolved', value: false };
+        }),
+      ),
+    );
+
+    expect(preview).toEqual({
+      kind: 'exact-undo-preview',
+      command: 'undo',
+      groupIds: [`group:v1:${'1'.repeat(64)}`],
+      operationIds: [],
+      cleanupPending: [
+        {
+          groupId: `group:v1:${'1'.repeat(64)}`,
+          pairId: `pair:v1:${'2'.repeat(64)}`,
+          activeTransactionId: 'transaction:v1:undo',
+        },
+      ],
+    });
+    expect(result.report.result).toMatchObject({
+      mode: 'execute',
+      state: 'refused',
+      approval: { required: true, outcome: 'refused' },
+      operations: [],
+      results: [],
+      effects: [],
+    });
+    expect(executed.value).toBe(0);
+  });
+
+  test('approved cleanup-only execution completes with no effects and surfaces retained backup warning', async () => {
+    const executed = { value: 0 };
+    const service = createUndoApplicationService({
+      prepare: (async () =>
+        ok(cleanupPrepared(executed, true))) as UndoApplicationDependencies['prepare'],
+    });
+
+    const result = await service(
+      request({ tool: ['claude-code'], project: true, yes: true }),
+      context(),
+    );
+
+    expect(result.exitClass).toBe('success');
+    expect(result.report.result).toMatchObject({
+      mode: 'execute',
+      state: 'completed',
+      approval: { required: true, outcome: 'approved' },
+      operations: [],
+      results: [],
+      effects: [],
+      summary: { alreadyReversed: 1, effects: 0 },
+    });
+    expect(result.diagnostics).toEqual([
+      {
+        code: 'undo-cleanup-retained',
+        severity: 'warning',
+        message: 'Undo cleanup retained a mismatched backup for manual inspection.',
+      },
+    ]);
+    expect(result.mutation).toMatchObject({ changed: 0, unchanged: 1, failed: 0 });
+    expect(executed.value).toBe(1);
   });
 });

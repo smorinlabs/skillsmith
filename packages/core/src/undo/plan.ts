@@ -1,5 +1,5 @@
 import { toolRegistry } from '../agents/registry.ts';
-import { createOperationPairId } from '../planning/create.ts';
+import { createOperationPairId, createPlanningDiagnosticId } from '../planning/create.ts';
 import type { OperationExecutionResult, OperationPlan } from '../planning/types.ts';
 import type {
   UndoCandidate,
@@ -189,6 +189,71 @@ export const createUndoPlanGroups = (
       };
     }),
   );
+};
+
+/** Project private cleanup markers into the one exact public planning diagnostic authority. */
+export const withUndoCleanupDiagnostics = (
+  observation: UndoObservation,
+  plan: OperationPlan<'undo'>,
+  groups: readonly UndoPlanGroup[],
+): OperationPlan<'undo'> => {
+  const diagnostics = groups.flatMap((group) =>
+    group.pairs.flatMap((pair) => {
+      const candidate = observation.candidates.find(
+        (item) =>
+          item.recoveryState === 'cleanup-pending' &&
+          item.name === group.name &&
+          item.scope === group.scope &&
+          item.tool === pair.tool &&
+          item.path === pair.path &&
+          item.activeTransactionId === pair.activeTransactionId,
+      );
+      if (candidate === undefined) return [];
+      const affected = {
+        skill: group.name,
+        source: null,
+        tool: pair.tool,
+        scope: group.scope,
+        path: { kind: 'machine-bound' as const, path: pair.path },
+      };
+      const correlation = {
+        groupId: group.groupId,
+        pairId: pair.pairId,
+        operationId: null,
+      };
+      const identity = {
+        domain: 'skillsmith.planning-diagnostic-identity' as const,
+        schemaVersion: 1 as const,
+        kind: 'warning' as const,
+        severity: 'warning' as const,
+        refusalClass: null,
+        affected,
+        correlation,
+        reasonCode: 'undo-cleanup-pending',
+        selectionSource: observation.selection.source,
+      };
+      return [
+        {
+          diagnosticId: createPlanningDiagnosticId(identity),
+          kind: identity.kind,
+          severity: identity.severity,
+          refusalClass: null,
+          affected,
+          correlation,
+          reason: {
+            code: identity.reasonCode,
+            message: `Committed undo cleanup remains pending for '${group.name}' on ${pair.tool}.`,
+          },
+          selectionSource: identity.selectionSource,
+        },
+      ];
+    }),
+  );
+  return deepFreeze({
+    ...plan,
+    selection: { ...plan.selection, groupIds: groups.map(({ groupId }) => groupId) },
+    diagnostics: [...plan.diagnostics, ...diagnostics],
+  });
 };
 
 const reducePair = (

@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
+import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
+import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import {
   createObservationEmitter,
   createOperationContext,
   noopObserver,
 } from '../../src/observation/index.ts';
-import { readLedgerState } from '../../src/place/ledger.ts';
+import { readLedgerState, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { prepareUndoFromObservation } from '../../src/undo/execute.ts';
-import type { UndoObservation } from '../../src/undo/types.ts';
+import type { UndoCandidate, UndoObservation } from '../../src/undo/types.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -88,7 +91,10 @@ describe('undo execution preparation', () => {
     if (!prepared.ok) return;
     expect(prepared.value.plan.operations).toEqual([]);
     expect(prepared.value.groups).toEqual([]);
-    expect(await prepared.value.execute()).toEqual({ ok: true, value: [] });
+    expect(await prepared.value.execute()).toEqual({
+      ok: true,
+      value: { results: [], warnings: [] },
+    });
     expect(await prepared.value.execute()).toEqual({
       ok: false,
       error: {
@@ -97,5 +103,272 @@ describe('undo execution preparation', () => {
         exitClass: 'state',
       },
     });
+  });
+
+  test('finalizes an approved cleanup-only carrier through the pre-schedule hook', async () => {
+    const fleet = await buildFixtureFleet();
+    open.push(fleet);
+    const ledgerPath = ledgerPathOf(fleet.data);
+    const skillsRoot = join(fleet.home, '.codex', 'skills');
+    const placementPath = join(skillsRoot, 'review');
+    const sourcePath = fleet.alphaSrc;
+    const startedAt = '2026-07-22T00:00:00.000Z';
+    const contentDigest = `sha256:${'a'.repeat(64)}` as ArtifactDigest;
+    const ledgerDigest = `sha256:${'b'.repeat(64)}` as ArtifactDigest;
+    const groupId = `group:v1:${'1'.repeat(64)}`;
+    const pairId = `pair:v1:${'2'.repeat(64)}`;
+    const resource = {
+      kind: 'live' as const,
+      skill: 'review',
+      tool: 'codex' as const,
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path: placementPath },
+    };
+    const source = { kind: 'local-dev' as const, path: sourcePath, contentHash: contentDigest };
+    const absent = { kind: 'absent' as const, resource };
+    const development = {
+      kind: 'placement' as const,
+      resource,
+      classification: 'dev' as const,
+      representation: 'symlink' as const,
+      linkTarget: { kind: 'machine-bound' as const, path: sourcePath },
+      dangling: false,
+      source,
+      contentHash: contentDigest,
+    };
+    const absentActual = {
+      resourceId: 'resource:live',
+      role: 'live' as const,
+      state: 'absent' as const,
+      repositoryRevision: null,
+      placementPath,
+      liveKind: null,
+      mode: null,
+      symlinkTarget: null,
+      contentHash: null,
+    };
+    const developmentActual = {
+      resourceId: 'resource:live',
+      role: 'live' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest: contentDigest },
+      placementPath,
+      liveKind: 'symlink' as const,
+      mode: 'dev' as const,
+      symlinkTarget: sourcePath,
+      contentHash: contentDigest,
+    };
+    const ledgerActual = {
+      resourceId: 'resource:ledger',
+      role: 'ledger' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest: ledgerDigest },
+      schemaVersion: 2 as const,
+      semanticHash: ledgerDigest,
+    };
+    const parent: LogicalJournalV1Dto = {
+      schemaVersion: 1,
+      kind: 'skillsmith.transaction-journal',
+      transactionId: 'transaction:parent',
+      intent: {
+        operationId: 'operation:parent',
+        groupId,
+        pairId,
+        kind: 'link-dev',
+        skill: 'review',
+        source,
+        tool: 'codex',
+        scope: 'user',
+        before: absent,
+        after: development,
+        mutates: { live: true, manifest: false, lock: false, ledger: true },
+        reversibility: { kind: 'none', retentionResourceIds: [] },
+        conflict: null,
+      },
+      context: {
+        parentOperationId: null,
+        command: 'skillsmith-dev',
+        workflow: 'dev',
+        attempt: 1,
+        startedAt,
+      },
+      disposition: 'forward',
+      phase: 'committed',
+      actual: {
+        before: [absentActual, ledgerActual],
+        after: [developmentActual, ledgerActual],
+        retained: [],
+      },
+      updatedAt: startedAt,
+      completedAt: startedAt,
+    };
+    const child: LogicalJournalV1Dto = {
+      ...parent,
+      transactionId: 'transaction:cleanup',
+      intent: {
+        ...parent.intent,
+        operationId: 'operation:cleanup',
+        groupId: `group:v1:${'3'.repeat(64)}`,
+      },
+      context: {
+        parentOperationId: parent.intent.operationId,
+        command: 'skillsmith-undo',
+        workflow: 'undo',
+        attempt: 1,
+        startedAt,
+      },
+      disposition: 'rollback',
+      actual: {
+        before: parent.actual.after,
+        after: parent.actual.before,
+        retained: parent.actual.retained,
+      },
+    };
+    const carrier = {
+      placementPath,
+      mode: 'dev' as const,
+      dev: {
+        sourcePath,
+        resolvedPath: sourcePath,
+        repoRoot: fleet.checkout,
+        sourceRelPath: 'plugins/fh/skills/alpha',
+        remote: null,
+        recordedAt: startedAt,
+      },
+      journal: {
+        op: 'uninstall' as const,
+        txId: child.transactionId,
+        phase: 'committed' as const,
+        startedAt,
+        completedAt: startedAt,
+        before: {
+          mode: 'dev' as const,
+          symlinkTarget: sourcePath,
+          liveKind: 'symlink' as const,
+        },
+        stagingPath: join(skillsRoot, '.skillsmith-staging-review'),
+        backupPath: join(skillsRoot, '.skillsmith-backup-review'),
+      },
+    };
+    const ledger = {
+      updatedAt: startedAt,
+      skills: { review: { tools: { codex: carrier } } },
+      projects: {},
+      projectRegistrations: {},
+      transactions: {},
+      history: [parent, child],
+    };
+    const written = await writeLedger(fleet.env, ledgerPath, ledger);
+    if (!written.ok) throw new Error('cleanup ledger fixture write failed');
+    const ledgerState = await readLedgerState(fleet.env, ledgerPath);
+    if (!ledgerState.ok || ledgerState.value.state !== 'present') {
+      throw new Error('cleanup ledger fixture read failed');
+    }
+    const candidate = {
+      name: 'review',
+      sourceGroupId: parent.intent.groupId,
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      path: placementPath,
+      placement: {
+        skill: 'review',
+        root: skillsRoot,
+        path: placementPath,
+        class: 'absent',
+        symlinkTarget: null,
+        dangling: false,
+      },
+      capabilities: ['undo'],
+      exists: true,
+      action: 'reverse-committed',
+      outcome: 'already-reversed',
+      operationFamily: 'dev',
+      disposition: 'rollback',
+      phase: 'committed',
+      executionMode: 'resume-rollback',
+      recoveryState: 'cleanup-pending',
+      before: 'dev',
+      eligibility: 'not-reversible',
+      retention: [],
+      sourceTransactionId: parent.transactionId,
+      activeTransactionId: child.transactionId,
+      sourceOperationId: parent.intent.operationId,
+      activeOperationId: child.intent.operationId,
+      parentOperationId: parent.intent.operationId,
+      authority: { format: 'logical', journal: child, source: parent },
+    } as const satisfies UndoCandidate;
+    const projectContext = {
+      invocationCwd: fleet.home,
+      effectiveCwd: fleet.home,
+      projectRoot: null,
+      projectIdentity: null,
+      projectKind: 'non-git' as const,
+      discoveredConfigPath: null,
+      explicitConfigPath: null,
+    };
+    const observed = {
+      request: {
+        targets: ['review'],
+        all: false,
+        tools: ['codex'],
+        scopes: ['user'],
+        dryRun: false,
+        yes: true,
+        continueOnError: false,
+      },
+      selection: {
+        source: 'explicit-targets',
+        outcome: 'selected',
+        reason: null,
+        targets: ['review'],
+        tools: ['codex'],
+        scopes: ['user'],
+      },
+      projectContext,
+      ledgerPath,
+      ledgerState: ledgerState.value,
+      ledger: ledgerState.value.model,
+      migrationPending: false,
+      candidates: [candidate],
+    } as const satisfies UndoObservation;
+    const runtimeObservation = Object.freeze({
+      context: createOperationContext({
+        command: 'skillsmith undo',
+        workflow: 'undo',
+        clock: { wallNowIso: () => startedAt, monotonicMilliseconds: () => 0 },
+        id: { nextId: () => 'undo-cleanup-test' },
+      }),
+      emitter: createObservationEmitter({ observer: noopObserver }),
+    });
+
+    const prepared = await prepareUndoFromObservation(observed, {
+      ports: fleet.env,
+      projectContext,
+      configuration: fleet.configuration,
+      observation: runtimeObservation,
+    });
+    expect(prepared).toMatchObject({ ok: true });
+    if (!prepared.ok) return;
+    expect(prepared.value.plan.operations).toEqual([]);
+    expect(prepared.value.plan.diagnostics).toMatchObject([
+      { reason: { code: 'undo-cleanup-pending' } },
+    ]);
+    expect(await prepared.value.execute()).toEqual({
+      ok: true,
+      value: { results: [], warnings: [] },
+    });
+
+    const terminal = await readLedgerState(fleet.env, ledgerPath);
+    if (!terminal.ok || terminal.value.state !== 'present') {
+      throw new Error('terminal cleanup ledger read failed');
+    }
+    expect(terminal.value.model.skills.review).toBeUndefined();
+    expect(
+      terminal.value.model.history.filter(
+        ({ transactionId }) => transactionId === child.transactionId,
+      ),
+    ).toHaveLength(1);
   });
 });

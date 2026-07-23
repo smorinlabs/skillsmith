@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { type UndoReportV1Dto, toUndoV1Dto, undoV1Codec } from '../../src/contracts/v1/undo.ts';
+import { createPlanningDiagnosticId } from '../../src/planning/create.ts';
 import type { UndoReport } from '../../src/undo/types.ts';
 
 const emptySummary = (): UndoReportV1Dto['summary'] => ({
@@ -163,8 +164,15 @@ const actionableReport = (mode: 'dry-run' | 'execute'): UndoReportV1Dto => {
       : [],
     effects: [
       {
+        role: 'ledger',
+        action: planned.kind,
+        operationId: planned.operationId,
+        groupId: planned.groupId,
+        outcome: execute ? 'succeeded' : 'planned',
+      },
+      {
         role: 'live',
-        action: 'restore',
+        action: planned.kind,
         operationId: planned.operationId,
         groupId: planned.groupId,
         outcome: execute ? 'succeeded' : 'planned',
@@ -175,7 +183,7 @@ const actionableReport = (mode: 'dry-run' | 'execute'): UndoReportV1Dto => {
       selected: 1,
       actionable: 1,
       [execute ? 'succeeded' : 'planned']: 1,
-      effects: 1,
+      effects: 2,
     },
   };
 };
@@ -198,6 +206,39 @@ describe('undo@1 report codec', () => {
   test('accepts exact planned and executed reversal products', () => {
     expect(undoV1Codec.validate(actionableReport('dry-run'))).toMatchObject({ ok: true });
     expect(undoV1Codec.validate(actionableReport('execute'))).toMatchObject({ ok: true });
+  });
+
+  test('rejects every non-canonical effect omission, duplication, order, and field drift', () => {
+    const report = actionableReport('dry-run');
+    const ledger = report.effects[0];
+    const live = report.effects[1];
+    if (ledger === undefined || live === undefined) {
+      throw new Error('actionable undo fixture omitted its canonical ledger/live effects');
+    }
+    expect(report.effects.map(({ role, action }) => [role, action])).toEqual([
+      ['ledger', 'link-dev'],
+      ['live', 'link-dev'],
+    ]);
+    const reject = (effects: UndoReportV1Dto['effects']): void => {
+      expect(undoV1Codec.validate({ ...report, effects })).toMatchObject({ ok: false });
+    };
+
+    reject([ledger]);
+    reject([...report.effects, ledger]);
+    reject([live, ledger]);
+    reject([{ ...ledger, role: 'live' }, live]);
+    reject([{ ...ledger, action: 'remove' }, live]);
+    reject([{ ...ledger, operationId: 'operation:v1:wrong' }, live]);
+    reject([{ ...ledger, groupId: 'group:v1:wrong' }, live]);
+    reject([{ ...ledger, outcome: 'succeeded' }, live]);
+
+    const executed = actionableReport('execute');
+    expect(
+      undoV1Codec.validate({
+        ...executed,
+        effects: executed.effects.map((effect) => ({ ...effect, outcome: 'failed' as const })),
+      }),
+    ).toMatchObject({ ok: false });
   });
 
   test('enforces canonical nested-pair order, identity, coverage, and reduction facts', () => {
@@ -254,12 +295,12 @@ describe('undo@1 report codec', () => {
       operations: [firstOperation, codexOperation],
       effects: [
         ...report.effects,
-        {
-          ...firstEffect,
+        ...report.effects.map((effect) => ({
+          ...effect,
           operationId: codexOperation.operationId,
-        },
+        })),
       ],
-      summary: { ...report.summary, effects: 2 },
+      summary: { ...report.summary, effects: 4 },
     };
     const pairedGroup = paired.groups[0];
     if (pairedGroup === undefined) throw new Error('paired fixture omitted its group');
@@ -304,10 +345,111 @@ describe('undo@1 report codec', () => {
       mode: 'execute',
       state: 'refused',
       approval: { required: true, outcome: 'refused' },
+      effects: actionableReport('dry-run').effects.map((effect) => ({
+        ...effect,
+        outcome: 'not-run',
+      })),
     };
     expect(refused.operations).not.toHaveLength(0);
     expect(refused.results).toEqual([]);
     expect(undoV1Codec.validate(refused)).toMatchObject({ ok: true });
+  });
+
+  test('uses one exact cleanup diagnostic as zero-operation execute approval authority', () => {
+    const actionable = actionableReport('dry-run');
+    const sourceGroup = actionable.groups[0];
+    const sourcePair = sourceGroup?.pairs[0];
+    if (sourceGroup === undefined || sourcePair === undefined) {
+      throw new Error('actionable fixture omitted its group pair');
+    }
+    const cleanupGroupId = `group:v1:${'1'.repeat(64)}`;
+    const cleanupPairId = `pair:v1:${'2'.repeat(64)}`;
+    const pair = {
+      ...sourcePair,
+      pairId: cleanupPairId,
+      eligibility: 'already-reversed' as const,
+      operations: [],
+      outcome: 'already-reversed' as const,
+    };
+    const group = {
+      ...sourceGroup,
+      groupId: cleanupGroupId,
+      pairs: [pair],
+      operations: [],
+      outcome: 'already-reversed' as const,
+    };
+    const affected = {
+      skill: group.skill,
+      source: null,
+      tool: pair.tool,
+      scope: group.scope,
+      path: { kind: 'machine-bound' as const, path: pair.path },
+    };
+    const correlation = { groupId: group.groupId, pairId: pair.pairId, operationId: null };
+    const diagnostic = {
+      diagnosticId: createPlanningDiagnosticId({
+        domain: 'skillsmith.planning-diagnostic-identity',
+        schemaVersion: 1,
+        kind: 'warning',
+        severity: 'warning',
+        refusalClass: null,
+        affected,
+        correlation,
+        reasonCode: 'undo-cleanup-pending',
+        selectionSource: 'explicit-targets',
+      }),
+      kind: 'warning' as const,
+      severity: 'warning' as const,
+      refusalClass: null,
+      affected,
+      correlation,
+      reason: {
+        code: 'undo-cleanup-pending',
+        message: "Committed undo cleanup remains pending for 'review' on claude-code.",
+      },
+      selectionSource: 'explicit-targets' as const,
+    };
+    const cleanup: UndoReportV1Dto = {
+      ...emptyReport(),
+      selection: {
+        ...actionable.selection,
+        groupIds: [group.groupId],
+      },
+      groups: [group],
+      diagnostics: [diagnostic],
+      summary: { ...emptySummary(), selected: 1, alreadyReversed: 1 },
+    };
+
+    expect(undoV1Codec.validate(cleanup)).toMatchObject({ ok: true });
+    expect(
+      undoV1Codec.validate({
+        ...cleanup,
+        mode: 'execute',
+        approval: { required: true, outcome: 'pending' },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      undoV1Codec.validate({
+        ...cleanup,
+        mode: 'execute',
+        state: 'completed',
+        approval: { required: true, outcome: 'approved' },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      undoV1Codec.validate({
+        ...cleanup,
+        mode: 'execute',
+        state: 'completed',
+        approval: { required: false, outcome: 'not-required' },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      undoV1Codec.validate({
+        ...cleanup,
+        diagnostics: [{ ...diagnostic, correlation: { ...correlation, pairId: 'pair:v1:wrong' } }],
+      }),
+    ).toMatchObject({ ok: false });
   });
 
   test('mechanically maps the closed domain report without leaking private group fields', () => {
@@ -396,6 +538,17 @@ describe('undo@1 report codec', () => {
           },
         },
       ],
+      effects: [
+        {
+          role: 'ledger',
+          action: migration.kind,
+          operationId: migration.operationId,
+          groupId: migration.groupId,
+          outcome: 'planned',
+        },
+        ...report.effects,
+      ],
+      summary: { ...report.summary, effects: 3 },
     };
 
     expect(prefixed.selection.groupIds).toEqual(['group:v1:undo-review']);

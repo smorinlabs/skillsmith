@@ -34,6 +34,7 @@ type ExecuteOperationPlan = (
     lockPort: Readonly<{
       withFileLock<T>(path: string, operation: () => Promise<T>, options?: LockRequest): Promise<T>;
     }>;
+    beforeSchedule?: (bindings: readonly UnknownRecord[]) => Promise<void>;
     signal?: AbortSignal;
   }>,
 ) => Promise<readonly UnknownRecord[]>;
@@ -288,11 +289,107 @@ describe('G3B-02 execution coordinator', () => {
       preconditions: [precondition],
       locks: [{ rank: 'ledger', key: 'ledger', path: '/fixture/placements.json' }],
       lockPort,
+      beforeSchedule: async (bindings) => {
+        expect(bindings).toHaveLength(1);
+        events.push('before-schedule');
+      },
     });
 
-    expect(events).toEqual(['acquire', 'observe', 'observe-actual-before', 'execute', 'release']);
+    expect(events).toEqual([
+      'acquire',
+      'observe',
+      'observe-actual-before',
+      'before-schedule',
+      'execute',
+      'release',
+    ]);
     expect(results.map((result) => result.operationId)).toEqual([operation.operationId]);
     expect(results.map((result) => result.outcome)).toEqual(['succeeded']);
+  });
+
+  test('runs a zero-operation before-schedule hook exactly once while all locks are held', async () => {
+    const executeOperationPlan = requireFactory<ExecuteOperationPlan>('executeOperationPlan');
+    const events: string[] = [];
+    const seed = planFor(operationFor([]));
+    const results = await executeOperationPlan({
+      plan: { ...seed, operations: [] } as unknown as UnknownRecord,
+      bindings: [],
+      preconditions: [],
+      locks: [{ rank: 'ledger', key: 'ledger', path: '/fixture/placements.json' }],
+      lockPort: {
+        withFileLock: async <T>(_path: string, callback: () => Promise<T>): Promise<T> => {
+          events.push('acquire');
+          try {
+            return await callback();
+          } finally {
+            events.push('release');
+          }
+        },
+      },
+      beforeSchedule: async (bindings) => {
+        expect(bindings).toEqual([]);
+        events.push('before-schedule');
+      },
+    });
+
+    expect(results).toEqual([]);
+    expect(events).toEqual(['acquire', 'before-schedule', 'release']);
+  });
+
+  test('a before-schedule failure releases locks and starts no scheduler work', async () => {
+    const createExecutionPrecondition = requireFactory<CreateExecutionPrecondition>(
+      'createExecutionPrecondition',
+    );
+    const executeOperationPlan = requireFactory<ExecuteOperationPlan>('executeOperationPlan');
+    const seed = operationFor([]);
+    const precondition = createExecutionPrecondition({
+      operationIds: [seed.operationId],
+      resource: RESOURCE,
+      expected: snapshot(),
+      observe: async () => snapshot(),
+    });
+    const operation = operationFor([String(precondition.preconditionId)]);
+    const events: string[] = [];
+
+    await expect(
+      executeOperationPlan({
+        plan: planFor(operation),
+        bindings: [
+          {
+            operationId: operation.operationId,
+            groupId: operation.groupId,
+            pairId: operation.pairId,
+            unstartedForce: null,
+            observeActualBefore: async () => {
+              events.push('bind');
+              return operation.before;
+            },
+            execute: async () => {
+              events.push('execute');
+              throw new Error('scheduler must not start');
+            },
+          },
+        ],
+        preconditions: [precondition],
+        locks: [{ rank: 'ledger', key: 'ledger', path: '/fixture/placements.json' }],
+        lockPort: {
+          withFileLock: async <T>(_path: string, callback: () => Promise<T>): Promise<T> => {
+            events.push('acquire');
+            try {
+              return await callback();
+            } finally {
+              events.push('release');
+            }
+          },
+        },
+        beforeSchedule: async () => {
+          events.push('before-schedule');
+          throw Object.freeze({ code: 'cleanup-failed', message: 'cleanup failed' });
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'cleanup-failed' });
+
+    expect(events).toEqual(['acquire', 'bind', 'before-schedule', 'release']);
   });
 
   test('changed under-lock state refuses with zero binding calls and no replan', async () => {

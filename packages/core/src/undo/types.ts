@@ -24,6 +24,7 @@ export type UndoScope = 'user' | 'project';
 export type UndoOperationFamily = 'dev' | 'promote' | 'install' | 'uninstall' | 'update';
 export type UndoAction = 'abort-pending' | 'reverse-committed';
 export type UndoExecutionMode = 'convert-to-rollback' | 'resume-rollback';
+export type UndoRecoveryState = 'none' | 'cleanup-pending';
 export type UndoPhase = 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';
 export type UndoPlanOutcome =
   | 'planned'
@@ -85,6 +86,8 @@ export interface UndoCandidate {
   readonly disposition: 'forward' | 'rollback';
   readonly phase: UndoPhase;
   readonly executionMode: UndoExecutionMode;
+  /** Private recovery preflight; public undo@1 projects this through one exact diagnostic. */
+  readonly recoveryState: UndoRecoveryState;
   readonly before: 'dev' | 'pinned' | 'absent' | 'multi-resource';
   readonly eligibility: StatusRetentionEligibility;
   readonly retention: readonly StatusRetentionRequirement[];
@@ -155,7 +158,17 @@ export interface PreparedUndoPlan {
   readonly observation: UndoObservation;
   readonly plan: OperationPlan<'undo'>;
   readonly groups: readonly UndoPlanGroup[];
-  readonly execute: () => Promise<Result<readonly OperationExecutionResult[], UndoError>>;
+  readonly execute: () => Promise<Result<UndoExecutionProduct, UndoError>>;
+}
+
+export interface UndoCleanupWarning {
+  readonly code: 'undo-cleanup-retained';
+  readonly message: string;
+}
+
+export interface UndoExecutionProduct {
+  readonly results: readonly OperationExecutionResult[];
+  readonly warnings: readonly UndoCleanupWarning[];
 }
 
 export interface UndoSelectionReport {

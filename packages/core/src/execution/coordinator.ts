@@ -196,6 +196,9 @@ const preflightBindings = <ToolId extends string>(
   request: ExecutionCoordinatorRequest<ToolId> | ObservedExecutionCoordinatorRequest<ToolId>,
 ): readonly PreparedBindingAdapter<ToolId>[] => {
   validateExecutionPlanShape(request.plan);
+  if (request.beforeSchedule !== undefined && typeof request.beforeSchedule !== 'function') {
+    fail('before-schedule hook must be a function');
+  }
   if (
     !Array.isArray(request.bindings) ||
     request.bindings.length !== request.plan.operations.length
@@ -358,6 +361,7 @@ const executeOperationPlanWithObservation = async <ToolId extends string>(
     async () => {
       await validateGenericPreconditions(request.plan, request.preconditions, options);
       const bindings = await bindUnderLock(prepared, request.signal, context);
+      await request.beforeSchedule?.(bindings);
       return scheduleValidatedOperationPlan(request.plan, bindings, options, context, observation);
     },
     options,

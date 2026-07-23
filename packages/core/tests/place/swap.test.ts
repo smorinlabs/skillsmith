@@ -22,7 +22,7 @@ import {
   commitLogicalTransaction,
 } from '../../src/place/logical-transactions.ts';
 import { ledgerPathOf, storeRootOf } from '../../src/place/paths.ts';
-import { recoverPlacement } from '../../src/place/recovery.ts';
+import { prepareCommittedPlacementCleanup, recoverPlacement } from '../../src/place/recovery.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from '../../src/place/store.ts';
 import {
   resumeSwap,
@@ -1029,7 +1029,7 @@ describe('runSwap — promote / demote happy paths', () => {
       conflict: null,
     };
     let currentLedger = s.ledger;
-    for (const phase of ['prepared', 'staged', 'backed-up', 'live'] as const) {
+    for (const phase of ['prepared', 'staged', 'backed-up', 'live', 'committed'] as const) {
       const forwardOperation: ExecutableOperation = {
         ...promoted,
         operationId: `${promoted.operationId}:${phase}`,
@@ -1106,24 +1106,124 @@ describe('runSwap — promote / demote happy paths', () => {
         phase: 'prepared',
       });
       expect(ledgerV2Codec.encode(first).ok, phase).toBeTrue();
-      const durableChild = interrupted.state.ledger.transactions[transactionId];
+      const durableChild =
+        interrupted.state.ledger.transactions[transactionId] ??
+        interrupted.state.ledger.history.find((journal) => journal.transactionId === transactionId);
       expect(durableChild?.phase, phase).toBe(phase);
       expect(getSwapPair(interrupted.state.ledger, 'alpha', 'claude-code')?.journal?.op).toBe(
         'dev',
       );
+      if (phase === 'committed') {
+        expect(interrupted.state.ledger.transactions[transactionId]).toBeUndefined();
+        expect(
+          getSwapPair(interrupted.state.ledger, 'alpha', 'claude-code')?.journal,
+        ).toMatchObject({ txId: transactionId, phase: 'committed' });
+      }
 
-      const recovered = await recoverPlacement(
-        {
-          env: f.env,
-          ledgerPath: s.ledgerPath,
-          ledger: interrupted.state.ledger,
-          journalNow: () => JOURNAL_NOW,
-          newTransactionId: () => 'unused-recovery-id',
-          logicalOperation: reversal,
-        },
-        'rollback',
-        { skill: 'alpha', tool: 'claude-code' },
-      );
+      let recoveryLedger = interrupted.state.ledger;
+      if (phase === 'committed') {
+        const hostilePair = getLedgerPairAt(recoveryLedger, null, 'alpha', 'claude-code');
+        if (hostilePair?.journal == null) throw new Error('committed cleanup carrier is missing');
+        const hostileLedger: LedgerModel = {
+          ...recoveryLedger,
+          skills: {
+            ...recoveryLedger.skills,
+            alpha: {
+              tools: {
+                ...recoveryLedger.skills.alpha?.tools,
+                'claude-code': {
+                  ...hostilePair,
+                  journal: { ...hostilePair.journal, op: 'install' },
+                },
+              },
+            },
+          },
+        };
+        const refusedHostile = await resumeSwap(
+          makeCtx(f.env, s.ledgerPath, hostileLedger, {
+            logicalOperation: reversal,
+            journalTimestamp: JOURNAL_NOW,
+          }),
+          'alpha',
+          'claude-code',
+        );
+        expect(refusedHostile.ok).toBeFalse();
+        expect(await f.env.pathKind(s.placementPath)).toBe('symlink');
+        expect(await f.env.readLink(s.placementPath)).toBe(s.target);
+
+        const preparedCleanup = await prepareCommittedPlacementCleanup(
+          {
+            env: f.env,
+            ledgerPath: s.ledgerPath,
+            ledger: recoveryLedger,
+            journalNow: () => JOURNAL_NOW,
+            newTransactionId: () => 'unused-recovery-id',
+            logicalOperation: reversal,
+          },
+          { skill: 'alpha', tool: 'claude-code' },
+        );
+        if (!preparedCleanup.ok || preparedCleanup.value === null) {
+          throw new Error('committed cleanup preparation failed');
+        }
+        expect(
+          getSwapPair(preparedCleanup.state.ledger, 'alpha', 'claude-code')?.journal,
+        ).toMatchObject({ txId: transactionId, phase: 'committed' });
+        expect(
+          getSwapPair(preparedCleanup.value.ledger, 'alpha', 'claude-code')?.journal,
+        ).toBeNull();
+        expect(preparedCleanup.value.outcome.backupKept).toBeNull();
+        expect(
+          await f.env.pathKind(join(s.skillsRoot, `.skillsmith-backup-alpha-${transactionId}`)),
+        ).toBe('absent');
+
+        const terminalWriteFaultEnv: RuntimePorts = {
+          ...f.env,
+          writeTextFile: async () => {
+            throw new Error('simulated cleanup terminal write fault');
+          },
+        };
+        const failedTerminal = await recoverPlacement(
+          {
+            env: terminalWriteFaultEnv,
+            ledgerPath: s.ledgerPath,
+            ledger: recoveryLedger,
+            journalNow: () => JOURNAL_NOW,
+            newTransactionId: () => 'unused-recovery-id',
+            logicalOperation: reversal,
+          },
+          'rollback',
+          { skill: 'alpha', tool: 'claude-code' },
+        );
+        expect(failedTerminal.ok).toBeFalse();
+        expect(
+          getSwapPair(failedTerminal.state.ledger, 'alpha', 'claude-code')?.journal,
+        ).toMatchObject({ txId: transactionId, phase: 'committed' });
+        recoveryLedger = failedTerminal.state.ledger;
+      }
+
+      const recovered =
+        phase === 'committed'
+          ? await resumeSwap(
+              makeCtx(f.env, s.ledgerPath, recoveryLedger, {
+                txId: 'unused-recovery-id',
+                logicalOperation: reversal,
+                journalTimestamp: JOURNAL_NOW,
+              }),
+              'alpha',
+              'claude-code',
+            )
+          : await recoverPlacement(
+              {
+                env: f.env,
+                ledgerPath: s.ledgerPath,
+                ledger: recoveryLedger,
+                journalNow: () => JOURNAL_NOW,
+                newTransactionId: () => 'unused-recovery-id',
+                logicalOperation: reversal,
+              },
+              'rollback',
+              { skill: 'alpha', tool: 'claude-code' },
+            );
       if (!recovered.ok) throw new Error(`${phase}: ${msg(recovered.error)}`);
       expect(await f.env.pathKind(s.placementPath), phase).toBe('symlink');
       expect(await f.env.readLink(s.placementPath), phase).toBe(s.target);
@@ -1137,6 +1237,14 @@ describe('runSwap — promote / demote happy paths', () => {
         intent: { operationId: reversal.operationId },
         actual: { after: durableParent.actual.before },
       });
+      expect(
+        recovered.state.ledger.history.filter((journal) => journal.transactionId === transactionId),
+        phase,
+      ).toHaveLength(1);
+      expect(
+        getSwapPair(recovered.state.ledger, 'alpha', 'claude-code')?.journal,
+        phase,
+      ).toBeNull();
       currentLedger = recovered.state.ledger;
     }
   }, 20_000);

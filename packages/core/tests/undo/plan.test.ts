@@ -4,6 +4,7 @@ import {
   createUndoPlanGroups,
   createUndoReport,
   reduceUndoPlanGroups,
+  withUndoCleanupDiagnostics,
 } from '../../src/undo/plan.ts';
 import type {
   UndoCandidate,
@@ -21,6 +22,7 @@ const candidate = (
   tool: UndoTool = 'codex',
   outcome: UndoCandidate['outcome'] = 'selected',
   sourceGroupId = `group:${name}`,
+  recoveryState: UndoCandidate['recoveryState'] = 'none',
 ): UndoCandidate =>
   ({
     name,
@@ -45,6 +47,7 @@ const candidate = (
     disposition: 'forward',
     phase: 'committed',
     executionMode: 'resume-rollback',
+    recoveryState,
     before: 'dev',
     eligibility: 'eligible',
     retention: [{ resourceId: `store:${name}:${tool}`, role: 'store', state: 'satisfied' }],
@@ -194,6 +197,73 @@ describe('undo planning projection', () => {
       [],
     );
     expect(report.summary).toMatchObject({ selected: 1, actionable: 1, alreadyReversed: 0 });
+  });
+
+  test('projects one exact cleanup diagnostic only for a cleanup-pending already pair', () => {
+    const cleanupGroupId = `group:v1:${'1'.repeat(64)}`;
+    const cleanupPairId = `pair:v1:${'2'.repeat(64)}`;
+    const cleanup = candidate(
+      'review',
+      'codex',
+      'already-reversed',
+      cleanupGroupId,
+      'cleanup-pending',
+    );
+    if (cleanup.authority.format !== 'logical') {
+      throw new Error('cleanup fixture requires logical authority');
+    }
+    const correlatedCleanup = {
+      ...cleanup,
+      authority: {
+        ...cleanup.authority,
+        journal: {
+          ...cleanup.authority.journal,
+          intent: { ...cleanup.authority.journal.intent, pairId: cleanupPairId },
+        },
+        source: {
+          ...cleanup.authority.source,
+          intent: { ...cleanup.authority.source.intent, pairId: cleanupPairId },
+        },
+      },
+    } as UndoCandidate;
+    const cleanupObservation = observation([correlatedCleanup]);
+    const cleanupPlan = plan([]);
+    const groups = createUndoPlanGroups(cleanupObservation, cleanupPlan);
+    const projected = withUndoCleanupDiagnostics(cleanupObservation, cleanupPlan, groups);
+
+    expect(projected.operations).toEqual([]);
+    expect(projected.selection.groupIds).toEqual([cleanupGroupId]);
+    expect(projected.diagnostics).toHaveLength(1);
+    expect(projected.diagnostics[0]).toMatchObject({
+      kind: 'warning',
+      severity: 'warning',
+      refusalClass: null,
+      affected: {
+        skill: 'review',
+        source: null,
+        tool: 'codex',
+        scope: 'user',
+        path: { kind: 'machine-bound', path: '/fixture/.codex/skills/review' },
+      },
+      correlation: {
+        groupId: cleanupGroupId,
+        pairId: cleanupPairId,
+        operationId: null,
+      },
+      reason: {
+        code: 'undo-cleanup-pending',
+        message: "Committed undo cleanup remains pending for 'review' on codex.",
+      },
+      selectionSource: 'explicit-targets',
+    });
+    expect(Object.isFrozen(projected)).toBeTrue();
+
+    const terminal = candidate('review', 'codex', 'already-reversed');
+    const terminalObservation = observation([terminal]);
+    const terminalGroups = createUndoPlanGroups(terminalObservation, cleanupPlan);
+    expect(
+      withUndoCleanupDiagnostics(terminalObservation, cleanupPlan, terminalGroups).diagnostics,
+    ).toEqual([]);
   });
 
   test.each([

@@ -8,6 +8,7 @@ import type {
   LegacyPairJournalV1Dto,
 } from '../artifacts/ledger-types.ts';
 import {
+  legacyJournalMatchesLogicalShadow,
   legacyJournalOperationMatchesLogicalShadow,
   validateJournalV1DtoShape,
 } from '../artifacts/registry.ts';
@@ -873,6 +874,112 @@ export const commitLogicalTransaction = (
   const transactions = { ...terminal.value.transactions };
   Reflect.deleteProperty(transactions, journal.transactionId);
   return ok({ ...terminal.value, transactions, history: [...terminal.value.history, journal] });
+};
+
+/**
+ * Commit a fresh reversal while retaining its exact committed compatibility shadow as durable
+ * cleanup authority. The caller supplies terminal pair records because promote/install stage those
+ * records before the logical journal reaches committed. No ordinary forward or converted rollback
+ * transaction may use this two-write terminal protocol.
+ */
+export const commitLogicalTransactionRetainingShadow = (
+  model: LedgerModel,
+  journal: LogicalJournalV1Dto,
+  terminalPair: LedgerPairV1Dto,
+): Result<LedgerModel, LogicalTransactionError> => {
+  if (!modelIdentityValid(model)) {
+    return err(failure('invalid-model', 'logical transaction model is invalid'));
+  }
+  if (!validJournal(journal) || journal.phase !== 'committed') {
+    return err(failure('invalid-journal', 'retained-shadow commit requires a committed journal'));
+  }
+  const location = pairLocation(journal);
+  if (location === null || journal.intent.pairId === null) {
+    return err(failure('identity-conflict', 'retained-shadow pair membership is invalid'));
+  }
+  const parent = rollbackParent(model, journal);
+  const priorHistory = historyById(model, journal.transactionId);
+  if (priorHistory !== null) {
+    const pair = getPair(model, location);
+    return same(priorHistory, journal) &&
+      pair !== null &&
+      pair.journal != null &&
+      legacyJournalMatchesLogicalShadow(journal, location, pair, parent)
+      ? ok(model)
+      : err(failure('identity-conflict', 'committed cleanup carrier conflicts with history'));
+  }
+  const pending = model.transactions[journal.transactionId];
+  if (
+    pending === undefined ||
+    !sameTransactionIdentity(pending, journal) ||
+    pending.phase !== 'live'
+  ) {
+    return err(failure('phase-conflict', 'retained-shadow commit requires matching live state'));
+  }
+  const mode = logicalRollbackExecutionMode(model, pending);
+  if (!mode.ok || mode.value !== 'fresh-reversal') {
+    return err(failure('phase-conflict', 'only a fresh reversal may retain cleanup authority'));
+  }
+  const currentPair = getPair(model, location);
+  if (
+    currentPair === null ||
+    currentPair.journal == null ||
+    !legacyJournalMatchesLogicalShadow(pending, location, currentPair, parent)
+  ) {
+    return err(failure('shadow-conflict', 'pending cleanup shadow is not authoritative'));
+  }
+  if (
+    terminalPair.placementPath !== currentPair.placementPath ||
+    terminalPair.journal == null ||
+    !legacyJournalMatchesLogicalShadow(journal, location, terminalPair, parent)
+  ) {
+    return err(failure('shadow-conflict', 'committed cleanup shadow is not authoritative'));
+  }
+  const withCarrier = replacePair(model, location, terminalPair);
+  const transactions = { ...withCarrier.transactions };
+  Reflect.deleteProperty(transactions, journal.transactionId);
+  return ok({ ...withCarrier, transactions, history: [...withCarrier.history, journal] });
+};
+
+/**
+ * Clear one exact committed fresh-reversal cleanup carrier after its backup decision and directory
+ * fsync are durable. Repeating the finalizer is a no-op; it never changes logical history.
+ */
+export const finalizeCommittedLogicalTransactionShadow = (
+  model: LedgerModel,
+  transactionId: string,
+): Result<LedgerModel, LogicalTransactionError> => {
+  if (!modelIdentityValid(model)) {
+    return err(failure('invalid-model', 'logical transaction model is invalid'));
+  }
+  const journal = historyById(model, transactionId);
+  if (journal === null || journal.phase !== 'committed') {
+    return err(failure('identity-conflict', 'committed cleanup history is missing'));
+  }
+  const mode = logicalRollbackExecutionMode(model, journal);
+  const location = pairLocation(journal);
+  const parent = rollbackParent(model, journal);
+  const operation = inverseLegacyOperation(journal, parent);
+  if (!mode.ok || mode.value !== 'fresh-reversal' || location === null || operation === null) {
+    return err(failure('identity-conflict', 'committed cleanup linkage is inconsistent'));
+  }
+  const pair = getPair(model, location);
+  if (pair === null) {
+    return operation === 'uninstall'
+      ? ok(model)
+      : err(failure('shadow-conflict', 'committed cleanup pair is missing'));
+  }
+  if (pair.journal == null) {
+    return operation === 'uninstall'
+      ? err(failure('shadow-conflict', 'uninstall cleanup pair was not deleted'))
+      : ok(model);
+  }
+  if (!legacyJournalMatchesLogicalShadow(journal, location, pair, parent)) {
+    return err(failure('shadow-conflict', 'committed cleanup shadow does not match history'));
+  }
+  return ok(
+    replacePair(model, location, operation === 'uninstall' ? null : { ...pair, journal: null }),
+  );
 };
 
 const retainedResourcesValid = (

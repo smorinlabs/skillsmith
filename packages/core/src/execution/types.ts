@@ -77,4 +77,8 @@ export interface ExecutionCoordinatorRequest<ToolId extends string = SupportedTo
   readonly preconditions: readonly ExecutionPrecondition[];
   readonly locks: readonly ExecutionLockDescriptor[];
   readonly lockPort: LockPort;
+  /** Runs exactly once under every lock after precondition validation and binding. */
+  readonly beforeSchedule?: (
+    bindings: readonly ValidatedExecutionBinding<ToolId>[],
+  ) => Promise<void>;
 }

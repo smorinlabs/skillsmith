@@ -8,33 +8,48 @@ import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import { validateJournalV1DtoShape } from '../../src/artifacts/registry.ts';
 import { resolveProjectContext } from '../../src/context/project.ts';
+import { flipFailedError } from '../../src/errors.ts';
 import {
   type PlacementOperationExecutionBindingInput,
   createExplicitPlacementProjectLocationV1,
   createPlacementExecutionInput,
   createPlacementOperationExecutionBindingV1,
+  createPlacementRevisionExecutionPreconditionsV1,
   createPlacementSnapshotAuthority,
   createPlacementSwapRequest,
+  executePlacementOperationPlan,
+  executePlacementPlan,
   executeRecordOnlyPlacementPlan,
   placementSnapshotResourceId,
   rebindPlacementSnapshotAuthorityForLedgerBootstrapV1,
   withPlacementLedgerBootstrapAuthorityV1,
 } from '../../src/place/execute.ts';
-import { emptyLedgerModel, readLedgerState, writeLedger } from '../../src/place/ledger.ts';
+import {
+  emptyLedgerModel,
+  getLedgerPairAt,
+  readLedgerState,
+  withLedgerPairAt,
+  withoutLedgerPairAt,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import {
   beginCommittedLogicalTransactionReversal,
   beginTransactionRecoveryAttempt,
   logicalRollbackExecutionMode,
   logicalRollbackTerminalActualAfter,
 } from '../../src/place/logical-transactions.ts';
+import type { PairPlan } from '../../src/place/plan.ts';
+import { contentHashOf } from '../../src/place/store.ts';
 import type { PairRecord, PlacementPorts } from '../../src/place/types.ts';
 import {
   createOperationGroupId,
   createOperationId,
   createOperationPairId,
+  createOperationPlan,
 } from '../../src/planning/create.ts';
 import type { ExecutableOperation, OperationExecutionResult } from '../../src/planning/types.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import { createExpectedRevisionPreconditionIdV1 } from '../../src/state/types.ts';
 
 const NOW = '2026-07-16T12:34:56-07:00';
 
@@ -433,14 +448,17 @@ test('live-only placement snapshots never read synthetic manifest or lock paths'
   }
 });
 
-const installOperation = (): ExecutableOperation => {
+const installOperation = (
+  placementPath = '/fixture/skills/alpha',
+  contentHash: `sha256:${string}` = `sha256:${'a'.repeat(64)}`,
+): ExecutableOperation => {
   const resource = {
     kind: 'live' as const,
     skill: 'alpha',
     tool: 'codex' as const,
     scope: 'user' as const,
     projectRoot: null,
-    location: { kind: 'machine-bound' as const, path: '/fixture/skills/alpha' },
+    location: { kind: 'machine-bound' as const, path: placementPath },
   };
   const source = {
     kind: 'portable' as const,
@@ -448,7 +466,7 @@ const installOperation = (): ExecutableOperation => {
     requestedRef: null,
     resolvedSha: 'c'.repeat(40),
     sourcePath: 'skills/alpha',
-    contentHash: `sha256:${'a'.repeat(64)}` as const,
+    contentHash,
   };
   const groupId = createOperationGroupId({
     domain: 'skillsmith.operation-group-identity',
@@ -514,6 +532,351 @@ const installOperation = (): ExecutableOperation => {
 };
 
 describe('placement execution boundary', () => {
+  test('persists a zero-operation before-schedule ledger result under placement authority', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-place-before-schedule-empty-'));
+    try {
+      const ports = await defaultRuntimePorts();
+      const ledgerPath = join(root, 'placements.json');
+      const initial = emptyLedgerModel('2026-07-16T18:00:00.000Z');
+      const seeded = await writeLedger(ports, ledgerPath, initial);
+      if (!seeded.ok) throw new Error(JSON.stringify(seeded.error));
+      const project = await resolveProjectContext(ports, { invocationCwd: root });
+      if (!project.ok) throw new Error(JSON.stringify(project.error));
+      const authority = await createPlacementSnapshotAuthority(
+        toolRegistry,
+        [],
+        ports,
+        project.value,
+        ledgerPath,
+        join(root, 'store'),
+        [],
+        [],
+      );
+      if (!authority.ok) throw new Error(JSON.stringify(authority.error));
+      const plan = createOperationPlan({
+        domain: 'skillsmith.operation-plan',
+        schemaVersion: 1,
+        command: 'undo',
+        selection: {
+          source: 'explicit-targets',
+          outcome: 'filter-noop',
+          tools: [],
+          scopes: [],
+        },
+        batchPolicy: 'fail-fast',
+        operations: [],
+        checks: [],
+        diagnostics: [],
+      });
+      const terminalAt = '2026-07-16T20:00:00.000Z';
+      const before = await readLedgerState(ports, ledgerPath);
+      if (!before.ok || before.value.state !== 'present') {
+        throw new Error('seeded placement ledger is missing');
+      }
+      const beforeModel = before.value.model;
+      let hookCalls = 0;
+
+      const results = await executePlacementOperationPlan({
+        env: ports,
+        ledgerPath,
+        plan,
+        preconditions: [],
+        authority: authority.value,
+        reportOp: 'rollback',
+        modelNow: () => '2026-07-16T19:00:00.000Z',
+        journalNow: () => '2026-07-16T19:00:00.000Z',
+        bindingForOperation: () => {
+          throw new Error('an empty plan must not request a binding');
+        },
+        executePair: async () => {
+          throw new Error('an empty plan must not execute a pair');
+        },
+        beforeSchedule: async (captured) => {
+          hookCalls += 1;
+          expect(captured).toEqual(beforeModel);
+          return { ...captured, updatedAt: terminalAt };
+        },
+        onStarted: () => {
+          throw new Error('an empty plan must not start an operation');
+        },
+      });
+      const durable = await readLedgerState(ports, ledgerPath);
+
+      expect(results).toEqual([]);
+      expect(hookCalls).toBe(1);
+      expect(durable).toMatchObject({
+        ok: true,
+        value: { state: 'present', model: { updatedAt: terminalAt } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('atomically carries nonzero cleanup finalization into the first prepared pair write', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-place-before-schedule-p1-'));
+    try {
+      const basePorts = await defaultRuntimePorts();
+      let failAfterFirstP1 = false;
+      const ports = {
+        ...basePorts,
+        afterLedgerBarrier: async (barrier: Readonly<{ readonly kind: string }>) => {
+          if (!failAfterFirstP1 || barrier.kind !== 'writer-live-parent-fsync') return;
+          failAfterFirstP1 = false;
+          const error = new Error('injected stop after first durable P1');
+          Object.assign(error, { code: 'EIO' });
+          throw error;
+        },
+      } as PlacementPorts;
+      const ledgerPath = join(root, 'placements.json');
+      const skillsRoot = join(root, 'skills');
+      const placementPath = join(skillsRoot, 'alpha');
+      const storeRoot = join(root, 'store');
+      const storePath = join(storeRoot, 'alpha');
+      await mkdir(storePath, { recursive: true });
+      await writeFile(join(storePath, 'SKILL.md'), '# alpha\n');
+      const hashed = await contentHashOf(ports, storePath);
+      if (!hashed.ok) throw new Error(JSON.stringify(hashed.error));
+      const contentHash = hashed.value as `sha256:${string}`;
+
+      const cleanupPair: PairRecord = {
+        placementPath: join(root, 'cleanup', 'retained'),
+        mode: 'pinned',
+        dev: null,
+        pinned: {
+          storePath: join(storeRoot, 'cleanup-retained'),
+          rev: 'cleanup-rev',
+          gitSha: null,
+          dirty: false,
+          contentHash: `sha256:${'b'.repeat(64)}`,
+          snapshotAt: '2026-07-16T18:00:00.000Z',
+          verify: 'passed',
+          placement: 'copy',
+        },
+        journal: null,
+      };
+      const withCleanup = withLedgerPairAt(
+        emptyLedgerModel('2026-07-16T18:00:00.000Z'),
+        null,
+        'cleanup-retained',
+        'codex',
+        cleanupPair,
+      );
+      if (!withCleanup.ok) throw new Error(JSON.stringify(withCleanup.error));
+      const seeded = await writeLedger(basePorts, ledgerPath, withCleanup.value);
+      if (!seeded.ok) throw new Error(JSON.stringify(seeded.error));
+      const original = await readLedgerState(ports, ledgerPath);
+      if (!original.ok || original.value.state !== 'present') {
+        throw new Error('seeded carrier ledger is missing');
+      }
+      const originalModel = original.value.model;
+      const originalByteRevision = original.value.byteRevision;
+
+      const project = await resolveProjectContext(ports, { invocationCwd: root });
+      if (!project.ok) throw new Error(JSON.stringify(project.error));
+      const pair: PairPlan = {
+        skill: 'alpha',
+        tool: 'codex',
+        scope: 'user',
+        scopeKey: null,
+        placement: {
+          skill: 'alpha',
+          root: skillsRoot,
+          path: placementPath,
+          class: 'absent',
+          symlinkTarget: null,
+          dangling: false,
+        },
+        notices: [],
+      };
+      const authority = await createPlacementSnapshotAuthority(
+        toolRegistry,
+        [],
+        ports,
+        project.value,
+        ledgerPath,
+        storeRoot,
+        [pair],
+        [],
+      );
+      if (!authority.ok) throw new Error(JSON.stringify(authority.error));
+      const live = authority.value.snapshot.live[0];
+      if (live === undefined) throw new Error('live placement authority is missing');
+      const expectedRevisions = [authority.value.snapshot.ledger.revision, live.revision] as const;
+      const operation: ExecutableOperation = {
+        ...installOperation(placementPath, contentHash),
+        preconditionIds: expectedRevisions.map(createExpectedRevisionPreconditionIdV1),
+      };
+      const plan = createOperationPlan({
+        domain: 'skillsmith.operation-plan',
+        schemaVersion: 1,
+        command: 'sync',
+        selection: {
+          source: 'explicit-targets',
+          outcome: 'selected',
+          tools: ['codex'],
+          scopes: ['user'],
+        },
+        batchPolicy: 'fail-fast',
+        operations: [operation],
+        checks: [],
+        diagnostics: [],
+      });
+      const preconditions = createPlacementRevisionExecutionPreconditionsV1(
+        authority.value,
+        plan,
+        expectedRevisions,
+      );
+      const common = {
+        env: ports,
+        ledgerPath,
+        plan,
+        preconditions,
+        authority: authority.value,
+        reportOp: 'sync' as const,
+        modelNow: () => '2026-07-16T19:00:00.000Z',
+        journalNow: () => '2026-07-16T19:00:00.000Z',
+        bindingForOperation: () => ({
+          kind: 'pair' as const,
+          stageResourceIds: [live.revision.resourceId],
+        }),
+      };
+
+      let prematureExecuteCalls = 0;
+      await expect(
+        executePlacementOperationPlan({
+          ...common,
+          beforeSchedule: async (captured) => {
+            expect(captured).toEqual(originalModel);
+            throw new Error('cleanup stopped before P1');
+          },
+          executePair: async () => {
+            prematureExecuteCalls += 1;
+            throw new Error('a failed hook must not start pair execution');
+          },
+          onStarted: () => {
+            throw new Error('a failed hook must not report started work');
+          },
+        }),
+      ).rejects.toThrow('cleanup stopped before P1');
+      const afterFailure = await readLedgerState(ports, ledgerPath);
+      expect(prematureExecuteCalls).toBe(0);
+      expect(afterFailure).toMatchObject({
+        ok: true,
+        value: { state: 'present', byteRevision: originalByteRevision, model: originalModel },
+      });
+
+      const transactionId = 'transaction:adapter-first-p1';
+      let pairExecutions = 0;
+      const results = await executePlacementOperationPlan({
+        ...common,
+        beforeSchedule: async (captured) => {
+          expect(captured).toEqual(originalModel);
+          const terminal = withoutLedgerPairAt(captured, null, 'cleanup-retained', 'codex');
+          if (!terminal.ok) throw terminal.error;
+          return terminal.value;
+        },
+        executePair: async (preparedOperation, terminalLedger) => {
+          pairExecutions += 1;
+          expect(getLedgerPairAt(terminalLedger, null, 'cleanup-retained', 'codex')).toBeNull();
+          const beforeP1 = await readLedgerState(ports, ledgerPath);
+          expect(beforeP1).toMatchObject({
+            ok: true,
+            value: { state: 'present', byteRevision: originalByteRevision, model: originalModel },
+          });
+          failAfterFirstP1 = true;
+          try {
+            const executed = await executePlacementPlan(
+              createPlacementExecutionInput(
+                ports,
+                ledgerPath,
+                terminalLedger,
+                {
+                  now: () => '2026-07-16T19:00:00.000Z',
+                  newTxId: () => transactionId,
+                },
+                {},
+                preparedOperation,
+              ),
+              {
+                op: 'install',
+                skill: 'alpha',
+                tool: 'codex',
+                skillsRoot,
+                placementPath,
+                scopeKey: null,
+                install: {
+                  build: 'copy',
+                  storePath,
+                  contentHash,
+                  pinned: {
+                    storePath,
+                    rev: 'action-rev',
+                    gitSha: null,
+                    dirty: false,
+                    contentHash,
+                    snapshotAt: '2026-07-16T19:00:00.000Z',
+                    verify: 'passed',
+                    placement: 'copy',
+                  },
+                  origin: {
+                    source: 'example.test/fixture/repo/skills/alpha',
+                    host: 'example.test',
+                    repo: 'fixture/repo',
+                    skillPath: 'skills/alpha',
+                    refRequested: null,
+                    refResolved: 'c'.repeat(40),
+                    pin: false,
+                    installedAt: '2026-07-16T19:00:00.000Z',
+                  },
+                  adoptedDev: null,
+                },
+              },
+            );
+            if (executed.ok) throw new Error('post-P1 seam did not stop execution');
+          } catch (error) {
+            expect(error).toMatchObject({ code: 'EIO' });
+          }
+          return {
+            skill: 'alpha',
+            tool: 'codex',
+            placementPath,
+            action: 'failed',
+            reason: 'paused after the first prepared write',
+            before: null,
+            after: null,
+            store: null,
+            verify: null,
+            error: flipFailedError('injected stop after first durable P1'),
+          };
+        },
+        onStarted: () => {},
+      });
+      const afterP1 = await readLedgerState(ports, ledgerPath);
+      if (!afterP1.ok || afterP1.value.state !== 'present') {
+        throw new Error('first prepared ledger write is missing');
+      }
+      const preparedPair = getLedgerPairAt(afterP1.value.model, null, 'alpha', 'codex');
+
+      expect(pairExecutions).toBe(1);
+      expect(results).toHaveLength(1);
+      expect(results[0]?.outcome).toBe('failed');
+      expect(failAfterFirstP1).toBeFalse();
+      expect(afterP1.value.byteRevision).not.toBe(originalByteRevision);
+      expect(getLedgerPairAt(afterP1.value.model, null, 'cleanup-retained', 'codex')).toBeNull();
+      expect(preparedPair?.journal).toMatchObject({
+        txId: transactionId,
+        phase: 'prepared',
+      });
+      expect(afterP1.value.model.transactions[transactionId]).toMatchObject({
+        transactionId,
+        phase: 'prepared',
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('begins a fresh history-preserving reversal with parent-oriented terminal facts', async () => {
     const reversalNow = '2026-07-16T19:34:56.000Z';
     const operation = installOperation();

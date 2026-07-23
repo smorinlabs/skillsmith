@@ -360,20 +360,44 @@ type BulkApproval =
       readonly message: string;
     };
 
+interface UndoCleanupApprovalMarker {
+  readonly groupId: string;
+  readonly pairId: string;
+  readonly activeTransactionId: string;
+}
+
 const authorizeBulkPlan = async (
   command: 'dev' | 'promote',
   plan: OperationPlan<'dev' | 'promote'>,
   interaction: InteractionPort,
+  cleanupPending: readonly UndoCleanupApprovalMarker[] = [],
 ): Promise<BulkApproval> => {
-  if (plan.operations.length === 0) return { ok: true };
+  if (plan.operations.length === 0 && cleanupPending.length === 0) return { ok: true };
 
   const operations = plan.operations;
-  const groupCount = new Set(operations.map((operation) => operation.groupId)).size;
+  const groupCount = new Set([
+    ...operations.map((operation) => operation.groupId),
+    ...cleanupPending.map(({ groupId }) => groupId),
+  ]).size;
   const scopes = plan.selection.scopes;
   const scopeSummary = scopes.length === 0 ? 'the selected scopes' : scopes.join(', ');
   const resolution = await interaction.confirm({
     id: `${command}.bulk-approval`,
-    message: `Confirm ${command} of ${groupCount} groups (${operations.length} operations) across ${scopeSummary}?`,
+    message:
+      cleanupPending.length === 0
+        ? `Confirm ${command} of ${groupCount} groups (${operations.length} operations) across ${scopeSummary}?`
+        : `Confirm ${command} rollback of ${groupCount} groups (${operations.length} operations, ${cleanupPending.length} cleanup-pending pairs) across ${scopeSummary}?`,
+    ...(cleanupPending.length === 0
+      ? {}
+      : {
+          preview: {
+            kind: 'exact-undo-preview',
+            command: 'undo',
+            groupIds: plan.selection.groupIds ?? [],
+            operationIds: operations.map(({ operationId }) => operationId),
+            cleanupPending,
+          },
+        }),
   });
   if (resolution.status === 'cancelled') {
     return {
@@ -679,6 +703,8 @@ interface PreparedUndoAlias {
   readonly preview: FlipReport;
   readonly plan: OperationPlan<'dev' | 'promote'>;
   readonly execute: () => Promise<Result<FlipReport, UndoError>>;
+  readonly cleanupPending: readonly UndoCleanupApprovalMarker[];
+  readonly cleanupWarnings: () => readonly Diagnostic[];
 }
 
 const projectUndoAlias = (
@@ -686,12 +712,44 @@ const projectUndoAlias = (
   command: 'dev' | 'promote',
 ): PreparedUndoAlias => {
   const preview = aliasFlipReport(prepared, command, true, []);
+  const cleanupPending = prepared.groups.flatMap((group) =>
+    group.pairs.flatMap((pair) =>
+      prepared.plan.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.reason.code === 'undo-cleanup-pending' &&
+          diagnostic.correlation.groupId === group.groupId &&
+          diagnostic.correlation.pairId === pair.pairId &&
+          diagnostic.correlation.operationId === null,
+      )
+        ? [
+            {
+              groupId: group.groupId,
+              pairId: pair.pairId,
+              activeTransactionId: pair.activeTransactionId,
+            },
+          ]
+        : [],
+    ),
+  );
+  let cleanupWarnings: readonly Diagnostic[] = [];
   return Object.freeze({
     preview,
     plan: preview.plan,
+    cleanupPending,
+    cleanupWarnings: () => cleanupWarnings,
     execute: async () => {
       const executed = await prepared.execute();
-      return executed.ok ? ok(aliasFlipReport(prepared, command, false, executed.value)) : executed;
+      if (!executed.ok) return executed;
+      cleanupWarnings = Object.freeze(
+        executed.value.warnings.map((warning) =>
+          Object.freeze({
+            code: warning.code,
+            severity: 'warning' as const,
+            message: warning.message,
+          }),
+        ),
+      );
+      return ok(aliasFlipReport(prepared, command, false, executed.value.results));
     },
   });
 };
@@ -1172,8 +1230,19 @@ export const createLifecycleApplicationServices = (
     if (flipOptions.dryRun) {
       report = prepared.preview;
     } else {
-      if (flipOptions.all || targets.length > 1) {
-        const approval = await authorizeBulkPlan('dev', prepared.plan, context.interaction);
+      const cleanupPending =
+        rollback && 'cleanupPending' in prepared ? prepared.cleanupPending : [];
+      const cleanupPreapproved = cleanupPending.length > 0 && bool(options, 'yes');
+      if (
+        (flipOptions.all || targets.length > 1 || cleanupPending.length > 0) &&
+        !cleanupPreapproved
+      ) {
+        const approval = await authorizeBulkPlan(
+          'dev',
+          prepared.plan,
+          context.interaction,
+          cleanupPending,
+        );
         if (!approval.ok)
           return refusal('dev', approval.exitClass, approval.code, approval.message);
       }
@@ -1186,7 +1255,7 @@ export const createLifecycleApplicationServices = (
       report = result.value;
     }
     const errors = report.results.flatMap((item) => (item.error ? [item.error] : []));
-    return reportOutcome(
+    const product = reportOutcome(
       'dev',
       report,
       errors,
@@ -1194,6 +1263,9 @@ export const createLifecycleApplicationServices = (
       context.signal,
       rollback ? rollbackDeprecation('dev') : [],
     );
+    return rollback && 'cleanupWarnings' in prepared
+      ? { ...product, diagnostics: [...product.diagnostics, ...prepared.cleanupWarnings()] }
+      : product;
   };
 
   const promote: ApplicationService<CurrentCommandRequest, PromoteApplicationReport> = async (
@@ -1305,8 +1377,19 @@ export const createLifecycleApplicationServices = (
     if (flipOptions.dryRun) {
       report = prepared.preview;
     } else {
-      if (flipOptions.all || targets.length > 1) {
-        const approval = await authorizeBulkPlan('promote', prepared.plan, context.interaction);
+      const cleanupPending =
+        rollback && 'cleanupPending' in prepared ? prepared.cleanupPending : [];
+      const cleanupPreapproved = cleanupPending.length > 0 && bool(options, 'yes');
+      if (
+        (flipOptions.all || targets.length > 1 || cleanupPending.length > 0) &&
+        !cleanupPreapproved
+      ) {
+        const approval = await authorizeBulkPlan(
+          'promote',
+          prepared.plan,
+          context.interaction,
+          cleanupPending,
+        );
         if (!approval.ok)
           return refusal('promote', approval.exitClass, approval.code, approval.message);
       }
@@ -1319,7 +1402,7 @@ export const createLifecycleApplicationServices = (
       report = result.value;
     }
     const errors = report.results.flatMap((item) => (item.error ? [item.error] : []));
-    return reportOutcome(
+    const product = reportOutcome(
       'promote',
       report,
       errors,
@@ -1327,6 +1410,9 @@ export const createLifecycleApplicationServices = (
       context.signal,
       rollback ? rollbackDeprecation('promote') : [],
     );
+    return rollback && 'cleanupWarnings' in prepared
+      ? { ...product, diagnostics: [...product.diagnostics, ...prepared.cleanupWarnings()] }
+      : product;
   };
 
   return { install, uninstall, dev, promote } as const;

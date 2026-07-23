@@ -107,6 +107,11 @@ export interface ExactUndoApprovalPreviewRequest {
   readonly command: 'undo';
   readonly groupIds: readonly string[];
   readonly operationIds: readonly string[];
+  readonly cleanupPending?: readonly Readonly<{
+    readonly groupId: string;
+    readonly pairId: string;
+    readonly activeTransactionId: string;
+  }>[];
 }
 
 /** Structured confirmation facts; adapters own presentation and interactive defaults. */

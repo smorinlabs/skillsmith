@@ -574,10 +574,40 @@ const freshRollbackPhysicalBeforeMatches = (
   }
   if (live.mode !== 'pinned' || before.mode !== 'pinned') return false;
   return (
-    before.storePath === (pair.pinned?.storePath ?? null) &&
     before.contentHash === live.contentHash &&
     (before.liveKind ?? liveKind) === liveKind &&
     (liveKind !== 'symlink' || before.symlinkTarget === live.symlinkTarget)
+  );
+};
+
+/**
+ * A fresh reversal stages its terminal pair records at P1. For a managed-to-managed reversal the
+ * physical before-image therefore belongs only to the compatibility shadow while `pair.pinned`
+ * already describes the restored after-image. Keep those two authorities separate and validate
+ * the terminal pair against the logical after-image once the cleanup carrier is committed.
+ */
+const freshRollbackTerminalPairMatches = (
+  logical: LogicalJournalV1Dto,
+  pair: LedgerPairV1Dto,
+): boolean => {
+  if (logical.phase !== 'committed') return true;
+  const lives = logical.actual.after.filter((resource) => resource.role === 'live');
+  if (lives.length !== 1) return false;
+  const live = lives[0];
+  if (live === undefined) return false;
+  if (live.state === 'absent') return pair.journal?.op === 'uninstall';
+  if (live.mode === 'dev') {
+    return (
+      pair.mode === 'dev' &&
+      pair.dev != null &&
+      live.liveKind === 'symlink' &&
+      live.symlinkTarget !== null
+    );
+  }
+  if (live.mode !== 'pinned' || pair.mode !== 'pinned' || pair.pinned == null) return false;
+  return (
+    pair.pinned.contentHash === live.contentHash &&
+    pair.pinned.placement === (live.liveKind === 'symlink' ? 'symlink' : 'copy')
   );
 };
 
@@ -614,7 +644,9 @@ export const legacyJournalMatchesLogicalShadow = (
     physical.phase === logical.phase &&
     physical.startedAt === logical.context.startedAt &&
     physical.completedAt === logical.completedAt &&
-    (!fresh || freshRollbackPhysicalBeforeMatches(logical, pair))
+    (!fresh ||
+      (freshRollbackPhysicalBeforeMatches(logical, pair) &&
+        freshRollbackTerminalPairMatches(logical, pair)))
   );
 };
 

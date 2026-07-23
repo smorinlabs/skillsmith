@@ -16,6 +16,9 @@ import {
   logicalRollbackExecutionMode,
 } from './logical-transactions.ts';
 import {
+  cleanupCommittedPlacementJournal,
+  cleanupCommittedPlacementJournalObserved,
+  prepareCommittedPlacementJournal,
   refusedMessage,
   resumeMoveScopeTransaction,
   resumeMoveScopeTransactionObserved,
@@ -36,6 +39,12 @@ export interface PlacementRecoveryTarget {
   readonly tool: FlipTool;
   readonly scopeKey?: string | null;
   readonly rollbackContext?: Readonly<{ command: string; workflow: string }>;
+}
+
+export interface CommittedPlacementCleanupPreparation {
+  readonly transactionId: string;
+  readonly outcome: SwapOutcome;
+  readonly ledger: PlacementExecutionInput['ledger'];
 }
 
 const moveScopeJournalMatchesTarget = (
@@ -281,6 +290,43 @@ const recoverPlacementInternal = async (
       ? null
       : beginRecoveryObservation(transactionObservation, direction);
   try {
+    const committedCleanup =
+      observation === undefined
+        ? await cleanupCommittedPlacementJournal(
+            recoveryRequest(input, sourceJournal),
+            target.skill,
+            target.tool,
+            target.scopeKey ?? null,
+          )
+        : await cleanupCommittedPlacementJournalObserved(
+            recoveryRequest(input, sourceJournal),
+            target.skill,
+            target.tool,
+            target.scopeKey ?? null,
+            observation,
+          );
+    if (!committedCleanup.ok) {
+      if (transactionObservation !== null) {
+        const completion = recoveryCompletion(committedCleanup);
+        completeRecoveryObservation(
+          transactionObservation,
+          span,
+          completion.outcome,
+          completion.errorCode,
+        );
+      }
+      return committedCleanup;
+    }
+    if (committedCleanup.value !== null) {
+      if (transactionObservation !== null) {
+        completeRecoveryObservation(transactionObservation, span, 'success', null);
+      }
+      return Object.freeze({
+        ok: true,
+        value: committedCleanup.value,
+        state: committedCleanup.state,
+      });
+    }
     const planned = planPlacementRecovery(input, direction, sourceJournal, target);
     if (!planned.ok) {
       if (transactionObservation !== null) {
@@ -447,6 +493,50 @@ export const recoverPlacementWithObservation = (
   observation?: ObservationBundle,
 ): Promise<SwapExecutionResult<SwapOutcome>> =>
   recoverPlacementInternal(input, direction, target, observation);
+
+export const recoverCommittedPlacementCleanup = (
+  input: PlacementExecutionInput,
+  target: PlacementRecoveryTarget,
+): Promise<SwapExecutionResult<SwapOutcome | null>> =>
+  cleanupCommittedPlacementJournal(
+    recoveryRequest(input, placementRecoveryJournalForTarget(input, target)),
+    target.skill,
+    target.tool,
+    target.scopeKey ?? null,
+  );
+
+export const prepareCommittedPlacementCleanup = (
+  input: PlacementExecutionInput,
+  target: PlacementRecoveryTarget,
+): Promise<SwapExecutionResult<CommittedPlacementCleanupPreparation | null>> =>
+  prepareCommittedPlacementJournal(
+    recoveryRequest(input, placementRecoveryJournalForTarget(input, target)),
+    target.skill,
+    target.tool,
+    target.scopeKey ?? null,
+  );
+
+export const recoverCommittedPlacementCleanupObserved = (
+  input: PlacementExecutionInput,
+  target: PlacementRecoveryTarget,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome | null>> =>
+  cleanupCommittedPlacementJournalObserved(
+    recoveryRequest(input, placementRecoveryJournalForTarget(input, target)),
+    target.skill,
+    target.tool,
+    target.scopeKey ?? null,
+    observation,
+  );
+
+export const recoverCommittedPlacementCleanupWithObservation = (
+  input: PlacementExecutionInput,
+  target: PlacementRecoveryTarget,
+  observation?: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome | null>> =>
+  observation === undefined
+    ? recoverCommittedPlacementCleanup(input, target)
+    : recoverCommittedPlacementCleanupObserved(input, target, observation);
 
 export const recoverCommittedAcquirePlacements = (
   input: PlacementExecutionInput,

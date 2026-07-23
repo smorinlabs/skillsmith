@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import { emptyLedgerModel, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
@@ -299,6 +300,187 @@ describe('undo observation', () => {
       sourceOperationId: parent.intent.operationId,
       activeOperationId: fresh.intent.operationId,
       parentOperationId: parent.intent.operationId,
+    });
+  });
+
+  test('distinguishes committed cleanup shadows from terminal already-reversed history', () => {
+    const parentBase = logicalJournal(
+      'transaction:parent',
+      'operation:parent',
+      'forward',
+      null,
+      'committed',
+    );
+    if (
+      parentBase.intent.before.kind !== 'absent' ||
+      parentBase.intent.before.resource.kind !== 'live'
+    ) {
+      throw new Error('cleanup fixture requires an absent live resource');
+    }
+    const liveResource = parentBase.intent.before.resource;
+    const contentDigest = `sha256:${'a'.repeat(64)}` as ArtifactDigest;
+    const source = {
+      kind: 'local-dev' as const,
+      path: '/fixture/source/review',
+      contentHash: contentDigest,
+    };
+    const absentActual = {
+      resourceId: 'resource:live',
+      role: 'live' as const,
+      state: 'absent' as const,
+      repositoryRevision: null,
+      placementPath: '/fixture/skills/review',
+      liveKind: null,
+      mode: null,
+      symlinkTarget: null,
+      contentHash: null,
+    };
+    const devActual = {
+      resourceId: 'resource:live',
+      role: 'live' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest: source.contentHash },
+      placementPath: '/fixture/skills/review',
+      liveKind: 'symlink' as const,
+      mode: 'dev' as const,
+      symlinkTarget: source.path,
+      contentHash: source.contentHash,
+    };
+    const ledgerDigest = `sha256:${'b'.repeat(64)}` as ArtifactDigest;
+    const ledgerActual = {
+      resourceId: 'resource:ledger',
+      role: 'ledger' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest: ledgerDigest },
+      schemaVersion: 2 as const,
+      semanticHash: ledgerDigest,
+    };
+    const parent: LogicalJournalV1Dto = {
+      ...parentBase,
+      intent: {
+        ...parentBase.intent,
+        source,
+        before: { kind: 'absent', resource: liveResource },
+        after: {
+          kind: 'placement',
+          resource: liveResource,
+          classification: 'dev',
+          representation: 'symlink',
+          linkTarget: { kind: 'machine-bound', path: source.path },
+          dangling: false,
+          source,
+          contentHash: source.contentHash,
+        },
+      },
+      actual: {
+        before: [absentActual, ledgerActual],
+        after: [devActual, ledgerActual],
+        retained: [],
+      },
+    };
+    const rollbackBase = logicalJournal(
+      'transaction:rollback',
+      'operation:rollback',
+      'rollback',
+      parent.intent.operationId,
+      'committed',
+    );
+    const rollback: LogicalJournalV1Dto = {
+      ...rollbackBase,
+      intent: {
+        ...parent.intent,
+        operationId: rollbackBase.intent.operationId,
+        groupId: rollbackBase.intent.groupId,
+      },
+      actual: { before: parent.actual.after, after: parent.actual.before, retained: [] },
+    };
+    const committedPlacement: StatusPlacement = {
+      ...pendingPlacement(rollback.transactionId),
+      journal: {
+        state: 'committed',
+        format: 'logical',
+        operation: rollback.intent.kind,
+        transactionId: rollback.transactionId,
+        phase: 'committed',
+        before: 'dev',
+        retention: [],
+        reverseEligibility: 'not-reversible',
+        remediation: { reverse: null },
+      },
+    };
+    const cleanupShadow = {
+      placementPath: '/fixture/skills/review',
+      mode: 'dev' as const,
+      dev: {
+        sourcePath: '/fixture/source/review',
+        resolvedPath: '/fixture/source/review',
+        repoRoot: null,
+        sourceRelPath: null,
+        remote: null,
+        recordedAt: '2026-07-22T00:00:00.000Z',
+      },
+      journal: {
+        op: 'uninstall' as const,
+        txId: rollback.transactionId,
+        phase: 'committed' as const,
+        startedAt: '2026-07-22T00:00:00.000Z',
+        completedAt: '2026-07-22T00:00:02.000Z',
+        before: {
+          mode: 'dev' as const,
+          symlinkTarget: source.path,
+          liveKind: 'symlink' as const,
+        },
+        stagingPath: '/fixture/staging/review',
+        backupPath: '/fixture/backup/review',
+      },
+    };
+    const ledger = {
+      ...emptyLedgerModel('2026-07-22T00:00:00.000Z'),
+      skills: { review: { tools: { codex: cleanupShadow } } },
+      history: [parent, rollback],
+    };
+
+    const pendingCleanup = candidateForStatusPlacement(ledger, 'review', committedPlacement);
+    expect(pendingCleanup).toMatchObject({
+      ok: true,
+      value: { outcome: 'already-reversed', recoveryState: 'cleanup-pending' },
+    });
+
+    const hostile = candidateForStatusPlacement(
+      {
+        ...ledger,
+        skills: {
+          review: {
+            tools: {
+              codex: {
+                ...cleanupShadow,
+                journal: { ...cleanupShadow.journal, op: 'install' },
+              },
+            },
+          },
+        },
+      },
+      'review',
+      committedPlacement,
+    );
+    expect(hostile).toMatchObject({
+      ok: false,
+      error: { code: 'undo-cleanup-carrier', exitClass: 'state' },
+    });
+
+    const terminal = candidateForStatusPlacement(
+      {
+        ...ledger,
+        skills: {
+          review: { tools: { codex: { ...cleanupShadow, journal: null } } },
+        },
+      },
+      'review',
+      committedPlacement,
+    );
+    expect(terminal).toMatchObject({
+      ok: true,
+      value: { outcome: 'already-reversed', recoveryState: 'none' },
     });
   });
 

@@ -301,6 +301,33 @@ const approvalRefusal = (
   );
 };
 
+interface UndoCleanupApprovalMarker {
+  readonly groupId: string;
+  readonly pairId: string;
+  readonly activeTransactionId: string;
+}
+
+const cleanupApprovalMarkers = (prepared: PreparedUndoPlan): readonly UndoCleanupApprovalMarker[] =>
+  prepared.groups.flatMap((group) =>
+    group.pairs.flatMap((pair) =>
+      prepared.plan.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.reason.code === 'undo-cleanup-pending' &&
+          diagnostic.correlation.groupId === group.groupId &&
+          diagnostic.correlation.pairId === pair.pairId &&
+          diagnostic.correlation.operationId === null,
+      )
+        ? [
+            {
+              groupId: group.groupId,
+              pairId: pair.pairId,
+              activeTransactionId: pair.activeTransactionId,
+            },
+          ]
+        : [],
+    ),
+  );
+
 export const createUndoApplicationService = (
   overrides: Partial<UndoApplicationDependencies> = {},
 ): ApplicationService<CurrentCommandRequest, UndoApplicationReport> => {
@@ -364,7 +391,8 @@ export const createUndoApplicationService = (
         [],
       );
     }
-    const changing = prepared.value.plan.operations.length > 0;
+    const cleanupPending = cleanupApprovalMarkers(prepared.value);
+    const changing = prepared.value.plan.operations.length > 0 || cleanupPending.length > 0;
     if (!changing) {
       return outcome(
         createUndoReport(
@@ -392,12 +420,16 @@ export const createUndoApplicationService = (
       }
       const approved = await context.interaction.confirm({
         id: 'undo.approval',
-        message: `Confirm undo of ${prepared.value.groups.length} groups (${prepared.value.plan.operations.length} operations)?`,
+        message:
+          cleanupPending.length === 0
+            ? `Confirm undo of ${prepared.value.groups.length} groups (${prepared.value.plan.operations.length} operations)?`
+            : `Confirm undo of ${prepared.value.groups.length} groups (${prepared.value.plan.operations.length} operations, ${cleanupPending.length} cleanup-pending pairs)?`,
         preview: {
           kind: 'exact-undo-preview',
           command: 'undo',
           groupIds: prepared.value.groups.map(({ groupId }) => groupId),
           operationIds: prepared.value.plan.operations.map(({ operationId }) => operationId),
+          ...(cleanupPending.length === 0 ? {} : { cleanupPending }),
         },
       });
       if (approved.status === 'cancelled') {
@@ -424,9 +456,17 @@ export const createUndoApplicationService = (
         prepared.value.groups,
         'execute',
         { required: true, outcome: 'approved' },
-        executed.value,
+        executed.value.results,
       ),
-      executed.value,
+      executed.value.results,
+      [
+        ...diagnosticsForResults(executed.value.results),
+        ...executed.value.warnings.map((warning) => ({
+          code: warning.code,
+          severity: 'warning' as const,
+          message: warning.message,
+        })),
+      ],
     );
   };
 };

@@ -2,6 +2,7 @@ import { dirname } from 'node:path';
 import { toolRegistry } from '../agents/registry.ts';
 import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
+import { committedPlacementCleanupTransactionForTarget } from '../place/swap.ts';
 import { createOperationGroupId } from '../planning/create.ts';
 import type { ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -137,6 +138,10 @@ export const candidateForStatusPlacement = (
   if (tool !== 'claude-code' && tool !== 'codex') return ok(null);
   const scope = placement.identity.scope;
   if (scope !== 'user' && scope !== 'project') return ok(null);
+  const projectRoot = scope === 'project' ? placement.identity.projectIdentity : null;
+  const ledgerPair = (
+    projectRoot === null ? ledger.skills : ledger.projects[projectRoot]?.skills
+  )?.[name]?.tools[tool];
 
   let authority: UndoJournalAuthority;
   let disposition: 'forward' | 'rollback';
@@ -157,10 +162,7 @@ export const candidateForStatusPlacement = (
     activeOperationId = journal.intent.operationId;
     parentOperationId = journal.context.parentOperationId;
   } else {
-    const projectRoot = scope === 'project' ? placement.identity.projectIdentity : null;
-    const pair = (projectRoot === null ? ledger.skills : ledger.projects[projectRoot]?.skills)?.[
-      name
-    ]?.tools[tool];
+    const pair = ledgerPair;
     if (pair === undefined || pair.journal?.txId !== journalState.transactionId) {
       return err(
         failure('undo-journal-correlation', 'selected legacy pair journal is missing', 'state'),
@@ -206,6 +208,22 @@ export const candidateForStatusPlacement = (
           scope,
           target: placement.identity.path,
         });
+  const cleanupTransaction = alreadyReversed
+    ? committedPlacementCleanupTransactionForTarget(ledger, name, tool, projectRoot)
+    : ok(null);
+  if (!cleanupTransaction.ok) {
+    return err(
+      failure(
+        'undo-cleanup-carrier',
+        'selected committed cleanup carrier is inconsistent',
+        'state',
+      ),
+    );
+  }
+  const recoveryState =
+    authority.format === 'logical' && cleanupTransaction.value === authority.journal.transactionId
+      ? ('cleanup-pending' as const)
+      : ('none' as const);
   return ok(
     deepFreeze({
       name,
@@ -238,6 +256,7 @@ export const candidateForStatusPlacement = (
         journalState.state === 'pending' && disposition === 'forward'
           ? ('convert-to-rollback' as const)
           : ('resume-rollback' as const),
+      recoveryState,
       before: journalState.before,
       eligibility,
       retention: journalState.retention,

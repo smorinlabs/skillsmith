@@ -1094,22 +1094,30 @@ describe('lifecycle application services', () => {
         },
       ],
       execute: async () =>
-        ok([
-          {
-            operationId,
-            outcome: 'failed',
-            error: {
-              code: 'undo-state',
-              message: 'no prior state',
-              remediation: 'inspect skillsmith status',
+        ok({
+          results: [
+            {
+              operationId,
+              outcome: 'failed',
+              error: {
+                code: 'undo-state',
+                message: 'no prior state',
+                remediation: 'inspect skillsmith status',
+              },
+            } as never,
+            {
+              operationId: codexOperationId,
+              outcome: 'succeeded',
+              error: null,
+            } as never,
+          ],
+          warnings: [
+            {
+              code: 'undo-cleanup-retained',
+              message: 'Undo cleanup retained a mismatched backup for manual inspection.',
             },
-          } as never,
-          {
-            operationId: codexOperationId,
-            outcome: 'succeeded',
-            error: null,
-          } as never,
-        ]),
+          ],
+        }),
     } as unknown as PreparedUndoPlan;
     const services = createLifecycleApplicationServices({
       prepareDev: (async (...args: unknown[]) => {
@@ -1154,6 +1162,11 @@ describe('lifecycle application services', () => {
     expect(outcome.exitClass).toBe('failure');
     expect(outcome.diagnostics).toEqual([
       { code: 'skillsmith.flip-failed', severity: 'error', message: 'no prior state' },
+      {
+        code: 'undo-cleanup-retained',
+        severity: 'warning',
+        message: 'Undo cleanup retained a mismatched backup for manual inspection.',
+      },
     ]);
     expect(outcome.mutation.failed).toBe(1);
     expect(outcome.deprecations).toEqual([
@@ -1184,6 +1197,148 @@ describe('lifecycle application services', () => {
     expect(devCalls).toBe(1);
     expect(devArguments).toHaveLength(2);
     expect(devArguments).not.toContain(observation);
+  });
+
+  test('rollback aliases require exact approval for cleanup-only work and surface warnings', async () => {
+    const groupId = `group:v1:${'1'.repeat(64)}`;
+    const pairId = `pair:v1:${'2'.repeat(64)}`;
+    const activeTransactionId = 'transaction:v1:cleanup';
+    let executions = 0;
+    const undoPrepared = {
+      observation: {
+        request: {
+          targets: ['skill'],
+          all: false,
+          tools: ['codex'],
+          scopes: ['project'],
+          dryRun: false,
+          yes: false,
+          continueOnError: false,
+        },
+        selection: {
+          source: 'explicit-targets',
+          outcome: 'selected',
+          reason: null,
+          targets: ['skill'],
+          tools: ['codex'],
+          scopes: ['project'],
+        },
+      },
+      plan: {
+        ...flipReport('rollback').plan,
+        command: 'undo',
+        selection: { ...flipReport('rollback').plan.selection, groupIds: [groupId] },
+        operations: [],
+        diagnostics: [
+          {
+            diagnosticId: 'diagnostic:cleanup',
+            kind: 'warning',
+            severity: 'warning',
+            refusalClass: null,
+            affected: {
+              skill: 'skill',
+              source: null,
+              tool: 'codex',
+              scope: 'project',
+              path: { kind: 'machine-bound', path: '/project/.codex/skills/skill' },
+            },
+            correlation: { groupId, pairId, operationId: null },
+            reason: {
+              code: 'undo-cleanup-pending',
+              message: "Committed undo cleanup remains pending for 'skill' on codex.",
+            },
+            selectionSource: 'explicit-targets',
+          },
+        ],
+      },
+      groups: [
+        {
+          name: 'skill',
+          scope: 'project',
+          groupId,
+          pairs: [
+            {
+              pairId,
+              tool: 'codex',
+              path: '/project/.codex/skills/skill',
+              activeTransactionId,
+              operationIds: [],
+              operations: [],
+              outcome: 'already-reversed',
+              failure: null,
+            },
+          ],
+          operationIds: [],
+          operations: [],
+          outcome: 'already-reversed',
+          failure: null,
+        },
+      ],
+      execute: async () => {
+        executions++;
+        return ok({
+          results: [],
+          warnings: [
+            {
+              code: 'undo-cleanup-retained',
+              message: 'Undo cleanup retained a mismatched backup for manual inspection.',
+            },
+          ],
+        });
+      },
+    } as unknown as PreparedUndoPlan;
+    const services = createLifecycleApplicationServices({
+      prepareUndo: (async () => ok(undoPrepared)) as never,
+    });
+    let preview: unknown;
+    const interactive: InteractionPort = {
+      mode: 'interactive',
+      choose: async () => ({ status: 'refused', reason: 'not used' }),
+      confirm: async (confirmation) => {
+        preview = confirmation.preview;
+        return { status: 'resolved', value: false };
+      },
+    };
+
+    const refused = await services.dev(
+      {
+        arguments: [['skill']],
+        options: { tool: ['codex'], rollback: true, verify: true },
+      },
+      context({ interaction: interactive }),
+    );
+    expect(preview).toEqual({
+      kind: 'exact-undo-preview',
+      command: 'undo',
+      groupIds: [groupId],
+      operationIds: [],
+      cleanupPending: [{ groupId, pairId, activeTransactionId }],
+    });
+    expect(refused.exitClass).toBe('usage');
+    expect(executions).toBe(0);
+
+    const approved = await services.dev(
+      {
+        arguments: [['skill']],
+        options: { tool: ['codex'], rollback: true, verify: true, yes: true },
+      },
+      context(),
+    );
+    expect(approved.exitClass).toBe('success');
+    expect(approved.report.value).toMatchObject({
+      op: 'rollback',
+      dryRun: false,
+      executionResults: [],
+      results: [{ action: 'noop', reason: 'already reversed' }],
+    });
+    expect(approved.diagnostics).toEqual([
+      {
+        code: 'undo-cleanup-retained',
+        severity: 'warning',
+        message: 'Undo cleanup retained a mismatched backup for manual inspection.',
+      },
+    ]);
+    expect(executions).toBe(1);
   });
 
   test('promote maps top-level domain errors and cancellation without numeric exit policy', async () => {

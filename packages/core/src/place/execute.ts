@@ -1012,6 +1012,11 @@ export interface PlacementOperationPlanExecutionInput {
     ledger: LedgerModel,
     observation?: ObservationBundle,
   ) => Promise<FlipResult>;
+  /**
+   * Runs under the coordinator locks after preconditions and bindings have been validated.
+   * The returned model is the ledger seed for the first scheduled placement mutation.
+   */
+  readonly beforeSchedule?: (ledger: LedgerModel) => Promise<LedgerModel>;
   readonly onStarted: (operation: ExecutableOperation, result: FlipResult) => void;
   readonly signal?: AbortSignal;
   readonly observation?: ObservationBundle;
@@ -1079,10 +1084,21 @@ export const executePlacementOperationPlan = async (
   input: PlacementOperationPlanExecutionInput,
 ): Promise<readonly OperationExecutionResult[]> => {
   let executionLedger: LedgerModel | null = null;
+  const beforeSchedule = input.beforeSchedule;
   const lifecycle = createPlacementLifecycleExecutor(input.authority);
+  const placementBindings = input.plan.operations.map((operation) =>
+    input.bindingForOperation(operation),
+  );
+  if (
+    beforeSchedule !== undefined &&
+    placementBindings.some((binding) => binding.kind === 'migrate-ledger')
+  ) {
+    throw flipRefusedError('placement cleanup cannot be combined with ledger migration');
+  }
   const coordinatorBindings: ObservedPreparedExecutionBinding[] = input.plan.operations.map(
-    (operation) => {
-      const binding = input.bindingForOperation(operation);
+    (operation, index) => {
+      const binding = placementBindings[index];
+      if (binding === undefined) throw new Error('prepared operation binding is missing');
       if (binding.kind === 'external') return binding.binding;
       if (binding.kind === 'migrate-ledger') {
         const migrationInput = {
@@ -1181,6 +1197,34 @@ export const executePlacementOperationPlan = async (
         },
       ] satisfies readonly ExecutionLockDescriptor[]),
     lockPort: compatibilityLockPort,
+    ...(beforeSchedule === undefined
+      ? {}
+      : {
+          beforeSchedule: async (): Promise<void> => {
+            let captured = executionLedger;
+            if (captured === null) {
+              const current = await readLedgerState(input.env, input.ledgerPath);
+              if (!current.ok) throw current.error;
+              captured = ledgerModelForMutation(current.value, input.modelNow());
+            }
+            const terminal = await beforeSchedule(captured);
+            executionLedger = terminal;
+            if (input.plan.operations.length !== 0) return;
+
+            const persistence = createLedgerPersistenceGateway(
+              input.env,
+              input.ledgerPath,
+              input.signal,
+            );
+            const written = await persistence.persist(terminal);
+            if (!written.ok) {
+              throw written.error.code === 'cancelled'
+                ? written.error
+                : flipFailedError(`ledger write failed: ${written.error.code}`);
+            }
+            executionLedger = written.value.model;
+          },
+        }),
     ...(input.signal === undefined ? {} : { signal: input.signal }),
   };
   return input.observation === undefined

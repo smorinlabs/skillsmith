@@ -22,7 +22,10 @@ import {
   validatePlanOperationIntentShapeV1,
 } from '../../src/artifacts/plan-codec.ts';
 import type { PlanOperationIntentV1, PlanOperationV1 } from '../../src/artifacts/plan-types.ts';
-import { legacyJournalMatchesLogicalShadow } from '../../src/artifacts/registry.ts';
+import {
+  legacyJournalMatchesLogicalShadow,
+  legacyJournalOperationMatchesLogicalShadow,
+} from '../../src/artifacts/registry.ts';
 
 const decoder = new TextDecoder();
 const V2_GOLDEN = join(
@@ -649,9 +652,12 @@ describe('artifact codec foundation', () => {
       actual: { ...child.actual, after: parent.actual.before },
     };
     if (pair.journal == null) throw new Error('fresh physical shadow is missing');
+    if (pair.pinned == null) throw new Error('fresh physical pin is missing');
+    const physicalJournal = pair.journal;
+    const physicalPin = pair.pinned;
     const livePair: LedgerPairV1Dto = {
       ...pair,
-      journal: { ...pair.journal, phase: 'live' },
+      journal: { ...physicalJournal, phase: 'live' },
     };
     expect(
       ledgerV2Codec.encode({
@@ -672,5 +678,232 @@ describe('artifact codec foundation', () => {
         },
       }).ok,
     ).toBeFalse();
+
+    const committedChild: LogicalJournalV1Dto = {
+      ...liveChild,
+      phase: 'committed',
+      updatedAt: startedAt,
+      completedAt: startedAt,
+    };
+    const committedPair: LedgerPairV1Dto = {
+      ...pair,
+      journal: { ...physicalJournal, phase: 'committed', completedAt: startedAt },
+    };
+    const committedCarrier = {
+      ...model,
+      skills: { alpha: { tools: { codex: committedPair } } },
+      transactions: {},
+      history: [parent, committedChild],
+    };
+    expect(ledgerV2Codec.encode(committedCarrier).ok).toBeTrue();
+    expect(
+      ledgerV2Codec.encode({
+        ...committedCarrier,
+        skills: {
+          alpha: {
+            tools: {
+              codex: {
+                ...committedPair,
+                journal: {
+                  ...physicalJournal,
+                  op: 'install',
+                  phase: 'committed',
+                  completedAt: startedAt,
+                },
+              },
+            },
+          },
+        },
+      }).ok,
+    ).toBeFalse();
+
+    const priorDigest = `sha256:${'c'.repeat(64)}` as ArtifactDigest;
+    const priorSource = { ...source, contentHash: priorDigest };
+    const priorPlacement = {
+      ...placement,
+      source: priorSource,
+      contentHash: priorDigest,
+    };
+    const priorActual = {
+      ...placementActual,
+      repositoryRevision: { kind: 'resource' as const, digest: priorDigest },
+      contentHash: priorDigest,
+    };
+    const promotedParent: LogicalJournalV1Dto = {
+      ...parent,
+      transactionId: 'tx:parent-managed-promote',
+      intent: {
+        ...parent.intent,
+        operationId: 'operation:parent-managed-promote',
+        groupId: 'group:parent-managed-promote',
+        kind: 'promote',
+        source,
+        before: priorPlacement,
+        after: placement,
+      },
+      actual: {
+        before: [priorActual, ledgerActual],
+        after: [placementActual, ledgerActual],
+        retained: [],
+      },
+    };
+    const savedManagedPromote: PlanOperationV1 = {
+      ...promotedParent.intent,
+      dependsOn: [],
+      reason: { code: 'promote-selected', message: 'Promote alpha.' },
+      selectionSource: 'explicit-targets',
+      preconditionIds: [],
+      requiredCheckIds: [],
+    };
+    expect(operationMatchesMatrix(savedManagedPromote)).toBeFalse();
+    expect(validatePlanOperationIntentShapeV1(promotedParent.intent)).toMatchObject({ ok: true });
+    expect(
+      validatePlanOperationIntentShapeV1({
+        ...promotedParent.intent,
+        before: { ...priorPlacement, classification: 'unmanaged' },
+      }),
+    ).toMatchObject({ ok: false });
+    const managedChild: LogicalJournalV1Dto = {
+      ...promotedParent,
+      transactionId: 'tx:fresh-managed-promote-reversal',
+      intent: {
+        ...promotedParent.intent,
+        operationId: 'operation:fresh-managed-promote-reversal',
+        groupId: 'group:fresh-managed-promote-reversal',
+      },
+      context: {
+        ...promotedParent.context,
+        parentOperationId: promotedParent.intent.operationId,
+        command: 'skillsmith-undo',
+        workflow: 'undo',
+      },
+      disposition: 'rollback',
+      actual: {
+        before: promotedParent.actual.after,
+        after: promotedParent.actual.before,
+        retained: [],
+      },
+    };
+    const managedPair: LedgerPairV1Dto = {
+      ...pair,
+      pinned: { ...physicalPin, storePath: '/fixture/store/prior', contentHash: priorDigest },
+      journal: {
+        ...physicalJournal,
+        op: 'promote',
+        txId: managedChild.transactionId,
+        phase: 'committed',
+        completedAt: startedAt,
+        before: {
+          mode: 'pinned',
+          storePath: '/fixture/store/current',
+          contentHash: digest,
+          liveKind: 'dir',
+        },
+      },
+    };
+    expect(
+      ledgerV2Codec.encode({
+        ...model,
+        skills: { alpha: { tools: { codex: managedPair } } },
+        transactions: {},
+        history: [promotedParent, managedChild],
+      }).ok,
+    ).toBeTrue();
+    expect(
+      legacyJournalMatchesLogicalShadow(
+        managedChild,
+        { projectRoot: null, skill: 'alpha', tool: 'codex' },
+        managedPair,
+        promotedParent,
+      ),
+    ).toBeTrue();
+    expect(
+      legacyJournalMatchesLogicalShadow(
+        managedChild,
+        { projectRoot: null, skill: 'alpha', tool: 'codex' },
+        {
+          ...managedPair,
+          pinned: { ...physicalPin, storePath: '/fixture/store/prior', contentHash: digest },
+        },
+        promotedParent,
+      ),
+    ).toBeFalse();
+
+    const devPlacement = {
+      ...placement,
+      classification: 'dev' as const,
+      representation: 'symlink' as const,
+      linkTarget: { kind: 'machine-bound' as const, path: '/fixture/source/alpha' },
+      source: {
+        kind: 'local-dev' as const,
+        path: '/fixture/source/alpha',
+        contentHash: digest,
+      },
+    };
+    const devActual = {
+      ...placementActual,
+      liveKind: 'symlink' as const,
+      mode: 'dev' as const,
+      symlinkTarget: '/fixture/source/alpha',
+    };
+    const variants = [
+      ['install', absent, placement, absentActual, placementActual, 'uninstall'],
+      ['link-dev', absent, devPlacement, absentActual, devActual, 'uninstall'],
+      ['link-dev', priorPlacement, devPlacement, priorActual, devActual, 'promote'],
+      ['promote', devPlacement, placement, devActual, placementActual, 'dev'],
+      ['promote', priorPlacement, placement, priorActual, placementActual, 'promote'],
+      ['remove', placement, absent, placementActual, absentActual, 'install'],
+      ['remove', devPlacement, absent, devActual, absentActual, 'dev'],
+    ] as const;
+    for (const [kind, before, after, beforeActual, afterActual, inverse] of variants) {
+      const variantParent = {
+        ...parent,
+        transactionId: `tx:parent:${kind}:${inverse}`,
+        intent: {
+          ...parent.intent,
+          operationId: `operation:parent:${kind}:${inverse}`,
+          groupId: `group:parent:${kind}:${inverse}`,
+          kind,
+          before,
+          after,
+        },
+        actual: {
+          before: [beforeActual, ledgerActual],
+          after: [afterActual, ledgerActual],
+          retained: [],
+        },
+      } as unknown as LogicalJournalV1Dto;
+      const variantChild = {
+        ...variantParent,
+        transactionId: `tx:child:${kind}:${inverse}`,
+        intent: {
+          ...variantParent.intent,
+          operationId: `operation:child:${kind}:${inverse}`,
+          groupId: `group:child:${kind}:${inverse}`,
+        },
+        context: {
+          ...variantParent.context,
+          parentOperationId: variantParent.intent.operationId,
+        },
+        disposition: 'rollback',
+        actual: {
+          before: variantParent.actual.after,
+          after: variantParent.actual.before,
+          retained: [],
+        },
+      } as unknown as LogicalJournalV1Dto;
+      expect(
+        legacyJournalOperationMatchesLogicalShadow(variantChild, inverse, variantParent),
+        `${kind} -> ${inverse}`,
+      ).toBeTrue();
+      expect(
+        legacyJournalOperationMatchesLogicalShadow(
+          variantChild,
+          inverse === 'install' ? 'uninstall' : 'install',
+          variantParent,
+        ),
+        `${kind} rejects another physical operation`,
+      ).toBeFalse();
+    }
   });
 });

@@ -23,7 +23,10 @@ import { prepareLedgerMigration } from '../place/ledger-migration.ts';
 import { resolveDataDir, storeRootOf } from '../place/paths.ts';
 import type { PairPlan, PlacementRollbackIntentV1 } from '../place/plan.ts';
 import { createPlacementPlan } from '../place/plan.ts';
-import { recoverPlacementWithObservation } from '../place/recovery.ts';
+import {
+  prepareCommittedPlacementCleanup,
+  recoverPlacementWithObservation,
+} from '../place/recovery.ts';
 import { contentHashOf } from '../place/store.ts';
 import type { FlipResult, PlacementPorts } from '../place/types.ts';
 import type { OperationPlan, OperationResourceIdentity } from '../planning/types.ts';
@@ -36,10 +39,11 @@ import {
   createExpectedRevisionPreconditionIdV1,
 } from '../state/types.ts';
 import { type ObserveUndoRuntime, observeUndo } from './observe.ts';
-import { createUndoPlanGroups } from './plan.ts';
+import { createUndoPlanGroups, withUndoCleanupDiagnostics } from './plan.ts';
 import type {
   PreparedUndoPlan,
   UndoCandidate,
+  UndoCleanupWarning,
   UndoError,
   UndoObservation,
   UndoRequest,
@@ -76,6 +80,29 @@ const mapError = (error: SkillSmithError, signal?: AbortSignal): UndoError => ({
             ? 'state'
             : 'failure',
 });
+
+const skillSmithErrorCodes = new Set<SkillSmithError['code']>([
+  'generic',
+  'invalid-argument',
+  'unknown-tool',
+  'config-error',
+  'skill-parse-error',
+  'placement-not-found',
+  'source-unresolvable',
+  'ledger-error',
+  'permission-denied',
+  'flip-refused',
+  'flip-failed',
+  'tool-unavailable',
+  'cancelled',
+]);
+
+const isSkillSmithError = (value: unknown): value is SkillSmithError =>
+  value !== null &&
+  typeof value === 'object' &&
+  'code' in value &&
+  typeof value.code === 'string' &&
+  skillSmithErrorCodes.has(value.code as SkillSmithError['code']);
 
 const pairIdentityKey = (pair: PairPlan): string =>
   JSON.stringify([pair.scope, pair.scopeKey, pair.skill, pair.tool, pair.placement.path]);
@@ -511,8 +538,34 @@ export const prepareUndoFromObservation = async (
 ): Promise<Result<PreparedUndoPlan, UndoError>> => {
   const prepared = await prepareAuthority(observation, runtime);
   if (!prepared.ok) return prepared;
-  const { plan, execution } = prepared.value;
-  const groups = createUndoPlanGroups(observation, plan);
+  const { plan: preparedPlan, execution } = prepared.value;
+  const groups = createUndoPlanGroups(observation, preparedPlan);
+  const plan = withUndoCleanupDiagnostics(observation, preparedPlan, groups);
+  const cleanupCandidates = groups.flatMap((group) =>
+    group.pairs.flatMap((pair) => {
+      const candidate = observation.candidates.find(
+        (item) =>
+          item.recoveryState === 'cleanup-pending' &&
+          item.name === group.name &&
+          item.scope === group.scope &&
+          item.tool === pair.tool &&
+          item.path === pair.path &&
+          item.activeTransactionId === pair.activeTransactionId,
+      );
+      return candidate === undefined ? [] : [candidate];
+    }),
+  );
+  if (
+    cleanupCandidates.length > 0 &&
+    plan.operations.some(({ kind }) => kind === 'migrate-ledger')
+  ) {
+    return err({
+      code: 'undo-cleanup-migration-conflict',
+      message: 'cleanup-pending undo cannot be combined with ledger migration',
+      exitClass: 'state',
+    });
+  }
+  let cleanupWarnings: readonly UndoCleanupWarning[] = [];
   let consumed = false;
   return ok(
     Object.freeze({
@@ -577,11 +630,69 @@ export const prepareUndoFromObservation = async (
               return physicalResult(candidate, outcome);
             },
             onStarted: () => {},
+            ...(cleanupCandidates.length === 0
+              ? {}
+              : {
+                  beforeSchedule: async (capturedLedger) => {
+                    let aggregate = capturedLedger;
+                    const warnings: {
+                      code: 'undo-cleanup-retained';
+                      message: string;
+                    }[] = [];
+                    for (const candidate of cleanupCandidates) {
+                      if (runtime.signal?.aborted) {
+                        throw {
+                          code: 'cancelled',
+                          message: 'undo cleanup was cancelled before scheduling',
+                        } satisfies SkillSmithError;
+                      }
+                      const input = createPlacementExecutionInput(
+                        runtime.ports,
+                        observation.ledgerPath,
+                        aggregate,
+                        { newTxId: () => `transaction:cleanup:${candidate.activeTransactionId}` },
+                        {
+                          ...(runtime.configuration.journalPause === undefined
+                            ? {}
+                            : { testPauseAt: runtime.configuration.journalPause }),
+                          ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
+                        },
+                      );
+                      const target: UndoRecoveryTarget = {
+                        skill: candidate.name,
+                        tool: candidate.tool,
+                        scopeKey: candidate.scope === 'project' ? candidate.projectIdentity : null,
+                        rollbackContext: { command: 'skillsmith-undo', workflow: 'undo' },
+                      };
+                      const cleanup = await prepareCommittedPlacementCleanup(input, target);
+                      if (!cleanup.ok) throw cleanup.error;
+                      if (
+                        cleanup.value === null ||
+                        cleanup.value.transactionId !== candidate.activeTransactionId
+                      ) {
+                        throw {
+                          code: 'flip-failed',
+                          message: `approved cleanup carrier for '${candidate.name}' on ${candidate.tool} no longer matches`,
+                        } satisfies SkillSmithError;
+                      }
+                      aggregate = cleanup.value.ledger;
+                      if (cleanup.value.outcome.warning !== null) {
+                        warnings.push({
+                          code: 'undo-cleanup-retained',
+                          message: `Undo cleanup retained a mismatched backup for '${candidate.name}' on ${candidate.tool}.`,
+                        });
+                      }
+                    }
+                    cleanupWarnings = Object.freeze(warnings);
+                    return aggregate;
+                  },
+                }),
             ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
             observation: runtime.observation,
           });
-          return ok(Object.freeze(results));
+          return ok(Object.freeze({ results: Object.freeze(results), warnings: cleanupWarnings }));
         } catch (cause) {
+          if (isSkillSmithError(cause)) return err(mapError(cause, runtime.signal));
           const message =
             cause instanceof Error
               ? cause.message

@@ -295,6 +295,48 @@ const pairReduction = (
   }
   return { outcome: 'succeeded', failure: null };
 };
+const canonicalEffects = (
+  operations: readonly UndoOperationV1Dto[],
+  mode: UndoReportV1Dto['mode'],
+  results: ReadonlyMap<string, UndoOperationResultV1Dto>,
+): readonly UndoEffectV1Dto[] =>
+  operations.flatMap((operation) => {
+    const result = results.get(operation.operationId);
+    const outcome: UndoEffectV1Dto['outcome'] =
+      mode === 'dry-run'
+        ? 'planned'
+        : result?.outcome === 'failed'
+          ? 'failed'
+          : result?.outcome === 'cancelled'
+            ? 'cancelled'
+            : result === undefined || result.outcome === 'skipped-after-failure'
+              ? 'not-run'
+              : 'succeeded';
+    const roles = [
+      ...(operation.mutates.ledger ? (['ledger'] as const) : []),
+      ...(operation.mutates.live ? (['live'] as const) : []),
+    ];
+    return roles.map((role) => ({
+      role,
+      action: operation.kind,
+      operationId: operation.operationId,
+      groupId: operation.groupId,
+      outcome,
+    }));
+  });
+const effectVectorsMatch = (
+  left: readonly UndoEffectV1Dto[],
+  right: readonly UndoEffectV1Dto[],
+): boolean =>
+  left.length === right.length &&
+  left.every(
+    (effect, index) =>
+      effect.role === right[index]?.role &&
+      effect.action === right[index]?.action &&
+      effect.operationId === right[index]?.operationId &&
+      effect.groupId === right[index]?.groupId &&
+      effect.outcome === right[index]?.outcome,
+  );
 
 const containsForbiddenOutput = (input: unknown): boolean => {
   if (typeof input === 'string') {
@@ -340,9 +382,12 @@ const UndoV1Schema = z
     const projectedDiagnostics = value.diagnostics.map((diagnostic) =>
       diagnostic.correlation.groupId !== null &&
       diagnostic.correlation.operationId === null &&
-      diagnostic.correlation.pairId === null &&
-      !operationGroupIds.has(diagnostic.correlation.groupId)
-        ? { ...diagnostic, correlation: { ...diagnostic.correlation, groupId: null } }
+      !operationGroupIds.has(diagnostic.correlation.groupId) &&
+      (diagnostic.correlation.pairId === null || diagnostic.reason.code === 'undo-cleanup-pending')
+        ? {
+            ...diagnostic,
+            correlation: { ...diagnostic.correlation, groupId: null, pairId: null },
+          }
         : diagnostic,
     );
     const operationKinds = [
@@ -607,17 +652,13 @@ const UndoV1Schema = z
         message: 'undo results must exactly follow executable operation identity order',
       });
     }
-    for (const [index, effect] of value.effects.entries()) {
-      if (
-        (!selectedGroups.has(effect.groupId) && !migrationGroups.has(effect.groupId)) ||
-        (effect.operationId !== null && !operationIdSet.has(effect.operationId))
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['effects', index],
-          message: 'undo effect references an unselected group or operation',
-        });
-      }
+    const expectedEffects = canonicalEffects(value.operations, value.mode, resultById);
+    if (!effectVectorsMatch(value.effects, expectedEffects)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['effects'],
+        message: 'undo effects must equal the exact canonical operation effect vector',
+      });
     }
     for (const [index, diagnostic] of value.diagnostics.entries()) {
       if (
@@ -631,6 +672,46 @@ const UndoV1Schema = z
           message: 'undo diagnostic references an unselected group',
         });
       }
+    }
+    const cleanupDiagnostics = value.diagnostics.filter(
+      ({ reason }) => reason.code === 'undo-cleanup-pending',
+    );
+    const cleanupPairs: string[] = [];
+    for (const diagnostic of cleanupDiagnostics) {
+      const group = value.groups.find(({ groupId }) => groupId === diagnostic.correlation.groupId);
+      const pair = group?.pairs.find(({ pairId }) => pairId === diagnostic.correlation.pairId);
+      if (group !== undefined && pair !== undefined) cleanupPairs.push(pair.pairId);
+      if (
+        group === undefined ||
+        pair === undefined ||
+        pair.outcome !== 'already-reversed' ||
+        diagnostic.kind !== 'warning' ||
+        diagnostic.severity !== 'warning' ||
+        diagnostic.refusalClass !== null ||
+        diagnostic.correlation.operationId !== null ||
+        diagnostic.affected.skill !== group.skill ||
+        diagnostic.affected.source !== null ||
+        diagnostic.affected.tool !== pair.tool ||
+        diagnostic.affected.scope !== group.scope ||
+        diagnostic.affected.path?.kind !== 'machine-bound' ||
+        diagnostic.affected.path.path !== pair.path ||
+        diagnostic.selectionSource !== value.selection.source ||
+        diagnostic.reason.message !==
+          `Committed undo cleanup remains pending for '${group.skill}' on ${pair.tool}.`
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['diagnostics'],
+          message: 'undo cleanup diagnostics must correlate exactly to one already-reversed pair',
+        });
+      }
+    }
+    if (!unique(cleanupPairs) || cleanupPairs.length !== cleanupDiagnostics.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['diagnostics'],
+        message: 'undo cleanup diagnostics must be unique per cleanup-pending pair',
+      });
     }
 
     const actionable = value.groups.filter(({ pairs }) =>
@@ -662,7 +743,7 @@ const UndoV1Schema = z
       });
     }
 
-    const changing = actionable > 0 && value.operations.length > 0;
+    const changing = value.operations.length > 0 || cleanupDiagnostics.length > 0;
     const approvalValid =
       value.mode === 'dry-run'
         ? !value.approval.required && value.approval.outcome === 'not-required'

@@ -1256,6 +1256,19 @@ export const operationMatchesMatrix = (item: PlanOperationV1): boolean => {
  */
 const runtimeJournalOperationMatchesMatrix = (item: PlanOperationV1): boolean => {
   if (operationMatchesMatrix(item)) return true;
+  if (item.kind === 'promote') {
+    return (
+      hasPlacementIdentity(item) &&
+      item.source?.kind === 'portable' &&
+      item.before.kind === 'placement' &&
+      (item.before.classification === 'pinned' || item.before.classification === 'store-linked') &&
+      item.after.kind === 'placement' &&
+      item.after.classification === 'pinned' &&
+      flagsEqual(item.mutates, [true, false, false, true]) &&
+      imageScopeMatches(item.before, item) &&
+      imageScopeMatches(item.after, item)
+    );
+  }
   if (item.kind !== 'install' && item.kind !== 'update') return false;
   if (
     !hasPlacementIdentity(item) ||

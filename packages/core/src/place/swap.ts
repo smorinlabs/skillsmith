@@ -52,6 +52,9 @@ import {
   advanceLogicalTransaction,
   beginCommittedLogicalTransactionReversal,
   commitLogicalTransaction,
+  commitLogicalTransactionRetainingShadow,
+  finalizeCommittedLogicalTransactionShadow,
+  logicalRollbackExecutionMode,
   logicalRollbackTerminalActualAfter,
 } from './logical-transactions.ts';
 import { contentHashOf } from './store.ts';
@@ -1555,7 +1558,21 @@ const persistPair = async (
         updatedAt: journal.updatedAt,
         completedAt: journal.completedAt,
       };
-      const committed = commitLogicalTransaction(staged.value, terminalJournal);
+      const rollbackMode =
+        stagedPending.disposition === 'rollback'
+          ? logicalRollbackExecutionMode(staged.value, stagedPending)
+          : null;
+      if (rollbackMode !== null && !rollbackMode.ok) {
+        return err(flipFailedError(rollbackMode.error.message));
+      }
+      const committed =
+        rollbackMode?.ok === true && rollbackMode.value === 'fresh-reversal'
+          ? commitLogicalTransactionRetainingShadow(
+              staged.value,
+              terminalJournal,
+              pair as LedgerPairV1Dto,
+            )
+          : commitLogicalTransaction(staged.value, terminalJournal);
       if (!committed.ok) return err(flipFailedError(committed.error.message));
       model = committed.value;
     } else {
@@ -1596,6 +1613,15 @@ const persistWithoutPair = async (
   const next = withoutLedgerPairAt(ledger.current(), scopeKey, skill, tool);
   if (!next.ok) return next;
   return ledger.persist(next.value);
+};
+
+const persistCommittedCleanupFinalizer = async (
+  ledger: SwapLedgerAccess,
+  transactionId: string,
+): Promise<Result<void, SkillSmithError>> => {
+  const terminal = finalizeCommittedLogicalTransactionShadow(ledger.current(), transactionId);
+  if (!terminal.ok) return err(flipFailedError(terminal.error.message));
+  return ledger.persist(terminal.value);
 };
 
 const logicalRollbackError = (message: string, cancelled = false): SkillSmithError =>
@@ -1893,9 +1919,9 @@ const trustedPortableRemovalBackupHash = (operation: ExecutableOperation | null 
 
 // P5: write-ahead commit (durable committed journal) THEN reclaim the backup. Committing first
 // keeps the C5 rollback valid — the backup is the only physical copy of the old state and must
-// survive until the new live entry is recorded as committed. Promote/dev leave the committed
-// journal at rest; acquisition ops (install/uninstall) finish with a terminal write that nulls the
-// journal (install) or deletes the pair (uninstall) so no committed acquisition journal survives.
+// survive until the new live entry is recorded as committed. A fresh reversal keeps its committed
+// compatibility shadow through cleanup and the following directory fsync, then clears that carrier
+// in a second ledger write. Ordinary compatibility-only promote/dev behavior remains unchanged.
 const commit = async (
   ctx: SwapCtx,
   ledger: SwapLedgerAccess,
@@ -1911,6 +1937,15 @@ const commit = async (
   } catch (e) {
     return err(mapFsErr(e, `cannot fsync ${plan.skillsRoot}`));
   }
+  const pendingLogical = ledger.current().transactions[j.txId];
+  const rollbackMode =
+    pendingLogical?.disposition === 'rollback'
+      ? logicalRollbackExecutionMode(ledger.current(), pendingLogical)
+      : null;
+  if (rollbackMode !== null && !rollbackMode.ok) {
+    return err(flipFailedError(rollbackMode.error.message));
+  }
+  const freshReversal = rollbackMode?.ok === true && rollbackMode.value === 'fresh-reversal';
 
   if (plan.op === 'promote' || plan.op === 'dev') {
     if (plan.op === 'promote') {
@@ -1935,6 +1970,10 @@ const commit = async (
       pair,
     );
     if (!persisted.ok) return persisted;
+    if (freshReversal && ctx.pauseAt === 'committed') {
+      await pause(ctx.signal);
+      if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
+    }
 
     // Backup reclamation is authorized by the now-durable committed journal.
     let backupKept: string | null = null;
@@ -1957,12 +1996,24 @@ const commit = async (
             }
           }
         }
-      } else if ((await env.pathKind(j.backupPath)) !== 'absent') {
-        await env.removeTree(j.backupPath);
+      } else {
+        const reclaimed = await reclaimBackup(
+          env,
+          j.backupPath,
+          [j.before.mode === 'pinned' ? j.before.contentHash : null],
+          'promoted',
+        );
+        if (!reclaimed.ok) return reclaimed;
+        backupKept = reclaimed.value.backupKept;
+        warning = reclaimed.value.warning;
       }
       await env.fsyncDir(plan.skillsRoot);
     } catch (e) {
       return err(mapFsErr(e, `cannot reclaim backup for ${plan.skill}`));
+    }
+    if (freshReversal) {
+      const terminal = await persistCommittedCleanupFinalizer(ledger, j.txId);
+      if (!terminal.ok) return terminal;
     }
     return ok({ committed: true, backupKept, warning });
   }
@@ -1973,6 +2024,32 @@ const commit = async (
     // needs a write-ahead committed journal to authorize reclaiming the backup, then a terminal
     // write to null the journal.
     if (j.before.mode === 'absent') {
+      if (freshReversal) {
+        j.phase = 'committed';
+        j.completedAt = effects.journalNow();
+        const committed = await persistPair(
+          ctx,
+          ledger,
+          effects,
+          scopeKey,
+          plan.skill,
+          plan.tool,
+          pair,
+        );
+        if (!committed.ok) return committed;
+        if (ctx.pauseAt === 'committed') {
+          await pause(ctx.signal);
+          if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
+        }
+        const synced = await guardFs(
+          () => env.fsyncDir(plan.skillsRoot),
+          `cannot fsync ${plan.skillsRoot}`,
+        );
+        if (!synced.ok) return synced;
+        const terminal = await persistCommittedCleanupFinalizer(ledger, j.txId);
+        if (!terminal.ok) return terminal;
+        return ok({ committed: true, backupKept: null, warning: null });
+      }
       pair.journal = null;
       const persisted = await persistPair(
         ctx,
@@ -1998,6 +2075,10 @@ const commit = async (
       pair,
     );
     if (!committed.ok) return committed;
+    if (freshReversal && ctx.pauseAt === 'committed') {
+      await pause(ctx.signal);
+      if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
+    }
 
     const newHash = plan.install?.contentHash ?? pair.pinned?.contentHash ?? null;
     const reclaimed = await reclaimBackup(
@@ -2013,8 +2094,12 @@ const commit = async (
     );
     if (!synced.ok) return synced;
 
-    pair.journal = null;
-    const terminal = await persistPair(ctx, ledger, effects, scopeKey, plan.skill, plan.tool, pair);
+    const terminal = freshReversal
+      ? await persistCommittedCleanupFinalizer(ledger, j.txId)
+      : await (async () => {
+          pair.journal = null;
+          return persistPair(ctx, ledger, effects, scopeKey, plan.skill, plan.tool, pair);
+        })();
     if (!terminal.ok) return terminal;
     return ok({ committed: true, ...reclaimed.value });
   }
@@ -2024,6 +2109,10 @@ const commit = async (
   j.completedAt = effects.journalNow();
   const committed = await persistPair(ctx, ledger, effects, scopeKey, plan.skill, plan.tool, pair);
   if (!committed.ok) return committed;
+  if (freshReversal && ctx.pauseAt === 'committed') {
+    await pause(ctx.signal);
+    if (ctx.signal?.aborted) return err(flipFailedError('interrupted'));
+  }
 
   const reclaimed = await reclaimBackup(
     env,
@@ -2038,7 +2127,9 @@ const commit = async (
   );
   if (!synced.ok) return synced;
 
-  const terminal = await persistWithoutPair(ledger, scopeKey, plan.skill, plan.tool);
+  const terminal = freshReversal
+    ? await persistCommittedCleanupFinalizer(ledger, j.txId)
+    : await persistWithoutPair(ledger, scopeKey, plan.skill, plan.tool);
   if (!terminal.ok) return terminal;
   return ok({ committed: true, ...reclaimed.value });
 };
@@ -2742,6 +2833,27 @@ const resumeSwapInternal = async (
   const pair = pairAt(ledger.current(), scopeKey, skill, tool);
   const j = pair?.journal ?? null;
   if (!pair || !j) return err(flipRefusedError(`nothing to resume for ${skill}`));
+  if (j.phase === 'committed') {
+    const cleanupTarget = committedPlacementCleanupTarget(ledger.current(), scopeKey, skill, tool);
+    if (!cleanupTarget.ok) return cleanupTarget;
+    if (
+      cleanupTarget.value !== null &&
+      (cleanupTarget.value.freshRollbackJournal !== null ||
+        cleanupTarget.value.canonicalJournal !== null)
+    ) {
+      const prepared = await prepareCommittedPlacementTargetInternal(
+        ctx,
+        ledger,
+        cleanupTarget.value,
+      );
+      if (!prepared.ok) return prepared;
+      if (prepared.value === null) {
+        return err(flipFailedError(`committed cleanup carrier is missing for ${skill}`));
+      }
+      const persisted = await ledger.persist(prepared.value.ledger);
+      return persisted.ok ? ok(prepared.value.outcome) : persisted;
+    }
+  }
   const plan = reconstructPlan(ledger.current(), pair, j, skill, tool, scopeKey);
   if (!plan.ok) return plan;
   const logicalJournal =
@@ -2987,10 +3099,10 @@ export const rollbackSwapObserved = (
       );
 };
 
-/** §8.5: finish any committed acquisition journal left by a crash between the committed write and
+/** §8.5: finish any committed placement journal left by a crash between the committed write and
  *  the terminal write. Walks the user `skills` tree AND every `projects` subtree. Runs at the start
  *  of every locked batch (install, uninstall, promote, dev, rollback). Idempotent. */
-interface CommittedAcquireTarget {
+interface CommittedPlacementTarget {
   readonly scopeKey: string | null;
   readonly skill: string;
   readonly tool: FlipTool;
@@ -2998,7 +3110,38 @@ interface CommittedAcquireTarget {
   readonly shadow: Journal;
   readonly logicalJournal: LogicalJournalV1Dto | null;
   readonly canonicalJournal: LogicalJournalV1Dto | null;
+  readonly freshRollbackJournal: LogicalJournalV1Dto | null;
 }
+
+const freshCommittedRollbackJournal = (
+  model: LedgerModel,
+  journal: LogicalJournalV1Dto | null,
+  identity: LedgerPairIdentity,
+  pair: PairRecord,
+): Result<LogicalJournalV1Dto | null, SkillSmithError> => {
+  if (journal?.phase !== 'committed' || journal.disposition !== 'rollback') {
+    return ok(null);
+  }
+  if (
+    journal.context.parentOperationId === null ||
+    journal.context.parentOperationId === journal.intent.operationId
+  ) {
+    return err(flipFailedError('committed fresh-reversal cleanup carrier is inconsistent'));
+  }
+  const mode = logicalRollbackExecutionMode(model, journal);
+  const parent = model.history.find(
+    (candidate) => candidate.intent.operationId === journal.context.parentOperationId,
+  );
+  if (
+    !mode.ok ||
+    mode.value !== 'fresh-reversal' ||
+    parent === undefined ||
+    !legacyJournalMatchesLogicalShadow(journal, identity, pair, parent)
+  ) {
+    return err(flipFailedError('committed fresh-reversal cleanup carrier is inconsistent'));
+  }
+  return ok(journal);
+};
 
 const canonicalAcquireJournal = (
   journal: LogicalJournalV1Dto | null,
@@ -3016,9 +3159,59 @@ const canonicalAcquireJournal = (
     : null;
 };
 
-const canonicalCommittedAcquireBase = (
+const committedPlacementCleanupTarget = (
   model: LedgerModel,
-  targets: readonly CommittedAcquireTarget[],
+  scopeKey: string | null,
+  skill: string,
+  tool: FlipTool,
+): Result<CommittedPlacementTarget | null, SkillSmithError> => {
+  const pair = getLedgerPairAt(model, scopeKey, skill, tool);
+  const shadow = pair?.journal;
+  if (
+    pair === null ||
+    shadow == null ||
+    shadow.phase !== 'committed' ||
+    (shadow.op !== 'install' &&
+      shadow.op !== 'uninstall' &&
+      shadow.op !== 'dev' &&
+      shadow.op !== 'promote')
+  ) {
+    return ok(null);
+  }
+  const logicalJournal =
+    model.transactions[shadow.txId] ??
+    model.history.find(({ transactionId }) => transactionId === shadow.txId) ??
+    null;
+  const identity = { projectRoot: scopeKey, skill, tool };
+  const freshRollback = freshCommittedRollbackJournal(model, logicalJournal, identity, pair);
+  if (!freshRollback.ok) return freshRollback;
+  return ok({
+    scopeKey,
+    skill,
+    tool,
+    pair: structuredClone(pair) as PairRecord,
+    shadow: structuredClone(shadow),
+    logicalJournal,
+    canonicalJournal: canonicalAcquireJournal(logicalJournal, identity, pair, shadow),
+    freshRollbackJournal: freshRollback.value,
+  });
+};
+
+export const committedPlacementCleanupTransactionForTarget = (
+  model: LedgerModel,
+  skill: string,
+  tool: FlipTool,
+  scopeKey: string | null = null,
+): Result<string | null, SkillSmithError> => {
+  const target = committedPlacementCleanupTarget(model, scopeKey, skill, tool);
+  if (!target.ok) return target;
+  const journal = target.value?.freshRollbackJournal ?? target.value?.canonicalJournal ?? null;
+  return ok(journal?.transactionId ?? null);
+};
+
+const canonicalCommittedPlacementBase = (
+  model: LedgerModel,
+  targets: readonly CommittedPlacementTarget[],
 ): LedgerModel => {
   const candidate = structuredClone(model);
   for (const target of targets) {
@@ -3050,7 +3243,7 @@ const canonicalCommittedAcquireBase = (
   };
 };
 
-const cleanupCanonicalCommittedAcquire = async (
+const cleanupCanonicalCommittedPlacement = async (
   ctx: SwapCtx,
   plan: SwapPlan,
   pair: PairRecord,
@@ -3098,7 +3291,179 @@ const cleanupCanonicalCommittedAcquire = async (
     return synced.ok ? ok({ committed: true, ...reclaimed.value }) : synced;
   }
 
-  return err(genericError(`cannot clean canonical acquisition journal for ${plan.skill}`));
+  if (plan.op === 'dev') {
+    let backupKind: PathKind;
+    try {
+      backupKind = await ctx.env.pathKind(shadow.backupPath);
+    } catch (error) {
+      return err(mapFsErr(error, `cannot inspect backup ${shadow.backupPath}`));
+    }
+    const pinnedHash = pair.pinned?.contentHash ?? null;
+    if (backupKind === 'absent') {
+      const synced = await guardFs(
+        () => ctx.env.fsyncDir(plan.skillsRoot),
+        `cannot fsync ${plan.skillsRoot}`,
+      );
+      return synced.ok ? ok({ committed: true, backupKept: null, warning: null }) : synced;
+    }
+    if (pinnedHash === null) {
+      const synced = await guardFs(
+        () => ctx.env.fsyncDir(plan.skillsRoot),
+        `cannot fsync ${plan.skillsRoot}`,
+      );
+      return synced.ok
+        ? ok({
+            committed: true,
+            backupKept: shadow.backupPath,
+            warning: `kept backup ${shadow.backupPath}: no pinned record to verify the demoted copy`,
+          })
+        : synced;
+    }
+    const hash = await contentHashOf(ctx.env, shadow.backupPath);
+    if (!hash.ok) return hash;
+    if (hash.value !== pinnedHash) {
+      const synced = await guardFs(
+        () => ctx.env.fsyncDir(plan.skillsRoot),
+        `cannot fsync ${plan.skillsRoot}`,
+      );
+      return synced.ok
+        ? ok({
+            committed: true,
+            backupKept: shadow.backupPath,
+            warning: `kept backup ${shadow.backupPath}: demoted copy was edited in place (hash mismatch)`,
+          })
+        : synced;
+    }
+    const removed = await guardFs(
+      () => ctx.env.removeTree(shadow.backupPath),
+      `cannot reclaim backup ${shadow.backupPath}`,
+    );
+    if (!removed.ok) return removed;
+    const synced = await guardFs(
+      () => ctx.env.fsyncDir(plan.skillsRoot),
+      `cannot fsync ${plan.skillsRoot}`,
+    );
+    return synced.ok ? ok({ committed: true, backupKept: null, warning: null }) : synced;
+  }
+
+  if (plan.op === 'promote') {
+    const reclaimed = await reclaimBackup(
+      ctx.env,
+      shadow.backupPath,
+      [shadow.before.mode === 'pinned' ? shadow.before.contentHash : null],
+      'promoted',
+    );
+    if (!reclaimed.ok) return reclaimed;
+    const synced = await guardFs(
+      () => ctx.env.fsyncDir(plan.skillsRoot),
+      `cannot fsync ${plan.skillsRoot}`,
+    );
+    return synced.ok ? ok({ committed: true, ...reclaimed.value }) : synced;
+  }
+
+  return err(genericError(`cannot clean canonical placement journal for ${plan.skill}`));
+};
+
+export interface PreparedCommittedPlacementJournalCleanup {
+  readonly transactionId: string;
+  readonly outcome: SwapOutcome;
+  readonly ledger: LedgerModel;
+}
+
+const prepareCommittedPlacementTargetInternal = async (
+  ctx: SwapCtx,
+  ledger: SwapLedgerAccess,
+  target: CommittedPlacementTarget,
+): Promise<Result<PreparedCommittedPlacementJournalCleanup | null, SkillSmithError>> => {
+  const journal = target.freshRollbackJournal ?? target.canonicalJournal;
+  if (journal === null) return ok(null);
+  const plan = reconstructPlan(
+    ledger.current(),
+    target.pair,
+    target.shadow,
+    target.skill,
+    target.tool,
+    target.scopeKey,
+  );
+  if (!plan.ok) return plan;
+  const cleaned = await cleanupCanonicalCommittedPlacement(
+    ctx,
+    plan.value,
+    target.pair,
+    target.shadow,
+    journalOperation(journal),
+  );
+  if (!cleaned.ok) return cleaned;
+  let terminalModel: LedgerModel;
+  if (target.freshRollbackJournal !== null) {
+    const finalized = finalizeCommittedLogicalTransactionShadow(
+      ledger.current(),
+      target.freshRollbackJournal.transactionId,
+    );
+    if (!finalized.ok) return err(flipFailedError(finalized.error.message));
+    terminalModel = finalized.value;
+  } else {
+    terminalModel = canonicalCommittedPlacementBase(ledger.current(), [target]);
+  }
+  return ok({
+    transactionId: journal.transactionId,
+    outcome: cleaned.value,
+    ledger: terminalModel,
+  });
+};
+
+/** Prepare physical cleanup and a terminal ledger candidate without persisting that candidate. */
+export const prepareCommittedPlacementJournal = (
+  request: SwapRequest,
+  skill: string,
+  tool: FlipTool,
+  scopeKey: string | null = null,
+): Promise<SwapExecutionResult<PreparedCommittedPlacementJournalCleanup | null>> =>
+  executeWithSwapState(request, async (ctx, ledger) => {
+    const target = committedPlacementCleanupTarget(ledger.current(), scopeKey, skill, tool);
+    if (!target.ok) return target;
+    return target.value === null
+      ? ok(null)
+      : prepareCommittedPlacementTargetInternal(ctx, ledger, target.value);
+  });
+
+/** Cleanup one exact committed placement carrier without replaying its live mutation. */
+export const cleanupCommittedPlacementJournal = (
+  request: SwapRequest,
+  skill: string,
+  tool: FlipTool,
+  scopeKey: string | null = null,
+): Promise<SwapExecutionResult<SwapOutcome | null>> =>
+  executeWithSwapState(request, async (ctx, ledger) => {
+    const target = committedPlacementCleanupTarget(ledger.current(), scopeKey, skill, tool);
+    if (!target.ok) return target;
+    if (target.value === null) return ok(null);
+    const prepared = await prepareCommittedPlacementTargetInternal(ctx, ledger, target.value);
+    if (!prepared.ok) return prepared;
+    if (prepared.value === null) return ok(null);
+    const persisted = await ledger.persist(prepared.value.ledger);
+    return persisted.ok ? ok(prepared.value.outcome) : persisted;
+  });
+
+export const cleanupCommittedPlacementJournalObserved = (
+  request: SwapRequest,
+  skill: string,
+  tool: FlipTool,
+  scopeKey: string | null,
+  observation: ObservationBundle,
+): Promise<SwapExecutionResult<SwapOutcome | null>> => {
+  const target = committedPlacementCleanupTarget(request.state.ledger, scopeKey, skill, tool);
+  const journal = target.ok
+    ? (target.value?.freshRollbackJournal ?? target.value?.canonicalJournal ?? null)
+    : null;
+  return journal === null
+    ? cleanupCommittedPlacementJournal(request, skill, tool, scopeKey)
+    : cleanupCommittedPlacementJournal(
+        observeSwapPersistence(request, observation, journal.intent, 'rollback-requested', true),
+        skill,
+        tool,
+        scopeKey,
+      );
 };
 
 const sweepCommittedAcquireJournalsInternal = async (
@@ -3107,8 +3472,9 @@ const sweepCommittedAcquireJournalsInternal = async (
   effects: SwapEffects,
   observation?: ObservationBundle,
 ): Promise<Result<string[], SkillSmithError>> => {
-  const targets: CommittedAcquireTarget[] = [];
+  const targets: CommittedPlacementTarget[] = [];
   const model = ledger.current();
+  let collectionError: SkillSmithError | null = null;
 
   const collect = (tree: LedgerModel['skills'], scopeKey: string | null): void => {
     for (const skill of Object.keys(tree)) {
@@ -3117,32 +3483,10 @@ const sweepCommittedAcquireJournalsInternal = async (
       for (const tool of Object.keys(entry.tools) as FlipTool[]) {
         const pair = entry.tools[tool];
         const shadow = pair?.journal;
-        if (
-          pair !== undefined &&
-          shadow !== undefined &&
-          shadow !== null &&
-          shadow.phase === 'committed' &&
-          (shadow.op === 'install' || shadow.op === 'uninstall')
-        ) {
-          const logicalJournal =
-            model.transactions[shadow.txId] ??
-            model.history.find(({ transactionId }) => transactionId === shadow.txId) ??
-            null;
-          targets.push({
-            scopeKey,
-            skill,
-            tool,
-            pair: structuredClone(pair) as PairRecord,
-            shadow: structuredClone(shadow),
-            logicalJournal,
-            canonicalJournal: canonicalAcquireJournal(
-              logicalJournal,
-              { projectRoot: scopeKey, skill, tool },
-              pair,
-              shadow,
-            ),
-          });
-        }
+        if (pair === undefined || shadow == null || shadow.phase !== 'committed') continue;
+        const target = committedPlacementCleanupTarget(model, scopeKey, skill, tool);
+        if (!target.ok) collectionError = target.error;
+        else if (target.value !== null) targets.push(target.value);
       }
     }
   };
@@ -3154,6 +3498,7 @@ const sweepCommittedAcquireJournalsInternal = async (
       if (scope) collect(scope.skills, key);
     }
   }
+  if (collectionError !== null) return err(collectionError);
 
   const notes: string[] = [];
   for (const journal of model.history) {
@@ -3226,7 +3571,10 @@ const sweepCommittedAcquireJournalsInternal = async (
     }
     if (reclaimed.value.warning !== null) notes.push(reclaimed.value.warning);
   }
-  const canonicalTargets = targets.filter(({ canonicalJournal }) => canonicalJournal !== null);
+  const canonicalTargets = targets.filter(
+    ({ canonicalJournal, freshRollbackJournal }) =>
+      canonicalJournal !== null || freshRollbackJournal !== null,
+  );
   const pendingCanonicalObservations: Array<
     Readonly<{
       transactionObservation: ObservationBundle;
@@ -3250,7 +3598,7 @@ const sweepCommittedAcquireJournalsInternal = async (
         : (({ signal: _signal, ...signalFreeContext }) => signalFreeContext)(ctx);
     let canonicalCleanupStarted = false;
     for (const target of canonicalTargets) {
-      const journal = target.canonicalJournal;
+      const journal = target.canonicalJournal ?? target.freshRollbackJournal;
       if (journal === null) continue;
       const transactionObservation =
         observation === undefined ? null : createTransactionObservation(observation, journal);
@@ -3277,7 +3625,7 @@ const sweepCommittedAcquireJournalsInternal = async (
       }
       const cleanupContext = canonicalCleanupStarted ? canonicalCleanupContext : ctx;
       canonicalCleanupStarted = true;
-      const done = await cleanupCanonicalCommittedAcquire(
+      const done = await cleanupCanonicalCommittedPlacement(
         cleanupContext,
         plan.value,
         target.pair,
@@ -3294,9 +3642,21 @@ const sweepCommittedAcquireJournalsInternal = async (
       if (done.value.warning) notes.push(done.value.warning);
     }
     if (canonicalTargets.length > 0) {
-      const persisted = await ledger.persist(
-        canonicalCommittedAcquireBase(ledger.current(), targets),
-      );
+      let terminalModel = canonicalCommittedPlacementBase(ledger.current(), targets);
+      for (const target of canonicalTargets) {
+        if (target.freshRollbackJournal === null) continue;
+        const finalized = finalizeCommittedLogicalTransactionShadow(
+          terminalModel,
+          target.freshRollbackJournal.transactionId,
+        );
+        if (!finalized.ok) {
+          const failed = flipFailedError(finalized.error.message);
+          completeCanonicalObservations('failure', failed.code);
+          return err(failed);
+        }
+        terminalModel = finalized.value;
+      }
+      const persisted = await ledger.persist(terminalModel);
       if (!persisted.ok) {
         completeCanonicalObservations(
           persisted.error.code === 'cancelled' ? 'cancelled' : 'failure',
@@ -3321,7 +3681,7 @@ const sweepCommittedAcquireJournalsInternal = async (
   }
 
   for (const t of targets) {
-    if (t.canonicalJournal !== null) continue;
+    if (t.canonicalJournal !== null || t.freshRollbackJournal !== null) continue;
     const pair = t.pair;
     const j = t.shadow;
     const journal = t.logicalJournal;
