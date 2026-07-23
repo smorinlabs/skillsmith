@@ -7055,7 +7055,7 @@
       "phase": "5",
       "title": "Scope-aware pending abort and committed undo with compatibility routing",
       "dependsOn": ["P17-G4B-03"],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7201,7 +7201,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF11.test.ts --test-name-pattern EWP-WF11"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g5_03_f26_f29_immutable_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -7219,32 +7219,32 @@
           "evidence": ["projects/p17/evidence/P17-G5-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-03.md#minimal-implementation"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-03.md#targeted-and-impacted-green"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-03.md#targeted-and-impacted-green"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-03.md#refactor"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-03.md#independent-adversarial-review"]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"]
         }
       },
       "evidence": [
@@ -7252,7 +7252,12 @@
         "projects/p17/evidence/P17-G5-03.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G5-03.md#ready-review",
         "projects/p17/evidence/P17-G5-03.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G5-03.md#test-first-evidence"
+        "projects/p17/evidence/P17-G5-03.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-03.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-03.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-03.md#refactor",
+        "projects/p17/evidence/P17-G5-03.md#independent-adversarial-review",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
       ]
     },
     {
@@ -8742,11 +8747,15 @@
       "title": "Manage — How do I abort or reverse a selected retained operation?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:undo",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-03.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
@@ -17800,7 +17809,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS01",
       "target": {
@@ -17809,7 +17818,11 @@
         "selector": "EWP-CMD-UNDO-TS01",
         "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS01"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts01"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-cmd-undo-ts01",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts01",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS01"],
@@ -17841,7 +17854,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS02",
       "target": {
@@ -17850,7 +17863,11 @@
         "selector": "EWP-CMD-UNDO-TS02",
         "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-cmd-undo-ts02",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts02",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS02"],
@@ -17917,7 +17934,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS04",
       "target": {
@@ -17926,7 +17943,11 @@
         "selector": "EWP-CMD-UNDO-TS04",
         "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS04"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts04"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-cmd-undo-ts04",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts04",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS04"],
@@ -17958,7 +17979,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS05",
       "target": {
@@ -17967,7 +17988,11 @@
         "selector": "EWP-CMD-UNDO-TS05",
         "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-cmd-undo-ts05",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts05",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS05"],
@@ -17999,7 +18024,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS06",
       "target": {
@@ -18008,7 +18033,11 @@
         "selector": "EWP-CMD-UNDO-TS06",
         "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS06"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts06"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-cmd-undo-ts06",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts06",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS06"],
@@ -18040,7 +18069,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS07",
       "target": {
@@ -18049,7 +18078,11 @@
         "selector": "EWP-CMD-UNDO-TS07",
         "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS07"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts07"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-cmd-undo-ts07",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts07",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS07"],
@@ -18081,7 +18114,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS08",
       "target": {
@@ -18090,7 +18123,11 @@
         "selector": "EWP-CMD-UNDO-TS08",
         "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS08"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts08"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-cmd-undo-ts08",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts08",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS08"],
@@ -18122,7 +18159,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS09",
       "target": {
@@ -18131,7 +18168,11 @@
         "selector": "EWP-CMD-UNDO-TS09",
         "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS09"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts09"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-cmd-undo-ts09",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-cmd-undo-ts09",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS09"],
@@ -24420,14 +24461,18 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G5-03",
-      "status": "ready",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G5-03.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G5-03.md#ready-review",
-        "projects/p17/evidence/P17-G5-03.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G5-03.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G5-03.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-03.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-03.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
       ],
       "secondaryGroups": ["P17-G3B-01", "P17-G5-05"],
       "implements": ["COMMAND:undo", "P1-11"],
@@ -24602,7 +24647,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:tests/ergonomics/phase/EWP-P5-TS03.test.ts#EWP-P5-TS03",
       "target": {
@@ -24611,7 +24656,11 @@
         "selector": "EWP-P5-TS03",
         "command": "bun test tests/ergonomics/phase/EWP-P5-TS03.test.ts --test-name-pattern EWP-P5-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-p5-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-p5-ts03",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-p5-ts03",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P5-TS03"],
@@ -25173,7 +25222,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:tests/ergonomics/workflows/EWP-WF05.test.ts#EWP-WF05",
       "target": {
@@ -25182,7 +25231,11 @@
         "selector": "EWP-WF05",
         "command": "bun test tests/ergonomics/workflows/EWP-WF05.test.ts --test-name-pattern EWP-WF05"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-wf05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-wf05",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-wf05",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": ["P17-G3B-01", "P17-G3B-02"],
       "implements": [],
       "validatedBy": ["EWP-WF05"],
@@ -25499,7 +25552,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-03",
-      "status": "failing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-03:tests/ergonomics/workflows/EWP-WF11.test.ts#EWP-WF11",
       "target": {
@@ -25508,7 +25561,11 @@
         "selector": "EWP-WF11",
         "command": "bun test tests/ergonomics/workflows/EWP-WF11.test.ts --test-name-pattern EWP-WF11"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-wf11"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#green-execution-receipt-ewp-wf11",
+        "projects/p17/evidence/P17-G5-03.md#red-execution-receipt-ewp-wf11",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": ["P17-G3B-03", "P17-G3A-01", "P17-G1-01", "P17-G1-04", "P17-G3B-04"],
       "implements": [],
       "validatedBy": ["EWP-WF11"],
@@ -26441,11 +26498,15 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-03",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-03",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-03.md#minimal-implementation",
+        "projects/p17/evidence/P17-G5-03.md#targeted-and-impacted-green",
+        "projects/p17/evidence/P17-G5-03.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": ["P17-G5-05"],
       "implements": [],
       "validatedBy": [
