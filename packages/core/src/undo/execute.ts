@@ -24,6 +24,7 @@ import { resolveDataDir, storeRootOf } from '../place/paths.ts';
 import type { PairPlan, PlacementRollbackIntentV1 } from '../place/plan.ts';
 import { createPlacementPlan } from '../place/plan.ts';
 import {
+  type CommittedPlacementCleanupPreparation,
   prepareCommittedPlacementCleanup,
   recoverPlacementWithObservation,
 } from '../place/recovery.ts';
@@ -596,7 +597,7 @@ export const prepareUndoFromObservation = async (
               if (binding === undefined) throw new Error('approved undo binding is missing');
               return binding;
             },
-            executePair: async (operation, ledger, nestedObservation) => {
+            executePair: async (operation, ledger, nestedObservation, firstPersistenceGuard) => {
               const candidate = execution.candidateByOperationId.get(operation.operationId);
               if (candidate === undefined) throw new Error('approved undo candidate is missing');
               const input = createPlacementExecutionInput(
@@ -611,6 +612,7 @@ export const prepareUndoFromObservation = async (
                   ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
                 },
                 operation,
+                firstPersistenceGuard,
               );
               const target: UndoRecoveryTarget = {
                 skill: candidate.name,
@@ -635,6 +637,8 @@ export const prepareUndoFromObservation = async (
               : {
                   beforeSchedule: async (capturedLedger) => {
                     let aggregate = capturedLedger;
+                    let publicationGuards: CommittedPlacementCleanupPreparation['publicationGuards'] =
+                      Object.freeze([]);
                     const warnings: {
                       code: 'undo-cleanup-retained';
                       message: string;
@@ -676,6 +680,10 @@ export const prepareUndoFromObservation = async (
                         } satisfies SkillSmithError;
                       }
                       aggregate = cleanup.value.ledger;
+                      publicationGuards = Object.freeze([
+                        ...publicationGuards,
+                        ...cleanup.value.publicationGuards,
+                      ]);
                       if (cleanup.value.outcome.warning !== null) {
                         warnings.push({
                           code: 'undo-cleanup-retained',
@@ -684,7 +692,7 @@ export const prepareUndoFromObservation = async (
                       }
                     }
                     cleanupWarnings = Object.freeze(warnings);
-                    return aggregate;
+                    return Object.freeze({ ledger: aggregate, publicationGuards });
                   },
                 }),
             ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),

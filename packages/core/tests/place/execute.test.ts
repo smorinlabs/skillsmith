@@ -40,7 +40,7 @@ import {
 } from '../../src/place/logical-transactions.ts';
 import type { PairPlan } from '../../src/place/plan.ts';
 import { contentHashOf } from '../../src/place/store.ts';
-import type { PairRecord, PlacementPorts } from '../../src/place/types.ts';
+import type { PairRecord, PlacementPorts, SwapPlan } from '../../src/place/types.ts';
 import {
   createOperationGroupId,
   createOperationId,
@@ -575,6 +575,7 @@ describe('placement execution boundary', () => {
       }
       const beforeModel = before.value.model;
       let hookCalls = 0;
+      let guardCalls = 0;
 
       const results = await executePlacementOperationPlan({
         env: ports,
@@ -594,7 +595,17 @@ describe('placement execution boundary', () => {
         beforeSchedule: async (captured) => {
           hookCalls += 1;
           expect(captured).toEqual(beforeModel);
-          return { ...captured, updatedAt: terminalAt };
+          return {
+            ledger: { ...captured, updatedAt: terminalAt },
+            publicationGuards: [
+              {
+                validate: async () => {
+                  guardCalls += 1;
+                  return { ok: true as const, value: undefined };
+                },
+              },
+            ],
+          };
         },
         onStarted: () => {
           throw new Error('an empty plan must not start an operation');
@@ -604,6 +615,7 @@ describe('placement execution boundary', () => {
 
       expect(results).toEqual([]);
       expect(hookCalls).toBe(1);
+      expect(guardCalls).toBe(2);
       expect(durable).toMatchObject({
         ok: true,
         value: { state: 'present', model: { updatedAt: terminalAt } },
@@ -766,6 +778,105 @@ describe('placement execution boundary', () => {
         value: { state: 'present', byteRevision: originalByteRevision, model: originalModel },
       });
 
+      const installSwapPlan: SwapPlan = {
+        op: 'install',
+        skill: 'alpha',
+        tool: 'codex',
+        skillsRoot,
+        placementPath,
+        scopeKey: null,
+        install: {
+          build: 'copy',
+          storePath,
+          contentHash,
+          pinned: {
+            storePath,
+            rev: 'action-rev',
+            gitSha: null,
+            dirty: false,
+            contentHash,
+            snapshotAt: '2026-07-16T19:00:00.000Z',
+            verify: 'passed',
+            placement: 'copy',
+          },
+          origin: {
+            source: 'example.test/fixture/repo/skills/alpha',
+            host: 'example.test',
+            repo: 'fixture/repo',
+            skillPath: 'skills/alpha',
+            refRequested: null,
+            refResolved: 'c'.repeat(40),
+            pin: false,
+            installedAt: '2026-07-16T19:00:00.000Z',
+          },
+          adoptedDev: null,
+        },
+      };
+      let lateGuardChecks = 0;
+      let latePairExecutions = 0;
+      let lateStarted = 0;
+      await expect(
+        executePlacementOperationPlan({
+          ...common,
+          beforeSchedule: async (captured) => {
+            const terminal = withoutLedgerPairAt(captured, null, 'cleanup-retained', 'codex');
+            if (!terminal.ok) throw terminal.error;
+            return {
+              ledger: terminal.value,
+              publicationGuards: [
+                {
+                  validate: async () => {
+                    lateGuardChecks += 1;
+                    return lateGuardChecks === 1
+                      ? { ok: true as const, value: undefined }
+                      : {
+                          ok: false as const,
+                          error: flipFailedError('late placement reappearance'),
+                        };
+                  },
+                },
+              ],
+            };
+          },
+          executePair: async (
+            preparedOperation,
+            terminalLedger,
+            _observation,
+            firstPersistenceGuard,
+          ) => {
+            latePairExecutions += 1;
+            const executed = await executePlacementPlan(
+              createPlacementExecutionInput(
+                ports,
+                ledgerPath,
+                terminalLedger,
+                {
+                  now: () => '2026-07-16T19:00:00.000Z',
+                  newTxId: () => 'transaction:adapter-late-guard',
+                },
+                {},
+                preparedOperation,
+                firstPersistenceGuard,
+              ),
+              installSwapPlan,
+            );
+            if (!executed.ok) throw executed.error;
+            throw new Error('late publication guard did not stop the first P1 write');
+          },
+          onStarted: () => {
+            lateStarted += 1;
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'flip-failed', message: 'late placement reappearance' });
+      const afterLateGuard = await readLedgerState(ports, ledgerPath);
+      expect(lateGuardChecks).toBe(2);
+      expect(latePairExecutions).toBe(1);
+      expect(lateStarted).toBe(0);
+      expect(afterLateGuard).toMatchObject({
+        ok: true,
+        value: { state: 'present', byteRevision: originalByteRevision, model: originalModel },
+      });
+
       const transactionId = 'transaction:adapter-first-p1';
       let pairExecutions = 0;
       const results = await executePlacementOperationPlan({
@@ -774,9 +885,14 @@ describe('placement execution boundary', () => {
           expect(captured).toEqual(originalModel);
           const terminal = withoutLedgerPairAt(captured, null, 'cleanup-retained', 'codex');
           if (!terminal.ok) throw terminal.error;
-          return terminal.value;
+          return { ledger: terminal.value, publicationGuards: [] };
         },
-        executePair: async (preparedOperation, terminalLedger) => {
+        executePair: async (
+          preparedOperation,
+          terminalLedger,
+          _observation,
+          firstPersistenceGuard,
+        ) => {
           pairExecutions += 1;
           expect(getLedgerPairAt(terminalLedger, null, 'cleanup-retained', 'codex')).toBeNull();
           const beforeP1 = await readLedgerState(ports, ledgerPath);
@@ -797,41 +913,9 @@ describe('placement execution boundary', () => {
                 },
                 {},
                 preparedOperation,
+                firstPersistenceGuard,
               ),
-              {
-                op: 'install',
-                skill: 'alpha',
-                tool: 'codex',
-                skillsRoot,
-                placementPath,
-                scopeKey: null,
-                install: {
-                  build: 'copy',
-                  storePath,
-                  contentHash,
-                  pinned: {
-                    storePath,
-                    rev: 'action-rev',
-                    gitSha: null,
-                    dirty: false,
-                    contentHash,
-                    snapshotAt: '2026-07-16T19:00:00.000Z',
-                    verify: 'passed',
-                    placement: 'copy',
-                  },
-                  origin: {
-                    source: 'example.test/fixture/repo/skills/alpha',
-                    host: 'example.test',
-                    repo: 'fixture/repo',
-                    skillPath: 'skills/alpha',
-                    refRequested: null,
-                    refResolved: 'c'.repeat(40),
-                    pin: false,
-                    installedAt: '2026-07-16T19:00:00.000Z',
-                  },
-                  adoptedDev: null,
-                },
-              },
+              installSwapPlan,
             );
             if (executed.ok) throw new Error('post-P1 seam did not stop execution');
           } catch (error) {

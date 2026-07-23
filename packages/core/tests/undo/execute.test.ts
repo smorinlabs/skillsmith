@@ -7,6 +7,7 @@ import {
   createOperationContext,
   noopObserver,
 } from '../../src/observation/index.ts';
+import type { ObserverEvent } from '../../src/observation/index.ts';
 import { readLedgerState, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { contentHashOf } from '../../src/place/store.ts';
@@ -106,7 +107,7 @@ describe('undo execution preparation', () => {
     });
   });
 
-  test('finalizes cleanup-only and blocks cleanup/live races before mixed scheduling', async () => {
+  test('guards cleanup aggregate and mixed first-P1 publication races with convergent retries', async () => {
     const fleet = await buildFixtureFleet();
     open.push(fleet);
     const ledgerPath = ledgerPathOf(fleet.data);
@@ -336,6 +337,7 @@ describe('undo execution preparation', () => {
       migrationPending: false,
       candidates: [candidate],
     } as const satisfies UndoObservation;
+    const executionEvents: ObserverEvent[] = [];
     const runtimeObservation = Object.freeze({
       context: createOperationContext({
         command: 'skillsmith undo',
@@ -343,7 +345,13 @@ describe('undo execution preparation', () => {
         clock: { wallNowIso: () => startedAt, monotonicMilliseconds: () => 0 },
         id: { nextId: () => 'undo-cleanup-test' },
       }),
-      emitter: createObservationEmitter({ observer: noopObserver }),
+      emitter: createObservationEmitter({
+        observer: {
+          observe: (event) => {
+            executionEvents.push(event);
+          },
+        },
+      }),
     });
 
     const prepared = await prepareUndoFromObservation(observed, {
@@ -540,5 +548,289 @@ describe('undo execution preparation', () => {
     expect(mixedDurable.value.model.transactions).toEqual({});
     expect(mixedDurable.value.model.history).toHaveLength(3);
     expect(await fleet.env.readLink(actionablePath)).toBe(sourcePath);
+
+    await fleet.env.removeTree(placementPath);
+    await fleet.env.removeTree(actionablePath);
+    const secondName = 'review-b';
+    const secondPlacementPath = join(skillsRoot, secondName);
+    const secondResource = {
+      ...resource,
+      skill: secondName,
+      location: { kind: 'machine-bound' as const, path: secondPlacementPath },
+    };
+    const secondParent: LogicalJournalV1Dto = {
+      ...parent,
+      transactionId: 'transaction:parent-b',
+      intent: {
+        ...parent.intent,
+        operationId: 'operation:parent-b',
+        groupId: `group:v1:${'6'.repeat(64)}`,
+        pairId: `pair:v1:${'7'.repeat(64)}`,
+        skill: secondName,
+        before: { kind: 'absent', resource: secondResource },
+        after: { ...development, resource: secondResource },
+      },
+      actual: {
+        before: [{ ...absentActual, placementPath: secondPlacementPath }, ledgerActual],
+        after: [{ ...developmentActual, placementPath: secondPlacementPath }, ledgerActual],
+        retained: [],
+      },
+    };
+    const secondChild: LogicalJournalV1Dto = {
+      ...secondParent,
+      transactionId: 'transaction:cleanup-b',
+      intent: {
+        ...secondParent.intent,
+        operationId: 'operation:cleanup-b',
+        groupId: `group:v1:${'8'.repeat(64)}`,
+      },
+      context: {
+        ...secondParent.context,
+        parentOperationId: secondParent.intent.operationId,
+        command: 'skillsmith-undo',
+        workflow: 'undo',
+      },
+      disposition: 'rollback',
+      actual: {
+        before: secondParent.actual.after,
+        after: secondParent.actual.before,
+        retained: secondParent.actual.retained,
+      },
+    };
+    const secondCarrier = {
+      ...carrier,
+      placementPath: secondPlacementPath,
+      journal: {
+        ...carrier.journal,
+        txId: secondChild.transactionId,
+        stagingPath: join(skillsRoot, '.skillsmith-staging-review-b'),
+        backupPath: join(skillsRoot, '.skillsmith-backup-review-b'),
+      },
+    };
+    const secondCandidate = {
+      ...candidate,
+      name: secondName,
+      sourceGroupId: secondParent.intent.groupId,
+      path: secondPlacementPath,
+      placement: {
+        ...candidate.placement,
+        skill: secondName,
+        path: secondPlacementPath,
+      },
+      sourceTransactionId: secondParent.transactionId,
+      activeTransactionId: secondChild.transactionId,
+      sourceOperationId: secondParent.intent.operationId,
+      activeOperationId: secondChild.intent.operationId,
+      parentOperationId: secondParent.intent.operationId,
+      authority: { format: 'logical' as const, journal: secondChild, source: secondParent },
+    } satisfies UndoCandidate;
+    const aggregateLedger = {
+      ...ledger,
+      skills: {
+        review: { tools: { codex: carrier } },
+        [secondName]: { tools: { codex: secondCarrier } },
+      },
+      history: [parent, child, secondParent, secondChild],
+    };
+    const aggregateWritten = await writeLedger(fleet.env, ledgerPath, aggregateLedger);
+    if (!aggregateWritten.ok) throw new Error('aggregate cleanup fixture write failed');
+    const aggregateLedgerState = await readLedgerState(fleet.env, ledgerPath);
+    if (!aggregateLedgerState.ok || aggregateLedgerState.value.state !== 'present') {
+      throw new Error('aggregate cleanup fixture read failed');
+    }
+    let aggregateAAbsentProbes = 0;
+    let aggregateRaceInjected = false;
+    let aggregateRaceFollowedAPreparation = false;
+    const aggregateRacePorts: typeof fleet.env = {
+      ...fleet.env,
+      pathKind: async (path) => {
+        const kind = await fleet.env.pathKind(path);
+        if (path === placementPath && kind === 'absent') aggregateAAbsentProbes++;
+        if (!aggregateRaceInjected && path === secondPlacementPath && kind === 'absent') {
+          aggregateRaceFollowedAPreparation = aggregateAAbsentProbes > 0;
+          await fleet.env.makeSymlink(sourcePath, placementPath);
+          aggregateRaceInjected = true;
+        }
+        return kind;
+      },
+    };
+    const aggregateObserved: UndoObservation = {
+      ...observed,
+      request: { ...observed.request, targets: ['review', secondName] },
+      selection: { ...observed.selection, targets: ['review', secondName] },
+      ledgerState: aggregateLedgerState.value,
+      ledger: aggregateLedgerState.value.model,
+      candidates: [candidate, secondCandidate],
+    };
+    const aggregate = await prepareUndoFromObservation(aggregateObserved, {
+      ports: aggregateRacePorts,
+      projectContext,
+      configuration: fleet.configuration,
+      observation: runtimeObservation,
+    });
+    expect(aggregate).toMatchObject({ ok: true });
+    if (!aggregate.ok) return;
+    expect(aggregate.value.plan.operations).toEqual([]);
+    const aggregateFailure = await aggregate.value.execute();
+    expect(aggregateRaceInjected).toBeTrue();
+    expect(aggregateRaceFollowedAPreparation).toBeTrue();
+    expect(aggregateFailure).toMatchObject({ ok: false });
+    expect(aggregateFailure).not.toHaveProperty('value');
+    const aggregateDurable = await readLedgerState(fleet.env, ledgerPath);
+    if (!aggregateDurable.ok || aggregateDurable.value.state !== 'present') {
+      throw new Error('aggregate cleanup race ledger read failed');
+    }
+    for (const [name, transactionId] of [
+      ['review', child.transactionId],
+      [secondName, secondChild.transactionId],
+    ] as const) {
+      expect(aggregateDurable.value.model.skills[name]?.tools.codex?.journal).toMatchObject({
+        txId: transactionId,
+        phase: 'committed',
+      });
+      expect(
+        aggregateDurable.value.model.history.filter(
+          (journal) => journal.transactionId === transactionId,
+        ),
+      ).toHaveLength(1);
+    }
+    expect(await fleet.env.readLink(placementPath)).toBe(sourcePath);
+    expect(await fleet.env.pathKind(secondPlacementPath)).toBe('absent');
+
+    await fleet.env.removeTree(placementPath);
+    const aggregateRetryState = await readLedgerState(fleet.env, ledgerPath);
+    if (!aggregateRetryState.ok || aggregateRetryState.value.state !== 'present') {
+      throw new Error('aggregate cleanup retry ledger read failed');
+    }
+    const aggregateRetry = await prepareUndoFromObservation(
+      {
+        ...aggregateObserved,
+        ledgerState: aggregateRetryState.value,
+        ledger: aggregateRetryState.value.model,
+      },
+      {
+        ports: fleet.env,
+        projectContext,
+        configuration: fleet.configuration,
+        observation: runtimeObservation,
+      },
+    );
+    expect(aggregateRetry).toMatchObject({ ok: true });
+    if (!aggregateRetry.ok) return;
+    expect(await aggregateRetry.value.execute()).toEqual({
+      ok: true,
+      value: { results: [], warnings: [] },
+    });
+    const aggregateTerminal = await readLedgerState(fleet.env, ledgerPath);
+    if (!aggregateTerminal.ok || aggregateTerminal.value.state !== 'present') {
+      throw new Error('aggregate cleanup terminal ledger read failed');
+    }
+    expect(aggregateTerminal.value.model.skills.review).toBeUndefined();
+    expect(aggregateTerminal.value.model.skills[secondName]).toBeUndefined();
+    expect(aggregateTerminal.value.model.history).toHaveLength(4);
+
+    const publicationMixedWritten = await writeLedger(fleet.env, ledgerPath, mixedLedger);
+    if (!publicationMixedWritten.ok) throw new Error('mixed publication fixture write failed');
+    await fleet.env.makeSymlink(sourcePath, actionablePath);
+    const publicationMixedState = await readLedgerState(fleet.env, ledgerPath);
+    if (!publicationMixedState.ok || publicationMixedState.value.state !== 'present') {
+      throw new Error('mixed publication fixture read failed');
+    }
+    const cleanupLiveProbeKinds: string[] = [];
+    let mixedRaceInjected = false;
+    const mixedPublicationPorts: typeof fleet.env = {
+      ...fleet.env,
+      pathKind: async (path) => {
+        if (path === placementPath) {
+          const kind = await fleet.env.pathKind(path);
+          cleanupLiveProbeKinds.push(kind);
+          if (cleanupLiveProbeKinds.length === 2) {
+            await fleet.env.makeSymlink(sourcePath, placementPath);
+            mixedRaceInjected = true;
+            return fleet.env.pathKind(path);
+          }
+          return kind;
+        }
+        return fleet.env.pathKind(path);
+      },
+    };
+    const publicationMixedObserved: UndoObservation = {
+      ...mixedObserved,
+      ledgerState: publicationMixedState.value,
+      ledger: publicationMixedState.value.model,
+    };
+    const publicationMixed = await prepareUndoFromObservation(publicationMixedObserved, {
+      ports: mixedPublicationPorts,
+      projectContext,
+      configuration: fleet.configuration,
+      observation: runtimeObservation,
+    });
+    expect(publicationMixed).toMatchObject({ ok: true });
+    if (!publicationMixed.ok) return;
+    expect(publicationMixed.value.plan.operations).toHaveLength(1);
+    const startedBeforePublicationGuard = executionEvents.filter(
+      ({ kind }) => kind === 'operation.started',
+    ).length;
+    const publicationMixedFailure = await publicationMixed.value.execute();
+    expect(cleanupLiveProbeKinds.slice(0, 2)).toEqual(['absent', 'absent']);
+    expect(mixedRaceInjected).toBeTrue();
+    expect(publicationMixedFailure).toMatchObject({ ok: false });
+    expect(publicationMixedFailure).not.toHaveProperty('value');
+    expect(executionEvents.filter(({ kind }) => kind === 'operation.started')).toHaveLength(
+      startedBeforePublicationGuard,
+    );
+    const publicationMixedDurable = await readLedgerState(fleet.env, ledgerPath);
+    if (!publicationMixedDurable.ok || publicationMixedDurable.value.state !== 'present') {
+      throw new Error('mixed publication race ledger read failed');
+    }
+    expect(publicationMixedDurable.value.model.skills.review?.tools.codex?.journal).toMatchObject({
+      txId: child.transactionId,
+      phase: 'committed',
+    });
+    expect(publicationMixedDurable.value.model.skills.actionable?.tools.codex?.journal).toBeNull();
+    expect(publicationMixedDurable.value.model.transactions).toEqual({});
+    expect(publicationMixedDurable.value.model.history).toHaveLength(3);
+    expect(await fleet.env.readLink(actionablePath)).toBe(sourcePath);
+
+    await fleet.env.removeTree(placementPath);
+    const publicationRetryState = await readLedgerState(fleet.env, ledgerPath);
+    if (!publicationRetryState.ok || publicationRetryState.value.state !== 'present') {
+      throw new Error('mixed publication retry ledger read failed');
+    }
+    const publicationRetry = await prepareUndoFromObservation(
+      {
+        ...publicationMixedObserved,
+        ledgerState: publicationRetryState.value,
+        ledger: publicationRetryState.value.model,
+      },
+      {
+        ports: fleet.env,
+        projectContext,
+        configuration: fleet.configuration,
+        observation: runtimeObservation,
+      },
+    );
+    expect(publicationRetry).toMatchObject({ ok: true });
+    if (!publicationRetry.ok) return;
+    const publicationRetryExecution = await publicationRetry.value.execute();
+    expect(publicationRetryExecution).toMatchObject({
+      ok: true,
+      value: { results: [{ outcome: 'rolled-back' }], warnings: [] },
+    });
+    const publicationTerminal = await readLedgerState(fleet.env, ledgerPath);
+    if (!publicationTerminal.ok || publicationTerminal.value.state !== 'present') {
+      throw new Error('mixed publication terminal ledger read failed');
+    }
+    expect(publicationTerminal.value.model.skills.review).toBeUndefined();
+    expect(publicationTerminal.value.model.skills.actionable).toBeUndefined();
+    expect(publicationTerminal.value.model.transactions).toEqual({});
+    expect(
+      publicationTerminal.value.model.history.filter(
+        (journal) =>
+          journal.disposition === 'rollback' &&
+          journal.context.parentOperationId === actionableParent.intent.operationId,
+      ),
+    ).toHaveLength(1);
+    expect(await fleet.env.pathKind(actionablePath)).toBe('absent');
   });
 });

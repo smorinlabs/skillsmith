@@ -16,6 +16,7 @@ import {
   logicalRollbackExecutionMode,
 } from './logical-transactions.ts';
 import {
+  type PlacementPublicationGuard,
   cleanupCommittedPlacementJournal,
   cleanupCommittedPlacementJournalObserved,
   prepareCommittedPlacementJournal,
@@ -45,6 +46,7 @@ export interface CommittedPlacementCleanupPreparation {
   readonly transactionId: string;
   readonly outcome: SwapOutcome;
   readonly ledger: PlacementExecutionInput['ledger'];
+  readonly publicationGuards: readonly PlacementPublicationGuard[];
 }
 
 const moveScopeJournalMatchesTarget = (

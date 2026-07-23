@@ -82,6 +82,7 @@ import type { PairPlan } from './plan.ts';
 import { createStoreRepository } from './store-repository.ts';
 import type { StoreResourceV1 } from './store-repository.ts';
 import {
+  type PlacementPublicationGuard,
   commitRecordOnlyLogicalTransaction,
   commitRecordOnlyLogicalTransactionObserved,
   runCommittedPlacementReversal,
@@ -1011,18 +1012,57 @@ export interface PlacementOperationPlanExecutionInput {
     operation: ExecutableOperation,
     ledger: LedgerModel,
     observation?: ObservationBundle,
+    firstPersistenceGuard?: PlacementFirstPersistenceGuard,
   ) => Promise<FlipResult>;
   /**
    * Runs under the coordinator locks after preconditions and bindings have been validated.
    * The returned model is the ledger seed for the first scheduled placement mutation.
    */
-  readonly beforeSchedule?: (ledger: LedgerModel) => Promise<LedgerModel>;
+  readonly beforeSchedule?: (ledger: LedgerModel) => Promise<PlacementSchedulePreparation>;
   readonly onStarted: (operation: ExecutableOperation, result: FlipResult) => void;
   readonly signal?: AbortSignal;
   readonly observation?: ObservationBundle;
   /** Omit only when an enclosing artifact-pair authority already holds the placement ledger. */
   readonly locks?: readonly ExecutionLockDescriptor[];
 }
+
+export interface PlacementSchedulePreparation {
+  readonly ledger: LedgerModel;
+  readonly publicationGuards: readonly PlacementPublicationGuard[];
+}
+
+export interface PlacementFirstPersistenceGuard {
+  readonly validate: () => Promise<Result<void, SkillSmithError>>;
+  readonly run: <T extends { readonly ok: boolean }>(
+    write: () => Promise<T>,
+  ) => Promise<Result<T, SkillSmithError>>;
+}
+
+const createPlacementFirstPersistenceGuard = (
+  guards: readonly PlacementPublicationGuard[],
+): PlacementFirstPersistenceGuard => {
+  let published = false;
+  const validate = async (): Promise<Result<void, SkillSmithError>> => {
+    if (published) return ok(undefined);
+    for (const guard of guards) {
+      const valid = await guard.validate();
+      if (!valid.ok) return valid;
+    }
+    return ok(undefined);
+  };
+  return Object.freeze({
+    validate,
+    run: async <T extends { readonly ok: boolean }>(
+      write: () => Promise<T>,
+    ): Promise<Result<T, SkillSmithError>> => {
+      const valid = await validate();
+      if (!valid.ok) return valid;
+      const written = await write();
+      if (written.ok) published = true;
+      return ok(written);
+    },
+  });
+};
 
 const operationResultForFlip = (
   operation: ExecutableOperation,
@@ -1084,6 +1124,7 @@ export const executePlacementOperationPlan = async (
   input: PlacementOperationPlanExecutionInput,
 ): Promise<readonly OperationExecutionResult[]> => {
   let executionLedger: LedgerModel | null = null;
+  let firstPersistenceGuard: PlacementFirstPersistenceGuard | undefined;
   const beforeSchedule = input.beforeSchedule;
   const lifecycle = createPlacementLifecycleExecutor(input.authority);
   const placementBindings = input.plan.operations.map((operation) =>
@@ -1144,7 +1185,7 @@ export const executePlacementOperationPlan = async (
           if (ledger === null) throw new Error('validated execution ledger is missing');
           const result = failClosedPlannedNoop(
             operation,
-            await input.executePair(operation, ledger, observation),
+            await input.executePair(operation, ledger, observation, firstPersistenceGuard),
           );
           input.onStarted(operation, result);
           const reread = await readLedgerState(input.env, input.ledgerPath);
@@ -1207,8 +1248,13 @@ export const executePlacementOperationPlan = async (
               if (!current.ok) throw current.error;
               captured = ledgerModelForMutation(current.value, input.modelNow());
             }
-            const terminal = await beforeSchedule(captured);
-            executionLedger = terminal;
+            const preparation = await beforeSchedule(captured);
+            executionLedger = preparation.ledger;
+            firstPersistenceGuard = createPlacementFirstPersistenceGuard(
+              preparation.publicationGuards,
+            );
+            const valid = await firstPersistenceGuard.validate();
+            if (!valid.ok) throw valid.error;
             if (input.plan.operations.length !== 0) return;
 
             const persistence = createLedgerPersistenceGateway(
@@ -1216,7 +1262,11 @@ export const executePlacementOperationPlan = async (
               input.ledgerPath,
               input.signal,
             );
-            const written = await persistence.persist(terminal);
+            const guarded = await firstPersistenceGuard.run(() =>
+              persistence.persist(preparation.ledger),
+            );
+            if (!guarded.ok) throw guarded.error;
+            const written = guarded.value;
             if (!written.ok) {
               throw written.error.code === 'cancelled'
                 ? written.error
@@ -1244,6 +1294,7 @@ export interface PlacementExecutionInput {
   readonly logicalOperation?: ExecutableOperation;
   readonly pauseAt?: JournalPhase;
   readonly signal?: AbortSignal;
+  readonly firstPersistenceGuard?: PlacementFirstPersistenceGuard;
 }
 
 export const createPlacementExecutionInput = (
@@ -1253,6 +1304,7 @@ export const createPlacementExecutionInput = (
   deps: Pick<FlipDeps, 'now' | 'newTxId'>,
   opts: Pick<FlipOptions, 'testPauseAt' | 'signal'>,
   logicalOperation?: ExecutableOperation,
+  firstPersistenceGuard?: PlacementFirstPersistenceGuard,
 ): PlacementExecutionInput => ({
   env,
   ledgerPath,
@@ -1272,6 +1324,7 @@ export const createPlacementExecutionInput = (
   ...(opts.testPauseAt === undefined ? {} : { pauseAt: opts.testPauseAt }),
   ...(opts.signal === undefined ? {} : { signal: opts.signal }),
   ...(logicalOperation === undefined ? {} : { logicalOperation }),
+  ...(firstPersistenceGuard === undefined ? {} : { firstPersistenceGuard }),
 });
 
 export const createPlacementSwapRequest = (input: PlacementExecutionInput): SwapRequest => {
@@ -1286,7 +1339,12 @@ export const createPlacementSwapRequest = (input: PlacementExecutionInput): Swap
     state: Object.freeze({ ledger: input.ledger }),
     effects: Object.freeze({
       persistLedger: async (candidate: LedgerModel) => {
-        const written = await persistence.persist(candidate);
+        const guarded =
+          input.firstPersistenceGuard === undefined
+            ? ok(await persistence.persist(candidate))
+            : await input.firstPersistenceGuard.run(() => persistence.persist(candidate));
+        if (!guarded.ok) throw guarded.error;
+        const written = guarded.value;
         if (!written.ok) {
           return Object.freeze({
             ok: false as const,

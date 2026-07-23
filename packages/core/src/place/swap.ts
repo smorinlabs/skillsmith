@@ -1917,6 +1917,10 @@ const trustedPortableRemovalBackupHash = (operation: ExecutableOperation | null 
     ? operation.before.contentHash
     : null;
 
+export interface PlacementPublicationGuard {
+  readonly validate: () => Promise<Result<void, SkillSmithError>>;
+}
+
 const requireFreshInverseUninstallAbsent = async (
   ctx: SwapCtx,
   journal: LogicalJournalV1Dto,
@@ -1946,6 +1950,25 @@ const requireFreshInverseUninstallAbsent = async (
   } catch (error) {
     return err(mapFsErr(error, `cannot inspect live placement ${placementPath}`));
   }
+};
+
+const freshInverseUninstallPublicationGuard = (
+  ctx: SwapCtx,
+  journal: LogicalJournalV1Dto,
+  placementPath: string,
+): PlacementPublicationGuard =>
+  Object.freeze({
+    validate: () => requireFreshInverseUninstallAbsent(ctx, journal, placementPath),
+  });
+
+const validatePlacementPublicationGuards = async (
+  guards: readonly PlacementPublicationGuard[],
+): Promise<Result<void, SkillSmithError>> => {
+  for (const guard of guards) {
+    const valid = await guard.validate();
+    if (!valid.ok) return valid;
+  }
+  return ok(undefined);
 };
 
 // P5: write-ahead commit (durable committed journal) THEN reclaim the backup. Committing first
@@ -2940,17 +2963,8 @@ const resumeSwapInternal = async (
       if (prepared.value === null) {
         return err(flipFailedError(`committed cleanup carrier is missing for ${skill}`));
       }
-      if (
-        cleanupTarget.value.freshRollbackJournal !== null &&
-        cleanupTarget.value.shadow.op === 'uninstall'
-      ) {
-        const absent = await requireFreshInverseUninstallAbsent(
-          ctx,
-          cleanupTarget.value.freshRollbackJournal,
-          cleanupTarget.value.pair.placementPath,
-        );
-        if (!absent.ok) return absent;
-      }
+      const valid = await validatePlacementPublicationGuards(prepared.value.publicationGuards);
+      if (!valid.ok) return valid;
       const persisted = await ledger.persist(prepared.value.ledger);
       return persisted.ok ? ok(prepared.value.outcome) : persisted;
     }
@@ -3469,6 +3483,7 @@ export interface PreparedCommittedPlacementJournalCleanup {
   readonly transactionId: string;
   readonly outcome: SwapOutcome;
   readonly ledger: LedgerModel;
+  readonly publicationGuards: readonly PlacementPublicationGuard[];
 }
 
 const prepareCommittedPlacementTargetInternal = async (
@@ -3495,16 +3510,20 @@ const prepareCommittedPlacementTargetInternal = async (
     journalOperation(journal),
   );
   if (!cleaned.ok) return cleaned;
+  const publicationGuards =
+    target.freshRollbackJournal !== null && target.shadow.op === 'uninstall'
+      ? Object.freeze([
+          freshInverseUninstallPublicationGuard(
+            ctx,
+            target.freshRollbackJournal,
+            target.pair.placementPath,
+          ),
+        ])
+      : Object.freeze([]);
   let terminalModel: LedgerModel;
   if (target.freshRollbackJournal !== null) {
-    if (target.shadow.op === 'uninstall') {
-      const absent = await requireFreshInverseUninstallAbsent(
-        ctx,
-        target.freshRollbackJournal,
-        target.pair.placementPath,
-      );
-      if (!absent.ok) return absent;
-    }
+    const valid = await validatePlacementPublicationGuards(publicationGuards);
+    if (!valid.ok) return valid;
     const finalized = finalizeCommittedLogicalTransactionShadow(
       ledger.current(),
       target.freshRollbackJournal.transactionId,
@@ -3518,6 +3537,7 @@ const prepareCommittedPlacementTargetInternal = async (
     transactionId: journal.transactionId,
     outcome: cleaned.value,
     ledger: terminalModel,
+    publicationGuards,
   });
 };
 
@@ -3550,14 +3570,8 @@ export const cleanupCommittedPlacementJournal = (
     const prepared = await prepareCommittedPlacementTargetInternal(ctx, ledger, target.value);
     if (!prepared.ok) return prepared;
     if (prepared.value === null) return ok(null);
-    if (target.value.freshRollbackJournal !== null && target.value.shadow.op === 'uninstall') {
-      const absent = await requireFreshInverseUninstallAbsent(
-        ctx,
-        target.value.freshRollbackJournal,
-        target.value.pair.placementPath,
-      );
-      if (!absent.ok) return absent;
-    }
+    const valid = await validatePlacementPublicationGuards(prepared.value.publicationGuards);
+    if (!valid.ok) return valid;
     const persisted = await ledger.persist(prepared.value.ledger);
     return persisted.ok ? ok(prepared.value.outcome) : persisted;
   });
