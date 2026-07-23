@@ -1917,6 +1917,37 @@ const trustedPortableRemovalBackupHash = (operation: ExecutableOperation | null 
     ? operation.before.contentHash
     : null;
 
+const requireFreshInverseUninstallAbsent = async (
+  ctx: SwapCtx,
+  journal: LogicalJournalV1Dto,
+  placementPath: string,
+): Promise<Result<void, SkillSmithError>> => {
+  const lives = journal.actual.after.filter((resource) => resource.role === 'live');
+  const live = lives[0];
+  if (
+    journal.phase !== 'committed' ||
+    journal.disposition !== 'rollback' ||
+    journal.intent.before.kind !== 'absent' ||
+    lives.length !== 1 ||
+    live === undefined ||
+    live.state !== 'absent' ||
+    live.placementPath !== placementPath
+  ) {
+    return err(flipFailedError('fresh inverse-uninstall terminal absence is invalid'));
+  }
+  try {
+    return (await ctx.env.pathKind(placementPath)) === 'absent'
+      ? ok(undefined)
+      : err(
+          flipFailedError(
+            'fresh inverse-uninstall live placement reappeared; cleanup carrier retained',
+          ),
+        );
+  } catch (error) {
+    return err(mapFsErr(error, `cannot inspect live placement ${placementPath}`));
+  }
+};
+
 // P5: write-ahead commit (durable committed journal) THEN reclaim the backup. Committing first
 // keeps the C5 rollback valid — the backup is the only physical copy of the old state and must
 // survive until the new live entry is recorded as committed. A fresh reversal keeps its committed
@@ -2128,7 +2159,20 @@ const commit = async (
   if (!synced.ok) return synced;
 
   const terminal = freshReversal
-    ? await persistCommittedCleanupFinalizer(ledger, j.txId)
+    ? await (async () => {
+        const committedJournal = ledger
+          .current()
+          .history.find((journal) => journal.transactionId === j.txId);
+        if (committedJournal === undefined) {
+          return err(flipFailedError('fresh inverse-uninstall committed journal is missing'));
+        }
+        const absent = await requireFreshInverseUninstallAbsent(
+          ctx,
+          committedJournal,
+          plan.placementPath,
+        );
+        return absent.ok ? persistCommittedCleanupFinalizer(ledger, j.txId) : absent;
+      })()
     : await persistWithoutPair(ledger, scopeKey, plan.skill, plan.tool);
   if (!terminal.ok) return terminal;
   return ok({ committed: true, ...reclaimed.value });
@@ -2542,6 +2586,31 @@ const machineProjectRoot = (operation: ExecutableOperation): string | null => {
   return paths.size === 1 ? ([...paths][0] ?? null) : null;
 };
 
+const exactFreshRetainedAuthority = (
+  parent: LogicalJournalV1Dto,
+  pairId: string,
+  path: string,
+  contentHash: string,
+): Extract<
+  LogicalJournalV1Dto['actual']['retained'][number],
+  { readonly role: 'store' }
+> | null => {
+  const retained = parent.actual.retained[0];
+  return parent.intent.reversibility.kind === 'conditional' &&
+    parent.intent.reversibility.retentionResourceIds.length === 1 &&
+    parent.intent.reversibility.retentionResourceIds[0] === pairId &&
+    parent.actual.retained.length === 1 &&
+    retained?.role === 'store' &&
+    retained.resourceId === pairId &&
+    retained.path === path &&
+    retained.contentHash === contentHash &&
+    retained.repositoryRevision.kind === 'resource' &&
+    retained.repositoryRevision.digest === contentHash &&
+    retained.retainUntil === null
+    ? retained
+    : null;
+};
+
 const freshReversalPlan = (
   request: SwapRequest,
   sourceTransactionId: string,
@@ -2586,8 +2655,11 @@ const freshReversalPlan = (
   const desired = operation.after;
   const current = operation.before;
   if (desired.kind === 'absent') {
-    return pair === null
-      ? err(flipFailedError('fresh reversal pair is missing for uninstall'))
+    return pair === null ||
+      parent.actual.retained.length !== 0 ||
+      parent.intent.reversibility.kind !== 'none' ||
+      parent.intent.reversibility.retentionResourceIds.length !== 0
+      ? err(flipFailedError('fresh reversal pair or terminal absence authority is invalid'))
       : ok({ ...base, op: 'uninstall' });
   }
   if (desired.kind !== 'placement') {
@@ -2604,10 +2676,17 @@ const freshReversalPlan = (
     ) {
       return err(flipFailedError('fresh development reversal source is invalid'));
     }
+    if (
+      exactFreshRetainedAuthority(parent, operation.pairId, source.path, source.contentHash) ===
+      null
+    ) {
+      return err(flipFailedError('fresh development reversal retained authority is invalid'));
+    }
     const recorded = pair?.dev;
     const devRecord =
       recorded !== null &&
       recorded !== undefined &&
+      resolve(recorded.sourcePath) === resolve(source.path) &&
       resolve(recorded.resolvedPath) === resolve(source.path)
         ? recorded
         : {
@@ -2625,18 +2704,29 @@ const freshReversalPlan = (
     });
   }
   const source = desired.source;
-  const retained = parent.actual.retained.find(
-    (resource) => resource.role === 'store' && resource.resourceId === operation.pairId,
-  );
+  const retained =
+    desired.contentHash === null
+      ? null
+      : exactFreshRetainedAuthority(
+          parent,
+          operation.pairId,
+          parent.actual.retained[0]?.path ?? '',
+          desired.contentHash,
+        );
   if (
     (desired.classification !== 'pinned' && desired.classification !== 'store-linked') ||
     (desired.representation !== 'copy' && desired.representation !== 'symlink') ||
     desired.contentHash === null ||
     source?.kind !== 'portable' ||
     source.contentHash !== desired.contentHash ||
-    retained === undefined ||
+    retained === null ||
     retained.contentHash !== desired.contentHash ||
-    retained.repositoryRevision.digest !== desired.contentHash
+    retained.repositoryRevision.kind !== 'resource' ||
+    retained.repositoryRevision.digest !== desired.contentHash ||
+    retained.retainUntil !== null ||
+    (desired.representation === 'copy'
+      ? desired.linkTarget !== null
+      : desired.linkTarget?.kind !== 'machine-bound' || desired.linkTarget.path !== retained.path)
   ) {
     return err(flipFailedError('fresh managed reversal retained authority is invalid'));
   }
@@ -2849,6 +2939,17 @@ const resumeSwapInternal = async (
       if (!prepared.ok) return prepared;
       if (prepared.value === null) {
         return err(flipFailedError(`committed cleanup carrier is missing for ${skill}`));
+      }
+      if (
+        cleanupTarget.value.freshRollbackJournal !== null &&
+        cleanupTarget.value.shadow.op === 'uninstall'
+      ) {
+        const absent = await requireFreshInverseUninstallAbsent(
+          ctx,
+          cleanupTarget.value.freshRollbackJournal,
+          cleanupTarget.value.pair.placementPath,
+        );
+        if (!absent.ok) return absent;
       }
       const persisted = await ledger.persist(prepared.value.ledger);
       return persisted.ok ? ok(prepared.value.outcome) : persisted;
@@ -3396,6 +3497,14 @@ const prepareCommittedPlacementTargetInternal = async (
   if (!cleaned.ok) return cleaned;
   let terminalModel: LedgerModel;
   if (target.freshRollbackJournal !== null) {
+    if (target.shadow.op === 'uninstall') {
+      const absent = await requireFreshInverseUninstallAbsent(
+        ctx,
+        target.freshRollbackJournal,
+        target.pair.placementPath,
+      );
+      if (!absent.ok) return absent;
+    }
     const finalized = finalizeCommittedLogicalTransactionShadow(
       ledger.current(),
       target.freshRollbackJournal.transactionId,
@@ -3441,6 +3550,14 @@ export const cleanupCommittedPlacementJournal = (
     const prepared = await prepareCommittedPlacementTargetInternal(ctx, ledger, target.value);
     if (!prepared.ok) return prepared;
     if (prepared.value === null) return ok(null);
+    if (target.value.freshRollbackJournal !== null && target.value.shadow.op === 'uninstall') {
+      const absent = await requireFreshInverseUninstallAbsent(
+        ctx,
+        target.value.freshRollbackJournal,
+        target.value.pair.placementPath,
+      );
+      if (!absent.ok) return absent;
+    }
     const persisted = await ledger.persist(prepared.value.ledger);
     return persisted.ok ? ok(prepared.value.outcome) : persisted;
   });
@@ -3655,6 +3772,20 @@ const sweepCommittedAcquireJournalsInternal = async (
           return err(failed);
         }
         terminalModel = finalized.value;
+      }
+      for (const target of canonicalTargets) {
+        if (target.freshRollbackJournal === null || target.shadow.op !== 'uninstall') {
+          continue;
+        }
+        const absent = await requireFreshInverseUninstallAbsent(
+          ctx,
+          target.freshRollbackJournal,
+          target.pair.placementPath,
+        );
+        if (!absent.ok) {
+          completeCanonicalObservations('failure', absent.error.code);
+          return absent;
+        }
       }
       const persisted = await ledger.persist(terminalModel);
       if (!persisted.ok) {

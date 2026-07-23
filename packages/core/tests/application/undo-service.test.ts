@@ -17,7 +17,7 @@ import {
 import { createPlanningDiagnosticId } from '../../src/planning/create.ts';
 import type { ExecutableOperation, OperationExecutionResult } from '../../src/planning/types.ts';
 import type { RuntimePorts } from '../../src/ports/types.ts';
-import { ok } from '../../src/result.ts';
+import { err, ok } from '../../src/result.ts';
 import type { PreparedUndoPlan, UndoObservation, UndoPlanGroup } from '../../src/undo/types.ts';
 
 const observation = Object.freeze({
@@ -219,7 +219,11 @@ const prepared = (changing: boolean, executed = { value: 0 }): PreparedUndoPlan 
   };
 };
 
-const cleanupPrepared = (executed = { value: 0 }, warning = false): PreparedUndoPlan => {
+const cleanupPrepared = (
+  executed = { value: 0 },
+  warning = false,
+  carrier?: { durable: boolean },
+): PreparedUndoPlan => {
   const base = prepared(true);
   const sourceGroup = base.groups[0];
   const sourcePair = sourceGroup?.pairs[0];
@@ -286,6 +290,7 @@ const cleanupPrepared = (executed = { value: 0 }, warning = false): PreparedUndo
     groups: [group],
     execute: async () => {
       executed.value++;
+      if (carrier !== undefined) carrier.durable = false;
       return ok({
         results: [],
         warnings: warning
@@ -410,9 +415,10 @@ describe('undo application service', () => {
 
   test('cleanup-only dry-run remains read-only and does not require approval', async () => {
     const executed = { value: 0 };
+    const carrier = { durable: true };
     const service = createUndoApplicationService({
       prepare: (async () =>
-        ok(cleanupPrepared(executed))) as UndoApplicationDependencies['prepare'],
+        ok(cleanupPrepared(executed, false, carrier))) as UndoApplicationDependencies['prepare'],
     });
 
     const result = await service(
@@ -435,14 +441,16 @@ describe('undo application service', () => {
       diagnostics: [{ reason: { code: 'undo-cleanup-pending' } }],
     });
     expect(executed.value).toBe(0);
+    expect(carrier.durable).toBeTrue();
   });
 
   test('cleanup-only approval preview carries exact cleanup authority and refusal writes nothing', async () => {
     const executed = { value: 0 };
+    const carrier = { durable: true };
     let preview: unknown;
     const service = createUndoApplicationService({
       prepare: (async () =>
-        ok(cleanupPrepared(executed))) as UndoApplicationDependencies['prepare'],
+        ok(cleanupPrepared(executed, false, carrier))) as UndoApplicationDependencies['prepare'],
     });
 
     const result = await service(
@@ -477,6 +485,51 @@ describe('undo application service', () => {
       effects: [],
     });
     expect(executed.value).toBe(0);
+    expect(carrier.durable).toBeTrue();
+  });
+
+  test('approved cleanup hook failure returns no report, result, or effect authority', async () => {
+    const executed = { value: 0 };
+    const carrier = { durable: true };
+    const prepared = cleanupPrepared(executed, false, carrier);
+    const service = createUndoApplicationService({
+      prepare: (async () =>
+        ok({
+          ...prepared,
+          execute: async () => {
+            executed.value++;
+            return err({
+              code: 'undo-flip-failed',
+              message: 'committed fresh-uninstall cleanup requires live to remain absent',
+              exitClass: 'failure' as const,
+            });
+          },
+        })) as UndoApplicationDependencies['prepare'],
+    });
+
+    const result = await service(
+      request({ tool: ['claude-code'], project: true, yes: true }),
+      context(),
+    );
+
+    expect(result.exitClass).toBe('failure');
+    expect(result.report.result).toBeNull();
+    expect(result.diagnostics).toEqual([
+      {
+        code: 'undo-flip-failed',
+        severity: 'error',
+        message: 'committed fresh-uninstall cleanup requires live to remain absent',
+      },
+    ]);
+    expect(result.mutation).toEqual({
+      kind: 'none',
+      planned: 0,
+      changed: 0,
+      unchanged: 0,
+      failed: 0,
+    });
+    expect(executed.value).toBe(1);
+    expect(carrier.durable).toBeTrue();
   });
 
   test('approved cleanup-only execution completes with no effects and surfaces retained backup warning', async () => {

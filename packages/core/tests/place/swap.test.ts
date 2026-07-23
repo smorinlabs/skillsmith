@@ -1151,6 +1151,36 @@ describe('runSwap — promote / demote happy paths', () => {
         expect(await f.env.pathKind(s.placementPath)).toBe('symlink');
         expect(await f.env.readLink(s.placementPath)).toBe(s.target);
 
+        const backupPath = join(s.skillsRoot, `.skillsmith-backup-alpha-${transactionId}`);
+        const baseFsyncDir = f.env.fsyncDir.bind(f.env);
+        let cleanupFsyncCalls = 0;
+        const cleanupFsyncFaultEnv: RuntimePorts = {
+          ...f.env,
+          fsyncDir: async (path) => {
+            cleanupFsyncCalls += 1;
+            if (cleanupFsyncCalls === 2) {
+              throw new Error('simulated post-removal pre-fsync cleanup fault');
+            }
+            await baseFsyncDir(path);
+          },
+        };
+        const failedCleanupFsync = await prepareCommittedPlacementCleanup(
+          {
+            env: cleanupFsyncFaultEnv,
+            ledgerPath: s.ledgerPath,
+            ledger: recoveryLedger,
+            journalNow: () => JOURNAL_NOW,
+            newTransactionId: () => 'unused-recovery-id',
+            logicalOperation: reversal,
+          },
+          { skill: 'alpha', tool: 'claude-code' },
+        );
+        expect(failedCleanupFsync.ok).toBeFalse();
+        expect(
+          getSwapPair(failedCleanupFsync.state.ledger, 'alpha', 'claude-code')?.journal,
+        ).toMatchObject({ txId: transactionId, phase: 'committed' });
+        expect(await f.env.pathKind(backupPath)).toBe('absent');
+
         const preparedCleanup = await prepareCommittedPlacementCleanup(
           {
             env: f.env,
@@ -1172,9 +1202,7 @@ describe('runSwap — promote / demote happy paths', () => {
           getSwapPair(preparedCleanup.value.ledger, 'alpha', 'claude-code')?.journal,
         ).toBeNull();
         expect(preparedCleanup.value.outcome.backupKept).toBeNull();
-        expect(
-          await f.env.pathKind(join(s.skillsRoot, `.skillsmith-backup-alpha-${transactionId}`)),
-        ).toBe('absent');
+        expect(await f.env.pathKind(backupPath)).toBe('absent');
 
         const terminalWriteFaultEnv: RuntimePorts = {
           ...f.env,
@@ -1248,6 +1276,179 @@ describe('runSwap — promote / demote happy paths', () => {
       currentLedger = recovered.state.ledger;
     }
   }, 20_000);
+
+  test('retains a fresh inverse-uninstall carrier whenever the live path reappears', async () => {
+    const skill = 'fresh-uninstall';
+    const skillsRoot = join(f.home, '.claude', 'skills');
+    const placementPath = join(skillsRoot, skill);
+    const sourcePath = resolve(f.alphaSrc);
+    const hashed = await contentHashOf(f.env, sourcePath);
+    if (!hashed.ok) throw new Error(msg(hashed.error));
+    const contentHash = hashed.value as OperationDigest;
+    const resource = {
+      kind: 'live' as const,
+      skill,
+      tool: 'claude-code' as const,
+      scope: 'user' as const,
+      projectRoot: null,
+      location: { kind: 'machine-bound' as const, path: placementPath },
+    };
+    const source = { kind: 'local-dev' as const, path: sourcePath, contentHash };
+    const parentOperation: ExecutableOperation = {
+      operationId: 'operation:fresh-uninstall-parent',
+      groupId: 'group:fresh-uninstall-parent',
+      pairId: 'pair:fresh-uninstall:claude-code',
+      kind: 'link-dev',
+      dependencyMetadata: {
+        domain: 'skillsmith.operation-dependency',
+        schemaVersion: 1,
+        operationIds: [],
+      },
+      skill,
+      source,
+      tool: 'claude-code',
+      scope: 'user',
+      before: { kind: 'absent', resource },
+      after: {
+        kind: 'placement',
+        resource,
+        classification: 'dev',
+        representation: 'symlink',
+        linkTarget: { kind: 'machine-bound', path: sourcePath },
+        dangling: false,
+        source,
+        contentHash,
+      },
+      reason: { code: 'link-dev-selected', message: 'Link development placement.' },
+      selectionSource: 'explicit-targets',
+      preconditionIds: [],
+      requiredCheckIds: [],
+      reversibility: { kind: 'none', retentionResourceIds: [] },
+      mutates: { live: true, manifest: false, lock: false, ledger: true },
+      conflict: null,
+    };
+    const ledgerPath = ledgerPathOf(f.data);
+    const parent = await runSwap(
+      makeCtx(f.env, ledgerPath, emptyLedgerModel(NOW), {
+        txId: 'transaction:fresh-uninstall-parent',
+        logicalOperation: parentOperation,
+        journalTimestamp: JOURNAL_NOW,
+      }),
+      {
+        op: 'dev',
+        skill,
+        tool: 'claude-code',
+        skillsRoot,
+        placementPath,
+        dev: { sourcePath, devRecord: dev(sourcePath) },
+      },
+    );
+    if (!parent.ok) throw new Error(msg(parent.error));
+    const parentJournal = parent.state.ledger.history.find(
+      ({ transactionId }) => transactionId === 'transaction:fresh-uninstall-parent',
+    );
+    if (parentJournal === undefined) throw new Error('fresh uninstall parent is missing');
+    const reversal: ExecutableOperation = {
+      ...parentOperation,
+      operationId: 'operation:fresh-uninstall-child',
+      groupId: 'group:fresh-uninstall-child',
+      before: parentOperation.after,
+      after: parentOperation.before,
+      reason: { code: 'rollback-inverse', message: 'Remove development placement.' },
+    };
+    const transactionId = 'transaction:fresh-uninstall-child';
+    const controller = new AbortController();
+    const interrupted = await runCommittedPlacementReversal(
+      makeCtx(f.env, ledgerPath, parent.state.ledger, {
+        txId: transactionId,
+        signal: controller.signal,
+        pauseAt: 'committed',
+        logicalOperation: reversal,
+        journalTimestamp: JOURNAL_NOW,
+        afterPersist: (ledger) => {
+          if (getSwapPair(ledger, skill, 'claude-code')?.journal?.phase === 'committed') {
+            controller.abort();
+          }
+        },
+      }),
+      parentJournal.transactionId,
+    );
+    expect(interrupted.ok).toBeFalse();
+    expect(await f.env.pathKind(placementPath)).toBe('absent');
+    expect(getSwapPair(interrupted.state.ledger, skill, 'claude-code')?.journal).toMatchObject({
+      txId: transactionId,
+      op: 'uninstall',
+      phase: 'committed',
+    });
+
+    await f.env.makeSymlink(sourcePath, placementPath);
+    const requests = [
+      () =>
+        resumeSwap(
+          makeCtx(f.env, ledgerPath, interrupted.state.ledger, {
+            logicalOperation: reversal,
+            journalTimestamp: JOURNAL_NOW,
+          }),
+          skill,
+          'claude-code',
+        ),
+      () =>
+        recoverPlacement(
+          {
+            env: f.env,
+            ledgerPath,
+            ledger: interrupted.state.ledger,
+            journalNow: () => JOURNAL_NOW,
+            newTransactionId: () => 'unused-recovery-id',
+            logicalOperation: reversal,
+          },
+          'rollback',
+          { skill, tool: 'claude-code' },
+        ),
+      () =>
+        prepareCommittedPlacementCleanup(
+          {
+            env: f.env,
+            ledgerPath,
+            ledger: interrupted.state.ledger,
+            journalNow: () => JOURNAL_NOW,
+            newTransactionId: () => 'unused-recovery-id',
+            logicalOperation: reversal,
+          },
+          { skill, tool: 'claude-code' },
+        ),
+      () =>
+        sweepCommittedAcquireJournals(
+          makeCtx(f.env, ledgerPath, interrupted.state.ledger, {
+            logicalOperation: reversal,
+            journalTimestamp: JOURNAL_NOW,
+          }),
+        ),
+    ] as const;
+    for (const recover of requests) {
+      const refused = await recover();
+      expect(refused.ok).toBeFalse();
+      expect(refused.ok ? null : msg(refused.error)).toContain('live placement reappeared');
+      expect(getSwapPair(refused.state.ledger, skill, 'claude-code')?.journal).toMatchObject({
+        txId: transactionId,
+        phase: 'committed',
+      });
+      expect(await f.env.pathKind(placementPath)).toBe('symlink');
+    }
+
+    await f.env.removeTree(placementPath);
+    const recovered = await resumeSwap(
+      makeCtx(f.env, ledgerPath, interrupted.state.ledger, {
+        logicalOperation: reversal,
+        journalTimestamp: JOURNAL_NOW,
+      }),
+      skill,
+      'claude-code',
+    );
+    if (!recovered.ok) throw new Error(msg(recovered.error));
+    expect(getSwapPair(recovered.state.ledger, skill, 'claude-code')).toBeNull();
+    expect(await f.env.pathKind(placementPath)).toBe('absent');
+  });
 
   test('demote when the pinned copy was edited in place: backup kept + warning, still flips', async () => {
     const s = await seedAlphaDev(f);

@@ -9,6 +9,7 @@ import {
 } from '../../src/observation/index.ts';
 import { readLedgerState, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
+import { contentHashOf } from '../../src/place/store.ts';
 import { prepareUndoFromObservation } from '../../src/undo/execute.ts';
 import type { UndoCandidate, UndoObservation } from '../../src/undo/types.ts';
 import {
@@ -105,7 +106,7 @@ describe('undo execution preparation', () => {
     });
   });
 
-  test('finalizes an approved cleanup-only carrier through the pre-schedule hook', async () => {
+  test('finalizes cleanup-only and blocks cleanup/live races before mixed scheduling', async () => {
     const fleet = await buildFixtureFleet();
     open.push(fleet);
     const ledgerPath = ledgerPathOf(fleet.data);
@@ -113,7 +114,9 @@ describe('undo execution preparation', () => {
     const placementPath = join(skillsRoot, 'review');
     const sourcePath = fleet.alphaSrc;
     const startedAt = '2026-07-22T00:00:00.000Z';
-    const contentDigest = `sha256:${'a'.repeat(64)}` as ArtifactDigest;
+    const hashedSource = await contentHashOf(fleet.env, sourcePath);
+    if (!hashedSource.ok) throw new Error('cleanup source fixture hash failed');
+    const contentDigest = hashedSource.value as ArtifactDigest;
     const ledgerDigest = `sha256:${'b'.repeat(64)}` as ArtifactDigest;
     const groupId = `group:v1:${'1'.repeat(64)}`;
     const pairId = `pair:v1:${'2'.repeat(64)}`;
@@ -370,5 +373,172 @@ describe('undo execution preparation', () => {
         ({ transactionId }) => transactionId === child.transactionId,
       ),
     ).toHaveLength(1);
+
+    const rewritten = await writeLedger(fleet.env, ledgerPath, ledger);
+    if (!rewritten.ok) throw new Error('cleanup race ledger fixture write failed');
+    const raceLedgerState = await readLedgerState(fleet.env, ledgerPath);
+    if (!raceLedgerState.ok || raceLedgerState.value.state !== 'present') {
+      throw new Error('cleanup race ledger fixture read failed');
+    }
+    const raceObserved: UndoObservation = {
+      ...observed,
+      ledgerState: raceLedgerState.value,
+      ledger: raceLedgerState.value.model,
+    };
+    const cleanupOnlyRace = await prepareUndoFromObservation(raceObserved, {
+      ports: fleet.env,
+      projectContext,
+      configuration: fleet.configuration,
+      observation: runtimeObservation,
+    });
+    expect(cleanupOnlyRace).toMatchObject({ ok: true });
+    if (!cleanupOnlyRace.ok) return;
+    await fleet.env.makeSymlink(sourcePath, placementPath);
+    const cleanupOnlyFailure = await cleanupOnlyRace.value.execute();
+    expect(cleanupOnlyFailure).toMatchObject({ ok: false });
+    expect(cleanupOnlyFailure).not.toHaveProperty('value');
+    if (cleanupOnlyFailure.ok) return;
+    expect(cleanupOnlyFailure.error).toMatchObject({ exitClass: 'failure' });
+    const cleanupOnlyDurable = await readLedgerState(fleet.env, ledgerPath);
+    if (!cleanupOnlyDurable.ok || cleanupOnlyDurable.value.state !== 'present') {
+      throw new Error('cleanup-only race ledger read failed');
+    }
+    expect(cleanupOnlyDurable.value.model.skills.review?.tools.codex?.journal).toMatchObject({
+      txId: child.transactionId,
+      phase: 'committed',
+    });
+    expect(cleanupOnlyDurable.value.model.transactions).toEqual({});
+
+    await fleet.env.removeTree(placementPath);
+    const actionablePath = join(skillsRoot, 'actionable');
+    const actionableResource = {
+      ...resource,
+      skill: 'actionable',
+      location: { kind: 'machine-bound' as const, path: actionablePath },
+    };
+    const actionableGroupId = `group:v1:${'4'.repeat(64)}`;
+    const actionablePairId = `pair:v1:${'5'.repeat(64)}`;
+    const actionableParent: LogicalJournalV1Dto = {
+      ...parent,
+      transactionId: 'transaction:actionable-parent',
+      intent: {
+        ...parent.intent,
+        operationId: 'operation:actionable-parent',
+        groupId: actionableGroupId,
+        pairId: actionablePairId,
+        skill: 'actionable',
+        before: { kind: 'absent', resource: actionableResource },
+        after: {
+          ...development,
+          resource: actionableResource,
+        },
+      },
+      actual: {
+        before: [{ ...absentActual, placementPath: actionablePath }, ledgerActual],
+        after: [{ ...developmentActual, placementPath: actionablePath }, ledgerActual],
+        retained: [],
+      },
+    };
+    const actionablePair = {
+      placementPath: actionablePath,
+      mode: 'dev' as const,
+      dev: {
+        sourcePath,
+        resolvedPath: sourcePath,
+        repoRoot: fleet.checkout,
+        sourceRelPath: 'plugins/fh/skills/alpha',
+        remote: null,
+        recordedAt: startedAt,
+      },
+      journal: null,
+    };
+    const mixedLedger = {
+      ...ledger,
+      skills: {
+        actionable: { tools: { codex: actionablePair } },
+        review: { tools: { codex: carrier } },
+      },
+      history: [parent, child, actionableParent],
+    };
+    const mixedWritten = await writeLedger(fleet.env, ledgerPath, mixedLedger);
+    if (!mixedWritten.ok) throw new Error('mixed cleanup ledger fixture write failed');
+    await fleet.env.makeSymlink(sourcePath, actionablePath);
+    const mixedLedgerState = await readLedgerState(fleet.env, ledgerPath);
+    if (!mixedLedgerState.ok || mixedLedgerState.value.state !== 'present') {
+      throw new Error('mixed cleanup ledger fixture read failed');
+    }
+    const actionableCandidate = {
+      name: 'actionable',
+      sourceGroupId: actionableParent.intent.groupId,
+      tool: 'codex',
+      scope: 'user',
+      projectIdentity: null,
+      path: actionablePath,
+      placement: {
+        skill: 'actionable',
+        root: skillsRoot,
+        path: actionablePath,
+        class: 'dev',
+        symlinkTarget: sourcePath,
+        dangling: false,
+      },
+      capabilities: ['undo'],
+      exists: true,
+      action: 'reverse-committed',
+      outcome: 'selected',
+      operationFamily: 'dev',
+      disposition: 'forward',
+      phase: 'committed',
+      executionMode: 'resume-rollback',
+      recoveryState: 'none',
+      before: 'absent',
+      eligibility: 'eligible',
+      retention: [],
+      sourceTransactionId: actionableParent.transactionId,
+      activeTransactionId: actionableParent.transactionId,
+      sourceOperationId: actionableParent.intent.operationId,
+      activeOperationId: actionableParent.intent.operationId,
+      parentOperationId: null,
+      authority: {
+        format: 'logical',
+        journal: actionableParent,
+        source: actionableParent,
+      },
+    } as const satisfies UndoCandidate;
+    const mixedObserved: UndoObservation = {
+      ...observed,
+      request: { ...observed.request, targets: ['actionable', 'review'] },
+      selection: { ...observed.selection, targets: ['actionable', 'review'] },
+      ledgerState: mixedLedgerState.value,
+      ledger: mixedLedgerState.value.model,
+      candidates: [actionableCandidate, candidate],
+    };
+    const mixed = await prepareUndoFromObservation(mixedObserved, {
+      ports: fleet.env,
+      projectContext,
+      configuration: fleet.configuration,
+      observation: runtimeObservation,
+    });
+    expect(mixed).toMatchObject({ ok: true });
+    if (!mixed.ok) return;
+    expect(mixed.value.plan.operations).toHaveLength(1);
+    await fleet.env.makeSymlink(sourcePath, placementPath);
+    const mixedFailure = await mixed.value.execute();
+    expect(mixedFailure).toMatchObject({ ok: false });
+    expect(mixedFailure).not.toHaveProperty('value');
+    if (mixedFailure.ok) return;
+    expect(mixedFailure.error).toMatchObject({ exitClass: 'failure' });
+    const mixedDurable = await readLedgerState(fleet.env, ledgerPath);
+    if (!mixedDurable.ok || mixedDurable.value.state !== 'present') {
+      throw new Error('mixed race ledger read failed');
+    }
+    expect(mixedDurable.value.model.skills.review?.tools.codex?.journal).toMatchObject({
+      txId: child.transactionId,
+      phase: 'committed',
+    });
+    expect(mixedDurable.value.model.skills.actionable?.tools.codex?.journal).toBeNull();
+    expect(mixedDurable.value.model.transactions).toEqual({});
+    expect(mixedDurable.value.model.history).toHaveLength(3);
+    expect(await fleet.env.readLink(actionablePath)).toBe(sourcePath);
   });
 });

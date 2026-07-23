@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { z } from 'zod';
 import { FLIP_TOOLS } from '../agents/registry.ts';
 import { type Result, err, ok } from '../result.ts';
@@ -580,35 +581,126 @@ const freshRollbackPhysicalBeforeMatches = (
   );
 };
 
-/**
- * A fresh reversal stages its terminal pair records at P1. For a managed-to-managed reversal the
- * physical before-image therefore belongs only to the compatibility shadow while `pair.pinned`
- * already describes the restored after-image. Keep those two authorities separate and validate
- * the terminal pair against the logical after-image once the cleanup carrier is committed.
- */
-const freshRollbackTerminalPairMatches = (
+const exactFreshRollbackRetention = (
   logical: LogicalJournalV1Dto,
-  pair: LedgerPairV1Dto,
+  path: string,
+  contentHash: string,
 ): boolean => {
-  if (logical.phase !== 'committed') return true;
+  const pairId = logical.intent.pairId;
+  const retained = logical.actual.retained[0];
+  return (
+    pairId !== null &&
+    logical.intent.reversibility.kind === 'conditional' &&
+    logical.intent.reversibility.retentionResourceIds.length === 1 &&
+    logical.intent.reversibility.retentionResourceIds[0] === pairId &&
+    logical.actual.retained.length === 1 &&
+    retained !== undefined &&
+    retained.role === 'store' &&
+    retained.resourceId === pairId &&
+    retained.path === path &&
+    retained.contentHash === contentHash &&
+    retained.repositoryRevision.kind === 'resource' &&
+    retained.repositoryRevision.digest === contentHash &&
+    retained.retainUntil === null
+  );
+};
+
+/**
+ * Exact terminal-membership authority for one committed fresh reversal. This is deliberately
+ * stricter than legacy compatibility matching: every present terminal membership must retain the
+ * exact F14 source/store authority used to reconstruct it.
+ */
+export const committedFreshRollbackTerminalMembershipMatches = (
+  logical: LogicalJournalV1Dto,
+  identity: LedgerPairIdentity,
+  pair: LedgerPairV1Dto,
+  parent: LogicalJournalV1Dto | null | undefined,
+): boolean => {
+  const logicalIdentity = logicalJournalPairIdentity(logical);
+  if (
+    logical.phase !== 'committed' ||
+    !freshRollbackParentMatches(logical, parent) ||
+    logicalIdentity === null ||
+    !samePairIdentity(logicalIdentity, identity)
+  ) {
+    return false;
+  }
+  const terminal = logical.intent.before;
   const lives = logical.actual.after.filter((resource) => resource.role === 'live');
   if (lives.length !== 1) return false;
   const live = lives[0];
-  if (live === undefined) return false;
-  if (live.state === 'absent') return pair.journal?.op === 'uninstall';
-  if (live.mode === 'dev') {
+  if (
+    live === undefined ||
+    (terminal.kind !== 'placement' && terminal.kind !== 'absent') ||
+    terminal.resource.kind !== 'live' ||
+    terminal.resource.location.kind !== 'machine-bound' ||
+    terminal.resource.location.path !== pair.placementPath ||
+    live.placementPath !== pair.placementPath
+  ) {
+    return false;
+  }
+  if (terminal.kind === 'absent') {
     return (
+      live.state === 'absent' &&
+      live.repositoryRevision === null &&
+      live.liveKind === null &&
+      live.mode === null &&
+      live.symlinkTarget === null &&
+      live.contentHash === null &&
+      logical.actual.retained.length === 0 &&
+      logical.intent.reversibility.kind === 'none' &&
+      logical.intent.reversibility.retentionResourceIds.length === 0 &&
+      pair.journal?.op === 'uninstall'
+    );
+  }
+  if (
+    live.state !== 'present' ||
+    terminal.contentHash === null ||
+    live.contentHash !== terminal.contentHash ||
+    live.repositoryRevision.kind !== 'resource' ||
+    live.repositoryRevision.digest !== terminal.contentHash ||
+    terminal.dangling
+  ) {
+    return false;
+  }
+  if (terminal.classification === 'dev') {
+    const source = terminal.source;
+    const target = terminal.linkTarget;
+    return (
+      terminal.representation === 'symlink' &&
+      source?.kind === 'local-dev' &&
+      source.contentHash === terminal.contentHash &&
+      target?.kind === 'machine-bound' &&
+      target.path === source.path &&
       pair.mode === 'dev' &&
       pair.dev != null &&
       live.liveKind === 'symlink' &&
-      live.symlinkTarget !== null
+      live.mode === 'dev' &&
+      live.symlinkTarget === target.path &&
+      resolve(pair.dev.sourcePath) === resolve(target.path) &&
+      resolve(pair.dev.resolvedPath) === resolve(target.path) &&
+      exactFreshRollbackRetention(logical, source.path, terminal.contentHash)
     );
   }
-  if (live.mode !== 'pinned' || pair.mode !== 'pinned' || pair.pinned == null) return false;
-  return (
-    pair.pinned.contentHash === live.contentHash &&
-    pair.pinned.placement === (live.liveKind === 'symlink' ? 'symlink' : 'copy')
-  );
+  if (
+    (terminal.classification !== 'pinned' && terminal.classification !== 'store-linked') ||
+    (terminal.representation !== 'copy' && terminal.representation !== 'symlink') ||
+    terminal.source?.contentHash !== terminal.contentHash ||
+    live.mode !== 'pinned' ||
+    live.liveKind !== (terminal.representation === 'symlink' ? 'symlink' : 'directory') ||
+    pair.mode !== 'pinned' ||
+    pair.pinned == null ||
+    pair.pinned.contentHash !== terminal.contentHash ||
+    pair.pinned.placement !== terminal.representation ||
+    !exactFreshRollbackRetention(logical, pair.pinned.storePath, terminal.contentHash)
+  ) {
+    return false;
+  }
+  return terminal.representation === 'copy'
+    ? terminal.linkTarget === null && live.symlinkTarget === null
+    : terminal.linkTarget?.kind === 'machine-bound' &&
+        terminal.linkTarget.path === pair.pinned.storePath &&
+        live.symlinkTarget === terminal.linkTarget.path;
 };
 
 /** Closed logical/legacy compatibility-shadow predicate shared by codec and status projection. */
@@ -646,7 +738,8 @@ export const legacyJournalMatchesLogicalShadow = (
     physical.completedAt === logical.completedAt &&
     (!fresh ||
       (freshRollbackPhysicalBeforeMatches(logical, pair) &&
-        freshRollbackTerminalPairMatches(logical, pair)))
+        (logical.phase !== 'committed' ||
+          committedFreshRollbackTerminalMembershipMatches(logical, identity, pair, parent))))
   );
 };
 

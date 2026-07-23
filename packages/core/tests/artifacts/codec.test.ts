@@ -15,7 +15,10 @@ import {
 } from '../../src/artifacts/codec.ts';
 import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
-import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
+import {
+  committedFreshRollbackTerminalMembershipMatches,
+  ledgerV2Codec,
+} from '../../src/artifacts/ledger-codec.ts';
 import type { LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
 import {
   operationMatchesMatrix,
@@ -26,6 +29,11 @@ import {
   legacyJournalMatchesLogicalShadow,
   legacyJournalOperationMatchesLogicalShadow,
 } from '../../src/artifacts/registry.ts';
+import { emptyLedgerModel, getLedgerPairAt, withLedgerPairAt } from '../../src/place/ledger.ts';
+import {
+  commitLogicalTransactionRetainingShadow,
+  finalizeCommittedLogicalTransactionShadow,
+} from '../../src/place/logical-transactions.ts';
 
 const decoder = new TextDecoder();
 const V2_GOLDEN = join(
@@ -740,11 +748,21 @@ describe('artifact codec foundation', () => {
         source,
         before: priorPlacement,
         after: placement,
+        reversibility: { kind: 'conditional', retentionResourceIds: ['pair:alpha:codex'] },
       },
       actual: {
         before: [priorActual, ledgerActual],
         after: [placementActual, ledgerActual],
-        retained: [],
+        retained: [
+          {
+            resourceId: 'pair:alpha:codex',
+            role: 'store',
+            path: '/fixture/store/prior',
+            repositoryRevision: { kind: 'resource', digest: priorDigest },
+            contentHash: priorDigest,
+            retainUntil: null,
+          },
+        ],
       },
     };
     const savedManagedPromote: PlanOperationV1 = {
@@ -781,7 +799,7 @@ describe('artifact codec foundation', () => {
       actual: {
         before: promotedParent.actual.after,
         after: promotedParent.actual.before,
-        retained: [],
+        retained: promotedParent.actual.retained,
       },
     };
     const managedPair: LedgerPairV1Dto = {
@@ -801,6 +819,43 @@ describe('artifact codec foundation', () => {
         },
       },
     };
+    if (managedPair.pinned == null || managedPair.journal == null) {
+      throw new Error('managed cleanup carrier authority is missing');
+    }
+    const managedPinned = managedPair.pinned;
+    const managedJournal = managedPair.journal;
+    const managedIdentity = { projectRoot: null, skill: 'alpha', tool: 'codex' } as const;
+    expect(
+      committedFreshRollbackTerminalMembershipMatches(
+        managedChild,
+        managedIdentity,
+        managedPair,
+        promotedParent,
+      ),
+    ).toBeTrue();
+    for (const hostilePair of [
+      {
+        ...managedPair,
+        pinned: { ...managedPair.pinned, storePath: '/fixture/store/hostile' },
+      },
+      {
+        ...managedPair,
+        pinned: { ...managedPair.pinned, contentHash: digest },
+      },
+      {
+        ...managedPair,
+        pinned: { ...managedPair.pinned, placement: 'symlink' as const },
+      },
+    ]) {
+      expect(
+        committedFreshRollbackTerminalMembershipMatches(
+          managedChild,
+          managedIdentity,
+          hostilePair,
+          promotedParent,
+        ),
+      ).toBeFalse();
+    }
     expect(
       ledgerV2Codec.encode({
         ...model,
@@ -809,6 +864,50 @@ describe('artifact codec foundation', () => {
         history: [promotedParent, managedChild],
       }).ok,
     ).toBeTrue();
+    const managedLiveChild: LogicalJournalV1Dto = {
+      ...managedChild,
+      phase: 'live',
+      completedAt: null,
+    };
+    const managedLivePair: LedgerPairV1Dto = {
+      ...managedPair,
+      journal: { ...managedJournal, phase: 'live', completedAt: null },
+    };
+    const managedLiveModel = {
+      ...model,
+      skills: { alpha: { tools: { codex: managedLivePair } } },
+      transactions: { [managedLiveChild.transactionId]: managedLiveChild },
+      history: [promotedParent],
+    };
+    expect(
+      commitLogicalTransactionRetainingShadow(managedLiveModel, managedChild, managedPair).ok,
+    ).toBeTrue();
+    expect(
+      commitLogicalTransactionRetainingShadow(managedLiveModel, managedChild, {
+        ...managedPair,
+        pinned: { ...managedPinned, storePath: '/fixture/store/hostile' },
+      }).ok,
+    ).toBeFalse();
+    expect(
+      finalizeCommittedLogicalTransactionShadow(
+        {
+          ...model,
+          skills: {
+            alpha: {
+              tools: {
+                codex: {
+                  ...managedPair,
+                  pinned: { ...managedPinned, storePath: '/fixture/store/hostile' },
+                },
+              },
+            },
+          },
+          transactions: {},
+          history: [promotedParent, managedChild],
+        },
+        managedChild.transactionId,
+      ).ok,
+    ).toBeFalse();
     expect(
       legacyJournalMatchesLogicalShadow(
         managedChild,
@@ -846,6 +945,192 @@ describe('artifact codec foundation', () => {
       mode: 'dev' as const,
       symlinkTarget: '/fixture/source/alpha',
     };
+    const linkedPriorPlacement = {
+      ...priorPlacement,
+      classification: 'store-linked' as const,
+      representation: 'symlink' as const,
+      linkTarget: { kind: 'machine-bound' as const, path: '/fixture/store/prior' },
+    };
+    const linkedPriorActual = {
+      ...priorActual,
+      liveKind: 'symlink' as const,
+      symlinkTarget: '/fixture/store/prior',
+    };
+    const linkedParent: LogicalJournalV1Dto = {
+      ...promotedParent,
+      intent: { ...promotedParent.intent, before: linkedPriorPlacement },
+      actual: { ...promotedParent.actual, before: [linkedPriorActual, ledgerActual] },
+    };
+    const linkedChild: LogicalJournalV1Dto = {
+      ...managedChild,
+      intent: {
+        ...linkedParent.intent,
+        operationId: managedChild.intent.operationId,
+        groupId: managedChild.intent.groupId,
+      },
+      actual: {
+        before: linkedParent.actual.after,
+        after: linkedParent.actual.before,
+        retained: linkedParent.actual.retained,
+      },
+    };
+    const linkedPair: LedgerPairV1Dto = {
+      ...managedPair,
+      pinned: { ...managedPinned, placement: 'symlink' },
+      journal: { ...managedJournal, txId: linkedChild.transactionId },
+    };
+    expect(
+      committedFreshRollbackTerminalMembershipMatches(
+        linkedChild,
+        managedIdentity,
+        linkedPair,
+        linkedParent,
+      ),
+    ).toBeTrue();
+    const wrongLinkParent: LogicalJournalV1Dto = {
+      ...linkedParent,
+      intent: {
+        ...linkedParent.intent,
+        before: {
+          ...linkedPriorPlacement,
+          linkTarget: { kind: 'machine-bound', path: '/fixture/store/hostile' },
+        },
+      },
+    };
+    const wrongLinkChild: LogicalJournalV1Dto = {
+      ...linkedChild,
+      intent: {
+        ...wrongLinkParent.intent,
+        operationId: linkedChild.intent.operationId,
+        groupId: linkedChild.intent.groupId,
+      },
+    };
+    expect(
+      committedFreshRollbackTerminalMembershipMatches(
+        wrongLinkChild,
+        managedIdentity,
+        linkedPair,
+        wrongLinkParent,
+      ),
+    ).toBeFalse();
+
+    const devParent: LogicalJournalV1Dto = {
+      ...promotedParent,
+      transactionId: 'tx:parent-dev-promote',
+      intent: {
+        ...promotedParent.intent,
+        operationId: 'operation:parent-dev-promote',
+        groupId: 'group:parent-dev-promote',
+        before: devPlacement,
+      },
+      actual: {
+        before: [devActual, ledgerActual],
+        after: [placementActual, ledgerActual],
+        retained: [
+          {
+            resourceId: 'pair:alpha:codex',
+            role: 'store',
+            path: '/fixture/source/alpha',
+            repositoryRevision: { kind: 'resource', digest },
+            contentHash: digest,
+            retainUntil: null,
+          },
+        ],
+      },
+    };
+    const devChild: LogicalJournalV1Dto = {
+      ...managedChild,
+      transactionId: 'tx:fresh-dev-promote-reversal',
+      intent: {
+        ...devParent.intent,
+        operationId: 'operation:fresh-dev-promote-reversal',
+        groupId: 'group:fresh-dev-promote-reversal',
+      },
+      context: {
+        ...managedChild.context,
+        parentOperationId: devParent.intent.operationId,
+      },
+      actual: {
+        before: devParent.actual.after,
+        after: devParent.actual.before,
+        retained: devParent.actual.retained,
+      },
+    };
+    const devPair: LedgerPairV1Dto = {
+      ...managedPair,
+      mode: 'dev',
+      dev: {
+        sourcePath: '/fixture/source/alpha',
+        resolvedPath: '/fixture/source/alpha',
+        repoRoot: null,
+        sourceRelPath: null,
+        remote: null,
+        recordedAt: startedAt,
+      },
+      journal: { ...managedJournal, op: 'dev', txId: devChild.transactionId },
+    };
+    if (devPair.dev == null || devPair.journal == null) {
+      throw new Error('development cleanup carrier authority is missing');
+    }
+    const devRecord = devPair.dev;
+    const devJournal = devPair.journal;
+    expect(
+      committedFreshRollbackTerminalMembershipMatches(
+        devChild,
+        managedIdentity,
+        devPair,
+        devParent,
+      ),
+    ).toBeTrue();
+    for (const dev of [
+      { ...devRecord, sourcePath: '/fixture/source/hostile' },
+      { ...devRecord, resolvedPath: '/fixture/source/hostile' },
+    ]) {
+      expect(
+        committedFreshRollbackTerminalMembershipMatches(
+          devChild,
+          managedIdentity,
+          { ...devPair, dev },
+          devParent,
+        ),
+      ).toBeFalse();
+    }
+    const devLiveChild: LogicalJournalV1Dto = {
+      ...devChild,
+      phase: 'live',
+      completedAt: null,
+    };
+    const devLivePair: LedgerPairV1Dto = {
+      ...devPair,
+      journal: { ...devJournal, phase: 'live', completedAt: null },
+    };
+    const hostileDevPair: LedgerPairV1Dto = {
+      ...devPair,
+      dev: { ...devRecord, resolvedPath: '/fixture/source/hostile' },
+    };
+    expect(
+      commitLogicalTransactionRetainingShadow(
+        {
+          ...model,
+          skills: { alpha: { tools: { codex: devLivePair } } },
+          transactions: { [devLiveChild.transactionId]: devLiveChild },
+          history: [devParent],
+        },
+        devChild,
+        hostileDevPair,
+      ).ok,
+    ).toBeFalse();
+    expect(
+      finalizeCommittedLogicalTransactionShadow(
+        {
+          ...model,
+          skills: { alpha: { tools: { codex: hostileDevPair } } },
+          transactions: {},
+          history: [devParent, devChild],
+        },
+        devChild.transactionId,
+      ).ok,
+    ).toBeFalse();
     const variants = [
       ['install', absent, placement, absentActual, placementActual, 'uninstall'],
       ['link-dev', absent, devPlacement, absentActual, devActual, 'uninstall'],
@@ -855,6 +1140,99 @@ describe('artifact codec foundation', () => {
       ['remove', placement, absent, placementActual, absentActual, 'install'],
       ['remove', devPlacement, absent, devActual, absentActual, 'dev'],
     ] as const;
+    type PlacementState = Extract<
+      LogicalJournalV1Dto['intent']['before'],
+      { readonly kind: 'placement' }
+    >;
+    type PlacementImage =
+      | PlacementState
+      | Readonly<{ kind: 'absent'; resource: PlacementState['resource'] }>;
+    type LiveActual = Extract<
+      LogicalJournalV1Dto['actual']['before'][number],
+      { readonly role: 'live' }
+    >;
+    const storeAuthorityFor = (
+      image: PlacementImage,
+    ): Readonly<{ path: string; contentHash: ArtifactDigest }> | null => {
+      if (image.kind !== 'placement' || image.contentHash === null) return null;
+      if (image.classification === 'dev') {
+        return image.source?.kind === 'local-dev'
+          ? { path: image.source.path, contentHash: image.contentHash }
+          : null;
+      }
+      const linked = image.linkTarget;
+      return {
+        path:
+          image.representation === 'symlink' && linked?.kind === 'machine-bound'
+            ? linked.path
+            : image.contentHash === priorDigest
+              ? '/fixture/store/prior'
+              : '/fixture/store/alpha',
+        contentHash: image.contentHash,
+      };
+    };
+    const pairForTerminal = (
+      terminal: PlacementImage,
+      fallback: PlacementImage,
+      placementPath: string,
+      journal: NonNullable<LedgerPairV1Dto['journal']>,
+    ): LedgerPairV1Dto => {
+      const image = terminal.kind === 'absent' ? fallback : terminal;
+      if (image.kind !== 'placement') throw new Error('carrier image is absent');
+      if (image.classification === 'dev') {
+        if (image.source?.kind !== 'local-dev') throw new Error('dev carrier source is missing');
+        return {
+          placementPath,
+          mode: 'dev',
+          dev: {
+            sourcePath: image.source.path,
+            resolvedPath: image.source.path,
+            repoRoot: null,
+            sourceRelPath: null,
+            remote: null,
+            recordedAt: startedAt,
+          },
+          pinned: null,
+          journal,
+        };
+      }
+      const authority = storeAuthorityFor(image);
+      if (authority === null) throw new Error('managed carrier authority is missing');
+      return {
+        placementPath,
+        mode: 'pinned',
+        dev: null,
+        pinned: {
+          storePath: authority.path,
+          rev: authority.contentHash.slice('sha256:'.length, 'sha256:'.length + 12),
+          gitSha: null,
+          dirty: false,
+          contentHash: authority.contentHash,
+          snapshotAt: startedAt,
+          verify: 'passed',
+          placement: image.representation === 'symlink' ? 'symlink' : 'copy',
+        },
+        journal,
+      };
+    };
+    const physicalBeforeFor = (
+      image: PlacementImage,
+    ): NonNullable<LedgerPairV1Dto['journal']>['before'] => {
+      if (image.kind === 'absent') return { mode: 'absent' };
+      if (image.classification === 'dev') {
+        if (image.source?.kind !== 'local-dev') throw new Error('dev before source is missing');
+        return { mode: 'dev', symlinkTarget: image.source.path, liveKind: 'symlink' };
+      }
+      const authority = storeAuthorityFor(image);
+      if (authority === null) throw new Error('managed before authority is missing');
+      return {
+        mode: 'pinned',
+        storePath: authority.path,
+        contentHash: authority.contentHash,
+        liveKind: image.representation === 'symlink' ? 'symlink' : 'dir',
+        ...(image.representation === 'symlink' ? { symlinkTarget: authority.path } : {}),
+      };
+    };
     for (const [kind, before, after, beforeActual, afterActual, inverse] of variants) {
       const variantParent = {
         ...parent,
@@ -904,6 +1282,167 @@ describe('artifact codec foundation', () => {
         ),
         `${kind} rejects another physical operation`,
       ).toBeFalse();
+
+      for (const scope of ['user', 'project'] as const) {
+        const scopeKey = scope === 'project' ? '/fixture/project' : null;
+        const scopedPath = `/fixture/${scope}/live/alpha`;
+        const scopedImage = (image: PlacementImage): PlacementImage => ({
+          ...image,
+          resource: {
+            ...image.resource,
+            scope,
+            projectRoot: scopeKey === null ? null : { kind: 'machine-bound', path: scopeKey },
+            location: { kind: 'machine-bound', path: scopedPath },
+          },
+        });
+        const scopedActual = (actual: LiveActual): LiveActual => ({
+          ...actual,
+          placementPath: scopedPath,
+        });
+        const scopedBefore = scopedImage(before);
+        const scopedAfter = scopedImage(after);
+        const scopedBeforeActual = scopedActual(beforeActual);
+        const scopedAfterActual = scopedActual(afterActual);
+        const pairId = `pair:alpha:codex:${scope}:${kind}:${inverse}`;
+        const terminalAuthority = storeAuthorityFor(scopedBefore);
+        const retained =
+          terminalAuthority === null
+            ? []
+            : [
+                {
+                  resourceId: pairId,
+                  role: 'store' as const,
+                  path: terminalAuthority.path,
+                  repositoryRevision: {
+                    kind: 'resource' as const,
+                    digest: terminalAuthority.contentHash,
+                  },
+                  contentHash: terminalAuthority.contentHash,
+                  retainUntil: null,
+                },
+              ];
+        const exactParent: LogicalJournalV1Dto = {
+          ...variantParent,
+          transactionId: `tx:matrix:parent:${scope}:${kind}:${inverse}`,
+          intent: {
+            ...variantParent.intent,
+            operationId: `operation:matrix:parent:${scope}:${kind}:${inverse}`,
+            groupId: `group:matrix:parent:${scope}:${kind}:${inverse}`,
+            pairId,
+            source:
+              kind === 'link-dev'
+                ? scopedAfter.kind === 'placement'
+                  ? scopedAfter.source
+                  : null
+                : kind === 'remove'
+                  ? scopedBefore.kind === 'placement'
+                    ? scopedBefore.source
+                    : null
+                  : scopedAfter.kind === 'placement'
+                    ? scopedAfter.source
+                    : null,
+            scope,
+            before: scopedBefore,
+            after: scopedAfter,
+            reversibility:
+              retained.length === 0
+                ? { kind: 'none', retentionResourceIds: [] }
+                : { kind: 'conditional', retentionResourceIds: [pairId] },
+          },
+          actual: {
+            before: [scopedBeforeActual, ledgerActual],
+            after: [scopedAfterActual, ledgerActual],
+            retained,
+          },
+        };
+        const exactChild: LogicalJournalV1Dto = {
+          ...exactParent,
+          transactionId: `tx:matrix:child:${scope}:${kind}:${inverse}`,
+          intent: {
+            ...exactParent.intent,
+            operationId: `operation:matrix:child:${scope}:${kind}:${inverse}`,
+            groupId: `group:matrix:child:${scope}:${kind}:${inverse}`,
+          },
+          context: {
+            ...exactParent.context,
+            parentOperationId: exactParent.intent.operationId,
+          },
+          disposition: 'rollback',
+          actual: {
+            before: exactParent.actual.after,
+            after: exactParent.actual.before,
+            retained: exactParent.actual.retained,
+          },
+        };
+        const committedShadow: NonNullable<LedgerPairV1Dto['journal']> = {
+          op: inverse,
+          txId: exactChild.transactionId,
+          phase: 'committed',
+          startedAt,
+          completedAt: startedAt,
+          before: physicalBeforeFor(scopedAfter),
+          stagingPath: `/fixture/${scope}/stage/${exactChild.transactionId}`,
+          backupPath: `/fixture/${scope}/backup/${exactChild.transactionId}`,
+        };
+        const committedCarrier = pairForTerminal(
+          scopedBefore,
+          scopedAfter,
+          scopedPath,
+          committedShadow,
+        );
+        const liveChild: LogicalJournalV1Dto = {
+          ...exactChild,
+          phase: 'live',
+          completedAt: null,
+        };
+        const liveCarrier: LedgerPairV1Dto = {
+          ...committedCarrier,
+          journal: { ...committedShadow, phase: 'live', completedAt: null },
+        };
+        const placed = withLedgerPairAt(
+          emptyLedgerModel(startedAt),
+          scopeKey,
+          'alpha',
+          'codex',
+          liveCarrier,
+        );
+        if (!placed.ok) throw new Error(`${scope} ${kind}: live carrier is invalid`);
+        const liveModel = {
+          ...placed.value,
+          transactions: { [liveChild.transactionId]: liveChild },
+          history: [exactParent],
+        };
+        const committed = commitLogicalTransactionRetainingShadow(
+          liveModel,
+          exactChild,
+          committedCarrier,
+        );
+        expect(committed.ok, `${scope} ${kind} -> ${inverse} retained commit`).toBeTrue();
+        if (!committed.ok) continue;
+        expect(
+          committedFreshRollbackTerminalMembershipMatches(
+            exactChild,
+            { projectRoot: scopeKey, skill: 'alpha', tool: 'codex' },
+            committedCarrier,
+            exactParent,
+          ),
+          `${scope} ${kind} -> ${inverse} terminal membership`,
+        ).toBeTrue();
+        const finalized = finalizeCommittedLogicalTransactionShadow(
+          committed.value,
+          exactChild.transactionId,
+        );
+        expect(finalized.ok, `${scope} ${kind} -> ${inverse} finalizer`).toBeTrue();
+        if (!finalized.ok) continue;
+        const terminalPair = getLedgerPairAt(finalized.value, scopeKey, 'alpha', 'codex');
+        if (inverse === 'uninstall') expect(terminalPair).toBeNull();
+        else expect(terminalPair?.journal ?? null).toBeNull();
+        expect(
+          finalized.value.history.filter(
+            ({ transactionId }) => transactionId === exactChild.transactionId,
+          ),
+        ).toHaveLength(1);
+      }
     }
   });
 });
