@@ -7632,8 +7632,10 @@
           ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#refactor-gate-at-7ec493c"
+          ]
         },
         "adversarial-review": {
           "status": "pending",
@@ -7662,7 +7664,8 @@
         "projects/p17/evidence/P17-G5-05.md#approved-implementation-compatibility-amendment",
         "projects/p17/evidence/P17-G5-05.md#implementation-amendment-review-at-b901bb8",
         "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011",
-        "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f"
+        "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f",
+        "projects/p17/evidence/P17-G5-05.md#refactor-gate-at-7ec493c"
       ]
     },
     {

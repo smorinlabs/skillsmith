@@ -1495,7 +1495,7 @@ Downstream coverage obligations: none.
 - [x] P17-G5-05:minimal-implementation _(passed)_
 - [x] P17-G5-05:targeted-green _(passed)_
 - [x] P17-G5-05:impacted-green _(passed)_
-- [ ] P17-G5-05:refactor _(pending)_
+- [x] P17-G5-05:refactor _(passed)_
 - [ ] P17-G5-05:adversarial-review _(pending)_
 - [ ] P17-G5-05:traceability-closure _(pending)_
 - [ ] P17-G5-05:signed-off _(pending)_
