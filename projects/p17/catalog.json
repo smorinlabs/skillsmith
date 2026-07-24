@@ -7626,8 +7626,10 @@
           ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f"
+          ]
         },
         "refactor": {
           "status": "pending",
@@ -7659,7 +7661,8 @@
         "projects/p17/evidence/P17-G5-05.md#test-first-evidence",
         "projects/p17/evidence/P17-G5-05.md#approved-implementation-compatibility-amendment",
         "projects/p17/evidence/P17-G5-05.md#implementation-amendment-review-at-b901bb8",
-        "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011"
+        "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011",
+        "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f"
       ]
     },
     {
@@ -26678,13 +26681,14 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G5-05.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011"
+        "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011",
+        "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f"
       ],
       "secondaryGroups": [],
       "implements": [],
