@@ -26,6 +26,8 @@ import { type BinaryProcessPort, createGitPort } from './git.ts';
 import { createHttpPort } from './http.ts';
 import type {
   ClockPort,
+  EffectiveUserPort,
+  ExclusiveCreatePort,
   FileMetadataReadPort,
   FileModeWritePort,
   FileReadPort,
@@ -174,10 +176,19 @@ const createFileReadPort = (): FileReadPort & FileMetadataReadPort => ({
         mode: value.mode & 0o7777,
         identity: `${value.dev}:${value.ino}`,
         linkCount: value.nlink,
+        uid: value.uid,
+        gid: value.gid,
       };
     } catch (error) {
       if (nodeCode(error) === 'ENOENT')
-        return { kind: 'absent', mode: null, identity: null, linkCount: 0 };
+        return {
+          kind: 'absent',
+          mode: null,
+          identity: null,
+          linkCount: 0,
+          uid: null,
+          gid: null,
+        };
       throw toPortError(error, {
         capability: 'file-read',
         operation: 'readFileMetadata',
@@ -218,6 +229,31 @@ const createFileWritePort = (): FileWritePort & FileModeWritePort => ({
     fileOperation('file-write', 'setFileMode', { path, mode: mode.toString(8) }, async () => {
       await chmod(path, mode);
     }),
+});
+
+const createPrivateStatePort = (): EffectiveUserPort & ExclusiveCreatePort => ({
+  effectiveUserIdentity: () => ({
+    uid: process.geteuid?.() ?? process.getuid?.() ?? null,
+    gid: process.getegid?.() ?? process.getgid?.() ?? null,
+  }),
+  makeDirExclusive: (path, mode) =>
+    fileOperation('file-write', 'makeDirExclusive', { path, mode: mode.toString(8) }, async () => {
+      await mkdir(path, { recursive: false, mode });
+    }),
+  writeTextFileExclusive: (path, text, mode) =>
+    fileOperation(
+      'file-write',
+      'writeTextFileExclusive',
+      { path, mode: mode.toString(8) },
+      async () => {
+        const handle = await open(path, 'wx', mode);
+        try {
+          await handle.writeFile(text, 'utf8');
+        } finally {
+          await handle.close();
+        }
+      },
+    ),
 });
 
 const cancelledLockError = (path: string) =>
@@ -424,6 +460,7 @@ export const defaultRuntimePorts = async (): Promise<RuntimePorts> => {
     xdg: resolveXdg(homeDir),
     ...createFileReadPort(),
     ...createFileWritePort(),
+    ...createPrivateStatePort(),
     ...createLockPort(),
     ...createPathAccessPort(),
     ...processPort,

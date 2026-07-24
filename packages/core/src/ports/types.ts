@@ -28,6 +28,10 @@ export interface FileMetadata {
   readonly identity: string | null;
   /** Hard-link count when the adapter can prove it; consumers that require it fail closed. */
   readonly linkCount?: number | null;
+  /** Effective numeric owner when the adapter can prove it; safety consumers fail closed on null. */
+  readonly uid?: number | null;
+  /** Effective numeric group when the adapter can prove it; safety consumers fail closed on null. */
+  readonly gid?: number | null;
 }
 
 /** Focused metadata capability used only by lossless editors and transaction planners. */
@@ -38,6 +42,22 @@ export interface FileMetadataReadPort {
 /** Focused permission capability used only when staging a replacement file. */
 export interface FileModeWritePort {
   setFileMode(path: string, mode: number): Promise<void>;
+}
+
+export interface EffectiveUserIdentity {
+  readonly uid: number | null;
+  readonly gid: number | null;
+}
+
+/** Focused ownership authority for private local state; null fields mean unavailable. */
+export interface EffectiveUserPort {
+  effectiveUserIdentity(): EffectiveUserIdentity;
+}
+
+/** Non-recursive, non-overwriting creation required by owner-bound recovery protocols. */
+export interface ExclusiveCreatePort {
+  makeDirExclusive(path: string, mode: number): Promise<void>;
+  writeTextFileExclusive(path: string, text: string, mode: number): Promise<void>;
 }
 
 export interface FileReadPort {
@@ -192,6 +212,8 @@ export interface RuntimePorts
     FileWritePort,
     FileMetadataReadPort,
     FileModeWritePort,
+    EffectiveUserPort,
+    ExclusiveCreatePort,
     LockPort,
     PathAccessPort,
     ProcessPort,

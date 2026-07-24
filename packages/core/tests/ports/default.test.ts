@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -194,7 +194,12 @@ describe('defaultRuntimePorts', () => {
       await writeFile(file, 'tool = "codex"\n');
       await chmod(file, 0o600);
       const before = await ports.readFileMetadata(file);
-      expect(before).toMatchObject({ kind: 'file', mode: 0o600 });
+      expect(before).toMatchObject({
+        kind: 'file',
+        mode: 0o600,
+        uid: ports.effectiveUserIdentity().uid,
+        gid: ports.effectiveUserIdentity().gid,
+      });
       expect(before.identity).toBeString();
       await ports.setFileMode(file, 0o640);
       expect((await stat(file)).mode & 0o777).toBe(0o640);
@@ -204,7 +209,38 @@ describe('defaultRuntimePorts', () => {
         mode: null,
         identity: null,
         linkCount: 0,
+        uid: null,
+        gid: null,
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('creates private directories and text files exclusively with initial modes', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-private-state-'));
+    const directory = join(root, 'recovery');
+    const file = join(directory, 'record.json');
+    try {
+      expect(ports.effectiveUserIdentity()).toMatchObject({
+        uid: process.geteuid?.() ?? process.getuid?.() ?? null,
+        gid: process.getegid?.() ?? process.getgid?.() ?? null,
+      });
+      await ports.makeDirExclusive(directory, 0o700);
+      expect((await stat(directory)).mode & 0o777).toBe(0o700);
+      await expect(ports.makeDirExclusive(directory, 0o700)).rejects.toMatchObject({
+        operation: 'makeDirExclusive',
+        code: 'conflict',
+      });
+      await ports.writeTextFileExclusive(file, '{"revision":1}\n', 0o600);
+      expect((await stat(file)).mode & 0o777).toBe(0o600);
+      expect(await readFile(file, 'utf8')).toBe('{"revision":1}\n');
+      await expect(ports.writeTextFileExclusive(file, 'clobbered', 0o600)).rejects.toMatchObject({
+        operation: 'writeTextFileExclusive',
+        code: 'conflict',
+      });
+      expect(await readFile(file, 'utf8')).toBe('{"revision":1}\n');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

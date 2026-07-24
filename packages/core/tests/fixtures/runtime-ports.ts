@@ -47,15 +47,34 @@ export const runtimePorts = (env: ScanEnv): RuntimePorts => ({
           mode: value.mode & 0o7777,
           identity: `${value.dev}:${value.ino}`,
           linkCount: value.nlink,
+          uid: value.uid,
+          gid: value.gid,
         };
       } catch {
         const kind = await env.pathKind(path);
         return kind === 'absent'
-          ? { kind, mode: null, identity: null, linkCount: 0 }
+          ? { kind, mode: null, identity: null, linkCount: 0, uid: null, gid: null }
           : { kind, mode: null, identity: path };
       }
     },
     setFileMode: (path, mode) => chmod(path, mode),
+    privateState: {
+      effectiveUserIdentity: () => ({
+        uid: process.geteuid?.() ?? process.getuid?.() ?? null,
+        gid: process.getegid?.() ?? process.getgid?.() ?? null,
+      }),
+      makeDirExclusive: async (path, mode) => {
+        await mkdir(path, { recursive: false, mode });
+      },
+      writeTextFileExclusive: async (path, text, mode) => {
+        const handle = await open(path, 'wx', mode);
+        try {
+          await handle.writeFile(text, 'utf8');
+        } finally {
+          await handle.close();
+        }
+      },
+    },
   }),
   xdg: { ...env.xdg, cache: tmpdir() },
   readText: async (path) => {

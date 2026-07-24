@@ -1,6 +1,8 @@
 import type { PortError } from '../../../../packages/core/src/ports/errors.ts';
 import type {
   ClockPort,
+  EffectiveUserPort,
+  ExclusiveCreatePort,
   FileMetadataReadPort,
   FileModeWritePort,
   FileReadPort,
@@ -32,6 +34,10 @@ type _PlatformPaths = Assert<
 >;
 type _FileMetadataReadPort = Assert<Equal<keyof FileMetadataReadPort, 'readFileMetadata'>>;
 type _FileModeWritePort = Assert<Equal<keyof FileModeWritePort, 'setFileMode'>>;
+type _EffectiveUserPort = Assert<Equal<keyof EffectiveUserPort, 'effectiveUserIdentity'>>;
+type _ExclusiveCreatePort = Assert<
+  Equal<keyof ExclusiveCreatePort, 'makeDirExclusive' | 'writeTextFileExclusive'>
+>;
 type _FileReadPort = Assert<
   Equal<
     keyof FileReadPort,
@@ -105,6 +111,8 @@ type RuntimePortKeys =
   | keyof FileWritePort
   | keyof FileMetadataReadPort
   | keyof FileModeWritePort
+  | keyof EffectiveUserPort
+  | keyof ExclusiveCreatePort
   | keyof LockPort
   | keyof PathAccessPort
   | keyof ProcessPort

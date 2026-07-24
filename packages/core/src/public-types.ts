@@ -239,7 +239,11 @@ export type {
 export type {
   ClockPort,
   DetectionPorts,
+  EffectiveUserIdentity,
+  EffectiveUserPort,
+  ExclusiveCreatePort,
   FileMetadataReadPort,
+  FileModeWritePort,
   FileReadPort,
   FileWritePort,
   GitBlobRequest,

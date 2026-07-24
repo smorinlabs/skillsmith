@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { PORT_ERROR_CODES, type PlatformPaths, isPortError, portError } from '../../src/index.ts';
 import type {
+  EffectiveUserPort,
+  ExclusiveCreatePort,
   FileMetadataReadPort,
   FileModeWritePort,
   FileReadPort,
@@ -75,5 +77,21 @@ describe('capability port contracts', () => {
     };
     expect(special.kind).toBe('other');
     expect(setMode).toBeFunction();
+  });
+
+  test('private state ownership and exclusive creation remain focused capabilities', async () => {
+    type BroadWriteHasExclusive = 'makeDirExclusive' extends keyof FileWritePort ? true : false;
+    const broadWriteHasExclusive: BroadWriteHasExclusive = false;
+    const effectiveUser: EffectiveUserPort = {
+      effectiveUserIdentity: () => ({ uid: 1000, gid: 1000 }),
+    };
+    const exclusive: ExclusiveCreatePort = {
+      makeDirExclusive: async () => {},
+      writeTextFileExclusive: async () => {},
+    };
+    expect(broadWriteHasExclusive).toBeFalse();
+    expect(effectiveUser.effectiveUserIdentity()).toEqual({ uid: 1000, gid: 1000 });
+    expect(exclusive.makeDirExclusive).toBeFunction();
+    expect(exclusive.writeTextFileExclusive).toBeFunction();
   });
 });

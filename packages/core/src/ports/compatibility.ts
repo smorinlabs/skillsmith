@@ -1,7 +1,14 @@
 import type { ScanEnv } from '../env/types.ts';
 import type { ExecResult } from '../env/types.ts';
 import { isPortError, portError } from './errors.ts';
-import type { ClockPort, IdPort, PathAccessPort, RuntimePorts } from './types.ts';
+import type {
+  ClockPort,
+  EffectiveUserPort,
+  ExclusiveCreatePort,
+  IdPort,
+  PathAccessPort,
+  RuntimePorts,
+} from './types.ts';
 
 /** The capability surface that can be projected from the public 1.x ScanEnv contract. */
 export type LegacyRuntimePorts = Omit<RuntimePorts, 'git' | 'http'>;
@@ -12,6 +19,7 @@ export interface LegacyRuntimePortSupplements {
   readonly pathAccess?: PathAccessPort;
   readonly readFileMetadata?: RuntimePorts['readFileMetadata'];
   readonly setFileMode?: RuntimePorts['setFileMode'];
+  readonly privateState?: EffectiveUserPort & ExclusiveCreatePort;
 }
 
 export type RuntimePortsFromScanEnv = (
@@ -69,6 +77,32 @@ export const runtimePortsFromScanEnv = (
         operation: 'setFileMode',
         code: 'unavailable',
         message: 'file mode writes are unavailable through the ScanEnv compatibility facade',
+        context: { path },
+      });
+    }),
+  effectiveUserIdentity:
+    supplements.privateState?.effectiveUserIdentity.bind(supplements.privateState) ??
+    (() => ({ uid: null, gid: null })),
+  makeDirExclusive:
+    supplements.privateState?.makeDirExclusive.bind(supplements.privateState) ??
+    (async (path) => {
+      throw portError({
+        capability: 'file-write',
+        operation: 'makeDirExclusive',
+        code: 'unavailable',
+        message:
+          'exclusive directory creation is unavailable through the ScanEnv compatibility facade',
+        context: { path },
+      });
+    }),
+  writeTextFileExclusive:
+    supplements.privateState?.writeTextFileExclusive.bind(supplements.privateState) ??
+    (async (path) => {
+      throw portError({
+        capability: 'file-write',
+        operation: 'writeTextFileExclusive',
+        code: 'unavailable',
+        message: 'exclusive text creation is unavailable through the ScanEnv compatibility facade',
         context: { path },
       });
     }),
