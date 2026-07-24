@@ -401,6 +401,14 @@ export const createArtifactPairOperationControllerV1 = (input: {
           }
           const path = role === 'manifest' ? pair.file.path : pair.lockfile.path;
           const before = await observeImage(input.artifactCoordinator, role, path);
+          if (
+            operation.reversibility.kind === 'conditional' &&
+            operation.reversibility.retentionResourceIds.length === 1 &&
+            sameImage(before.image, operation.after)
+          ) {
+            successful.add(operation.operationId);
+            return resultFor(operation, binding, 'succeeded', operation.after);
+          }
           if (!sameImage(before.image, operation.before)) {
             return controllerFail('physical artifact state differs from planned before image');
           }

@@ -68,6 +68,7 @@ import type {
   OperationPlanInput,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import { bindForwardUpdateArtifactHistoryV1 } from '../update/history.ts';
 import type {
   SavedReconcileExecutionGuards,
   ValidateSavedReconcilePlanRuntime,
@@ -1529,14 +1530,27 @@ export const executeValidatedReconcilePlan = async <Command extends ReconcileExe
                   : null);
             if (action === null) return null;
             const binding = artifactController.bind(operation, action);
-            if (!runtime.blockedGroupIds?.has(operation.groupId)) return binding;
-            return Object.freeze({
-              ...binding,
-              execute: (validatedBinding: ValidatedExecutionBinding) =>
-                Promise.resolve(
-                  verificationBlockedResult(operation, validatedBinding.actualBefore),
-                ),
-            });
+            if (runtime.blockedGroupIds?.has(operation.groupId)) {
+              return Object.freeze({
+                ...binding,
+                execute: (validatedBinding: ValidatedExecutionBinding) =>
+                  Promise.resolve(
+                    verificationBlockedResult(operation, validatedBinding.actualBefore),
+                  ),
+              });
+            }
+            return plan.command === 'update' &&
+              (operation.kind === 'write-manifest' || operation.kind === 'write-lock')
+              ? bindForwardUpdateArtifactHistoryV1({
+                  operation,
+                  binding,
+                  artifactCoordinator: runtime.artifactCoordinator,
+                  ports: runtime.ports,
+                  ledgerPath,
+                  onLedgerCommitted: () => lifecycle.rebase([snapshotAuthority.ledgerResourceId]),
+                  ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
+                })
+              : binding;
           },
         },
         ledgerMigration: {

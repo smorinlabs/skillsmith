@@ -1448,6 +1448,7 @@ export const acquisitionRevisionPreconditions = (
 };
 
 export interface AcquisitionRepositoryLifecycleControllerV1 {
+  rebase(resourceIds: readonly string[]): Promise<void>;
   bind(
     operation: ExecutableOperation,
     binding: PreparedExecutionBinding,
@@ -2241,6 +2242,33 @@ export const createAcquisitionRepositoryLifecycleControllerV1 = (input: {
   });
   let blocked = false;
   return Object.freeze({
+    rebase: async (resourceIds: readonly string[]): Promise<void> => {
+      const selected = new Set(resourceIds);
+      if (blocked || selected.size !== resourceIds.length || selected.size === 0) {
+        throw new Error('acquisition lifecycle rebase authority is invalid');
+      }
+      const revisions = [];
+      for (const revision of cursor.revisions) {
+        if (!selected.has(revision.resourceId)) {
+          revisions.push(revision);
+          continue;
+        }
+        const observed = await lifecycleRepository(input.authority, revision).observeRevision(
+          revision.resourceId,
+        );
+        if (!observed.ok) throw observed.error;
+        revisions.push(observed.value);
+        selected.delete(revision.resourceId);
+      }
+      if (selected.size !== 0) {
+        throw new Error('acquisition lifecycle rebase resource is unknown');
+      }
+      cursor = createRevisionCursorV1({
+        schemaVersion: 1,
+        snapshotId: cursor.snapshotId,
+        expectedRevisions: revisions,
+      });
+    },
     bind: (
       operation: ExecutableOperation,
       binding: PreparedExecutionBinding,
