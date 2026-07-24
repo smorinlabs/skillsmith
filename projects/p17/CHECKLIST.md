@@ -264,7 +264,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-WF06 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF07 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF08 | P17-G4B-02 | signed-off | required-pr |
-| EWP-WF09 | P17-G5-05 | planned | required-pr |
+| EWP-WF09 | P17-G5-05 | failing | required-pr |
 | EWP-WF10 | P17-G5-01 | signed-off | required-pr |
 | EWP-WF11 | P17-G5-03 | signed-off | required-pr |
 | EWP-WF12 | P17-G5-04 | signed-off | required-pr |
@@ -1483,7 +1483,7 @@ Downstream coverage obligations: none.
 
 ## P17-G5-05 — Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure
 
-Phase: 5; status: **ready**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
+Phase: 5; status: **active**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
 Required-now validations: EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS13, EWP-CMD-SYNC-TS09, EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-OPT-TS08, EWP-P4A-TS02, EWP-P5-TS05, EWP-WF09, EWP-WF13.
 Downstream coverage obligations: none.
 
@@ -1491,7 +1491,7 @@ Downstream coverage obligations: none.
 
 - [x] P17-G5-05:mapped _(passed)_
 - [x] P17-G5-05:ready _(passed)_
-- [ ] P17-G5-05:test-first _(pending)_
+- [x] P17-G5-05:test-first _(passed)_
 - [ ] P17-G5-05:minimal-implementation _(pending)_
 - [ ] P17-G5-05:targeted-green _(pending)_
 - [ ] P17-G5-05:impacted-green _(pending)_
@@ -1502,11 +1502,11 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
-- [ ] **EWP-CMD-UNDO-TS03** — update reversal and lock restoration. _(command-test; planned)_
-- [ ] **EWP-CMD-UPDATE-TS07** — prior-store retention and undo. _(command-test; planned)_
+- [ ] **EWP-CMD-UNDO-TS03** — update reversal and lock restoration. _(command-test; failing)_
+- [ ] **EWP-CMD-UPDATE-TS07** — prior-store retention and undo. _(command-test; failing)_
 - [ ] **EWP-OPT-TS08** — Assert sibling lock derivation plus the uniform advanced lockfile override on _(option-gate; planned)_
-- [ ] **EWP-P5-TS05** — Bulk confirmation/noninteractive safety plus fail-fast/continue scheduling _(phase-test; planned)_
-- [ ] **EWP-WF09** — Update lifecycle _(workflow; planned)_
+- [ ] **EWP-P5-TS05** — Bulk confirmation/noninteractive safety plus fail-fast/continue scheduling _(phase-test; failing)_
+- [ ] **EWP-WF09** — Update lifecycle _(workflow; failing)_
 - [ ] **EWP-WF13** — Multi-tool partial failure _(workflow; planned)_
 - [ ] **P1-04** — Safe bulk mutation _(recommendation; mapped)_
 

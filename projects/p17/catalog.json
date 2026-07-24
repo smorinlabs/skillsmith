@@ -7472,7 +7472,7 @@
       "phase": "5",
       "title": "Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure",
       "dependsOn": ["P17-G5-01", "P17-G5-02", "P17-G5-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -7603,8 +7603,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-05.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -7644,7 +7644,8 @@
         "projects/p17/evidence/P17-G5-05.md#ready-review-at-e7405cc",
         "projects/p17/evidence/P17-G5-05.md#ready-rerun-at-d13d907",
         "projects/p17/evidence/P17-G5-05.md#final-ready-review-at-b779a87",
-        "projects/p17/evidence/P17-G5-05.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G5-05.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G5-05.md#test-first-evidence"
       ]
     },
     {
@@ -18302,11 +18303,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/undo.test.ts",
+        "selector": "EWP-CMD-UNDO-TS03",
+        "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-undo-ts03"],
       "secondaryGroups": ["P17-G5-02", "P17-G5-03", "P17-G3B-03", "P17-G3B-02", "P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS03"],
@@ -18328,8 +18334,13 @@
         "P1-11",
         "P2-02"
       ],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS03"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/undo.test.ts",
+        "tests/ergonomics/fixtures/p5-update/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UNDO-TS04",
@@ -19200,11 +19211,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/update.test.ts",
+        "selector": "EWP-CMD-UPDATE-TS07",
+        "command": "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-update-ts07"],
       "secondaryGroups": ["P17-G5-02", "P17-G5-03", "P17-G3B-03", "P17-G3B-02", "P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-UPDATE-TS07"],
@@ -19227,8 +19243,13 @@
         "P1-11",
         "P2-02"
       ],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS07"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/update.test.ts",
+        "tests/ergonomics/fixtures/p5-update/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-UPDATE-TS08",
@@ -25150,18 +25171,28 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:tests/ergonomics/phase/EWP-P5-TS05.test.ts#EWP-P5-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P5-TS05.test.ts",
+        "selector": "EWP-P5-TS05",
+        "command": "bun test tests/ergonomics/phase/EWP-P5-TS05.test.ts --test-name-pattern EWP-P5-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-p5-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P5-TS05"],
       "impactedValidations": ["EWP-P5-TS05"],
       "affectedContracts": ["P1-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P5-TS05.test.ts --test-name-pattern EWP-P5-TS05"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P5-TS05.test.ts",
+        "tests/ergonomics/fixtures/p5-batch/fleet.ts"
+      ]
     },
     {
       "id": "EWP-P6-T01",
@@ -25890,11 +25921,16 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:tests/ergonomics/workflows/EWP-WF09.test.ts#EWP-WF09",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF09.test.ts",
+        "selector": "EWP-WF09",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF09.test.ts --test-name-pattern EWP-WF09"
+      },
+      "evidence": ["projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-wf09"],
       "secondaryGroups": [
         "P17-G5-02",
         "P17-G5-03",
@@ -25925,8 +25961,13 @@
         "P1-11",
         "P2-02"
       ],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF09.test.ts --test-name-pattern EWP-WF09"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/workflows/EWP-WF09.test.ts",
+        "tests/ergonomics/fixtures/p5-batch/fleet.ts"
+      ]
     },
     {
       "id": "EWP-WF10",
