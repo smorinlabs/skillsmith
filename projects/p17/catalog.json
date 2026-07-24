@@ -7629,16 +7629,12 @@
           ]
         },
         "impacted-green": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#adversarial-correction-implementation-and-impacted-green-at-e778e6b"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "refactor": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#adversarial-correction-refactor-gate-at-e778e6b"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "adversarial-review": {
           "status": "pending",
@@ -7674,7 +7670,8 @@
         "projects/p17/evidence/P17-G5-05.md#adversarial-correction-amendment-review-at-78ba654",
         "projects/p17/evidence/P17-G5-05.md#adversarial-correction-test-first-evidence-at-23eb290",
         "projects/p17/evidence/P17-G5-05.md#adversarial-correction-implementation-and-impacted-green-at-e778e6b",
-        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-refactor-gate-at-e778e6b"
+        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-refactor-gate-at-e778e6b",
+        "projects/p17/evidence/P17-G5-05.md#corrected-adversarial-review-no-go-at-e497dcc"
       ]
     },
     {
@@ -26693,7 +26690,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "validated",
+      "status": "mapped",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
@@ -26701,7 +26698,8 @@
         "projects/p17/evidence/P17-G5-05.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011",
         "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f",
-        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-implementation-and-impacted-green-at-e778e6b"
+        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-implementation-and-impacted-green-at-e778e6b",
+        "projects/p17/evidence/P17-G5-05.md#corrected-adversarial-review-no-go-at-e497dcc"
       ],
       "secondaryGroups": [],
       "implements": [],
