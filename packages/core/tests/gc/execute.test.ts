@@ -2,10 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { deriveLedgerProjectRegistrations } from '../../src/artifacts/ledger-codec.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
-import { executeGcPlan, resumeGcRecovery } from '../../src/gc/execute.ts';
+import {
+  clearIncompleteGcRecovery,
+  executeGcPlan,
+  resumeGcRecovery,
+} from '../../src/gc/execute.ts';
 import { inventoryGcStore } from '../../src/gc/inventory.ts';
-import { buildGcPlan } from '../../src/gc/plan.ts';
+import { buildGcPlan, withoutLedgerProjectAt } from '../../src/gc/plan.ts';
 import { observeGcRecovery } from '../../src/gc/recovery.ts';
 import { emptyLedgerModel, readLedgerState, writeLedger } from '../../src/place/ledger.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
@@ -416,6 +421,12 @@ describe('GC execution transaction', () => {
           }
           await ports.fsyncDir(path);
         },
+        pathKind: async (path: string) => {
+          if (interrupted && path === recoveryRoot) {
+            throw Object.assign(new Error('observer denied'), { code: 'EACCES' });
+          }
+          return ports.pathKind(path);
+        },
       });
       const failed = await executeGcPlan(interruptedPorts, plan);
       expect(failed).toMatchObject({
@@ -432,6 +443,44 @@ describe('GC execution transaction', () => {
         recovery,
       });
       expect(resumed.ok).toBeTrue();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('reports no pending authority when completion delete succeeds but parent fsync fails', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-complete-fsync-'));
+    try {
+      const plan = await preparedPlan(ports, root, ['review']);
+      const recoveryRoot = join(plan.dataDir, '.gc-recovery', 'v1');
+      const live = join(recoveryRoot, `${plan.planId}.json`);
+      let removed = false;
+      let interrupted = false;
+      const interruptedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        removeTree: async (path: string) => {
+          await ports.removeTree(path);
+          if (path === live) removed = true;
+        },
+        fsyncDir: async (path: string) => {
+          if (removed && !interrupted && path === recoveryRoot) {
+            interrupted = true;
+            throw Object.assign(new Error('denied'), { code: 'EPERM' });
+          }
+          await ports.fsyncDir(path);
+        },
+      });
+      const failed = await executeGcPlan(interruptedPorts, plan);
+      expect(failed).toMatchObject({
+        ok: false,
+        reason: expect.stringContaining('permission denied'),
+        report: {
+          recovery: { state: 'none', phase: null },
+          summary: { reclaimedItems: 1, failedItems: 1 },
+        },
+      });
+      expect(await ports.pathKind(live)).toBe('absent');
+      expect(await observeGcRecovery(ports, plan.dataDir)).toMatchObject({ state: 'none' });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -548,6 +597,196 @@ describe('GC execution transaction', () => {
     }
   });
 
+  test('reports a durable migration when its following recovery CAS publication fails', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-migration-cas-report-'));
+    try {
+      const base = await preparedPlan(ports, root, ['review']);
+      await writeFile(
+        base.ledgerPath,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          kind: 'skillsmith.placements',
+          updatedAt: '2026-07-23T00:00:00.000Z',
+          skills: {},
+          projects: {},
+        })}\n`,
+      );
+      const source = await readLedgerState(ports, base.ledgerPath);
+      if (!source.ok || source.value.state !== 'present' || source.value.sourceVersion !== 1) {
+        throw new Error('v1 ledger fixture failed');
+      }
+      const inventory = await inventoryGcStore(ports, base.storeRoot);
+      if (inventory.state !== 'ok') throw new Error('inventory fixture failed');
+      const plan = buildGcPlan({
+        sourceLedger: source.value,
+        model: source.value.model,
+        postForgetModel: source.value.model,
+        inventory,
+        classifications: inventory.objects.map((object) => ({
+          object,
+          protection: [],
+          ageEligible: true,
+          outcome: 'eligible' as const,
+        })),
+        duration: null,
+        nowMilliseconds: base.nowMilliseconds,
+        projects: [],
+        dataDir: base.dataDir,
+        storeRoot: base.storeRoot,
+        ledgerPath: base.ledgerPath,
+        project: base.report.project,
+        retryArguments: ['gc', '--yes'],
+        normalizedForgetRoots: [],
+      });
+      const writeDeniedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        writeTextFile: async (path: string, contents: string) => {
+          if (path.startsWith(`${base.ledgerPath}.tmp-`)) {
+            throw Object.assign(new Error('denied'), { code: 'EACCES' });
+          }
+          await ports.writeTextFile(path, contents);
+        },
+      });
+      expect(await executeGcPlan(writeDeniedPorts, plan)).toMatchObject({
+        ok: false,
+        report: {
+          migration: { outcome: 'planned' },
+          results: [
+            { kind: 'migrate-ledger', outcome: 'failed' },
+            { kind: 'reclaim-store', outcome: 'planned' },
+          ],
+        },
+      });
+      const interruptedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        writeTextFileExclusive: async (path: string, contents: string, mode: number) => {
+          if (path.includes('.cas-')) throw new Error('recovery CAS unavailable');
+          await ports.writeTextFileExclusive(path, contents, mode);
+        },
+      });
+      const partial = await executeGcPlan(interruptedPorts, plan);
+      expect(partial).toMatchObject({
+        ok: false,
+        report: {
+          migration: { outcome: 'succeeded' },
+          recovery: { state: 'pending', phase: 'approved' },
+          results: [
+            { kind: 'migrate-ledger', outcome: 'succeeded' },
+            { kind: 'reclaim-store', outcome: 'planned' },
+          ],
+        },
+      });
+      const migrated = await readLedgerState(ports, base.ledgerPath);
+      expect(migrated).toMatchObject({ ok: true, value: { state: 'present', sourceVersion: 2 } });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('reports a durable forget when its following recovery CAS publication fails', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-forget-cas-report-'));
+    try {
+      const base = await preparedPlan(ports, root, ['review']);
+      const retired = join(root, 'retired');
+      const seed = {
+        ...emptyLedgerModel('2026-07-23T00:00:00.000Z'),
+        projects: { [retired]: { skills: {} } },
+      };
+      const model: LedgerModel = {
+        ...seed,
+        projectRegistrations: deriveLedgerProjectRegistrations(seed.projects),
+      };
+      expect((await writeLedger(ports, base.ledgerPath, model)).ok).toBeTrue();
+      const source = await readLedgerState(ports, base.ledgerPath);
+      if (!source.ok || source.value.state !== 'present') throw new Error('ledger fixture failed');
+      const postForget = withoutLedgerProjectAt(source.value.model, [retired]);
+      if (!postForget.ok) throw new Error('forget fixture failed');
+      const inventory = await inventoryGcStore(ports, base.storeRoot);
+      if (inventory.state !== 'ok') throw new Error('inventory fixture failed');
+      const plan = buildGcPlan({
+        sourceLedger: source.value,
+        model: source.value.model,
+        postForgetModel: postForget.value,
+        inventory,
+        classifications: inventory.objects.map((object) => ({
+          object,
+          protection: [],
+          ageEligible: true,
+          outcome: 'eligible' as const,
+        })),
+        duration: null,
+        nowMilliseconds: base.nowMilliseconds,
+        projects: [
+          {
+            root: retired,
+            current: false,
+            existing: false,
+            registered: true,
+            requested: true,
+            action: 'forget-project',
+            outcome: 'planned',
+            reason: null,
+          },
+        ],
+        dataDir: base.dataDir,
+        storeRoot: base.storeRoot,
+        ledgerPath: base.ledgerPath,
+        project: base.report.project,
+        retryArguments: ['gc', '--forget-project', retired, '--yes'],
+        normalizedForgetRoots: [retired],
+      });
+      const writeDeniedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        writeTextFile: async (path: string, contents: string) => {
+          if (path.startsWith(`${base.ledgerPath}.tmp-`)) {
+            throw Object.assign(new Error('denied'), { code: 'EPERM' });
+          }
+          await ports.writeTextFile(path, contents);
+        },
+      });
+      expect(await executeGcPlan(writeDeniedPorts, plan)).toMatchObject({
+        ok: false,
+        report: {
+          recovery: { state: 'pending', phase: 'migration-complete' },
+          results: [
+            { kind: 'forget-project', outcome: 'failed' },
+            { kind: 'reclaim-store', outcome: 'planned' },
+          ],
+        },
+      });
+      let replacements = 0;
+      const interruptedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        writeTextFileExclusive: async (path: string, contents: string, mode: number) => {
+          if (path.includes('.cas-')) {
+            replacements += 1;
+            if (replacements === 1) throw new Error('recovery CAS unavailable');
+          }
+          await ports.writeTextFileExclusive(path, contents, mode);
+        },
+      });
+      const partial = await executeGcPlan(interruptedPorts, plan);
+      expect(partial).toMatchObject({
+        ok: false,
+        report: {
+          recovery: { state: 'pending', phase: 'migration-complete' },
+          projects: [{ root: retired, outcome: 'forgotten' }],
+          results: [
+            { kind: 'forget-project', outcome: 'succeeded' },
+            { kind: 'reclaim-store', outcome: 'planned' },
+          ],
+          summary: { forgottenProjects: 1 },
+        },
+      });
+      const forgotten = await readLedgerState(ports, base.ledgerPath);
+      expect(forgotten).toMatchObject({ ok: true, value: { state: 'present' } });
+      if (!forgotten.ok || forgotten.value.state !== 'present') {
+        throw new Error('forgotten ledger is unavailable');
+      }
+      expect(forgotten.value.model.projects[retired]).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('refuses planted action state before publishing a recovery record', async () => {
     const ports = await defaultRuntimePorts();
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-pre-record-planted-'));
@@ -610,6 +849,43 @@ describe('GC execution transaction', () => {
         reason: expect.stringContaining('permission denied'),
       });
       expect(await observeGcRecovery(ports, plan.dataDir)).toMatchObject({ state: 'none' });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('preserves permission denial while locking incomplete recovery cleanup', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-incomplete-lock-'));
+    try {
+      const dataDir = join(root, 'data');
+      const recoveryRoot = join(dataDir, '.gc-recovery', 'v1');
+      await mkdir(recoveryRoot, { recursive: true, mode: 0o700 });
+      await chmod(dataDir, 0o700);
+      await chmod(join(dataDir, '.gc-recovery'), 0o700);
+      const planId = 'a'.repeat(64);
+      const revision = 'b'.repeat(64);
+      const staging = join(recoveryRoot, `.${planId}.create-${revision}-${'1'.repeat(16)}.tmp`);
+      await writeFile(staging, '', { mode: 0o600 });
+      const observed = await observeGcRecovery(ports, dataDir);
+      if (observed.state !== 'incomplete') throw new Error('incomplete recovery missing');
+      const deniedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        withFileLock: async (): Promise<never> => {
+          throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        },
+      });
+      expect(
+        await clearIncompleteGcRecovery(deniedPorts, {
+          dataDir,
+          ledgerPath: join(dataDir, 'placements.json'),
+          recovery: observed,
+        }),
+      ).toMatchObject({
+        ok: false,
+        recoveryState: 'pending',
+        reason: expect.stringContaining('permission denied'),
+      });
+      expect(await ports.pathKind(staging)).toBe('file');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

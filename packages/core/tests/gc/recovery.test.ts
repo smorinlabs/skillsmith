@@ -185,8 +185,58 @@ describe('GC private recovery repository', () => {
       expect(await ports.listDir(join(root, '.gc-recovery', 'v1'))).toEqual([
         `${initialRecord.planId}.json`,
       ]);
-      expect(await removeGcRecoveryRecord(ports, replaced)).toBeTrue();
+      expect(await removeGcRecoveryRecord(ports, replaced)).toEqual({
+        ok: true,
+        recoveryState: 'none',
+      });
       expect(await observeGcRecovery(ports, root)).toMatchObject({ state: 'none' });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('preserves the exact successor when CAS rename succeeds but fsync and observation fail', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-recovery-cas-observer-'));
+    try {
+      await chmod(root, 0o700);
+      const initial = record(root, 'approved');
+      const created = await createGcRecoveryRecord(ports, root, initial);
+      if (created.state !== 'pending') throw new Error('recovery create failed');
+      const { revision: _revision, ...initialSeed } = initial;
+      const nextSeed = { ...initialSeed, phase: 'migration-complete' as const };
+      const next = Object.freeze({ ...nextSeed, revision: gcRecoveryRevision(nextSeed) });
+      const recoveryRoot = join(root, '.gc-recovery', 'v1');
+      let renamed = false;
+      let interrupted = false;
+      const interruptedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        rename: async (from: string, to: string) => {
+          await ports.rename(from, to);
+          if (from.includes('.cas-')) renamed = true;
+        },
+        fsyncDir: async (path: string) => {
+          if (renamed && !interrupted && path === recoveryRoot) {
+            interrupted = true;
+            throw Object.assign(new Error('denied'), { code: 'EACCES' });
+          }
+          await ports.fsyncDir(path);
+        },
+        pathKind: async (path: string) => {
+          if (interrupted && path === recoveryRoot) {
+            throw Object.assign(new Error('observer denied'), { code: 'EACCES' });
+          }
+          return ports.pathKind(path);
+        },
+      });
+      expect(await replaceGcRecoveryRecord(interruptedPorts, created, next)).toMatchObject({
+        state: 'pending',
+        record: { revision: next.revision, phase: 'migration-complete' },
+        publicationFailure: expect.stringContaining('permission denied'),
+      });
+      expect(await observeGcRecovery(ports, root)).toMatchObject({
+        state: 'pending',
+        record: { revision: next.revision, phase: 'migration-complete' },
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -351,8 +401,54 @@ describe('GC private recovery repository', () => {
       expect(observed).toMatchObject({ state: 'incomplete', path: staging });
       expect(await ports.pathKind(staging)).toBe('file');
       if (observed.state !== 'incomplete') throw new Error('incomplete staging was not observed');
-      expect(await removeIncompleteGcRecovery(ports, root, observed)).toBeTrue();
+      expect(await removeIncompleteGcRecovery(ports, root, observed)).toEqual({
+        ok: true,
+        recoveryState: 'none',
+      });
       expect(await observeGcRecovery(ports, root)).toMatchObject({ state: 'none' });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('preserves permission and visible-state facts for incomplete staging cleanup failures', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-recovery-incomplete-denied-'));
+    try {
+      const recovery = join(root, '.gc-recovery', 'v1');
+      await mkdir(recovery, { recursive: true, mode: 0o700 });
+      await chmod(root, 0o700);
+      await chmod(join(root, '.gc-recovery'), 0o700);
+      const staging = join(recovery, `.${id('a')}.create-${id('b')}-${'1'.repeat(16)}.tmp`);
+      await writeFile(staging, '', { mode: 0o600 });
+      const observed = await observeGcRecovery(ports, root);
+      if (observed.state !== 'incomplete') throw new Error('incomplete staging was not observed');
+
+      const removeDeniedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        removeTree: async (path: string) => {
+          if (path === staging) throw Object.assign(new Error('denied'), { code: 'EACCES' });
+          await ports.removeTree(path);
+        },
+      });
+      expect(await removeIncompleteGcRecovery(removeDeniedPorts, root, observed)).toMatchObject({
+        ok: false,
+        recoveryState: 'refused',
+        reason: expect.stringContaining('permission denied'),
+      });
+      expect(await ports.pathKind(staging)).toBe('file');
+
+      const fsyncDeniedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        fsyncDir: async (path: string) => {
+          if (path === recovery) throw Object.assign(new Error('denied'), { code: 'EPERM' });
+          await ports.fsyncDir(path);
+        },
+      });
+      expect(await removeIncompleteGcRecovery(fsyncDeniedPorts, root, observed)).toMatchObject({
+        ok: false,
+        recoveryState: 'none',
+        reason: expect.stringContaining('permission denied'),
+      });
+      expect(await ports.pathKind(staging)).toBe('absent');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

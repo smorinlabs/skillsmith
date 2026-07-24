@@ -21,6 +21,14 @@ type RecoveryPorts = EffectiveUserPort &
   Pick<FileWritePort, 'fsyncDir' | 'fsyncFile' | 'removeTree' | 'rename'> &
   IdPort;
 
+export type GcRecoveryCleanupResult =
+  | Readonly<{ readonly ok: true; readonly recoveryState: 'none' }>
+  | Readonly<{
+      readonly ok: false;
+      readonly recoveryState: 'none' | 'pending' | 'refused';
+      readonly reason: string;
+    }>;
+
 const HEX64 = /^[0-9a-f]{64}$/u;
 const HEX16 = /^[0-9a-f]{16}$/u;
 const IdSchema = z.string().regex(HEX64);
@@ -533,6 +541,7 @@ export const convergeGcRecovery = async (
   }
   const root = recoveryRootOf(dataDir);
   const live = join(root, `${expected.record.planId}.json`);
+  let authoritativeLive = expected.staging === 'redundant';
   try {
     if (expected.staging === 'redundant') {
       await ports.removeTree(expected.path);
@@ -541,17 +550,37 @@ export const convergeGcRecovery = async (
         throw new Error();
       }
       await ports.rename(expected.path, live);
+      authoritativeLive = true;
     }
     await ports.fsyncDir(root);
   } catch (error) {
     const reason = publicationFailure(error, 'recovery staging convergence');
-    const converged = await observeGcRecovery(ports, dataDir);
-    if (
-      converged.state === 'pending' &&
-      converged.staging === undefined &&
-      converged.record.revision === expected.record.revision
-    ) {
-      return Object.freeze({ ...converged, publicationFailure: reason });
+    try {
+      const converged = await observeGcRecovery(ports, dataDir);
+      if (
+        converged.state === 'pending' &&
+        converged.staging === undefined &&
+        converged.record.revision === expected.record.revision
+      ) {
+        return Object.freeze({ ...converged, publicationFailure: reason });
+      }
+    } catch {
+      if (authoritativeLive) {
+        return Object.freeze({
+          state: 'pending',
+          record: Object.freeze(expected.record),
+          path: live,
+          publicationFailure: reason,
+        });
+      }
+    }
+    if (authoritativeLive) {
+      return Object.freeze({
+        state: 'pending',
+        record: Object.freeze(expected.record),
+        path: live,
+        publicationFailure: reason,
+      });
     }
     return Object.freeze({
       state: 'refused',
@@ -560,7 +589,17 @@ export const convergeGcRecovery = async (
       reason,
     });
   }
-  const converged = await observeGcRecovery(ports, dataDir);
+  let converged: GcRecoveryObservation;
+  try {
+    converged = await observeGcRecovery(ports, dataDir);
+  } catch (error) {
+    return Object.freeze({
+      state: 'pending',
+      record: Object.freeze(expected.record),
+      path: live,
+      publicationFailure: publicationFailure(error, 'recovery convergence verification'),
+    });
+  }
   return converged.state === 'pending' &&
     converged.staging === undefined &&
     converged.record.revision === expected.record.revision
@@ -577,12 +616,41 @@ export const removeIncompleteGcRecovery = async (
   ports: RecoveryPorts,
   dataDir: string,
   expected: Extract<GcRecoveryObservation, { readonly state: 'incomplete' }>,
-): Promise<boolean> => {
-  const observed = await observeGcRecovery(ports, dataDir);
-  if (observed.state !== 'incomplete' || observed.path !== expected.path) return false;
-  await ports.removeTree(expected.path).catch(() => {});
-  await ports.fsyncDir(recoveryRootOf(dataDir)).catch(() => {});
-  return (await observeGcRecovery(ports, dataDir)).state === 'none';
+): Promise<GcRecoveryCleanupResult> => {
+  try {
+    const observed = await observeGcRecovery(ports, dataDir);
+    if (observed.state !== 'incomplete' || observed.path !== expected.path) {
+      return Object.freeze({
+        ok: false,
+        recoveryState: observed.state === 'none' ? 'none' : 'refused',
+        reason: 'GC incomplete recovery staging changed before cleanup',
+      });
+    }
+    await ports.removeTree(expected.path);
+    await ports.fsyncDir(recoveryRootOf(dataDir));
+    const after = await observeGcRecovery(ports, dataDir);
+    return after.state === 'none'
+      ? Object.freeze({ ok: true, recoveryState: 'none' as const })
+      : Object.freeze({
+          ok: false,
+          recoveryState: after.state === 'pending' ? ('pending' as const) : ('refused' as const),
+          reason: 'GC incomplete recovery staging cleanup did not converge',
+        });
+  } catch (error) {
+    let recoveryState: GcRecoveryCleanupResult['recoveryState'] = 'refused';
+    try {
+      const after = await observeGcRecovery(ports, dataDir);
+      recoveryState =
+        after.state === 'none' ? 'none' : after.state === 'pending' ? 'pending' : 'refused';
+    } catch {
+      // Preserve refusal when the cleanup state cannot itself be safely re-observed.
+    }
+    return Object.freeze({
+      ok: false,
+      recoveryState,
+      reason: publicationFailure(error, 'incomplete recovery staging cleanup'),
+    });
+  }
 };
 
 const ensureDirectory = async (
@@ -661,6 +729,7 @@ export const createGcRecoveryRecord = async (
   if (!HEX16.test(cas)) throw new TypeError('GC CAS ID invariant failed');
   const temp = join(root, `.${record.planId}.create-${record.revision}-${cas}.tmp`);
   const source = canonical(record);
+  let authoritativeLive = false;
   try {
     await ports.writeTextFileExclusive(temp, source, 0o600);
     await ports.fsyncFile(temp);
@@ -669,18 +738,38 @@ export const createGcRecoveryRecord = async (
     await ports.fsyncDir(root);
     if ((await ports.pathKind(live)) !== 'absent') throw new Error();
     await ports.rename(temp, live);
+    authoritativeLive = true;
     await ports.fsyncDir(root);
   } catch (error) {
     await ports.removeTree(temp).catch(() => {});
     await ports.fsyncDir(root).catch(() => {});
     const reason = publicationFailure(error, 'recovery record publication');
-    const observed = await observeGcRecovery(ports, dataDir);
-    if (
-      observed.state === 'pending' &&
-      observed.staging === undefined &&
-      observed.record.revision === record.revision
-    ) {
-      return Object.freeze({ ...observed, publicationFailure: reason });
+    try {
+      const observed = await observeGcRecovery(ports, dataDir);
+      if (
+        observed.state === 'pending' &&
+        observed.staging === undefined &&
+        observed.record.revision === record.revision
+      ) {
+        return Object.freeze({ ...observed, publicationFailure: reason });
+      }
+    } catch {
+      if (authoritativeLive) {
+        return Object.freeze({
+          state: 'pending',
+          record: Object.freeze(record),
+          path: live,
+          publicationFailure: reason,
+        });
+      }
+    }
+    if (authoritativeLive) {
+      return Object.freeze({
+        state: 'pending',
+        record: Object.freeze(record),
+        path: live,
+        publicationFailure: reason,
+      });
     }
     return Object.freeze({
       state: 'refused',
@@ -803,6 +892,7 @@ export const replaceGcRecoveryRecord = async (
   const cas = casId(ports);
   const temp = join(root, `.${next.planId}.cas-${current.revision}-${next.revision}-${cas}.tmp`);
   const source = canonical(next);
+  let authoritativeLive = false;
   try {
     if ((await ports.readText(observation.path)) !== canonical(current)) throw new Error();
     await ports.writeTextFileExclusive(temp, source, 0o600);
@@ -812,18 +902,38 @@ export const replaceGcRecoveryRecord = async (
     await ports.fsyncDir(root);
     if ((await ports.readText(observation.path)) !== canonical(current)) throw new Error();
     await ports.rename(temp, observation.path);
+    authoritativeLive = true;
     await ports.fsyncDir(root);
   } catch (error) {
     await ports.removeTree(temp).catch(() => {});
     await ports.fsyncDir(root).catch(() => {});
     const reason = publicationFailure(error, 'recovery CAS replacement');
-    const observed = await observeGcRecovery(ports, dirname(dirname(root)));
-    if (
-      observed.state === 'pending' &&
-      observed.staging === undefined &&
-      observed.record.revision === next.revision
-    ) {
-      return Object.freeze({ ...observed, publicationFailure: reason });
+    try {
+      const observed = await observeGcRecovery(ports, dirname(dirname(root)));
+      if (
+        observed.state === 'pending' &&
+        observed.staging === undefined &&
+        observed.record.revision === next.revision
+      ) {
+        return Object.freeze({ ...observed, publicationFailure: reason });
+      }
+    } catch {
+      if (authoritativeLive) {
+        return Object.freeze({
+          state: 'pending',
+          record: Object.freeze(next),
+          path: observation.path,
+          publicationFailure: reason,
+        });
+      }
+    }
+    if (authoritativeLive) {
+      return Object.freeze({
+        state: 'pending',
+        record: Object.freeze(next),
+        path: observation.path,
+        publicationFailure: reason,
+      });
     }
     return Object.freeze({
       state: 'refused',
@@ -838,13 +948,39 @@ export const replaceGcRecoveryRecord = async (
 export const removeGcRecoveryRecord = async (
   ports: RecoveryPorts,
   observation: Extract<GcRecoveryObservation, { readonly state: 'pending' }>,
-): Promise<boolean> => {
-  if ((await ports.readText(observation.path).catch(() => '')) !== canonical(observation.record)) {
-    return false;
+): Promise<GcRecoveryCleanupResult> => {
+  try {
+    if ((await ports.readText(observation.path)) !== canonical(observation.record)) {
+      return Object.freeze({
+        ok: false,
+        recoveryState: 'refused',
+        reason: 'GC recovery completion authority changed before cleanup',
+      });
+    }
+    await ports.removeTree(observation.path);
+    await ports.fsyncDir(dirname(observation.path));
+    return (await ports.pathKind(observation.path)) === 'absent'
+      ? Object.freeze({ ok: true, recoveryState: 'none' as const })
+      : Object.freeze({
+          ok: false,
+          recoveryState: 'pending' as const,
+          reason: 'GC recovery completion cleanup did not converge',
+        });
+  } catch (error) {
+    let recoveryState: GcRecoveryCleanupResult['recoveryState'] = 'refused';
+    try {
+      const after = await observeGcRecovery(ports, dirname(dirname(dirname(observation.path))));
+      recoveryState =
+        after.state === 'none' ? 'none' : after.state === 'pending' ? 'pending' : 'refused';
+    } catch {
+      // Preserve refusal when completion state cannot itself be safely re-observed.
+    }
+    return Object.freeze({
+      ok: false,
+      recoveryState,
+      reason: publicationFailure(error, 'recovery completion cleanup'),
+    });
   }
-  await ports.removeTree(observation.path);
-  await ports.fsyncDir(dirname(observation.path));
-  return (await ports.pathKind(observation.path)) === 'absent';
 };
 
 export const gcRecoveryRevision = (value: unknown): string =>

@@ -20,6 +20,7 @@ import { inventoryGcStore } from './inventory.ts';
 import { withoutLedgerProjectAt } from './plan.ts';
 import { classifyGcReachability, observeGcLiveTargets } from './reachability.ts';
 import {
+  type GcRecoveryCleanupResult,
   convergeGcRecovery,
   createGcRecoveryRecord,
   gcRecoveryRevision,
@@ -135,6 +136,11 @@ const reportFromRecord = (
     readonly mode: 'dry-run' | 'execute';
     readonly completed: boolean;
     readonly reason?: string;
+    readonly migrationDone?: boolean;
+    readonly forgetDone?: boolean;
+    readonly recovery?: GcReportV1Dto['recovery'];
+    readonly failureKind?: GcReportV1Dto['actions'][number]['kind'];
+    readonly failureActionId?: string;
   }>,
 ): GcReportV1Dto => {
   const outcomes = new Map(record.actions.map((action) => [action.actionId, action.outcome]));
@@ -151,28 +157,32 @@ const reportFromRecord = (
       .filter(({ outcome }) => outcome === 'already-absent')
       .map(({ actionId }) => actionId),
   );
-  const firstIncomplete = record.actions.find(
-    ({ outcome }) =>
-      outcome === 'pending' ||
-      outcome === 'prepared' ||
-      outcome === 'detached' ||
-      outcome === 'cleanup-started',
-  )?.actionId;
-  const migrationDone = migrationCommitted(record);
-  const forgetDone = forgetCommitted(record);
+  const migrationDone = input.migrationDone ?? migrationCommitted(record);
+  const forgetDone = input.forgetDone ?? forgetCommitted(record);
   const results = record.approvedReport.actions.map((action) => {
+    const failed =
+      input.reason !== undefined &&
+      (action.actionId === input.failureActionId || action.kind === input.failureKind);
     if (action.kind === 'migrate-ledger') {
       return {
         ...action,
-        outcome: migrationDone ? ('succeeded' as const) : ('planned' as const),
-        reason: null,
+        outcome: migrationDone
+          ? ('succeeded' as const)
+          : failed
+            ? ('failed' as const)
+            : ('planned' as const),
+        reason: failed ? (input.reason ?? null) : null,
       };
     }
     if (action.kind === 'forget-project') {
       return {
         ...action,
-        outcome: forgetDone ? ('succeeded' as const) : ('planned' as const),
-        reason: null,
+        outcome: forgetDone
+          ? ('succeeded' as const)
+          : failed
+            ? ('failed' as const)
+            : ('planned' as const),
+        reason: failed ? (input.reason ?? null) : null,
       };
     }
     const outcome = outcomes.get(action.actionId);
@@ -183,7 +193,7 @@ const reportFromRecord = (
           ? ('succeeded' as const)
           : outcome === 'protected-skip'
             ? ('protected-skip' as const)
-            : input.reason !== undefined && action.actionId === firstIncomplete
+            : failed
               ? ('failed' as const)
               : ('planned' as const),
       reason:
@@ -191,7 +201,7 @@ const reportFromRecord = (
           ? 'protection changed after ledger commit'
           : outcome === 'already-absent'
             ? 'already absent before detach'
-            : input.reason !== undefined && action.actionId === firstIncomplete
+            : failed
               ? input.reason
               : null,
     };
@@ -223,9 +233,11 @@ const reportFromRecord = (
           ? ('approved' as const)
           : ('not-required' as const),
     },
-    recovery: input.completed
-      ? { state: 'completed' as const, phase: 'complete' as const }
-      : { state: 'pending' as const, phase: record.phase },
+    recovery:
+      input.recovery ??
+      (input.completed
+        ? { state: 'completed' as const, phase: 'complete' as const }
+        : { state: 'pending' as const, phase: record.phase }),
     projects: record.approvedReport.projects.map((project) =>
       project.action === 'forget-project' && forgetDone
         ? { ...project, outcome: 'forgotten' as const }
@@ -273,11 +285,26 @@ export const pendingGcRecoveryReport = (
   mode: 'dry-run' | 'execute',
 ): GcReportV1Dto => reportFromRecord(record, { mode, completed: false });
 
-const fail = (record: GcRecoveryRecordV1, reason: string): GcExecutionResult =>
+const fail = (
+  record: GcRecoveryRecordV1,
+  reason: string,
+  projection: Readonly<{
+    readonly migrationDone?: boolean;
+    readonly forgetDone?: boolean;
+    readonly recovery?: GcReportV1Dto['recovery'];
+    readonly failureKind?: GcReportV1Dto['actions'][number]['kind'];
+    readonly failureActionId?: string;
+  }> = {},
+): GcExecutionResult =>
   Object.freeze({
     ok: false,
     reason,
-    report: reportFromRecord(record, { mode: 'execute', completed: false, reason }),
+    report: reportFromRecord(record, {
+      mode: 'execute',
+      completed: false,
+      reason,
+      ...projection,
+    }),
   });
 
 const sameSource = (expected: GcRecoveryLedgerSourceV1, actual: LedgerReadState): boolean =>
@@ -296,6 +323,10 @@ const replace = async (
   recovery: Extract<GcRecoveryObservation, { readonly state: 'pending' }>,
   patch: Partial<Omit<GcRecoveryRecordV1, 'revision'>>,
   fallback: string,
+  projection: Readonly<{
+    readonly migrationDone?: boolean;
+    readonly forgetDone?: boolean;
+  }> = {},
 ): Promise<
   | Readonly<{
       readonly ok: true;
@@ -316,7 +347,7 @@ const replace = async (
         : fallback;
   return Object.freeze({
     ok: false,
-    result: fail(result.state === 'pending' ? result.record : recovery.record, reason),
+    result: fail(result.state === 'pending' ? result.record : recovery.record, reason, projection),
   });
 };
 
@@ -416,12 +447,18 @@ const commitLedgerBoundaries = async (
         recovery,
         { phase: 'migration-complete' },
         'GC migration recovery CAS failed',
+        { migrationDone: true },
       );
       if (!advanced.ok) return { ok: false, result: advanced.result };
       recovery = advanced.recovery;
     } else if (expected !== null && sameSource(recovery.record.sourceLedger, current.value)) {
       if (current.value.state !== 'present' || recovery.record.migrationUpdatedAt === null) {
-        return { ok: false, result: fail(recovery.record, 'GC ledger migration failed') };
+        return {
+          ok: false,
+          result: fail(recovery.record, 'GC ledger migration failed', {
+            failureKind: 'migrate-ledger',
+          }),
+        };
       }
       const writeFailure = await writeExactLedger(
         ports,
@@ -431,13 +468,17 @@ const commitLedgerBoundaries = async (
         expected,
       );
       if (writeFailure !== null) {
-        return { ok: false, result: fail(recovery.record, writeFailure) };
+        return {
+          ok: false,
+          result: fail(recovery.record, writeFailure, { failureKind: 'migrate-ledger' }),
+        };
       }
       const advanced = await replace(
         ports,
         recovery,
         { phase: 'migration-complete' },
         'GC migration recovery CAS failed',
+        { migrationDone: true },
       );
       if (!advanced.ok) return { ok: false, result: advanced.result };
       recovery = advanced.recovery;
@@ -466,6 +507,7 @@ const commitLedgerBoundaries = async (
         recovery,
         { phase: 'forget-complete' },
         'GC committed ledger adoption failed',
+        { migrationDone: true, forgetDone: true },
       );
       if (!advanced.ok) return { ok: false, result: advanced.result };
       recovery = advanced.recovery;
@@ -492,6 +534,7 @@ const commitLedgerBoundaries = async (
         recovery,
         { phase: 'forget-complete' },
         'GC forget adoption CAS failed',
+        { forgetDone: true },
       );
       if (!advanced.ok) return { ok: false, result: advanced.result };
       recovery = advanced.recovery;
@@ -522,14 +565,24 @@ const commitLedgerBoundaries = async (
           recovery.record.normalizedForgetRoots,
         ))
       ) {
-        return { ok: false, result: fail(recovery.record, 'GC forget source is unavailable') };
+        return {
+          ok: false,
+          result: fail(recovery.record, 'GC forget source is unavailable', {
+            failureKind: 'forget-project',
+          }),
+        };
       }
       const forgotten = withoutLedgerProjectAt(
         current.value.model,
         recovery.record.normalizedForgetRoots,
       );
       if (!forgotten.ok) {
-        return { ok: false, result: fail(recovery.record, 'GC ledger forget commit failed') };
+        return {
+          ok: false,
+          result: fail(recovery.record, 'GC ledger forget commit failed', {
+            failureKind: 'forget-project',
+          }),
+        };
       }
       const writeFailure = await writeExactLedger(
         ports,
@@ -539,13 +592,17 @@ const commitLedgerBoundaries = async (
         expected,
       );
       if (writeFailure !== null) {
-        return { ok: false, result: fail(recovery.record, writeFailure) };
+        return {
+          ok: false,
+          result: fail(recovery.record, writeFailure, { failureKind: 'forget-project' }),
+        };
       }
       const advanced = await replace(
         ports,
         recovery,
         { phase: 'forget-complete' },
         'GC forget recovery CAS failed',
+        { forgetDone: true },
       );
       if (!advanced.ok) return { ok: false, result: advanced.result };
       recovery = advanced.recovery;
@@ -639,19 +696,27 @@ const runPendingLocked = async (
     if (action.outcome === 'pending') {
       const inventory = await inventoryGcStore(ports, storeRoot);
       if (inventory.state !== 'ok') {
-        return fail(recovery.record, 'GC committed store inventory is unsafe');
+        return fail(recovery.record, 'GC committed store inventory is unsafe', {
+          failureActionId: action.actionId,
+        });
       }
       const current = inventory.objects.find(({ path }) => path === action?.object.path);
       const sourceAbsent =
         current === undefined && (await ports.pathKind(action.object.path)) === 'absent';
       if (current !== undefined && current.id !== action.object.id) {
-        return fail(recovery.record, 'GC approved candidate changed before reclaim');
+        return fail(recovery.record, 'GC approved candidate changed before reclaim', {
+          failureActionId: action.actionId,
+        });
       }
       if (current === undefined && !sourceAbsent) {
-        return fail(recovery.record, 'GC approved candidate became unsafe before reclaim');
+        return fail(recovery.record, 'GC approved candidate became unsafe before reclaim', {
+          failureActionId: action.actionId,
+        });
       }
       const liveTargets = await observeGcLiveTargets(ports, boundaries.model, inventory.objects);
-      if (liveTargets.state !== 'ok') return fail(recovery.record, liveTargets.reason);
+      if (liveTargets.state !== 'ok') {
+        return fail(recovery.record, liveTargets.reason, { failureActionId: action.actionId });
+      }
       const classified = classifyGcReachability({
         model: boundaries.model,
         objects: inventory.objects,
@@ -660,7 +725,9 @@ const runPendingLocked = async (
         liveTargets: liveTargets.targets,
       });
       if (classified.state !== 'ok') {
-        return fail(recovery.record, 'GC committed reachability revalidation failed');
+        return fail(recovery.record, 'GC committed reachability revalidation failed', {
+          failureActionId: action.actionId,
+        });
       }
       const stillEligible =
         sourceAbsent ||
@@ -696,7 +763,11 @@ const runPendingLocked = async (
         ports,
         actionRequest(storeRoot, recovery.record.planId, action),
       );
-      if (advancedAction.state === 'refused') return fail(recovery.record, advancedAction.reason);
+      if (advancedAction.state === 'refused') {
+        return fail(recovery.record, advancedAction.reason, {
+          failureActionId: action.actionId,
+        });
+      }
       const actions = recovery.record.actions.map((candidate) =>
         candidate.actionId === action?.actionId
           ? {
@@ -724,7 +795,9 @@ const runPendingLocked = async (
         ports,
         actionRequest(storeRoot, recovery.record.planId, action),
       );
-      if (!finalized.ok) return fail(recovery.record, finalized.reason);
+      if (!finalized.ok) {
+        return fail(recovery.record, finalized.reason, { failureActionId: action.actionId });
+      }
     }
   }
 
@@ -740,18 +813,15 @@ const runPendingLocked = async (
     complete = advanced.recovery;
   }
   const report = reportFromRecord(complete.record, { mode: 'execute', completed: true });
-  try {
-    if (!(await removeGcRecoveryRecord(ports, complete))) {
-      return fail(complete.record, 'GC recovery completion cleanup failed');
-    }
-  } catch (error) {
-    const code = safeErrorCode(error);
-    return fail(
-      complete.record,
-      code === 'EACCES' || code === 'EPERM'
-        ? 'GC permission denied during recovery completion cleanup'
-        : 'GC recovery completion cleanup failed',
-    );
+  const removed = await removeGcRecoveryRecord(ports, complete);
+  if (!removed.ok) {
+    const recovery: GcReportV1Dto['recovery'] =
+      removed.recoveryState === 'none'
+        ? { state: 'none', phase: null }
+        : removed.recoveryState === 'pending'
+          ? { state: 'pending', phase: 'complete' }
+          : { state: 'refused', phase: 'complete' };
+    return fail(complete.record, removed.reason, { recovery });
   }
   return Object.freeze({ ok: true, report });
 };
@@ -837,15 +907,27 @@ export const clearIncompleteGcRecovery = async (
     readonly recovery: Extract<GcRecoveryObservation, { readonly state: 'incomplete' }>;
     readonly signal?: AbortSignal;
   }>,
-): Promise<boolean> => {
-  if (input.signal?.aborted) return false;
+): Promise<GcRecoveryCleanupResult> => {
+  if (input.signal?.aborted) {
+    return Object.freeze({
+      ok: false,
+      recoveryState: 'pending',
+      reason: 'GC execution was cancelled',
+    });
+  }
   const locked = await withLedgerLock(
     ports,
     input.ledgerPath,
     () => removeIncompleteGcRecovery(ports, input.dataDir, input.recovery),
     input.signal === undefined ? undefined : { signal: input.signal },
   );
-  return locked.ok && locked.value;
+  return locked.ok
+    ? locked.value
+    : Object.freeze({
+        ok: false,
+        recoveryState: 'pending' as const,
+        reason: lockFailureReason(locked.error),
+      });
 };
 
 const preRecordPlanFailure = async (

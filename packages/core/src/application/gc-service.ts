@@ -207,7 +207,7 @@ export const gcExecutionExitClass = (
   signal?: AbortSignal,
 ): 'failure' | 'state' | 'permission' | 'cancelled' => {
   if (signal?.aborted) return 'cancelled';
-  if (/permission denied|ownership|mode is unsafe/u.test(reason)) return 'permission';
+  if (/permission denied/u.test(reason)) return 'permission';
   return /changed|drift|unsafe|unreadable|mismatch|different|could not acquire|precondition/u.test(
     reason,
   )
@@ -407,14 +407,25 @@ export const runGcApplication: ApplicationService<
       recovery: observed.recovery,
       ...(context.signal === undefined ? {} : { signal: context.signal }),
     });
-    return cleared
-      ? runGcApplication(rawRequest, context)
-      : refuse(
-          context.signal?.aborted ? 'cancelled' : 'state',
-          context.signal?.aborted ? 'gc-cancelled' : 'gc-recovery-incomplete',
-          context.signal?.aborted ? 'GC execution was cancelled' : `${message}; cleanup failed`,
-          report,
-        );
+    if (cleared.ok) return runGcApplication(rawRequest, context);
+    const cleanupRecovery: GcReportV1Dto['recovery'] =
+      cleared.recoveryState === 'none'
+        ? { state: 'none', phase: null }
+        : cleared.recoveryState === 'pending'
+          ? { state: 'pending', phase: 'initial-staging' }
+          : { state: 'refused', phase: 'initial-staging' };
+    const cleanupReport: GcReportV1Dto = Object.freeze({
+      ...report,
+      recovery: cleanupRecovery,
+      diagnostics: [{ code: 'gc-execution', path: null, message: cleared.reason }],
+    });
+    const exitClass = gcExecutionExitClass(cleared.reason, context.signal);
+    return refuse(
+      exitClass,
+      exitClass === 'cancelled' ? 'gc-cancelled' : 'gc-recovery-incomplete',
+      cleared.reason,
+      cleanupReport,
+    );
   }
   if (observed.inventory.state === 'refused') {
     const message = 'GC store inventory is unsafe; no action was selected';

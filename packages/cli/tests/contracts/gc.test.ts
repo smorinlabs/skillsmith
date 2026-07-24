@@ -24,12 +24,14 @@ import {
 } from '../../../../tests/ergonomics/fixtures/p5-gc/fleet.ts';
 import { CURRENT_APPLICATION_SERVICES } from '../../../core/src/application/current-services.ts';
 import type { ArtifactDigest } from '../../../core/src/artifacts/hash.ts';
+import { validateJournalV1DtoShape } from '../../../core/src/artifacts/journal-codec.ts';
 import type { LogicalJournalV1Dto } from '../../../core/src/artifacts/journal-types.ts';
 import { validateLedgerV2Dto } from '../../../core/src/artifacts/ledger-codec.ts';
 import { executeGcPlan } from '../../../core/src/gc/execute.ts';
 import { inventoryGcStore } from '../../../core/src/gc/inventory.ts';
 import { buildGcPlan } from '../../../core/src/gc/plan.ts';
 import { classifyGcReachability } from '../../../core/src/gc/reachability.ts';
+import { observeGcRecovery } from '../../../core/src/gc/recovery.ts';
 import type { GcObjectObservation } from '../../../core/src/gc/types.ts';
 import { emptyLedgerModel, readLedgerState } from '../../../core/src/place/ledger.ts';
 import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
@@ -163,6 +165,158 @@ const retainedJournal = (
   completedAt: phase === 'committed' ? '2026-07-23T00:00:00.000Z' : null,
 });
 
+const retainedRollbackLineage = (
+  object: GcStoreObject,
+): readonly [LogicalJournalV1Dto, LogicalJournalV1Dto] => {
+  const resource = {
+    kind: 'live' as const,
+    skill: 'lineage-retained',
+    tool: 'codex' as const,
+    scope: 'user' as const,
+    projectRoot: null,
+    location: { kind: 'machine-bound' as const, path: '/live/lineage-retained' },
+  };
+  const before = {
+    resourceId: 'resource:lineage:live',
+    role: 'live' as const,
+    state: 'absent' as const,
+    repositoryRevision: null,
+    placementPath: '/live/lineage-retained',
+    liveKind: null,
+    mode: null,
+    symlinkTarget: null,
+    contentHash: null,
+  };
+  const after = {
+    resourceId: 'resource:lineage:live',
+    role: 'live' as const,
+    state: 'present' as const,
+    repositoryRevision: {
+      kind: 'resource' as const,
+      digest: object.contentHash as ArtifactDigest,
+    },
+    placementPath: '/live/lineage-retained',
+    liveKind: 'directory' as const,
+    mode: 'pinned' as const,
+    symlinkTarget: null,
+    contentHash: object.contentHash as ArtifactDigest,
+  };
+  const ledgerBefore = {
+    resourceId: 'resource:lineage:ledger',
+    role: 'ledger' as const,
+    state: 'present' as const,
+    repositoryRevision: {
+      kind: 'artifact-bytes' as const,
+      digest: `sha256:${'1'.repeat(64)}` as ArtifactDigest,
+    },
+    schemaVersion: 2 as const,
+    semanticHash: `sha256:${'2'.repeat(64)}` as ArtifactDigest,
+  };
+  const ledgerAfter = {
+    ...ledgerBefore,
+    repositoryRevision: {
+      kind: 'artifact-bytes' as const,
+      digest: `sha256:${'3'.repeat(64)}` as ArtifactDigest,
+    },
+    semanticHash: `sha256:${'4'.repeat(64)}` as ArtifactDigest,
+  };
+  const retained = {
+    resourceId: 'resource:lineage:store',
+    role: 'store' as const,
+    path: object.path,
+    repositoryRevision: {
+      kind: 'resource' as const,
+      digest: object.contentHash as ArtifactDigest,
+    },
+    contentHash: object.contentHash as ArtifactDigest,
+    retainUntil: null,
+  };
+  const intent: LogicalJournalV1Dto['intent'] = {
+    operationId: 'operation:lineage-parent',
+    groupId: 'group:lineage-parent',
+    pairId: 'pair:lineage-retained:codex',
+    kind: 'install',
+    skill: 'lineage-retained',
+    source: {
+      kind: 'portable',
+      identity: {
+        host: 'github.com',
+        repository: 'skillsmith/fixtures',
+        path: 'lineage-retained',
+      },
+      requestedRef: null,
+      resolvedSha: 'a'.repeat(40),
+      sourcePath: 'lineage-retained',
+      contentHash: object.contentHash as ArtifactDigest,
+    },
+    tool: 'codex',
+    scope: 'user',
+    before: { kind: 'absent', resource },
+    after: {
+      kind: 'placement',
+      resource,
+      classification: 'pinned',
+      representation: 'copy',
+      linkTarget: null,
+      dangling: false,
+      source: null,
+      contentHash: object.contentHash as ArtifactDigest,
+    },
+    mutates: { live: true, manifest: false, lock: false, ledger: true },
+    reversibility: {
+      kind: 'conditional',
+      retentionResourceIds: [retained.resourceId],
+    },
+    conflict: null,
+  };
+  const parent: LogicalJournalV1Dto = {
+    schemaVersion: 1,
+    kind: 'skillsmith.transaction-journal',
+    transactionId: 'transaction:lineage-parent',
+    intent,
+    context: {
+      parentOperationId: null,
+      command: 'skillsmith:install',
+      workflow: 'gc-selector-lineage',
+      attempt: 1,
+      startedAt: '2026-07-23T00:00:00.000Z',
+    },
+    disposition: 'forward',
+    phase: 'committed',
+    actual: {
+      before: [ledgerBefore, before],
+      after: [ledgerAfter, after],
+      retained: [retained],
+    },
+    updatedAt: '2026-07-23T00:00:01.000Z',
+    completedAt: '2026-07-23T00:00:01.000Z',
+  };
+  const child: LogicalJournalV1Dto = {
+    ...parent,
+    transactionId: 'transaction:lineage-child',
+    intent: {
+      ...intent,
+      operationId: 'operation:lineage-child',
+      groupId: 'group:lineage-child',
+    },
+    context: {
+      ...parent.context,
+      parentOperationId: intent.operationId,
+      attempt: 2,
+      startedAt: '2026-07-23T00:00:02.000Z',
+    },
+    disposition: 'rollback',
+    actual: {
+      before: [ledgerAfter, after],
+      after: [ledgerBefore, before],
+      retained: [retained],
+    },
+    updatedAt: '2026-07-23T00:00:03.000Z',
+    completedAt: '2026-07-23T00:00:03.000Z',
+  };
+  return [parent, child];
+};
+
 const requireGcReport = (product: GcCliProduct, expectedExit = 0): UnknownRecord => {
   expect(product.exitCode, `${product.stderr}\n${product.stdout}`).toBe(expectedExit);
   const parsed: unknown = JSON.parse(product.stdout);
@@ -276,6 +430,10 @@ describe('gc command contract', () => {
       revision: '444444444446',
       skill: 'history-retained',
     });
+    const lineageObject = await createStoreObject(selected, {
+      revision: '444444444447',
+      skill: 'lineage-retained',
+    });
     const placementPath = join(selected.projects.current, '.claude', 'skills', 'policy');
     const pair = {
       ...pinnedPair(placementPath, protectedObject),
@@ -300,10 +458,17 @@ describe('gc command contract', () => {
       historyObject,
       '2099-01-01T00:00:00.000Z',
     );
+    const lineage = retainedRollbackLineage(lineageObject);
+    for (const journal of lineage) {
+      const validated = validateJournalV1DtoShape(journal);
+      if (!validated.ok) {
+        throw new Error(`${journal.transactionId}: ${JSON.stringify(validated.error)}`);
+      }
+    }
     await writeLedgerV2(selected, {
       skills: { policy: { tools: { 'claude-code': pair } } },
       transactions: { [logical.transactionId]: logical },
-      history: [historical],
+      history: [historical, ...lineage],
     });
     const plantedLedger = validateLedgerV2Dto(JSON.parse(await readLedgerText(selected)));
     if (!plantedLedger.ok) throw new Error(JSON.stringify(plantedLedger.error));
@@ -332,6 +497,11 @@ describe('gc command contract', () => {
         }),
         expect.objectContaining({
           path: historyObject.path,
+          outcome: 'protected',
+          protection: expect.arrayContaining([expect.objectContaining({ kind: 'history' })]),
+        }),
+        expect.objectContaining({
+          path: lineageObject.path,
           outcome: 'protected',
           protection: expect.arrayContaining([expect.objectContaining({ kind: 'history' })]),
         }),
@@ -751,6 +921,55 @@ describe('gc command contract', () => {
     });
     expect(await pathExists(interruptedObject.path)).toBeFalse();
     expect(await ports.listDir(actionContainer)).toEqual([]);
+
+    const pendingRecovery = await observeGcRecovery(ports, selected.data);
+    if (pendingRecovery.state !== 'pending') throw new Error('pending recovery fixture missing');
+    const recoveryRoot = join(selected.data, '.gc-recovery', 'v1');
+    const liveSource = await readFile(pendingRecovery.path, 'utf8');
+    const expectPhysicalRefusal = async (): Promise<void> => {
+      expect((await runGcCli(selected, ['gc', '--yes', '--json'])).exitCode).toBe(3);
+      expect(await pathExists(interruptedObject.path)).toBeFalse();
+      expect(await pathExists(reachable.path)).toBeTrue();
+    };
+
+    const competingLive = join(recoveryRoot, `${'f'.repeat(64)}.json`);
+    await writeFile(competingLive, liveSource, { mode: 0o600 });
+    await expectPhysicalRefusal();
+    await rm(competingLive);
+
+    await chmod(pendingRecovery.path, 0o644);
+    await expectPhysicalRefusal();
+    await chmod(pendingRecovery.path, 0o600);
+
+    const malformedCas = join(
+      recoveryRoot,
+      `.${interruptedPlan.planId}.cas-${pendingRecovery.record.revision}-${'e'.repeat(64)}-${'1'.repeat(16)}.tmp`,
+    );
+    await writeFile(malformedCas, '{}\n', { mode: 0o600 });
+    await expectPhysicalRefusal();
+    await rm(malformedCas);
+
+    const competingInitial = join(
+      recoveryRoot,
+      `.${interruptedPlan.planId}.create-${pendingRecovery.record.revision}-${'2'.repeat(16)}.tmp`,
+    );
+    await writeFile(competingInitial, liveSource, { mode: 0o600 });
+    await expectPhysicalRefusal();
+    await rm(competingInitial);
+
+    await chmod(actionContainer, 0o755);
+    await expectPhysicalRefusal();
+    await chmod(actionContainer, 0o700);
+
+    await writeFile(join(actionContainer, 'owner.json'), '{}\n', { mode: 0o600 });
+    await expectPhysicalRefusal();
+    await rm(join(actionContainer, 'owner.json'));
+
+    const unsupportedTombstoneVersion = join(selected.store, '.gc-tombstones', 'v2');
+    await mkdir(unsupportedTombstoneVersion, { mode: 0o700 });
+    await expectPhysicalRefusal();
+    await rm(unsupportedTombstoneVersion, { recursive: true });
+
     const resumed = requireGcReport(await runGcCli(selected, ['gc', '--yes', '--json']));
     expect(resumed).toMatchObject({
       state: 'completed',
