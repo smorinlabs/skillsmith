@@ -147,7 +147,26 @@ export interface GcPlanningInput {
   readonly liveTargets?: readonly GcLiveStoreTarget[];
 }
 
-export type GcRecoveryPhase = 'approved' | 'forget-complete' | 'reclaiming' | 'complete';
+export type GcRecoveryPhase =
+  | 'approved'
+  | 'migration-complete'
+  | 'forget-complete'
+  | 'reclaiming'
+  | 'complete';
+
+export type GcRecoveryLedgerSourceV1 =
+  | Readonly<{
+      readonly state: 'absent';
+      readonly sourceVersion: null;
+      readonly byteRevision: null;
+      readonly semanticRevision: null;
+    }>
+  | Readonly<{
+      readonly state: 'present';
+      readonly sourceVersion: 1 | 2;
+      readonly byteRevision: ArtifactDigest;
+      readonly semanticRevision: ArtifactDigest;
+    }>;
 
 export interface GcRecoveryActionV1 {
   readonly actionId: string;
@@ -156,10 +175,13 @@ export interface GcRecoveryActionV1 {
   readonly contentHash: string;
   readonly modifiedAt: number;
   readonly logicalBytes: number;
+  readonly object: GcObjectObservation;
   readonly ownershipToken: string;
   readonly containerPath: string;
   readonly payloadPath: string;
-  readonly outcome: 'pending' | 'detached' | 'cleaned' | 'protected-skip';
+  readonly containerIdentity: string | null;
+  readonly payloadIdentity: string | null;
+  readonly outcome: 'pending' | 'prepared' | 'detached' | 'cleaned' | 'protected-skip';
 }
 
 export interface GcRecoveryRecordV1 {
@@ -169,7 +191,19 @@ export interface GcRecoveryRecordV1 {
   readonly requestDigest: string;
   readonly revision: string;
   readonly phase: GcRecoveryPhase;
+  readonly dataDir: string;
+  readonly storeRoot: string;
+  readonly ledgerPath: string;
   readonly retryArguments: readonly string[];
+  readonly sourceLedger: GcRecoveryLedgerSourceV1;
+  readonly normalizedForgetRoots: readonly string[];
+  readonly migrationUpdatedAt: string | null;
+  readonly expectedMigrationSemanticRevision: ArtifactDigest | null;
+  readonly forgetUpdatedAt: string | null;
+  readonly expectedPostForgetSemanticRevision: ArtifactDigest | null;
+  readonly nowMilliseconds: number;
+  readonly olderThanMilliseconds: number | null;
+  readonly approvedReport: GcReportV1Dto;
   readonly actions: readonly GcRecoveryActionV1[];
 }
 
@@ -193,11 +227,32 @@ export interface GcReclaimRequest {
   readonly actionId: string;
   readonly ownershipToken: string;
   readonly object: GcObjectObservation;
+  readonly containerPath: string;
+  readonly payloadPath: string;
+  readonly outcome: GcRecoveryActionV1['outcome'];
+  readonly containerIdentity: string | null;
+  readonly payloadIdentity: string | null;
 }
 
 export type GcReclaimResult =
-  | Readonly<{ readonly state: 'cleaned'; readonly logicalBytes: number }>
-  | Readonly<{ readonly state: 'already-absent'; readonly logicalBytes: 0 }>
+  | Readonly<{
+      readonly state: 'prepared';
+      readonly logicalBytes: 0;
+      readonly containerIdentity: string;
+      readonly payloadIdentity: null;
+    }>
+  | Readonly<{
+      readonly state: 'detached';
+      readonly logicalBytes: 0;
+      readonly containerIdentity: string;
+      readonly payloadIdentity: string;
+    }>
+  | Readonly<{
+      readonly state: 'cleaned';
+      readonly logicalBytes: number;
+      readonly containerIdentity: string;
+      readonly payloadIdentity: string;
+    }>
   | Readonly<{ readonly state: 'refused'; readonly logicalBytes: 0; readonly reason: string }>;
 
 export type GcTombstoneObservation =
@@ -238,4 +293,7 @@ export interface PreparedGcPlan {
   readonly storeRoot: string;
   readonly ledgerPath: string;
   readonly retryArguments: readonly string[];
+  readonly normalizedForgetRoots: readonly string[];
+  readonly nowMilliseconds: number;
+  readonly olderThanMilliseconds: number | null;
 }

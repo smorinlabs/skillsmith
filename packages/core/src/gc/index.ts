@@ -14,6 +14,10 @@ export {
   removeGcRecoveryRecord,
   replaceGcRecoveryRecord,
 } from './recovery.ts';
-export { observeGcTombstones, reclaimGcStoreObject } from './repository.ts';
+export {
+  finalizeGcStoreReclaim,
+  observeGcTombstones,
+  reclaimGcStoreObject,
+} from './repository.ts';
 export type * from './types.ts';
 export { executeGcPlan } from './execute.ts';

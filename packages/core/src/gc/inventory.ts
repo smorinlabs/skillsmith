@@ -237,6 +237,30 @@ const measureObject = async (
   });
 };
 
+/** Revalidates one approved object at either its source path or a record-bound payload path. */
+export const validateGcObjectAt = async (
+  ports: GcInventoryPorts,
+  path: string,
+  expected: GcObjectObservation,
+): Promise<boolean> => {
+  const metadataA = await readStableDirectory(ports, path);
+  if ('code' in metadataA || metadataA.identity !== expected.directoryIdentity) return false;
+  const modifiedAtA = await ports.modifiedAt(path).catch(() => null);
+  const measured = await measureObject(ports, path);
+  const modifiedAtB = await ports.modifiedAt(path).catch(() => null);
+  const metadataB = await safeMetadata(ports, path);
+  return (
+    !('code' in measured) &&
+    modifiedAtA === expected.modifiedAt &&
+    modifiedAtB === expected.modifiedAt &&
+    metadataB !== null &&
+    sameMetadata(metadataA, metadataB) &&
+    measured.contentHash === expected.contentHash &&
+    measured.logicalBytes === expected.logicalBytes &&
+    JSON.stringify(measured.entries) === JSON.stringify(expected.entries)
+  );
+};
+
 const readStableDirectory = async (
   ports: GcInventoryPorts,
   path: string,

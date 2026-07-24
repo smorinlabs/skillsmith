@@ -3,10 +3,11 @@ import { logicalJournalPairIdentity } from '../artifacts/registry.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { GcProjectV1Dto, GcReportV1Dto } from '../contracts/v1/gc.ts';
-import { executeGcPlan } from '../gc/execute.ts';
+import { executeGcPlan, resumeGcRecovery } from '../gc/execute.ts';
 import { observeGcState } from '../gc/observe.ts';
 import {
   buildGcPlan,
+  gcRequestDigest,
   normalizeGcForgetRoots,
   parseGcDuration,
   withoutLedgerProjectAt,
@@ -276,6 +277,13 @@ export const runGcApplication: ApplicationService<
   const resolved = await resolveContext(context);
   if (!resolved.ok) return refuse('usage', resolved.error.code, resolved.error.message);
   const project = publicProject(resolved.value);
+  const normalizedRoots = normalizeGcForgetRoots(
+    resolved.value.effectiveCwd,
+    normalized.value.forgetProject,
+  );
+  if (!normalizedRoots.ok) {
+    return refuse('usage', normalizedRoots.error.code, normalizedRoots.error.message);
+  }
   const dataDir = resolveDataDir(context.ports, context.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
@@ -289,16 +297,45 @@ export const runGcApplication: ApplicationService<
     );
   }
   if (observed.recovery.state === 'pending') {
-    const message = 'GC has pending private recovery state; retry the recorded invocation';
-    return refuse(
-      'state',
-      'gc-recovery-pending',
-      message,
-      refusalReport(project, message, {
-        sourceVersion: observed.ledger.sourceVersion,
-        recovery: observed.recovery,
-      }),
-    );
+    const digest = gcRequestDigest(normalized.value.duration, normalizedRoots.value);
+    if (digest !== observed.recovery.record.requestDigest) {
+      const remediation = observed.recovery.record.retryArguments.join(' ');
+      const message = `GC has pending recovery for a different request; retry: ${remediation}`;
+      return refuse(
+        'state',
+        'gc-recovery-request-mismatch',
+        message,
+        refusalReport(project, message, {
+          sourceVersion: observed.ledger.sourceVersion,
+          recovery: observed.recovery,
+        }),
+      );
+    }
+    if (normalized.value.dryRun) {
+      const pending: GcReportV1Dto = Object.freeze({
+        ...observed.recovery.record.approvedReport,
+        mode: 'dry-run',
+        state: 'partial',
+        recovery: { state: 'pending' as const, phase: observed.recovery.record.phase },
+        diagnostics: [
+          {
+            code: 'gc-recovery-pending',
+            path: null,
+            message: `retry: ${observed.recovery.record.retryArguments.join(' ')}`,
+          },
+        ],
+      });
+      return success(pending, true);
+    }
+    const resumed = await resumeGcRecovery(context.ports, {
+      dataDir,
+      storeRoot,
+      ledgerPath,
+      recovery: observed.recovery,
+    });
+    return resumed.ok
+      ? success(resumed.report, false)
+      : refuse('state', 'gc-execution', resumed.reason, resumed.report);
   }
   if (observed.inventory.state === 'refused') {
     const message = 'GC store inventory is unsafe; no action was selected';
@@ -321,13 +358,6 @@ export const runGcApplication: ApplicationService<
     observed.ledger.state === 'present'
       ? observed.ledger.model
       : emptyLedgerModel(new Date(nowMilliseconds).toISOString());
-  const normalizedRoots = normalizeGcForgetRoots(
-    resolved.value.effectiveCwd,
-    normalized.value.forgetProject,
-  );
-  if (!normalizedRoots.ok) {
-    return refuse('usage', normalizedRoots.error.code, normalizedRoots.error.message);
-  }
   const projects = await forgetRows(context, model, resolved.value, normalizedRoots.value);
   if (!projects.ok) return refuse('usage', projects.error.code, projects.error.message);
   const postForget = withoutLedgerProjectAt(model, normalizedRoots.value);
@@ -362,6 +392,7 @@ export const runGcApplication: ApplicationService<
     ledgerPath,
     project,
     retryArguments: retryArguments(normalized.value, normalizedRoots.value),
+    normalizedForgetRoots: normalizedRoots.value,
   });
   if (normalized.value.dryRun) return success(plan.report, true);
   if (plan.actions.length === 0) {

@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inventoryGcStore } from '../../src/gc/inventory.ts';
-import { observeGcTombstones, reclaimGcStoreObject } from '../../src/gc/repository.ts';
+import {
+  finalizeGcStoreReclaim,
+  observeGcTombstones,
+  reclaimGcStoreObject,
+} from '../../src/gc/repository.ts';
+import type { GcObjectObservation, GcReclaimRequest } from '../../src/gc/types.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 
 const id = (character: string): string => character.repeat(64);
@@ -13,6 +18,22 @@ const seed = async (root: string): Promise<string> => {
   await mkdir(path, { recursive: true });
   await writeFile(join(path, 'SKILL.md'), 'review');
   return path;
+};
+
+const requestFor = (root: string, object: GcObjectObservation): GcReclaimRequest => {
+  const containerPath = join(root, '.gc-tombstones', 'v1', id('a'), id('b'));
+  return {
+    storeRoot: root,
+    planId: id('a'),
+    actionId: id('b'),
+    ownershipToken: id('c'),
+    object,
+    containerPath,
+    payloadPath: join(containerPath, 'payload'),
+    outcome: 'pending',
+    containerIdentity: null,
+    payloadIdentity: null,
+  };
 };
 
 describe('GC owner-bound store repository', () => {
@@ -27,14 +48,31 @@ describe('GC owner-bound store repository', () => {
         throw new Error('fixture inventory failed');
       }
       const selected = inventory.objects[0];
-      const result = await reclaimGcStoreObject(ports, {
-        storeRoot: root,
-        planId: id('a'),
-        actionId: id('b'),
-        ownershipToken: id('c'),
-        object: selected,
+      const request = requestFor(root, selected);
+      const prepared = await reclaimGcStoreObject(ports, request);
+      expect(prepared).toMatchObject({ state: 'prepared' });
+      if (prepared.state !== 'prepared') throw new Error('prepare failed');
+      const detached = await reclaimGcStoreObject(ports, {
+        ...request,
+        ...prepared,
+        outcome: prepared.state,
       });
-      expect(result).toEqual({ state: 'cleaned', logicalBytes: selected.logicalBytes });
+      expect(detached).toMatchObject({ state: 'detached' });
+      if (detached.state !== 'detached') throw new Error('detach failed');
+      const cleaned = await reclaimGcStoreObject(ports, {
+        ...request,
+        ...detached,
+        outcome: detached.state,
+      });
+      expect(cleaned).toMatchObject({ state: 'cleaned', logicalBytes: selected.logicalBytes });
+      if (cleaned.state !== 'cleaned') throw new Error('cleanup failed');
+      expect(
+        await finalizeGcStoreReclaim(ports, {
+          ...request,
+          ...cleaned,
+          outcome: cleaned.state,
+        }),
+      ).toBeTrue();
       expect(await ports.pathKind(path)).toBe('absent');
       expect(await ports.pathKind(join(root, '.gc-tombstones', 'v1', id('a'), id('b')))).toBe(
         'absent',
@@ -56,13 +94,7 @@ describe('GC owner-bound store repository', () => {
       }
       const planted = join(root, '.gc-tombstones', 'v1', id('a'), id('b'));
       await mkdir(planted, { recursive: true, mode: 0o700 });
-      const result = await reclaimGcStoreObject(ports, {
-        storeRoot: root,
-        planId: id('a'),
-        actionId: id('b'),
-        ownershipToken: id('c'),
-        object: inventory.objects[0],
-      });
+      const result = await reclaimGcStoreObject(ports, requestFor(root, inventory.objects[0]));
       expect(result).toMatchObject({ state: 'refused' });
       expect(await ports.pathKind(path)).toBe('dir');
     } finally {
@@ -80,13 +112,7 @@ describe('GC owner-bound store repository', () => {
         throw new Error('fixture inventory failed');
       }
       await writeFile(join(path, 'changed'), 'changed');
-      const result = await reclaimGcStoreObject(ports, {
-        storeRoot: root,
-        planId: id('a'),
-        actionId: id('b'),
-        ownershipToken: id('c'),
-        object: inventory.objects[0],
-      });
+      const result = await reclaimGcStoreObject(ports, requestFor(root, inventory.objects[0]));
       expect(result).toMatchObject({ state: 'refused' });
       expect(await ports.pathKind(path)).toBe('dir');
       expect(await ports.pathKind(join(root, '.gc-tombstones'))).toBe('absent');

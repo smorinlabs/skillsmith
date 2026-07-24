@@ -28,7 +28,7 @@ export const observeGcState = async (
 ): Promise<GcObservation | Readonly<{ readonly error: string }>> => {
   const recovery = await observeGcRecovery(ports, input.dataDir);
   if (recovery.state === 'refused') return Object.freeze({ error: recovery.reason });
-  const tombstones = await observeGcTombstones(ports, input.storeRoot);
+  const tombstones = await observeGcTombstones(ports, input.storeRoot, recovery);
   if (tombstones.state === 'refused') return Object.freeze({ error: tombstones.reason });
   const ledger = await readLedgerState(ports, input.ledgerPath);
   if (!ledger.ok) {

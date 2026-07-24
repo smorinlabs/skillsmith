@@ -84,6 +84,15 @@ export const withoutLedgerProjectAt = (
 const digest = (value: unknown): string =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
+export const gcRequestDigest = (
+  duration: GcDuration | null,
+  normalizedForgetRoots: readonly string[],
+): string =>
+  digest({
+    olderThanMilliseconds: duration?.milliseconds ?? null,
+    forget: normalizedForgetRoots,
+  });
+
 const compare = (left: string, right: string): number =>
   Buffer.from(left).compare(Buffer.from(right));
 
@@ -108,6 +117,7 @@ export interface BuildGcPlanInput {
   readonly ledgerPath: string;
   readonly project: GcReportV1Dto['project'];
   readonly retryArguments: readonly string[];
+  readonly normalizedForgetRoots: readonly string[];
 }
 
 export const buildGcPlan = (input: BuildGcPlanInput): PreparedGcPlan => {
@@ -123,10 +133,7 @@ export const buildGcPlan = (input: BuildGcPlanInput): PreparedGcPlan => {
     .filter(({ outcome }) => outcome === 'eligible')
     .map(({ object }) => ({ kind: 'reclaim-store' as const, target: object.path, object }))
     .sort((left, right) => compare(left.target, right.target));
-  const requestDigest = digest({
-    duration: input.duration,
-    forget: forgetSeeds.map(({ target }) => target),
-  });
+  const requestDigest = gcRequestDigest(input.duration, input.normalizedForgetRoots);
   const planId = digest({
     requestDigest,
     ledger:
@@ -263,5 +270,8 @@ export const buildGcPlan = (input: BuildGcPlanInput): PreparedGcPlan => {
     storeRoot: input.storeRoot,
     ledgerPath: input.ledgerPath,
     retryArguments: Object.freeze([...input.retryArguments]),
+    normalizedForgetRoots: Object.freeze([...input.normalizedForgetRoots]),
+    nowMilliseconds: input.nowMilliseconds,
+    olderThanMilliseconds: input.duration?.milliseconds ?? null,
   });
 };

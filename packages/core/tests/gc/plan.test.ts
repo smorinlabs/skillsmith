@@ -4,6 +4,7 @@ import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
 import { deriveLedgerProjectRegistrations } from '../../src/artifacts/registry.ts';
 import {
   buildGcPlan,
+  gcRequestDigest,
   normalizeGcForgetRoots,
   parseGcDuration,
   withoutLedgerProjectAt,
@@ -44,6 +45,18 @@ describe('GC pure request and ledger planning', () => {
       ok: false,
       error: { code: 'invalid-forget' },
     });
+  });
+
+  test('binds only semantic retry selectors in the recovery request digest', () => {
+    const oneHour = parseGcDuration('1h');
+    const sixtyMinutes = parseGcDuration('60m');
+    if (!oneHour.ok || !sixtyMinutes.ok) throw new Error('duration fixture failed');
+    expect(gcRequestDigest(oneHour.value, ['/retired'])).toBe(
+      gcRequestDigest(sixtyMinutes.value, ['/retired']),
+    );
+    expect(gcRequestDigest(oneHour.value, ['/retired'])).not.toBe(
+      gcRequestDigest(oneHour.value, ['/different']),
+    );
   });
 
   test('removes exact project subtrees and re-derives registrations without other mutation', () => {
@@ -147,6 +160,7 @@ describe('GC pure request and ledger planning', () => {
       ledgerPath: '/data/placements.json',
       project: { effectiveCwd: '/workspace', root: '/workspace', identity: 'workspace' },
       retryArguments: ['gc', '--forget-project', '/retired', '--yes'],
+      normalizedForgetRoots: ['/retired'],
     };
     const first = buildGcPlan(input);
     const second = buildGcPlan(structuredClone(input));

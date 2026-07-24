@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
+import { gcV1Codec } from '../contracts/v1/gc.ts';
 import type {
   EffectiveUserPort,
   ExclusiveCreatePort,
@@ -9,32 +10,87 @@ import type {
   FileWritePort,
   IdPort,
 } from '../ports/types.ts';
+import { gcRequestDigest } from './plan.ts';
 import type { GcRecoveryObservation, GcRecoveryPhase, GcRecoveryRecordV1 } from './types.ts';
 
 type RecoveryPorts = EffectiveUserPort &
   ExclusiveCreatePort &
   FileMetadataReadPort &
-  Pick<FileReadPort, 'listDir' | 'pathKind' | 'readText'> &
+  Pick<FileReadPort, 'listDir' | 'pathKind' | 'readText' | 'realpath'> &
   Pick<FileWritePort, 'fsyncDir' | 'fsyncFile' | 'removeTree' | 'rename'> &
   IdPort;
 
 const HEX64 = /^[0-9a-f]{64}$/u;
 const HEX16 = /^[0-9a-f]{16}$/u;
 const IdSchema = z.string().regex(HEX64);
+const DigestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/u);
+const EntrySchema = z
+  .object({
+    path: z.string().min(1),
+    kind: z.enum(['file', 'symlink']),
+    identity: z.string().min(1),
+    linkCount: z.literal(1),
+    logicalBytes: z.number().int().nonnegative(),
+    executable: z.boolean().nullable(),
+    target: z.string().nullable(),
+  })
+  .strict();
+const ObjectSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: z.enum(['store', 'adapted-overlay']),
+    path: z.string().min(1),
+    relativePath: z.string().min(1),
+    namespace: z.string().min(1),
+    repository: z.string().min(1),
+    revision: z.string().min(1),
+    skill: z.string().min(1),
+    contentHash: DigestSchema,
+    modifiedAt: z.number().finite(),
+    logicalBytes: z.number().int().nonnegative(),
+    rootIdentity: z.string().min(1),
+    namespaceIdentity: z.string().min(1),
+    repositoryIdentity: z.string().min(1),
+    directoryIdentity: z.string().min(1),
+    directoryLinkCount: z.number().int().nonnegative(),
+    entries: z.array(EntrySchema),
+  })
+  .strict();
 const ActionSchema = z
   .object({
     actionId: IdSchema,
     kind: z.literal('reclaim-store'),
     path: z.string().min(1),
-    contentHash: z.string().regex(/^sha256:[0-9a-f]{64}$/u),
+    contentHash: DigestSchema,
     modifiedAt: z.number().finite(),
     logicalBytes: z.number().int().nonnegative(),
+    object: ObjectSchema,
     ownershipToken: IdSchema,
     containerPath: z.string().min(1),
     payloadPath: z.string().min(1),
-    outcome: z.enum(['pending', 'detached', 'cleaned', 'protected-skip']),
+    containerIdentity: z.string().min(1).nullable(),
+    payloadIdentity: z.string().min(1).nullable(),
+    outcome: z.enum(['pending', 'prepared', 'detached', 'cleaned', 'protected-skip']),
   })
   .strict();
+const SourceLedgerSchema = z.discriminatedUnion('state', [
+  z
+    .object({
+      state: z.literal('absent'),
+      sourceVersion: z.null(),
+      byteRevision: z.null(),
+      semanticRevision: z.null(),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal('present'),
+      sourceVersion: z.union([z.literal(1), z.literal(2)]),
+      byteRevision: DigestSchema,
+      semanticRevision: DigestSchema,
+    })
+    .strict(),
+]);
 const RecordSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -42,8 +98,20 @@ const RecordSchema = z
     planId: IdSchema,
     requestDigest: IdSchema,
     revision: IdSchema,
-    phase: z.enum(['approved', 'forget-complete', 'reclaiming', 'complete']),
+    phase: z.enum(['approved', 'migration-complete', 'forget-complete', 'reclaiming', 'complete']),
+    dataDir: z.string().min(1),
+    storeRoot: z.string().min(1),
+    ledgerPath: z.string().min(1),
     retryArguments: z.array(z.string()),
+    sourceLedger: SourceLedgerSchema,
+    normalizedForgetRoots: z.array(z.string().min(1)),
+    migrationUpdatedAt: z.string().datetime().nullable(),
+    expectedMigrationSemanticRevision: DigestSchema.nullable(),
+    forgetUpdatedAt: z.string().datetime().nullable(),
+    expectedPostForgetSemanticRevision: DigestSchema.nullable(),
+    nowMilliseconds: z.number().int().safe(),
+    olderThanMilliseconds: z.number().int().positive().safe().nullable(),
+    approvedReport: z.unknown(),
     actions: z.array(ActionSchema),
   })
   .strict();
@@ -57,7 +125,19 @@ const canonical = (record: GcRecoveryRecordV1): string =>
       requestDigest: record.requestDigest,
       revision: record.revision,
       phase: record.phase,
+      dataDir: record.dataDir,
+      storeRoot: record.storeRoot,
+      ledgerPath: record.ledgerPath,
       retryArguments: [...record.retryArguments],
+      sourceLedger: record.sourceLedger,
+      normalizedForgetRoots: [...record.normalizedForgetRoots],
+      migrationUpdatedAt: record.migrationUpdatedAt,
+      expectedMigrationSemanticRevision: record.expectedMigrationSemanticRevision,
+      forgetUpdatedAt: record.forgetUpdatedAt,
+      expectedPostForgetSemanticRevision: record.expectedPostForgetSemanticRevision,
+      nowMilliseconds: record.nowMilliseconds,
+      olderThanMilliseconds: record.olderThanMilliseconds,
+      approvedReport: record.approvedReport,
       actions: record.actions.map((action) => ({
         actionId: action.actionId,
         kind: action.kind,
@@ -65,9 +145,12 @@ const canonical = (record: GcRecoveryRecordV1): string =>
         contentHash: action.contentHash,
         modifiedAt: action.modifiedAt,
         logicalBytes: action.logicalBytes,
+        object: action.object,
         ownershipToken: action.ownershipToken,
         containerPath: action.containerPath,
         payloadPath: action.payloadPath,
+        containerIdentity: action.containerIdentity,
+        payloadIdentity: action.payloadIdentity,
         outcome: action.outcome,
       })),
     },
@@ -116,7 +199,91 @@ const secureFile = async (ports: RecoveryPorts, path: string): Promise<boolean> 
 const parseRecord = (source: string): GcRecoveryRecordV1 | null => {
   try {
     const parsed = RecordSchema.safeParse(JSON.parse(source));
-    return parsed.success ? (parsed.data as GcRecoveryRecordV1) : null;
+    if (!parsed.success) return null;
+    const report = gcV1Codec.decode(`${JSON.stringify(parsed.data.approvedReport, null, 2)}\n`);
+    const { revision, ...seed } = parsed.data;
+    const actionIds = new Set(parsed.data.actions.map(({ actionId }) => actionId));
+    const reportActions = new Map(
+      report.ok
+        ? report.value.actions
+            .filter(({ kind }) => kind === 'reclaim-store')
+            .map((action) => [action.actionId, action])
+        : [],
+    );
+    const outcomesValid = parsed.data.actions.every((action) => {
+      const publicAction = reportActions.get(action.actionId);
+      const identityValid =
+        action.outcome === 'pending' || action.outcome === 'protected-skip'
+          ? action.containerIdentity === null && action.payloadIdentity === null
+          : action.outcome === 'prepared'
+            ? action.containerIdentity !== null && action.payloadIdentity === null
+            : action.containerIdentity !== null && action.payloadIdentity !== null;
+      return (
+        identityValid &&
+        action.path === action.object.path &&
+        action.contentHash === action.object.contentHash &&
+        action.modifiedAt === action.object.modifiedAt &&
+        action.logicalBytes === action.object.logicalBytes &&
+        action.containerPath ===
+          join(
+            parsed.data.storeRoot,
+            '.gc-tombstones',
+            'v1',
+            parsed.data.planId,
+            action.actionId,
+          ) &&
+        action.payloadPath === join(action.containerPath, 'payload') &&
+        !relative(parsed.data.storeRoot, action.path).startsWith('..') &&
+        relative(parsed.data.storeRoot, action.path) !== '' &&
+        publicAction?.target === action.path &&
+        publicAction.logicalBytes === action.logicalBytes
+      );
+    });
+    const phaseValid =
+      parsed.data.phase === 'complete'
+        ? parsed.data.actions.every(
+            ({ outcome }) => outcome === 'cleaned' || outcome === 'protected-skip',
+          )
+        : parsed.data.phase === 'approved' || parsed.data.phase === 'migration-complete'
+          ? parsed.data.actions.every(({ outcome }) => outcome === 'pending')
+          : true;
+    const retryArguments = [
+      'gc',
+      ...(report.ok && report.value.olderThan !== null
+        ? ['--older-than', report.value.olderThan.input]
+        : []),
+      ...parsed.data.normalizedForgetRoots.flatMap((root) => ['--forget-project', root]),
+      '--yes',
+    ];
+    const reportForgetRoots = report.ok
+      ? report.value.projects
+          .filter(({ action }) => action === 'forget-project')
+          .map(({ root }) => root)
+      : [];
+    const duration =
+      report.ok && report.value.olderThan !== null
+        ? {
+            input: report.value.olderThan.input,
+            milliseconds: report.value.olderThan.milliseconds,
+          }
+        : null;
+    return report.ok &&
+      report.value.planId === parsed.data.planId &&
+      report.value.migration.sourceVersion === parsed.data.sourceLedger.sourceVersion &&
+      parsed.data.requestDigest === gcRequestDigest(duration, parsed.data.normalizedForgetRoots) &&
+      JSON.stringify(parsed.data.retryArguments) === JSON.stringify(retryArguments) &&
+      JSON.stringify(reportForgetRoots) === JSON.stringify(parsed.data.normalizedForgetRoots) &&
+      actionIds.size === parsed.data.actions.length &&
+      reportActions.size === parsed.data.actions.length &&
+      outcomesValid &&
+      phaseValid &&
+      [parsed.data.dataDir, parsed.data.storeRoot, parsed.data.ledgerPath].every(isAbsolute) &&
+      new Set(parsed.data.normalizedForgetRoots).size ===
+        parsed.data.normalizedForgetRoots.length &&
+      parsed.data.normalizedForgetRoots.every(isAbsolute) &&
+      revision === gcRecoveryRevision(seed)
+      ? (parsed.data as unknown as GcRecoveryRecordV1)
+      : null;
   } catch {
     return null;
   }
@@ -186,7 +353,7 @@ export const createGcRecoveryRecord = async (
   dataDir: string,
   record: GcRecoveryRecordV1,
 ): Promise<GcRecoveryObservation> => {
-  if (!RecordSchema.safeParse(record).success) {
+  if (parseRecord(canonical(record)) === null) {
     return Object.freeze({
       state: 'refused',
       record: null,
@@ -209,6 +376,14 @@ export const createGcRecoveryRecord = async (
       record: null,
       path: recoveryRootOf(dataDir),
       reason: 'GC data directory ownership or mode is unsafe',
+    });
+  }
+  if ((await ports.realpath(dataDir).catch(() => '')) !== dataDir) {
+    return Object.freeze({
+      state: 'refused',
+      record: null,
+      path: recoveryRootOf(dataDir),
+      reason: 'GC data directory must be a stable canonical real directory',
     });
   }
   const parent = join(dataDir, '.gc-recovery');
@@ -258,14 +433,84 @@ export const createGcRecoveryRecord = async (
   return Object.freeze({ state: 'pending', record: Object.freeze(record), path: live });
 };
 
-const nextPhase = (current: GcRecoveryPhase, next: GcRecoveryPhase): boolean => {
-  const order: readonly GcRecoveryPhase[] = [
-    'approved',
-    'forget-complete',
-    'reclaiming',
-    'complete',
-  ];
-  return order.indexOf(next) >= order.indexOf(current);
+const actionStatic = ({
+  outcome: _outcome,
+  containerIdentity: _containerIdentity,
+  payloadIdentity: _payloadIdentity,
+  ...value
+}: GcRecoveryRecordV1['actions'][number]) => value;
+
+const recordStatic = ({
+  revision: _revision,
+  phase: _phase,
+  actions,
+  ...value
+}: GcRecoveryRecordV1) => ({ ...value, actions: actions.map(actionStatic) });
+
+const phaseTransition = (current: GcRecoveryPhase, next: GcRecoveryPhase): boolean =>
+  current === next ||
+  (current === 'approved' && (next === 'migration-complete' || next === 'forget-complete')) ||
+  (current === 'migration-complete' && next === 'forget-complete') ||
+  (current === 'forget-complete' && (next === 'reclaiming' || next === 'complete')) ||
+  (current === 'reclaiming' && next === 'complete');
+
+const actionTransition = (
+  current: GcRecoveryRecordV1['actions'][number],
+  next: GcRecoveryRecordV1['actions'][number],
+): boolean => {
+  if (JSON.stringify(actionStatic(current)) !== JSON.stringify(actionStatic(next))) return false;
+  if (
+    current.outcome === next.outcome &&
+    current.containerIdentity === next.containerIdentity &&
+    current.payloadIdentity === next.payloadIdentity
+  ) {
+    return true;
+  }
+  if (current.outcome === 'pending') {
+    return next.outcome === 'protected-skip'
+      ? next.containerIdentity === null && next.payloadIdentity === null
+      : next.outcome === 'prepared' &&
+          next.containerIdentity !== null &&
+          next.payloadIdentity === null;
+  }
+  if (current.outcome === 'prepared') {
+    return (
+      next.outcome === 'detached' &&
+      next.containerIdentity === current.containerIdentity &&
+      next.payloadIdentity !== null
+    );
+  }
+  return (
+    current.outcome === 'detached' &&
+    next.outcome === 'cleaned' &&
+    next.containerIdentity === current.containerIdentity &&
+    next.payloadIdentity === current.payloadIdentity
+  );
+};
+
+const validTransition = (current: GcRecoveryRecordV1, next: GcRecoveryRecordV1): boolean => {
+  if (
+    JSON.stringify(recordStatic(current)) !== JSON.stringify(recordStatic(next)) ||
+    !phaseTransition(current.phase, next.phase) ||
+    current.actions.length !== next.actions.length
+  ) {
+    return false;
+  }
+  let changes = 0;
+  for (let index = 0; index < current.actions.length; index += 1) {
+    const before = current.actions[index];
+    const after = next.actions[index];
+    if (before === undefined || after === undefined || !actionTransition(before, after))
+      return false;
+    if (
+      before.outcome !== after.outcome ||
+      before.containerIdentity !== after.containerIdentity ||
+      before.payloadIdentity !== after.payloadIdentity
+    ) {
+      changes += 1;
+    }
+  }
+  return changes <= 1 && (changes === 0 || next.phase === 'reclaiming');
 };
 
 export const replaceGcRecoveryRecord = async (
@@ -278,8 +523,8 @@ export const replaceGcRecoveryRecord = async (
     next.planId !== current.planId ||
     next.requestDigest !== current.requestDigest ||
     next.revision === current.revision ||
-    !nextPhase(current.phase, next.phase) ||
-    !RecordSchema.safeParse(next).success
+    !validTransition(current, next) ||
+    parseRecord(canonical(next)) === null
   ) {
     return Object.freeze({
       state: 'refused',
