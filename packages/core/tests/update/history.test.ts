@@ -341,9 +341,13 @@ describe('forward update artifact history', () => {
     30_000,
   );
 
-  test.each([false, true])(
-    'completes a durable artifact cleanup marker after restart (envelope present=%s)',
-    async (envelopePresent) => {
+  test.each([
+    [false, false],
+    [true, false],
+    [true, true],
+  ] as const)(
+    'handles a durable artifact cleanup marker after restart (envelope present=%s, workflow corrupted=%s)',
+    async (envelopePresent, workflowCorrupted) => {
       const root = await mkdtemp(join(tmpdir(), 'skillsmith-update-history-cleanup-restart-'));
       roots.push(root);
       const ledgerPath = join(root, 'placements.json');
@@ -378,7 +382,9 @@ describe('forward update artifact history', () => {
         context: {
           ...oldSequence.value.staged.context,
           command: 'update',
-          workflow: 'update-artifact-orphan-cleanup',
+          workflow: workflowCorrupted
+            ? 'corrupt-update-artifact-orphan-cleanup'
+            : 'update-artifact-orphan-cleanup',
           attempt: oldSequence.value.staged.context.attempt + 1,
         },
         disposition: 'rollback' as const,
@@ -422,6 +428,7 @@ describe('forward update artifact history', () => {
         observeActualBefore: async () => nextFixture.operation.before,
         execute: async () => {
           physicalExecutions += 1;
+          if (workflowCorrupted) throw new TypeError('physical execution must not run');
           await writeFile(join(root, 'skillsmith.toml'), nextFixture.afterBytes);
           await chmod(join(root, 'skillsmith.toml'), 0o640);
           return {
@@ -451,10 +458,25 @@ describe('forward update artifact history', () => {
       });
       const durable = await readLedgerState(ports, ledgerPath);
 
-      expect(executed).toMatchObject({ outcome: 'succeeded', error: null });
-      expect(physicalExecutions).toBe(1);
       expect(durable.ok).toBeTrue();
       if (!durable.ok || durable.value.state !== 'present') return;
+      if (workflowCorrupted) {
+        expect(executed).toMatchObject({
+          outcome: 'failed',
+          error: { code: 'update-artifact-history-failed' },
+        });
+        expect(physicalExecutions).toBe(0);
+        expect([...new Uint8Array(await readFile(join(root, 'skillsmith.toml')))]).toEqual([
+          ...oldFixture.beforeBytes,
+        ]);
+        expect(durable.value.model.transactions).toEqual({
+          [oldTransactionId]: cleanupMarker,
+        });
+        expect(existsSync(retainedPath)).toBeTrue();
+        return;
+      }
+      expect(executed).toMatchObject({ outcome: 'succeeded', error: null });
+      expect(physicalExecutions).toBe(1);
       expect(durable.value.model.transactions[oldTransactionId]).toBeUndefined();
       expect(
         durable.value.model.history.find(({ transactionId }) => transactionId === oldTransactionId),
@@ -469,7 +491,7 @@ describe('forward update artifact history', () => {
     30_000,
   );
 
-  test.each(['envelope', 'journal'] as const)(
+  test.each(['envelope', 'command', 'workflow'] as const)(
     'refuses corrupted superseded %s authority before physical execution',
     async (corruption) => {
       const root = await mkdtemp(join(tmpdir(), 'skillsmith-update-history-corrupt-orphan-'));
@@ -503,12 +525,20 @@ describe('forward update artifact history', () => {
       if (!oldSequence.ok) throw new TypeError(oldSequence.error.message);
       const writer = await createTestNodeLedgerWriter(ledgerPath, {});
       const pending =
-        corruption === 'journal'
+        corruption === 'command'
           ? {
               ...oldSequence.value.staged,
               context: { ...oldSequence.value.staged.context, command: 'wrong-update-command' },
             }
-          : oldSequence.value.staged;
+          : corruption === 'workflow'
+            ? {
+                ...oldSequence.value.staged,
+                context: {
+                  ...oldSequence.value.staged.context,
+                  workflow: 'corrupt-update-artifact-history',
+                },
+              }
+            : oldSequence.value.staged;
       const seeded = await writer.replace({
         model: {
           ...emptyLedgerModel(startedAt),
