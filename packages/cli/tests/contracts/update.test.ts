@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { chmod, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { chmod, lstat, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   type CreateUpdateFleetOptions,
@@ -603,6 +603,89 @@ describe('update command contract', () => {
       state: 'current',
       operations: [],
     });
+  });
+
+  test('EWP-CMD-UPDATE-TS07 — update commits exact reversible artifact lineage', async () => {
+    const selected = await fleet();
+    await chmod(selected.manifest, 0o604);
+    await chmod(selected.lock, 0o640);
+    const beforeByRole = new Map([
+      ['manifest', { bytes: await readFile(selected.manifest), mode: 0o604 }],
+      ['lock', { bytes: await readFile(selected.lock), mode: 0o640 }],
+    ] as const);
+    const report = await updateReport(selected, ['update', 'factor-scan', '--pin']);
+    const artifactOperations = (report.operations as readonly Record<string, unknown>[]).filter(
+      ({ kind }) => kind === 'write-manifest' || kind === 'write-lock',
+    );
+    expect(artifactOperations.map(({ kind }) => kind)).toEqual(['write-manifest', 'write-lock']);
+    for (const operation of artifactOperations) {
+      expect(operation).toMatchObject({
+        pairId: null,
+        reversibility: { kind: 'conditional', retentionResourceIds: [expect.any(String)] },
+      });
+    }
+
+    const ledger = JSON.parse(await readFile(selected.ledger, 'utf8')) as {
+      history?: readonly Record<string, unknown>[];
+    };
+    for (const operation of artifactOperations) {
+      const role = operation.kind === 'write-manifest' ? 'manifest' : 'lock';
+      const carrier = ledger.history?.find((candidate) => {
+        const intent = candidate.intent as Record<string, unknown> | undefined;
+        return (
+          intent?.kind === operation.kind &&
+          intent?.operationId === operation.operationId &&
+          intent?.groupId === operation.groupId
+        );
+      });
+      expect(carrier).toMatchObject({
+        disposition: 'forward',
+        phase: 'committed',
+        intent: { pairId: null, kind: operation.kind },
+        actual: {
+          retained: [
+            {
+              role: 'backup',
+              sourceRole: role,
+              repositoryRevision: { kind: 'resource' },
+            },
+          ],
+        },
+      });
+      const retained = (
+        carrier?.actual as
+          | { retained?: readonly { path?: string; contentHash?: string }[] }
+          | undefined
+      )?.retained?.[0];
+      expect(retained?.path).toBeString();
+      const envelopePath = retained?.path as string;
+      const encoded = await readFile(envelopePath, 'utf8');
+      const envelope = JSON.parse(encoded) as {
+        kind?: string;
+        version?: number;
+        role?: string;
+        before?: { mode?: number; bytes?: string };
+        after?: { digest?: string; mode?: number };
+      };
+      const expectedBefore = beforeByRole.get(role);
+      if (expectedBefore === undefined) throw new Error(`missing ${role} preimage`);
+      expect(envelope).toMatchObject({
+        kind: 'skillsmith.retained-artifact-preimage',
+        version: 1,
+        role,
+        before: { mode: expectedBefore.mode },
+        after: {
+          mode: expectedBefore.mode,
+          digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        },
+      });
+      expect(Buffer.from(envelope.before?.bytes ?? '', 'base64')).toEqual(expectedBefore.bytes);
+      expect(encoded.endsWith('\n')).toBeTrue();
+      expect((await lstat(envelopePath)).mode & 0o7777).toBe(0o600);
+      expect((await lstat(dirname(envelopePath))).mode & 0o7777).toBe(0o700);
+    }
+    expect(JSON.stringify({ report, ledger })).not.toContain(UPDATE_SECRET_CANARIES[0]);
+    expect(JSON.stringify({ report, ledger })).not.toContain(UPDATE_SECRET_CANARIES[1]);
   });
 
   test('EWP-CMD-UPDATE-TS08 — failure, continuation, and cancellation truth', async () => {

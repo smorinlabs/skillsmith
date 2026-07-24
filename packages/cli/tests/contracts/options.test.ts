@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  createUpdateFleet,
+  destroyUpdateFleet,
+  runUpdateCli,
+} from '../../../../tests/ergonomics/fixtures/p5-update/fleet.ts';
 import {
   resolveTargetSelection,
   validateSelectionRequest,
@@ -1514,6 +1519,142 @@ describe('EWP-OPT-TS06', () => {
       );
     }
   });
+});
+
+describe('EWP-OPT-TS08', () => {
+  test('advanced manifest and lock selectors have one cross-command relation matrix', async () => {
+    const api = await requireOptionContractApi();
+    const paired = [
+      'skillsmith status',
+      'skillsmith doctor',
+      'skillsmith check',
+      'skillsmith install',
+      'skillsmith uninstall',
+      'skillsmith export',
+      'skillsmith plan',
+      'skillsmith apply',
+      'skillsmith sync',
+      'skillsmith update',
+    ] as const;
+    for (const path of paired) {
+      const spec = api.CURRENT_COMMAND_SPECS.find((candidate) => candidate.path === path);
+      expect(spec, path).toBeDefined();
+      const options = spec?.options.map(({ long }) => long) ?? [];
+      expect(options, path).toContain('--file');
+      expect(options, path).toContain('--lockfile');
+    }
+    expect(
+      api.CURRENT_COMMAND_SPECS.find(({ path }) => path === 'skillsmith init')?.options.map(
+        ({ long }) => long,
+      ),
+    ).not.toContain('--lockfile');
+    expect(api.validateCurrentOptionRelations()).toEqual([]);
+
+    const accepted = [
+      ['skillsmith status', ['--file', 'one.toml', '--lockfile', 'one.lock']],
+      ['skillsmith doctor', ['--file', 'one.toml']],
+      ['skillsmith check', ['--file', 'one.toml', '--lockfile', 'one.lock']],
+      ['skillsmith export', ['--file', 'one.toml']],
+      ['skillsmith plan', ['--file', 'one.toml', '--lockfile', 'one.lock']],
+      ['skillsmith apply', ['--file', 'one.toml', '--lockfile', 'one.lock']],
+      [
+        'skillsmith sync',
+        ['--from', 'claude-code', '--to', 'codex', '--save', '--file', 'one.toml'],
+      ],
+      ['skillsmith update', ['review', '--file', 'one.toml', '--lockfile', 'one.lock']],
+    ] as const;
+    for (const [command, args] of accepted) {
+      expect(api.validateOptionInvocation(command, args), `${command} ${args.join(' ')}`).toEqual({
+        ok: true,
+      });
+    }
+
+    const rejected = [
+      ['skillsmith install', ['review', '--no-save', '--file', 'one.toml']],
+      ['skillsmith install', ['review', '--no-save', '--lockfile', 'one.lock']],
+      ['skillsmith uninstall', ['review', '--no-save', '--file', 'one.toml']],
+      ['skillsmith uninstall', ['review', '--no-save', '--lockfile', 'one.lock']],
+      ['skillsmith sync', ['--from', 'claude-code', '--to', 'codex', '--file', 'one.toml']],
+      ['skillsmith apply', ['--plan', 'saved.plan', '--file', 'one.toml']],
+      ['skillsmith apply', ['--plan', 'saved.plan', '--lockfile', 'one.lock']],
+      ['skillsmith update', ['review', '--file', 'one.toml', '--file', 'two.toml']],
+      ['skillsmith update', ['review', '--lockfile', 'one.lock', '--lockfile', 'two.lock']],
+    ] as const;
+    for (const [command, args] of rejected) {
+      const result = api.validateOptionInvocation(command, args);
+      expect(result.ok, `${command} ${args.join(' ')}`).toBeFalse();
+      if (!result.ok) expect(result.error.exitCode).toBe(2);
+    }
+
+    const fleet = await createUpdateFleet();
+    try {
+      const customRoot = join(fleet.cwd, 'custom-pair');
+      const customManifest = join(customRoot, 'team.toml');
+      const customLock = join(customRoot, 'team.lock');
+      await mkdir(customRoot, { recursive: true });
+      await Promise.all([
+        writeFile(customManifest, await readFile(fleet.manifest)),
+        writeFile(customLock, await readFile(fleet.lock)),
+      ]);
+      const explicit = await runUpdateCli(fleet, [
+        'update',
+        'factor-scan',
+        '--file',
+        customManifest,
+        '--lockfile',
+        customLock,
+        '--dry-run',
+        '--json',
+      ]);
+      expect(explicit.exitCode, explicit.stderr).toBe(0);
+      const explicitReport = JSON.parse(explicit.stdout) as Record<string, unknown>;
+      expect(explicitReport).toMatchObject({
+        artifactPair: {
+          manifestPath: customManifest,
+          lockPath: customLock,
+          lockSource: 'explicit',
+          selectionSource: 'explicit',
+        },
+      });
+
+      const relative = await runUpdateCli(fleet, [
+        'update',
+        'factor-scan',
+        '--file',
+        'custom-pair/team.toml',
+        '--lockfile',
+        'custom-pair/team.lock',
+        '--dry-run',
+        '--json',
+      ]);
+      expect(relative.exitCode, relative.stderr).toBe(0);
+      const relativeReport = JSON.parse(relative.stdout) as Record<string, unknown>;
+      expect(relativeReport.artifactPair).toEqual(explicitReport.artifactPair);
+      const operationIdentity = (value: unknown) =>
+        (Array.isArray(value) ? value : []).map((operation: Record<string, unknown>) => ({
+          kind: operation.kind,
+          operationId: operation.operationId,
+          groupId: operation.groupId,
+          pairId: operation.pairId,
+        }));
+      expect(operationIdentity(relativeReport.operations)).toEqual(
+        operationIdentity(explicitReport.operations),
+      );
+
+      const ordinary = await runUpdateCli(fleet, ['update', 'factor-scan', '--dry-run', '--json']);
+      expect(ordinary.exitCode, ordinary.stderr).toBe(0);
+      expect(JSON.parse(ordinary.stdout)).toMatchObject({
+        artifactPair: {
+          manifestPath: fleet.manifest,
+          lockPath: fleet.lock,
+          lockSource: 'sibling',
+          selectionSource: 'discovered-project',
+        },
+      });
+    } finally {
+      await destroyUpdateFleet(fleet);
+    }
+  }, 30_000);
 });
 
 describe('EWP-OPT-TS09', () => {

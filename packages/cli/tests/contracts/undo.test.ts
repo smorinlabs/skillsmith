@@ -17,6 +17,12 @@ import {
   writeLegacyPendingDev,
   writeUndoLedgerText,
 } from '../../../../tests/ergonomics/fixtures/p5-undo/fleet.ts';
+import {
+  createUpdateFleet,
+  destroyUpdateFleet,
+  runUpdateCli,
+  snapshotUpdateState,
+} from '../../../../tests/ergonomics/fixtures/p5-update/fleet.ts';
 import { CURRENT_APPLICATION_SERVICES } from '../../../core/src/application/current-services.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 
@@ -179,6 +185,94 @@ describe('undo command contract', () => {
       await runUndoCli(isolated, ['undo', 'review', '--user', '--dry-run', '--json']),
     );
     expect(scoped).toMatchObject({ groups: [{ scope: 'user' }] });
+  });
+
+  test('EWP-CMD-UNDO-TS03 — committed update restores exact lock and live preimages', async () => {
+    requireUndoBoundary();
+    const selected = await createUpdateFleet();
+    try {
+      const before = await snapshotUpdateState(selected);
+      const updated = requireJsonObject(
+        await runUpdateCli(selected, ['update', 'factor-scan', '--json']),
+      );
+      expect(updated).toMatchObject({
+        kind: 'skillsmith.update',
+        command: 'update',
+        state: 'completed',
+      });
+
+      const preview = requireUndoReport(
+        await runUpdateCli(selected, ['undo', 'factor-scan', '--project', '--dry-run', '--json']),
+      );
+      expect(preview).toMatchObject({
+        mode: 'dry-run',
+        groups: [
+          {
+            skill: 'factor-scan',
+            scope: 'project',
+            outcome: 'planned',
+            pairs: [
+              { tool: 'claude-code', operationFamily: 'update' },
+              { tool: 'codex', operationFamily: 'update' },
+            ],
+          },
+        ],
+      });
+      expect(records(preview.operations).map(({ kind }) => kind)).toEqual([
+        'write-lock',
+        expect.stringMatching(/install|promote|update/),
+        expect.stringMatching(/install|promote|update/),
+      ]);
+      const forwardIds = new Set(records(updated.operations).map(({ operationId }) => operationId));
+      const undoIds = records(preview.operations).map(({ operationId }) => operationId);
+      expect(undoIds.every((operationId) => !forwardIds.has(operationId))).toBeTrue();
+      expect(new Set(undoIds).size).toBe(undoIds.length);
+      expect(new Set(records(preview.operations).map(({ groupId }) => groupId)).size).toBe(1);
+
+      const executed = requireUndoReport(
+        await runUpdateCli(selected, ['undo', 'factor-scan', '--project', '--yes', '--json']),
+      );
+      expect(executed).toMatchObject({ summary: { failed: 0, succeeded: 1 } });
+      const restored = await snapshotUpdateState(selected);
+      expect({ ...restored, ledger: null }).toEqual({ ...before, ledger: null });
+      expect(restored.ledger).not.toBeNull();
+
+      const repeated = requireUndoReport(
+        await runUpdateCli(selected, ['undo', 'factor-scan', '--project', '--dry-run', '--json']),
+      );
+      expect(repeated).toMatchObject({ groups: [{ outcome: 'already-reversed', operations: [] }] });
+
+      const beforePin = await snapshotUpdateState(selected);
+      const pinned = requireJsonObject(
+        await runUpdateCli(selected, ['update', 'factor-scan', '--pin', '--json']),
+      );
+      const pinnedPreview = requireUndoReport(
+        await runUpdateCli(selected, ['undo', 'factor-scan', '--project', '--dry-run', '--json']),
+      );
+      expect(records(pinnedPreview.operations).map(({ kind }) => kind)).toEqual([
+        'write-manifest',
+        'write-lock',
+        expect.stringMatching(/install|promote|update/),
+        expect.stringMatching(/install|promote|update/),
+      ]);
+      const pinnedForwardIds = new Set(
+        records(pinned.operations).map(({ operationId }) => operationId),
+      );
+      expect(
+        records(pinnedPreview.operations).every(
+          ({ operationId }) => !pinnedForwardIds.has(operationId),
+        ),
+      ).toBeTrue();
+      expect(
+        requireUndoReport(
+          await runUpdateCli(selected, ['undo', 'factor-scan', '--project', '--yes', '--json']),
+        ),
+      ).toMatchObject({ summary: { failed: 0, succeeded: 1 } });
+      const restoredPin = await snapshotUpdateState(selected);
+      expect({ ...restoredPin, ledger: null }).toEqual({ ...beforePin, ledger: null });
+    } finally {
+      await destroyUpdateFleet(selected);
+    }
   });
 
   test('EWP-CMD-UNDO-TS04 — pending wins and stale or unrestorable newest state never falls back', async () => {
