@@ -7265,7 +7265,7 @@
       "phase": "5",
       "title": "Ledger-authoritative reachability, retention, explicit forget, and safe GC",
       "dependsOn": ["P17-G4B-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7410,8 +7410,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-04.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -7448,7 +7448,8 @@
         "projects/p17/evidence/P17-G5-04.md#amendment-review",
         "projects/p17/evidence/P17-G5-04.md#accepted-amendment-result",
         "projects/p17/evidence/P17-G5-04.md#ready-review",
-        "projects/p17/evidence/P17-G5-04.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G5-04.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence"
       ]
     },
     {
