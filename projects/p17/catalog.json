@@ -7476,6 +7476,7 @@
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
+        "packages/core/src/acquire/execute.ts",
         "packages/core/src/acquire/plan.ts",
         "packages/core/src/acquire/run.ts",
         "packages/core/src/acquire/uninstall.ts",
@@ -7497,6 +7498,7 @@
         "packages/core/src/place/swap.ts",
         "packages/core/src/place/types.ts",
         "packages/core/src/reconcile/apply-execution.ts",
+        "packages/core/src/reconcile/execute.ts",
         "packages/core/src/status/join.ts",
         "packages/core/src/status/read.ts",
         "packages/core/src/status/types.ts",
@@ -7524,6 +7526,7 @@
         "packages/core/tests/place/plan.test.ts",
         "packages/core/tests/place/swap.test.ts",
         "packages/core/tests/reconcile/apply-execution.test.ts",
+        "packages/core/tests/reconcile/execute.test.ts",
         "packages/core/tests/status/read.test.ts",
         "packages/core/tests/undo/artifacts.test.ts",
         "packages/core/tests/undo/execute.test.ts",
@@ -7626,16 +7629,12 @@
           ]
         },
         "impacted-green": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "refactor": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#refactor-gate-at-7ec493c"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "adversarial-review": {
           "status": "pending",
@@ -7665,7 +7664,9 @@
         "projects/p17/evidence/P17-G5-05.md#implementation-amendment-review-at-b901bb8",
         "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011",
         "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f",
-        "projects/p17/evidence/P17-G5-05.md#refactor-gate-at-7ec493c"
+        "projects/p17/evidence/P17-G5-05.md#refactor-gate-at-7ec493c",
+        "projects/p17/evidence/P17-G5-05.md#independent-adversarial-review-no-go-at-a5a0897",
+        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-amendment"
       ]
     },
     {
@@ -26684,7 +26685,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "validated",
+      "status": "mapped",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,

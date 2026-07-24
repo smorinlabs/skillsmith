@@ -143,7 +143,7 @@ Tracked entities: **426** across **45** change groups.
 | P1-01 | P17-G3A-02 | signed-off | required-pr |
 | P1-02 | P17-G3A-01 | signed-off | required-pr |
 | P1-03 | P17-G3A-02 | signed-off | required-pr |
-| P1-04 | P17-G5-05 | validated | required-pr |
+| P1-04 | P17-G5-05 | mapped | required-pr |
 | P1-05 | P17-G4A-03 | signed-off | required-pr |
 | P1-06 | P17-G4A-02 | signed-off | required-pr |
 | P1-07 | P17-G4B-01 | signed-off | required-pr |
@@ -1494,8 +1494,8 @@ Downstream coverage obligations: none.
 - [x] P17-G5-05:test-first _(passed)_
 - [x] P17-G5-05:minimal-implementation _(passed)_
 - [x] P17-G5-05:targeted-green _(passed)_
-- [x] P17-G5-05:impacted-green _(passed)_
-- [x] P17-G5-05:refactor _(passed)_
+- [ ] P17-G5-05:impacted-green _(pending)_
+- [ ] P17-G5-05:refactor _(pending)_
 - [ ] P17-G5-05:adversarial-review _(pending)_
 - [ ] P17-G5-05:traceability-closure _(pending)_
 - [ ] P17-G5-05:signed-off _(pending)_
@@ -1508,7 +1508,7 @@ Downstream coverage obligations: none.
 - [ ] **EWP-P5-TS05** — Bulk confirmation/noninteractive safety plus fail-fast/continue scheduling _(phase-test; passing)_
 - [ ] **EWP-WF09** — Update lifecycle _(workflow; passing)_
 - [ ] **EWP-WF13** — Multi-tool partial failure _(workflow; passing)_
-- [ ] **P1-04** — Safe bulk mutation _(recommendation; validated)_
+- [ ] **P1-04** — Safe bulk mutation _(recommendation; mapped)_
 
 ## P17-G6-01 — Native assets, checksums, Homebrew/npm distribution, and clean installs
 
