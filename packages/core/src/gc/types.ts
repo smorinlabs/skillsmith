@@ -145,3 +145,56 @@ export interface GcPlanningInput {
   readonly nowMilliseconds: number;
   readonly liveTargets?: readonly GcLiveStoreTarget[];
 }
+
+export type GcRecoveryPhase = 'approved' | 'forget-complete' | 'reclaiming' | 'complete';
+
+export interface GcRecoveryActionV1 {
+  readonly actionId: string;
+  readonly kind: 'reclaim-store';
+  readonly path: string;
+  readonly contentHash: string;
+  readonly modifiedAt: number;
+  readonly logicalBytes: number;
+  readonly ownershipToken: string;
+  readonly containerPath: string;
+  readonly payloadPath: string;
+  readonly outcome: 'pending' | 'detached' | 'cleaned' | 'protected-skip';
+}
+
+export interface GcRecoveryRecordV1 {
+  readonly schemaVersion: 1;
+  readonly kind: 'skillsmith.gc-recovery';
+  readonly planId: string;
+  readonly requestDigest: string;
+  readonly revision: string;
+  readonly phase: GcRecoveryPhase;
+  readonly retryArguments: readonly string[];
+  readonly actions: readonly GcRecoveryActionV1[];
+}
+
+export type GcRecoveryObservation =
+  | Readonly<{ readonly state: 'none'; readonly record: null; readonly path: string }>
+  | Readonly<{
+      readonly state: 'pending';
+      readonly record: GcRecoveryRecordV1;
+      readonly path: string;
+    }>
+  | Readonly<{
+      readonly state: 'refused';
+      readonly record: null;
+      readonly path: string;
+      readonly reason: string;
+    }>;
+
+export interface GcReclaimRequest {
+  readonly storeRoot: string;
+  readonly planId: string;
+  readonly actionId: string;
+  readonly ownershipToken: string;
+  readonly object: GcObjectObservation;
+}
+
+export type GcReclaimResult =
+  | Readonly<{ readonly state: 'cleaned'; readonly logicalBytes: number }>
+  | Readonly<{ readonly state: 'already-absent'; readonly logicalBytes: 0 }>
+  | Readonly<{ readonly state: 'refused'; readonly logicalBytes: 0; readonly reason: string }>;
