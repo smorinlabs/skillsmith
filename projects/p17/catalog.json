@@ -7476,6 +7476,10 @@
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
+        "packages/core/src/acquire/plan.ts",
+        "packages/core/src/acquire/run.ts",
+        "packages/core/src/acquire/uninstall.ts",
+        "packages/core/src/application/lifecycle-services.ts",
         "packages/core/src/application/undo-service.ts",
         "packages/core/src/application/update-service.ts",
         "packages/core/src/artifacts/coordinator-types.ts",
@@ -7487,9 +7491,11 @@
         "packages/core/src/artifacts/retained-preimage-codec.ts",
         "packages/core/src/contracts/v1/undo.ts",
         "packages/core/src/execution/scheduler.ts",
+        "packages/core/src/place/execute.ts",
         "packages/core/src/place/logical-transactions.ts",
         "packages/core/src/place/plan.ts",
         "packages/core/src/place/swap.ts",
+        "packages/core/src/place/types.ts",
         "packages/core/src/reconcile/apply-execution.ts",
         "packages/core/src/status/join.ts",
         "packages/core/src/status/read.ts",
@@ -7513,6 +7519,7 @@
         "packages/core/tests/artifacts/retained-preimage-codec.test.ts",
         "packages/core/tests/contracts/undo.test.ts",
         "packages/core/tests/execution/scheduler.test.ts",
+        "packages/core/tests/place/execute.test.ts",
         "packages/core/tests/place/logical-transactions.test.ts",
         "packages/core/tests/place/plan.test.ts",
         "packages/core/tests/place/swap.test.ts",
@@ -7645,7 +7652,8 @@
         "projects/p17/evidence/P17-G5-05.md#ready-rerun-at-d13d907",
         "projects/p17/evidence/P17-G5-05.md#final-ready-review-at-b779a87",
         "projects/p17/evidence/P17-G5-05.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G5-05.md#test-first-evidence"
+        "projects/p17/evidence/P17-G5-05.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-05.md#approved-implementation-compatibility-amendment"
       ]
     },
     {
