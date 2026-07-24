@@ -17,12 +17,14 @@ import type {
 } from '../ports/types.ts';
 import { inventoryGcStore } from './inventory.ts';
 import { withoutLedgerProjectAt } from './plan.ts';
-import { classifyGcReachability } from './reachability.ts';
+import { classifyGcReachability, observeGcLiveTargets } from './reachability.ts';
 import {
+  convergeGcRecovery,
   createGcRecoveryRecord,
   gcRecoveryRevision,
   observeGcRecovery,
   removeGcRecoveryRecord,
+  removeIncompleteGcRecovery,
   replaceGcRecoveryRecord,
 } from './recovery.ts';
 import { finalizeGcStoreReclaim, reclaimGcStoreObject } from './repository.ts';
@@ -428,18 +430,25 @@ const runPendingLocked = async (
   ) {
     return fail(approved.record, 'GC recovery state changed before execution');
   }
-  const boundaries = await commitLedgerBoundaries(ports, ledgerPath, observed);
+  const converged = await convergeGcRecovery(ports, dataDir, observed);
+  if (converged.state !== 'pending') {
+    return fail(approved.record, 'GC recovery staging could not converge');
+  }
+  const boundaries = await commitLedgerBoundaries(ports, ledgerPath, converged);
   if (!boundaries.ok) return boundaries.result;
   let recovery = boundaries.recovery;
 
   const inventory = await inventoryGcStore(ports, storeRoot);
   if (inventory.state !== 'ok')
     return fail(recovery.record, 'GC committed store inventory is unsafe');
+  const liveTargets = await observeGcLiveTargets(ports, boundaries.model, inventory.objects);
+  if (liveTargets.state !== 'ok') return fail(recovery.record, liveTargets.reason);
   const classified = classifyGcReachability({
     model: boundaries.model,
     objects: inventory.objects,
     nowMilliseconds: recovery.record.nowMilliseconds,
     olderThanMilliseconds: recovery.record.olderThanMilliseconds,
+    liveTargets: liveTargets.targets,
   });
   if (classified.state !== 'ok')
     return fail(recovery.record, 'GC committed reachability revalidation failed');
@@ -539,6 +548,20 @@ export const resumeGcRecovery = async (
   if (!locked.ok)
     return fail(input.recovery.record, 'GC could not acquire the placement ledger lock');
   return locked.value;
+};
+
+export const clearIncompleteGcRecovery = async (
+  ports: ExecutePorts,
+  input: Readonly<{
+    readonly dataDir: string;
+    readonly ledgerPath: string;
+    readonly recovery: Extract<GcRecoveryObservation, { readonly state: 'incomplete' }>;
+  }>,
+): Promise<boolean> => {
+  const locked = await withLedgerLock(ports, input.ledgerPath, () =>
+    removeIncompleteGcRecovery(ports, input.dataDir, input.recovery),
+  );
+  return locked.ok && locked.value;
 };
 
 export const executeGcPlan = async (

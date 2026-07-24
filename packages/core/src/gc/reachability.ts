@@ -1,7 +1,10 @@
+import { dirname, resolve } from 'node:path';
 import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
 import { resolveFreshRollbackLineage } from '../artifacts/ledger-history.ts';
-import type { LedgerPairV1Dto, LedgerSkillsV2Dto } from '../artifacts/ledger-types.ts';
+import type { LedgerModel, LedgerPairV1Dto, LedgerSkillsV2Dto } from '../artifacts/ledger-types.ts';
+import type { FileReadPort } from '../ports/types.ts';
 import type {
+  GcLiveTargetObservation,
   GcObjectObservation,
   GcProtectionEdge,
   GcReachabilityInput,
@@ -65,6 +68,58 @@ const retainedEligible = (retainUntil: string | null, nowMilliseconds: number): 
   if (retainUntil === null) return true;
   const cutoff = Date.parse(retainUntil);
   return Number.isFinite(cutoff) ? nowMilliseconds <= cutoff : null;
+};
+
+/** Observes exact, stable symlink targets for every bounded ledger/registration placement. */
+export const observeGcLiveTargets = async (
+  ports: Pick<FileReadPort, 'pathKind' | 'readLink' | 'realpath'>,
+  model: LedgerModel,
+  objects: readonly GcObjectObservation[],
+): Promise<GcLiveTargetObservation> => {
+  const placements = new Set<string>();
+  const collectPair = (pair: LedgerPairV1Dto): void => {
+    placements.add(pair.placementPath);
+  };
+  visitPairs(model.skills, 'user', collectPair);
+  for (const project of Object.values(model.projects)) {
+    visitPairs(project.skills, 'project', collectPair);
+  }
+  for (const registration of Object.values(model.projectRegistrations)) {
+    for (const consumer of registration.consumers) placements.add(consumer.placementPath);
+  }
+  const byPath = new Map(objects.map((object) => [object.path, object]));
+  const targets = [];
+  for (const placementPath of [...placements].sort(compare)) {
+    let kindA: Awaited<ReturnType<typeof ports.pathKind>>;
+    let kindB: Awaited<ReturnType<typeof ports.pathKind>>;
+    try {
+      kindA = await ports.pathKind(placementPath);
+      if (kindA !== 'symlink') continue;
+      const targetA = await ports.readLink(placementPath);
+      const targetB = await ports.readLink(placementPath);
+      kindB = await ports.pathKind(placementPath);
+      if (kindB !== kindA || targetA !== targetB) throw new Error('unstable');
+      const lexicalTarget = resolve(dirname(placementPath), targetA);
+      const canonicalTarget = await ports.realpath(lexicalTarget).catch(() => null);
+      if (canonicalTarget === null) continue;
+      const object = byPath.get(canonicalTarget);
+      if (object === undefined) continue;
+      targets.push(
+        Object.freeze({
+          sourceId: `live:${placementPath}`,
+          path: object.path,
+          contentHash: object.contentHash,
+        }),
+      );
+    } catch {
+      return deepFreeze({
+        state: 'refused',
+        reason: `GC live placement changed during observation: ${placementPath}`,
+        targets: [],
+      });
+    }
+  }
+  return deepFreeze({ state: 'ok', targets });
 };
 
 export const classifyGcReachability = (input: GcReachabilityInput): GcReachabilityResult => {

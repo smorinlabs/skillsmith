@@ -98,6 +98,10 @@ export interface GcLiveStoreTarget {
   readonly contentHash: string;
 }
 
+export type GcLiveTargetObservation =
+  | Readonly<{ readonly state: 'ok'; readonly targets: readonly GcLiveStoreTarget[] }>
+  | Readonly<{ readonly state: 'refused'; readonly reason: string; readonly targets: readonly [] }>;
+
 export interface GcReachabilityInput {
   readonly model: LedgerModel;
   readonly objects: readonly GcObjectObservation[];
@@ -213,6 +217,13 @@ export type GcRecoveryObservation =
       readonly state: 'pending';
       readonly record: GcRecoveryRecordV1;
       readonly path: string;
+      readonly staging?: 'initial' | 'successor' | 'redundant';
+    }>
+  | Readonly<{
+      readonly state: 'incomplete';
+      readonly record: null;
+      readonly path: string;
+      readonly reason: string;
     }>
   | Readonly<{
       readonly state: 'refused';

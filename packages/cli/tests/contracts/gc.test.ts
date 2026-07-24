@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   GC_SECRET_CANARIES,
@@ -85,8 +85,16 @@ describe('gc command contract', () => {
       revision: '222222222222',
       skill: 'lint',
     });
+    const liveDrift = await createStoreObject(selected, {
+      namespace: 'local',
+      repository: 'live drift',
+      revision: '333333333334',
+      skill: 'drift',
+    });
     await mkdir(join(selected.store, '.staging', 'ignored'), { recursive: true });
     const placementPath = join(selected.projects.current, '.agents', 'skills', 'review');
+    await mkdir(join(selected.projects.current, '.agents', 'skills'), { recursive: true });
+    await symlink(liveDrift.path, placementPath);
     const pair = pinnedPair(placementPath, reachable);
     const fields = projectLedgerFields(
       selected.projects.current,
@@ -100,7 +108,7 @@ describe('gc command contract', () => {
     const report = requireGcReport(await runGcCli(selected, ['gc', '--dry-run', '--json']));
     expect(report).toMatchObject({ mode: 'dry-run', state: 'planned' });
     const objects = records(report.objects);
-    expect(objects).toHaveLength(2);
+    expect(objects).toHaveLength(3);
     expect(objects).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -109,6 +117,11 @@ describe('gc command contract', () => {
           outcome: 'protected',
         }),
         expect.objectContaining({ path: extraAt.path, outcome: 'eligible' }),
+        expect.objectContaining({
+          path: liveDrift.path,
+          outcome: 'protected',
+          protection: expect.arrayContaining([expect.objectContaining({ kind: 'live-placement' })]),
+        }),
       ]),
     );
     expect(JSON.stringify(report)).not.toContain('.staging/ignored');
@@ -245,6 +258,32 @@ describe('gc command contract', () => {
 
     const noOp = requireGcReport(await runGcCli(selected, ['gc', '--json']));
     expect(noOp).toMatchObject({ state: 'no-op', summary: { eligibleItems: 0 } });
+
+    const interrupted = await createStoreObject(selected, {
+      revision: '898989898989',
+      skill: 'interrupted',
+    });
+    const recoveryParent = join(selected.data, '.gc-recovery');
+    await mkdir(selected.recovery, { recursive: true, mode: 0o700 });
+    await chmod(recoveryParent, 0o700);
+    await chmod(selected.recovery, 0o700);
+    const staging = join(
+      selected.recovery,
+      `.${'a'.repeat(64)}.create-${'b'.repeat(64)}-${'c'.repeat(16)}.tmp`,
+    );
+    await writeFile(staging, '', { mode: 0o600 });
+    const stagingBefore = await snapshotGcState(selected);
+    const pending = requireGcReport(await runGcCli(selected, ['gc', '--dry-run', '--json']), 3);
+    expect(pending).toMatchObject({
+      mode: 'dry-run',
+      state: 'partial',
+      recovery: { state: 'pending', phase: 'initial-staging' },
+    });
+    expect(await snapshotGcState(selected)).toEqual(stagingBefore);
+    const converged = requireGcReport(await runGcCli(selected, ['gc', '--yes', '--json']));
+    expect(converged).toMatchObject({ state: 'completed' });
+    expect(await pathExists(staging)).toBeFalse();
+    expect(await pathExists(interrupted.path)).toBeFalse();
   });
 
   test('EWP-CMD-GC-TS07 — exact missing-project forget and derived ledger mutation', async () => {

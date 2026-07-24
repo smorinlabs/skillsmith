@@ -307,7 +307,20 @@ export const observeGcRecovery = async (
   }
   const names = [...(await ports.listDir(root))].sort();
   if (names.length === 0) return Object.freeze({ state: 'none', record: null, path: root });
-  if (names.length !== 1 || !/^([0-9a-f]{64})\.json$/u.test(names[0] ?? '')) {
+  const liveNames = names.filter((name) => /^([0-9a-f]{64})\.json$/u.test(name));
+  const initialNames = names.filter((name) =>
+    /^\.([0-9a-f]{64})\.create-([0-9a-f]{64})-([0-9a-f]{16})\.tmp$/u.test(name),
+  );
+  const successorNames = names.filter((name) =>
+    /^\.([0-9a-f]{64})\.cas-([0-9a-f]{64})-([0-9a-f]{64})-([0-9a-f]{16})\.tmp$/u.test(name),
+  );
+  if (
+    liveNames.length > 1 ||
+    initialNames.length > 1 ||
+    successorNames.length > 1 ||
+    names.length !== liveNames.length + initialNames.length + successorNames.length ||
+    initialNames.length + successorNames.length > 1
+  ) {
     return Object.freeze({
       state: 'refused',
       record: null,
@@ -315,26 +328,206 @@ export const observeGcRecovery = async (
       reason: 'GC recovery namespace contains unexpected or competing state',
     });
   }
-  const path = join(root, names[0] as string);
-  if (!(await secureFile(ports, path))) {
+  const readCanonical = async (
+    name: string,
+  ): Promise<Readonly<{
+    readonly path: string;
+    readonly source: string;
+    readonly record: GcRecoveryRecordV1 | null;
+  }> | null> => {
+    const path = join(root, name);
+    if (!(await secureFile(ports, path))) return null;
+    const source = await ports.readText(path).catch(() => '');
+    return Object.freeze({ path, source, record: parseRecord(source) });
+  };
+  const initialName = initialNames[0];
+  if (initialName !== undefined && liveNames.length === 0 && successorNames.length === 0) {
+    const parsedName = /^\.([0-9a-f]{64})\.create-([0-9a-f]{64})-([0-9a-f]{16})\.tmp$/u.exec(
+      initialName,
+    );
+    const staged = await readCanonical(initialName);
+    if (staged === null) {
+      return Object.freeze({
+        state: 'refused',
+        record: null,
+        path: join(root, initialName),
+        reason: 'GC recovery staging ownership, mode, or identity is unsafe',
+      });
+    }
+    if (staged.record === null) {
+      return Object.freeze({
+        state: 'incomplete',
+        record: null,
+        path: staged.path,
+        reason: 'GC recovery has incomplete non-authoritative initial staging',
+      });
+    }
+    if (
+      parsedName?.[1] !== staged.record.planId ||
+      parsedName[2] !== staged.record.revision ||
+      canonical(staged.record) !== staged.source
+    ) {
+      return Object.freeze({
+        state: 'refused',
+        record: null,
+        path: staged.path,
+        reason: 'GC initial recovery staging is malformed or inconsistent',
+      });
+    }
     return Object.freeze({
-      state: 'refused',
-      record: null,
-      path,
-      reason: 'GC recovery record ownership, mode, or identity is unsafe',
+      state: 'pending',
+      record: Object.freeze(staged.record),
+      path: staged.path,
+      staging: 'initial',
     });
   }
-  const source = await ports.readText(path).catch(() => '');
-  const record = parseRecord(source);
-  if (record === null || names[0] !== `${record.planId}.json` || canonical(record) !== source) {
+  const liveName = liveNames[0];
+  if (liveName === undefined || initialName !== undefined) {
     return Object.freeze({
       state: 'refused',
       record: null,
-      path,
+      path: root,
+      reason: 'GC recovery temp transition has no valid authoritative predecessor',
+    });
+  }
+  const live = await readCanonical(liveName);
+  if (
+    live === null ||
+    live.record === null ||
+    liveName !== `${live.record.planId}.json` ||
+    canonical(live.record) !== live.source
+  ) {
+    return Object.freeze({
+      state: 'refused',
+      record: null,
+      path: live?.path ?? join(root, liveName),
       reason: 'GC recovery record is malformed or noncanonical',
     });
   }
-  return Object.freeze({ state: 'pending', record: Object.freeze(record), path });
+  const successorName = successorNames[0];
+  if (successorName === undefined) {
+    return Object.freeze({
+      state: 'pending',
+      record: Object.freeze(live.record),
+      path: live.path,
+    });
+  }
+  const parsedName =
+    /^\.([0-9a-f]{64})\.cas-([0-9a-f]{64})-([0-9a-f]{64})-([0-9a-f]{16})\.tmp$/u.exec(
+      successorName,
+    );
+  const staged = await readCanonical(successorName);
+  if (staged === null || staged.record === null || canonical(staged.record) !== staged.source) {
+    return Object.freeze({
+      state: 'refused',
+      record: null,
+      path: staged?.path ?? join(root, successorName),
+      reason: 'GC successor recovery staging is malformed or unsafe',
+    });
+  }
+  if (
+    parsedName?.[1] !== live.record.planId ||
+    parsedName[3] !== staged.record.revision ||
+    staged.record.planId !== live.record.planId
+  ) {
+    return Object.freeze({
+      state: 'refused',
+      record: null,
+      path: staged.path,
+      reason: 'GC successor recovery staging identity is inconsistent',
+    });
+  }
+  if (parsedName[2] === live.record.revision && validTransition(live.record, staged.record)) {
+    return Object.freeze({
+      state: 'pending',
+      record: Object.freeze(staged.record),
+      path: staged.path,
+      staging: 'successor',
+    });
+  }
+  if (
+    parsedName[3] === live.record.revision &&
+    staged.record.revision === live.record.revision &&
+    staged.source === live.source
+  ) {
+    return Object.freeze({
+      state: 'pending',
+      record: Object.freeze(live.record),
+      path: staged.path,
+      staging: 'redundant',
+    });
+  }
+  return Object.freeze({
+    state: 'refused',
+    record: null,
+    path: staged.path,
+    reason: 'GC successor recovery staging revision or phase is impossible',
+  });
+};
+
+export const convergeGcRecovery = async (
+  ports: RecoveryPorts,
+  dataDir: string,
+  expected: Extract<GcRecoveryObservation, { readonly state: 'pending' }>,
+): Promise<GcRecoveryObservation> => {
+  if (expected.staging === undefined) return expected;
+  const observed = await observeGcRecovery(ports, dataDir);
+  if (
+    observed.state !== 'pending' ||
+    observed.staging !== expected.staging ||
+    observed.path !== expected.path ||
+    observed.record.revision !== expected.record.revision
+  ) {
+    return Object.freeze({
+      state: 'refused',
+      record: null,
+      path: expected.path,
+      reason: 'GC recovery staging changed before convergence',
+    });
+  }
+  const root = recoveryRootOf(dataDir);
+  const live = join(root, `${expected.record.planId}.json`);
+  try {
+    if (expected.staging === 'redundant') {
+      await ports.removeTree(expected.path);
+    } else {
+      if (expected.staging === 'initial' && (await ports.pathKind(live)) !== 'absent') {
+        throw new Error();
+      }
+      await ports.rename(expected.path, live);
+    }
+    await ports.fsyncDir(root);
+  } catch {
+    return Object.freeze({
+      state: 'refused',
+      record: null,
+      path: expected.path,
+      reason: 'GC recovery staging convergence failed',
+    });
+  }
+  const converged = await observeGcRecovery(ports, dataDir);
+  return converged.state === 'pending' &&
+    converged.staging === undefined &&
+    converged.record.revision === expected.record.revision
+    ? converged
+    : Object.freeze({
+        state: 'refused',
+        record: null,
+        path: live,
+        reason: 'GC recovery staging did not converge to one live record',
+      });
+};
+
+export const removeIncompleteGcRecovery = async (
+  ports: RecoveryPorts,
+  dataDir: string,
+  expected: Extract<GcRecoveryObservation, { readonly state: 'incomplete' }>,
+): Promise<boolean> => {
+  const observed = await observeGcRecovery(ports, dataDir);
+  if (observed.state !== 'incomplete' || observed.path !== expected.path) return false;
+  await ports.removeTree(expected.path).catch(() => {});
+  await ports.fsyncDir(recoveryRootOf(dataDir)).catch(() => {});
+  return (await observeGcRecovery(ports, dataDir)).state === 'none';
 };
 
 const ensureDirectory = async (

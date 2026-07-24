@@ -3,7 +3,7 @@ import { logicalJournalPairIdentity } from '../artifacts/registry.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { GcProjectV1Dto, GcReportV1Dto } from '../contracts/v1/gc.ts';
-import { executeGcPlan, resumeGcRecovery } from '../gc/execute.ts';
+import { clearIncompleteGcRecovery, executeGcPlan, resumeGcRecovery } from '../gc/execute.ts';
 import { observeGcState } from '../gc/observe.ts';
 import {
   buildGcPlan,
@@ -12,7 +12,7 @@ import {
   parseGcDuration,
   withoutLedgerProjectAt,
 } from '../gc/plan.ts';
-import { classifyGcReachability } from '../gc/reachability.ts';
+import { classifyGcReachability, observeGcLiveTargets } from '../gc/reachability.ts';
 import type { GcDuration, GcInventory, GcRecoveryObservation } from '../gc/types.ts';
 import { emptyLedgerModel } from '../place/ledger.ts';
 import { ledgerPathOf, resolveDataDir, storeRootOf } from '../place/paths.ts';
@@ -337,6 +337,26 @@ export const runGcApplication: ApplicationService<
       ? success(resumed.report, false)
       : refuse('state', 'gc-execution', resumed.reason, resumed.report);
   }
+  if (observed.recovery.state === 'incomplete') {
+    const message = 'GC has incomplete non-authoritative initial recovery staging';
+    const report: GcReportV1Dto = Object.freeze({
+      ...refusalReport(project, message, { sourceVersion: observed.ledger.sourceVersion }),
+      mode: normalized.value.dryRun ? 'dry-run' : 'execute',
+      state: 'partial',
+      recovery: { state: 'pending' as const, phase: 'initial-staging' },
+    });
+    if (normalized.value.dryRun) {
+      return refuse('state', 'gc-recovery-incomplete', message, report);
+    }
+    const cleared = await clearIncompleteGcRecovery(context.ports, {
+      dataDir,
+      ledgerPath,
+      recovery: observed.recovery,
+    });
+    return cleared
+      ? runGcApplication(rawRequest, context)
+      : refuse('state', 'gc-recovery-incomplete', `${message}; cleanup failed`, report);
+  }
   if (observed.inventory.state === 'refused') {
     const message = 'GC store inventory is unsafe; no action was selected';
     return refuse(
@@ -362,11 +382,27 @@ export const runGcApplication: ApplicationService<
   if (!projects.ok) return refuse('usage', projects.error.code, projects.error.message);
   const postForget = withoutLedgerProjectAt(model, normalizedRoots.value);
   if (!postForget.ok) return refuse('usage', postForget.error.code, postForget.error.message);
+  const liveTargets = await observeGcLiveTargets(
+    context.ports,
+    postForget.value,
+    observed.inventory.objects,
+  );
+  if (liveTargets.state === 'refused') {
+    return refuse(
+      'state',
+      'gc-live-placement-refused',
+      liveTargets.reason,
+      refusalReport(project, liveTargets.reason, {
+        sourceVersion: observed.ledger.sourceVersion,
+      }),
+    );
+  }
   const classified = classifyGcReachability({
     model: postForget.value,
     objects: observed.inventory.objects,
     nowMilliseconds,
     olderThanMilliseconds: normalized.value.duration?.milliseconds ?? null,
+    liveTargets: liveTargets.targets,
   });
   if (classified.state === 'refused') {
     return refuse(

@@ -6,10 +6,12 @@ import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import type { GcReportV1Dto } from '../../src/contracts/v1/gc.ts';
 import { gcRequestDigest } from '../../src/gc/plan.ts';
 import {
+  convergeGcRecovery,
   createGcRecoveryRecord,
   gcRecoveryRevision,
   observeGcRecovery,
   removeGcRecoveryRecord,
+  removeIncompleteGcRecovery,
   replaceGcRecoveryRecord,
 } from '../../src/gc/recovery.ts';
 import type { GcRecoveryRecordV1 } from '../../src/gc/types.ts';
@@ -206,6 +208,105 @@ describe('GC private recovery repository', () => {
         state: 'refused',
         reason: expect.stringContaining('malformed'),
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('reports valid initial temp state read-only and converges it only on execution', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-recovery-temp-'));
+    try {
+      await chmod(root, 0o700);
+      const initialRecord = record(root, 'approved');
+      const created = await createGcRecoveryRecord(ports, root, initialRecord);
+      if (created.state !== 'pending') throw new Error('recovery create failed');
+      const staging = join(
+        root,
+        '.gc-recovery',
+        'v1',
+        `.${initialRecord.planId}.create-${initialRecord.revision}-${'1'.repeat(16)}.tmp`,
+      );
+      await ports.rename(created.path, staging);
+      const before = await ports.listDir(join(root, '.gc-recovery', 'v1'));
+      const observed = await observeGcRecovery(ports, root);
+      expect(observed).toMatchObject({
+        state: 'pending',
+        record: { revision: initialRecord.revision },
+        path: staging,
+        staging: 'initial',
+      });
+      expect(await ports.listDir(join(root, '.gc-recovery', 'v1'))).toEqual(before);
+      if (observed.state !== 'pending') throw new Error('initial staging was not observed');
+      const converged = await convergeGcRecovery(ports, root, observed);
+      expect(converged).toMatchObject({
+        state: 'pending',
+        record: { revision: initialRecord.revision },
+        path: created.path,
+      });
+      expect(await ports.pathKind(staging)).toBe('absent');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('reports incomplete initial staging without writes and removes only the reobserved temp', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-recovery-incomplete-'));
+    try {
+      const recovery = join(root, '.gc-recovery', 'v1');
+      await mkdir(recovery, { recursive: true, mode: 0o700 });
+      await chmod(root, 0o700);
+      await chmod(join(root, '.gc-recovery'), 0o700);
+      const staging = join(recovery, `.${id('a')}.create-${id('b')}-${'1'.repeat(16)}.tmp`);
+      await writeFile(staging, '', { mode: 0o600 });
+      const observed = await observeGcRecovery(ports, root);
+      expect(observed).toMatchObject({ state: 'incomplete', path: staging });
+      expect(await ports.pathKind(staging)).toBe('file');
+      if (observed.state !== 'incomplete') throw new Error('incomplete staging was not observed');
+      expect(await removeIncompleteGcRecovery(ports, root, observed)).toBeTrue();
+      expect(await observeGcRecovery(ports, root)).toMatchObject({ state: 'none' });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('adopts one valid successor CAS temp from its exact live predecessor', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-recovery-successor-'));
+    try {
+      await chmod(root, 0o700);
+      const initialRecord = record(root, 'approved');
+      const created = await createGcRecoveryRecord(ports, root, initialRecord);
+      if (created.state !== 'pending') throw new Error('recovery create failed');
+      const initialSource = await readFile(created.path, 'utf8');
+      const { revision: _revision, ...initialSeed } = initialRecord;
+      const nextSeed = { ...initialSeed, phase: 'migration-complete' as const };
+      const next = Object.freeze({ ...nextSeed, revision: gcRecoveryRevision(nextSeed) });
+      const replaced = await replaceGcRecoveryRecord(ports, created, next);
+      if (replaced.state !== 'pending') throw new Error('recovery replace failed');
+      const nextSource = await readFile(replaced.path, 'utf8');
+      await writeFile(replaced.path, initialSource, { mode: 0o600 });
+      const staging = join(
+        root,
+        '.gc-recovery',
+        'v1',
+        `.${next.planId}.cas-${initialRecord.revision}-${next.revision}-${'2'.repeat(16)}.tmp`,
+      );
+      await writeFile(staging, nextSource, { mode: 0o600 });
+      const observed = await observeGcRecovery(ports, root);
+      expect(observed).toMatchObject({
+        state: 'pending',
+        record: { revision: next.revision, phase: 'migration-complete' },
+        staging: 'successor',
+      });
+      if (observed.state !== 'pending') throw new Error('successor staging was not observed');
+      const converged = await convergeGcRecovery(ports, root, observed);
+      expect(converged).toMatchObject({
+        state: 'pending',
+        record: { revision: next.revision, phase: 'migration-complete' },
+      });
+      expect(await ports.pathKind(staging)).toBe('absent');
     } finally {
       await rm(root, { recursive: true, force: true });
     }
